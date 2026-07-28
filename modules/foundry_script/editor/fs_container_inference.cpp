@@ -864,6 +864,10 @@ private:
 				const FSParser::ConstantNode *constant = static_cast<const FSParser::ConstantNode *>(p_statement);
 				scan_value(constant->initializer);
 			} break;
+			case Node::VARIABLE_DESTRUCTURE: {
+				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_statement);
+				scan_value(destructure->initializer); // Catches `var (a, b) = our_var`.
+			} break;
 			case Node::IF: {
 				const FSParser::IfNode *if_node = static_cast<const FSParser::IfNode *>(p_statement);
 				scan_value(if_node->condition);
@@ -2016,6 +2020,10 @@ private:
 			case Node::CONSTANT: {
 				const FSParser::ConstantNode *constant = static_cast<const FSParser::ConstantNode *>(p_statement);
 				scan_value(constant->initializer);
+			} break;
+			case Node::VARIABLE_DESTRUCTURE: {
+				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_statement);
+				scan_value(destructure->initializer); // Catches `var (a, b) = our_var`.
 			} break;
 			case Node::IF: {
 				const FSParser::IfNode *if_node = static_cast<const FSParser::IfNode *>(p_statement);

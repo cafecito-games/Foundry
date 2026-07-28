@@ -2,7 +2,7 @@
 /*  test_container_inference.h                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -281,6 +281,13 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference]") {
 		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar fn = func(): items.append(2)\n");
 		FSContainerInference::Result result = infer_in(fixture, "f", "items");
 		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Referencing the array inside a destructuring initializer escapes it") {
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar (a, b) = (items, 2)\n");
+		FSContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+		CHECK_FALSE(result.detail.is_empty());
 	}
 
 	TEST_CASE("An unmodelled mutating method forces a conservative skip") {
@@ -724,6 +731,13 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference][Dictionary]") {
 		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar fn = func(): d[\"b\"] = 2\n");
 		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Referencing the dictionary inside a destructuring initializer escapes it") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar (a, b) = (d, 2)\n");
+		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+		CHECK_FALSE(result.detail.is_empty());
 	}
 
 	TEST_CASE("An unused empty dictionary literal yields no evidence") {
