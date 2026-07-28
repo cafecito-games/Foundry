@@ -3620,6 +3620,13 @@ Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorE
 		r_config.repositories.set(i, value);
 	}
 	r_config.repositories.sort();
+	if (r_config.plugin_kind == "maven" && r_config.repositories.is_empty()) {
+		return _foundry_java_invalid_option(
+				REPOSITORIES_OPTION,
+				"<empty>",
+				vformat(TTR("must contain at least one repository when %s selects a Maven plugin"), PLUGIN_MAVEN_OPTION),
+				r_error);
+	}
 
 	seen.clear();
 	for (int i = 0; i < r_config.maven_artifacts.size(); i++) {

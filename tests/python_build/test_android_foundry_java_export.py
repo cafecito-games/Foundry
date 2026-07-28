@@ -1274,6 +1274,23 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         }
         self.assert_gradle_failed_with(properties, "must use an exact Maven")
 
+    def test_maven_plugin_requires_a_repository_before_dependency_resolution(self) -> None:
+        properties = {
+            "foundry_java_registry_marker": "registry-index-v2",
+            "foundry_java_gradle_plugin_kind": "maven",
+            "foundry_java_gradle_plugin": "test.fixture:unreachable-plugin:1.0.0",
+            "foundry_java_local_artifacts": str(self.artifact),
+        }
+        result = self.run_gradle(properties)
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode, output)
+        self.assertIn(
+            "foundry_java_maven_repositories must contain at least one repository "
+            "when foundry_java_gradle_plugin_kind is maven",
+            output,
+        )
+        self.assertNotIn("Could not resolve", output)
+
     def test_latest_is_dynamic_only_in_the_maven_version(self) -> None:
         properties = self.enabled_local_properties()
         properties["foundry_java_maven_artifacts"] = "latest.test.fixture:module-latest:1.0.0"
@@ -5189,6 +5206,17 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         "test:plugin:1.0",
                         "gradle_build/foundry_java/gradle_plugin_local",
                         str(plugin),
+                    ),
+                ),
+                (
+                    None,
+                    (module,),
+                    ('gradle_build/foundry_java/gradle_plugin_maven="test:plugin:1.0"',),
+                    (
+                        "gradle_build/foundry_java/maven_repositories",
+                        "<empty>",
+                        "must contain at least one repository",
+                        "gradle_build/foundry_java/gradle_plugin_maven",
                     ),
                 ),
                 (

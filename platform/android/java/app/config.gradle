@@ -477,8 +477,14 @@ ext.validateFoundryJavaExport = { ->
     if (!getFoundryJavaEnabled()) {
         return
     }
-    getFoundryJavaGradlePlugin()
-    getFoundryJavaMavenRepositories()
+    Map<String, String> plugin = getFoundryJavaGradlePlugin()
+    List<String> repositories = getFoundryJavaMavenRepositories()
+    if (plugin.kind == "maven" && repositories.isEmpty()) {
+        throw new GradleException(
+            "foundry_java_maven_repositories must contain at least one repository " +
+                "when foundry_java_gradle_plugin_kind is maven"
+        )
+    }
     List<String> mavenArtifacts = getFoundryJavaMavenArtifacts()
     List<File> localArtifacts = getFoundryJavaLocalArtifacts()
     if (mavenArtifacts.isEmpty() && localArtifacts.isEmpty()) {
