@@ -1183,10 +1183,13 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				// Apply annotations.
 				for (FSParser::AnnotationNode *&E : member.variable->annotations) {
 					if (E->name != SNAME("@warning_ignore")) {
-						// `@export_storage` is explicitly type-independent (it persists the raw
-						// value without going through the inspector's PropertyInfo mapping), so it
-						// never hits the erased-type problem the other `@export*` annotations do.
-						const bool is_inspector_export_annotation = String(E->name).begins_with("@export") && E->name != SNAME("@export_storage");
+						// `@export_storage` and `@export_custom` are explicitly type-independent: they
+						// publish the property's raw runtime type (and, for `@export_custom`, a
+						// caller-supplied hint/usage) instead of going through the inspector's
+						// automatic PropertyInfo mapping, so neither hits the erased-type mismatch
+						// the other `@export*` annotations do.
+						const bool is_type_independent_export_annotation = E->name == SNAME("@export_storage") || E->name == SNAME("@export_custom");
+						const bool is_inspector_export_annotation = String(E->name).begins_with("@export") && !is_type_independent_export_annotation;
 						if (rejects_export && is_inspector_export_annotation) {
 							if (rejected_export_datatype.is_tuple()) {
 								push_error(vformat(R"(Cannot export a tuple-typed property: "%s" has type "%s".)",
