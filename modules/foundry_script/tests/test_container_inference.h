@@ -290,11 +290,12 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference]") {
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
-	TEST_CASE("Discarding the array's destructured slot does not escape it") {
+	TEST_CASE("Referencing the array through a discarded destructured slot still escapes it") {
+		// The element is still evaluated even though its binding is `_`, so the
+		// analysis cannot assume the reference was never retained elsewhere.
 		InferenceFixture fixture("func f():\n\tvar items = [1]\n\titems.append(2)\n\tvar (_, b) = (items, 2)\n");
 		FSContainerInference::Result result = infer_in(fixture, "f", "items");
-		CHECK_EQ(result.outcome, FSContainerInference::INFERRED);
-		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
 	}
 
 	TEST_CASE("A non-literal destructuring initializer still escapes the array") {
@@ -753,11 +754,12 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference][Dictionary]") {
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
-	TEST_CASE("Discarding the dictionary's destructured slot does not escape it") {
+	TEST_CASE("Referencing the dictionary through a discarded destructured slot still escapes it") {
+		// The element is still evaluated even though its binding is `_`, so the
+		// analysis cannot assume the reference was never retained elsewhere.
 		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\td[\"b\"] = 2\n\tvar (_, b) = (d, 2)\n");
 		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
-		CHECK_EQ(result.outcome, FSContainerInference::INFERRED);
-		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
 	}
 
 	TEST_CASE("A non-literal destructuring initializer still escapes the dictionary") {

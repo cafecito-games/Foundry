@@ -782,25 +782,13 @@ private:
 		}
 	}
 
-	// Handles `var (a, b) = <init>`. When the initializer is a literal tuple, each
-	// element is scanned against its own binding so an element bound to `_` (a
-	// discarded slot, stored as a null binding) is not treated as an escaping
-	// alias: the value is never retained anywhere. A non-literal initializer
-	// (e.g. a function call) cannot be matched positionally, so it is scanned
-	// as a whole, exactly like a single `var v = <init>`.
+	// Handles `var (a, b) = <init>`, matching the single-variable case: the whole
+	// initializer expression is scanned, since every element is evaluated
+	// regardless of whether its binding is a named local or a discarded `_`
+	// slot (a null binding). A discarded slot still evaluates its element, so
+	// any escape or mutation the element expression performs must be seen.
 	void scan_destructure_initializer(const FSParser::VariableDestructureNode *p_destructure) {
-		if (p_destructure == nullptr || p_destructure->initializer == nullptr) {
-			return;
-		}
-		if (p_destructure->initializer->type == Node::TUPLE_LITERAL) {
-			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_destructure->initializer);
-			int count = MIN(tuple_literal->elements.size(), p_destructure->bindings.size());
-			for (int i = 0; i < count; i++) {
-				if (p_destructure->bindings[i] == nullptr) {
-					continue; // `_`: the element is discarded, so it cannot escape through this slot.
-				}
-				scan_value(tuple_literal->elements[i]);
-			}
+		if (p_destructure == nullptr) {
 			return;
 		}
 		scan_value(p_destructure->initializer);
@@ -1959,23 +1947,13 @@ private:
 		}
 	}
 
-	// Handles `var (a, b) = <init>`, mirroring the array walker's destructure handling:
-	// a literal tuple is scanned element-by-element against its binding, skipping any
-	// element bound to `_` (a discarded slot, stored as a null binding) since that value
-	// is never retained anywhere; a non-literal initializer is scanned as a whole.
+	// Handles `var (a, b) = <init>`, matching the single-variable case: the whole
+	// initializer expression is scanned, since every element is evaluated
+	// regardless of whether its binding is a named local or a discarded `_`
+	// slot (a null binding). A discarded slot still evaluates its element, so
+	// any escape or mutation the element expression performs must be seen.
 	void scan_destructure_initializer(const FSParser::VariableDestructureNode *p_destructure) {
-		if (p_destructure == nullptr || p_destructure->initializer == nullptr) {
-			return;
-		}
-		if (p_destructure->initializer->type == Node::TUPLE_LITERAL) {
-			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_destructure->initializer);
-			int count = MIN(tuple_literal->elements.size(), p_destructure->bindings.size());
-			for (int i = 0; i < count; i++) {
-				if (p_destructure->bindings[i] == nullptr) {
-					continue; // `_`: the element is discarded, so it cannot escape through this slot.
-				}
-				scan_value(tuple_literal->elements[i]);
-			}
+		if (p_destructure == nullptr) {
 			return;
 		}
 		scan_value(p_destructure->initializer);
