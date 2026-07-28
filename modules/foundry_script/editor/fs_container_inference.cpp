@@ -782,13 +782,33 @@ private:
 		}
 	}
 
-	// Handles `var (a, b) = <init>`, matching the single-variable case: the whole
-	// initializer expression is scanned, since every element is evaluated
-	// regardless of whether its binding is a named local or a discarded `_`
-	// slot (a null binding). A discarded slot still evaluates its element, so
-	// any escape or mutation the element expression performs must be seen.
+	// Handles `var (a, b) = <init>`.
+	//   - A literal tuple initializer is scanned element-by-element against its
+	//     binding. A *bare* direct reference to the tracked variable (`items` /
+	//     `self.member`) placed in a discarded `_` slot (a null binding) is not
+	//     an alias: the value is evaluated and immediately dropped, exactly like
+	//     a bare expression statement, so it is skipped rather than scanned.
+	//     Every other element — a named binding's element, or any element that
+	//     is more than a bare reference (a call, a mutation, an assignment) —
+	//     is scanned regardless of whether its slot is discarded, since the
+	//     expression still runs and may alias or mutate the tracked variable.
+	//   - A non-literal initializer (e.g. a function call) cannot be matched
+	//     positionally to the bindings, so it is scanned as a whole, exactly
+	//     like a single `var v = <init>`.
 	void scan_destructure_initializer(const FSParser::VariableDestructureNode *p_destructure) {
-		if (p_destructure == nullptr) {
+		if (p_destructure == nullptr || p_destructure->initializer == nullptr) {
+			return;
+		}
+		if (p_destructure->initializer->type == Node::TUPLE_LITERAL) {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_destructure->initializer);
+			int count = MIN(tuple_literal->elements.size(), p_destructure->bindings.size());
+			for (int i = 0; i < count; i++) {
+				const FSParser::ExpressionNode *element = tuple_literal->elements[i];
+				if (p_destructure->bindings[i] == nullptr && is_our_var(element)) {
+					continue; // `_`: a bare reference is discarded, not aliased.
+				}
+				scan_value(element);
+			}
 			return;
 		}
 		scan_value(p_destructure->initializer);
@@ -1947,13 +1967,30 @@ private:
 		}
 	}
 
-	// Handles `var (a, b) = <init>`, matching the single-variable case: the whole
-	// initializer expression is scanned, since every element is evaluated
-	// regardless of whether its binding is a named local or a discarded `_`
-	// slot (a null binding). A discarded slot still evaluates its element, so
-	// any escape or mutation the element expression performs must be seen.
+	// Handles `var (a, b) = <init>`, mirroring the array walker's destructure
+	// handling: a literal tuple is scanned element-by-element against its
+	// binding, skipping a *bare* direct reference to the tracked variable
+	// placed in a discarded `_` slot (a null binding) since the value is
+	// evaluated and immediately dropped, never aliased. Every other element —
+	// a named binding's element, or an element that is more than a bare
+	// reference — is scanned regardless of discard status, since the
+	// expression still runs and may alias or mutate the tracked variable. A
+	// non-literal initializer cannot be matched positionally, so it is
+	// scanned as a whole.
 	void scan_destructure_initializer(const FSParser::VariableDestructureNode *p_destructure) {
-		if (p_destructure == nullptr) {
+		if (p_destructure == nullptr || p_destructure->initializer == nullptr) {
+			return;
+		}
+		if (p_destructure->initializer->type == Node::TUPLE_LITERAL) {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_destructure->initializer);
+			int count = MIN(tuple_literal->elements.size(), p_destructure->bindings.size());
+			for (int i = 0; i < count; i++) {
+				const FSParser::ExpressionNode *element = tuple_literal->elements[i];
+				if (p_destructure->bindings[i] == nullptr && is_our_var(element)) {
+					continue; // `_`: a bare reference is discarded, not aliased.
+				}
+				scan_value(element);
+			}
 			return;
 		}
 		scan_value(p_destructure->initializer);
