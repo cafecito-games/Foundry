@@ -32,6 +32,7 @@
 
 #include "foundry_script.h"
 #include "fs_script_extensible_native_hooks.h"
+#include "fs_tagged_union.h"
 #include "fs_trait_utils.h"
 #include "fs_type.h"
 #include "fs_utility_callable.h"
@@ -8472,8 +8473,10 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 						return;
 					}
 					// A payload-less case of a tagged union is a value of the union, not an integer
-					// constant, so its tag is deliberately not folded in here.
+					// constant: it folds to the read-only `[tag]` singleton its case erases to.
 					p_identifier->set_datatype(case_type);
+					p_identifier->is_constant = true;
+					p_identifier->reduced_value = fs_tagged_union_case_singleton(base.enum_values[name]);
 					return;
 				}
 				p_identifier->set_datatype(case_type);
@@ -8923,8 +8926,12 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 						push_error(vformat(R"*(Enum case "%s" carries a payload and must be constructed, e.g. "%s(...)".)*",
 										   element.identifier->name, element.identifier->name),
 								p_identifier);
+					} else {
+						// A tagged-union case is a value, not an integer constant: it folds to the
+						// read-only `[tag]` singleton its case erases to.
+						p_identifier->is_constant = true;
+						p_identifier->reduced_value = fs_tagged_union_case_singleton(element.value);
 					}
-					// A tagged-union case is a value, not an integer constant, so its tag is not folded in.
 					return;
 				}
 

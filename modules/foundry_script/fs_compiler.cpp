@@ -35,6 +35,7 @@
 #include "fs_byte_codegen.h"
 #include "fs_cache.h"
 #include "fs_conformance_registry.h"
+#include "fs_tagged_union.h"
 #include "fs_trait_utils.h"
 #include "fs_utility_functions.h"
 
@@ -309,54 +310,6 @@ FSDataType FSCompiler::_gdtype_tuple_test_type_from_datatype(const FSParser::Dat
 		}
 	}
 	return result;
-}
-
-// Every case of a tagged union erases to a read-only `[tag, payload...]` Array, so a payload-less case
-// is the same shape with no payload: tag extraction is always element 0. The read-only flag makes the
-// value immutable and content-hashable, exactly like a tuple.
-static Variant _tagged_union_case_singleton(int64_t p_tag) {
-	Array value;
-	value.push_back(p_tag);
-	value.make_read_only();
-	return value;
-}
-
-bool FSCompiler::_tagged_union_case_singleton_for_expression(const FSParser::ExpressionNode *p_expression, Variant &r_value) {
-	StringName case_name;
-	switch (p_expression->type) {
-		case FSParser::Node::IDENTIFIER: {
-			const FSParser::IdentifierNode *identifier = static_cast<const FSParser::IdentifierNode *>(p_expression);
-			// A bare case name only resolves to a case inside the enum's own declaration (where the
-			// analyzer resolves it before the source dispatch) or as a whole-file enum's class constant.
-			// Any other source is a local, parameter, or member that merely shares the name.
-			if (identifier->source != FSParser::IdentifierNode::UNDEFINED_SOURCE &&
-					identifier->source != FSParser::IdentifierNode::MEMBER_CONSTANT) {
-				return false;
-			}
-			case_name = identifier->name;
-		} break;
-		case FSParser::Node::SUBSCRIPT: {
-			const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(p_expression);
-			if (!subscript->is_attribute || subscript->attribute == nullptr) {
-				return false;
-			}
-			case_name = subscript->attribute->name;
-		} break;
-		default:
-			return false;
-	}
-
-	const FSParser::DataType datatype = p_expression->get_datatype();
-	if (!datatype.is_set() || datatype.is_meta_type || !datatype.is_tagged_union_type()) {
-		return false;
-	}
-	const int64_t *tag = datatype.enum_values.getptr(case_name);
-	if (tag == nullptr || datatype.get_enum_case_payload(case_name) != nullptr) {
-		return false;
-	}
-
-	r_value = _tagged_union_case_singleton(*tag);
-	return true;
 }
 
 FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype) {
@@ -694,16 +647,6 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 			!(p_expression->get_datatype().is_meta_type &&
 					p_expression->get_datatype().kind == FSParser::DataType::CLASS)) {
 		return codegen.add_constant(p_expression->reduced_value);
-	}
-
-	// A payload-less tagged-union case is a per-case singleton: the same read-only `[tag]` Array every
-	// reference resolves to. Identity is semantically irrelevant because equality is the deep Array
-	// comparison, so the value can be emitted straight into the constant pool.
-	{
-		Variant case_singleton;
-		if (_tagged_union_case_singleton_for_expression(p_expression, case_singleton)) {
-			return codegen.add_constant(case_singleton);
-		}
 	}
 
 	FSCodeGenerator *gen = codegen.generator;
@@ -4420,7 +4363,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				// A payload case is a constructor, not a value, so it contributes no constant; a
 				// payload-less case contributes its `[tag]` singleton rather than a bare integer.
 				if (!enum_value.has_payload()) {
-					p_script->constants.insert(enum_value.identifier->name, _tagged_union_case_singleton(enum_value.value));
+					p_script->constants.insert(enum_value.identifier->name, fs_tagged_union_case_singleton(enum_value.value));
 				}
 				continue;
 			}
@@ -4542,7 +4485,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 					// A payload case is a constructor, not a value, so it contributes no constant; a
 					// payload-less case contributes its `[tag]` singleton rather than a bare integer.
 					if (!enum_value.has_payload()) {
-						p_script->constants.insert(name, _tagged_union_case_singleton(enum_value.value));
+						p_script->constants.insert(name, fs_tagged_union_case_singleton(enum_value.value));
 					}
 					break;
 				}
