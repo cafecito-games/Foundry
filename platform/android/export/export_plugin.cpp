@@ -4987,7 +4987,13 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		return foundry_java_config_error;
 	}
 
-	const String base_dir = p_path.get_base_dir();
+	String final_artifact_path = p_path;
+	if (final_artifact_path.is_relative_path()) {
+		final_artifact_path = OS::get_singleton()->get_resource_dir().path_join(final_artifact_path);
+	}
+	final_artifact_path = ProjectSettings::get_singleton()->globalize_path(final_artifact_path).simplify_path();
+
+	const String base_dir = final_artifact_path.get_base_dir();
 	if (!DirAccess::exists(base_dir)) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Target folder does not exist or is inaccessible: \"%s\""), base_dir));
 		return ERR_FILE_BAD_PATH;
@@ -5336,12 +5342,8 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		String export_format_arg = export_format == EXPORT_FORMAT_AAB ? "aab" : "apk";
 		copy_args.push_back("-Pexport_format=" + export_format_arg);
 
-		String export_filename = p_path.get_file();
-		String export_path = p_path.get_base_dir();
-		if (export_path.is_relative_path()) {
-			export_path = OS::get_singleton()->get_resource_dir().path_join(export_path);
-		}
-		export_path = ProjectSettings::get_singleton()->globalize_path(export_path).simplify_path();
+		String export_filename = final_artifact_path.get_file();
+		String export_path = final_artifact_path.get_base_dir();
 
 		copy_args.push_back("-Pexport_path=file:" + export_path);
 		copy_args.push_back("-Pexport_filename=" + export_filename);
@@ -5374,15 +5376,15 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 		if (foundry_java.enabled) {
 			String final_artifact_error;
-			err = _inspect_foundry_java_artifact(p_path, enabled_abis, export_format, final_artifact_error);
+			err = _inspect_foundry_java_artifact(final_artifact_path, enabled_abis, export_format, final_artifact_error);
 			if (err != OK) {
 				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), final_artifact_error);
-				const Error remove_error = DirAccess::remove_absolute(p_path);
-				if (remove_error != OK || FileAccess::exists(p_path)) {
+				const Error remove_error = DirAccess::remove_absolute(final_artifact_path);
+				if (remove_error != OK || FileAccess::exists(final_artifact_path)) {
 					add_message(
 							EXPORT_MESSAGE_ERROR,
 							TTR("Export"),
-							vformat(TTR("Foundry-Java export could not remove rejected final artifact '%s'."), p_path));
+							vformat(TTR("Foundry-Java export could not remove rejected final artifact '%s'."), final_artifact_path));
 				}
 				return err;
 			}

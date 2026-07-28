@@ -3730,14 +3730,49 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         self.assertGreater(marker_position, enabled_branch)
         self.assertGreater(build_execution, marker_position)
 
-    def test_gradle_export_inspects_the_copied_final_artifact_before_success(self) -> None:
+    def test_gradle_export_reuses_the_globalized_final_artifact_path(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
-        copy_result = exporter.find("int copy_result =")
-        inspection = exporter.find("_inspect_foundry_java_artifact(p_path", copy_result)
-        success = exporter.find('print_verbose("Successfully completed Android gradle build.")', copy_result)
-        self.assertGreaterEqual(copy_result, 0)
+        export_helper = exporter.split(
+            "Error EditorExportPlatformAndroid::export_project_helper",
+            maxsplit=1,
+        )[1]
+        final_artifact_path = export_helper.find("String final_artifact_path = p_path;")
+        base_dir = export_helper.find("const String base_dir = final_artifact_path.get_base_dir();")
+        copy_result = export_helper.find("int copy_result =")
+        inspection = export_helper.find(
+            "_inspect_foundry_java_artifact(final_artifact_path",
+            copy_result,
+        )
+        removal = export_helper.find("DirAccess::remove_absolute(final_artifact_path)", inspection)
+        existence_check = export_helper.find("FileAccess::exists(final_artifact_path)", removal)
+        diagnostic = export_helper.find(
+            "TTR(\"Foundry-Java export could not remove rejected final artifact '%s'.\"), final_artifact_path",
+            existence_check,
+        )
+        success = export_helper.find(
+            'print_verbose("Successfully completed Android gradle build.")',
+            copy_result,
+        )
+
+        self.assertGreaterEqual(final_artifact_path, 0)
+        self.assertIn("if (final_artifact_path.is_relative_path())", export_helper)
+        self.assertIn(
+            "OS::get_singleton()->get_resource_dir().path_join(final_artifact_path)",
+            export_helper,
+        )
+        self.assertIn(
+            "ProjectSettings::get_singleton()->globalize_path(final_artifact_path).simplify_path()",
+            export_helper,
+        )
+        self.assertIn("String export_filename = final_artifact_path.get_file();", export_helper)
+        self.assertIn("String export_path = final_artifact_path.get_base_dir();", export_helper)
+        self.assertGreater(base_dir, final_artifact_path)
+        self.assertGreater(copy_result, base_dir)
         self.assertGreater(inspection, copy_result)
-        self.assertGreater(success, inspection)
+        self.assertGreater(removal, inspection)
+        self.assertGreater(existence_check, removal)
+        self.assertGreater(diagnostic, existence_check)
+        self.assertGreater(success, diagnostic)
 
     def test_command_first_coordinate_latest_rule_applies_only_to_the_version(self) -> None:
         for coordinate, should_succeed in (
