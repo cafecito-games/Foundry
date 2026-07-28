@@ -782,6 +782,21 @@ private:
 		}
 	}
 
+	// Handles `var (a, b) = <init>`, matching the single-variable case: the whole
+	// initializer expression is scanned, since every element is evaluated
+	// regardless of whether its binding is a named local or a discarded `_`
+	// slot (a null binding). A discarded slot still evaluates its element, so
+	// any escape or mutation the element expression performs must be seen;
+	// this is conservative for a bare reference placed in a discarded slot
+	// (it is not actually retained anywhere), matching the array's existing
+	// treatment of any other unbound-but-evaluated reference.
+	void scan_destructure_initializer(const FSParser::VariableDestructureNode *p_destructure) {
+		if (p_destructure == nullptr) {
+			return;
+		}
+		scan_value(p_destructure->initializer);
+	}
+
 	bool is_self_member(const FSParser::SubscriptNode *p_subscript) const {
 		return self_attribute_refers_to(p_subscript, decl, member_mode, match_member_by_name);
 	}
@@ -863,6 +878,10 @@ private:
 			case Node::CONSTANT: {
 				const FSParser::ConstantNode *constant = static_cast<const FSParser::ConstantNode *>(p_statement);
 				scan_value(constant->initializer);
+			} break;
+			case Node::VARIABLE_DESTRUCTURE: {
+				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_statement);
+				scan_destructure_initializer(destructure); // Catches `var (a, b) = our_var`.
 			} break;
 			case Node::IF: {
 				const FSParser::IfNode *if_node = static_cast<const FSParser::IfNode *>(p_statement);
@@ -1931,6 +1950,21 @@ private:
 		}
 	}
 
+	// Handles `var (a, b) = <init>`, matching the single-variable case: the whole
+	// initializer expression is scanned, since every element is evaluated
+	// regardless of whether its binding is a named local or a discarded `_`
+	// slot (a null binding). A discarded slot still evaluates its element, so
+	// any escape or mutation the element expression performs must be seen;
+	// this is conservative for a bare reference placed in a discarded slot
+	// (it is not actually retained anywhere), matching the dictionary's
+	// existing treatment of any other unbound-but-evaluated reference.
+	void scan_destructure_initializer(const FSParser::VariableDestructureNode *p_destructure) {
+		if (p_destructure == nullptr) {
+			return;
+		}
+		scan_value(p_destructure->initializer);
+	}
+
 	bool is_our_var_read_list(const FSParser::ExpressionNode *p_list) const {
 		if (is_our_var(p_list)) {
 			return true;
@@ -2016,6 +2050,10 @@ private:
 			case Node::CONSTANT: {
 				const FSParser::ConstantNode *constant = static_cast<const FSParser::ConstantNode *>(p_statement);
 				scan_value(constant->initializer);
+			} break;
+			case Node::VARIABLE_DESTRUCTURE: {
+				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_statement);
+				scan_destructure_initializer(destructure); // Catches `var (a, b) = our_var`.
 			} break;
 			case Node::IF: {
 				const FSParser::IfNode *if_node = static_cast<const FSParser::IfNode *>(p_statement);

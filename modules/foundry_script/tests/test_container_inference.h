@@ -2,7 +2,7 @@
 /*  test_container_inference.h                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -279,6 +279,35 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference]") {
 
 	TEST_CASE("Capturing the variable in a lambda escapes it") {
 		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar fn = func(): items.append(2)\n");
+		FSContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Referencing the array inside a destructuring initializer escapes it") {
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar (a, b) = (items, 2)\n");
+		FSContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+		CHECK_FALSE(result.detail.is_empty());
+	}
+
+	TEST_CASE("Referencing the array through a discarded destructured slot still escapes it") {
+		// The element is still evaluated even though its binding is `_`, so the
+		// analysis conservatively treats it the same as any other reference.
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\titems.append(2)\n\tvar (_, b) = (items, 2)\n");
+		FSContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("A mutating call in a discarded destructured slot still forces a conservative skip") {
+		// Unlike a bare reference, this element performs an unmodelled mutation
+		// that still runs even though its result is discarded via `_`.
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar (_, b) = (items.resize(4), 2)\n");
+		FSContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, FSContainerInference::UNPROVABLE);
+	}
+
+	TEST_CASE("A non-literal destructuring initializer still escapes the array") {
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar (a, b) = (items, 2) if true else (0, 3)\n");
 		FSContainerInference::Result result = infer_in(fixture, "f", "items");
 		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
 	}
@@ -722,6 +751,35 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference][Dictionary]") {
 
 	TEST_CASE("Capturing the dictionary in a lambda escapes it") {
 		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar fn = func(): d[\"b\"] = 2\n");
+		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("Referencing the dictionary inside a destructuring initializer escapes it") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar (a, b) = (d, 2)\n");
+		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+		CHECK_FALSE(result.detail.is_empty());
+	}
+
+	TEST_CASE("Referencing the dictionary through a discarded destructured slot still escapes it") {
+		// The element is still evaluated even though its binding is `_`, so the
+		// analysis conservatively treats it the same as any other reference.
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\td[\"b\"] = 2\n\tvar (_, b) = (d, 2)\n");
+		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+	}
+
+	TEST_CASE("An unmodelled call in a discarded destructured slot still forces a conservative skip") {
+		// Unlike a bare reference, this element performs an unmodelled call
+		// that still runs even though its result is discarded via `_`.
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar (_, b) = (d.duplicate(), 2)\n");
+		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, FSContainerInference::UNPROVABLE);
+	}
+
+	TEST_CASE("A non-literal destructuring initializer still escapes the dictionary") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar (a, b) = (d, 2) if true else (0, 3)\n");
 		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
 	}
