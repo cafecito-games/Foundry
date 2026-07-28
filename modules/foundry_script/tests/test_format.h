@@ -770,6 +770,29 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(format_or_fail(source), source);
 	}
 
+	// The declaration line is the function's only line, so it is also the line that
+	// carries any inline comment. Nothing further down attaches it.
+	TEST_CASE("[Format] Keeps an inline comment on a bodyless function") {
+		String source = "func ping() -> int  # unimplemented\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Keeps an inline comment on a bodyless method") {
+		String source = "abstract class C:\n\tabstract func ping() -> int  # unimplemented\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Keeps an inline comment on a bodyless enum function") {
+		String source = "enum E:\n\tA = 0\n\n\tfunc ping() -> int  # unimplemented\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Keeps an inline comment on a bodyless multi-line signature") {
+		String source = "func ping(\n\t\tvalue: int\n) -> int  # unimplemented\n";
+		String expected = "func ping(value: int) -> int  # unimplemented\n";
+		CHECK_EQ(format_or_fail(source), expected);
+	}
+
 	// The same rule applies to a lambda whose `:` is not followed by a body: emit the
 	// bare `func():` rather than an indented `pass` block, which would both change the
 	// tree and corrupt the enclosing expression. The trailing `:` would swallow the

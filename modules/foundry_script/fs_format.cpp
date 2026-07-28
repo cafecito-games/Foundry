@@ -1282,6 +1282,11 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 				has_own_body_flush = true;
 			}
 		}
+		// A bodyless function collapses to a single declaration line and attaches that
+		// line's inline comment itself, however many source lines its signature spanned.
+		if (member.type == FSParser::ClassNode::Member::FUNCTION && !member.function->has_body) {
+			has_own_body_flush = true;
+		}
 
 		print_member(member, has_own_body_flush);
 
@@ -1490,6 +1495,9 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		// appending `:` would be a parse error, and synthesizing a `pass` body would
 		// add a statement the author never wrote.
 		newline();
+		// That line is also the function's last, so it owns any inline comment on it;
+		// there is no body whose tail flush would otherwise pick the comment up.
+		emit_trailing_comment(p_function->end_line);
 		return;
 	}
 	write(":");
