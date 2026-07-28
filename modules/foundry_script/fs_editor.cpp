@@ -4572,13 +4572,19 @@ static void _find_call_arguments(FSParser::CompletionContext &p_context, const F
 }
 
 ::Error FSLanguage::complete_code(const String &p_code, const String &p_path, Object *p_owner, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_forced, String &r_call_hint) {
+	return complete_code(p_code, p_path, p_owner, r_options, r_forced, r_call_hint, true);
+}
+
+::Error FSLanguage::complete_code(const String &p_code, const String &p_path, Object *p_owner, List<ScriptLanguage::CodeCompletionOption> *r_options, bool &r_forced, String &r_call_hint, bool p_analyze) {
 	const String quote_style = EDITOR_GET("text_editor/completion/use_single_quotes") ? "'" : "\"";
 
 	FSParser parser;
 	FSAnalyzer analyzer(&parser);
 
 	parser.parse(p_code, p_path, true);
-	analyzer.analyze();
+	if (p_analyze) {
+		analyzer.analyze();
+	}
 
 	r_forced = false;
 	HashMap<String, ScriptLanguage::CodeCompletionOption> options;

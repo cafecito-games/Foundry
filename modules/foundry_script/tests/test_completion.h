@@ -35,6 +35,7 @@
 #include "tests/test_macros.h"
 
 #include "../foundry_script.h"
+#include "../fs_parser.h"
 #include "fs_test_runner.h"
 
 #include "core/config/project_settings.h"
@@ -77,6 +78,112 @@ static void to_dict_list(Variant p_variant, List<Dictionary> &p_list) {
 			p_list.push_back(arr[i]);
 		}
 	}
+}
+
+static String completion_type_name(FSParser::CompletionType p_type) {
+	switch (p_type) {
+		case FSParser::COMPLETION_NONE:
+			return "COMPLETION_NONE";
+		case FSParser::COMPLETION_ANNOTATION:
+			return "COMPLETION_ANNOTATION";
+		case FSParser::COMPLETION_ANNOTATION_ARGUMENTS:
+			return "COMPLETION_ANNOTATION_ARGUMENTS";
+		case FSParser::COMPLETION_ASSIGN:
+			return "COMPLETION_ASSIGN";
+		case FSParser::COMPLETION_ATTRIBUTE:
+			return "COMPLETION_ATTRIBUTE";
+		case FSParser::COMPLETION_ATTRIBUTE_METHOD:
+			return "COMPLETION_ATTRIBUTE_METHOD";
+		case FSParser::COMPLETION_BUILT_IN_TYPE_CONSTANT_OR_STATIC_METHOD:
+			return "COMPLETION_BUILT_IN_TYPE_CONSTANT_OR_STATIC_METHOD";
+		case FSParser::COMPLETION_CALL_ARGUMENTS:
+			return "COMPLETION_CALL_ARGUMENTS";
+		case FSParser::COMPLETION_DECLARATION:
+			return "COMPLETION_DECLARATION";
+		case FSParser::COMPLETION_GET_NODE:
+			return "COMPLETION_GET_NODE";
+		case FSParser::COMPLETION_IDENTIFIER:
+			return "COMPLETION_IDENTIFIER";
+		case FSParser::COMPLETION_IMPORT_NAMESPACE:
+			return "COMPLETION_IMPORT_NAMESPACE";
+		case FSParser::COMPLETION_INHERIT_TYPE:
+			return "COMPLETION_INHERIT_TYPE";
+		case FSParser::COMPLETION_METHOD:
+			return "COMPLETION_METHOD";
+		case FSParser::COMPLETION_OVERRIDE_METHOD:
+			return "COMPLETION_OVERRIDE_METHOD";
+		case FSParser::COMPLETION_PROPERTY_DECLARATION:
+			return "COMPLETION_PROPERTY_DECLARATION";
+		case FSParser::COMPLETION_PROPERTY_DECLARATION_OR_TYPE:
+			return "COMPLETION_PROPERTY_DECLARATION_OR_TYPE";
+		case FSParser::COMPLETION_PROPERTY_METHOD:
+			return "COMPLETION_PROPERTY_METHOD";
+		case FSParser::COMPLETION_RESOURCE_PATH:
+			return "COMPLETION_RESOURCE_PATH";
+		case FSParser::COMPLETION_SUBSCRIPT:
+			return "COMPLETION_SUBSCRIPT";
+		case FSParser::COMPLETION_SUPER:
+			return "COMPLETION_SUPER";
+		case FSParser::COMPLETION_SUPER_METHOD:
+			return "COMPLETION_SUPER_METHOD";
+		case FSParser::COMPLETION_TYPE_ATTRIBUTE:
+			return "COMPLETION_TYPE_ATTRIBUTE";
+		case FSParser::COMPLETION_TYPE_HANDLE_ARGUMENT:
+			return "COMPLETION_TYPE_HANDLE_ARGUMENT";
+		case FSParser::COMPLETION_TYPE_NAME:
+			return "COMPLETION_TYPE_NAME";
+		case FSParser::COMPLETION_TYPE_NAME_OR_VOID:
+			return "COMPLETION_TYPE_NAME_OR_VOID";
+		case FSParser::COMPLETION_USES:
+			return "COMPLETION_USES";
+	}
+	return "COMPLETION_<unknown>";
+}
+
+static bool parse_completion_type_name(const String &p_name, FSParser::CompletionType &r_type) {
+	static const HashMap<String, FSParser::CompletionType> names = []() {
+		HashMap<String, FSParser::CompletionType> map;
+		const FSParser::CompletionType all[] = {
+			FSParser::COMPLETION_NONE,
+			FSParser::COMPLETION_ANNOTATION,
+			FSParser::COMPLETION_ANNOTATION_ARGUMENTS,
+			FSParser::COMPLETION_ASSIGN,
+			FSParser::COMPLETION_ATTRIBUTE,
+			FSParser::COMPLETION_ATTRIBUTE_METHOD,
+			FSParser::COMPLETION_BUILT_IN_TYPE_CONSTANT_OR_STATIC_METHOD,
+			FSParser::COMPLETION_CALL_ARGUMENTS,
+			FSParser::COMPLETION_DECLARATION,
+			FSParser::COMPLETION_GET_NODE,
+			FSParser::COMPLETION_IDENTIFIER,
+			FSParser::COMPLETION_IMPORT_NAMESPACE,
+			FSParser::COMPLETION_INHERIT_TYPE,
+			FSParser::COMPLETION_METHOD,
+			FSParser::COMPLETION_OVERRIDE_METHOD,
+			FSParser::COMPLETION_PROPERTY_DECLARATION,
+			FSParser::COMPLETION_PROPERTY_DECLARATION_OR_TYPE,
+			FSParser::COMPLETION_PROPERTY_METHOD,
+			FSParser::COMPLETION_RESOURCE_PATH,
+			FSParser::COMPLETION_SUBSCRIPT,
+			FSParser::COMPLETION_SUPER,
+			FSParser::COMPLETION_SUPER_METHOD,
+			FSParser::COMPLETION_TYPE_ATTRIBUTE,
+			FSParser::COMPLETION_TYPE_HANDLE_ARGUMENT,
+			FSParser::COMPLETION_TYPE_NAME,
+			FSParser::COMPLETION_TYPE_NAME_OR_VOID,
+			FSParser::COMPLETION_USES,
+		};
+		for (FSParser::CompletionType type : all) {
+			map[completion_type_name(type)] = type;
+		}
+		return map;
+	}();
+
+	const HashMap<String, FSParser::CompletionType>::ConstIterator E = names.find(p_name);
+	if (!E) {
+		return false;
+	}
+	r_type = E->value;
+	return true;
 }
 
 static void test_directory(const String &p_dir) {
@@ -133,6 +240,8 @@ static void test_directory(const String &p_dir) {
 			EditorSettings::get_singleton()->set_setting("text_editor/completion/add_node_path_literals", conf.get_value("input", "add_node_path_literals", false));
 			EditorSettings::get_singleton()->set_setting("text_editor/completion/add_string_name_literals", conf.get_value("input", "add_string_name_literals", false));
 
+			const bool analyze = conf.get_value("input", "analyze", true);
+
 			List<Dictionary> include;
 			to_dict_list(conf.get_value("output", "include", Array()), include);
 
@@ -184,8 +293,24 @@ static void test_directory(const String &p_dir) {
 				owner->set_script(scr);
 			}
 
-			FSLanguage::get_singleton()->complete_code(code, res_path, owner, &options, forced, call_hint);
+			FSLanguage::get_singleton()->complete_code(code, res_path, owner, &options, forced, call_hint, analyze);
 			ERR_PRINT_ON;
+
+			if (conf.has_section_key("output", "expect_completion_type")) {
+				const String expected_type_name = conf.get_value("output", "expect_completion_type");
+				FSParser::CompletionType expected_type = FSParser::COMPLETION_NONE;
+				CHECK_MESSAGE(parse_completion_type_name(expected_type_name, expected_type),
+						"Unknown expect_completion_type '", expected_type_name, "' for '", path.path_join(next), "'.");
+
+				// Re-parse with the same cursor so the fixture can assert the context the option
+				// list was built from. Completion type is decided during parse, before analysis.
+				FSParser type_parser;
+				CHECK_EQ(type_parser.parse(code, res_path, true), OK);
+				const FSParser::CompletionType actual_type = type_parser.get_completion_context().type;
+				CHECK_MESSAGE(actual_type == expected_type,
+						"Completion type for '", path.path_join(next), "' is ", completion_type_name(actual_type),
+						", expected ", expected_type_name, ".");
+			}
 
 			String contains_excluded;
 			for (ScriptLanguage::CodeCompletionOption &option : options) {

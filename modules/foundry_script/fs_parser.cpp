@@ -5287,7 +5287,13 @@ FSParser::ExpressionNode *FSParser::parse_attribute(ExpressionNode *p_previous_o
 			}
 		}
 		if (!is_builtin) {
-			make_completion_context(COMPLETION_ATTRIBUTE, attribute, -1);
+			// `base.➡(` is already a call site: only callables belong there, so record the
+			// functions-only attribute context. A bare `base.➡` still wants every member.
+			if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+				make_completion_context(COMPLETION_ATTRIBUTE_METHOD, attribute, -1);
+			} else {
+				make_completion_context(COMPLETION_ATTRIBUTE, attribute, -1);
+			}
 		}
 	}
 
@@ -5314,6 +5320,11 @@ FSParser::ExpressionNode *FSParser::parse_attribute(ExpressionNode *p_previous_o
 		current.type = FSTokenizer::Token::IDENTIFIER;
 	}
 	if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected identifier after "." for attribute access.)")) {
+		// Completing `base.➡(` still produced an attribute access; keep that shape so lookup and
+		// later call parsing see the same node the completion context points at.
+		if (for_completion && completion_context.type == COMPLETION_ATTRIBUTE_METHOD) {
+			attribute->is_attribute = true;
+		}
 		complete_extents(attribute);
 		return attribute;
 	}
