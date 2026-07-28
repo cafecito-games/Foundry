@@ -782,6 +782,30 @@ private:
 		}
 	}
 
+	// Handles `var (a, b) = <init>`. When the initializer is a literal tuple, each
+	// element is scanned against its own binding so an element bound to `_` (a
+	// discarded slot, stored as a null binding) is not treated as an escaping
+	// alias: the value is never retained anywhere. A non-literal initializer
+	// (e.g. a function call) cannot be matched positionally, so it is scanned
+	// as a whole, exactly like a single `var v = <init>`.
+	void scan_destructure_initializer(const FSParser::VariableDestructureNode *p_destructure) {
+		if (p_destructure == nullptr || p_destructure->initializer == nullptr) {
+			return;
+		}
+		if (p_destructure->initializer->type == Node::TUPLE_LITERAL) {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_destructure->initializer);
+			int count = MIN(tuple_literal->elements.size(), p_destructure->bindings.size());
+			for (int i = 0; i < count; i++) {
+				if (p_destructure->bindings[i] == nullptr) {
+					continue; // `_`: the element is discarded, so it cannot escape through this slot.
+				}
+				scan_value(tuple_literal->elements[i]);
+			}
+			return;
+		}
+		scan_value(p_destructure->initializer);
+	}
+
 	bool is_self_member(const FSParser::SubscriptNode *p_subscript) const {
 		return self_attribute_refers_to(p_subscript, decl, member_mode, match_member_by_name);
 	}
@@ -866,7 +890,7 @@ private:
 			} break;
 			case Node::VARIABLE_DESTRUCTURE: {
 				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_statement);
-				scan_value(destructure->initializer); // Catches `var (a, b) = our_var`.
+				scan_destructure_initializer(destructure); // Catches `var (a, b) = our_var`.
 			} break;
 			case Node::IF: {
 				const FSParser::IfNode *if_node = static_cast<const FSParser::IfNode *>(p_statement);
@@ -1935,6 +1959,28 @@ private:
 		}
 	}
 
+	// Handles `var (a, b) = <init>`, mirroring the array walker's destructure handling:
+	// a literal tuple is scanned element-by-element against its binding, skipping any
+	// element bound to `_` (a discarded slot, stored as a null binding) since that value
+	// is never retained anywhere; a non-literal initializer is scanned as a whole.
+	void scan_destructure_initializer(const FSParser::VariableDestructureNode *p_destructure) {
+		if (p_destructure == nullptr || p_destructure->initializer == nullptr) {
+			return;
+		}
+		if (p_destructure->initializer->type == Node::TUPLE_LITERAL) {
+			const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_destructure->initializer);
+			int count = MIN(tuple_literal->elements.size(), p_destructure->bindings.size());
+			for (int i = 0; i < count; i++) {
+				if (p_destructure->bindings[i] == nullptr) {
+					continue; // `_`: the element is discarded, so it cannot escape through this slot.
+				}
+				scan_value(tuple_literal->elements[i]);
+			}
+			return;
+		}
+		scan_value(p_destructure->initializer);
+	}
+
 	bool is_our_var_read_list(const FSParser::ExpressionNode *p_list) const {
 		if (is_our_var(p_list)) {
 			return true;
@@ -2023,7 +2069,7 @@ private:
 			} break;
 			case Node::VARIABLE_DESTRUCTURE: {
 				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(p_statement);
-				scan_value(destructure->initializer); // Catches `var (a, b) = our_var`.
+				scan_destructure_initializer(destructure); // Catches `var (a, b) = our_var`.
 			} break;
 			case Node::IF: {
 				const FSParser::IfNode *if_node = static_cast<const FSParser::IfNode *>(p_statement);

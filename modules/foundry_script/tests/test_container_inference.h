@@ -290,6 +290,19 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference]") {
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
+	TEST_CASE("Discarding the array's destructured slot does not escape it") {
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\titems.append(2)\n\tvar (_, b) = (items, 2)\n");
+		FSContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, FSContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+	}
+
+	TEST_CASE("A non-literal destructuring initializer still escapes the array") {
+		InferenceFixture fixture("func f():\n\tvar items = [1]\n\tvar (a, b) = (items, 2) if true else (0, 3)\n");
+		FSContainerInference::Result result = infer_in(fixture, "f", "items");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
+	}
+
 	TEST_CASE("An unmodelled mutating method forces a conservative skip") {
 		InferenceFixture fixture("func f():\n\tvar items = [1]\n\titems.resize(4)\n");
 		FSContainerInference::Result result = infer_in(fixture, "f", "items");
@@ -738,6 +751,19 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference][Dictionary]") {
 		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
 		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
 		CHECK_FALSE(result.detail.is_empty());
+	}
+
+	TEST_CASE("Discarding the dictionary's destructured slot does not escape it") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\td[\"b\"] = 2\n\tvar (_, b) = (d, 2)\n");
+		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, FSContainerInference::INFERRED);
+		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
+	}
+
+	TEST_CASE("A non-literal destructuring initializer still escapes the dictionary") {
+		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\tvar (a, b) = (d, 2) if true else (0, 3)\n");
+		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
 	}
 
 	TEST_CASE("An unused empty dictionary literal yields no evidence") {
