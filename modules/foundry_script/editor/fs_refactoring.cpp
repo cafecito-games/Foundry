@@ -1177,6 +1177,9 @@ void collect_callsite_parameter_type_in_node(
 		case FSParser::Node::VARIABLE:
 			collect_callsite_parameter_type_in_variable(p_workspace, p_path, p_parser, static_cast<const FSParser::VariableNode *>(p_node), p_target_symbol, p_parameter_index, p_parse_results, r_state);
 			break;
+		case FSParser::Node::VARIABLE_DESTRUCTURE:
+			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, static_cast<const FSParser::VariableDestructureNode *>(p_node)->initializer, p_target_symbol, p_parameter_index, p_parse_results, r_state);
+			break;
 		case FSParser::Node::WHILE: {
 			const FSParser::WhileNode *while_node = static_cast<const FSParser::WhileNode *>(p_node);
 			collect_callsite_parameter_type_in_expression(p_workspace, p_path, p_parser, while_node->condition, p_target_symbol, p_parameter_index, p_parse_results, r_state);
@@ -2386,6 +2389,12 @@ bool find_extract_variable_in_suite(const RefactorLocation &p_location, const Ve
 					return true;
 				}
 			} break;
+			case FSParser::Node::VARIABLE_DESTRUCTURE: {
+				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(statement);
+				if (try_extract_direct_expression(p_location, p_lines, destructure->initializer, statement, p_suite, r_candidate)) {
+					return true;
+				}
+			} break;
 			case FSParser::Node::CONSTANT: {
 				const FSParser::ConstantNode *constant = static_cast<const FSParser::ConstantNode *>(statement);
 				if (try_extract_direct_expression(p_location, p_lines, constant->initializer, statement, p_suite, r_candidate)) {
@@ -2631,6 +2640,12 @@ bool find_inline_variable_target_in_suite(const RefactorLocation &p_location, co
 					return true;
 				}
 			} break;
+			case FSParser::Node::VARIABLE_DESTRUCTURE: {
+				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(statement);
+				if (find_inline_variable_target_in_expression(p_location, p_lines, destructure->initializer, r_variable, r_function)) {
+					return true;
+				}
+			} break;
 			case FSParser::Node::CONSTANT: {
 				const FSParser::ConstantNode *constant = static_cast<const FSParser::ConstantNode *>(statement);
 				if (find_inline_variable_target_in_expression(p_location, p_lines, constant->initializer, r_variable, r_function)) {
@@ -2855,6 +2870,10 @@ void collect_inline_variable_uses_in_suite(const FSParser::SuiteNode *p_suite, c
 			case FSParser::Node::VARIABLE: {
 				const FSParser::VariableNode *variable = static_cast<const FSParser::VariableNode *>(statement);
 				collect_inline_variable_uses_in_expression(variable->initializer, statement, false, p_target, p_target_function, p_current_function, r_collection);
+			} break;
+			case FSParser::Node::VARIABLE_DESTRUCTURE: {
+				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(statement);
+				collect_inline_variable_uses_in_expression(destructure->initializer, statement, false, p_target, p_target_function, p_current_function, r_collection);
 			} break;
 			case FSParser::Node::CONSTANT: {
 				const FSParser::ConstantNode *constant = static_cast<const FSParser::ConstantNode *>(statement);
@@ -7369,6 +7388,9 @@ void collect_cast_candidates_in_suite(const Vector<String> &p_lines, const FSPar
 		switch (statement->type) {
 			case FSParser::Node::VARIABLE:
 				collect_declaration_cast_candidates(p_lines, static_cast<const FSParser::VariableNode *>(statement), r_candidates);
+				break;
+			case FSParser::Node::VARIABLE_DESTRUCTURE:
+				collect_cast_candidates_in_expression(p_lines, static_cast<const FSParser::VariableDestructureNode *>(statement)->initializer, r_candidates);
 				break;
 			case FSParser::Node::RETURN:
 				collect_return_cast_candidates(p_lines, static_cast<const FSParser::ReturnNode *>(statement), p_function, r_candidates);
