@@ -254,7 +254,7 @@ class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
         inspector = load_source_template_module()
         limit = getattr(inspector, "MAX_NESTED_ENTRY_UNCOMPRESSED_BYTES", None)
         self.assertIsNotNone(limit)
-        inspector.MAX_NESTED_ENTRY_UNCOMPRESSED_BYTES = 4
+        setattr(inspector, "MAX_NESTED_ENTRY_UNCOMPRESSED_BYTES", 4)
         payload = self._archive((("classes.bin", b"12345"),))
         with self.assertRaisesRegex(inspector.SourceTemplateError, "entry decompressed size limit"):
             inspector._inspect_host_archive(payload, "host.aar")
@@ -263,7 +263,7 @@ class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
         inspector = load_source_template_module()
         limit = getattr(inspector, "MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES", None)
         self.assertIsNotNone(limit)
-        inspector.MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES = 5
+        setattr(inspector, "MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES", 5)
         payload = self._archive(
             (
                 ("first.bin", b"123"),
@@ -277,7 +277,7 @@ class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
         inspector = load_source_template_module()
         limit = getattr(inspector, "MAX_NESTED_ARCHIVES", None)
         self.assertIsNotNone(limit)
-        inspector.MAX_NESTED_ARCHIVES = 2
+        setattr(inspector, "MAX_NESTED_ARCHIVES", 2)
         child = self._archive((("leaf.txt", b"leaf"),))
         nested = self._archive(
             (
@@ -292,7 +292,7 @@ class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
         inspector = load_source_template_module()
         limit = getattr(inspector, "MAX_NESTED_ARCHIVE_ENTRIES", None)
         self.assertIsNotNone(limit)
-        inspector.MAX_NESTED_ARCHIVE_ENTRIES = 1
+        setattr(inspector, "MAX_NESTED_ARCHIVE_ENTRIES", 1)
         payload = self._archive(
             (
                 ("first.bin", b"first"),
@@ -1389,7 +1389,7 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
             "foundry_java_gradle_plugin": "test.fixture:unreachable-plugin:1.0.0",
             "foundry_java_maven_repositories": probe_url,
         }
-        cases = (
+        cases: tuple[tuple[dict[str, str], str], ...] = (
             (
                 {"foundry_java_maven_artifacts": "test.fixture:module:+"},
                 "must use an exact Maven",
@@ -2648,8 +2648,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         self.assertIn("-keep class games.cafecito.foundry.generated.demo.DemoRegistry", keep_rules)
         self.assertIn("-keep class example.DemoExtension_FoundryTrampoline", keep_rules)
 
-        generated_sources = getattr(self, "module_generated_sources", None)
+        generated_sources: Path | None = getattr(self, "module_generated_sources", None)
         self.assertIsNotNone(generated_sources)
+        if generated_sources is None:
+            raise AssertionError("module generated sources were not configured")
         trampoline = generated_sources / "example/DemoExtension_FoundryTrampoline.java"
         registry = generated_sources / "games/cafecito/foundry/generated/demo/DemoRegistry.java"
         self.assertTrue(trampoline.is_file(), trampoline)
@@ -2810,7 +2812,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
 
     def test_rejects_opaque_descriptor_mutations(self) -> None:
         descriptor_path = "META-INF/foundry-java/modules/demo.descriptor"
-        cases = (
+        cases: tuple[
+            tuple[str, tuple[tuple[bytes, bytes], ...], str, tuple[str, ...]],
+            ...,
+        ] = (
             (
                 "descriptor-format.jar",
                 ((b"format=2", b"format=1"),),
@@ -2839,22 +2844,25 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                 ("module=Demo_Name",),
             ),
         )
-        for name, replacements, path, diagnostics in cases:
+        for name, descriptor_replacements, path, diagnostics in cases:
             with self.subTest(name=name):
                 mutant = self._mutate_module(
                     name,
-                    replacements=replacements,
+                    replacements=descriptor_replacements,
                     descriptor_path=path,
                 )
                 self._assert_plugin_rejects(
-                    name.removesuffix(".jar"),
+                    name[: -len(".jar")] if name.endswith(".jar") else name,
                     (self.binding_aar, self.runtime_jar, mutant),
                     (str(mutant), path, *diagnostics),
                 )
 
     def test_rejects_opaque_graph_identity_and_provenance_mutations(self) -> None:
         descriptor_root = "META-INF/foundry-java/modules"
-        identity_cases = (
+        identity_cases: tuple[
+            tuple[str, tuple[tuple[bytes, bytes], ...], str, str],
+            ...,
+        ] = (
             (
                 "duplicate-module.jar",
                 (
@@ -2873,15 +2881,15 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                 "duplicate registry=games.cafecito.foundry.generated.demo.DemoRegistry",
             ),
         )
-        for name, replacements, path, diagnostic in identity_cases:
+        for name, identity_replacements, path, diagnostic in identity_cases:
             with self.subTest(name=name):
                 mutant = self._mutate_module(
                     name,
-                    replacements=replacements,
+                    replacements=identity_replacements,
                     descriptor_path=path,
                 )
                 self._assert_plugin_rejects(
-                    name.removesuffix(".jar"),
+                    name[: -len(".jar")] if name.endswith(".jar") else name,
                     (self.binding_aar, self.runtime_jar, self.module_jar, mutant),
                     (
                         diagnostic,
@@ -2914,7 +2922,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             with self.subTest(field=field):
                 module_name = f"mixed-{field.replace('_', '-')}"
                 registry_name = "example.Mixed" + "".join(word.capitalize() for word in field.split("_"))
-                replacements = (
+                provenance_replacements = (
                     (b"module=demo", f"module={module_name}".encode()),
                     (
                         b"registry=games.cafecito.foundry.generated.demo.DemoRegistry",
@@ -2925,7 +2933,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                 path = f"{descriptor_root}/{module_name}.descriptor"
                 mutant = self._mutate_module(
                     f"mixed-{field}.jar",
-                    replacements=replacements,
+                    replacements=provenance_replacements,
                     descriptor_path=path,
                 )
                 old_value = old.decode().split("=", maxsplit=1)[-1]

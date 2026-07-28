@@ -193,7 +193,9 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             "build.gradle": b"plugins { id 'com.android.application' }\n",
             "config.gradle": b"ext.versions = [:]\n",
             "gradlew": b"#!/bin/sh\n",
-            "gradle/wrapper/gradle-wrapper.jar": b"wrapper",
+            "gradle/wrapper/gradle-wrapper.jar": archive_bytes(
+                {"org/gradle/wrapper/GradleWrapperMain.class": b"wrapper"}
+            ),
             "gradle/wrapper/gradle-wrapper.properties": b"distributionUrl=gradle\n",
             "settings.gradle": b'rootProject.name = "FoundryAcceptance"\n',
             "src/main/AndroidManifest.xml": b"<manifest />\n",

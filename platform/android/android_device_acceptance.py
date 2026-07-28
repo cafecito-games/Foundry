@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import ModuleType
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from xml.etree import ElementTree
 
 
@@ -90,7 +90,7 @@ def _remap_target(contents: bytes, name: str) -> str:
     targets = re.findall(r'(?m)^path="([^"]+)"\s*$', text_contents)
     if len(targets) != 1:
         raise AcceptanceError(f"Android compiled acceptance remap {name} must contain exactly one path")
-    return targets[0]
+    return cast(str, targets[0])
 
 
 @dataclass(frozen=True)
