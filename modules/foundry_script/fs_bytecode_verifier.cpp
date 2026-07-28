@@ -202,6 +202,16 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_TABLE(ip + 8, global_names_count, "global name");
 				ip += 9;
 			} break;
+			case FSFunction::OPCODE_TYPE_TEST_TUPLE: {
+				// The tuple shape travels as a single constant descriptor at ip+3; ip+4 is the arity,
+				// which the VM only uses as a cheap size comparison, so it needs no table bound.
+				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				CHECK_ADDR(ip + 3);
+				VERIFY_FAIL_COND(code_ptr[ip + 4] < 0, "negative tuple arity");
+				ip += 5;
+			} break;
 			case FSFunction::OPCODE_TYPE_TEST_NATIVE: {
 				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);

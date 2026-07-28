@@ -1136,6 +1136,8 @@ public:
 		bool is_trait = false;
 		bool is_enum_file = false; // Root class only. File declares a top-level enum_name.
 		EnumNode *enum_file_decl = nullptr; // Root class only. The enum declared by enum_name.
+		bool is_tuple_file = false; // Root class only. File declares a top-level tuple_name.
+		TupleNode *tuple_file_decl = nullptr; // Root class only. The tuple declared by tuple_name.
 		bool trait_name_used = false;
 		bool uses_used = false;
 		String extends_path;
@@ -2082,6 +2084,7 @@ private:
 	void parse_class_name();
 	void parse_trait_name();
 	void parse_enum_name(bool p_can_register_enum_file);
+	void parse_tuple_name(bool p_can_register_tuple_file);
 	void parse_extends();
 	void parse_uses();
 	bool parse_trait_use(ClassNode::TraitUse &r_trait_use);

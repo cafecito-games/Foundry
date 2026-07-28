@@ -477,6 +477,7 @@ private:
 	void reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type = false);
 	void reduce_tuple_index_access(FSParser::SubscriptNode *p_subscript);
 	void reduce_tuple_field_access(FSParser::SubscriptNode *p_subscript, const FSParser::DataType &p_base_type);
+	bool find_global_tuple_meta_type(const StringName &p_name, FSParser::Node *p_source, FSParser::DataType &r_tuple_meta_type);
 	bool find_named_tuple_meta_type(const FSParser::DataType &p_base_type, bool p_is_self, const StringName &p_name,
 			const FSParser::Node *p_source, FSParser::DataType &r_tuple_meta_type);
 	void reduce_call_tuple_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_tuple_meta_type);
@@ -506,6 +507,7 @@ private:
 	bool validate_bootstrap_namespace_import(const String &p_import, const LocalVector<StringName> &p_global_classes);
 	bool reject_bootstrap_global_class_dependency(const StringName &p_class_name, const FSParser::Node *p_source, const String &p_context);
 	FSParser::DataType make_global_class_meta_type(const StringName &p_class_name, const FSParser::Node *p_source);
+	FSParser::DataType make_global_tuple_type_from_current_parser(const StringName &p_global_name, const FSParser::Node *p_source);
 	FSParser::DataType make_global_enum_type_from_path(
 			const StringName &p_global_name, const String &p_path, const FSParser::Node *p_source);
 	FSParser::DataType make_global_enum_type_from_current_parser(

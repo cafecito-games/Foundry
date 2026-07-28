@@ -37,6 +37,19 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 	descriptor["builtin_type"] = p_type.builtin_type;
 	descriptor["native_type"] = p_type.native_type;
 	descriptor["script_type"] = p_type.script_type;
+	if (p_type.kind == FSDataType::TUPLE) {
+		// A tuple erases to a plain Array, so `builtin_type` alone would read back as a typed array
+		// of the first element type. The marker keeps the tuple shape recoverable for `is` tests.
+		descriptor["is_tuple"] = true;
+	}
+	if (p_type.is_nullable) {
+		descriptor["is_nullable"] = true;
+	}
+	if (p_type.is_type_handle) {
+		// A `Type[T]` element tests class handles, not instances, so the distinction has to survive
+		// the round trip through the descriptor.
+		descriptor["is_type_handle"] = true;
+	}
 
 	Array element_types;
 	for (const FSDataType &element_type : p_type.container_element_types) {
@@ -619,6 +632,13 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 				append(p_source);
 				append(p_type.builtin_type | (p_type.is_nullable ? FSFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
 			}
+		} break;
+		case FSDataType::TUPLE: {
+			append_opcode(FSFunction::OPCODE_TYPE_TEST_TUPLE);
+			append(p_target);
+			append(p_source);
+			append(get_container_type_pos(p_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+			append(p_type.container_element_types.size());
 		} break;
 		case FSDataType::NATIVE: {
 			append_opcode(FSFunction::OPCODE_TYPE_TEST_NATIVE);
