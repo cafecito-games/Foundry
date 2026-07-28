@@ -10311,13 +10311,15 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 
 	// A case test compares the runtime tag, not the static type, so the union itself is the type the
 	// operand is checked against.
-	const bool is_enum_case_test = test_type.is_tagged_union_type() && test_type.enum_case_name != StringName();
 	FSParser::DataType compatibility_type = test_type;
 	compatibility_type.enum_case_name = StringName();
 
 	resolve_type_test_case_binds(p_type_test, test_type);
 
-	if (p_type_test->operand->is_constant && !is_enum_case_test) {
+	// An enum test is a membership test over the declared values, which the folding path below cannot
+	// express (it only compares representations), so it is always decided at runtime. Otherwise a
+	// constant and a variable holding the same integer would disagree.
+	if (p_type_test->operand->is_constant && test_type.kind != FSParser::DataType::ENUM) {
 		p_type_test->is_constant = true;
 		p_type_test->reduced_value = false;
 

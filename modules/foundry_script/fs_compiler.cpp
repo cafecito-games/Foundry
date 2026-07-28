@@ -3146,9 +3146,8 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 				}
 			} break;
 			case FSParser::Node::ASSERT: {
-#ifdef DEBUG_ENABLED
 				const FSParser::AssertNode *as = static_cast<const FSParser::AssertNode *>(s);
-
+#ifdef DEBUG_ENABLED
 				FSCodeGenerator::Address condition = _parse_expression(codegen, err, as->condition);
 				if (err) {
 					return err;
@@ -3169,6 +3168,20 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 				}
 				if (message.mode == FSCodeGenerator::Address::TEMPORARY) {
 					codegen.generator->pop_temporary();
+				}
+#else
+				// Assertions are stripped outside debug builds, but payload binds declared by the
+				// condition are locals of the enclosing suite that later statements read. Keep
+				// evaluating such a condition and discard its result, so a bind never observes an
+				// unassigned value in an exported build.
+				if (as->condition_has_case_binds) {
+					FSCodeGenerator::Address condition = _parse_expression(codegen, err, as->condition);
+					if (err) {
+						return err;
+					}
+					if (condition.mode == FSCodeGenerator::Address::TEMPORARY) {
+						codegen.generator->pop_temporary();
+					}
 				}
 #endif
 			} break;

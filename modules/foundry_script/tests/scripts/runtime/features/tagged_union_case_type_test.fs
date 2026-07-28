@@ -68,3 +68,9 @@ func test():
 	var not_a_level: Variant = 3
 	print(not_a_level is CaseLevel)
 	print(CaseLevel.Low is CaseLevel)
+
+	# Membership is decided at runtime, so a constant agrees with a variable holding the same value.
+	const DECLARED_LEVEL: int = 7
+	const UNDECLARED_LEVEL: int = 3
+	print(DECLARED_LEVEL is CaseLevel)
+	print(UNDECLARED_LEVEL is CaseLevel)

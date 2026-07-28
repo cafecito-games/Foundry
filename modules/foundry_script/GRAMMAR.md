@@ -836,6 +836,9 @@ valid as the condition of `if`, `elif`, `while`, or `assert`, either directly or
 `assert`). Without a bind list, `msg is Message.Move` is an ordinary boolean expression that tests
 the case tag, and `msg is Message` tests membership in the enum.
 
+Because the binds of an `assert` outlive the assertion, a bind-carrying `assert` condition is still
+evaluated in builds where assertions are stripped; only the failure check is removed.
+
 #### `await`
 
 ```ebnf
