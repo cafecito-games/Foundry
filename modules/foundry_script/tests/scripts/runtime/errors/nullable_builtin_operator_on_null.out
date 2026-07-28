@@ -1,0 +1,2 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/nullable_builtin_operator_on_null.fs:3 on test(): Invalid operands 'Nil' and 'int' in operator '+'.

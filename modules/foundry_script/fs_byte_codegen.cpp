@@ -369,11 +369,17 @@ void FSByteCodeGenerator::set_initial_line(int p_line) {
 	function->_initial_line = p_line;
 }
 
+// Both macros gate the validated fast paths, which bake the declared builtin type into the emitted
+// instruction and never inspect the value at runtime. A nullable slot can legitimately hold null
+// (`OPCODE_ASSIGN_TYPED_BUILTIN` stores it as-is), so it must fall back to the generic opcodes that
+// dispatch on the actual runtime type. Otherwise `String? != null` would answer from the validated
+// `(STRING, NIL)` evaluator — a constant `true` — and a null receiver would be read as if it held
+// the underlying type.
 #define HAS_BUILTIN_TYPE(m_var) \
-	(m_var.type.kind == FSDataType::BUILTIN)
+	(m_var.type.kind == FSDataType::BUILTIN && !m_var.type.is_nullable)
 
 #define IS_BUILTIN_TYPE(m_var, m_type) \
-	(m_var.type.kind == FSDataType::BUILTIN && m_var.type.builtin_type == m_type && m_type != Variant::NIL)
+	(m_var.type.kind == FSDataType::BUILTIN && !m_var.type.is_nullable && m_var.type.builtin_type == m_type && m_type != Variant::NIL)
 
 void FSByteCodeGenerator::write_type_adjust(const Address &p_target, Variant::Type p_new_type) {
 	switch (p_new_type) {
@@ -1358,6 +1364,10 @@ void FSByteCodeGenerator::write_call_builtin_type(const Address &p_target, const
 	// Check if all types are correct.
 	if (Variant::is_builtin_method_vararg(p_type, p_method)) {
 		is_validated = false; // Vararg needs runtime checks, can't use validated call.
+	} else if (!p_is_static && p_base.type.is_nullable) {
+		// A nullable receiver may hold null, which the validated call would read as the underlying
+		// type. The regular call reports the missing method on a null base instead.
+		is_validated = false;
 	} else if (p_arguments.size() == Variant::get_builtin_method_argument_count(p_type, p_method)) {
 		bool all_types_exact = true;
 		for (int i = 0; i < p_arguments.size(); i++) {
