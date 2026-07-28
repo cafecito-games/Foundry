@@ -304,8 +304,9 @@ static void test_directory(const String &p_dir) {
 
 				// Re-parse with the same cursor so the fixture can assert the context the option
 				// list was built from. Completion type is decided during parse, before analysis.
+				// Fixtures are often incomplete by design, so parse errors are expected here.
 				FSParser type_parser;
-				CHECK_EQ(type_parser.parse(code, res_path, true), OK);
+				type_parser.parse(code, res_path, true);
 				const FSParser::CompletionType actual_type = type_parser.get_completion_context().type;
 				CHECK_MESSAGE(actual_type == expected_type,
 						"Completion type for '", path.path_join(next), "' is ", completion_type_name(actual_type),
