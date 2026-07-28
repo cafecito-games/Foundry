@@ -2470,6 +2470,68 @@ FSCodeGenerator::Address FSCompiler::_parse_match_pattern(CodeGen &codegen, Erro
 
 			return p_previous_test;
 		} break;
+		case FSParser::PatternNode::PT_ENUM_CASE: {
+			if (p_is_nested) {
+				codegen.generator->write_and_left_operand(p_previous_test);
+			} else if (!p_is_first) {
+				codegen.generator->write_or_left_operand(p_previous_test);
+			}
+
+			FSDataType bool_type;
+			bool_type.kind = FSDataType::BUILTIN;
+			bool_type.builtin_type = Variant::BOOL;
+			FSCodeGenerator::Address result_addr = codegen.add_temporary(bool_type);
+
+			// The tag test also extracts the payload, so each field gets a temporary that the
+			// sub-patterns then match against. The extraction only happens when the tag matches, and
+			// the short-circuiting AND below keeps the sub-patterns from reading a stale field.
+			const FSParser::DataType &case_type = p_pattern->case_datatype;
+			const int64_t *tag = case_type.enum_values.getptr(case_type.enum_case_name);
+			Vector<FSCodeGenerator::Address> field_addrs;
+			for (int i = 0; i < p_pattern->array.size(); i++) {
+				field_addrs.push_back(codegen.add_temporary());
+			}
+			codegen.generator->write_type_test_enum_case(result_addr, p_value_addr, tag != nullptr ? (int)*tag : -1, field_addrs);
+
+			FSCodeGenerator::Address field_type_addr = codegen.add_temporary();
+			for (int i = 0; i < p_pattern->array.size(); i++) {
+				codegen.generator->write_and_left_operand(result_addr);
+
+				Vector<FSCodeGenerator::Address> typeof_args;
+				typeof_args.push_back(field_addrs[i]);
+				codegen.generator->write_call_utility(field_type_addr, "typeof", typeof_args);
+
+				result_addr = _parse_match_pattern(codegen, r_error, p_pattern->array[i], field_addrs[i], field_type_addr, result_addr, false, true);
+				if (r_error != OK) {
+					return FSCodeGenerator::Address();
+				}
+
+				codegen.generator->write_and_right_operand(result_addr);
+				codegen.generator->write_end_and(result_addr);
+			}
+			codegen.generator->pop_temporary(); // Remove field_type_addr.
+			for (int i = 0; i < field_addrs.size(); i++) {
+				codegen.generator->pop_temporary(); // Remove one payload field temporary.
+			}
+
+			// If this isn't the first, we need to OR with the previous pattern. If it's nested, we use AND instead.
+			if (p_is_nested) {
+				codegen.generator->write_and_right_operand(result_addr);
+				codegen.generator->write_end_and(p_previous_test);
+			} else if (!p_is_first) {
+				codegen.generator->write_or_right_operand(result_addr);
+				codegen.generator->write_end_or(p_previous_test);
+			} else {
+				codegen.generator->write_assign(p_previous_test, result_addr);
+			}
+			codegen.generator->pop_temporary(); // Remove temp result addr.
+
+			return p_previous_test;
+		} break;
+		case FSParser::PatternNode::PT_TUPLE:
+			// A tuple erases to an Array, so it matches through the array pattern lowering; a tuple
+			// pattern just cannot carry a rest sub-pattern.
+			[[fallthrough]];
 		case FSParser::PatternNode::PT_ARRAY: {
 			if (p_is_nested) {
 				codegen.generator->write_and_left_operand(p_previous_test);

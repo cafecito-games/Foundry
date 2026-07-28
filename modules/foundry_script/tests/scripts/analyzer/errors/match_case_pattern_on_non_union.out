@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Could not find nested type "LOW" under base "match_case_pattern_on_non_union.fs.PlainPatternLevel".
+>> ERROR at line 8: Only a tagged-union case can match payload values, e.g. "Message.Move(x, y)".

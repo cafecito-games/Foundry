@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Case "Move" carries 2 payload value(s), but 1 pattern(s) were given.

@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Case "Quit" carries no payload, so it cannot match payload values.

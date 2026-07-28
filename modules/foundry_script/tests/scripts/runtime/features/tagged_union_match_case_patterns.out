@@ -1,0 +1,17 @@
+FS_TEST_OK
+preview move 1 2
+move 1 2
+write
+quit
+origin
+vertical 5
+diagonal 3
+move 4,7
+write done
+quit
+circle 2.5
+rect 3x4
+point
+no movement
+movement
+no movement

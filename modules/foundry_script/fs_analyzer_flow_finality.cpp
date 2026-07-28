@@ -1095,7 +1095,9 @@ void FSAnalyzer::FlowFinalityContext::check_final_reads_in_pattern(const FSParse
 		case FSParser::PatternNode::PT_EXPRESSION: {
 			check_final_reads_in_expression(p_pattern->expression, p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 		} break;
-		case FSParser::PatternNode::PT_ARRAY: {
+		case FSParser::PatternNode::PT_ARRAY:
+		case FSParser::PatternNode::PT_TUPLE:
+		case FSParser::PatternNode::PT_ENUM_CASE: {
 			for (int i = 0; i < p_pattern->array.size(); i++) {
 				check_final_reads_in_pattern(p_pattern->array[i], p_finals, p_finals_by_name, p_scope, p_state, p_flattened_trait_body);
 			}
@@ -1511,7 +1513,21 @@ static bool _match_branch_accepts_null(const FSParser::MatchBranchNode *p_branch
 }
 
 static bool _match_pattern_type_narrowing(const FSParser::PatternNode *p_pattern, FSParser::ExpressionNode *p_match_test, FSParser::DataType &r_type) {
-	if (p_pattern == nullptr || p_pattern->pattern_type != FSParser::PatternNode::PT_EXPRESSION) {
+	if (p_pattern == nullptr) {
+		return false;
+	}
+
+	// A case pattern narrows the subject to the matched case, exactly like `is Message.Move(x, y)`.
+	if (p_pattern->pattern_type == FSParser::PatternNode::PT_ENUM_CASE) {
+		if (!p_pattern->case_datatype.is_set() || !p_pattern->case_datatype.is_tagged_union_type()) {
+			return false;
+		}
+		r_type = p_pattern->case_datatype;
+		r_type.is_meta_type = false;
+		return true;
+	}
+
+	if (p_pattern->pattern_type != FSParser::PatternNode::PT_EXPRESSION) {
 		return false;
 	}
 

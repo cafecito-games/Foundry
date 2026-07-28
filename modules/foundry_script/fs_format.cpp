@@ -2228,7 +2228,10 @@ void FSPrinter::print_pattern(const FSParser::PatternNode *p_pattern) {
 			print_expression(p_pattern->expression);
 			break;
 		case FSParser::PatternNode::PT_BIND:
-			write("var ");
+			// A payload bind is written bare, so re-adding `var` would change the source.
+			if (!p_pattern->implicit_bind) {
+				write("var ");
+			}
 			write(p_pattern->bind->name);
 			break;
 		case FSParser::PatternNode::PT_ARRAY:
@@ -2271,6 +2274,23 @@ void FSPrinter::print_pattern(const FSParser::PatternNode *p_pattern) {
 						}
 						return pair.key != nullptr ? pair.key->end_line : p_pattern->start_line;
 					});
+			break;
+		case FSParser::PatternNode::PT_TUPLE:
+			print_delimited_items(
+					"(", ")", p_pattern->array.size(), node_was_authored_multiline(p_pattern),
+					p_pattern->start_line, p_pattern->end_line,
+					[&](int p_index) { print_pattern(p_pattern->array[p_index]); },
+					[&](int p_index) { return p_pattern->array[p_index]->start_line; },
+					[&](int p_index) { return p_pattern->array[p_index]->end_line; });
+			break;
+		case FSParser::PatternNode::PT_ENUM_CASE:
+			print_type(p_pattern->case_type);
+			print_delimited_items(
+					"(", ")", p_pattern->array.size(), node_was_authored_multiline(p_pattern),
+					p_pattern->start_line, p_pattern->end_line,
+					[&](int p_index) { print_pattern(p_pattern->array[p_index]); },
+					[&](int p_index) { return p_pattern->array[p_index]->start_line; },
+					[&](int p_index) { return p_pattern->array[p_index]->end_line; });
 			break;
 		case FSParser::PatternNode::PT_REST:
 			write("..");

@@ -4311,9 +4311,12 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	bool is_finite_domain = false;
 	HashMap<StringName, int64_t> domain_values;
 	String type_name;
-	// A tagged union also has a finite case domain, but its cases are Array values rather than int
-	// constants, so the int-constant coverage analysis below cannot see them. Case-aware
-	// exhaustiveness arrives with the tagged-union match patterns.
+	if (match_type.is_tagged_union_type()) {
+		if (!has_default) {
+			check_tagged_union_match_exhaustiveness(p_match, match_type);
+		}
+		return;
+	}
 	if (match_type.kind == FSParser::DataType::ENUM && !match_type.is_tagged_union) {
 		is_finite_domain = true;
 		domain_values = match_type.enum_values;
@@ -4393,6 +4396,77 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 
 	if (!unhandled.is_empty()) {
 		parser->push_warning(p_match, FSWarning::NON_EXHAUSTIVE_MATCH, type_name, String(", ").join(unhandled));
+	}
+}
+
+// The domain of a tagged union is its case set. A case is covered by a payload-less case value used as
+// a plain pattern, or by a case pattern whose payload patterns accept every value of the case.
+void FSAnalyzer::check_tagged_union_match_exhaustiveness(FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type) {
+	if (p_match_type.enum_values.is_empty()) {
+		return;
+	}
+
+	HashSet<int64_t> covered_tags;
+	bool null_covered = false;
+	for (FSParser::MatchBranchNode *branch : p_match->branches) {
+		if (branch->guard_body != nullptr) {
+			continue; // Guard may fail; does not guarantee coverage.
+		}
+		for (FSParser::PatternNode *pattern : branch->patterns) {
+			if (pattern->pattern_type == FSParser::PatternNode::PT_ENUM_CASE) {
+				const FSParser::DataType &case_type = pattern->case_datatype;
+				if (!pattern->case_payload_is_irrefutable || case_type.enum_type != p_match_type.enum_type) {
+					continue; // A refutable payload pattern proves nothing about the case.
+				}
+				const int64_t *tag = case_type.enum_values.getptr(case_type.enum_case_name);
+				if (tag != nullptr) {
+					covered_tags.insert(*tag);
+				}
+				continue;
+			}
+
+			const FSParser::ExpressionNode *value_node = nullptr;
+			if (pattern->pattern_type == FSParser::PatternNode::PT_LITERAL) {
+				value_node = pattern->literal;
+			} else if (pattern->pattern_type == FSParser::PatternNode::PT_EXPRESSION) {
+				value_node = pattern->expression;
+			} else {
+				continue; // Array, dictionary and tuple patterns cannot cover a whole case.
+			}
+
+			if (value_node == nullptr || !value_node->is_constant) {
+				return; // Non-constant pattern: cannot prove coverage; bail out.
+			}
+			// A payload-less case folds to its read-only `[tag]` singleton, which is the only constant
+			// that can cover a case at runtime.
+			if (value_node->reduced_value.get_type() == Variant::NIL) {
+				null_covered = true;
+				continue;
+			}
+			const FSParser::DataType &value_type = value_node->get_datatype();
+			if (value_node->reduced_value.get_type() != Variant::ARRAY || !value_type.is_tagged_union_type() || value_type.enum_type != p_match_type.enum_type) {
+				continue;
+			}
+			const Array value = value_node->reduced_value;
+			if (value.size() != 1 || value[0].get_type() != Variant::INT) {
+				continue;
+			}
+			covered_tags.insert((int64_t)value[0]);
+		}
+	}
+
+	Vector<String> unhandled;
+	for (const KeyValue<StringName, int64_t> &E : p_match_type.enum_values) {
+		if (!covered_tags.has(E.value)) {
+			unhandled.push_back(String(E.key));
+		}
+	}
+	if (p_match_type.is_nullable && !null_covered) {
+		unhandled.push_back("null");
+	}
+
+	if (!unhandled.is_empty()) {
+		parser->push_warning(p_match, FSWarning::NON_EXHAUSTIVE_MATCH, p_match_type.enum_type, String(", ").join(unhandled));
 	}
 }
 #endif // DEBUG_ENABLED
@@ -4481,6 +4555,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 			} else {
 				result = FSParser::DataType::get_variant_type();
 			}
+			p_match_pattern->is_irrefutable = true;
 			p_match_pattern->bind->set_datatype(result);
 #ifdef DEBUG_ENABLED
 			is_shadowing(p_match_pattern->bind, "pattern bind", true);
@@ -4524,13 +4599,82 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 			}
 			result = p_match_pattern->get_datatype();
 			break;
+		case FSParser::PatternNode::PT_TUPLE: {
+			const bool subject_is_tuple = has_match_test_type && match_test_type.is_tuple();
+			if (subject_is_tuple && match_test_type.get_container_element_type_count() != p_match_pattern->array.size()) {
+				push_error(vformat(R"(Tuple pattern has %d element(s), but "%s" has %d.)", p_match_pattern->array.size(), match_test_type.to_string(), match_test_type.get_container_element_type_count()), p_match_pattern);
+			}
+
+			bool all_irrefutable = true;
+			for (int i = 0; i < p_match_pattern->array.size(); i++) {
+				FSParser::DataType element_type;
+				FSParser::DataType *element_type_ptr = nullptr;
+				if (subject_is_tuple && match_test_type.has_container_element_type(i)) {
+					element_type = match_test_type.get_container_element_type(i);
+					element_type_ptr = &element_type;
+				}
+				resolve_match_pattern(p_match_pattern->array[i], nullptr, element_type_ptr);
+				all_irrefutable = all_irrefutable && p_match_pattern->array[i] != nullptr && p_match_pattern->array[i]->is_irrefutable;
+				decide_suite_type(p_match_pattern, p_match_pattern->array[i]);
+			}
+			// A tuple pattern only accepts every value of its subject when the subject is statically a
+			// tuple of the same arity; against a Variant it can still fail the shape test at runtime.
+			p_match_pattern->is_irrefutable = all_irrefutable && subject_is_tuple &&
+					match_test_type.get_container_element_type_count() == p_match_pattern->array.size();
+			result = p_match_pattern->get_datatype();
+		} break;
+		case FSParser::PatternNode::PT_ENUM_CASE:
+			resolve_match_case_pattern(p_match_pattern);
+			result = p_match_pattern->case_datatype;
+			break;
 		case FSParser::PatternNode::PT_WILDCARD:
+			p_match_pattern->is_irrefutable = true;
+			result.kind = FSParser::DataType::VARIANT;
+			break;
 		case FSParser::PatternNode::PT_REST:
 			result.kind = FSParser::DataType::VARIANT;
 			break;
 	}
 
 	p_match_pattern->set_datatype(result);
+}
+
+// Resolves `Message.Move(x, _)`: the case reference is resolved like the right-hand side of `is`, then
+// each payload field type is propagated into the matching sub-pattern.
+void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern) {
+	FSParser::DataType case_type = type_from_metatype(resolve_datatype(p_match_pattern->case_type));
+	p_match_pattern->case_datatype = case_type;
+
+	const FSParser::DataType::EnumCasePayload *payload = nullptr;
+	if (case_type.is_set()) {
+		if (!case_type.is_tagged_union_type() || case_type.enum_case_name == StringName()) {
+			push_error(R"*(Only a tagged-union case can match payload values, e.g. "Message.Move(x, y)".)*", p_match_pattern);
+		} else {
+			payload = case_type.get_enum_case_payload(case_type.enum_case_name);
+			if (payload == nullptr) {
+				push_error(vformat(R"(Case "%s" carries no payload, so it cannot match payload values.)", case_type.enum_case_name), p_match_pattern);
+			} else if (payload->field_types.size() != p_match_pattern->array.size()) {
+				push_error(vformat(R"(Case "%s" carries %d payload value(s), but %d pattern(s) were given.)", case_type.enum_case_name, payload->field_types.size(), p_match_pattern->array.size()), p_match_pattern);
+				payload = nullptr;
+			}
+		}
+	}
+
+	bool all_irrefutable = true;
+	for (int i = 0; i < p_match_pattern->array.size(); i++) {
+		FSParser::DataType field_type;
+		FSParser::DataType *field_type_ptr = nullptr;
+		if (payload != nullptr && i < payload->field_types.size()) {
+			field_type = payload->field_types[i];
+			field_type_ptr = &field_type;
+		}
+		resolve_match_pattern(p_match_pattern->array[i], nullptr, field_type_ptr);
+		all_irrefutable = all_irrefutable && p_match_pattern->array[i] != nullptr && p_match_pattern->array[i]->is_irrefutable;
+	}
+	// The case pattern itself is refutable (it tests the tag), but knowing that its payload patterns
+	// accept every value of the case is what lets exhaustiveness count the case as handled.
+	p_match_pattern->is_irrefutable = false;
+	p_match_pattern->case_payload_is_irrefutable = payload != nullptr && all_irrefutable;
 }
 
 void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {

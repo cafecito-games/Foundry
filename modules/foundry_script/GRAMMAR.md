@@ -1050,7 +1050,21 @@ pattern      =
     | ".."                                          (* rest (array/dict only) *)
     | "[", [ pattern, { ",", pattern } ], "]"       (* array pattern *)
     | "{", [ dict_pattern_entry, { ",", dict_pattern_entry } ], "}"  (* dict pattern *)
+    | "(", pattern, ")"                             (* grouping *)
+    | tuple_pattern
+    | case_pattern
     | expression ;                                  (* literal or value pattern *)
+
+tuple_pattern = "(", pattern, ",", [ pattern, { ",", pattern } ], [ "," ], ")" ;
+
+case_pattern = case_reference,
+               "(", case_payload_pattern, { ",", case_payload_pattern }, [ "," ], ")" ;
+
+case_reference = identifier, ".", identifier, { ".", identifier } ;
+
+case_payload_pattern =
+      identifier                                    (* payload bind, no "var" needed *)
+    | pattern ;
 
 dict_pattern_entry =
       ".."                                          (* rest *)
@@ -1060,11 +1074,24 @@ dict_pattern_entry =
 Rules:
 
 - A branch may list multiple comma-separated patterns; a variable bind (`var x`) cannot be
-  combined with multiple patterns.
+  combined with multiple patterns. This includes payload binds of a case pattern.
 - `..` (rest) is valid only inside array/dictionary patterns and must be last.
 - A `when` guard adds a boolean condition; pattern binds are in scope in the guard and the
   branch body.
 - Only `@warning_ignore` annotations are allowed on match branches.
+- A tuple pattern has arity >= 2 and matches element by element; `(p)` is a grouping and `(p,)`
+  is an error, never a one-element tuple. Because a tuple erases to a read-only Array, an array
+  pattern of the same arity (`[a, b]`) also matches a tuple value.
+- A case pattern is a dotted name **immediately** followed by `(`, and names a tagged-union case;
+  its sub-pattern count must equal the case's payload arity. A payload-less case is matched as
+  the ordinary value it is (`Message.Quit`), without parentheses.
+- Directly inside a case pattern's parentheses a bare identifier is a payload bind, matching the
+  `is Case(x, y)` form; `_` skips the position and any other expression stays a value pattern
+  (so a constant is still written `Message.Move(Config.ORIGIN_X, y)`). Nested patterns follow the
+  ordinary pattern rules, so a bind inside one needs `var` (`Shape.Rect((var w, var h))`).
+- Exhaustiveness over a tagged union counts a case as handled by a bind or wildcard branch, by a
+  payload-less case value, or by a case pattern whose sub-patterns are all irrefutable
+  (binds/wildcards, recursively). A refutable sub-pattern such as `Move(0, y)` covers nothing.
 
 ---
 
