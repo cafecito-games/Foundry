@@ -96,8 +96,9 @@ application artifacts may coexist; Maven and local plugin sources may not.
 
 Repository URLs use ASCII URI syntax. Non-ASCII characters must be
 percent-encoded. Malformed percent escapes and unsupported raw URI characters
-are rejected before Gradle, and repository values are redacted from diagnostics
-and verbose command logging.
+are rejected before Gradle, and repository values are redacted from diagnostics,
+verbose command logging, and captured Gradle output before it is displayed or
+retained by the exporter.
 
 The application build script adds the selected plugin artifact to its
 `buildscript` classpath only when the marker is present, applies

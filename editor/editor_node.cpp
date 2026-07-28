@@ -10136,7 +10136,32 @@ static void _execute_thread(void *p_ud) {
 	eta->done.set();
 }
 
-int EditorNode::execute_and_show_output(const String &p_title, const String &p_path, const List<String> &p_arguments, bool p_close_on_ok, bool p_close_on_errors, String *r_output) {
+struct ExecuteOutputRedactionComparator {
+	_FORCE_INLINE_ bool operator()(const String &p_left, const String &p_right) const {
+		if (p_left.length() != p_right.length()) {
+			return p_left.length() > p_right.length();
+		}
+		return p_left < p_right;
+	}
+};
+
+static String _redact_execute_output(const String &p_output, const Vector<String> &p_redactions) {
+	Vector<String> redactions;
+	for (const String &redaction : p_redactions) {
+		if (!redaction.is_empty() && !redactions.has(redaction)) {
+			redactions.push_back(redaction);
+		}
+	}
+	redactions.sort_custom<ExecuteOutputRedactionComparator>();
+
+	String output = p_output;
+	for (const String &redaction : redactions) {
+		output = output.replace(redaction, "<redacted>");
+	}
+	return output;
+}
+
+int EditorNode::execute_and_show_output(const String &p_title, const String &p_path, const List<String> &p_arguments, bool p_close_on_ok, bool p_close_on_errors, String *r_output, const Vector<String> &p_output_redactions) {
 	if (execute_output_dialog) {
 		execute_output_dialog->set_title(p_title);
 		execute_output_dialog->get_ok_button()->set_disabled(true);
@@ -10157,7 +10182,9 @@ int EditorNode::execute_and_show_output(const String &p_title, const String &p_p
 	while (!eta.done.is_set()) {
 		{
 			MutexLock lock(eta.execute_output_mutex);
-			if (prev_len != eta.output.length()) {
+			// A redacted value can cross arbitrary process-output chunk boundaries, so sensitive
+			// output is displayed only after the complete captured string has been sanitized.
+			if (p_output_redactions.is_empty() && prev_len != eta.output.length()) {
 				String to_add = eta.output.substr(prev_len);
 				prev_len = eta.output.length();
 				execute_outputs->add_text(to_add);
@@ -10169,6 +10196,10 @@ int EditorNode::execute_and_show_output(const String &p_title, const String &p_p
 	}
 
 	eta.execute_output_thread.wait_to_finish();
+	const String output = _redact_execute_output(eta.output, p_output_redactions);
+	if (!p_output_redactions.is_empty()) {
+		execute_outputs->add_text(output);
+	}
 	execute_outputs->add_text("\nExit Code: " + itos(eta.exitcode));
 
 	if (execute_output_dialog) {
@@ -10183,7 +10214,7 @@ int EditorNode::execute_and_show_output(const String &p_title, const String &p_p
 	}
 
 	if (r_output) {
-		*r_output = eta.output;
+		*r_output = output;
 	}
 	return eta.exitcode;
 }

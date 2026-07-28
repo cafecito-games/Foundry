@@ -5240,10 +5240,19 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		// to avoid accidentally leaking sensitive information when sharing verbose logs for troubleshooting.
 		// Any non-sensitive additions to the command line arguments must be done above this section.
 		// Sensitive additions must be done below the logging statement.
+		Vector<String> repository_output_redactions;
 		const String repository_log_argument = foundry_java.enabled && !foundry_java.repositories.is_empty() ? " -Pfoundry_java_maven_repositories=<redacted>" : "";
 		print_verbose("Build Android project using gradle command: " + String("\n") + build_command + " " + join_list(cmdline, String(" ")) + repository_log_argument);
 		if (foundry_java.enabled && !foundry_java.repositories.is_empty()) {
-			cmdline.push_back("-Pfoundry_java_maven_repositories=" + String("|").join(foundry_java.repositories));
+			const String joined_repositories = String("|").join(foundry_java.repositories);
+			repository_output_redactions.push_back(joined_repositories);
+			for (const String &repository : foundry_java.repositories) {
+				repository_output_redactions.push_back(repository);
+				if (repository.begins_with("file:///")) {
+					repository_output_redactions.push_back("file:" + repository.trim_prefix("file://"));
+				}
+			}
+			cmdline.push_back("-Pfoundry_java_maven_repositories=" + joined_repositories);
 		}
 
 		if (should_sign) {
@@ -5310,7 +5319,14 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		copy_args.push_back("-Pexport_filename=" + export_filename);
 
 		String build_project_output;
-		int result = EditorNode::get_singleton()->execute_and_show_output(TTR("Building Android Project (gradle)"), build_command, cmdline, true, false, &build_project_output);
+		int result = EditorNode::get_singleton()->execute_and_show_output(
+				TTR("Building Android Project (gradle)"),
+				build_command,
+				cmdline,
+				true,
+				false,
+				&build_project_output,
+				repository_output_redactions);
 		if (result != 0) {
 			add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Building of Android project failed, check output for the error:") + "\n\n" + build_project_output);
 			return ERR_CANT_CREATE;

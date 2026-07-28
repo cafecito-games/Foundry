@@ -3320,6 +3320,9 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         corrupt_entry_payload: str | None = None,
         uncompressed_sizes: tuple[int, ...] | None = None,
         entry_payload_sizes: tuple[int, ...] | None = None,
+        build_stdout_fragments: tuple[str, ...] = (),
+        build_stderr_fragments: tuple[str, ...] = (),
+        build_exit_code: int = 0,
     ) -> Path:
         gradle_root = project / "android"
         build = gradle_root / "build"
@@ -3600,6 +3603,14 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                                 contents[eocd + 8 : eocd + 12] = contradictory_count * 2
                             contents[eocd:eocd] = zip64_end + zip64_locator
                         destination.write_bytes({sfx_prefix!r} + contents)
+                else:
+                    for fragment in {build_stdout_fragments!r}:
+                        sys.stdout.write(fragment)
+                        sys.stdout.flush()
+                    for fragment in {build_stderr_fragments!r}:
+                        sys.stderr.write(fragment)
+                        sys.stderr.flush()
+                    raise SystemExit({build_exit_code!r})
                     """
             ),
             encoding="utf-8",
@@ -4625,6 +4636,96 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     self.assertEqual(0, result.returncode, output)
                     self.assertIn("-Pfoundry_java_maven_repositories=<redacted>", output)
                     self.assertNotIn(repository, output)
+
+    def test_command_first_gradle_failure_redacts_accepted_repository_output(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-repository-failure-redaction.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java Repository Failure Redaction"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+
+            repository_prefix = "https://example.invalid/repository/%4a"
+            repositories = (
+                repository_prefix,
+                f"{repository_prefix}/nested-secret",
+                "https://[::1]:8443/repository/%20secret",
+                "file:///tmp/foundry-java/repository%20file-secret",
+            )
+            normalized_file_repository = repositories[3].replace("file:///", "file:/", 1)
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                ),
+                build_stdout_fragments=(
+                    "USEFUL_STDOUT:",
+                    repositories[1],
+                    ":still-useful\n",
+                ),
+                build_stderr_fragments=(
+                    "USEFUL_STDERR:",
+                    repositories[0],
+                    ":still-useful\nNORMALIZED_FILE:",
+                    normalized_file_repository,
+                    "\nUNTERMINATED:",
+                    repositories[2],
+                ),
+                build_exit_code=23,
+            )
+            encoded_repositories = ", ".join(f'"{repository}"' for repository in repositories)
+            self._write_export_preset(
+                project,
+                plugin_local=plugin,
+                local_artifacts=(module,),
+                use_gradle=True,
+                extra_options=(
+                    f'gradle_build/gradle_build_directory="{gradle_root}"',
+                    f"gradle_build/foundry_java/maven_repositories=PackedStringArray({encoded_repositories})",
+                    "package/signed=false",
+                    "architectures/armeabi-v7a=false",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=false",
+                    "architectures/x86_64=false",
+                ),
+            )
+
+            result = self._run_export(project, "repository-failure.apk", verbose=True)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode, output)
+            self.assertIn("-Pfoundry_java_maven_repositories=<redacted>", output)
+            self.assertIn("USEFUL_STDOUT:<redacted>:still-useful", output)
+            self.assertIn("USEFUL_STDERR:<redacted>:still-useful", output)
+            self.assertIn("UNTERMINATED:<redacted>", output)
+            self.assertIn("NORMALIZED_FILE:<redacted>", output)
+            self.assertNotIn("nested-secret", output)
+            self.assertNotIn("%20secret", output)
+            self.assertNotIn(normalized_file_repository, output)
+            for repository in repositories:
+                self.assertNotIn(repository, output)
+            self.assertFalse((project / "repository-failure.apk").exists())
 
     @unittest.skipUnless(sys.platform == "darwin", "macOS system path aliases are platform-specific")
     def test_command_first_export_accepts_macos_system_temp_alias_for_local_inputs(self) -> None:
