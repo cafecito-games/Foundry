@@ -3063,6 +3063,14 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 			return ERR_FILE_CORRUPT;
 		}
 		filename.write[info.size_filename] = '\0';
+		if (info.size_filename >= 3 &&
+				uint8_t(filename[0]) == 0xEF &&
+				uint8_t(filename[1]) == 0xBB &&
+				uint8_t(filename[2]) == 0xBF) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name begins with a UTF-8 byte order mark."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
 		for (uint64_t i = 0; i < info.size_filename; i++) {
 			if (filename[i] == '\0') {
 				r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name contains an embedded NUL byte."), artifact_kind);
