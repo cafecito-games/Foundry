@@ -242,7 +242,15 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 				// A named tuple is nominal: document it by its own qualified name and point the
 				// tuple channel at the declaration's entry.
 				r_type = _qualified_declared_type_name(p_gdtype.native_type);
-				r_tuple = r_type;
+				if (String(p_gdtype.native_type) == String(p_gdtype.tuple_name)) {
+					// A whole-file `tuple_name` declaration is its own documented class, so the
+					// owning page is the qualified name itself and the entry inside that page is
+					// keyed by the simple declaration name.
+					const int slice_count = r_type.get_slice_count(".");
+					r_tuple = r_type + "." + r_type.get_slicec('.', slice_count - 1);
+				} else {
+					r_tuple = r_type;
+				}
 				return;
 			}
 			// An unnamed tuple is structural: spell the parenthesized element list, recursing so
@@ -481,7 +489,10 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		doc.used_traits.push_back(trait_use.to_string());
 	}
 
-	if (p_class->is_enum_file && p_class->get_global_name() != StringName()) {
+	if ((p_class->is_enum_file || p_class->is_tuple_file) && p_class->get_global_name() != StringName()) {
+		// A whole-file enum or tuple declaration is documented as its own page, so it must be
+		// named by its global name: the simple declaration name collides across namespaces and
+		// does not match the qualified name every generated link uses.
 		doc.name = p_class->get_global_name();
 	} else if (p_script->local_name == StringName()) {
 		// This is an outer unnamed class.

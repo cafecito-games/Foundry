@@ -131,6 +131,17 @@ TEST_CASE("[Editor][EditorHelp] A named tuple channel renders one tuple link") {
 	CHECK(segments[0].text == "Player.PlayerWorldPosition");
 }
 
+TEST_CASE("[Editor][EditorHelp] A whole-file tuple shows its own spelling and links to its entry") {
+	// A whole-file `tuple_name` declaration is its own class page, so the link target is
+	// qualified past the spelling the reader sees.
+	const Vector<EditorHelp::HelpTypeRenderSegment> segments =
+			EditorHelp::_build_type_render_segments("game.Vec2", "", false, "", "game.Vec2.Vec2");
+	REQUIRE(segments.size() == 1);
+	CHECK(segments[0].kind == EditorHelp::HelpTypeRenderSegment::TUPLE_LINK);
+	CHECK(segments[0].link == "game.Vec2.Vec2");
+	CHECK(segments[0].text == "game.Vec2");
+}
+
 TEST_CASE("[Editor][EditorHelp] A tuple inside a dictionary splits on the top-level comma only") {
 	CHECK(class_link_targets("Dictionary[(int, int), String]") == Vector<String>({ "Dictionary", "int", "int", "String" }));
 	CHECK(rendered_text("Dictionary[(int, int), String]") == "Dictionary[(int, int), String]");

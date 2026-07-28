@@ -603,9 +603,10 @@ Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segment
 		link_t = p_enum; // The link for enums is always the full enum description.
 		display_t = _contextualize_class_specifier(p_enum, p_class);
 	} else if (is_tuple_type) {
-		// A named tuple is nominal: the link is always its qualified declaration name.
+		// A named tuple is nominal: the link addresses its declaration entry, which for a
+		// whole-file declaration is qualified beyond the spelling shown to the reader.
 		link_t = p_tuple;
-		display_t = _contextualize_class_specifier(p_tuple, p_class);
+		display_t = _contextualize_class_specifier(p_type, p_class);
 	} else {
 		display_t = _contextualize_class_specifier(p_type, p_class);
 	}
@@ -4842,6 +4843,7 @@ void EditorHelpBit::parse_symbol(const String &p_symbol, const String &p_prologu
 		}
 		help_data.doc_type.type = item_data.get("doc_type", "");
 		help_data.doc_type.enumeration = item_data.get("enumeration", "");
+		help_data.doc_type.tuple_type = item_data.get("tuple_type", "");
 		help_data.doc_type.is_bitfield = item_data.get("is_bitfield", false);
 		help_data.value = item_data.get("value", "");
 	} else if (item_type == "resource") {

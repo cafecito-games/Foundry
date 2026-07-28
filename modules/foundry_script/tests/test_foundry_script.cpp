@@ -4532,6 +4532,55 @@ func nested() -> Array[(int, int)]:
 	CHECK(methods["nested"].return_tuple.is_empty());
 }
 
+TEST_CASE("[Modules][FoundryScript] Docgen qualifies tuple link targets by declaration site") {
+	Vector<FSParser::DataType> element_types;
+	FSParser::DataType element;
+	element.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	element.kind = FSParser::DataType::BUILTIN;
+	element.builtin_type = Variant::FLOAT;
+	element_types.push_back(element);
+	element_types.push_back(element);
+
+	Vector<StringName> field_names;
+	field_names.push_back(SNAME("x"));
+	field_names.push_back(SNAME("y"));
+
+	// Mirrors `FSAnalyzer::make_tuple_type()`: `native_type` carries the nominal identity, and it
+	// equals `tuple_name` exactly when the declaration is a whole-file `tuple_name`.
+	auto make_tuple_datatype = [&](const StringName &p_tuple_name, const StringName &p_native_type) {
+		FSParser::DataType type;
+		type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		type.kind = FSParser::DataType::TUPLE;
+		type.builtin_type = Variant::ARRAY;
+		type.tuple_name = p_tuple_name;
+		type.native_type = p_native_type;
+		type.container_element_types = element_types;
+		type.tuple_field_names = field_names;
+		return type;
+	};
+
+	// A class-body declaration lives inside its owner's page, so the link is `Owner.Tuple`.
+	const FSParser::DataType member_tuple = make_tuple_datatype(SNAME("Vec2"), SNAME("Player.Vec2"));
+	String member_type;
+	String member_enum;
+	String member_tuple_link;
+	FSDocGen::doctype_from_gdtype(member_tuple, member_type, member_enum, member_tuple_link);
+	CHECK_EQ(member_type, "Player.Vec2");
+	CHECK_EQ(member_tuple_link, "Player.Vec2");
+	CHECK(member_enum.is_empty());
+
+	// A whole-file `tuple_name` declaration is its own page, so the owning class of the link is
+	// the qualified global name and the entry inside it keeps the simple declaration name.
+	const FSParser::DataType file_tuple = make_tuple_datatype(SNAME("game.Vec2"), SNAME("game.Vec2"));
+	String file_type;
+	String file_enum;
+	String file_tuple_link;
+	FSDocGen::doctype_from_gdtype(file_tuple, file_type, file_enum, file_tuple_link);
+	CHECK_EQ(file_type, "game.Vec2");
+	CHECK_EQ(file_tuple_link, "game.Vec2.Vec2");
+	CHECK(file_enum.is_empty());
+}
+
 TEST_CASE("[Modules][FoundryScript] Cleared script refuses to instantiate") {
 	// Regression test: `clear()` deletes every compiled function (this is what
 	// `FSLanguage::finish()` does to all live scripts), but a stale Ref or ResourceCache entry

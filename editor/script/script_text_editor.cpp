@@ -1591,6 +1591,7 @@ void ScriptTextEditor::_show_symbol_tooltip(const String &p_symbol, int p_row, i
 				item_data["experimental_message"] = result.experimental_message;
 				item_data["doc_type"] = result.doc_type;
 				item_data["enumeration"] = result.enumeration;
+				item_data["tuple_type"] = result.tuple_type;
 				item_data["is_bitfield"] = result.is_bitfield;
 				item_data["value"] = result.value;
 				doc_symbol = item_type + "||" + p_symbol + "|" + JSON::stringify(item_data);

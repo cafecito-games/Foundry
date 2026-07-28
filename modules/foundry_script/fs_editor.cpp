@@ -5965,8 +5965,7 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 								break;
 						}
 
-						String doc_tuple_name;
-						FSDocGen::doctype_from_gdtype(local.get_datatype(), r_result.doc_type, r_result.enumeration, doc_tuple_name);
+						FSDocGen::doctype_from_gdtype(local.get_datatype(), r_result.doc_type, r_result.enumeration, r_result.tuple_type);
 
 						Error err = OK;
 						r_result.script = FSCache::get_shallow_script(base_type.script_path, err);
