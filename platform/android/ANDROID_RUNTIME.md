@@ -119,9 +119,6 @@ The existing architecture selection remains authoritative:
 
 Foundry continues to own and package its ordinary host
 `libfoundry_android.so`; the binding AAR may not contain that host library.
-Foundry-Android is only a read-only source donor for this migration. It is not
-a dependency, is never packaged or published by this path, and must not be
-modified, renamed, archived, deleted, or republished.
 
 ## Android and toolchain levels
 

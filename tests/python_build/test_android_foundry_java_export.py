@@ -403,15 +403,12 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             "x86_32",
             "x86_64",
             "zero descriptor",
-            "Foundry-Android",
-            "read-only source donor",
         )
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, guide)
         self.assertIn("ordinary exports remain", guide.lower())
         self.assertIn("unchanged:", guide.lower())
-        self.assertRegex(guide.lower(), r"not\s+a dependency")
 
     def test_class_reference_documents_all_six_export_options(self) -> None:
         class_reference = ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8")
@@ -4934,7 +4931,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
 
     def test_command_first_export_accepts_valid_zip64_final_archive_metadata(self) -> None:
         for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
-            compatibility_cases = (
+            compatibility_cases: tuple[tuple[str, bool, bool, str | None, bytes], ...] = (
                 (
                     "zip64-directory",
                     True,

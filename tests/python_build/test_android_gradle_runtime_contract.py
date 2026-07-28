@@ -827,7 +827,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
     def test_android_runtime_documentation_covers_internal_build_and_acceptance(self) -> None:
         readme = read(ANDROID_README)
         runtime_doc = read(ANDROID_RUNTIME_DOC)
-        normalized_runtime_doc = " ".join(runtime_doc.split())
 
         self.assertIn("ANDROID_RUNTIME.md", readme)
         for fragment in (
@@ -871,15 +870,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "fresh",
         ):
             self.assertIn(fragment, runtime_doc)
-        self.assertIn(
-            (
-                "Foundry-Android is only a read-only source donor for this migration. It is not "
-                "a dependency, is never packaged or published by this path, and must not be "
-                "modified, renamed, archived, deleted, or republished."
-            ),
-            normalized_runtime_doc,
-        )
-        self.assertEqual(1, runtime_doc.count("Foundry-Android"))
         for forbidden in (
             "--source-repository",
             "--allow-fetch",
