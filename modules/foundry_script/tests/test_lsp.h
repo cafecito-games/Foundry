@@ -986,6 +986,7 @@ func f():
 			REQUIRE(message);
 			CHECK_EQ(message->kind, LSP::SymbolKind::Enum);
 			CHECK(message->documentation.contains("A message the actor can receive."));
+			CHECK_EQ(message->detail, "enum Message:\n\tQuit\n\tMove(x: int, y: int)\n\tWrite(text: String)");
 			REQUIRE(message->children.size() == 3);
 
 			// A tag is ordinal by declaration order, so it is not spelled as a value; a payload
