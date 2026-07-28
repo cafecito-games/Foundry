@@ -3818,6 +3818,9 @@ FSParser::AssertNode *FSParser::parse_assert() {
 	}
 	if (assert->condition == nullptr) {
 		push_error("Expected expression to assert.");
+		// Unwind any transient case-bind locals declared while parsing the (failed) condition so they
+		// don't leak into the rest of the suite as declared locals.
+		declare_condition_case_binds(Vector<TypeTestNode *>(), current_suite, case_binds_mark);
 		pop_multiline();
 		complete_extents(assert);
 		return nullptr;
