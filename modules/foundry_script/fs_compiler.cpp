@@ -35,6 +35,7 @@
 #include "fs_byte_codegen.h"
 #include "fs_cache.h"
 #include "fs_conformance_registry.h"
+#include "fs_tagged_union.h"
 #include "fs_trait_utils.h"
 #include "fs_utility_functions.h"
 
@@ -1065,6 +1066,48 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					gen->pop_temporary();
 				}
 				return tuple_result;
+			}
+
+			// `Message.Move(1, 2)` constructs a payload-carrying case of a tagged union, not a method
+			// call. It erases to the same read-only Array a tuple builds, with the case's ordinal tag as
+			// element 0 so tag extraction is uniform across every case of the union.
+			if (call->is_enum_case_construction) {
+				const FSParser::DataType case_datatype = call->get_datatype();
+				const FSParser::DataType::EnumCasePayload *payload = case_datatype.get_enum_case_payload(call->function_name);
+				if (payload == nullptr || payload->field_types.size() != call->arguments.size()) {
+					_set_error("Compiler bug (please report): enum case construction has no matching payload.", call);
+					r_error = ERR_COMPILATION_FAILED;
+					return FSCodeGenerator::Address();
+				}
+
+				Vector<FSCodeGenerator::Address> values;
+				int case_temporaries_to_pop = 0;
+				FSCodeGenerator::Address case_result = codegen.add_temporary(_gdtype_from_datatype(case_datatype, codegen.script));
+				values.push_back(codegen.add_constant(call->enum_case_tag));
+				for (int i = 0; i < call->arguments.size(); i++) {
+					FSCodeGenerator::Address value = _parse_expression(codegen, r_error, call->arguments[i]);
+					if (r_error) {
+						return FSCodeGenerator::Address();
+					}
+					if (value.mode == FSCodeGenerator::Address::TEMPORARY) {
+						case_temporaries_to_pop++;
+					}
+					// The analyzer accepts implicit conversions and dynamic arguments for a typed payload
+					// field, so each argument is converted to its declared type before it enters the value.
+					const FSDataType field_type = _gdtype_from_datatype(payload->field_types[i], codegen.script);
+					if (field_type.has_type()) {
+						FSCodeGenerator::Address converted = codegen.add_temporary(field_type);
+						case_temporaries_to_pop++;
+						gen->write_assign_with_conversion(converted, value);
+						value = converted;
+					}
+					values.push_back(value);
+				}
+				gen->write_construct_tuple(case_result, values);
+				for (int i = 0; i < case_temporaries_to_pop; i++) {
+					gen->pop_temporary();
+				}
+				return case_result;
 			}
 			// Compile the call as async (store the live function-state handle without suspending and
 			// skip the debug missing-await guard) when it is the operand of an `await`, or when the
@@ -4316,6 +4359,14 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr && p_class->enum_file_decl->identifier != nullptr) {
 		const FSParser::EnumNode *enum_n = p_class->enum_file_decl;
 		for (const FSParser::EnumNode::Value &enum_value : enum_n->values) {
+			if (enum_n->is_tagged_union) {
+				// A payload case is a constructor, not a value, so it contributes no constant; a
+				// payload-less case contributes its `[tag]` singleton rather than a bare integer.
+				if (!enum_value.has_payload()) {
+					p_script->constants.insert(enum_value.identifier->name, fs_tagged_union_case_singleton(enum_value.value));
+				}
+				continue;
+			}
 			p_script->constants.insert(enum_value.identifier->name, enum_value.value);
 		}
 		p_script->constants.insert(enum_n->identifier->name, enum_n->dictionary);
@@ -4428,6 +4479,16 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 			case FSParser::ClassNode::Member::ENUM_VALUE: {
 				const FSParser::EnumNode::Value &enum_value = member.enum_value;
 				StringName name = enum_value.identifier->name;
+
+				const bool is_tagged_union_case = enum_value.parent_enum != nullptr && enum_value.parent_enum->is_tagged_union;
+				if (is_tagged_union_case) {
+					// A payload case is a constructor, not a value, so it contributes no constant; a
+					// payload-less case contributes its `[tag]` singleton rather than a bare integer.
+					if (!enum_value.has_payload()) {
+						p_script->constants.insert(name, fs_tagged_union_case_singleton(enum_value.value));
+					}
+					break;
+				}
 
 				p_script->constants.insert(name, enum_value.value);
 			} break;

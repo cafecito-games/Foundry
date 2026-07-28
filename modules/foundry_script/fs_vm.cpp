@@ -3018,8 +3018,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 
 				GET_INSTRUCTION_ARG(base, argc);
-				if (!is_static && base->get_type() != Variant::INT) {
-					err_text = vformat("Cannot call %s: the receiver is %s instead of an enum integer.",
+				// An int-backed enum's receiver is its integer value; a tagged union's receiver is the
+				// read-only `[tag, payload...]` Array its cases erase to. Both are bound as `self`.
+				if (!is_static && base->get_type() != Variant::INT && base->get_type() != Variant::ARRAY) {
+					err_text = vformat("Cannot call %s: the receiver is %s instead of an enum value.",
 							call_identity, Variant::get_type_name(base->get_type()));
 					OPCODE_BREAK;
 				}

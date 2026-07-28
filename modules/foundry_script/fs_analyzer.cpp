@@ -32,6 +32,7 @@
 
 #include "foundry_script.h"
 #include "fs_script_extensible_native_hooks.h"
+#include "fs_tagged_union.h"
 #include "fs_trait_utils.h"
 #include "fs_type.h"
 #include "fs_utility_callable.h"
@@ -8472,8 +8473,10 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 						return;
 					}
 					// A payload-less case of a tagged union is a value of the union, not an integer
-					// constant, so its tag is deliberately not folded in here.
+					// constant: it folds to the read-only `[tag]` singleton its case erases to.
 					p_identifier->set_datatype(case_type);
+					p_identifier->is_constant = true;
+					p_identifier->reduced_value = fs_tagged_union_case_singleton(base.enum_values[name]);
 					return;
 				}
 				p_identifier->set_datatype(case_type);
@@ -8634,7 +8637,28 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 			FSParser::DataType enum_type = enum_file_decl->get_datatype();
 			if (enum_type.is_set() && enum_type.kind != FSParser::DataType::RESOLVING) {
 				if (enum_type.enum_values.has(name)) {
-					p_identifier->set_datatype(type_from_metatype(enum_type));
+					FSParser::DataType case_type = type_from_metatype(enum_type);
+					if (enum_type.is_tagged_union) {
+						if (enum_type.get_enum_case_payload(name) != nullptr) {
+							// A payload case reached through the declaring script handle has no
+							// construction form: the case constructor is only spelled on the enum name.
+							case_type.is_pseudo_type = true;
+							case_type.enum_case_name = name;
+							p_identifier->set_datatype(case_type);
+							push_error(vformat(R"*(Enum case "%s.%s" carries a payload and must be constructed through the enum name, e.g. "%s.%s(...)".)*",
+											   enum_file_decl->identifier->name, name, enum_file_decl->identifier->name, name),
+									p_identifier);
+							return;
+						}
+						// A payload-less case is a value of the union: the read-only `[tag]` singleton
+						// its case erases to, not the bare ordinal.
+						p_identifier->set_datatype(case_type);
+						p_identifier->is_constant = true;
+						p_identifier->reduced_value = fs_tagged_union_case_singleton(enum_type.enum_values[name]);
+						p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
+						return;
+					}
+					p_identifier->set_datatype(case_type);
 					p_identifier->is_constant = true;
 					p_identifier->reduced_value = enum_type.enum_values[name];
 					p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
@@ -8923,8 +8947,12 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 						push_error(vformat(R"*(Enum case "%s" carries a payload and must be constructed, e.g. "%s(...)".)*",
 										   element.identifier->name, element.identifier->name),
 								p_identifier);
+					} else {
+						// A tagged-union case is a value, not an integer constant: it folds to the
+						// read-only `[tag]` singleton its case erases to.
+						p_identifier->is_constant = true;
+						p_identifier->reduced_value = fs_tagged_union_case_singleton(element.value);
 					}
-					// A tagged-union case is a value, not an integer constant, so its tag is not folded in.
 					return;
 				}
 

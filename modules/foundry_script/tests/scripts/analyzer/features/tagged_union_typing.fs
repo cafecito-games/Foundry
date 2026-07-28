@@ -30,3 +30,12 @@ func forward(message: Command) -> Command:
 
 func compare(left: Command, right: Command) -> bool:
 	return left == right
+
+func test():
+	print(quit_case())
+	print(move_case())
+	print(write_case())
+	print(widened_argument())
+	print(assign_and_pass())
+	print(compare(Command.Quit, Command.Quit))
+	print(compare(Command.Quit, Command.Move(1, 2)))
