@@ -84,10 +84,13 @@ versions, malformed coordinates, repository URLs other than HTTPS or absolute
 local `file:///` URLs, credential-bearing or query/fragment repository URLs,
 and missing or non-regular local inputs fail deterministically and name the
 export option without echoing repository values. The exporter checks the
-user-supplied path before canonicalization and
-rejects a symlink in the final component or any existing path component. Only
-an accepted regular file with no symlink traversal is then canonicalized before
-the Gradle command is constructed. Maven and local application artifacts may
+user-supplied path before canonicalization and rejects a symlink in the final
+component or any user-controlled existing path component. On macOS, only the
+fixed OS-owned `/etc`, `/tmp`, and `/var` aliases are accepted, and only when
+their link targets exactly match `private/etc`, `private/tmp`, and
+`private/var`; every later component is still checked. Only an accepted regular
+file with no user-controlled symlink traversal is then canonicalized before the
+Gradle command is constructed. Maven and local application artifacts may
 coexist; Maven and local plugin sources may not.
 
 Repository URLs use ASCII URI syntax. Non-ASCII characters must be

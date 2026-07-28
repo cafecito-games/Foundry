@@ -272,8 +272,11 @@ The C++ helper must:
 - require Gradle, exact-one plugin source, and one or more application inputs;
 - reject CR, LF, `|`, blanks, duplicates, malformed/dynamic coordinates, and
   invalid repository schemes;
-- reject a symlink at every existing user-supplied path component before
-  resolving the path;
+- reject a symlink at every user-controlled existing path component before
+  resolving the path; on macOS, exempt only the fixed `/etc`, `/tmp`, and
+  `/var` root aliases when their link targets exactly match the standard
+  `private/etc`, `private/tmp`, and `private/var` targets, while continuing to
+  check every later component;
 - require a regular `.jar` plugin and regular `.jar`/`.aar` inputs;
 - inspect explicit local archives and reject any root or nested
   `libfoundry_android.so` entry with the input path and entry name;

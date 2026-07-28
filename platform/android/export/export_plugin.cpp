@@ -1916,6 +1916,24 @@ static bool _is_exact_foundry_java_coordinate(const String &p_coordinate) {
 	return true;
 }
 
+#ifdef MACOS_ENABLED
+static bool _foundry_java_normalize_macos_system_root_alias(const Ref<DirAccess> &p_dir, String &r_path) {
+	String expected_target;
+	if (r_path == "/etc") {
+		expected_target = "private/etc";
+	} else if (r_path == "/tmp") {
+		expected_target = "private/tmp";
+	} else if (r_path == "/var") {
+		expected_target = "private/var";
+	}
+	if (expected_target.is_empty() || p_dir->read_link(r_path) != expected_target) {
+		return false;
+	}
+	r_path = "/" + expected_target;
+	return true;
+}
+#endif
+
 static bool _foundry_java_path_has_symlink(const String &p_path) {
 	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	ERR_FAIL_COND_V(dir.is_null(), true);
@@ -1933,6 +1951,13 @@ static bool _foundry_java_path_has_symlink(const String &p_path) {
 		}
 		current = current.is_empty() ? component : current.path_join(component);
 		if (dir->is_link(current)) {
+#ifdef MACOS_ENABLED
+			// macOS exposes these fixed root-owned aliases as symlinks into
+			// /private. Continue checking every component below the exact target.
+			if (_foundry_java_normalize_macos_system_root_alias(dir, current)) {
+				continue;
+			}
+#endif
 			return true;
 		}
 	}

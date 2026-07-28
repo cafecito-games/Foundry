@@ -47,6 +47,7 @@ ANDROID_EXPORT_CLASS_REFERENCE = REPO_ROOT / "platform/android/doc_classes/Edito
 ANDROID_EXPORT_PLAN = REPO_ROOT / "docs/superpowers/plans/2026-07-26-foundry-java-android-export.md"
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 ANDROID_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/android_builds.yml"
+MACOS_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/macos_builds.yml"
 EXACT_FOUNDRY_JAVA_COMMIT = "0db6970116de257fffffffe2a55e89543d4a12b5"
 FOUNDRY_JAVA_GROUP = "games.cafecito.foundry"
 FOUNDRY_JAVA_VERSION = "0.1.0-SNAPSHOT"
@@ -392,15 +393,47 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         self.assertIn("FoundryJava.foundryextension", class_reference)
         self.assertIn("absolute local [code]file:///[/code]", class_reference)
 
-    def test_class_reference_documents_the_local_plugin_path_contract(self) -> None:
+    def test_class_reference_documents_the_local_input_path_contract(self) -> None:
         class_reference = ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8")
-        local_plugin = class_reference.split(
-            '<member name="gradle_build/foundry_java/gradle_plugin_local"',
+        for option in (
+            "gradle_build/foundry_java/gradle_plugin_local",
+            "gradle_build/foundry_java/local_artifacts",
+        ):
+            with self.subTest(option=option):
+                local_input = class_reference.split(
+                    f'<member name="{option}"',
+                    maxsplit=1,
+                )[1].split("</member>", maxsplit=1)[0]
+                self.assertIn("Every user-controlled existing path component", local_input)
+                self.assertIn("must not be a symbolic link", local_input)
+                for fragment in (
+                    "[code]/etc[/code]",
+                    "[code]/tmp[/code]",
+                    "[code]/var[/code]",
+                    "[code]private/etc[/code]",
+                    "[code]private/tmp[/code]",
+                    "[code]private/var[/code]",
+                ):
+                    self.assertIn(fragment, local_input)
+
+    def test_macos_ci_runs_the_local_input_system_alias_regressions(self) -> None:
+        workflow = MACOS_BUILDS_WORKFLOW.read_text(encoding="utf-8")
+        step_name = "- name: Foundry-Java macOS local input path aliases"
+        self.assertIn(step_name, workflow)
+        step = workflow.split(
+            step_name,
             maxsplit=1,
-        )[1].split("</member>", maxsplit=1)[0]
-        self.assertIn("regular JAR file", local_plugin)
-        self.assertIn("Every existing path component", local_plugin)
-        self.assertIn("must not be a symbolic link", local_plugin)
+        )[1].split("\n      - name:", maxsplit=1)[0]
+        self.assertIn("if: matrix.target == 'editor'", step)
+        for test in (
+            "test_command_first_export_accepts_macos_system_temp_alias_for_local_inputs",
+            "test_command_first_export_rejects_user_symlinks_below_macos_system_temp_alias",
+        ):
+            with self.subTest(test=test):
+                self.assertIn(
+                    f"FoundryJavaExporterContractTests.{test}",
+                    step,
+                )
 
     def test_plan_documents_the_bounded_pre_commit_contract_classes(self) -> None:
         plan = ANDROID_EXPORT_PLAN.read_text(encoding="utf-8")
@@ -465,7 +498,7 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         )
         required_scopes = (
             r"\.pre-commit-config\.yaml",
-            r"\.github/workflows/android_builds\.yml",
+            r"\.github/workflows/(?:android|macos)_builds\.yml",
             r"platform/android/ANDROID_RUNTIME\.md",
             r"platform/android/android_device_acceptance\.py",
             r"platform/android/android_source_template\.py",
@@ -4310,6 +4343,134 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     self.assertEqual(0, result.returncode, output)
                     self.assertIn("-Pfoundry_java_maven_repositories=<redacted>", output)
                     self.assertNotIn(repository, output)
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS system path aliases are platform-specific")
+    def test_command_first_export_accepts_macos_system_temp_alias_for_local_inputs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="foundry-java-macos-temp-alias.", dir="/tmp") as directory:
+            project = Path(directory)
+            self.assertTrue(str(project).startswith(("/tmp/", "/var/")), project)
+            self.assertNotEqual(project, project.resolve())
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java macOS Temp Alias"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                ),
+            )
+            self._write_export_preset(
+                project,
+                plugin_local=plugin,
+                local_artifacts=(module,),
+                use_gradle=True,
+                extra_options=(
+                    f'gradle_build/gradle_build_directory="{gradle_root}"',
+                    "gradle_build/export_format=0",
+                    "package/signed=false",
+                    "architectures/armeabi-v7a=false",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=false",
+                    "architectures/x86_64=false",
+                ),
+            )
+
+            result = self._run_export(project, "macos-temp-alias.apk")
+            output = result.stdout + result.stderr
+            self.assertEqual(0, result.returncode, output)
+            self.assertTrue((project / "macos-temp-alias.apk").is_file())
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS system path aliases are platform-specific")
+    def test_command_first_export_rejects_user_symlinks_below_macos_system_temp_alias(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="foundry-java-macos-user-symlink.", dir="/tmp") as directory:
+            project = Path(directory)
+            self.assertTrue(str(project).startswith(("/tmp/", "/var/")), project)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java macOS User Symlink"\n',
+                encoding="utf-8",
+            )
+            real_inputs = project / "real-inputs"
+            real_inputs.mkdir()
+            plugin = real_inputs / "plugin.jar"
+            module = real_inputs / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+
+            plugin_link = project / "plugin-link.jar"
+            plugin_link.symlink_to(plugin)
+            module_link = project / "module-link.jar"
+            module_link.symlink_to(module)
+            directory_link = project / "input-link"
+            directory_link.symlink_to(real_inputs, target_is_directory=True)
+
+            cases = (
+                (
+                    plugin_link,
+                    (module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    plugin_link,
+                ),
+                (
+                    directory_link / plugin.name,
+                    (module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    directory_link / plugin.name,
+                ),
+                (
+                    plugin,
+                    (module_link,),
+                    "gradle_build/foundry_java/local_artifacts",
+                    module_link,
+                ),
+                (
+                    plugin,
+                    (directory_link / module.name,),
+                    "gradle_build/foundry_java/local_artifacts",
+                    directory_link / module.name,
+                ),
+            )
+            for index, (plugin_local, local_artifacts, option, value) in enumerate(cases):
+                with self.subTest(option=option, value=value):
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin_local,
+                        local_artifacts=local_artifacts,
+                        use_gradle=True,
+                    )
+                    output_name = f"macos-user-symlink-{index}.apk"
+                    result = self._run_export(project, output_name)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn(option, output)
+                    self.assertIn(str(value), output)
+                    self.assertIn("must not traverse a symbolic link", output)
+                    self.assertFalse((project / output_name).exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
 
     def test_command_first_export_rejects_unsafe_local_archives_before_build(self) -> None:
         with tempfile.TemporaryDirectory(

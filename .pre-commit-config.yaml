@@ -251,7 +251,7 @@ repos:
         files: |
           (?x)^(
             \.pre-commit-config\.yaml|
-            \.github/workflows/android_builds\.yml|
+            \.github/workflows/(?:android|macos)_builds\.yml|
             platform/android/ANDROID_RUNTIME\.md|
             platform/android/android_device_acceptance\.py|
             platform/android/android_source_template\.py|

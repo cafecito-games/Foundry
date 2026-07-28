@@ -47,13 +47,18 @@ no Foundry-Java task or generated output. Enabling it requires
 - `gradle_build/foundry_java/gradle_plugin_maven`: one exact
   `group:artifact:version` coordinate;
 - `gradle_build/foundry_java/gradle_plugin_local`: one regular local plugin
-  JAR with no symbolic-link path component.
+  JAR with no user-controlled symbolic-link path component.
 
 At least one application input is also required. Exact Maven inputs use
 `gradle_build/foundry_java/maven_repositories` and
 `gradle_build/foundry_java/maven_artifacts`; offline archives use
 `gradle_build/foundry_java/local_artifacts`. Maven and local application inputs
-may be combined, but Maven and local plugin sources may not. For example:
+must also have no user-controlled symbolic-link path component. On macOS, the
+standard OS-owned `/etc`, `/tmp`, and `/var` aliases are accepted only when
+they are symlinks to the exact `private/etc`, `private/tmp`, and `private/var`
+targets; every component below the alias and the final file remains subject to
+the symlink check. Maven and local application inputs may be combined, but
+Maven and local plugin sources may not. For example:
 
 ```text
 gradle_build/foundry_java/gradle_plugin_maven =
