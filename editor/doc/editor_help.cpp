@@ -3305,6 +3305,12 @@ String EditorHelp::get_cache_full_path() {
 	return EditorPaths::get_singleton()->get_cache_dir().path_join(vformat("editor_doc_cache-%d.%d.res", FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR));
 }
 
+// Identifies the `DocData::ClassDoc` dictionary schema the script doc cache was written with. A
+// cache produced by a build with a different schema cannot be trusted: its entries would silently
+// deserialize as valid but incomplete documentation, so it is discarded and regenerated instead.
+// Bump this whenever the dictionary form of a script-visible doc structure changes.
+static constexpr int SCRIPT_DOC_CACHE_SCHEMA_VERSION = 2;
+
 String EditorHelp::get_script_doc_cache_full_path() {
 	return EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_script_doc_cache.res");
 }
@@ -3493,6 +3499,13 @@ void EditorHelp::_load_script_doc_cache_thread(void *p_udata) {
 		return;
 	}
 
+	if (int(script_doc_cache_res->get_meta("schema_version", 0)) != SCRIPT_DOC_CACHE_SCHEMA_VERSION) {
+		print_verbose("Script doc cache was written with a different documentation schema. Regenerating it instead.");
+		_delete_script_doc_cache();
+		callable_mp_static(EditorHelp::regenerate_script_doc_cache).call_deferred();
+		return;
+	}
+
 	Array classes = script_doc_cache_res->get_meta("classes", Array());
 	for (const Dictionary dict : classes) {
 		doc->add_doc(DocData::ClassDoc::from_dict(dict));
@@ -3593,6 +3606,7 @@ void EditorHelp::save_script_doc_cache() {
 		}
 	}
 
+	cache_res->set_meta("schema_version", SCRIPT_DOC_CACHE_SCHEMA_VERSION);
 	cache_res->set_meta("classes", classes);
 	Error err = ResourceSaver::save(cache_res, get_script_doc_cache_full_path(), ResourceSaver::FLAG_COMPRESS);
 	ERR_FAIL_COND_MSG(err != OK, vformat("Cannot save script documentation cache in %s.", get_script_doc_cache_full_path()));
