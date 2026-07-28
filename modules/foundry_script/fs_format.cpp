@@ -1463,6 +1463,16 @@ void FSPrinter::print_annotation_declaration(const FSParser::AnnotationDeclarati
 }
 
 void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
+	if (!p_function->has_body) {
+		// The signature collapses onto one line and there is no body to relocate its
+		// full-line trivia into, so lift it above the declaration. Inline comments are
+		// re-attached to the collapsed line further down instead.
+		for (int line = p_function->start_line + 1; line <= p_function->end_line; line++) {
+			if (is_trivia_line(line)) {
+				emit_trivia_line(line);
+			}
+		}
+	}
 	write_indent();
 	if (p_function->is_abstract) {
 		write("abstract ");
