@@ -1940,6 +1940,11 @@ static bool _foundry_java_path_has_symlink(const String &p_path) {
 }
 
 static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES = 65534;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_DEPTH = 8;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVES = 64;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES = 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES = 131072;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES = 16383;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES = 16 * 1024 * 1024;
@@ -2606,6 +2611,313 @@ static FoundryJavaCentralDirectoryConsistency _foundry_java_check_central_direct
 	return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
 }
 
+struct FoundryJavaInputArchiveBudget {
+	uint64_t archive_count = 0;
+	uint64_t total_uncompressed_bytes = 0;
+};
+
+static String _foundry_java_archive_context(const String &p_parent, const String &p_entry) {
+	return p_parent.is_empty() ? p_entry : p_parent + "!" + p_entry;
+}
+
+static String _foundry_java_archive_error(const String &p_context, const String &p_error) {
+	return p_context.is_empty() ? p_error : vformat(TTR("nested archive '%s': %s"), _foundry_java_safe_diagnostic_value(p_context), p_error);
+}
+
+static bool _foundry_java_is_nested_archive_entry(const String &p_entry) {
+	const String lower_entry = p_entry.to_lower();
+	return lower_entry.ends_with(".aar") || lower_entry.ends_with(".jar") || lower_entry.ends_with(".zip");
+}
+
+static Error _foundry_java_scan_open_archive(
+		unzFile p_archive,
+		const Ref<FileAccess> &p_archive_file,
+		const String &p_context,
+		uint64_t p_depth,
+		FoundryJavaInputArchiveBudget &r_budget,
+		bool &r_contains_host_library,
+		String &r_entry,
+		String &r_error);
+
+static Error _foundry_java_scan_nested_archive_entry(
+		unzFile p_parent_archive,
+		const unz_file_info64 &p_info,
+		const String &p_context,
+		uint64_t p_depth,
+		FoundryJavaInputArchiveBudget &r_budget,
+		bool &r_contains_host_library,
+		String &r_entry,
+		String &r_error) {
+	if (p_depth > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_DEPTH) {
+		r_error = vformat(
+				TTR("nested archive depth exceeds the maximum %d at '%s'"),
+				FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_DEPTH,
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+	Error temp_error = OK;
+	Ref<FileAccess> temp_file = FileAccess::create_temp(
+			FileAccess::WRITE_READ,
+			"foundry_java_archive",
+			"zip",
+			false,
+			&temp_error);
+	if (temp_error != OK || temp_file.is_null()) {
+		r_error = vformat(
+				TTR("temporary storage for nested archive '%s' could not be created"),
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+	if (unzOpenCurrentFile(p_parent_archive) != UNZ_OK) {
+		r_error = vformat(
+				TTR("nested archive entry '%s' could not be opened"),
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+
+	Vector<uint8_t> buffer;
+	buffer.resize(FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES);
+	uint64_t bytes_read = 0;
+	Error read_error = OK;
+	while (true) {
+		const int result = unzReadCurrentFile(p_parent_archive, buffer.ptrw(), buffer.size());
+		if (result < 0) {
+			read_error = ERR_FILE_CORRUPT;
+			break;
+		}
+		if (result == 0) {
+			break;
+		}
+		if (uint64_t(result) > p_info.uncompressed_size - bytes_read ||
+				!temp_file->store_buffer(buffer.ptr(), result)) {
+			read_error = ERR_FILE_CORRUPT;
+			break;
+		}
+		bytes_read += result;
+	}
+	const int close_result = unzCloseCurrentFile(p_parent_archive);
+	if (read_error != OK || bytes_read != p_info.uncompressed_size || close_result != UNZ_OK) {
+		r_error = vformat(
+				TTR("nested archive entry '%s' failed integrity validation"),
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+	temp_file->flush();
+	const String temp_path = temp_file->get_path_absolute();
+	temp_file->close();
+
+	Ref<FileAccess> archive_file;
+	zlib_filefunc_def io = zipio_create_io(&archive_file);
+	unzFile archive = unzOpen2(temp_path.utf8().get_data(), &io);
+	if (!archive) {
+		r_error = vformat(
+				TTR("nested archive '%s' could not be opened"),
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+	return _foundry_java_scan_open_archive(
+			archive,
+			archive_file,
+			p_context,
+			p_depth,
+			r_budget,
+			r_contains_host_library,
+			r_entry,
+			r_error);
+}
+
+static Error _foundry_java_scan_open_archive(
+		unzFile p_archive,
+		const Ref<FileAccess> &p_archive_file,
+		const String &p_context,
+		uint64_t p_depth,
+		FoundryJavaInputArchiveBudget &r_budget,
+		bool &r_contains_host_library,
+		String &r_entry,
+		String &r_error) {
+	r_budget.archive_count++;
+	if (r_budget.archive_count > FOUNDRY_JAVA_MAX_INPUT_ARCHIVES) {
+		r_error = vformat(
+				TTR("nested archive count exceeds the maximum %d at '%s'"),
+				FOUNDRY_JAVA_MAX_INPUT_ARCHIVES,
+				_foundry_java_safe_diagnostic_value(p_context));
+		unzClose(p_archive);
+		return ERR_FILE_CORRUPT;
+	}
+
+	unz_global_info64 global_info;
+	memset(&global_info, 0, sizeof(global_info));
+	if (unzGetGlobalInfo64(p_archive, &global_info) != UNZ_OK) {
+		r_error = _foundry_java_archive_error(p_context, TTR("archive global metadata could not be read"));
+		unzClose(p_archive);
+		return ERR_FILE_CORRUPT;
+	}
+	if (global_info.number_entry > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES) {
+		r_error = _foundry_java_archive_error(
+				p_context,
+				vformat(
+						TTR("archive reports too many entries (%d; maximum %d)"),
+						global_info.number_entry,
+						FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES));
+		unzClose(p_archive);
+		return ERR_FILE_CORRUPT;
+	}
+	if (global_info.number_entry == 0) {
+		const uint64_t expected_empty_archive_size =
+				FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE + global_info.size_comment;
+		if (p_archive_file.is_null() || p_archive_file->get_length() != expected_empty_archive_size) {
+			r_error = _foundry_java_archive_error(
+					p_context,
+					TTR("archive entry count does not match its non-empty central directory"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		if (unzClose(p_archive) != UNZ_OK) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive could not be closed cleanly"));
+			return ERR_FILE_CORRUPT;
+		}
+		return OK;
+	}
+
+	uint64_t entries_scanned = 0;
+	uint64_t total_entry_name_bytes = 0;
+	FoundryJavaCentralDirectoryContext central_directory_context;
+	int result = unzGoToFirstFile(p_archive);
+	while (result == UNZ_OK) {
+		unz_file_info64 info;
+		memset(&info, 0, sizeof(info));
+		if (unzGetCurrentFileInfo64(p_archive, &info, nullptr, 0, nullptr, 0, nullptr, 0) != UNZ_OK) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive entry metadata could not be read"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		if (info.size_filename > FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES) {
+			r_error = _foundry_java_archive_error(
+					p_context,
+					vformat(TTR("archive entry name is too long (%d bytes; maximum %d)"), info.size_filename, FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		if (info.size_filename > FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES - total_entry_name_bytes) {
+			r_error = _foundry_java_archive_error(
+					p_context,
+					vformat(TTR("archive entry names exceed the aggregate %d-byte limit"), FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		total_entry_name_bytes += info.size_filename;
+
+		Vector<char> filename;
+		filename.resize(info.size_filename + 1);
+		if (unzGetCurrentFileInfo64(p_archive, &info, filename.ptrw(), filename.size(), nullptr, 0, nullptr, 0) != UNZ_OK) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive entry name could not be read"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		uint64_t central_directory_entry_end = 0;
+		if (!_foundry_java_validate_current_central_directory_entry(
+					p_archive,
+					p_archive_file,
+					global_info,
+					info,
+					central_directory_context,
+					central_directory_entry_end)) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive central directory metadata is corrupt"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		filename.write[info.size_filename] = '\0';
+		for (uint64_t i = 0; i < info.size_filename; i++) {
+			if (filename[i] == '\0') {
+				r_error = _foundry_java_archive_error(p_context, TTR("archive entry name contains an embedded NUL byte"));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+		}
+		String entry;
+		if (entry.append_utf8(filename.ptr(), info.size_filename) != OK) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive entry name is not valid UTF-8"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		const String entry_context = _foundry_java_archive_context(p_context, entry);
+		const bool is_directory = entry.ends_with("/");
+		if (!is_directory) {
+			if (info.uncompressed_size > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRY_UNCOMPRESSED_BYTES) {
+				r_error = vformat(
+						TTR("archive entry decompressed size exceeds the %d-byte limit at '%s'"),
+						FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRY_UNCOMPRESSED_BYTES,
+						_foundry_java_safe_diagnostic_value(entry_context));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			if (info.uncompressed_size > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_TOTAL_UNCOMPRESSED_BYTES - r_budget.total_uncompressed_bytes) {
+				r_error = vformat(
+						TTR("archive entries exceed the aggregate %d-byte decompressed size limit at '%s'"),
+						FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_TOTAL_UNCOMPRESSED_BYTES,
+						_foundry_java_safe_diagnostic_value(entry_context));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			r_budget.total_uncompressed_bytes += info.uncompressed_size;
+		}
+		if (entry == "libfoundry_android.so" || entry.ends_with("/libfoundry_android.so")) {
+			r_contains_host_library = true;
+			r_entry = entry_context;
+		}
+		if (!is_directory && _foundry_java_is_nested_archive_entry(entry)) {
+			if (r_budget.archive_count >= FOUNDRY_JAVA_MAX_INPUT_ARCHIVES) {
+				r_error = vformat(
+						TTR("nested archive count exceeds the maximum %d at '%s'"),
+						FOUNDRY_JAVA_MAX_INPUT_ARCHIVES,
+						_foundry_java_safe_diagnostic_value(entry_context));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			if (_foundry_java_scan_nested_archive_entry(
+						p_archive,
+						info,
+						entry_context,
+						p_depth + 1,
+						r_budget,
+						r_contains_host_library,
+						r_entry,
+						r_error) != OK) {
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+		}
+		entries_scanned++;
+		if (entries_scanned == global_info.number_entry) {
+			const FoundryJavaCentralDirectoryConsistency consistency =
+					_foundry_java_check_central_directory_tail(p_archive_file, central_directory_context, central_directory_entry_end);
+			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_UNREPORTED_ENTRY) {
+				r_error = _foundry_java_archive_error(p_context, TTR("archive entry count does not match its central directory"));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT) {
+				r_error = _foundry_java_archive_error(p_context, TTR("archive central directory metadata is corrupt"));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			result = UNZ_END_OF_LIST_OF_FILE;
+			break;
+		}
+		result = unzGoToNextFile(p_archive);
+	}
+	if (result != UNZ_OK && result != UNZ_END_OF_LIST_OF_FILE) {
+		r_error = _foundry_java_archive_error(p_context, TTR("archive traversal failed"));
+		unzClose(p_archive);
+		return ERR_FILE_CORRUPT;
+	}
+	if (unzClose(p_archive) != UNZ_OK) {
+		r_error = _foundry_java_archive_error(p_context, TTR("archive could not be closed cleanly"));
+		return ERR_FILE_CORRUPT;
+	}
+	return OK;
+}
+
 static Error _foundry_java_scan_archive(const String &p_path, bool &r_contains_host_library, String &r_entry, String &r_error) {
 	r_contains_host_library = false;
 	r_entry.clear();
@@ -2618,124 +2930,16 @@ static Error _foundry_java_scan_archive(const String &p_path, bool &r_contains_h
 		r_error = TTR("archive could not be opened");
 		return ERR_FILE_CORRUPT;
 	}
-
-	unz_global_info64 global_info;
-	memset(&global_info, 0, sizeof(global_info));
-	if (unzGetGlobalInfo64(archive, &global_info) != UNZ_OK) {
-		r_error = TTR("archive global metadata could not be read");
-		unzClose(archive);
-		return ERR_FILE_CORRUPT;
-	}
-	if (global_info.number_entry > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES) {
-		r_error = vformat(TTR("archive reports too many entries (%d; maximum %d)"), global_info.number_entry, FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES);
-		unzClose(archive);
-		return ERR_FILE_CORRUPT;
-	}
-	if (global_info.number_entry == 0) {
-		constexpr uint64_t CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE = 22;
-		const uint64_t expected_empty_archive_size = CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE + global_info.size_comment;
-		if (archive_file.is_null() || archive_file->get_length() != expected_empty_archive_size) {
-			r_error = TTR("archive entry count does not match its non-empty central directory");
-			unzClose(archive);
-			return ERR_FILE_CORRUPT;
-		}
-		if (unzClose(archive) != UNZ_OK) {
-			r_error = TTR("archive could not be closed cleanly");
-			return ERR_FILE_CORRUPT;
-		}
-		return OK;
-	}
-
-	uint64_t entries_scanned = 0;
-	uint64_t total_entry_name_bytes = 0;
-	FoundryJavaCentralDirectoryContext central_directory_context;
-	int result = unzGoToFirstFile(archive);
-	while (result == UNZ_OK) {
-		unz_file_info64 info;
-		memset(&info, 0, sizeof(info));
-		if (unzGetCurrentFileInfo64(archive, &info, nullptr, 0, nullptr, 0, nullptr, 0) != UNZ_OK) {
-			r_error = TTR("archive entry metadata could not be read");
-			unzClose(archive);
-			return ERR_FILE_CORRUPT;
-		}
-		if (info.size_filename > FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES) {
-			r_error = vformat(TTR("archive entry name is too long (%d bytes; maximum %d)"), info.size_filename, FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES);
-			unzClose(archive);
-			return ERR_FILE_CORRUPT;
-		}
-		if (info.size_filename > FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES - total_entry_name_bytes) {
-			r_error = vformat(TTR("archive entry names exceed the aggregate %d-byte limit"), FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES);
-			unzClose(archive);
-			return ERR_FILE_CORRUPT;
-		}
-		total_entry_name_bytes += info.size_filename;
-
-		Vector<char> filename;
-		filename.resize(info.size_filename + 1);
-		if (unzGetCurrentFileInfo64(archive, &info, filename.ptrw(), filename.size(), nullptr, 0, nullptr, 0) != UNZ_OK) {
-			r_error = TTR("archive entry name could not be read");
-			unzClose(archive);
-			return ERR_FILE_CORRUPT;
-		}
-		uint64_t central_directory_entry_end = 0;
-		if (!_foundry_java_validate_current_central_directory_entry(
-					archive,
-					archive_file,
-					global_info,
-					info,
-					central_directory_context,
-					central_directory_entry_end)) {
-			r_error = TTR("archive central directory metadata is corrupt");
-			unzClose(archive);
-			return ERR_FILE_CORRUPT;
-		}
-		filename.write[info.size_filename] = '\0';
-		for (uint64_t i = 0; i < info.size_filename; i++) {
-			if (filename[i] == '\0') {
-				r_error = TTR("archive entry name contains an embedded NUL byte");
-				unzClose(archive);
-				return ERR_FILE_CORRUPT;
-			}
-		}
-		String entry;
-		if (entry.append_utf8(filename.ptr(), info.size_filename) != OK) {
-			r_error = TTR("archive entry name is not valid UTF-8");
-			unzClose(archive);
-			return ERR_FILE_CORRUPT;
-		}
-		if (entry == "libfoundry_android.so" || entry.ends_with("/libfoundry_android.so")) {
-			r_contains_host_library = true;
-			r_entry = entry;
-		}
-		entries_scanned++;
-		if (entries_scanned == global_info.number_entry) {
-			const FoundryJavaCentralDirectoryConsistency consistency =
-					_foundry_java_check_central_directory_tail(archive_file, central_directory_context, central_directory_entry_end);
-			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_UNREPORTED_ENTRY) {
-				r_error = TTR("archive entry count does not match its central directory");
-				unzClose(archive);
-				return ERR_FILE_CORRUPT;
-			}
-			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT) {
-				r_error = TTR("archive central directory metadata is corrupt");
-				unzClose(archive);
-				return ERR_FILE_CORRUPT;
-			}
-			result = UNZ_END_OF_LIST_OF_FILE;
-			break;
-		}
-		result = unzGoToNextFile(archive);
-	}
-	if (result != UNZ_OK && result != UNZ_END_OF_LIST_OF_FILE) {
-		r_error = TTR("archive traversal failed");
-		unzClose(archive);
-		return ERR_FILE_CORRUPT;
-	}
-	if (unzClose(archive) != UNZ_OK) {
-		r_error = TTR("archive could not be closed cleanly");
-		return ERR_FILE_CORRUPT;
-	}
-	return OK;
+	FoundryJavaInputArchiveBudget budget;
+	return _foundry_java_scan_open_archive(
+			archive,
+			archive_file,
+			String(),
+			0,
+			budget,
+			r_contains_host_library,
+			r_entry,
+			r_error);
 }
 
 Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, String &r_error) const {
@@ -3313,6 +3517,9 @@ bool EditorExportPlatformAndroid::get_export_option_visibility(const EditorExpor
 	}
 
 	bool advanced_options_enabled = p_preset->are_advanced_options_enabled();
+	// Keep the Foundry-Java toggle visible even when Gradle builds are disabled
+	// so a stale enabled preset can be repaired. Export validation still rejects
+	// that inconsistent state before any build work begins.
 	if (p_option.begins_with("gradle_build/foundry_java/") && p_option != "gradle_build/foundry_java/enabled") {
 		return bool(p_preset->get("gradle_build/foundry_java/enabled"));
 	}

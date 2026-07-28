@@ -469,6 +469,12 @@ jobs:
       - assemble-android
       - compile-instrumented-assets
       - foundry-java-command-first
+    if: >-
+      ${{
+        always() &&
+        needs.assemble-android.result == 'success' &&
+        needs.compile-instrumented-assets.result == 'success'
+      }}
     runs-on: ubuntu-24.04
     name: Verify Android runtime on an emulator
     timeout-minutes: 120
@@ -498,6 +504,7 @@ jobs:
           path: .test_scratch/android-instrumented-assets
 
       - name: Download command-first Foundry-Java APKs
+        if: needs.foundry-java-command-first.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: foundry-java-command-first-exports
@@ -567,6 +574,7 @@ jobs:
             --serial emulator-5554
 
       - name: Run command-first Foundry-Java APK acceptance
+        if: needs.foundry-java-command-first.result == 'success'
         run: |
           set -euo pipefail
           python3 platform/android/android_device_acceptance.py verify-apks \

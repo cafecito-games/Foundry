@@ -74,7 +74,11 @@ rejected. Repository values are redacted from verbose export command logging.
 An offline build instead sets `gradle_plugin_local` to the exact
 Foundry-Java plugin JAR and lists the binding AAR, runtime JAR, and extension
 module JARs in `local_artifacts`. Local archives are external export inputs;
-they are never embedded in `android_source.zip`.
+they are never embedded in `android_source.zip`. The exporter inspects nested
+JAR, AAR, and ZIP entries recursively and rejects `libfoundry_android.so` at
+any depth. Inspection fails closed at 8 nested levels, 64 root-inclusive
+archives, 65,534 entries per archive, 128 MiB per decompressed entry, or
+512 MiB of aggregate declared decompressed content.
 
 The exporter passes the fixed `registry-index-v2` marker and Gradle applies
 only plugin ID `games.cafecito.foundry.java`. The plugin owns descriptor,

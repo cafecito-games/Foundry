@@ -303,6 +303,36 @@ class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
 
 
 class FoundryJavaDocumentationTests(unittest.TestCase):
+    def test_foundry_java_toggle_stays_visible_for_stale_preset_recovery(self) -> None:
+        exporter = EXPORTER.read_text(encoding="utf-8")
+        visibility = exporter.split(
+            "bool EditorExportPlatformAndroid::get_export_option_visibility",
+            maxsplit=1,
+        )[1].split("String EditorExportPlatformAndroid::get_name", maxsplit=1)[0]
+        self.assertIn(
+            "Keep the Foundry-Java toggle visible even when Gradle builds are disabled",
+            visibility,
+        )
+        self.assertIn(
+            'p_option != "gradle_build/foundry_java/enabled"',
+            visibility,
+        )
+        self.assertNotIn(
+            'p_option == "gradle_build/foundry_java/enabled"',
+            visibility,
+        )
+        self.assertNotIn(
+            'p_option.begins_with("gradle_build/foundry_java/") && '
+            'bool(p_preset->get("gradle_build/use_gradle_build"))',
+            visibility,
+        )
+        self.assertTrue(
+            hasattr(
+                FoundryJavaExporterContractTests,
+                "test_command_first_export_rejects_opt_in_without_gradle_before_build",
+            )
+        )
+
     def test_repository_urls_document_ascii_uri_syntax_and_percent_encoding(self) -> None:
         documents = {
             "runtime guide": ANDROID_RUNTIME_GUIDE.read_text(encoding="utf-8"),
@@ -535,6 +565,7 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         compile_job = workflow.split(compile_job_marker, maxsplit=1)[1].split(assemble_job_marker, maxsplit=1)[0]
         command_job = workflow.split(command_job_marker, maxsplit=1)[1].split(device_job_marker, maxsplit=1)[0]
         device_job = workflow.split(device_job_marker, maxsplit=1)[1]
+        device_job_header = device_job.split("\n    steps:", maxsplit=1)[0]
         self.assertIn("name: linuxbsd-editor-foundry-java-command-first", compile_job)
         self.assertIn("path: bin/foundry.linuxbsd.editor.dev.x86_64", compile_job)
         for fragment in (
@@ -574,6 +605,19 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         ):
             with self.subTest(job="device", fragment=fragment):
                 self.assertIn(fragment, device_job)
+        for fragment in (
+            "if: >-",
+            "always()",
+            "needs.assemble-android.result == 'success'",
+            "needs.compile-instrumented-assets.result == 'success'",
+        ):
+            with self.subTest(job="device-header", fragment=fragment):
+                self.assertIn(fragment, device_job_header)
+        self.assertNotIn("needs.foundry-java-command-first.result", device_job_header)
+        self.assertEqual(
+            2,
+            device_job.count("if: needs.foundry-java-command-first.result == 'success'"),
+        )
 
 
 class FoundryJavaFinalArtifactInspectorTests(unittest.TestCase):
@@ -3110,6 +3154,45 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
 
 class FoundryJavaExporterContractTests(unittest.TestCase):
     @staticmethod
+    def _archive_bytes(entries: tuple[tuple[str, bytes], ...]) -> bytes:
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, contents in entries:
+                archive.writestr(name, contents)
+        return output.getvalue()
+
+    @classmethod
+    def _nested_archive_bytes(
+        cls,
+        archive_entries: tuple[str, ...],
+        leaf_entries: tuple[tuple[str, bytes], ...],
+    ) -> bytes:
+        contents = cls._archive_bytes(leaf_entries)
+        for name in reversed(archive_entries):
+            contents = cls._archive_bytes(((name, contents),))
+        return contents
+
+    @staticmethod
+    def _patch_archive_uncompressed_sizes(contents: bytes, sizes: tuple[int, ...]) -> bytes:
+        patched = bytearray(contents)
+        local_headers: list[int] = []
+        central_headers: list[int] = []
+        cursor = 0
+        while (cursor := patched.find(b"PK\x03\x04", cursor)) >= 0:
+            local_headers.append(cursor)
+            cursor += 4
+        cursor = 0
+        while (cursor := patched.find(b"PK\x01\x02", cursor)) >= 0:
+            central_headers.append(cursor)
+            cursor += 4
+        if len(local_headers) != len(sizes) or len(central_headers) != len(sizes):
+            raise AssertionError((len(local_headers), len(central_headers), len(sizes)))
+        for local_header, central_header, size in zip(local_headers, central_headers, sizes):
+            patched[local_header + 22 : local_header + 26] = size.to_bytes(4, "little")
+            patched[central_header + 24 : central_header + 28] = size.to_bytes(4, "little")
+        return bytes(patched)
+
+    @staticmethod
     def _development_binary() -> Path:
         binaries = [
             path for path in (REPO_ROOT / "bin").glob("foundry.*editor*") if path.is_file() and os.access(path, os.X_OK)
@@ -4302,6 +4385,238 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     self.assertNotEqual(0, result.returncode, output)
                     self.assertIn(option, output)
                     self.assertIn(value, output)
+                    self.assertFalse((project / "should-not-exist.apk").exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
+
+    def test_command_first_export_rejects_nested_host_libraries_in_plugin_and_local_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-nested-host-preflight.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Nested Host Preflight"\n',
+                encoding="utf-8",
+            )
+            valid_plugin = project / "valid-plugin.jar"
+            with zipfile.ZipFile(valid_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            nested_host = self._nested_archive_bytes(
+                ("layers/middle.jar", "payload/inner.aar"),
+                (("jni/arm64-v8a/libfoundry_android.so", b"host"),),
+            )
+            plugin = project / "nested-plugin.jar"
+            plugin.write_bytes(nested_host)
+            module = project / "nested-module.aar"
+            module.write_bytes(nested_host)
+
+            for plugin_local, local_artifacts, option, value in (
+                (plugin, (), "gradle_build/foundry_java/gradle_plugin_local", plugin),
+                (valid_plugin, (module,), "gradle_build/foundry_java/local_artifacts", module),
+            ):
+                with self.subTest(option=option):
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin_local,
+                        local_artifacts=local_artifacts,
+                        use_gradle=True,
+                    )
+                    result = self._run_export(project)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn(option, output)
+                    self.assertIn(str(value), output)
+                    self.assertIn(
+                        "layers/middle.jar!payload/inner.aar!jni/arm64-v8a/libfoundry_android.so",
+                        output,
+                    )
+                    self.assertIn("contains forbidden libfoundry_android.so", output)
+                    self.assertFalse((project / "should-not-exist.apk").exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
+
+    def test_command_first_export_rejects_corrupt_nested_plugin_and_local_archives(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-corrupt-nested-preflight.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Corrupt Nested Preflight"\n',
+                encoding="utf-8",
+            )
+            valid_plugin = project / "valid-plugin.jar"
+            with zipfile.ZipFile(valid_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            corrupt_nested = self._archive_bytes((("layers/broken.jar", b"not a ZIP archive"),))
+            plugin = project / "corrupt-nested-plugin.jar"
+            plugin.write_bytes(corrupt_nested)
+            module = project / "corrupt-nested-module.aar"
+            module.write_bytes(corrupt_nested)
+            corrupt_metadata = bytearray(self._archive_bytes((("payload.txt", b"payload"),)))
+            local_header = corrupt_metadata.find(b"PK\x03\x04")
+            self.assertGreaterEqual(local_header, 0)
+            corrupt_metadata[local_header + 30] ^= 0x01
+            metadata_module = project / "corrupt-metadata-module.aar"
+            metadata_module.write_bytes(self._archive_bytes((("layers/middle.jar", bytes(corrupt_metadata)),)))
+            corrupt_payload_buffer = io.BytesIO()
+            with zipfile.ZipFile(
+                corrupt_payload_buffer,
+                "w",
+                compression=zipfile.ZIP_STORED,
+            ) as archive:
+                archive.writestr(
+                    "layers/crc.jar",
+                    self._archive_bytes((("payload.txt", b"payload"),)),
+                )
+            corrupt_payload = bytearray(corrupt_payload_buffer.getvalue())
+            payload_local_header = corrupt_payload.find(b"PK\x03\x04")
+            self.assertGreaterEqual(payload_local_header, 0)
+            payload_name_size = int.from_bytes(
+                corrupt_payload[payload_local_header + 26 : payload_local_header + 28],
+                "little",
+            )
+            payload_extra_size = int.from_bytes(
+                corrupt_payload[payload_local_header + 28 : payload_local_header + 30],
+                "little",
+            )
+            payload_offset = payload_local_header + 30 + payload_name_size + payload_extra_size
+            corrupt_payload[payload_offset] ^= 0x01
+            corrupt_payload_module = project / "corrupt-payload-module.aar"
+            corrupt_payload_module.write_bytes(corrupt_payload)
+            unsafe_context_module = project / "unsafe-context-module.aar"
+            unsafe_context_module.write_bytes(self._archive_bytes((("layers/broken\nname.jar", b"not a ZIP archive"),)))
+
+            for plugin_local, local_artifacts, option in (
+                (plugin, (), "gradle_build/foundry_java/gradle_plugin_local"),
+                (valid_plugin, (module,), "gradle_build/foundry_java/local_artifacts"),
+            ):
+                with self.subTest(option=option):
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin_local,
+                        local_artifacts=local_artifacts,
+                        use_gradle=True,
+                    )
+                    result = self._run_export(project)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn(option, output)
+                    self.assertIn("nested archive 'layers/broken.jar' could not be opened", output)
+                    self.assertFalse((project / "should-not-exist.apk").exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
+
+            self._write_export_preset(
+                project,
+                plugin_local=valid_plugin,
+                local_artifacts=(metadata_module,),
+                use_gradle=True,
+            )
+            result = self._run_export(project)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode, output)
+            self.assertIn("gradle_build/foundry_java/local_artifacts", output)
+            self.assertIn(
+                "nested archive 'layers/middle.jar': archive central directory metadata is corrupt",
+                output,
+            )
+            self.assertFalse((project / "should-not-exist.apk").exists())
+            self.assertNotIn("Starting a Gradle Daemon", output)
+
+            self._write_export_preset(
+                project,
+                plugin_local=valid_plugin,
+                local_artifacts=(corrupt_payload_module,),
+                use_gradle=True,
+            )
+            result = self._run_export(project)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode, output)
+            self.assertIn("nested archive entry 'layers/crc.jar' failed integrity validation", output)
+            self.assertFalse((project / "should-not-exist.apk").exists())
+            self.assertNotIn("Starting a Gradle Daemon", output)
+
+            self._write_export_preset(
+                project,
+                plugin_local=valid_plugin,
+                local_artifacts=(unsafe_context_module,),
+                use_gradle=True,
+            )
+            result = self._run_export(project)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode, output)
+            self.assertIn("nested archive 'layers/broken\\nname.jar' could not be opened", output)
+            self.assertNotIn("layers/broken\nname.jar", output)
+
+    def test_command_first_export_rejects_nested_archive_resource_limits(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-nested-limit-preflight.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Nested Limit Preflight"\n',
+                encoding="utf-8",
+            )
+            valid_plugin = project / "valid-plugin.jar"
+            with zipfile.ZipFile(valid_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+
+            depth = self._nested_archive_bytes(
+                tuple(f"level-{index}.jar" for index in range(1, 10)),
+                (),
+            )
+            empty_archive = self._archive_bytes(())
+            archive_count = self._archive_bytes(tuple((f"nested-{index}.jar", empty_archive) for index in range(64)))
+            too_many_entries_buffer = io.BytesIO()
+            with zipfile.ZipFile(too_many_entries_buffer, "w", allowZip64=True) as archive:
+                for index in range(65_535):
+                    archive.writestr(f"entry-{index}", b"")
+            too_many_entries = self._archive_bytes((("too-many.jar", too_many_entries_buffer.getvalue()),))
+
+            oversized_metadata = self._patch_archive_uncompressed_sizes(
+                self._archive_bytes((("oversized.bin", b"x"),)),
+                (128 * 1024 * 1024 + 1,),
+            )
+            oversized_entry = self._archive_bytes((("oversized.jar", oversized_metadata),))
+
+            aggregate_metadata = self._patch_archive_uncompressed_sizes(
+                self._archive_bytes(tuple((f"large-{index}.bin", b"x") for index in range(5))),
+                (105 * 1024 * 1024,) * 5,
+            )
+            aggregate = self._archive_bytes((("aggregate.jar", aggregate_metadata),))
+
+            for index, (contents, expected) in enumerate(
+                (
+                    (depth, "nested archive depth exceeds the maximum 8"),
+                    (archive_count, "nested archive count exceeds the maximum 64"),
+                    (too_many_entries, "archive reports too many entries (65535; maximum 65534)"),
+                    (oversized_entry, "archive entry decompressed size exceeds the 134217728-byte limit"),
+                    (aggregate, "archive entries exceed the aggregate 536870912-byte decompressed size limit"),
+                )
+            ):
+                with self.subTest(expected=expected):
+                    module = project / f"limit-{index}.aar"
+                    module.write_bytes(contents)
+                    self._write_export_preset(
+                        project,
+                        plugin_local=valid_plugin,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                    )
+                    result = self._run_export(project)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn("gradle_build/foundry_java/local_artifacts", output)
+                    self.assertIn(expected, output)
                     self.assertFalse((project / "should-not-exist.apk").exists())
                     self.assertNotIn("Starting a Gradle Daemon", output)
 
