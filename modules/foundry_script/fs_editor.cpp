@@ -2300,9 +2300,13 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 									signature += ", ";
 								}
 								if (field_index < payload->field_names.size() && payload->field_names[field_index] != StringName()) {
-									signature += String(payload->field_names[field_index]) + ": ";
+									signature += String(payload->field_names[field_index]);
 								}
-								signature += payload->field_types[field_index].to_string();
+								// A field whose type is not resolved here contributes no spelling
+								// rather than a misleading one.
+								if (payload->field_types[field_index].is_hard_type()) {
+									signature += ": " + payload->field_types[field_index].to_string();
+								}
 							}
 							signature += ")";
 							option.display += signature;
@@ -2861,11 +2865,32 @@ static void _populate_global_enum_completion_values(
 		return;
 	}
 
-	for (const FSParser::EnumNode::Value &element : enum_node->values) {
+	r_type.is_tagged_union = enum_node->is_tagged_union;
+
+	for (int i = 0; i < enum_node->values.size(); i++) {
+		const FSParser::EnumNode::Value &element = enum_node->values[i];
 		if (element.identifier == nullptr) {
 			continue;
 		}
-		r_type.enum_values[element.identifier->name] = element.value;
+		// A tagged union's tags are ordinal by declaration order and are only assigned once the
+		// declaring file is analyzed, which this completion path deliberately avoids.
+		r_type.enum_values[element.identifier->name] = enum_node->is_tagged_union ? int64_t(i) : element.value;
+
+		if (!element.has_payload()) {
+			continue;
+		}
+		// Payload field types are only resolved by a full analysis of the declaring file, so an
+		// unresolved field keeps its name and position and contributes no type spelling.
+		FSParser::DataType::EnumCasePayload payload;
+		for (const FSParser::EnumNode::PayloadField &field : element.payload_fields) {
+			payload.field_names.push_back(field.identifier != nullptr ? field.identifier->name : StringName());
+			FSParser::DataType field_type;
+			if (field.type != nullptr && field.type->get_datatype().is_set()) {
+				field_type = FSAnalyzer::type_from_metatype(field.type->get_datatype());
+			}
+			payload.field_types.push_back(field_type);
+		}
+		r_type.enum_case_payloads[element.identifier->name] = payload;
 	}
 }
 
