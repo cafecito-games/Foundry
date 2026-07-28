@@ -4189,6 +4189,74 @@ FSParser::PatternNode *FSParser::parse_match_pattern(PatternNode *p_root_pattern
 			root_pattern->binds[pattern->bind->name] = pattern->bind;
 
 		} break;
+		case FSTokenizer::Token::PARENTHESIS_OPEN: {
+			// Tuple pattern, or an ordinary parenthesized grouping when it holds a single pattern.
+			push_multiline(true);
+			advance();
+			pattern->pattern_type = PatternNode::PT_TUPLE;
+
+			PatternNode *root_pattern = p_root_pattern != nullptr ? p_root_pattern : pattern;
+			if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+				push_error(R"(A tuple pattern cannot be empty.)");
+			} else {
+				PatternNode *first_element = parse_match_pattern(root_pattern);
+				if (first_element != nullptr) {
+					pattern->array.push_back(first_element);
+				}
+				if (!check(FSTokenizer::Token::COMMA) && first_element != nullptr) {
+					// Grouping: `(p)` is the pattern `p` itself, never a one-element tuple.
+					pop_multiline();
+					consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after the grouped pattern.)*");
+
+					ExpressionNode *grouped_expression = nullptr;
+					if (first_element->pattern_type == PatternNode::PT_LITERAL) {
+						grouped_expression = first_element->literal;
+					} else if (first_element->pattern_type == PatternNode::PT_EXPRESSION) {
+						grouped_expression = first_element->expression;
+					}
+					if (grouped_expression != nullptr && get_rule(current.type)->precedence != PREC_NONE) {
+						// The grouping was only the head of a larger value pattern, e.g. `(A + B) * C`.
+						pattern->array.clear();
+						ExpressionNode *expression = parse_infix_operators(grouped_expression, PREC_ASSIGNMENT, false);
+						pattern->pattern_type = expression != nullptr && expression->type == Node::LITERAL ? PatternNode::PT_LITERAL : PatternNode::PT_EXPRESSION;
+						pattern->expression = expression;
+						complete_extents(pattern);
+						return pattern;
+					}
+
+					// The grouping node is dropped, so any bind it collected as the root pattern moves to
+					// the pattern that takes its place; the branch reads its binds off that node.
+					if (p_root_pattern == nullptr) {
+						for (const KeyValue<StringName, IdentifierNode *> &E : pattern->binds) {
+							first_element->binds[E.key] = E.value;
+						}
+					}
+					first_element->was_grouped = true;
+					complete_extents(pattern);
+					return first_element;
+				}
+				while (match(FSTokenizer::Token::COMMA)) {
+					if (is_at_end() || check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+						break; // Trailing comma.
+					}
+					PatternNode *sub_pattern = parse_match_pattern(root_pattern);
+					if (sub_pattern == nullptr) {
+						continue;
+					}
+					if (sub_pattern->pattern_type == PatternNode::PT_REST) {
+						push_error(R"(The ".." pattern cannot be used in a tuple pattern.)");
+					} else {
+						pattern->array.push_back(sub_pattern);
+					}
+				}
+			}
+
+			pop_multiline();
+			consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after the tuple pattern.)*");
+			if (pattern->array.size() == 1) {
+				push_error(R"(A single-element tuple pattern is not allowed; either drop the trailing comma or add a second element.)", pattern);
+			}
+		} break;
 		case FSTokenizer::Token::UNDERSCORE:
 			// Wildcard.
 			advance();
@@ -4272,6 +4340,13 @@ FSParser::PatternNode *FSParser::parse_match_pattern(PatternNode *p_root_pattern
 			break;
 		}
 		default: {
+			// A dotted name directly followed by `(` is a tagged-union case pattern; anything else is
+			// an ordinary value pattern, so the dotted head is handed back to the expression parser.
+			if (current.is_identifier() && peek().type == FSTokenizer::Token::PERIOD) {
+				parse_match_pattern_dotted_head(pattern, p_root_pattern);
+				break;
+			}
+
 			// Expression.
 			ExpressionNode *expression = parse_expression(false);
 			if (expression == nullptr) {
@@ -4291,6 +4366,124 @@ FSParser::PatternNode *FSParser::parse_match_pattern(PatternNode *p_root_pattern
 	}
 	complete_extents(pattern);
 
+	return pattern;
+}
+
+void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNode *p_root_pattern) {
+	// The head is a dotted name, `A.B` or longer. It is a case reference only when `(` follows it
+	// immediately; otherwise it is the start of an ordinary value pattern such as `Vector2.ZERO`.
+	advance();
+	ExpressionNode *head_expression = parse_identifier(nullptr, false);
+#ifdef TOOLS_ENABLED
+	if (head_expression != nullptr) {
+		make_completion_context(COMPLETION_IDENTIFIER, head_expression);
+	}
+#endif
+
+	Vector<IdentifierNode *> case_chain;
+	if (head_expression != nullptr && head_expression->type == Node::IDENTIFIER) {
+		case_chain.push_back(static_cast<IdentifierNode *>(head_expression));
+	}
+
+	while (head_expression != nullptr && check(FSTokenizer::Token::PERIOD) && peek().is_identifier()) {
+		advance(); // Consume ".", so `parse_attribute()` sees the same tokenizer state as the Pratt driver.
+		head_expression = parse_attribute(head_expression, false);
+		if (head_expression == nullptr || head_expression->type != Node::SUBSCRIPT) {
+			case_chain.clear();
+			break;
+		}
+		SubscriptNode *attribute = static_cast<SubscriptNode *>(head_expression);
+		if (!attribute->is_attribute || attribute->attribute == nullptr) {
+			case_chain.clear();
+			break;
+		}
+		if (!case_chain.is_empty()) {
+			case_chain.push_back(attribute->attribute);
+		}
+	}
+
+	if (head_expression != nullptr && case_chain.size() >= 2 && check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+		// The case reference is resolved as a type, exactly like the right-hand side of `is`, so a
+		// payload case is never reduced as a value.
+		TypeNode *case_type = alloc_node<TypeNode>();
+		reset_extents(case_type, case_chain[0]);
+		update_extents(case_type);
+		case_type->type_chain = case_chain;
+		case_type->allows_enum_case = true;
+		complete_extents(case_type);
+
+		p_pattern->pattern_type = PatternNode::PT_ENUM_CASE;
+		p_pattern->case_type = case_type;
+
+		PatternNode *root_pattern = p_root_pattern != nullptr ? p_root_pattern : p_pattern;
+
+		push_multiline(true);
+		advance(); // Consume "(".
+		if (check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+			push_error(R"(Expected at least one payload pattern after "(".)");
+		} else {
+			do {
+				if (is_at_end() || check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+					break; // Trailing comma.
+				}
+				// A bare identifier in a payload position binds the value, matching `is Case(x, y)`.
+				// Any other expression keeps its usual meaning as a value pattern.
+				PatternNode *sub_pattern = nullptr;
+				if (current.is_identifier() && (peek().type == FSTokenizer::Token::COMMA || peek().type == FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+					sub_pattern = parse_match_case_payload_bind(root_pattern);
+				} else {
+					sub_pattern = parse_match_pattern(root_pattern);
+				}
+				if (sub_pattern == nullptr) {
+					continue;
+				}
+				if (sub_pattern->pattern_type == PatternNode::PT_REST) {
+					push_error(R"(The ".." pattern cannot be used in a case pattern.)");
+				} else {
+					p_pattern->array.push_back(sub_pattern);
+				}
+			} while (match(FSTokenizer::Token::COMMA));
+		}
+		pop_multiline();
+		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after the case pattern.)*");
+		return;
+	}
+
+	ExpressionNode *expression = parse_infix_operators(head_expression, PREC_ASSIGNMENT, false);
+	if (expression == nullptr) {
+		push_error(R"(Expected expression for match pattern.)");
+		return;
+	}
+	p_pattern->pattern_type = expression->type == Node::LITERAL ? PatternNode::PT_LITERAL : PatternNode::PT_EXPRESSION;
+	p_pattern->expression = expression;
+}
+
+FSParser::PatternNode *FSParser::parse_match_case_payload_bind(PatternNode *p_root_pattern) {
+	PatternNode *pattern = alloc_node<PatternNode>();
+	reset_extents(pattern, current);
+	advance();
+
+	pattern->pattern_type = PatternNode::PT_BIND;
+	pattern->implicit_bind = true;
+	pattern->bind = parse_identifier();
+	if (pattern->bind == nullptr) {
+		complete_extents(pattern);
+		return nullptr;
+	}
+
+	if (p_root_pattern->has_bind(pattern->bind->name)) {
+		push_error(vformat(R"(Bind variable name "%s" was already used in this pattern.)", pattern->bind->name));
+		complete_extents(pattern);
+		return nullptr;
+	}
+	if (current_suite->has_local(pattern->bind->name)) {
+		push_error(vformat(R"(There's already a %s named "%s" in this scope.)", current_suite->get_local(pattern->bind->name).get_name(), pattern->bind->name));
+		complete_extents(pattern);
+		return nullptr;
+	}
+
+	p_root_pattern->binds[pattern->bind->name] = pattern->bind;
+	complete_extents(pattern);
 	return pattern;
 }
 
@@ -4387,6 +4580,12 @@ FSParser::ExpressionNode *FSParser::parse_precedence(Precedence p_precedence, bo
 	}
 #endif
 
+	return parse_infix_operators(previous_operand, p_precedence, p_can_assign, p_stop_on_assign, p_stop_on_question_mark);
+}
+
+FSParser::ExpressionNode *FSParser::parse_infix_operators(ExpressionNode *p_previous_operand, Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign, bool p_stop_on_question_mark) {
+	ExpressionNode *previous_operand = p_previous_operand;
+
 	while (p_precedence <= get_rule(current.type)->precedence) {
 		if (previous_operand == nullptr || (p_stop_on_assign && current.type == FSTokenizer::Token::EQUAL) || (p_stop_on_question_mark && current.type == FSTokenizer::Token::QUESTION_MARK) || lambda_ended) {
 			return previous_operand;
@@ -4401,7 +4600,7 @@ FSParser::ExpressionNode *FSParser::parse_precedence(Precedence p_precedence, bo
 			default:
 				break; // Nothing to do.
 		}
-		token = advance();
+		const FSTokenizer::Token token = advance();
 		ParseFunction infix_rule = get_rule(token.type)->infix;
 		previous_operand = (this->*infix_rule)(previous_operand, p_can_assign);
 	}
@@ -8013,7 +8212,9 @@ void FSParser::TreePrinter::print_match_pattern(PatternNode *p_match_pattern) {
 			push_text("..");
 			break;
 		case PatternNode::PT_BIND:
-			push_text("Var ");
+			if (!p_match_pattern->implicit_bind) {
+				push_text("Var ");
+			}
 			print_identifier(p_match_pattern->bind);
 			break;
 		case PatternNode::PT_EXPRESSION:
@@ -8028,6 +8229,27 @@ void FSParser::TreePrinter::print_match_pattern(PatternNode *p_match_pattern) {
 				print_match_pattern(p_match_pattern->array[i]);
 			}
 			push_text(" ]");
+			break;
+		case PatternNode::PT_TUPLE:
+			push_text("( ");
+			for (int i = 0; i < p_match_pattern->array.size(); i++) {
+				if (i > 0) {
+					push_text(" , ");
+				}
+				print_match_pattern(p_match_pattern->array[i]);
+			}
+			push_text(" )");
+			break;
+		case PatternNode::PT_ENUM_CASE:
+			print_type(p_match_pattern->case_type);
+			push_text("( ");
+			for (int i = 0; i < p_match_pattern->array.size(); i++) {
+				if (i > 0) {
+					push_text(" , ");
+				}
+				print_match_pattern(p_match_pattern->array[i]);
+			}
+			push_text(" )");
 			break;
 		case PatternNode::PT_DICTIONARY:
 			push_text("{ ");

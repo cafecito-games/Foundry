@@ -305,7 +305,7 @@ static bool assignable_eq(const FSParser::AssignableNode *p_a, const FSParser::A
 }
 
 static bool pattern_eq(const FSParser::PatternNode *p_a, const FSParser::PatternNode *p_b) {
-	if (p_a->pattern_type != p_b->pattern_type) {
+	if (p_a->pattern_type != p_b->pattern_type || p_a->was_grouped != p_b->was_grouped) {
 		return false;
 	}
 	using PatternNode = FSParser::PatternNode;
@@ -315,9 +315,12 @@ static bool pattern_eq(const FSParser::PatternNode *p_a, const FSParser::Pattern
 		case PatternNode::PT_EXPRESSION:
 			return node_eq(p_a->expression, p_b->expression);
 		case PatternNode::PT_BIND:
-			return identifier_name(p_a->bind) == identifier_name(p_b->bind);
+			return identifier_name(p_a->bind) == identifier_name(p_b->bind) && p_a->implicit_bind == p_b->implicit_bind;
 		case PatternNode::PT_ARRAY:
+		case PatternNode::PT_TUPLE:
 			return node_vector_eq(p_a->array, p_b->array) && p_a->rest_used == p_b->rest_used;
+		case PatternNode::PT_ENUM_CASE:
+			return node_eq(p_a->case_type, p_b->case_type) && node_vector_eq(p_a->array, p_b->array);
 		case PatternNode::PT_DICTIONARY: {
 			if (p_a->dictionary.size() != p_b->dictionary.size() || p_a->rest_used != p_b->rest_used) {
 				return false;

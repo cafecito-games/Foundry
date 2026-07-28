@@ -1475,6 +1475,8 @@ public:
 			PT_DICTIONARY,
 			PT_REST,
 			PT_WILDCARD,
+			PT_TUPLE, // `(a, b)`: parenthesized sub-patterns, arity >= 2.
+			PT_ENUM_CASE, // `Message.Move(x, _)`: tagged-union case reference plus payload sub-patterns.
 		};
 		Type pattern_type = PT_LITERAL;
 
@@ -1483,8 +1485,24 @@ public:
 			IdentifierNode *bind;
 			ExpressionNode *expression;
 		};
+		// Sub-patterns of an array, tuple or enum-case pattern.
 		Vector<PatternNode *> array;
 		bool rest_used = false; // For array/dict patterns.
+		// A bind written without `var`, which only payload positions of a case pattern allow.
+		bool implicit_bind = false;
+		// Whether the pattern was written parenthesized. Grouping is dropped from the tree but stays
+		// meaningful in a case payload position, where `Case(NAME)` binds and `Case((NAME))` compares.
+		bool was_grouped = false;
+		// Whether this pattern matches every value of the type it was resolved against. Set by the
+		// analyzer; a case pattern is never irrefutable, since it always tests the tag.
+		bool is_irrefutable = false;
+		// For PT_ENUM_CASE: whether every payload sub-pattern is irrefutable, i.e. the pattern matches
+		// every value of its case and therefore covers it for exhaustiveness.
+		bool case_payload_is_irrefutable = false;
+
+		// For PT_ENUM_CASE: the dotted case reference (`Message.Move`) and its resolved case type.
+		TypeNode *case_type = nullptr;
+		DataType case_datatype;
 
 		struct Pair {
 			ExpressionNode *key = nullptr;
@@ -2189,10 +2207,15 @@ private:
 	MatchNode *parse_match();
 	MatchBranchNode *parse_match_branch();
 	PatternNode *parse_match_pattern(PatternNode *p_root_pattern = nullptr);
+	void parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNode *p_root_pattern);
+	PatternNode *parse_match_case_payload_bind(PatternNode *p_root_pattern);
 	WhileNode *parse_while();
 	// Expressions.
 	ExpressionNode *parse_expression(bool p_can_assign, bool p_stop_on_assign = false, bool p_stop_on_question_mark = false);
 	ExpressionNode *parse_precedence(Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign = false, bool p_stop_on_question_mark = false);
+	// Runs the Pratt infix loop over an already-parsed left operand, so a caller that consumed a
+	// prefix form itself (e.g. the dotted head of a match pattern) can finish the expression.
+	ExpressionNode *parse_infix_operators(ExpressionNode *p_previous_operand, Precedence p_precedence, bool p_can_assign, bool p_stop_on_assign = false, bool p_stop_on_question_mark = false);
 	ExpressionNode *parse_literal(ExpressionNode *p_previous_operand, bool p_can_assign);
 	LiteralNode *parse_literal();
 	ExpressionNode *parse_self(ExpressionNode *p_previous_operand, bool p_can_assign);
