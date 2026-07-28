@@ -2376,6 +2376,28 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 
 				return;
 			} break;
+			case FSParser::DataType::TUPLE: {
+				// A tuple value exposes exactly its elements: the declared field name where the
+				// declaration gave one, plus the positional index that always addresses it.
+				if (p_types_only || p_only_functions || base_type.is_meta_type) {
+					return;
+				}
+
+				for (int i = 0; i < base_type.container_element_types.size(); i++) {
+					if (i < base_type.tuple_field_names.size() && base_type.tuple_field_names[i] != StringName()) {
+						ScriptLanguage::CodeCompletionOption named_option(
+								base_type.tuple_field_names[i], ScriptLanguage::CODE_COMPLETION_KIND_MEMBER,
+								p_recursion_depth + ScriptLanguage::LOCATION_LOCAL);
+						r_result.insert(named_option.display, named_option);
+					}
+					ScriptLanguage::CodeCompletionOption index_option(
+							itos(i), ScriptLanguage::CODE_COMPLETION_KIND_MEMBER,
+							p_recursion_depth + ScriptLanguage::LOCATION_LOCAL);
+					r_result.insert(index_option.display, index_option);
+				}
+
+				return;
+			} break;
 			default: {
 				return;
 			} break;
@@ -5202,7 +5224,8 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 		case FSParser::ClassNode::Member::CLASS: {
 			String doc_type_name;
 			String doc_enum_name;
-			FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_member.get_datatype()), doc_type_name, doc_enum_name);
+			String doc_tuple_name;
+			FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_member.get_datatype()), doc_type_name, doc_enum_name, doc_tuple_name);
 
 			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
 			r_result.class_name = doc_type_name;
@@ -5235,7 +5258,8 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 	if (p_member.type != FSParser::ClassNode::Member::CLASS) {
 		String doc_type_name;
 		String doc_enum_name;
-		FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_base_type), doc_type_name, doc_enum_name);
+		String doc_tuple_name;
+		FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_base_type), doc_type_name, doc_enum_name, doc_tuple_name);
 
 		r_result.class_name = doc_type_name;
 		r_result.class_member = p_name;
@@ -5524,7 +5548,8 @@ static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const St
 				if (const FSParser::FunctionNode *function = _get_enum_function_for_receiver(base_type, p_symbol)) {
 					String doc_type_name;
 					String doc_enum_name;
-					FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name);
+					String doc_tuple_name;
+					FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name, doc_tuple_name);
 
 					Error err = OK;
 					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
@@ -5540,7 +5565,8 @@ static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const St
 					if (base_type.enum_values.has(p_symbol)) {
 						String doc_type_name;
 						String doc_enum_name;
-						FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name);
+						String doc_tuple_name;
+						FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name, doc_tuple_name);
 
 						if (CoreConstants::is_global_enum(doc_enum_name)) {
 							r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
@@ -5940,7 +5966,7 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 								break;
 						}
 
-						FSDocGen::doctype_from_gdtype(local.get_datatype(), r_result.doc_type, r_result.enumeration);
+						FSDocGen::doctype_from_gdtype(local.get_datatype(), r_result.doc_type, r_result.enumeration, r_result.tuple_type);
 
 						Error err = OK;
 						r_result.script = FSCache::get_shallow_script(base_type.script_path, err);

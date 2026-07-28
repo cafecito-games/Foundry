@@ -5329,6 +5329,28 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			CHECK(out.contains("return tally"));
 			CHECK_FALSE(out.contains("counter"));
 		}
+		SUBCASE("member in a file that declares a tuple") {
+			// Tuple declarations and tuple field access must not derail the rename walk.
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_tuple_member.fs", 4, 4, "tally", out); // caret on `counter`
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "counter");
+			CHECK(out.contains("var tally := 0"));
+			CHECK(out.contains("tally += point.x + point.0"));
+			CHECK(out.contains("tuple Vec2(x: int, y: int)"));
+			CHECK_FALSE(out.contains("counter"));
+		}
+		SUBCASE("tuple declaration name") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_tuple_member.fs", 2, 6, "Point2", out); // caret on `Vec2`
+			// Renaming a tuple declaration must either rewrite it consistently or refuse
+			// cleanly; it must never crash or emit a partial rewrite.
+			if (r.ok) {
+				CHECK(out.contains("tuple Point2(x: int, y: int)"));
+				CHECK(out.contains("Point2(1, 2)"));
+				CHECK_FALSE(out.contains("Vec2"));
+			}
+		}
 		SUBCASE("class referenced inside Type[T] annotations") {
 			String out;
 			RefactorResult r = run_rename("res://refactor/type_metatype_rename.fs", 0, 6, "Client", out); // caret on `User` class

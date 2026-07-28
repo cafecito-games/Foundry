@@ -408,6 +408,9 @@ public:
 		// For `LOCAL_*`.
 		String doc_type;
 		String enumeration;
+		// Qualified name of the script-declared named tuple `doc_type` denotes, parallel to
+		// `enumeration`. Empty unless the type is a named tuple.
+		String tuple_type;
 		bool is_bitfield = false;
 
 		// For `LOCAL_*`.

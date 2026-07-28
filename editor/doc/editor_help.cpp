@@ -278,6 +278,21 @@ void EditorHelp::_class_desc_select(const String &p_select) {
 		}
 
 		emit_signal(SNAME("go_to_help"), "class_enum:" + enum_class_name + ":" + enum_name);
+	} else if (p_select.begins_with("%")) { // Tuple.
+		const String link = p_select.substr(1);
+
+		String tuple_class_name;
+		String tuple_name;
+		const int dot_pos = link.rfind_char('.');
+		if (dot_pos >= 0) {
+			tuple_class_name = link.left(dot_pos);
+			tuple_name = link.substr(dot_pos + 1);
+		} else {
+			tuple_class_name = edited_class;
+			tuple_name = link;
+		}
+
+		emit_signal(SNAME("go_to_help"), "class_tuple:" + tuple_class_name + ":" + tuple_name);
 	} else if (p_select.begins_with("#")) { // Class.
 		emit_signal(SNAME("go_to_help"), "class_name:" + p_select.substr(1));
 	} else if (p_select.begins_with("@")) { // Member.
@@ -303,6 +318,9 @@ void EditorHelp::_class_desc_select(const String &p_select) {
 		} else if (tag == "enum") {
 			topic = "class_enum";
 			table = &enum_line;
+		} else if (tag == "tuple") {
+			topic = "class_tuple";
+			table = &tuple_line;
 		} else if (tag == "signal") {
 			topic = "class_signal";
 			table = &signal_line;
@@ -385,10 +403,10 @@ void EditorHelp::_class_desc_resized(bool p_force_update_theme) {
 	}
 }
 
-static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
+static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_is_bitfield, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class, const String &p_tuple = String()) {
 	const Color type_color = p_owner_node->get_theme_color(SNAME("type_color"), SNAME("EditorHelp"));
 
-	for (const EditorHelp::HelpTypeRenderSegment &segment : EditorHelp::_build_type_render_segments(p_type, p_enum, p_is_bitfield, p_class)) {
+	for (const EditorHelp::HelpTypeRenderSegment &segment : EditorHelp::_build_type_render_segments(p_type, p_enum, p_is_bitfield, p_class, p_tuple)) {
 		p_rt->push_color(segment.dim ? Color(type_color, 0.5) : type_color);
 		const bool has_hint = !segment.hint.is_empty();
 		if (has_hint) {
@@ -400,6 +418,9 @@ static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_i
 			} break;
 			case EditorHelp::HelpTypeRenderSegment::ENUM_LINK: {
 				p_rt->push_meta("$" + segment.link, RichTextLabel::META_UNDERLINE_ON_HOVER); // enum
+			} break;
+			case EditorHelp::HelpTypeRenderSegment::TUPLE_LINK: {
+				p_rt->push_meta("%" + segment.link, RichTextLabel::META_UNDERLINE_ON_HOVER); // tuple
 			} break;
 			case EditorHelp::HelpTypeRenderSegment::TEXT: {
 			} break;
@@ -415,7 +436,7 @@ static void _add_type_to_rt(const String &p_type, const String &p_enum, bool p_i
 	}
 }
 
-Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segments(const String &p_type, const String &p_enum, bool p_is_bitfield, const String &p_class) {
+Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segments(const String &p_type, const String &p_enum, bool p_is_bitfield, const String &p_class, const String &p_tuple) {
 	Vector<HelpTypeRenderSegment> segments;
 
 	if (p_type.is_empty() || p_type == "void") {
@@ -430,7 +451,51 @@ Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segment
 	// Container element types recurse through this builder so any nesting depth
 	// links each leaf type correctly. Enum and pointer types are leaves and skip
 	// this; they can never spell a typed container.
-	if (p_enum.is_empty() && !p_type.contains_char('*')) {
+	if (p_enum.is_empty() && p_tuple.is_empty() && !p_type.contains_char('*')) {
+		if (p_type.begins_with("(") && p_type.ends_with(")")) {
+			// An unnamed FoundryScript tuple is spelled as its parenthesized element list.
+			// It has no help page of its own, so render the punctuation as plain text and
+			// recurse per element so every leaf type still links.
+			const String inner = p_type.substr(1, p_type.length() - 2);
+			if (inner.strip_edges().is_empty()) {
+				HelpTypeRenderSegment segment;
+				segment.text = p_type;
+				segments.push_back(segment);
+				return segments;
+			}
+			Vector<String> element_types;
+			int depth = 0;
+			int element_start = 0;
+			for (int i = 0; i < inner.length(); i++) {
+				const char32_t character = inner[i];
+				if (character == '[' || character == '(') {
+					depth++;
+				} else if (character == ']' || character == ')') {
+					depth--;
+				} else if (character == ',' && depth == 0) {
+					element_types.push_back(inner.substr(element_start, i - element_start).strip_edges());
+					element_start = i + 1;
+				}
+			}
+			element_types.push_back(inner.substr(element_start).strip_edges());
+
+			HelpTypeRenderSegment open;
+			open.text = "(";
+			segments.push_back(open);
+			for (int i = 0; i < element_types.size(); i++) {
+				if (i > 0) {
+					HelpTypeRenderSegment comma;
+					comma.text = ", ";
+					segments.push_back(comma);
+				}
+				segments.append_array(_build_type_render_segments(element_types[i], "", false, p_class));
+			}
+			HelpTypeRenderSegment close_segment;
+			close_segment.text = ")";
+			segments.push_back(close_segment);
+			return segments;
+		}
+
 		if (p_type.begins_with("Coroutine[") && p_type.ends_with("]")) {
 			// `Coroutine[T]` is a synthetic FoundryScript type with no dedicated class
 			// page. Render the wrapper as plain text and recurse on the result type
@@ -494,9 +559,9 @@ Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segment
 			int separator = -1;
 			for (int i = 0; i < inner.length(); i++) {
 				const char32_t character = inner[i];
-				if (character == '[') {
+				if (character == '[' || character == '(') {
 					depth++;
-				} else if (character == ']') {
+				} else if (character == ']' || character == ')') {
 					depth--;
 				} else if (character == ',' && depth == 0) {
 					separator = i;
@@ -528,6 +593,7 @@ Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segment
 	}
 
 	const bool is_enum_type = !p_enum.is_empty();
+	const bool is_tuple_type = p_enum.is_empty() && !p_tuple.is_empty();
 	const bool is_bitfield = p_is_bitfield && is_enum_type;
 	const bool can_ref = !p_type.contains_char('*') || is_enum_type;
 
@@ -536,6 +602,11 @@ Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segment
 	if (is_enum_type) {
 		link_t = p_enum; // The link for enums is always the full enum description.
 		display_t = _contextualize_class_specifier(p_enum, p_class);
+	} else if (is_tuple_type) {
+		// A named tuple is nominal: the link addresses its declaration entry, which for a
+		// whole-file declaration is qualified beyond the spelling shown to the reader.
+		link_t = p_tuple;
+		display_t = _contextualize_class_specifier(p_type, p_class);
 	} else {
 		display_t = _contextualize_class_specifier(p_type, p_class);
 	}
@@ -561,8 +632,16 @@ Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segment
 	}
 
 	HelpTypeRenderSegment link_segment;
-	link_segment.kind = is_enum_type ? HelpTypeRenderSegment::ENUM_LINK : HelpTypeRenderSegment::CLASS_LINK;
-	link_segment.link = is_enum_type ? link_t : DocData::get_type_link_target(link_t);
+	if (is_enum_type) {
+		link_segment.kind = HelpTypeRenderSegment::ENUM_LINK;
+		link_segment.link = link_t;
+	} else if (is_tuple_type) {
+		link_segment.kind = HelpTypeRenderSegment::TUPLE_LINK;
+		link_segment.link = link_t;
+	} else {
+		link_segment.kind = HelpTypeRenderSegment::CLASS_LINK;
+		link_segment.link = DocData::get_type_link_target(link_t);
+	}
 	link_segment.text = display_t;
 	segments.push_back(link_segment);
 
@@ -576,8 +655,8 @@ Vector<EditorHelp::HelpTypeRenderSegment> EditorHelp::_build_type_render_segment
 	return segments;
 }
 
-void EditorHelp::_add_type(const String &p_type, const String &p_enum, bool p_is_bitfield) {
-	_add_type_to_rt(p_type, p_enum, p_is_bitfield, class_desc, this, edited_class);
+void EditorHelp::_add_type(const String &p_type, const String &p_enum, bool p_is_bitfield, const String &p_tuple) {
+	_add_type_to_rt(p_type, p_enum, p_is_bitfield, class_desc, this, edited_class, p_tuple);
 }
 
 void EditorHelp::_add_type_icon(const String &p_type, int p_size, const String &p_fallback) {
@@ -665,7 +744,7 @@ void EditorHelp::_add_method(const DocData::MethodDoc &p_method, bool p_overview
 		_add_bulletpoint();
 	}
 
-	_add_type(p_method.return_type, p_method.return_enum, p_method.return_is_bitfield);
+	_add_type(p_method.return_type, p_method.return_enum, p_method.return_is_bitfield, p_method.return_tuple);
 
 	if (p_overview) {
 		class_desc->pop(); // paragraph
@@ -710,7 +789,7 @@ void EditorHelp::_add_method(const DocData::MethodDoc &p_method, bool p_overview
 		class_desc->add_text(colon_nbsp);
 		class_desc->pop(); // color
 
-		_add_type(argument.type, argument.enumeration, argument.is_bitfield);
+		_add_type(argument.type, argument.enumeration, argument.is_bitfield, argument.tuple_type);
 
 		if (!argument.default_value.is_empty()) {
 			class_desc->push_color(theme_cache.symbol_color);
@@ -747,7 +826,7 @@ void EditorHelp::_add_method(const DocData::MethodDoc &p_method, bool p_overview
 		if (rest_argument.type.is_empty()) {
 			_add_type("Array");
 		} else {
-			_add_type(rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield);
+			_add_type(rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield, rest_argument.tuple_type);
 		}
 	}
 
@@ -1075,6 +1154,7 @@ void EditorHelp::_update_doc() {
 
 	class_desc->clear();
 	method_line.clear();
+	tuple_line.clear();
 	section_line.clear();
 	section_line.push_back(Pair<String, int>(TTR("Top"), 0));
 
@@ -1378,7 +1458,7 @@ void EditorHelp::_update_doc() {
 			// Property type.
 			class_desc->push_cell();
 			class_desc->push_paragraph(HORIZONTAL_ALIGNMENT_RIGHT, Control::TEXT_DIRECTION_AUTO, "");
-			_add_type(prop.type, prop.enumeration, prop.is_bitfield);
+			_add_type(prop.type, prop.enumeration, prop.is_bitfield, prop.tuple_type);
 			class_desc->pop(); // paragraph
 			class_desc->pop(); // cell
 
@@ -1731,7 +1811,7 @@ void EditorHelp::_update_doc() {
 				class_desc->add_text(colon_nbsp);
 				class_desc->pop(); // color
 
-				_add_type(argument.type, argument.enumeration, argument.is_bitfield);
+				_add_type(argument.type, argument.enumeration, argument.is_bitfield, argument.tuple_type);
 
 				// Signals currently do not support default argument values, neither the core nor FoundryScript.
 				// This code is just for completeness.
@@ -1807,6 +1887,113 @@ void EditorHelp::_update_doc() {
 			class_desc->pop(); // indent
 		}
 	}
+
+	// Tuples
+	// Named tuples are declared like enums (a name plus a fixed field list) and are rendered the
+	// same way: one entry per declaration with the full declaration signature as its header.
+	auto render_tuples_section = [&]() {
+		if (cd.tuples.is_empty()) {
+			return;
+		}
+
+		class_desc->add_newline();
+		class_desc->add_newline();
+
+		section_line.push_back(Pair<String, int>(TTR("Tuples"), class_desc->get_paragraph_count() - 2));
+		_push_title_font();
+		class_desc->add_text(TTR("Tuples"));
+		_pop_title_font();
+
+		for (const KeyValue<String, DocData::TupleDoc> &E : cd.tuples) {
+			class_desc->add_newline();
+			class_desc->add_newline();
+
+			// Tuple header: `tuple Name(field: Type, ...)`.
+			_push_code_font();
+
+			tuple_line[E.key] = class_desc->get_paragraph_count() - 2;
+			class_desc->push_color(theme_cache.title_color);
+			class_desc->add_text("tuple ");
+			class_desc->pop(); // color
+
+			class_desc->push_color(theme_cache.headline_color);
+			class_desc->add_text(E.key);
+			class_desc->pop(); // color
+
+			class_desc->push_color(theme_cache.symbol_color);
+			class_desc->add_text("(");
+			class_desc->pop(); // color
+
+			for (int i = 0; i < E.value.fields.size(); i++) {
+				const DocData::TupleFieldDoc &field = E.value.fields[i];
+				if (i > 0) {
+					class_desc->push_color(theme_cache.symbol_color);
+					class_desc->add_text(", ");
+					class_desc->pop(); // color
+				}
+				if (!field.name.is_empty()) {
+					class_desc->push_color(theme_cache.text_color);
+					class_desc->add_text(field.name);
+					class_desc->pop(); // color
+
+					class_desc->push_color(theme_cache.symbol_color);
+					class_desc->add_text(": ");
+					class_desc->pop(); // color
+				}
+				_add_type(field.type, field.enumeration);
+			}
+
+			class_desc->push_color(theme_cache.symbol_color);
+			class_desc->add_text(")");
+			class_desc->pop(); // color
+
+			_pop_code_font();
+
+			// Tuple description.
+			const String descr = HANDLE_DOC(E.value.description);
+			const bool is_multiline = descr.find_char('\n') > 0;
+			if (E.value.is_deprecated || E.value.is_experimental || !descr.is_empty()) {
+				class_desc->add_newline();
+
+				class_desc->push_indent(1);
+				_push_normal_font();
+				class_desc->push_color(theme_cache.text_color);
+
+				bool has_prev_text = false;
+
+				if (E.value.is_deprecated) {
+					has_prev_text = true;
+					DEPRECATED_DOC_MSG(HANDLE_DOC(E.value.deprecated_message), TTR("This tuple may be changed or removed in future versions."));
+				}
+
+				if (E.value.is_experimental) {
+					if (has_prev_text) {
+						class_desc->add_newline();
+						if (is_multiline) {
+							class_desc->add_newline();
+						}
+					}
+					has_prev_text = true;
+					EXPERIMENTAL_DOC_MSG(HANDLE_DOC(E.value.experimental_message), TTR("This tuple may be changed or removed in future versions."));
+				}
+
+				if (!descr.is_empty()) {
+					if (has_prev_text) {
+						class_desc->add_newline();
+						if (is_multiline) {
+							class_desc->add_newline();
+						}
+					}
+					has_prev_text = true;
+					_add_text(descr);
+				}
+
+				class_desc->pop(); // color
+				_pop_normal_font();
+				class_desc->pop(); // indent
+			}
+		}
+	};
 
 	// Constants and enums
 	if (!cd.constants.is_empty()) {
@@ -2028,6 +2215,8 @@ void EditorHelp::_update_doc() {
 			}
 		}
 
+		render_tuples_section();
+
 		// Constants
 		if (!constants.is_empty()) {
 			class_desc->add_newline();
@@ -2127,6 +2316,10 @@ void EditorHelp::_update_doc() {
 				class_desc->pop(); // indent
 			}
 		}
+	} else {
+		// No constants means neither an Enumerations nor a Constants section was rendered; the
+		// Tuples section still belongs here, between where they would have been.
+		render_tuples_section();
 	}
 
 	// Annotations
@@ -2181,7 +2374,7 @@ void EditorHelp::_update_doc() {
 					class_desc->add_text(colon_nbsp);
 					class_desc->pop(); // color
 
-					_add_type(argument.type, argument.enumeration, argument.is_bitfield);
+					_add_type(argument.type, argument.enumeration, argument.is_bitfield, argument.tuple_type);
 
 					if (!argument.default_value.is_empty()) {
 						class_desc->push_color(theme_cache.symbol_color);
@@ -2218,7 +2411,7 @@ void EditorHelp::_update_doc() {
 					if (rest_argument.type.is_empty()) {
 						_add_type("Array");
 					} else {
-						_add_type(rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield);
+						_add_type(rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield, rest_argument.tuple_type);
 					}
 				}
 
@@ -2298,7 +2491,7 @@ void EditorHelp::_update_doc() {
 			class_desc->push_cell();
 			_push_code_font();
 			_add_bulletpoint();
-			_add_type(prop.type, prop.enumeration, prop.is_bitfield);
+			_add_type(prop.type, prop.enumeration, prop.is_bitfield, prop.tuple_type);
 			_pop_code_font();
 			class_desc->pop(); // cell
 
@@ -2554,6 +2747,10 @@ void EditorHelp::_help_callback(const String &p_topic) {
 		if (enum_line.has(name)) {
 			line = enum_line[name];
 		}
+	} else if (what == "class_tuple") {
+		if (tuple_line.has(name)) {
+			line = tuple_line[name];
+		}
 	} else if (what == "class_theme_item") {
 		if (theme_property_line.has(name)) {
 			line = theme_property_line[name];
@@ -2734,7 +2931,7 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 			} else {
 				p_rt->pop();
 			}
-		} else if (tag.begins_with("method ") || tag.begins_with("constructor ") || tag.begins_with("operator ") || tag.begins_with("member ") || tag.begins_with("signal ") || tag.begins_with("enum ") || tag.begins_with("constant ") || tag.begins_with("annotation ") || tag.begins_with("theme_item ")) {
+		} else if (tag.begins_with("method ") || tag.begins_with("constructor ") || tag.begins_with("operator ") || tag.begins_with("member ") || tag.begins_with("signal ") || tag.begins_with("enum ") || tag.begins_with("tuple ") || tag.begins_with("constant ") || tag.begins_with("annotation ") || tag.begins_with("theme_item ")) {
 			const int tag_end = tag.find_char(' ');
 			const String link_tag = tag.left(tag_end);
 			const String link_target = tag.substr(tag_end + 1).lstrip(" ");
@@ -3108,6 +3305,12 @@ String EditorHelp::get_cache_full_path() {
 	return EditorPaths::get_singleton()->get_cache_dir().path_join(vformat("editor_doc_cache-%d.%d.res", FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR));
 }
 
+// Identifies the `DocData::ClassDoc` dictionary schema the script doc cache was written with. A
+// cache produced by a build with a different schema cannot be trusted: its entries would silently
+// deserialize as valid but incomplete documentation, so it is discarded and regenerated instead.
+// Bump this whenever the dictionary form of a script-visible doc structure changes.
+static constexpr int SCRIPT_DOC_CACHE_SCHEMA_VERSION = 2;
+
 String EditorHelp::get_script_doc_cache_full_path() {
 	return EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_script_doc_cache.res");
 }
@@ -3296,6 +3499,13 @@ void EditorHelp::_load_script_doc_cache_thread(void *p_udata) {
 		return;
 	}
 
+	if (int(script_doc_cache_res->get_meta("schema_version", 0)) != SCRIPT_DOC_CACHE_SCHEMA_VERSION) {
+		print_verbose("Script doc cache was written with a different documentation schema. Regenerating it instead.");
+		_delete_script_doc_cache();
+		callable_mp_static(EditorHelp::regenerate_script_doc_cache).call_deferred();
+		return;
+	}
+
 	Array classes = script_doc_cache_res->get_meta("classes", Array());
 	for (const Dictionary dict : classes) {
 		doc->add_doc(DocData::ClassDoc::from_dict(dict));
@@ -3396,6 +3606,7 @@ void EditorHelp::save_script_doc_cache() {
 		}
 	}
 
+	cache_res->set_meta("schema_version", SCRIPT_DOC_CACHE_SCHEMA_VERSION);
 	cache_res->set_meta("classes", classes);
 	Error err = ResourceSaver::save(cache_res, get_script_doc_cache_full_path(), ResourceSaver::FLAG_COMPRESS);
 	ERR_FAIL_COND_MSG(err != OK, vformat("Cannot save script documentation cache in %s.", get_script_doc_cache_full_path()));
@@ -3752,7 +3963,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_constant_help_data(const StringName 
 					current.experimental_message = HANDLE_DOC(constant.experimental_message);
 				}
 			}
-			current.doc_type = { constant.type, constant.enumeration, constant.is_bitfield };
+			current.doc_type = { constant.type, constant.enumeration, constant.is_bitfield, String() };
 			if (constant.is_value_valid) {
 				current.value = constant.value;
 			}
@@ -3803,7 +4014,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_property_help_data(const StringName 
 					current.experimental_message = HANDLE_DOC(property.experimental_message);
 				}
 			}
-			current.doc_type = { property.type, property.enumeration, property.is_bitfield };
+			current.doc_type = { property.type, property.enumeration, property.is_bitfield, property.tuple_type };
 			current.value = property.default_value;
 
 			String enum_class_name;
@@ -3887,7 +4098,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_theme_item_help_data(const StringNam
 					current.experimental_message = HANDLE_DOC(theme_item.experimental_message);
 				}
 			}
-			current.doc_type = { theme_item.type, String(), false };
+			current.doc_type = { theme_item.type, String(), false, String() };
 			current.value = theme_item.default_value;
 
 			if (theme_item.name == p_theme_item_name) {
@@ -3944,14 +4155,14 @@ EditorHelpBit::HelpData EditorHelpBit::_get_method_help_data(const StringName &p
 					current.experimental_message = HANDLE_DOC(method.experimental_message);
 				}
 			}
-			current.doc_type = { method.return_type, method.return_enum, method.return_is_bitfield };
+			current.doc_type = { method.return_type, method.return_enum, method.return_is_bitfield, method.return_tuple };
 			for (const DocData::ArgumentDoc &argument : method.arguments) {
-				const DocType argument_doc_type = { argument.type, argument.enumeration, argument.is_bitfield };
+				const DocType argument_doc_type = { argument.type, argument.enumeration, argument.is_bitfield, argument.tuple_type };
 				current.arguments.push_back({ argument.name, argument_doc_type, argument.default_value });
 			}
 			current.qualifiers = method.qualifiers;
 			const DocData::ArgumentDoc &rest_argument = method.rest_argument;
-			const DocType rest_argument_doc_type = { rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield };
+			const DocType rest_argument_doc_type = { rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield, rest_argument.tuple_type };
 			current.rest_argument = { rest_argument.name, rest_argument_doc_type, rest_argument.default_value };
 
 			if (method.name == p_method_name) {
@@ -4001,7 +4212,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_signal_help_data(const StringName &p
 				}
 			}
 			for (const DocData::ArgumentDoc &argument : signal.arguments) {
-				const DocType argument_type = { argument.type, argument.enumeration, argument.is_bitfield };
+				const DocType argument_type = { argument.type, argument.enumeration, argument.is_bitfield, argument.tuple_type };
 				current.arguments.push_back({ argument.name, argument_type, argument.default_value });
 			}
 			current.qualifiers = signal.qualifiers;
@@ -4053,12 +4264,12 @@ EditorHelpBit::HelpData EditorHelpBit::_get_annotation_help_data(const StringNam
 				}
 			}
 			for (const DocData::ArgumentDoc &argument : annotation.arguments) {
-				const DocType argument_type = { argument.type, argument.enumeration, argument.is_bitfield };
+				const DocType argument_type = { argument.type, argument.enumeration, argument.is_bitfield, argument.tuple_type };
 				current.arguments.push_back({ argument.name, argument_type, argument.default_value });
 			}
 			current.qualifiers = annotation.qualifiers;
 			const DocData::ArgumentDoc &rest_argument = annotation.rest_argument;
-			const DocType rest_argument_doc_type = { rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield };
+			const DocType rest_argument_doc_type = { rest_argument.type, rest_argument.enumeration, rest_argument.is_bitfield, rest_argument.tuple_type };
 			current.rest_argument = { rest_argument.name, rest_argument_doc_type, rest_argument.default_value };
 
 			if (annotation.name == p_annotation_name) {
@@ -4081,7 +4292,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_annotation_help_data(const StringNam
 #undef HANDLE_DOC
 
 void EditorHelpBit::_add_type_to_title(const DocType &p_doc_type) {
-	_add_type_to_rt(p_doc_type.type, p_doc_type.enumeration, p_doc_type.is_bitfield, title, this, symbol_class_name);
+	_add_type_to_rt(p_doc_type.type, p_doc_type.enumeration, p_doc_type.is_bitfield, title, this, symbol_class_name, p_doc_type.tuple_type);
 }
 
 void EditorHelpBit::_update_labels() {
@@ -4141,7 +4352,7 @@ void EditorHelpBit::_update_labels() {
 						title->add_text(" <" + nbsp);
 						title->pop(); // color
 
-						_add_type_to_title({ inherits, String(), false });
+						_add_type_to_title({ inherits, String(), false, String() });
 
 						const DocData::ClassDoc *base_class_doc = EditorHelp::get_doc(inherits);
 						inherits = base_class_doc ? base_class_doc->inherits : String();
@@ -4241,7 +4452,7 @@ void EditorHelpBit::_update_labels() {
 					title->pop(); // color
 
 					if (rest_argument.doc_type.type.is_empty()) {
-						_add_type_to_title({ "Array", "", false });
+						_add_type_to_title({ "Array", "", false, String() });
 					} else {
 						_add_type_to_title(rest_argument.doc_type);
 					}
@@ -4441,6 +4652,21 @@ void EditorHelpBit::_meta_clicked(const String &p_select) {
 		}
 
 		_go_to_help("class_enum:" + enum_class_name + ":" + enum_name);
+	} else if (p_select.begins_with("%")) { // Tuple.
+		const String link = p_select.substr(1);
+
+		String tuple_class_name;
+		String tuple_name;
+		const int dot_pos = link.rfind_char('.');
+		if (dot_pos >= 0) {
+			tuple_class_name = link.left(dot_pos);
+			tuple_name = link.substr(dot_pos + 1);
+		} else {
+			tuple_class_name = symbol_class_name;
+			tuple_name = link;
+		}
+
+		_go_to_help("class_tuple:" + tuple_class_name + ":" + tuple_name);
 	} else if (p_select.begins_with("#")) { // Class.
 		_go_to_help("class_name:" + p_select.substr(1));
 	} else if (p_select.begins_with("@")) { // Member.
@@ -4459,6 +4685,8 @@ void EditorHelpBit::_meta_clicked(const String &p_select) {
 			topic = "class_property";
 		} else if (tag == "enum") {
 			topic = "class_enum";
+		} else if (tag == "tuple") {
+			topic = "class_tuple";
 		} else if (tag == "signal") {
 			topic = "class_signal";
 		} else if (tag == "constant") {
@@ -4629,6 +4857,7 @@ void EditorHelpBit::parse_symbol(const String &p_symbol, const String &p_prologu
 		}
 		help_data.doc_type.type = item_data.get("doc_type", "");
 		help_data.doc_type.enumeration = item_data.get("enumeration", "");
+		help_data.doc_type.tuple_type = item_data.get("tuple_type", "");
 		help_data.doc_type.is_bitfield = item_data.get("is_bitfield", false);
 		help_data.value = item_data.get("value", "");
 	} else if (item_type == "resource") {

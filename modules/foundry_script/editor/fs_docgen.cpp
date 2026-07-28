@@ -104,7 +104,56 @@ static String _doccontainer_type_from_container_type(const ContainerType &p_type
 	return Variant::get_type_name(p_type.builtin_type);
 }
 
-void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, bool p_is_return) {
+// Qualifies the nominal identity of a script-declared type (enum or named tuple) for the class
+// reference: `res://` owner paths become the script's documented name, so the rendered spelling is
+// `Player.PlayerWorldPosition` rather than a raw resource path.
+String FSDocGen::_qualified_declared_type_name(const StringName &p_native_type) {
+	String qualified = String(p_native_type);
+	if (qualified.begins_with("res://")) {
+		// The owning script path is the leading segment: it ends at the first `::` nested-class
+		// separator, or at the last `.` when the declaration sits directly in the root class.
+		// Splitting on the last `.` unconditionally would fold an inner class name into the file
+		// name and produce a link to a page that does not exist.
+		int path_end = qualified.find("::");
+		if (path_end < 0) {
+			path_end = qualified.rfind_char('.');
+		}
+		if (path_end >= 0) {
+			qualified = _get_script_name(qualified.left(path_end)) + qualified.substr(path_end);
+		} else {
+			qualified = _get_script_name(qualified);
+		}
+	}
+	return qualified.replace("::", ".");
+}
+
+String FSDocGen::_structural_tuple_spelling(const GDType &p_gdtype) {
+	String spelling = "(";
+	for (int i = 0; i < p_gdtype.container_element_types.size(); i++) {
+		if (i > 0) {
+			spelling += ", ";
+		}
+		String element_type;
+		String element_enum;
+		_doctype_from_gdtype_nested(p_gdtype.container_element_types[i], element_type, element_enum);
+		spelling += element_type.is_empty() ? String("Variant") : element_type;
+	}
+	return spelling + ")";
+}
+
+void FSDocGen::_doctype_from_gdtype_nested(const GDType &p_gdtype, String &r_type, String &r_enum) {
+	String nested_tuple;
+	_doctype_from_gdtype(p_gdtype, r_type, r_enum, nested_tuple);
+	if (!nested_tuple.is_empty()) {
+		// Only one tuple channel travels with a documented type, and it describes the outermost
+		// type. A nested named tuple therefore has nowhere to carry its link target, so it is
+		// spelled structurally: rendering the name without the channel would emit a dead
+		// class-style help link, exactly as an enum nested in `Coroutine[T]` collapses to `int`.
+		r_type = _structural_tuple_spelling(p_gdtype);
+	}
+}
+
+void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, String &r_tuple, bool p_is_return) {
 	if (!p_gdtype.is_hard_type()) {
 		r_type = "Variant";
 		return;
@@ -124,7 +173,7 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 				// in a separate metadata field that the wrapped `Coroutine[T]` spelling cannot
 				// carry, and embedding it here would emit a dead class-style help link.
 				String element_enum;
-				_doctype_from_gdtype(result_type, element, element_enum);
+				_doctype_from_gdtype_nested(result_type, element, element_enum);
 				if (element.is_empty()) {
 					element = "Variant";
 				}
@@ -140,7 +189,7 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 				return;
 			}
 			if (p_gdtype.builtin_type == Variant::ARRAY && p_gdtype.has_container_element_type(0)) {
-				_doctype_from_gdtype(p_gdtype.get_container_element_type(0), r_type, r_enum);
+				_doctype_from_gdtype_nested(p_gdtype.get_container_element_type(0), r_type, r_enum);
 				if (!r_enum.is_empty()) {
 					r_type = "int[]";
 					r_enum += "[]";
@@ -153,8 +202,8 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 			}
 			if (p_gdtype.builtin_type == Variant::DICTIONARY && p_gdtype.has_container_element_types()) {
 				String key, value;
-				_doctype_from_gdtype(p_gdtype.get_container_element_type_or_variant(0), key, r_enum);
-				_doctype_from_gdtype(p_gdtype.get_container_element_type_or_variant(1), value, r_enum);
+				_doctype_from_gdtype_nested(p_gdtype.get_container_element_type_or_variant(0), key, r_enum);
+				_doctype_from_gdtype_nested(p_gdtype.get_container_element_type_or_variant(1), value, r_enum);
 				if (key != "Variant" || value != "Variant") {
 					r_type = "Dictionary[" + key + ", " + value + "]";
 					return;
@@ -212,20 +261,27 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 				return;
 			}
 			r_type = "int";
-			r_enum = String(p_gdtype.native_type).replace("::", ".");
-			if (r_enum.begins_with("res://")) {
-				int dot_pos = r_enum.rfind_char('.');
-				if (dot_pos >= 0) {
-					r_enum = _get_script_name(r_enum.left(dot_pos)) + r_enum.substr(dot_pos);
-				} else {
-					r_enum = _get_script_name(r_enum);
-				}
-			}
+			r_enum = _qualified_declared_type_name(p_gdtype.native_type);
 			return;
 		case GDType::TUPLE:
-			// Tuples erase to a read-only Array at runtime and have no class-reference page of
-			// their own, so documentation refers to the erasure target.
-			r_type = "Array";
+			if (p_gdtype.tuple_name != StringName()) {
+				// A named tuple is nominal: document it by its own qualified name and point the
+				// tuple channel at the declaration's entry.
+				r_type = _qualified_declared_type_name(p_gdtype.native_type);
+				if (String(p_gdtype.native_type) == String(p_gdtype.tuple_name)) {
+					// A whole-file `tuple_name` declaration is its own documented class, so the
+					// owning page is the qualified name itself and the entry inside that page is
+					// keyed by the simple declaration name.
+					const int slice_count = r_type.get_slice_count(".");
+					r_tuple = r_type + "." + r_type.get_slicec('.', slice_count - 1);
+				} else {
+					r_tuple = r_type;
+				}
+				return;
+			}
+			// An unnamed tuple is structural: spell the parenthesized element list, recursing so
+			// nested containers compose with the existing synthetic spellings.
+			r_type = _structural_tuple_spelling(p_gdtype);
 			return;
 		case GDType::TYPE_PARAMETER:
 			r_type = p_gdtype.type_parameter_name;
@@ -435,7 +491,8 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		if (trait_use.resolved_trait != nullptr) {
 			String trait_type;
 			String trait_enum;
-			_doctype_from_gdtype(FSAnalyzer::type_from_metatype(trait_use.resolved_trait->get_datatype()), trait_type, trait_enum);
+			String trait_tuple;
+			_doctype_from_gdtype(FSAnalyzer::type_from_metatype(trait_use.resolved_trait->get_datatype()), trait_type, trait_enum, trait_tuple);
 			if (!trait_type.is_empty()) {
 				doc.used_traits.push_back(trait_type);
 				continue;
@@ -444,7 +501,10 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		doc.used_traits.push_back(trait_use.to_string());
 	}
 
-	if (p_class->is_enum_file && p_class->get_global_name() != StringName()) {
+	if ((p_class->is_enum_file || p_class->is_tuple_file) && p_class->get_global_name() != StringName()) {
+		// A whole-file enum or tuple declaration is documented as its own page, so it must be
+		// named by its global name: the simple declaration name collides across namespaces and
+		// does not match the qualified name every generated link uses.
 		doc.name = p_class->get_global_name();
 	} else if (p_script->local_name == StringName()) {
 		// This is an outer unnamed class.
@@ -505,7 +565,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 			}
 			method_doc.qualifiers += "vararg";
 			method_doc.rest_argument.name = p_function->rest_parameter->identifier->name;
-			_doctype_from_gdtype(p_function->rest_parameter->get_datatype(), method_doc.rest_argument.type, method_doc.rest_argument.enumeration);
+			_doctype_from_gdtype(p_function->rest_parameter->get_datatype(), method_doc.rest_argument.type, method_doc.rest_argument.enumeration, method_doc.rest_argument.tuple_type);
 		}
 		if (p_function->is_abstract) {
 			if (!method_doc.qualifiers.is_empty()) {
@@ -536,7 +596,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 			method_doc.return_type = "void";
 		} else if (p_function->return_type) {
 			// `p_function->return_type->get_datatype()` is a metatype.
-			_doctype_from_gdtype(p_function->get_datatype(), method_doc.return_type, method_doc.return_enum, true);
+			_doctype_from_gdtype(p_function->get_datatype(), method_doc.return_type, method_doc.return_enum, method_doc.return_tuple, true);
 		} else if (!p_function->body->has_return) {
 			// If no `return` statement, then return type is `void`, not `Variant`.
 			method_doc.return_type = "void";
@@ -547,7 +607,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		for (const GDP::ParameterNode *parameter : p_function->parameters) {
 			DocData::ArgumentDoc arg_doc;
 			arg_doc.name = parameter->identifier->name;
-			_doctype_from_gdtype(parameter->get_datatype(), arg_doc.type, arg_doc.enumeration);
+			_doctype_from_gdtype(parameter->get_datatype(), arg_doc.type, arg_doc.enumeration, arg_doc.tuple_type);
 			if (parameter->initializer != nullptr) {
 				arg_doc.default_value = docvalue_from_expression(parameter->initializer, parameter->get_datatype());
 			}
@@ -555,6 +615,49 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		}
 
 		doc.methods.push_back(method_doc);
+	};
+
+	// A named tuple declaration is documented like a named enum: one entry keyed by the declared
+	// name, carrying the `##` doc comment and one field entry per declared field.
+	auto add_tuple_docs = [&](const GDP::TupleNode *p_tuple, const String &p_description_fallback = String()) {
+		ERR_FAIL_NULL(p_tuple);
+		ERR_FAIL_NULL(p_tuple->identifier);
+
+		const StringName &name = p_tuple->identifier->name;
+
+		p_script->member_lines[name] = p_tuple->start_line;
+
+		DocData::TupleDoc tuple_doc;
+		tuple_doc.description = p_tuple->doc_data.description.is_empty() ? p_description_fallback : p_tuple->doc_data.description;
+		tuple_doc.is_deprecated = p_tuple->doc_data.is_deprecated;
+		tuple_doc.deprecated_message = p_tuple->doc_data.deprecated_message;
+		tuple_doc.is_experimental = p_tuple->doc_data.is_experimental;
+		tuple_doc.experimental_message = p_tuple->doc_data.experimental_message;
+
+		// The declaration's own type carries the resolved element types; fall back to each field's
+		// type annotation when the declaration was never resolved (e.g. an erroring script).
+		const GDType tuple_type = FSAnalyzer::type_from_metatype(p_tuple->get_datatype());
+		for (int i = 0; i < p_tuple->fields.size(); i++) {
+			const GDP::TupleNode::Field &field = p_tuple->fields[i];
+
+			DocData::TupleFieldDoc field_doc;
+			if (field.identifier != nullptr) {
+				field_doc.name = field.identifier->name;
+			}
+			// A field type is rendered inside the declaration signature, where no tuple channel
+			// travels with it, so it is spelled like any other nested position.
+			if (tuple_type.is_tuple() && i < tuple_type.container_element_types.size()) {
+				_doctype_from_gdtype_nested(tuple_type.container_element_types[i], field_doc.type, field_doc.enumeration);
+			} else if (field.type != nullptr) {
+				_doctype_from_gdtype_nested(FSAnalyzer::type_from_metatype(field.type->get_datatype()), field_doc.type, field_doc.enumeration);
+			}
+			if (field_doc.type.is_empty()) {
+				field_doc.type = "Variant";
+			}
+			tuple_doc.fields.push_back(field_doc);
+		}
+
+		doc.tuples[name] = tuple_doc;
 	};
 
 	auto add_enum_docs = [&](const GDP::EnumNode *p_enum, const String &p_description_fallback = String(), bool p_requires_resolved_values = false) {
@@ -601,6 +704,10 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		}
 	}
 
+	if (p_class->is_tuple_file && p_class->tuple_file_decl != nullptr) {
+		add_tuple_docs(p_class->tuple_file_decl, _description_from_class_doc_data(p_class->doc_data));
+	}
+
 	for (const GDP::ClassNode::Member &member : p_class->members) {
 		switch (member.type) {
 			case GDP::ClassNode::Member::CLASS: {
@@ -624,7 +731,8 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 				const_doc.name = const_name;
 				const_doc.value = _docvalue_from_variant(m_const->initializer->reduced_value);
 				const_doc.is_value_valid = true;
-				_doctype_from_gdtype(m_const->get_datatype(), const_doc.type, const_doc.enumeration);
+				String constant_tuple;
+				_doctype_from_gdtype(m_const->get_datatype(), const_doc.type, const_doc.enumeration, constant_tuple);
 				const_doc.description = m_const->doc_data.description;
 				const_doc.is_deprecated = m_const->doc_data.is_deprecated;
 				const_doc.deprecated_message = m_const->doc_data.deprecated_message;
@@ -654,7 +762,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 				for (const GDP::ParameterNode *p : m_signal->parameters) {
 					DocData::ArgumentDoc arg_doc;
 					arg_doc.name = p->identifier->name;
-					_doctype_from_gdtype(p->get_datatype(), arg_doc.type, arg_doc.enumeration);
+					_doctype_from_gdtype(p->get_datatype(), arg_doc.type, arg_doc.enumeration, arg_doc.tuple_type);
 					signal_doc.arguments.push_back(arg_doc);
 				}
 
@@ -674,7 +782,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 				prop_doc.deprecated_message = m_var->doc_data.deprecated_message;
 				prop_doc.is_experimental = m_var->doc_data.is_experimental;
 				prop_doc.experimental_message = m_var->doc_data.experimental_message;
-				_doctype_from_gdtype(m_var->get_datatype(), prop_doc.type, prop_doc.enumeration);
+				_doctype_from_gdtype(m_var->get_datatype(), prop_doc.type, prop_doc.enumeration, prop_doc.tuple_type);
 
 				switch (m_var->property) {
 					case GDP::VariableNode::PROP_NONE:
@@ -709,6 +817,10 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 			case GDP::ClassNode::Member::ENUM: {
 				const GDP::EnumNode *m_enum = member.m_enum;
 				add_enum_docs(m_enum);
+			} break;
+
+			case GDP::ClassNode::Member::TUPLE: {
+				add_tuple_docs(member.m_tuple);
 			} break;
 
 			case GDP::ClassNode::Member::ENUM_VALUE: {
@@ -757,7 +869,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		for (const GDP::ParameterNode *p : annotation_declaration->parameters) {
 			DocData::ArgumentDoc arg_doc;
 			arg_doc.name = p->identifier->name;
-			_doctype_from_gdtype(p->get_datatype(), arg_doc.type, arg_doc.enumeration);
+			_doctype_from_gdtype(p->get_datatype(), arg_doc.type, arg_doc.enumeration, arg_doc.tuple_type);
 			if (p->initializer != nullptr) {
 				arg_doc.default_value = docvalue_from_expression(p->initializer, p->get_datatype());
 			}
@@ -766,7 +878,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 
 		if (annotation_declaration->is_variadic()) {
 			annotation_doc.rest_argument.name = annotation_declaration->rest_parameter->identifier->name;
-			_doctype_from_gdtype(annotation_declaration->rest_parameter->get_datatype(), annotation_doc.rest_argument.type, annotation_doc.rest_argument.enumeration);
+			_doctype_from_gdtype(annotation_declaration->rest_parameter->get_datatype(), annotation_doc.rest_argument.type, annotation_doc.rest_argument.enumeration, annotation_doc.rest_argument.tuple_type);
 		}
 
 		doc.annotations.push_back(annotation_doc);
@@ -783,8 +895,8 @@ void FSDocGen::generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_cl
 }
 
 // This method is needed for the editor, since during autocompletion the script is not compiled, only analyzed.
-void FSDocGen::doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, bool p_is_return) {
+void FSDocGen::doctype_from_gdtype(const GDType &p_gdtype, String &r_type, String &r_enum, String &r_tuple, bool p_is_return) {
 	_populate_singletons_from_autoload_index();
-	_doctype_from_gdtype(p_gdtype, r_type, r_enum, p_is_return);
+	_doctype_from_gdtype(p_gdtype, r_type, r_enum, r_tuple, p_is_return);
 	singletons.clear();
 }

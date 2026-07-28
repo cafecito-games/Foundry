@@ -1118,6 +1118,66 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Rewrites serialized surfaces 
 	CHECK_EQ(name_mangler_application_serialize(script), baseline);
 }
 
+TEST_CASE("[FoundryScript][NameManglerApplication] Mangles around tuple declarations and keeps them running") {
+	// A tuple declaration is a static-only type: its name and field names never reach the compiled
+	// surface, because every tuple value is a positional read-only Array at runtime. The mangler
+	// therefore has nothing to rename for a tuple, and a mangled script that constructs and reads
+	// tuples must keep producing the same values.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"\n"
+			"tuple TupleMarkerVec2(tuple_marker_x: int, tuple_marker_y: int)\n"
+			"\n"
+			"var tuple_marker_member: int = 0\n"
+			"\n"
+			"func tuple_marker_method() -> int:\n"
+			"\tvar point := TupleMarkerVec2(3, 4)\n"
+			"\tvar pair := (1, 2)\n"
+			"\ttuple_marker_member = point.tuple_marker_x + point.1 + pair.0 + pair.1\n"
+			"\treturn tuple_marker_member\n");
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	REQUIRE(analysis.rename_map.has(SNAME("tuple_marker_member")));
+	REQUIRE(analysis.rename_map.has(SNAME("tuple_marker_method")));
+	// Field names are analyzer-only, and the tuple type name has no runtime identity, so neither
+	// is a rename candidate at all.
+	CHECK_FALSE(analysis.rename_map.has(SNAME("tuple_marker_x")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("tuple_marker_y")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("TupleMarkerVec2")));
+
+	Callable::CallError call_error;
+	const Variant before_instance = script->_new(nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	Object *before_object = before_instance.get_validated_object();
+	REQUIRE(before_object != nullptr);
+	const Variant before_result = before_object->callp(SNAME("tuple_marker_method"), nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(int(before_result), 10);
+
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(transaction.begin(input.scripts, analysis.rename_map, diagnostics), OK);
+	REQUIRE(diagnostics.is_empty());
+
+	const StringName renamed_method = analysis.rename_map[SNAME("tuple_marker_method")];
+	CHECK(script->get_member_functions().has(renamed_method));
+	CHECK_FALSE(script->get_member_functions().has(SNAME("tuple_marker_method")));
+
+	const Variant mangled_instance = script->_new(nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	Object *mangled_object = mangled_instance.get_validated_object();
+	REQUIRE(mangled_object != nullptr);
+	const Variant mangled_result = mangled_object->callp(renamed_method, nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(int(mangled_result), 10);
+
+	transaction.rollback();
+	CHECK(script->get_member_functions().has(SNAME("tuple_marker_method")));
+}
+
 TEST_CASE("[FoundryScript][NameManglerApplication] Restores nonserialized editor caches exactly") {
 	const StringName member = SNAME("private_marker_cache_member");
 	const StringName static_member = SNAME("private_marker_cache_static");

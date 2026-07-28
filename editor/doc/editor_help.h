@@ -108,6 +108,7 @@ class EditorHelp : public VBoxContainer {
 	HashMap<String, int> constant_line;
 	HashMap<String, int> annotation_line;
 	HashMap<String, int> enum_line;
+	HashMap<String, int> tuple_line;
 	HashMap<String, HashMap<String, int>> enum_values_line;
 	int description_line = 0;
 
@@ -154,7 +155,7 @@ class EditorHelp : public VBoxContainer {
 	bool scroll_locked = false;
 
 	//void _button_pressed(int p_idx);
-	void _add_type(const String &p_type, const String &p_enum = String(), bool p_is_bitfield = false);
+	void _add_type(const String &p_type, const String &p_enum = String(), bool p_is_bitfield = false, const String &p_tuple = String());
 	void _add_type_icon(const String &p_type, int p_size = 0, const String &p_fallback = "");
 	void _add_method(const DocData::MethodDoc &p_method, bool p_overview, bool p_override = true);
 
@@ -258,6 +259,7 @@ public:
 			TEXT, // Plain text, no hyperlink (container punctuation, synthetic wrappers, pointer types).
 			CLASS_LINK, // Hyperlink to a class help page ("#" target).
 			ENUM_LINK, // Hyperlink to an enum ("$" target).
+			TUPLE_LINK, // Hyperlink to a FoundryScript named tuple declaration ("%" target).
 		};
 		Kind kind = TEXT;
 		String text; // Visible text.
@@ -269,7 +271,7 @@ public:
 	// recursing through container element types (Array, Dictionary, Coroutine) with
 	// a nesting-aware split so any depth of nesting links each leaf correctly and
 	// pageless synthetic types (Coroutine[T]) never emit dead class links.
-	static Vector<HelpTypeRenderSegment> _build_type_render_segments(const String &p_type, const String &p_enum, bool p_is_bitfield, const String &p_class);
+	static Vector<HelpTypeRenderSegment> _build_type_render_segments(const String &p_type, const String &p_enum, bool p_is_bitfield, const String &p_class, const String &p_tuple = String());
 
 	void go_to_help(const String &p_help);
 	void go_to_class(const String &p_class);
@@ -309,6 +311,9 @@ class EditorHelpBit : public VBoxContainer {
 		String type;
 		String enumeration;
 		bool is_bitfield = false;
+		// Qualified name of the FoundryScript named tuple this type denotes, parallel to
+		// `enumeration`. Empty unless the type is a named tuple.
+		String tuple_type;
 	};
 
 	struct ArgumentData {
