@@ -1463,16 +1463,9 @@ void FSPrinter::print_annotation_declaration(const FSParser::AnnotationDeclarati
 }
 
 void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
-	if (!p_function->has_body) {
-		// The signature collapses onto one line and there is no body to relocate its
-		// full-line trivia into, so lift it above the declaration. Inline comments are
-		// re-attached to the collapsed line further down instead.
-		for (int line = p_function->start_line + 1; line <= p_function->end_line; line++) {
-			if (is_trivia_line(line)) {
-				emit_trivia_line(line);
-			}
-		}
-	}
+	// Where the declaration line begins, so a bodyless declaration can splice the
+	// trivia it rescues from its signature in above itself (see below).
+	const int declaration_start = output.length();
 	write_indent();
 	if (p_function->is_abstract) {
 		write("abstract ");
@@ -1530,6 +1523,23 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 			}
 		}
 		last_emitted_line = MAX(last_emitted_line, signature_cursor);
+		// Full-line trivia has no line of its own left once the signature collapses, and
+		// no body to be relocated into either, so it moves above the declaration -- the
+		// one position a re-format reproduces unchanged. Only lines the signature did not
+		// already emit in place qualify: a default value that kept its multi-line layout
+		// still owns the trivia between its delimiters. The declaration is already in the
+		// buffer by now, so emit the trivia at the end and splice it back into place.
+		const int trivia_start = output.length();
+		for (int line = signature_cursor + 1; line <= p_function->end_line; line++) {
+			if (is_trivia_line(line)) {
+				emit_trivia_line(line);
+			}
+		}
+		if (output.length() > trivia_start) {
+			const String trivia = output.substr(trivia_start, output.length() - trivia_start);
+			const String declaration = output.substr(declaration_start, trivia_start - declaration_start);
+			output = output.substr(0, declaration_start) + trivia + declaration;
+		}
 		return;
 	}
 	write(":");

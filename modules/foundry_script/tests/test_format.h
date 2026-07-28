@@ -835,6 +835,15 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(format_or_fail(expected), expected);
 	}
 
+	// A default value that keeps its multi-line layout still owns the trivia between
+	// its delimiters; none of it may be hoisted onto or past the declaration line.
+	TEST_CASE("[Format] Leaves trivia inside a retained bodyless default in place") {
+		String source = "func ping(values = [\n\t\t\t1,  # first\n\t\t\t# note\n\t\t\t2,\n\t\t]) -> int\n";
+		String expected = "func ping(values = [\n\t1,  # first\n\t# note\n\t2,\n]) -> int\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
 	// A redundant grouping around a multi-line default is dropped, but its opening
 	// line -- the declaration line -- keeps the comment it already emitted there.
 	TEST_CASE("[Format] Does not duplicate a comment on a grouped bodyless default") {
