@@ -9359,23 +9359,19 @@ bool FSAnalyzer::find_global_tuple_meta_type(const StringName &p_name, FSParser:
 		}
 	}
 
-	StringName global_name = p_name;
-	if (!ScriptServer::is_global_class(global_name)) {
-		// The declaring file's own namespace wins over imports, matching how a type annotation
-		// resolves a bare global name.
-		StringName namespace_candidate;
-		if (get_global_class_in_namespace(parser->head->namespace_name, p_name, namespace_candidate)) {
-			global_name = namespace_candidate;
-		} else {
-			StringName imported_name;
-			bool namespace_error = false;
-			if (!get_imported_global_class(p_name, p_source, imported_name, namespace_error) || namespace_error) {
-				return false;
-			}
-			global_name = imported_name;
-		}
+	// Precedence matches how a type annotation resolves a bare name: the file's own namespace first,
+	// then imported namespaces, and only then an unnamespaced global of the same short name.
+	StringName global_name;
+	StringName namespace_candidate;
+	bool namespace_error = false;
+	if (get_global_class_in_namespace(parser->head->namespace_name, p_name, namespace_candidate)) {
+		global_name = namespace_candidate;
+	} else if (get_imported_global_class(p_name, p_source, namespace_candidate, namespace_error) && !namespace_error) {
+		global_name = namespace_candidate;
+	} else if (!namespace_error && ScriptServer::is_global_class(p_name)) {
+		global_name = p_name;
 	}
-	if (!ScriptServer::is_global_class(global_name)) {
+	if (global_name == StringName() || !ScriptServer::is_global_class(global_name)) {
 		return false;
 	}
 
