@@ -810,6 +810,14 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(count_comments(expected), 1);
 	}
 
+	// The multi-line default advances the source cursor past the `func` line without
+	// consuming that line's comment, so the flush has to rewind to reach it.
+	TEST_CASE("[Format] Keeps the opening comment of a bodyless multi-line default") {
+		String source = "func ping(  # head\n\t\tvalues = [\n\t\t\t1,\n\t\t]) -> int\n";
+		String expected = "func ping(values = [\n\t1,\n]) -> int  # head\n";
+		CHECK_EQ(format_or_fail(source), expected);
+	}
+
 	// A statement-free lambda suite that still holds trivia is not bodyless: the
 	// standalone annotation is recovered by line, so it needs the block form's line
 	// to be emitted on rather than being collapsed away with the body.

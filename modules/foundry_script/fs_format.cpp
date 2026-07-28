@@ -1506,14 +1506,20 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		// add a statement the author never wrote.
 		newline();
 		// There is no body whose tail flush would otherwise pick up the declaration's
-		// inline comments, and a signature spread over several source lines collapses
-		// onto one, so every inline comment it carried has to land on that one line.
-		// A default value printed across several lines (a collection literal) keeps its
-		// own layout and has already emitted the comments on those lines, so start past
-		// the cursor it left behind rather than emitting them a second time.
-		for (int line = MAX(p_function->start_line, last_emitted_line + 1); line <= p_function->end_line; line++) {
-			emit_trailing_comment(line);
+		// inline comments, so attach them here. Only the signature's first and last
+		// source lines are this declaration's own: anything between them belongs to a
+		// default value, which keeps its own multi-line layout and has already emitted
+		// (and consumed) the comments on its lines.
+		const int signature_cursor = last_emitted_line;
+		// A multi-line default advances the cursor past the `func` line without ever
+		// consuming that line's comment, so rewind before flushing it -- the same reset
+		// the bodied path performs below.
+		last_emitted_line = p_function->start_line;
+		emit_trailing_comment(p_function->start_line);
+		if (p_function->end_line > p_function->start_line && p_function->end_line > signature_cursor) {
+			emit_trailing_comment(p_function->end_line);
 		}
+		last_emitted_line = MAX(last_emitted_line, signature_cursor);
 		return;
 	}
 	write(":");
