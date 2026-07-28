@@ -308,7 +308,7 @@ static int unary_operator_precedence(FSParser::UnaryOpNode::OpType p_operation) 
 // Precedence of an expression node as seen by its parent. Atoms (literals,
 // identifiers, calls, subscripts, collections, ...) never need wrapping, so they
 // report the maximum precedence.
-static int expression_precedence(const FSParser::ExpressionNode *p_expression) {
+int FSPrinter::expression_precedence(const FSParser::ExpressionNode *p_expression) const {
 	switch (p_expression->type) {
 		case FSParser::Node::ASSIGNMENT:
 			return FPREC_ASSIGNMENT;
@@ -325,6 +325,11 @@ static int expression_precedence(const FSParser::ExpressionNode *p_expression) {
 		case FSParser::Node::AWAIT:
 			return FPREC_AWAIT;
 		case FSParser::Node::LAMBDA:
+			// A bodyless lambda prints its own parentheses (see `print_lambda`), so it
+			// is already self-delimiting and never needs another layer.
+			if (is_bodyless_lambda(static_cast<const FSParser::LambdaNode *>(p_expression))) {
+				return FPREC_PRIMARY;
+			}
 			// A lambda body greedily extends to the end of the line, so anything
 			// that follows it (a postfix `.method()`, an operator) must be inside
 			// parentheses. Rank it lowest so every operand context wraps it.
@@ -649,6 +654,24 @@ bool FSPrinter::is_trivia_line(int p_line) const {
 	return is_full_line_comment(p_line) || standalone_annotations.has(p_line) || string_comments.has(p_line);
 }
 
+bool FSPrinter::is_bodyless_lambda(const FSParser::LambdaNode *p_lambda) const {
+	const FSParser::FunctionNode *function = p_lambda->function;
+	if (function == nullptr || (function->body != nullptr && !function->body->statements.is_empty())) {
+		return false;
+	}
+	// A statement-free suite is not proof the author wrote no body: trivia is absent
+	// from the tree and recovered by line number instead. A lambda with only trivia
+	// under its `:` must keep the block form, which is the only shape with a line to
+	// emit that trivia on. (Truly bodyless lambdas are always single-line anyway --
+	// a newline after the `:` requires an indented block to follow.)
+	for (int line = p_lambda->start_line + 1; line <= p_lambda->end_line; line++) {
+		if (is_trivia_line(line)) {
+			return false;
+		}
+	}
+	return true;
+}
+
 // Emits the trivia at `p_line` (a full-line comment, a recovered standalone
 // annotation, or a recovered string comment) at the current indent and advances
 // the cursor past it.
@@ -732,6 +755,7 @@ void FSPrinter::emit_trailing_comment(int p_line) {
 	write("  ");
 	write(normalize_comment_text(found->value.comment));
 	newline();
+	emitted_inline_comments.insert(p_line);
 	if (p_line > last_emitted_line) {
 		last_emitted_line = p_line;
 	}
@@ -769,6 +793,7 @@ void FSPrinter::append_inline_comment(int p_line) {
 	}
 	write("  ");
 	write(normalize_comment_text(found->value.comment));
+	emitted_inline_comments.insert(p_line);
 	last_emitted_line = p_line;
 }
 
@@ -1269,6 +1294,11 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 				has_own_body_flush = true;
 			}
 		}
+		// A bodyless function collapses to a single declaration line and attaches that
+		// line's inline comment itself, however many source lines its signature spanned.
+		if (member.type == FSParser::ClassNode::Member::FUNCTION && !member.function->has_body) {
+			has_own_body_flush = true;
+		}
 
 		print_member(member, has_own_body_flush);
 
@@ -1433,6 +1463,9 @@ void FSPrinter::print_annotation_declaration(const FSParser::AnnotationDeclarati
 }
 
 void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
+	// Where the declaration line begins, so a bodyless declaration can splice the
+	// trivia it rescues from its signature in above itself (see below).
+	const int declaration_start = output.length();
 	write_indent();
 	if (p_function->is_abstract) {
 		write("abstract ");
@@ -1470,12 +1503,43 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		write(" -> ");
 		print_type(p_function->return_type);
 	}
-	if (p_function->is_abstract && (p_function->body == nullptr || p_function->body->statements.is_empty())) {
-		// A well-formed abstract method declares a signature only (its body is empty);
-		// a trailing `:` is a parse error, so emit the bare declaration line. (An
-		// abstract method that still carries real statements is an error fixture; fall
-		// through so its body is preserved and the parsed tree is unchanged.)
+	if (!p_function->has_body) {
+		// The declaration ended without a `:`. That is the well-formed shape of an
+		// abstract method, and a malformed-but-parseable one for any other function
+		// (the analyzer rejects it). Either way, emit the bare declaration line:
+		// appending `:` would be a parse error, and synthesizing a `pass` body would
+		// add a statement the author never wrote.
 		newline();
+		// There is no body whose tail flush would otherwise pick up the declaration's
+		// inline comments, and a signature spread over several source lines collapses
+		// onto one, so every comment it carried has to land on that one line. A default
+		// value that keeps its own multi-line layout has already written the comments on
+		// its lines in place; skip exactly those rather than reasoning from the cursor,
+		// which such a value advances over lines it never consumed.
+		const int signature_cursor = last_emitted_line;
+		for (int line = p_function->start_line; line <= p_function->end_line; line++) {
+			if (!emitted_inline_comments.has(line)) {
+				emit_trailing_comment(line);
+			}
+		}
+		last_emitted_line = MAX(last_emitted_line, signature_cursor);
+		// Full-line trivia has no line of its own left once the signature collapses, and
+		// no body to be relocated into either, so it moves above the declaration -- the
+		// one position a re-format reproduces unchanged. Only lines the signature did not
+		// already emit in place qualify: a default value that kept its multi-line layout
+		// still owns the trivia between its delimiters. The declaration is already in the
+		// buffer by now, so emit the trivia at the end and splice it back into place.
+		const int trivia_start = output.length();
+		for (int line = signature_cursor + 1; line <= p_function->end_line; line++) {
+			if (is_trivia_line(line)) {
+				emit_trivia_line(line);
+			}
+		}
+		if (output.length() > trivia_start) {
+			const String trivia = output.substr(trivia_start, output.length() - trivia_start);
+			const String declaration = output.substr(declaration_start, trivia_start - declaration_start);
+			output = output.substr(0, declaration_start) + trivia + declaration;
+		}
 		return;
 	}
 	write(":");
@@ -2685,6 +2749,13 @@ void FSPrinter::print_dictionary(const FSParser::DictionaryNode *p_dictionary) {
 
 void FSPrinter::print_lambda(const FSParser::LambdaNode *p_lambda) {
 	const FSParser::FunctionNode *function = p_lambda->function;
+	// A bodyless lambda's `:` would otherwise swallow whatever the formatter emits
+	// next as its body, so wrap it in parentheses that close the construct on the
+	// same line. The parser discards the parentheses, leaving the tree unchanged.
+	const bool bodyless = is_bodyless_lambda(p_lambda);
+	if (bodyless) {
+		write("(");
+	}
 	write("func");
 	if (function->identifier != nullptr) {
 		write(" ");
@@ -2710,6 +2781,10 @@ void FSPrinter::print_lambda(const FSParser::LambdaNode *p_lambda) {
 		print_type(function->return_type);
 	}
 	write(":");
+	if (bodyless) {
+		write(")");
+		return;
+	}
 
 	// A lambda the author wrote on a single line keeps its inline body
 	// (`func(): return x`). Emitting it as a multi-line block would corrupt any

@@ -3292,6 +3292,8 @@ FSParser::FunctionNode *FSParser::parse_function_declaration(const DeclarationMo
 	function->min_local_doc_line = previous.end_line + 1;
 #endif // TOOLS_ENABLED
 
+	function->has_body = has_body;
+
 	if (!has_body) {
 		// Abstract functions do not have a body.
 		end_statement("bodyless function declaration");

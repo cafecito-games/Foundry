@@ -37,6 +37,7 @@
 
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 
 #ifdef TESTS_ENABLED
 #include <stdio.h>
@@ -123,6 +124,10 @@ private:
 	String output;
 	int indent_level = 0;
 	int last_emitted_line = 0; // For comment / blank-line bookkeeping (Task 2).
+	// Source lines whose inline comment has already been written out. The cursor
+	// alone cannot answer this: emitting a construct that keeps its own multi-line
+	// layout advances the cursor over lines whose comments it never consumed.
+	HashSet<int> emitted_inline_comments;
 
 	// Buffer helpers.
 	void write_indent();
@@ -171,6 +176,14 @@ private:
 	// A trivia line is a full-line comment or a recovered standalone annotation;
 	// `emit_trivia_line` emits whichever sits at `p_line` and advances the cursor.
 	bool is_trivia_line(int p_line) const;
+	// True for a lambda whose `:` is followed by nothing at all. Never valid
+	// FoundryScript -- the analyzer rejects it -- but it parses, so the printer must
+	// emit it without inventing a body. A lambda whose suite holds only trivia (a
+	// comment or a standalone warning-region annotation) does not qualify: that trivia
+	// is recovered by line, and only the block form has a line to put it on.
+	bool is_bodyless_lambda(const FSParser::LambdaNode *p_lambda) const;
+	// Precedence of an expression as seen by its parent; atoms report the maximum.
+	int expression_precedence(const FSParser::ExpressionNode *p_expression) const;
 	void emit_trivia_line(int p_line);
 	void emit_comment_line(int p_line, const String &p_raw_comment);
 	void emit_leading_trivia(int p_next_line, int p_required_blanks);

@@ -160,21 +160,6 @@ static Vector<String> collect_gd_scripts(const String &p_dir) {
 	return files;
 }
 
-// A few error fixtures are narrow-skipped from the idempotency and tree-
-// preservation sweeps. They all declare a bodyless function that is *not* marked
-// `abstract`, which is invalid FoundryScript -- the analyzer rejects it. Such a
-// function still parses, so formatting reaches it and necessarily synthesizes a
-// `pass` body, which both adds a statement to the tree and destabilizes
-// blank-line accounting. (`analyzer/errors/abstract_methods.fs` does this with
-// bodyless lambdas, which parse only because surrounding parentheses -- discarded
-// by the parser, leaving no paren node -- keep the malformed construct readable.)
-// The construct is not valid code any formatter is expected to round-trip, so it
-// is excluded by path. Every other corpus script is swept unconditionally.
-static bool is_narrow_skipped_fixture(const String &p_path) {
-	return p_path.ends_with("analyzer/errors/abstract_methods.fs") ||
-			p_path.ends_with("analyzer/errors/trait_body_declaration_error_base.notest.fs");
-}
-
 // Parses `p_source` with no analysis pass (the raw syntactic tree). Returns true
 // and the parser by reference only when parsing produced no errors.
 static bool parse_no_errors(FSParser &p_parser, const String &p_source, const String &p_path) {
@@ -765,6 +750,155 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK(result.error_line > 0);
 	}
 
+	// A bodyless `func` parses but is only valid when marked `abstract`; the analyzer
+	// is what rejects the unmarked form. The formatter must not "repair" it by
+	// synthesizing a `pass` body -- that would add a statement to the parse tree and
+	// silently turn invalid code into a different, valid program. It emits the
+	// declaration verbatim instead, so the construct round-trips unchanged.
+	TEST_CASE("[Format] Preserves a bodyless non-abstract function") {
+		String source = "func ping() -> int\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Preserves a bodyless non-abstract method") {
+		String source = "class C:\n\tfunc ping() -> int\n\n\tfunc pong():\n\t\tpass\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Preserves a bodyless abstract method") {
+		String source = "abstract class C:\n\tabstract func ping() -> int\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	// The declaration line is the function's only line, so it is also the line that
+	// carries any inline comment. Nothing further down attaches it.
+	TEST_CASE("[Format] Keeps an inline comment on a bodyless function") {
+		String source = "func ping() -> int  # unimplemented\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Keeps an inline comment on a bodyless method") {
+		String source = "abstract class C:\n\tabstract func ping() -> int  # unimplemented\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Keeps an inline comment on a bodyless enum function") {
+		String source = "enum E:\n\tA = 0\n\n\tfunc ping() -> int  # unimplemented\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Keeps an inline comment on a bodyless multi-line signature") {
+		String source = "func ping(\n\t\tvalue: int\n) -> int  # unimplemented\n";
+		String expected = "func ping(value: int) -> int  # unimplemented\n";
+		CHECK_EQ(format_or_fail(source), expected);
+	}
+
+	// The signature collapses onto one line, so both comments have to land on it.
+	TEST_CASE("[Format] Keeps every inline comment on a bodyless multi-line signature") {
+		String source = "func ping(  # head\n\t\tvalue: int) -> int  # tail\n";
+		String expected = "func ping(value: int) -> int  # head  # tail\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	// A multi-line default keeps its own layout, so the comments on its lines are
+	// already emitted in place and must not be re-attached to the declaration line.
+	TEST_CASE("[Format] Does not duplicate a comment inside a bodyless multi-line default") {
+		String source = "abstract class C:\n\tabstract func ping(values = [\n\t\t\t1,  # first\n\t\t\t2,\n\t\t]) -> int\n";
+		String expected = "abstract class C:\n\tabstract func ping(values = [\n\t\t1,  # first\n\t\t2,\n\t]) -> int\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(count_comments(expected), 1);
+	}
+
+	// The multi-line default advances the source cursor past the `func` line without
+	// consuming that line's comment, so the flush has to rewind to reach it.
+	TEST_CASE("[Format] Keeps the opening comment of a bodyless multi-line default") {
+		String source = "func ping(  # head\n\t\tvalues = [\n\t\t\t1,\n\t\t]) -> int\n";
+		String expected = "func ping(values = [\n\t1,\n]) -> int  # head\n";
+		CHECK_EQ(format_or_fail(source), expected);
+	}
+
+	// The signature collapses onto one line, leaving a full-line comment inside it
+	// nowhere to sit; there is no body to relocate it into either, so it moves above
+	// the declaration rather than being dropped.
+	TEST_CASE("[Format] Lifts a full-line comment out of a bodyless signature") {
+		String source = "func ping(\n\t\t# why\n\t\ta: int) -> int\n";
+		String expected = "# why\nfunc ping(a: int) -> int\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	TEST_CASE("[Format] Lifts a full-line comment out of a bodyless method signature") {
+		String source = "abstract class C:\n\tabstract func ping(\n\t\t\t# why\n\t\t\ta: int) -> int\n";
+		String expected = "abstract class C:\n\t# why\n\tabstract func ping(a: int) -> int\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	// A default value that keeps its multi-line layout still owns the trivia between
+	// its delimiters; none of it may be hoisted onto or past the declaration line.
+	TEST_CASE("[Format] Leaves trivia inside a retained bodyless default in place") {
+		String source = "func ping(values = [\n\t\t\t1,  # first\n\t\t\t# note\n\t\t\t2,\n\t\t]) -> int\n";
+		String expected = "func ping(values = [\n\t1,  # first\n\t# note\n\t2,\n]) -> int\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	// A redundant grouping around a multi-line default is dropped, but its opening
+	// line -- the declaration line -- keeps the comment it already emitted there.
+	TEST_CASE("[Format] Does not duplicate a comment on a grouped bodyless default") {
+		String source = "abstract class C:\n\tabstract func ping(value = ([  # head\n\t\t\t1,\n\t\t])) -> int\n";
+		String expected = "abstract class C:\n\tabstract func ping(value = [  # head\n\t\t1,\n\t]) -> int\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	// A statement-free lambda suite that still holds trivia is not bodyless: the
+	// standalone annotation is recovered by line, so it needs the block form's line
+	// to be emitted on rather than being collapsed away with the body.
+	TEST_CASE("[Format] Keeps a standalone annotation inside an otherwise empty lambda") {
+		String source = "func f():\n\tvar callback = (func():\n\t\t@warning_ignore_start(\"unsafe_call_argument\")\n\t)\n";
+		String formatted = format_or_fail(source);
+		CHECK(formatted.contains("@warning_ignore_start(\"unsafe_call_argument\")"));
+	}
+
+	// The same rule applies to a lambda whose `:` is not followed by a body: emit the
+	// bare `func():` rather than an indented `pass` block, which would both change the
+	// tree and corrupt the enclosing expression. The trailing `:` would swallow the
+	// next line, so the construct closes itself with parentheses.
+	TEST_CASE("[Format] Parenthesizes a bodyless lambda instead of giving it a body") {
+		String source = "func f():\n\tvar callback = (func():)\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Parenthesizes a bodyless lambda default argument") {
+		String source = "func f(callback = func():):\n\tpass\n";
+		String expected = "func f(callback = (func():)):\n\tpass\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	// Without the parentheses the `1` below would re-parse as the lambda's body.
+	TEST_CASE("[Format] Bodyless lambda stays self-delimiting inside a wrapped collection") {
+		String source = "func f():\n\tvar items = [(func():), 1]\n";
+		String formatted = format_or_fail(source);
+		CHECK(formatted.contains("(func():)"));
+		CHECK(trees_equivalent(source, formatted, "bodyless_lambda.fs"));
+	}
+
+	// A bodyless lambda only parses when its `:` is closed on the same line, so it
+	// never holds comment trivia of its own. The comments that can sit next to one
+	// belong to the enclosing expression and must survive the bodyless path.
+	TEST_CASE("[Format] Keeps comments neighbouring a bodyless lambda") {
+		String source = "func f():\n\tvar items = [\n\t\t(func():),\n\t\t# note\n\t\t1,\n\t]\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Keeps an inline comment trailing a bodyless lambda") {
+		String source = "func f():\n\tvar callback = (func():)  # note\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
 	TEST_CASE("[Format] Preserves string contents and normalizes to double quotes") {
 		// Quote normalization itself lands in Task 3; here we assert the
 		// literal text round-trips via the token index rather than the Variant.
@@ -1232,9 +1366,6 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
 		for (const String &script : collect_gd_scripts(fixture_root)) {
-			if (is_narrow_skipped_fixture(script)) {
-				continue;
-			}
 			Error read_error = OK;
 			const String source = FileAccess::get_file_as_string(script, &read_error);
 			if (read_error != OK) {
@@ -1292,9 +1423,6 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
 		for (const String &script : collect_gd_scripts(fixture_root)) {
-			if (is_narrow_skipped_fixture(script)) {
-				continue;
-			}
 			Error read_error = OK;
 			const String source = FileAccess::get_file_as_string(script, &read_error);
 			if (read_error != OK) {
@@ -1320,9 +1448,6 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
 		for (const String &script : collect_gd_scripts(fixture_root)) {
-			if (is_narrow_skipped_fixture(script)) {
-				continue;
-			}
 			Error read_error = OK;
 			const String source = FileAccess::get_file_as_string(script, &read_error);
 			if (read_error != OK) {
@@ -1350,9 +1475,6 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
 		for (const String &script : collect_gd_scripts(fixture_root)) {
-			if (is_narrow_skipped_fixture(script)) {
-				continue;
-			}
 			Error read_error = OK;
 			const String source = FileAccess::get_file_as_string(script, &read_error);
 			if (read_error != OK) {
