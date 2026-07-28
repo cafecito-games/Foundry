@@ -1971,6 +1971,12 @@ private:
 	// later `and`-conjunct of the same condition can already reference them; `declare_condition_case_binds()`
 	// removes the transient entries and relocates the ones in a legal bind position into the guarded suite.
 	Vector<IdentifierNode *> pending_case_binds;
+	// Non-zero while parsing the condition expression of an if/elif/while/assert, i.e. only while
+	// there is a matching declare_condition_case_binds() call downstream that will clean up any
+	// transient case-bind locals. A case-bind test parsed anywhere else (an ordinary expression
+	// statement, a default value, ...) must not declare a transient local, or it would leak into the
+	// rest of the suite with nothing to remove it.
+	int case_bind_condition_depth = 0;
 
 	CompletionContext completion_context;
 	List<CompletionCall> completion_call_stack;

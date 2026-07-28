@@ -3812,7 +3812,10 @@ FSParser::AssertNode *FSParser::parse_assert() {
 	consume(FSTokenizer::Token::PARENTHESIS_OPEN, R"(Expected "(" after "assert".)");
 
 	int case_binds_mark = pending_case_binds.size();
-	assert->condition = parse_expression(false);
+	{
+		RecursionDepthGuard case_bind_condition_guard(case_bind_condition_depth);
+		assert->condition = parse_expression(false);
+	}
 	if (assert->condition == nullptr) {
 		push_error("Expected expression to assert.");
 		pop_multiline();
@@ -3934,7 +3937,10 @@ FSParser::IfNode *FSParser::parse_if(const String &p_token) {
 	IfNode *n_if = alloc_node<IfNode>();
 
 	int case_binds_mark = pending_case_binds.size();
-	n_if->condition = parse_expression(false);
+	{
+		RecursionDepthGuard case_bind_condition_guard(case_bind_condition_depth);
+		n_if->condition = parse_expression(false);
+	}
 	if (n_if->condition == nullptr) {
 		push_error(vformat(R"(Expected conditional expression after "%s".)", p_token));
 	}
@@ -4501,7 +4507,10 @@ FSParser::WhileNode *FSParser::parse_while() {
 	WhileNode *n_while = alloc_node<WhileNode>();
 
 	int case_binds_mark = pending_case_binds.size();
-	n_while->condition = parse_expression(false);
+	{
+		RecursionDepthGuard case_bind_condition_guard(case_bind_condition_depth);
+		n_while->condition = parse_expression(false);
+	}
 	if (n_while->condition == nullptr) {
 		push_error(R"(Expected conditional expression after "while".)");
 	}
@@ -5833,9 +5842,11 @@ void FSParser::parse_type_test_case_binds(TypeTestNode *p_type_test) {
 }
 
 void FSParser::declare_transient_case_bind(IdentifierNode *p_bind) {
-	if (current_suite == nullptr) {
-		// A case-bind test parsed outside any suite (e.g. a class-level member initializer) has no
-		// scope to declare into. The analyzer still rejects it via TypeTestNode::binds_allowed.
+	if (current_suite == nullptr || case_bind_condition_depth == 0) {
+		// A case-bind test parsed outside any suite (e.g. a class-level member initializer), or
+		// outside the condition of an if/elif/while/assert (e.g. an ordinary expression statement),
+		// has no matching declare_condition_case_binds() call downstream to remove a transient local.
+		// Leave it undeclared; the analyzer still rejects it via TypeTestNode::binds_allowed.
 		return;
 	}
 	if (current_suite->has_local(p_bind->name)) {
