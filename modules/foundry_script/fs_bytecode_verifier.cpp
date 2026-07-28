@@ -212,6 +212,15 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				VERIFY_FAIL_COND(code_ptr[ip + 4] < 0, "negative tuple arity");
 				ip += 5;
 			} break;
+			case FSFunction::OPCODE_TYPE_TEST_ENUM: {
+				// The declared value set travels as a single constant descriptor at ip+3; ip+4 is the
+				// tagged-union flag, which the VM only reads as a boolean.
+				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				CHECK_ADDR(ip + 3);
+				ip += 5;
+			} break;
 			case FSFunction::OPCODE_TYPE_TEST_NATIVE: {
 				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);
@@ -549,6 +558,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 			case FSFunction::OPCODE_CONSTRUCT_DICTIONARY:
 			case FSFunction::OPCODE_CONSTRUCT_TYPED_DICTIONARY:
 			case FSFunction::OPCODE_CONSTRUCT_SPECIALIZED:
+			case FSFunction::OPCODE_TYPE_TEST_ENUM_CASE:
 			case FSFunction::OPCODE_CALL:
 			case FSFunction::OPCODE_CALL_RETURN:
 			case FSFunction::OPCODE_CALL_ASYNC:
@@ -650,6 +660,15 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 						const int argument_count = code_ptr[shift + 1];
 						VERIFY_FAIL_COND(argument_count < 0, "negative argument count");
 						highest_arg_index = argument_count;
+					} break;
+					case FSFunction::OPCODE_TYPE_TEST_ENUM_CASE: {
+						// Instruction arguments are the payload binds followed by the tested value and
+						// the result, so the bind count fixes the whole packed layout.
+						const int bind_count = code_ptr[shift + 2];
+						VERIFY_FAIL_COND(bind_count < 0, "negative case payload bind count");
+						VERIFY_FAIL_COND(instruction_arg_count != bind_count + 2,
+								"case test instruction argument count does not match bind count");
+						highest_arg_index = (int64_t)bind_count + 1;
 					} break;
 					case FSFunction::OPCODE_CONSTRUCT_TYPED_ARRAY: {
 						const int argument_count = code_ptr[shift + 1];

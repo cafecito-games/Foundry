@@ -94,6 +94,12 @@ public:
 	virtual void write_unary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand) = 0;
 	virtual void write_binary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand, const Address &p_right_operand) = 0;
 	virtual void write_type_test(const Address &p_target, const Address &p_source, const FSDataType &p_type) = 0;
+	// Membership test against an enum's declared value set. A tagged union tests the tag of a
+	// `[tag, payload...]` value; an int-backed enum tests the integer itself.
+	virtual void write_type_test_enum(const Address &p_target, const Address &p_source, const PackedInt64Array &p_declared_values, bool p_is_tagged_union) = 0;
+	// Tagged-union case test. On a match the payload elements are written to p_binds, which holds one
+	// address per payload position (a skipped `_` position gets a scratch address).
+	virtual void write_type_test_enum_case(const Address &p_target, const Address &p_source, int p_tag, const Vector<Address> &p_binds) = 0;
 	virtual void write_and_left_operand(const Address &p_left_operand) = 0;
 	virtual void write_and_right_operand(const Address &p_right_operand) = 0;
 	virtual void write_end_and(const Address &p_target) = 0;

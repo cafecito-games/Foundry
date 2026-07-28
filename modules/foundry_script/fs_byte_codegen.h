@@ -517,6 +517,8 @@ public:
 	virtual void write_unary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand) override;
 	virtual void write_binary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand, const Address &p_right_operand) override;
 	virtual void write_type_test(const Address &p_target, const Address &p_source, const FSDataType &p_type) override;
+	virtual void write_type_test_enum(const Address &p_target, const Address &p_source, const PackedInt64Array &p_declared_values, bool p_is_tagged_union) override;
+	virtual void write_type_test_enum_case(const Address &p_target, const Address &p_source, int p_tag, const Vector<Address> &p_binds) override;
 	virtual void write_and_left_operand(const Address &p_left_operand) override;
 	virtual void write_and_right_operand(const Address &p_right_operand) override;
 	virtual void write_end_and(const Address &p_target) override;

@@ -711,6 +711,8 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_TYPE_TEST_ARRAY,                        \
 		&&OPCODE_TYPE_TEST_DICTIONARY,                   \
 		&&OPCODE_TYPE_TEST_TUPLE,                        \
+		&&OPCODE_TYPE_TEST_ENUM,                         \
+		&&OPCODE_TYPE_TEST_ENUM_CASE,                    \
 		&&OPCODE_TYPE_TEST_NATIVE,                       \
 		&&OPCODE_TYPE_TEST_SCRIPT,                       \
 		&&OPCODE_SET_KEYED,                              \
@@ -1427,6 +1429,72 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				*dst = result;
 				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_TYPE_TEST_ENUM) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(value, 1);
+
+				GET_VARIANT_PTR(values, 2);
+				const bool is_tagged_union = _code_ptr[ip + 4];
+
+				// An enum is a named subset of its backing representation, so `is` is a membership
+				// test: an int-backed enum accepts a declared int, a tagged union accepts a
+				// `[tag, payload...]` Array whose tag is declared.
+				bool result = false;
+				if (likely(values->get_type() == Variant::PACKED_INT64_ARRAY)) {
+					const PackedInt64Array *declared_values = VariantInternal::get_int64_array(values);
+					if (is_tagged_union) {
+						if (value->get_type() == Variant::ARRAY) {
+							const Array *array = VariantInternal::get_array(value);
+							if (array->size() >= 1) {
+								const Variant &tag = (*array)[0];
+								result = tag.get_type() == Variant::INT && declared_values->has((int64_t)tag);
+							}
+						}
+					} else if (value->get_type() == Variant::INT) {
+						result = declared_values->has(*VariantInternal::get_int(value));
+					}
+				}
+
+				*dst = result;
+				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_TYPE_TEST_ENUM_CASE) {
+				LOAD_INSTRUCTION_ARGS
+				CHECK_SPACE(2 + instr_arg_count);
+				ip += instr_arg_count;
+
+				const int tag = _code_ptr[ip + 1];
+				const int bind_count = _code_ptr[ip + 2];
+
+				GET_INSTRUCTION_ARG(value, bind_count);
+				GET_INSTRUCTION_ARG(dst, bind_count + 1);
+
+				// Every case value is `[tag, payload...]`, so the shape check is the exact arity plus
+				// the tag, and the payload binds are the remaining elements in declaration order.
+				bool result = false;
+				if (value->get_type() == Variant::ARRAY) {
+					const Array *array = VariantInternal::get_array(value);
+					if (array->size() == bind_count + 1) {
+						const Variant &value_tag = (*array)[0];
+						result = value_tag.get_type() == Variant::INT && (int64_t)value_tag == (int64_t)tag;
+					}
+					if (result) {
+						for (int i = 0; i < bind_count; i++) {
+							GET_INSTRUCTION_ARG(bind, i);
+							*bind = (*array)[i + 1];
+						}
+					}
+				}
+
+				*dst = result;
+				ip += 3;
 			}
 			DISPATCH_OPCODE;
 

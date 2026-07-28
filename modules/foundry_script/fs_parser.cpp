@@ -3819,6 +3819,12 @@ FSParser::AssertNode *FSParser::parse_assert() {
 		return nullptr;
 	}
 
+	// An assert has no guarded suite, so its binds live in the enclosing suite from here on, exactly
+	// like a variable declaration would.
+	Vector<TypeTestNode *> case_bind_tests;
+	collect_condition_case_binds(assert->condition, case_bind_tests);
+	assert->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, current_suite);
+
 	if (match(FSTokenizer::Token::COMMA) && !check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
 		assert->message = parse_expression(false);
 		if (assert->message == nullptr) {
@@ -3931,9 +3937,14 @@ FSParser::IfNode *FSParser::parse_if(const String &p_token) {
 		push_error(vformat(R"(Expected conditional expression after "%s".)", p_token));
 	}
 
+	Vector<TypeTestNode *> case_bind_tests;
+	collect_condition_case_binds(n_if->condition, case_bind_tests);
+
 	consume(FSTokenizer::Token::COLON, vformat(R"(Expected ":" after "%s" condition.)", p_token));
 
-	n_if->true_block = parse_suite(vformat(R"("%s" block)", p_token));
+	SuiteNode *true_suite = alloc_node<SuiteNode>();
+	n_if->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, true_suite);
+	n_if->true_block = parse_suite(vformat(R"("%s" block)", p_token), true_suite);
 	n_if->true_block->parent_if = n_if;
 
 	if (n_if->true_block->has_continue) {
@@ -4299,6 +4310,9 @@ FSParser::WhileNode *FSParser::parse_while() {
 		push_error(R"(Expected conditional expression after "while".)");
 	}
 
+	Vector<TypeTestNode *> case_bind_tests;
+	collect_condition_case_binds(n_while->condition, case_bind_tests);
+
 	consume(FSTokenizer::Token::COLON, R"(Expected ":" after "while" condition.)");
 
 	// Save break/continue state.
@@ -4311,6 +4325,7 @@ FSParser::WhileNode *FSParser::parse_while() {
 
 	SuiteNode *suite = alloc_node<SuiteNode>();
 	suite->is_in_loop = true;
+	n_while->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, suite);
 	n_while->loop = parse_suite(R"("while" block)", suite);
 	complete_extents(n_while);
 
@@ -4444,6 +4459,7 @@ FSParser::ExpressionNode *FSParser::parse_identifier(ExpressionNode *p_previous_
 				declaration.bind->usages++;
 				break;
 			case SuiteNode::Local::PATTERN_BIND:
+			case SuiteNode::Local::CASE_BIND:
 				identifier->source = IdentifierNode::LOCAL_BIND;
 				identifier->bind_source = declaration.bind;
 				declaration.bind->usages++;
@@ -5543,11 +5559,20 @@ FSParser::ExpressionNode *FSParser::parse_type_test(ExpressionNode *p_previous_o
 
 	type_test->operand = p_previous_operand;
 	type_test->test_type = parse_type();
+	if (type_test->test_type != nullptr) {
+		type_test->test_type->allows_enum_case = true;
+		if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+			parse_type_test_case_binds(type_test);
+		}
+	}
 	complete_extents(type_test);
 
 	if (not_node != nullptr) {
 		not_node->operand = type_test;
 		complete_extents(not_node);
+		if (!type_test->case_binds.is_empty()) {
+			push_error(R"(Cannot bind case payloads with "is not".)", type_test);
+		}
 	}
 
 	if (type_test->test_type == nullptr) {
@@ -5563,6 +5588,91 @@ FSParser::ExpressionNode *FSParser::parse_type_test(ExpressionNode *p_previous_o
 	}
 
 	return type_test;
+}
+
+void FSParser::parse_type_test_case_binds(TypeTestNode *p_type_test) {
+	push_multiline(true);
+	advance(); // Consume "(".
+
+	if (match(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+		pop_multiline();
+		push_error(R"(Expected at least one case payload bind name or "_" after "(".)");
+		return;
+	}
+
+	HashSet<StringName> seen_names;
+	do {
+		if (is_at_end() || check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
+			break;
+		}
+		if (match(FSTokenizer::Token::UNDERSCORE)) {
+			// A skipped payload field still occupies a position, so record it as an empty bind.
+			p_type_test->case_binds.push_back(nullptr);
+			continue;
+		}
+		if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected case payload bind name or "_".)")) {
+			break;
+		}
+		IdentifierNode *bind = parse_identifier();
+		if (bind == nullptr) {
+			break;
+		}
+		if (seen_names.has(bind->name)) {
+			push_error(vformat(R"(Bind name "%s" was already used in this case test.)", bind->name), bind);
+		} else {
+			seen_names.insert(bind->name);
+		}
+		p_type_test->case_binds.push_back(bind);
+	} while (match(FSTokenizer::Token::COMMA));
+
+	pop_multiline();
+	consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected ")" after case payload binds.)*");
+}
+
+void FSParser::collect_condition_case_binds(ExpressionNode *p_condition, Vector<TypeTestNode *> &r_type_tests) {
+	if (p_condition == nullptr) {
+		return;
+	}
+
+	if (p_condition->type == Node::BINARY_OPERATOR) {
+		BinaryOpNode *binary_op = static_cast<BinaryOpNode *>(p_condition);
+		if (binary_op->variant_op == Variant::OP_AND) {
+			collect_condition_case_binds(binary_op->left_operand, r_type_tests);
+			collect_condition_case_binds(binary_op->right_operand, r_type_tests);
+		}
+		return;
+	}
+
+	if (p_condition->type != Node::TYPE_TEST) {
+		return;
+	}
+
+	TypeTestNode *type_test = static_cast<TypeTestNode *>(p_condition);
+	type_test->binds_allowed = true;
+	if (!type_test->case_binds.is_empty()) {
+		r_type_tests.push_back(type_test);
+	}
+}
+
+bool FSParser::declare_condition_case_binds(const Vector<TypeTestNode *> &p_type_tests, SuiteNode *p_suite) {
+	bool declared_any = false;
+	for (TypeTestNode *type_test : p_type_tests) {
+		for (IdentifierNode *bind : type_test->case_binds) {
+			if (bind == nullptr) {
+				continue;
+			}
+			if (p_suite->has_local(bind->name) || current_suite->has_local(bind->name)) {
+				const SuiteNode *owner = p_suite->has_local(bind->name) ? p_suite : current_suite;
+				push_error(vformat(R"(There's already a %s named "%s" in this scope.)", owner->get_local(bind->name).get_name(), bind->name), bind);
+				continue;
+			}
+			SuiteNode::Local local(bind, current_function);
+			local.type = SuiteNode::Local::CASE_BIND;
+			p_suite->add_local(local);
+			declared_any = true;
+		}
+	}
+	return declared_any;
 }
 
 FSParser::ExpressionNode *FSParser::parse_yield(ExpressionNode *p_previous_operand, bool p_can_assign) {
@@ -7179,6 +7289,7 @@ FSParser::DataType FSParser::SuiteNode::Local::get_datatype() const {
 			return parameter->get_datatype();
 		case FOR_VARIABLE:
 		case PATTERN_BIND:
+		case CASE_BIND:
 			return bind->get_datatype();
 		case UNDEFINED:
 			return DataType();
@@ -7198,6 +7309,8 @@ String FSParser::SuiteNode::Local::get_name() const {
 			return "for loop iterator";
 		case SuiteNode::Local::PATTERN_BIND:
 			return "pattern bind";
+		case SuiteNode::Local::CASE_BIND:
+			return "case bind";
 		case SuiteNode::Local::UNDEFINED:
 			return "<undefined>";
 		default:
@@ -8163,6 +8276,18 @@ void FSParser::TreePrinter::print_type_test(TypeTestNode *p_test) {
 	print_expression(p_test->operand);
 	push_text(" IS ");
 	print_type(p_test->test_type);
+	if (p_test->case_binds.is_empty()) {
+		return;
+	}
+	push_text("(");
+	for (int i = 0; i < p_test->case_binds.size(); i++) {
+		if (i > 0) {
+			push_text(", ");
+		}
+		IdentifierNode *bind = p_test->case_binds[i];
+		push_text(bind != nullptr ? String(bind->name) : String("_"));
+	}
+	push_text(")");
 }
 
 void FSParser::TreePrinter::print_unary_op(UnaryOpNode *p_unary_op) {

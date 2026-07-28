@@ -604,6 +604,8 @@ public:
 	struct AssertNode : public Node {
 		ExpressionNode *condition = nullptr;
 		ExpressionNode *message = nullptr;
+		// The condition binds tagged-union payloads, so the binds are locals of the enclosing suite.
+		bool condition_has_case_binds = false;
 
 		AssertNode() {
 			type = ASSERT;
@@ -1382,6 +1384,9 @@ public:
 		ExpressionNode *condition = nullptr;
 		SuiteNode *true_block = nullptr;
 		SuiteNode *false_block = nullptr;
+		// The condition binds tagged-union payloads, so the true block's locals must be allocated
+		// before the condition is compiled.
+		bool condition_has_case_binds = false;
 
 		IfNode *get_elif() {
 			return const_cast<IfNode *>(static_cast<const IfNode *>(this)->get_elif());
@@ -1575,6 +1580,7 @@ public:
 				PARAMETER,
 				FOR_VARIABLE,
 				PATTERN_BIND,
+				CASE_BIND, // Payload bind of an `is Case(...)` test, scoped to the guarded suite.
 			};
 			Type type = UNDEFINED;
 			union {
@@ -1691,6 +1697,10 @@ public:
 		// is empty in this case; the element types live in `tuple_element_types` instead.
 		bool is_tuple = false;
 		Vector<TypeNode *> tuple_element_types;
+		// Set only for the right-hand side of an `is` test, where a dotted name may name a
+		// tagged-union case (`Message.Move`) instead of a type. Type annotations keep rejecting
+		// case names, since a case is not a type.
+		bool allows_enum_case = false;
 
 		TypeNode *get_container_type_or_null(int p_index) const {
 			return p_index >= 0 && p_index < container_types.size() ? container_types[p_index] : nullptr;
@@ -1717,6 +1727,12 @@ public:
 		ExpressionNode *operand = nullptr;
 		TypeNode *test_type = nullptr;
 		DataType test_datatype;
+		// Payload binds of a tagged-union case test, `msg is Message.Move(x, _)`. A null entry is a
+		// `_` skip. Empty when the test carries no bind list.
+		Vector<IdentifierNode *> case_binds;
+		// Set by the statement parsers when the test sits where binds can become suite locals: the
+		// condition, or an `and`-conjunct of the condition, of `if`/`elif`/`while`/`assert`.
+		bool binds_allowed = false;
 
 		TypeTestNode() {
 			type = TYPE_TEST;
@@ -1790,6 +1806,9 @@ public:
 	struct WhileNode : public Node {
 		ExpressionNode *condition = nullptr;
 		SuiteNode *loop = nullptr;
+		// The condition binds tagged-union payloads, so the loop's locals must be allocated before
+		// the condition is compiled.
+		bool condition_has_case_binds = false;
 
 		WhileNode() {
 			type = WHILE;
@@ -2197,9 +2216,17 @@ private:
 	ExpressionNode *parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_type_test(ExpressionNode *p_previous_operand, bool p_can_assign);
+	void parse_type_test_case_binds(TypeTestNode *p_type_test);
 	ExpressionNode *parse_yield(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_invalid_token(ExpressionNode *p_previous_operand, bool p_can_assign);
 	TypeNode *parse_type(bool p_allow_void = false, CompletionType p_forced_completion = COMPLETION_NONE);
+
+	// Collects the bind-carrying `is` tests a condition may legally declare binds for: the condition
+	// itself, or any `and`-conjunct of it. Marks each collected test as permitted so the analyzer can
+	// reject bind lists written anywhere else.
+	static void collect_condition_case_binds(ExpressionNode *p_condition, Vector<TypeTestNode *> &r_type_tests);
+	// Declares the collected binds as locals of p_suite, rejecting duplicate and shadowing names.
+	bool declare_condition_case_binds(const Vector<TypeTestNode *> &p_type_tests, SuiteNode *p_suite);
 
 #ifdef TOOLS_ENABLED
 	int max_script_doc_line = INT_MAX;

@@ -178,7 +178,13 @@ class FSCompiler {
 	FSCodeGenerator::Address _emit_global_class_value(CodeGen &codegen, Error &r_error, const StringName &p_global_class, const FSParser::ExpressionNode *p_source);
 	FSCodeGenerator::Address _parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root = false, bool p_initializer = false);
 	FSCodeGenerator::Address _parse_match_pattern(CodeGen &codegen, Error &r_error, const FSParser::PatternNode *p_pattern, const FSCodeGenerator::Address &p_value_addr, const FSCodeGenerator::Address &p_type_addr, const FSCodeGenerator::Address &p_previous_test, bool p_is_first, bool p_is_nested);
-	List<FSCodeGenerator::Address> _add_block_locals(CodeGen &codegen, const FSParser::SuiteNode *p_block);
+	// Lowers `is` against an enum type: a membership test, or a tagged-union case test that also binds
+	// the case payload.
+	void _parse_enum_type_test(CodeGen &codegen, const FSParser::TypeTestNode *p_type_test, const FSCodeGenerator::Address &p_target, const FSCodeGenerator::Address &p_source);
+	// Allocates a block's locals. When r_case_bind_locals is given, `is Case(...)` binds are collected
+	// there instead of in the returned list, so the caller can clear the rest without wiping a bind the
+	// guarded suite is about to read.
+	List<FSCodeGenerator::Address> _add_block_locals(CodeGen &codegen, const FSParser::SuiteNode *p_block, List<FSCodeGenerator::Address> *r_case_bind_locals = nullptr);
 	void _clear_block_locals(CodeGen &codegen, const List<FSCodeGenerator::Address> &p_locals);
 	Error _parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_block, bool p_add_locals = true, bool p_clear_locals = true);
 	static void _collect_flattened_trait_members(const FSParser::ClassNode *p_class, Vector<const FSParser::ClassNode::Member *> &r_members);

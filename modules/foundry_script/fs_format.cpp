@@ -2656,6 +2656,18 @@ void FSPrinter::print_type_test(const FSParser::TypeTestNode *p_test) {
 	print_operand(FPREC_TYPE_TEST, p_test->operand);
 	write(" is ");
 	print_type(p_test->test_type);
+	if (p_test->case_binds.is_empty()) {
+		return;
+	}
+	write("(");
+	for (int i = 0; i < p_test->case_binds.size(); i++) {
+		if (i > 0) {
+			write(", ");
+		}
+		const FSParser::IdentifierNode *bind = p_test->case_binds[i];
+		write(bind != nullptr ? String(bind->name) : String("_"));
+	}
+	write(")");
 }
 
 static String read_all_stdin() {
