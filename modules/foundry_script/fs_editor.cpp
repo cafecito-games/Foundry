@@ -2289,6 +2289,13 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 								continue;
 							}
 
+							if (!p_add_braces) {
+								// Parentheses are suppressed where a Callable is expected, but a
+								// payload case is not a first-class callable: it must be
+								// constructed, so a bare reference to it would not compile.
+								continue;
+							}
+
 							// A payload case is a constructor, so it completes like a call and
 							// displays the payload it expects.
 							ScriptLanguage::CodeCompletionOption option(
@@ -2310,9 +2317,7 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 							}
 							signature += ")";
 							option.display += signature;
-							if (p_add_braces) {
-								option.insert_text += "(";
-							}
+							option.insert_text += "(";
 							r_result.insert(option.display, option);
 						}
 					}
