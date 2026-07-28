@@ -1966,6 +1966,12 @@ private:
 	LambdaNode *current_lambda = nullptr;
 	SuiteNode *current_suite = nullptr;
 
+	// Case-payload binds declared while parsing the condition currently being parsed (if/elif/while/assert).
+	// They are declared as transient locals of `current_suite` as soon as `is Case(binds)` is parsed so a
+	// later `and`-conjunct of the same condition can already reference them; `declare_condition_case_binds()`
+	// removes the transient entries and relocates the ones in a legal bind position into the guarded suite.
+	Vector<IdentifierNode *> pending_case_binds;
+
 	CompletionContext completion_context;
 	List<CompletionCall> completion_call_stack;
 	bool in_lambda = false;
@@ -2244,12 +2250,20 @@ private:
 	ExpressionNode *parse_invalid_token(ExpressionNode *p_previous_operand, bool p_can_assign);
 	TypeNode *parse_type(bool p_allow_void = false, CompletionType p_forced_completion = COMPLETION_NONE);
 
+	// Declares a case-payload bind name as a transient local of `current_suite`, as soon as it is
+	// parsed, so later `and`-conjuncts of the same condition can already reference it. Rejects names
+	// that shadow an existing local. `declare_condition_case_binds()` later removes the transient
+	// entry (and relocates it if it ended up in a legal bind position).
+	void declare_transient_case_bind(IdentifierNode *p_bind);
+
 	// Collects the bind-carrying `is` tests a condition may legally declare binds for: the condition
 	// itself, or any `and`-conjunct of it. Marks each collected test as permitted so the analyzer can
 	// reject bind lists written anywhere else.
 	static void collect_condition_case_binds(ExpressionNode *p_condition, Vector<TypeTestNode *> &r_type_tests);
-	// Declares the collected binds as locals of p_suite, rejecting duplicate and shadowing names.
-	bool declare_condition_case_binds(const Vector<TypeTestNode *> &p_type_tests, SuiteNode *p_suite);
+	// Removes the transient case-bind locals declared into `current_suite` since `p_pending_mark`
+	// (an index into `pending_case_binds`, rebuilding `SuiteNode::locals_indices`), then declares
+	// the ones in a legal bind position (from p_type_tests) as locals of p_suite.
+	bool declare_condition_case_binds(const Vector<TypeTestNode *> &p_type_tests, SuiteNode *p_suite, int p_pending_mark);
 
 #ifdef TOOLS_ENABLED
 	int max_script_doc_line = INT_MAX;
