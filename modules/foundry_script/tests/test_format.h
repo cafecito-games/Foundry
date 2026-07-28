@@ -160,17 +160,19 @@ static Vector<String> collect_gd_scripts(const String &p_dir) {
 	return files;
 }
 
-// A single error fixture is narrow-skipped from the idempotency and tree-
-// preservation sweeps. `analyzer/errors/abstract_methods.fs` contains bodyless
-// lambdas (`func():` with no body) that are invalid FoundryScript -- the analyzer
-// rejects them. They parse only because surrounding parentheses (which the parser
-// discards, leaving no paren node) keep the malformed construct readable;
-// formatting them necessarily synthesizes a `pass` body, which both adds a
-// statement to the tree and destabilizes blank-line accounting. The construct is
-// not valid code any formatter is expected to round-trip, so it is excluded by
-// path. Every other corpus script is swept unconditionally.
+// A few error fixtures are narrow-skipped from the idempotency and tree-
+// preservation sweeps. They all declare a bodyless function that is *not* marked
+// `abstract`, which is invalid FoundryScript -- the analyzer rejects it. Such a
+// function still parses, so formatting reaches it and necessarily synthesizes a
+// `pass` body, which both adds a statement to the tree and destabilizes
+// blank-line accounting. (`analyzer/errors/abstract_methods.fs` does this with
+// bodyless lambdas, which parse only because surrounding parentheses -- discarded
+// by the parser, leaving no paren node -- keep the malformed construct readable.)
+// The construct is not valid code any formatter is expected to round-trip, so it
+// is excluded by path. Every other corpus script is swept unconditionally.
 static bool is_narrow_skipped_fixture(const String &p_path) {
-	return p_path.ends_with("analyzer/errors/abstract_methods.fs");
+	return p_path.ends_with("analyzer/errors/abstract_methods.fs") ||
+			p_path.ends_with("analyzer/errors/trait_body_declaration_error_base.notest.fs");
 }
 
 // Parses `p_source` with no analysis pass (the raw syntactic tree). Returns true
