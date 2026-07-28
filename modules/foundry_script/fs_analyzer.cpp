@@ -791,6 +791,37 @@ static String _localize_script_path(const String &p_path) {
 	return ProjectSettings::get_singleton()->localize_path(p_path);
 }
 
+// A cascading dependency failure is reported in the file that *uses* a symbol, not in the file
+// that actually failed to compile, so on its own it reads like a resolution limitation rather
+// than an error one file over. Naming the declaring file and quoting the first error recorded
+// for it gives the reader a path from the symptom to the cause.
+// `p_first_error_index` skips errors the dependency parser already held before the failing step.
+static String _dependency_error_suffix(const char *p_noun, const String &p_path, FSParser *p_dependency_parser, int p_first_error_index) {
+	String first_error;
+	if (p_dependency_parser != nullptr) {
+		int index = 0;
+		for (const FSParser::ParserError &error : p_dependency_parser->get_errors()) {
+			if (index++ < p_first_error_index) {
+				continue;
+			}
+			first_error = vformat("line %d: %s", error.line, error.message);
+			break;
+		}
+	}
+
+	const String script_path = _localize_script_path(p_path);
+	if (script_path.is_empty()) {
+		if (first_error.is_empty()) {
+			return String();
+		}
+		return vformat("The %s has errors, the first at %s", p_noun, first_error);
+	}
+	if (first_error.is_empty()) {
+		return vformat(R"(The %s is declared in "%s".)", p_noun, script_path);
+	}
+	return vformat(R"(The %s is declared in "%s", which has errors, the first at %s)", p_noun, script_path, first_error);
+}
+
 static String _trait_method_info_source(const FSParser::ClassNode *p_class,
 		const FSParser::FunctionNode *p_function) {
 	if (p_class == nullptr) {
@@ -2214,7 +2245,13 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		int error_count = other_parser->errors.size();
 		other_analyzer->resolve_class_body(p_class);
 		if (other_parser->errors.size() > error_count) {
-			push_error(vformat(R"(Could not resolve class "%s".)", p_class->fqcn), p_source);
+			// The class name here is already its script path, so only the underlying error is added.
+			String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
+			const String suffix = _dependency_error_suffix("class", String(), other_parser, error_count);
+			if (!suffix.is_empty()) {
+				message += " " + suffix;
+			}
+			push_error(message, p_source);
 			return;
 		}
 
@@ -2245,7 +2282,16 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		if (trait_parser_ref.is_valid()) {
 			Error err = dependency_parser_access.raise_parser_to_status(trait_parser_ref, FSParserRef::FULLY_SOLVED);
 			if (err != OK) {
-				push_error(vformat(R"(Could not resolve body of trait "%s" applied by "%s".)", _class_or_trait_name(trait), _class_or_trait_name(p_class)), p_source);
+				String trait_path = trait_parser_ref->get_path();
+				if (trait_path.is_empty()) {
+					trait_path = trait->get_datatype().script_path;
+				}
+				String message = vformat(R"(Could not resolve body of trait "%s" applied by "%s".)", _class_or_trait_name(trait), _class_or_trait_name(p_class));
+				const String suffix = _dependency_error_suffix("trait", trait_path, trait_parser_ref->get_parser(), 0);
+				if (!suffix.is_empty()) {
+					message += " " + suffix;
+				}
+				push_error(message, p_source);
 			}
 		}
 	}

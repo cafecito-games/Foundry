@@ -548,7 +548,8 @@ tuple_field     = [ identifier, ":" ], type ;   (* a bare type is a positional f
 function_decl   = "func", identifier, [ type_parameters ],
                   "(", [ parameter_list ], ")",
                   [ "->", return_type ],
-                  ( ":", block | (* abstract: no body *) NEWLINE ) ;
+                  ( ":", block
+                  | (* only when the "abstract" modifier is present *) NEWLINE ) ;
 
 parameter_list  = param_item, { ",", param_item }, [ "," ] ;
 param_item      = [ "..." ], parameter_annotation*, parameter ; (* "..." marks the rest parameter *)
@@ -564,8 +565,11 @@ Rules (`parse_function_signature`):
 - Parameters with defaults must follow parameters without defaults (except the rest
   parameter).
 - `void` is allowed only as a return type.
-- An **abstract** function (modifier `abstract`, or a trait/class context allowing it) has
-  no body: the signature is terminated by `NEWLINE` instead of `:` + block.
+- An **abstract** function has no body: the signature is terminated by `NEWLINE` instead of
+  `:` + block. The `abstract` modifier is **required** for that form — a body-less `func` is
+  an error even inside a trait, where every requirement must be written `abstract func`. No
+  context exempts a function from this; the analyzer rejects a body-less `func` with *"A
+  function must either have a `:` followed by a body, or be marked as `abstract`."*
 - `async func` (the contextual `async` modifier before `func`) declares a coroutine; `await`
   in a body also makes a function a coroutine.
 - The special static constructor `_static_init` must be `static` and parameterless.
