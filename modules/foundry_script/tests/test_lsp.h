@@ -976,6 +976,32 @@ func f():
 			CHECK_EQ(cls.children[1].kind, LSP::SymbolKind::Field);
 		}
 
+		SUBCASE("Tagged-union cases are reported with their payload signatures") {
+			String path = "res://lsp/tagged_unions.fs";
+			assert_no_errors_in(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			const LSP::DocumentSymbol *message = parser->get_member_symbol("Message");
+			REQUIRE(message);
+			CHECK_EQ(message->kind, LSP::SymbolKind::Enum);
+			CHECK(message->documentation.contains("A message the actor can receive."));
+			REQUIRE(message->children.size() == 3);
+
+			// A tag is ordinal by declaration order, so it is not spelled as a value; a payload
+			// case is described by the payload it declares.
+			CHECK_EQ(message->children[0].name, "Quit");
+			CHECK_EQ(message->children[0].kind, LSP::SymbolKind::EnumMember);
+			CHECK_EQ(message->children[0].detail, "Quit");
+			CHECK(message->children[0].documentation.contains("Stop processing."));
+			CHECK_EQ(message->children[1].name, "Move");
+			CHECK_EQ(message->children[1].kind, LSP::SymbolKind::EnumMember);
+			CHECK_EQ(message->children[1].detail, "Move(x: int, y: int)");
+			CHECK(message->children[1].documentation.contains("Move by a delta."));
+			CHECK_EQ(message->children[2].name, "Write");
+			CHECK_EQ(message->children[2].detail, "Write(text: String)");
+		}
+
 		SUBCASE("A global enum_name file is reported as an enum with members") {
 			LSPGlobalScriptClassBackup global_class_backup;
 			ScriptServer::global_classes_clear();

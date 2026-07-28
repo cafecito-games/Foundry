@@ -4569,6 +4569,115 @@ func nested_named() -> Array[PlayerWorldPosition]:
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript] Docgen documents tagged-union cases by their payload") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+class_name Actor
+
+## A message the actor can receive.
+enum Message:
+	## Stop processing.
+	Quit
+	## Move by a delta.
+	Move(x: int, y: int)
+	Write(text: String)
+)",
+			"res://tagged_union_docgen.fs", false);
+	CHECK_EQ(err, OK);
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	FSCompiler::make_scripts(script.ptr(), root, false);
+	FSDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+
+	CHECK(docs[0].enums.has("Message"));
+	if (!docs[0].enums.has("Message")) {
+		return;
+	}
+	CHECK(docs[0].enums["Message"].is_tagged_union);
+	CHECK_EQ(docs[0].enums["Message"].description, "A message the actor can receive.");
+
+	HashMap<String, DocData::ConstantDoc> cases;
+	for (const DocData::ConstantDoc &constant : docs[0].constants) {
+		if (constant.enumeration == "Message") {
+			cases[constant.name] = constant;
+		}
+	}
+	CHECK(cases.has("Quit"));
+	CHECK(cases.has("Move"));
+	CHECK(cases.has("Write"));
+	if (!cases.has("Quit") || !cases.has("Move") || !cases.has("Write")) {
+		return;
+	}
+
+	// Every case of a tagged union erases to a read-only `[tag, payload...]` Array, so no case is
+	// documented as an `int` constant.
+	CHECK_EQ(cases["Quit"].type, "Array");
+	CHECK_EQ(cases["Move"].type, "Array");
+
+	// A payload-less case is a singleton value; its documented value is that singleton.
+	CHECK(cases["Quit"].is_value_valid);
+	CHECK_EQ(cases["Quit"].value, "[0]");
+	CHECK(cases["Quit"].payload_fields.is_empty());
+	CHECK_EQ(cases["Quit"].description, "Stop processing.");
+
+	// A payload case is a constructor, so it documents its signature instead of a value.
+	CHECK_FALSE(cases["Move"].is_value_valid);
+	CHECK_EQ(cases["Move"].payload_fields.size(), 2);
+	CHECK_EQ(cases["Write"].payload_fields.size(), 1);
+	if (cases["Move"].payload_fields.size() != 2 || cases["Write"].payload_fields.size() != 1) {
+		return;
+	}
+	CHECK_EQ(cases["Move"].payload_fields[0].name, "x");
+	CHECK_EQ(cases["Move"].payload_fields[0].type, "int");
+	CHECK_EQ(cases["Move"].payload_fields[1].name, "y");
+	CHECK_EQ(cases["Move"].payload_fields[1].type, "int");
+	CHECK_EQ(cases["Move"].description, "Move by a delta.");
+
+	CHECK_EQ(cases["Write"].payload_fields[0].name, "text");
+	CHECK_EQ(cases["Write"].payload_fields[0].type, "String");
+
+	// The editor doc cache round-trips class docs through a Dictionary, so the payload and the
+	// tagged-union flag must survive that conversion.
+	const DocData::ClassDoc restored = DocData::ClassDoc::from_dict(DocData::ClassDoc::to_dict(docs[0]));
+	CHECK(restored.enums.has("Message"));
+	if (!restored.enums.has("Message")) {
+		return;
+	}
+	CHECK(restored.enums["Message"].is_tagged_union);
+	bool found_restored_move = false;
+	for (const DocData::ConstantDoc &constant : restored.constants) {
+		if (constant.name != "Move") {
+			continue;
+		}
+		found_restored_move = true;
+		CHECK_EQ(constant.payload_fields.size(), 2);
+		if (constant.payload_fields.size() != 2) {
+			continue;
+		}
+		CHECK_EQ(constant.payload_fields[0].name, "x");
+		CHECK_EQ(constant.payload_fields[0].type, "int");
+		CHECK_EQ(constant.payload_fields[1].name, "y");
+	}
+	CHECK(found_restored_move);
+}
+
 TEST_CASE("[Modules][FoundryScript] Docgen qualifies tuple link targets by declaration site") {
 	Vector<FSParser::DataType> element_types;
 	FSParser::DataType element;

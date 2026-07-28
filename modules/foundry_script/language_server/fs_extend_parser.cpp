@@ -201,6 +201,38 @@ LSP::Range ExtendFSParser::range_of_node(const FSParser::Node *p_node) const {
 	return FoundryRange(start, end).to_lsp(lines);
 }
 
+String ExtendFSParser::enum_case_detail(const FSParser::EnumNode::Value &p_value) {
+	const String name = p_value.identifier != nullptr ? String(p_value.identifier->name) : String();
+
+	if (p_value.parent_enum == nullptr || !p_value.parent_enum->is_tagged_union) {
+		return name + " = " + itos(p_value.value);
+	}
+
+	// A tagged-union tag is ordinal by declaration order rather than something the source spells,
+	// so a case is described by its declared shape: its payload signature, or just its name.
+	if (!p_value.has_payload()) {
+		return name;
+	}
+
+	String detail = name + "(";
+	for (int i = 0; i < p_value.payload_fields.size(); i++) {
+		if (i > 0) {
+			detail += ", ";
+		}
+		const FSParser::EnumNode::PayloadField &field = p_value.payload_fields[i];
+		if (field.identifier != nullptr) {
+			detail += String(field.identifier->name);
+		}
+		if (field.type != nullptr) {
+			const FSParser::DataType field_type = FSAnalyzer::type_from_metatype(field.type->get_datatype());
+			if (field_type.is_hard_type()) {
+				detail += ": " + field_type.to_string();
+			}
+		}
+	}
+	return detail + ")";
+}
+
 void ExtendFSParser::append_enum_symbol_children(const FSParser::EnumNode *p_enum, LSP::DocumentSymbol &r_symbol) {
 	const String uri = get_uri();
 
@@ -216,7 +248,7 @@ void ExtendFSParser::append_enum_symbol_children(const FSParser::EnumNode *p_enu
 		child.documentation = value.doc_data.description;
 		child.uri = uri;
 		child.script_path = path;
-		child.detail = child.name + " = " + itos(value.value);
+		child.detail = enum_case_detail(value);
 
 		r_symbol.children.push_back(child);
 	}
@@ -483,7 +515,7 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 				symbol.uri = uri;
 				symbol.script_path = path;
 
-				symbol.detail = symbol.name + " = " + itos(m.enum_value.value);
+				symbol.detail = enum_case_detail(m.enum_value);
 
 				r_symbol.children.push_back(symbol);
 			} break;

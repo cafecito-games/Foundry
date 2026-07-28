@@ -33,6 +33,7 @@
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
 #include "../fs_autoload_index.h"
+#include "../fs_tagged_union.h"
 
 #include "core/variant/container_type_validate.h"
 
@@ -674,18 +675,44 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		enum_doc.deprecated_message = p_enum->doc_data.deprecated_message;
 		enum_doc.is_experimental = p_enum->doc_data.is_experimental;
 		enum_doc.experimental_message = p_enum->doc_data.experimental_message;
+		enum_doc.is_tagged_union = p_enum->is_tagged_union;
 		doc.enums[name] = enum_doc;
 
 		for (const GDP::EnumNode::Value &val : p_enum->values) {
 			DocData::ConstantDoc const_doc;
 			const_doc.name = val.identifier->name;
-			// Enum files keep their enum outside ClassNode::members; until that path
-			// is analyzed, avoid documenting default zeroes as real values.
-			if (!p_requires_resolved_values || val.resolved) {
-				const_doc.value = _docvalue_from_variant(val.value);
-				const_doc.is_value_valid = true;
+			if (p_enum->is_tagged_union) {
+				// A tagged-union case is not an integer constant: its runtime value is the
+				// read-only `[tag, payload...]` Array, so a payload case documents its
+				// constructor signature and a payload-less case documents its singleton.
+				const_doc.type = "Array";
+				if (val.has_payload()) {
+					for (const GDP::EnumNode::PayloadField &field : val.payload_fields) {
+						DocData::TupleFieldDoc field_doc;
+						if (field.identifier != nullptr) {
+							field_doc.name = field.identifier->name;
+						}
+						if (field.type != nullptr) {
+							_doctype_from_gdtype_nested(FSAnalyzer::type_from_metatype(field.type->get_datatype()), field_doc.type, field_doc.enumeration);
+						}
+						if (field_doc.type.is_empty()) {
+							field_doc.type = "Variant";
+						}
+						const_doc.payload_fields.push_back(field_doc);
+					}
+				} else if (!p_requires_resolved_values || val.resolved) {
+					const_doc.value = _docvalue_from_variant(fs_tagged_union_case_singleton(val.value));
+					const_doc.is_value_valid = true;
+				}
+			} else {
+				// Enum files keep their enum outside ClassNode::members; until that path
+				// is analyzed, avoid documenting default zeroes as real values.
+				if (!p_requires_resolved_values || val.resolved) {
+					const_doc.value = _docvalue_from_variant(val.value);
+					const_doc.is_value_valid = true;
+				}
+				const_doc.type = "int";
 			}
-			const_doc.type = "int";
 			const_doc.enumeration = name;
 			const_doc.description = val.doc_data.description;
 			const_doc.is_deprecated = val.doc_data.is_deprecated;

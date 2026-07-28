@@ -1,3 +1,33 @@
+/**************************************************************************/
+/*  test_name_mangler_application.h                                       */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             FOUNDRY ENGINE                             */
+/*          A fork of the Godot Engine (https://godotengine.org)          */
+/*                       https://www.cafecito.games                       */
+/**************************************************************************/
+/* Copyright (c) 2026-present Cafecito Games LLC.                         */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
 #pragma once
 
 #ifdef TOOLS_ENABLED
@@ -1176,6 +1206,72 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Mangles around tuple declarat
 
 	transaction.rollback();
 	CHECK(script->get_member_functions().has(SNAME("tuple_marker_method")));
+}
+
+TEST_CASE("[FoundryScript][NameManglerApplication] Mangles around tagged unions and keeps them running") {
+	// A tagged-union payload is positional at runtime, so payload field names never reach the
+	// compiled surface and are not rename candidates. A payload case is inlined at its construction
+	// site and contributes no constant, so its name has no runtime identity either; only a
+	// payload-less case becomes a script constant, which follows the ordinary constant rules.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"\n"
+			"enum UnionMarkerMessage:\n"
+			"\tunion_marker_quit\n"
+			"\tunion_marker_move(union_marker_x: int, union_marker_y: int)\n"
+			"\n"
+			"var union_marker_member: int = 0\n"
+			"\n"
+			"func union_marker_method() -> int:\n"
+			"\tvar message: UnionMarkerMessage = UnionMarkerMessage.union_marker_move(3, 4)\n"
+			"\tif message is UnionMarkerMessage.union_marker_move(x, y):\n"
+			"\t\tunion_marker_member = x + y\n"
+			"\tvar stop: UnionMarkerMessage = UnionMarkerMessage.union_marker_quit\n"
+			"\tmatch stop:\n"
+			"\t\tUnionMarkerMessage.union_marker_quit:\n"
+			"\t\t\tunion_marker_member += 3\n"
+			"\t\t_:\n"
+			"\t\t\tunion_marker_member = -1\n"
+			"\treturn union_marker_member\n");
+
+	FSNameManglerAnalysis::Input input;
+	input.scripts.push_back(script);
+	const FSNameManglerAnalysis::Result analysis = FSNameManglerAnalysis::analyze(input);
+	REQUIRE_EQ(analysis.error, OK);
+	REQUIRE(analysis.rename_map.has(SNAME("union_marker_member")));
+	REQUIRE(analysis.rename_map.has(SNAME("union_marker_method")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("union_marker_x")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("union_marker_y")));
+	CHECK_FALSE(analysis.rename_map.has(SNAME("union_marker_move")));
+
+	Callable::CallError call_error;
+	const Variant before_instance = script->_new(nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	Object *before_object = before_instance.get_validated_object();
+	REQUIRE(before_object != nullptr);
+	const Variant before_result = before_object->callp(SNAME("union_marker_method"), nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(int(before_result), 10);
+
+	FSNameManglerApplication::Transaction transaction;
+	Vector<FSNameManglerApplication::Diagnostic> diagnostics;
+	REQUIRE_EQ(transaction.begin(input.scripts, analysis.rename_map, diagnostics), OK);
+	REQUIRE(diagnostics.is_empty());
+
+	const StringName renamed_method = analysis.rename_map[SNAME("union_marker_method")];
+	CHECK(script->get_member_functions().has(renamed_method));
+	CHECK_FALSE(script->get_member_functions().has(SNAME("union_marker_method")));
+
+	const Variant mangled_instance = script->_new(nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	Object *mangled_object = mangled_instance.get_validated_object();
+	REQUIRE(mangled_object != nullptr);
+	const Variant mangled_result = mangled_object->callp(renamed_method, nullptr, 0, call_error);
+	REQUIRE_EQ(call_error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(int(mangled_result), 10);
+
+	transaction.rollback();
+	CHECK(script->get_member_functions().has(SNAME("union_marker_method")));
 }
 
 TEST_CASE("[FoundryScript][NameManglerApplication] Restores nonserialized editor caches exactly") {

@@ -60,6 +60,20 @@ invisible to keep rules.
 A whole-file `tuple_name` declaration registers a global class, so its type name is a class identity
 and follows the class rules above; a class-body `tuple` declaration has no identity to keep.
 
+## Tagged unions
+
+A tagged union is an enum whose cases carry payloads. Its payload field names are analyzer-only,
+exactly like tuple field names: a payload is a positional `[tag, payload...]` read-only `Array` at
+runtime, so a payload field name is never mangled and never matched by a member glob.
+
+Case names follow the enum rules. A payload-less case is compiled to a script constant, so it is an
+ordinary constant identity that a member glob can keep. A payload case is a constructor that is
+inlined at every construction site and contributes no constant, so it has no runtime identity to
+keep and a rule naming it matches nothing.
+
+The union's own type name is an enum name and follows the existing enum identity rules: a whole-file
+`enum_name` declaration registers a global class and follows the class rules above.
+
 ## Glob matching
 
 Matching is case-sensitive and covers the complete string:

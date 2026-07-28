@@ -2,7 +2,7 @@
 /*  fs_extend_parser.h                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -128,6 +128,7 @@ class ExtendFSParser : public FSParser {
 	void update_document_links(const String &p_code);
 	void parse_class_symbol(const FSParser::ClassNode *p_class, LSP::DocumentSymbol &r_symbol);
 	void parse_function_symbol(const FSParser::FunctionNode *p_func, LSP::DocumentSymbol &r_symbol, const FSParser::ClassNode *p_owner_class = nullptr);
+	static String enum_case_detail(const FSParser::EnumNode::Value &p_value);
 	void append_enum_symbol_children(const FSParser::EnumNode *p_enum, LSP::DocumentSymbol &r_symbol);
 	void append_tuple_symbol_fields(const FSParser::TupleNode *p_tuple, LSP::DocumentSymbol &r_symbol);
 

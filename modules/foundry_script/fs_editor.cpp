@@ -2266,6 +2266,50 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 					}
 				}
 
+				if (base_type.is_tagged_union) {
+					// A tagged-union value erases to a read-only `[tag, payload...]` Array and its
+					// meta type to a Dictionary, but neither erasure target is part of the surface
+					// users write: completing Array, Dictionary, or int members here would suggest
+					// operations the analyzer rejects. Only the cases themselves are offered, and
+					// only on the meta type, since a value has no case members.
+					if (base_type.is_meta_type && !p_only_functions) {
+						for (const KeyValue<StringName, int64_t> &enum_value : base_type.enum_values) {
+							const FSParser::DataType::EnumCasePayload *payload = base_type.get_enum_case_payload(enum_value.key);
+							if (payload == nullptr) {
+								// A payload-less case is a singleton value, never called.
+								ScriptLanguage::CodeCompletionOption option(
+										enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT,
+										p_recursion_depth + ScriptLanguage::LOCATION_OTHER_USER_CODE);
+								r_result.insert(option.display, option);
+								continue;
+							}
+
+							// A payload case is a constructor, so it completes like a call and
+							// displays the payload it expects.
+							ScriptLanguage::CodeCompletionOption option(
+									enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION,
+									p_recursion_depth + ScriptLanguage::LOCATION_OTHER_USER_CODE);
+							String signature = "(";
+							for (int field_index = 0; field_index < payload->field_types.size(); field_index++) {
+								if (field_index > 0) {
+									signature += ", ";
+								}
+								if (field_index < payload->field_names.size() && payload->field_names[field_index] != StringName()) {
+									signature += String(payload->field_names[field_index]) + ": ";
+								}
+								signature += payload->field_types[field_index].to_string();
+							}
+							signature += ")";
+							option.display += signature;
+							if (p_add_braces) {
+								option.insert_text += "(";
+							}
+							r_result.insert(option.display, option);
+						}
+					}
+					return;
+				}
+
 				String type_str = base_type.native_type;
 				bool completed_native_enum = false;
 

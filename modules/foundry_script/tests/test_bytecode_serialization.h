@@ -1302,6 +1302,76 @@ TEST_CASE("[FoundryScript][BytecodeFunction] Tuple-typed functions round-trip an
 	}
 }
 
+TEST_CASE("[FoundryScript][BytecodeFunction] Tagged-union functions round-trip and execute identically") {
+	// Exercises the whole tagged-union surface of the design's `Message` example through a real
+	// compile -> export -> load -> call cycle: payload-less singletons, payload construction
+	// (`OPCODE_CONSTRUCT_TUPLE`), whole-union tests (`OPCODE_TYPE_TEST_ENUM`), `is` tests that bind
+	// the payload (`OPCODE_TYPE_TEST_ENUM_CASE`), and case patterns in `match`.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"enum Message:\n"
+			"\tQuit\n"
+			"\tMove(x: int, y: int)\n"
+			"\tWrite(text: String)\n"
+			"\n"
+			"static func preview(message: Message) -> String:\n"
+			"\tif message is Message.Move(x, y):\n"
+			"\t\treturn \"move \" + str(x) + \" \" + str(y)\n"
+			"\tif message is Message.Write(text):\n"
+			"\t\treturn \"write \" + text\n"
+			"\treturn \"other\"\n"
+			"\n"
+			"static func classify(message: Message) -> String:\n"
+			"\tmatch message:\n"
+			"\t\tMessage.Quit:\n"
+			"\t\t\treturn \"quit\"\n"
+			"\t\tMessage.Move(x, _):\n"
+			"\t\t\treturn \"move \" + str(x)\n"
+			"\t\tMessage.Write(text):\n"
+			"\t\t\treturn \"write \" + text\n"
+			"\treturn \"unreachable\"\n"
+			"\n"
+			"static func message_roundtrip(x: int, y: int, text: String) -> Array:\n"
+			"\tvar quit := Message.Quit\n"
+			"\tvar move := Message.Move(x, y)\n"
+			"\tvar write := Message.Write(text)\n"
+			"\tvar erased: Variant = move\n"
+			"\treturn [\n"
+			"\t\tquit, move, write,\n"
+			"\t\terased is Message, erased is int,\n"
+			"\t\tpreview(quit), preview(move), preview(write),\n"
+			"\t\tclassify(quit), classify(move), classify(write),\n"
+			"\t]\n");
+
+	struct ParityFixture {
+		StringName function_name;
+		Vector<Vector<Variant>> argument_sets;
+	};
+	Vector<ParityFixture> fixtures;
+
+	Array move_value;
+	move_value.push_back(1);
+	move_value.push_back(7);
+	move_value.push_back(8);
+	move_value.make_read_only();
+	Array quit_value;
+	quit_value.push_back(0);
+	quit_value.make_read_only();
+
+	fixtures.push_back({ "preview", { { move_value }, { quit_value } } });
+	fixtures.push_back({ "classify", { { move_value }, { quit_value } } });
+	fixtures.push_back({ "message_roundtrip", { { 3, 4, String("hello") } } });
+
+	for (const ParityFixture &fixture : fixtures) {
+		const String fixture_name = fixture.function_name;
+		CAPTURE(fixture_name);
+		FSFunction *restored = bytecode_round_trip_member_function(script, fixture.function_name);
+		for (const Vector<Variant> &arguments : fixture.argument_sets) {
+			bytecode_check_call_parity(script, fixture.function_name, restored, arguments);
+		}
+		bytecode_destroy_restored_function(script, restored);
+	}
+}
+
 TEST_CASE("[FoundryScript][BytecodeFunction] Await-containing functions deserialize without error") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"static func waits(value):\n"
