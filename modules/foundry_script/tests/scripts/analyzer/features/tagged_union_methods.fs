@@ -18,3 +18,8 @@ func describe_constructed() -> String:
 
 func from_static() -> Command:
 	return Command.default_message()
+
+func test():
+	print(describe_case(Command.Quit))
+	print(describe_constructed())
+	print(from_static() == Command.Quit)

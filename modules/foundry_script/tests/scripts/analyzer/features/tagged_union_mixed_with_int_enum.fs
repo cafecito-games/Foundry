@@ -16,3 +16,8 @@ func tagged_union_case() -> Command:
 
 func both(level: Severity, message: Command) -> String:
 	return str(level) + str(message)
+
+func test():
+	print(int_enum_is_still_an_int())
+	print(tagged_union_case())
+	print(both(Severity.HIGH, Command.Move(1, 2)))

@@ -164,6 +164,10 @@ class FSCompiler {
 
 	FSDataType _gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype = true);
 	FSDataType _gdtype_tuple_test_type_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner);
+	// A payload-less case of a tagged union (`Message.Quit`, or a bare `Quit` inside the enum's own
+	// methods) is a value, not an integer constant, so the analyzer leaves it unfolded. Recognizes such
+	// a reference and yields the read-only `[tag]` singleton it erases to.
+	bool _tagged_union_case_singleton_for_expression(const FSParser::ExpressionNode *p_expression, Variant &r_value);
 	// A `const` aliasing a class in this compilation unit (`const Alias = Box`) folds to the analyzer's
 	// shallow, uncompiled class object; constructing through it (`Alias.new()`) fails. Re-point such a
 	// folded value at the live subclass compiled in this unit so the alias matches the inner-class name.
