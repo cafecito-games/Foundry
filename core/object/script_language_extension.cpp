@@ -2,7 +2,7 @@
 /*  script_language_extension.cpp                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -168,6 +168,7 @@ void ScriptLanguageExtension::_bind_methods() {
 	BIND_ENUM_CONSTANT(LOOKUP_RESULT_CLASS_METHOD);
 	BIND_ENUM_CONSTANT(LOOKUP_RESULT_CLASS_SIGNAL);
 	BIND_ENUM_CONSTANT(LOOKUP_RESULT_CLASS_ENUM);
+	BIND_ENUM_CONSTANT(LOOKUP_RESULT_CLASS_TUPLE);
 	BIND_ENUM_CONSTANT(LOOKUP_RESULT_CLASS_TBD_GLOBALSCOPE); // Deprecated.
 	BIND_ENUM_CONSTANT(LOOKUP_RESULT_CLASS_ANNOTATION);
 	BIND_ENUM_CONSTANT(LOOKUP_RESULT_LOCAL_CONSTANT);

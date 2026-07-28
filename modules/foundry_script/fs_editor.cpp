@@ -5249,9 +5249,7 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
 			break;
 		case FSParser::ClassNode::Member::TUPLE:
-			// A named tuple is a type declaration like a class; its own doc type name is
-			// resolved once tuple typing (DataType::Kind::TUPLE) lands.
-			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_TUPLE;
 			break;
 	}
 

@@ -2,7 +2,7 @@
 /*  script_text_editor.cpp                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1403,6 +1403,9 @@ void ScriptTextEditor::_lookup_symbol(const String &p_symbol, int p_row, int p_c
 					}
 					emit_signal(SNAME("go_to_help"), "class_enum:" + result.class_name + ":" + result.class_member);
 				} break;
+				case ScriptLanguage::LOOKUP_RESULT_CLASS_TUPLE: {
+					emit_signal(SNAME("go_to_help"), "class_tuple:" + result.class_name + ":" + result.class_member);
+				} break;
 				case ScriptLanguage::LOOKUP_RESULT_CLASS_ANNOTATION: {
 					emit_signal(SNAME("go_to_help"), "class_annotation:" + result.class_name + ":" + result.class_member);
 				} break;
@@ -1576,6 +1579,9 @@ void ScriptTextEditor::_show_symbol_tooltip(const String &p_symbol, int p_row, i
 					cname = ClassDB::get_parent_class(cname);
 				}
 				doc_symbol = "enum|" + result.class_name + "|" + result.class_member;
+			} break;
+			case ScriptLanguage::LOOKUP_RESULT_CLASS_TUPLE: {
+				doc_symbol = "tuple|" + result.class_name + "|" + result.class_member;
 			} break;
 			case ScriptLanguage::LOOKUP_RESULT_CLASS_ANNOTATION: {
 				doc_symbol = "annotation|" + result.class_name + "|" + result.class_member;
