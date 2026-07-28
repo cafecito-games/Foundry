@@ -3233,10 +3233,14 @@ bool FSParser::parse_function_signature(FunctionNode *p_function, SuiteNode *p_b
 
 	// TODO: Improve token consumption so it synchronizes to a statement boundary. This way we can get into the function body with unrecognized tokens.
 	if (p_type == "lambda") {
-		return consume(FSTokenizer::Token::COLON, R"(Expected ":" after lambda declaration.)");
+		const bool ok = consume(FSTokenizer::Token::COLON, R"(Expected ":" after lambda declaration.)");
+		p_function->signature_end_line = previous.end_line;
+		return ok;
 	}
 	// The colon may not be present in the case of abstract functions.
-	return match(FSTokenizer::Token::COLON);
+	const bool has_body = match(FSTokenizer::Token::COLON);
+	p_function->signature_end_line = previous.end_line;
+	return has_body;
 }
 
 FSParser::FunctionNode *FSParser::parse_function_declaration(const DeclarationModifiers &p_modifiers) {

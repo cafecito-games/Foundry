@@ -1503,6 +1503,11 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		write(" -> ");
 		print_type(p_function->return_type);
 	}
+	// A signature authored across several lines collapses onto one. `end_line` spans
+	// any body, so the signature's own last line is `signature_end_line` (the `:` when
+	// present, otherwise the closing `)` / return type).
+	const int signature_end = p_function->signature_end_line > 0 ? p_function->signature_end_line : p_function->start_line;
+
 	if (!p_function->has_body) {
 		// The declaration ended without a `:`. That is the well-formed shape of an
 		// abstract method, and a malformed-but-parseable one for any other function
@@ -1517,7 +1522,7 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		// its lines in place; skip exactly those rather than reasoning from the cursor,
 		// which such a value advances over lines it never consumed.
 		const int signature_cursor = last_emitted_line;
-		for (int line = p_function->start_line; line <= p_function->end_line; line++) {
+		for (int line = p_function->start_line; line <= signature_end; line++) {
 			if (!emitted_inline_comments.has(line)) {
 				emit_trailing_comment(line);
 			}
@@ -1530,7 +1535,7 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		// still owns the trivia between its delimiters. The declaration is already in the
 		// buffer by now, so emit the trivia at the end and splice it back into place.
 		const int trivia_start = output.length();
-		for (int line = signature_cursor + 1; line <= p_function->end_line; line++) {
+		for (int line = signature_cursor + 1; line <= signature_end; line++) {
 			if (is_trivia_line(line)) {
 				emit_trivia_line(line);
 			}
@@ -1547,9 +1552,26 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 	if (p_function->body == nullptr) {
 		return;
 	}
-	last_emitted_line = p_function->start_line;
-	emit_trailing_comment(p_function->start_line);
+	// Same collapse as the bodyless path: reattach every inline comment the signature
+	// carried (including one on the closing `)` / `:` line, which `start_line` alone
+	// would miss), and advance the cursor past the signature's code lines so they are
+	// not mistaken for a blank run before the body. Full-line trivia that lived inside
+	// the signature has nowhere to sit on the collapsed line; emit it into the body,
+	// the position a re-format reproduces. A retained multi-line default still owns the
+	// trivia between its delimiters -- skip those via the cursor.
+	const int signature_cursor = last_emitted_line;
+	for (int line = p_function->start_line; line <= signature_end; line++) {
+		if (!emitted_inline_comments.has(line)) {
+			emit_trailing_comment(line);
+		}
+	}
 	indent_level++;
+	for (int line = signature_cursor + 1; line <= signature_end; line++) {
+		if (is_trivia_line(line)) {
+			emit_trivia_line(line);
+		}
+	}
+	last_emitted_line = MAX(last_emitted_line, signature_end);
 	print_suite(p_function->body);
 	flush_block_tail_comments();
 	indent_level--;
@@ -2800,8 +2822,23 @@ void FSPrinter::print_lambda(const FSParser::LambdaNode *p_lambda) {
 	}
 
 	newline();
-	last_emitted_line = function->start_line;
+	// Mirror `print_function`: a multi-line lambda signature collapses onto one line,
+	// so reattach its inline comments and advance past its code lines before the body
+	// so they are not mistaken for a blank run.
+	const int signature_end = function->signature_end_line > 0 ? function->signature_end_line : function->start_line;
+	const int signature_cursor = last_emitted_line;
+	for (int line = function->start_line; line <= signature_end; line++) {
+		if (!emitted_inline_comments.has(line)) {
+			emit_trailing_comment(line);
+		}
+	}
 	indent_level++;
+	for (int line = signature_cursor + 1; line <= signature_end; line++) {
+		if (is_trivia_line(line)) {
+			emit_trivia_line(line);
+		}
+	}
+	last_emitted_line = MAX(last_emitted_line, signature_end);
 	print_suite(function->body);
 	flush_block_tail_comments();
 	indent_level--;
