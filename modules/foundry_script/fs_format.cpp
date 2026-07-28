@@ -1153,8 +1153,7 @@ void FSPrinter::print_class_header(const FSParser::ClassNode *p_class, bool p_is
 		print_enum(p_class->enum_file_decl, "enum_name", true);
 	} else if (p_class->is_tuple_file && p_class->tuple_file_decl != nullptr) {
 		// A whole-file `tuple_name` declaration: same rationale as `enum_name` above.
-		print_tuple(p_class->tuple_file_decl, "tuple_name");
-		emit_trailing_comment(p_class->tuple_file_decl->end_line);
+		print_tuple(p_class->tuple_file_decl, "tuple_name", true);
 	} else if (p_class->identifier != nullptr) {
 		write(modifier);
 		modifier_consumed = true;
@@ -1749,7 +1748,7 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum, const String &p_key
 	}
 }
 
-void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple, const String &p_keyword) {
+void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple, const String &p_keyword, bool p_owns_trailing_comment) {
 	write_indent();
 	write(p_keyword);
 	write(" ");
@@ -1759,8 +1758,9 @@ void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple, const String &p_
 	// Reuse the generic delimited-list layout so a tuple declaration authored across
 	// several lines keeps that layout (rather than being silently collapsed to one line)
 	// and any full-line comments between fields are interleaved instead of dropped.
+	const bool multiline = node_was_authored_multiline(p_tuple);
 	print_delimited_items(
-			"(", ")", p_tuple->fields.size(), node_was_authored_multiline(p_tuple),
+			"(", ")", p_tuple->fields.size(), multiline,
 			p_tuple->start_line, p_tuple->end_line,
 			[&](int p_index) {
 				const FSParser::TupleNode::Field &field = p_tuple->fields[p_index];
@@ -1772,6 +1772,18 @@ void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple, const String &p_
 			},
 			[&](int p_index) { return p_tuple->fields[p_index].line; },
 			[&](int p_index) { return p_tuple->fields[p_index].type->end_line; });
+	if (p_owns_trailing_comment) {
+		// In the multiline layout, `print_delimited_items` already claims an inline
+		// comment on the closing delimiter's line for us when the last field ends on
+		// that same line; claiming it again here would emit it twice. Every other
+		// shape (single-line, or a multiline closing delimiter on its own line) never
+		// gets that comment claimed internally, so it is ours to flush.
+		const bool close_already_claimed = multiline && !p_tuple->fields.is_empty() &&
+				p_tuple->fields[p_tuple->fields.size() - 1].type->end_line == p_tuple->end_line;
+		if (!close_already_claimed) {
+			emit_trailing_comment(p_tuple->end_line);
+		}
+	}
 	newline();
 	last_emitted_line = MAX(last_emitted_line, p_tuple->end_line);
 }
