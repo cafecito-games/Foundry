@@ -9374,6 +9374,9 @@ bool FSAnalyzer::find_global_tuple_meta_type(const StringName &p_name, FSParser:
 	if (global_name == StringName() || !ScriptServer::is_global_class(global_name)) {
 		return false;
 	}
+	if (reject_bootstrap_global_class_dependency(global_name, p_source, "global type")) {
+		return false;
+	}
 
 	const String path = ScriptServer::get_global_class_path(global_name);
 	if (path.get_extension() != FSLanguage::get_singleton()->get_extension()) {
