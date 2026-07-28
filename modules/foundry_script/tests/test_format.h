@@ -899,6 +899,36 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(format_or_fail(source), source);
 	}
 
+	// A multi-line signature collapses onto one line. The comment on its closing
+	// `)` / `:` line must survive, and the collapsed source lines must not be
+	// mistaken for a blank run before the body.
+	TEST_CASE("[Format] Keeps an inline comment on a multi-line function signature") {
+		String source = "func f(\n\t\ta = 1,\n\t\tb = 2):  # sig note\n\tpass\n";
+		String expected = "func f(a = 1, b = 2):  # sig note\n\tpass\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	TEST_CASE("[Format] Does not insert a blank line after a collapsed function signature") {
+		String source = "func f(\n\t\ta = 1,\n\t\tb = 2):\n\tpass\n";
+		String expected = "func f(a = 1, b = 2):\n\tpass\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	TEST_CASE("[Format] Keeps a closing-line comment when `)` alone trails parameters") {
+		String source = "func f(\n\t\ta = 1,\n\t\tb = 2\n):  # sig note\n\tpass\n";
+		String expected = "func f(a = 1, b = 2):  # sig note\n\tpass\n";
+		CHECK_EQ(format_or_fail(source), expected);
+	}
+
+	TEST_CASE("[Format] Relocates a full-line comment from a collapsed signature into the body") {
+		String source = "func f(\n\t\t# why\n\t\ta = 1):\n\tpass\n";
+		String expected = "func f(a = 1):\n\t# why\n\tpass\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
 	TEST_CASE("[Format] Preserves string contents and normalizes to double quotes") {
 		// Quote normalization itself lands in Task 3; here we assert the
 		// literal text round-trips via the token index rather than the Variant.

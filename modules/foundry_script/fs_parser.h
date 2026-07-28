@@ -1324,6 +1324,11 @@ public:
 		// the form parses either way, so tooling that must reproduce the source (the
 		// formatter) needs to tell it apart from a function whose body is merely empty.
 		bool has_body = true;
+		// Source line of the last token of the signature (`:` when present, otherwise the
+		// closing `)` / return type). Distinct from `end_line`, which spans a body when
+		// one is present. The formatter uses this to reattach comments from a collapsed
+		// multi-line signature without walking the body.
+		int signature_end_line = 0;
 		bool is_abstract = false;
 		bool is_final = false;
 		bool is_noreturn = false;
