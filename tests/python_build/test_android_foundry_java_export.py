@@ -160,8 +160,9 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
         self.assertEqual(
             (
                 "foundry-java",
-                "FoundryJava.foundryextension",
+                "foundryjava.foundryextension",
                 "foundry_java/registry-index-v2.txt",
+                "libfoundry_java.so",
             ),
             inspector.FORBIDDEN_BINDING_FRAGMENTS,
         )
