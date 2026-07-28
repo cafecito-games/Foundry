@@ -2272,10 +2272,15 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 					// users write: completing Array, Dictionary, or int members here would suggest
 					// operations the analyzer rejects. Only the cases themselves are offered, and
 					// only on the meta type, since a value has no case members.
-					if (base_type.is_meta_type && !p_only_functions) {
+					if (base_type.is_meta_type) {
 						for (const KeyValue<StringName, int64_t> &enum_value : base_type.enum_values) {
 							const FSParser::DataType::EnumCasePayload *payload = base_type.get_enum_case_payload(enum_value.key);
 							if (payload == nullptr) {
+								if (p_only_functions) {
+									// A payload-less case is a singleton value, never called, so it
+									// is not a candidate where only callables are wanted.
+									continue;
+								}
 								// A payload-less case is a singleton value, never called.
 								ScriptLanguage::CodeCompletionOption option(
 										enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT,
