@@ -800,6 +800,14 @@ bool FSPrinter::has_full_line_comment_between(int p_after, int p_before) const {
 	return false;
 }
 
+bool FSPrinter::has_inline_comment(int p_line) const {
+	if (p_line <= last_emitted_line) {
+		return false; // Already consumed.
+	}
+	HashMap<int, FSTokenizer::CommentData>::ConstIterator found = comments.find(p_line);
+	return found && !found->value.new_line;
+}
+
 void FSPrinter::flush_trivia_until(int p_until_line) {
 	int line = last_emitted_line + 1;
 	while (line < p_until_line) {
@@ -1238,24 +1246,33 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 			emit_leading_trivia(start_line, required_blanks);
 		}
 
-		print_member(member);
+		// A member that emits a suite internally (a function/class body, or a
+		// variable with an inline `get:`/`set:` property block) already attaches
+		// any inline comment on its last body line; emitting one here too would
+		// duplicate it. A multiline enum/tuple member is the same shape: it owns
+		// its own closing line (a `pass` body or a delimited field list) and
+		// already attaches that line's comment internally, so it must self-flush
+		// too rather than have this wrapper flush it a second time (or, since by
+		// then indentation has already been unwound, at the wrong depth). Every
+		// other member (and a single-line one, e.g. a bodyless abstract method)
+		// can carry an inline comment on its closing line here.
+		bool has_own_body_flush = false;
+		if (node != nullptr && node->start_line != node->end_line) {
+			if (member.type == FSParser::ClassNode::Member::FUNCTION ||
+					member.type == FSParser::ClassNode::Member::CLASS ||
+					member.type == FSParser::ClassNode::Member::ENUM ||
+					member.type == FSParser::ClassNode::Member::ENUM_VALUE ||
+					member.type == FSParser::ClassNode::Member::TUPLE) {
+				has_own_body_flush = true;
+			} else if (member.type == FSParser::ClassNode::Member::VARIABLE &&
+					member.variable->property == FSParser::VariableNode::PROP_INLINE) {
+				has_own_body_flush = true;
+			}
+		}
+
+		print_member(member, has_own_body_flush);
 
 		if (node != nullptr) {
-			// A member that emits a suite internally (a function/class body, or a
-			// variable with an inline `get:`/`set:` property block) already attaches
-			// any inline comment on its last body line; emitting one here too would
-			// duplicate it. Every other member (and a single-line one, e.g. a bodyless
-			// abstract method) can carry an inline comment on its closing line here.
-			bool has_own_body_flush = false;
-			if (node->start_line != node->end_line) {
-				if (member.type == FSParser::ClassNode::Member::FUNCTION ||
-						member.type == FSParser::ClassNode::Member::CLASS) {
-					has_own_body_flush = true;
-				} else if (member.type == FSParser::ClassNode::Member::VARIABLE &&
-						member.variable->property == FSParser::VariableNode::PROP_INLINE) {
-					has_own_body_flush = true;
-				}
-			}
 			if (!has_own_body_flush) {
 				emit_trailing_comment(node->end_line);
 			}
@@ -1273,7 +1290,7 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 	}
 }
 
-void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member) {
+void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member, bool p_owns_trailing_comment) {
 	switch (p_member.type) {
 		case FSParser::ClassNode::Member::CLASS:
 			print_annotations(p_member.m_class->annotations, p_member.m_class->start_line);
@@ -1297,18 +1314,18 @@ void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member) {
 			break;
 		case FSParser::ClassNode::Member::ENUM:
 			print_annotations(p_member.m_enum->annotations, p_member.m_enum->start_line);
-			print_enum(p_member.m_enum);
+			print_enum(p_member.m_enum, "enum", p_owns_trailing_comment);
 			break;
 		case FSParser::ClassNode::Member::ENUM_VALUE:
 			// Unnamed enum values are flattened into the class as individual members.
 			// Reconstruct the whole enum: body once, from the first value.
 			if (p_member.enum_value.index == 0 && p_member.enum_value.parent_enum != nullptr) {
-				print_enum(p_member.enum_value.parent_enum);
+				print_enum(p_member.enum_value.parent_enum, "enum", p_owns_trailing_comment);
 			}
 			break;
 		case FSParser::ClassNode::Member::TUPLE:
 			print_annotations(p_member.m_tuple->annotations, p_member.m_tuple->start_line);
-			print_tuple(p_member.m_tuple);
+			print_tuple(p_member.m_tuple, "tuple", p_owns_trailing_comment);
 			break;
 		case FSParser::ClassNode::Member::GROUP:
 			print_annotations(p_member.annotation->annotations);
@@ -1784,7 +1801,14 @@ void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple, const String &p_
 			emit_trailing_comment(p_tuple->end_line);
 		}
 	}
-	newline();
+	// `emit_trailing_comment` above already terminates the line with its own
+	// newline when it finds and emits a comment; only add one here when it did
+	// not, or a comment on a closing delimiter that sits on its own line (not
+	// sharing the last field's) would end up followed by a spurious blank line
+	// that then round-trips as a real one.
+	if (!output.ends_with("\n")) {
+		newline();
+	}
 	last_emitted_line = MAX(last_emitted_line, p_tuple->end_line);
 }
 
@@ -2337,6 +2361,49 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 	if (p_expression == nullptr) {
 		return;
 	}
+	// A redundant parenthesized grouping this expression was the sole content of
+	// carries no semantic effect and is normally never re-printed. But a comment
+	// trailing its opening delimiter (`(  # note`) has nowhere else to attach (the
+	// grouping itself has no AST node), so re-wrap this expression's printed text
+	// in real, multi-line parentheses -- never by appending the comment straight
+	// after the collapsed text, which would silently comment out whatever the
+	// caller writes next on that same line (an enclosing operator, a call's
+	// closing delimiter, ...).
+	//
+	// This only ever claims that one, unambiguous line: the opening delimiter's
+	// own, and only when the content does not also start on it (so the comment
+	// cannot instead be trailing the content). Every other placement -- a comment
+	// on the closing delimiter's line, or one shared with the grouping's content
+	// on a single physical line -- is left alone; on a single-line grouping the
+	// comment is indistinguishable from the statement's ordinary trailing comment
+	// and the existing collapse-and-let-the-caller-flush-it path already handles
+	// it correctly (the same way it does for `var x = 1 + 2  # tail`), and a
+	// closing-line comment risks landing after other source the caller still has
+	// to write on that same output line. Check every recorded level (outermost
+	// first, since that is the one a caller can safely wrap around) and use the
+	// first one that qualifies.
+	int wrap_open_line = 0;
+	int wrap_close_line = 0;
+	for (int i = p_expression->redundant_groupings.size() - 1; i >= 0; i--) {
+		const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[i];
+		if (span.open_line != span.close_line && span.open_line != p_expression->start_line &&
+				has_inline_comment(span.open_line)) {
+			wrap_open_line = span.open_line;
+			wrap_close_line = span.close_line;
+			break;
+		}
+	}
+	if (wrap_open_line > 0) {
+		write("(");
+		append_inline_comment(wrap_open_line);
+		if (wrap_open_line > last_emitted_line) {
+			last_emitted_line = wrap_open_line;
+		}
+		indent_level++;
+		flush_inner_comments(p_expression->start_line);
+		newline();
+		write_indent();
+	}
 	switch (p_expression->type) {
 		case FSParser::Node::LITERAL:
 			print_literal(static_cast<const FSParser::LiteralNode *>(p_expression));
@@ -2394,6 +2461,17 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 			break;
 		default:
 			ERR_FAIL_MSG("FSPrinter: unhandled expression node type " + itos(p_expression->type) + ".");
+	}
+	if (wrap_open_line > 0) {
+		// A full-line comment strictly between the content and the closing
+		// delimiter (`# dangling` below) is unambiguous -- it cannot be anything
+		// else's -- so it is safe to interleave here, unlike an inline comment
+		// directly on the closing delimiter's own line (see above).
+		flush_inner_comments(wrap_close_line);
+		indent_level--;
+		newline();
+		write_indent();
+		write(")");
 	}
 }
 
