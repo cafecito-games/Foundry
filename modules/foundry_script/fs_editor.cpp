@@ -5202,7 +5202,8 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 		case FSParser::ClassNode::Member::CLASS: {
 			String doc_type_name;
 			String doc_enum_name;
-			FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_member.get_datatype()), doc_type_name, doc_enum_name);
+			String doc_tuple_name;
+			FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_member.get_datatype()), doc_type_name, doc_enum_name, doc_tuple_name);
 
 			r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
 			r_result.class_name = doc_type_name;
@@ -5235,7 +5236,8 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 	if (p_member.type != FSParser::ClassNode::Member::CLASS) {
 		String doc_type_name;
 		String doc_enum_name;
-		FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_base_type), doc_type_name, doc_enum_name);
+		String doc_tuple_name;
+		FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(p_base_type), doc_type_name, doc_enum_name, doc_tuple_name);
 
 		r_result.class_name = doc_type_name;
 		r_result.class_member = p_name;
@@ -5524,7 +5526,8 @@ static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const St
 				if (const FSParser::FunctionNode *function = _get_enum_function_for_receiver(base_type, p_symbol)) {
 					String doc_type_name;
 					String doc_enum_name;
-					FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name);
+					String doc_tuple_name;
+					FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name, doc_tuple_name);
 
 					Error err = OK;
 					r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_METHOD;
@@ -5540,7 +5543,8 @@ static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const St
 					if (base_type.enum_values.has(p_symbol)) {
 						String doc_type_name;
 						String doc_enum_name;
-						FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name);
+						String doc_tuple_name;
+						FSDocGen::doctype_from_gdtype(FSAnalyzer::type_from_metatype(base_type), doc_type_name, doc_enum_name, doc_tuple_name);
 
 						if (CoreConstants::is_global_enum(doc_enum_name)) {
 							r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS_CONSTANT;
@@ -5939,7 +5943,8 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 								break;
 						}
 
-						FSDocGen::doctype_from_gdtype(local.get_datatype(), r_result.doc_type, r_result.enumeration);
+						String doc_tuple_name;
+						FSDocGen::doctype_from_gdtype(local.get_datatype(), r_result.doc_type, r_result.enumeration, doc_tuple_name);
 
 						Error err = OK;
 						r_result.script = FSCache::get_shallow_script(base_type.script_path, err);

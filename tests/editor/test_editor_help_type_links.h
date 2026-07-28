@@ -101,6 +101,41 @@ TEST_CASE("[Editor][EditorHelp] Nested non-coroutine generics link every leaf an
 	CHECK(rendered_text("int[][]") == "Array[Array[int]]");
 }
 
+TEST_CASE("[Editor][EditorHelp] Unnamed tuple spellings render punctuation as text and link every element") {
+	const Vector<EditorHelp::HelpTypeRenderSegment> segments = EditorHelp::_build_type_render_segments("(Vector2i, int)", "", false, "");
+	REQUIRE(segments.size() == 5);
+	CHECK(segments[0].kind == EditorHelp::HelpTypeRenderSegment::TEXT);
+	CHECK(segments[0].text == "(");
+	CHECK(segments[1].kind == EditorHelp::HelpTypeRenderSegment::CLASS_LINK);
+	CHECK(segments[1].link == "Vector2i");
+	CHECK(segments[2].kind == EditorHelp::HelpTypeRenderSegment::TEXT);
+	CHECK(segments[2].text == ", ");
+	CHECK(segments[3].kind == EditorHelp::HelpTypeRenderSegment::CLASS_LINK);
+	CHECK(segments[3].link == "int");
+	CHECK(segments[4].kind == EditorHelp::HelpTypeRenderSegment::TEXT);
+	CHECK(segments[4].text == ")");
+
+	CHECK(rendered_text("(Vector2i, int)") == "(Vector2i, int)");
+
+	// An array of tuples is docgen-spelled `(int, int)[]`; the array level still peels.
+	CHECK(class_link_targets("(int, int)[]") == Vector<String>({ "Array", "int", "int" }));
+	CHECK(rendered_text("(int, int)[]") == "Array[(int, int)]");
+}
+
+TEST_CASE("[Editor][EditorHelp] A named tuple channel renders one tuple link") {
+	const Vector<EditorHelp::HelpTypeRenderSegment> segments =
+			EditorHelp::_build_type_render_segments("Player.PlayerWorldPosition", "", false, "", "Player.PlayerWorldPosition");
+	REQUIRE(segments.size() == 1);
+	CHECK(segments[0].kind == EditorHelp::HelpTypeRenderSegment::TUPLE_LINK);
+	CHECK(segments[0].link == "Player.PlayerWorldPosition");
+	CHECK(segments[0].text == "Player.PlayerWorldPosition");
+}
+
+TEST_CASE("[Editor][EditorHelp] A tuple inside a dictionary splits on the top-level comma only") {
+	CHECK(class_link_targets("Dictionary[(int, int), String]") == Vector<String>({ "Dictionary", "int", "int", "String" }));
+	CHECK(rendered_text("Dictionary[(int, int), String]") == "Dictionary[(int, int), String]");
+}
+
 TEST_CASE("[Editor][EditorHelp] Leaf and synthetic-alias types keep their existing link targets") {
 	CHECK(class_link_targets("int") == Vector<String>({ "int" }));
 	CHECK(rendered_text("int") == "int");

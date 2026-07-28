@@ -4394,6 +4394,144 @@ var map: Dictionary[String, DocTarget]
 	CHECK_EQ(docs[0].properties[2].type, "Dictionary[String, characters.DocTarget]");
 }
 
+TEST_CASE("[Modules][FoundryScript] Docgen documents named tuple declarations") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+class_name Player
+
+## Player position in the world
+tuple PlayerWorldPosition(vec: Vector2i, zone: int)
+)",
+			"res://tuple_docgen_declaration.fs", false);
+	CHECK_EQ(err, OK);
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	FSCompiler::make_scripts(script.ptr(), root, false);
+	FSDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+
+	CHECK(docs[0].tuples.has("PlayerWorldPosition"));
+	if (!docs[0].tuples.has("PlayerWorldPosition")) {
+		return;
+	}
+
+	const DocData::TupleDoc &tuple_doc = docs[0].tuples["PlayerWorldPosition"];
+	CHECK_EQ(tuple_doc.description, "Player position in the world");
+	CHECK_EQ(tuple_doc.fields.size(), 2);
+	if (tuple_doc.fields.size() != 2) {
+		return;
+	}
+	CHECK_EQ(tuple_doc.fields[0].name, "vec");
+	CHECK_EQ(tuple_doc.fields[0].type, "Vector2i");
+	CHECK_EQ(tuple_doc.fields[1].name, "zone");
+	CHECK_EQ(tuple_doc.fields[1].type, "int");
+
+	// The editor doc cache round-trips class docs through a Dictionary, so a tuple entry must
+	// survive that conversion unchanged.
+	const DocData::ClassDoc restored = DocData::ClassDoc::from_dict(DocData::ClassDoc::to_dict(docs[0]));
+	CHECK(restored.tuples.has("PlayerWorldPosition"));
+	if (!restored.tuples.has("PlayerWorldPosition")) {
+		return;
+	}
+	const DocData::TupleDoc &restored_tuple = restored.tuples["PlayerWorldPosition"];
+	CHECK_EQ(restored_tuple.description, tuple_doc.description);
+	CHECK_EQ(restored_tuple.fields.size(), tuple_doc.fields.size());
+	if (restored_tuple.fields.size() != tuple_doc.fields.size()) {
+		return;
+	}
+	for (int i = 0; i < restored_tuple.fields.size(); i++) {
+		CHECK_EQ(restored_tuple.fields[i].name, tuple_doc.fields[i].name);
+		CHECK_EQ(restored_tuple.fields[i].type, tuple_doc.fields[i].type);
+		CHECK_EQ(restored_tuple.fields[i].enumeration, tuple_doc.fields[i].enumeration);
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript] Docgen spells tuple types in signatures") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+class_name Player
+
+tuple PlayerWorldPosition(vec: Vector2i, zone: int)
+
+func named() -> PlayerWorldPosition:
+	return PlayerWorldPosition(Vector2i(1, 2), 3)
+
+func structural() -> (Vector2i, int):
+	return (Vector2i(1, 2), 3)
+
+func nested() -> Array[(int, int)]:
+	return [(1, 2)]
+)",
+			"res://tuple_docgen_signature.fs", false);
+	CHECK_EQ(err, OK);
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	FSCompiler::make_scripts(script.ptr(), root, false);
+	FSDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+
+	HashMap<String, DocData::MethodDoc> methods;
+	for (const DocData::MethodDoc &method : docs[0].methods) {
+		methods[method.name] = method;
+	}
+
+	CHECK(methods.has("named"));
+	CHECK(methods.has("structural"));
+	CHECK(methods.has("nested"));
+	if (!methods.has("named") || !methods.has("structural") || !methods.has("nested")) {
+		return;
+	}
+
+	// A named tuple documents its own qualified name through the dedicated tuple channel; it is
+	// neither erased to `Array` nor smuggled through the enum channel.
+	CHECK_EQ(docs[0].name, "Player");
+	const String qualified_name = "Player.PlayerWorldPosition";
+	CHECK_EQ(methods["named"].return_type, qualified_name);
+	CHECK_EQ(methods["named"].return_tuple, qualified_name);
+	CHECK(methods["named"].return_enum.is_empty());
+
+	// An unnamed tuple is structural: it documents its parenthesized element list and sets no
+	// tuple channel, because there is no declaration to link to.
+	CHECK_EQ(methods["structural"].return_type, "(Vector2i, int)");
+	CHECK(methods["structural"].return_tuple.is_empty());
+
+	// Nesting composes with the existing synthetic container spellings.
+	CHECK_EQ(methods["nested"].return_type, "(int, int)[]");
+	CHECK(methods["nested"].return_tuple.is_empty());
+}
+
 TEST_CASE("[Modules][FoundryScript] Cleared script refuses to instantiate") {
 	// Regression test: `clear()` deletes every compiled function (this is what
 	// `FSLanguage::finish()` does to all live scripts), but a stale Ref or ResourceCache entry

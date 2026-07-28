@@ -39,6 +39,9 @@ public:
 		String name;
 		String type;
 		String enumeration;
+		// Qualified name of the FoundryScript named tuple this type denotes, parallel to
+		// `enumeration`. Empty unless the type is a named tuple.
+		String tuple_type;
 		bool is_bitfield = false;
 		String default_value;
 		bool operator<(const ArgumentDoc &p_arg) const {
@@ -65,6 +68,10 @@ public:
 				}
 			}
 
+			if (p_dict.has("tuple_type")) {
+				doc.tuple_type = p_dict["tuple_type"];
+			}
+
 			if (p_dict.has("default_value")) {
 				doc.default_value = p_dict["default_value"];
 			}
@@ -87,6 +94,10 @@ public:
 				dict["is_bitfield"] = p_doc.is_bitfield;
 			}
 
+			if (!p_doc.tuple_type.is_empty()) {
+				dict["tuple_type"] = p_doc.tuple_type;
+			}
+
 			if (!p_doc.default_value.is_empty()) {
 				dict["default_value"] = p_doc.default_value;
 			}
@@ -99,6 +110,9 @@ public:
 		String name;
 		String return_type;
 		String return_enum;
+		// Qualified name of the FoundryScript named tuple the return type denotes, parallel to
+		// `return_enum`. Empty unless the return type is a named tuple.
+		String return_tuple;
 		bool return_is_bitfield = false;
 		String qualifiers;
 		String description;
@@ -157,6 +171,10 @@ public:
 				}
 			}
 
+			if (p_dict.has("return_tuple")) {
+				doc.return_tuple = p_dict["return_tuple"];
+			}
+
 			if (p_dict.has("qualifiers")) {
 				doc.qualifiers = p_dict["qualifiers"];
 			}
@@ -211,6 +229,10 @@ public:
 			if (!p_doc.return_enum.is_empty()) {
 				dict["return_enum"] = p_doc.return_enum;
 				dict["return_is_bitfield"] = p_doc.return_is_bitfield;
+			}
+
+			if (!p_doc.return_tuple.is_empty()) {
+				dict["return_tuple"] = p_doc.return_tuple;
 			}
 
 			if (!p_doc.qualifiers.is_empty()) {
@@ -359,6 +381,9 @@ public:
 		String name;
 		String type;
 		String enumeration;
+		// Qualified name of the FoundryScript named tuple this type denotes, parallel to
+		// `enumeration`. Empty unless the type is a named tuple.
+		String tuple_type;
 		bool is_bitfield = false;
 		String description;
 		String setter, getter;
@@ -389,6 +414,10 @@ public:
 				if (p_dict.has("is_bitfield")) {
 					doc.is_bitfield = p_dict["is_bitfield"];
 				}
+			}
+
+			if (p_dict.has("tuple_type")) {
+				doc.tuple_type = p_dict["tuple_type"];
 			}
 
 			if (p_dict.has("description")) {
@@ -445,6 +474,10 @@ public:
 			if (!p_doc.enumeration.is_empty()) {
 				dict["enumeration"] = p_doc.enumeration;
 				dict["is_bitfield"] = p_doc.is_bitfield;
+			}
+
+			if (!p_doc.tuple_type.is_empty()) {
+				dict["tuple_type"] = p_doc.tuple_type;
 			}
 
 			if (!p_doc.description.is_empty()) {
@@ -656,6 +689,112 @@ public:
 		}
 	};
 
+	// One field of a FoundryScript named tuple declaration. An empty `name` is a positional
+	// field, matching `FSParser::DataType::tuple_field_names` semantics.
+	struct TupleFieldDoc {
+		String name;
+		String type;
+		String enumeration;
+		static TupleFieldDoc from_dict(const Dictionary &p_dict) {
+			TupleFieldDoc doc;
+
+			if (p_dict.has("name")) {
+				doc.name = p_dict["name"];
+			}
+
+			if (p_dict.has("type")) {
+				doc.type = p_dict["type"];
+			}
+
+			if (p_dict.has("enumeration")) {
+				doc.enumeration = p_dict["enumeration"];
+			}
+
+			return doc;
+		}
+		static Dictionary to_dict(const TupleFieldDoc &p_doc) {
+			Dictionary dict;
+
+			if (!p_doc.name.is_empty()) {
+				dict["name"] = p_doc.name;
+			}
+
+			if (!p_doc.type.is_empty()) {
+				dict["type"] = p_doc.type;
+			}
+
+			if (!p_doc.enumeration.is_empty()) {
+				dict["enumeration"] = p_doc.enumeration;
+			}
+
+			return dict;
+		}
+	};
+
+	// A FoundryScript named tuple declaration. Named tuples share the constant annotation target
+	// with named enums, so they are documented with the enum model: one entry per declaration,
+	// carrying its own description and deprecation/experimental state.
+	struct TupleDoc {
+		String description;
+		bool is_deprecated = false;
+		String deprecated_message;
+		bool is_experimental = false;
+		String experimental_message;
+		Vector<TupleFieldDoc> fields;
+		static TupleDoc from_dict(const Dictionary &p_dict) {
+			TupleDoc doc;
+
+			if (p_dict.has("description")) {
+				doc.description = p_dict["description"];
+			}
+
+			if (p_dict.has("deprecated")) {
+				doc.is_deprecated = true;
+				doc.deprecated_message = p_dict["deprecated"];
+			}
+
+			if (p_dict.has("experimental")) {
+				doc.is_experimental = true;
+				doc.experimental_message = p_dict["experimental"];
+			}
+
+			Array fields;
+			if (p_dict.has("fields")) {
+				fields = p_dict["fields"];
+			}
+			for (int i = 0; i < fields.size(); i++) {
+				doc.fields.push_back(TupleFieldDoc::from_dict(fields[i]));
+			}
+
+			return doc;
+		}
+		static Dictionary to_dict(const TupleDoc &p_doc) {
+			Dictionary dict;
+
+			if (!p_doc.description.is_empty()) {
+				dict["description"] = p_doc.description;
+			}
+
+			if (p_doc.is_deprecated) {
+				dict["deprecated"] = p_doc.deprecated_message;
+			}
+
+			if (p_doc.is_experimental) {
+				dict["experimental"] = p_doc.experimental_message;
+			}
+
+			if (!p_doc.fields.is_empty()) {
+				Array fields;
+				for (int i = 0; i < p_doc.fields.size(); i++) {
+					fields.push_back(TupleFieldDoc::to_dict(p_doc.fields[i]));
+				}
+				dict["fields"] = fields;
+			}
+
+			return dict;
+		}
+	};
+
 	struct ClassDoc {
 		String name;
 		String inherits;
@@ -669,6 +808,7 @@ public:
 		Vector<MethodDoc> signals;
 		Vector<ConstantDoc> constants;
 		HashMap<String, EnumDoc> enums;
+		HashMap<String, TupleDoc> tuples;
 		Vector<PropertyDoc> properties;
 		Vector<MethodDoc> annotations;
 		Vector<ThemeItemDoc> theme_properties;
@@ -761,6 +901,14 @@ public:
 			}
 			for (const KeyValue<Variant, Variant> &kv : enums) {
 				doc.enums[kv.key] = EnumDoc::from_dict(kv.value);
+			}
+
+			Dictionary tuples;
+			if (p_dict.has("tuples")) {
+				tuples = p_dict["tuples"];
+			}
+			for (const KeyValue<Variant, Variant> &kv : tuples) {
+				doc.tuples[kv.key] = TupleDoc::from_dict(kv.value);
 			}
 
 			Array properties;
@@ -896,6 +1044,14 @@ public:
 					enums[E.key] = EnumDoc::to_dict(E.value);
 				}
 				dict["enums"] = enums;
+			}
+
+			if (!p_doc.tuples.is_empty()) {
+				Dictionary tuples;
+				for (const KeyValue<String, TupleDoc> &E : p_doc.tuples) {
+					tuples[E.key] = TupleDoc::to_dict(E.value);
+				}
+				dict["tuples"] = tuples;
 			}
 
 			if (!p_doc.properties.is_empty()) {
