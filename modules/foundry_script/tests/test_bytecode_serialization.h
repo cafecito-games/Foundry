@@ -2,7 +2,7 @@
 /*  test_bytecode_serialization.h                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -643,6 +643,20 @@ TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType round-trip") {
 	type_parameter.type_parameter_scope = FSDataType::TYPE_PARAMETER_CLASS;
 	data_types.push_back(type_parameter);
 
+	FSDataType tuple_type;
+	tuple_type.kind = FSDataType::TUPLE;
+	tuple_type.builtin_type = Variant::ARRAY;
+	tuple_type.container_element_types.push_back(integer_type);
+	tuple_type.container_element_types.push_back(nullable_float);
+	data_types.push_back(tuple_type);
+
+	FSDataType nested_tuple_type;
+	nested_tuple_type.kind = FSDataType::TUPLE;
+	nested_tuple_type.builtin_type = Variant::ARRAY;
+	nested_tuple_type.container_element_types.push_back(tuple_type);
+	nested_tuple_type.container_element_types.push_back(string_type);
+	data_types.push_back(nested_tuple_type);
+
 	FSDataType specialized_handle;
 	specialized_handle.kind = FSDataType::FOUNDRY_SCRIPT;
 	specialized_handle.builtin_type = Variant::OBJECT;
@@ -1244,6 +1258,48 @@ TEST_CASE("[FoundryScript][BytecodeFunction] Compiled functions round-trip and e
 	}
 	bytecode_check_call_parity(script, "lambda_sum", restored_lambda_function, { 10 });
 	bytecode_destroy_restored_function(script, restored_lambda_function);
+}
+
+TEST_CASE("[FoundryScript][BytecodeFunction] Tuple-typed functions round-trip and execute identically") {
+	// Exercises tuple construction, element access, destructuring, and `is`/`is not` shape tests
+	// through a real compile -> export -> load -> call cycle. The parameter and return types are
+	// tuple-kind `FSDataType`s, so this also drives `encode_data_type`/`decode_data_type` through the
+	// `FSDataType::TUPLE` branch, not just the opcode stream.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func swap_pair(pair: (int, int)) -> (int, int):\n"
+			"\treturn (pair.1, pair.0)\n"
+			"\n"
+			"static func tuple_roundtrip(a: int, b: int, label: String) -> Array:\n"
+			"\tvar pair := (a, b)\n"
+			"\tvar (x, y) = pair\n"
+			"\tvar swapped := (y, x)\n"
+			"\tvar nested := (pair, label)\n"
+			"\tvar erased: Variant = pair\n"
+			"\tvar matches_int_int := erased is (int, int)\n"
+			"\tvar matches_string := erased is (String, int)\n"
+			"\tvar not_string := erased is not (String, int)\n"
+			"\treturn [pair, x, y, swapped, nested, matches_int_int, matches_string, not_string]\n");
+
+	struct ParityFixture {
+		StringName function_name;
+		Vector<Vector<Variant>> argument_sets;
+	};
+	Vector<ParityFixture> fixtures;
+	Array first_pair;
+	first_pair.push_back(3);
+	first_pair.push_back(4);
+	fixtures.push_back({ "swap_pair", { { first_pair } } });
+	fixtures.push_back({ "tuple_roundtrip", { { 1, 2, String("tail") } } });
+
+	for (const ParityFixture &fixture : fixtures) {
+		const String fixture_name = fixture.function_name;
+		CAPTURE(fixture_name);
+		FSFunction *restored = bytecode_round_trip_member_function(script, fixture.function_name);
+		for (const Vector<Variant> &arguments : fixture.argument_sets) {
+			bytecode_check_call_parity(script, fixture.function_name, restored, arguments);
+		}
+		bytecode_destroy_restored_function(script, restored);
+	}
 }
 
 TEST_CASE("[FoundryScript][BytecodeFunction] Await-containing functions deserialize without error") {
