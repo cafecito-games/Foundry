@@ -1150,7 +1150,7 @@ void FSPrinter::print_class_header(const FSParser::ClassNode *p_class, bool p_is
 		// A whole-file `enum_name` declaration: print the canonical `enum_name X:`
 		// head and its full body, not the `class_name` head this class node's
 		// `identifier` (aliased to the enum's own identifier) would otherwise imply.
-		print_enum(p_class->enum_file_decl, "enum_name");
+		print_enum(p_class->enum_file_decl, "enum_name", true);
 	} else if (p_class->is_tuple_file && p_class->tuple_file_decl != nullptr) {
 		// A whole-file `tuple_name` declaration: same rationale as `enum_name` above.
 		print_tuple(p_class->tuple_file_decl, "tuple_name");
@@ -1637,7 +1637,7 @@ void FSPrinter::print_signal(const FSParser::SignalNode *p_signal) {
 	newline();
 }
 
-void FSPrinter::print_enum(const FSParser::EnumNode *p_enum, const String &p_keyword) {
+void FSPrinter::print_enum(const FSParser::EnumNode *p_enum, const String &p_keyword, bool p_owns_trailing_comment) {
 	write_indent();
 	write(p_keyword);
 	if (p_enum->identifier != nullptr) {
@@ -1660,6 +1660,9 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum, const String &p_key
 		write_indent();
 		write("pass");
 		newline();
+		if (p_owns_trailing_comment) {
+			emit_trailing_comment(p_enum->end_line);
+		}
 	} else if (!p_enum->values.is_empty()) {
 		for (int i = 0; i < p_enum->values.size(); i++) {
 			const FSParser::EnumNode::Value &value = p_enum->values[i];

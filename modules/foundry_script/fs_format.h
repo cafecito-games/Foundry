@@ -206,8 +206,11 @@ private:
 	void write_destructure_bindings(const FSParser::VariableDestructureNode *p_destructure);
 	void print_signal(const FSParser::SignalNode *p_signal);
 	// `p_keyword` is the leading token: "enum" for a nested member declaration,
-	// "enum_name" for a file's whole-file type-only head declaration.
-	void print_enum(const FSParser::EnumNode *p_enum, const String &p_keyword = "enum");
+	// "enum_name" for a file's whole-file type-only head declaration. A nested
+	// member's trailing comment (on an empty `pass` body) is left for the caller
+	// in `print_class_body` to flush; a whole-file `enum_name` has no such
+	// caller, so `p_owns_trailing_comment` tells this call to flush it itself.
+	void print_enum(const FSParser::EnumNode *p_enum, const String &p_keyword = "enum", bool p_owns_trailing_comment = false);
 	// `p_keyword` is the leading token: "tuple" for a nested member declaration,
 	// "tuple_name" for a file's whole-file type-only head declaration.
 	void print_tuple(const FSParser::TupleNode *p_tuple, const String &p_keyword = "tuple");
