@@ -2245,9 +2245,18 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		int error_count = other_parser->errors.size();
 		other_analyzer->resolve_class_body(p_class);
 		if (other_parser->errors.size() > error_count) {
-			// The class name here is already its script path, so only the underlying error is added.
 			String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
-			const String suffix = _dependency_error_suffix("class", String(), other_parser, error_count);
+			// A `class_name` class reports its global name here rather than a path, so the
+			// declaring file still has to be named; it is only omitted when the name already is
+			// that path.
+			String class_path = parser_ref->get_path();
+			if (class_path.is_empty()) {
+				class_path = p_class->get_datatype().script_path;
+			}
+			if (_localize_script_path(class_path) == p_class->fqcn) {
+				class_path = String();
+			}
+			const String suffix = _dependency_error_suffix("class", class_path, other_parser, error_count);
 			if (!suffix.is_empty()) {
 				message += " " + suffix;
 			}
