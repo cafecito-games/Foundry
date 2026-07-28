@@ -5833,6 +5833,11 @@ void FSParser::parse_type_test_case_binds(TypeTestNode *p_type_test) {
 }
 
 void FSParser::declare_transient_case_bind(IdentifierNode *p_bind) {
+	if (current_suite == nullptr) {
+		// A case-bind test parsed outside any suite (e.g. a class-level member initializer) has no
+		// scope to declare into. The analyzer still rejects it via TypeTestNode::binds_allowed.
+		return;
+	}
 	if (current_suite->has_local(p_bind->name)) {
 		const SuiteNode::Local &existing = current_suite->get_local(p_bind->name);
 		push_error(vformat(R"(There's already a %s named "%s" in this scope.)", existing.get_name(), p_bind->name), p_bind);
