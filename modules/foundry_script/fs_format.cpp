@@ -1508,7 +1508,10 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		// There is no body whose tail flush would otherwise pick up the declaration's
 		// inline comments, and a signature spread over several source lines collapses
 		// onto one, so every inline comment it carried has to land on that one line.
-		for (int line = p_function->start_line; line <= p_function->end_line; line++) {
+		// A default value printed across several lines (a collection literal) keeps its
+		// own layout and has already emitted the comments on those lines, so start past
+		// the cursor it left behind rather than emitting them a second time.
+		for (int line = MAX(p_function->start_line, last_emitted_line + 1); line <= p_function->end_line; line++) {
 			emit_trailing_comment(line);
 		}
 		return;

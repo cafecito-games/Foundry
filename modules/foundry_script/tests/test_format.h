@@ -801,6 +801,15 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(format_or_fail(expected), expected);
 	}
 
+	// A multi-line default keeps its own layout, so the comments on its lines are
+	// already emitted in place and must not be re-attached to the declaration line.
+	TEST_CASE("[Format] Does not duplicate a comment inside a bodyless multi-line default") {
+		String source = "abstract class C:\n\tabstract func ping(values = [\n\t\t\t1,  # first\n\t\t\t2,\n\t\t]) -> int\n";
+		String expected = "abstract class C:\n\tabstract func ping(values = [\n\t\t1,  # first\n\t\t2,\n\t]) -> int\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(count_comments(expected), 1);
+	}
+
 	// A statement-free lambda suite that still holds trivia is not bodyless: the
 	// standalone annotation is recovered by line, so it needs the block form's line
 	// to be emitted on rather than being collapsed away with the body.
