@@ -1,0 +1,3 @@
+FS_TEST_OK
+var message_type: Dictionary
+  hint=NONE hint_string="" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
