@@ -665,6 +665,25 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 	}
 }
 
+void FSByteCodeGenerator::write_type_test_enum(const Address &p_target, const Address &p_source, const PackedInt64Array &p_declared_values, bool p_is_tagged_union) {
+	append_opcode(FSFunction::OPCODE_TYPE_TEST_ENUM);
+	append(p_target);
+	append(p_source);
+	append(get_constant_pos(p_declared_values) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+	append(p_is_tagged_union ? 1 : 0);
+}
+
+void FSByteCodeGenerator::write_type_test_enum_case(const Address &p_target, const Address &p_source, int p_tag, const Vector<Address> &p_binds) {
+	append_opcode_and_argcount(FSFunction::OPCODE_TYPE_TEST_ENUM_CASE, p_binds.size() + 2);
+	for (const Address &bind : p_binds) {
+		append(bind);
+	}
+	append(p_source);
+	append(p_target);
+	append(p_tag);
+	append(p_binds.size());
+}
+
 void FSByteCodeGenerator::write_and_left_operand(const Address &p_left_operand) {
 	append_opcode(FSFunction::OPCODE_JUMP_IF_NOT);
 	append(p_left_operand);

@@ -5935,6 +5935,7 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 							case FSParser::SuiteNode::Local::PARAMETER:
 							case FSParser::SuiteNode::Local::FOR_VARIABLE:
 							case FSParser::SuiteNode::Local::PATTERN_BIND:
+							case FSParser::SuiteNode::Local::CASE_BIND:
 								r_result.type = ScriptLanguage::LOOKUP_RESULT_LOCAL_VARIABLE;
 								break;
 						}

@@ -1768,6 +1768,18 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 			FSCodeGenerator::Address result = codegen.add_temporary(_gdtype_from_datatype(type_test->get_datatype(), codegen.script));
 
 			FSCodeGenerator::Address operand = _parse_expression(codegen, r_error, type_test->operand);
+			if (r_error) {
+				return FSCodeGenerator::Address();
+			}
+
+			if (type_test->test_datatype.kind == FSParser::DataType::ENUM && type_test->test_datatype.is_hard_type() && !type_test->test_datatype.is_meta_type) {
+				_parse_enum_type_test(codegen, type_test, result, operand);
+				if (operand.mode == FSCodeGenerator::Address::TEMPORARY) {
+					gen->pop_temporary();
+				}
+				return result;
+			}
+
 			const bool handles_type_annotation = type_test->test_datatype.is_type_handle_annotation;
 			FSDataType test_type = type_test->test_datatype.kind == FSParser::DataType::TUPLE && type_test->test_datatype.is_hard_type()
 					? _gdtype_tuple_test_type_from_datatype(type_test->test_datatype, codegen.script)
@@ -2724,14 +2736,62 @@ FSCodeGenerator::Address FSCompiler::_parse_match_pattern(CodeGen &codegen, Erro
 	return p_previous_test;
 }
 
-List<FSCodeGenerator::Address> FSCompiler::_add_block_locals(CodeGen &codegen, const FSParser::SuiteNode *p_block) {
+void FSCompiler::_parse_enum_type_test(CodeGen &codegen, const FSParser::TypeTestNode *p_type_test, const FSCodeGenerator::Address &p_target, const FSCodeGenerator::Address &p_source) {
+	FSCodeGenerator *gen = codegen.generator;
+	const FSParser::DataType &test_type = p_type_test->test_datatype;
+
+	if (test_type.enum_case_name == StringName()) {
+		// `value is SomeEnum`: a membership test against the enum's declared value set.
+		PackedInt64Array declared_values;
+		declared_values.resize(test_type.enum_values.size());
+		int index = 0;
+		for (const KeyValue<StringName, int64_t> &E : test_type.enum_values) {
+			declared_values.write[index++] = E.value;
+		}
+		declared_values.sort();
+		gen->write_type_test_enum(p_target, p_source, declared_values, test_type.is_tagged_union);
+		return;
+	}
+
+	const int64_t *tag = test_type.enum_values.getptr(test_type.enum_case_name);
+	const FSParser::DataType::EnumCasePayload *payload = test_type.get_enum_case_payload(test_type.enum_case_name);
+	const int arity = payload != nullptr ? payload->field_types.size() : 0;
+
+	// One address per payload position, so the shape check and the binds share a single operand list.
+	// A position without a bind (`_`, or a bare tag test on a payload case) still needs an address to
+	// receive the element, so it gets a scratch temporary that is discarded right after.
+	Vector<FSCodeGenerator::Address> binds;
+	int scratch_count = 0;
+	for (int i = 0; i < arity; i++) {
+		const FSParser::IdentifierNode *bind = i < p_type_test->case_binds.size() ? p_type_test->case_binds[i] : nullptr;
+		if (bind != nullptr && codegen.locals.has(bind->name)) {
+			binds.push_back(codegen.locals[bind->name]);
+		} else {
+			binds.push_back(codegen.add_temporary());
+			scratch_count++;
+		}
+	}
+
+	gen->write_type_test_enum_case(p_target, p_source, tag != nullptr ? (int)*tag : -1, binds);
+
+	for (int i = 0; i < scratch_count; i++) {
+		gen->pop_temporary();
+	}
+}
+
+List<FSCodeGenerator::Address> FSCompiler::_add_block_locals(CodeGen &codegen, const FSParser::SuiteNode *p_block, List<FSCodeGenerator::Address> *r_case_bind_locals) {
 	List<FSCodeGenerator::Address> addresses;
 	for (int i = 0; i < p_block->locals.size(); i++) {
 		if (p_block->locals[i].type == FSParser::SuiteNode::Local::PARAMETER || p_block->locals[i].type == FSParser::SuiteNode::Local::FOR_VARIABLE) {
 			// Parameters are added directly from function and loop variables are declared explicitly.
 			continue;
 		}
-		addresses.push_back(codegen.add_local(p_block->locals[i].name, _gdtype_from_datatype(p_block->locals[i].get_datatype(), codegen.script)));
+		const FSCodeGenerator::Address address = codegen.add_local(p_block->locals[i].name, _gdtype_from_datatype(p_block->locals[i].get_datatype(), codegen.script));
+		if (r_case_bind_locals != nullptr && p_block->locals[i].type == FSParser::SuiteNode::Local::CASE_BIND) {
+			r_case_bind_locals->push_back(address);
+		} else {
+			addresses.push_back(address);
+		}
 	}
 	return addresses;
 }
@@ -2865,6 +2925,17 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 			} break;
 			case FSParser::Node::IF: {
 				const FSParser::IfNode *if_n = static_cast<const FSParser::IfNode *>(s);
+
+				// `if value is Case(x)` writes its binds while the condition is evaluated, so the true
+				// block's locals must already exist. They then belong to an extra scope wrapping the
+				// whole statement, exactly like `match` branch binds.
+				const bool preallocate_true_block = if_n->condition_has_case_binds;
+				List<FSCodeGenerator::Address> true_block_locals;
+				if (preallocate_true_block) {
+					codegen.start_block();
+					true_block_locals = _add_block_locals(codegen, if_n->true_block);
+				}
+
 				FSCodeGenerator::Address condition = _parse_expression(codegen, err, if_n->condition);
 				if (err) {
 					return err;
@@ -2876,7 +2947,7 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 					codegen.generator->pop_temporary();
 				}
 
-				err = _parse_block(codegen, if_n->true_block);
+				err = _parse_block(codegen, if_n->true_block, !preallocate_true_block);
 				if (err) {
 					return err;
 				}
@@ -2891,6 +2962,11 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 				}
 
 				gen->write_endif();
+
+				if (preallocate_true_block) {
+					_clear_block_locals(codegen, true_block_locals);
+					codegen.end_block();
+				}
 			} break;
 			case FSParser::Node::FOR: {
 				const FSParser::ForNode *for_n = static_cast<const FSParser::ForNode *>(s);
@@ -2981,6 +3057,16 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 
 				codegen.start_block(); // Add an extra block, since we use custom logic to clear block locals.
 
+				// `while value is Case(x)` writes its binds while the condition is evaluated, so the
+				// loop's locals must already exist. The binds are kept out of the per-iteration clear
+				// list, which runs after the condition and would otherwise wipe what it just bound.
+				const bool preallocate_loop = while_n->condition_has_case_binds;
+				List<FSCodeGenerator::Address> loop_locals;
+				List<FSCodeGenerator::Address> case_bind_locals;
+				if (preallocate_loop) {
+					loop_locals = _add_block_locals(codegen, while_n->loop, &case_bind_locals);
+				}
+
 				gen->start_while_condition();
 
 				FSCodeGenerator::Address condition = _parse_expression(codegen, err, while_n->condition);
@@ -2995,7 +3081,9 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 				}
 
 				// Loop variables must be cleared even when `break`/`continue` is used.
-				List<FSCodeGenerator::Address> loop_locals = _add_block_locals(codegen, while_n->loop);
+				if (!preallocate_loop) {
+					loop_locals = _add_block_locals(codegen, while_n->loop);
+				}
 
 				_clear_block_locals(codegen, loop_locals); // Inside loop, before block - for `continue`.
 
@@ -3007,6 +3095,7 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 				gen->write_endwhile();
 
 				_clear_block_locals(codegen, loop_locals); // Outside loop, after block - for `break` and normal exit.
+				_clear_block_locals(codegen, case_bind_locals);
 
 				codegen.end_block(); // Get out of extra block for custom locals clearing.
 			} break;

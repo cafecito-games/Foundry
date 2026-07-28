@@ -819,11 +819,22 @@ expressions (`can_assign` is false there).
 #### Cast and type test
 
 ```ebnf
-cast      = expression, "as", type ;
-type_test = expression, "is", [ "not" ], type ;
+cast          = expression, "as", type ;
+type_test     = expression, "is", [ "not" ], type, [ case_bind_list ] ;
+case_bind_list = "(", case_bind, { ",", case_bind }, ")" ;
+case_bind     = identifier | "_" ;
 ```
 
 `x is not int` is parsed as `not (x is int)`.
+
+A `case_bind_list` may only follow a type that names a tagged-union case, `msg is Message.Move(x, y)`;
+a case name is accepted in this position only, never as a type annotation. The list is rejected
+after `is not`, must be non-empty, must not repeat a bind name, and must have exactly one entry per
+payload field of the case (`_` skips a field without declaring a name). A bind-carrying test is only
+valid as the condition of `if`, `elif`, `while`, or `assert`, either directly or as an operand of
+`and` within that condition; the binds become locals of the guarded suite (of the enclosing suite for
+`assert`). Without a bind list, `msg is Message.Move` is an ordinary boolean expression that tests
+the case tag, and `msg is Message` tests membership in the enum.
 
 #### `await`
 

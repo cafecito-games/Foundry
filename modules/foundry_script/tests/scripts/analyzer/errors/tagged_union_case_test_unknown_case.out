@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Enum "tagged_union_case_test_unknown_case.fs.UnknownCaseMessage" has no case named "Resize".

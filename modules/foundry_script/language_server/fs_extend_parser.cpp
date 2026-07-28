@@ -715,6 +715,7 @@ void ExtendFSParser::parse_function_symbol(const FSParser::FunctionNode *p_func,
 					break;
 				case SuiteNode::Local::FOR_VARIABLE:
 				case SuiteNode::Local::PATTERN_BIND:
+				case SuiteNode::Local::CASE_BIND:
 					symbol.range = range_of_node(local.bind);
 					symbol.selectionRange = range_of_node(local.bind);
 					break;

@@ -390,6 +390,8 @@ public:
 		OPCODE_TYPE_TEST_ARRAY,
 		OPCODE_TYPE_TEST_DICTIONARY,
 		OPCODE_TYPE_TEST_TUPLE, // Structural shape test: Array, matching arity, per-element type test.
+		OPCODE_TYPE_TEST_ENUM, // Membership test against an enum's value set (int-backed or tagged union).
+		OPCODE_TYPE_TEST_ENUM_CASE, // Tagged-union case test that also binds the case payload on success.
 		OPCODE_TYPE_TEST_NATIVE,
 		OPCODE_TYPE_TEST_SCRIPT,
 		OPCODE_SET_KEYED,

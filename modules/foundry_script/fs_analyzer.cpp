@@ -2082,6 +2082,19 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				push_error(vformat(R"(Could not find type "%s" in "%s".)", p_type->type_chain[resolved_type_chain_size]->name, first), p_type->type_chain[resolved_type_chain_size]);
 				return bad_type;
 			}
+		} else if (result.kind == FSParser::DataType::ENUM && result.is_tagged_union && p_type->allows_enum_case) {
+			// A tagged-union case is not a type, so it is only accepted where the parser asked for it:
+			// the right-hand side of an `is` test.
+			if (p_type->type_chain.size() > resolved_type_chain_size + 1) {
+				push_error(R"(Enum cases cannot contain nested types.)", p_type->type_chain[resolved_type_chain_size + 1]);
+				return bad_type;
+			}
+			const StringName case_name = p_type->type_chain[resolved_type_chain_size]->name;
+			if (!result.enum_values.has(case_name)) {
+				push_error(vformat(R"(Enum "%s" has no case named "%s".)", result.to_string(), case_name), p_type->type_chain[resolved_type_chain_size]);
+				return bad_type;
+			}
+			result.enum_case_name = case_name;
 		} else {
 			push_error(vformat(R"(Could not find nested type "%s" under base "%s".)", p_type->type_chain[resolved_type_chain_size]->name, result.to_string()), p_type->type_chain[resolved_type_chain_size]);
 			return bad_type;
@@ -10283,20 +10296,38 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 	p_type_test->test_datatype = test_type;
 
 	if (!operand_type.is_set() || !test_type.is_set()) {
+		// The surrounding error already explains the unresolved type; give the binds a usable type so
+		// their uses do not cascade into further diagnostics.
+		for (FSParser::IdentifierNode *bind : p_type_test->case_binds) {
+			if (bind != nullptr) {
+				FSParser::DataType bind_type;
+				bind_type.kind = FSParser::DataType::VARIANT;
+				bind_type.type_source = FSParser::DataType::INFERRED;
+				bind->set_datatype(bind_type);
+			}
+		}
 		return;
 	}
 
-	if (p_type_test->operand->is_constant) {
+	// A case test compares the runtime tag, not the static type, so the union itself is the type the
+	// operand is checked against.
+	const bool is_enum_case_test = test_type.is_tagged_union_type() && test_type.enum_case_name != StringName();
+	FSParser::DataType compatibility_type = test_type;
+	compatibility_type.enum_case_name = StringName();
+
+	resolve_type_test_case_binds(p_type_test, test_type);
+
+	if (p_type_test->operand->is_constant && !is_enum_case_test) {
 		p_type_test->is_constant = true;
 		p_type_test->reduced_value = false;
 
-		if (!is_type_compatible(test_type, operand_type)) {
+		if (!is_type_compatible(compatibility_type, operand_type)) {
 			push_error(vformat(R"(Expression is of type "%s" so it can't be of type "%s".)", operand_type.to_string(), test_type.to_string()), p_type_test->operand);
 		} else {
 			// The constant's type can still be resolving during re-entrant member resolution;
 			// only fold the test when it is known (`is_type_compatible()` treats unset as compatible anyway).
 			const FSParser::DataType value_type = type_from_variant(p_type_test->operand->reduced_value, p_type_test->operand);
-			if (value_type.is_set() && is_type_compatible(test_type, value_type)) {
+			if (value_type.is_set() && is_type_compatible(compatibility_type, value_type)) {
 				p_type_test->reduced_value = test_type.builtin_type != Variant::OBJECT || !p_type_test->operand->reduced_value.is_null();
 			}
 		}
@@ -10304,12 +10335,51 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 		return;
 	}
 
-	if (!is_type_compatible(test_type, operand_type) && !is_type_compatible(operand_type, test_type)) {
+	if (!is_type_compatible(compatibility_type, operand_type) && !is_type_compatible(operand_type, compatibility_type)) {
 		if (operand_type.is_hard_type()) {
 			push_error(vformat(R"(Expression is of type "%s" so it can't be of type "%s".)", operand_type.to_string(), test_type.to_string()), p_type_test->operand);
 		} else {
 			downgrade_node_type_source(p_type_test->operand);
 		}
+	}
+}
+
+void FSAnalyzer::resolve_type_test_case_binds(FSParser::TypeTestNode *p_type_test, const FSParser::DataType &p_test_type) {
+	if (p_type_test->case_binds.is_empty()) {
+		return;
+	}
+
+	const FSParser::DataType::EnumCasePayload *payload = nullptr;
+	const bool is_enum_case_test = p_test_type.is_tagged_union_type() && p_test_type.enum_case_name != StringName();
+
+	if (!is_enum_case_test) {
+		push_error(R"*(Only a tagged-union case can bind payload values, e.g. "value is Message.Move(x, y)".)*", p_type_test);
+	} else {
+		if (!p_type_test->binds_allowed) {
+			push_error(R"(Case payload binds are only allowed in the condition of "if", "elif", "while" or "assert", directly or as an "and" operand.)", p_type_test);
+		}
+		payload = p_test_type.get_enum_case_payload(p_test_type.enum_case_name);
+		if (payload == nullptr) {
+			push_error(vformat(R"(Case "%s" carries no payload, so it cannot bind values.)", p_test_type.enum_case_name), p_type_test);
+		} else if (payload->field_types.size() != p_type_test->case_binds.size()) {
+			push_error(vformat(R"(Case "%s" carries %d payload value(s), but %d bind(s) were given.)", p_test_type.enum_case_name, payload->field_types.size(), p_type_test->case_binds.size()), p_type_test);
+			payload = nullptr;
+		}
+	}
+
+	for (int i = 0; i < p_type_test->case_binds.size(); i++) {
+		FSParser::IdentifierNode *bind = p_type_test->case_binds[i];
+		if (bind == nullptr) {
+			continue;
+		}
+		FSParser::DataType bind_type;
+		if (payload != nullptr && i < payload->field_types.size()) {
+			bind_type = payload->field_types[i];
+		} else {
+			bind_type.kind = FSParser::DataType::VARIANT;
+			bind_type.type_source = FSParser::DataType::INFERRED;
+		}
+		bind->set_datatype(bind_type);
 	}
 }
 

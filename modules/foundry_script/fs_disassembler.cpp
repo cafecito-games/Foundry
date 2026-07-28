@@ -268,6 +268,38 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 5;
 			} break;
+			case OPCODE_TYPE_TEST_ENUM: {
+				text += "type test ";
+				text += DADDR(1);
+				text += " = ";
+				text += DADDR(2);
+				text += _code_ptr[ip + 4] ? " is tagged union " : " is enum ";
+				text += Variant(get_constant(_code_ptr[ip + 3] & ADDR_MASK)).operator String();
+
+				incr += 5;
+			} break;
+			case OPCODE_TYPE_TEST_ENUM_CASE: {
+				int instr_var_args = _code_ptr[++ip];
+				int bind_count = _code_ptr[ip + 2 + instr_var_args];
+				text += "type test ";
+				text += DADDR(1 + bind_count + 1);
+				text += " = ";
+				text += DADDR(1 + bind_count);
+				text += " is enum case tag ";
+				text += itos(_code_ptr[ip + 1 + instr_var_args]);
+				text += " binding (";
+
+				for (int i = 0; i < bind_count; i++) {
+					if (i > 0) {
+						text += ", ";
+					}
+					text += DADDR(1 + i);
+				}
+
+				text += ")";
+
+				incr += 5 + bind_count;
+			} break;
 			case OPCODE_TYPE_TEST_DICTIONARY: {
 				text += "type test ";
 				text += DADDR(1);

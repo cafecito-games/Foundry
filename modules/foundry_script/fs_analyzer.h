@@ -485,6 +485,7 @@ private:
 	void reduce_call_enum_case_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_enum_meta_type);
 	void reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(FSParser::TypeTestNode *p_type_test);
+	void resolve_type_test_case_binds(FSParser::TypeTestNode *p_type_test, const FSParser::DataType &p_test_type);
 	void reduce_unary_op(FSParser::UnaryOpNode *p_unary_op);
 
 	Variant make_expression_reduced_value(FSParser::ExpressionNode *p_expression, bool &is_reduced);
