@@ -4618,8 +4618,9 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 				decide_suite_type(p_match_pattern, p_match_pattern->array[i]);
 			}
 			// A tuple pattern only accepts every value of its subject when the subject is statically a
-			// tuple of the same arity; against a Variant it can still fail the shape test at runtime.
-			p_match_pattern->is_irrefutable = all_irrefutable && subject_is_tuple &&
+			// non-nullable tuple of the same arity; against a Variant or a nullable tuple it can still
+			// fail the shape test at runtime.
+			p_match_pattern->is_irrefutable = all_irrefutable && subject_is_tuple && !match_test_type.is_nullable &&
 					match_test_type.get_container_element_type_count() == p_match_pattern->array.size();
 			result = p_match_pattern->get_datatype();
 		} break;
