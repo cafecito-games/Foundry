@@ -2,7 +2,7 @@
 /*  fs_function.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -244,6 +244,10 @@ bool FSDataType::is_type_handle_type(const Variant &p_variant) const {
 
 FSDataType FSDataType::from_type_handle_container_type(const ContainerType &p_container_type) {
 	return _gdtype_from_container_type(p_container_type, true);
+}
+
+FSDataType FSDataType::from_container_type(const ContainerType &p_container_type) {
+	return _gdtype_from_container_type(p_container_type, false);
 }
 
 Variant FSFunction::get_constant(int p_idx) const {

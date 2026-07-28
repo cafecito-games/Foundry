@@ -131,6 +131,7 @@ public:
 			TRAIT,
 			TRAIT_NAME,
 			TUPLE,
+			TUPLE_NAME,
 			USES,
 			VAR,
 			TK_VOID, // Conflict with WinAPI.

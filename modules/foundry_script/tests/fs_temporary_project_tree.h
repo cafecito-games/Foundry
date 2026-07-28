@@ -2,7 +2,7 @@
 /*  fs_temporary_project_tree.h                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -35,6 +35,17 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
+
+#ifdef UNIX_ENABLED
+#include <sys/types.h>
+#include <cerrno>
+#include <csignal>
+#endif // UNIX_ENABLED
+
+#ifdef WINDOWS_ENABLED
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif // WINDOWS_ENABLED
 
 namespace FSTests {
 
@@ -76,7 +87,23 @@ struct TemporaryProjectTree {
 				return configured_root.simplify_path();
 			}
 		}
-		return OS::get_singleton()->get_temp_path().path_join("foundry-tests").simplify_path();
+		// Without an explicit `FOUNDRY_TEST_SCRATCH`, fall back to a directory scoped to this
+		// process. A fixed shared path would let two `foundry` test processes running
+		// concurrently on the same machine (e.g. separate worktrees during a multi-agent
+		// session) race on the same staged project tree: one process's `remove_recursive` +
+		// `copy_dir` in `stage_project_copy` can interleave with another's, corrupting the
+		// staged files each currently-running test depends on.
+		static const String scoped_root = [] {
+			const String base = OS::get_singleton()->get_temp_path().simplify_path();
+			// Sweep scratch directories left behind by processes that are no longer
+			// running (crashed, killed, or otherwise never reached their own cleanup) so
+			// direct, `FOUNDRY_TEST_SCRATCH`-less invocations don't accumulate one staged
+			// project copy per past run.
+			reap_dead_process_scratch_dirs(base);
+			const String directory_name = vformat("foundry-tests-%d", OS::get_singleton()->get_process_id());
+			return base.path_join(directory_name).simplify_path();
+		}();
+		return scoped_root;
 	}
 
 	static String get_test_scratch_path(const String &p_name) {
@@ -134,6 +161,78 @@ struct TemporaryProjectTree {
 		}
 		dir->list_dir_end();
 		DirAccess::remove_absolute(p_path);
+	}
+
+private:
+	// A grace period before a `foundry-tests-<pid>` directory is even considered for
+	// reaping. This alone cannot prove the owning process exited (a paused debugger
+	// session, or a backward wall-clock jump, could make a live process's directory look
+	// old), so it is only ever used to gate `process_is_definitely_dead()` below, never as
+	// the sole reason to delete.
+	static constexpr uint64_t STALE_SCRATCH_AGE_SECONDS = 12 * 60 * 60;
+
+	// True only when the platform can prove `p_pid` no longer names a running process, for
+	// any process on the system, not just this one's own children. `OS::is_process_running()`
+	// cannot be reused here: on Unix it is implemented via `waitpid` and on Windows it looks
+	// up the engine's own child-process table, so both only answer for processes this
+	// engine instance itself started. A live but unrelated sibling `foundry` test process
+	// must never be mistaken for dead, so every ambiguous outcome (permission denied, an
+	// unsupported platform) is treated as "still alive".
+	static bool process_is_definitely_dead(int64_t p_pid) {
+#ifdef UNIX_ENABLED
+		// `kill(pid, 0)` sends no signal; it only probes whether `pid` exists and is
+		// visible to this user. `ESRCH` is the only outcome that proves the process is
+		// gone; `EPERM` means it exists but is owned by someone else.
+		return ::kill((pid_t)p_pid, 0) != 0 && errno == ESRCH;
+#elif defined(WINDOWS_ENABLED)
+		// `OpenProcess` fails for a PID no process on the system currently holds, which is
+		// enough on its own to prove `p_pid` is gone (unlike `GetExitCodeProcess`, this
+		// does not require having started or otherwise tracked the process).
+		HANDLE process_handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, (DWORD)p_pid);
+		if (process_handle == nullptr) {
+			return GetLastError() == ERROR_INVALID_PARAMETER;
+		}
+		CloseHandle(process_handle);
+		return false;
+#else
+		// Without a reliable cross-process liveness check, never claim a directory is
+		// safe to delete based on age alone.
+		return false;
+#endif
+	}
+
+	// Removes `foundry-tests-<pid>` directories under `p_base` whose owning process is
+	// provably no longer running and that have not been touched recently, so scratch
+	// directories from earlier direct test invocations are reclaimed the next time any
+	// `foundry` test process starts, without ever touching a live process's staged
+	// project.
+	static void reap_dead_process_scratch_dirs(const String &p_base) {
+		Ref<DirAccess> dir = DirAccess::open(p_base);
+		if (dir.is_null()) {
+			return;
+		}
+		const uint64_t now = OS::get_singleton()->get_unix_time();
+		dir->list_dir_begin();
+		for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
+			const String child = p_base.path_join(entry);
+			// Never follow a symlink here: a planted (or merely stale, from a different
+			// tool) symlink named `foundry-tests-<n>` in the shared system temp directory
+			// must not cause a recursive delete outside the scratch area.
+			if (!dir->current_is_dir() || dir->is_link(child) || !entry.begins_with("foundry-tests-")) {
+				continue;
+			}
+			const String pid_text = entry.trim_prefix("foundry-tests-");
+			if (!pid_text.is_valid_int()) {
+				continue;
+			}
+			const uint64_t modified_time = FileAccess::get_modified_time(child);
+			const bool recently_touched = modified_time != 0 && now >= modified_time && now - modified_time < STALE_SCRATCH_AGE_SECONDS;
+			if (recently_touched || !process_is_definitely_dead(pid_text.to_int())) {
+				continue;
+			}
+			remove_recursive(child);
+		}
+		dir->list_dir_end();
 	}
 };
 

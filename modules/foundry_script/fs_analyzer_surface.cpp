@@ -1458,6 +1458,15 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 			resolve_enum_interface(p_class->enum_file_decl, enum_type, p_class);
 		}
 
+		// The same applies to a `tuple_name` declaration: resolving it here validates its field types
+		// and reports a by-value self-cycle even when no other script references the tuple.
+		if (p_class == parser->head && p_class->is_tuple_file && p_class->tuple_file_decl != nullptr && p_class->tuple_file_decl->identifier != nullptr) {
+			const StringName global_tuple_name = p_class->qualified_global_name.is_empty()
+					? p_class->tuple_file_decl->identifier->name
+					: StringName(p_class->qualified_global_name);
+			make_global_tuple_type_from_current_parser(global_tuple_name, p_class);
+		}
+
 		// Resolve declared type-parameter bounds eagerly so runtime reflection can report them even
 		// when a parameter is never referenced inside the class body. A class parameter's bound is
 		// resolved in its declaring class scope, mirroring `resolve_type_parameter`.

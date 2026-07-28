@@ -67,6 +67,9 @@ public:
 		NATIVE,
 		SCRIPT,
 		FOUNDRY_SCRIPT,
+		// A tuple shape. The value erases to a read-only Array, so only `is` tests keep the shape
+		// around at runtime; `container_element_types` holds the element types, in declaration order.
+		TUPLE,
 		TYPE_PARAMETER, // Generic type parameter, erased before execution.
 	};
 
@@ -105,6 +108,9 @@ public:
 
 	bool is_type_handle_type(const Variant &p_variant) const;
 	static FSDataType from_type_handle_container_type(const ContainerType &p_container_type);
+	// Value-position counterpart of the above: rebuilds a plain type (not a type handle) from the
+	// container-type description a constant carries.
+	static FSDataType from_container_type(const ContainerType &p_container_type);
 
 	// True when `p_base` (or any of its base scripts) is retroactively conformed to trait `p_trait` via
 	// an external `extend ... uses` declaration recorded in the conformance registry. Used as a runtime
@@ -201,6 +207,33 @@ public:
 					base = base->get_base_script();
 				}
 				return valid;
+			} break;
+			case TUPLE: {
+				// Named identity is erased at runtime, so the test is structural: an Array of the
+				// right arity whose elements pass their own type tests. Any shape-compatible Array
+				// therefore satisfies a named tuple test, the same class of erasure that int-backed
+				// enum tests already have.
+				if (p_variant.get_type() != Variant::ARRAY) {
+					return false;
+				}
+				const Array array = p_variant;
+				if (array.size() != container_element_types.size()) {
+					return false;
+				}
+				for (int i = 0; i < container_element_types.size(); i++) {
+					const FSDataType &element_type = container_element_types[i];
+					const Variant element = array[i];
+					// Object kinds accept null for assignment compatibility, which an `is` test must
+					// not: `null is Node` is false, so a null element only satisfies a nullable slot.
+					if (element.get_type() == Variant::NIL && !element_type.is_nullable &&
+							(element_type.kind == NATIVE || element_type.kind == SCRIPT || element_type.kind == FOUNDRY_SCRIPT)) {
+						return false;
+					}
+					if (!element_type.is_type(element)) {
+						return false;
+					}
+				}
+				return true;
 			} break;
 			case TYPE_PARAMETER: {
 				// Type parameters are erased before execution; accept any value defensively.
@@ -356,6 +389,7 @@ public:
 		OPCODE_TYPE_TEST_BUILTIN,
 		OPCODE_TYPE_TEST_ARRAY,
 		OPCODE_TYPE_TEST_DICTIONARY,
+		OPCODE_TYPE_TEST_TUPLE, // Structural shape test: Array, matching arity, per-element type test.
 		OPCODE_TYPE_TEST_NATIVE,
 		OPCODE_TYPE_TEST_SCRIPT,
 		OPCODE_SET_KEYED,

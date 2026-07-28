@@ -292,6 +292,25 @@ static bool _datatype_contains_coroutine(const FSParser::DataType &p_datatype) {
 	return false;
 }
 
+// Type slots erase a tuple to a plain Array, but an `is` test has to keep the shape: the runtime
+// tuple kind carries the arity and the element types so the test can check them structurally.
+FSDataType FSCompiler::_gdtype_tuple_test_type_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner) {
+	FSDataType result;
+	result.kind = FSDataType::TUPLE;
+	result.builtin_type = Variant::ARRAY;
+	result.is_nullable = p_datatype.is_nullable;
+	for (const FSParser::DataType &element : p_datatype.container_element_types) {
+		if (element.kind == FSParser::DataType::TUPLE) {
+			result.container_element_types.push_back(_gdtype_tuple_test_type_from_datatype(element, p_owner));
+		} else {
+			// A soft or unset element type yields the `VARIANT` kind, which accepts any value: an
+			// element the analyzer could not pin down must not make the whole test fail.
+			result.container_element_types.push_back(_gdtype_from_datatype(element, p_owner));
+		}
+	}
+	return result;
+}
+
 FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype) {
 	if (!p_datatype.is_set() || !p_datatype.is_hard_type() || p_datatype.is_coroutine) {
 		return FSDataType();
@@ -1707,7 +1726,9 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 
 			FSCodeGenerator::Address operand = _parse_expression(codegen, r_error, type_test->operand);
 			const bool handles_type_annotation = type_test->test_datatype.is_type_handle_annotation;
-			FSDataType test_type = _gdtype_from_datatype(type_test->test_datatype, codegen.script, handles_type_annotation);
+			FSDataType test_type = type_test->test_datatype.kind == FSParser::DataType::TUPLE && type_test->test_datatype.is_hard_type()
+					? _gdtype_tuple_test_type_from_datatype(type_test->test_datatype, codegen.script)
+					: _gdtype_from_datatype(type_test->test_datatype, codegen.script, handles_type_annotation);
 			if (r_error) {
 				return FSCodeGenerator::Address();
 			}

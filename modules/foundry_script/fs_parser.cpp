@@ -929,6 +929,8 @@ void FSParser::parse_program() {
 				advance();
 				if (head->is_enum_file) {
 					push_error(R"("enum_name" cannot be combined with "class_name" in the same file.)");
+				} else if (head->is_tuple_file) {
+					push_error(R"("tuple_name" cannot be combined with "class_name" in the same file.)");
 				} else if (head->trait_name_used) {
 					push_error(R"("class_name" cannot be combined with "trait_name" in the same file.)");
 				} else if (head->identifier != nullptr) {
@@ -942,6 +944,8 @@ void FSParser::parse_program() {
 				advance();
 				if (head->is_enum_file) {
 					push_error(R"("enum_name" cannot be combined with "trait_name" in the same file.)");
+				} else if (head->is_tuple_file) {
+					push_error(R"("tuple_name" cannot be combined with "trait_name" in the same file.)");
 				} else if (head->trait_name_used) {
 					push_error(R"("trait_name" can only be used once.)");
 				} else if (head->identifier != nullptr) {
@@ -960,11 +964,23 @@ void FSParser::parse_program() {
 				}
 				parse_enum_name(can_register_enum_file);
 			} break;
+			case FSTokenizer::Token::TUPLE_NAME: {
+				push_pending_annotations_to_head();
+				advance();
+				bool can_register_tuple_file = true;
+				if (has_top_level_annotation) {
+					push_error(R"(A "tuple_name" file may only contain its tuple declaration.)");
+					can_register_tuple_file = false;
+				}
+				parse_tuple_name(can_register_tuple_file);
+			} break;
 			case FSTokenizer::Token::EXTENDS:
 				push_pending_annotations_to_head();
 				advance();
 				if (head->is_enum_file) {
 					push_error(R"("enum_name" cannot be combined with "extends" in the same file.)");
+				} else if (head->is_tuple_file) {
+					push_error(R"("tuple_name" cannot be combined with "extends" in the same file.)");
 				} else if (head->uses_used) {
 					push_error(R"("extends" must appear before "uses".)");
 				} else if (head->extends_used) {
@@ -984,6 +1000,8 @@ void FSParser::parse_program() {
 				advance();
 				if (head->is_enum_file) {
 					push_error(R"("enum_name" cannot be combined with "uses" in the same file.)");
+				} else if (head->is_tuple_file) {
+					push_error(R"("tuple_name" cannot be combined with "uses" in the same file.)");
 				} else {
 					parse_uses();
 					end_statement("uses declaration");
@@ -1457,6 +1475,46 @@ void FSParser::parse_enum_name(bool p_can_register_enum_file) {
 
 	if (!has_conflict && enum_node != nullptr && enum_node->identifier != nullptr) {
 		current_class->identifier = enum_node->identifier;
+		current_class->qualified_global_name = current_class->namespace_name.is_empty() ? String(current_class->identifier->name) : current_class->namespace_name + "." + String(current_class->identifier->name);
+		current_class->fqcn = current_class->qualified_global_name;
+	}
+}
+
+void FSParser::parse_tuple_name(bool p_can_register_tuple_file) {
+	const bool already_tuple_file = current_class->is_tuple_file;
+	bool has_conflict = !p_can_register_tuple_file;
+	if (already_tuple_file) {
+		push_error(R"("tuple_name" can only be used once per file.)");
+		has_conflict = true;
+	} else if (!current_class->annotations.is_empty()) {
+		push_error(R"(A "tuple_name" file may only contain its tuple declaration.)");
+		has_conflict = true;
+	} else if (current_class->is_enum_file) {
+		push_error(R"("tuple_name" cannot be combined with "enum_name" in the same file.)");
+		has_conflict = true;
+	} else if (current_class->trait_name_used) {
+		push_error(R"("tuple_name" cannot be combined with "trait_name" in the same file.)");
+		has_conflict = true;
+	} else if (current_class->identifier != nullptr) {
+		push_error(R"("tuple_name" cannot be combined with "class_name" in the same file.)");
+		has_conflict = true;
+	} else if (current_class->extends_used) {
+		push_error(R"("tuple_name" cannot be combined with "extends" in the same file.)");
+		has_conflict = true;
+	} else if (current_class->uses_used) {
+		push_error(R"("tuple_name" cannot be combined with "uses" in the same file.)");
+		has_conflict = true;
+	}
+
+	DeclarationModifiers no_modifiers;
+	TupleNode *tuple_node = parse_tuple(no_modifiers);
+	if (!has_conflict) {
+		current_class->is_tuple_file = true;
+		current_class->tuple_file_decl = tuple_node;
+	}
+
+	if (!has_conflict && tuple_node != nullptr && tuple_node->identifier != nullptr) {
+		current_class->identifier = tuple_node->identifier;
 		current_class->qualified_global_name = current_class->namespace_name.is_empty() ? String(current_class->identifier->name) : current_class->namespace_name + "." + String(current_class->identifier->name);
 		current_class->fqcn = current_class->qualified_global_name;
 	}
@@ -2062,6 +2120,17 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 						starts_conformance_declaration);
 		if (disallowed_enum_file_member) {
 			push_error(R"(An "enum_name" file may only contain its enum declaration.)");
+		}
+		// A `tuple_name` file declares one global tuple type and nothing else, mirroring `enum_name`:
+		// the file has no script body to attach members to.
+		const bool disallowed_tuple_file_member = current_class->is_tuple_file &&
+				(starts_declaration ||
+						token.type == FSTokenizer::Token::ANNOTATION ||
+						token.type == FSTokenizer::Token::PASS ||
+						starts_annotation_declaration ||
+						starts_conformance_declaration);
+		if (disallowed_tuple_file_member) {
+			push_error(R"(A "tuple_name" file may only contain its tuple declaration.)");
 		}
 		if (modifiers.has_any() && !starts_declaration) {
 			push_error(R"(Expected a declaration after the modifier.)");
@@ -6036,6 +6105,7 @@ FSParser::ParseRule *FSParser::get_rule(FSTokenizer::Token::Type p_token_type) {
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TRAIT,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TRAIT_NAME,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TUPLE,
+		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TUPLE_NAME,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // USES,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // VAR,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // TK_VOID,

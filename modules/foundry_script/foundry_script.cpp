@@ -3599,6 +3599,7 @@ Vector<String> FSLanguage::get_reserved_words() const {
 		"trait",
 		"trait_name",
 		"tuple",
+		"tuple_name",
 		"var",
 		// Other keywords.
 		"await",
@@ -3720,7 +3721,8 @@ String FSLanguage::_get_global_class_name(const String &p_path, String *r_base_t
 	 * Before changing this function, please ask the current maintainer of EditorFileSystem.
 	 */
 
-	if (r_base_type && c->is_enum_file) {
+	if (r_base_type && (c->is_enum_file || c->is_tuple_file)) {
+		// An `enum_name` or `tuple_name` file declares a type, not a script: it has no base class.
 		*r_base_type = String();
 	} else if (r_base_type) {
 		const FSParser::ClassNode *subclass = c;

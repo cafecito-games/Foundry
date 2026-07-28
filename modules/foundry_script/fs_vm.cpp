@@ -195,6 +195,30 @@ static ContainerType _container_type_from_descriptor(const Variant &p_descriptor
 	return type;
 }
 
+// Rebuilds the tuple shape a type test was compiled against. Only tuple descriptors carry the
+// `is_tuple` marker, so every other node reads back through the shared container-type path.
+static FSDataType _data_type_from_tuple_descriptor(const Variant &p_descriptor) {
+	const Dictionary descriptor = p_descriptor;
+	FSDataType type;
+	if (!descriptor.get("is_tuple", false)) {
+		const ContainerType container_type = _container_type_from_descriptor(descriptor);
+		type = descriptor.get("is_type_handle", false)
+				? FSDataType::from_type_handle_container_type(container_type)
+				: FSDataType::from_container_type(container_type);
+		type.is_nullable = descriptor.get("is_nullable", false);
+		return type;
+	}
+
+	type.kind = FSDataType::TUPLE;
+	type.builtin_type = Variant::ARRAY;
+	type.is_nullable = descriptor.get("is_nullable", false);
+	const Array element_types = descriptor.get("element_types", Array());
+	for (int i = 0; i < element_types.size(); i++) {
+		type.container_element_types.push_back(_data_type_from_tuple_descriptor(element_types[i]));
+	}
+	return type;
+}
+
 static ContainerType _container_type_from_type_info(const Variant &p_type_info, Variant::Type p_builtin_type, const StringName &p_native_type) {
 	if (_is_container_type_descriptor(p_type_info)) {
 		return _container_type_from_descriptor(p_type_info);
@@ -686,6 +710,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_TYPE_TEST_BUILTIN,                      \
 		&&OPCODE_TYPE_TEST_ARRAY,                        \
 		&&OPCODE_TYPE_TEST_DICTIONARY,                   \
+		&&OPCODE_TYPE_TEST_TUPLE,                        \
 		&&OPCODE_TYPE_TEST_NATIVE,                       \
 		&&OPCODE_TYPE_TEST_SCRIPT,                       \
 		&&OPCODE_SET_KEYED,                              \
@@ -1377,6 +1402,31 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				*dst = result;
 				ip += 9;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_TYPE_TEST_TUPLE) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(dst, 0);
+				GET_VARIANT_PTR(value, 1);
+
+				GET_VARIANT_PTR(type_info, 2);
+				const int arity = _code_ptr[ip + 4];
+
+				bool result = false;
+				if (value->get_type() == Variant::ARRAY) {
+					// The arity check is the cheap rejection; only a candidate of the right shape pays
+					// for rebuilding the element types and testing them one by one.
+					result = VariantInternal::get_array(value)->size() == arity &&
+							_data_type_from_tuple_descriptor(*type_info).is_type(*value);
+				} else if (value->get_type() == Variant::NIL) {
+					// A nullable tuple type accepts null; the flag travels on the descriptor.
+					result = _data_type_from_tuple_descriptor(*type_info).is_nullable;
+				}
+
+				*dst = result;
+				ip += 5;
 			}
 			DISPATCH_OPCODE;
 

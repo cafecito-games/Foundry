@@ -258,6 +258,16 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 6;
 			} break;
+			case OPCODE_TYPE_TEST_TUPLE: {
+				text += "type test ";
+				text += DADDR(1);
+				text += " = ";
+				text += DADDR(2);
+				text += " is tuple of arity ";
+				text += itos(_code_ptr[ip + 4]);
+
+				incr += 5;
+			} break;
 			case OPCODE_TYPE_TEST_DICTIONARY: {
 				text += "type test ";
 				text += DADDR(1);
