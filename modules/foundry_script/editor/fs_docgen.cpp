@@ -700,6 +700,22 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 						}
 						const_doc.payload_fields.push_back(field_doc);
 					}
+					// The structured payload only travels through the doc cache; the class
+					// reference XML carries a single value string, so spell the signature there
+					// rather than letting the case degrade to an unresolved constant.
+					String signature = "(";
+					for (int field_index = 0; field_index < const_doc.payload_fields.size(); field_index++) {
+						if (field_index > 0) {
+							signature += ", ";
+						}
+						const DocData::TupleFieldDoc &field_doc = const_doc.payload_fields[field_index];
+						if (!field_doc.name.is_empty()) {
+							signature += field_doc.name + ": ";
+						}
+						signature += field_doc.type;
+					}
+					const_doc.value = signature + ")";
+					const_doc.is_value_valid = true;
 				} else if (!p_requires_resolved_values || val.resolved) {
 					const_doc.value = _docvalue_from_variant(fs_tagged_union_case_singleton(val.value));
 					const_doc.is_value_valid = true;

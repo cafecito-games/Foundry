@@ -4638,7 +4638,9 @@ enum Message:
 	CHECK_EQ(cases["Quit"].description, "Stop processing.");
 
 	// A payload case is a constructor, so it documents its signature instead of a value.
-	CHECK_FALSE(cases["Move"].is_value_valid);
+	// The class reference XML carries only a value string, so the signature is spelled there too.
+	CHECK(cases["Move"].is_value_valid);
+	CHECK_EQ(cases["Move"].value, "(x: int, y: int)");
 	CHECK_EQ(cases["Move"].payload_fields.size(), 2);
 	CHECK_EQ(cases["Write"].payload_fields.size(), 1);
 	if (cases["Move"].payload_fields.size() != 2 || cases["Write"].payload_fields.size() != 1) {
