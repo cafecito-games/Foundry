@@ -1,7 +1,0 @@
-format=2
-module=demo
-registry=example.DemoExtension
-api_sha256=85e91174c1a8a48629223d6459bb2ef595ad1da405b2ce88435c24fe221aec51
-generator_version=1
-runtime_contract_version=1
-bridge_contract_version=1

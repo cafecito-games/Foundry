@@ -19,7 +19,11 @@ import zipfile
 from pathlib import Path
 from types import ModuleType
 
-from tests.python_build.android_native_test_support import populate_native_matrix
+from tests.python_build.android_native_test_support import (
+    EXTERNAL_JNI_SYMBOLS,
+    FOUNDRY_SYMBOLS,
+    populate_native_matrix,
+)
 from tests.python_build.test_android_gradle_behavioral import (
     copy_gradle_fixture,
     find_android_sdk,
@@ -33,12 +37,14 @@ APP_BUILD = REPO_ROOT / "platform/android/java/app/build.gradle"
 APP_CONFIG = REPO_ROOT / "platform/android/java/app/config.gradle"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 DEVICE_ACCEPTANCE_TOOL = REPO_ROOT / "platform/android/android_device_acceptance.py"
+NATIVE_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_native_contract.py"
 GRADLE_WRAPPER = REPO_ROOT / "platform/android/java/gradlew"
 JAVA_ROOT = REPO_ROOT / "platform/android/java"
 APP_ROOT = REPO_ROOT / "platform/android/java/app"
 INTEGRATION_FIXTURE = REPO_ROOT / "tests/fixtures/android_foundry_java"
 ANDROID_RUNTIME_GUIDE = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
 ANDROID_EXPORT_CLASS_REFERENCE = REPO_ROOT / "platform/android/doc_classes/EditorExportPlatformAndroid.xml"
+ANDROID_EXPORT_PLAN = REPO_ROOT / "docs/superpowers/plans/2026-07-26-foundry-java-android-export.md"
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 ANDROID_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/android_builds.yml"
 EXACT_FOUNDRY_JAVA_COMMIT = "0db6970116de257fffffffe2a55e89543d4a12b5"
@@ -66,6 +72,14 @@ def read(relative_path: str) -> str:
     return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def load_source_template_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("android_source_template", SOURCE_TEMPLATE_TOOL)
     if spec is None or spec.loader is None:
@@ -82,6 +96,19 @@ def load_device_acceptance_module() -> ModuleType:
     )
     if spec is None or spec.loader is None:
         raise AssertionError(f"Unable to load {DEVICE_ACCEPTANCE_TOOL}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_native_contract_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "android_native_contract_foundry_java",
+        NATIVE_CONTRACT_TOOL,
+    )
+    if spec is None or spec.loader is None:
+        raise AssertionError(f"Unable to load {NATIVE_CONTRACT_TOOL}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -167,8 +194,96 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
             inspector.FORBIDDEN_BINDING_FRAGMENTS,
         )
 
+    def test_large_command_first_evidence_artifacts_use_streamed_hashing(self) -> None:
+        source = Path(__file__).read_text(encoding="utf-8")
+        self.assertIn("def sha256_file(", source)
+        for eager_hash in (
+            f"hashlib.sha256({'apk'}.read_bytes())",
+            f"hashlib.sha256({'editor'}.read_bytes())",
+            f"hashlib.sha256({'source_template'}.read_bytes())",
+        ):
+            with self.subTest(eager_hash=eager_hash):
+                self.assertNotIn(eager_hash, source)
+
+
+class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
+    @staticmethod
+    def _archive(entries: tuple[tuple[str, bytes], ...]) -> bytes:
+        contents = io.BytesIO()
+        with zipfile.ZipFile(contents, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, payload in entries:
+                archive.writestr(name, payload)
+        return contents.getvalue()
+
+    def test_nested_archive_rejects_an_entry_over_the_decompressed_size_limit(self) -> None:
+        inspector = load_source_template_module()
+        limit = getattr(inspector, "MAX_NESTED_ENTRY_UNCOMPRESSED_BYTES", None)
+        self.assertIsNotNone(limit)
+        inspector.MAX_NESTED_ENTRY_UNCOMPRESSED_BYTES = 4
+        payload = self._archive((("classes.bin", b"12345"),))
+        with self.assertRaisesRegex(inspector.SourceTemplateError, "entry decompressed size limit"):
+            inspector._inspect_host_archive(payload, "host.aar")
+
+    def test_nested_archive_rejects_cumulative_decompressed_size_over_the_limit(self) -> None:
+        inspector = load_source_template_module()
+        limit = getattr(inspector, "MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES", None)
+        self.assertIsNotNone(limit)
+        inspector.MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES = 5
+        payload = self._archive(
+            (
+                ("first.bin", b"123"),
+                ("second.bin", b"456"),
+            )
+        )
+        with self.assertRaisesRegex(inspector.SourceTemplateError, "cumulative decompressed size limit"):
+            inspector._inspect_host_archive(payload, "host.aar")
+
+    def test_nested_archive_rejects_more_than_the_archive_count_limit(self) -> None:
+        inspector = load_source_template_module()
+        limit = getattr(inspector, "MAX_NESTED_ARCHIVES", None)
+        self.assertIsNotNone(limit)
+        inspector.MAX_NESTED_ARCHIVES = 2
+        child = self._archive((("leaf.txt", b"leaf"),))
+        nested = self._archive(
+            (
+                ("nested-a.jar", child),
+                ("nested-b.jar", child),
+            )
+        )
+        with self.assertRaisesRegex(inspector.SourceTemplateError, "nested archive count limit"):
+            inspector._inspect_host_archive(nested, "host.aar")
+
+    def test_nested_archive_rejects_more_than_the_entry_count_limit(self) -> None:
+        inspector = load_source_template_module()
+        limit = getattr(inspector, "MAX_NESTED_ARCHIVE_ENTRIES", None)
+        self.assertIsNotNone(limit)
+        inspector.MAX_NESTED_ARCHIVE_ENTRIES = 1
+        payload = self._archive(
+            (
+                ("first.bin", b"first"),
+                ("second.bin", b"second"),
+            )
+        )
+        with self.assertRaisesRegex(inspector.SourceTemplateError, "nested archive has too many entries"):
+            inspector._inspect_host_archive(payload, "host.aar")
+
 
 class FoundryJavaDocumentationTests(unittest.TestCase):
+    def test_repository_urls_document_ascii_uri_syntax_and_percent_encoding(self) -> None:
+        documents = {
+            "runtime guide": ANDROID_RUNTIME_GUIDE.read_text(encoding="utf-8"),
+            "class reference": ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8"),
+            "design": read("docs/superpowers/specs/2026-07-26-foundry-java-android-export-design.md"),
+            "plan": ANDROID_EXPORT_PLAN.read_text(encoding="utf-8"),
+        }
+        for name, document in documents.items():
+            with self.subTest(document=name):
+                normalized_document = " ".join(document.split())
+                self.assertIn("ASCII URI syntax", normalized_document)
+                self.assertIn("Non-ASCII characters must be percent-encoded", normalized_document)
+                self.assertIn("rejected before Gradle", normalized_document)
+                self.assertIn("redacted", normalized_document)
+
     def test_runtime_guide_documents_the_complete_opt_in_contract(self) -> None:
         guide = ANDROID_RUNTIME_GUIDE.read_text(encoding="utf-8")
         required_fragments = (
@@ -177,6 +292,10 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             "gradle_build/foundry_java/gradle_plugin_maven",
             "gradle_build/foundry_java/gradle_plugin_local",
             "gradle_build/foundry_java/maven_repositories",
+            "HTTPS or an absolute local `file:///` URL",
+            "Plain HTTP",
+            "embedded credentials",
+            "redacted from verbose",
             "gradle_build/foundry_java/maven_artifacts",
             "gradle_build/foundry_java/local_artifacts",
             "registry-index-v2",
@@ -207,13 +326,79 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         self.assertIn("registry-index-v2", class_reference)
         self.assertIn("games.cafecito.foundry.java", class_reference)
         self.assertIn("FoundryJava.foundryextension", class_reference)
+        self.assertIn("absolute local [code]file:///[/code]", class_reference)
+
+    def test_class_reference_documents_the_local_plugin_path_contract(self) -> None:
+        class_reference = ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8")
+        local_plugin = class_reference.split(
+            '<member name="gradle_build/foundry_java/gradle_plugin_local"',
+            maxsplit=1,
+        )[1].split("</member>", maxsplit=1)[0]
+        self.assertIn("regular JAR file", local_plugin)
+        self.assertIn("Every existing path component", local_plugin)
+        self.assertIn("must not be a symbolic link", local_plugin)
+
+    def test_plan_documents_the_bounded_pre_commit_contract_classes(self) -> None:
+        plan = ANDROID_EXPORT_PLAN.read_text(encoding="utf-8")
+        self.assertIn(EXACT_FOUNDRY_JAVA_COMMIT, plan)
+        for stale_reference in (
+            "FoundryJavaArchiveContractTests",
+            "FoundryJavaAndroidIntegrationTests.test_exact_local_inputs",
+            "FoundryJavaAbiAndReleaseTests",
+        ):
+            with self.subTest(stale_reference=stale_reference):
+                self.assertNotIn(stale_reference, plan)
+        task = plan.split("### Task 7: Document and register the contract gates", maxsplit=1)[1].split(
+            "### Task 8:",
+            maxsplit=1,
+        )[0]
+        for contract_class in (
+            "FoundryJavaExportSurfaceTests",
+            "FoundryJavaSourceTemplateResourceTests",
+            "FoundryJavaDocumentationTests",
+            "FoundryJavaFinalArtifactInspectorTests",
+        ):
+            with self.subTest(contract_class=contract_class):
+                self.assertIn(
+                    f"tests.python_build.test_android_foundry_java_export.{contract_class}",
+                    task,
+                )
+        self.assertIn(
+            "Gradle-, integration-, and editor-binary-dependent contract classes remain in CI",
+            task,
+        )
+        self.assertNotIn(
+            "python3 -m unittest tests.python_build.test_android_foundry_java_export -v",
+            task,
+        )
 
     def test_pre_commit_runs_the_contract_on_every_owned_surface(self) -> None:
         config = PRE_COMMIT_CONFIG.read_text(encoding="utf-8")
         hook_marker = "\n      - id: foundry-java-android-export\n"
         self.assertEqual(1, config.count(hook_marker))
         hook = config.split(hook_marker, maxsplit=1)[1].split("\n      - id:", maxsplit=1)[0]
-        self.assertIn("tests.python_build.test_android_foundry_java_export", hook)
+        for contract_class in (
+            "FoundryJavaExportSurfaceTests",
+            "FoundryJavaSourceTemplateResourceTests",
+            "FoundryJavaDocumentationTests",
+            "FoundryJavaFinalArtifactInspectorTests",
+        ):
+            with self.subTest(contract_class=contract_class):
+                self.assertIn(
+                    f"tests.python_build.test_android_foundry_java_export.{contract_class}",
+                    hook,
+                )
+        for non_local_contract in (
+            "FoundryJavaGradlePropertyTests",
+            "FoundryJavaAndroidIntegrationTests",
+            "FoundryJavaExporterContractTests",
+        ):
+            with self.subTest(non_local_contract=non_local_contract):
+                self.assertNotIn(non_local_contract, hook)
+        self.assertNotIn(
+            "\n          - tests.python_build.test_android_foundry_java_export\n",
+            hook,
+        )
         required_scopes = (
             r"\.pre-commit-config\.yaml",
             r"\.github/workflows/android_builds\.yml",
@@ -246,11 +431,11 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             "FOUNDRY_JAVA_REPO: ${{ github.workspace }}/foundry-java-dependency",
             "actions/setup-java@v5",
             "java-version: '17'",
-            (
-                "tests.python_build.test_android_foundry_java_export."
-                "FoundryJavaDocumentationTests."
-                "test_android_ci_runs_the_exact_foundry_java_matrix_without_skipping"
-            ),
+            "tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests",
+            "tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests",
+            "tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests",
+            "tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests",
+            "tests.python_build.test_android_foundry_java_export.FoundryJavaGradlePropertyTests",
             "tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests",
         )
         for fragment in required_fragments:
@@ -331,6 +516,9 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             "FOUNDRY_JAVA_COMMAND_FIRST_OUTPUT:",
             "platforms;android-36",
             "build-tools;36.1.0",
+            "mkdir -p bin",
+            'install -m 0755 "${FOUNDRY_EDITOR_BINARY}" bin/foundry.linuxbsd.editor.dev.x86_64',
+            "tests.python_build.test_android_foundry_java_export.FoundryJavaExporterContractTests",
             ("FoundryJavaAndroidIntegrationTests.test_command_first_source_template_acceptance"),
             "foundry-java-command-first-exports",
         ):
@@ -957,7 +1145,105 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
             "foundry_java_maven_repositories": "ftp://example.invalid/repository",
             "foundry_java_maven_artifacts": "games.cafecito.foundry:foundry-java-android:1.0.0",
         }
-        self.assert_gradle_failed_with(properties, "must use HTTP(S) or file URLs")
+        self.assert_gradle_failed_with(properties, "must use HTTPS or a local file URL")
+
+    def test_insecure_or_secret_bearing_repositories_fail_without_echoing_the_url(self) -> None:
+        base = {
+            "foundry_java_registry_marker": "registry-index-v2",
+            "foundry_java_gradle_plugin_kind": "local",
+            "foundry_java_gradle_plugin": str(self.plugin),
+            "foundry_java_local_artifacts": str(self.artifact),
+        }
+        for repository in (
+            "http://example.invalid/insecure",
+            "https://user:password@example.invalid/repository",
+            "https://example.invalid/repository?token=secret-query-token",
+            "https://example.invalid/repository#secret-fragment-token",
+            "file:/repository",
+            "file:////remote-path/repository",
+            "file://remote-host/repository",
+        ):
+            with self.subTest(repository=repository):
+                result = self.run_gradle(
+                    {
+                        **base,
+                        "foundry_java_maven_repositories": repository,
+                    }
+                )
+                output = result.stdout + result.stderr
+                self.assertNotEqual(0, result.returncode, output)
+                self.assertIn("must use HTTPS or a local file URL without credentials, query, or fragment", output)
+                self.assertNotIn(repository, output)
+
+    def test_repository_raw_uri_syntax_rejects_non_ascii_malformed_escapes_and_illegal_characters(self) -> None:
+        base = self.enabled_local_properties()
+        repositories = (
+            "file:///tmp/repository-é",
+            "file:///tmp/repository-%",
+            "file:///tmp/repository-%0",
+            "file:///tmp/repository-%GG",
+            "https://example.invalid/repository-%GG",
+            "https://invalid_host.example/repository",
+            "https://-invalid.example/repository",
+            "https://example.invalid:0/repository",
+            "https://example.invalid:65536/repository",
+            "https://[::1]:0/repository",
+            "https://[::1]:65536/repository",
+            "https://[::1]invalid/repository",
+            "https://[::1]:8443invalid/repository",
+            "https://[example.invalid]/repository",
+            "https://[127.0.0.1]/repository",
+            " file:///tmp/repository",
+            "file:///tmp/repository ",
+            "file:///tmp/repository bad",
+            "file:///tmp/repository\\bad",
+            'file:///tmp/repository"bad',
+            "file:///tmp/repository<bad",
+            "file:///tmp/repository>bad",
+            "file:///tmp/repository{bad",
+            "file:///tmp/repository}bad",
+            "file:///tmp/repository^bad",
+            "file:///tmp/repository`bad",
+            "file:///tmp/repository|bad",
+            "file:///tmp/repository\x7fbad",
+        )
+        diagnostic = "must use HTTPS or a local file URL without credentials, query, or fragment"
+        for repository in repositories:
+            with self.subTest(repository=repository):
+                result = self.run_gradle(
+                    {
+                        **base,
+                        "foundry_java_maven_repositories": repository,
+                    }
+                )
+                output = result.stdout + result.stderr
+                self.assertNotEqual(0, result.returncode, output)
+                self.assertIn(diagnostic, output)
+                self.assertNotIn(repository, output)
+
+    def test_repository_raw_uri_syntax_accepts_percent_escapes_and_file_root(self) -> None:
+        properties = {
+            **self.enabled_local_properties(),
+            "foundry_java_maven_repositories": "|".join(
+                (
+                    "file:///",
+                    "file:///tmp/repository%20space",
+                    "https://example.invalid/repository/%4a",
+                )
+            ),
+        }
+        result = self.run_gradle(properties)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_mixed_case_local_plugin_extension_is_accepted(self) -> None:
+        mixed_case_plugin = self.workspace / "mixed-plugin.JAR"
+        shutil.copyfile(self.plugin, mixed_case_plugin)
+        properties = {
+            **self.enabled_local_properties(),
+            "foundry_java_gradle_plugin": str(mixed_case_plugin),
+        }
+        result = self.run_gradle(properties)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_missing_local_application_artifact_fails_deterministically(self) -> None:
         properties = self.enabled_local_properties()
@@ -970,7 +1256,7 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
         self.assert_gradle_failed_with(properties, "requires at least one Maven or local application artifact")
 
     def test_every_malformed_application_input_fails_before_plugin_network_resolution(self) -> None:
-        probe_url = f"http://127.0.0.1:{self.network_probe.server_port}/repository"
+        probe_url = (self.workspace / "unreachable-repository").resolve().as_uri()
         base = {
             "foundry_java_registry_marker": "registry-index-v2",
             "foundry_java_gradle_plugin_kind": "maven",
@@ -1007,7 +1293,7 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
                     "foundry_java_maven_repositories": f"{probe_url}|ftp://example.invalid/repository",
                     "foundry_java_maven_artifacts": "test.fixture:module:1.0.0",
                 },
-                "must use HTTP(S) or file URLs",
+                "must use HTTPS or a local file URL",
             ),
             ({}, "requires at least one Maven or local application artifact"),
         )
@@ -1079,8 +1365,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
     runtime_jar: Path
     api_model_jar: Path
     annotations_jar: Path
+    processor_jar: Path
     binding_aar: Path
     module_jar: Path
+    module_generated_sources: Path
     host_fixture_root: Path
     host_java_root: Path
     host_native_root: Path
@@ -1119,6 +1407,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         cls.runtime_jar = cls._only_artifact("foundry-java-runtime/build/libs/foundry-java-runtime-*.jar")
         cls.api_model_jar = cls._only_artifact("foundry-java-api-model/build/libs/foundry-java-api-model-*.jar")
         cls.annotations_jar = cls._only_artifact("foundry-java-annotations/build/libs/foundry-java-annotations-*.jar")
+        cls.processor_jar = cls._only_artifact("foundry-java-processor/build/libs/foundry-java-processor-*.jar")
         cls.binding_aar = cls._only_artifact("foundry-java-android/build/outputs/aar/foundry-java-android-release.aar")
         cls.module_jar = cls._compile_module_fixture()
         cls._prepare_host_fixture()
@@ -1151,6 +1440,8 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             [
                 str(cls.foundry_java_repo / "gradlew"),
                 "--no-daemon",
+                ":foundry-java-annotations:jar",
+                ":foundry-java-processor:jar",
                 ":foundry-java-gradle-plugin:jar",
                 ":foundry-java-runtime:jar",
                 ":foundry-java-android:assembleRelease",
@@ -1173,6 +1464,8 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
     def _compile_module_fixture(cls) -> Path:
         classes = cls.workspace / "module-classes"
         classes.mkdir()
+        cls.module_generated_sources = cls.workspace / "module-generated-sources"
+        cls.module_generated_sources.mkdir()
         sources = sorted((INTEGRATION_FIXTURE / "module/src/main/java").rglob("*.java"))
         result = run_bounded_subprocess(
             [
@@ -1180,7 +1473,14 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                 "--release",
                 "17",
                 "-classpath",
-                str(cls.runtime_jar),
+                os.pathsep.join((str(cls.runtime_jar), str(cls.annotations_jar))),
+                "-processorpath",
+                os.pathsep.join((str(cls.processor_jar), str(cls.annotations_jar))),
+                "-processor",
+                "games.cafecito.foundry.processor.FoundryExtensionProcessor",
+                "-Afoundry.module=demo",
+                "-s",
+                str(cls.module_generated_sources),
                 "-d",
                 str(classes),
                 *[str(source) for source in sources],
@@ -1193,12 +1493,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             raise AssertionError(f"Module fixture compilation failed:\n{result.stdout}\n{result.stderr}")
 
         archive = cls.workspace / "foundry-java-demo-module-1.0.0.jar"
-        entries: list[tuple[str, Path]] = []
-        for root in (
-            classes,
-            INTEGRATION_FIXTURE / "module/src/main/resources",
-        ):
-            entries.extend((path.relative_to(root).as_posix(), path) for path in root.rglob("*") if path.is_file())
+        entries = [(path.relative_to(classes).as_posix(), path) for path in classes.rglob("*") if path.is_file()]
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
             for name, source in sorted(entries):
                 info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
@@ -1260,11 +1555,14 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(assembled, destination)
         with zipfile.ZipFile(destination) as archive:
-            host_entries = sorted(name for name in archive.namelist() if name.endswith("/libfoundry_android.so"))
-        expected = [f"jni/{requested_abi}/libfoundry_android.so"]
-        if host_entries != expected:
+            native_entries = sorted(name for name in archive.namelist() if name.endswith(".so"))
+        expected = [
+            f"jni/{requested_abi}/libc++_shared.so",
+            f"jni/{requested_abi}/libfoundry_android.so",
+        ]
+        if native_entries != expected:
             raise AssertionError(
-                f"Single-ABI host AAR mismatch for {requested_abi}: expected {expected}, found {host_entries}"
+                f"Single-ABI host AAR mismatch for {requested_abi}: expected {expected}, found {native_entries}"
             )
         cls.host_aars[cache_key] = destination
         return destination
@@ -1478,7 +1776,9 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         include_module: bool = True,
         artifacts: tuple[Path, ...] | None = None,
     ) -> dict[str, str]:
-        local_artifacts = list(artifacts) if artifacts is not None else [self.binding_aar, self.runtime_jar]
+        local_artifacts = (
+            list(artifacts) if artifacts is not None else [self.binding_aar, self.runtime_jar, self.annotations_jar]
+        )
         if include_module and artifacts is None:
             local_artifacts.append(self.module_jar)
         return {
@@ -1525,8 +1825,16 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             descriptor_entries = [name for name in module.namelist() if name.endswith(".descriptor")]
             self.assertEqual([descriptor], descriptor_entries)
             descriptor_bytes = module.read(descriptor)
-        fixture = INTEGRATION_FIXTURE / "module/src/main/resources" / descriptor
-        self.assertEqual(fixture.read_bytes(), descriptor_bytes)
+        descriptor_text = descriptor_bytes.decode("utf-8")
+        self.assertIn(
+            "registry=games.cafecito.foundry.generated.demo.DemoRegistry\n",
+            descriptor_text,
+        )
+        self.assertIn("class=example.DemoExtension|DemoExtension|", descriptor_text)
+        self.assertIn(
+            "method=example.DemoExtension|callback_probe|callbackProbe|long(long)\n",
+            descriptor_text,
+        )
         return descriptor, hashlib.sha256(descriptor_bytes).hexdigest()
 
     @staticmethod
@@ -1700,6 +2008,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         requested_abis: tuple[str, ...],
         expected_application_id: str,
         build_type: str = "debug",
+        preserve_native_debug_symbols: bool = False,
     ) -> dict[str, object]:
         first_output = first.stdout + first.stderr
         self.assertEqual(0, first.returncode, first_output)
@@ -1716,8 +2025,9 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         generated_java = app / f"build/generated/java/generate{variant}FoundryJavaRegistry"
         bootstrap = generated_java / "games/cafecito/foundry/generated/FoundryGeneratedBootstrap.java"
         startup_provider = generated_java / "games/cafecito/foundry/generated/FoundryGeneratedStartupProvider.java"
-        self.assertIn("module=demo|example.DemoExtension", index.read_text(encoding="utf-8"))
-        self.assertIn("example.DemoExtension.PROVIDER", bootstrap.read_text(encoding="utf-8"))
+        registry_class = "games.cafecito.foundry.generated.demo.DemoRegistry"
+        self.assertIn(f"module=demo|{registry_class}", index.read_text(encoding="utf-8"))
+        self.assertIn(f"{registry_class}.PROVIDER", bootstrap.read_text(encoding="utf-8"))
         self.assertIn(
             "return FoundryGeneratedBootstrap.bootstrap();",
             startup_provider.read_text(encoding="utf-8"),
@@ -1736,6 +2046,43 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         expected_bridges = tuple(f"lib/{abi}/libfoundry_java.so" for abi in sorted_abis)
         self.assertEqual(sorted_abis, evidence["requested_abis"])
         self.assertEqual(expected_bridges, evidence["bridge_entries"])
+        expected_hosts = tuple(f"lib/{abi}/libfoundry_android.so" for abi in sorted_abis)
+        expected_unrelated = tuple(f"lib/{abi}/libc++_shared.so" for abi in sorted_abis)
+        self.assertEqual(expected_hosts, evidence["host_entries"])
+        native_contract = load_native_contract_module()
+        host_surfaces: set[tuple[str, ...]] = set()
+        unrelated_surfaces: set[tuple[str, ...]] = set()
+        debug_symbols_preserved = True
+        host_aar = app / f"libs/{build_type}/foundry-{build_type}.aar"
+        with zipfile.ZipFile(host_aar) as input_archive, zipfile.ZipFile(apk) as output_archive:
+            output_names = set(output_archive.namelist())
+            self.assertEqual(
+                set(expected_unrelated),
+                {name for name in output_names if name.endswith("/libc++_shared.so")},
+            )
+            for abi in sorted_abis:
+                input_host = input_archive.read(f"jni/{abi}/libfoundry_android.so")
+                output_host = output_archive.read(f"lib/{abi}/libfoundry_android.so")
+                input_unrelated = input_archive.read(f"jni/{abi}/libc++_shared.so")
+                output_unrelated = output_archive.read(f"lib/{abi}/libc++_shared.so")
+                debug_symbols_preserved &= input_host == output_host and input_unrelated == output_unrelated
+                host_surfaces.add(
+                    native_contract.read_elf(
+                        output_host,
+                        f"{build_type}/{abi}/libfoundry_android.so",
+                    ).exported_symbols
+                )
+                unrelated_surfaces.add(
+                    native_contract.read_elf(
+                        output_unrelated,
+                        f"{build_type}/{abi}/libc++_shared.so",
+                    ).exported_symbols
+                )
+        expected_host_symbols = tuple(sorted(FOUNDRY_SYMBOLS + EXTERNAL_JNI_SYMBOLS))
+        self.assertEqual({expected_host_symbols}, host_surfaces)
+        self.assertEqual({()}, unrelated_surfaces)
+        if preserve_native_debug_symbols:
+            self.assertTrue(debug_symbols_preserved)
         self.assertEqual(
             hashlib.sha256(binding_configuration).hexdigest(),
             evidence["configuration_sha256"],
@@ -1761,7 +2108,8 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             for retained_class in (
                 "games.cafecito.foundry.generated.FoundryGeneratedStartupProvider",
                 "games.cafecito.foundry.generated.FoundryGeneratedBootstrap",
-                "example.DemoExtension",
+                "games.cafecito.foundry.generated.demo.DemoRegistry",
+                "example.DemoExtension_FoundryTrampoline",
             ):
                 self.assertIn(
                     f"{retained_class} -> {retained_class}:",
@@ -1771,6 +2119,11 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         return {
             "requested_abis": evidence["requested_abis"],
             "bridge_entries": evidence["bridge_entries"],
+            "host_entries": evidence["host_entries"],
+            "unrelated_native_entries": expected_unrelated,
+            "host_exported_symbols": next(iter(host_surfaces)),
+            "unrelated_exported_symbols": next(iter(unrelated_surfaces)),
+            "native_debug_symbols_preserved": debug_symbols_preserved,
             "configuration_sha256": evidence["configuration_sha256"],
             "registry_index_sha256": evidence["registry_index_sha256"],
             "descriptor_name": descriptor_name,
@@ -1787,9 +2140,11 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             f"local-debug-{requested_abi}",
             requested_abi=requested_abi,
         )
+        properties = self._local_properties(requested_abis)
+        properties["doNotStrip"] = "true"
         result = self._run_app(
             app,
-            self._local_properties(requested_abis),
+            properties,
             "assembleStandardDebug",
         )
         evidence = self._assert_outputs(
@@ -1797,6 +2152,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             result,
             requested_abis=requested_abis,
             expected_application_id="games.cafecito.foundry.game",
+            preserve_native_debug_symbols=True,
         )
         self.local_debug_evidence[requested_abi] = evidence
         return evidence
@@ -1868,7 +2224,12 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         FoundryJavaExporterContractTests._write_export_preset(
             project,
             plugin_local=self.plugin_jar,
-            local_artifacts=(self.binding_aar, self.runtime_jar, self.module_jar),
+            local_artifacts=(
+                self.binding_aar,
+                self.runtime_jar,
+                self.annotations_jar,
+                self.module_jar,
+            ),
             use_gradle=True,
             extra_options=(
                 f'gradle_build/android_source_template="{source_template}"',
@@ -2008,7 +2369,8 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             retained_classes = (
                 "games.cafecito.foundry.generated.FoundryGeneratedStartupProvider",
                 "games.cafecito.foundry.generated.FoundryGeneratedBootstrap",
-                "example.DemoExtension",
+                "games.cafecito.foundry.generated.demo.DemoRegistry",
+                "example.DemoExtension_FoundryTrampoline",
             )
             for retained_class in retained_classes:
                 self.assertIn(
@@ -2018,7 +2380,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
 
         return {
             "apk": apk.name,
-            "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+            "apk_sha256": sha256_file(apk),
             "application_id": application_id,
             "build_type": build_type,
             "requested_abis": list(evidence["requested_abis"]),
@@ -2045,6 +2407,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         generated_roots = {
             "assets": app / f"build/generated/assets/generate{variant}FoundryJavaRegistry",
             "java": app / f"build/generated/java/generate{variant}FoundryJavaRegistry",
+            "manifests": app / f"build/generated/manifests/generate{variant}FoundryJavaRegistry",
         }
 
         def snapshot() -> dict[str, bytes]:
@@ -2056,10 +2419,55 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             }
 
         before = snapshot()
+        for root in generated_roots.values():
+            shutil.rmtree(root)
+            root.mkdir(parents=True)
         second = self._run_app(app, properties, f"assemble{variant}")
+        second_output = second.stdout + second.stderr
+        generator_task = f"> Task :generate{variant}FoundryJavaRegistry"
+        self.assertIn("Reusing configuration cache.", second_output)
+        self.assertIn(generator_task, second_output.splitlines())
         after = snapshot()
         self.assertEqual(before, after)
         return first, second
+
+    def test_module_fixture_is_processor_generated(self) -> None:
+        descriptor_path = "META-INF/foundry-java/modules/demo.descriptor"
+        keep_rules_path = "META-INF/proguard/foundry-java-demo.pro"
+        registry_class = "games/cafecito/foundry/generated/demo/DemoRegistry.class"
+        trampoline_class = "example/DemoExtension_FoundryTrampoline.class"
+        with zipfile.ZipFile(self.module_jar) as module:
+            names = set(module.namelist())
+            self.assertTrue(
+                {descriptor_path, keep_rules_path, registry_class, trampoline_class}.issubset(names),
+                names,
+            )
+            descriptor = module.read(descriptor_path).decode("utf-8")
+            keep_rules = module.read(keep_rules_path).decode("utf-8")
+
+        self.assertIn(
+            "registry=games.cafecito.foundry.generated.demo.DemoRegistry\n",
+            descriptor,
+        )
+        self.assertIn("class=example.DemoExtension|DemoExtension|", descriptor)
+        self.assertIn(
+            "method=example.DemoExtension|callback_probe|callbackProbe|long(long)\n",
+            descriptor,
+        )
+        self.assertIn("-keep class games.cafecito.foundry.generated.demo.DemoRegistry", keep_rules)
+        self.assertIn("-keep class example.DemoExtension_FoundryTrampoline", keep_rules)
+
+        generated_sources = getattr(self, "module_generated_sources", None)
+        self.assertIsNotNone(generated_sources)
+        trampoline = generated_sources / "example/DemoExtension_FoundryTrampoline.java"
+        registry = generated_sources / "games/cafecito/foundry/generated/demo/DemoRegistry.java"
+        self.assertTrue(trampoline.is_file(), trampoline)
+        self.assertTrue(registry.is_file(), registry)
+        self.assertIn('case "callback_probe"', trampoline.read_text(encoding="utf-8"))
+        self.assertIn(
+            "example.DemoExtension_FoundryTrampoline.invoke(",
+            registry.read_text(encoding="utf-8"),
+        )
 
     def test_command_first_source_template_acceptance(self) -> None:
         if os.environ.get("FOUNDRY_JAVA_COMMAND_FIRST_ACCEPTANCE") != "1":
@@ -2134,7 +2542,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             "generator_version=1\n"
             "runtime_contract_version=1\n"
             "bridge_contract_version=1\n"
-            "module=demo|example.DemoExtension\n"
+            "module=demo|games.cafecito.foundry.generated.demo.DemoRegistry\n"
         ).encode()
         scenarios = (
             (
@@ -2193,10 +2601,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             "foundry_java_commit": EXACT_FOUNDRY_JAVA_COMMIT,
             "foundry_revision": foundry_revision,
             "editor": str(editor),
-            "editor_sha256": hashlib.sha256(editor.read_bytes()).hexdigest(),
+            "editor_sha256": sha256_file(editor),
             "source_template": {
                 "name": source_template.name,
-                "sha256": hashlib.sha256(source_template.read_bytes()).hexdigest(),
+                "sha256": sha256_file(source_template),
                 "entries": list(source_entries),
             },
             "expected_configuration_sha256": hashlib.sha256(expected_configuration).hexdigest(),
@@ -2258,7 +2666,12 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         identity_cases = (
             (
                 "duplicate-module.jar",
-                ((b"registry=example.DemoExtension", b"registry=example.DuplicateModule"),),
+                (
+                    (
+                        b"registry=games.cafecito.foundry.generated.demo.DemoRegistry",
+                        b"registry=example.DuplicateModule",
+                    ),
+                ),
                 f"{descriptor_root}/demo.descriptor",
                 "duplicate module=demo",
             ),
@@ -2266,7 +2679,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                 "duplicate-registry.jar",
                 ((b"module=demo", b"module=duplicate-registry"),),
                 f"{descriptor_root}/duplicate-registry.descriptor",
-                "duplicate registry=example.DemoExtension",
+                "duplicate registry=games.cafecito.foundry.generated.demo.DemoRegistry",
             ),
         )
         for name, replacements, path, diagnostic in identity_cases:
@@ -2312,7 +2725,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                 registry_name = "example.Mixed" + "".join(word.capitalize() for word in field.split("_"))
                 replacements = (
                     (b"module=demo", f"module={module_name}".encode()),
-                    (b"registry=example.DemoExtension", f"registry={registry_name}".encode()),
+                    (
+                        b"registry=games.cafecito.foundry.generated.demo.DemoRegistry",
+                        f"registry={registry_name}".encode(),
+                    ),
                     (old, new),
                 )
                 path = f"{descriptor_root}/{module_name}.descriptor"
@@ -2437,16 +2853,32 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
     def test_local_debug_single_abi_matrix(self) -> None:
         for requested_abi in ("armeabi-v7a", "arm64-v8a", "x86", "x86_64"):
             with self.subTest(requested_abi=requested_abi):
-                self._local_debug_evidence(requested_abi)
+                evidence = self._local_debug_evidence(requested_abi)
+                self.assertEqual(
+                    (f"lib/{requested_abi}/libfoundry_android.so",),
+                    evidence.get("host_entries"),
+                )
+                self.assertEqual(
+                    (f"lib/{requested_abi}/libc++_shared.so",),
+                    evidence.get("unrelated_native_entries"),
+                )
+                self.assertEqual(
+                    tuple(sorted(FOUNDRY_SYMBOLS + EXTERNAL_JNI_SYMBOLS)),
+                    evidence.get("host_exported_symbols"),
+                )
+                self.assertEqual((), evidence.get("unrelated_exported_symbols"))
+                self.assertIs(True, evidence.get("native_debug_symbols_preserved"))
 
     def test_staged_maven_x86_64_debug_matches_local(self) -> None:
         requested_abis = ("x86_64",)
         repository, marker = self._stage_maven_graph()
         local_evidence = self._local_debug_evidence("x86_64")
         app = self._prepare_app("maven-debug-parity")
+        properties = self._maven_properties(repository, marker, requested_abis)
+        properties["doNotStrip"] = "true"
         first, second = self._build_twice(
             app,
-            self._maven_properties(repository, marker, requested_abis),
+            properties,
         )
         maven_evidence = self._assert_outputs(
             app,
@@ -2454,6 +2886,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             second,
             requested_abis=requested_abis,
             expected_application_id="games.cafecito.foundry.game",
+            preserve_native_debug_symbols=True,
         )
         self.assertEqual(local_evidence, maven_evidence)
 
@@ -2517,6 +2950,11 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             app,
             properties,
             build_type="release",
+        )
+        second_output = second.stdout + second.stderr
+        self.assertNotIn(
+            "> Task :generateStandardReleaseFoundryJavaRegistry UP-TO-DATE",
+            second_output,
         )
         self._assert_outputs(
             app,
@@ -2610,10 +3048,18 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def _run_export(self, project: Path, output_name: str = "should-not-exist.apk") -> subprocess.CompletedProcess[str]:
+    def _run_export(
+        self,
+        project: Path,
+        output_name: str = "should-not-exist.apk",
+        *,
+        verbose: bool = False,
+        timeout: int = 60,
+    ) -> subprocess.CompletedProcess[str]:
         return run_bounded_subprocess(
             [
                 str(self._development_binary()),
+                *(("--verbose",) if verbose else ()),
                 "--headless",
                 "project",
                 "export",
@@ -2625,11 +3071,23 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 str(project / output_name),
             ],
             cwd=project,
-            timeout=30,
+            timeout=timeout,
         )
 
     @classmethod
-    def _write_fake_gradle_wrapper(cls, project: Path, entries: tuple[str, ...]) -> Path:
+    def _write_fake_gradle_wrapper(
+        cls,
+        project: Path,
+        entries: tuple[str, ...],
+        *,
+        reported_entry_count: int | None = None,
+        central_directory_mutation: str | None = None,
+        force_zip64: bool = False,
+        force_local_zip64_sizes: bool = False,
+        streaming_data_descriptor: bool = False,
+        lock_output_directory: bool = False,
+        sfx_prefix: bytes = b"",
+    ) -> Path:
         gradle_root = project / "android"
         build = gradle_root / "build"
         (build / "src/debug").mkdir(parents=True)
@@ -2651,9 +3109,32 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             textwrap.dedent(
                 f"""\
                 #!{sys.executable}
+                import struct
                 import sys
                 import zipfile
                 from pathlib import Path
+
+                class NonSeekableWriter:
+                    def __init__(self, output):
+                        self.output = output
+
+                    def write(self, data):
+                        return self.output.write(data)
+
+                    def flush(self):
+                        self.output.flush()
+
+                def write_entries(archive):
+                    for entry in {entries!r}:
+                        if {force_local_zip64_sizes!r}:
+                            with archive.open(entry, "w", force_zip64=True) as output:
+                                output.write(entry.encode("utf-8"))
+                        elif {force_zip64!r}:
+                            entry_info = zipfile.ZipInfo(entry)
+                            entry_info.extra = struct.pack("<HHQ", 0x0001, 8, 0)
+                            archive.writestr(entry_info, entry)
+                        else:
+                            archive.writestr(entry, entry)
 
                 arguments = sys.argv[1:]
                 export_path = next(
@@ -2666,10 +3147,159 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 )
                 if export_path is not None and export_filename is not None:
                     destination = Path(export_path) / export_filename
-                    with zipfile.ZipFile(destination, "w") as archive:
-                        for entry in {entries!r}:
-                            archive.writestr(entry, entry)
-                """
+                    if {streaming_data_descriptor!r}:
+                        with destination.open("wb") as output:
+                            with zipfile.ZipFile(NonSeekableWriter(output), "w") as archive:
+                                write_entries(archive)
+                    else:
+                        with zipfile.ZipFile(destination, "w") as archive:
+                            write_entries(archive)
+                    if {lock_output_directory!r}:
+                        destination.parent.chmod(0o500)
+                    if {streaming_data_descriptor!r}:
+                        streaming_contents = destination.read_bytes()
+                        first_local_entry = streaming_contents.find(b"PK\\x03\\x04")
+                        if first_local_entry < 0:
+                            raise RuntimeError("streaming ZIP has no local file entry")
+                        local_flags = int.from_bytes(
+                            streaming_contents[first_local_entry + 6 : first_local_entry + 8],
+                            "little",
+                        )
+                        if not local_flags & 0x0008 or b"PK\\x07\\x08" not in streaming_contents:
+                            raise RuntimeError("streaming ZIP did not emit a real data descriptor")
+                    reported_entry_count = {reported_entry_count!r}
+                    central_directory_mutation = {central_directory_mutation!r}
+                    force_zip64 = {force_zip64!r}
+                    if reported_entry_count is not None or central_directory_mutation is not None or force_zip64:
+                        contents = bytearray(destination.read_bytes())
+                        eocd = contents.rfind(b"PK\\x05\\x06")
+                        if eocd < 0:
+                            raise RuntimeError("fake Gradle output has no classic ZIP end record")
+                        if reported_entry_count is not None:
+                            count = reported_entry_count.to_bytes(2, "little")
+                            contents[eocd + 8 : eocd + 12] = count + count
+                        if central_directory_mutation == "last-comment-bounds":
+                            central_entry = contents.rfind(b"PK\\x01\\x02", 0, eocd)
+                            if central_entry < 0:
+                                raise RuntimeError("fake Gradle output has no central directory entry")
+                            contents[central_entry + 32 : central_entry + 34] = b"\\xff\\xff"
+                        elif central_directory_mutation == "central-offset":
+                            central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                            if central_offset == 0:
+                                raise RuntimeError("fake Gradle output has no mutable central directory offset")
+                            contents[eocd + 16 : eocd + 20] = (central_offset - 1).to_bytes(4, "little")
+                        elif central_directory_mutation == "last-local-offset":
+                            central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                            first_central_entry = contents.find(b"PK\\x01\\x02", central_offset, eocd)
+                            final_central_entry = contents.rfind(b"PK\\x01\\x02", central_offset, eocd)
+                            if first_central_entry < 0 or final_central_entry <= first_central_entry:
+                                raise RuntimeError("fake Gradle output has no distinct central directory entries")
+                            contents[final_central_entry + 42 : final_central_entry + 46] = contents[
+                                first_central_entry + 42 : first_central_entry + 46
+                            ]
+                        elif central_directory_mutation == "first-local-name":
+                            first_local_entry = contents.find(b"PK\\x03\\x04")
+                            if first_local_entry < 0:
+                                raise RuntimeError("fake Gradle output has no local file entry")
+                            first_filename_size = int.from_bytes(
+                                contents[first_local_entry + 26 : first_local_entry + 28],
+                                "little",
+                            )
+                            if first_filename_size == 0:
+                                raise RuntimeError("fake Gradle output has no mutable local filename")
+                            contents[first_local_entry + 30] ^= 0x01
+                        elif central_directory_mutation == "bit3-local-sentinels":
+                            central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                            first_central_entry = contents.find(b"PK\\x01\\x02", central_offset, eocd)
+                            first_local_entry = contents.find(b"PK\\x03\\x04")
+                            if first_central_entry < 0 or first_local_entry < 0:
+                                raise RuntimeError("fake Gradle output has no mutable first entry")
+                            central_flags = int.from_bytes(
+                                contents[first_central_entry + 8 : first_central_entry + 10],
+                                "little",
+                            )
+                            local_flags = int.from_bytes(
+                                contents[first_local_entry + 6 : first_local_entry + 8],
+                                "little",
+                            )
+                            contents[first_central_entry + 8 : first_central_entry + 10] = (
+                                central_flags | 0x0008
+                            ).to_bytes(2, "little")
+                            contents[first_local_entry + 6 : first_local_entry + 8] = (
+                                local_flags | 0x0008
+                            ).to_bytes(2, "little")
+                            contents[first_local_entry + 14 : first_local_entry + 18] = b"\\x00" * 4
+                            contents[first_local_entry + 18 : first_local_entry + 26] = b"\\xff" * 8
+                        elif central_directory_mutation in (
+                            "central-digital-signature",
+                            "central-digital-signature-size",
+                        ):
+                            central_size = int.from_bytes(contents[eocd + 12 : eocd + 16], "little")
+                            signature_payload = b"Foundry-Java"
+                            signature_size = len(signature_payload)
+                            if central_directory_mutation == "central-digital-signature-size":
+                                signature_size += 1
+                            signature = struct.pack("<IH", 0x05054B50, signature_size) + signature_payload
+                            contents[eocd + 12 : eocd + 16] = (central_size + len(signature)).to_bytes(4, "little")
+                            contents[eocd:eocd] = signature
+                        elif central_directory_mutation == "classic-locator-magic":
+                            central_size = int.from_bytes(contents[eocd + 12 : eocd + 16], "little")
+                            final_central_entry = contents.rfind(b"PK\\x01\\x02", 0, eocd)
+                            if final_central_entry < 0:
+                                raise RuntimeError("fake Gradle output has no final central directory entry")
+                            locator_lookalike = b"PK\\x06\\x07" + b"classic-comment!"
+                            contents[final_central_entry + 32 : final_central_entry + 34] = len(
+                                locator_lookalike
+                            ).to_bytes(2, "little")
+                            contents[eocd + 12 : eocd + 16] = (central_size + len(locator_lookalike)).to_bytes(
+                                4,
+                                "little",
+                            )
+                            contents[eocd:eocd] = locator_lookalike
+                        elif central_directory_mutation not in (None, "zip64-classic-count"):
+                            raise RuntimeError(f"unknown central directory mutation: {{central_directory_mutation}}")
+                        if force_zip64:
+                            entry_count = int.from_bytes(contents[eocd + 10 : eocd + 12], "little")
+                            central_size = int.from_bytes(contents[eocd + 12 : eocd + 16], "little")
+                            central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                            final_central_entry = contents.rfind(b"PK\\x01\\x02", central_offset, eocd)
+                            if final_central_entry < 0:
+                                raise RuntimeError("fake Gradle output has no final central directory entry")
+                            final_filename_size = int.from_bytes(
+                                contents[final_central_entry + 28 : final_central_entry + 30],
+                                "little",
+                            )
+                            final_extra = final_central_entry + 46 + final_filename_size
+                            if contents[final_extra : final_extra + 4] != struct.pack("<HH", 0x0001, 8):
+                                raise RuntimeError("fake Gradle output has no ZIP64 offset field")
+                            final_local_offset = contents[final_central_entry + 42 : final_central_entry + 46]
+                            contents[final_extra + 4 : final_extra + 12] = int.from_bytes(
+                                final_local_offset,
+                                "little",
+                            ).to_bytes(8, "little")
+                            contents[final_central_entry + 42 : final_central_entry + 46] = b"\\xff" * 4
+                            zip64_end = struct.pack(
+                                "<IQHHIIQQQQ",
+                                0x06064B50,
+                                44,
+                                45,
+                                45,
+                                0,
+                                0,
+                                entry_count,
+                                entry_count,
+                                central_size,
+                                central_offset,
+                            )
+                            zip64_locator = struct.pack("<IIQI", 0x07064B50, 0, len({sfx_prefix!r}) + eocd, 1)
+                            contents[eocd + 8 : eocd + 12] = b"\\xff\\xff\\xff\\xff"
+                            contents[eocd + 12 : eocd + 20] = b"\\xff" * 8
+                            if central_directory_mutation == "zip64-classic-count":
+                                contradictory_count = (entry_count - 1).to_bytes(2, "little")
+                                contents[eocd + 8 : eocd + 12] = contradictory_count * 2
+                            contents[eocd:eocd] = zip64_end + zip64_locator
+                        destination.write_bytes({sfx_prefix!r} + contents)
+                    """
             ),
             encoding="utf-8",
         )
@@ -2681,7 +3311,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         for fragment in (
             "Invalid export option %s value '%s': %s.",
             "must be an exact group:artifact:version value",
-            "must use an HTTP(S) or file URL",
+            "must use HTTPS or a local file URL without credentials, query, or fragment",
             "must name a regular .jar or .aar file",
             "must not traverse a symbolic link",
             "must not contain carriage returns, newlines, or '|'",
@@ -2693,7 +3323,10 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             "archive entry name contains an embedded NUL byte",
             "archive entry name is not valid UTF-8",
             "archive could not be opened",
+            "archive central directory metadata is corrupt",
+            "archive reports too many entries",
             "requires at least one enabled Android architecture",
+            "-Pfoundry_java_maven_repositories=<redacted>",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, exporter)
@@ -2775,6 +3408,8 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                             )
                         with zipfile.ZipFile(module, "w"):
                             pass
+                        unrelated_sentinel = project / "unrelated-sentinel.txt"
+                        unrelated_sentinel.write_bytes(b"preserve unrelated output\n")
                         gradle_root = self._write_fake_gradle_wrapper(project, entries)
                         self._write_export_preset(
                             project,
@@ -2796,7 +3431,365 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         output = result.stdout + result.stderr
                         self.assertNotEqual(0, result.returncode, output)
                         self.assertIn(diagnostic, output)
-                        self.assertTrue((project / output_name).is_file())
+                        self.assertFalse((project / output_name).exists())
+                        self.assertEqual(b"preserve unrelated output\n", unrelated_sentinel.read_bytes())
+
+    def test_rejected_final_artifact_reports_cleanup_failure(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-final-cleanup.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java Final Artifact Cleanup"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                ),
+                lock_output_directory=True,
+            )
+            self._write_export_preset(
+                project,
+                plugin_local=plugin,
+                local_artifacts=(module,),
+                use_gradle=True,
+                extra_options=(
+                    f'gradle_build/gradle_build_directory="{gradle_root}"',
+                    "gradle_build/export_format=0",
+                    "package/signed=false",
+                    "architectures/armeabi-v7a=false",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=false",
+                    "architectures/x86_64=false",
+                ),
+            )
+            try:
+                result = self._run_export(project, "malformed.apk")
+            finally:
+                project.chmod(0o700)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode, output)
+            self.assertIn("assets/FoundryJava.foundryextension", output)
+            self.assertIn("could not remove rejected final artifact", output)
+
+    def test_command_first_export_rejects_inconsistent_final_archive_metadata(self) -> None:
+        for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
+            valid_entries = (
+                f"{root}assets/FoundryJava.foundryextension",
+                f"{root}assets/foundry_java/registry-index-v2.txt",
+                f"{root}lib/arm64-v8a/libfoundry_java.so",
+            )
+            cases = (
+                (
+                    "underreported",
+                    (*valid_entries, f"{root}lib/x86_64/libfoundry_java.so"),
+                    3,
+                    None,
+                    False,
+                    "entry count does not match its central directory",
+                ),
+                (
+                    "last-comment-bounds",
+                    valid_entries,
+                    None,
+                    "last-comment-bounds",
+                    False,
+                    "central directory metadata is corrupt",
+                ),
+                (
+                    "central-offset",
+                    valid_entries,
+                    None,
+                    "central-offset",
+                    False,
+                    "central directory metadata is corrupt",
+                ),
+                (
+                    "last-local-offset",
+                    valid_entries,
+                    None,
+                    "last-local-offset",
+                    False,
+                    "central directory metadata is corrupt",
+                ),
+                (
+                    "first-local-name",
+                    valid_entries,
+                    None,
+                    "first-local-name",
+                    False,
+                    "central directory metadata is corrupt",
+                ),
+                (
+                    "central-digital-signature-size",
+                    valid_entries,
+                    None,
+                    "central-digital-signature-size",
+                    False,
+                    "central directory metadata is corrupt",
+                ),
+                (
+                    "zip64-classic-count",
+                    valid_entries,
+                    None,
+                    "zip64-classic-count",
+                    True,
+                    "central directory metadata is corrupt",
+                ),
+            )
+            for (
+                defect,
+                entries,
+                reported_entry_count,
+                central_directory_mutation,
+                force_zip64,
+                diagnostic,
+            ) in cases:
+                with self.subTest(extension=extension, defect=defect):
+                    with tempfile.TemporaryDirectory(
+                        prefix=f"foundry-java-final-{defect}-{extension}.",
+                        dir=test_scratch_directory(),
+                    ) as directory:
+                        project = Path(directory)
+                        project.joinpath("project.foundry").write_text(
+                            textwrap.dedent(
+                                """\
+                                [application]
+                                config/name="Foundry Java Final ZIP Consistency"
+
+                                [rendering]
+                                textures/vram_compression/import_etc2_astc=true
+                                """
+                            ),
+                            encoding="utf-8",
+                        )
+                        plugin = project / "plugin.jar"
+                        module = project / "module.jar"
+                        with zipfile.ZipFile(plugin, "w") as archive:
+                            archive.writestr(
+                                "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                                "implementation-class=test.Fixture\n",
+                            )
+                        with zipfile.ZipFile(module, "w"):
+                            pass
+                        unrelated_sentinel = project / "unrelated-sentinel.txt"
+                        unrelated_sentinel.write_bytes(b"preserve unrelated output\n")
+                        gradle_root = self._write_fake_gradle_wrapper(
+                            project,
+                            entries,
+                            reported_entry_count=reported_entry_count,
+                            central_directory_mutation=central_directory_mutation,
+                            force_zip64=force_zip64,
+                        )
+                        self._write_export_preset(
+                            project,
+                            plugin_local=plugin,
+                            local_artifacts=(module,),
+                            use_gradle=True,
+                            extra_options=(
+                                f'gradle_build/gradle_build_directory="{gradle_root}"',
+                                f"gradle_build/export_format={export_format}",
+                                "package/signed=false",
+                                "architectures/armeabi-v7a=false",
+                                "architectures/arm64-v8a=true",
+                                "architectures/x86=false",
+                                "architectures/x86_64=false",
+                            ),
+                        )
+
+                        output_name = f"{defect}.{extension}"
+                        result = self._run_export(project, output_name)
+                        output = result.stdout + result.stderr
+                        self.assertNotEqual(0, result.returncode, output)
+                        self.assertIn(diagnostic, output)
+                        self.assertFalse((project / output_name).exists())
+                        self.assertEqual(b"preserve unrelated output\n", unrelated_sentinel.read_bytes())
+
+    def test_command_first_export_accepts_valid_zip64_final_archive_metadata(self) -> None:
+        for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
+            compatibility_cases = (
+                (
+                    "zip64-directory",
+                    True,
+                    False,
+                    None,
+                    b"Foundry-Java SFX fixture\n" if extension == "aab" else b"",
+                ),
+                ("zip64-local-sizes", False, True, None, b""),
+                ("bit3-local-sentinels", False, False, "bit3-local-sentinels", b""),
+                ("streaming-data-descriptor", False, False, None, b""),
+                ("central-digital-signature", False, False, "central-digital-signature", b""),
+            )
+            for (
+                compatibility,
+                force_zip64,
+                force_local_zip64_sizes,
+                central_directory_mutation,
+                sfx_prefix,
+            ) in compatibility_cases:
+                with self.subTest(extension=extension, compatibility=compatibility):
+                    self._run_valid_final_archive_compatibility_case(
+                        extension=extension,
+                        export_format=export_format,
+                        root=root,
+                        compatibility=compatibility,
+                        force_zip64=force_zip64,
+                        force_local_zip64_sizes=force_local_zip64_sizes,
+                        streaming_data_descriptor=compatibility == "streaming-data-descriptor",
+                        central_directory_mutation=central_directory_mutation,
+                        sfx_prefix=sfx_prefix,
+                    )
+
+    def _run_valid_final_archive_compatibility_case(
+        self,
+        *,
+        extension: str,
+        export_format: int,
+        root: str,
+        compatibility: str,
+        force_zip64: bool,
+        force_local_zip64_sizes: bool,
+        streaming_data_descriptor: bool,
+        central_directory_mutation: str | None,
+        sfx_prefix: bytes,
+    ) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix=f"foundry-java-final-{compatibility}-{extension}.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java Final ZIP Compatibility"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    f"{root}assets/FoundryJava.foundryextension",
+                    f"{root}assets/foundry_java/registry-index-v2.txt",
+                    f"{root}lib/arm64-v8a/libfoundry_java.so",
+                ),
+                force_zip64=force_zip64,
+                force_local_zip64_sizes=force_local_zip64_sizes,
+                streaming_data_descriptor=streaming_data_descriptor,
+                central_directory_mutation=central_directory_mutation,
+                sfx_prefix=sfx_prefix,
+            )
+            self._write_export_preset(
+                project,
+                plugin_local=plugin,
+                local_artifacts=(module,),
+                use_gradle=True,
+                extra_options=(
+                    f'gradle_build/gradle_build_directory="{gradle_root}"',
+                    f"gradle_build/export_format={export_format}",
+                    "package/signed=false",
+                    "architectures/armeabi-v7a=false",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=false",
+                    "architectures/x86_64=false",
+                ),
+            )
+
+            output_name = f"valid-{compatibility}.{extension}"
+            result = self._run_export(project, output_name)
+            output = result.stdout + result.stderr
+            self.assertEqual(0, result.returncode, output)
+            self.assertTrue((project / output_name).is_file())
+
+    def test_command_first_export_accepts_classic_locator_magic_in_final_entry_comment(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-final-classic-locator-magic.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java Classic Locator Magic"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                ),
+                central_directory_mutation="classic-locator-magic",
+            )
+            self._write_export_preset(
+                project,
+                plugin_local=plugin,
+                local_artifacts=(module,),
+                use_gradle=True,
+                extra_options=(
+                    f'gradle_build/gradle_build_directory="{gradle_root}"',
+                    "package/signed=false",
+                    "architectures/armeabi-v7a=false",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=false",
+                    "architectures/x86_64=false",
+                ),
+            )
+
+            result = self._run_export(project, "classic-locator-magic.apk")
+            output = result.stdout + result.stderr
+            self.assertEqual(0, result.returncode, output)
+            self.assertTrue((project / "classic-locator-magic.apk").is_file())
 
     def test_command_first_export_rejects_opt_in_without_gradle_before_build(self) -> None:
         with tempfile.TemporaryDirectory(
@@ -2863,7 +3856,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     plugin,
                     (module,),
                     ('gradle_build/foundry_java/maven_repositories=PackedStringArray("ftp://repo.invalid")',),
-                    ("gradle_build/foundry_java/maven_repositories", "ftp://repo.invalid"),
+                    ("gradle_build/foundry_java/maven_repositories", "<redacted>"),
                 ),
                 (
                     plugin,
@@ -2904,6 +3897,138 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         self.assertIn(fragment, output)
                     self.assertFalse((project / "should-not-exist.apk").exists())
                     self.assertNotIn("Starting a Gradle Daemon", output)
+
+    def test_command_first_repository_preflight_never_echoes_rejected_secrets(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-repository-secrets.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Repository Secrets"\n',
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+
+            for repository in (
+                "http://example.invalid/insecure",
+                " https://example.invalid/repository",
+                "https://example.invalid/repository ",
+                "https://invalid_host.example/repository",
+                "https://-invalid.example/repository",
+                "https://example.invalid:0/repository",
+                "https://example.invalid:65536/repository",
+                "https://[::1]:0/repository",
+                "https://[::1]:65536/repository",
+                "https://[::1]invalid/repository",
+                "https://[::1]:8443invalid/repository",
+                "https://[example.invalid]/repository",
+                "https://[127.0.0.1]/repository",
+                "https://user:password@example.invalid/repository",
+                "https://example.invalid/repository?token=secret-query-token",
+                "https://example.invalid/repository#secret-fragment-token",
+                "file:/repository",
+                "file:////remote-path/repository",
+                "file:///tmp/repository-%",
+                "file:///tmp/repository-%0",
+                "file:///tmp/repository-%GG",
+                "https://example.invalid/repository-%GG",
+                "file:///tmp/repository{invalid",
+                "file:///tmp/repository\\invalid",
+                "file:///tmp/repository-é",
+            ):
+                with self.subTest(repository=repository):
+                    encoded_repository = repository.replace("\\", "\\\\")
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                        extra_options=(
+                            f'gradle_build/foundry_java/maven_repositories=PackedStringArray("{encoded_repository}")',
+                        ),
+                    )
+                    result = self._run_export(project)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn("gradle_build/foundry_java/maven_repositories", output)
+                    self.assertIn("<redacted>", output)
+                    self.assertNotIn(repository, output)
+
+    def test_command_first_accepts_mixed_case_plugin_and_redacts_accepted_repositories(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-repository-log.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java Repository Log"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.JAR"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                ),
+            )
+            for index, repository in enumerate(
+                (
+                    (project / "repository secret token").resolve().as_uri(),
+                    "file:///",
+                    "https://example.invalid/repository/%4a",
+                    "https://example.invalid./repository",
+                    "https://[::1]:8443/repository",
+                )
+            ):
+                with self.subTest(repository=repository):
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                        extra_options=(
+                            f'gradle_build/gradle_build_directory="{gradle_root}"',
+                            f'gradle_build/foundry_java/maven_repositories=PackedStringArray("{repository}")',
+                            "package/signed=false",
+                            "architectures/armeabi-v7a=false",
+                            "architectures/arm64-v8a=true",
+                            "architectures/x86=false",
+                            "architectures/x86_64=false",
+                        ),
+                    )
+
+                    result = self._run_export(project, f"redacted-{index}.apk", verbose=True)
+                    output = result.stdout + result.stderr
+                    self.assertEqual(0, result.returncode, output)
+                    self.assertIn("-Pfoundry_java_maven_repositories=<redacted>", output)
+                    self.assertNotIn(repository, output)
 
     def test_command_first_export_rejects_unsafe_local_archives_before_build(self) -> None:
         with tempfile.TemporaryDirectory(
@@ -3018,6 +4143,59 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             self.assertGreaterEqual(hidden_host_eocd, 0)
             hidden_host_bytes[hidden_host_eocd + 8 : hidden_host_eocd + 12] = b"\x00\x00\x00\x00"
             hidden_host_plugin.write_bytes(hidden_host_bytes)
+            underreported_host_plugin = project / "underreported-host-plugin.jar"
+            with zipfile.ZipFile(underreported_host_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+                archive.writestr("jni/arm64-v8a/libfoundry_android.so", b"hidden-host")
+            underreported_host_bytes = bytearray(underreported_host_plugin.read_bytes())
+            underreported_host_eocd = underreported_host_bytes.rfind(b"PK\x05\x06")
+            self.assertGreaterEqual(underreported_host_eocd, 0)
+            underreported_host_bytes[underreported_host_eocd + 8 : underreported_host_eocd + 12] = b"\x01\x00\x01\x00"
+            underreported_host_plugin.write_bytes(underreported_host_bytes)
+            corrupt_comment_plugin = project / "corrupt-comment-plugin.jar"
+            with zipfile.ZipFile(corrupt_comment_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            corrupt_comment_bytes = bytearray(corrupt_comment_plugin.read_bytes())
+            corrupt_comment_eocd = corrupt_comment_bytes.rfind(b"PK\x05\x06")
+            corrupt_comment_central = corrupt_comment_bytes.rfind(b"PK\x01\x02", 0, corrupt_comment_eocd)
+            self.assertGreaterEqual(corrupt_comment_central, 0)
+            corrupt_comment_bytes[corrupt_comment_central + 32 : corrupt_comment_central + 34] = b"\xff\xff"
+            corrupt_comment_plugin.write_bytes(corrupt_comment_bytes)
+            corrupt_offset_plugin = project / "corrupt-offset-plugin.jar"
+            with zipfile.ZipFile(corrupt_offset_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            corrupt_offset_bytes = bytearray(corrupt_offset_plugin.read_bytes())
+            corrupt_offset_eocd = corrupt_offset_bytes.rfind(b"PK\x05\x06")
+            self.assertGreaterEqual(corrupt_offset_eocd, 0)
+            corrupt_offset = int.from_bytes(
+                corrupt_offset_bytes[corrupt_offset_eocd + 16 : corrupt_offset_eocd + 20],
+                "little",
+            )
+            self.assertGreater(corrupt_offset, 0)
+            corrupt_offset_bytes[corrupt_offset_eocd + 16 : corrupt_offset_eocd + 20] = (corrupt_offset - 1).to_bytes(
+                4, "little"
+            )
+            corrupt_offset_plugin.write_bytes(corrupt_offset_bytes)
+            excessive_entries_plugin = project / "excessive-entries-plugin.jar"
+            with zipfile.ZipFile(excessive_entries_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            excessive_entries_bytes = bytearray(excessive_entries_plugin.read_bytes())
+            excessive_entries_eocd = excessive_entries_bytes.rfind(b"PK\x05\x06")
+            self.assertGreaterEqual(excessive_entries_eocd, 0)
+            excessive_entries_bytes[excessive_entries_eocd + 8 : excessive_entries_eocd + 12] = b"\xff\xff\xff\xff"
+            excessive_entries_plugin.write_bytes(excessive_entries_bytes)
             traversal_plugin = project / "traversal-plugin.jar"
             with zipfile.ZipFile(traversal_plugin, "w") as archive:
                 archive.writestr("first-entry", b"valid")
@@ -3071,6 +4249,30 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     "archive entry count does not match its non-empty central directory",
                 ),
                 (
+                    underreported_host_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive entry count does not match its central directory",
+                ),
+                (
+                    corrupt_comment_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive central directory metadata is corrupt",
+                ),
+                (
+                    corrupt_offset_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive central directory metadata is corrupt",
+                ),
+                (
+                    excessive_entries_plugin,
+                    (valid_module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    "archive reports too many entries",
+                ),
+                (
                     traversal_plugin,
                     (valid_module,),
                     "gradle_build/foundry_java/gradle_plugin_local",
@@ -3110,6 +4312,102 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     offending = plugin if plugin != valid_plugin else local_artifacts[0]
                     self.assertIn(str(offending), output)
                     self.assertIn(diagnostic, output)
+                    self.assertFalse((project / "should-not-exist.apk").exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
+
+    def test_command_first_export_rejects_first_entry_local_header_corruption_before_build(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-first-local-header.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java First Local Header"\n',
+                encoding="utf-8",
+            )
+            plugin = project / "first-entry-corrupt-plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+                archive.writestr("second-entry.txt", b"second")
+            with zipfile.ZipFile(module, "w"):
+                pass
+
+            contents = bytearray(plugin.read_bytes())
+            first_local_entry = contents.find(b"PK\x03\x04")
+            self.assertGreaterEqual(first_local_entry, 0)
+            first_filename_size = int.from_bytes(contents[first_local_entry + 26 : first_local_entry + 28], "little")
+            self.assertGreater(first_filename_size, 0)
+            contents[first_local_entry + 30] ^= 0x01
+            plugin.write_bytes(contents)
+
+            self._write_export_preset(
+                project,
+                plugin_local=plugin,
+                local_artifacts=(module,),
+                use_gradle=True,
+            )
+            result = self._run_export(project)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode, output)
+            self.assertIn("gradle_build/foundry_java/gradle_plugin_local", output)
+            self.assertIn("archive central directory metadata is corrupt", output)
+            self.assertFalse((project / "should-not-exist.apk").exists())
+            self.assertNotIn("Starting a Gradle Daemon", output)
+
+    def test_command_first_export_rejects_local_header_identity_mismatches_before_build(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-local-identity.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                '[application]\nconfig/name="Foundry Java Local Identity"\n',
+                encoding="utf-8",
+            )
+            module = project / "module.jar"
+            with zipfile.ZipFile(module, "w"):
+                pass
+
+            cases = (
+                ("flags", 6, 2, lambda value: value ^ 0x0800),
+                ("method", 8, 2, lambda value: value ^ 0x0001),
+                ("crc", 14, 4, lambda value: value ^ 0x00000001),
+                ("effective-size", 22, 4, lambda value: value + 1),
+            )
+            for defect, field_offset, field_size, mutate in cases:
+                with self.subTest(defect=defect):
+                    plugin = project / f"{defect}-plugin.jar"
+                    with zipfile.ZipFile(plugin, "w") as archive:
+                        archive.writestr(
+                            "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                            "implementation-class=test.Fixture\n",
+                        )
+                        archive.writestr("second-entry.txt", b"second")
+
+                    contents = bytearray(plugin.read_bytes())
+                    first_local_entry = contents.find(b"PK\x03\x04")
+                    self.assertGreaterEqual(first_local_entry, 0)
+                    field_start = first_local_entry + field_offset
+                    field_end = field_start + field_size
+                    value = int.from_bytes(contents[field_start:field_end], "little")
+                    contents[field_start:field_end] = mutate(value).to_bytes(field_size, "little")
+                    plugin.write_bytes(contents)
+
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                    )
+                    result = self._run_export(project)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn("gradle_build/foundry_java/gradle_plugin_local", output)
+                    self.assertIn("archive central directory metadata is corrupt", output)
                     self.assertFalse((project / "should-not-exist.apk").exists())
                     self.assertNotIn("Starting a Gradle Daemon", output)
 

@@ -66,7 +66,11 @@ jobs:
       - name: Run exact Foundry-Java Android export matrix
         run: |
           python3 -m unittest -v \
-            tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests.test_android_ci_runs_the_exact_foundry_java_matrix_without_skipping \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaGradlePropertyTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests
 
   build-android-native:
@@ -434,6 +438,14 @@ jobs:
         with:
           name: android-templates-assembled
           path: .test_scratch/android-templates-assembled
+
+      - name: Run command-first Foundry-Java exporter contracts
+        run: |
+          set -euo pipefail
+          mkdir -p bin
+          install -m 0755 "${FOUNDRY_EDITOR_BINARY}" bin/foundry.linuxbsd.editor.dev.x86_64
+          python3 -m unittest -v \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaExporterContractTests
 
       - name: Run positive command-first Foundry-Java acceptance
         run: |

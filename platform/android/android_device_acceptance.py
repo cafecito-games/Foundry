@@ -1040,6 +1040,13 @@ def run_source_template_acceptance(
         raise
 
 
+def _normalize_required_runtime_marker(marker: str) -> str:
+    marker = marker.strip()
+    if not marker:
+        raise AcceptanceError("required runtime marker must contain non-whitespace text")
+    return marker
+
+
 def run_apk_acceptance(
     *,
     apks: Sequence[tuple[str, Path]],
@@ -1054,6 +1061,8 @@ def run_apk_acceptance(
     required_runtime_marker: str | None = None,
 ) -> dict[str, Any]:
     """Install and start already-exported APKs using the same runtime checks."""
+    if required_runtime_marker is not None:
+        required_runtime_marker = _normalize_required_runtime_marker(required_runtime_marker)
     evidence_dir = _create_owned_directory(evidence_dir, "Android acceptance evidence directory")
     command_runner: Runner = runner if runner is not None else SubprocessRunner(evidence_dir)
     report: dict[str, Any] = {
@@ -1111,6 +1120,13 @@ def _parse_apk(value: str) -> tuple[str, Path]:
     return application_id, Path(path)
 
 
+def _parse_required_runtime_marker(value: str) -> str:
+    try:
+        return _normalize_required_runtime_marker(value)
+    except AcceptanceError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
 def _add_device_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--evidence-dir", required=True, type=Path)
     parser.add_argument("--adb", required=True, type=Path)
@@ -1148,7 +1164,7 @@ def _parser() -> argparse.ArgumentParser:
         help="install and start already-exported APKs",
     )
     apks.add_argument("--apk", required=True, action="append", type=_parse_apk)
-    apks.add_argument("--required-runtime-marker")
+    apks.add_argument("--required-runtime-marker", type=_parse_required_runtime_marker)
     _add_device_arguments(apks)
     return parser
 

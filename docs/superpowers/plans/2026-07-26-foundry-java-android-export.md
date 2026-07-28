@@ -101,7 +101,7 @@ INVALID_PROPERTIES = (
     ({"foundry_java_gradle_plugin_kind": "maven"}, "foundry_java_registry_marker"),
     ({"foundry_java_maven_artifacts": "g:a:1|g:a:1"}, "duplicate"),
     ({"foundry_java_maven_artifacts": "g:a:1.+"}, "exact Maven coordinate"),
-    ({"foundry_java_maven_repositories": "ftp://example.test/repo"}, "HTTP(S) or file"),
+    ({"foundry_java_maven_repositories": "ftp://example.test/repo"}, "HTTPS or a local file URL"),
     ({"foundry_java_local_artifacts": "missing.jar"}, "regular file"),
 )
 ```
@@ -221,7 +221,7 @@ enabled branch. Add exact invalid cases:
 ```python
 for fragment in (
     "dynamic Maven versions are not supported",
-    "must use HTTP(S) or file",
+    "must use HTTPS or a local file URL",
     "must be a regular file",
     "must not traverse a symbolic link",
     "select exactly one Maven or local Gradle plugin",
@@ -356,7 +356,9 @@ Run:
 
 ```sh
 python3 -m unittest \
-  tests.python_build.test_android_foundry_java_export.FoundryJavaArchiveContractTests \
+  tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests \
+  tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests \
+  tests.python_build.test_android_foundry_java_export.FoundryJavaExporterContractTests \
   tests.python_build.test_android_gradle_runtime_contract.AndroidSourceTemplateTests -v
 ```
 
@@ -404,8 +406,6 @@ git commit -m "Keep Android source templates binding-free"
 **Files:**
 - Create: `tests/fixtures/android_foundry_java/README.md`
 - Create: `tests/fixtures/android_foundry_java/module/src/main/java/example/DemoExtension.java`
-- Create: `tests/fixtures/android_foundry_java/module/src/main/resources/META-INF/foundry-java/modules/demo.descriptor`
-- Create: `tests/fixtures/android_foundry_java/module/src/main/resources/META-INF/proguard/foundry-java-demo.pro`
 - Modify: `tests/python_build/test_android_foundry_java_export.py`
 - Modify: `tests/python_build/test_android_gradle_behavioral.py`
 
@@ -414,17 +414,21 @@ git commit -m "Keep Android source templates binding-free"
 The test helper resolves `FOUNDRY_JAVA_REPO`, defaulting to the sibling
 `/Users/christian/CafecitoGames/Foundry-Java`, and requires
 `git rev-parse HEAD` to equal
-`7eb98b37845b42ff67f3da1427bd78ebef19668f`. With Java 17, run:
+`0db6970116de257fffffffe2a55e89543d4a12b5`. With Java 17, run:
 
 ```sh
 ./gradlew --no-daemon \
+  :foundry-java-annotations:jar \
+  :foundry-java-processor:jar \
   :foundry-java-gradle-plugin:jar \
   :foundry-java-runtime:jar \
   :foundry-java-android:assembleRelease
 ```
 
-The helper then compiles the checked-in demo registry against the exact runtime
-JAR and creates a deterministic descriptor-bearing module JAR.
+The helper compiles the checked-in annotated demo extension through the exact
+processor and runtime JARs. The processor emits the registry, callback
+trampoline, descriptor, and narrow keep rules that become the deterministic
+module JAR.
 
 - [ ] **Step 2: Add a real fully-local RED build**
 
@@ -441,8 +445,11 @@ self.assertIn("assets/foundry_java/registry-index-v2.txt", apk_entries(apk))
 self.assertEqual([f"lib/{abi}/libfoundry_java.so"], bridge_entries(apk))
 ```
 
-Also assert the ordinary Foundry host `libfoundry_android.so` remains present
-independently.
+Also assert the ordinary Foundry host `libfoundry_android.so` and unrelated
+`libc++_shared.so` remain present independently. Run the debug cells with
+`-PdoNotStrip=true`, require byte-identical native inputs/outputs, and parse the
+packaged ELF dynamic symbols to prove the host JNI surface is preserved while
+the unrelated library exports no JNI symbols.
 
 - [ ] **Step 3: Run and verify RED**
 
@@ -451,7 +458,7 @@ Run the local integration case with:
 ```sh
 FOUNDRY_JAVA_REPO=/Users/christian/CafecitoGames/Foundry-Java \
 python3 -m unittest \
-  tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests.test_exact_local_inputs -v
+  tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests.test_local_debug_single_abi_matrix -v
 ```
 
 Expected: Gradle fails because conditional plugin/dependency wiring is not yet
@@ -530,7 +537,8 @@ Run:
 
 ```sh
 python3 -m unittest \
-  tests.python_build.test_android_foundry_java_export.FoundryJavaAbiAndReleaseTests -v
+  tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests.test_local_debug_single_abi_matrix \
+  tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests.test_local_x86_64_minified_release_is_reproducible -v
 ```
 
 Expected: failures identify only missing final-output assertions or variant
@@ -569,8 +577,8 @@ Require the runtime guide and class reference to document every option, the
 fixed marker, exact plugin ID, Maven/local examples, zero-descriptor behavior,
 ABI mapping, generated asset paths, ordinary-export isolation, and
 Foundry-Android's read-only/non-dependency status. Require pre-commit to run the
-new module when any exporter, app Gradle, source-template, fixture, doc, or test
-surface changes.
+four bounded pure-Python contract classes when any exporter, app Gradle,
+source-template, fixture, doc, or test surface changes.
 
 - [ ] **Step 2: Run and verify RED**
 
@@ -589,24 +597,38 @@ Add a concise "Optional Foundry-Java extensions" section to
 `ANDROID_RUNTIME.md`, six export-option members to
 `EditorExportPlatformAndroid.xml`, and a local pre-commit hook:
 
+Document that repository URLs use ASCII URI syntax. Non-ASCII characters must
+be percent-encoded. Malformed percent escapes and unsupported raw URI characters
+are rejected before Gradle, and repository values are redacted from diagnostics
+and verbose command logging.
+
 ```yaml
 - id: foundry-java-android-export
   name: Foundry-Java Android export contracts
   language: python
   entry: python -m unittest
   args:
-    - tests.python_build.test_android_foundry_java_export
+    - tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests
+    - tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests
+    - tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests
+    - tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests
   pass_filenames: false
 ```
 
 Scope the hook to the exact files listed in this plan.
+Gradle-, integration-, and editor-binary-dependent contract classes remain in CI
+because they are not bounded pure-Python pre-commit checks.
 
 - [ ] **Step 4: Validate and commit**
 
 Run:
 
 ```sh
-python3 -m unittest tests.python_build.test_android_foundry_java_export -v
+python3 -m unittest -v \
+  tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests \
+  tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests \
+  tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests \
+  tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests
 python3 misc/scripts/validate_xml.py platform/android/doc_classes/EditorExportPlatformAndroid.xml
 pre-commit run foundry-java-android-export --all-files
 ```

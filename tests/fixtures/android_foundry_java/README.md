@@ -1,10 +1,11 @@
 # Foundry-Java Android export fixture
 
-This fixture is the smallest descriptor-bearing Java module used by the
-Foundry Android exporter integration tests. The tests compile
-`DemoExtension.java` against the exact merged Foundry-Java runtime JAR, package
-the descriptor and narrow ProGuard rules into a deterministic module JAR, and
-then consume it through both explicit local files and a staged Maven repository.
+This fixture is the smallest annotated Java extension used by the Foundry
+Android exporter integration tests. The tests compile `DemoExtension.java`
+through the exact merged Foundry-Java annotation processor. The processor emits
+the reflection-free module registry, callback trampoline, descriptor, and
+narrow ProGuard rules, which the tests package into a deterministic module JAR
+and consume through both explicit local files and a staged Maven repository.
 
 The fixture deliberately contains no Android or Foundry host native library.
 Foundry-Java owns descriptor and binding-payload validation; Foundry supplies

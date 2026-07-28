@@ -243,7 +243,10 @@ repos:
         language: python
         entry: python -m unittest
         args:
-          - tests.python_build.test_android_foundry_java_export
+          - tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests
+          - tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests
+          - tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests
+          - tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests
         pass_filenames: false
         files: |
           (?x)^(

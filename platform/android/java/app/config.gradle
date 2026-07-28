@@ -343,22 +343,83 @@ ext.validateFoundryJavaCoordinate = { String propertyName, String coordinate ->
     return coordinate
 }
 
+ext.hasSafeFoundryJavaUriSyntax = { String value, boolean allowSquareBrackets ->
+    for (int index = 0; index < value.length(); index++) {
+        int character = value.charAt(index) as int
+        if (character <= 0x20 || character >= 0x7f ||
+                character in [0x22, 0x3c, 0x3e, 0x5c, 0x5e, 0x60, 0x7b, 0x7c, 0x7d] ||
+                (!allowSquareBrackets && character in [0x5b, 0x5d])) {
+            return false
+        }
+        if (character == 0x25) {
+            if (index + 2 >= value.length()) {
+                return false
+            }
+            for (int hexIndex = index + 1; hexIndex <= index + 2; hexIndex++) {
+                int hexCharacter = value.charAt(hexIndex) as int
+                if (!((hexCharacter >= 0x30 && hexCharacter <= 0x39) ||
+                        (hexCharacter >= 0x41 && hexCharacter <= 0x46) ||
+                        (hexCharacter >= 0x61 && hexCharacter <= 0x66))) {
+                    return false
+                }
+            }
+            index += 2
+        }
+    }
+    return true
+}
+
 ext.getFoundryJavaMavenRepositories = { ->
+    String diagnostic =
+        "foundry_java_maven_repositories must use HTTPS or a local file URL without credentials, query, or fragment"
+    String rawRepositories = project.hasProperty("foundry_java_maven_repositories") ?
+        project.property("foundry_java_maven_repositories") : ""
+    if (!rawRepositories.isEmpty() &&
+            rawRepositories.split(FOUNDRY_JAVA_LIST_SEPARATOR_REGEX, -1).any { it != it.trim() }) {
+        throw new GradleException(diagnostic)
+    }
     List<String> repositories = parseFoundryJavaList("foundry_java_maven_repositories")
     repositories.each { String repository ->
-        URI uri
-        try {
-            uri = new URI(repository)
-        } catch (URISyntaxException error) {
-            throw new GradleException(
-                "foundry_java_maven_repositories must use valid HTTP(S) or file URLs; found '$repository'",
-                error
-            )
+        boolean valid = false
+        String rawPath = ""
+        boolean safeSyntax = false
+        if (repository.startsWith("file:///")) {
+            rawPath = repository.substring(8)
+            safeSyntax = !rawPath.startsWith("/") &&
+                hasSafeFoundryJavaUriSyntax(rawPath, false)
+        } else if (repository.startsWith("https://")) {
+            String remainder = repository.substring(8)
+            int pathSeparator = remainder.indexOf("/")
+            rawPath = pathSeparator == -1 ? "" : remainder.substring(pathSeparator)
+            safeSyntax = hasSafeFoundryJavaUriSyntax(repository, true) &&
+                hasSafeFoundryJavaUriSyntax(rawPath, false)
         }
-        if (!(uri.scheme in ["http", "https", "file"])) {
-            throw new GradleException(
-                "foundry_java_maven_repositories must use HTTP(S) or file URLs; found '$repository'"
-            )
+        if (safeSyntax) {
+            URI uri
+            try {
+                uri = new URI(repository)
+                if (uri.scheme == "https") {
+                    valid = !uri.isOpaque() &&
+                        uri.host != null &&
+                        !uri.host.isEmpty() &&
+                        uri.userInfo == null &&
+                        (uri.port == -1 || (uri.port >= 1 && uri.port <= 65535)) &&
+                        uri.rawQuery == null &&
+                        uri.rawFragment == null
+                } else if (uri.scheme == "file") {
+                    valid = !uri.isOpaque() &&
+                        uri.rawAuthority == null &&
+                        uri.path != null &&
+                        uri.path.startsWith("/") &&
+                        uri.rawQuery == null &&
+                        uri.rawFragment == null
+                }
+            } catch (URISyntaxException ignored) {
+                // The deterministic diagnostic below intentionally does not echo a URL which may contain secrets.
+            }
+        }
+        if (!valid) {
+            throw new GradleException(diagnostic)
         }
     }
     return repositories
@@ -402,7 +463,7 @@ ext.getFoundryJavaGradlePlugin = { ->
         validateFoundryJavaCoordinate("foundry_java_gradle_plugin", plugin)
     } else {
         File pluginFile = file(plugin)
-        if (!pluginFile.isFile() || !pluginFile.name.endsWith(".jar")) {
+        if (!pluginFile.isFile() || !pluginFile.name.toLowerCase(Locale.ROOT).endsWith(".jar")) {
             throw new GradleException(
                 "foundry_java_gradle_plugin must be a regular local JAR file: $plugin"
             )

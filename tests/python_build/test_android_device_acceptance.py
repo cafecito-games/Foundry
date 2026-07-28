@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import json
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -588,7 +590,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             [scenario["application_id"] for scenario in report["scenarios"]],
         )
 
-    def test_apk_only_acceptance_verifies_required_marker_for_both_application_ids(self) -> None:
+    def test_apk_only_acceptance_normalizes_required_marker_for_both_application_ids(self) -> None:
         canonical = self.workspace / "canonical.apk"
         custom = self.workspace / "custom.apk"
         canonical.write_bytes(b"canonical")
@@ -613,7 +615,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             boot_timeout=0.0,
             process_timeout=0.0,
             poll_interval=0.0,
-            required_runtime_marker=marker,
+            required_runtime_marker=f" \t{marker}\n",
         )
         self.assertEqual("verify-apks", report["mode"])
         self.assertEqual(marker, report["required_runtime_marker"])
@@ -625,6 +627,111 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             report,
             json.loads((self.workspace / "apk-evidence/report.json").read_text(encoding="utf-8")),
         )
+
+    def test_apk_only_acceptance_rejects_empty_or_whitespace_runtime_marker(self) -> None:
+        for index, marker in enumerate(("", " \t ")):
+            with self.subTest(marker=repr(marker)):
+                apk = self.workspace / f"invalid-marker-{index}.apk"
+                apk.write_bytes(b"apk")
+                runner = FakeRunner(self.tool)
+                runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+
+                with self.assertRaisesRegex(
+                    self.tool.AcceptanceError,
+                    "required runtime marker must contain non-whitespace text",
+                ):
+                    self.tool.run_apk_acceptance(
+                        apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                        evidence_dir=self.workspace / f"invalid-marker-evidence-{index}",
+                        adb=Path("/sdk/platform-tools/adb"),
+                        apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                        requested_serial="emulator-5554",
+                        runner=runner,
+                        boot_timeout=0.0,
+                        process_timeout=0.0,
+                        poll_interval=0.0,
+                        required_runtime_marker=marker,
+                    )
+
+    def test_verify_apks_cli_rejects_empty_or_whitespace_runtime_marker(self) -> None:
+        parser = self.tool._parser()
+        for marker in ("", " \t "):
+            with self.subTest(marker=repr(marker)):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as error:
+                    parser.parse_args(
+                        [
+                            "verify-apks",
+                            "--apk",
+                            f"{self.tool.DEFAULT_APPLICATION_ID}=/tmp/example.apk",
+                            "--required-runtime-marker",
+                            marker,
+                            "--evidence-dir",
+                            "/tmp/evidence",
+                            "--adb",
+                            "/tmp/adb",
+                            "--apkanalyzer",
+                            "/tmp/apkanalyzer",
+                        ]
+                    )
+                self.assertEqual(2, error.exception.code)
+                self.assertIn("required runtime marker must contain non-whitespace text", stderr.getvalue())
+
+    def test_verify_apks_executable_rejects_invalid_runtime_marker_before_device_work(self) -> None:
+        for index, marker in enumerate(("", " \t ")):
+            with self.subTest(marker=repr(marker)):
+                evidence_dir = self.workspace / f"invalid-cli-marker-evidence-{index}"
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(TOOL_PATH),
+                        "verify-apks",
+                        "--apk",
+                        f"{self.tool.DEFAULT_APPLICATION_ID}={self.workspace / 'example.apk'}",
+                        "--required-runtime-marker",
+                        marker,
+                        "--evidence-dir",
+                        str(evidence_dir),
+                        "--adb",
+                        str(self.workspace / "adb-must-not-run"),
+                        "--apkanalyzer",
+                        str(self.workspace / "apkanalyzer-must-not-run"),
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                self.assertEqual(2, result.returncode)
+                self.assertIn(
+                    "required runtime marker must contain non-whitespace text",
+                    result.stderr,
+                )
+                self.assertNotIn("is not executable", result.stderr)
+                self.assertFalse(evidence_dir.exists())
+
+    def test_verify_apks_cli_normalizes_runtime_marker(self) -> None:
+        marker = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
+
+        arguments = self.tool._parser().parse_args(
+            [
+                "verify-apks",
+                "--apk",
+                f"{self.tool.DEFAULT_APPLICATION_ID}=/tmp/example.apk",
+                "--required-runtime-marker",
+                f" \t{marker}\n",
+                "--evidence-dir",
+                "/tmp/evidence",
+                "--adb",
+                "/tmp/adb",
+                "--apkanalyzer",
+                "/tmp/apkanalyzer",
+            ]
+        )
+
+        self.assertEqual(marker, arguments.required_runtime_marker)
 
     def test_apk_only_acceptance_rejects_missing_required_runtime_marker(self) -> None:
         apk = self.workspace / "canonical.apk"

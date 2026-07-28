@@ -65,6 +65,12 @@ gradle_build/foundry_java/maven_artifacts =
    "com.example:my-foundry-extension:1.0.0"]
 ```
 
+Repository URLs must use HTTPS or an absolute local `file:///` URL and ASCII URI
+syntax. Non-ASCII characters must be percent-encoded. Malformed percent escapes
+and unsupported raw URI characters are rejected before Gradle runs. Plain HTTP,
+remote file authorities, embedded credentials, queries, and fragments are also
+rejected. Repository values are redacted from verbose export command logging.
+
 An offline build instead sets `gradle_plugin_local` to the exact
 Foundry-Java plugin JAR and lists the binding AAR, runtime JAR, and extension
 module JARs in `local_artifacts`. Local archives are external export inputs;

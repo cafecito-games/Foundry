@@ -80,13 +80,20 @@ foundry_java_local_artifacts=<sorted encoded list>
 
 List values are sorted and joined with `|` after validation. Newlines, carriage
 returns, `|` injection, blank entries, duplicates, dynamic Maven
-versions, malformed coordinates, non-HTTP(S)/file repository URLs, and
-missing or non-regular local inputs fail deterministically and name the export
-option. The exporter checks the user-supplied path before canonicalization and
+versions, malformed coordinates, repository URLs other than HTTPS or absolute
+local `file:///` URLs, credential-bearing or query/fragment repository URLs,
+and missing or non-regular local inputs fail deterministically and name the
+export option without echoing repository values. The exporter checks the
+user-supplied path before canonicalization and
 rejects a symlink in the final component or any existing path component. Only
 an accepted regular file with no symlink traversal is then canonicalized before
 the Gradle command is constructed. Maven and local application artifacts may
 coexist; Maven and local plugin sources may not.
+
+Repository URLs use ASCII URI syntax. Non-ASCII characters must be
+percent-encoded. Malformed percent escapes and unsupported raw URI characters
+are rejected before Gradle, and repository values are redacted from diagnostics
+and verbose command logging.
 
 The application build script adds the selected plugin artifact to its
 `buildscript` classpath only when the marker is present, applies
