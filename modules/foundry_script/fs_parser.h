@@ -523,6 +523,13 @@ public:
 		struct GroupingSpan {
 			int open_line = 0;
 			int close_line = 0;
+			// True when the token immediately following the closing delimiter starts
+			// on that same source line (`(expr).method()`, `(expr) + 1`, ...): more of
+			// this expression's own source continues there, so a comment on that line
+			// is not necessarily the grouping's to claim -- it could trail that
+			// continuation instead. The formatter only reattaches a close-line comment
+			// when this is false.
+			bool close_line_has_trailing_code = false;
 		};
 		Vector<GroupingSpan> redundant_groupings;
 

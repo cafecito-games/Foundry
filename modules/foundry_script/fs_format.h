@@ -163,6 +163,11 @@ private:
 	// comment -- a query-only counterpart to `append_inline_comment`/
 	// `emit_trailing_comment` that does not itself consume it.
 	bool has_inline_comment(int p_line) const;
+	// Like `has_full_line_comment_between`, but only counts a comment the cursor
+	// has not already passed. A caller deciding whether *it* still needs to make
+	// room for a comment (e.g. by keeping an otherwise-collapsible construct
+	// multi-line) must not trigger on one an enclosing context already flushed.
+	bool has_unconsumed_full_line_comment_between(int p_after, int p_before) const;
 	// The source line of the `else` keyword, found as the only non-comment,
 	// non-blank line between the true block's end and the else block's first
 	// statement. The parser records no node for `else`, and the else suite's

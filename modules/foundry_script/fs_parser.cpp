@@ -5232,6 +5232,24 @@ FSParser::ExpressionNode *FSParser::parse_grouping(ExpressionNode *p_previous_op
 		ExpressionNode::GroupingSpan span;
 		span.open_line = open_paren.start_line;
 		span.close_line = previous.start_line;
+		// `current` is already the token past the just-consumed `)` (a Pratt prefix
+		// rule's caller looks at it next to decide whether an infix/postfix
+		// continues), so this reflects the real source, not just how far this
+		// function happened to parse. `NEWLINE`/`INDENT`/`DEDENT` are structural
+		// tokens the tokenizer synthesizes at the line boundary itself, not real
+		// source content, so they never count as trailing code.
+		switch (current.type) {
+			case FSTokenizer::Token::TK_EOF:
+			case FSTokenizer::Token::ERROR:
+			case FSTokenizer::Token::NEWLINE:
+			case FSTokenizer::Token::INDENT:
+			case FSTokenizer::Token::DEDENT:
+				span.close_line_has_trailing_code = false;
+				break;
+			default:
+				span.close_line_has_trailing_code = current.start_line == span.close_line;
+				break;
+		}
 		first_element->redundant_groupings.push_back(span);
 		return first_element;
 	}
