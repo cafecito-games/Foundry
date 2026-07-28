@@ -5707,6 +5707,13 @@ FSParser::ExpressionNode *FSParser::parse_lambda(ExpressionNode *p_previous_oper
 	SuiteNode *previous_suite = current_suite;
 	current_suite = body;
 
+	// A lambda's parameters and body are their own scope, parsed independently of any condition
+	// that happens to contain this lambda expression: a case-bind test written inside them is not
+	// an `and`-conjunct of that outer condition and has no matching declare_condition_case_binds()
+	// call to clean it up. Suppress transient case-bind declaration for the whole lambda.
+	int previous_case_bind_condition_depth = case_bind_condition_depth;
+	case_bind_condition_depth = 0;
+
 	parse_function_signature(function, body, "lambda", -1);
 
 	current_suite = previous_suite;
@@ -5725,6 +5732,8 @@ FSParser::ExpressionNode *FSParser::parse_lambda(ExpressionNode *p_previous_oper
 	function->body = parse_suite("lambda declaration", body, true);
 	complete_extents(function);
 	complete_extents(lambda);
+
+	case_bind_condition_depth = previous_case_bind_condition_depth;
 
 	pop_multiline();
 
