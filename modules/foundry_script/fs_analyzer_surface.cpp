@@ -39,6 +39,23 @@
 #define UNNAMED_ENUM "<anonymous enum>"
 #define ENUM_SEPARATOR "."
 
+// `enum_name` and `tuple_name` files declare a type-only head with no script body: they cannot be
+// extended like an ordinary class or trait. Returns an article-qualified description of the head
+// declaration to name in a diagnostic (e.g. `an "enum_name"`), or an empty string when `p_head` is
+// an ordinary class/trait head.
+static String _type_only_head_declaration_description(const FSParser::ClassNode *p_head) {
+	if (p_head == nullptr) {
+		return String();
+	}
+	if (p_head->is_enum_file) {
+		return R"(an "enum_name")";
+	}
+	if (p_head->is_tuple_file) {
+		return R"(a "tuple_name")";
+	}
+	return String();
+}
+
 static String _class_or_trait_name(const FSParser::ClassNode *p_class) {
 	if (p_class == nullptr) {
 		return "<unknown>";
@@ -486,6 +503,12 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 			}
 #endif // DEBUG_ENABLED
 
+			const String type_only_head_description = _type_only_head_declaration_description(ext_parser->get_parser()->head);
+			if (!type_only_head_description.is_empty()) {
+				push_error(vformat(R"(Cannot extend "%s"; it is %s file, not a class.)", p_class->extends_path, type_only_head_description), p_class);
+				return ERR_PARSE_ERROR;
+			}
+
 			base = ext_parser->get_parser()->head->get_datatype();
 		} else {
 			if (p_class->extends.is_empty()) {
@@ -504,6 +527,11 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 				String base_path = ScriptServer::get_global_class_path(name);
 
 				if (FoundryScript::is_canonically_equal_paths(base_path, parser->script_path)) {
+					const String type_only_head_description = _type_only_head_declaration_description(parser->head);
+					if (!type_only_head_description.is_empty()) {
+						push_error(vformat(R"(Cannot extend "%s"; it is %s file, not a class.)", name, type_only_head_description), id);
+						return ERR_PARSE_ERROR;
+					}
 					base = parser->head->get_datatype();
 				} else {
 					Ref<FSParserRef> base_parser;
@@ -523,6 +551,12 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 						parser->push_warning(p_class, FSWarning::MISSING_TOOL);
 					}
 #endif // DEBUG_ENABLED
+
+					const String type_only_head_description = _type_only_head_declaration_description(base_parser->get_parser()->head);
+					if (!type_only_head_description.is_empty()) {
+						push_error(vformat(R"(Cannot extend "%s"; it is %s file, not a class.)", name, type_only_head_description), id);
+						return ERR_PARSE_ERROR;
+					}
 
 					base = base_parser->get_parser()->head->get_datatype();
 				}
