@@ -553,7 +553,10 @@ wiring defects.
 
 Reuse existing ZIP/APK helpers and extend the existing device/export acceptance
 inspector with enabled-only checks for the two assets and requested bridge
-entries. Do not reject Foundry's legitimate host `libfoundry_android.so` in the
+entries. Stream each required payload through miniz to validate its declared
+size and CRC, bounded at 128 MiB per entry and 512 MiB in aggregate. Do not read
+unrequested bridge payloads; reject their names through the exact ABI-set
+check. Do not reject Foundry's legitimate host `libfoundry_android.so` in the
 final app; input ownership is validated before assembly.
 
 - [ ] **Step 5: Rerun and commit**

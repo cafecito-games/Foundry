@@ -144,6 +144,12 @@ Foundry inspects only the observable APK/AAB Foundry-Java contract and rejects:
 - anything other than one `libfoundry_java.so` for each requested ABI; and
 - any `libfoundry_java.so` for an unrequested ABI.
 
+The final inspector also streams the configuration, registry index, and each
+requested ABI bridge through miniz to validate the declared uncompressed size
+and CRC. This payload validation is bounded at 128 MiB per required entry and
+512 MiB across required entries. Unrequested bridge payloads are not read
+because their names already fail the exact ABI-set contract.
+
 Broad handwritten keep rules and discovery fallbacks are prohibited through
 static source/build-script contracts rather than inferred from final APK
 contents.

@@ -3317,6 +3317,9 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         streaming_data_descriptor: bool = False,
         lock_output_directory: bool = False,
         sfx_prefix: bytes = b"",
+        corrupt_entry_payload: str | None = None,
+        uncompressed_sizes: tuple[int, ...] | None = None,
+        entry_payload_sizes: tuple[int, ...] | None = None,
     ) -> Path:
         gradle_root = project / "android"
         build = gradle_root / "build"
@@ -3354,9 +3357,21 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     def flush(self):
                         self.output.flush()
 
+                entry_payload_sizes = {entry_payload_sizes!r}
+
                 def write_entries(archive):
-                    for entry in {entries!r}:
-                        if {force_local_zip64_sizes!r}:
+                    if entry_payload_sizes is not None and len(entry_payload_sizes) != len({entries!r}):
+                        raise RuntimeError("fake Gradle output entry count does not match payload-size fixture")
+                    for index, entry in enumerate({entries!r}):
+                        if entry_payload_sizes is not None:
+                            remaining = entry_payload_sizes[index]
+                            chunk = b"\\x00" * (1024 * 1024)
+                            with archive.open(entry, "w") as output:
+                                while remaining > 0:
+                                    written = min(remaining, len(chunk))
+                                    output.write(chunk[:written])
+                                    remaining -= written
+                        elif {force_local_zip64_sizes!r}:
                             with archive.open(entry, "w", force_zip64=True) as output:
                                 output.write(entry.encode("utf-8"))
                         elif {force_zip64!r}:
@@ -3379,10 +3394,18 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     destination = Path(export_path) / export_filename
                     if {streaming_data_descriptor!r}:
                         with destination.open("wb") as output:
-                            with zipfile.ZipFile(NonSeekableWriter(output), "w") as archive:
+                            with zipfile.ZipFile(
+                                NonSeekableWriter(output),
+                                "w",
+                                compression=zipfile.ZIP_DEFLATED if entry_payload_sizes is not None else zipfile.ZIP_STORED,
+                            ) as archive:
                                 write_entries(archive)
                     else:
-                        with zipfile.ZipFile(destination, "w") as archive:
+                        with zipfile.ZipFile(
+                            destination,
+                            "w",
+                            compression=zipfile.ZIP_DEFLATED if entry_payload_sizes is not None else zipfile.ZIP_STORED,
+                        ) as archive:
                             write_entries(archive)
                     if {lock_output_directory!r}:
                         destination.parent.chmod(0o500)
@@ -3397,6 +3420,45 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         )
                         if not local_flags & 0x0008 or b"PK\\x07\\x08" not in streaming_contents:
                             raise RuntimeError("streaming ZIP did not emit a real data descriptor")
+                    corrupt_entry_payload = {corrupt_entry_payload!r}
+                    if corrupt_entry_payload is not None:
+                        with zipfile.ZipFile(destination) as archive:
+                            entry_info = archive.getinfo(corrupt_entry_payload)
+                        contents = bytearray(destination.read_bytes())
+                        local_entry = entry_info.header_offset
+                        filename_size = int.from_bytes(contents[local_entry + 26 : local_entry + 28], "little")
+                        extra_size = int.from_bytes(contents[local_entry + 28 : local_entry + 30], "little")
+                        payload_offset = local_entry + 30 + filename_size + extra_size
+                        if entry_info.compress_size == 0 or payload_offset >= len(contents):
+                            raise RuntimeError("fake Gradle output has no mutable entry payload")
+                        contents[payload_offset] ^= 0x01
+                        destination.write_bytes(contents)
+                    uncompressed_sizes = {uncompressed_sizes!r}
+                    if uncompressed_sizes is not None:
+                        contents = bytearray(destination.read_bytes())
+                        local_headers = []
+                        central_headers = []
+                        cursor = 0
+                        while (cursor := contents.find(b"PK\\x03\\x04", cursor)) >= 0:
+                            local_headers.append(cursor)
+                            cursor += 4
+                        cursor = 0
+                        while (cursor := contents.find(b"PK\\x01\\x02", cursor)) >= 0:
+                            central_headers.append(cursor)
+                            cursor += 4
+                        if len(local_headers) != len(uncompressed_sizes) or len(central_headers) != len(
+                            uncompressed_sizes
+                        ):
+                            raise RuntimeError("fake Gradle output entry count does not match size fixture")
+                        for local_header, central_header, uncompressed_size in zip(
+                            local_headers,
+                            central_headers,
+                            uncompressed_sizes,
+                        ):
+                            encoded_size = uncompressed_size.to_bytes(4, "little")
+                            contents[local_header + 22 : local_header + 26] = encoded_size
+                            contents[central_header + 24 : central_header + 28] = encoded_size
+                        destination.write_bytes(contents)
                     reported_entry_count = {reported_entry_count!r}
                     central_directory_mutation = {central_directory_mutation!r}
                     force_zip64 = {force_zip64!r}
@@ -3732,6 +3794,223 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         self.assertIn(diagnostic, output)
                         self.assertFalse((project / output_name).exists())
                         self.assertEqual(b"preserve unrelated output\n", unrelated_sentinel.read_bytes())
+
+    def test_command_first_export_rejects_corrupt_required_final_artifact_payloads(self) -> None:
+        for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
+            required_entries = (
+                f"{root}assets/FoundryJava.foundryextension",
+                f"{root}assets/foundry_java/registry-index-v2.txt",
+                f"{root}lib/arm64-v8a/libfoundry_java.so",
+            )
+            for entry in required_entries:
+                with self.subTest(extension=extension, entry=entry):
+                    with tempfile.TemporaryDirectory(
+                        prefix=f"foundry-java-final-payload-{extension}.",
+                        dir=test_scratch_directory(),
+                    ) as directory:
+                        project = Path(directory)
+                        project.joinpath("project.foundry").write_text(
+                            textwrap.dedent(
+                                """\
+                                [application]
+                                config/name="Foundry Java Final Artifact Payload Integrity"
+
+                                [rendering]
+                                textures/vram_compression/import_etc2_astc=true
+                                """
+                            ),
+                            encoding="utf-8",
+                        )
+                        plugin = project / "plugin.jar"
+                        module = project / "module.jar"
+                        with zipfile.ZipFile(plugin, "w") as archive:
+                            archive.writestr(
+                                "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                                "implementation-class=test.Fixture\n",
+                            )
+                        with zipfile.ZipFile(module, "w"):
+                            pass
+                        gradle_root = self._write_fake_gradle_wrapper(
+                            project,
+                            required_entries,
+                            corrupt_entry_payload=entry,
+                        )
+                        self._write_export_preset(
+                            project,
+                            plugin_local=plugin,
+                            local_artifacts=(module,),
+                            use_gradle=True,
+                            extra_options=(
+                                f'gradle_build/gradle_build_directory="{gradle_root}"',
+                                f"gradle_build/export_format={export_format}",
+                                "package/signed=false",
+                                "architectures/armeabi-v7a=false",
+                                "architectures/arm64-v8a=true",
+                                "architectures/x86=false",
+                                "architectures/x86_64=false",
+                            ),
+                        )
+                        output_name = f"corrupt-payload.{extension}"
+                        result = self._run_export(project, output_name)
+                        output = result.stdout + result.stderr
+                        self.assertNotEqual(0, result.returncode, output)
+                        self.assertIn(f"required entry '{entry}' failed integrity validation", output)
+                        self.assertFalse((project / output_name).exists())
+
+    def test_command_first_export_bounds_required_final_artifact_payloads(self) -> None:
+        mib = 1024 * 1024
+        cases = (
+            (
+                "per-entry",
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                ),
+                (128 * mib + 1, 1, 1),
+                None,
+                (
+                    "architectures/armeabi-v7a=false",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=false",
+                    "architectures/x86_64=false",
+                ),
+                "required entry 'assets/FoundryJava.foundryextension' exceeds the 134217728-byte decompressed size limit",
+            ),
+            (
+                "aggregate",
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/armeabi-v7a/libfoundry_java.so",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                    "lib/x86/libfoundry_java.so",
+                    "lib/x86_64/libfoundry_java.so",
+                ),
+                None,
+                (90 * mib,) * 6,
+                (
+                    "architectures/armeabi-v7a=true",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=true",
+                    "architectures/x86_64=true",
+                ),
+                "required entries exceed the aggregate 536870912-byte decompressed size limit",
+            ),
+        )
+        for defect, entries, uncompressed_sizes, entry_payload_sizes, architectures, diagnostic in cases:
+            with self.subTest(defect=defect):
+                with tempfile.TemporaryDirectory(
+                    prefix=f"foundry-java-final-payload-{defect}.",
+                    dir=test_scratch_directory(),
+                ) as directory:
+                    project = Path(directory)
+                    project.joinpath("project.foundry").write_text(
+                        textwrap.dedent(
+                            """\
+                            [application]
+                            config/name="Foundry Java Final Artifact Payload Bounds"
+
+                            [rendering]
+                            textures/vram_compression/import_etc2_astc=true
+                            """
+                        ),
+                        encoding="utf-8",
+                    )
+                    plugin = project / "plugin.jar"
+                    module = project / "module.jar"
+                    with zipfile.ZipFile(plugin, "w") as archive:
+                        archive.writestr(
+                            "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                            "implementation-class=test.Fixture\n",
+                        )
+                    with zipfile.ZipFile(module, "w"):
+                        pass
+                    gradle_root = self._write_fake_gradle_wrapper(
+                        project,
+                        entries,
+                        uncompressed_sizes=uncompressed_sizes,
+                        entry_payload_sizes=entry_payload_sizes,
+                    )
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                        extra_options=(
+                            f'gradle_build/gradle_build_directory="{gradle_root}"',
+                            "gradle_build/export_format=0",
+                            "package/signed=false",
+                            *architectures,
+                        ),
+                    )
+                    output_name = f"oversized-{defect}.apk"
+                    result = self._run_export(project, output_name)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn(diagnostic, output)
+                    self.assertFalse((project / output_name).exists())
+
+    def test_command_first_export_does_not_read_unrequested_bridge_payloads(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-final-unrequested-bridge.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java Unrequested Bridge Payload"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            unrequested_bridge = "lib/x86_64/libfoundry_java.so"
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                    unrequested_bridge,
+                ),
+                corrupt_entry_payload=unrequested_bridge,
+            )
+            self._write_export_preset(
+                project,
+                plugin_local=plugin,
+                local_artifacts=(module,),
+                use_gradle=True,
+                extra_options=(
+                    f'gradle_build/gradle_build_directory="{gradle_root}"',
+                    "gradle_build/export_format=0",
+                    "package/signed=false",
+                    "architectures/armeabi-v7a=false",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=false",
+                    "architectures/x86_64=false",
+                ),
+            )
+            output_name = "unrequested-bridge.apk"
+            result = self._run_export(project, output_name)
+            output = result.stdout + result.stderr
+            self.assertNotEqual(0, result.returncode, output)
+            self.assertIn("bridge entries differ from the requested ABI set", output)
+            self.assertNotIn("failed integrity validation", output)
+            self.assertFalse((project / output_name).exists())
 
     def test_rejected_final_artifact_reports_cleanup_failure(self) -> None:
         with tempfile.TemporaryDirectory(

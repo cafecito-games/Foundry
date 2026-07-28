@@ -1971,6 +1971,8 @@ static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRY_UNCOMPRESSED_BYTE
 static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES = 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES = 131072;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES = 16383;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES = 16 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIZE = 30;
@@ -2967,11 +2969,43 @@ static Error _foundry_java_scan_archive(const String &p_path, bool &r_contains_h
 			r_error);
 }
 
+static bool _foundry_java_validate_current_archive_entry_payload(unzFile p_archive, const unz_file_info64 &p_info) {
+	if (unzOpenCurrentFile(p_archive) != UNZ_OK) {
+		return false;
+	}
+
+	Vector<uint8_t> buffer;
+	buffer.resize(FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES);
+	uint64_t bytes_read = 0;
+	bool valid = true;
+	while (true) {
+		const int result = unzReadCurrentFile(p_archive, buffer.ptrw(), buffer.size());
+		if (result < 0) {
+			valid = false;
+			break;
+		}
+		if (result == 0) {
+			break;
+		}
+		if (bytes_read > p_info.uncompressed_size || uint64_t(result) > p_info.uncompressed_size - bytes_read) {
+			valid = false;
+			break;
+		}
+		bytes_read += result;
+	}
+	const int close_result = unzCloseCurrentFile(p_archive);
+	return valid && bytes_read == p_info.uncompressed_size && close_result == UNZ_OK;
+}
+
 Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, String &r_error) const {
 	const String artifact_kind = p_export_format == EXPORT_FORMAT_AAB ? "AAB" : "APK";
 	const String root = p_export_format == EXPORT_FORMAT_AAB ? "base/" : "";
 	const String configuration = root + "assets/FoundryJava.foundryextension";
 	const String registry_index = root + "assets/foundry_java/registry-index-v2.txt";
+	Vector<String> expected_bridges;
+	for (const ABI &abi : p_enabled_abis) {
+		expected_bridges.push_back(root + "lib/" + abi.abi + "/libfoundry_java.so");
+	}
 
 	Ref<FileAccess> artifact_file;
 	zlib_filefunc_def io = zipio_create_io(&artifact_file);
@@ -3002,6 +3036,7 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 	Vector<String> bridge_entries;
 	uint64_t entries_scanned = 0;
 	uint64_t total_entry_name_bytes = 0;
+	uint64_t total_required_entry_uncompressed_bytes = 0;
 	FoundryJavaCentralDirectoryContext central_directory_context;
 	int result = unzGoToFirstFile(artifact);
 	while (result == UNZ_OK) {
@@ -3033,14 +3068,50 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 			unzClose(artifact);
 			return ERR_FILE_CORRUPT;
 		}
+		bool is_required_entry = false;
 		if (entry == configuration) {
 			configuration_count++;
+			is_required_entry = true;
 		}
 		if (entry == registry_index) {
 			registry_index_count++;
+			is_required_entry = true;
 		}
 		if (entry.ends_with("/libfoundry_java.so")) {
 			bridge_entries.push_back(entry);
+			is_required_entry = expected_bridges.has(entry);
+		}
+		if (is_required_entry &&
+				info.uncompressed_size > FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPRESSED_BYTES) {
+			r_error = vformat(
+					TTR("Unable to inspect final Foundry-Java %s: required entry '%s' exceeds the %d-byte decompressed size limit."),
+					artifact_kind,
+					_foundry_java_safe_diagnostic_value(entry),
+					FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPRESSED_BYTES);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		if (is_required_entry &&
+				info.uncompressed_size >
+						FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES - total_required_entry_uncompressed_bytes) {
+			r_error = vformat(
+					TTR("Unable to inspect final Foundry-Java %s: required entries exceed the aggregate %d-byte decompressed size limit at '%s'."),
+					artifact_kind,
+					FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES,
+					_foundry_java_safe_diagnostic_value(entry));
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		if (is_required_entry) {
+			total_required_entry_uncompressed_bytes += info.uncompressed_size;
+		}
+		if (is_required_entry && !_foundry_java_validate_current_archive_entry_payload(artifact, info)) {
+			r_error = vformat(
+					TTR("Unable to inspect final Foundry-Java %s: required entry '%s' failed integrity validation."),
+					artifact_kind,
+					_foundry_java_safe_diagnostic_value(entry));
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
 		}
 		entries_scanned++;
 		if (entries_scanned > FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES) {
@@ -3085,10 +3156,6 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 		return ERR_INVALID_DATA;
 	}
 
-	Vector<String> expected_bridges;
-	for (const ABI &abi : p_enabled_abis) {
-		expected_bridges.push_back(root + "lib/" + abi.abi + "/libfoundry_java.so");
-	}
 	bridge_entries.sort();
 	expected_bridges.sort();
 	if (bridge_entries != expected_bridges) {

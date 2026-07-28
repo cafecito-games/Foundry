@@ -99,6 +99,13 @@ assets/foundry_java/registry-index-v2.txt
 lib/<requested-abi>/libfoundry_java.so
 ```
 
+After Gradle copies the final APK or AAB, the exporter validates its archive
+structure and streams the configuration, registry index, and each requested ABI
+bridge through miniz so their declared size and CRC are verified before export
+success. Required payload inspection is limited to 128 MiB per entry and
+512 MiB in aggregate. Unrequested bridge names are still collected for the ABI
+set diagnostic, but their payloads are not read.
+
 The existing architecture selection remains authoritative:
 
 | Foundry SCons architecture | Android ABI |
