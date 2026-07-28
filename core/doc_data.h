@@ -2,7 +2,7 @@
 /*  doc_data.h                                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -275,6 +275,49 @@ public:
 		}
 	};
 
+	// One field of a FoundryScript named tuple declaration, or one payload field of a tagged-union
+	// case: both spell a field the same way. An empty `name` is a positional field, matching
+	// `FSParser::DataType::tuple_field_names` semantics.
+	struct TupleFieldDoc {
+		String name;
+		String type;
+		String enumeration;
+		static TupleFieldDoc from_dict(const Dictionary &p_dict) {
+			TupleFieldDoc doc;
+
+			if (p_dict.has("name")) {
+				doc.name = p_dict["name"];
+			}
+
+			if (p_dict.has("type")) {
+				doc.type = p_dict["type"];
+			}
+
+			if (p_dict.has("enumeration")) {
+				doc.enumeration = p_dict["enumeration"];
+			}
+
+			return doc;
+		}
+		static Dictionary to_dict(const TupleFieldDoc &p_doc) {
+			Dictionary dict;
+
+			if (!p_doc.name.is_empty()) {
+				dict["name"] = p_doc.name;
+			}
+
+			if (!p_doc.type.is_empty()) {
+				dict["type"] = p_doc.type;
+			}
+
+			if (!p_doc.enumeration.is_empty()) {
+				dict["enumeration"] = p_doc.enumeration;
+			}
+
+			return dict;
+		}
+	};
+
 	struct ConstantDoc {
 		String name;
 		String value;
@@ -288,6 +331,9 @@ public:
 		bool is_experimental = false;
 		String experimental_message;
 		String keywords;
+		// Payload of a FoundryScript tagged-union case, e.g. the `x: int, y: int` of
+		// `Move(x: int, y: int)`. Empty for every other constant, including a payload-less case.
+		Vector<TupleFieldDoc> payload_fields;
 		bool operator<(const ConstantDoc &p_const) const {
 			return name < p_const.name;
 		}
@@ -335,6 +381,14 @@ public:
 				doc.keywords = p_dict["keywords"];
 			}
 
+			Array payload_fields;
+			if (p_dict.has("payload_fields")) {
+				payload_fields = p_dict["payload_fields"];
+			}
+			for (int i = 0; i < payload_fields.size(); i++) {
+				doc.payload_fields.push_back(TupleFieldDoc::from_dict(payload_fields[i]));
+			}
+
 			return doc;
 		}
 		static Dictionary to_dict(const ConstantDoc &p_doc) {
@@ -371,6 +425,14 @@ public:
 
 			if (!p_doc.keywords.is_empty()) {
 				dict["keywords"] = p_doc.keywords;
+			}
+
+			if (!p_doc.payload_fields.is_empty()) {
+				Array payload_fields;
+				for (int i = 0; i < p_doc.payload_fields.size(); i++) {
+					payload_fields.push_back(TupleFieldDoc::to_dict(p_doc.payload_fields[i]));
+				}
+				dict["payload_fields"] = payload_fields;
 			}
 
 			return dict;
@@ -651,11 +713,18 @@ public:
 		String deprecated_message;
 		bool is_experimental = false;
 		String experimental_message;
+		// True for a FoundryScript tagged union: an enum where at least one case carries a payload,
+		// so its cases are constructors and values rather than integer constants.
+		bool is_tagged_union = false;
 		static EnumDoc from_dict(const Dictionary &p_dict) {
 			EnumDoc doc;
 
 			if (p_dict.has("description")) {
 				doc.description = p_dict["description"];
+			}
+
+			if (p_dict.has("is_tagged_union")) {
+				doc.is_tagged_union = p_dict["is_tagged_union"];
 			}
 
 			if (p_dict.has("deprecated")) {
@@ -677,54 +746,16 @@ public:
 				dict["description"] = p_doc.description;
 			}
 
+			if (p_doc.is_tagged_union) {
+				dict["is_tagged_union"] = true;
+			}
+
 			if (p_doc.is_deprecated) {
 				dict["deprecated"] = p_doc.deprecated_message;
 			}
 
 			if (p_doc.is_experimental) {
 				dict["experimental"] = p_doc.experimental_message;
-			}
-
-			return dict;
-		}
-	};
-
-	// One field of a FoundryScript named tuple declaration. An empty `name` is a positional
-	// field, matching `FSParser::DataType::tuple_field_names` semantics.
-	struct TupleFieldDoc {
-		String name;
-		String type;
-		String enumeration;
-		static TupleFieldDoc from_dict(const Dictionary &p_dict) {
-			TupleFieldDoc doc;
-
-			if (p_dict.has("name")) {
-				doc.name = p_dict["name"];
-			}
-
-			if (p_dict.has("type")) {
-				doc.type = p_dict["type"];
-			}
-
-			if (p_dict.has("enumeration")) {
-				doc.enumeration = p_dict["enumeration"];
-			}
-
-			return doc;
-		}
-		static Dictionary to_dict(const TupleFieldDoc &p_doc) {
-			Dictionary dict;
-
-			if (!p_doc.name.is_empty()) {
-				dict["name"] = p_doc.name;
-			}
-
-			if (!p_doc.type.is_empty()) {
-				dict["type"] = p_doc.type;
-			}
-
-			if (!p_doc.enumeration.is_empty()) {
-				dict["enumeration"] = p_doc.enumeration;
 			}
 
 			return dict;

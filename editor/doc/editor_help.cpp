@@ -2152,7 +2152,38 @@ void EditorHelp::_update_doc() {
 					class_desc->add_text(enum_value.name);
 					class_desc->pop(); // color
 
-					if (enum_value.is_value_valid) {
+					if (!enum_value.payload_fields.is_empty()) {
+						// A tagged-union case carrying a payload is a constructor rather than a
+						// constant, so its declared signature is what documents it.
+						class_desc->push_color(theme_cache.symbol_color);
+						class_desc->add_text("(");
+						class_desc->pop(); // color
+
+						for (int payload_index = 0; payload_index < enum_value.payload_fields.size(); payload_index++) {
+							if (payload_index > 0) {
+								class_desc->push_color(theme_cache.symbol_color);
+								class_desc->add_text(", ");
+								class_desc->pop(); // color
+							}
+
+							const DocData::TupleFieldDoc &payload_field = enum_value.payload_fields[payload_index];
+							if (!payload_field.name.is_empty()) {
+								class_desc->push_color(theme_cache.text_color);
+								class_desc->add_text(payload_field.name);
+								class_desc->pop(); // color
+
+								class_desc->push_color(theme_cache.symbol_color);
+								class_desc->add_text(colon_nbsp);
+								class_desc->pop(); // color
+							}
+
+							_add_type(payload_field.type, payload_field.enumeration);
+						}
+
+						class_desc->push_color(theme_cache.symbol_color);
+						class_desc->add_text(")");
+						class_desc->pop(); // color
+					} else if (enum_value.is_value_valid) {
 						class_desc->push_color(theme_cache.symbol_color);
 						class_desc->add_text(nbsp_equal_nbsp);
 						class_desc->pop(); // color
@@ -3309,7 +3340,7 @@ String EditorHelp::get_cache_full_path() {
 // cache produced by a build with a different schema cannot be trusted: its entries would silently
 // deserialize as valid but incomplete documentation, so it is discarded and regenerated instead.
 // Bump this whenever the dictionary form of a script-visible doc structure changes.
-static constexpr int SCRIPT_DOC_CACHE_SCHEMA_VERSION = 2;
+static constexpr int SCRIPT_DOC_CACHE_SCHEMA_VERSION = 3;
 
 String EditorHelp::get_script_doc_cache_full_path() {
 	return EditorPaths::get_singleton()->get_project_settings_dir().path_join("editor_script_doc_cache.res");

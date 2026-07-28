@@ -2266,6 +2266,64 @@ static void _find_identifiers_in_base(const FSCompletionIdentifier &p_base, bool
 					}
 				}
 
+				if (base_type.is_tagged_union) {
+					// A tagged-union value erases to a read-only `[tag, payload...]` Array and its
+					// meta type to a Dictionary, but neither erasure target is part of the surface
+					// users write: completing Array, Dictionary, or int members here would suggest
+					// operations the analyzer rejects. Only the cases themselves are offered, and
+					// only on the meta type, since a value has no case members.
+					if (base_type.is_meta_type) {
+						for (const KeyValue<StringName, int64_t> &enum_value : base_type.enum_values) {
+							const FSParser::DataType::EnumCasePayload *payload = base_type.get_enum_case_payload(enum_value.key);
+							if (payload == nullptr) {
+								if (p_only_functions) {
+									// A payload-less case is a singleton value, never called, so it
+									// is not a candidate where only callables are wanted.
+									continue;
+								}
+								// A payload-less case is a singleton value, never called.
+								ScriptLanguage::CodeCompletionOption option(
+										enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_CONSTANT,
+										p_recursion_depth + ScriptLanguage::LOCATION_OTHER_USER_CODE);
+								r_result.insert(option.display, option);
+								continue;
+							}
+
+							if (!p_add_braces) {
+								// Parentheses are suppressed where a Callable is expected, but a
+								// payload case is not a first-class callable: it must be
+								// constructed, so a bare reference to it would not compile.
+								continue;
+							}
+
+							// A payload case is a constructor, so it completes like a call and
+							// displays the payload it expects.
+							ScriptLanguage::CodeCompletionOption option(
+									enum_value.key, ScriptLanguage::CODE_COMPLETION_KIND_FUNCTION,
+									p_recursion_depth + ScriptLanguage::LOCATION_OTHER_USER_CODE);
+							String signature = "(";
+							for (int field_index = 0; field_index < payload->field_types.size(); field_index++) {
+								if (field_index > 0) {
+									signature += ", ";
+								}
+								if (field_index < payload->field_names.size() && payload->field_names[field_index] != StringName()) {
+									signature += String(payload->field_names[field_index]);
+								}
+								// A field whose type is not resolved here contributes no spelling
+								// rather than a misleading one.
+								if (payload->field_types[field_index].is_hard_type()) {
+									signature += ": " + payload->field_types[field_index].to_string();
+								}
+							}
+							signature += ")";
+							option.display += signature;
+							option.insert_text += "(";
+							r_result.insert(option.display, option);
+						}
+					}
+					return;
+				}
+
 				String type_str = base_type.native_type;
 				bool completed_native_enum = false;
 
@@ -2812,11 +2870,32 @@ static void _populate_global_enum_completion_values(
 		return;
 	}
 
-	for (const FSParser::EnumNode::Value &element : enum_node->values) {
+	r_type.is_tagged_union = enum_node->is_tagged_union;
+
+	for (int i = 0; i < enum_node->values.size(); i++) {
+		const FSParser::EnumNode::Value &element = enum_node->values[i];
 		if (element.identifier == nullptr) {
 			continue;
 		}
-		r_type.enum_values[element.identifier->name] = element.value;
+		// A tagged union's tags are ordinal by declaration order and are only assigned once the
+		// declaring file is analyzed, which this completion path deliberately avoids.
+		r_type.enum_values[element.identifier->name] = enum_node->is_tagged_union ? int64_t(i) : element.value;
+
+		if (!element.has_payload()) {
+			continue;
+		}
+		// Payload field types are only resolved by a full analysis of the declaring file, so an
+		// unresolved field keeps its name and position and contributes no type spelling.
+		FSParser::DataType::EnumCasePayload payload;
+		for (const FSParser::EnumNode::PayloadField &field : element.payload_fields) {
+			payload.field_names.push_back(field.identifier != nullptr ? field.identifier->name : StringName());
+			FSParser::DataType field_type;
+			if (field.type != nullptr && field.type->get_datatype().is_set()) {
+				field_type = FSAnalyzer::type_from_metatype(field.type->get_datatype());
+			}
+			payload.field_types.push_back(field_type);
+		}
+		r_type.enum_case_payloads[element.identifier->name] = payload;
 	}
 }
 
