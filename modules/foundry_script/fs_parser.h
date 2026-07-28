@@ -1490,6 +1490,9 @@ public:
 		bool rest_used = false; // For array/dict patterns.
 		// A bind written without `var`, which only payload positions of a case pattern allow.
 		bool implicit_bind = false;
+		// Whether the pattern was written parenthesized. Grouping is dropped from the tree but stays
+		// meaningful in a case payload position, where `Case(NAME)` binds and `Case((NAME))` compares.
+		bool was_grouped = false;
 		// Whether this pattern matches every value of the type it was resolved against. Set by the
 		// analyzer; a case pattern is never irrefutable, since it always tests the tag.
 		bool is_irrefutable = false;

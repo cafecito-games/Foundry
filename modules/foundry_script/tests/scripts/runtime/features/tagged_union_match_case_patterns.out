@@ -12,6 +12,8 @@ quit
 circle 2.5
 rect 3x4
 point
+expected step
+other
 no movement
 movement
 no movement

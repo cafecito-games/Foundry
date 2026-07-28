@@ -4231,6 +4231,7 @@ FSParser::PatternNode *FSParser::parse_match_pattern(PatternNode *p_root_pattern
 							first_element->binds[E.key] = E.value;
 						}
 					}
+					first_element->was_grouped = true;
 					complete_extents(pattern);
 					return first_element;
 				}

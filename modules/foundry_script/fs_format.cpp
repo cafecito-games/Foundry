@@ -2220,6 +2220,12 @@ void FSPrinter::print_match_branch(const FSParser::MatchBranchNode *p_branch) {
 }
 
 void FSPrinter::print_pattern(const FSParser::PatternNode *p_pattern) {
+	// Grouping is dropped from the tree but stays meaningful in a case payload position, where
+	// `Case(NAME)` binds while `Case((NAME))` compares against `NAME`, so it is printed back.
+	if (p_pattern->was_grouped) {
+		write("(");
+	}
+
 	switch (p_pattern->pattern_type) {
 		case FSParser::PatternNode::PT_LITERAL:
 			print_literal(p_pattern->literal);
@@ -2298,6 +2304,10 @@ void FSPrinter::print_pattern(const FSParser::PatternNode *p_pattern) {
 		case FSParser::PatternNode::PT_WILDCARD:
 			write("_");
 			break;
+	}
+
+	if (p_pattern->was_grouped) {
+		write(")");
 	}
 }
 

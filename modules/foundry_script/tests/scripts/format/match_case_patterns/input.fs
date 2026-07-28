@@ -16,3 +16,5 @@ func test():
    print("move")
   FormatPatternMessage.Write(text):
    print(text)
+  FormatPatternMessage.Move((0),_):
+   print("grouped zero")
