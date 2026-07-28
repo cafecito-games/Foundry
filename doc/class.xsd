@@ -183,9 +183,10 @@
 												<xs:sequence>
 													<xs:sequence />
 												</xs:sequence>
-												<!-- `xs:short`, not `xs:byte` like a method `<param>`: FoundryScript places no
-												     127-field limit on a tagged-union payload. -->
-												<xs:attribute type="xs:short" name="index" />
+												<!-- `xs:int`, not `xs:byte` like a method `<param>`: FoundryScript places no
+												     small limit on a tagged-union payload, and `index` mirrors the field's
+												     position in a `Vector<TupleFieldDoc>`, whose own size is an `int`. -->
+												<xs:attribute type="xs:int" name="index" />
 												<xs:attribute type="xs:string" name="name" />
 												<xs:attribute type="xs:string" name="type" />
 												<xs:attribute type="xs:string" name="enum" use="optional" />
