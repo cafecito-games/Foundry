@@ -512,24 +512,16 @@ public:
 		// entry with `open_line`/`close_line` at the `(`/`)`. Such a grouping
 		// carries no semantic effect and gets no dedicated AST node -- each
 		// `parse_grouping` call drops it and returns this expression directly --
-		// so a comment trailing an opening delimiter, or sitting on its own line
-		// inside the parens, would have nowhere left to attach. The formatter
-		// checks every recorded level for a comment and, when at least one has
-		// one, re-wraps this expression's printed text in real parentheses (using
-		// the outermost level's lines) instead of ever appending the comment to
-		// text that has not been written yet -- which would silently comment that
-		// text out. Empty when this expression was never the direct content of a
+		// so a comment trailing an opening delimiter would have nowhere left to
+		// attach. The formatter checks every recorded level and, for one whose
+		// opening delimiter carries a comment, re-wraps this expression's printed
+		// text in real parentheses instead of ever appending the comment to text
+		// that has not been written yet -- which would silently comment that text
+		// out. Empty when this expression was never the direct content of a
 		// dropped grouping.
 		struct GroupingSpan {
 			int open_line = 0;
 			int close_line = 0;
-			// True when the token immediately following the closing delimiter starts
-			// on that same source line (`(expr).method()`, `(expr) + 1`, ...): more of
-			// this expression's own source continues there, so a comment on that line
-			// is not necessarily the grouping's to claim -- it could trail that
-			// continuation instead. The formatter only reattaches a close-line comment
-			// when this is false.
-			bool close_line_has_trailing_code = false;
 		};
 		Vector<GroupingSpan> redundant_groupings;
 

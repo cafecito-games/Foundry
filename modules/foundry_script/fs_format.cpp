@@ -808,18 +808,6 @@ bool FSPrinter::has_inline_comment(int p_line) const {
 	return found && !found->value.new_line;
 }
 
-bool FSPrinter::has_unconsumed_full_line_comment_between(int p_after, int p_before) const {
-	if (p_after <= 0 || p_before <= 0) {
-		return false;
-	}
-	for (int line = MAX(p_after + 1, last_emitted_line + 1); line < p_before; line++) {
-		if (is_full_line_comment(line)) {
-			return true;
-		}
-	}
-	return false;
-}
-
 void FSPrinter::flush_trivia_until(int p_until_line) {
 	int line = last_emitted_line + 1;
 	while (line < p_until_line) {
@@ -2367,58 +2355,42 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 		return;
 	}
 	// A redundant parenthesized grouping this expression was the sole content of
-	// carries no semantic effect and is normally never re-printed. But when one of
-	// its levels held a comment, that comment has nowhere else to attach (the
+	// carries no semantic effect and is normally never re-printed. But a comment
+	// trailing its opening delimiter (`(  # note`) has nowhere else to attach (the
 	// grouping itself has no AST node), so re-wrap this expression's printed text
 	// in real, multi-line parentheses -- never by appending the comment straight
 	// after the collapsed text, which would silently comment out whatever the
 	// caller writes next on that same line (an enclosing operator, a call's
-	// closing delimiter, ...). Check every recorded level (outermost first, since
-	// that is the one a caller can safely wrap around) and use the first one that
-	// actually carries a comment.
+	// closing delimiter, ...).
+	//
+	// This only ever claims that one, unambiguous line: the opening delimiter's
+	// own, and only when the content does not also start on it (so the comment
+	// cannot instead be trailing the content). Every other placement -- a comment
+	// on the closing delimiter's line, or one shared with the grouping's content
+	// on a single physical line -- is left alone; on a single-line grouping the
+	// comment is indistinguishable from the statement's ordinary trailing comment
+	// and the existing collapse-and-let-the-caller-flush-it path already handles
+	// it correctly (the same way it does for `var x = 1 + 2  # tail`), and a
+	// closing-line comment risks landing after other source the caller still has
+	// to write on that same output line. Check every recorded level (outermost
+	// first, since that is the one a caller can safely wrap around) and use the
+	// first one that qualifies.
 	int wrap_open_line = 0;
 	int wrap_close_line = 0;
-	bool wrap_close_line_has_trailing_code = false;
 	for (int i = p_expression->redundant_groupings.size() - 1; i >= 0; i--) {
 		const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[i];
-		// A grouping written entirely on one source line (`(1 + 2)  # tail`) is
-		// indistinguishable, comment-wise, from having no grouping at all: any
-		// comment on that shared line is the whole statement's ordinary trailing
-		// comment, not something specific to this delimiter pair, and the existing
-		// collapse-and-let-the-caller-flush-it path already handles that correctly
-		// (the same way it does for `var x = 1 + 2  # tail`). Only a grouping that
-		// truly spans multiple lines has delimiter lines a comment can
-		// unambiguously belong to.
-		if (span.open_line == span.close_line) {
-			continue;
-		}
-		// A close-line comment is only safe to claim as this grouping's own when
-		// nothing else from the source continues on that line after the `)`; a full-
-		// line comment strictly between the delimiters only counts when nothing has
-		// consumed it already (an enclosing multi-line collection's own comment
-		// interleaving runs before this expression prints, so it can legitimately
-		// claim a comment inside this span's line range first).
-		const bool open_has_comment = has_inline_comment(span.open_line);
-		const bool close_has_comment = !span.close_line_has_trailing_code && has_inline_comment(span.close_line);
-		if (open_has_comment || close_has_comment || has_unconsumed_full_line_comment_between(span.open_line, span.close_line)) {
+		if (span.open_line != span.close_line && span.open_line != p_expression->start_line &&
+				has_inline_comment(span.open_line)) {
 			wrap_open_line = span.open_line;
 			wrap_close_line = span.close_line;
-			wrap_close_line_has_trailing_code = span.close_line_has_trailing_code;
 			break;
 		}
 	}
 	if (wrap_open_line > 0) {
 		write("(");
-		// A comment can trail the opening delimiter itself (`(  # note`); claim it
-		// here, before the fallback below marks the line consumed with nowhere to
-		// go. But skip this (and leave the line for the content's own trailing-
-		// comment check below) when the content starts on that same source line --
-		// the comment then trails the content, not the bare opening delimiter.
-		if (wrap_open_line != p_expression->start_line) {
-			append_inline_comment(wrap_open_line);
-			if (wrap_open_line > last_emitted_line) {
-				last_emitted_line = wrap_open_line;
-			}
+		append_inline_comment(wrap_open_line);
+		if (wrap_open_line > last_emitted_line) {
+			last_emitted_line = wrap_open_line;
 		}
 		indent_level++;
 		flush_inner_comments(p_expression->start_line);
@@ -2484,27 +2456,15 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 			ERR_FAIL_MSG("FSPrinter: unhandled expression node type " + itos(p_expression->type) + ".");
 	}
 	if (wrap_open_line > 0) {
-		// Neither claim below is safe when the line in question also carries more
-		// source after the grouping's own closing delimiter: the comment there
-		// trails that continuation, not this expression, and grabbing it here would
-		// strand that continuation behind a `#` when the caller writes it next.
-		if (p_expression->end_line != wrap_close_line || !wrap_close_line_has_trailing_code) {
-			append_inline_comment(p_expression->end_line);
-			if (p_expression->end_line > last_emitted_line) {
-				last_emitted_line = p_expression->end_line;
-			}
-		}
+		// A full-line comment strictly between the content and the closing
+		// delimiter (`# dangling` below) is unambiguous -- it cannot be anything
+		// else's -- so it is safe to interleave here, unlike an inline comment
+		// directly on the closing delimiter's own line (see above).
 		flush_inner_comments(wrap_close_line);
 		indent_level--;
 		newline();
 		write_indent();
 		write(")");
-		if (!wrap_close_line_has_trailing_code) {
-			append_inline_comment(wrap_close_line);
-			if (wrap_close_line > last_emitted_line) {
-				last_emitted_line = wrap_close_line;
-			}
-		}
 	}
 }
 
