@@ -27,6 +27,7 @@ The config file contains two section:
 - `use_single_quotes: boolean = false`: Configures the corresponding editor setting for the test.
 - `add_node_path_literals: boolean = false`: Configures the corresponding editor setting for the test.
 - `add_string_name_literals: boolean = false`: Configures the corresponding editor setting for the test.
+- `analyze: boolean = true`: When `false`, completion skips analyzing the edited script and only raises depended parsers to inheritance-solved. Use this to exercise suggestion paths that never see fully resolved enum metadata (for example cross-file `enum_name` tagged unions).
 - `scene: String`: Allows to specify a scene which is opened while autocompletion is performed. If this is not set the test runner will search for a `.tscn` file with the same basename as the Foundry Script file. If that isn't found either, autocompletion will behave as if no scene was opened.
 - `node_path: String`: The node path of the node which holds the current script inside of the scene. Defaults to the scene root node.
 
@@ -36,6 +37,7 @@ The config file contains two section:
 - `exclude: Array`: An array of suggestions which should not be in the result. The entries take the same form as for `include`.
 - `call_hint: String`: The expected call hint returned by autocompletion.
 - `forced: boolean`: Whether autocompletion is expected to force opening a completion window.
+- `expect_completion_type: String`: The parser completion context that must be selected for the cursor (for example `COMPLETION_ATTRIBUTE_METHOD`). Use this when the suggestion list alone cannot distinguish two completion paths.
 
 Tests will only test against entries in `[output]` that were specified.
 
