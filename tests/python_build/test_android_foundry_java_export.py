@@ -404,7 +404,9 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
                     f'<member name="{option}"',
                     maxsplit=1,
                 )[1].split("</member>", maxsplit=1)[0]
-                self.assertIn("Every user-controlled existing path component", local_input)
+                self.assertIn("lexically simplified once", local_input)
+                self.assertIn("same normalized path is validated and opened", local_input)
+                self.assertIn("Every user-controlled existing component of the normalized path", local_input)
                 self.assertIn("must not be a symbolic link", local_input)
                 for fragment in (
                     "[code]/etc[/code]",
@@ -4463,6 +4465,93 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         use_gradle=True,
                     )
                     output_name = f"macos-user-symlink-{index}.apk"
+                    result = self._run_export(project, output_name)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn(option, output)
+                    self.assertIn(str(value), output)
+                    self.assertIn("must not traverse a symbolic link", output)
+                    self.assertFalse((project / output_name).exists())
+                    self.assertNotIn("Starting a Gradle Daemon", output)
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS system path aliases are platform-specific")
+    def test_command_first_export_rejects_user_symlink_after_macos_alias_parent_component(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-macos-alias-parent.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            self.assertNotEqual("private", project.parts[1], project)
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java macOS Alias Parent"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            real_plugin = project / "real-plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(real_plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            plugin_link = project / "plugin-link.jar"
+            plugin_link.symlink_to(real_plugin)
+            module_link = project / "module-link.jar"
+            module_link.symlink_to(module)
+            alias_parent_plugin = Path("/var/..") / plugin_link.relative_to("/")
+            alias_parent_module = Path("/var/..") / module_link.relative_to("/")
+            self.assertEqual(plugin_link, Path(os.path.normpath(alias_parent_plugin)))
+            self.assertEqual(module_link, Path(os.path.normpath(alias_parent_module)))
+
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                ),
+            )
+            cases = (
+                (
+                    alias_parent_plugin,
+                    (module,),
+                    "gradle_build/foundry_java/gradle_plugin_local",
+                    alias_parent_plugin,
+                ),
+                (
+                    real_plugin,
+                    (alias_parent_module,),
+                    "gradle_build/foundry_java/local_artifacts",
+                    alias_parent_module,
+                ),
+            )
+            for index, (plugin_local, local_artifacts, option, value) in enumerate(cases):
+                with self.subTest(option=option, value=value):
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin_local,
+                        local_artifacts=local_artifacts,
+                        use_gradle=True,
+                        extra_options=(
+                            f'gradle_build/gradle_build_directory="{gradle_root}"',
+                            "gradle_build/export_format=0",
+                            "package/signed=false",
+                            "architectures/armeabi-v7a=false",
+                            "architectures/arm64-v8a=true",
+                            "architectures/x86=false",
+                            "architectures/x86_64=false",
+                        ),
+                    )
+                    output_name = f"macos-alias-parent-{index}.apk"
                     result = self._run_export(project, output_name)
                     output = result.stdout + result.stderr
                     self.assertNotEqual(0, result.returncode, output)

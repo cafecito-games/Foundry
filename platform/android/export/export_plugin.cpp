@@ -3152,10 +3152,10 @@ Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorE
 	} else {
 		r_config.plugin_kind = "local";
 		const String globalized_plugin = ProjectSettings::get_singleton()->globalize_path(plugin_local);
-		if (_foundry_java_path_has_symlink(globalized_plugin)) {
+		const String simplified_plugin = globalized_plugin.simplify_path();
+		if (_foundry_java_path_has_symlink(simplified_plugin)) {
 			return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, TTR("must not traverse a symbolic link"), r_error);
 		}
-		const String simplified_plugin = globalized_plugin.simplify_path();
 		if (!FileAccess::exists(simplified_plugin) || DirAccess::exists(simplified_plugin) || !simplified_plugin.to_lower().ends_with(".jar")) {
 			return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, TTR("must name a regular .jar file"), r_error);
 		}
@@ -3264,10 +3264,10 @@ Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorE
 			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("must contain non-empty unique paths"), r_error);
 		}
 		const String globalized_path = ProjectSettings::get_singleton()->globalize_path(original);
-		if (_foundry_java_path_has_symlink(globalized_path)) {
+		const String simplified_path = globalized_path.simplify_path();
+		if (_foundry_java_path_has_symlink(simplified_path)) {
 			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("must not traverse a symbolic link"), r_error);
 		}
-		const String simplified_path = globalized_path.simplify_path();
 		if (!FileAccess::exists(simplified_path) || DirAccess::exists(simplified_path) ||
 				!(simplified_path.to_lower().ends_with(".jar") || simplified_path.to_lower().ends_with(".aar"))) {
 			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("must name a regular .jar or .aar file"), r_error);
