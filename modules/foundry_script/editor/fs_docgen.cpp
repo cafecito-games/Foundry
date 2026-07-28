@@ -108,16 +108,23 @@ static String _doccontainer_type_from_container_type(const ContainerType &p_type
 // reference: `res://` owner paths become the script's documented name, so the rendered spelling is
 // `Player.PlayerWorldPosition` rather than a raw resource path.
 String FSDocGen::_qualified_declared_type_name(const StringName &p_native_type) {
-	String qualified = String(p_native_type).replace("::", ".");
+	String qualified = String(p_native_type);
 	if (qualified.begins_with("res://")) {
-		const int dot_position = qualified.rfind_char('.');
-		if (dot_position >= 0) {
-			qualified = _get_script_name(qualified.left(dot_position)) + qualified.substr(dot_position);
+		// The owning script path is the leading segment: it ends at the first `::` nested-class
+		// separator, or at the last `.` when the declaration sits directly in the root class.
+		// Splitting on the last `.` unconditionally would fold an inner class name into the file
+		// name and produce a link to a page that does not exist.
+		int path_end = qualified.find("::");
+		if (path_end < 0) {
+			path_end = qualified.rfind_char('.');
+		}
+		if (path_end >= 0) {
+			qualified = _get_script_name(qualified.left(path_end)) + qualified.substr(path_end);
 		} else {
 			qualified = _get_script_name(qualified);
 		}
 	}
-	return qualified;
+	return qualified.replace("::", ".");
 }
 
 String FSDocGen::_structural_tuple_spelling(const GDType &p_gdtype) {
