@@ -8,3 +8,5 @@ var history: Array[Message]
   hint=ARRAY_TYPE hint_string="Message" usage=STORAGE|SCRIPT_VARIABLE class_name=&""
 var custom_position: Array
   hint=NONE hint_string="" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
+var custom_history: Array
+  hint=NONE hint_string="" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""

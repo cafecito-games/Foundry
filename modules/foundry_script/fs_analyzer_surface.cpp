@@ -1187,15 +1187,18 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 						// imprecise published type is a harmless reflection detail, not a broken editor
 						// widget; it is exempt for both tuples and tagged unions.
 						//
-						// `@export_custom` publishes `variable->get_datatype().builtin_type` verbatim.
-						// That is safe for a tuple, whose canonical `builtin_type` is already `Array`
-						// (`FSAnalyzer::make_tuple_type`). A tagged union's canonical `builtin_type` is
-						// still `Variant::INT` (`make_class_enum_type`/`make_enum_type` do not special-case
-						// `is_tagged_union`), so `@export_custom` on a tagged-union property would still
-						// advertise itself as an integer to the (visible, by default) inspector while its
-						// runtime value is an Array; only exempt it for the tuple case.
+						// `@export_custom` publishes the *property's own* `builtin_type` verbatim
+						// (`export_check_datatype`, not the nested offending type `rejects_export`
+						// found). That published `builtin_type` is only wrong when the property is
+						// itself directly a tagged-union value: a tagged union's canonical
+						// `builtin_type` is still `Variant::INT` (`make_class_enum_type`/`make_enum_type`
+						// do not special-case `is_tagged_union`), while its runtime value is an Array.
+						// A tuple's `builtin_type` is already `Array` (`FSAnalyzer::make_tuple_type`),
+						// and an `Array`/`Dictionary` wrapping either always has its own correct
+						// `builtin_type` regardless of what it contains, so both stay exempt.
+						const bool export_check_datatype_is_tagged_union_value = export_check_datatype.is_tagged_union_type() && !export_check_datatype.is_meta_type;
 						const bool skip_guard_for_annotation = E->name == SNAME("@export_storage") ||
-								(E->name == SNAME("@export_custom") && rejected_export_datatype.is_tuple());
+								(E->name == SNAME("@export_custom") && !export_check_datatype_is_tagged_union_value);
 						const bool is_inspector_export_annotation = String(E->name).begins_with("@export") && !skip_guard_for_annotation;
 						if (rejects_export && is_inspector_export_annotation) {
 							if (rejected_export_datatype.is_tuple()) {

@@ -12,6 +12,7 @@ enum Message:
 @export_storage var history: Array[Message] = []
 
 @export_custom(PROPERTY_HINT_NONE, "") var custom_position: Vec2 = Vec2(1.0, 2.0)
+@export_custom(PROPERTY_HINT_NONE, "") var custom_history: Array[Message] = []
 
 func test():
 	for property in get_property_list():
