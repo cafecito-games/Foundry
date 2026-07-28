@@ -1899,7 +1899,7 @@ Vector<EditorExportPlatformAndroid::ABI> EditorExportPlatformAndroid::get_enable
 
 static bool _is_exact_foundry_java_coordinate(const String &p_coordinate) {
 	PackedStringArray parts = p_coordinate.split(":");
-	if (parts.size() != 3 || p_coordinate.contains("+") || p_coordinate.contains("[") || p_coordinate.contains("]") || p_coordinate.to_lower().contains("latest")) {
+	if (parts.size() != 3 || p_coordinate.contains("+") || p_coordinate.contains("[") || p_coordinate.contains("]") || parts[2].to_lower().contains("latest")) {
 		return false;
 	}
 	for (const String &part : parts) {
@@ -2460,11 +2460,13 @@ static bool _foundry_java_validate_central_directory_entry(
 	uint64_t local_filename_position = 0;
 	uint64_t local_filename_end = 0;
 	uint64_t local_extra_end = 0;
+	uint64_t local_payload_end = 0;
 	if (local_filename_size != filename_size ||
 			!_foundry_java_checked_add(local_header_position, FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIZE, local_filename_position) ||
 			!_foundry_java_checked_add(local_filename_position, local_filename_size, local_filename_end) ||
 			!_foundry_java_checked_add(local_filename_end, local_extra_size, local_extra_end) ||
-			local_extra_end > p_central_directory_start) {
+			!_foundry_java_checked_add(local_extra_end, central_compressed_size, local_payload_end) ||
+			local_payload_end > p_central_directory_start) {
 		return false;
 	}
 	Vector<uint8_t> local_extra;

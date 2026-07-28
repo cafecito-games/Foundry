@@ -333,9 +333,10 @@ ext.parseFoundryJavaList = { String propertyName ->
 }
 
 ext.validateFoundryJavaCoordinate = { String propertyName, String coordinate ->
+    List<String> parts = coordinate.split(":", -1) as List<String>
     if (!(coordinate ==~ FOUNDRY_JAVA_COORDINATE_REGEX) ||
             coordinate.contains("+") ||
-            coordinate.toLowerCase(Locale.ROOT).contains("latest")) {
+            parts[2].toLowerCase(Locale.ROOT).contains("latest")) {
         throw new GradleException(
             "$propertyName must use an exact Maven group:artifact:version coordinate; found '$coordinate'"
         )

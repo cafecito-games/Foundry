@@ -205,6 +205,20 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
             with self.subTest(eager_hash=eager_hash):
                 self.assertNotIn(eager_hash, source)
 
+    def test_central_directory_validation_bounds_the_local_compressed_payload(self) -> None:
+        exporter = EXPORTER.read_text(encoding="utf-8")
+        validator_start = exporter.index("static bool _foundry_java_validate_central_directory_entry(")
+        validator_end = exporter.index(
+            "static bool _foundry_java_validate_current_central_directory_entry(",
+            validator_start,
+        )
+        validator = exporter[validator_start:validator_end]
+        self.assertIn(
+            "_foundry_java_checked_add(local_extra_end, central_compressed_size, local_payload_end)",
+            validator,
+        )
+        self.assertIn("local_payload_end > p_central_directory_start", validator)
+
 
 class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
     @staticmethod
@@ -1129,6 +1143,18 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
             "foundry_java_maven_artifacts": "games.cafecito.foundry:foundry-java-android:1.0.0",
         }
         self.assert_gradle_failed_with(properties, "must use an exact Maven")
+
+    def test_latest_is_dynamic_only_in_the_maven_version(self) -> None:
+        properties = self.enabled_local_properties()
+        properties["foundry_java_maven_artifacts"] = "latest.test.fixture:module-latest:1.0.0"
+        result = self.run_gradle(properties)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+        for version in ("latest", "LaTeSt", "1.0-latest"):
+            with self.subTest(version=version):
+                dynamic = self.enabled_local_properties()
+                dynamic["foundry_java_maven_artifacts"] = f"test.fixture:module:{version}"
+                self.assert_gradle_failed_with(dynamic, "must use an exact Maven")
 
     def test_duplicate_application_artifacts_fail_deterministically(self) -> None:
         properties = self.enabled_local_properties()
@@ -3208,6 +3234,15 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                             if first_filename_size == 0:
                                 raise RuntimeError("fake Gradle output has no mutable local filename")
                             contents[first_local_entry + 30] ^= 0x01
+                        elif central_directory_mutation == "first-central-compressed-overlap":
+                            central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                            first_central_entry = contents.find(b"PK\\x01\\x02", central_offset, eocd)
+                            if first_central_entry < 0:
+                                raise RuntimeError("fake Gradle output has no mutable first central entry")
+                            contents[first_central_entry + 20 : first_central_entry + 24] = central_offset.to_bytes(
+                                4,
+                                "little",
+                            )
                         elif central_directory_mutation == "bit3-local-sentinels":
                             central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
                             first_central_entry = contents.find(b"PK\\x01\\x02", central_offset, eocd)
@@ -3361,6 +3396,66 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         self.assertGreater(inspection, copy_result)
         self.assertGreater(success, inspection)
 
+    def test_command_first_coordinate_latest_rule_applies_only_to_the_version(self) -> None:
+        for coordinate, should_succeed in (
+            ("latest.games:foundry-latest-plugin:1.0.0", True),
+            ("games.cafecito.foundry:foundry-java-plugin:LaTeSt", False),
+        ):
+            with self.subTest(coordinate=coordinate):
+                with tempfile.TemporaryDirectory(
+                    prefix="foundry-java-coordinate.",
+                    dir=test_scratch_directory(),
+                ) as directory:
+                    project = Path(directory)
+                    project.joinpath("project.foundry").write_text(
+                        textwrap.dedent(
+                            """\
+                            [application]
+                            config/name="Foundry Java Coordinate Validation"
+
+                            [rendering]
+                            textures/vram_compression/import_etc2_astc=true
+                            """
+                        ),
+                        encoding="utf-8",
+                    )
+                    module = project / "module.jar"
+                    with zipfile.ZipFile(module, "w"):
+                        pass
+                    gradle_root = self._write_fake_gradle_wrapper(
+                        project,
+                        (
+                            "assets/FoundryJava.foundryextension",
+                            "assets/foundry_java/registry-index-v2.txt",
+                            "lib/arm64-v8a/libfoundry_java.so",
+                        ),
+                    )
+                    self._write_export_preset(
+                        project,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                        extra_options=(
+                            f'gradle_build/foundry_java/gradle_plugin_maven="{coordinate}"',
+                            f'gradle_build/gradle_build_directory="{gradle_root}"',
+                            "gradle_build/export_format=0",
+                            "package/signed=false",
+                            "architectures/armeabi-v7a=false",
+                            "architectures/arm64-v8a=true",
+                            "architectures/x86=false",
+                            "architectures/x86_64=false",
+                        ),
+                    )
+                    output_name = "coordinate.apk"
+                    result = self._run_export(project, output_name)
+                    output = result.stdout + result.stderr
+                    if should_succeed:
+                        self.assertEqual(0, result.returncode, output)
+                        self.assertTrue((project / output_name).is_file())
+                    else:
+                        self.assertNotEqual(0, result.returncode, output)
+                        self.assertIn("must be an exact group:artifact:version value", output)
+                        self.assertFalse((project / output_name).exists())
+
     def test_command_first_export_rejects_malformed_copied_apk_and_aab(self) -> None:
         for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
             configuration = f"{root}assets/FoundryJava.foundryextension"
@@ -3508,6 +3603,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     None,
                     False,
                     "entry count does not match its central directory",
+                    False,
                 ),
                 (
                     "last-comment-bounds",
@@ -3516,6 +3612,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     "last-comment-bounds",
                     False,
                     "central directory metadata is corrupt",
+                    False,
                 ),
                 (
                     "central-offset",
@@ -3524,6 +3621,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     "central-offset",
                     False,
                     "central directory metadata is corrupt",
+                    False,
                 ),
                 (
                     "last-local-offset",
@@ -3532,6 +3630,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     "last-local-offset",
                     False,
                     "central directory metadata is corrupt",
+                    False,
                 ),
                 (
                     "first-local-name",
@@ -3540,6 +3639,16 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     "first-local-name",
                     False,
                     "central directory metadata is corrupt",
+                    False,
+                ),
+                (
+                    "compressed-payload-overlap",
+                    valid_entries,
+                    None,
+                    "first-central-compressed-overlap",
+                    False,
+                    "central directory metadata is corrupt",
+                    True,
                 ),
                 (
                     "central-digital-signature-size",
@@ -3548,6 +3657,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     "central-digital-signature-size",
                     False,
                     "central directory metadata is corrupt",
+                    False,
                 ),
                 (
                     "zip64-classic-count",
@@ -3556,6 +3666,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     "zip64-classic-count",
                     True,
                     "central directory metadata is corrupt",
+                    False,
                 ),
             )
             for (
@@ -3565,6 +3676,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 central_directory_mutation,
                 force_zip64,
                 diagnostic,
+                streaming_data_descriptor,
             ) in cases:
                 with self.subTest(extension=extension, defect=defect):
                     with tempfile.TemporaryDirectory(
@@ -3601,6 +3713,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                             reported_entry_count=reported_entry_count,
                             central_directory_mutation=central_directory_mutation,
                             force_zip64=force_zip64,
+                            streaming_data_descriptor=streaming_data_descriptor,
                         )
                         self._write_export_preset(
                             project,
