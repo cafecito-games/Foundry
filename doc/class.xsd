@@ -175,20 +175,53 @@
 					<xs:complexType>
 						<xs:sequence>
 							<xs:element name="constant" maxOccurs="unbounded" minOccurs="0">
+								<xs:complexType mixed="true">
+									<xs:sequence>
+										<!-- Present only for a tagged-union case that carries a payload, one entry per field. -->
+										<xs:element name="payload_field" maxOccurs="unbounded" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:sequence />
+												</xs:sequence>
+												<xs:attribute type="xs:byte" name="index" />
+												<xs:attribute type="xs:string" name="name" />
+												<xs:attribute type="xs:string" name="type" />
+												<xs:attribute type="xs:string" name="enum" use="optional" />
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+									<xs:attribute type="xs:string" name="name" />
+									<xs:attribute type="xs:string" name="value" />
+									<xs:attribute type="xs:string" name="enum" use="optional" />
+									<xs:attribute type="xs:boolean" name="is_bitfield" use="optional" />
+									<!-- deprecated -->
+									<xs:attribute type="xs:boolean" name="is_deprecated" use="optional" />
+									<xs:attribute type="xs:boolean" name="is_experimental" use="optional" />
+									<!-- /deprecated -->
+									<xs:attribute type="xs:string" name="deprecated" use="optional" />
+									<xs:attribute type="xs:string" name="experimental" use="optional" />
+									<xs:attribute type="xs:string" name="keywords" use="optional" />
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="enums" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="enum" maxOccurs="unbounded" minOccurs="0">
 								<xs:complexType>
 									<xs:simpleContent>
 										<xs:extension base="xs:string">
 											<xs:attribute type="xs:string" name="name" />
-											<xs:attribute type="xs:string" name="value" />
-											<xs:attribute type="xs:string" name="enum" use="optional" />
-											<xs:attribute type="xs:boolean" name="is_bitfield" use="optional" />
+											<!-- True for a FoundryScript tagged union: an enum whose cases are constructors and values, not integer constants. -->
+											<xs:attribute type="xs:boolean" name="is_tagged_union" use="optional" />
 											<!-- deprecated -->
 											<xs:attribute type="xs:boolean" name="is_deprecated" use="optional" />
 											<xs:attribute type="xs:boolean" name="is_experimental" use="optional" />
 											<!-- /deprecated -->
 											<xs:attribute type="xs:string" name="deprecated" use="optional" />
 											<xs:attribute type="xs:string" name="experimental" use="optional" />
-											<xs:attribute type="xs:string" name="keywords" use="optional" />
 										</xs:extension>
 									</xs:simpleContent>
 								</xs:complexType>

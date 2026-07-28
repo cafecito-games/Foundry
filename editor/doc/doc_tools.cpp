@@ -2,7 +2,7 @@
 /*  doc_tools.cpp                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1467,10 +1467,26 @@ Error DocTools::_load(Ref<XMLParser> parser) {
 								if (parser->has_attribute("keywords")) {
 									constant2.keywords = parser->get_named_attribute_value("keywords");
 								}
+								// A tagged-union payload case carries `<payload_field>` children ahead of its
+								// description text, so the constant's content is mixed rather than plain text.
 								if (!parser->is_empty()) {
-									parser->read();
-									if (parser->get_node_type() == XMLParser::NODE_TEXT) {
-										constant2.description = parser->get_node_data();
+									while (parser->read() == OK) {
+										if (parser->get_node_type() == XMLParser::NODE_TEXT) {
+											constant2.description = parser->get_node_data();
+										} else if (parser->get_node_type() == XMLParser::NODE_ELEMENT && parser->get_node_name() == "payload_field") {
+											DocData::TupleFieldDoc field;
+											if (parser->has_attribute("name")) {
+												field.name = parser->get_named_attribute_value("name");
+											}
+											ERR_FAIL_COND_V(!parser->has_attribute("type"), ERR_FILE_CORRUPT);
+											field.type = parser->get_named_attribute_value("type");
+											if (parser->has_attribute("enum")) {
+												field.enumeration = parser->get_named_attribute_value("enum");
+											}
+											constant2.payload_fields.push_back(field);
+										} else if (parser->get_node_type() == XMLParser::NODE_ELEMENT_END && parser->get_node_name() == "constant") {
+											break;
+										}
 									}
 								}
 								c.constants.push_back(constant2);
@@ -1480,6 +1496,42 @@ Error DocTools::_load(Ref<XMLParser> parser) {
 
 						} else if (parser->get_node_type() == XMLParser::NODE_ELEMENT_END && parser->get_node_name() == "constants") {
 							break; // End of <constants>.
+						}
+					}
+
+				} else if (name2 == "enums") {
+					while (parser->read() == OK) {
+						if (parser->get_node_type() == XMLParser::NODE_ELEMENT) {
+							String name3 = parser->get_node_name();
+
+							if (name3 == "enum") {
+								ERR_FAIL_COND_V(!parser->has_attribute("name"), ERR_FILE_CORRUPT);
+								String enum_name = parser->get_named_attribute_value("name");
+								DocData::EnumDoc enum_doc;
+								if (parser->has_attribute("is_tagged_union")) {
+									enum_doc.is_tagged_union = parser->get_named_attribute_value("is_tagged_union").to_lower() == "true";
+								}
+								if (parser->has_attribute("deprecated")) {
+									enum_doc.is_deprecated = true;
+									enum_doc.deprecated_message = parser->get_named_attribute_value("deprecated");
+								}
+								if (parser->has_attribute("experimental")) {
+									enum_doc.is_experimental = true;
+									enum_doc.experimental_message = parser->get_named_attribute_value("experimental");
+								}
+								if (!parser->is_empty()) {
+									parser->read();
+									if (parser->get_node_type() == XMLParser::NODE_TEXT) {
+										enum_doc.description = parser->get_node_data();
+									}
+								}
+								c.enums[enum_name] = enum_doc;
+							} else {
+								ERR_FAIL_V_MSG(ERR_FILE_CORRUPT, "Invalid tag in doc file: " + name3 + ".");
+							}
+
+						} else if (parser->get_node_type() == XMLParser::NODE_ELEMENT_END && parser->get_node_name() == "enums") {
+							break; // End of <enums>.
 						}
 					}
 
@@ -1711,11 +1763,50 @@ Error DocTools::save_classes(const String &p_default_path, const HashMap<String,
 						_write_string(f, 2, "<constant name=\"" + k.name.xml_escape(true) + "\" value=\"platform-dependent\"" + additional_attributes + ">");
 					}
 				}
+				for (int j = 0; j < k.payload_fields.size(); j++) {
+					const DocData::TupleFieldDoc &field = k.payload_fields[j];
+					String field_enum_text;
+					if (!field.enumeration.is_empty()) {
+						field_enum_text = " enum=\"" + field.enumeration.xml_escape(true) + "\"";
+					}
+					_write_string(f, 3, "<payload_field index=\"" + itos(j) + "\" name=\"" + field.name.xml_escape(true) + "\" type=\"" + field.type.xml_escape(true) + "\"" + field_enum_text + " />");
+				}
 				_write_string(f, 3, _translate_doc_string(k.description).strip_edges().xml_escape());
 				_write_string(f, 2, "</constant>");
 			}
 
 			_write_string(f, 1, "</constants>");
+		}
+
+		if (!c.enums.is_empty()) {
+			_write_string(f, 1, "<enums>");
+
+			Vector<String> enum_names;
+			for (const KeyValue<String, DocData::EnumDoc> &enum_entry : c.enums) {
+				enum_names.push_back(enum_entry.key);
+			}
+			enum_names.sort();
+
+			for (const String &enum_name : enum_names) {
+				const DocData::EnumDoc &enum_doc = c.enums[enum_name];
+
+				String additional_attributes;
+				if (enum_doc.is_tagged_union) {
+					additional_attributes += " is_tagged_union=\"true\"";
+				}
+				if (enum_doc.is_deprecated) {
+					additional_attributes += " deprecated=\"" + enum_doc.deprecated_message.xml_escape(true) + "\"";
+				}
+				if (enum_doc.is_experimental) {
+					additional_attributes += " experimental=\"" + enum_doc.experimental_message.xml_escape(true) + "\"";
+				}
+
+				_write_string(f, 2, "<enum name=\"" + enum_name.xml_escape(true) + "\"" + additional_attributes + ">");
+				_write_string(f, 3, _translate_doc_string(enum_doc.description).strip_edges().xml_escape());
+				_write_string(f, 2, "</enum>");
+			}
+
+			_write_string(f, 1, "</enums>");
 		}
 
 		_write_method_doc(f, "annotation", c.annotations);
