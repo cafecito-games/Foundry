@@ -2,7 +2,7 @@
 /*  test_bytecode_hardening.h                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -54,7 +54,20 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Format version is pinned") {
 	// The reader rejects any other version outright, so the on-disk layout and this constant move
 	// together. Bump FORMAT_VERSION in the same change as ANY layout change to the `.fsb` format
 	// (sections, field order/width, opcode operand layout, tag/fixup sets) and update this pin.
-	CHECK(FSBytecodeFormat::FORMAT_VERSION == 3);
+	CHECK(FSBytecodeFormat::FORMAT_VERSION == 4);
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects a stale format version") {
+	Vector<uint8_t> header = FSBytecodeExporter::write_header();
+	// The format version is the first u32 after the 4-byte magic; corrupt it to a version that
+	// predates the tuple opcode/data-type additions and confirm the loader refuses to read it
+	// instead of silently decoding a layout it no longer matches.
+	REQUIRE(header.size() >= 8);
+	const uint32_t stale_version = FSBytecodeFormat::FORMAT_VERSION - 1;
+	memcpy(header.ptrw() + 4, &stale_version, sizeof(uint32_t));
+	ERR_PRINT_OFF;
+	CHECK(FSBytecodeLoader::check_header(header) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier validates every enum-call operand and identity") {

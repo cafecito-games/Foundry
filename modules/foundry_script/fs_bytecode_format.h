@@ -2,7 +2,7 @@
 /*  fs_bytecode_format.h                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -58,7 +58,7 @@ class FSBytecodeFormat {
 public:
 	static constexpr uint8_t MAGIC[4] = { 'F', 'S', 'B', 'C' };
 	// Bump on ANY layout change; the reader rejects other versions outright.
-	static constexpr uint32_t FORMAT_VERSION = 3;
+	static constexpr uint32_t FORMAT_VERSION = 4;
 
 	enum SectionId : uint32_t {
 		SECTION_STRING_TABLE,
