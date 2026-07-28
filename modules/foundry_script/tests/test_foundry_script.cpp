@@ -1317,6 +1317,32 @@ TEST_CASE("[Modules][FoundryScript][Editor] Symbol lookup resolves UID-backed au
 	CHECK_EQ(result.location, 0);
 }
 
+TEST_CASE("[Modules][FoundryScript][Editor] Symbol lookup navigates to a class-body tuple entry") {
+	ScopedFSNativeGlobals native_globals;
+	const String source = "class_name LookupTupleNavigation\n"
+						  "\n"
+						  "tuple PlayerWorldPosition(vec: Vector2i, zone: int)\n"
+						  "\n"
+						  "func locate() -> PlayerWorldPosition:\n"
+						  "\treturn PlayerWorldPosition(Vector2i(1, 2), 3)\n";
+	TempScriptFile tuple_script("lookup_tuple_navigation.fs", source);
+
+	FSLanguage::LookupResult result;
+	const String cursor_source = source.insert(source.find("PlayerWorldPosition:") + String("PlayerWorldPosition").length(), String::chr(0xFFFF));
+	const Error err = FSLanguage::get_singleton()->lookup_code(
+			cursor_source,
+			"PlayerWorldPosition",
+			tuple_script.path,
+			nullptr,
+			result);
+
+	CHECK_EQ(err, OK);
+	CHECK_EQ(result.type, ScriptLanguage::LOOKUP_RESULT_CLASS_TUPLE);
+	CHECK_EQ(result.class_name, "LookupTupleNavigation");
+	CHECK_EQ(result.class_member, "PlayerWorldPosition");
+	CHECK_EQ(result.location, 3);
+}
+
 TEST_CASE("[Modules][FoundryScript][Editor] Syntax highlighter colors UID-backed autoload singletons") {
 	ScopedFSNativeGlobals native_globals;
 	TempScriptFile autoload_script("highlight_uid_autoload.fs", "extends Node\n");

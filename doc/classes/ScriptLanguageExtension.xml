@@ -392,7 +392,9 @@
 		</constant>
 		<constant name="LOOKUP_RESULT_LOCAL_VARIABLE" value="10" enum="LookupResultType">
 		</constant>
-		<constant name="LOOKUP_RESULT_MAX" value="11" enum="LookupResultType">
+		<constant name="LOOKUP_RESULT_CLASS_TUPLE" value="11" enum="LookupResultType">
+		</constant>
+		<constant name="LOOKUP_RESULT_MAX" value="12" enum="LookupResultType">
 		</constant>
 		<constant name="LOCATION_LOCAL" value="0" enum="CodeCompletionLocation">
 			The option is local to the location of the code completion query - e.g. a local variable. Subsequent value of location represent options from the outer class, the exact value represent how far they are (in terms of inner classes).

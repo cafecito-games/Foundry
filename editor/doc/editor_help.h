@@ -2,7 +2,7 @@
 /*  editor_help.h                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -336,6 +336,7 @@ class EditorHelpBit : public VBoxContainer {
 
 	inline static HashMap<StringName, HelpData> doc_class_cache;
 	inline static HashMap<StringName, HashMap<StringName, HelpData>> doc_enum_cache;
+	inline static HashMap<StringName, HashMap<StringName, HelpData>> doc_tuple_cache;
 	inline static HashMap<StringName, HashMap<StringName, HelpData>> doc_constant_cache;
 	inline static HashMap<StringName, HashMap<StringName, HelpData>> doc_property_cache;
 	inline static HashMap<StringName, HashMap<StringName, HelpData>> doc_theme_item_cache;
@@ -361,6 +362,7 @@ class EditorHelpBit : public VBoxContainer {
 
 	static HelpData _get_class_help_data(const StringName &p_class_name);
 	static HelpData _get_enum_help_data(const StringName &p_class_name, const StringName &p_enum_name);
+	static HelpData _get_tuple_help_data(const StringName &p_class_name, const StringName &p_tuple_name);
 	static HelpData _get_constant_help_data(const StringName &p_class_name, const StringName &p_constant_name);
 	static HelpData _get_property_help_data(const StringName &p_class_name, const StringName &p_property_name);
 	static HelpData _get_theme_item_help_data(const StringName &p_class_name, const StringName &p_theme_item_name);

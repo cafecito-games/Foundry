@@ -2,7 +2,7 @@
 /*  script_language.h                                                     */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -388,6 +388,7 @@ public:
 		LOOKUP_RESULT_CLASS_ANNOTATION,
 		LOOKUP_RESULT_LOCAL_CONSTANT,
 		LOOKUP_RESULT_LOCAL_VARIABLE,
+		LOOKUP_RESULT_CLASS_TUPLE,
 		LOOKUP_RESULT_MAX,
 	};
 

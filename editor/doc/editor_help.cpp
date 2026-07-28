@@ -2,7 +2,7 @@
 /*  editor_help.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -3934,6 +3934,56 @@ EditorHelpBit::HelpData EditorHelpBit::_get_enum_help_data(const StringName &p_c
 	return result;
 }
 
+EditorHelpBit::HelpData EditorHelpBit::_get_tuple_help_data(const StringName &p_class_name, const StringName &p_tuple_name) {
+	if (doc_tuple_cache.has(p_class_name) && doc_tuple_cache[p_class_name].has(p_tuple_name)) {
+		return doc_tuple_cache[p_class_name][p_tuple_name];
+	}
+
+	HelpData result;
+
+	const DocData::ClassDoc *class_doc = EditorHelp::get_doc(p_class_name);
+	if (class_doc) {
+		// Non-native tuples shouldn't be cached, nor translated.
+		const bool is_native = !class_doc->is_script_doc;
+
+		for (const KeyValue<String, DocData::TupleDoc> &kv : class_doc->tuples) {
+			const StringName tuple_name = kv.key;
+			const DocData::TupleDoc &tuple_doc = kv.value;
+
+			HelpData current;
+			current.description = HANDLE_DOC(tuple_doc.description);
+			if (tuple_doc.is_deprecated) {
+				if (tuple_doc.deprecated_message.is_empty()) {
+					current.deprecated_message = TTR("This tuple may be changed or removed in future versions.");
+				} else {
+					current.deprecated_message = HANDLE_DOC(tuple_doc.deprecated_message);
+				}
+			}
+			if (tuple_doc.is_experimental) {
+				if (tuple_doc.experimental_message.is_empty()) {
+					current.experimental_message = TTR("This tuple may be changed or removed in future versions.");
+				} else {
+					current.experimental_message = HANDLE_DOC(tuple_doc.experimental_message);
+				}
+			}
+
+			if (tuple_name == p_tuple_name) {
+				result = current;
+
+				if (!is_native) {
+					break;
+				}
+			}
+
+			if (is_native) {
+				doc_tuple_cache[p_class_name][tuple_name] = current;
+			}
+		}
+	}
+
+	return result;
+}
+
 EditorHelpBit::HelpData EditorHelpBit::_get_constant_help_data(const StringName &p_class_name, const StringName &p_constant_name) {
 	if (doc_constant_cache.has(p_class_name) && doc_constant_cache[p_class_name].has(p_constant_name)) {
 		return doc_constant_cache[p_class_name][p_constant_name];
@@ -4775,6 +4825,10 @@ void EditorHelpBit::parse_symbol(const String &p_symbol, const String &p_prologu
 		symbol_doc_link = vformat("$%s.%s", class_name, item_name);
 		symbol_type = TTR("Enumeration");
 		help_data = _get_enum_help_data(class_name, item_name);
+	} else if (item_type == "tuple") {
+		symbol_doc_link = vformat("%%%s.%s", class_name, item_name);
+		symbol_type = TTR("Tuple");
+		help_data = _get_tuple_help_data(class_name, item_name);
 	} else if (item_type == "constant") {
 		symbol_doc_link = vformat("@constant %s.%s", class_name, item_name);
 		symbol_type = TTR("Constant");
