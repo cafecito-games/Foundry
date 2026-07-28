@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
@@ -45,9 +46,12 @@ FORBIDDEN_PREFIXES = (
 )
 FORBIDDEN_BINDING_FRAGMENTS = (
     "foundry-java",
-    "FoundryJava.foundryextension",
+    "foundryjava.foundryextension",
     "foundry_java/registry-index-v2.txt",
+    "libfoundry_java.so",
 )
+NESTED_ARCHIVE_SUFFIXES = frozenset({".aar", ".jar", ".zip"})
+MAX_NESTED_ARCHIVE_DEPTH = 8
 
 
 class SourceTemplateError(RuntimeError):
@@ -68,6 +72,33 @@ def _normalized_entry(info: zipfile.ZipInfo) -> str:
     if info.flag_bits & 0x1:
         raise SourceTemplateError(f"source template contains an encrypted entry: {raw!r}")
     return name
+
+
+def _inspect_host_archive(contents: bytes, context: str, depth: int = 0) -> None:
+    if depth > MAX_NESTED_ARCHIVE_DEPTH:
+        raise SourceTemplateError(f"source template host AAR nesting is too deep: {context}")
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(contents))
+    except zipfile.BadZipFile as error:
+        raise SourceTemplateError(f"source template contains an invalid nested archive: {context}") from error
+
+    with archive:
+        entries: set[str] = set()
+        for info in archive.infolist():
+            name = _normalized_entry(info)
+            nested_context = f"{context}!{name}"
+            if name in entries:
+                raise SourceTemplateError(f"source template contains duplicate nested entry: {nested_context}")
+            entries.add(name)
+            if info.is_dir():
+                continue
+            lowered = name.lower()
+            if any(fragment in lowered for fragment in FORBIDDEN_BINDING_FRAGMENTS):
+                raise SourceTemplateError(
+                    f"source template contains a forbidden Foundry-Java binding path: {nested_context}"
+                )
+            if PurePosixPath(name).suffix.lower() in NESTED_ARCHIVE_SUFFIXES:
+                _inspect_host_archive(archive.read(info), nested_context, depth + 1)
 
 
 def inspect_source_template(archive_path: Path) -> tuple[str, ...]:
@@ -96,7 +127,7 @@ def inspect_source_template(archive_path: Path) -> tuple[str, ...]:
 
             if name.startswith(FORBIDDEN_PREFIXES):
                 raise SourceTemplateError(f"source template contains a forbidden in-tree runtime path: {name}")
-            if any(fragment in name for fragment in FORBIDDEN_BINDING_FRAGMENTS):
+            if any(fragment in name.lower() for fragment in FORBIDDEN_BINDING_FRAGMENTS):
                 raise SourceTemplateError(f"source template contains a forbidden Foundry-Java binding path: {name}")
             if PurePosixPath(name).suffix in SOURCE_SUFFIXES and APP_SOURCE_PATTERN.match(name) is None:
                 raise SourceTemplateError(f"source template contains runtime source outside the app package: {name}")
@@ -104,6 +135,8 @@ def inspect_source_template(archive_path: Path) -> tuple[str, ...]:
                 raise SourceTemplateError(f"source template contains an unexpected AAR: {name}")
             if name in EXPECTED_AARS and info.file_size == 0:
                 raise SourceTemplateError(f"source template contains an empty in-tree host AAR: {name}")
+            if name in EXPECTED_AARS:
+                _inspect_host_archive(archive.read(info), name)
 
         missing = sorted(REQUIRED_FILES - files)
         if missing:

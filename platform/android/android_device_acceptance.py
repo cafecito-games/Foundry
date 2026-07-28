@@ -1051,11 +1051,16 @@ def run_apk_acceptance(
     boot_timeout: float = 300,
     process_timeout: float = 30,
     poll_interval: float = 2,
+    required_runtime_marker: str | None = None,
 ) -> dict[str, Any]:
     """Install and start already-exported APKs using the same runtime checks."""
     evidence_dir = _create_owned_directory(evidence_dir, "Android acceptance evidence directory")
     command_runner: Runner = runner if runner is not None else SubprocessRunner(evidence_dir)
-    report: dict[str, Any] = {"mode": "verify-apks", "schema_version": 1}
+    report: dict[str, Any] = {
+        "mode": "verify-apks",
+        "required_runtime_marker": required_runtime_marker,
+        "schema_version": 1,
+    }
     try:
         device = _device_context(
             adb,
@@ -1081,7 +1086,7 @@ def run_apk_acceptance(
                         runner=command_runner,
                         process_timeout=process_timeout,
                         poll_interval=poll_interval,
-                        required_runtime_marker=None,
+                        required_runtime_marker=required_runtime_marker,
                     )
                 )
             finally:
@@ -1143,6 +1148,7 @@ def _parser() -> argparse.ArgumentParser:
         help="install and start already-exported APKs",
     )
     apks.add_argument("--apk", required=True, action="append", type=_parse_apk)
+    apks.add_argument("--required-runtime-marker")
     _add_device_arguments(apks)
     return parser
 
@@ -1195,7 +1201,11 @@ def main() -> int:
                 **common,
             )
         else:
-            report = run_apk_acceptance(apks=arguments.apk, **common)
+            report = run_apk_acceptance(
+                apks=arguments.apk,
+                required_runtime_marker=arguments.required_runtime_marker,
+                **common,
+            )
     except AcceptanceError as error:
         print(f"Android device acceptance failed: {error}", file=sys.stderr)
         return 2

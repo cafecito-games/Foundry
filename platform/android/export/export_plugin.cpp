@@ -3392,6 +3392,9 @@ bool EditorExportPlatformAndroid::has_valid_project_configuration(const Ref<Edit
 	if (_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error) != OK) {
 		err += foundry_java_error + "\n";
 		valid = false;
+	} else if (foundry_java.enabled && get_enabled_abis(p_preset).is_empty()) {
+		err += TTR("Foundry-Java requires at least one enabled Android architecture in the export preset.") + "\n";
+		valid = false;
 	}
 
 	List<ExportOption> options;
@@ -3918,6 +3921,11 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	bool p_give_internet = p_flags.has_flag(DEBUG_FLAG_DUMB_CLIENT) || p_flags.has_flag(DEBUG_FLAG_REMOTE_DEBUG);
 	bool apk_expansion = p_preset->get("apk_expansion/enable");
 	Vector<ABI> enabled_abis = get_enabled_abis(p_preset);
+	if (foundry_java.enabled && enabled_abis.is_empty()) {
+		const String error = TTR("Foundry-Java requires at least one enabled Android architecture in the export preset.");
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), error);
+		return ERR_INVALID_PARAMETER;
+	}
 
 	print_verbose("Exporting for Android...");
 	print_verbose("- debug build: " + bool_to_string(p_debug));

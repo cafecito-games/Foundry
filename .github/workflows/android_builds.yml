@@ -560,6 +560,7 @@ jobs:
           python3 platform/android/android_device_acceptance.py verify-apks \
             --apk games.cafecito.foundry.game=.test_scratch/foundry-java-command-first/foundry-java-default-debug.apk \
             --apk dev.example.foundryjava=.test_scratch/foundry-java-command-first/foundry-java-custom-release.apk \
+            --required-runtime-marker FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY \
             --evidence-dir "${RUNNER_TEMP}/foundry-java-command-first-device-evidence" \
             --adb "${ANDROID_HOME}/platform-tools/adb" \
             --apkanalyzer "${ANDROID_HOME}/cmdline-tools/latest/bin/apkanalyzer" \

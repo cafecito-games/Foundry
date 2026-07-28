@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import re
 import stat
 import sys
@@ -95,6 +96,22 @@ EXPECTED_SOURCE_AARS = {
     "libs/dev/foundry-dev.aar",
     "libs/release/foundry-release.aar",
 }
+
+
+def archive_bytes(entries: dict[str, bytes]) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        for name, contents in entries.items():
+            archive.writestr(name, contents)
+    return output.getvalue()
+
+
+VALID_HOST_AAR = archive_bytes(
+    {
+        "AndroidManifest.xml": b"<manifest />\n",
+        "classes.jar": archive_bytes({"games/cafecito/foundry/Host.class": b"host"}),
+    }
+)
 VALID_SOURCE_TEMPLATE = {
     "build.gradle": b"// app template\n",
     "config.gradle": b"// app config\n",
@@ -103,7 +120,7 @@ VALID_SOURCE_TEMPLATE = {
     "gradle/wrapper/gradle-wrapper.properties": b"distributionUrl=gradle\n",
     "src/main/AndroidManifest.xml": b"<manifest />\n",
     "src/main/java/games/cafecito/foundry/game/FoundryApp.java": b"package games.cafecito.foundry.game;\n",
-    **{path: f"{path}\n".encode() for path in EXPECTED_SOURCE_AARS},
+    **{path: VALID_HOST_AAR for path in EXPECTED_SOURCE_AARS},
 }
 
 
@@ -645,6 +662,57 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             with self.assertRaises(tool.SourceTemplateError):
                 tool.inspect_source_template(archive_link)
 
+    def test_source_template_inspector_rejects_foundry_java_in_nested_host_aars(self) -> None:
+        tool = load_source_template_tool()
+        mutations = {
+            "direct native bridge": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes({"games/cafecito/foundry/Host.class": b"host"}),
+                    "jni/x86_64/libfoundry_java.so": b"binding",
+                }
+            ),
+            "classes jar descriptor": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes(
+                        {
+                            "games/cafecito/foundry/Host.class": b"host",
+                            "assets/FoundryJava.foundryextension": b"[configuration]\n",
+                        }
+                    ),
+                }
+            ),
+            "nested registry": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes(
+                        {
+                            "games/cafecito/foundry/Host.class": b"host",
+                            "libs/nested.jar": archive_bytes(
+                                {"assets/foundry_java/registry-index-v2.txt": b"module\n"}
+                            ),
+                        }
+                    ),
+                }
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            for host_path in sorted(EXPECTED_SOURCE_AARS):
+                for description, host_aar in mutations.items():
+                    with self.subTest(host_path=host_path, description=description):
+                        entries = {
+                            **VALID_SOURCE_TEMPLATE,
+                            host_path: host_aar,
+                        }
+                        archive = Path(temporary) / (f"{Path(host_path).stem}-{description.replace(' ', '-')}.zip")
+                        write_source_template(archive, entries)
+                        with self.assertRaisesRegex(
+                            tool.SourceTemplateError,
+                            re.escape(host_path) + r"!.*(?:libfoundry_java|FoundryJava|foundry_java)",
+                        ):
+                            tool.inspect_source_template(archive)
+
     def test_source_template_promotion_is_fail_closed_and_atomic(self) -> None:
         tool = load_source_template_tool()
         with tempfile.TemporaryDirectory() as temporary:
@@ -687,6 +755,7 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
     def test_android_runtime_documentation_covers_internal_build_and_acceptance(self) -> None:
         readme = read(ANDROID_README)
         runtime_doc = read(ANDROID_RUNTIME_DOC)
+        normalized_runtime_doc = " ".join(runtime_doc.split())
 
         self.assertIn("ANDROID_RUNTIME.md", readme)
         for fragment in (
@@ -730,8 +799,16 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "fresh",
         ):
             self.assertIn(fragment, runtime_doc)
+        self.assertIn(
+            (
+                "Foundry-Android is only a read-only source donor for this migration. It is not "
+                "a dependency, is never packaged or published by this path, and must not be "
+                "modified, renamed, archived, deleted, or republished."
+            ),
+            normalized_runtime_doc,
+        )
+        self.assertEqual(1, runtime_doc.count("Foundry-Android"))
         for forbidden in (
-            "Foundry-Android",
             "--source-repository",
             "--allow-fetch",
             "sole Maven publisher",
@@ -741,6 +818,17 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
         ):
             self.assertNotIn(forbidden, runtime_doc)
+
+    def test_export_abi_fallback_is_preserved_only_for_ordinary_exports(self) -> None:
+        config = read(APP_CONFIG)
+        enabled_abis = config.split("ext.getExportEnabledABIs = { ->", maxsplit=1)[1].split(
+            "ext.getExportPath = {", maxsplit=1
+        )[0]
+        self.assertIn('project.hasProperty("export_enabled_abis")', enabled_abis)
+        self.assertIn("enabledABIs == null || enabledABIs.isEmpty()", enabled_abis)
+        self.assertIn("getFoundryJavaEnabled()", enabled_abis)
+        self.assertIn("return [] as Set<String>", enabled_abis)
+        self.assertIn('enabledABIs = "armeabi-v7a|arm64-v8a|x86|x86_64|"', enabled_abis)
 
     def test_pre_commit_routes_the_android_device_acceptance_surface(self) -> None:
         pre_commit = read(PRE_COMMIT)

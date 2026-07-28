@@ -261,6 +261,8 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             "test_rejects_opaque_descriptor_mutations",
             "test_rejects_opaque_graph_identity_and_provenance_mutations",
             "test_rejects_opaque_binding_payload_mutations",
+            "test_rejects_empty_and_unsupported_requested_abis",
+            "test_ordinary_marker_absent_debug_and_release_remain_inert",
             "test_local_debug_single_abi_matrix",
             "test_staged_maven_x86_64_debug_matches_local",
             "test_local_x86_64_minified_release_is_reproducible",
@@ -292,6 +294,12 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             "foundry-java-default-debug.apk",
             "foundry-java-custom-release.apk",
             "foundry-java-command-first-evidence.json",
+            'run/main_scene="res://main.tscn"',
+            'project.joinpath("main.tscn")',
+            'project.joinpath("main.fs")',
+            "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY",
+            '"foundry_revision"',
+            '"editor_sha256"',
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
@@ -338,6 +346,7 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             ),
             ("--apk dev.example.foundryjava=.test_scratch/foundry-java-command-first/foundry-java-custom-release.apk"),
             "foundry-java-command-first-device-evidence",
+            "--required-runtime-marker FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY",
             "if: always()",
         ):
             with self.subTest(job="device", fragment=fragment):
@@ -877,6 +886,43 @@ class FoundryJavaGradlePropertyTests(unittest.TestCase):
                 }
             ],
         )
+
+    def test_ordinary_absent_and_explicit_empty_abi_properties_keep_default_matrix(self) -> None:
+        isolated_app = self.workspace / "ordinary-abi-defaults"
+        shutil.copytree(
+            APP_ROOT,
+            isolated_app,
+            ignore=shutil.ignore_patterns("build", ".gradle"),
+        )
+        build_file = isolated_app / "build.gradle"
+        build_file.write_text(
+            build_file.read_text(encoding="utf-8")
+            + textwrap.dedent(
+                """
+
+                tasks.register("printOrdinaryExportAbis") {
+                    doLast {
+                        println "ORDINARY_EXPORT_ABIS=" + getExportEnabledABIs().sort().join(",")
+                    }
+                }
+                """
+            ),
+            encoding="utf-8",
+        )
+        for properties in ({}, {"export_enabled_abis": ""}):
+            with self.subTest(properties=properties):
+                result = self.run_gradle(
+                    properties,
+                    tasks=("printOrdinaryExportAbis",),
+                    project_root=isolated_app,
+                )
+                output = result.stdout + result.stderr
+                self.assertEqual(0, result.returncode, output)
+                line = next(value for value in output.splitlines() if value.startswith("ORDINARY_EXPORT_ABIS="))
+                self.assertEqual(
+                    {"armeabi-v7a", "arm64-v8a", "x86", "x86_64"},
+                    set(line.partition("=")[2].split(",")),
+                )
 
     def enabled_local_properties(self) -> dict[str, str]:
         return {
@@ -1580,6 +1626,9 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
     def _assert_no_failed_export_outputs(self, app: Path) -> None:
         generated_assets = app / "build/generated/assets/generateStandardDebugFoundryJavaRegistry"
         generated_java = app / "build/generated/java/generateStandardDebugFoundryJavaRegistry"
+        generated_manifest = app / "build/generated/manifests/generateStandardDebugFoundryJavaRegistry"
+        for root in (generated_assets, generated_java, generated_manifest):
+            self.assertFalse(any(path.is_file() for path in root.rglob("*")), root)
         for output in (
             generated_assets / "FoundryJava.foundryextension",
             generated_assets / "foundry_java/registry-index-v2.txt",
@@ -1597,7 +1646,9 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         *,
         requested_abis: tuple[str, ...] = ("x86_64",),
     ) -> None:
-        app = self._prepare_app(f"reject-{case}", requested_abi=requested_abis[0])
+        supported_abis = ("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        host_abi = requested_abis[0] if requested_abis and requested_abis[0] in supported_abis else "x86_64"
+        app = self._prepare_app(f"reject-{case}", requested_abi=host_abi)
         result = self._run_app(
             app,
             self._local_properties(
@@ -1782,8 +1833,11 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         project.joinpath("project.foundry").write_text(
             textwrap.dedent(
                 """\
+                config_version=5
+
                 [application]
                 config/name="Foundry Java Command First"
+                run/main_scene="res://main.tscn"
 
                 [rendering]
                 renderer/rendering_method="gl_compatibility"
@@ -1791,6 +1845,23 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                 textures/vram_compression/import_etc2_astc=true
                 """
             ),
+            encoding="utf-8",
+        )
+        project.joinpath("main.tscn").write_text(
+            textwrap.dedent(
+                """\
+                [gd_scene load_steps=2 format=3]
+
+                [ext_resource type="Script" path="res://main.fs" id="1_acceptance"]
+
+                [node name="Main" type="Node"]
+                script = ExtResource("1_acceptance")
+                """
+            ),
+            encoding="utf-8",
+        )
+        project.joinpath("main.fs").write_text(
+            'extends Node\n\nfunc _ready() -> void:\n\tprint("FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY")\n',
             encoding="utf-8",
         )
         FoundryJavaExporterContractTests._write_export_preset(
@@ -2107,10 +2178,21 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                     expected_index=expected_index,
                 )
 
+        revision_result = run_bounded_subprocess(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO_ROOT,
+            timeout=30,
+        )
+        revision_output = revision_result.stdout + revision_result.stderr
+        self.assertEqual(0, revision_result.returncode, revision_output)
+        foundry_revision = revision_result.stdout.strip()
+        self.assertRegex(foundry_revision, r"^[0-9a-f]{40}$")
         evidence = {
             "schema_version": 1,
             "foundry_java_commit": EXACT_FOUNDRY_JAVA_COMMIT,
+            "foundry_revision": foundry_revision,
             "editor": str(editor),
+            "editor_sha256": hashlib.sha256(editor.read_bytes()).hexdigest(),
             "source_template": {
                 "name": source_template.name,
                 "sha256": hashlib.sha256(source_template.read_bytes()).hexdigest(),
@@ -2329,6 +2411,28 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             with self.subTest(name=name):
                 self._assert_plugin_rejects(name, artifacts, diagnostics)
 
+    def test_rejects_empty_and_unsupported_requested_abis(self) -> None:
+        artifacts = (self.binding_aar, self.runtime_jar, self.module_jar)
+        for name, requested_abis, diagnostics in (
+            (
+                "empty-requested-abis",
+                (),
+                ("requested_abis must contain at least one Android ABI",),
+            ),
+            (
+                "unsupported-requested-abi",
+                ("mips",),
+                ("Unsupported Foundry-Java ABI mips",),
+            ),
+        ):
+            with self.subTest(name=name):
+                self._assert_plugin_rejects(
+                    name,
+                    artifacts,
+                    diagnostics,
+                    requested_abis=requested_abis,
+                )
+
     def test_local_debug_single_abi_matrix(self) -> None:
         for requested_abi in ("armeabi-v7a", "arm64-v8a", "x86", "x86_64"):
             with self.subTest(requested_abi=requested_abi):
@@ -2339,18 +2443,65 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         repository, marker = self._stage_maven_graph()
         local_evidence = self._local_debug_evidence("x86_64")
         app = self._prepare_app("maven-debug-parity")
-        result = self._run_app(
+        first, second = self._build_twice(
             app,
             self._maven_properties(repository, marker, requested_abis),
-            "assembleStandardDebug",
         )
         maven_evidence = self._assert_outputs(
             app,
-            result,
+            first,
+            second,
             requested_abis=requested_abis,
             expected_application_id="games.cafecito.foundry.game",
         )
         self.assertEqual(local_evidence, maven_evidence)
+
+    def test_ordinary_marker_absent_debug_and_release_remain_inert(self) -> None:
+        for build_type, application_id in (
+            ("debug", "games.cafecito.foundry.game"),
+            ("release", "dev.example.ordinary"),
+        ):
+            with self.subTest(build_type=build_type):
+                app = self._prepare_app(f"ordinary-{build_type}", build_type=build_type)
+                properties = {"export_enabled_abis": "x86_64"}
+                if build_type == "release":
+                    properties["export_package_name"] = application_id
+                first = self._run_app(app, properties, f"assembleStandard{build_type.capitalize()}")
+                second = self._run_app(app, properties, f"assembleStandard{build_type.capitalize()}")
+                for result in (first, second):
+                    output = result.stdout + result.stderr
+                    self.assertEqual(0, result.returncode, output)
+                    self.assertNotIn("FoundryJavaRegistry", output)
+                    self.assertNotIn("games.cafecito.foundry.java", output)
+                self.assertIn("Reusing configuration cache.", second.stdout + second.stderr)
+
+                generated = app / "build/generated"
+                self.assertFalse(any(generated.glob("**/*FoundryJava*")))
+                apk = app / f"build/outputs/apk/standard/{build_type}/android_{build_type}.apk"
+                with zipfile.ZipFile(apk) as archive:
+                    names = set(archive.namelist())
+                    self.assertNotIn("assets/FoundryJava.foundryextension", names)
+                    self.assertNotIn("assets/foundry_java/registry-index-v2.txt", names)
+                    self.assertFalse(any(name.endswith("/libfoundry_java.so") for name in names))
+                    self.assertEqual(
+                        {"lib/x86_64/libfoundry_android.so"},
+                        {name for name in names if name.endswith("/libfoundry_android.so")},
+                    )
+                metadata = json.loads(
+                    (app / f"build/outputs/apk/standard/{build_type}/output-metadata.json").read_text(encoding="utf-8")
+                )
+                self.assertEqual(application_id, metadata["applicationId"])
+                merged = sorted(
+                    (app / f"build/intermediates/merged_manifest/standard{build_type.capitalize()}").rglob(
+                        "AndroidManifest.xml"
+                    )
+                )
+                self.assertEqual(1, len(merged), merged)
+                self.assertNotIn(
+                    "games.cafecito.foundry.generated.FoundryGeneratedStartupProvider",
+                    merged[0].read_text(encoding="utf-8"),
+                )
+                self.assertFalse((app / f"build/outputs/mapping/standard{build_type.capitalize()}").exists())
 
     def test_local_x86_64_minified_release_is_reproducible(self) -> None:
         requested_abis = ("x86_64",)
@@ -2541,9 +2692,21 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             "archive entry name contains an embedded NUL byte",
             "archive entry name is not valid UTF-8",
             "archive could not be opened",
+            "requires at least one enabled Android architecture",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, exporter)
+
+    def test_opt_in_empty_architectures_are_rejected_before_gradle(self) -> None:
+        exporter = EXPORTER.read_text(encoding="utf-8")
+        configuration_check = exporter.find("bool EditorExportPlatformAndroid::has_valid_project_configuration")
+        export_helper = exporter.find("Error EditorExportPlatformAndroid::export_project_helper")
+        gradle_execution = exporter.find("execute_and_show_output", export_helper)
+        for start in (configuration_check, export_helper):
+            check = exporter.find("requires at least one enabled Android architecture", start)
+            self.assertGreater(check, start)
+            if start == export_helper:
+                self.assertLess(check, gradle_execution)
 
     def test_properties_are_emitted_only_inside_the_enabled_branch(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
