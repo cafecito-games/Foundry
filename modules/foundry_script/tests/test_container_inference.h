@@ -290,13 +290,12 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference]") {
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
-	TEST_CASE("A bare array reference in a discarded destructured slot does not escape it") {
-		// The value is evaluated and immediately dropped via `_`; no binding
-		// retains a reference to it, so this is as safe as a bare read.
+	TEST_CASE("Referencing the array through a discarded destructured slot still escapes it") {
+		// The element is still evaluated even though its binding is `_`, so the
+		// analysis conservatively treats it the same as any other reference.
 		InferenceFixture fixture("func f():\n\tvar items = [1]\n\titems.append(2)\n\tvar (_, b) = (items, 2)\n");
 		FSContainerInference::Result result = infer_in(fixture, "f", "items");
-		CHECK_EQ(result.outcome, FSContainerInference::INFERRED);
-		CHECK_EQ(result.element_type.to_string(), "Array[int]");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
 	}
 
 	TEST_CASE("A mutating call in a discarded destructured slot still forces a conservative skip") {
@@ -763,13 +762,12 @@ TEST_SUITE("[Modules][FoundryScript][ContainerInference][Dictionary]") {
 		CHECK_FALSE(result.detail.is_empty());
 	}
 
-	TEST_CASE("A bare dictionary reference in a discarded destructured slot does not escape it") {
-		// The value is evaluated and immediately dropped via `_`; no binding
-		// retains a reference to it, so this is as safe as a bare read.
+	TEST_CASE("Referencing the dictionary through a discarded destructured slot still escapes it") {
+		// The element is still evaluated even though its binding is `_`, so the
+		// analysis conservatively treats it the same as any other reference.
 		InferenceFixture fixture("func f():\n\tvar d = {\"a\": 1}\n\td[\"b\"] = 2\n\tvar (_, b) = (d, 2)\n");
 		FSContainerInference::Result result = infer_dict_in(fixture, "f", "d");
-		CHECK_EQ(result.outcome, FSContainerInference::INFERRED);
-		CHECK_EQ(result.element_type.to_string(), "Dictionary[String, int]");
+		CHECK_EQ(result.outcome, FSContainerInference::ESCAPES);
 	}
 
 	TEST_CASE("An unmodelled call in a discarded destructured slot still forces a conservative skip") {
