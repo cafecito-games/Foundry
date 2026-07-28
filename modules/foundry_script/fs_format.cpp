@@ -305,18 +305,10 @@ static int unary_operator_precedence(FSParser::UnaryOpNode::OpType p_operation) 
 	return FPREC_PRIMARY;
 }
 
-// A lambda whose `:` is followed by nothing. That is never valid FoundryScript --
-// the analyzer rejects it -- but it parses, so the formatter still has to emit it
-// without inventing a body for it.
-static bool is_bodyless_lambda(const FSParser::LambdaNode *p_lambda) {
-	const FSParser::FunctionNode *function = p_lambda->function;
-	return function != nullptr && (function->body == nullptr || function->body->statements.is_empty());
-}
-
 // Precedence of an expression node as seen by its parent. Atoms (literals,
 // identifiers, calls, subscripts, collections, ...) never need wrapping, so they
 // report the maximum precedence.
-static int expression_precedence(const FSParser::ExpressionNode *p_expression) {
+int FSPrinter::expression_precedence(const FSParser::ExpressionNode *p_expression) const {
 	switch (p_expression->type) {
 		case FSParser::Node::ASSIGNMENT:
 			return FPREC_ASSIGNMENT;
@@ -660,6 +652,24 @@ void FSPrinter::emit_comment_line(int p_line, const String &p_raw_comment) {
 
 bool FSPrinter::is_trivia_line(int p_line) const {
 	return is_full_line_comment(p_line) || standalone_annotations.has(p_line) || string_comments.has(p_line);
+}
+
+bool FSPrinter::is_bodyless_lambda(const FSParser::LambdaNode *p_lambda) const {
+	const FSParser::FunctionNode *function = p_lambda->function;
+	if (function == nullptr || (function->body != nullptr && !function->body->statements.is_empty())) {
+		return false;
+	}
+	// A statement-free suite is not proof the author wrote no body: trivia is absent
+	// from the tree and recovered by line number instead. A lambda with only trivia
+	// under its `:` must keep the block form, which is the only shape with a line to
+	// emit that trivia on. (Truly bodyless lambdas are always single-line anyway --
+	// a newline after the `:` requires an indented block to follow.)
+	for (int line = p_lambda->start_line + 1; line <= p_lambda->end_line; line++) {
+		if (is_trivia_line(line)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 // Emits the trivia at `p_line` (a full-line comment, a recovered standalone
@@ -1495,9 +1505,12 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		// appending `:` would be a parse error, and synthesizing a `pass` body would
 		// add a statement the author never wrote.
 		newline();
-		// That line is also the function's last, so it owns any inline comment on it;
-		// there is no body whose tail flush would otherwise pick the comment up.
-		emit_trailing_comment(p_function->end_line);
+		// There is no body whose tail flush would otherwise pick up the declaration's
+		// inline comments, and a signature spread over several source lines collapses
+		// onto one, so every inline comment it carried has to land on that one line.
+		for (int line = p_function->start_line; line <= p_function->end_line; line++) {
+			emit_trailing_comment(line);
+		}
 		return;
 	}
 	write(":");

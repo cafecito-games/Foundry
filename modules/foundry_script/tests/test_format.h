@@ -793,6 +793,23 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(format_or_fail(source), expected);
 	}
 
+	// The signature collapses onto one line, so both comments have to land on it.
+	TEST_CASE("[Format] Keeps every inline comment on a bodyless multi-line signature") {
+		String source = "func ping(  # head\n\t\tvalue: int) -> int  # tail\n";
+		String expected = "func ping(value: int) -> int  # head  # tail\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	// A statement-free lambda suite that still holds trivia is not bodyless: the
+	// standalone annotation is recovered by line, so it needs the block form's line
+	// to be emitted on rather than being collapsed away with the body.
+	TEST_CASE("[Format] Keeps a standalone annotation inside an otherwise empty lambda") {
+		String source = "func f():\n\tvar callback = (func():\n\t\t@warning_ignore_start(\"unsafe_call_argument\")\n\t)\n";
+		String formatted = format_or_fail(source);
+		CHECK(formatted.contains("@warning_ignore_start(\"unsafe_call_argument\")"));
+	}
+
 	// The same rule applies to a lambda whose `:` is not followed by a body: emit the
 	// bare `func():` rather than an indented `pass` block, which would both change the
 	// tree and corrupt the enclosing expression. The trailing `:` would swallow the
