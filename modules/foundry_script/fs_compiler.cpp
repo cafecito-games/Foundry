@@ -3045,6 +3045,26 @@ Error FSCompiler::_parse_block(CodeGen &codegen, const FSParser::SuiteNode *p_bl
 				gen->write_breakpoint();
 #endif
 			} break;
+			case FSParser::Node::VARIABLE_DESTRUCTURE: {
+				const FSParser::VariableDestructureNode *destructure = static_cast<const FSParser::VariableDestructureNode *>(s);
+				// A tuple is a read-only Array at runtime, so every binding is a constant-indexed
+				// get from the single evaluated initializer value.
+				FSCodeGenerator::Address tuple_value = _parse_expression(codegen, err, destructure->initializer);
+				if (err) {
+					return err;
+				}
+				for (int binding_index = 0; binding_index < destructure->bindings.size(); binding_index++) {
+					const FSParser::VariableNode *binding = destructure->bindings[binding_index];
+					if (binding == nullptr) {
+						continue; // A `_` slot binds nothing.
+					}
+					FSCodeGenerator::Address local = codegen.locals[binding->identifier->name];
+					gen->write_get(local, codegen.add_constant(binding_index), tuple_value);
+				}
+				if (tuple_value.mode == FSCodeGenerator::Address::TEMPORARY) {
+					codegen.generator->pop_temporary();
+				}
+			} break;
 			case FSParser::Node::VARIABLE: {
 				const FSParser::VariableNode *lv = static_cast<const FSParser::VariableNode *>(s);
 				// Should be already in stack when the block began.

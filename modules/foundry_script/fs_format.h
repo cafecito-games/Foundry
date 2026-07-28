@@ -202,6 +202,8 @@ private:
 	void print_function(const FSParser::FunctionNode *p_function);
 	void print_variable(const FSParser::VariableNode *p_variable);
 	void print_constant(const FSParser::ConstantNode *p_constant);
+	void print_variable_destructure(const FSParser::VariableDestructureNode *p_destructure);
+	void write_destructure_bindings(const FSParser::VariableDestructureNode *p_destructure);
 	void print_signal(const FSParser::SignalNode *p_signal);
 	void print_enum(const FSParser::EnumNode *p_enum);
 	void print_tuple(const FSParser::TupleNode *p_tuple);

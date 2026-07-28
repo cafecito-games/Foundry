@@ -218,6 +218,9 @@ void FSEditorTranslationParserPlugin::_traverse_block(const FSParser::SuiteNode 
 			case FSParser::Node::VARIABLE: {
 				_assess_expression(static_cast<const FSParser::VariableNode *>(statement)->initializer);
 			} break;
+			case FSParser::Node::VARIABLE_DESTRUCTURE: {
+				_assess_expression(static_cast<const FSParser::VariableDestructureNode *>(statement)->initializer);
+			} break;
 			case FSParser::Node::WHILE: {
 				const FSParser::WhileNode *while_node = static_cast<const FSParser::WhileNode *>(statement);
 				_assess_expression(while_node->condition);

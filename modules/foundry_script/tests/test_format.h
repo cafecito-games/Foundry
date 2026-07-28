@@ -505,6 +505,24 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 			}
 			return true;
 		}
+		case Node::VARIABLE_DESTRUCTURE: {
+			const FSParser::VariableDestructureNode *a = static_cast<const FSParser::VariableDestructureNode *>(p_a);
+			const FSParser::VariableDestructureNode *b = static_cast<const FSParser::VariableDestructureNode *>(p_b);
+			if (a->is_const != b->is_const || a->bindings.size() != b->bindings.size() ||
+					!node_eq(a->initializer, b->initializer)) {
+				return false;
+			}
+			for (int i = 0; i < a->bindings.size(); i++) {
+				// A null binding is a `_` slot, which must stay a `_` slot on both sides.
+				if ((a->bindings[i] == nullptr) != (b->bindings[i] == nullptr)) {
+					return false;
+				}
+				if (a->bindings[i] != nullptr && !node_eq(a->bindings[i], b->bindings[i])) {
+					return false;
+				}
+			}
+			return true;
+		}
 		case Node::DICTIONARY: {
 			const FSParser::DictionaryNode *a = static_cast<const FSParser::DictionaryNode *>(p_a);
 			const FSParser::DictionaryNode *b = static_cast<const FSParser::DictionaryNode *>(p_b);

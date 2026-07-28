@@ -3583,6 +3583,20 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 	}
 
 	TEST_CASE("Inline variable removes local declaration and replaces reads") {
+		SUBCASE("use inside a destructuring initializer") {
+			const String source =
+					"func run() -> int:\n"
+					"\tvar value = 2\n"
+					"\tvar (first, second) = (value, 3)\n"
+					"\treturn first + second\n";
+			String out;
+			RefactorResult r = run_inline_variable(source, 1, 6, out);
+			REQUIRE(r.ok);
+			CHECK_EQ(out,
+					"func run() -> int:\n"
+					"\tvar (first, second) = (2, 3)\n"
+					"\treturn first + second\n");
+		}
 		SUBCASE("single use from declaration") {
 			const String source =
 					"func run() -> int:\n"

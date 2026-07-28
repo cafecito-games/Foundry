@@ -1566,6 +1566,32 @@ void FSPrinter::print_variable(const FSParser::VariableNode *p_variable) {
 	indent_level--;
 }
 
+void FSPrinter::print_variable_destructure(const FSParser::VariableDestructureNode *p_destructure) {
+	write_indent();
+	write_destructure_bindings(p_destructure);
+	newline();
+}
+
+// Shared by the statement and inline printers: `var (x, _) = expr` on a single line.
+void FSPrinter::write_destructure_bindings(const FSParser::VariableDestructureNode *p_destructure) {
+	write(p_destructure->is_const ? "const (" : "var (");
+	for (int i = 0; i < p_destructure->bindings.size(); i++) {
+		if (i > 0) {
+			write(", ");
+		}
+		if (p_destructure->bindings[i] == nullptr) {
+			write("_");
+		} else {
+			write(p_destructure->bindings[i]->identifier->name);
+		}
+	}
+	write(")");
+	if (p_destructure->initializer != nullptr) {
+		write(" = ");
+		print_expression(p_destructure->initializer);
+	}
+}
+
 void FSPrinter::print_constant(const FSParser::ConstantNode *p_constant) {
 	write_indent();
 	write("const ");
@@ -1874,6 +1900,9 @@ void FSPrinter::print_statement(const FSParser::Node *p_statement) {
 		case FSParser::Node::VARIABLE:
 			print_variable(static_cast<const FSParser::VariableNode *>(p_statement));
 			break;
+		case FSParser::Node::VARIABLE_DESTRUCTURE:
+			print_variable_destructure(static_cast<const FSParser::VariableDestructureNode *>(p_statement));
+			break;
 		case FSParser::Node::CONSTANT:
 			print_constant(static_cast<const FSParser::ConstantNode *>(p_statement));
 			break;
@@ -1991,6 +2020,9 @@ bool FSPrinter::print_statement_inline(const FSParser::Node *p_statement) {
 			}
 			return true;
 		}
+		case FSParser::Node::VARIABLE_DESTRUCTURE:
+			write_destructure_bindings(static_cast<const FSParser::VariableDestructureNode *>(p_statement));
+			return true;
 		default:
 			if (p_statement->is_expression()) {
 				print_expression(static_cast<const FSParser::ExpressionNode *>(p_statement));

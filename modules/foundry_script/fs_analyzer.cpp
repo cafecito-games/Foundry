@@ -2471,6 +2471,9 @@ void FSAnalyzer::resolve_node(FSParser::Node *p_node, bool p_is_root) {
 		case FSParser::Node::VARIABLE:
 			resolve_variable(static_cast<FSParser::VariableNode *>(p_node), true);
 			break;
+		case FSParser::Node::VARIABLE_DESTRUCTURE:
+			resolve_variable_destructure(static_cast<FSParser::VariableDestructureNode *>(p_node));
+			break;
 		case FSParser::Node::WHILE:
 			resolve_while(static_cast<FSParser::WhileNode *>(p_node));
 			break;
@@ -3987,6 +3990,70 @@ void FSAnalyzer::resolve_variable(FSParser::VariableNode *p_variable, bool p_is_
 #endif // DEBUG_ENABLED
 }
 
+// Types the bindings of a destructuring declaration. The initializer must be a statically known
+// tuple of exactly the declared arity: a Variant or any other shape has no element types to hand
+// out, so it is rejected rather than silently degrading every binding to Variant.
+void FSAnalyzer::resolve_variable_destructure(FSParser::VariableDestructureNode *p_destructure) {
+	FSParser::DataType initializer_type;
+	if (p_destructure->initializer != nullptr) {
+		reduce_expression(p_destructure->initializer);
+		initializer_type = p_destructure->initializer->get_datatype();
+	}
+
+	bool shape_is_known = false;
+	if (p_destructure->initializer == nullptr) {
+		// The parser already reported the missing initializer.
+	} else if (!initializer_type.is_set() || !initializer_type.is_hard_type() || initializer_type.kind != FSParser::DataType::TUPLE) {
+		push_error(vformat(R"(Cannot destructure a value of type "%s"; only a tuple with a statically known shape can be destructured.)",
+						   initializer_type.to_string()),
+				p_destructure->initializer);
+	} else if (initializer_type.is_meta_type) {
+		push_error(vformat(R"(Cannot destructure the tuple type "%s"; construct a value first.)", initializer_type.to_string()),
+				p_destructure->initializer);
+	} else if (strict_null_checks && initializer_type.is_nullable) {
+		// Destructuring reads the elements, so it dereferences the value: a nullable tuple must be
+		// narrowed to non-null first, exactly like the other strict-null boundaries.
+		push_error(vformat(R"(Cannot destructure the nullable value of type "%s"; check for null first.)", initializer_type.to_string()),
+				p_destructure->initializer);
+	} else if (initializer_type.container_element_types.size() != p_destructure->bindings.size()) {
+		push_error(vformat(R"(Cannot destructure the tuple "%s" into %d bindings; it has %d elements.)",
+						   initializer_type.to_string(), p_destructure->bindings.size(), initializer_type.container_element_types.size()),
+				p_destructure->initializer);
+	} else {
+		shape_is_known = true;
+	}
+
+	for (int i = 0; i < p_destructure->bindings.size(); i++) {
+		FSParser::VariableNode *binding = p_destructure->bindings[i];
+		if (binding == nullptr) {
+			continue; // A `_` slot binds nothing.
+		}
+
+		FSParser::DataType binding_type;
+		if (shape_is_known) {
+			binding_type = initializer_type.get_container_element_type_or_variant(i);
+			binding_type.type_source = FSParser::DataType::ANNOTATED_INFERRED;
+		} else {
+			// Keep going with a Variant binding so a broken initializer reports once instead of
+			// cascading through every later use of the names it declares.
+			binding_type.kind = FSParser::DataType::VARIANT;
+			binding_type.type_source = FSParser::DataType::UNDETECTED;
+		}
+		// A `const` binding is immutable, not compile-time constant: its value comes from a runtime
+		// tuple, so it must not be treated as a foldable constant.
+		binding_type.is_constant = false;
+		binding_type.is_read_only = false;
+		binding->set_datatype(binding_type);
+
+#ifdef DEBUG_ENABLED
+		if (binding->usages == 0 && !String(binding->identifier->name).begins_with("_")) {
+			parser->push_warning(binding, FSWarning::UNUSED_VARIABLE, binding->identifier->name);
+		}
+		is_shadowing(binding->identifier, "variable", true);
+#endif // DEBUG_ENABLED
+	}
+}
+
 void FSAnalyzer::resolve_constant(FSParser::ConstantNode *p_constant, bool p_is_local) {
 	static constexpr const char *kind = "constant";
 	resolve_assignable(p_constant, kind);
@@ -4685,6 +4752,7 @@ void FSAnalyzer::reduce_expression(FSParser::ExpressionNode *p_expression, bool 
 		case FSParser::Node::TYPE:
 		case FSParser::Node::TYPE_PARAMETER:
 		case FSParser::Node::VARIABLE:
+		case FSParser::Node::VARIABLE_DESTRUCTURE:
 		case FSParser::Node::WHILE:
 			ERR_FAIL_MSG("Reaching unreachable case");
 	}
