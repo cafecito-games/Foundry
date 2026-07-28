@@ -1183,13 +1183,20 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				// Apply annotations.
 				for (FSParser::AnnotationNode *&E : member.variable->annotations) {
 					if (E->name != SNAME("@warning_ignore")) {
-						// `@export_storage` and `@export_custom` are explicitly type-independent: they
-						// publish the property's raw runtime type (and, for `@export_custom`, a
-						// caller-supplied hint/usage) instead of going through the inspector's
-						// automatic PropertyInfo mapping, so neither hits the erased-type mismatch
-						// the other `@export*` annotations do.
-						const bool is_type_independent_export_annotation = E->name == SNAME("@export_storage") || E->name == SNAME("@export_custom");
-						const bool is_inspector_export_annotation = String(E->name).begins_with("@export") && !is_type_independent_export_annotation;
+						// `@export_storage` is not inspector-visible (no `PROPERTY_USAGE_EDITOR`), so an
+						// imprecise published type is a harmless reflection detail, not a broken editor
+						// widget; it is exempt for both tuples and tagged unions.
+						//
+						// `@export_custom` publishes `variable->get_datatype().builtin_type` verbatim.
+						// That is safe for a tuple, whose canonical `builtin_type` is already `Array`
+						// (`FSAnalyzer::make_tuple_type`). A tagged union's canonical `builtin_type` is
+						// still `Variant::INT` (`make_class_enum_type`/`make_enum_type` do not special-case
+						// `is_tagged_union`), so `@export_custom` on a tagged-union property would still
+						// advertise itself as an integer to the (visible, by default) inspector while its
+						// runtime value is an Array; only exempt it for the tuple case.
+						const bool skip_guard_for_annotation = E->name == SNAME("@export_storage") ||
+								(E->name == SNAME("@export_custom") && rejected_export_datatype.is_tuple());
+						const bool is_inspector_export_annotation = String(E->name).begins_with("@export") && !skip_guard_for_annotation;
 						if (rejects_export && is_inspector_export_annotation) {
 							if (rejected_export_datatype.is_tuple()) {
 								push_error(vformat(R"(Cannot export a tuple-typed property: "%s" has type "%s".)",

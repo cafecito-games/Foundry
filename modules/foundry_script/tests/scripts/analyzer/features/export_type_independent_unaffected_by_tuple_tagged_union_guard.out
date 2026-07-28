@@ -1,6 +1,5 @@
 FS_TEST_OK
 ~~ WARNING at line 11: (ENUM_VARIABLE_WITHOUT_DEFAULT) The variable "last_message" has an enum type and does not set an explicit default value. The default will be set to "0".
-~~ WARNING at line 15: (ENUM_VARIABLE_WITHOUT_DEFAULT) The variable "custom_last_message" has an enum type and does not set an explicit default value. The default will be set to "0".
 var position: Array
   hint=NONE hint_string="" usage=STORAGE|SCRIPT_VARIABLE class_name=&""
 var last_message: Message
@@ -9,5 +8,3 @@ var history: Array[Message]
   hint=ARRAY_TYPE hint_string="Message" usage=STORAGE|SCRIPT_VARIABLE class_name=&""
 var custom_position: Array
   hint=NONE hint_string="" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
-var custom_last_message: int
-  hint=NONE hint_string="" usage=DEFAULT|SCRIPT_VARIABLE class_name=&"Message"
