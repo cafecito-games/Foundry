@@ -10,6 +10,9 @@ func test():
 	print(RuntimeTopLevelMessage.Quit == RuntimeTopLevelMessage.Move(1, 2))
 	print(RuntimeTopLevelMessage)
 
+	# The same value is reached through the declaring script handle, statically and dynamically.
+	print(EnumFile.Quit)
+	print(EnumFile.Quit == RuntimeTopLevelMessage.Quit)
 	var enum_file: Variant = EnumFile
 	@warning_ignore("unsafe_property_access")
 	print(enum_file.Quit)
