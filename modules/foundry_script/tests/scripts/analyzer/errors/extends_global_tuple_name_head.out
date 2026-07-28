@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 1: Cannot extend "TupleNameDeclaredVec2"; it is a "tuple_name" file, not a class.
+>> ERROR at line 1: Cannot extend tuple_name file "TupleNameDeclaredVec2".

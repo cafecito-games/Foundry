@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 1: Cannot extend "TopLevelParserEnum"; it is an "enum_name" file, not a class.
+>> ERROR at line 1: Cannot extend enum_name file "TopLevelParserEnum".

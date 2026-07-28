@@ -40,18 +40,17 @@
 #define ENUM_SEPARATOR "."
 
 // `enum_name` and `tuple_name` files declare a type-only head with no script body: they cannot be
-// extended like an ordinary class or trait. Returns an article-qualified description of the head
-// declaration to name in a diagnostic (e.g. `an "enum_name"`), or an empty string when `p_head` is
-// an ordinary class/trait head.
-static String _type_only_head_declaration_description(const FSParser::ClassNode *p_head) {
+// extended like an ordinary class or trait. Returns the head declaration keyword to name in a
+// diagnostic, or an empty string when `p_head` is an ordinary class/trait head.
+static String _type_only_head_declaration_keyword(const FSParser::ClassNode *p_head) {
 	if (p_head == nullptr) {
 		return String();
 	}
 	if (p_head->is_enum_file) {
-		return R"(an "enum_name")";
+		return "enum_name";
 	}
 	if (p_head->is_tuple_file) {
-		return R"(a "tuple_name")";
+		return "tuple_name";
 	}
 	return String();
 }
@@ -503,12 +502,6 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 			}
 #endif // DEBUG_ENABLED
 
-			const String type_only_head_description = _type_only_head_declaration_description(ext_parser->get_parser()->head);
-			if (!type_only_head_description.is_empty()) {
-				push_error(vformat(R"(Cannot extend "%s"; it is %s file, not a class.)", p_class->extends_path, type_only_head_description), p_class);
-				return ERR_PARSE_ERROR;
-			}
-
 			base = ext_parser->get_parser()->head->get_datatype();
 		} else {
 			if (p_class->extends.is_empty()) {
@@ -527,11 +520,6 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 				String base_path = ScriptServer::get_global_class_path(name);
 
 				if (FoundryScript::is_canonically_equal_paths(base_path, parser->script_path)) {
-					const String type_only_head_description = _type_only_head_declaration_description(parser->head);
-					if (!type_only_head_description.is_empty()) {
-						push_error(vformat(R"(Cannot extend "%s"; it is %s file, not a class.)", name, type_only_head_description), id);
-						return ERR_PARSE_ERROR;
-					}
 					base = parser->head->get_datatype();
 				} else {
 					Ref<FSParserRef> base_parser;
@@ -551,12 +539,6 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 						parser->push_warning(p_class, FSWarning::MISSING_TOOL);
 					}
 #endif // DEBUG_ENABLED
-
-					const String type_only_head_description = _type_only_head_declaration_description(base_parser->get_parser()->head);
-					if (!type_only_head_description.is_empty()) {
-						push_error(vformat(R"(Cannot extend "%s"; it is %s file, not a class.)", name, type_only_head_description), id);
-						return ERR_PARSE_ERROR;
-					}
 
 					base = base_parser->get_parser()->head->get_datatype();
 				}
@@ -640,6 +622,28 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 		}
 
 		result = base;
+
+		// An `enum_name`/`tuple_name` file has no script body: its global name denotes the type
+		// itself, not an extendable class. Catch every path that can produce such a base here,
+		// including a script constant preloading the file (`const E = preload("...")` then
+		// `extends E`), rather than special-casing each of the branches above.
+		{
+			String type_only_head_keyword;
+			if (result.kind == FSParser::DataType::CLASS && result.class_type != nullptr) {
+				type_only_head_keyword = _type_only_head_declaration_keyword(result.class_type);
+			} else if (result.kind == FSParser::DataType::SCRIPT && !result.script_path.is_empty()) {
+				Ref<FSParserRef> preloaded_parser;
+				Error preload_err = dependency_parser_access.raise_depended_parser_for(result.script_path, FSParserRef::INHERITANCE_SOLVED, preloaded_parser);
+				if (preloaded_parser.is_valid() && preload_err == OK) {
+					type_only_head_keyword = _type_only_head_declaration_keyword(preloaded_parser->get_parser()->head);
+				}
+			}
+			if (!type_only_head_keyword.is_empty()) {
+				const FSParser::Node *source = p_class->extends.is_empty() ? static_cast<const FSParser::Node *>(p_class) : p_class->extends[0];
+				push_error(vformat(R"(Cannot extend %s file "%s".)", type_only_head_keyword, result.to_string()), source);
+				return ERR_PARSE_ERROR;
+			}
+		}
 
 		// Specialize a generic base, e.g. `Stack[T] extends List[T]` or `extends List[int]`. The
 		// arguments are resolved in this class's scope so a child parameter like `T` binds here.
