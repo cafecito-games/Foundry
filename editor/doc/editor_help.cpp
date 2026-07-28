@@ -3948,7 +3948,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_constant_help_data(const StringName 
 					current.experimental_message = HANDLE_DOC(constant.experimental_message);
 				}
 			}
-			current.doc_type = { constant.type, constant.enumeration, constant.is_bitfield };
+			current.doc_type = { constant.type, constant.enumeration, constant.is_bitfield, String() };
 			if (constant.is_value_valid) {
 				current.value = constant.value;
 			}
@@ -4083,7 +4083,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_theme_item_help_data(const StringNam
 					current.experimental_message = HANDLE_DOC(theme_item.experimental_message);
 				}
 			}
-			current.doc_type = { theme_item.type, String(), false };
+			current.doc_type = { theme_item.type, String(), false, String() };
 			current.value = theme_item.default_value;
 
 			if (theme_item.name == p_theme_item_name) {
@@ -4197,7 +4197,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_signal_help_data(const StringName &p
 				}
 			}
 			for (const DocData::ArgumentDoc &argument : signal.arguments) {
-				const DocType argument_type = { argument.type, argument.enumeration, argument.is_bitfield };
+				const DocType argument_type = { argument.type, argument.enumeration, argument.is_bitfield, argument.tuple_type };
 				current.arguments.push_back({ argument.name, argument_type, argument.default_value });
 			}
 			current.qualifiers = signal.qualifiers;
@@ -4249,7 +4249,7 @@ EditorHelpBit::HelpData EditorHelpBit::_get_annotation_help_data(const StringNam
 				}
 			}
 			for (const DocData::ArgumentDoc &argument : annotation.arguments) {
-				const DocType argument_type = { argument.type, argument.enumeration, argument.is_bitfield };
+				const DocType argument_type = { argument.type, argument.enumeration, argument.is_bitfield, argument.tuple_type };
 				current.arguments.push_back({ argument.name, argument_type, argument.default_value });
 			}
 			current.qualifiers = annotation.qualifiers;
@@ -4337,7 +4337,7 @@ void EditorHelpBit::_update_labels() {
 						title->add_text(" <" + nbsp);
 						title->pop(); // color
 
-						_add_type_to_title({ inherits, String(), false });
+						_add_type_to_title({ inherits, String(), false, String() });
 
 						const DocData::ClassDoc *base_class_doc = EditorHelp::get_doc(inherits);
 						inherits = base_class_doc ? base_class_doc->inherits : String();
@@ -4437,7 +4437,7 @@ void EditorHelpBit::_update_labels() {
 					title->pop(); // color
 
 					if (rest_argument.doc_type.type.is_empty()) {
-						_add_type_to_title({ "Array", "", false });
+						_add_type_to_title({ "Array", "", false, String() });
 					} else {
 						_add_type_to_title(rest_argument.doc_type);
 					}
