@@ -430,6 +430,7 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         for test in (
             "test_command_first_export_accepts_macos_system_temp_alias_for_local_inputs",
             "test_command_first_export_rejects_user_symlinks_below_macos_system_temp_alias",
+            "test_command_first_export_rejects_user_symlink_after_macos_alias_parent_component",
         ):
             with self.subTest(test=test):
                 self.assertIn(
