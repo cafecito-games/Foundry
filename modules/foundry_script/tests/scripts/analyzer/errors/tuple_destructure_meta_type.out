@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 4: Cannot destructure the tuple type "Vec2"; construct a value first.

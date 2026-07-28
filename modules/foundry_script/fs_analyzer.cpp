@@ -3998,6 +3998,14 @@ void FSAnalyzer::resolve_variable_destructure(FSParser::VariableDestructureNode 
 		push_error(vformat(R"(Cannot destructure a value of type "%s"; only a tuple with a statically known shape can be destructured.)",
 						   initializer_type.to_string()),
 				p_destructure->initializer);
+	} else if (initializer_type.is_meta_type) {
+		push_error(vformat(R"(Cannot destructure the tuple type "%s"; construct a value first.)", initializer_type.to_string()),
+				p_destructure->initializer);
+	} else if (strict_null_checks && initializer_type.is_nullable) {
+		// Destructuring reads the elements, so it dereferences the value: a nullable tuple must be
+		// narrowed to non-null first, exactly like the other strict-null boundaries.
+		push_error(vformat(R"(Cannot destructure the nullable value of type "%s"; check for null first.)", initializer_type.to_string()),
+				p_destructure->initializer);
 	} else if (initializer_type.container_element_types.size() != p_destructure->bindings.size()) {
 		push_error(vformat(R"(Cannot destructure the tuple "%s" into %d bindings; it has %d elements.)",
 						   initializer_type.to_string(), p_destructure->bindings.size(), initializer_type.container_element_types.size()),
