@@ -3811,9 +3811,16 @@ FSParser::AssertNode *FSParser::parse_assert() {
 	push_multiline(true);
 	consume(FSTokenizer::Token::PARENTHESIS_OPEN, R"(Expected "(" after "assert".)");
 
-	assert->condition = parse_expression(false);
+	int case_binds_mark = pending_case_binds.size();
+	{
+		RecursionDepthGuard case_bind_condition_guard(case_bind_condition_depth);
+		assert->condition = parse_expression(false);
+	}
 	if (assert->condition == nullptr) {
 		push_error("Expected expression to assert.");
+		// Unwind any transient case-bind locals declared while parsing the (failed) condition so they
+		// don't leak into the rest of the suite as declared locals.
+		declare_condition_case_binds(Vector<TypeTestNode *>(), current_suite, case_binds_mark);
 		pop_multiline();
 		complete_extents(assert);
 		return nullptr;
@@ -3823,7 +3830,7 @@ FSParser::AssertNode *FSParser::parse_assert() {
 	// like a variable declaration would.
 	Vector<TypeTestNode *> case_bind_tests;
 	collect_condition_case_binds(assert->condition, case_bind_tests);
-	assert->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, current_suite);
+	assert->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, current_suite, case_binds_mark);
 
 	if (match(FSTokenizer::Token::COMMA) && !check(FSTokenizer::Token::PARENTHESIS_CLOSE)) {
 		assert->message = parse_expression(false);
@@ -3932,7 +3939,11 @@ FSParser::IfNode *FSParser::parse_if(const String &p_token) {
 
 	IfNode *n_if = alloc_node<IfNode>();
 
-	n_if->condition = parse_expression(false);
+	int case_binds_mark = pending_case_binds.size();
+	{
+		RecursionDepthGuard case_bind_condition_guard(case_bind_condition_depth);
+		n_if->condition = parse_expression(false);
+	}
 	if (n_if->condition == nullptr) {
 		push_error(vformat(R"(Expected conditional expression after "%s".)", p_token));
 	}
@@ -3943,7 +3954,7 @@ FSParser::IfNode *FSParser::parse_if(const String &p_token) {
 	consume(FSTokenizer::Token::COLON, vformat(R"(Expected ":" after "%s" condition.)", p_token));
 
 	SuiteNode *true_suite = alloc_node<SuiteNode>();
-	n_if->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, true_suite);
+	n_if->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, true_suite, case_binds_mark);
 	n_if->true_block = parse_suite(vformat(R"("%s" block)", p_token), true_suite);
 	n_if->true_block->parent_if = n_if;
 
@@ -4498,7 +4509,11 @@ FSParser::IdentifierNode *FSParser::PatternNode::get_bind(const StringName &p_na
 FSParser::WhileNode *FSParser::parse_while() {
 	WhileNode *n_while = alloc_node<WhileNode>();
 
-	n_while->condition = parse_expression(false);
+	int case_binds_mark = pending_case_binds.size();
+	{
+		RecursionDepthGuard case_bind_condition_guard(case_bind_condition_depth);
+		n_while->condition = parse_expression(false);
+	}
 	if (n_while->condition == nullptr) {
 		push_error(R"(Expected conditional expression after "while".)");
 	}
@@ -4518,7 +4533,7 @@ FSParser::WhileNode *FSParser::parse_while() {
 
 	SuiteNode *suite = alloc_node<SuiteNode>();
 	suite->is_in_loop = true;
-	n_while->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, suite);
+	n_while->condition_has_case_binds = declare_condition_case_binds(case_bind_tests, suite, case_binds_mark);
 	n_while->loop = parse_suite(R"("while" block)", suite);
 	complete_extents(n_while);
 
@@ -5695,6 +5710,13 @@ FSParser::ExpressionNode *FSParser::parse_lambda(ExpressionNode *p_previous_oper
 	SuiteNode *previous_suite = current_suite;
 	current_suite = body;
 
+	// A lambda's parameters and body are their own scope, parsed independently of any condition
+	// that happens to contain this lambda expression: a case-bind test written inside them is not
+	// an `and`-conjunct of that outer condition and has no matching declare_condition_case_binds()
+	// call to clean it up. Suppress transient case-bind declaration for the whole lambda.
+	int previous_case_bind_condition_depth = case_bind_condition_depth;
+	case_bind_condition_depth = 0;
+
 	parse_function_signature(function, body, "lambda", -1);
 
 	current_suite = previous_suite;
@@ -5713,6 +5735,8 @@ FSParser::ExpressionNode *FSParser::parse_lambda(ExpressionNode *p_previous_oper
 	function->body = parse_suite("lambda declaration", body, true);
 	complete_extents(function);
 	complete_extents(lambda);
+
+	case_bind_condition_depth = previous_case_bind_condition_depth;
 
 	pop_multiline();
 
@@ -5820,12 +5844,32 @@ void FSParser::parse_type_test_case_binds(TypeTestNode *p_type_test) {
 			push_error(vformat(R"(Bind name "%s" was already used in this case test.)", bind->name), bind);
 		} else {
 			seen_names.insert(bind->name);
+			declare_transient_case_bind(bind);
 		}
 		p_type_test->case_binds.push_back(bind);
 	} while (match(FSTokenizer::Token::COMMA));
 
 	pop_multiline();
 	consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected ")" after case payload binds.)*");
+}
+
+void FSParser::declare_transient_case_bind(IdentifierNode *p_bind) {
+	if (current_suite == nullptr || case_bind_condition_depth == 0) {
+		// A case-bind test parsed outside any suite (e.g. a class-level member initializer), or
+		// outside the condition of an if/elif/while/assert (e.g. an ordinary expression statement),
+		// has no matching declare_condition_case_binds() call downstream to remove a transient local.
+		// Leave it undeclared; the analyzer still rejects it via TypeTestNode::binds_allowed.
+		return;
+	}
+	if (current_suite->has_local(p_bind->name)) {
+		const SuiteNode::Local &existing = current_suite->get_local(p_bind->name);
+		push_error(vformat(R"(There's already a %s named "%s" in this scope.)", existing.get_name(), p_bind->name), p_bind);
+		return;
+	}
+	SuiteNode::Local local(p_bind, current_function);
+	local.type = SuiteNode::Local::CASE_BIND;
+	current_suite->add_local(local);
+	pending_case_binds.push_back(p_bind);
 }
 
 void FSParser::collect_condition_case_binds(ExpressionNode *p_condition, Vector<TypeTestNode *> &r_type_tests) {
@@ -5853,24 +5897,56 @@ void FSParser::collect_condition_case_binds(ExpressionNode *p_condition, Vector<
 	}
 }
 
-bool FSParser::declare_condition_case_binds(const Vector<TypeTestNode *> &p_type_tests, SuiteNode *p_suite) {
-	bool declared_any = false;
-	for (TypeTestNode *type_test : p_type_tests) {
-		for (IdentifierNode *bind : type_test->case_binds) {
-			if (bind == nullptr) {
-				continue;
+bool FSParser::declare_condition_case_binds(const Vector<TypeTestNode *> &p_type_tests, SuiteNode *p_suite, int p_pending_mark) {
+	// Every bind parsed since p_pending_mark was declared into current_suite as a transient local so
+	// that later `and`-conjuncts of this same condition could already reference it (see
+	// declare_transient_case_bind()). Now that the whole condition has been parsed, drop those
+	// transient entries...
+	HashSet<StringName> transient_names;
+	for (int i = p_pending_mark; i < pending_case_binds.size(); i++) {
+		transient_names.insert(pending_case_binds[i]->name);
+	}
+	if (!transient_names.is_empty()) {
+		Vector<SuiteNode::Local> kept_locals;
+		kept_locals.reserve(current_suite->locals.size());
+		for (const SuiteNode::Local &local : current_suite->locals) {
+			if (!transient_names.has(local.name)) {
+				kept_locals.push_back(local);
 			}
-			if (p_suite->has_local(bind->name) || current_suite->has_local(bind->name)) {
-				const SuiteNode *owner = p_suite->has_local(bind->name) ? p_suite : current_suite;
-				push_error(vformat(R"(There's already a %s named "%s" in this scope.)", owner->get_local(bind->name).get_name(), bind->name), bind);
-				continue;
-			}
-			SuiteNode::Local local(bind, current_function);
-			local.type = SuiteNode::Local::CASE_BIND;
-			p_suite->add_local(local);
-			declared_any = true;
+		}
+		current_suite->locals = kept_locals;
+		current_suite->locals_indices.clear();
+		for (int i = 0; i < current_suite->locals.size(); i++) {
+			current_suite->locals_indices[current_suite->locals[i].name] = i;
 		}
 	}
+
+	// ...and relocate the ones that ended up in a legal bind position (i.e. collected into
+	// p_type_tests, directly or as an `and`-conjunct) into the guarded suite. Binds that never made
+	// it past declare_transient_case_bind() (name conflicts) and binds in an illegal position (not
+	// present in p_type_tests) are left undeclared, exactly as if they had never been written.
+	HashSet<IdentifierNode *> legal_binds;
+	for (TypeTestNode *type_test : p_type_tests) {
+		for (IdentifierNode *bind : type_test->case_binds) {
+			if (bind != nullptr) {
+				legal_binds.insert(bind);
+			}
+		}
+	}
+
+	bool declared_any = false;
+	for (int i = p_pending_mark; i < pending_case_binds.size(); i++) {
+		IdentifierNode *bind = pending_case_binds[i];
+		if (!legal_binds.has(bind)) {
+			continue;
+		}
+		SuiteNode::Local local(bind, current_function);
+		local.type = SuiteNode::Local::CASE_BIND;
+		p_suite->add_local(local);
+		declared_any = true;
+	}
+
+	pending_case_binds.resize(p_pending_mark);
 	return declared_any;
 }
 
