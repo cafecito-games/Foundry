@@ -755,6 +755,7 @@ void FSPrinter::emit_trailing_comment(int p_line) {
 	write("  ");
 	write(normalize_comment_text(found->value.comment));
 	newline();
+	emitted_inline_comments.insert(p_line);
 	if (p_line > last_emitted_line) {
 		last_emitted_line = p_line;
 	}
@@ -792,6 +793,7 @@ void FSPrinter::append_inline_comment(int p_line) {
 	}
 	write("  ");
 	write(normalize_comment_text(found->value.comment));
+	emitted_inline_comments.insert(p_line);
 	last_emitted_line = p_line;
 }
 
@@ -1506,18 +1508,16 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		// add a statement the author never wrote.
 		newline();
 		// There is no body whose tail flush would otherwise pick up the declaration's
-		// inline comments, so attach them here. Only the signature's first and last
-		// source lines are this declaration's own: anything between them belongs to a
-		// default value, which keeps its own multi-line layout and has already emitted
-		// (and consumed) the comments on its lines.
+		// inline comments, and a signature spread over several source lines collapses
+		// onto one, so every comment it carried has to land on that one line. A default
+		// value that keeps its own multi-line layout has already written the comments on
+		// its lines in place; skip exactly those rather than reasoning from the cursor,
+		// which such a value advances over lines it never consumed.
 		const int signature_cursor = last_emitted_line;
-		// A multi-line default advances the cursor past the `func` line without ever
-		// consuming that line's comment, so rewind before flushing it -- the same reset
-		// the bodied path performs below.
-		last_emitted_line = p_function->start_line;
-		emit_trailing_comment(p_function->start_line);
-		if (p_function->end_line > p_function->start_line && p_function->end_line > signature_cursor) {
-			emit_trailing_comment(p_function->end_line);
+		for (int line = p_function->start_line; line <= p_function->end_line; line++) {
+			if (!emitted_inline_comments.has(line)) {
+				emit_trailing_comment(line);
+			}
 		}
 		last_emitted_line = MAX(last_emitted_line, signature_cursor);
 		return;

@@ -37,6 +37,7 @@
 
 #include "core/string/ustring.h"
 #include "core/templates/hash_map.h"
+#include "core/templates/hash_set.h"
 
 #ifdef TESTS_ENABLED
 #include <stdio.h>
@@ -123,6 +124,10 @@ private:
 	String output;
 	int indent_level = 0;
 	int last_emitted_line = 0; // For comment / blank-line bookkeeping (Task 2).
+	// Source lines whose inline comment has already been written out. The cursor
+	// alone cannot answer this: emitting a construct that keeps its own multi-line
+	// layout advances the cursor over lines whose comments it never consumed.
+	HashSet<int> emitted_inline_comments;
 
 	// Buffer helpers.
 	void write_indent();

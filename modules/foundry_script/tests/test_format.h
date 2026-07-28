@@ -818,6 +818,15 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK_EQ(format_or_fail(source), expected);
 	}
 
+	// A redundant grouping around a multi-line default is dropped, but its opening
+	// line -- the declaration line -- keeps the comment it already emitted there.
+	TEST_CASE("[Format] Does not duplicate a comment on a grouped bodyless default") {
+		String source = "abstract class C:\n\tabstract func ping(value = ([  # head\n\t\t\t1,\n\t\t])) -> int\n";
+		String expected = "abstract class C:\n\tabstract func ping(value = [  # head\n\t\t1,\n\t]) -> int\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
 	// A statement-free lambda suite that still holds trivia is not bodyless: the
 	// standalone annotation is recovered by line, so it needs the block form's line
 	// to be emitted on rather than being collapsed away with the body.
