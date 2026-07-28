@@ -1146,7 +1146,16 @@ void FSPrinter::print_class_header(const FSParser::ClassNode *p_class, bool p_is
 	}
 
 	bool modifier_consumed = false;
-	if (p_class->identifier != nullptr) {
+	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
+		// A whole-file `enum_name` declaration: print the canonical `enum_name X:`
+		// head and its full body, not the `class_name` head this class node's
+		// `identifier` (aliased to the enum's own identifier) would otherwise imply.
+		print_enum(p_class->enum_file_decl, "enum_name");
+	} else if (p_class->is_tuple_file && p_class->tuple_file_decl != nullptr) {
+		// A whole-file `tuple_name` declaration: same rationale as `enum_name` above.
+		print_tuple(p_class->tuple_file_decl, "tuple_name");
+		emit_trailing_comment(p_class->tuple_file_decl->end_line);
+	} else if (p_class->identifier != nullptr) {
 		write(modifier);
 		modifier_consumed = true;
 		write(p_class->trait_name_used ? "trait_name " : "class_name ");
@@ -1628,9 +1637,9 @@ void FSPrinter::print_signal(const FSParser::SignalNode *p_signal) {
 	newline();
 }
 
-void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
+void FSPrinter::print_enum(const FSParser::EnumNode *p_enum, const String &p_keyword) {
 	write_indent();
-	write("enum");
+	write(p_keyword);
 	if (p_enum->identifier != nullptr) {
 		write(" ");
 		write(p_enum->identifier->name);
@@ -1737,9 +1746,10 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum) {
 	}
 }
 
-void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple) {
+void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple, const String &p_keyword) {
 	write_indent();
-	write("tuple ");
+	write(p_keyword);
+	write(" ");
 	if (p_tuple->identifier != nullptr) {
 		write(p_tuple->identifier->name);
 	}

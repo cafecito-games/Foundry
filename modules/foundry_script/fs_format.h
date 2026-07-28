@@ -205,8 +205,12 @@ private:
 	void print_variable_destructure(const FSParser::VariableDestructureNode *p_destructure);
 	void write_destructure_bindings(const FSParser::VariableDestructureNode *p_destructure);
 	void print_signal(const FSParser::SignalNode *p_signal);
-	void print_enum(const FSParser::EnumNode *p_enum);
-	void print_tuple(const FSParser::TupleNode *p_tuple);
+	// `p_keyword` is the leading token: "enum" for a nested member declaration,
+	// "enum_name" for a file's whole-file type-only head declaration.
+	void print_enum(const FSParser::EnumNode *p_enum, const String &p_keyword = "enum");
+	// `p_keyword` is the leading token: "tuple" for a nested member declaration,
+	// "tuple_name" for a file's whole-file type-only head declaration.
+	void print_tuple(const FSParser::TupleNode *p_tuple, const String &p_keyword = "tuple");
 	// Emits each annotation on its own line, keeping a comment on an annotation line
 	// (inline) and a full-line comment between annotations or between the last
 	// annotation and the annotated node (when `p_target_line` is the node's line).
