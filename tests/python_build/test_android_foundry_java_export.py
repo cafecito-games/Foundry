@@ -3355,6 +3355,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         lock_output_directory: bool = False,
         sfx_prefix: bytes = b"",
         corrupt_entry_payload: str | None = None,
+        embedded_nul_entry: str | None = None,
         uncompressed_sizes: tuple[int, ...] | None = None,
         entry_payload_sizes: tuple[int, ...] | None = None,
         build_stdout_fragments: tuple[str, ...] = (),
@@ -3447,6 +3448,29 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                             compression=zipfile.ZIP_DEFLATED if entry_payload_sizes is not None else zipfile.ZIP_STORED,
                         ) as archive:
                             write_entries(archive)
+                    embedded_nul_entry = {embedded_nul_entry!r}
+                    if embedded_nul_entry is not None:
+                        with zipfile.ZipFile(destination) as archive:
+                            entry_info = archive.getinfo(embedded_nul_entry)
+                        marker_index = embedded_nul_entry.index("!")
+                        encoded_name = embedded_nul_entry.encode("utf-8")
+                        contents = bytearray(destination.read_bytes())
+                        local_entry = entry_info.header_offset
+                        local_filename_size = int.from_bytes(
+                            contents[local_entry + 26 : local_entry + 28],
+                            "little",
+                        )
+                        local_filename = local_entry + 30
+                        if contents[local_filename : local_filename + local_filename_size] != encoded_name:
+                            raise RuntimeError("fake Gradle output local filename does not match NUL fixture")
+                        eocd = contents.rfind(b"PK\\x05\\x06")
+                        central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                        central_filename = contents.find(encoded_name, central_offset, eocd)
+                        if central_filename < 0:
+                            raise RuntimeError("fake Gradle output central filename does not match NUL fixture")
+                        contents[local_filename + marker_index] = 0
+                        contents[central_filename + marker_index] = 0
+                        destination.write_bytes(contents)
                     if {lock_output_directory!r}:
                         destination.parent.chmod(0o500)
                     if {streaming_data_descriptor!r}:
@@ -3842,6 +3866,67 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         self.assertIn(diagnostic, output)
                         self.assertFalse((project / output_name).exists())
                         self.assertEqual(b"preserve unrelated output\n", unrelated_sentinel.read_bytes())
+
+    def test_command_first_export_rejects_embedded_nul_final_artifact_names(self) -> None:
+        for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):
+            with self.subTest(extension=extension):
+                with tempfile.TemporaryDirectory(
+                    prefix=f"foundry-java-final-nul-{extension}.",
+                    dir=test_scratch_directory(),
+                ) as directory:
+                    project = Path(directory)
+                    project.joinpath("project.foundry").write_text(
+                        textwrap.dedent(
+                            """\
+                            [application]
+                            config/name="Foundry Java Final Artifact NUL"
+
+                            [rendering]
+                            textures/vram_compression/import_etc2_astc=true
+                            """
+                        ),
+                        encoding="utf-8",
+                    )
+                    plugin = project / "plugin.jar"
+                    module = project / "module.jar"
+                    with zipfile.ZipFile(plugin, "w") as archive:
+                        archive.writestr(
+                            "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                            "implementation-class=test.Fixture\n",
+                        )
+                    with zipfile.ZipFile(module, "w"):
+                        pass
+                    malformed_configuration = f"{root}assets/FoundryJava.foundryextension!suffix"
+                    gradle_root = self._write_fake_gradle_wrapper(
+                        project,
+                        (
+                            malformed_configuration,
+                            f"{root}assets/foundry_java/registry-index-v2.txt",
+                            f"{root}lib/arm64-v8a/libfoundry_java.so",
+                        ),
+                        embedded_nul_entry=malformed_configuration,
+                    )
+                    self._write_export_preset(
+                        project,
+                        plugin_local=plugin,
+                        local_artifacts=(module,),
+                        use_gradle=True,
+                        extra_options=(
+                            f'gradle_build/gradle_build_directory="{gradle_root}"',
+                            f"gradle_build/export_format={export_format}",
+                            "package/signed=false",
+                            "architectures/armeabi-v7a=false",
+                            "architectures/arm64-v8a=true",
+                            "architectures/x86=false",
+                            "architectures/x86_64=false",
+                        ),
+                    )
+                    output_name = f"embedded-nul.{extension}"
+                    result = self._run_export(project, output_name)
+                    output = result.stdout + result.stderr
+                    self.assertNotEqual(0, result.returncode, output)
+                    self.assertIn("archive entry name contains an embedded NUL byte", output)
+                    self.assertFalse((project / output_name).exists())
 
     def test_command_first_export_rejects_corrupt_required_final_artifact_payloads(self) -> None:
         for extension, export_format, root in (("apk", 0, ""), ("aab", 1, "base/")):

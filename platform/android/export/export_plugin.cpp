@@ -3055,9 +3055,24 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 			return ERR_FILE_CORRUPT;
 		}
 		total_entry_name_bytes += info.size_filename;
+		Vector<char> filename;
+		filename.resize(info.size_filename + 1);
+		if (unzGetCurrentFileInfo64(artifact, &info, filename.ptrw(), filename.size(), nullptr, 0, nullptr, 0) != UNZ_OK) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name could not be read."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		filename.write[info.size_filename] = '\0';
+		for (uint64_t i = 0; i < info.size_filename; i++) {
+			if (filename[i] == '\0') {
+				r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name contains an embedded NUL byte."), artifact_kind);
+				unzClose(artifact);
+				return ERR_FILE_CORRUPT;
+			}
+		}
 		String entry;
-		if (foundry_unzip_get_current_file_info(artifact, info, entry) != UNZ_OK) {
-			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry metadata could not be read."), artifact_kind);
+		if (entry.append_utf8(filename.ptr(), info.size_filename) != OK) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name is not valid UTF-8."), artifact_kind);
 			unzClose(artifact);
 			return ERR_FILE_CORRUPT;
 		}
