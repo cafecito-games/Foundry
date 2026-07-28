@@ -305,6 +305,14 @@ static int unary_operator_precedence(FSParser::UnaryOpNode::OpType p_operation) 
 	return FPREC_PRIMARY;
 }
 
+// A lambda whose `:` is followed by nothing. That is never valid FoundryScript --
+// the analyzer rejects it -- but it parses, so the formatter still has to emit it
+// without inventing a body for it.
+static bool is_bodyless_lambda(const FSParser::LambdaNode *p_lambda) {
+	const FSParser::FunctionNode *function = p_lambda->function;
+	return function != nullptr && (function->body == nullptr || function->body->statements.is_empty());
+}
+
 // Precedence of an expression node as seen by its parent. Atoms (literals,
 // identifiers, calls, subscripts, collections, ...) never need wrapping, so they
 // report the maximum precedence.
@@ -325,6 +333,11 @@ static int expression_precedence(const FSParser::ExpressionNode *p_expression) {
 		case FSParser::Node::AWAIT:
 			return FPREC_AWAIT;
 		case FSParser::Node::LAMBDA:
+			// A bodyless lambda prints its own parentheses (see `print_lambda`), so it
+			// is already self-delimiting and never needs another layer.
+			if (is_bodyless_lambda(static_cast<const FSParser::LambdaNode *>(p_expression))) {
+				return FPREC_PRIMARY;
+			}
 			// A lambda body greedily extends to the end of the line, so anything
 			// that follows it (a postfix `.method()`, an operator) must be inside
 			// parentheses. Rank it lowest so every operand context wraps it.
@@ -1470,11 +1483,12 @@ void FSPrinter::print_function(const FSParser::FunctionNode *p_function) {
 		write(" -> ");
 		print_type(p_function->return_type);
 	}
-	if (p_function->is_abstract && (p_function->body == nullptr || p_function->body->statements.is_empty())) {
-		// A well-formed abstract method declares a signature only (its body is empty);
-		// a trailing `:` is a parse error, so emit the bare declaration line. (An
-		// abstract method that still carries real statements is an error fixture; fall
-		// through so its body is preserved and the parsed tree is unchanged.)
+	if (!p_function->has_body) {
+		// The declaration ended without a `:`. That is the well-formed shape of an
+		// abstract method, and a malformed-but-parseable one for any other function
+		// (the analyzer rejects it). Either way, emit the bare declaration line:
+		// appending `:` would be a parse error, and synthesizing a `pass` body would
+		// add a statement the author never wrote.
 		newline();
 		return;
 	}
@@ -2685,6 +2699,13 @@ void FSPrinter::print_dictionary(const FSParser::DictionaryNode *p_dictionary) {
 
 void FSPrinter::print_lambda(const FSParser::LambdaNode *p_lambda) {
 	const FSParser::FunctionNode *function = p_lambda->function;
+	// A bodyless lambda's `:` would otherwise swallow whatever the formatter emits
+	// next as its body, so wrap it in parentheses that close the construct on the
+	// same line. The parser discards the parentheses, leaving the tree unchanged.
+	const bool bodyless = is_bodyless_lambda(p_lambda);
+	if (bodyless) {
+		write("(");
+	}
 	write("func");
 	if (function->identifier != nullptr) {
 		write(" ");
@@ -2710,6 +2731,10 @@ void FSPrinter::print_lambda(const FSParser::LambdaNode *p_lambda) {
 		print_type(function->return_type);
 	}
 	write(":");
+	if (bodyless) {
+		write(")");
+		return;
+	}
 
 	// A lambda the author wrote on a single line keeps its inline body
 	// (`func(): return x`). Emitting it as a multi-line block would corrupt any

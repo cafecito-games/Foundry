@@ -160,21 +160,6 @@ static Vector<String> collect_gd_scripts(const String &p_dir) {
 	return files;
 }
 
-// A few error fixtures are narrow-skipped from the idempotency and tree-
-// preservation sweeps. They all declare a bodyless function that is *not* marked
-// `abstract`, which is invalid FoundryScript -- the analyzer rejects it. Such a
-// function still parses, so formatting reaches it and necessarily synthesizes a
-// `pass` body, which both adds a statement to the tree and destabilizes
-// blank-line accounting. (`analyzer/errors/abstract_methods.fs` does this with
-// bodyless lambdas, which parse only because surrounding parentheses -- discarded
-// by the parser, leaving no paren node -- keep the malformed construct readable.)
-// The construct is not valid code any formatter is expected to round-trip, so it
-// is excluded by path. Every other corpus script is swept unconditionally.
-static bool is_narrow_skipped_fixture(const String &p_path) {
-	return p_path.ends_with("analyzer/errors/abstract_methods.fs") ||
-			p_path.ends_with("analyzer/errors/trait_body_declaration_error_base.notest.fs");
-}
-
 // Parses `p_source` with no analysis pass (the raw syntactic tree). Returns true
 // and the parser by reference only when parsing produced no errors.
 static bool parse_no_errors(FSParser &p_parser, const String &p_source, const String &p_path) {
@@ -765,6 +750,50 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK(result.error_line > 0);
 	}
 
+	// A bodyless `func` parses but is only valid when marked `abstract`; the analyzer
+	// is what rejects the unmarked form. The formatter must not "repair" it by
+	// synthesizing a `pass` body -- that would add a statement to the parse tree and
+	// silently turn invalid code into a different, valid program. It emits the
+	// declaration verbatim instead, so the construct round-trips unchanged.
+	TEST_CASE("[Format] Preserves a bodyless non-abstract function") {
+		String source = "func ping() -> int\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Preserves a bodyless non-abstract method") {
+		String source = "class C:\n\tfunc ping() -> int\n\n\tfunc pong():\n\t\tpass\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Preserves a bodyless abstract method") {
+		String source = "abstract class C:\n\tabstract func ping() -> int\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	// The same rule applies to a lambda whose `:` is not followed by a body: emit the
+	// bare `func():` rather than an indented `pass` block, which would both change the
+	// tree and corrupt the enclosing expression. The trailing `:` would swallow the
+	// next line, so the construct closes itself with parentheses.
+	TEST_CASE("[Format] Parenthesizes a bodyless lambda instead of giving it a body") {
+		String source = "func f():\n\tvar callback = (func():)\n";
+		CHECK_EQ(format_or_fail(source), source);
+	}
+
+	TEST_CASE("[Format] Parenthesizes a bodyless lambda default argument") {
+		String source = "func f(callback = func():):\n\tpass\n";
+		String expected = "func f(callback = (func():)):\n\tpass\n";
+		CHECK_EQ(format_or_fail(source), expected);
+		CHECK_EQ(format_or_fail(expected), expected);
+	}
+
+	// Without the parentheses the `1` below would re-parse as the lambda's body.
+	TEST_CASE("[Format] Bodyless lambda stays self-delimiting inside a wrapped collection") {
+		String source = "func f():\n\tvar items = [(func():), 1]\n";
+		String formatted = format_or_fail(source);
+		CHECK(formatted.contains("(func():)"));
+		CHECK(trees_equivalent(source, formatted, "bodyless_lambda.fs"));
+	}
+
 	TEST_CASE("[Format] Preserves string contents and normalizes to double quotes") {
 		// Quote normalization itself lands in Task 3; here we assert the
 		// literal text round-trips via the token index rather than the Variant.
@@ -1232,9 +1261,6 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
 		for (const String &script : collect_gd_scripts(fixture_root)) {
-			if (is_narrow_skipped_fixture(script)) {
-				continue;
-			}
 			Error read_error = OK;
 			const String source = FileAccess::get_file_as_string(script, &read_error);
 			if (read_error != OK) {
@@ -1292,9 +1318,6 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
 		for (const String &script : collect_gd_scripts(fixture_root)) {
-			if (is_narrow_skipped_fixture(script)) {
-				continue;
-			}
 			Error read_error = OK;
 			const String source = FileAccess::get_file_as_string(script, &read_error);
 			if (read_error != OK) {
@@ -1320,9 +1343,6 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
 		for (const String &script : collect_gd_scripts(fixture_root)) {
-			if (is_narrow_skipped_fixture(script)) {
-				continue;
-			}
 			Error read_error = OK;
 			const String source = FileAccess::get_file_as_string(script, &read_error);
 			if (read_error != OK) {
@@ -1350,9 +1370,6 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		const String fixture_root = "modules/foundry_script/tests/scripts";
 		int checked = 0;
 		for (const String &script : collect_gd_scripts(fixture_root)) {
-			if (is_narrow_skipped_fixture(script)) {
-				continue;
-			}
 			Error read_error = OK;
 			const String source = FileAccess::get_file_as_string(script, &read_error);
 			if (read_error != OK) {

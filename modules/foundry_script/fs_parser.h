@@ -1319,6 +1319,11 @@ public:
 		ParameterNode *rest_parameter = nullptr;
 		TypeNode *return_type = nullptr;
 		SuiteNode *body = nullptr;
+		// False when the declaration ended without a ":" and a body. Only valid for an
+		// `abstract` function -- the analyzer rejects any other bodyless function -- but
+		// the form parses either way, so tooling that must reproduce the source (the
+		// formatter) needs to tell it apart from a function whose body is merely empty.
+		bool has_body = true;
 		bool is_abstract = false;
 		bool is_final = false;
 		bool is_noreturn = false;
