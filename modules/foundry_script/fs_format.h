@@ -198,7 +198,11 @@ private:
 	void print_extends_clause(const FSParser::ClassNode *p_class);
 	void print_trait_use(const FSParser::ClassNode::TraitUse &p_use);
 	void print_class_body(const FSParser::ClassNode *p_class, bool p_is_root);
-	void print_member(const FSParser::ClassNode::Member &p_member);
+	// `p_owns_trailing_comment` mirrors the same-named parameter on `print_enum`/
+	// `print_tuple`: true when the caller (`print_class_body`) has already
+	// determined this member self-flushes its own closing-line comment, so this
+	// call must forward that instead of leaving it to be flushed twice.
+	void print_member(const FSParser::ClassNode::Member &p_member, bool p_owns_trailing_comment = false);
 	void print_function(const FSParser::FunctionNode *p_function);
 	void print_variable(const FSParser::VariableNode *p_variable);
 	void print_constant(const FSParser::ConstantNode *p_constant);
@@ -206,17 +210,19 @@ private:
 	void write_destructure_bindings(const FSParser::VariableDestructureNode *p_destructure);
 	void print_signal(const FSParser::SignalNode *p_signal);
 	// `p_keyword` is the leading token: "enum" for a nested member declaration,
-	// "enum_name" for a file's whole-file type-only head declaration. A nested
-	// member's trailing comment (on an empty `pass` body) is left for the caller
-	// in `print_class_body` to flush; a whole-file `enum_name` has no such
-	// caller, so `p_owns_trailing_comment` tells this call to flush it itself.
+	// "enum_name" for a file's whole-file type-only head declaration. A
+	// single-line nested member's trailing comment is left for the caller in
+	// `print_class_body` to flush; a multiline nested member (an empty `pass`
+	// body) and a whole-file `enum_name` (which has no such caller) both pass
+	// `p_owns_trailing_comment` so this call flushes it itself.
 	void print_enum(const FSParser::EnumNode *p_enum, const String &p_keyword = "enum", bool p_owns_trailing_comment = false);
 	// `p_keyword` is the leading token: "tuple" for a nested member declaration,
-	// "tuple_name" for a file's whole-file type-only head declaration. A nested
-	// member's trailing comment is left for the caller in `print_class_body` to
-	// flush; a whole-file `tuple_name` has no such caller, so
-	// `p_owns_trailing_comment` tells this call to flush it itself (skipping the
-	// closing delimiter's line when a field on that same line already claimed it).
+	// "tuple_name" for a file's whole-file type-only head declaration. A
+	// single-line nested member's trailing comment is left for the caller in
+	// `print_class_body` to flush; a multiline nested member and a whole-file
+	// `tuple_name` (which has no such caller) both pass `p_owns_trailing_comment`
+	// so this call flushes it itself (skipping the closing delimiter's line when
+	// a field on that same line already claimed it).
 	void print_tuple(const FSParser::TupleNode *p_tuple, const String &p_keyword = "tuple", bool p_owns_trailing_comment = false);
 	// Emits each annotation on its own line, keeping a comment on an annotation line
 	// (inline) and a full-line comment between annotations or between the last

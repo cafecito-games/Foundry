@@ -507,6 +507,15 @@ public:
 		// compiler can emit the class object directly. The registered name is dotted
 		// (`ns.Foo`), which a bare-identifier lookup cannot match. Empty otherwise.
 		StringName resolved_global_class;
+		// Source line of a redundant parenthesized grouping's opening delimiter
+		// (`(`) this expression was the sole content of, e.g. `(  # note\n  1 + 2\n)`.
+		// The grouping carries no semantic effect and has no dedicated AST node --
+		// `parse_grouping` returns this expression directly -- so an inline comment
+		// trailing that opening delimiter has nowhere else to attach; the formatter
+		// reattaches it here once it finishes printing this expression's own
+		// (collapsed) text. 0 when this expression was not the direct content of a
+		// dropped grouping.
+		int grouping_comment_line = 0;
 
 		virtual bool is_expression() const override { return true; }
 		virtual ~ExpressionNode() {}

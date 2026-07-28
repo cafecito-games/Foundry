@@ -5218,9 +5218,18 @@ FSParser::ExpressionNode *FSParser::parse_grouping(ExpressionNode *p_previous_op
 	}
 
 	if (!check(FSTokenizer::Token::COMMA)) {
-		// Ordinary expression grouping: `(a)` evaluates to `a` itself.
+		// Ordinary expression grouping: `(a)` evaluates to `a` itself. The grouping
+		// carries no semantic effect, so it gets no AST node of its own; but an
+		// inline comment trailing the opening delimiter (`(  # note`) would
+		// otherwise have nowhere left to attach once that delimiter is gone, so
+		// stash its line on the surviving expression for the formatter to recover.
+		// An already-set line (a nested grouping around this same expression)
+		// takes precedence, since it sits closer to the actual content.
 		pop_multiline();
 		consume(FSTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after grouping expression.)*");
+		if (first_element->grouping_comment_line == 0) {
+			first_element->grouping_comment_line = open_paren.start_line;
+		}
 		return first_element;
 	}
 

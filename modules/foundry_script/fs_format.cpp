@@ -1238,24 +1238,33 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 			emit_leading_trivia(start_line, required_blanks);
 		}
 
-		print_member(member);
+		// A member that emits a suite internally (a function/class body, or a
+		// variable with an inline `get:`/`set:` property block) already attaches
+		// any inline comment on its last body line; emitting one here too would
+		// duplicate it. A multiline enum/tuple member is the same shape: it owns
+		// its own closing line (a `pass` body or a delimited field list) and
+		// already attaches that line's comment internally, so it must self-flush
+		// too rather than have this wrapper flush it a second time (or, since by
+		// then indentation has already been unwound, at the wrong depth). Every
+		// other member (and a single-line one, e.g. a bodyless abstract method)
+		// can carry an inline comment on its closing line here.
+		bool has_own_body_flush = false;
+		if (node != nullptr && node->start_line != node->end_line) {
+			if (member.type == FSParser::ClassNode::Member::FUNCTION ||
+					member.type == FSParser::ClassNode::Member::CLASS ||
+					member.type == FSParser::ClassNode::Member::ENUM ||
+					member.type == FSParser::ClassNode::Member::ENUM_VALUE ||
+					member.type == FSParser::ClassNode::Member::TUPLE) {
+				has_own_body_flush = true;
+			} else if (member.type == FSParser::ClassNode::Member::VARIABLE &&
+					member.variable->property == FSParser::VariableNode::PROP_INLINE) {
+				has_own_body_flush = true;
+			}
+		}
+
+		print_member(member, has_own_body_flush);
 
 		if (node != nullptr) {
-			// A member that emits a suite internally (a function/class body, or a
-			// variable with an inline `get:`/`set:` property block) already attaches
-			// any inline comment on its last body line; emitting one here too would
-			// duplicate it. Every other member (and a single-line one, e.g. a bodyless
-			// abstract method) can carry an inline comment on its closing line here.
-			bool has_own_body_flush = false;
-			if (node->start_line != node->end_line) {
-				if (member.type == FSParser::ClassNode::Member::FUNCTION ||
-						member.type == FSParser::ClassNode::Member::CLASS) {
-					has_own_body_flush = true;
-				} else if (member.type == FSParser::ClassNode::Member::VARIABLE &&
-						member.variable->property == FSParser::VariableNode::PROP_INLINE) {
-					has_own_body_flush = true;
-				}
-			}
 			if (!has_own_body_flush) {
 				emit_trailing_comment(node->end_line);
 			}
@@ -1273,7 +1282,7 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 	}
 }
 
-void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member) {
+void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member, bool p_owns_trailing_comment) {
 	switch (p_member.type) {
 		case FSParser::ClassNode::Member::CLASS:
 			print_annotations(p_member.m_class->annotations, p_member.m_class->start_line);
@@ -1297,18 +1306,18 @@ void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member) {
 			break;
 		case FSParser::ClassNode::Member::ENUM:
 			print_annotations(p_member.m_enum->annotations, p_member.m_enum->start_line);
-			print_enum(p_member.m_enum);
+			print_enum(p_member.m_enum, "enum", p_owns_trailing_comment);
 			break;
 		case FSParser::ClassNode::Member::ENUM_VALUE:
 			// Unnamed enum values are flattened into the class as individual members.
 			// Reconstruct the whole enum: body once, from the first value.
 			if (p_member.enum_value.index == 0 && p_member.enum_value.parent_enum != nullptr) {
-				print_enum(p_member.enum_value.parent_enum);
+				print_enum(p_member.enum_value.parent_enum, "enum", p_owns_trailing_comment);
 			}
 			break;
 		case FSParser::ClassNode::Member::TUPLE:
 			print_annotations(p_member.m_tuple->annotations, p_member.m_tuple->start_line);
-			print_tuple(p_member.m_tuple);
+			print_tuple(p_member.m_tuple, "tuple", p_owns_trailing_comment);
 			break;
 		case FSParser::ClassNode::Member::GROUP:
 			print_annotations(p_member.annotation->annotations);
@@ -2394,6 +2403,14 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 			break;
 		default:
 			ERR_FAIL_MSG("FSPrinter: unhandled expression node type " + itos(p_expression->type) + ".");
+	}
+	// A redundant grouping this expression was the sole content of is never
+	// re-printed (the parens carried no semantic effect), but an inline comment
+	// that trailed its now-gone opening delimiter still needs somewhere to land;
+	// append it right after this expression's own (collapsed) text. A no-op when
+	// that line has no comment, or it was already consumed.
+	if (p_expression->grouping_comment_line > 0) {
+		append_inline_comment(p_expression->grouping_comment_line);
 	}
 }
 
