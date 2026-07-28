@@ -33,6 +33,7 @@ from tests.python_build.test_android_gradle_behavioral import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 EXPORTER = REPO_ROOT / "platform/android/export/export_plugin.cpp"
+EDITOR_NODE = REPO_ROOT / "editor/editor_node.cpp"
 APP_BUILD = REPO_ROOT / "platform/android/java/app/build.gradle"
 APP_CONFIG = REPO_ROOT / "platform/android/java/app/config.gradle"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
@@ -239,6 +240,21 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
             validator,
         )
         self.assertIn("local_payload_end > p_central_directory_start", validator)
+
+    def test_redacted_execute_output_keeps_the_editor_responsive(self) -> None:
+        editor_node = EDITOR_NODE.read_text(encoding="utf-8")
+        function_start = editor_node.index("int EditorNode::execute_and_show_output(")
+        wait_start = editor_node.index("while (!eta.done.is_set())", function_start)
+        wait_end = editor_node.index("eta.execute_output_thread.wait_to_finish()", wait_start)
+        wait_loop = editor_node[wait_start:wait_end]
+        self.assertIn("bool should_process_events = !p_output_redactions.is_empty();", wait_loop)
+        redaction_guard = wait_loop.index("if (p_output_redactions.is_empty()")
+        redaction_guard_end = wait_loop.index("\n\t\t\t}", redaction_guard)
+        process_events = wait_loop.index("DisplayServer::get_singleton()->process_events()")
+        main_iteration = wait_loop.index("Main::iteration()")
+        self.assertIn("if (should_process_events)", wait_loop)
+        self.assertGreater(process_events, redaction_guard_end)
+        self.assertGreater(main_iteration, redaction_guard_end)
 
 
 class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):

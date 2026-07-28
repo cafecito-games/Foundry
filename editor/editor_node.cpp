@@ -10180,6 +10180,7 @@ int EditorNode::execute_and_show_output(const String &p_title, const String &p_p
 	eta.execute_output_thread.start(_execute_thread, &eta);
 
 	while (!eta.done.is_set()) {
+		bool should_process_events = !p_output_redactions.is_empty();
 		{
 			MutexLock lock(eta.execute_output_mutex);
 			// A redacted value can cross arbitrary process-output chunk boundaries, so sensitive
@@ -10188,9 +10189,12 @@ int EditorNode::execute_and_show_output(const String &p_title, const String &p_p
 				String to_add = eta.output.substr(prev_len);
 				prev_len = eta.output.length();
 				execute_outputs->add_text(to_add);
-				DisplayServer::get_singleton()->process_events(); // Get rid of pending events.
-				Main::iteration();
+				should_process_events = true;
 			}
+		}
+		if (should_process_events) {
+			DisplayServer::get_singleton()->process_events(); // Get rid of pending events.
+			Main::iteration();
 		}
 		OS::get_singleton()->delay_usec(1000);
 	}
