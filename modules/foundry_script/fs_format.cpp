@@ -1801,7 +1801,14 @@ void FSPrinter::print_tuple(const FSParser::TupleNode *p_tuple, const String &p_
 			emit_trailing_comment(p_tuple->end_line);
 		}
 	}
-	newline();
+	// `emit_trailing_comment` above already terminates the line with its own
+	// newline when it finds and emits a comment; only add one here when it did
+	// not, or a comment on a closing delimiter that sits on its own line (not
+	// sharing the last field's) would end up followed by a spurious blank line
+	// that then round-trips as a real one.
+	if (!output.ends_with("\n")) {
+		newline();
+	}
 	last_emitted_line = MAX(last_emitted_line, p_tuple->end_line);
 }
 
