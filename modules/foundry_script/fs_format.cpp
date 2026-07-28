@@ -2381,6 +2381,17 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 	bool wrap_close_line_has_trailing_code = false;
 	for (int i = p_expression->redundant_groupings.size() - 1; i >= 0; i--) {
 		const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[i];
+		// A grouping written entirely on one source line (`(1 + 2)  # tail`) is
+		// indistinguishable, comment-wise, from having no grouping at all: any
+		// comment on that shared line is the whole statement's ordinary trailing
+		// comment, not something specific to this delimiter pair, and the existing
+		// collapse-and-let-the-caller-flush-it path already handles that correctly
+		// (the same way it does for `var x = 1 + 2  # tail`). Only a grouping that
+		// truly spans multiple lines has delimiter lines a comment can
+		// unambiguously belong to.
+		if (span.open_line == span.close_line) {
+			continue;
+		}
 		// A close-line comment is only safe to claim as this grouping's own when
 		// nothing else from the source continues on that line after the `)`; a full-
 		// line comment strictly between the delimiters only counts when nothing has
