@@ -45,15 +45,47 @@ INSTRUMENTATION_METHODS = (
 INSTRUMENTATION_TEST = INSTRUMENTATION_CLASS
 STANDARD_APK = Path("build/outputs/apk/standard/debug/android_debug.apk")
 JUNIT_REPORT_ROOT = Path("build/outputs/androidTest-results/connected")
+# The single list of fatal runtime signatures. It gates the runtime-marker wait,
+# the post-run log review, and the startup wait: observing one of these attributed
+# to the target package while polling for a PID means the process already died, so
+# the wait ends immediately with the real cause instead of burning the whole
+# timeout on an empty probe.
 RUNTIME_FAILURE_PATTERNS = (
     "UnsatisfiedLinkError",
     "NoClassDefFoundError",
     "ClassNotFoundException",
+    "NoSuchMethodError",
+    "NoSuchFieldError",
+    "IncompatibleClassChangeError",
     "FATAL EXCEPTION",
+    "Fatal signal",
     'couldn\'t find "libfoundry_android.so"',
 )
+STARTUP_ABORT_EXCERPT_LINES = 60
+# A fatal signature only ends the startup wait when the log declares the crashing
+# process, and declares it to be the target. These are the two headers Android
+# writes inside a crash block itself: the AndroidRuntime Java header and the
+# native tombstone header. Ordinary lines that merely name the package -- launch
+# records, lifecycle chatter -- are deliberately not owners, so an unrelated
+# process crashing beside them cannot be mistaken for the target aborting.
+STARTUP_ABORT_OWNER_TEMPLATES = (
+    r"Process:\s*{package}(?![\w.$])",
+    r">>>\s*{package}\s*<<<",
+)
+# Android emits the owner header immediately beside the signature: "Process:" is
+# the line after "FATAL EXCEPTION", and the tombstone header follows "Fatal
+# signal" within the same short block.
+STARTUP_ABORT_OWNER_LINES = 8
+# Written into logcat immediately before each launch. Startup failure detection
+# reads only what follows it, so a crash from an earlier launch of the same
+# package can never be attributed to the current one.
+LAUNCH_BOUNDARY_TAG = "FoundryAcceptance"
+LAUNCH_BOUNDARY_MARKER = "FOUNDRY_ACCEPTANCE_LAUNCH_BOUNDARY"
+HOST_CONTRACT_REPORTED_MEMBERS = 12
 STANDARD_SMOKE_READY_MARKER = "Foundry Android standard runtime smoke ready"
 SOURCE_TEMPLATE_TOOL_PATH = Path(__file__).resolve().with_name("android_source_template.py")
+HOST_CONTRACT_TOOL_PATH = Path(__file__).resolve().with_name("android_host_contract.py")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPILED_ASSET_REQUIRED_PATHS = frozenset(
     {
         "project.binary",
@@ -80,6 +112,7 @@ COMPILED_ASSET_REMAP_TARGETS = {
     ),
 }
 _source_template_tool: ModuleType | None = None
+_host_contract_tool: ModuleType | None = None
 
 
 def _remap_target(contents: bytes, name: str) -> str:
@@ -119,12 +152,17 @@ class Runner(Protocol):
 
 
 class SubprocessRunner:
-    """Run commands without a shell and retain one log per invocation."""
+    """Run commands without a shell and retain one log per invocation.
 
-    def __init__(self, evidence_dir: Path) -> None:
+    Passing no evidence directory runs commands without retaining logs, which the
+    device-free inspection commands use.
+    """
+
+    def __init__(self, evidence_dir: Path | None = None) -> None:
         self.evidence_dir = evidence_dir
-        self.command_dir = evidence_dir / "commands"
-        self.command_dir.mkdir(parents=True, exist_ok=True)
+        self.command_dir = evidence_dir / "commands" if evidence_dir is not None else None
+        if self.command_dir is not None:
+            self.command_dir.mkdir(parents=True, exist_ok=True)
         self.command_index = 0
 
     def _write_log(
@@ -132,6 +170,8 @@ class SubprocessRunner:
         description: str,
         result: CommandResult,
     ) -> None:
+        if self.command_dir is None:
+            return
         self.command_index += 1
         slug = re.sub(r"[^a-z0-9]+", "-", description.lower()).strip("-") or "command"
         path = self.command_dir / f"{self.command_index:03d}-{slug}.log"
@@ -284,6 +324,59 @@ def runtime_log_failures(contents: str) -> list[str]:
     return [signature for signature in RUNTIME_FAILURE_PATTERNS if signature in contents]
 
 
+def log_since_launch(contents: str, launch_boundary: str | None) -> str:
+    """Return the captured log written after the current launch was stamped.
+
+    Falls back to the whole capture when the stamp is absent, so a device that
+    rejects the marker keeps the previous, more permissive behavior.
+    """
+    if not launch_boundary:
+        return contents
+    marker = contents.rfind(launch_boundary)
+    if marker < 0:
+        return contents
+    newline = contents.find("\n", marker)
+    return "" if newline < 0 else contents[newline + 1 :]
+
+
+def _crash_owner_patterns(application_id: str) -> tuple[re.Pattern[str], ...]:
+    # The package name needs a boundary, or a sibling that merely extends the ID --
+    # the ".instrumented" flavor, for instance -- would claim the crash.
+    package = rf"(?<![\w.$]){re.escape(application_id)}"
+    return tuple(re.compile(template.format(package=package)) for template in STARTUP_ABORT_OWNER_TEMPLATES)
+
+
+def attributed_runtime_failures(contents: str, application_id: str) -> list[str]:
+    """Return fatal signatures one captured log attributes to a specific package."""
+    lines = contents.splitlines()
+    owners = _crash_owner_patterns(application_id)
+    owned = [index for index, line in enumerate(lines) if any(owner.search(line) for owner in owners)]
+    if not owned:
+        return []
+    attributed: list[str] = []
+    for signature in RUNTIME_FAILURE_PATTERNS:
+        for index, line in enumerate(lines):
+            if signature not in line:
+                continue
+            if any(abs(index - owner) <= STARTUP_ABORT_OWNER_LINES for owner in owned):
+                attributed.append(signature)
+                break
+    return attributed
+
+
+def startup_abort_excerpt(contents: str, signatures: Sequence[str]) -> str:
+    """Return the log window around the first startup abort signature."""
+    lines = contents.splitlines()
+    first = next(
+        (index for index, line in enumerate(lines) if any(signature in line for signature in signatures)),
+        None,
+    )
+    if first is None:
+        return "\n".join(lines[-STARTUP_ABORT_EXCERPT_LINES:])
+    start = max(0, first - STARTUP_ABORT_EXCERPT_LINES // 4)
+    return "\n".join(lines[start : start + STARTUP_ABORT_EXCERPT_LINES])
+
+
 def _load_source_template_tool() -> ModuleType:
     global _source_template_tool
     if _source_template_tool is not None:
@@ -299,6 +392,86 @@ def _load_source_template_tool() -> ModuleType:
     spec.loader.exec_module(module)
     _source_template_tool = module
     return module
+
+
+def _load_host_contract_tool() -> ModuleType:
+    global _host_contract_tool
+    if _host_contract_tool is not None:
+        return _host_contract_tool
+    spec = importlib.util.spec_from_file_location(
+        "_foundry_android_host_contract",
+        HOST_CONTRACT_TOOL_PATH,
+    )
+    if spec is None or spec.loader is None:
+        raise AcceptanceError(f"unable to load host JNI contract: {HOST_CONTRACT_TOOL_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _host_contract_tool = module
+    return module
+
+
+def expected_host_dex_members(repo_root: Path) -> tuple[str, ...]:
+    """Return the dex member listings every native-resolved Java member must produce."""
+    contract = _load_host_contract_tool()
+    try:
+        members = contract.derive_host_members(repo_root)
+    except contract.HostContractError as error:
+        raise AcceptanceError(f"unable to derive the Android host JNI contract: {error}") from error
+
+    listings: list[str] = []
+    for member in members:
+        if member.field:
+            rendered = f"{contract.decode_field_descriptor(member.descriptor)} {member.member_name}"
+        else:
+            return_type, arguments = contract.decode_method_descriptor(member.descriptor)
+            signature = f"{member.member_name}({','.join(arguments)})"
+            # Initializers are listed without a return type.
+            rendered = signature if member.member_name.startswith("<") else f"{return_type} {signature}"
+        listings.append(f"{member.class_name} {rendered}")
+    return tuple(sorted(listings))
+
+
+def parse_dex_members(output: str) -> frozenset[str]:
+    """Return every class member defined by an ``apkanalyzer dex packages`` listing."""
+    members: set[str] = set()
+    for line in output.splitlines():
+        fields = line.split(None, 5)
+        if len(fields) != 6 or fields[0] not in ("M", "F") or fields[1] != "d":
+            continue
+        members.add(" ".join(fields[5].split()))
+    return frozenset(members)
+
+
+def verify_host_contract_in_apk(
+    *,
+    apk: Path,
+    apkanalyzer: Path,
+    runner: Runner,
+    repo_root: Path,
+) -> dict[str, Any]:
+    """Prove a built APK still exposes every Java member the native host resolves."""
+    apk = apk.absolute()
+    if not apk.is_file():
+        raise AcceptanceError(f"Android host contract APK does not exist: {apk}")
+    expected = expected_host_dex_members(repo_root)
+    listing = runner.run(
+        [str(apkanalyzer), "dex", "packages", "--defined-only", str(apk)],
+        cwd=None,
+        timeout=600,
+        description=f"listing defined dex members of {apk.name}",
+    )
+    defined = parse_dex_members(listing.stdout)
+    missing = tuple(member for member in expected if member not in defined)
+    if missing:
+        shown = list(missing[:HOST_CONTRACT_REPORTED_MEMBERS])
+        remainder = len(missing) - len(shown)
+        suffix = f" (and {remainder} more)" if remainder else ""
+        raise AcceptanceError(
+            f"Android APK {apk.name} lost {len(missing)} of {len(expected)} Java member(s) the native host "
+            f"resolves through JNI; minification must keep them: {shown}{suffix}"
+        )
+    return {"apk": str(apk), "member_count": len(expected), "status": "verified"}
 
 
 def _inspect_compiled_assets(compiled_assets: Path) -> tuple[str, ...]:
@@ -737,15 +910,39 @@ def _wait_for_process(
     *,
     timeout: float,
     poll_interval: float,
+    launch_boundary: str | None = None,
 ) -> str:
-    result = _wait_for_probe(
-        lambda: runner.run(
+    def process_probe() -> CommandResult:
+        probe = runner.run(
             _adb(adb, serial, "shell", "pidof", application_id),
             cwd=None,
             timeout=15,
             description=f"reading process ID for {application_id}",
             check=False,
-        ),
+        )
+        if probe.returncode == 0 and probe.stdout.strip():
+            return probe
+        # No live process yet. The launch may simply be slow, or it may already
+        # have aborted; only the log distinguishes them, so fail fast on aborts
+        # instead of polling an empty PID for the whole timeout.
+        log = runner.run(
+            _adb(adb, serial, "logcat", "-d", "-v", "threadtime"),
+            cwd=None,
+            timeout=60,
+            description=f"reading Android startup log for {application_id}",
+            check=False,
+        )
+        contents = log_since_launch(log.stdout + log.stderr, launch_boundary)
+        signatures = attributed_runtime_failures(contents, application_id)
+        if signatures:
+            raise AcceptanceError(
+                f"Android package {application_id} aborted during startup with {signatures}; "
+                f"logcat excerpt:\n{startup_abort_excerpt(contents, signatures)}"
+            )
+        return probe
+
+    result = _wait_for_probe(
+        process_probe,
         lambda probe: probe.returncode == 0 and bool(probe.stdout.strip()),
         timeout=timeout,
         poll_interval=poll_interval,
@@ -855,6 +1052,13 @@ def _verify_apk_on_device(
             f"Android APK application ID mismatch: expected {application_id!r}, found {manifest_application_id!r}"
         )
 
+    host_contract = verify_host_contract_in_apk(
+        apk=apk,
+        apkanalyzer=apkanalyzer,
+        runner=runner,
+        repo_root=REPO_ROOT,
+    )
+
     runner.run(
         _adb(adb, serial, "install", "-r", str(apk)),
         cwd=None,
@@ -873,6 +1077,17 @@ def _verify_apk_on_device(
         cwd=None,
         timeout=30,
         description="clearing Android logcat",
+        check=False,
+    )
+    # Clearing is best-effort and a crash block can still drain in after it, so
+    # stamp the log with an explicit boundary. Startup failure detection reads only
+    # what follows, and never a crash from a previous launch of the same package.
+    launch_boundary = f"{LAUNCH_BOUNDARY_MARKER} {application_id}"
+    runner.run(
+        _adb(adb, serial, "shell", "log", "-p", "i", "-t", LAUNCH_BOUNDARY_TAG, launch_boundary),
+        cwd=None,
+        timeout=30,
+        description=f"stamping Android launch boundary for {application_id}",
         check=False,
     )
     component = f"{application_id}/games.cafecito.foundry.game.FoundryAppLauncher"
@@ -894,9 +1109,14 @@ def _verify_apk_on_device(
             runner,
             timeout=process_timeout,
             poll_interval=poll_interval,
+            launch_boundary=launch_boundary,
         )
     except AcceptanceError as error:
         full_logcat, _ = _capture_logcat(adb, serial, None, runner)
+        # Preserve the log before propagating; a startup abort leaves no process to
+        # filter on later, so this is the only capture of the actual cause.
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        (evidence_dir / f"{application_id}-logcat.txt").write_text(full_logcat, encoding="utf-8")
         failures = runtime_log_failures(full_logcat)
         suffix = f"; runtime failures: {failures}" if failures else ""
         raise AcceptanceError(f"{error}{suffix}") from error
@@ -929,6 +1149,7 @@ def _verify_apk_on_device(
         "apk": str(apk),
         "apk_sha256": _sha256(apk),
         "application_id": application_id,
+        "host_contract": host_contract,
         "manifest_application_id": manifest_application_id,
         "pid": pid,
         "runtime_log_failures": failures,
@@ -1159,6 +1380,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     prepare_assets.add_argument("--source", required=True, type=Path)
     prepare_assets.add_argument("--output", required=True, type=Path)
+    host_contract = commands.add_parser(
+        "inspect-host-contract",
+        help="prove built APKs keep every Java member the native host resolves through JNI",
+    )
+    host_contract.add_argument("--apk", required=True, action="append", type=Path)
+    host_contract.add_argument("--apkanalyzer", required=True, type=Path)
     apks = commands.add_parser(
         "verify-apks",
         help="install and start already-exported, structurally validated APKs using runtime-only checks",
@@ -1194,6 +1421,23 @@ def main() -> int:
                 "compiled_assets": str(compiled_assets),
                 "compiled_assets_sha256": _sha256(compiled_assets),
                 "paths": paths,
+                "schema_version": 1,
+            }
+            print(json.dumps(report, sort_keys=True))
+            return 0
+        if arguments.command == "inspect-host-contract":
+            _require_executable(arguments.apkanalyzer, "apkanalyzer")
+            runner = SubprocessRunner()
+            report = {
+                "apks": [
+                    verify_host_contract_in_apk(
+                        apk=apk,
+                        apkanalyzer=arguments.apkanalyzer,
+                        runner=runner,
+                        repo_root=REPO_ROOT,
+                    )
+                    for apk in arguments.apk
+                ],
                 "schema_version": 1,
             }
             print(json.dumps(report, sort_keys=True))
