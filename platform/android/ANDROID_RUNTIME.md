@@ -339,11 +339,16 @@ class-loading, native-library, and fatal-exception failures.
 
 To verify APKs produced through the real command-first editor exporter:
 
+These APKs have already passed structural APK validation in the editor and the
+command-first producer. This command is intentionally limited to
+device-runtime behavior.
+
 ```sh
 python3 platform/android/android_device_acceptance.py verify-apks \
-  --apk games.cafecito.foundry.game=.test_scratch/android-cli-export/canonical.apk \
-  --apk dev.example.foundryacceptance=.test_scratch/android-cli-export/custom.apk \
-  --evidence-dir .test_scratch/android-cli-export-evidence \
+  --apk games.cafecito.foundry.game=.test_scratch/foundry-java-command-first/foundry-java-default-debug.apk \
+  --apk dev.example.foundryjava=.test_scratch/foundry-java-command-first/foundry-java-custom-release.apk \
+  --required-runtime-marker FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY \
+  --evidence-dir .test_scratch/foundry-java-command-first-device-evidence \
   --adb "${ANDROID_SDK_ROOT}/platform-tools/adb" \
   --apkanalyzer "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/apkanalyzer"
 ```

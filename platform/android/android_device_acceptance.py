@@ -1060,7 +1060,7 @@ def run_apk_acceptance(
     poll_interval: float = 2,
     required_runtime_marker: str | None = None,
 ) -> dict[str, Any]:
-    """Install and start already-exported APKs using the same runtime checks."""
+    """Install and start already-exported, structurally validated APKs using runtime-only checks."""
     if required_runtime_marker is not None:
         required_runtime_marker = _normalize_required_runtime_marker(required_runtime_marker)
     evidence_dir = _create_owned_directory(evidence_dir, "Android acceptance evidence directory")
@@ -1161,7 +1161,7 @@ def _parser() -> argparse.ArgumentParser:
     prepare_assets.add_argument("--output", required=True, type=Path)
     apks = commands.add_parser(
         "verify-apks",
-        help="install and start already-exported APKs",
+        help="install and start already-exported, structurally validated APKs using runtime-only checks",
     )
     apks.add_argument("--apk", required=True, action="append", type=_parse_apk)
     apks.add_argument("--required-runtime-marker", type=_parse_required_runtime_marker)

@@ -2031,6 +2031,40 @@ static Error _foundry_java_invalid_option(const String &p_option, const String &
 	return ERR_INVALID_PARAMETER;
 }
 
+static Error _foundry_java_parse_string_array_option(
+		const Variant &p_value,
+		const String &p_option,
+		const String &p_value_kind,
+		bool p_redact_value,
+		PackedStringArray &r_values,
+		String &r_error) {
+	r_values.clear();
+	if (p_value.get_type() == Variant::PACKED_STRING_ARRAY) {
+		r_values = p_value;
+		return OK;
+	}
+	const String diagnostic_value = p_redact_value ? "<redacted>" : p_value.stringify();
+	if (p_value.get_type() != Variant::ARRAY) {
+		return _foundry_java_invalid_option(
+				p_option,
+				diagnostic_value,
+				vformat(TTR("must be an array of %s strings, not %s"), p_value_kind, Variant::get_type_name(p_value.get_type())),
+				r_error);
+	}
+	const Array values = p_value;
+	for (const Variant &value : values) {
+		if (value.get_type() != Variant::STRING) {
+			return _foundry_java_invalid_option(
+					p_option,
+					p_redact_value ? "<redacted>" : value.stringify(),
+					vformat(TTR("must contain only %s strings, not %s"), p_value_kind, Variant::get_type_name(value.get_type())),
+					r_error);
+		}
+		r_values.push_back(value);
+	}
+	return OK;
+}
+
 static bool _foundry_java_contains_property_separator(const String &p_value) {
 	return p_value.contains("|") || p_value.contains("\n") || p_value.contains("\r");
 }
@@ -3494,7 +3528,7 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 	return OK;
 }
 
-Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorExportPreset *p_preset, FoundryJavaExportConfig &r_config, String &r_error) const {
+Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorExportPreset *p_preset, FoundryJavaExportConfig &r_config, String &r_error, bool p_scan_archives) const {
 	static const String ENABLED_OPTION = "gradle_build/foundry_java/enabled";
 	static const String USE_GRADLE_OPTION = "gradle_build/use_gradle_build";
 	static const String PLUGIN_MAVEN_OPTION = "gradle_build/foundry_java/gradle_plugin_maven";
@@ -3559,24 +3593,44 @@ Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorE
 		r_config.plugin = plugin_file->get_path_absolute().simplify_path();
 		plugin_file.unref();
 
-		bool contains_host_library = false;
-		String forbidden_entry;
-		String archive_error;
-		if (_foundry_java_scan_archive(r_config.plugin, contains_host_library, forbidden_entry, archive_error) != OK) {
-			return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, archive_error, r_error);
-		}
-		if (contains_host_library) {
-			r_error = vformat(
-					TTR("Invalid export option %s value '%s': archive entry '%s' contains forbidden libfoundry_android.so."),
-					PLUGIN_LOCAL_OPTION,
-					_foundry_java_safe_diagnostic_value(plugin_local_raw),
-					_foundry_java_safe_diagnostic_value(forbidden_entry));
-			return ERR_INVALID_PARAMETER;
+		if (p_scan_archives) {
+			bool contains_host_library = false;
+			String forbidden_entry;
+			String archive_error;
+			if (_foundry_java_scan_archive(r_config.plugin, contains_host_library, forbidden_entry, archive_error) != OK) {
+				return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, archive_error, r_error);
+			}
+			if (contains_host_library) {
+				r_error = vformat(
+						TTR("Invalid export option %s value '%s': archive entry '%s' contains forbidden libfoundry_android.so."),
+						PLUGIN_LOCAL_OPTION,
+						_foundry_java_safe_diagnostic_value(plugin_local_raw),
+						_foundry_java_safe_diagnostic_value(forbidden_entry));
+				return ERR_INVALID_PARAMETER;
+			}
 		}
 	}
 
-	r_config.repositories = p_preset->get(REPOSITORIES_OPTION);
-	r_config.maven_artifacts = p_preset->get(MAVEN_ARTIFACTS_OPTION);
+	Error array_error = _foundry_java_parse_string_array_option(
+			p_preset->get(REPOSITORIES_OPTION),
+			REPOSITORIES_OPTION,
+			TTR("repository URL"),
+			true,
+			r_config.repositories,
+			r_error);
+	if (array_error != OK) {
+		return array_error;
+	}
+	array_error = _foundry_java_parse_string_array_option(
+			p_preset->get(MAVEN_ARTIFACTS_OPTION),
+			MAVEN_ARTIFACTS_OPTION,
+			TTR("exact group:artifact:version"),
+			false,
+			r_config.maven_artifacts,
+			r_error);
+	if (array_error != OK) {
+		return array_error;
+	}
 	const Variant local_artifacts_value = p_preset->get(LOCAL_ARTIFACTS_OPTION);
 	if (local_artifacts_value.get_type() == Variant::PACKED_STRING_ARRAY) {
 		r_config.local_artifacts = local_artifacts_value;
@@ -3685,19 +3739,21 @@ Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorE
 			}
 		}
 
-		bool contains_host_library = false;
-		String forbidden_entry;
-		String archive_error;
-		if (_foundry_java_scan_archive(path, contains_host_library, forbidden_entry, archive_error) != OK) {
-			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, archive_error, r_error);
-		}
-		if (contains_host_library) {
-			r_error = vformat(
-					TTR("Invalid export option %s value '%s': archive entry '%s' contains forbidden libfoundry_android.so."),
-					LOCAL_ARTIFACTS_OPTION,
-					_foundry_java_safe_diagnostic_value(raw),
-					_foundry_java_safe_diagnostic_value(forbidden_entry));
-			return ERR_INVALID_PARAMETER;
+		if (p_scan_archives) {
+			bool contains_host_library = false;
+			String forbidden_entry;
+			String archive_error;
+			if (_foundry_java_scan_archive(path, contains_host_library, forbidden_entry, archive_error) != OK) {
+				return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, archive_error, r_error);
+			}
+			if (contains_host_library) {
+				r_error = vformat(
+						TTR("Invalid export option %s value '%s': archive entry '%s' contains forbidden libfoundry_android.so."),
+						LOCAL_ARTIFACTS_OPTION,
+						_foundry_java_safe_diagnostic_value(raw),
+						_foundry_java_safe_diagnostic_value(forbidden_entry));
+				return ERR_INVALID_PARAMETER;
+			}
 		}
 		canonical_local_artifacts.push_back(path);
 		r_config.local_artifacts.set(i, path);
@@ -3734,7 +3790,7 @@ String EditorExportPlatformAndroid::get_export_option_warning(const EditorExport
 		if (String(p_name).begins_with("gradle_build/foundry_java/")) {
 			FoundryJavaExportConfig config;
 			String error;
-			if (_get_foundry_java_export_config(p_preset, config, error) != OK) {
+			if (_get_foundry_java_export_config(p_preset, config, error, false) != OK) {
 				return error;
 			}
 		} else if (p_name == ("apk_expansion/public_key")) {
@@ -4775,7 +4831,7 @@ bool EditorExportPlatformAndroid::has_valid_project_configuration(const Ref<Edit
 	bool valid = true;
 	FoundryJavaExportConfig foundry_java;
 	String foundry_java_error;
-	if (_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error) != OK) {
+	if (_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, false) != OK) {
 		err += foundry_java_error + "\n";
 		valid = false;
 	} else if (foundry_java.enabled && get_enabled_abis(p_preset).is_empty()) {
@@ -5285,7 +5341,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	ExportNotifier notifier(*this, p_preset, p_debug, p_path, p_flags);
 	FoundryJavaExportConfig foundry_java;
 	String foundry_java_error;
-	Error foundry_java_config_error = _get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error);
+	Error foundry_java_config_error = _get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true);
 	if (foundry_java_config_error != OK) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), foundry_java_error);
 		return foundry_java_config_error;
@@ -5340,7 +5396,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 	Vector<uint8_t> command_line_flags;
 	// Write command line flags into the command_line_flags variable.
-	get_command_line_flags(p_preset, p_path, p_flags, command_line_flags);
+	get_command_line_flags(p_preset, final_artifact_path, p_flags, command_line_flags);
 
 	if (export_format == EXPORT_FORMAT_AAB) {
 		if (!p_path.ends_with(".aab")) {
@@ -5453,7 +5509,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 			}
 		} else {
 			print_verbose("Saving apk expansion file...");
-			err = save_apk_expansion_file(p_preset, p_debug, p_path);
+			err = save_apk_expansion_file(p_preset, p_debug, final_artifact_path);
 			if (err != OK) {
 				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Could not write expansion package file!"));
 				return err;
@@ -5921,7 +5977,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		err = export_project_files(p_preset, p_debug, ignore_apk_file, nullptr, &ed, save_apk_so);
 	} else {
 		if (apk_expansion) {
-			err = save_apk_expansion_file(p_preset, p_debug, p_path);
+			err = save_apk_expansion_file(p_preset, p_debug, final_artifact_path);
 			if (err != OK) {
 				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Could not write expansion package file!"));
 				return err;
@@ -5987,7 +6043,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	ret = unzGoToFirstFile(tmp_unaligned);
 
 	io2 = zipio_create_io(&io2_fa);
-	zipFile final_apk = zipOpen2(p_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io2);
+	zipFile final_apk = zipOpen2(final_artifact_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io2);
 
 	// Take files from the unaligned APK and write them out to the aligned one
 	// in raw mode, i.e. not uncompressing and recompressing, aligning them as needed,
@@ -6057,7 +6113,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	if (should_sign) {
 		// Signing must be done last as any additional modifications to the
 		// file will invalidate the signature.
-		err = sign_apk(p_preset, p_debug, p_path, ep);
+		err = sign_apk(p_preset, p_debug, final_artifact_path, ep);
 		if (err != OK) {
 			// Message is supplied by the subroutine method.
 			CLEANUP_AND_RETURN(err);

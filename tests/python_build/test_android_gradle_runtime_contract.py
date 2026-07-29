@@ -236,6 +236,25 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         )[1].split("```", 1)[0]
         self.assertIn("--compiled-assets", source_template_example)
 
+    def test_runtime_documentation_matches_command_first_apk_acceptance(self) -> None:
+        documentation = read(ANDROID_RUNTIME_DOC)
+        verify_apks_section = documentation.split(
+            "To verify APKs produced through the real command-first editor exporter:",
+            1,
+        )[1].split("## Acceptance evidence map", 1)[0]
+        for fragment in (
+            (
+                "--apk games.cafecito.foundry.game="
+                ".test_scratch/foundry-java-command-first/foundry-java-default-debug.apk"
+            ),
+            ("--apk dev.example.foundryjava=.test_scratch/foundry-java-command-first/foundry-java-custom-release.apk"),
+            "--required-runtime-marker FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY",
+            "structural APK validation",
+            "device-runtime behavior",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, verify_apks_section)
+
     def test_device_acceptance_requires_every_instrumented_test_method(self) -> None:
         instrumented_test = read(APP_INSTRUMENTED_TEST)
         kotlin_methods = tuple(
@@ -625,7 +644,7 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "test": "FoundryExtensionTestSupport",
             "types": "Vector2",
         }
-        suffixes = ("CLASS", "Java", "kT")
+        suffixes = ("CLASS", "Java", "kT", "AiDl")
 
         for package, class_name in binding_classes.items():
             for suffix in suffixes:
@@ -673,6 +692,10 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "binding config": {
                 **VALID_SOURCE_TEMPLATE,
                 "src/main/assets/FoundryJava.foundryextension": b"[configuration]\n",
+            },
+            "binding class": {
+                **VALID_SOURCE_TEMPLATE,
+                "assets/classes/games/cafecito/foundry/api/FoundryExtension.class": b"binding",
             },
             "binding registry": {
                 **VALID_SOURCE_TEMPLATE,
@@ -732,6 +755,17 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
                             "libs/foundry-api.jar": archive_bytes(
                                 {"games/cafecito/foundry/api/FoundryExtension.class": b"binding"}
                             ),
+                        }
+                    ),
+                }
+            ),
+            "nested API AIDL": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes(
+                        {
+                            "games/cafecito/foundry/FoundryHost.class": b"host",
+                            "aidl/games/cafecito/foundry/api/FoundryExtension.AiDl": b"binding",
                         }
                     ),
                 }

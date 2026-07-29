@@ -583,10 +583,9 @@ git commit -m "Prove Foundry-Java ABI and release exports"
 
 Require the runtime guide and class reference to document every option, the
 fixed marker, exact plugin ID, Maven/local examples, zero-descriptor behavior,
-ABI mapping, generated asset paths, ordinary-export isolation, and
-Foundry-Android's read-only/non-dependency status. Require pre-commit to run the
-four bounded pure-Python contract classes when any exporter, app Gradle,
-source-template, fixture, doc, or test surface changes.
+ABI mapping, generated asset paths, and ordinary-export isolation. Require
+pre-commit to run the four bounded pure-Python contract classes when any
+exporter, app Gradle, source-template, fixture, doc, or test surface changes.
 
 - [ ] **Step 2: Run and verify RED**
 

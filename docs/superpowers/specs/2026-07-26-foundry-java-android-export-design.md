@@ -27,7 +27,7 @@ contract without reproducing it:
   provenance, duplicate identities or payloads, and missing ABIs.
 
 Foundry does not synthesize the fixed configuration, inspect Java classes or
-manifests, or search for artifacts. Foundry-Android remains read-only.
+manifests, or search for artifacts.
 
 ## Alternatives considered
 

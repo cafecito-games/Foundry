@@ -257,6 +257,27 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
         self.assertGreater(process_events, redaction_guard_end)
         self.assertGreater(main_iteration, redaction_guard_end)
 
+    def test_export_option_warnings_defer_deep_archive_scanning_until_export(self) -> None:
+        exporter = EXPORTER.read_text(encoding="utf-8")
+        config_start = exporter.index("Error EditorExportPlatformAndroid::_get_foundry_java_export_config(")
+        config_end = exporter.index("void EditorExportPlatformAndroid::get_preset_features", config_start)
+        config = exporter[config_start:config_end]
+        warning_start = exporter.index("String EditorExportPlatformAndroid::get_export_option_warning")
+        warning_end = exporter.index("bool EditorExportPlatformAndroid::get_export_option_visibility", warning_start)
+        warning = exporter[warning_start:warning_end]
+        validity_start = exporter.index("bool EditorExportPlatformAndroid::has_valid_project_configuration")
+        validity_end = exporter.index("bool EditorExportPlatformAndroid::_is_clean_build_required", validity_start)
+        validity = exporter[validity_start:validity_end]
+        helper = exporter.split("Error EditorExportPlatformAndroid::export_project_helper", maxsplit=1)[1]
+
+        self.assertIn("bool p_scan_archives", config)
+        self.assertEqual(2, config.count("if (p_scan_archives)"))
+        self.assertIn("_get_foundry_java_export_config(p_preset, config, error, false)", warning)
+        self.assertIn(
+            "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, false)", validity
+        )
+        self.assertIn("_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true)", helper)
+
     def test_symlink_validation_preserves_windows_unc_roots(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
         checker_start = exporter.index("static bool _foundry_java_path_has_symlink(")
@@ -4005,7 +4026,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         self.assertGreater(marker_position, enabled_branch)
         self.assertGreater(build_execution, marker_position)
 
-    def test_gradle_export_reuses_the_globalized_final_artifact_path(self) -> None:
+    def test_all_exports_reuse_the_globalized_final_artifact_path(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
         export_helper = exporter.split(
             "Error EditorExportPlatformAndroid::export_project_helper",
@@ -4039,8 +4060,16 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             "ProjectSettings::get_singleton()->globalize_path(final_artifact_path).simplify_path()",
             export_helper,
         )
+        self.assertIn("get_command_line_flags(p_preset, final_artifact_path, p_flags", export_helper)
         self.assertIn("String export_filename = final_artifact_path.get_file();", export_helper)
         self.assertIn("String export_path = final_artifact_path.get_base_dir();", export_helper)
+        self.assertEqual(
+            2,
+            export_helper.count("save_apk_expansion_file(p_preset, p_debug, final_artifact_path)"),
+        )
+        self.assertNotIn("save_apk_expansion_file(p_preset, p_debug, p_path)", export_helper)
+        self.assertIn("zipOpen2(final_artifact_path.utf8().get_data()", export_helper)
+        self.assertIn("sign_apk(p_preset, p_debug, final_artifact_path, ep)", export_helper)
         self.assertGreater(base_dir, final_artifact_path)
         self.assertGreater(copy_result, base_dir)
         self.assertGreater(inspection, copy_result)
@@ -5235,8 +5264,32 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 (
                     plugin,
                     (module,),
+                    ("gradle_build/foundry_java/maven_repositories=[1]",),
+                    ("gradle_build/foundry_java/maven_repositories", "not int"),
+                ),
+                (
+                    plugin,
+                    (module,),
+                    ('gradle_build/foundry_java/maven_repositories="https://repo.invalid/private"',),
+                    ("gradle_build/foundry_java/maven_repositories", "<redacted>", "not String"),
+                ),
+                (
+                    plugin,
+                    (module,),
                     ('gradle_build/foundry_java/maven_artifacts=PackedStringArray("not-coordinate")',),
                     ("gradle_build/foundry_java/maven_artifacts", "not-coordinate"),
+                ),
+                (
+                    plugin,
+                    (module,),
+                    ("gradle_build/foundry_java/maven_artifacts=[1]",),
+                    ("gradle_build/foundry_java/maven_artifacts", "not int"),
+                ),
+                (
+                    plugin,
+                    (module,),
+                    ('gradle_build/foundry_java/maven_artifacts="test:module:1.0"',),
+                    ("gradle_build/foundry_java/maven_artifacts", "not String"),
                 ),
                 (
                     plugin,

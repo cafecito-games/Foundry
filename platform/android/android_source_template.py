@@ -66,7 +66,7 @@ FORBIDDEN_BINDING_CODE_PATHS = tuple(
         "types",
     )
 )
-BINDING_CODE_SUFFIXES = frozenset({".class", ".java", ".kt"})
+BINDING_CODE_SUFFIXES = frozenset({".aidl", ".class", ".java", ".kt"})
 NESTED_ARCHIVE_SUFFIXES = frozenset({".aar", ".jar", ".zip"})
 MAX_NESTED_ARCHIVE_DEPTH = 8
 MAX_NESTED_ARCHIVE_ENTRIES = 65_536
@@ -213,7 +213,7 @@ def inspect_source_template(archive_path: Path) -> tuple[str, ...]:
 
             if name.startswith(FORBIDDEN_PREFIXES):
                 raise SourceTemplateError(f"source template contains a forbidden in-tree runtime path: {name}")
-            if any(fragment in name.lower() for fragment in FORBIDDEN_BINDING_FRAGMENTS):
+            if any(fragment in name.lower() for fragment in FORBIDDEN_BINDING_FRAGMENTS) or _is_binding_code_path(name):
                 raise SourceTemplateError(f"source template contains a forbidden Foundry-Java binding path: {name}")
             if PurePosixPath(name).suffix in SOURCE_SUFFIXES and APP_SOURCE_PATTERN.match(name) is None:
                 raise SourceTemplateError(f"source template contains runtime source outside the app package: {name}")

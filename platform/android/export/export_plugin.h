@@ -188,7 +188,7 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 	bool _uses_vulkan(const Ref<EditorExportPreset> &p_preset) const;
 
 	Error _generate_sparse_pck_metadata(const Ref<EditorExportPreset> &p_preset, PackData &p_pack_data, Vector<uint8_t> &r_data);
-	Error _get_foundry_java_export_config(const EditorExportPreset *p_preset, FoundryJavaExportConfig &r_config, String &r_error) const;
+	Error _get_foundry_java_export_config(const EditorExportPreset *p_preset, FoundryJavaExportConfig &r_config, String &r_error, bool p_scan_archives) const;
 	Error _inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, String &r_error) const;
 
 protected:
