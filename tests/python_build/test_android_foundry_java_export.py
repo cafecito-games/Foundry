@@ -3933,6 +3933,33 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                                 "little",
                             )
                             contents[eocd:eocd] = locator_lookalike
+                        elif central_directory_mutation == "final-local-zero-padding":
+                            central_offset = int.from_bytes(contents[eocd + 16 : eocd + 20], "little")
+                            final_central_entry = contents.rfind(b"PK\\x01\\x02", central_offset, eocd)
+                            if final_central_entry < 0:
+                                raise RuntimeError("fake Gradle output has no final central directory entry")
+                            final_local_entry = int.from_bytes(
+                                contents[final_central_entry + 42 : final_central_entry + 46],
+                                "little",
+                            )
+                            filename_size = int.from_bytes(
+                                contents[final_local_entry + 26 : final_local_entry + 28],
+                                "little",
+                            )
+                            extra_size = int.from_bytes(
+                                contents[final_local_entry + 28 : final_local_entry + 30],
+                                "little",
+                            )
+                            payload_offset = final_local_entry + 30 + filename_size + extra_size
+                            padding_size = (-payload_offset) % 4
+                            if padding_size == 0:
+                                padding_size = 3
+                            contents[final_local_entry + 28 : final_local_entry + 30] = (
+                                extra_size + padding_size
+                            ).to_bytes(2, "little")
+                            contents[payload_offset:payload_offset] = b"\\x00" * padding_size
+                            eocd += padding_size
+                            contents[eocd + 16 : eocd + 20] = (central_offset + padding_size).to_bytes(4, "little")
                         elif central_directory_mutation not in (None, "zip64-classic-count"):
                             raise RuntimeError(f"unknown central directory mutation: {{central_directory_mutation}}")
                         if force_zip64:
@@ -5195,6 +5222,62 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             output = result.stdout + result.stderr
             self.assertEqual(0, result.returncode, output)
             self.assertTrue((project / "classic-locator-magic.apk").is_file())
+
+    def test_command_first_export_accepts_zipalign_local_header_padding(self) -> None:
+        with tempfile.TemporaryDirectory(
+            prefix="foundry-java-final-zipalign-padding.",
+            dir=test_scratch_directory(),
+        ) as directory:
+            project = Path(directory)
+            project.joinpath("project.foundry").write_text(
+                textwrap.dedent(
+                    """\
+                    [application]
+                    config/name="Foundry Java Zipalign Padding"
+
+                    [rendering]
+                    textures/vram_compression/import_etc2_astc=true
+                    """
+                ),
+                encoding="utf-8",
+            )
+            plugin = project / "plugin.jar"
+            module = project / "module.jar"
+            with zipfile.ZipFile(plugin, "w") as archive:
+                archive.writestr(
+                    "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                    "implementation-class=test.Fixture\n",
+                )
+            with zipfile.ZipFile(module, "w"):
+                pass
+            gradle_root = self._write_fake_gradle_wrapper(
+                project,
+                (
+                    "assets/FoundryJava.foundryextension",
+                    "assets/foundry_java/registry-index-v2.txt",
+                    "lib/arm64-v8a/libfoundry_java.so",
+                ),
+                central_directory_mutation="final-local-zero-padding",
+            )
+            self._write_export_preset(
+                project,
+                plugin_local=plugin,
+                local_artifacts=(module,),
+                use_gradle=True,
+                extra_options=(
+                    f'gradle_build/gradle_build_directory="{gradle_root}"',
+                    "package/signed=false",
+                    "architectures/armeabi-v7a=false",
+                    "architectures/arm64-v8a=true",
+                    "architectures/x86=false",
+                    "architectures/x86_64=false",
+                ),
+            )
+
+            result = self._run_export(project, "zipalign-padding.apk")
+            output = result.stdout + result.stderr
+            self.assertEqual(0, result.returncode, output)
+            self.assertTrue((project / "zipalign-padding.apk").is_file())
 
     def test_command_first_export_rejects_opt_in_without_gradle_before_build(self) -> None:
         with tempfile.TemporaryDirectory(

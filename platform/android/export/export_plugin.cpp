@@ -2414,6 +2414,7 @@ static bool _foundry_java_resolve_zip64_entry_values(
 		uint32_t p_raw_local_header_offset,
 		uint16_t p_raw_disk_start,
 		bool p_has_offset_and_disk,
+		bool p_allow_zero_padding,
 		uint64_t &r_uncompressed_size,
 		uint64_t &r_compressed_size,
 		uint64_t &r_local_header_offset,
@@ -2428,9 +2429,18 @@ static bool _foundry_java_resolve_zip64_entry_values(
 	const bool needs_local_header_offset = p_has_offset_and_disk && p_raw_local_header_offset == UINT32_MAX;
 	const bool needs_disk_start = p_has_offset_and_disk && p_raw_disk_start == UINT16_MAX;
 	const bool needs_zip64 = needs_uncompressed_size || needs_compressed_size || needs_local_header_offset || needs_disk_start;
+	uint64_t zero_padding_start = p_extra.size();
+	if (p_allow_zero_padding) {
+		while (zero_padding_start > 0 && p_extra[zero_padding_start - 1] == 0) {
+			zero_padding_start--;
+		}
+	}
 	bool found_zip64 = false;
 	uint64_t extra_cursor = 0;
 	while (extra_cursor < uint64_t(p_extra.size())) {
+		if (p_allow_zero_padding && extra_cursor >= zero_padding_start) {
+			return !needs_zip64 || found_zip64;
+		}
 		if (uint64_t(p_extra.size()) - extra_cursor < 4) {
 			return false;
 		}
@@ -2632,6 +2642,7 @@ static bool _foundry_java_validate_central_directory_entry(
 				raw_local_header_offset,
 				raw_disk_start,
 				true,
+				false,
 				central_uncompressed_size,
 				central_compressed_size,
 				local_header_offset,
@@ -2701,6 +2712,7 @@ static bool _foundry_java_validate_central_directory_entry(
 				0,
 				0,
 				false,
+				true,
 				local_uncompressed_size,
 				local_compressed_size,
 				ignored_local_header_offset,
