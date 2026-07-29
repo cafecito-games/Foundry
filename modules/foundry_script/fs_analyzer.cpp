@@ -822,6 +822,42 @@ static String _dependency_error_suffix(const char *p_noun, const String &p_path,
 	return vformat(R"(The %s is declared in "%s", which has errors, the first at %s)", p_noun, script_path, first_error);
 }
 
+// Name of the type currently being resolved in this analyzer, used when a dependency raise fails
+// so the diagnostic points at the relationship rather than a generic "parser error". Prefer the
+// file's global name (`class_name` / `enum_name` / `trait_name` / `tuple_name`) when present.
+static String _resolving_context_name(const FSParser *p_parser) {
+	if (p_parser == nullptr) {
+		return String();
+	}
+	const FSParser::ClassNode *head = p_parser->get_tree();
+	if (head == nullptr) {
+		return String();
+	}
+	const StringName global_name = head->get_global_name();
+	if (global_name != StringName()) {
+		return global_name;
+	}
+	return _class_or_trait_name(head);
+}
+
+// Shared wording for failed cross-file class/enum raises. `FSParserRef::result` is sticky and can
+// carry analyzer failures, so "because of a parser error" is often wrong; naming the dependent
+// type and quoting the dependency's first error points at the real cause.
+static String _unresolved_dependency_type_message(const char *p_noun, const StringName &p_type_name,
+		const FSParser *p_current_parser, const String &p_dependency_path, FSParser *p_dependency_parser) {
+	String message = vformat(R"(Could not resolve %s "%s")", p_noun, p_type_name);
+	const String resolving = _resolving_context_name(p_current_parser);
+	if (!resolving.is_empty() && resolving != String(p_type_name)) {
+		message += vformat(R"( while resolving "%s")", resolving);
+	}
+	message += ".";
+	const String suffix = _dependency_error_suffix(p_noun, p_dependency_path, p_dependency_parser, 0);
+	if (!suffix.is_empty()) {
+		message += " " + suffix;
+	}
+	return message;
+}
+
 static String _trait_method_info_source(const FSParser::ClassNode *p_class,
 		const FSParser::FunctionNode *p_function) {
 	if (p_class == nullptr) {
@@ -1921,6 +1957,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 					} else {
 						result = make_global_class_meta_type(namespace_global_class, p_type);
 					}
+					// Failed dependency raises leave a Variant/UNDETECTED fallback; stop here so a
+					// dotted nested type does not cascade into "under base Variant".
+					if (result.has_no_type()) {
+						return bad_type;
+					}
 					resolved_type_chain_size = namespace_type_chain_size;
 				}
 			}
@@ -1935,6 +1976,9 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			if (ScriptServer::is_global_class_enum(first)) {
 				const String path = ScriptServer::get_global_class_path(first);
 				result = make_global_enum_type_from_path(first, path, p_type);
+				if (result.has_no_type()) {
+					return bad_type;
+				}
 			} else {
 				if (FoundryScript::is_canonically_equal_paths(parser->script_path, ScriptServer::get_global_class_path(first))) {
 					// A `tuple_name` file naming itself is a by-value cycle; resolving through the
@@ -2126,6 +2170,10 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				return bad_type;
 			}
 			result.enum_case_name = case_name;
+		} else if (result.kind == FSParser::DataType::VARIANT) {
+			// The base failed to resolve (or is an untyped Variant fallback). A second diagnostic
+			// naming "Variant" would leak that implementation detail after the root-cause error.
+			return bad_type;
 		} else {
 			push_error(vformat(R"(Could not find nested type "%s" under base "%s".)", p_type->type_chain[resolved_type_chain_size]->name, result.to_string()), p_type->type_chain[resolved_type_chain_size]);
 			return bad_type;
@@ -6826,7 +6874,9 @@ FSParser::DataType FSAnalyzer::make_global_class_meta_type(const StringName &p_c
 		}
 
 		if (err) {
-			push_error(vformat(R"(Could not resolve class "%s", because of a parser error.)", p_class_name), p_source);
+			// Sticky `FSParserRef::result` may be an analyzer failure rather than a syntax error;
+			// name the resolving type and the dependency's first error instead of "parser error".
+			push_error(_unresolved_dependency_type_message("class", p_class_name, parser, path, ref->get_parser()), p_source);
 			type.type_source = FSParser::DataType::UNDETECTED;
 			type.kind = FSParser::DataType::VARIANT;
 			return type;
@@ -6947,7 +6997,8 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_path(const StringName 
 	}
 
 	if (err != OK) {
-		push_error(vformat(R"(Could not resolve enum "%s", because of a parser error.)", p_global_name), p_source);
+		// Same sticky-result pitfall as `make_global_class_meta_type`: do not call this a parser error.
+		push_error(_unresolved_dependency_type_message("enum", p_global_name, parser, p_path, ref->get_parser()), p_source);
 		return error_type;
 	}
 
@@ -9945,6 +9996,12 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 						namespace_class_type = make_global_enum_type_from_path(namespace_global_class, path, p_subscript);
 					} else {
 						namespace_class_type = make_global_class_meta_type(namespace_global_class, p_subscript);
+					}
+					if (namespace_class_type.has_no_type()) {
+						FSParser::DataType dummy;
+						dummy.kind = FSParser::DataType::VARIANT;
+						p_subscript->set_datatype(dummy);
+						return;
 					}
 					const FSParser::DataType resolved_namespace_class_type = namespace_class_type;
 					for (int i = namespace_type_chain_size; i < type_chain.size(); i++) {
