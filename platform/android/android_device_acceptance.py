@@ -1007,6 +1007,11 @@ def _wait_for_runtime_marker(
             description=f"reading Android runtime marker for {application_id}",
             check=False,
         )
+        # Process-filtered logcat is already scoped to this launch's PID, so a
+        # previous launch of the same package cannot appear here. Package
+        # attribution is likewise redundant: every retained line belongs to the
+        # target process. Keep the shared RUNTIME_FAILURE_PATTERNS list via
+        # runtime_log_failures rather than inventing a second signature set.
         failures = runtime_log_failures(result.stdout + result.stderr)
         if failures:
             raise AcceptanceError(f"Android package {application_id} logged forbidden runtime failures: {failures}")
@@ -1117,7 +1122,11 @@ def _verify_apk_on_device(
         # filter on later, so this is the only capture of the actual cause.
         evidence_dir.mkdir(parents=True, exist_ok=True)
         (evidence_dir / f"{application_id}-logcat.txt").write_text(full_logcat, encoding="utf-8")
-        failures = runtime_log_failures(full_logcat)
+        # The suffix only decorates an error already being raised, but it must still
+        # attribute signatures to this package and this launch. A bare whole-logcat
+        # scan can point the message at an unrelated process or a previous launch.
+        contents = log_since_launch(full_logcat, launch_boundary)
+        failures = attributed_runtime_failures(contents, application_id)
         suffix = f"; runtime failures: {failures}" if failures else ""
         raise AcceptanceError(f"{error}{suffix}") from error
 
