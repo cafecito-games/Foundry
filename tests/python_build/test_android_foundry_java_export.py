@@ -44,6 +44,19 @@ GRADLE_WRAPPER = REPO_ROOT / "platform/android/java/gradlew"
 JAVA_ROOT = REPO_ROOT / "platform/android/java"
 APP_ROOT = REPO_ROOT / "platform/android/java/app"
 INTEGRATION_FIXTURE = REPO_ROOT / "tests/fixtures/android_foundry_java"
+ACCEPTANCE_MAIN_SCRIPT = INTEGRATION_FIXTURE / "acceptance/main.fs"
+FOUNDRY_KOTLIN_HOST = REPO_ROOT / "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt"
+FOUNDRY_JAVA_EXTENSION_KOTLIN = (
+    REPO_ROOT / "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryJavaExtension.kt"
+)
+FOUNDRY_JAVA_EXTENSION_KOTLIN_TEST = (
+    REPO_ROOT / "platform/android/java/lib/src/test/java/games/cafecito/foundry/FoundryJavaExtensionTest.kt"
+)
+OS_ANDROID = REPO_ROOT / "platform/android/os_android.cpp"
+FOUNDRY_JAVA_EXTENSION_ASSET = "FoundryJava.foundryextension"
+FOUNDRY_JAVA_EXTENSION_CONFIG_PATH = "res://FoundryJava.foundryextension"
+PLATFORM_EXTENSION_LOAD_FAILED_TOKEN = "FOUNDRY_JAVA_PLATFORM_EXTENSION_LOAD_FAILED"
+ACCEPTANCE_READY_MARKER = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
 ANDROID_RUNTIME_GUIDE = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
 ANDROID_EXPORT_CLASS_REFERENCE = REPO_ROOT / "platform/android/doc_classes/EditorExportPlatformAndroid.xml"
 ANDROID_EXPORT_PLAN = REPO_ROOT / "docs/superpowers/plans/2026-07-26-foundry-java-android-export.md"
@@ -163,6 +176,108 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
             with self.subTest(option=option):
                 self.assertIn(option, exporter)
         self.assertIn("foundry_java_registry_marker=registry-index-v2", exporter)
+
+    def test_platform_extension_seam_reports_the_single_fixed_binding_path(self) -> None:
+        extension = FOUNDRY_JAVA_EXTENSION_KOTLIN.read_text(encoding="utf-8")
+        self.assertEqual(1, extension.count(f'"{FOUNDRY_JAVA_EXTENSION_ASSET}"'))
+        self.assertEqual(1, extension.count(f'"{FOUNDRY_JAVA_EXTENSION_CONFIG_PATH}"'))
+        self.assertIn(f'const val ASSET_NAME = "{FOUNDRY_JAVA_EXTENSION_ASSET}"', extension)
+        self.assertIn(f'const val CONFIG_PATH = "{FOUNDRY_JAVA_EXTENSION_CONFIG_PATH}"', extension)
+
+        host = FOUNDRY_KOTLIN_HOST.read_text(encoding="utf-8")
+        seam = host.split("private fun getFoundryExtensionConfigFiles(): Array<String> {", maxsplit=1)[1].split(
+            "\n\t}",
+            maxsplit=1,
+        )[0]
+        # The dead seam this issue replaced returned no paths at all, so the binding
+        # was packaged and never loaded. Guard the exact regression.
+        self.assertNotIn("emptyArray()", seam)
+        self.assertIn("FoundryJavaExtension.configFiles", seam)
+        self.assertIn("@Keep\n\tprivate fun getFoundryExtensionConfigFiles(): Array<String> {", host)
+
+    def test_platform_extension_discovery_never_scans(self) -> None:
+        host = FOUNDRY_KOTLIN_HOST.read_text(encoding="utf-8")
+        # Scoped to the discovery seam itself: the surrounding host class legitimately uses
+        # package and asset APIs for unrelated runtime concerns.
+        discovery = host.split("private fun getFoundryExtensionConfigFiles(): Array<String> {", maxsplit=1)[1].split(
+            "\n\t@Keep",
+            maxsplit=1,
+        )[0]
+        sources = {
+            "Foundry.kt discovery seam": discovery,
+            "FoundryJavaExtension.kt": FOUNDRY_JAVA_EXTENSION_KOTLIN.read_text(encoding="utf-8"),
+        }
+        for name, source in sources.items():
+            for forbidden in (
+                "assets.list(",
+                "getAssets().list(",
+                "Class.forName",
+                "::class.java.getDeclaredMethod",
+                "getPackageInfo",
+                "queryIntentActivities",
+                "GET_META_DATA",
+            ):
+                with self.subTest(source=name, forbidden=forbidden):
+                    self.assertNotIn(forbidden, source)
+
+    def test_platform_extension_surfaces_name_the_foundry_project_data_directory(self) -> None:
+        # This fork's project data directory is `.foundry`, not the upstream `.godot`.
+        for path in (
+            FOUNDRY_KOTLIN_HOST,
+            FOUNDRY_JAVA_EXTENSION_KOTLIN,
+            ANDROID_RUNTIME_GUIDE,
+        ):
+            with self.subTest(path=path.name):
+                self.assertNotIn(".godot/", path.read_text(encoding="utf-8"))
+        self.assertIn("res://.foundry/extension_list.cfg", FOUNDRY_JAVA_EXTENSION_KOTLIN.read_text(encoding="utf-8"))
+
+    def test_platform_extension_load_failure_is_diagnosable_and_non_fatal(self) -> None:
+        os_android = OS_ANDROID.read_text(encoding="utf-8")
+        loader = os_android.split("void OS_Android::load_platform_foundry_extensions() const {", maxsplit=1)[1].split(
+            "\n}",
+            maxsplit=1,
+        )[0]
+        self.assertIn(PLATFORM_EXTENSION_LOAD_FAILED_TOKEN, loader)
+        self.assertIn("config_file_path", loader)
+        # Startup must survive a failed binding load so the harness sees the token
+        # instead of a dead process with no attributable cause.
+        self.assertIn("ERR_CONTINUE_MSG", loader)
+        self.assertNotIn("ERR_FAIL", loader)
+
+        acceptance = DEVICE_ACCEPTANCE_TOOL.read_text(encoding="utf-8")
+        self.assertIn(
+            f'PLATFORM_EXTENSION_LOAD_FAILED_TOKEN = "{PLATFORM_EXTENSION_LOAD_FAILED_TOKEN}"',
+            acceptance,
+        )
+        patterns = acceptance.split("RUNTIME_FAILURE_PATTERNS = (", maxsplit=1)[1].split("\n)", maxsplit=1)[0]
+        self.assertIn("PLATFORM_EXTENSION_LOAD_FAILED_TOKEN,", patterns)
+
+    def test_acceptance_fixture_gates_the_marker_behind_a_live_binding(self) -> None:
+        script = ACCEPTANCE_MAIN_SCRIPT.read_text(encoding="utf-8")
+        self.assertEqual(1, script.count(f'print("{ACCEPTANCE_READY_MARKER}")'))
+        preamble = script.split(f'print("{ACCEPTANCE_READY_MARKER}")', maxsplit=1)[0]
+        # Every proof step must precede the marker, or a dead binding still passes
+        # the device gate exactly as it did before this issue.
+        for gate in (
+            'ClassDB.class_exists("DemoExtension")',
+            'ClassDB.instantiate("DemoExtension")',
+            'probe.call("callback_probe", 41)',
+            "result != 42",
+        ):
+            with self.subTest(gate=gate):
+                self.assertIn(gate, preamble)
+        # Resolution stays dynamic so the project still exports where no binding exists.
+        self.assertNotIn("extends DemoExtension", script)
+        self.assertNotIn(": DemoExtension", script)
+
+    def test_acceptance_project_writes_the_reviewable_fixture(self) -> None:
+        suite = Path(__file__).read_text(encoding="utf-8")
+        writer = suite.split("\n    def _write_command_first_project(\n", maxsplit=1)[1].split(
+            "\n    def ",
+            maxsplit=1,
+        )[0]
+        self.assertIn("ACCEPTANCE_MAIN_SCRIPT", writer)
+        self.assertNotIn(ACCEPTANCE_READY_MARKER, writer)
 
     def test_ordinary_gradle_dependencies_remain_owned_by_foundry(self) -> None:
         build = APP_BUILD.read_text(encoding="utf-8")
@@ -451,6 +566,39 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
                 self.assertIn(fragment, guide)
         self.assertIn("ordinary exports remain", guide.lower())
         self.assertIn("unchanged:", guide.lower())
+
+    def test_runtime_guide_documents_how_the_binding_is_loaded_at_startup(self) -> None:
+        guide = ANDROID_RUNTIME_GUIDE.read_text(encoding="utf-8")
+        required_fragments = (
+            "### Loading the binding at runtime",
+            "getFoundryExtensionConfigFiles()",
+            FOUNDRY_JAVA_EXTENSION_CONFIG_PATH,
+            "single fixed-path check",
+            "no manifest scanning",
+            "no asset enumeration",
+            "reflection",
+            "FoundryJavaStartupProvider",
+            "FoundryLib.initialize()",
+            "engine CORE init",
+            "load_platform_foundry_extensions()",
+            "foundry_java_library_init",
+            "level-ordered registration",
+            PLATFORM_EXTENSION_LOAD_FAILED_TOKEN,
+            "| Engine-loaded runtime |",
+        )
+        for fragment in required_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, guide)
+
+    def test_class_reference_documents_the_runtime_load_consequence(self) -> None:
+        class_reference = ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8")
+        enabled = class_reference.split(
+            '<member name="gradle_build/foundry_java/enabled"',
+            maxsplit=1,
+        )[1].split("</member>", maxsplit=1)[0]
+        self.assertIn("load the binding extension at startup", enabled)
+        self.assertIn(f"[code]{FOUNDRY_JAVA_EXTENSION_CONFIG_PATH}[/code]", enabled)
+        self.assertIn("only when", enabled)
 
     def test_class_reference_documents_all_six_export_options(self) -> None:
         class_reference = ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8")
@@ -2494,8 +2642,10 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
+        # The acceptance script is a reviewable fixture, not an inline literal: it is the only
+        # thing that proves the packaged binding actually loaded and dispatched on device.
         project.joinpath("main.fs").write_text(
-            'extends Node\n\nfunc _ready() -> void:\n\tprint("FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY")\n',
+            ACCEPTANCE_MAIN_SCRIPT.read_text(encoding="utf-8"),
             encoding="utf-8",
         )
         FoundryJavaExporterContractTests._write_export_preset(
