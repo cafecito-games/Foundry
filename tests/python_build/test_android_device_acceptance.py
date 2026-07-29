@@ -133,8 +133,13 @@ class FakeRunner:
             application_id = arguments[-1]
             self.pid_calls[application_id] = self.pid_calls.get(application_id, 0) + 1
             if (
-                self.failure == "process-timeout"
-                or self.failure == "startup-abort"
+                self.failure
+                in {
+                    "process-timeout",
+                    "process-timeout-unrelated-crash",
+                    "process-timeout-stale-crash",
+                    "startup-abort",
+                }
                 or (self.failure == "process-exits" and self.pid_calls[application_id] > 1)
                 or (
                     self.failure == "process-exits-while-ready"
@@ -159,6 +164,27 @@ class FakeRunner:
                     "01-01 00:00:00.150  1 1 E AndroidRuntime: Process: "
                     f"{self.tool.DEFAULT_APPLICATION_ID}, PID: 4242\n"
                     "01-01 00:00:00.200  1 1 F libc: Fatal signal 6 (SIGABRT)\n"
+                )
+            elif self.failure == "process-timeout-unrelated-crash":
+                # A sibling/unrelated crash after the launch stamp must not decorate
+                # the target's timeout message as if it were the cause.
+                target = self.tool.DEFAULT_APPLICATION_ID
+                boundary = f"{self.tool.LAUNCH_BOUNDARY_MARKER} {target}"
+                stdout = (
+                    f"01-01 00:00:00.000  1 1 I {self.tool.LAUNCH_BOUNDARY_TAG}: {boundary}\n"
+                    "01-01 00:00:00.100  1 1 E AndroidRuntime: FATAL EXCEPTION: main\n"
+                    "01-01 00:00:00.150  1 1 E AndroidRuntime: Process: com.example.unrelated, PID: 9001\n"
+                )
+            elif self.failure == "process-timeout-stale-crash":
+                # A crash from a previous launch of the same package sits before the
+                # boundary and must not decorate the current launch's timeout.
+                target = self.tool.DEFAULT_APPLICATION_ID
+                boundary = f"{self.tool.LAUNCH_BOUNDARY_MARKER} {target}"
+                stdout = (
+                    "01-01 00:00:00.000  1 1 E AndroidRuntime: FATAL EXCEPTION: main\n"
+                    f"01-01 00:00:00.050  1 1 E AndroidRuntime: Process: {target}, PID: 1111\n"
+                    f"01-01 00:00:00.100  1 1 I {self.tool.LAUNCH_BOUNDARY_TAG}: {boundary}\n"
+                    "01-01 00:00:00.150  1 1 I ActivityManager: Start proc\n"
                 )
             elif self.failure is not None and self.failure.startswith("runtime-log:"):
                 stdout = f"{self.failure.partition(':')[2]}\n"
@@ -878,6 +904,56 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         logcat = evidence_dir / f"{self.tool.DEFAULT_APPLICATION_ID}-logcat.txt"
         self.assertIn("NoSuchMethodError", logcat.read_text(encoding="utf-8"))
         self.assertEqual(1, runner.pid_calls[self.tool.DEFAULT_APPLICATION_ID])
+
+    def test_startup_timeout_suffix_ignores_unrelated_process_crash(self) -> None:
+        # The timeout decorator must not blame the target for a fatal signature that
+        # Android attributed to another process in the same capture.
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        runner = FakeRunner(self.tool, "process-timeout-unrelated-crash")
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+        with self.assertRaisesRegex(self.tool.AcceptanceError, "waiting for Android process") as caught:
+            self.tool.run_apk_acceptance(
+                apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                evidence_dir=self.workspace / "apk-unrelated-suffix-evidence",
+                adb=Path("/sdk/platform-tools/adb"),
+                apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                requested_serial="emulator-5554",
+                runner=runner,
+                boot_timeout=0.0,
+                process_timeout=0.0,
+                poll_interval=0.0,
+                required_runtime_marker=None,
+            )
+        message = str(caught.exception)
+        self.assertIn("timed out", message)
+        self.assertNotIn("runtime failures:", message)
+        self.assertNotIn("FATAL EXCEPTION", message)
+
+    def test_startup_timeout_suffix_ignores_previous_launch_crash(self) -> None:
+        # A crash from an earlier launch of the same package sits before the stamp
+        # and must not decorate the current launch's timeout message.
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        runner = FakeRunner(self.tool, "process-timeout-stale-crash")
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+        with self.assertRaisesRegex(self.tool.AcceptanceError, "waiting for Android process") as caught:
+            self.tool.run_apk_acceptance(
+                apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                evidence_dir=self.workspace / "apk-stale-suffix-evidence",
+                adb=Path("/sdk/platform-tools/adb"),
+                apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                requested_serial="emulator-5554",
+                runner=runner,
+                boot_timeout=0.0,
+                process_timeout=0.0,
+                poll_interval=0.0,
+                required_runtime_marker=None,
+            )
+        message = str(caught.exception)
+        self.assertIn("timed out", message)
+        self.assertNotIn("runtime failures:", message)
+        self.assertNotIn("FATAL EXCEPTION", message)
 
     def test_every_shared_runtime_failure_signature_ends_the_startup_wait(self) -> None:
         # The startup watcher must read the single shared signature list so a new
