@@ -909,6 +909,19 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
                 poll_interval=0.0,
             )
 
+    def test_attribution_rejects_packages_that_merely_extend_the_id(self) -> None:
+        target = self.tool.DEFAULT_APPLICATION_ID
+        for sibling in (f"{target}.instrumented", f"{target}.test", f"{target}extra"):
+            with self.subTest(sibling=sibling):
+                log = "\n".join(
+                    (
+                        "E AndroidRuntime: FATAL EXCEPTION: main",
+                        f"E AndroidRuntime: Process: {sibling}, PID: 4242",
+                    )
+                )
+
+                self.assertEqual([], self.tool.attributed_runtime_failures(log, target))
+
     def test_attribution_ignores_signatures_far_from_the_package(self) -> None:
         distant = "\n".join(
             (

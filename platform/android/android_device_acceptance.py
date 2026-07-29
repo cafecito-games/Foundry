@@ -310,10 +310,17 @@ def runtime_log_failures(contents: str) -> list[str]:
     return [signature for signature in RUNTIME_FAILURE_PATTERNS if signature in contents]
 
 
+def _package_owner_pattern(application_id: str) -> re.Pattern[str]:
+    # A bare substring match would also claim sibling packages that extend the ID,
+    # such as the ".instrumented" flavor, so require a package-name boundary.
+    return re.compile(rf"(?<![\w.$]){re.escape(application_id)}(?![\w.$])")
+
+
 def attributed_runtime_failures(contents: str, application_id: str) -> list[str]:
     """Return fatal signatures one captured log attributes to a specific package."""
     lines = contents.splitlines()
-    owned = [index for index, line in enumerate(lines) if application_id in line]
+    owner = _package_owner_pattern(application_id)
+    owned = [index for index, line in enumerate(lines) if owner.search(line)]
     if not owned:
         return []
     attributed: list[str] = []
