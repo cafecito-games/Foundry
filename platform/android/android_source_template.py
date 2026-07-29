@@ -180,11 +180,10 @@ def _inspect_host_archive(
                 raise SourceTemplateError(
                     f"source template contains a forbidden Foundry-Java binding path: {nested_context}"
                 )
+            # Opaque leaves are inspected from metadata; only nested archives are read and consume the budget.
             if PurePosixPath(name).suffix.lower() in NESTED_ARCHIVE_SUFFIXES:
                 contents = _read_archive_entry(archive, info, nested_context, budget)
                 _inspect_host_archive(contents, nested_context, depth + 1, budget)
-            else:
-                budget.record_entry(info.file_size, nested_context)
 
 
 def inspect_source_template(archive_path: Path) -> tuple[str, ...]:

@@ -284,8 +284,9 @@ class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
         inspector = load_source_template_module()
         limit = getattr(inspector, "MAX_NESTED_ENTRY_UNCOMPRESSED_BYTES", None)
         self.assertIsNotNone(limit)
-        setattr(inspector, "MAX_NESTED_ENTRY_UNCOMPRESSED_BYTES", 4)
-        payload = self._archive((("classes.bin", b"12345"),))
+        child = self._archive((("leaf.bin", b"leaf"),))
+        setattr(inspector, "MAX_NESTED_ENTRY_UNCOMPRESSED_BYTES", len(child) - 1)
+        payload = self._archive((("classes.jar", child),))
         with self.assertRaisesRegex(inspector.SourceTemplateError, "entry decompressed size limit"):
             inspector._inspect_host_archive(payload, "host.aar")
 
@@ -293,15 +294,24 @@ class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
         inspector = load_source_template_module()
         limit = getattr(inspector, "MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES", None)
         self.assertIsNotNone(limit)
-        setattr(inspector, "MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES", 5)
+        child = self._archive((("leaf.bin", b"leaf"),))
+        setattr(inspector, "MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES", (len(child) * 2) - 1)
         payload = self._archive(
             (
-                ("first.bin", b"123"),
-                ("second.bin", b"456"),
+                ("first.jar", child),
+                ("second.jar", child),
             )
         )
         with self.assertRaisesRegex(inspector.SourceTemplateError, "cumulative decompressed size limit"):
             inspector._inspect_host_archive(payload, "host.aar")
+
+    def test_nested_archive_does_not_charge_opaque_leaf_payloads(self) -> None:
+        inspector = load_source_template_module()
+        limit = getattr(inspector, "MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES", None)
+        self.assertIsNotNone(limit)
+        setattr(inspector, "MAX_NESTED_TOTAL_UNCOMPRESSED_BYTES", 5)
+        payload = self._archive((("jni/arm64-v8a/libfoundry_android.so", b"123456"),))
+        inspector._inspect_host_archive(payload, "host.aar")
 
     def test_nested_archive_rejects_more_than_the_archive_count_limit(self) -> None:
         inspector = load_source_template_module()
