@@ -1582,10 +1582,24 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 			return ERR_PARSE_ERROR;
 		}
 
-		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::INTERFACE_SOLVED);
+		// Only the declaring file's `uses` clauses are needed here. Raising the whole file to
+		// `INTERFACE_SOLVED` would also resolve every member of that file, which re-enters whatever
+		// global enum or tuple this analyzer is in the middle of resolving and reports a false cycle.
+		// Resolving the trait uses in the owning analyzer, the way an external class interface is
+		// resolved, keeps the dependency down to what the caller actually asked for.
+		Error err = dependency_parser_access.raise_parser_to_status(parser_ref, FSParserRef::PARSED);
 		if (err != OK) {
 			push_error(vformat(R"(Could not resolve trait uses for class "%s".)", p_class->fqcn), p_source);
 			return err;
+		}
+
+		FSAnalyzer *other_analyzer = parser_ref->get_analyzer();
+		FSParser *other_parser = parser_ref->get_parser();
+		const int error_count = other_parser->errors.size();
+		err = other_analyzer->resolve_trait_uses(p_class);
+		if (err != OK || other_parser->errors.size() > error_count) {
+			push_error(vformat(R"(Could not resolve trait uses for class "%s".)", p_class->fqcn), p_source);
+			return err != OK ? err : ERR_PARSE_ERROR;
 		}
 		return OK;
 	}
