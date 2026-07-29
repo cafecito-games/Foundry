@@ -826,14 +826,18 @@ static String _dependency_error_suffix(const char *p_noun, const String &p_path,
 // so the diagnostic points at the relationship rather than a generic "parser error". Prefer the
 // file's global name (`class_name` / `enum_name` / `trait_name` / `tuple_name`) when present.
 static String _resolving_context_name(const FSParser *p_parser) {
-	if (p_parser == nullptr || p_parser->head == nullptr) {
+	if (p_parser == nullptr) {
 		return String();
 	}
-	const StringName global_name = p_parser->head->get_global_name();
+	const FSParser::ClassNode *head = p_parser->get_tree();
+	if (head == nullptr) {
+		return String();
+	}
+	const StringName global_name = head->get_global_name();
 	if (global_name != StringName()) {
 		return global_name;
 	}
-	return _class_or_trait_name(p_parser->head);
+	return _class_or_trait_name(head);
 }
 
 // Shared wording for failed cross-file class/enum raises. `FSParserRef::result` is sticky and can
