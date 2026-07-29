@@ -3997,6 +3997,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             "Invalid export option %s value '%s': %s.",
             "must be an exact group:artifact:version value",
             "must use HTTPS or a local file URL without credentials, query, or fragment",
+            "must contain at least one repository",
             "must name a regular .jar or .aar file",
             "must not traverse a symbolic link",
             "must not contain carriage returns, newlines, or '|'",
@@ -4129,6 +4130,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         use_gradle=True,
                         extra_options=(
                             f'gradle_build/foundry_java/gradle_plugin_maven="{coordinate}"',
+                            'gradle_build/foundry_java/maven_repositories=PackedStringArray("https://repo.invalid/releases")',
                             f'gradle_build/gradle_build_directory="{gradle_root}"',
                             "gradle_build/export_format=0",
                             "package/signed=false",
