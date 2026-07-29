@@ -1,9 +1,11 @@
 name: 🚀 Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  # Deliberately no `push: tags` trigger. The release tag is created by an app
+  # installation token, and unlike GITHUB_TOKEN those tokens do trigger
+  # workflows -- a tag-push trigger would start a second full build matrix that
+  # then races to publish a release for a tag that already has one. Releases are
+  # cut with workflow_dispatch.
   workflow_dispatch:
     inputs:
       mode:
@@ -35,7 +37,6 @@ concurrency:
 
 jobs:
   # Resolve the version/status strings and whether to publish or leave a draft.
-  # - Tag push (refs/tags/vX.Y.Z or refs/tags/vX.Y.Z-alpha.N) -> auto-published.
   # - Manual draft -> version from version.py, channel from inputs, prerelease number auto-incremented, left as a draft.
   # - Manual publish -> same as manual draft, but creates the resolved tag and publishes in this run.
   resolve:
@@ -67,6 +68,18 @@ jobs:
           CHANNEL_INPUT: ${{ inputs.channel }}
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/resolve_release.py
+
+      # Mint the tag credential before the ~1h build matrix rather than in
+      # `publish`, so a bad secret, an expired key, or an installation that no
+      # longer covers this repository is reported in seconds instead of after
+      # every template is built. Minting is the check: it exercises the whole
+      # chain, which a test for a non-empty secret would not.
+      - name: Verify release tag credential
+        if: steps.resolve.outputs.create_tag == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
   build-linux:
     needs: resolve
@@ -1169,10 +1182,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # Not github.token: GITHUB_TOKEN can never be granted the `workflows`
+      # permission, and any ref update -- `git push` or the Git Data API alike --
+      # is refused with 403 when the target commit touches .github/workflows/.
+      # This app installation holds contents:write plus workflows:write, so
+      # release commits that carry CI changes can still be tagged.
+      - name: Mint release tag token
+        id: release-token
+        if: needs.resolve.outputs.create_tag == 'true'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
       - name: Create release tag
         if: needs.resolve.outputs.create_tag == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.release-token.outputs.token }}
           TAG_NAME: ${{ needs.resolve.outputs.tag }}
           RELEASE_NAME: ${{ needs.resolve.outputs.release_name }}
         run: |
@@ -1181,10 +1207,8 @@ jobs:
             exit 1
           fi
 
-          # Create the annotated tag through the REST API instead of `git push`:
-          # GITHUB_TOKEN cannot be granted the `workflows` permission, so pushing
-          # a tag whose commit touches .github/workflows/ is rejected at the git
-          # layer, while the Git Data API accepts it.
+          # The annotated tag is created as an object first, then pointed at by a
+          # ref, because `gh api` has no single call for an annotated tag.
           TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
             -f tag="$TAG_NAME" \
             -f message="$RELEASE_NAME" \
