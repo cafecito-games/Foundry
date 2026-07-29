@@ -4831,7 +4831,7 @@ bool EditorExportPlatformAndroid::has_valid_project_configuration(const Ref<Edit
 	bool valid = true;
 	FoundryJavaExportConfig foundry_java;
 	String foundry_java_error;
-	if (_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, false) != OK) {
+	if (_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true) != OK) {
 		err += foundry_java_error + "\n";
 		valid = false;
 	} else if (foundry_java.enabled && get_enabled_abis(p_preset).is_empty()) {

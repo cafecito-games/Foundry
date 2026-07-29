@@ -257,7 +257,7 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
         self.assertGreater(process_events, redaction_guard_end)
         self.assertGreater(main_iteration, redaction_guard_end)
 
-    def test_export_option_warnings_defer_deep_archive_scanning_until_export(self) -> None:
+    def test_property_warnings_are_shallow_but_preflight_and_export_scan_archives(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
         config_start = exporter.index("Error EditorExportPlatformAndroid::_get_foundry_java_export_config(")
         config_end = exporter.index("void EditorExportPlatformAndroid::get_preset_features", config_start)
@@ -270,13 +270,24 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
         validity = exporter[validity_start:validity_end]
         helper = exporter.split("Error EditorExportPlatformAndroid::export_project_helper", maxsplit=1)[1]
 
+        # Property warnings are queried repeatedly by the inspector and must not
+        # traverse archives. Project validity is the authoritative command-first
+        # diagnostic boundary, while the export helper repeats deep validation as
+        # defense in depth.
         self.assertIn("bool p_scan_archives", config)
         self.assertEqual(2, config.count("if (p_scan_archives)"))
         self.assertIn("_get_foundry_java_export_config(p_preset, config, error, false)", warning)
+        self.assertNotIn("_get_foundry_java_export_config(p_preset, config, error, true)", warning)
         self.assertIn(
+            "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true)", validity
+        )
+        self.assertNotIn(
             "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, false)", validity
         )
         self.assertIn("_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true)", helper)
+        self.assertNotIn(
+            "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, false)", helper
+        )
 
     def test_symlink_validation_preserves_windows_unc_roots(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
