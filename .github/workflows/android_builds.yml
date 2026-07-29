@@ -27,6 +27,7 @@ jobs:
             tests.python_build.test_android_runtime_contract \
             tests.python_build.test_android_runtime_build \
             tests.python_build.test_android_jni_contract \
+            tests.python_build.test_android_host_contract \
             tests.python_build.test_android_native_staging \
             tests.python_build.test_android_gradle_behavioral \
             tests.python_build.test_android_gradle_runtime_contract \

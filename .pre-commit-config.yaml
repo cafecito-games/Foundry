@@ -238,6 +238,23 @@ repos:
             tests/python_build/test_android_runtime_surface\.py
           )$
 
+      - id: foundry-android-host-jni-contract
+        name: Foundry Android host JNI keep rules
+        language: python
+        entry: python -m unittest
+        args:
+          - tests.python_build.test_android_host_contract
+        pass_filenames: false
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            platform/android/[^/]*\.cpp|
+            platform/android/android_host_contract\.py|
+            platform/android/java/app/build\.gradle|
+            platform/android/java/lib/(?:build\.gradle|proguard-rules\.pro)|
+            tests/python_build/test_android_host_contract\.py
+          )$
+
       - id: foundry-java-android-export
         name: Foundry-Java Android export contracts
         language: python
@@ -254,6 +271,7 @@ repos:
             \.github/workflows/(?:android|macos)_builds\.yml|
             platform/android/ANDROID_RUNTIME\.md|
             platform/android/android_device_acceptance\.py|
+            platform/android/android_host_contract\.py|
             platform/android/android_source_template\.py|
             platform/android/doc_classes/EditorExportPlatformAndroid\.xml|
             platform/android/export/export_plugin\.(?:cpp|h)|
