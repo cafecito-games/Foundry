@@ -332,14 +332,14 @@ def require_exact_python(actual: str, expected: str, context: str) -> None:
 
 def validate_events(workflow: str) -> None:
     on_block = named_block(workflow, "on", 0, "workflow")
+    # Dispatch-only on purpose. The release tag is created with an app
+    # installation token, and those tokens trigger workflows, so a tag-push
+    # trigger would start a duplicate build matrix racing to publish the same
+    # release.
     require(
-        set(child_keys(on_block, 2)) == {"push", "workflow_dispatch"},
-        "release workflow events must be exactly push and workflow_dispatch",
+        set(child_keys(on_block, 2)) == {"workflow_dispatch"},
+        "release workflow events must be exactly workflow_dispatch",
     )
-    push_block = named_block(on_block, "push", 2, "release events")
-    require(set(child_keys(push_block, 4)) == {"tags"}, "release push event must be tag-only")
-    tags = list_items(named_block(push_block, "tags", 4, "release push"), 6, "release push tags")
-    require({tag.strip("'\"") for tag in tags} == {"v*"} and len(tags) == 1, "release push tags must be exactly v*")
 
 
 def validate_publish_handoff(workflow: str) -> None:
