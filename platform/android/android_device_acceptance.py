@@ -62,11 +62,20 @@ RUNTIME_FAILURE_PATTERNS = (
     'couldn\'t find "libfoundry_android.so"',
 )
 STARTUP_ABORT_EXCERPT_LINES = 60
-# A fatal signature only ends the startup wait when the surrounding log lines name
-# the package. Android writes the owner next to the signature -- "Process: <id>"
-# for a Java crash, ">>> <id> <<<" for a tombstone -- so an unrelated process
-# crashing during our startup delay cannot be mistaken for the target aborting.
-STARTUP_ABORT_ATTRIBUTION_LINES = 30
+# A fatal signature only ends the startup wait when the log declares the crashing
+# process, and declares it to be the target. These are the two headers Android
+# writes inside a crash block itself: the AndroidRuntime Java header and the
+# native tombstone header. Ordinary lines that merely name the package -- launch
+# records, lifecycle chatter -- are deliberately not owners, so an unrelated
+# process crashing beside them cannot be mistaken for the target aborting.
+STARTUP_ABORT_OWNER_TEMPLATES = (
+    r"Process:\s*{package}(?![\w.$])",
+    r">>>\s*{package}\s*<<<",
+)
+# Android emits the owner header immediately beside the signature: "Process:" is
+# the line after "FATAL EXCEPTION", and the tombstone header follows "Fatal
+# signal" within the same short block.
+STARTUP_ABORT_OWNER_LINES = 8
 HOST_CONTRACT_REPORTED_MEMBERS = 12
 STANDARD_SMOKE_READY_MARKER = "Foundry Android standard runtime smoke ready"
 SOURCE_TEMPLATE_TOOL_PATH = Path(__file__).resolve().with_name("android_source_template.py")
@@ -310,17 +319,18 @@ def runtime_log_failures(contents: str) -> list[str]:
     return [signature for signature in RUNTIME_FAILURE_PATTERNS if signature in contents]
 
 
-def _package_owner_pattern(application_id: str) -> re.Pattern[str]:
-    # A bare substring match would also claim sibling packages that extend the ID,
-    # such as the ".instrumented" flavor, so require a package-name boundary.
-    return re.compile(rf"(?<![\w.$]){re.escape(application_id)}(?![\w.$])")
+def _crash_owner_patterns(application_id: str) -> tuple[re.Pattern[str], ...]:
+    # The package name needs a boundary, or a sibling that merely extends the ID --
+    # the ".instrumented" flavor, for instance -- would claim the crash.
+    package = rf"(?<![\w.$]){re.escape(application_id)}"
+    return tuple(re.compile(template.format(package=package)) for template in STARTUP_ABORT_OWNER_TEMPLATES)
 
 
 def attributed_runtime_failures(contents: str, application_id: str) -> list[str]:
     """Return fatal signatures one captured log attributes to a specific package."""
     lines = contents.splitlines()
-    owner = _package_owner_pattern(application_id)
-    owned = [index for index, line in enumerate(lines) if owner.search(line)]
+    owners = _crash_owner_patterns(application_id)
+    owned = [index for index, line in enumerate(lines) if any(owner.search(line) for owner in owners)]
     if not owned:
         return []
     attributed: list[str] = []
@@ -328,7 +338,7 @@ def attributed_runtime_failures(contents: str, application_id: str) -> list[str]
         for index, line in enumerate(lines):
             if signature not in line:
                 continue
-            if any(abs(index - owner) <= STARTUP_ABORT_ATTRIBUTION_LINES for owner in owned):
+            if any(abs(index - owner) <= STARTUP_ABORT_OWNER_LINES for owner in owned):
                 attributed.append(signature)
                 break
     return attributed

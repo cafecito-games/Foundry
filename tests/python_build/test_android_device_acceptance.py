@@ -922,26 +922,47 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
 
                 self.assertEqual([], self.tool.attributed_runtime_failures(log, target))
 
-    def test_attribution_ignores_signatures_far_from_the_package(self) -> None:
-        distant = "\n".join(
+    def test_only_crash_block_headers_declare_ownership(self) -> None:
+        target = self.tool.DEFAULT_APPLICATION_ID
+        # An unrelated crash interleaved with ordinary launch chatter naming the
+        # target must not read as the target aborting.
+        interleaved = "\n".join(
             (
+                f"I ActivityTaskManager: START u0 cmp={target}/.FoundryAppLauncher",
                 "E AndroidRuntime: FATAL EXCEPTION: main",
-                *[f"noise {index}" for index in range(self.tool.STARTUP_ABORT_ATTRIBUTION_LINES + 5)],
-                f"I ActivityManager: Start proc for {self.tool.DEFAULT_APPLICATION_ID}",
+                "E AndroidRuntime: Process: com.example.unrelated, PID: 9001",
+                f"I ActivityManager: Start proc 4242:{target}/u0a123",
             )
         )
-        adjacent = "\n".join(
+        java_crash = "\n".join(
             (
                 "E AndroidRuntime: FATAL EXCEPTION: main",
-                f"E AndroidRuntime: Process: {self.tool.DEFAULT_APPLICATION_ID}, PID: 4242",
+                f"E AndroidRuntime: Process: {target}, PID: 4242",
+            )
+        )
+        tombstone = "\n".join(
+            (
+                "F libc: Fatal signal 6 (SIGABRT)",
+                "F DEBUG: pid: 4242, tid: 4242",
+                f"F DEBUG: >>> {target} <<<",
             )
         )
 
-        self.assertEqual([], self.tool.attributed_runtime_failures(distant, self.tool.DEFAULT_APPLICATION_ID))
-        self.assertEqual(
-            ["FATAL EXCEPTION"],
-            self.tool.attributed_runtime_failures(adjacent, self.tool.DEFAULT_APPLICATION_ID),
+        self.assertEqual([], self.tool.attributed_runtime_failures(interleaved, target))
+        self.assertEqual(["FATAL EXCEPTION"], self.tool.attributed_runtime_failures(java_crash, target))
+        self.assertEqual(["Fatal signal"], self.tool.attributed_runtime_failures(tombstone, target))
+
+    def test_attribution_ignores_signatures_outside_the_crash_block(self) -> None:
+        target = self.tool.DEFAULT_APPLICATION_ID
+        distant = "\n".join(
+            (
+                "E AndroidRuntime: FATAL EXCEPTION: main",
+                *[f"noise {index}" for index in range(self.tool.STARTUP_ABORT_OWNER_LINES + 5)],
+                f"E AndroidRuntime: Process: {target}, PID: 4242",
+            )
         )
+
+        self.assertEqual([], self.tool.attributed_runtime_failures(distant, target))
 
     def test_startup_abort_excerpt_centers_on_the_first_signature(self) -> None:
         contents = "\n".join(
