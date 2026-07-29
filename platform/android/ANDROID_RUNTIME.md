@@ -120,6 +120,40 @@ The existing architecture selection remains authoritative:
 Foundry continues to own and package its ordinary host
 `libfoundry_android.so`; the binding AAR may not contain that host library.
 
+### Loading the binding at runtime
+
+Packaging the binding is not the same as running it. `assets/FoundryJava.foundryextension`
+is injected into the APK by the Gradle plugin at build time, so it is never a
+project file and never appears in `res://.foundry/extension_list.cfg`, which is the
+only list the ordinary extension loader reads. The Android platform-extension
+seam is what closes that gap.
+
+The exported application loads the binding extension at startup when, and only
+when, the fixed asset `FoundryJava.foundryextension` is present. Discovery is a
+single fixed-path check: `getFoundryExtensionConfigFiles()` reports exactly
+`res://FoundryJava.foundryextension` if that one asset opens, and nothing
+otherwise. Only a missing asset means "no binding"; a broken `AssetManager`
+propagates rather than being reported as an application that ships no binding.
+There is no manifest scanning, no class scanning, no asset enumeration, and no
+reflection.
+
+Startup order:
+
+```text
+FoundryJavaStartupProvider (pre-Activity, primes the bridge)
+  -> FoundryLib.initialize()
+  -> engine CORE init
+  -> load_platform_foundry_extensions()
+  -> foundry_java_library_init
+  -> level-ordered registration
+```
+
+A failed load is reported with the stable token
+`FOUNDRY_JAVA_PLATFORM_EXTENSION_LOAD_FAILED` and the offending path, and startup
+continues rather than aborting, so the device gate observes a diagnosable log
+instead of a dead process. That token is a fatal runtime signature for
+`android_device_acceptance.py`, so the gate fails immediately with the real cause.
+
 ## Android and toolchain levels
 
 The root app configuration is authoritative for both `:app` and `:lib`:
@@ -409,6 +443,7 @@ python3 platform/android/android_device_acceptance.py verify-apks \
 | Source ZIP | `android_source_template.py inspect` proves the three internal AAR payloads and safe app-only source. |
 | Device runtime | `android_device_acceptance.py source-template` records JUnit, install, start, PID, and log evidence for both IDs. |
 | Editor exporter | Command-first exports followed by `android_device_acceptance.py verify-apks`. |
+| Engine-loaded runtime | `android_device_acceptance.py verify-apks` gates on `FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY`, which the acceptance app prints only after `DemoExtension` resolves through `ClassDB` and `callback_probe(41)` returns `42`. |
 | Minified host JNI surface | `android_host_contract.py --check` proves the shipped keep rules match the native call sites; `android_device_acceptance.py inspect-host-contract` proves built APKs kept every member. |
 
 No individual layer substitutes for another: compilation is not a device boot,

@@ -886,7 +886,10 @@ void OS_Android::load_platform_foundry_extensions() const {
 	Vector<String> extension_list_config_file = foundry_java->get_foundry_extension_list_config_file();
 	for (String config_file_path : extension_list_config_file) {
 		FoundryExtensionManager::LoadStatus err = FoundryExtensionManager::get_singleton()->load_extension(config_file_path);
-		ERR_CONTINUE_MSG(err == FoundryExtensionManager::LOAD_STATUS_FAILED, "Error loading platform extension: " + config_file_path);
+		// A failed load is reported and startup continues: the device acceptance harness needs a
+		// diagnosable log with the stable token, not a dead process with no attributable cause.
+		ERR_CONTINUE_MSG(err == FoundryExtensionManager::LOAD_STATUS_FAILED,
+				"FOUNDRY_JAVA_PLATFORM_EXTENSION_LOAD_FAILED Error loading platform extension: " + config_file_path);
 	}
 }
 

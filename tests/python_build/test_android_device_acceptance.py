@@ -356,6 +356,8 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             "java.lang.ClassNotFoundException",
             "FATAL EXCEPTION: main",
             'couldn\'t find "libfoundry_android.so"',
+            "FOUNDRY_JAVA_PLATFORM_EXTENSION_LOAD_FAILED Error loading platform extension: "
+            "res://FoundryJava.foundryextension",
         ):
             with self.subTest(signature=signature):
                 self.assertTrue(self.tool.runtime_log_failures(signature))
@@ -708,6 +710,64 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             report,
             json.loads((self.workspace / "apk-evidence/report.json").read_text(encoding="utf-8")),
         )
+
+    def test_apk_only_acceptance_records_binding_evidence_for_each_scenario(self) -> None:
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        runner = FakeRunner(self.tool)
+        marker = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
+        runner.runtime_marker = marker
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+
+        report = self.tool.run_apk_acceptance(
+            apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+            evidence_dir=self.workspace / "binding-evidence",
+            adb=Path("/sdk/platform-tools/adb"),
+            apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+            requested_serial="emulator-5554",
+            runner=runner,
+            boot_timeout=0.0,
+            process_timeout=0.0,
+            poll_interval=0.0,
+            required_runtime_marker=marker,
+        )
+
+        scenario = report["scenarios"][0]
+        self.assertEqual(marker, scenario["observed_runtime_marker"])
+        self.assertFalse(scenario["platform_extension_load_failed"])
+
+    def test_apk_only_acceptance_fails_fast_on_a_failed_platform_extension_load(self) -> None:
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        marker = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
+        # The engine keeps running after a failed binding load, so the gate must recognize the
+        # token rather than wait out the marker timeout with no attributable cause.
+        runner = FakeRunner(
+            self.tool,
+            f"runtime-log:{self.tool.PLATFORM_EXTENSION_LOAD_FAILED_TOKEN} "
+            "Error loading platform extension: res://FoundryJava.foundryextension",
+        )
+        runner.runtime_marker = marker
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+
+        # Matching the forbidden-failure message, not merely the token, is what separates
+        # fail-fast attribution from a marker timeout that happens to echo the same log.
+        with self.assertRaisesRegex(
+            self.tool.AcceptanceError,
+            f"logged forbidden runtime failures.*{self.tool.PLATFORM_EXTENSION_LOAD_FAILED_TOKEN}",
+        ):
+            self.tool.run_apk_acceptance(
+                apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                evidence_dir=self.workspace / "binding-failure-evidence",
+                adb=Path("/sdk/platform-tools/adb"),
+                apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                requested_serial="emulator-5554",
+                runner=runner,
+                boot_timeout=0.0,
+                process_timeout=0.0,
+                poll_interval=0.0,
+                required_runtime_marker=marker,
+            )
 
     def test_apk_only_acceptance_rejects_empty_or_whitespace_runtime_marker(self) -> None:
         for index, marker in enumerate(("", " \t ")):

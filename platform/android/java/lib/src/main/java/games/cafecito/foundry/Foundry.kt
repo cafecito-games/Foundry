@@ -74,6 +74,7 @@ import games.cafecito.foundry.utils.vibrateCompat
 import games.cafecito.foundry.xr.XRMode
 import java.io.File
 import java.io.FileInputStream
+import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.*
@@ -1116,10 +1117,29 @@ class Foundry private constructor(val context: Context) {
 
 	/**
 	 * Get the list of foundry_extension modules to register.
+	 *
+	 * This is the only seam through which the engine can discover the optional Foundry-Java
+	 * binding: the Gradle plugin injects its configuration into the APK, so it is never a project
+	 * file and never appears in `res://.foundry/extension_list.cfg`.
 	 */
 	@Keep
 	private fun getFoundryExtensionConfigFiles(): Array<String> {
-		return emptyArray()
+		return FoundryJavaExtension.configFiles(::hasPackagedAsset)
+	}
+
+	/**
+	 * Reports whether [assetName] is packaged in this application's assets.
+	 *
+	 * Only a missing asset means "no binding". Any other failure is a broken [AssetManager] and
+	 * must propagate rather than be reported as an application that simply ships no binding.
+	 */
+	private fun hasPackagedAsset(assetName: String): Boolean {
+		return try {
+			context.assets.open(assetName).close()
+			true
+		} catch (_: IOException) {
+			false
+		}
 	}
 
 	@Keep

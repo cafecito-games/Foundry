@@ -50,6 +50,7 @@ JUNIT_REPORT_ROOT = Path("build/outputs/androidTest-results/connected")
 # to the target package while polling for a PID means the process already died, so
 # the wait ends immediately with the real cause instead of burning the whole
 # timeout on an empty probe.
+PLATFORM_EXTENSION_LOAD_FAILED_TOKEN = "FOUNDRY_JAVA_PLATFORM_EXTENSION_LOAD_FAILED"
 RUNTIME_FAILURE_PATTERNS = (
     "UnsatisfiedLinkError",
     "NoClassDefFoundError",
@@ -60,6 +61,9 @@ RUNTIME_FAILURE_PATTERNS = (
     "FATAL EXCEPTION",
     "Fatal signal",
     'couldn\'t find "libfoundry_android.so"',
+    # The engine reports a failed Foundry-Java binding load and keeps running, so without this
+    # signature the gate would burn the whole marker timeout instead of naming the real cause.
+    PLATFORM_EXTENSION_LOAD_FAILED_TOKEN,
 )
 STARTUP_ABORT_EXCERPT_LINES = 60
 # A fatal signature only ends the startup wait when the log declares the crashing
@@ -1148,6 +1152,14 @@ def _verify_apk_on_device(
     (evidence_dir / f"{application_id}-logcat.txt").write_text(full_logcat, encoding="utf-8")
     (evidence_dir / f"{application_id}-process-logcat.txt").write_text(process_logcat, encoding="utf-8")
     failures = runtime_log_failures(process_logcat)
+    # Recorded before the failure check so the evidence states what the process actually logged
+    # about the Foundry-Java binding, rather than only what survived the gate.
+    platform_extension_load_failed = PLATFORM_EXTENSION_LOAD_FAILED_TOKEN in process_logcat
+    observed_runtime_marker = (
+        required_runtime_marker
+        if required_runtime_marker is not None and required_runtime_marker in process_logcat
+        else None
+    )
     if failures:
         raise AcceptanceError(f"Android package {application_id} logged forbidden runtime failures: {failures}")
     if required_runtime_marker is not None and required_runtime_marker not in process_logcat:
@@ -1160,7 +1172,9 @@ def _verify_apk_on_device(
         "application_id": application_id,
         "host_contract": host_contract,
         "manifest_application_id": manifest_application_id,
+        "observed_runtime_marker": observed_runtime_marker,
         "pid": pid,
+        "platform_extension_load_failed": platform_extension_load_failed,
         "runtime_log_failures": failures,
         "start_status": "ok",
     }
