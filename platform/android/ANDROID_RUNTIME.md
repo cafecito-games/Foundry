@@ -312,6 +312,47 @@ and `apkanalyzer`; require:
 - `armeabi-v7a`, `arm64-v8a`, `x86`, and `x86_64`;
 - the requested application ID and fixed Foundry implementation classes.
 
+## Host JNI keep rules
+
+`android_jni_contract.py` covers Java-to-native calls. The reverse direction —
+Java members the native host resolves reflectively with `GetMethodID`,
+`GetStaticMethodID`, `GetFieldID`, or `GetStaticFieldID` — has no compiled Java
+reference keeping it alive, so R8 is free to rename, inline, staticize, or drop
+those members in minified release builds. `android_host_contract.py` derives that
+surface from the native call sites and generates
+`platform/android/java/lib/proguard-rules.pro`:
+
+```sh
+python3 platform/android/android_host_contract.py --emit-keep-rules
+python3 platform/android/android_host_contract.py --check
+```
+
+The library ships the generated file through `consumerProguardFiles`, so both
+project-dependency builds and exported app-only projects consuming the packaged
+AARs inherit it. Rules are emitted without `allowoptimization`, because inlining
+or staticizing a member breaks `GetMethodID` exactly as renaming does.
+
+The contract fails closed. A lookup on a `jclass` obtained from `GetObjectClass`
+must declare its type in `INSTANCE_CLASS_BY_HANDLE`, a lookup that resolves a
+framework member on a polymorphic handle must appear in
+`FRAMEWORK_DISPATCH_MEMBERS`, and a new runtime-named lookup must be added to
+`DYNAMIC_LOOKUP_SITES`. `tests/python_build/test_android_host_contract.py` proves
+the checked-in rules match the derived contract and that every native source
+performing lookups is scanned; `:lib:verifyFoundryHostKeepRules` repeats the
+check on every Android build.
+
+To prove built artifacts kept the surface, without a device:
+
+```sh
+python3 platform/android/android_device_acceptance.py inspect-host-contract \
+  --apk .test_scratch/foundry-java-command-first/foundry-java-custom-release.apk \
+  --apkanalyzer "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/apkanalyzer"
+```
+
+This runs in seconds against any already-built APK and needs neither the native
+matrix, template assembly, nor an emulator. `verify-apks` runs the same check
+before installing, so a minified-away member fails before the device work starts.
+
 ## Device or emulator acceptance
 
 Use an API 36 device or emulator whose ABI is one of the four supported ABIs.
@@ -368,6 +409,7 @@ python3 platform/android/android_device_acceptance.py verify-apks \
 | Source ZIP | `android_source_template.py inspect` proves the three internal AAR payloads and safe app-only source. |
 | Device runtime | `android_device_acceptance.py source-template` records JUnit, install, start, PID, and log evidence for both IDs. |
 | Editor exporter | Command-first exports followed by `android_device_acceptance.py verify-apks`. |
+| Minified host JNI surface | `android_host_contract.py --check` proves the shipped keep rules match the native call sites; `android_device_acceptance.py inspect-host-contract` proves built APKs kept every member. |
 
 No individual layer substitutes for another: compilation is not a device boot,
 a green matrix is not JNI parity, and a direct Gradle APK is not proof of the

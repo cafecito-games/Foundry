@@ -18,6 +18,7 @@ from tests.python_build.android_native_test_support import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 JAVA_SOURCE = REPO_ROOT / "platform/android/java"
 ANDROID_TOOLS = (
+    "android_host_contract.py",
     "android_jni_contract.py",
     "android_native_contract.py",
     "android_native_staging.py",
@@ -80,6 +81,10 @@ def copy_gradle_fixture(destination: Path) -> Path:
     android_root = repository / "platform/android"
     for name in ANDROID_TOOLS:
         shutil.copy2(REPO_ROOT / "platform/android" / name, android_root / name)
+    # The host JNI keep rules are derived from these sources, and the library build
+    # verifies the checked-in rules against them.
+    for source in sorted((REPO_ROOT / "platform/android").glob("*.cpp")):
+        shutil.copy2(source, android_root / source.name)
     shutil.copy2(REPO_ROOT / "version.py", repository / "version.py")
 
     git_environment = {

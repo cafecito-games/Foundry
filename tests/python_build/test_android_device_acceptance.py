@@ -111,6 +111,11 @@ class FakeRunner:
                     f'<testsuite tests="{len(test_cases)}" failures="0">' + "".join(test_cases) + "</testsuite>",
                     encoding="utf-8",
                 )
+        elif len(arguments) >= 5 and arguments[1:4] == ("dex", "packages", "--defined-only"):
+            members = list(self.tool.expected_host_dex_members(self.tool.REPO_ROOT))
+            if self.failure == "stripped-host-member":
+                members = [member for member in members if "void restart()" not in member]
+            stdout = "".join(f"M\td\t1\t1\t42\t{member}\n" for member in members)
         elif len(arguments) >= 4 and arguments[1:3] == ("manifest", "application-id"):
             apk = Path(arguments[3]).resolve()
             stdout = (
@@ -129,6 +134,7 @@ class FakeRunner:
             self.pid_calls[application_id] = self.pid_calls.get(application_id, 0) + 1
             if (
                 self.failure == "process-timeout"
+                or self.failure == "startup-abort"
                 or (self.failure == "process-exits" and self.pid_calls[application_id] > 1)
                 or (
                     self.failure == "process-exits-while-ready"
@@ -142,7 +148,14 @@ class FakeRunner:
             filtered = any(argument.startswith("--pid=") for argument in arguments)
             if filtered:
                 self.filtered_logcat_calls += 1
-            if self.failure is not None and self.failure.startswith("runtime-log:"):
+            if self.failure == "startup-abort":
+                stdout = (
+                    "01-01 00:00:00.000  1 1 I ActivityManager: Start proc\n"
+                    "01-01 00:00:00.100  1 1 E AndroidRuntime: java.lang.NoSuchMethodError: no non-static "
+                    'method "Lgames/cafecito/foundry/Foundry;.restart()V"\n'
+                    "01-01 00:00:00.200  1 1 F libc: Fatal signal 6 (SIGABRT)\n"
+                )
+            elif self.failure is not None and self.failure.startswith("runtime-log:"):
                 stdout = f"{self.failure.partition(':')[2]}\n"
             elif (
                 self.failure is not None
@@ -168,6 +181,35 @@ class FakeRunner:
         if check and returncode != 0:
             raise self.tool.AcceptanceError(f"{description} failed with exit {returncode}:\n{stdout}{stderr}")
         return result
+
+
+class StartupAbortRunner:
+    """Report no process while logging one chosen fatal runtime signature."""
+
+    def __init__(self, tool: ModuleType, signature: str) -> None:
+        self.tool = tool
+        self.signature = signature
+
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout: float,
+        description: str,
+        check: bool = True,
+        env: dict[str, str] | None = None,
+    ) -> Any:
+        del cwd, timeout, description, check, env
+        arguments = tuple(str(argument) for argument in argv)
+        if "pidof" in arguments:
+            return self.tool.CommandResult(argv=arguments, returncode=1, stdout="", stderr="")
+        return self.tool.CommandResult(
+            argv=arguments,
+            returncode=0,
+            stdout=f"01-01 00:00:00.000 1 1 E AndroidRuntime: {self.signature}\n",
+            stderr="",
+        )
 
 
 class AndroidDeviceAcceptanceTests(unittest.TestCase):
@@ -774,6 +816,108 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
                 poll_interval=0.0,
                 required_runtime_marker=runner.runtime_marker,
             )
+
+    def test_apk_only_acceptance_rejects_minified_away_host_members(self) -> None:
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        runner = FakeRunner(self.tool, "stripped-host-member")
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+        with self.assertRaisesRegex(self.tool.AcceptanceError, r"lost 1 of \d+ Java member"):
+            self.tool.run_apk_acceptance(
+                apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                evidence_dir=self.workspace / "apk-host-contract-evidence",
+                adb=Path("/sdk/platform-tools/adb"),
+                apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                requested_serial="emulator-5554",
+                runner=runner,
+                boot_timeout=0.0,
+                process_timeout=0.0,
+                poll_interval=0.0,
+                required_runtime_marker=None,
+            )
+        self.assertNotIn(
+            ("/sdk/platform-tools/adb", "-s", "emulator-5554", "install", "-r", str(apk)),
+            runner.commands,
+        )
+
+    def test_apk_only_acceptance_reports_startup_abort_without_exhausting_timeout(self) -> None:
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        runner = FakeRunner(self.tool, "startup-abort")
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+        evidence_dir = self.workspace / "apk-startup-abort-evidence"
+        with self.assertRaisesRegex(self.tool.AcceptanceError, "aborted during startup") as caught:
+            self.tool.run_apk_acceptance(
+                apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                evidence_dir=evidence_dir,
+                adb=Path("/sdk/platform-tools/adb"),
+                apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                requested_serial="emulator-5554",
+                runner=runner,
+                boot_timeout=0.0,
+                # A generous timeout must not be spent once the abort is observable.
+                process_timeout=600.0,
+                poll_interval=0.0,
+                required_runtime_marker=None,
+            )
+        message = str(caught.exception)
+        self.assertIn("NoSuchMethodError", message)
+        self.assertIn("Lgames/cafecito/foundry/Foundry;.restart()V", message)
+        self.assertNotIn("timed out", message)
+        logcat = evidence_dir / f"{self.tool.DEFAULT_APPLICATION_ID}-logcat.txt"
+        self.assertIn("NoSuchMethodError", logcat.read_text(encoding="utf-8"))
+        self.assertEqual(1, runner.pid_calls[self.tool.DEFAULT_APPLICATION_ID])
+
+    def test_every_shared_runtime_failure_signature_ends_the_startup_wait(self) -> None:
+        # The startup watcher must read the single shared signature list so a new
+        # engine failure token composes without a parallel list to update.
+        for signature in self.tool.RUNTIME_FAILURE_PATTERNS:
+            with self.subTest(signature=signature):
+                runner = StartupAbortRunner(self.tool, signature)
+                with self.assertRaisesRegex(self.tool.AcceptanceError, "aborted during startup"):
+                    self.tool._wait_for_process(
+                        Path("/sdk/platform-tools/adb"),
+                        "emulator-5554",
+                        self.tool.DEFAULT_APPLICATION_ID,
+                        runner,
+                        timeout=600.0,
+                        poll_interval=0.0,
+                    )
+
+    def test_startup_abort_excerpt_centers_on_the_first_signature(self) -> None:
+        contents = "\n".join(
+            [*[f"noise {index}" for index in range(200)], "E AndroidRuntime: FATAL EXCEPTION: main", "after"]
+        )
+
+        excerpt = self.tool.startup_abort_excerpt(contents, ["FATAL EXCEPTION"])
+
+        self.assertIn("FATAL EXCEPTION", excerpt)
+        self.assertIn("after", excerpt)
+        self.assertLessEqual(len(excerpt.splitlines()), self.tool.STARTUP_ABORT_EXCERPT_LINES)
+        self.assertNotIn("noise 0\n", excerpt)
+
+    def test_parse_dex_members_reads_defined_methods_and_fields_only(self) -> None:
+        listing = "\n".join(
+            (
+                "P d 1\t1\t10\tgames.cafecito.foundry",
+                "C d 1\t1\t10\tgames.cafecito.foundry.Foundry",
+                "M d 1\t1\t46\tgames.cafecito.foundry.Foundry void restart()",
+                "M r 0\t1\t0\tgames.cafecito.foundry.Foundry void referencedOnly()",
+                "F d 0\t0\t10\tgames.cafecito.foundry.Foundry int keptField",
+                "M d 1\t1\t48\tgames.cafecito.foundry.Foundry void showDialog(java.lang.String,java.lang.String)",
+            )
+        )
+
+        members = self.tool.parse_dex_members(listing)
+
+        self.assertEqual(
+            {
+                "games.cafecito.foundry.Foundry void restart()",
+                "games.cafecito.foundry.Foundry int keptField",
+                "games.cafecito.foundry.Foundry void showDialog(java.lang.String,java.lang.String)",
+            },
+            set(members),
+        )
 
     def test_primary_failure_still_uninstalls_target_and_test_packages(self) -> None:
         runner = FakeRunner(self.tool, "start")

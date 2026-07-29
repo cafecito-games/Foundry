@@ -30,6 +30,7 @@ def androidAbiBySconsArch = [
 def supportedBuildTypes = ["debug", "dev", "release"]
 def pythonExecutable = providers.gradleProperty("pythonExecutable").orElse("python3")
 def jniContractTool = rootProject.file("../android_jni_contract.py")
+def hostContractTool = rootProject.file("../android_host_contract.py")
 def nativeContractTool = rootProject.file("../android_native_contract.py")
 def nativeStagingTool = rootProject.file("../android_native_staging.py")
 def foundrySourceRoot = file(pathToRootDir)
@@ -61,6 +62,10 @@ android {
         minSdkVersion versions.minSdk
         targetSdkVersion versions.targetSdk
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // The native host resolves these Java members reflectively through JNI, so
+        // consumers that minify must inherit the generated keep rules.
+        consumerProguardFiles 'proguard-rules.pro'
 
         manifestPlaceholders = [
             foundryLibraryVersion: foundryLibraryVersion,
@@ -259,3 +264,14 @@ android {
         }
     }
 }
+
+// The keep rules shipped to minifying consumers are generated from the native JNI
+// call sites; a stale checked-in file would silently ship an unprotected member.
+def verifyHostKeepRules = tasks.register("verifyFoundryHostKeepRules", Exec) {
+    inputs.file(hostContractTool)
+    inputs.file(file("proguard-rules.pro"))
+    inputs.files(fileTree(dir: "${pathToRootDir}platform/android", include: "*.cpp"))
+    outputs.upToDateWhen { false }
+    commandLine pythonExecutable.get(), hostContractTool.absolutePath, "--check"
+}
+tasks.named("preBuild").configure { dependsOn verifyHostKeepRules }
