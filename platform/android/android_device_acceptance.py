@@ -46,9 +46,10 @@ INSTRUMENTATION_TEST = INSTRUMENTATION_CLASS
 STANDARD_APK = Path("build/outputs/apk/standard/debug/android_debug.apk")
 JUNIT_REPORT_ROOT = Path("build/outputs/androidTest-results/connected")
 # The single list of fatal runtime signatures. It gates the runtime-marker wait,
-# the post-run log review, and the startup wait: observing any of these while
-# polling for a PID means the process already died, so the wait ends immediately
-# with the real cause instead of burning the whole timeout on an empty probe.
+# the post-run log review, and the startup wait: observing one of these attributed
+# to the target package while polling for a PID means the process already died, so
+# the wait ends immediately with the real cause instead of burning the whole
+# timeout on an empty probe.
 RUNTIME_FAILURE_PATTERNS = (
     "UnsatisfiedLinkError",
     "NoClassDefFoundError",
@@ -61,6 +62,11 @@ RUNTIME_FAILURE_PATTERNS = (
     'couldn\'t find "libfoundry_android.so"',
 )
 STARTUP_ABORT_EXCERPT_LINES = 60
+# A fatal signature only ends the startup wait when the surrounding log lines name
+# the package. Android writes the owner next to the signature -- "Process: <id>"
+# for a Java crash, ">>> <id> <<<" for a tombstone -- so an unrelated process
+# crashing during our startup delay cannot be mistaken for the target aborting.
+STARTUP_ABORT_ATTRIBUTION_LINES = 30
 HOST_CONTRACT_REPORTED_MEMBERS = 12
 STANDARD_SMOKE_READY_MARKER = "Foundry Android standard runtime smoke ready"
 SOURCE_TEMPLATE_TOOL_PATH = Path(__file__).resolve().with_name("android_source_template.py")
@@ -302,6 +308,23 @@ def select_device(output: str, requested_serial: str | None) -> str:
 def runtime_log_failures(contents: str) -> list[str]:
     """Return fatal runtime signatures present in one captured Android log."""
     return [signature for signature in RUNTIME_FAILURE_PATTERNS if signature in contents]
+
+
+def attributed_runtime_failures(contents: str, application_id: str) -> list[str]:
+    """Return fatal signatures one captured log attributes to a specific package."""
+    lines = contents.splitlines()
+    owned = [index for index, line in enumerate(lines) if application_id in line]
+    if not owned:
+        return []
+    attributed: list[str] = []
+    for signature in RUNTIME_FAILURE_PATTERNS:
+        for index, line in enumerate(lines):
+            if signature not in line:
+                continue
+            if any(abs(index - owner) <= STARTUP_ABORT_ATTRIBUTION_LINES for owner in owned):
+                attributed.append(signature)
+                break
+    return attributed
 
 
 def startup_abort_excerpt(contents: str, signatures: Sequence[str]) -> str:
@@ -872,7 +895,7 @@ def _wait_for_process(
             check=False,
         )
         contents = log.stdout + log.stderr
-        signatures = runtime_log_failures(contents)
+        signatures = attributed_runtime_failures(contents, application_id)
         if signatures:
             raise AcceptanceError(
                 f"Android package {application_id} aborted during startup with {signatures}; "

@@ -153,6 +153,8 @@ class FakeRunner:
                     "01-01 00:00:00.000  1 1 I ActivityManager: Start proc\n"
                     "01-01 00:00:00.100  1 1 E AndroidRuntime: java.lang.NoSuchMethodError: no non-static "
                     'method "Lgames/cafecito/foundry/Foundry;.restart()V"\n'
+                    "01-01 00:00:00.150  1 1 E AndroidRuntime: Process: "
+                    f"{self.tool.DEFAULT_APPLICATION_ID}, PID: 4242\n"
                     "01-01 00:00:00.200  1 1 F libc: Fatal signal 6 (SIGABRT)\n"
                 )
             elif self.failure is not None and self.failure.startswith("runtime-log:"):
@@ -186,9 +188,11 @@ class FakeRunner:
 class StartupAbortRunner:
     """Report no process while logging one chosen fatal runtime signature."""
 
-    def __init__(self, tool: ModuleType, signature: str) -> None:
+    def __init__(self, tool: ModuleType, signature: str, owner: str | None = None) -> None:
         self.tool = tool
         self.signature = signature
+        self.owner = tool.DEFAULT_APPLICATION_ID if owner is None else owner
+        self.pid_calls = 0
 
     def run(
         self,
@@ -203,11 +207,15 @@ class StartupAbortRunner:
         del cwd, timeout, description, check, env
         arguments = tuple(str(argument) for argument in argv)
         if "pidof" in arguments:
+            self.pid_calls += 1
             return self.tool.CommandResult(argv=arguments, returncode=1, stdout="", stderr="")
         return self.tool.CommandResult(
             argv=arguments,
             returncode=0,
-            stdout=f"01-01 00:00:00.000 1 1 E AndroidRuntime: {self.signature}\n",
+            stdout=(
+                f"01-01 00:00:00.000 1 1 E AndroidRuntime: {self.signature}\n"
+                f"01-01 00:00:00.001 1 1 E AndroidRuntime: Process: {self.owner}, PID: 4242\n"
+            ),
             stderr="",
         )
 
@@ -856,7 +864,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
                 runner=runner,
                 boot_timeout=0.0,
                 # A generous timeout must not be spent once the abort is observable.
-                process_timeout=600.0,
+                process_timeout=30.0,
                 poll_interval=0.0,
                 required_runtime_marker=None,
             )
@@ -880,9 +888,47 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
                         "emulator-5554",
                         self.tool.DEFAULT_APPLICATION_ID,
                         runner,
-                        timeout=600.0,
+                        # Generous relative to instant, but bounded so a regression
+                        # fails rather than polling for minutes.
+                        timeout=30.0,
                         poll_interval=0.0,
                     )
+
+    def test_unrelated_process_crash_does_not_end_the_startup_wait(self) -> None:
+        # A crash from any other package during our startup delay must not be
+        # reported as the target aborting.
+        runner = StartupAbortRunner(self.tool, "FATAL EXCEPTION", owner="com.example.unrelated")
+
+        with self.assertRaisesRegex(self.tool.AcceptanceError, "timed out"):
+            self.tool._wait_for_process(
+                Path("/sdk/platform-tools/adb"),
+                "emulator-5554",
+                self.tool.DEFAULT_APPLICATION_ID,
+                runner,
+                timeout=0.0,
+                poll_interval=0.0,
+            )
+
+    def test_attribution_ignores_signatures_far_from_the_package(self) -> None:
+        distant = "\n".join(
+            (
+                "E AndroidRuntime: FATAL EXCEPTION: main",
+                *[f"noise {index}" for index in range(self.tool.STARTUP_ABORT_ATTRIBUTION_LINES + 5)],
+                f"I ActivityManager: Start proc for {self.tool.DEFAULT_APPLICATION_ID}",
+            )
+        )
+        adjacent = "\n".join(
+            (
+                "E AndroidRuntime: FATAL EXCEPTION: main",
+                f"E AndroidRuntime: Process: {self.tool.DEFAULT_APPLICATION_ID}, PID: 4242",
+            )
+        )
+
+        self.assertEqual([], self.tool.attributed_runtime_failures(distant, self.tool.DEFAULT_APPLICATION_ID))
+        self.assertEqual(
+            ["FATAL EXCEPTION"],
+            self.tool.attributed_runtime_failures(adjacent, self.tool.DEFAULT_APPLICATION_ID),
+        )
 
     def test_startup_abort_excerpt_centers_on_the_first_signature(self) -> None:
         contents = "\n".join(
