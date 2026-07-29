@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Could not resolve class "diag.resolve_failed.ResolveFailedHolder" while resolving "diag.resolve_failed.ResolveFailedPick". The class is declared in "res://analyzer/errors/resolve_failed_class_nested_type_holder.notest.fs", which has errors, the first at line 7: Could not find base class "DoesNotExist".
