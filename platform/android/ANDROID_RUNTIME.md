@@ -36,6 +36,90 @@ projects may still include explicit project-local JAR or AAR dependencies from
 `res://addons`; those artifacts are normal build inputs, not dynamically
 discovered host plugins.
 
+## Optional Foundry-Java extensions
+
+Foundry-Java is an explicit, opt-in Gradle export path. Ordinary exports remain
+unchanged: with `gradle_build/foundry_java/enabled` disabled, the exporter
+passes no Foundry-Java properties, resolves no plugin or artifact, and produces
+no Foundry-Java task or generated output. Enabling it requires
+`gradle_build/use_gradle_build` and exactly one plugin source:
+
+- `gradle_build/foundry_java/gradle_plugin_maven`: one exact
+  `group:artifact:version` coordinate;
+- `gradle_build/foundry_java/gradle_plugin_local`: one regular local plugin
+  JAR with no user-controlled symbolic-link path component.
+
+At least one application input is also required. Exact Maven inputs use
+`gradle_build/foundry_java/maven_repositories` and
+`gradle_build/foundry_java/maven_artifacts`; offline archives use
+`gradle_build/foundry_java/local_artifacts`. Local plugin and application paths
+are globalized and lexically simplified once, and the same normalized path is
+used for symlink validation and opening. They must have no user-controlled
+symbolic-link component in that normalized path. On macOS, the standard
+OS-owned `/etc`, `/tmp`, and `/var` aliases are accepted only when they are
+symlinks to the exact `private/etc`, `private/tmp`, and `private/var` targets;
+every component below the alias and the final file remains subject to the
+symlink check. Maven and local application inputs may be combined, but Maven
+and local plugin sources may not. For example:
+
+```text
+gradle_build/foundry_java/gradle_plugin_maven =
+  games.cafecito.foundry.java:games.cafecito.foundry.java.gradle.plugin:0.1.0
+gradle_build/foundry_java/maven_repositories =
+  ["https://repo.maven.apache.org/maven2"]
+gradle_build/foundry_java/maven_artifacts =
+  ["games.cafecito.foundry:foundry-java-android:0.1.0",
+   "com.example:my-foundry-extension:1.0.0"]
+```
+
+Repository URLs must use HTTPS or an absolute local `file:///` URL and ASCII URI
+syntax. Non-ASCII characters must be percent-encoded. Malformed percent escapes
+and unsupported raw URI characters are rejected before Gradle runs. Plain HTTP,
+remote file authorities, embedded credentials, queries, and fragments are also
+rejected. Repository values are redacted from verbose export command logging
+and from captured Gradle output before it is displayed or retained by the
+exporter.
+
+An offline build instead sets `gradle_plugin_local` to the exact
+Foundry-Java plugin JAR and lists the binding AAR, runtime JAR, and extension
+module JARs in `local_artifacts`. Local archives are external export inputs;
+they are never embedded in `android_source.zip`. The exporter inspects nested
+JAR, AAR, and ZIP entries recursively and rejects `libfoundry_android.so` at
+any depth. Inspection fails closed at 8 nested levels, 64 root-inclusive
+archives, 65,534 entries per archive, 128 MiB per decompressed entry, or
+512 MiB of aggregate declared decompressed content.
+
+The exporter passes the fixed `registry-index-v2` marker and Gradle applies
+only plugin ID `games.cafecito.foundry.java`. The plugin owns descriptor,
+binding-payload, provenance, and requested-ABI validation. A zero descriptor
+opt-in is rejected and leaves no generated outputs. A valid build produces
+exactly:
+
+```text
+assets/FoundryJava.foundryextension
+assets/foundry_java/registry-index-v2.txt
+lib/<requested-abi>/libfoundry_java.so
+```
+
+After Gradle copies the final APK or AAB, the exporter validates its archive
+structure and streams the configuration, registry index, and each requested ABI
+bridge through miniz so their declared size and CRC are verified before export
+success. Required payload inspection is limited to 128 MiB per entry and
+512 MiB in aggregate. Unrequested bridge names are still collected for the ABI
+set diagnostic, but their payloads are not read.
+
+The existing architecture selection remains authoritative:
+
+| Foundry SCons architecture | Android ABI |
+| --- | --- |
+| `arm32` | `armeabi-v7a` |
+| `arm64` | `arm64-v8a` |
+| `x86_32` | `x86` |
+| `x86_64` | `x86_64` |
+
+Foundry continues to own and package its ordinary host
+`libfoundry_android.so`; the binding AAR may not contain that host library.
+
 ## Android and toolchain levels
 
 The root app configuration is authoritative for both `:app` and `:lib`:
@@ -255,11 +339,16 @@ class-loading, native-library, and fatal-exception failures.
 
 To verify APKs produced through the real command-first editor exporter:
 
+These APKs have already passed structural APK validation in the editor and the
+command-first producer. This command is intentionally limited to
+device-runtime behavior.
+
 ```sh
 python3 platform/android/android_device_acceptance.py verify-apks \
-  --apk games.cafecito.foundry.game=.test_scratch/android-cli-export/canonical.apk \
-  --apk dev.example.foundryacceptance=.test_scratch/android-cli-export/custom.apk \
-  --evidence-dir .test_scratch/android-cli-export-evidence \
+  --apk games.cafecito.foundry.game=.test_scratch/foundry-java-command-first/foundry-java-default-debug.apk \
+  --apk dev.example.foundryjava=.test_scratch/foundry-java-command-first/foundry-java-custom-release.apk \
+  --required-runtime-marker FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY \
+  --evidence-dir .test_scratch/foundry-java-command-first-device-evidence \
   --adb "${ANDROID_SDK_ROOT}/platform-tools/adb" \
   --apkanalyzer "${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin/apkanalyzer"
 ```

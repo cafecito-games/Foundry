@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -27,6 +30,14 @@ def load_tool() -> ModuleType:
     return module
 
 
+def archive_bytes(entries: dict[str, bytes]) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        for name, contents in entries.items():
+            archive.writestr(name, contents)
+    return output.getvalue()
+
+
 class FakeRunner:
     def __init__(self, tool: ModuleType, failure: str | None = None) -> None:
         self.tool = tool
@@ -37,6 +48,7 @@ class FakeRunner:
         self.devices_calls = 0
         self.pid_calls: dict[str, int] = {}
         self.filtered_logcat_calls = 0
+        self.runtime_marker = tool.STANDARD_SMOKE_READY_MARKER
 
     def run(
         self,
@@ -115,11 +127,13 @@ class FakeRunner:
         elif "pidof" in arguments:
             application_id = arguments[-1]
             self.pid_calls[application_id] = self.pid_calls.get(application_id, 0) + 1
-            if self.failure == "process-timeout" or (
-                self.failure == "process-exits" and self.pid_calls[application_id] > 1
-            ) or (
-                self.failure == "process-exits-while-ready"
-                and self.pid_calls[application_id] > self.tool.PROCESS_STABILITY_OBSERVATIONS
+            if (
+                self.failure == "process-timeout"
+                or (self.failure == "process-exits" and self.pid_calls[application_id] > 1)
+                or (
+                    self.failure == "process-exits-while-ready"
+                    and self.pid_calls[application_id] > self.tool.PROCESS_STABILITY_OBSERVATIONS
+                )
             ):
                 returncode = 1
             else:
@@ -141,7 +155,7 @@ class FakeRunner:
             elif self.failure == "delayed-ready-marker" and filtered and self.filtered_logcat_calls == 1:
                 stdout = "Foundry process starting\n"
             else:
-                stdout = "Foundry Android standard runtime smoke ready\n"
+                stdout = f"{self.runtime_marker}\n"
         elif "uninstall" in arguments:
             stdout = "Success\n"
 
@@ -169,20 +183,28 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         self.acceptance_run_index = 0
         self.source_template = self.workspace / "android_source.zip"
         self.compiled_assets = self.workspace / "android-instrumented-assets.zip"
+        host_aar = archive_bytes(
+            {
+                "AndroidManifest.xml": b"<manifest />\n",
+                "classes.jar": archive_bytes({"games/cafecito/foundry/Host.class": b"host"}),
+            }
+        )
         self.source_entries = {
             "build.gradle": b"plugins { id 'com.android.application' }\n",
             "config.gradle": b"ext.versions = [:]\n",
             "gradlew": b"#!/bin/sh\n",
-            "gradle/wrapper/gradle-wrapper.jar": b"wrapper",
+            "gradle/wrapper/gradle-wrapper.jar": archive_bytes(
+                {"org/gradle/wrapper/GradleWrapperMain.class": b"wrapper"}
+            ),
             "gradle/wrapper/gradle-wrapper.properties": b"distributionUrl=gradle\n",
             "settings.gradle": b'rootProject.name = "FoundryAcceptance"\n',
             "src/main/AndroidManifest.xml": b"<manifest />\n",
             "src/main/assets/.gitignore": b"*\n",
             "src/instrumented/assets/project.foundry": b"instrumented project",
             "src/instrumented/assets/main.fs": b"extends Node\n",
-            "libs/debug/foundry-debug.aar": b"debug aar",
-            "libs/dev/foundry-dev.aar": b"dev aar",
-            "libs/release/foundry-release.aar": b"release aar",
+            "libs/debug/foundry-debug.aar": host_aar,
+            "libs/dev/foundry-dev.aar": host_aar,
+            "libs/release/foundry-release.aar": host_aar,
         }
         self.write_source_template(self.source_entries)
         self.write_compiled_assets(
@@ -402,10 +424,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         self.assertIn("connectedInstrumentedDebugAndroidTest", custom)
         self.assertIn("-Pexport_enabled_abis=arm64-v8a|", custom)
         self.assertIn(
-            (
-                "-Pandroid.testInstrumentationRunnerArguments.class="
-                "games.cafecito.foundry.game.FoundryAppTest"
-            ),
+            ("-Pandroid.testInstrumentationRunnerArguments.class=games.cafecito.foundry.game.FoundryAppTest"),
             custom,
         )
 
@@ -543,11 +562,44 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         self.assertEqual(2, runner.devices_calls)
 
     def test_apk_only_acceptance_verifies_both_exported_application_ids(self) -> None:
+        canonical = self.workspace / "canonical-no-marker.apk"
+        custom = self.workspace / "custom-no-marker.apk"
+        canonical.write_bytes(b"canonical")
+        custom.write_bytes(b"custom")
+        runner = FakeRunner(self.tool)
+        runner.apk_ids = {
+            canonical.resolve(): self.tool.DEFAULT_APPLICATION_ID,
+            custom.resolve(): self.tool.CUSTOM_APPLICATION_ID,
+        }
+        report = self.tool.run_apk_acceptance(
+            apks=(
+                (self.tool.DEFAULT_APPLICATION_ID, canonical),
+                (self.tool.CUSTOM_APPLICATION_ID, custom),
+            ),
+            evidence_dir=self.workspace / "apk-no-marker-evidence",
+            adb=Path("/sdk/platform-tools/adb"),
+            apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+            requested_serial="emulator-5554",
+            runner=runner,
+            boot_timeout=0.0,
+            process_timeout=0.0,
+            poll_interval=0.0,
+        )
+        self.assertEqual("verify-apks", report["mode"])
+        self.assertIsNone(report["required_runtime_marker"])
+        self.assertEqual(
+            [self.tool.DEFAULT_APPLICATION_ID, self.tool.CUSTOM_APPLICATION_ID],
+            [scenario["application_id"] for scenario in report["scenarios"]],
+        )
+
+    def test_apk_only_acceptance_normalizes_required_marker_for_both_application_ids(self) -> None:
         canonical = self.workspace / "canonical.apk"
         custom = self.workspace / "custom.apk"
         canonical.write_bytes(b"canonical")
         custom.write_bytes(b"custom")
         runner = FakeRunner(self.tool)
+        marker = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
+        runner.runtime_marker = marker
         runner.apk_ids = {
             canonical.resolve(): self.tool.DEFAULT_APPLICATION_ID,
             custom.resolve(): self.tool.CUSTOM_APPLICATION_ID,
@@ -565,8 +617,10 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             boot_timeout=0.0,
             process_timeout=0.0,
             poll_interval=0.0,
+            required_runtime_marker=f" \t{marker}\n",
         )
         self.assertEqual("verify-apks", report["mode"])
+        self.assertEqual(marker, report["required_runtime_marker"])
         self.assertEqual(
             [self.tool.DEFAULT_APPLICATION_ID, self.tool.CUSTOM_APPLICATION_ID],
             [scenario["application_id"] for scenario in report["scenarios"]],
@@ -575,6 +629,151 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
             report,
             json.loads((self.workspace / "apk-evidence/report.json").read_text(encoding="utf-8")),
         )
+
+    def test_apk_only_acceptance_rejects_empty_or_whitespace_runtime_marker(self) -> None:
+        for index, marker in enumerate(("", " \t ")):
+            with self.subTest(marker=repr(marker)):
+                apk = self.workspace / f"invalid-marker-{index}.apk"
+                apk.write_bytes(b"apk")
+                runner = FakeRunner(self.tool)
+                runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+
+                with self.assertRaisesRegex(
+                    self.tool.AcceptanceError,
+                    "required runtime marker must contain non-whitespace text",
+                ):
+                    self.tool.run_apk_acceptance(
+                        apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                        evidence_dir=self.workspace / f"invalid-marker-evidence-{index}",
+                        adb=Path("/sdk/platform-tools/adb"),
+                        apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                        requested_serial="emulator-5554",
+                        runner=runner,
+                        boot_timeout=0.0,
+                        process_timeout=0.0,
+                        poll_interval=0.0,
+                        required_runtime_marker=marker,
+                    )
+
+    def test_verify_apks_cli_rejects_empty_or_whitespace_runtime_marker(self) -> None:
+        parser = self.tool._parser()
+        for marker in ("", " \t "):
+            with self.subTest(marker=repr(marker)):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as error:
+                    parser.parse_args(
+                        [
+                            "verify-apks",
+                            "--apk",
+                            f"{self.tool.DEFAULT_APPLICATION_ID}=/tmp/example.apk",
+                            "--required-runtime-marker",
+                            marker,
+                            "--evidence-dir",
+                            "/tmp/evidence",
+                            "--adb",
+                            "/tmp/adb",
+                            "--apkanalyzer",
+                            "/tmp/apkanalyzer",
+                        ]
+                    )
+                self.assertEqual(2, error.exception.code)
+                self.assertIn("required runtime marker must contain non-whitespace text", stderr.getvalue())
+
+    def test_verify_apks_executable_rejects_invalid_runtime_marker_before_device_work(self) -> None:
+        for index, marker in enumerate(("", " \t ")):
+            with self.subTest(marker=repr(marker)):
+                evidence_dir = self.workspace / f"invalid-cli-marker-evidence-{index}"
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(TOOL_PATH),
+                        "verify-apks",
+                        "--apk",
+                        f"{self.tool.DEFAULT_APPLICATION_ID}={self.workspace / 'example.apk'}",
+                        "--required-runtime-marker",
+                        marker,
+                        "--evidence-dir",
+                        str(evidence_dir),
+                        "--adb",
+                        str(self.workspace / "adb-must-not-run"),
+                        "--apkanalyzer",
+                        str(self.workspace / "apkanalyzer-must-not-run"),
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                self.assertEqual(2, result.returncode)
+                self.assertIn(
+                    "required runtime marker must contain non-whitespace text",
+                    result.stderr,
+                )
+                self.assertNotIn("is not executable", result.stderr)
+                self.assertFalse(evidence_dir.exists())
+
+    def test_verify_apks_cli_normalizes_runtime_marker(self) -> None:
+        marker = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
+
+        arguments = self.tool._parser().parse_args(
+            [
+                "verify-apks",
+                "--apk",
+                f"{self.tool.DEFAULT_APPLICATION_ID}=/tmp/example.apk",
+                "--required-runtime-marker",
+                f" \t{marker}\n",
+                "--evidence-dir",
+                "/tmp/evidence",
+                "--adb",
+                "/tmp/adb",
+                "--apkanalyzer",
+                "/tmp/apkanalyzer",
+            ]
+        )
+
+        self.assertEqual(marker, arguments.required_runtime_marker)
+
+    def test_apk_only_acceptance_rejects_missing_required_runtime_marker(self) -> None:
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        runner = FakeRunner(self.tool, "missing-ready-marker")
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+        marker = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
+        with self.assertRaisesRegex(self.tool.AcceptanceError, "waiting for required runtime marker.*timed out"):
+            self.tool.run_apk_acceptance(
+                apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                evidence_dir=self.workspace / "apk-marker-evidence",
+                adb=Path("/sdk/platform-tools/adb"),
+                apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                requested_serial="emulator-5554",
+                runner=runner,
+                boot_timeout=0.0,
+                process_timeout=0.0,
+                poll_interval=0.0,
+                required_runtime_marker=marker,
+            )
+
+    def test_apk_only_required_marker_does_not_mask_process_exit(self) -> None:
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        runner = FakeRunner(self.tool, "process-exits-while-ready")
+        runner.runtime_marker = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+        with self.assertRaisesRegex(self.tool.AcceptanceError, "did not remain stable"):
+            self.tool.run_apk_acceptance(
+                apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+                evidence_dir=self.workspace / "apk-exit-evidence",
+                adb=Path("/sdk/platform-tools/adb"),
+                apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+                requested_serial="emulator-5554",
+                runner=runner,
+                boot_timeout=0.0,
+                process_timeout=0.0,
+                poll_interval=0.0,
+                required_runtime_marker=runner.runtime_marker,
+            )
 
     def test_primary_failure_still_uninstalls_target_and_test_packages(self) -> None:
         runner = FakeRunner(self.tool, "start")
@@ -626,9 +825,7 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         )
         gradle_index = next(index for index, command in enumerate(runner.commands) if command[0].endswith("gradlew"))
         logcat_index = next(
-            index
-            for index, command in enumerate(runner.commands)
-            if "logcat" in command and "-d" in command
+            index for index, command in enumerate(runner.commands) if "logcat" in command and "-d" in command
         )
         cleanup_index = next(
             index

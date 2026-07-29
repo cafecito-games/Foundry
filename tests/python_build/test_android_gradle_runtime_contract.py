@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import re
 import stat
 import sys
@@ -95,15 +96,36 @@ EXPECTED_SOURCE_AARS = {
     "libs/dev/foundry-dev.aar",
     "libs/release/foundry-release.aar",
 }
+
+
+def archive_bytes(entries: dict[str, bytes]) -> bytes:
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        for name, contents in entries.items():
+            archive.writestr(name, contents)
+    return output.getvalue()
+
+
+VALID_HOST_AAR = archive_bytes(
+    {
+        "AndroidManifest.xml": b"<manifest />\n",
+        "classes.jar": archive_bytes(
+            {
+                "games/cafecito/foundry/FoundryHost.class": b"host",
+                "games/cafecito/foundry/input/FoundryInputHandler.class": b"host",
+            }
+        ),
+    }
+)
 VALID_SOURCE_TEMPLATE = {
     "build.gradle": b"// app template\n",
     "config.gradle": b"// app config\n",
     "gradlew": b"#!/bin/sh\n",
-    "gradle/wrapper/gradle-wrapper.jar": b"wrapper",
+    "gradle/wrapper/gradle-wrapper.jar": archive_bytes({"org/gradle/wrapper/GradleWrapperMain.class": b"wrapper"}),
     "gradle/wrapper/gradle-wrapper.properties": b"distributionUrl=gradle\n",
     "src/main/AndroidManifest.xml": b"<manifest />\n",
     "src/main/java/games/cafecito/foundry/game/FoundryApp.java": b"package games.cafecito.foundry.game;\n",
-    **{path: f"{path}\n".encode() for path in EXPECTED_SOURCE_AARS},
+    **{path: VALID_HOST_AAR for path in EXPECTED_SOURCE_AARS},
 }
 
 
@@ -213,6 +235,25 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             1,
         )[1].split("```", 1)[0]
         self.assertIn("--compiled-assets", source_template_example)
+
+    def test_runtime_documentation_matches_command_first_apk_acceptance(self) -> None:
+        documentation = read(ANDROID_RUNTIME_DOC)
+        verify_apks_section = documentation.split(
+            "To verify APKs produced through the real command-first editor exporter:",
+            1,
+        )[1].split("## Acceptance evidence map", 1)[0]
+        for fragment in (
+            (
+                "--apk games.cafecito.foundry.game="
+                ".test_scratch/foundry-java-command-first/foundry-java-default-debug.apk"
+            ),
+            ("--apk dev.example.foundryjava=.test_scratch/foundry-java-command-first/foundry-java-custom-release.apk"),
+            "--required-runtime-marker FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY",
+            "structural APK validation",
+            "device-runtime behavior",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, verify_apks_section)
 
     def test_device_acceptance_requires_every_instrumented_test_method(self) -> None:
         instrumented_test = read(APP_INSTRUMENTED_TEST)
@@ -588,6 +629,36 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
 
         self.assertEqual(EXPECTED_SOURCE_AARS, {name for name in names if name.endswith(".aar")})
 
+    def test_source_template_binding_code_classifier_covers_exact_foundry_java_packages(self) -> None:
+        tool = load_source_template_tool()
+        binding_classes = {
+            "annotations": "FoundryClass",
+            "api": "FoundryExtension",
+            "generated": "FoundryGeneratedBootstrap",
+            "generator": "FoundrySourceGenerator",
+            "gradle": "FoundryJavaPlugin",
+            "java": "FoundryJavaInitializer",
+            "kotlin": "Binding",
+            "processor": "FoundryExtensionProcessor",
+            "runtime": "FoundryBindingContext",
+            "test": "FoundryExtensionTestSupport",
+            "types": "Vector2",
+        }
+        suffixes = ("CLASS", "Java", "kT", "AiDl")
+
+        for package, class_name in binding_classes.items():
+            for suffix in suffixes:
+                with self.subTest(package=package, suffix=suffix):
+                    self.assertTrue(
+                        tool._is_binding_code_path(
+                            f"META-INF/versions/17/games/cafecito/foundry/{package}/{class_name}.{suffix}"
+                        )
+                    )
+            with self.subTest(package=package, match="near prefix"):
+                self.assertFalse(
+                    tool._is_binding_code_path(f"games/cafecito/foundry/{package}_extra/{class_name}.class")
+                )
+
     def test_source_template_inspector_rejects_runtime_source_and_archive_drift(self) -> None:
         tool = load_source_template_tool()
         mutations = {
@@ -601,6 +672,34 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "runtime source": {
                 **VALID_SOURCE_TEMPLATE,
                 "src/main/java/games/cafecito/foundry/Foundry.kt": b"package games.cafecito.foundry\n",
+            },
+            "binding jar": {
+                **VALID_SOURCE_TEMPLATE,
+                "libs/debug/foundry-java-module.jar": b"binding",
+            },
+            "generic binding jar": {
+                **VALID_SOURCE_TEMPLATE,
+                "libs/debug/module.jar": archive_bytes(
+                    {"games/cafecito/foundry/runtime/FoundryBindingContext.class": b"binding"}
+                ),
+            },
+            "nested binding zip": {
+                **VALID_SOURCE_TEMPLATE,
+                "assets/modules.zip": archive_bytes(
+                    {"libs/api.jar": archive_bytes({"games/cafecito/foundry/api/FoundryExtension.class": b"binding"})}
+                ),
+            },
+            "binding config": {
+                **VALID_SOURCE_TEMPLATE,
+                "src/main/assets/FoundryJava.foundryextension": b"[configuration]\n",
+            },
+            "binding class": {
+                **VALID_SOURCE_TEMPLATE,
+                "assets/classes/games/cafecito/foundry/api/FoundryExtension.class": b"binding",
+            },
+            "binding registry": {
+                **VALID_SOURCE_TEMPLATE,
+                "src/main/assets/foundry_java/registry-index-v2.txt": b"module\n",
             },
             "unsafe path": {
                 **VALID_SOURCE_TEMPLATE,
@@ -632,6 +731,93 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             archive_link.symlink_to(archive_target)
             with self.assertRaises(tool.SourceTemplateError):
                 tool.inspect_source_template(archive_link)
+
+    def test_source_template_inspector_rejects_foundry_java_in_nested_host_aars(self) -> None:
+        tool = load_source_template_tool()
+        mutations = {
+            "direct runtime class": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes(
+                        {
+                            "games/cafecito/foundry/FoundryHost.class": b"host",
+                            "games/cafecito/foundry/runtime/FoundryBindingContext.class": b"binding",
+                        }
+                    ),
+                }
+            ),
+            "nested API class": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes(
+                        {
+                            "games/cafecito/foundry/FoundryHost.class": b"host",
+                            "libs/foundry-api.jar": archive_bytes(
+                                {"games/cafecito/foundry/api/FoundryExtension.class": b"binding"}
+                            ),
+                        }
+                    ),
+                }
+            ),
+            "nested API AIDL": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes(
+                        {
+                            "games/cafecito/foundry/FoundryHost.class": b"host",
+                            "aidl/games/cafecito/foundry/api/FoundryExtension.AiDl": b"binding",
+                        }
+                    ),
+                }
+            ),
+            "direct native bridge": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes({"games/cafecito/foundry/Host.class": b"host"}),
+                    "jni/x86_64/libfoundry_java.so": b"binding",
+                }
+            ),
+            "classes jar descriptor": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes(
+                        {
+                            "games/cafecito/foundry/Host.class": b"host",
+                            "assets/FoundryJava.foundryextension": b"[configuration]\n",
+                        }
+                    ),
+                }
+            ),
+            "nested registry": archive_bytes(
+                {
+                    "AndroidManifest.xml": b"<manifest />\n",
+                    "classes.jar": archive_bytes(
+                        {
+                            "games/cafecito/foundry/Host.class": b"host",
+                            "libs/nested.jar": archive_bytes(
+                                {"assets/foundry_java/registry-index-v2.txt": b"module\n"}
+                            ),
+                        }
+                    ),
+                }
+            ),
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            for host_path in sorted(EXPECTED_SOURCE_AARS):
+                for description, host_aar in mutations.items():
+                    with self.subTest(host_path=host_path, description=description):
+                        entries = {
+                            **VALID_SOURCE_TEMPLATE,
+                            host_path: host_aar,
+                        }
+                        archive = Path(temporary) / (f"{Path(host_path).stem}-{description.replace(' ', '-')}.zip")
+                        write_source_template(archive, entries)
+                        with self.assertRaisesRegex(
+                            tool.SourceTemplateError,
+                            re.escape(host_path)
+                            + r"!.*(?:libfoundry_java|FoundryJava|foundry_java|games/cafecito/foundry/(?:api|runtime)/)",
+                        ):
+                            tool.inspect_source_template(archive)
 
     def test_source_template_promotion_is_fail_closed_and_atomic(self) -> None:
         tool = load_source_template_tool()
@@ -719,7 +905,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         ):
             self.assertIn(fragment, runtime_doc)
         for forbidden in (
-            "Foundry-Android",
             "--source-repository",
             "--allow-fetch",
             "sole Maven publisher",
@@ -729,6 +914,17 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
         ):
             self.assertNotIn(forbidden, runtime_doc)
+
+    def test_export_abi_fallback_is_preserved_only_for_ordinary_exports(self) -> None:
+        config = read(APP_CONFIG)
+        enabled_abis = config.split("ext.getExportEnabledABIs = { ->", maxsplit=1)[1].split(
+            "ext.getExportPath = {", maxsplit=1
+        )[0]
+        self.assertIn('project.hasProperty("export_enabled_abis")', enabled_abis)
+        self.assertIn("enabledABIs == null || enabledABIs.isEmpty()", enabled_abis)
+        self.assertIn("getFoundryJavaEnabled()", enabled_abis)
+        self.assertIn("return [] as Set<String>", enabled_abis)
+        self.assertIn('enabledABIs = "armeabi-v7a|arm64-v8a|x86|x86_64|"', enabled_abis)
 
     def test_pre_commit_routes_the_android_device_acceptance_surface(self) -> None:
         pre_commit = read(PRE_COMMIT)

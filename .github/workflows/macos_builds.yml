@@ -124,3 +124,11 @@ jobs:
         # the test runner is only available on the editor build.
         if: matrix.target == 'editor'
         run: ${{ matrix.bin }} test run --force-colors
+
+      - name: Foundry-Java macOS local input path aliases
+        if: matrix.target == 'editor'
+        run: |
+          python3 -m unittest \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaExporterContractTests.test_command_first_export_accepts_macos_system_temp_alias_for_local_inputs \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaExporterContractTests.test_command_first_export_rejects_user_symlinks_below_macos_system_temp_alias \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaExporterContractTests.test_command_first_export_rejects_user_symlink_after_macos_alias_parent_component

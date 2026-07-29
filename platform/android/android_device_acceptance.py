@@ -19,7 +19,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import ModuleType
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from xml.etree import ElementTree
 
 
@@ -90,7 +90,7 @@ def _remap_target(contents: bytes, name: str) -> str:
     targets = re.findall(r'(?m)^path="([^"]+)"\s*$', text_contents)
     if len(targets) != 1:
         raise AcceptanceError(f"Android compiled acceptance remap {name} must contain exactly one path")
-    return targets[0]
+    return cast(str, targets[0])
 
 
 @dataclass(frozen=True)
@@ -206,6 +206,65 @@ def validate_application_id(value: str) -> str:
     return value
 
 
+def inspect_foundry_java_apk(
+    apk: Path,
+    *,
+    requested_abis: Sequence[str],
+    enabled: bool,
+) -> dict[str, Any] | None:
+    """Inspect the enabled-only Foundry-Java contract in one final APK or AAB."""
+    if not enabled:
+        return None
+
+    artifact_kind = "AAB" if apk.suffix.lower() == ".aab" else "APK"
+    root = "base/" if artifact_kind == "AAB" else ""
+    requested = tuple(sorted(requested_abis))
+    if not requested:
+        raise AcceptanceError(f"Foundry-Java {artifact_kind} inspection requires at least one requested ABI")
+    if len(requested) != len(set(requested)):
+        raise AcceptanceError(f"Foundry-Java {artifact_kind} inspection received duplicate requested ABIs")
+    unsupported = sorted(set(requested).difference(SUPPORTED_ABIS))
+    if unsupported:
+        raise AcceptanceError(
+            f"Foundry-Java {artifact_kind} inspection has unsupported requested ABI: " + ", ".join(unsupported)
+        )
+
+    apk = apk.absolute()
+    if not apk.is_file() or apk.is_symlink():
+        raise AcceptanceError(f"Foundry-Java {artifact_kind} is not a regular file: {apk}")
+
+    configuration = f"{root}assets/FoundryJava.foundryextension"
+    registry_index = f"{root}assets/foundry_java/registry-index-v2.txt"
+    try:
+        with zipfile.ZipFile(apk) as archive:
+            names = [entry.filename for entry in archive.infolist() if not entry.is_dir()]
+            for required in (configuration, registry_index):
+                count = names.count(required)
+                if count != 1:
+                    raise AcceptanceError(
+                        f"Foundry-Java {artifact_kind} must contain exactly one {required}; found {count}"
+                    )
+            bridge_entries = tuple(sorted(name for name in names if name.endswith("/libfoundry_java.so")))
+            expected_bridges = tuple(f"{root}lib/{abi}/libfoundry_java.so" for abi in requested)
+            if bridge_entries != expected_bridges:
+                raise AcceptanceError(
+                    f"Foundry-Java {artifact_kind} bridge entries differ from the requested ABI set: "
+                    f"expected {list(expected_bridges)}, found {list(bridge_entries)}"
+                )
+            host_entries = tuple(sorted(name for name in names if name.endswith("/libfoundry_android.so")))
+            return {
+                "requested_abis": requested,
+                "bridge_entries": bridge_entries,
+                "host_entries": host_entries,
+                "configuration_sha256": hashlib.sha256(archive.read(configuration)).hexdigest(),
+                "registry_index_sha256": hashlib.sha256(archive.read(registry_index)).hexdigest(),
+            }
+    except AcceptanceError:
+        raise
+    except (OSError, KeyError, zipfile.BadZipFile) as error:
+        raise AcceptanceError(f"unable to inspect Foundry-Java {artifact_kind} {apk}: {error}") from error
+
+
 def select_device(output: str, requested_serial: str | None) -> str:
     """Resolve exactly one ready adb device, or one explicitly requested device."""
     ready = [
@@ -288,9 +347,7 @@ def _inspect_compiled_assets(compiled_assets: Path) -> tuple[str, ...]:
                 if remap in seen:
                     actual_target = _remap_target(archive.read(remap), remap)
                     if actual_target != target:
-                        raise AcceptanceError(
-                            f"Android compiled acceptance remap {remap} does not target {target}"
-                        )
+                        raise AcceptanceError(f"Android compiled acceptance remap {remap} does not target {target}")
             if "main.tscn.remap" in seen:
                 scene_target = _remap_target(archive.read("main.tscn.remap"), "main.tscn.remap")
                 scene_path = scene_target[len("res://") :] if scene_target.startswith("res://") else scene_target
@@ -592,9 +649,7 @@ def _device_context(
 def _require_instrumentation_results(scenario: Path) -> tuple[Path, ...]:
     report_root = scenario / JUNIT_REPORT_ROOT
     reports = sorted(report_root.rglob("*.xml")) if report_root.is_dir() else []
-    matches: dict[str, list[tuple[Path, ElementTree.Element]]] = {
-        method: [] for method in INSTRUMENTATION_METHODS
-    }
+    matches: dict[str, list[tuple[Path, ElementTree.Element]]] = {method: [] for method in INSTRUMENTATION_METHODS}
     for report in reports:
         try:
             root = ElementTree.parse(report).getroot()
@@ -609,9 +664,7 @@ def _require_instrumentation_results(scenario: Path) -> tuple[Path, ...]:
     missing = [method for method, cases in matches.items() if not cases]
     duplicates = [method for method, cases in matches.items() if len(cases) > 1]
     if missing:
-        raise AcceptanceError(
-            "Android instrumentation is missing required test cases: " + ", ".join(missing)
-        )
+        raise AcceptanceError("Android instrumentation is missing required test cases: " + ", ".join(missing))
     if duplicates:
         raise AcceptanceError(
             "Android instrumentation reported duplicate required test cases: " + ", ".join(duplicates)
@@ -987,6 +1040,13 @@ def run_source_template_acceptance(
         raise
 
 
+def _normalize_required_runtime_marker(marker: str) -> str:
+    marker = marker.strip()
+    if not marker:
+        raise AcceptanceError("required runtime marker must contain non-whitespace text")
+    return marker
+
+
 def run_apk_acceptance(
     *,
     apks: Sequence[tuple[str, Path]],
@@ -998,11 +1058,18 @@ def run_apk_acceptance(
     boot_timeout: float = 300,
     process_timeout: float = 30,
     poll_interval: float = 2,
+    required_runtime_marker: str | None = None,
 ) -> dict[str, Any]:
-    """Install and start already-exported APKs using the same runtime checks."""
+    """Install and start already-exported, structurally validated APKs using runtime-only checks."""
+    if required_runtime_marker is not None:
+        required_runtime_marker = _normalize_required_runtime_marker(required_runtime_marker)
     evidence_dir = _create_owned_directory(evidence_dir, "Android acceptance evidence directory")
     command_runner: Runner = runner if runner is not None else SubprocessRunner(evidence_dir)
-    report: dict[str, Any] = {"mode": "verify-apks", "schema_version": 1}
+    report: dict[str, Any] = {
+        "mode": "verify-apks",
+        "required_runtime_marker": required_runtime_marker,
+        "schema_version": 1,
+    }
     try:
         device = _device_context(
             adb,
@@ -1028,7 +1095,7 @@ def run_apk_acceptance(
                         runner=command_runner,
                         process_timeout=process_timeout,
                         poll_interval=poll_interval,
-                        required_runtime_marker=None,
+                        required_runtime_marker=required_runtime_marker,
                     )
                 )
             finally:
@@ -1051,6 +1118,13 @@ def _parse_apk(value: str) -> tuple[str, Path]:
     except AcceptanceError as error:
         raise argparse.ArgumentTypeError(str(error)) from error
     return application_id, Path(path)
+
+
+def _parse_required_runtime_marker(value: str) -> str:
+    try:
+        return _normalize_required_runtime_marker(value)
+    except AcceptanceError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
 
 
 def _add_device_arguments(parser: argparse.ArgumentParser) -> None:
@@ -1087,9 +1161,10 @@ def _parser() -> argparse.ArgumentParser:
     prepare_assets.add_argument("--output", required=True, type=Path)
     apks = commands.add_parser(
         "verify-apks",
-        help="install and start already-exported APKs",
+        help="install and start already-exported, structurally validated APKs using runtime-only checks",
     )
     apks.add_argument("--apk", required=True, action="append", type=_parse_apk)
+    apks.add_argument("--required-runtime-marker", type=_parse_required_runtime_marker)
     _add_device_arguments(apks)
     return parser
 
@@ -1142,7 +1217,11 @@ def main() -> int:
                 **common,
             )
         else:
-            report = run_apk_acceptance(apks=arguments.apk, **common)
+            report = run_apk_acceptance(
+                apks=arguments.apk,
+                required_runtime_marker=arguments.required_runtime_marker,
+                **common,
+            )
     except AcceptanceError as error:
         print(f"Android device acceptance failed: {error}", file=sys.stderr)
         return 2

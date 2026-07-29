@@ -1,13 +1,41 @@
 // Gradle build config for Foundry Engine's Android port.
+buildscript {
+    apply from: "config.gradle"
+    validateFoundryJavaExport()
+
+    if (getFoundryJavaEnabled()) {
+        Map<String, String> plugin = getFoundryJavaGradlePlugin()
+        repositories {
+            getFoundryJavaMavenRepositories().each { String repositoryUrl ->
+                maven { url repositoryUrl }
+            }
+        }
+        dependencies {
+            if (plugin.kind == "maven") {
+                classpath plugin.value
+            } else {
+                classpath files(project.file(plugin.value))
+            }
+        }
+    }
+}
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
 }
 
-apply from: 'config.gradle'
+if (getFoundryJavaEnabled()) {
+    apply plugin: "games.cafecito.foundry.java"
+}
 
 allprojects {
     repositories {
+        if (getFoundryJavaEnabled()) {
+            getFoundryJavaMavenRepositories().each { String repositoryUrl ->
+                maven { url repositoryUrl }
+            }
+        }
         google()
         mavenCentral()
         gradlePluginPortal()
@@ -34,6 +62,15 @@ dependencies {
     implementation "androidx.fragment:fragment:$versions.fragmentVersion"
     implementation "androidx.core:core-splashscreen:$versions.splashscreenVersion"
     implementation "androidx.documentfile:documentfile:$versions.documentfileVersion"
+
+    if (getFoundryJavaEnabled()) {
+        getFoundryJavaMavenArtifacts().each { String artifact ->
+            implementation artifact
+        }
+        getFoundryJavaLocalArtifacts().each { File artifact ->
+            implementation files(artifact)
+        }
+    }
 
     if (rootProject.findProject(":lib")) {
         implementation project(":lib")
@@ -62,6 +99,12 @@ dependencies {
     String jar = '../../../../modules/mono/thirdparty/libSystem.Security.Cryptography.Native.Android.jar'
     if (file(jar).exists()) {
         monoImplementation files(jar)
+    }
+}
+
+if (getFoundryJavaEnabled()) {
+    foundryJava {
+        requestedAbis.set(getExportEnabledABIs() as Set)
     }
 }
 
@@ -203,6 +246,10 @@ android {
             // Signing and zip-aligning are skipped for prebuilt builds, but
             // performed for Foundry gradle builds.
             zipAlignEnabled shouldZipAlign()
+            minifyEnabled getFoundryJavaEnabled()
+            if (getFoundryJavaEnabled()) {
+                proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+            }
             if (shouldSign()) {
                 signingConfig signingConfigs.release
             } else {

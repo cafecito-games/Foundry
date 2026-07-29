@@ -1897,6 +1897,1891 @@ Vector<EditorExportPlatformAndroid::ABI> EditorExportPlatformAndroid::get_enable
 	return enabled_abis;
 }
 
+static bool _is_exact_foundry_java_coordinate(const String &p_coordinate) {
+	PackedStringArray parts = p_coordinate.split(":");
+	if (parts.size() != 3 || p_coordinate.contains("+") || p_coordinate.contains("[") || p_coordinate.contains("]") || parts[2].to_lower().contains("latest")) {
+		return false;
+	}
+	for (const String &part : parts) {
+		if (part.is_empty()) {
+			return false;
+		}
+		for (int i = 0; i < part.length(); i++) {
+			const char32_t character = part[i];
+			if (!(is_ascii_alphanumeric_char(character) || character == '.' || character == '_' || character == '-')) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+#ifdef MACOS_ENABLED
+static bool _foundry_java_normalize_macos_system_root_alias(const Ref<DirAccess> &p_dir, String &r_path) {
+	String expected_target;
+	if (r_path == "/etc") {
+		expected_target = "private/etc";
+	} else if (r_path == "/tmp") {
+		expected_target = "private/tmp";
+	} else if (r_path == "/var") {
+		expected_target = "private/var";
+	}
+	if (expected_target.is_empty() || p_dir->read_link(r_path) != expected_target) {
+		return false;
+	}
+	r_path = "/" + expected_target;
+	return true;
+}
+#endif
+
+static bool _foundry_java_path_has_symlink(const String &p_path) {
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	ERR_FAIL_COND_V(dir.is_null(), true);
+
+	const String with_normalized_separators = p_path.replace("\\", "/");
+	PackedStringArray components = with_normalized_separators.split("/", false);
+	String current;
+	if (with_normalized_separators.is_network_share_path()) {
+		current = "//";
+	} else if (with_normalized_separators.begins_with("/")) {
+		current = "/";
+	}
+	for (const String &component : components) {
+		if (component == ".") {
+			continue;
+		}
+		if (component == "..") {
+			current = current.get_base_dir();
+			continue;
+		}
+		current = current.is_empty() ? component : current.path_join(component);
+		if (dir->is_link(current)) {
+#ifdef MACOS_ENABLED
+			// macOS exposes these fixed root-owned aliases as symlinks into
+			// /private. Continue checking every component below the exact target.
+			if (_foundry_java_normalize_macos_system_root_alias(dir, current)) {
+				continue;
+			}
+#endif
+			return true;
+		}
+	}
+	return false;
+}
+
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES = 65534;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_DEPTH = 8;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVES = 64;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_TOTAL_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES = 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES = 131072;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES = 16383;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES = 16 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_BYTES = 128 * 1024 * 1024;
+static constexpr uint64_t FOUNDRY_JAVA_APK_SIGNING_BLOCK_ALIGNMENT = 4096;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_PADDING_BYTES =
+		FOUNDRY_JAVA_APK_SIGNING_BLOCK_ALIGNMENT - 1;
+static constexpr uint64_t FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIZE = 30;
+static constexpr uint64_t FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIZE = 46;
+static constexpr uint64_t FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE = 22;
+static constexpr uint64_t FOUNDRY_JAVA_MAX_ZIP_COMMENT_BYTES = 65535;
+static constexpr uint32_t FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIGNATURE = 0x04034b50;
+static constexpr uint32_t FOUNDRY_JAVA_DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
+static constexpr uint32_t FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIGNATURE = 0x02014b50;
+static constexpr uint32_t FOUNDRY_JAVA_CENTRAL_DIRECTORY_DIGITAL_SIGNATURE = 0x05054b50;
+static constexpr uint32_t FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06054b50;
+static constexpr uint32_t FOUNDRY_JAVA_ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE = 0x06064b50;
+static constexpr uint32_t FOUNDRY_JAVA_ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE = 0x07064b50;
+static constexpr uint8_t FOUNDRY_JAVA_APK_SIGNING_BLOCK_MAGIC[16] = {
+	'A', 'P', 'K', ' ', 'S', 'i', 'g', ' ', 'B', 'l', 'o', 'c', 'k', ' ', '4', '2'
+};
+
+enum FoundryJavaCentralDirectoryConsistency {
+	FOUNDRY_JAVA_CENTRAL_DIRECTORY_CLEAN,
+	FOUNDRY_JAVA_CENTRAL_DIRECTORY_UNREPORTED_ENTRY,
+	FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT,
+};
+
+enum FoundryJavaZip64ExtentResult {
+	FOUNDRY_JAVA_ZIP64_EXTENT_NOT_PRESENT,
+	FOUNDRY_JAVA_ZIP64_EXTENT_VALID,
+	FOUNDRY_JAVA_ZIP64_EXTENT_CORRUPT,
+};
+
+enum FoundryJavaApkSigningBlockResult {
+	FOUNDRY_JAVA_APK_SIGNING_BLOCK_NOT_PRESENT,
+	FOUNDRY_JAVA_APK_SIGNING_BLOCK_VALID,
+	FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT,
+};
+
+static String _foundry_java_safe_diagnostic_value(const String &p_value) {
+	constexpr int MAX_DIAGNOSTIC_VALUE_LENGTH = 512;
+	const String escaped = p_value.c_escape();
+	if (escaped.length() <= MAX_DIAGNOSTIC_VALUE_LENGTH) {
+		return escaped;
+	}
+	return escaped.left(MAX_DIAGNOSTIC_VALUE_LENGTH) + vformat("... <%d characters>", escaped.length());
+}
+
+static Error _foundry_java_invalid_option(const String &p_option, const String &p_value, const String &p_reason, String &r_error) {
+	r_error = vformat(TTR("Invalid export option %s value '%s': %s."), p_option, _foundry_java_safe_diagnostic_value(p_value), p_reason);
+	return ERR_INVALID_PARAMETER;
+}
+
+static Error _foundry_java_parse_string_array_option(
+		const Variant &p_value,
+		const String &p_option,
+		const String &p_value_kind,
+		bool p_redact_value,
+		PackedStringArray &r_values,
+		String &r_error) {
+	r_values.clear();
+	if (p_value.get_type() == Variant::PACKED_STRING_ARRAY) {
+		r_values = p_value;
+		return OK;
+	}
+	const String diagnostic_value = p_redact_value ? "<redacted>" : p_value.stringify();
+	if (p_value.get_type() != Variant::ARRAY) {
+		return _foundry_java_invalid_option(
+				p_option,
+				diagnostic_value,
+				vformat(TTR("must be an array of %s strings, not %s"), p_value_kind, Variant::get_type_name(p_value.get_type())),
+				r_error);
+	}
+	const Array values = p_value;
+	for (const Variant &value : values) {
+		if (value.get_type() != Variant::STRING) {
+			return _foundry_java_invalid_option(
+					p_option,
+					p_redact_value ? "<redacted>" : value.stringify(),
+					vformat(TTR("must contain only %s strings, not %s"), p_value_kind, Variant::get_type_name(value.get_type())),
+					r_error);
+		}
+		r_values.push_back(value);
+	}
+	return OK;
+}
+
+static bool _foundry_java_contains_property_separator(const String &p_value) {
+	return p_value.contains("|") || p_value.contains("\n") || p_value.contains("\r");
+}
+
+static bool _foundry_java_has_safe_uri_syntax(const String &p_value, bool p_allow_square_brackets) {
+	for (int i = 0; i < p_value.length(); i++) {
+		const char32_t character = p_value[i];
+		if (character <= 0x20 || character >= 0x7f ||
+				character == '\\' || character == '"' || character == '<' || character == '>' ||
+				character == '{' || character == '}' || character == '^' || character == '`' ||
+				character == '|' || (!p_allow_square_brackets && (character == '[' || character == ']'))) {
+			return false;
+		}
+		if (character == '%') {
+			if (i + 2 >= p_value.length() ||
+					!is_hex_digit(p_value[i + 1]) ||
+					!is_hex_digit(p_value[i + 2])) {
+				return false;
+			}
+			i += 2;
+		}
+	}
+	return true;
+}
+
+static bool _foundry_java_has_safe_repository_url(const String &p_value) {
+	if (p_value.contains("?") || p_value.contains("#")) {
+		return false;
+	}
+	if (p_value.begins_with("file:///")) {
+		const String path = p_value.substr(8);
+		return !path.begins_with("/") && _foundry_java_has_safe_uri_syntax(path, false);
+	}
+	if (!p_value.begins_with("https://") || !_foundry_java_has_safe_uri_syntax(p_value, true)) {
+		return false;
+	}
+	const String remainder = p_value.substr(8);
+	const int path_separator = remainder.find("/");
+	const String authority = path_separator == -1 ? remainder : remainder.left(path_separator);
+	const String raw_path = path_separator == -1 ? String() : remainder.substr(path_separator);
+	if (authority.is_empty() || authority.contains("@") || !_foundry_java_has_safe_uri_syntax(raw_path, false)) {
+		return false;
+	}
+	if (authority.begins_with("[")) {
+		const int closing_bracket = authority.find("]");
+		if (closing_bracket == -1 ||
+				(closing_bracket + 1 < authority.length() && authority[closing_bracket + 1] != ':')) {
+			return false;
+		}
+	} else if (authority.contains("[") || authority.contains("]")) {
+		return false;
+	}
+	String scheme;
+	String host;
+	String path;
+	String fragment;
+	int port = 0;
+	if (p_value.parse_url(scheme, host, port, path, fragment) != OK || scheme != "https://" || !fragment.is_empty()) {
+		return false;
+	}
+	const bool host_is_ip_address = host.is_valid_ip_address();
+	if (authority.begins_with("[") && (!host.contains(":") || !host_is_ip_address)) {
+		return false;
+	}
+	if (host_is_ip_address) {
+		return true;
+	}
+	String hostname = host;
+	if (hostname.ends_with(".")) {
+		hostname = hostname.left(-1);
+	}
+	if (hostname.is_empty()) {
+		return false;
+	}
+	const PackedStringArray labels = hostname.split(".");
+	for (const String &label : labels) {
+		if (label.is_empty() || label.length() > 63 ||
+				!is_ascii_alphanumeric_char(label[0]) ||
+				!is_ascii_alphanumeric_char(label[label.length() - 1])) {
+			return false;
+		}
+		for (int i = 1; i < label.length() - 1; i++) {
+			if (!is_ascii_alphanumeric_char(label[i]) && label[i] != '-') {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+static uint16_t _foundry_java_decode_uint16(const uint8_t *p_bytes) {
+	return uint16_t(p_bytes[0]) | (uint16_t(p_bytes[1]) << 8);
+}
+
+static uint32_t _foundry_java_decode_uint32(const uint8_t *p_bytes) {
+	return uint32_t(p_bytes[0]) | (uint32_t(p_bytes[1]) << 8) | (uint32_t(p_bytes[2]) << 16) | (uint32_t(p_bytes[3]) << 24);
+}
+
+static uint64_t _foundry_java_decode_uint64(const uint8_t *p_bytes) {
+	return uint64_t(_foundry_java_decode_uint32(p_bytes)) | (uint64_t(_foundry_java_decode_uint32(p_bytes + 4)) << 32);
+}
+
+static bool _foundry_java_checked_add(uint64_t p_left, uint64_t p_right, uint64_t &r_sum) {
+	if (p_right > UINT64_MAX - p_left) {
+		return false;
+	}
+	r_sum = p_left + p_right;
+	return true;
+}
+
+static bool _foundry_java_read_archive_bytes(const Ref<FileAccess> &p_archive_file, uint64_t p_position, uint8_t *r_bytes, uint64_t p_size) {
+	if (p_archive_file.is_null()) {
+		return false;
+	}
+	const uint64_t archive_length = p_archive_file->get_length();
+	if (p_position > archive_length || p_size > archive_length - p_position) {
+		return false;
+	}
+	p_archive_file->seek(p_position);
+	return p_archive_file->get_buffer(r_bytes, p_size) == p_size;
+}
+
+static bool _foundry_java_read_archive_uint32(const Ref<FileAccess> &p_archive_file, uint64_t p_position, uint32_t &r_value) {
+	uint8_t bytes[4];
+	if (!_foundry_java_read_archive_bytes(p_archive_file, p_position, bytes, sizeof(bytes))) {
+		return false;
+	}
+	r_value = _foundry_java_decode_uint32(bytes);
+	return true;
+}
+
+static bool _foundry_java_read_archive_uint64(const Ref<FileAccess> &p_archive_file, uint64_t p_position, uint64_t &r_value) {
+	uint8_t bytes[8];
+	if (!_foundry_java_read_archive_bytes(p_archive_file, p_position, bytes, sizeof(bytes))) {
+		return false;
+	}
+	r_value = _foundry_java_decode_uint64(bytes);
+	return true;
+}
+
+static FoundryJavaZip64ExtentResult _foundry_java_find_zip64_central_directory_extent(
+		const Ref<FileAccess> &p_archive_file,
+		const unz_global_info64 &p_global_info,
+		uint64_t p_end_record_position,
+		uint16_t p_classic_disk_entry_count,
+		uint16_t p_classic_total_entry_count,
+		uint32_t p_classic_central_directory_size,
+		uint32_t p_classic_central_directory_offset,
+		uint64_t &r_byte_before_zip,
+		uint64_t &r_central_directory_start,
+		uint64_t &r_central_directory_end) {
+	if (p_end_record_position < 20) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_NOT_PRESENT;
+	}
+	uint8_t locator[20];
+	if (!_foundry_java_read_archive_bytes(
+				p_archive_file,
+				p_end_record_position - sizeof(locator),
+				locator,
+				sizeof(locator)) ||
+			_foundry_java_decode_uint32(locator) != FOUNDRY_JAVA_ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_NOT_PRESENT;
+	}
+
+	// Bundled minizip treats the locator's ZIP64 record offset as a physical
+	// archive offset, including any prepended SFX bytes.
+	const uint64_t zip64_end_record_position = _foundry_java_decode_uint64(locator + 8);
+	if (zip64_end_record_position >= p_end_record_position - sizeof(locator)) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_NOT_PRESENT;
+	}
+	uint8_t zip64_end_record[56];
+	if (!_foundry_java_read_archive_bytes(
+				p_archive_file,
+				zip64_end_record_position,
+				zip64_end_record,
+				sizeof(zip64_end_record)) ||
+			_foundry_java_decode_uint32(zip64_end_record) != FOUNDRY_JAVA_ZIP64_END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_NOT_PRESENT;
+	}
+	const uint64_t zip64_end_record_data_size = _foundry_java_decode_uint64(zip64_end_record + 4);
+	uint64_t zip64_end_record_end = 0;
+	if (zip64_end_record_data_size < 44 ||
+			!_foundry_java_checked_add(zip64_end_record_position, 12, zip64_end_record_end) ||
+			!_foundry_java_checked_add(zip64_end_record_end, zip64_end_record_data_size, zip64_end_record_end) ||
+			zip64_end_record_end != p_end_record_position - sizeof(locator)) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_NOT_PRESENT;
+	}
+
+	const uint64_t zip64_disk_entry_count = _foundry_java_decode_uint64(zip64_end_record + 24);
+	const uint64_t zip64_total_entry_count = _foundry_java_decode_uint64(zip64_end_record + 32);
+	const uint64_t zip64_central_directory_size = _foundry_java_decode_uint64(zip64_end_record + 40);
+	const uint64_t zip64_central_directory_offset = _foundry_java_decode_uint64(zip64_end_record + 48);
+	if (_foundry_java_decode_uint32(locator + 4) != 0 ||
+			_foundry_java_decode_uint32(locator + 16) != 1 ||
+			_foundry_java_decode_uint32(zip64_end_record + 16) != 0 ||
+			_foundry_java_decode_uint32(zip64_end_record + 20) != 0 ||
+			zip64_disk_entry_count != zip64_total_entry_count ||
+			zip64_total_entry_count != p_global_info.number_entry ||
+			(p_classic_disk_entry_count != UINT16_MAX && p_classic_disk_entry_count != zip64_disk_entry_count) ||
+			(p_classic_total_entry_count != UINT16_MAX && p_classic_total_entry_count != zip64_total_entry_count) ||
+			(p_classic_central_directory_size != UINT32_MAX && p_classic_central_directory_size != zip64_central_directory_size) ||
+			(p_classic_central_directory_offset != UINT32_MAX && p_classic_central_directory_offset != zip64_central_directory_offset)) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_CORRUPT;
+	}
+
+	uint64_t central_directory_start = 0;
+	uint64_t central_directory_end = 0;
+	if (zip64_central_directory_offset > zip64_end_record_position ||
+			zip64_central_directory_size > zip64_end_record_position - zip64_central_directory_offset) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_CORRUPT;
+	}
+	const uint64_t byte_before_zip = zip64_end_record_position - zip64_central_directory_offset - zip64_central_directory_size;
+	if (!_foundry_java_checked_add(byte_before_zip, zip64_central_directory_offset, central_directory_start) ||
+			!_foundry_java_checked_add(central_directory_start, zip64_central_directory_size, central_directory_end) ||
+			central_directory_end != zip64_end_record_position ||
+			central_directory_start >= central_directory_end) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_CORRUPT;
+	}
+	uint32_t central_directory_signature = 0;
+	if (!_foundry_java_read_archive_uint32(p_archive_file, central_directory_start, central_directory_signature) ||
+			central_directory_signature != FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIGNATURE) {
+		return FOUNDRY_JAVA_ZIP64_EXTENT_CORRUPT;
+	}
+	r_byte_before_zip = byte_before_zip;
+	r_central_directory_start = central_directory_start;
+	r_central_directory_end = central_directory_end;
+	return FOUNDRY_JAVA_ZIP64_EXTENT_VALID;
+}
+
+static bool _foundry_java_find_central_directory_extent(
+		const Ref<FileAccess> &p_archive_file,
+		const unz_global_info64 &p_global_info,
+		uint64_t &r_byte_before_zip,
+		uint64_t &r_central_directory_start,
+		uint64_t &r_central_directory_end) {
+	const uint64_t archive_length = p_archive_file->get_length();
+	if (archive_length < FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE) {
+		return false;
+	}
+	const uint64_t tail_size = MIN(
+			archive_length,
+			FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE + FOUNDRY_JAVA_MAX_ZIP_COMMENT_BYTES);
+	Vector<uint8_t> tail;
+	tail.resize(tail_size);
+	if (!_foundry_java_read_archive_bytes(p_archive_file, archive_length - tail_size, tail.ptrw(), tail_size)) {
+		return false;
+	}
+
+	const uint8_t *tail_bytes = tail.ptr();
+	for (int64_t index = tail_size - FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE; index >= 0; index--) {
+		if (_foundry_java_decode_uint32(tail_bytes + index) != FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIGNATURE) {
+			continue;
+		}
+		const uint16_t comment_size = _foundry_java_decode_uint16(tail_bytes + index + 20);
+		if (uint64_t(index) + FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE + comment_size != tail_size) {
+			continue;
+		}
+		const uint16_t disk_number = _foundry_java_decode_uint16(tail_bytes + index + 4);
+		const uint16_t central_directory_disk = _foundry_java_decode_uint16(tail_bytes + index + 6);
+		const uint16_t disk_entry_count = _foundry_java_decode_uint16(tail_bytes + index + 8);
+		const uint16_t total_entry_count = _foundry_java_decode_uint16(tail_bytes + index + 10);
+		const uint32_t central_directory_size = _foundry_java_decode_uint32(tail_bytes + index + 12);
+		const uint32_t central_directory_offset = _foundry_java_decode_uint32(tail_bytes + index + 16);
+		if (disk_number != 0 || central_directory_disk != 0) {
+			continue;
+		}
+
+		const uint64_t end_record_position = archive_length - tail_size + index;
+		const FoundryJavaZip64ExtentResult zip64_result = _foundry_java_find_zip64_central_directory_extent(
+				p_archive_file,
+				p_global_info,
+				end_record_position,
+				disk_entry_count,
+				total_entry_count,
+				central_directory_size,
+				central_directory_offset,
+				r_byte_before_zip,
+				r_central_directory_start,
+				r_central_directory_end);
+		if (zip64_result == FOUNDRY_JAVA_ZIP64_EXTENT_VALID) {
+			return true;
+		}
+		if (zip64_result == FOUNDRY_JAVA_ZIP64_EXTENT_CORRUPT) {
+			continue;
+		}
+
+		if (disk_entry_count != total_entry_count ||
+				total_entry_count != p_global_info.number_entry ||
+				central_directory_size == UINT32_MAX ||
+				central_directory_offset == UINT32_MAX) {
+			continue;
+		}
+		uint64_t central_directory_start = 0;
+		uint64_t central_directory_end = 0;
+		if (central_directory_offset > end_record_position ||
+				central_directory_size > end_record_position - central_directory_offset) {
+			continue;
+		}
+		const uint64_t byte_before_zip = end_record_position - central_directory_offset - central_directory_size;
+		if (!_foundry_java_checked_add(byte_before_zip, central_directory_offset, central_directory_start) ||
+				!_foundry_java_checked_add(central_directory_start, central_directory_size, central_directory_end) ||
+				central_directory_end != end_record_position ||
+				central_directory_start >= central_directory_end) {
+			continue;
+		}
+		uint32_t central_directory_signature = 0;
+		if (!_foundry_java_read_archive_uint32(p_archive_file, central_directory_start, central_directory_signature) ||
+				central_directory_signature != FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIGNATURE) {
+			continue;
+		}
+		r_byte_before_zip = byte_before_zip;
+		r_central_directory_start = central_directory_start;
+		r_central_directory_end = central_directory_end;
+		return true;
+	}
+	return false;
+}
+
+struct FoundryJavaLocalEntryRecord {
+	uint64_t local_header_position = 0;
+	uint64_t payload_end = 0;
+	bool uses_data_descriptor = false;
+	bool descriptor_uses_zip64 = false;
+	uint32_t crc = 0;
+	uint64_t compressed_size = 0;
+	uint64_t uncompressed_size = 0;
+};
+
+struct FoundryJavaLocalEntryRecordComparator {
+	_FORCE_INLINE_ bool operator()(const FoundryJavaLocalEntryRecord &p_left, const FoundryJavaLocalEntryRecord &p_right) const {
+		return p_left.local_header_position < p_right.local_header_position;
+	}
+};
+
+struct FoundryJavaCentralDirectoryContext {
+	bool initialized = false;
+	uint64_t byte_before_zip = 0;
+	uint64_t central_directory_start = 0;
+	uint64_t central_directory_end = 0;
+	Vector<FoundryJavaLocalEntryRecord> local_entries;
+};
+
+static bool _foundry_java_resolve_zip64_entry_values(
+		const Vector<uint8_t> &p_extra,
+		uint32_t p_raw_uncompressed_size,
+		uint32_t p_raw_compressed_size,
+		uint32_t p_raw_local_header_offset,
+		uint16_t p_raw_disk_start,
+		bool p_has_offset_and_disk,
+		bool p_allow_zero_padding,
+		uint64_t &r_uncompressed_size,
+		uint64_t &r_compressed_size,
+		uint64_t &r_local_header_offset,
+		uint32_t &r_disk_start) {
+	r_uncompressed_size = p_raw_uncompressed_size;
+	r_compressed_size = p_raw_compressed_size;
+	r_local_header_offset = p_raw_local_header_offset;
+	r_disk_start = p_raw_disk_start;
+
+	const bool needs_uncompressed_size = p_raw_uncompressed_size == UINT32_MAX;
+	const bool needs_compressed_size = p_raw_compressed_size == UINT32_MAX;
+	const bool needs_local_header_offset = p_has_offset_and_disk && p_raw_local_header_offset == UINT32_MAX;
+	const bool needs_disk_start = p_has_offset_and_disk && p_raw_disk_start == UINT16_MAX;
+	const bool needs_zip64 = needs_uncompressed_size || needs_compressed_size || needs_local_header_offset || needs_disk_start;
+	uint64_t zero_padding_start = p_extra.size();
+	if (p_allow_zero_padding) {
+		while (zero_padding_start > 0 && p_extra[zero_padding_start - 1] == 0) {
+			zero_padding_start--;
+		}
+	}
+	bool found_zip64 = false;
+	uint64_t extra_cursor = 0;
+	while (extra_cursor < uint64_t(p_extra.size())) {
+		if (p_allow_zero_padding && extra_cursor >= zero_padding_start) {
+			return !needs_zip64 || found_zip64;
+		}
+		if (uint64_t(p_extra.size()) - extra_cursor < 4) {
+			return false;
+		}
+		const uint16_t header_id = _foundry_java_decode_uint16(p_extra.ptr() + extra_cursor);
+		const uint16_t data_size = _foundry_java_decode_uint16(p_extra.ptr() + extra_cursor + 2);
+		extra_cursor += 4;
+		if (data_size > uint64_t(p_extra.size()) - extra_cursor) {
+			return false;
+		}
+		if (header_id == 0x0001) {
+			if (found_zip64) {
+				return false;
+			}
+			found_zip64 = true;
+			uint64_t zip64_cursor = extra_cursor;
+			const uint64_t zip64_end = extra_cursor + data_size;
+			if (needs_uncompressed_size) {
+				if (zip64_end - zip64_cursor < sizeof(uint64_t)) {
+					return false;
+				}
+				r_uncompressed_size = _foundry_java_decode_uint64(p_extra.ptr() + zip64_cursor);
+				zip64_cursor += sizeof(uint64_t);
+			}
+			if (needs_compressed_size) {
+				if (zip64_end - zip64_cursor < sizeof(uint64_t)) {
+					return false;
+				}
+				r_compressed_size = _foundry_java_decode_uint64(p_extra.ptr() + zip64_cursor);
+				zip64_cursor += sizeof(uint64_t);
+			}
+			if (needs_local_header_offset) {
+				if (zip64_end - zip64_cursor < sizeof(uint64_t)) {
+					return false;
+				}
+				r_local_header_offset = _foundry_java_decode_uint64(p_extra.ptr() + zip64_cursor);
+				zip64_cursor += sizeof(uint64_t);
+			}
+			if (needs_disk_start) {
+				if (zip64_end - zip64_cursor < sizeof(uint32_t)) {
+					return false;
+				}
+				r_disk_start = _foundry_java_decode_uint32(p_extra.ptr() + zip64_cursor);
+			}
+		}
+		extra_cursor += data_size;
+	}
+	return !needs_zip64 || found_zip64;
+}
+
+static bool _foundry_java_validate_structure_gap(
+		const Ref<FileAccess> &p_archive_file,
+		uint64_t p_candidate_end,
+		uint64_t p_next_structure,
+		bool p_allow_apk_signing_block_padding) {
+	if (p_candidate_end == p_next_structure) {
+		return true;
+	}
+	if (!p_allow_apk_signing_block_padding ||
+			p_candidate_end > p_next_structure ||
+			p_next_structure % FOUNDRY_JAVA_APK_SIGNING_BLOCK_ALIGNMENT != 0) {
+		return false;
+	}
+
+	const uint64_t padding_size = p_next_structure - p_candidate_end;
+	if (padding_size == 0 || padding_size > FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_PADDING_BYTES) {
+		return false;
+	}
+	uint8_t padding[256];
+	uint64_t padding_cursor = p_candidate_end;
+	while (padding_cursor < p_next_structure) {
+		const uint64_t read_size = MIN(uint64_t(sizeof(padding)), p_next_structure - padding_cursor);
+		if (!_foundry_java_read_archive_bytes(
+					p_archive_file,
+					padding_cursor,
+					padding,
+					read_size)) {
+			return false;
+		}
+		for (uint64_t i = 0; i < read_size; i++) {
+			if (padding[i] != 0) {
+				return false;
+			}
+		}
+		padding_cursor += read_size;
+	}
+	return true;
+}
+
+static bool _foundry_java_validate_data_descriptor(
+		const Ref<FileAccess> &p_archive_file,
+		uint64_t p_descriptor_start,
+		uint64_t p_next_structure,
+		bool p_allow_apk_signing_block_padding,
+		bool p_uses_zip64,
+		uint32_t p_crc,
+		uint64_t p_compressed_size,
+		uint64_t p_uncompressed_size) {
+	if (p_archive_file.is_null() || p_descriptor_start >= p_next_structure ||
+			(!p_uses_zip64 && (p_compressed_size > UINT32_MAX || p_uncompressed_size > UINT32_MAX))) {
+		return false;
+	}
+
+	uint32_t first_value = 0;
+	if (!_foundry_java_read_archive_uint32(p_archive_file, p_descriptor_start, first_value)) {
+		return false;
+	}
+
+	uint64_t value_starts[2] = { p_descriptor_start, p_descriptor_start };
+	int value_start_count = 1;
+	if (first_value == FOUNDRY_JAVA_DATA_DESCRIPTOR_SIGNATURE) {
+		if (!_foundry_java_checked_add(p_descriptor_start, sizeof(uint32_t), value_starts[0])) {
+			return false;
+		}
+		value_starts[1] = p_descriptor_start;
+		value_start_count = 2;
+	}
+
+	const uint64_t descriptor_values_size =
+			sizeof(uint32_t) + (p_uses_zip64 ? 2 * sizeof(uint64_t) : 2 * sizeof(uint32_t));
+	for (int i = 0; i < value_start_count; i++) {
+		uint64_t descriptor_end = 0;
+		if (!_foundry_java_checked_add(value_starts[i], descriptor_values_size, descriptor_end) ||
+				!_foundry_java_validate_structure_gap(
+						p_archive_file,
+						descriptor_end,
+						p_next_structure,
+						p_allow_apk_signing_block_padding)) {
+			continue;
+		}
+
+		uint8_t descriptor[sizeof(uint32_t) + 2 * sizeof(uint64_t)];
+		if (!_foundry_java_read_archive_bytes(
+					p_archive_file,
+					value_starts[i],
+					descriptor,
+					descriptor_values_size) ||
+				_foundry_java_decode_uint32(descriptor) != p_crc) {
+			continue;
+		}
+		const uint64_t descriptor_compressed_size = p_uses_zip64 ? _foundry_java_decode_uint64(descriptor + sizeof(uint32_t)) : _foundry_java_decode_uint32(descriptor + sizeof(uint32_t));
+		const uint64_t descriptor_uncompressed_size = p_uses_zip64 ? _foundry_java_decode_uint64(descriptor + sizeof(uint32_t) + sizeof(uint64_t)) : _foundry_java_decode_uint32(descriptor + sizeof(uint32_t) + sizeof(uint32_t));
+		if (descriptor_compressed_size == p_compressed_size &&
+				descriptor_uncompressed_size == p_uncompressed_size) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool _foundry_java_validate_central_directory_entry(
+		const Ref<FileAccess> &p_archive_file,
+		uint64_t p_entry_start,
+		uint64_t p_central_directory_start,
+		uint64_t p_central_directory_end,
+		uint64_t p_byte_before_zip,
+		uint64_t &r_entry_end,
+		const unz_file_info64 *p_info = nullptr,
+		FoundryJavaLocalEntryRecord *r_local_entry = nullptr) {
+	uint8_t header[FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIZE];
+	if (!_foundry_java_read_archive_bytes(p_archive_file, p_entry_start, header, sizeof(header)) ||
+			_foundry_java_decode_uint32(header) != FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIGNATURE) {
+		return false;
+	}
+	const uint16_t central_flags = _foundry_java_decode_uint16(header + 8);
+	const uint16_t central_compression_method = _foundry_java_decode_uint16(header + 10);
+	const uint32_t central_crc = _foundry_java_decode_uint32(header + 16);
+	const uint16_t filename_size = _foundry_java_decode_uint16(header + 28);
+	const uint16_t extra_size = _foundry_java_decode_uint16(header + 30);
+	const uint16_t comment_size = _foundry_java_decode_uint16(header + 32);
+	const uint16_t raw_disk_start = _foundry_java_decode_uint16(header + 34);
+	const uint32_t raw_compressed_size = _foundry_java_decode_uint32(header + 20);
+	const uint32_t raw_uncompressed_size = _foundry_java_decode_uint32(header + 24);
+	const uint32_t raw_local_header_offset = _foundry_java_decode_uint32(header + 42);
+
+	uint64_t entry_end = 0;
+	if (!_foundry_java_checked_add(p_entry_start, FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIZE, entry_end) ||
+			!_foundry_java_checked_add(entry_end, filename_size, entry_end) ||
+			!_foundry_java_checked_add(entry_end, extra_size, entry_end) ||
+			!_foundry_java_checked_add(entry_end, comment_size, entry_end) ||
+			entry_end > p_central_directory_end) {
+		return false;
+	}
+
+	Vector<uint8_t> central_extra;
+	central_extra.resize(extra_size);
+	const uint64_t central_extra_position = p_entry_start + FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIZE + filename_size;
+	if (extra_size > 0 &&
+			!_foundry_java_read_archive_bytes(p_archive_file, central_extra_position, central_extra.ptrw(), extra_size)) {
+		return false;
+	}
+	uint64_t central_uncompressed_size = 0;
+	uint64_t central_compressed_size = 0;
+	uint64_t local_header_offset = 0;
+	uint32_t central_disk_start = 0;
+	if (!_foundry_java_resolve_zip64_entry_values(
+				central_extra,
+				raw_uncompressed_size,
+				raw_compressed_size,
+				raw_local_header_offset,
+				raw_disk_start,
+				true,
+				false,
+				central_uncompressed_size,
+				central_compressed_size,
+				local_header_offset,
+				central_disk_start) ||
+			central_disk_start != 0) {
+		return false;
+	}
+	if (p_info &&
+			(filename_size != p_info->size_filename ||
+					extra_size != p_info->size_file_extra ||
+					comment_size != p_info->size_file_comment ||
+					central_flags != p_info->flag ||
+					central_compression_method != p_info->compression_method ||
+					central_crc != p_info->crc ||
+					central_compressed_size != p_info->compressed_size ||
+					central_uncompressed_size != p_info->uncompressed_size ||
+					central_disk_start != p_info->disk_num_start)) {
+		return false;
+	}
+
+	uint64_t local_header_position = 0;
+	if (!_foundry_java_checked_add(p_byte_before_zip, local_header_offset, local_header_position) ||
+			local_header_position >= p_central_directory_start) {
+		return false;
+	}
+	uint8_t local_header[FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIZE];
+	if (!_foundry_java_read_archive_bytes(p_archive_file, local_header_position, local_header, sizeof(local_header)) ||
+			_foundry_java_decode_uint32(local_header) != FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIGNATURE) {
+		return false;
+	}
+	const uint16_t local_flags = _foundry_java_decode_uint16(local_header + 6);
+	const uint16_t local_compression_method = _foundry_java_decode_uint16(local_header + 8);
+	if (central_flags != local_flags || central_compression_method != local_compression_method) {
+		return false;
+	}
+	const uint16_t local_filename_size = _foundry_java_decode_uint16(local_header + 26);
+	const uint16_t local_extra_size = _foundry_java_decode_uint16(local_header + 28);
+	const uint32_t raw_local_compressed_size = _foundry_java_decode_uint32(local_header + 18);
+	const uint32_t raw_local_uncompressed_size = _foundry_java_decode_uint32(local_header + 22);
+	uint64_t local_filename_position = 0;
+	uint64_t local_filename_end = 0;
+	uint64_t local_extra_end = 0;
+	uint64_t local_payload_end = 0;
+	if (local_filename_size != filename_size ||
+			!_foundry_java_checked_add(local_header_position, FOUNDRY_JAVA_LOCAL_FILE_ENTRY_SIZE, local_filename_position) ||
+			!_foundry_java_checked_add(local_filename_position, local_filename_size, local_filename_end) ||
+			!_foundry_java_checked_add(local_filename_end, local_extra_size, local_extra_end) ||
+			!_foundry_java_checked_add(local_extra_end, central_compressed_size, local_payload_end) ||
+			local_payload_end > p_central_directory_start) {
+		return false;
+	}
+	Vector<uint8_t> local_extra;
+	local_extra.resize(local_extra_size);
+	if (local_extra_size > 0 &&
+			!_foundry_java_read_archive_bytes(p_archive_file, local_filename_end, local_extra.ptrw(), local_extra_size)) {
+		return false;
+	}
+	uint64_t local_uncompressed_size = 0;
+	uint64_t local_compressed_size = 0;
+	uint64_t ignored_local_header_offset = 0;
+	uint32_t ignored_disk_start = 0;
+	const bool uses_data_descriptor = (central_flags & 0x0008) != 0;
+	if (!_foundry_java_resolve_zip64_entry_values(
+				local_extra,
+				uses_data_descriptor ? 0 : raw_local_uncompressed_size,
+				uses_data_descriptor ? 0 : raw_local_compressed_size,
+				0,
+				0,
+				false,
+				true,
+				local_uncompressed_size,
+				local_compressed_size,
+				ignored_local_header_offset,
+				ignored_disk_start)) {
+		return false;
+	}
+	if (!uses_data_descriptor &&
+			(central_crc != _foundry_java_decode_uint32(local_header + 14) ||
+					central_compressed_size != local_compressed_size ||
+					central_uncompressed_size != local_uncompressed_size)) {
+		return false;
+	}
+	if (filename_size > 0) {
+		Vector<uint8_t> central_filename;
+		Vector<uint8_t> local_filename;
+		central_filename.resize(filename_size);
+		local_filename.resize(filename_size);
+		if (!_foundry_java_read_archive_bytes(
+					p_archive_file,
+					p_entry_start + FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIZE,
+					central_filename.ptrw(),
+					filename_size) ||
+				!_foundry_java_read_archive_bytes(
+						p_archive_file,
+						local_filename_position,
+						local_filename.ptrw(),
+						filename_size) ||
+				memcmp(central_filename.ptr(), local_filename.ptr(), filename_size) != 0) {
+			return false;
+		}
+	}
+
+	if (r_local_entry) {
+		r_local_entry->local_header_position = local_header_position;
+		r_local_entry->payload_end = local_payload_end;
+		r_local_entry->uses_data_descriptor = uses_data_descriptor;
+		r_local_entry->descriptor_uses_zip64 =
+				raw_compressed_size == UINT32_MAX ||
+				raw_uncompressed_size == UINT32_MAX ||
+				raw_local_compressed_size == UINT32_MAX ||
+				raw_local_uncompressed_size == UINT32_MAX ||
+				central_compressed_size > UINT32_MAX ||
+				central_uncompressed_size > UINT32_MAX;
+		r_local_entry->crc = central_crc;
+		r_local_entry->compressed_size = central_compressed_size;
+		r_local_entry->uncompressed_size = central_uncompressed_size;
+	}
+	r_entry_end = entry_end;
+	return true;
+}
+
+static bool _foundry_java_validate_current_central_directory_entry(
+		unzFile p_archive,
+		const Ref<FileAccess> &p_archive_file,
+		const unz_global_info64 &p_global_info,
+		const unz_file_info64 &p_info,
+		FoundryJavaCentralDirectoryContext &r_context,
+		uint64_t &r_entry_end) {
+	if (!p_archive || p_archive_file.is_null()) {
+		return false;
+	}
+
+	const uint64_t entry_offset = unzGetOffset64(p_archive);
+	if (!r_context.initialized) {
+		if (!_foundry_java_find_central_directory_extent(
+					p_archive_file,
+					p_global_info,
+					r_context.byte_before_zip,
+					r_context.central_directory_start,
+					r_context.central_directory_end)) {
+			return false;
+		}
+		r_context.initialized = true;
+	}
+	uint64_t entry_start = 0;
+	if (!_foundry_java_checked_add(r_context.byte_before_zip, entry_offset, entry_start) ||
+			entry_start < r_context.central_directory_start ||
+			entry_start >= r_context.central_directory_end) {
+		return false;
+	}
+
+	FoundryJavaLocalEntryRecord local_entry;
+	if (!_foundry_java_validate_central_directory_entry(
+				p_archive_file,
+				entry_start,
+				r_context.central_directory_start,
+				r_context.central_directory_end,
+				r_context.byte_before_zip,
+				r_entry_end,
+				&p_info,
+				&local_entry) ||
+			uint64_t(r_context.local_entries.size()) >= p_global_info.number_entry) {
+		return false;
+	}
+	r_context.local_entries.push_back(local_entry);
+	return true;
+}
+
+static FoundryJavaApkSigningBlockResult _foundry_java_find_apk_signing_block_start(
+		const Ref<FileAccess> &p_archive_file,
+		uint64_t p_central_directory_start,
+		uint64_t &r_signing_block_start) {
+	r_signing_block_start = p_central_directory_start;
+	constexpr uint64_t SIGNING_BLOCK_TRAILER_SIZE =
+			sizeof(uint64_t) + sizeof(FOUNDRY_JAVA_APK_SIGNING_BLOCK_MAGIC);
+	if (p_archive_file.is_null() || p_central_directory_start < SIGNING_BLOCK_TRAILER_SIZE) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_NOT_PRESENT;
+	}
+
+	uint8_t trailer[SIGNING_BLOCK_TRAILER_SIZE];
+	const uint64_t trailer_start = p_central_directory_start - SIGNING_BLOCK_TRAILER_SIZE;
+	if (!_foundry_java_read_archive_bytes(
+				p_archive_file,
+				trailer_start,
+				trailer,
+				sizeof(trailer))) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+	}
+	if (memcmp(
+				trailer + sizeof(uint64_t),
+				FOUNDRY_JAVA_APK_SIGNING_BLOCK_MAGIC,
+				sizeof(FOUNDRY_JAVA_APK_SIGNING_BLOCK_MAGIC)) != 0) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_NOT_PRESENT;
+	}
+
+	const uint64_t trailing_block_size = _foundry_java_decode_uint64(trailer);
+	constexpr uint64_t MIN_PAIR_SIZE = sizeof(uint64_t) + sizeof(uint32_t);
+	constexpr uint64_t MIN_BLOCK_SIZE = sizeof(uint64_t) + MIN_PAIR_SIZE + SIGNING_BLOCK_TRAILER_SIZE;
+	uint64_t total_block_size = 0;
+	if (trailing_block_size > FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_BYTES - sizeof(uint64_t) ||
+			!_foundry_java_checked_add(trailing_block_size, sizeof(uint64_t), total_block_size) ||
+			total_block_size < MIN_BLOCK_SIZE ||
+			total_block_size > p_central_directory_start) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+	}
+
+	const uint64_t signing_block_start = p_central_directory_start - total_block_size;
+	uint64_t leading_block_size = 0;
+	if (!_foundry_java_read_archive_uint64(p_archive_file, signing_block_start, leading_block_size) ||
+			leading_block_size != trailing_block_size) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+	}
+
+	uint64_t pair_cursor = signing_block_start + sizeof(uint64_t);
+	const uint64_t pairs_end = trailer_start;
+	bool found_pair = false;
+	while (pair_cursor < pairs_end) {
+		uint64_t pair_size = 0;
+		if (pairs_end - pair_cursor < sizeof(uint64_t) ||
+				!_foundry_java_read_archive_uint64(p_archive_file, pair_cursor, pair_size)) {
+			return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+		}
+		pair_cursor += sizeof(uint64_t);
+		if (pair_size < sizeof(uint32_t) || pair_size > pairs_end - pair_cursor) {
+			return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+		}
+		pair_cursor += pair_size;
+		found_pair = true;
+	}
+	if (!found_pair || pair_cursor != pairs_end) {
+		return FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT;
+	}
+
+	r_signing_block_start = signing_block_start;
+	return FOUNDRY_JAVA_APK_SIGNING_BLOCK_VALID;
+}
+
+static bool _foundry_java_validate_local_entry_boundaries(
+		const Ref<FileAccess> &p_archive_file,
+		const FoundryJavaCentralDirectoryContext &p_context,
+		bool p_allow_apk_signing_block) {
+	if (!p_context.initialized || p_archive_file.is_null() || p_context.local_entries.is_empty()) {
+		return false;
+	}
+
+	uint64_t final_structure = p_context.central_directory_start;
+	bool allow_final_signing_block_padding = false;
+	if (p_allow_apk_signing_block) {
+		const FoundryJavaApkSigningBlockResult signing_block_result =
+				_foundry_java_find_apk_signing_block_start(
+						p_archive_file,
+						p_context.central_directory_start,
+						final_structure);
+		if (signing_block_result == FOUNDRY_JAVA_APK_SIGNING_BLOCK_CORRUPT) {
+			return false;
+		}
+		allow_final_signing_block_padding = signing_block_result == FOUNDRY_JAVA_APK_SIGNING_BLOCK_VALID;
+	}
+
+	Vector<FoundryJavaLocalEntryRecord> local_entries = p_context.local_entries;
+	local_entries.sort_custom<FoundryJavaLocalEntryRecordComparator>();
+	for (int i = 0; i < local_entries.size(); i++) {
+		const FoundryJavaLocalEntryRecord &entry = local_entries[i];
+		const uint64_t next_structure =
+				i + 1 < local_entries.size() ? local_entries[i + 1].local_header_position : final_structure;
+		const bool allow_signing_block_padding =
+				i + 1 == local_entries.size() && allow_final_signing_block_padding;
+		if (entry.local_header_position >= next_structure || entry.payload_end > next_structure) {
+			return false;
+		}
+		if (entry.uses_data_descriptor &&
+				!_foundry_java_validate_data_descriptor(
+						p_archive_file,
+						entry.payload_end,
+						next_structure,
+						allow_signing_block_padding,
+						entry.descriptor_uses_zip64,
+						entry.crc,
+						entry.compressed_size,
+						entry.uncompressed_size)) {
+			return false;
+		}
+		if (!entry.uses_data_descriptor &&
+				!_foundry_java_validate_structure_gap(
+						p_archive_file,
+						entry.payload_end,
+						next_structure,
+						allow_signing_block_padding)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static FoundryJavaCentralDirectoryConsistency _foundry_java_check_central_directory_tail(
+		const Ref<FileAccess> &p_archive_file,
+		const FoundryJavaCentralDirectoryContext &p_context,
+		uint64_t p_entry_end,
+		bool p_allow_apk_signing_block) {
+	if (p_entry_end == p_context.central_directory_end) {
+		return _foundry_java_validate_local_entry_boundaries(p_archive_file, p_context, p_allow_apk_signing_block) ? FOUNDRY_JAVA_CENTRAL_DIRECTORY_CLEAN : FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
+	}
+
+	uint32_t next_signature = 0;
+	if (!_foundry_java_read_archive_uint32(p_archive_file, p_entry_end, next_signature)) {
+		return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
+	}
+	if (next_signature == FOUNDRY_JAVA_CENTRAL_DIRECTORY_ENTRY_SIGNATURE) {
+		uint64_t next_entry_end = 0;
+		if (_foundry_java_validate_central_directory_entry(
+					p_archive_file,
+					p_entry_end,
+					p_context.central_directory_start,
+					p_context.central_directory_end,
+					p_context.byte_before_zip,
+					next_entry_end)) {
+			return FOUNDRY_JAVA_CENTRAL_DIRECTORY_UNREPORTED_ENTRY;
+		}
+		return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
+	}
+	if (next_signature == FOUNDRY_JAVA_CENTRAL_DIRECTORY_DIGITAL_SIGNATURE) {
+		uint8_t signature_size_bytes[2];
+		if (!_foundry_java_read_archive_bytes(p_archive_file, p_entry_end + sizeof(uint32_t), signature_size_bytes, sizeof(signature_size_bytes))) {
+			return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
+		}
+		uint64_t signature_end = 0;
+		if (_foundry_java_checked_add(p_entry_end, sizeof(uint32_t) + sizeof(uint16_t), signature_end) &&
+				_foundry_java_checked_add(signature_end, _foundry_java_decode_uint16(signature_size_bytes), signature_end) &&
+				signature_end == p_context.central_directory_end) {
+			return _foundry_java_validate_local_entry_boundaries(p_archive_file, p_context, p_allow_apk_signing_block) ? FOUNDRY_JAVA_CENTRAL_DIRECTORY_CLEAN : FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
+		}
+	}
+	return FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT;
+}
+
+struct FoundryJavaInputArchiveBudget {
+	uint64_t archive_count = 0;
+	uint64_t total_uncompressed_bytes = 0;
+};
+
+static String _foundry_java_archive_context(const String &p_parent, const String &p_entry) {
+	return p_parent.is_empty() ? p_entry : p_parent + "!" + p_entry;
+}
+
+static String _foundry_java_archive_error(const String &p_context, const String &p_error) {
+	return p_context.is_empty() ? p_error : vformat(TTR("nested archive '%s': %s"), _foundry_java_safe_diagnostic_value(p_context), p_error);
+}
+
+static bool _foundry_java_is_nested_archive_entry(const String &p_entry) {
+	const String lower_entry = p_entry.to_lower();
+	return lower_entry.ends_with(".aar") || lower_entry.ends_with(".jar") || lower_entry.ends_with(".zip");
+}
+
+static Error _foundry_java_scan_open_archive(
+		unzFile p_archive,
+		const Ref<FileAccess> &p_archive_file,
+		const String &p_context,
+		uint64_t p_depth,
+		FoundryJavaInputArchiveBudget &r_budget,
+		bool &r_contains_host_library,
+		String &r_entry,
+		String &r_error);
+
+static Error _foundry_java_scan_nested_archive_entry(
+		unzFile p_parent_archive,
+		const unz_file_info64 &p_info,
+		const String &p_context,
+		uint64_t p_depth,
+		FoundryJavaInputArchiveBudget &r_budget,
+		bool &r_contains_host_library,
+		String &r_entry,
+		String &r_error) {
+	if (p_depth > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_DEPTH) {
+		r_error = vformat(
+				TTR("nested archive depth exceeds the maximum %d at '%s'"),
+				FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_DEPTH,
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+	Error temp_error = OK;
+	Ref<FileAccess> temp_file = FileAccess::create_temp(
+			FileAccess::WRITE_READ,
+			"foundry_java_archive",
+			"zip",
+			false,
+			&temp_error);
+	if (temp_error != OK || temp_file.is_null()) {
+		r_error = vformat(
+				TTR("temporary storage for nested archive '%s' could not be created"),
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+	if (unzOpenCurrentFile(p_parent_archive) != UNZ_OK) {
+		r_error = vformat(
+				TTR("nested archive entry '%s' could not be opened"),
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+
+	Vector<uint8_t> buffer;
+	buffer.resize(FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES);
+	uint64_t bytes_read = 0;
+	Error read_error = OK;
+	while (true) {
+		const int result = unzReadCurrentFile(p_parent_archive, buffer.ptrw(), buffer.size());
+		if (result < 0) {
+			read_error = ERR_FILE_CORRUPT;
+			break;
+		}
+		if (result == 0) {
+			break;
+		}
+		if (uint64_t(result) > p_info.uncompressed_size - bytes_read ||
+				!temp_file->store_buffer(buffer.ptr(), result)) {
+			read_error = ERR_FILE_CORRUPT;
+			break;
+		}
+		bytes_read += result;
+	}
+	const int close_result = unzCloseCurrentFile(p_parent_archive);
+	if (read_error != OK || bytes_read != p_info.uncompressed_size || close_result != UNZ_OK) {
+		r_error = vformat(
+				TTR("nested archive entry '%s' failed integrity validation"),
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+	temp_file->flush();
+	const String temp_path = temp_file->get_path_absolute();
+	temp_file->close();
+
+	Ref<FileAccess> archive_file;
+	zlib_filefunc_def io = zipio_create_io(&archive_file);
+	unzFile archive = unzOpen2(temp_path.utf8().get_data(), &io);
+	if (!archive) {
+		r_error = vformat(
+				TTR("nested archive '%s' could not be opened"),
+				_foundry_java_safe_diagnostic_value(p_context));
+		return ERR_FILE_CORRUPT;
+	}
+	return _foundry_java_scan_open_archive(
+			archive,
+			archive_file,
+			p_context,
+			p_depth,
+			r_budget,
+			r_contains_host_library,
+			r_entry,
+			r_error);
+}
+
+static Error _foundry_java_scan_open_archive(
+		unzFile p_archive,
+		const Ref<FileAccess> &p_archive_file,
+		const String &p_context,
+		uint64_t p_depth,
+		FoundryJavaInputArchiveBudget &r_budget,
+		bool &r_contains_host_library,
+		String &r_entry,
+		String &r_error) {
+	r_budget.archive_count++;
+	if (r_budget.archive_count > FOUNDRY_JAVA_MAX_INPUT_ARCHIVES) {
+		r_error = vformat(
+				TTR("nested archive count exceeds the maximum %d at '%s'"),
+				FOUNDRY_JAVA_MAX_INPUT_ARCHIVES,
+				_foundry_java_safe_diagnostic_value(p_context));
+		unzClose(p_archive);
+		return ERR_FILE_CORRUPT;
+	}
+
+	unz_global_info64 global_info;
+	memset(&global_info, 0, sizeof(global_info));
+	if (unzGetGlobalInfo64(p_archive, &global_info) != UNZ_OK) {
+		r_error = _foundry_java_archive_error(p_context, TTR("archive global metadata could not be read"));
+		unzClose(p_archive);
+		return ERR_FILE_CORRUPT;
+	}
+	if (global_info.number_entry > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES) {
+		r_error = _foundry_java_archive_error(
+				p_context,
+				vformat(
+						TTR("archive reports too many entries (%d; maximum %d)"),
+						global_info.number_entry,
+						FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES));
+		unzClose(p_archive);
+		return ERR_FILE_CORRUPT;
+	}
+	if (global_info.number_entry == 0) {
+		const uint64_t expected_empty_archive_size =
+				FOUNDRY_JAVA_CLASSIC_END_OF_CENTRAL_DIRECTORY_SIZE + global_info.size_comment;
+		if (p_archive_file.is_null() || p_archive_file->get_length() != expected_empty_archive_size) {
+			r_error = _foundry_java_archive_error(
+					p_context,
+					TTR("archive entry count does not match its non-empty central directory"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		if (unzClose(p_archive) != UNZ_OK) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive could not be closed cleanly"));
+			return ERR_FILE_CORRUPT;
+		}
+		return OK;
+	}
+
+	uint64_t entries_scanned = 0;
+	uint64_t total_entry_name_bytes = 0;
+	FoundryJavaCentralDirectoryContext central_directory_context;
+	int result = unzGoToFirstFile(p_archive);
+	while (result == UNZ_OK) {
+		unz_file_info64 info;
+		memset(&info, 0, sizeof(info));
+		if (unzGetCurrentFileInfo64(p_archive, &info, nullptr, 0, nullptr, 0, nullptr, 0) != UNZ_OK) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive entry metadata could not be read"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		if (info.size_filename > FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES) {
+			r_error = _foundry_java_archive_error(
+					p_context,
+					vformat(TTR("archive entry name is too long (%d bytes; maximum %d)"), info.size_filename, FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		if (info.size_filename > FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES - total_entry_name_bytes) {
+			r_error = _foundry_java_archive_error(
+					p_context,
+					vformat(TTR("archive entry names exceed the aggregate %d-byte limit"), FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		total_entry_name_bytes += info.size_filename;
+
+		Vector<char> filename;
+		filename.resize(info.size_filename + 1);
+		if (unzGetCurrentFileInfo64(p_archive, &info, filename.ptrw(), filename.size(), nullptr, 0, nullptr, 0) != UNZ_OK) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive entry name could not be read"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		uint64_t central_directory_entry_end = 0;
+		if (!_foundry_java_validate_current_central_directory_entry(
+					p_archive,
+					p_archive_file,
+					global_info,
+					info,
+					central_directory_context,
+					central_directory_entry_end)) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive central directory metadata is corrupt"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		filename.write[info.size_filename] = '\0';
+		for (uint64_t i = 0; i < info.size_filename; i++) {
+			if (filename[i] == '\0') {
+				r_error = _foundry_java_archive_error(p_context, TTR("archive entry name contains an embedded NUL byte"));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+		}
+		String entry;
+		if (entry.append_utf8(filename.ptr(), info.size_filename) != OK) {
+			r_error = _foundry_java_archive_error(p_context, TTR("archive entry name is not valid UTF-8"));
+			unzClose(p_archive);
+			return ERR_FILE_CORRUPT;
+		}
+		const String entry_context = _foundry_java_archive_context(p_context, entry);
+		const bool is_directory = entry.ends_with("/");
+		if (!is_directory) {
+			if (info.uncompressed_size > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRY_UNCOMPRESSED_BYTES) {
+				r_error = vformat(
+						TTR("archive entry decompressed size exceeds the %d-byte limit at '%s'"),
+						FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRY_UNCOMPRESSED_BYTES,
+						_foundry_java_safe_diagnostic_value(entry_context));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			if (info.uncompressed_size > FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_TOTAL_UNCOMPRESSED_BYTES - r_budget.total_uncompressed_bytes) {
+				r_error = vformat(
+						TTR("archive entries exceed the aggregate %d-byte decompressed size limit at '%s'"),
+						FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_TOTAL_UNCOMPRESSED_BYTES,
+						_foundry_java_safe_diagnostic_value(entry_context));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			r_budget.total_uncompressed_bytes += info.uncompressed_size;
+		}
+		if (entry == "libfoundry_android.so" || entry.ends_with("/libfoundry_android.so")) {
+			r_contains_host_library = true;
+			r_entry = entry_context;
+		}
+		if (!is_directory && _foundry_java_is_nested_archive_entry(entry)) {
+			if (r_budget.archive_count >= FOUNDRY_JAVA_MAX_INPUT_ARCHIVES) {
+				r_error = vformat(
+						TTR("nested archive count exceeds the maximum %d at '%s'"),
+						FOUNDRY_JAVA_MAX_INPUT_ARCHIVES,
+						_foundry_java_safe_diagnostic_value(entry_context));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			if (_foundry_java_scan_nested_archive_entry(
+						p_archive,
+						info,
+						entry_context,
+						p_depth + 1,
+						r_budget,
+						r_contains_host_library,
+						r_entry,
+						r_error) != OK) {
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+		}
+		entries_scanned++;
+		if (entries_scanned == global_info.number_entry) {
+			const FoundryJavaCentralDirectoryConsistency consistency =
+					_foundry_java_check_central_directory_tail(
+							p_archive_file,
+							central_directory_context,
+							central_directory_entry_end,
+							false);
+			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_UNREPORTED_ENTRY) {
+				r_error = _foundry_java_archive_error(p_context, TTR("archive entry count does not match its central directory"));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT) {
+				r_error = _foundry_java_archive_error(p_context, TTR("archive central directory metadata is corrupt"));
+				unzClose(p_archive);
+				return ERR_FILE_CORRUPT;
+			}
+			result = UNZ_END_OF_LIST_OF_FILE;
+			break;
+		}
+		result = unzGoToNextFile(p_archive);
+	}
+	if (result != UNZ_OK && result != UNZ_END_OF_LIST_OF_FILE) {
+		r_error = _foundry_java_archive_error(p_context, TTR("archive traversal failed"));
+		unzClose(p_archive);
+		return ERR_FILE_CORRUPT;
+	}
+	if (unzClose(p_archive) != UNZ_OK) {
+		r_error = _foundry_java_archive_error(p_context, TTR("archive could not be closed cleanly"));
+		return ERR_FILE_CORRUPT;
+	}
+	return OK;
+}
+
+static Error _foundry_java_scan_archive(const String &p_path, bool &r_contains_host_library, String &r_entry, String &r_error) {
+	r_contains_host_library = false;
+	r_entry.clear();
+	r_error.clear();
+
+	Ref<FileAccess> archive_file;
+	zlib_filefunc_def io = zipio_create_io(&archive_file);
+	unzFile archive = unzOpen2(p_path.utf8().get_data(), &io);
+	if (!archive) {
+		r_error = TTR("archive could not be opened");
+		return ERR_FILE_CORRUPT;
+	}
+	FoundryJavaInputArchiveBudget budget;
+	return _foundry_java_scan_open_archive(
+			archive,
+			archive_file,
+			String(),
+			0,
+			budget,
+			r_contains_host_library,
+			r_entry,
+			r_error);
+}
+
+static bool _foundry_java_validate_current_archive_entry_payload(unzFile p_archive, const unz_file_info64 &p_info) {
+	if (unzOpenCurrentFile(p_archive) != UNZ_OK) {
+		return false;
+	}
+
+	Vector<uint8_t> buffer;
+	buffer.resize(FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES);
+	uint64_t bytes_read = 0;
+	bool valid = true;
+	while (true) {
+		const int result = unzReadCurrentFile(p_archive, buffer.ptrw(), buffer.size());
+		if (result < 0) {
+			valid = false;
+			break;
+		}
+		if (result == 0) {
+			break;
+		}
+		if (bytes_read > p_info.uncompressed_size || uint64_t(result) > p_info.uncompressed_size - bytes_read) {
+			valid = false;
+			break;
+		}
+		bytes_read += result;
+	}
+	const int close_result = unzCloseCurrentFile(p_archive);
+	return valid && bytes_read == p_info.uncompressed_size && close_result == UNZ_OK;
+}
+
+Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, String &r_error) const {
+	const String artifact_kind = p_export_format == EXPORT_FORMAT_AAB ? "AAB" : "APK";
+	const String root = p_export_format == EXPORT_FORMAT_AAB ? "base/" : "";
+	const String configuration = root + "assets/FoundryJava.foundryextension";
+	const String registry_index = root + "assets/foundry_java/registry-index-v2.txt";
+	Vector<String> expected_bridges;
+	for (const ABI &abi : p_enabled_abis) {
+		expected_bridges.push_back(root + "lib/" + abi.abi + "/libfoundry_java.so");
+	}
+
+	Ref<FileAccess> artifact_file;
+	zlib_filefunc_def io = zipio_create_io(&artifact_file);
+	unzFile artifact = unzOpen2(p_path.utf8().get_data(), &io);
+	if (!artifact) {
+		r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive could not be opened."), artifact_kind);
+		return ERR_FILE_CORRUPT;
+	}
+	unz_global_info64 global_info;
+	memset(&global_info, 0, sizeof(global_info));
+	if (unzGetGlobalInfo64(artifact, &global_info) != UNZ_OK) {
+		r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive global metadata could not be read."), artifact_kind);
+		unzClose(artifact);
+		return ERR_FILE_CORRUPT;
+	}
+	if (global_info.number_entry > FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES) {
+		r_error = vformat(
+				TTR("Unable to inspect final Foundry-Java %s: archive reports too many entries (%d; maximum %d)."),
+				artifact_kind,
+				global_info.number_entry,
+				FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES);
+		unzClose(artifact);
+		return ERR_FILE_CORRUPT;
+	}
+
+	int configuration_count = 0;
+	int registry_index_count = 0;
+	Vector<String> bridge_entries;
+	uint64_t entries_scanned = 0;
+	uint64_t total_entry_name_bytes = 0;
+	uint64_t total_required_entry_uncompressed_bytes = 0;
+	FoundryJavaCentralDirectoryContext central_directory_context;
+	int result = unzGoToFirstFile(artifact);
+	while (result == UNZ_OK) {
+		unz_file_info64 info;
+		memset(&info, 0, sizeof(info));
+		if (unzGetCurrentFileInfo64(artifact, &info, nullptr, 0, nullptr, 0, nullptr, 0) != UNZ_OK ||
+				info.size_filename > FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES ||
+				info.size_filename > FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES - total_entry_name_bytes) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry metadata exceeds inspection limits."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		total_entry_name_bytes += info.size_filename;
+		Vector<char> filename;
+		filename.resize(info.size_filename + 1);
+		if (unzGetCurrentFileInfo64(artifact, &info, filename.ptrw(), filename.size(), nullptr, 0, nullptr, 0) != UNZ_OK) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name could not be read."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		filename.write[info.size_filename] = '\0';
+		if (info.size_filename >= 3 &&
+				uint8_t(filename[0]) == 0xEF &&
+				uint8_t(filename[1]) == 0xBB &&
+				uint8_t(filename[2]) == 0xBF) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name begins with a UTF-8 byte order mark."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		for (uint64_t i = 0; i < info.size_filename; i++) {
+			if (filename[i] == '\0') {
+				r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name contains an embedded NUL byte."), artifact_kind);
+				unzClose(artifact);
+				return ERR_FILE_CORRUPT;
+			}
+		}
+		String entry;
+		if (entry.append_utf8(filename.ptr(), info.size_filename) != OK) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry name is not valid UTF-8."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		uint64_t central_directory_entry_end = 0;
+		if (!_foundry_java_validate_current_central_directory_entry(
+					artifact,
+					artifact_file,
+					global_info,
+					info,
+					central_directory_context,
+					central_directory_entry_end)) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive central directory metadata is corrupt."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		bool is_required_entry = false;
+		if (entry == configuration) {
+			configuration_count++;
+			is_required_entry = true;
+		}
+		if (entry == registry_index) {
+			registry_index_count++;
+			is_required_entry = true;
+		}
+		if (entry.ends_with("/libfoundry_java.so")) {
+			bridge_entries.push_back(entry);
+			is_required_entry = expected_bridges.has(entry);
+		}
+		if (is_required_entry &&
+				info.uncompressed_size > FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPRESSED_BYTES) {
+			r_error = vformat(
+					TTR("Unable to inspect final Foundry-Java %s: required entry '%s' exceeds the %d-byte decompressed size limit."),
+					artifact_kind,
+					_foundry_java_safe_diagnostic_value(entry),
+					FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPRESSED_BYTES);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		if (is_required_entry &&
+				info.uncompressed_size >
+						FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES - total_required_entry_uncompressed_bytes) {
+			r_error = vformat(
+					TTR("Unable to inspect final Foundry-Java %s: required entries exceed the aggregate %d-byte decompressed size limit at '%s'."),
+					artifact_kind,
+					FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES,
+					_foundry_java_safe_diagnostic_value(entry));
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		if (is_required_entry) {
+			total_required_entry_uncompressed_bytes += info.uncompressed_size;
+		}
+		if (is_required_entry && !_foundry_java_validate_current_archive_entry_payload(artifact, info)) {
+			r_error = vformat(
+					TTR("Unable to inspect final Foundry-Java %s: required entry '%s' failed integrity validation."),
+					artifact_kind,
+					_foundry_java_safe_diagnostic_value(entry));
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		entries_scanned++;
+		if (entries_scanned > FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES) {
+			r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive contains too many entries."), artifact_kind);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
+		if (entries_scanned == global_info.number_entry) {
+			const FoundryJavaCentralDirectoryConsistency consistency =
+					_foundry_java_check_central_directory_tail(
+							artifact_file,
+							central_directory_context,
+							central_directory_entry_end,
+							artifact_kind == "APK");
+			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_UNREPORTED_ENTRY) {
+				r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive entry count does not match its central directory."), artifact_kind);
+				unzClose(artifact);
+				return ERR_FILE_CORRUPT;
+			}
+			if (consistency == FOUNDRY_JAVA_CENTRAL_DIRECTORY_CORRUPT) {
+				r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive central directory metadata is corrupt."), artifact_kind);
+				unzClose(artifact);
+				return ERR_FILE_CORRUPT;
+			}
+			result = UNZ_END_OF_LIST_OF_FILE;
+			break;
+		}
+		result = unzGoToNextFile(artifact);
+	}
+	if (result != UNZ_END_OF_LIST_OF_FILE) {
+		r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive traversal failed."), artifact_kind);
+		unzClose(artifact);
+		return ERR_FILE_CORRUPT;
+	}
+	if (unzClose(artifact) != UNZ_OK) {
+		r_error = vformat(TTR("Unable to inspect final Foundry-Java %s: archive could not be closed cleanly."), artifact_kind);
+		return ERR_FILE_CORRUPT;
+	}
+
+	if (configuration_count != 1) {
+		r_error = vformat(TTR("Final Foundry-Java %s must contain exactly one %s; found %d."), artifact_kind, configuration, configuration_count);
+		return ERR_INVALID_DATA;
+	}
+	if (registry_index_count != 1) {
+		r_error = vformat(TTR("Final Foundry-Java %s must contain exactly one %s; found %d."), artifact_kind, registry_index, registry_index_count);
+		return ERR_INVALID_DATA;
+	}
+
+	bridge_entries.sort();
+	expected_bridges.sort();
+	if (bridge_entries != expected_bridges) {
+		r_error = vformat(
+				TTR("Final Foundry-Java %s bridge entries differ from the requested ABI set: expected [%s], found [%s]."),
+				artifact_kind,
+				String(", ").join(expected_bridges),
+				String(", ").join(bridge_entries));
+		return ERR_INVALID_DATA;
+	}
+	return OK;
+}
+
+Error EditorExportPlatformAndroid::_get_foundry_java_export_config(const EditorExportPreset *p_preset, FoundryJavaExportConfig &r_config, String &r_error, bool p_scan_archives) const {
+	static const String ENABLED_OPTION = "gradle_build/foundry_java/enabled";
+	static const String USE_GRADLE_OPTION = "gradle_build/use_gradle_build";
+	static const String PLUGIN_MAVEN_OPTION = "gradle_build/foundry_java/gradle_plugin_maven";
+	static const String PLUGIN_LOCAL_OPTION = "gradle_build/foundry_java/gradle_plugin_local";
+	static const String REPOSITORIES_OPTION = "gradle_build/foundry_java/maven_repositories";
+	static const String MAVEN_ARTIFACTS_OPTION = "gradle_build/foundry_java/maven_artifacts";
+	static const String LOCAL_ARTIFACTS_OPTION = "gradle_build/foundry_java/local_artifacts";
+
+	r_config = FoundryJavaExportConfig();
+	r_config.enabled = bool(p_preset->get(ENABLED_OPTION));
+	if (!r_config.enabled) {
+		return OK;
+	}
+	if (!bool(p_preset->get(USE_GRADLE_OPTION))) {
+		r_error = vformat(
+				TTR("Export option %s value 'true' requires %s value 'true', but its offending value is 'false'."),
+				ENABLED_OPTION,
+				USE_GRADLE_OPTION);
+		return ERR_INVALID_PARAMETER;
+	}
+
+	const String plugin_maven_raw = p_preset->get(PLUGIN_MAVEN_OPTION);
+	const String plugin_local_raw = p_preset->get(PLUGIN_LOCAL_OPTION);
+	if (_foundry_java_contains_property_separator(plugin_maven_raw)) {
+		return _foundry_java_invalid_option(PLUGIN_MAVEN_OPTION, plugin_maven_raw, TTR("must not contain carriage returns, newlines, or '|'"), r_error);
+	}
+	if (_foundry_java_contains_property_separator(plugin_local_raw)) {
+		return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, TTR("must not contain carriage returns, newlines, or '|'"), r_error);
+	}
+	const String plugin_maven = plugin_maven_raw.strip_edges();
+	const String plugin_local = plugin_local_raw.strip_edges();
+	if (plugin_maven.is_empty() == plugin_local.is_empty()) {
+		r_error = vformat(
+				TTR("Export options %s value '%s' and %s value '%s' must select exactly one Maven or local Gradle plugin."),
+				PLUGIN_MAVEN_OPTION,
+				_foundry_java_safe_diagnostic_value(plugin_maven_raw),
+				PLUGIN_LOCAL_OPTION,
+				_foundry_java_safe_diagnostic_value(plugin_local_raw));
+		return ERR_INVALID_PARAMETER;
+	}
+	if (!plugin_maven.is_empty()) {
+		if (!_is_exact_foundry_java_coordinate(plugin_maven)) {
+			return _foundry_java_invalid_option(PLUGIN_MAVEN_OPTION, plugin_maven_raw, TTR("must be an exact group:artifact:version value"), r_error);
+		}
+		r_config.plugin_kind = "maven";
+		r_config.plugin = plugin_maven;
+	} else {
+		r_config.plugin_kind = "local";
+		const String globalized_plugin = ProjectSettings::get_singleton()->globalize_path(plugin_local);
+		const String simplified_plugin = globalized_plugin.simplify_path();
+		if (_foundry_java_path_has_symlink(simplified_plugin)) {
+			return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, TTR("must not traverse a symbolic link"), r_error);
+		}
+		if (!FileAccess::exists(simplified_plugin) || DirAccess::exists(simplified_plugin) || !simplified_plugin.to_lower().ends_with(".jar")) {
+			return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, TTR("must name a regular .jar file"), r_error);
+		}
+		Error open_error = OK;
+		Ref<FileAccess> plugin_file = FileAccess::open(simplified_plugin, FileAccess::READ, &open_error);
+		if (open_error != OK || plugin_file.is_null()) {
+			return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, TTR("could not be opened as a regular .jar file"), r_error);
+		}
+		r_config.plugin = plugin_file->get_path_absolute().simplify_path();
+		plugin_file.unref();
+
+		if (p_scan_archives) {
+			bool contains_host_library = false;
+			String forbidden_entry;
+			String archive_error;
+			if (_foundry_java_scan_archive(r_config.plugin, contains_host_library, forbidden_entry, archive_error) != OK) {
+				return _foundry_java_invalid_option(PLUGIN_LOCAL_OPTION, plugin_local_raw, archive_error, r_error);
+			}
+			if (contains_host_library) {
+				r_error = vformat(
+						TTR("Invalid export option %s value '%s': archive entry '%s' contains forbidden libfoundry_android.so."),
+						PLUGIN_LOCAL_OPTION,
+						_foundry_java_safe_diagnostic_value(plugin_local_raw),
+						_foundry_java_safe_diagnostic_value(forbidden_entry));
+				return ERR_INVALID_PARAMETER;
+			}
+		}
+	}
+
+	Error array_error = _foundry_java_parse_string_array_option(
+			p_preset->get(REPOSITORIES_OPTION),
+			REPOSITORIES_OPTION,
+			TTR("repository URL"),
+			true,
+			r_config.repositories,
+			r_error);
+	if (array_error != OK) {
+		return array_error;
+	}
+	array_error = _foundry_java_parse_string_array_option(
+			p_preset->get(MAVEN_ARTIFACTS_OPTION),
+			MAVEN_ARTIFACTS_OPTION,
+			TTR("exact group:artifact:version"),
+			false,
+			r_config.maven_artifacts,
+			r_error);
+	if (array_error != OK) {
+		return array_error;
+	}
+	const Variant local_artifacts_value = p_preset->get(LOCAL_ARTIFACTS_OPTION);
+	if (local_artifacts_value.get_type() == Variant::PACKED_STRING_ARRAY) {
+		r_config.local_artifacts = local_artifacts_value;
+	} else if (local_artifacts_value.get_type() == Variant::ARRAY) {
+		const Array local_artifacts = local_artifacts_value;
+		for (const Variant &artifact : local_artifacts) {
+			if (artifact.get_type() != Variant::STRING) {
+				return _foundry_java_invalid_option(
+						LOCAL_ARTIFACTS_OPTION,
+						artifact.stringify(),
+						vformat(TTR("must contain only path strings naming regular .jar or .aar files, not %s"), Variant::get_type_name(artifact.get_type())),
+						r_error);
+			}
+			r_config.local_artifacts.push_back(artifact);
+		}
+	} else {
+		return _foundry_java_invalid_option(
+				LOCAL_ARTIFACTS_OPTION,
+				local_artifacts_value.stringify(),
+				vformat(TTR("must be an array of path strings naming regular .jar or .aar files, not %s"), Variant::get_type_name(local_artifacts_value.get_type())),
+				r_error);
+	}
+	HashSet<String> seen;
+	for (int i = 0; i < r_config.repositories.size(); i++) {
+		const String raw = r_config.repositories[i];
+		const String value = raw.strip_edges();
+		if (_foundry_java_contains_property_separator(raw)) {
+			return _foundry_java_invalid_option(REPOSITORIES_OPTION, "<redacted>", TTR("must not contain carriage returns, newlines, or '|'"), r_error);
+		}
+		if (raw != value || value.is_empty() || seen.has(value)) {
+			return _foundry_java_invalid_option(REPOSITORIES_OPTION, "<redacted>", TTR("must contain non-empty unique values"), r_error);
+		}
+		seen.insert(value);
+		if (!_foundry_java_has_safe_repository_url(value)) {
+			return _foundry_java_invalid_option(
+					REPOSITORIES_OPTION,
+					"<redacted>",
+					TTR("must use HTTPS or a local file URL without credentials, query, or fragment"),
+					r_error);
+		}
+		r_config.repositories.set(i, value);
+	}
+	r_config.repositories.sort();
+	if (r_config.plugin_kind == "maven" && r_config.repositories.is_empty()) {
+		return _foundry_java_invalid_option(
+				REPOSITORIES_OPTION,
+				"<empty>",
+				vformat(TTR("must contain at least one repository when %s selects a Maven plugin"), PLUGIN_MAVEN_OPTION),
+				r_error);
+	}
+
+	seen.clear();
+	for (int i = 0; i < r_config.maven_artifacts.size(); i++) {
+		const String raw = r_config.maven_artifacts[i];
+		const String value = raw.strip_edges();
+		if (_foundry_java_contains_property_separator(raw)) {
+			return _foundry_java_invalid_option(MAVEN_ARTIFACTS_OPTION, raw, TTR("must not contain carriage returns, newlines, or '|'"), r_error);
+		}
+		if (seen.has(value) || !_is_exact_foundry_java_coordinate(value)) {
+			return _foundry_java_invalid_option(MAVEN_ARTIFACTS_OPTION, raw, TTR("must contain unique exact group:artifact:version values"), r_error);
+		}
+		seen.insert(value);
+		r_config.maven_artifacts.set(i, value);
+	}
+	r_config.maven_artifacts.sort();
+
+	seen.clear();
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return _foundry_java_invalid_option(
+				LOCAL_ARTIFACTS_OPTION,
+				String(", ").join(r_config.local_artifacts),
+				TTR("could not create filesystem access for local artifact validation"),
+				r_error);
+	}
+	Vector<String> canonical_local_artifacts;
+	for (int i = 0; i < r_config.local_artifacts.size(); i++) {
+		const String raw = r_config.local_artifacts[i];
+		const String original = raw.strip_edges();
+		if (_foundry_java_contains_property_separator(raw)) {
+			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("must not contain carriage returns, newlines, or '|'"), r_error);
+		}
+		if (original.is_empty()) {
+			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("must contain non-empty unique paths"), r_error);
+		}
+		const String globalized_path = ProjectSettings::get_singleton()->globalize_path(original);
+		const String simplified_path = globalized_path.simplify_path();
+		if (_foundry_java_path_has_symlink(simplified_path)) {
+			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("must not traverse a symbolic link"), r_error);
+		}
+		if (!FileAccess::exists(simplified_path) || DirAccess::exists(simplified_path) ||
+				!(simplified_path.to_lower().ends_with(".jar") || simplified_path.to_lower().ends_with(".aar"))) {
+			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("must name a regular .jar or .aar file"), r_error);
+		}
+		Error open_error = OK;
+		Ref<FileAccess> artifact_file = FileAccess::open(simplified_path, FileAccess::READ, &open_error);
+		if (open_error != OK || artifact_file.is_null()) {
+			return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("could not be opened as a regular .jar or .aar file"), r_error);
+		}
+		const String path = artifact_file->get_path_absolute().simplify_path();
+		artifact_file.unref();
+
+		for (const String &canonical_artifact : canonical_local_artifacts) {
+			if (filesystem->is_equivalent(canonical_artifact, path)) {
+				return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, TTR("resolves to a duplicate local artifact"), r_error);
+			}
+		}
+
+		if (p_scan_archives) {
+			bool contains_host_library = false;
+			String forbidden_entry;
+			String archive_error;
+			if (_foundry_java_scan_archive(path, contains_host_library, forbidden_entry, archive_error) != OK) {
+				return _foundry_java_invalid_option(LOCAL_ARTIFACTS_OPTION, raw, archive_error, r_error);
+			}
+			if (contains_host_library) {
+				r_error = vformat(
+						TTR("Invalid export option %s value '%s': archive entry '%s' contains forbidden libfoundry_android.so."),
+						LOCAL_ARTIFACTS_OPTION,
+						_foundry_java_safe_diagnostic_value(raw),
+						_foundry_java_safe_diagnostic_value(forbidden_entry));
+				return ERR_INVALID_PARAMETER;
+			}
+		}
+		canonical_local_artifacts.push_back(path);
+		r_config.local_artifacts.set(i, path);
+	}
+	r_config.local_artifacts.sort();
+
+	if (r_config.maven_artifacts.is_empty() && r_config.local_artifacts.is_empty()) {
+		r_error = vformat(
+				TTR("Export options %s value '<empty>' and %s value '<empty>' require at least one Maven or local application artifact."),
+				MAVEN_ARTIFACTS_OPTION,
+				LOCAL_ARTIFACTS_OPTION);
+		return ERR_INVALID_PARAMETER;
+	}
+	return OK;
+}
+
 void EditorExportPlatformAndroid::get_preset_features(const Ref<EditorExportPreset> &p_preset, List<String> *r_features) const {
 	r_features->push_back("etc2");
 	r_features->push_back("astc");
@@ -1914,7 +3799,13 @@ void EditorExportPlatformAndroid::get_preset_features(const Ref<EditorExportPres
 
 String EditorExportPlatformAndroid::get_export_option_warning(const EditorExportPreset *p_preset, const StringName &p_name) const {
 	if (p_preset) {
-		if (p_name == ("apk_expansion/public_key")) {
+		if (String(p_name).begins_with("gradle_build/foundry_java/")) {
+			FoundryJavaExportConfig config;
+			String error;
+			if (_get_foundry_java_export_config(p_preset, config, error, false) != OK) {
+				return error;
+			}
+		} else if (p_name == ("apk_expansion/public_key")) {
 			bool apk_expansion = p_preset->get("apk_expansion/enable");
 			String apk_expansion_pkey = p_preset->get("apk_expansion/public_key");
 			if (apk_expansion && apk_expansion_pkey.is_empty()) {
@@ -2018,6 +3909,18 @@ void EditorExportPlatformAndroid::get_export_options(List<ExportOption> *r_optio
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "custom_template/release", PROPERTY_HINT_GLOBAL_FILE, "*.apk"), ""));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "gradle_build/use_gradle_build"), false, true, false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "gradle_build/foundry_java/enabled"), false, true, false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/foundry_java/gradle_plugin_maven", PROPERTY_HINT_PLACEHOLDER_TEXT, "group:artifact:version"), ""));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/foundry_java/gradle_plugin_local", PROPERTY_HINT_GLOBAL_FILE, "*.jar"), ""));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::PACKED_STRING_ARRAY, "gradle_build/foundry_java/maven_repositories"), PackedStringArray()));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::PACKED_STRING_ARRAY, "gradle_build/foundry_java/maven_artifacts"), PackedStringArray()));
+	r_options->push_back(ExportOption(
+			PropertyInfo(
+					Variant::ARRAY,
+					"gradle_build/foundry_java/local_artifacts",
+					PROPERTY_HINT_ARRAY_TYPE,
+					vformat("%d/%d:*.jar,*.aar", Variant::STRING, PROPERTY_HINT_GLOBAL_FILE)),
+			Array()));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/gradle_build_directory", PROPERTY_HINT_PLACEHOLDER_TEXT, "res://android"), "", false, false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "gradle_build/android_source_template", PROPERTY_HINT_GLOBAL_FILE, "*.zip"), ""));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "gradle_build/compress_native_libraries"), false, false, true));
@@ -2106,6 +4009,12 @@ bool EditorExportPlatformAndroid::get_export_option_visibility(const EditorExpor
 	}
 
 	bool advanced_options_enabled = p_preset->are_advanced_options_enabled();
+	// Keep the Foundry-Java toggle visible even when Gradle builds are disabled
+	// so a stale enabled preset can be repaired. Export validation still rejects
+	// that inconsistent state before any build work begins.
+	if (p_option.begins_with("gradle_build/foundry_java/") && p_option != "gradle_build/foundry_java/enabled") {
+		return bool(p_preset->get("gradle_build/foundry_java/enabled"));
+	}
 	if (p_option == "graphics/opengl_debug" ||
 			p_option == "gradle_build/custom_theme_attributes" ||
 			p_option == "command_line/extra_args" ||
@@ -2932,10 +4841,22 @@ bool EditorExportPlatformAndroid::has_valid_export_configuration(const Ref<Edito
 bool EditorExportPlatformAndroid::has_valid_project_configuration(const Ref<EditorExportPreset> &p_preset, String &r_error) const {
 	String err;
 	bool valid = true;
+	FoundryJavaExportConfig foundry_java;
+	String foundry_java_error;
+	if (_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true) != OK) {
+		err += foundry_java_error + "\n";
+		valid = false;
+	} else if (foundry_java.enabled && get_enabled_abis(p_preset).is_empty()) {
+		err += TTR("Foundry-Java requires at least one enabled Android architecture in the export preset.") + "\n";
+		valid = false;
+	}
 
 	List<ExportOption> options;
 	get_export_options(&options);
 	for (const EditorExportPlatform::ExportOption &E : options) {
+		if (String(E.option.name).begins_with("gradle_build/foundry_java/")) {
+			continue;
+		}
 		if (get_export_option_visibility(p_preset.ptr(), E.option.name)) {
 			String warn = get_export_option_warning(p_preset.ptr(), E.option.name);
 			if (!warn.is_empty()) {
@@ -3430,8 +5351,21 @@ Error EditorExportPlatformAndroid::_generate_sparse_pck_metadata(const Ref<Edito
 
 Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportPreset> &p_preset, bool p_debug, const String &p_path, int export_format, bool should_sign, BitField<EditorExportPlatform::DebugFlags> p_flags) {
 	ExportNotifier notifier(*this, p_preset, p_debug, p_path, p_flags);
+	FoundryJavaExportConfig foundry_java;
+	String foundry_java_error;
+	Error foundry_java_config_error = _get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true);
+	if (foundry_java_config_error != OK) {
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), foundry_java_error);
+		return foundry_java_config_error;
+	}
 
-	const String base_dir = p_path.get_base_dir();
+	String final_artifact_path = p_path;
+	if (final_artifact_path.is_relative_path()) {
+		final_artifact_path = OS::get_singleton()->get_resource_dir().path_join(final_artifact_path);
+	}
+	final_artifact_path = ProjectSettings::get_singleton()->globalize_path(final_artifact_path).simplify_path();
+
+	const String base_dir = final_artifact_path.get_base_dir();
 	if (!DirAccess::exists(base_dir)) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Target folder does not exist or is inaccessible: \"%s\""), base_dir));
 		return ERR_FILE_BAD_PATH;
@@ -3447,6 +5381,11 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	bool p_give_internet = p_flags.has_flag(DEBUG_FLAG_DUMB_CLIENT) || p_flags.has_flag(DEBUG_FLAG_REMOTE_DEBUG);
 	bool apk_expansion = p_preset->get("apk_expansion/enable");
 	Vector<ABI> enabled_abis = get_enabled_abis(p_preset);
+	if (foundry_java.enabled && enabled_abis.is_empty()) {
+		const String error = TTR("Foundry-Java requires at least one enabled Android architecture in the export preset.");
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), error);
+		return ERR_INVALID_PARAMETER;
+	}
 
 	print_verbose("Exporting for Android...");
 	print_verbose("- debug build: " + bool_to_string(p_debug));
@@ -3469,7 +5408,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 	Vector<uint8_t> command_line_flags;
 	// Write command line flags into the command_line_flags variable.
-	get_command_line_flags(p_preset, p_path, p_flags, command_line_flags);
+	get_command_line_flags(p_preset, final_artifact_path, p_flags, command_line_flags);
 
 	if (export_format == EXPORT_FORMAT_AAB) {
 		if (!p_path.ends_with(".aab")) {
@@ -3582,7 +5521,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 			}
 		} else {
 			print_verbose("Saving apk expansion file...");
-			err = save_apk_expansion_file(p_preset, p_debug, p_path);
+			err = save_apk_expansion_file(p_preset, p_debug, final_artifact_path);
 			if (err != OK) {
 				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Could not write expansion package file!"));
 				return err;
@@ -3685,6 +5624,17 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		cmdline.push_back("-Pexport_version_min_sdk=" + min_sdk_version); // argument to specify the min sdk.
 		cmdline.push_back("-Pexport_version_target_sdk=" + target_sdk_version); // argument to specify the target sdk.
 		cmdline.push_back("-Pexport_enabled_abis=" + enabled_abi_string); // argument to specify enabled ABIs.
+		if (foundry_java.enabled) {
+			cmdline.push_back("-Pfoundry_java_registry_marker=registry-index-v2");
+			cmdline.push_back("-Pfoundry_java_gradle_plugin_kind=" + foundry_java.plugin_kind);
+			cmdline.push_back("-Pfoundry_java_gradle_plugin=" + foundry_java.plugin);
+			if (!foundry_java.maven_artifacts.is_empty()) {
+				cmdline.push_back("-Pfoundry_java_maven_artifacts=" + String("|").join(foundry_java.maven_artifacts));
+			}
+			if (!foundry_java.local_artifacts.is_empty()) {
+				cmdline.push_back("-Pfoundry_java_local_artifacts=" + String("|").join(foundry_java.local_artifacts));
+			}
+		}
 		if (!openxr_loader_version.is_empty()) {
 			cmdline.push_back("-Popenxr_loader_version=" + openxr_loader_version); // fixed engine-owned OpenXR loader version.
 		}
@@ -3696,7 +5646,20 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		// to avoid accidentally leaking sensitive information when sharing verbose logs for troubleshooting.
 		// Any non-sensitive additions to the command line arguments must be done above this section.
 		// Sensitive additions must be done below the logging statement.
-		print_verbose("Build Android project using gradle command: " + String("\n") + build_command + " " + join_list(cmdline, String(" ")));
+		Vector<String> repository_output_redactions;
+		const String repository_log_argument = foundry_java.enabled && !foundry_java.repositories.is_empty() ? " -Pfoundry_java_maven_repositories=<redacted>" : "";
+		print_verbose("Build Android project using gradle command: " + String("\n") + build_command + " " + join_list(cmdline, String(" ")) + repository_log_argument);
+		if (foundry_java.enabled && !foundry_java.repositories.is_empty()) {
+			const String joined_repositories = String("|").join(foundry_java.repositories);
+			repository_output_redactions.push_back(joined_repositories);
+			for (const String &repository : foundry_java.repositories) {
+				repository_output_redactions.push_back(repository);
+				if (repository.begins_with("file:///")) {
+					repository_output_redactions.push_back("file:" + repository.trim_prefix("file://"));
+				}
+			}
+			cmdline.push_back("-Pfoundry_java_maven_repositories=" + joined_repositories);
+		}
 
 		if (should_sign) {
 			if (p_debug) {
@@ -3751,18 +5714,21 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		String export_format_arg = export_format == EXPORT_FORMAT_AAB ? "aab" : "apk";
 		copy_args.push_back("-Pexport_format=" + export_format_arg);
 
-		String export_filename = p_path.get_file();
-		String export_path = p_path.get_base_dir();
-		if (export_path.is_relative_path()) {
-			export_path = OS::get_singleton()->get_resource_dir().path_join(export_path);
-		}
-		export_path = ProjectSettings::get_singleton()->globalize_path(export_path).simplify_path();
+		String export_filename = final_artifact_path.get_file();
+		String export_path = final_artifact_path.get_base_dir();
 
 		copy_args.push_back("-Pexport_path=file:" + export_path);
 		copy_args.push_back("-Pexport_filename=" + export_filename);
 
 		String build_project_output;
-		int result = EditorNode::get_singleton()->execute_and_show_output(TTR("Building Android Project (gradle)"), build_command, cmdline, true, false, &build_project_output);
+		int result = EditorNode::get_singleton()->execute_and_show_output(
+				TTR("Building Android Project (gradle)"),
+				build_command,
+				cmdline,
+				true,
+				false,
+				&build_project_output,
+				repository_output_redactions);
 		if (result != 0) {
 			add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Building of Android project failed, check output for the error:") + "\n\n" + build_project_output);
 			return ERR_CANT_CREATE;
@@ -3778,6 +5744,22 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 			return ERR_CANT_CREATE;
 		} else {
 			print_verbose(copy_binary_output);
+		}
+
+		if (foundry_java.enabled) {
+			String final_artifact_error;
+			err = _inspect_foundry_java_artifact(final_artifact_path, enabled_abis, export_format, final_artifact_error);
+			if (err != OK) {
+				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), final_artifact_error);
+				const Error remove_error = DirAccess::remove_absolute(final_artifact_path);
+				if (remove_error != OK || FileAccess::exists(final_artifact_path)) {
+					add_message(
+							EXPORT_MESSAGE_ERROR,
+							TTR("Export"),
+							vformat(TTR("Foundry-Java export could not remove rejected final artifact '%s'."), final_artifact_path));
+				}
+				return err;
+			}
 		}
 
 		print_verbose("Successfully completed Android gradle build.");
@@ -4007,7 +5989,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		err = export_project_files(p_preset, p_debug, ignore_apk_file, nullptr, &ed, save_apk_so);
 	} else {
 		if (apk_expansion) {
-			err = save_apk_expansion_file(p_preset, p_debug, p_path);
+			err = save_apk_expansion_file(p_preset, p_debug, final_artifact_path);
 			if (err != OK) {
 				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Could not write expansion package file!"));
 				return err;
@@ -4073,7 +6055,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	ret = unzGoToFirstFile(tmp_unaligned);
 
 	io2 = zipio_create_io(&io2_fa);
-	zipFile final_apk = zipOpen2(p_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io2);
+	zipFile final_apk = zipOpen2(final_artifact_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io2);
 
 	// Take files from the unaligned APK and write them out to the aligned one
 	// in raw mode, i.e. not uncompressing and recompressing, aligning them as needed,
@@ -4143,7 +6125,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	if (should_sign) {
 		// Signing must be done last as any additional modifications to the
 		// file will invalidate the signature.
-		err = sign_apk(p_preset, p_debug, p_path, ep);
+		err = sign_apk(p_preset, p_debug, final_artifact_path, ep);
 		if (err != OK) {
 			// Message is supplied by the subroutine method.
 			CLEANUP_AND_RETURN(err);
