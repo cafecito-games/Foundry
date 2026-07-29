@@ -3,7 +3,7 @@ on:
   workflow_call:
     inputs:
       checkout-ref:
-        description: Git ref or SHA to check out. Defaults to the workflow ref.
+        description: Git ref or SHA to check out. Defaults to the workflow commit.
         required: false
         type: string
         default: ""
@@ -55,7 +55,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.checkout-ref || github.ref }}
+          ref: ${{ inputs.checkout-ref || github.sha }}
           submodules: recursive
 
       - name: Restore Foundry build cache
