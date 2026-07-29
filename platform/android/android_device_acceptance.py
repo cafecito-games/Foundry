@@ -76,6 +76,11 @@ STARTUP_ABORT_OWNER_TEMPLATES = (
 # the line after "FATAL EXCEPTION", and the tombstone header follows "Fatal
 # signal" within the same short block.
 STARTUP_ABORT_OWNER_LINES = 8
+# Written into logcat immediately before each launch. Startup failure detection
+# reads only what follows it, so a crash from an earlier launch of the same
+# package can never be attributed to the current one.
+LAUNCH_BOUNDARY_TAG = "FoundryAcceptance"
+LAUNCH_BOUNDARY_MARKER = "FOUNDRY_ACCEPTANCE_LAUNCH_BOUNDARY"
 HOST_CONTRACT_REPORTED_MEMBERS = 12
 STANDARD_SMOKE_READY_MARKER = "Foundry Android standard runtime smoke ready"
 SOURCE_TEMPLATE_TOOL_PATH = Path(__file__).resolve().with_name("android_source_template.py")
@@ -317,6 +322,21 @@ def select_device(output: str, requested_serial: str | None) -> str:
 def runtime_log_failures(contents: str) -> list[str]:
     """Return fatal runtime signatures present in one captured Android log."""
     return [signature for signature in RUNTIME_FAILURE_PATTERNS if signature in contents]
+
+
+def log_since_launch(contents: str, launch_boundary: str | None) -> str:
+    """Return the captured log written after the current launch was stamped.
+
+    Falls back to the whole capture when the stamp is absent, so a device that
+    rejects the marker keeps the previous, more permissive behavior.
+    """
+    if not launch_boundary:
+        return contents
+    marker = contents.rfind(launch_boundary)
+    if marker < 0:
+        return contents
+    newline = contents.find("\n", marker)
+    return "" if newline < 0 else contents[newline + 1 :]
 
 
 def _crash_owner_patterns(application_id: str) -> tuple[re.Pattern[str], ...]:
@@ -890,6 +910,7 @@ def _wait_for_process(
     *,
     timeout: float,
     poll_interval: float,
+    launch_boundary: str | None = None,
 ) -> str:
     def process_probe() -> CommandResult:
         probe = runner.run(
@@ -911,7 +932,7 @@ def _wait_for_process(
             description=f"reading Android startup log for {application_id}",
             check=False,
         )
-        contents = log.stdout + log.stderr
+        contents = log_since_launch(log.stdout + log.stderr, launch_boundary)
         signatures = attributed_runtime_failures(contents, application_id)
         if signatures:
             raise AcceptanceError(
@@ -1058,6 +1079,17 @@ def _verify_apk_on_device(
         description="clearing Android logcat",
         check=False,
     )
+    # Clearing is best-effort and a crash block can still drain in after it, so
+    # stamp the log with an explicit boundary. Startup failure detection reads only
+    # what follows, and never a crash from a previous launch of the same package.
+    launch_boundary = f"{LAUNCH_BOUNDARY_MARKER} {application_id}"
+    runner.run(
+        _adb(adb, serial, "shell", "log", "-p", "i", "-t", LAUNCH_BOUNDARY_TAG, launch_boundary),
+        cwd=None,
+        timeout=30,
+        description=f"stamping Android launch boundary for {application_id}",
+        check=False,
+    )
     component = f"{application_id}/games.cafecito.foundry.game.FoundryAppLauncher"
     start = runner.run(
         _adb(adb, serial, "shell", "am", "start", "-W", "-n", component),
@@ -1077,6 +1109,7 @@ def _verify_apk_on_device(
             runner,
             timeout=process_timeout,
             poll_interval=poll_interval,
+            launch_boundary=launch_boundary,
         )
     except AcceptanceError as error:
         full_logcat, _ = _capture_logcat(adb, serial, None, runner)

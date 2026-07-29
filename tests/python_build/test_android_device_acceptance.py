@@ -150,6 +150,9 @@ class FakeRunner:
                 self.filtered_logcat_calls += 1
             if self.failure == "startup-abort":
                 stdout = (
+                    "01-01 00:00:00.000  1 1 I "
+                    f"{self.tool.LAUNCH_BOUNDARY_TAG}: {self.tool.LAUNCH_BOUNDARY_MARKER} "
+                    f"{self.tool.DEFAULT_APPLICATION_ID}\n"
                     "01-01 00:00:00.000  1 1 I ActivityManager: Start proc\n"
                     "01-01 00:00:00.100  1 1 E AndroidRuntime: java.lang.NoSuchMethodError: no non-static "
                     'method "Lgames/cafecito/foundry/Foundry;.restart()V"\n'
@@ -951,6 +954,58 @@ class AndroidDeviceAcceptanceTests(unittest.TestCase):
         self.assertEqual([], self.tool.attributed_runtime_failures(interleaved, target))
         self.assertEqual(["FATAL EXCEPTION"], self.tool.attributed_runtime_failures(java_crash, target))
         self.assertEqual(["Fatal signal"], self.tool.attributed_runtime_failures(tombstone, target))
+
+    def test_startup_wait_ignores_a_crash_from_a_previous_launch(self) -> None:
+        target = self.tool.DEFAULT_APPLICATION_ID
+        boundary = f"{self.tool.LAUNCH_BOUNDARY_MARKER} {target}"
+        stale = "\n".join(
+            (
+                "E AndroidRuntime: FATAL EXCEPTION: main",
+                f"E AndroidRuntime: Process: {target}, PID: 1111",
+                f"I {self.tool.LAUNCH_BOUNDARY_TAG}: {boundary}",
+                f"I ActivityManager: Start proc 4242:{target}/u0a123",
+            )
+        )
+
+        self.assertEqual([], self.tool.attributed_runtime_failures(self.tool.log_since_launch(stale, boundary), target))
+        # Without the boundary the same capture still reports the crash, so the
+        # fallback for a device that rejects the stamp stays permissive.
+        self.assertEqual(["FATAL EXCEPTION"], self.tool.attributed_runtime_failures(stale, target))
+
+    def test_log_since_launch_uses_the_last_boundary_and_tolerates_absence(self) -> None:
+        boundary = "FOUNDRY_ACCEPTANCE_LAUNCH_BOUNDARY example"
+        contents = f"first\nI tag: {boundary}\nsecond\nI tag: {boundary}\nthird\n"
+
+        self.assertEqual("third\n", self.tool.log_since_launch(contents, boundary))
+        self.assertEqual(contents, self.tool.log_since_launch(contents, "absent-boundary"))
+        self.assertEqual(contents, self.tool.log_since_launch(contents, None))
+
+    def test_verify_apks_stamps_a_launch_boundary_before_starting(self) -> None:
+        apk = self.workspace / "canonical.apk"
+        apk.write_bytes(b"canonical")
+        runner = FakeRunner(self.tool)
+        runner.apk_ids = {apk.resolve(): self.tool.DEFAULT_APPLICATION_ID}
+        runner.runtime_marker = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
+
+        self.tool.run_apk_acceptance(
+            apks=((self.tool.DEFAULT_APPLICATION_ID, apk),),
+            evidence_dir=self.workspace / "apk-boundary-evidence",
+            adb=Path("/sdk/platform-tools/adb"),
+            apkanalyzer=Path("/sdk/cmdline-tools/latest/bin/apkanalyzer"),
+            requested_serial="emulator-5554",
+            runner=runner,
+            boot_timeout=0.0,
+            process_timeout=0.0,
+            poll_interval=0.0,
+            required_runtime_marker=runner.runtime_marker,
+        )
+
+        commands = [" ".join(command) for command in runner.commands]
+        stamp = next(index for index, command in enumerate(commands) if self.tool.LAUNCH_BOUNDARY_MARKER in command)
+        clear = next(index for index, command in enumerate(commands) if command.endswith("logcat -c"))
+        start = next(index for index, command in enumerate(commands) if "am start" in command)
+        self.assertLess(clear, stamp)
+        self.assertLess(stamp, start)
 
     def test_attribution_ignores_signatures_outside_the_crash_block(self) -> None:
         target = self.tool.DEFAULT_APPLICATION_ID
