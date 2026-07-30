@@ -418,8 +418,9 @@ git commit -m "Keep Android source templates binding-free"
 
 The test helper resolves `FOUNDRY_JAVA_REPO`, defaulting to the sibling
 `/Users/christian/CafecitoGames/Foundry-Java`, and requires
-`git rev-parse HEAD` to equal
-`499cf13bdf7cebce4639b898f2ad3520d81571f2`. With Java 17, run:
+`git rev-parse HEAD` to equal the commit declared in
+`platform/android/foundry_java_pin.json`, which is the only place that commit is
+written. With Java 17, run:
 
 ```sh
 ./gradlew --no-daemon \

@@ -179,6 +179,37 @@ continues rather than aborting, so the device gate observes a diagnosable log
 instead of a dead process. That token is a fatal runtime signature for
 `android_device_acceptance.py`, so the gate fails immediately with the real cause.
 
+### Pinning the Foundry-Java dependency
+
+The Foundry-Java integration tests build the dependency from source, so the
+commit they build is pinned. `platform/android/foundry_java_pin.json` is the
+single declaration:
+
+```json
+{
+  "repository": "cafecito-games/Foundry-Java",
+  "commit": "<40-character lowercase SHA>",
+  "reason": "<why this commit>"
+}
+```
+
+Everything else resolves the pin instead of restating it.
+`android_builds.yml` reads it in a `Resolve the declared Foundry-Java pin` step
+that fails the job on an empty or malformed value, and both
+`Checkout exact Foundry-Java` steps take `ref` from that step's output. The
+tests load it through `load_foundry_java_pin()` in
+`tests/python_build/android_native_test_support.py`.
+
+To bump the dependency, edit `commit` and `reason` in that one file. Nothing
+else needs to change.
+
+Local runs resolve the checkout from `FOUNDRY_JAVA_REPO`, defaulting to a
+sibling `Foundry-Java` directory. When that checkout is absent or sits at a
+different commit, `FoundryJavaAndroidIntegrationTests` skips and prints the
+`git -C <path> checkout <sha>` command that would let it run; the pin describes
+what CI builds, not a constraint on an unrelated local checkout. CI checks out
+the pinned commit itself, so it never skips.
+
 ## Android and toolchain levels
 
 The root app configuration is authoritative for both `:app` and `:lib`:

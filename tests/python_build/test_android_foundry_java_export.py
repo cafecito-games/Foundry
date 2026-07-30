@@ -22,7 +22,9 @@ from types import ModuleType
 
 from tests.python_build.android_native_test_support import (
     EXTERNAL_JNI_SYMBOLS,
+    FOUNDRY_JAVA_PIN_PATH,
     FOUNDRY_SYMBOLS,
+    load_foundry_java_pin,
     populate_native_matrix,
 )
 from tests.python_build.test_android_gradle_behavioral import (
@@ -63,7 +65,7 @@ ANDROID_EXPORT_PLAN = REPO_ROOT / "docs/superpowers/plans/2026-07-26-foundry-jav
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 ANDROID_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/android_builds.yml"
 MACOS_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/macos_builds.yml"
-EXACT_FOUNDRY_JAVA_COMMIT = "499cf13bdf7cebce4639b898f2ad3520d81571f2"
+FOUNDRY_JAVA_PIN = load_foundry_java_pin()
 FOUNDRY_JAVA_GROUP = "games.cafecito.foundry"
 FOUNDRY_JAVA_VERSION = "0.1.0-SNAPSHOT"
 
@@ -191,6 +193,157 @@ def test_scratch_directory() -> Path:
     scratch = Path(os.environ.get("FOUNDRY_TEST_SCRATCH", REPO_ROOT / ".test_scratch"))
     scratch.mkdir(parents=True, exist_ok=True)
     return scratch
+
+
+def require_pinned_foundry_java_checkout(repository: Path, head: str | None) -> None:
+    """Skip unless *repository* is checked out at the declared Foundry-Java pin.
+
+    The pin describes what this repository's CI builds against; it is not a
+    constraint the local suite may impose on an unrelated sibling checkout. A
+    missing or differing checkout therefore means "cannot verify here", which is
+    a skip, not a failure. CI checks out the pinned commit by construction and
+    so never skips.
+    """
+
+    if head is None:
+        raise unittest.SkipTest(
+            f"Foundry-Java checkout is unavailable at {repository}; "
+            "set FOUNDRY_JAVA_REPO to run the Foundry-Java integration tests"
+        )
+    expected = FOUNDRY_JAVA_PIN["commit"]
+    if head != expected:
+        raise unittest.SkipTest(
+            f"Foundry-Java checkout at {repository} is not at the commit pinned in "
+            f"{FOUNDRY_JAVA_PIN_PATH}: expected {expected}, found {head}. "
+            f"Run: git -C {repository} checkout {expected}"
+        )
+
+
+class FoundryJavaPinTests(unittest.TestCase):
+    def _write_pin(self, contents: str) -> Path:
+        directory = tempfile.TemporaryDirectory(prefix="foundry-java-pin.", dir=test_scratch_directory())
+        self.addCleanup(directory.cleanup)
+        pin_path = Path(directory.name) / "foundry_java_pin.json"
+        pin_path.write_text(contents, encoding="utf-8")
+        return pin_path
+
+    def test_pin_file_parses_repository_and_commit(self) -> None:
+        pin = load_foundry_java_pin()
+        self.assertEqual("cafecito-games/Foundry-Java", pin["repository"])
+        self.assertRegex(pin["commit"], r"^[0-9a-f]{40}$")
+        self.assertTrue(pin["reason"].strip())
+
+    def test_missing_pin_file_fails_with_a_clear_message(self) -> None:
+        missing = Path(test_scratch_directory()) / "foundry-java-pin-absent" / "foundry_java_pin.json"
+        with self.assertRaises(FileNotFoundError) as caught:
+            load_foundry_java_pin(missing)
+        self.assertIn(str(missing), str(caught.exception))
+        self.assertIn("missing", str(caught.exception))
+
+    def test_malformed_pin_json_fails_with_a_clear_message(self) -> None:
+        pin_path = self._write_pin('{"repository": "cafecito-games/Foundry-Java",')
+        with self.assertRaises(ValueError) as caught:
+            load_foundry_java_pin(pin_path)
+        self.assertIn("not valid JSON", str(caught.exception))
+        self.assertIn(str(pin_path), str(caught.exception))
+
+    def test_non_hex_commit_is_rejected(self) -> None:
+        pin_path = self._write_pin(
+            json.dumps(
+                {
+                    "repository": "cafecito-games/Foundry-Java",
+                    "commit": "z99cf13bdf7cebce4639b898f2ad3520d81571f2",
+                    "reason": "test",
+                }
+            )
+        )
+        with self.assertRaises(ValueError) as caught:
+            load_foundry_java_pin(pin_path)
+        self.assertIn("hexadecimal", str(caught.exception))
+
+    def test_short_commit_is_rejected(self) -> None:
+        pin_path = self._write_pin(
+            json.dumps(
+                {
+                    "repository": "cafecito-games/Foundry-Java",
+                    "commit": "499cf13",
+                    "reason": "test",
+                }
+            )
+        )
+        with self.assertRaises(ValueError) as caught:
+            load_foundry_java_pin(pin_path)
+        self.assertIn("40-character", str(caught.exception))
+
+    def test_blank_reason_is_rejected(self) -> None:
+        pin_path = self._write_pin(
+            json.dumps(
+                {
+                    "repository": "cafecito-games/Foundry-Java",
+                    "commit": FOUNDRY_JAVA_PIN["commit"],
+                    "reason": "   ",
+                }
+            )
+        )
+        with self.assertRaises(ValueError) as caught:
+            load_foundry_java_pin(pin_path)
+        self.assertIn("'reason'", str(caught.exception))
+
+    def test_missing_required_field_is_rejected(self) -> None:
+        pin_path = self._write_pin(json.dumps({"repository": "cafecito-games/Foundry-Java"}))
+        with self.assertRaises(ValueError) as caught:
+            load_foundry_java_pin(pin_path)
+        self.assertIn("'commit'", str(caught.exception))
+
+    def test_absent_sibling_checkout_still_skips(self) -> None:
+        with self.assertRaises(unittest.SkipTest) as caught:
+            require_pinned_foundry_java_checkout(Path("/nonexistent/Foundry-Java"), None)
+        self.assertIn("FOUNDRY_JAVA_REPO", str(caught.exception))
+
+    def test_mismatched_sibling_checkout_skips_rather_than_fails(self) -> None:
+        other_commit = "0" * 40
+        repository = Path("/nonexistent/Foundry-Java")
+        with self.assertRaises(unittest.SkipTest) as caught:
+            require_pinned_foundry_java_checkout(repository, other_commit)
+        message = str(caught.exception)
+        self.assertIn(FOUNDRY_JAVA_PIN["commit"], message)
+        self.assertIn(other_commit, message)
+        self.assertIn(f"git -C {repository} checkout {FOUNDRY_JAVA_PIN['commit']}", message)
+
+    def test_pinned_sibling_checkout_does_not_skip(self) -> None:
+        require_pinned_foundry_java_checkout(Path("/nonexistent/Foundry-Java"), FOUNDRY_JAVA_PIN["commit"])
+
+    def test_android_workflow_resolves_the_pin_instead_of_restating_it(self) -> None:
+        workflow = ANDROID_BUILDS_WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn(FOUNDRY_JAVA_PIN["commit"], workflow)
+        checkout_steps = workflow.count("- name: Checkout exact Foundry-Java")
+        self.assertEqual(2, checkout_steps)
+        self.assertEqual(
+            checkout_steps,
+            workflow.count("ref: ${{ steps.foundry-java-pin.outputs.commit }}"),
+        )
+        resolve_steps = workflow.count("id: foundry-java-pin")
+        self.assertEqual(checkout_steps, resolve_steps)
+        for resolve_step in workflow.split("id: foundry-java-pin")[1:]:
+            body = resolve_step.split("\n      - name:", maxsplit=1)[0]
+            with self.subTest(fragment="strict shell"):
+                self.assertIn("set -euo pipefail", body)
+            with self.subTest(fragment="loader"):
+                self.assertIn("load_foundry_java_pin", body)
+            with self.subTest(fragment="empty guard"):
+                self.assertIn("exit 1", body)
+            with self.subTest(fragment="output"):
+                self.assertIn('echo "commit=${commit}" >> "${GITHUB_OUTPUT}"', body)
+
+    def test_no_file_outside_the_pin_restates_the_pinned_commit(self) -> None:
+        result = run_bounded_subprocess(
+            ["git", "grep", "--untracked", "-l", FOUNDRY_JAVA_PIN["commit"], "--", ".", ":!.worktrees"],
+            cwd=REPO_ROOT,
+            timeout=60,
+        )
+        self.assertIn(result.returncode, (0, 1), result.stdout + result.stderr)
+        matches = sorted(line for line in result.stdout.splitlines() if line.strip())
+        self.assertEqual(["platform/android/foundry_java_pin.json"], matches)
 
 
 class FoundryJavaExportSurfaceTests(unittest.TestCase):
@@ -714,7 +867,6 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
 
     def test_plan_documents_the_bounded_pre_commit_contract_classes(self) -> None:
         plan = ANDROID_EXPORT_PLAN.read_text(encoding="utf-8")
-        self.assertIn(EXACT_FOUNDRY_JAVA_COMMIT, plan)
         for stale_reference in (
             "FoundryJavaArchiveContractTests",
             "FoundryJavaAndroidIntegrationTests.test_exact_local_inputs",
@@ -800,7 +952,6 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         self.assertNotIn("\n    needs:", job)
         required_fragments = (
             "repository: cafecito-games/Foundry-Java",
-            f"ref: {EXACT_FOUNDRY_JAVA_COMMIT}",
             "path: foundry-java-dependency",
             "FOUNDRY_JAVA_REPO: ${{ github.workspace }}/foundry-java-dependency",
             "actions/setup-java@v5",
@@ -884,7 +1035,6 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
             "compile-instrumented-assets",
             "linuxbsd-editor-foundry-java-command-first",
             "repository: cafecito-games/Foundry-Java",
-            f"ref: {EXACT_FOUNDRY_JAVA_COMMIT}",
             "FOUNDRY_JAVA_COMMAND_FIRST_ACCEPTANCE: '1'",
             "FOUNDRY_EDITOR_BINARY:",
             "FOUNDRY_ANDROID_SOURCE_TEMPLATE:",
@@ -1865,16 +2015,11 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
             if configured_repository
             else (REPO_ROOT.parent / "Foundry-Java").resolve()
         )
-        if not (cls.foundry_java_repo / ".git").exists():
-            raise unittest.SkipTest(
-                "Foundry-Java checkout is unavailable; set FOUNDRY_JAVA_REPO to run integration tests"
-            )
-        head = cls._git("rev-parse", "HEAD")
-        if head != EXACT_FOUNDRY_JAVA_COMMIT:
-            raise AssertionError(
-                "Foundry-Java integration must use exact merged commit "
-                f"{EXACT_FOUNDRY_JAVA_COMMIT}; found {head} at {cls.foundry_java_repo}"
-            )
+        checkout_present = (cls.foundry_java_repo / ".git").exists()
+        require_pinned_foundry_java_checkout(
+            cls.foundry_java_repo,
+            cls._git("rev-parse", "HEAD") if checkout_present else None,
+        )
 
         cls.java_home = find_java_17_home()
         cls.android_sdk = find_android_sdk()
@@ -3084,7 +3229,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         self.assertRegex(foundry_revision, r"^[0-9a-f]{40}$")
         evidence = {
             "schema_version": 1,
-            "foundry_java_commit": EXACT_FOUNDRY_JAVA_COMMIT,
+            "foundry_java_commit": FOUNDRY_JAVA_PIN["commit"],
             "foundry_revision": foundry_revision,
             "editor": str(editor),
             "editor_sha256": sha256_file(editor),
