@@ -3440,13 +3440,20 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 			continue;
 		}
 		bool all_tags_met = true;
+		bool requires_single = false;
+		bool requires_double = false;
 		for (const String &raw_tag : tags) {
-			if (!_foundry_java_android_export_reports_feature(raw_tag.strip_edges(), p_abi, p_arch, p_debug)) {
+			const String tag = raw_tag.strip_edges();
+			if (!_foundry_java_android_export_reports_feature(tag, p_abi, p_arch, p_debug)) {
 				all_tags_met = false;
 				break;
 			}
+			requires_single = requires_single || tag == "single";
+			requires_double = requires_double || tag == "double";
 		}
-		if (!all_tags_met) {
+		// Precision counts as met either way because the template decides it, so a
+		// key demanding both is unmatchable on every template rather than on none.
+		if (!all_tags_met || (requires_single && requires_double)) {
 			continue;
 		}
 		best_library = p_descriptor->get_value("libraries", key, String());

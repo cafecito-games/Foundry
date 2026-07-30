@@ -4399,6 +4399,15 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 "declares \"configuration/compatibility_maximum\" '0.0.9', which is older than the exporting engine version",
             ),
             (
+                "requested-abi-only-under-mutually-exclusive-tags",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64.single.double = "libfoundry_java.so"',
+                ).encode("utf-8"),
+                0,
+                "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            ),
+            (
                 "requested-abi-only-for-the-other-build-type",
                 LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
                     'android.arm64 = "libfoundry_java.so"',
