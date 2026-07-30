@@ -199,6 +199,13 @@ public:
 	// registered. Consulted by the runtime only after a normal member-function lookup misses.
 	FSFunction *find_witness_function(const String &p_target_key, const StringName &p_method) const;
 
+	// The compiled witness for `p_method` compiled against exactly `p_target_script`, or `nullptr` when
+	// none is registered. Unlike `find_witness_function`, this cannot answer with another class's
+	// witness: the alias index it uses holds one function per (alias, method), and two classes in one
+	// file share aliases, so an alias hit is neither unique nor complete. Scans the runtime store, so
+	// it belongs on a miss path, not a hot one.
+	FSFunction *find_witness_function_for_target(const FoundryScript *p_target_script, const StringName &p_method) const;
+
 	// The compiled witness for `p_method` on `p_native_class` or any of its ancestors, or `nullptr` when
 	// none is registered. Walks `ClassDB::get_parent_class` so a witness declared on a base engine class
 	// dispatches for a subclass instance. Consulted by the runtime after a native call misses.

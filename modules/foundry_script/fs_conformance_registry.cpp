@@ -247,6 +247,25 @@ FSFunction *FSConformanceRegistry::find_witness_function(const String &p_target_
 	return function != nullptr ? *function : nullptr;
 }
 
+FSFunction *FSConformanceRegistry::find_witness_function_for_target(const FoundryScript *p_target_script, const StringName &p_method) const {
+	if (p_target_script == nullptr || p_method == StringName()) {
+		return nullptr;
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<RuntimeConformance>> &file_entry : runtime_by_file) {
+		for (const RuntimeConformance &conformance : file_entry.value) {
+			if (conformance.target_script != p_target_script) {
+				continue;
+			}
+			FSFunction *const *function = conformance.functions.getptr(p_method);
+			if (function != nullptr && *function != nullptr) {
+				return *function;
+			}
+		}
+	}
+	return nullptr;
+}
+
 FSFunction *FSConformanceRegistry::find_native_witness_function(const StringName &p_native_class, const StringName &p_method) const {
 	if (p_native_class == StringName() || p_method == StringName()) {
 		return nullptr;
