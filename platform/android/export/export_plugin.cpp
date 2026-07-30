@@ -3394,43 +3394,20 @@ static bool _foundry_java_read_current_archive_entry_payload(unzFile p_archive, 
 // not the export, decides them. A descriptor that resolves only under an
 // unmodeled tag therefore fails the export instead of shipping a binding that may
 // be dead on device.
-// The tags OS::has_feature() answers itself, before it consults the project's
-// custom features. A custom feature that collides with one of these is never
-// observed on a device, so it must not satisfy a descriptor tag here either.
-static bool _foundry_java_feature_is_engine_reserved(const String &p_tag) {
-	static const char *reserved_features[] = {
-		// Platform identifiers.
-		"android", "ios", "linuxbsd", "macos", "visionos", "web", "web_android",
-		"web_ios", "web_linuxbsd", "web_macos", "web_windows", "windows",
-		// Build configuration and host role.
-		"debug", "editor", "editor_hint", "editor_runtime", "embedded_in_editor",
-		"movie", "release", "template", "template_debug", "template_release",
-		// Precision, pointer width, and threading.
-		"32", "64", "double", "nothreads", "single", "threads",
-		// Architectures and their aliases.
-		"arm", "arm32", "arm64", "arm64-v8a", "armeabi", "armeabi-v7a", "armv7",
-		"armv7a", "armv7s", "loongarch64", "ppc", "ppc32", "ppc64", "riscv", "rv64",
-		"simulator", "universal", "wasm", "wasm32", "wasm64", "x86", "x86_32",
-		"x86_64",
-		// Android features reported by the platform itself.
-		"mobile", "system_fonts"
-	};
-	for (const char *reserved_feature : reserved_features) {
-		if (p_tag == reserved_feature) {
-			return true;
-		}
-	}
-	return false;
-}
-
+// The tags an exported Android application reports, for the requested ABI and
+// build type: the platform identifier, the always-on Android features from
+// OS_Android::_check_internal_feature_support(), every architecture alias
+// OS::has_feature() answers for that ABI, the pointer width, and the export
+// template's build-type tags. Preset and export-plugin custom features are
+// serialized into the exported project settings, so the device reports those too,
+// except where the engine answers the tag false before it ever consults them. Tags
+// outside all of this may still be true on a device, so they are only ever treated
+// as unmet here, never as met -- including the precision tags, which the export
+// cannot observe because the template binary, not the export, decides them. A
+// descriptor that resolves only under an unmodeled tag therefore fails the export
+// instead of shipping a binding that may be dead on device.
 static bool _foundry_java_android_export_reports_feature(const String &p_tag, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
-	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts") {
-		return true;
-	}
-	// Preset and export-plugin custom features are serialized into the exported
-	// project settings, so the device reports them too -- unless the engine already
-	// answers that tag itself.
-	if (!_foundry_java_feature_is_engine_reserved(p_tag) && p_custom_features.has(p_tag)) {
+	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts" || p_tag == "threads") {
 		return true;
 	}
 	if (p_tag == p_abi || p_tag == p_arch) {
@@ -3447,15 +3424,25 @@ static bool _foundry_java_android_export_reports_feature(const String &p_tag, co
 		return true;
 	}
 	if (p_arch == "arm32") {
-		return p_tag == "armeabi" || p_tag == "armv7a" || p_tag == "armv7" || p_tag == "arm";
+		if (p_tag == "armeabi" || p_tag == "armv7a" || p_tag == "armv7" || p_tag == "arm") {
+			return true;
+		}
+	} else if (p_arch == "arm64") {
+		if (p_tag == "arm") {
+			return true;
+		}
+	} else if (p_arch == "x86_64" || p_arch == "x86_32") {
+		if (p_tag == "x86") {
+			return true;
+		}
 	}
-	if (p_arch == "arm64") {
-		return p_tag == "arm";
+	// OS::has_feature() and OS_Android::_check_internal_feature_support() answer
+	// these false outright, before reaching the project's custom features, so a
+	// custom feature named after one is never observed on a device.
+	if (p_tag == "movie" || p_tag == "nothreads" || p_tag == "macos" || p_tag == "web_ios" || p_tag == "web_macos" || p_tag == "windows") {
+		return false;
 	}
-	if (p_arch == "x86_64" || p_arch == "x86_32") {
-		return p_tag == "x86";
-	}
-	return false;
+	return p_custom_features.has(p_tag);
 }
 
 // Mirrors FoundryExtensionLibraryLoader::find_extension_library's explicit

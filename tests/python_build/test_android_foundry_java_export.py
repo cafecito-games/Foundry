@@ -4520,19 +4520,23 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
 
     def test_export_accepts_library_keys_gated_on_preset_custom_features(self) -> None:
         # Custom features are serialized into the exported project settings, so the
-        # device reports them and a key built from one resolves there.
-        descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
-            'android.arm64 = "libfoundry_java.so"',
-            'android.arm64.premium_binding = "libfoundry_java.so"',
-        )
-        result, artifact = self._export_packaged_descriptor(
-            "preset-custom-feature",
-            descriptor.encode("utf-8"),
-            custom_features="premium_binding",
-        )
-        output = result.stdout + result.stderr
-        self.assertEqual(0, result.returncode, output)
-        self.assertTrue(artifact.is_file())
+        # device reports them and a key built from one resolves there. That includes
+        # a name the engine only answers when true, such as another platform's tag,
+        # because those checks fall through to the project's custom features.
+        for defect, feature in (("plain", "premium_binding"), ("engine-name", "linuxbsd")):
+            with self.subTest(feature=feature):
+                descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    f'android.arm64.{feature} = "libfoundry_java.so"',
+                )
+                result, artifact = self._export_packaged_descriptor(
+                    f"preset-custom-feature-{defect}",
+                    descriptor.encode("utf-8"),
+                    custom_features=feature,
+                )
+                output = result.stdout + result.stderr
+                self.assertEqual(0, result.returncode, output)
+                self.assertTrue(artifact.is_file())
 
     def test_export_accepts_library_keys_using_reported_device_features(self) -> None:
         # Every Android runtime reports `mobile` and the ABI aliases, so keys built
