@@ -133,7 +133,7 @@ The gallery ingests finished PNGs and is capture-source-agnostic, so it works to
 
 ## Coding Style & Naming Conventions
 
-Follow `.editorconfig`: UTF-8, LF line endings, final newline, 120-column limit, and trimmed trailing whitespace. C/C++ and most engine files use tabs with width 4; Python, `SConstruct`, and `SCsub` use 4 spaces; YAML and clang config files use 2 spaces. C++ formatting is enforced by `.clang-format`; Python/SCons formatting and imports are handled by Ruff, with mypy checks for Python. Keep filenames and APIs consistent with nearby Godot conventions, such as `snake_case` file names and test headers named `test_<area>.h`.
+Follow `.editorconfig`: UTF-8, LF line endings, final newline, 120-column limit, and trimmed trailing whitespace. C/C++ and most engine files use tabs with width 4; Python, `SConstruct`, and `SCsub` use 4 spaces; YAML and clang config files use 2 spaces. C++ formatting is enforced by `.clang-format`; Python/SCons formatting and imports are handled by Ruff, with mypy checks for Python. Keep filenames and APIs consistent with nearby Godot conventions, such as `snake_case` file names and test headers named `test_<area>.h`. Naming and content rules for Python test/check files live in `### Test authoring rules` below.
 
 ## Grammar Specification
 
@@ -158,6 +158,34 @@ subclasses of the extensible base and for unrelated native method overrides cont
 Add or update tests with behavior changes. C++ tests use doctest macros from `tests/test_macros.h` and are included through `tests/test_main.cpp`. New C++ test skeletons can be created with `python tests/create_test.py Name path`, where `path` is relative to `tests/`. Foundry Script integration, completion, LSP, and refactor fixtures belong under `modules/foundry_script/tests/scripts/`; pair `.fs` fixtures with expected-output config files where the local test runner expects them.
 
 Tests that generate, mutate, or persist local files must write those files under the shared test scratch space instead of the repository root or tracked fixture directories. Agent-run tests get `FOUNDRY_TEST_SCRATCH=$REPO_ROOT/.test_scratch` from `scripts/agent_build.py`; C++ tests should use the Foundry test scratch helpers so aborted runs do not pollute `git status`. Use fixture directories only for intentional checked-in inputs and expected outputs, and keep fixture regeneration commands (`test generate-fixtures`, `test generate-format-fixtures`) as the explicit path for updating tracked files.
+
+### Test authoring rules
+
+A test asserts on observable behavior — a return value, an exit code, emitted output, a produced artifact, a parsed data structure. A test that asserts on the source text of another file is not a test. This is scaffolding hygiene, not blame: scaffolding a text-matching check while building a feature is fine, but it must be deleted in the same change that lands real coverage, not shipped as a permanent gate. See epic #1344.
+
+- **Never** assert that a source file contains a substring to verify behavior implemented in that file. Write a C++ doctest, a Foundry Script fixture, or a Python unit test that executes the code instead.
+- **Never** slice a source file on a function signature to grep inside it (`source.split("void Foo::bar() {")[1]`). Write a test that calls the function, or a check that parses a real AST/symbol table.
+- **Never** assert on YAML or Markdown formatting: indentation, key order, whitespace, or `str.find()` positions. Parse workflow YAML with `yaml.safe_load` and assert on the graph via `.github/scripts/workflow_graph.py` instead.
+- **Never** pin the body of an embedded script as a string constant. Extract the script to a real file and execute it in the test.
+- **Never** assert that a Markdown document contains a particular phrase; documentation correctness is a review concern, not a test.
+- **Never** assert that another test exists (`assertTrue(hasattr(SomeTests, "test_..."))`). Delete the assertion, or write the missing test.
+- File-content policy worth enforcing — required or forbidden literal tokens in given paths — goes in `misc/checks/file_policy.toml` as data, never as new Python.
+- Naming: `test_*.py` executes code and asserts on results; `check_*.py` under `misc/checks/` inspects files or artifacts, reports every violation, and exits non-zero. A `test_*.py` with no assertions is misnamed.
+- Python tests belong in `tests/python_build/` (build-system behavior), `.github/scripts/tests/` (CI helper modules), `scripts/tests/` (developer tooling), or `tools/*/tests/` (standalone tools).
+- Every new `pre-commit` hook goes below the marker at `.pre-commit-config.yaml:199` and must justify its `files:` regex; prefer extending an existing hook over adding one.
+
+Self-check before opening a PR that touches these areas (non-empty output means work remains — see the tracking cleanup issues under epic #1344):
+
+```sh
+# No source-signature slicing.
+git grep -nE '\.split\("(void|bool|String|private fun|const val|def )' -- '*.py'
+# No assertions on documentation prose.
+git grep -n "docs/superpowers" -- '*/test_*.py' '*/check_*.py'
+# No assertions that other tests exist.
+git grep -n "hasattr(" -- '*/test_*.py'
+# No test_* file without assertions, and no check_* file with them.
+git grep -l "assert" -- 'misc/checks/check_*.py'
+```
 
 ## Commit & Pull Request Guidelines
 
