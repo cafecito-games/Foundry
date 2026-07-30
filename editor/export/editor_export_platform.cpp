@@ -650,8 +650,9 @@ Vector<String> EditorExportPlatform::get_custom_project_features(const Ref<Edito
 			}
 		}
 	}
+	const Ref<EditorExportPlatform> platform = p_preset->get_platform();
 	for (const Ref<EditorExportPlugin> &export_plugin : p_export_plugins) {
-		features.append_array(export_plugin->_get_export_features(Ref<EditorExportPlatform>(this), p_debug));
+		features.append_array(export_plugin->_get_export_features(platform, p_debug));
 	}
 	return features;
 }
