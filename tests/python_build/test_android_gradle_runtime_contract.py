@@ -940,7 +940,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "platform/android/java/app/src/instrumented/assets/",
             "ANDROID_RUNTIME",
             "android_builds",
-            "test_android_runtime_workflows",
         ):
             self.assertIn(fragment, pre_commit)
 

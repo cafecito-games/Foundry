@@ -56,6 +56,7 @@ repos:
       - id: mypy
         files: \.py$
         types_or: [text]
+        additional_dependencies: [types-PyYAML]
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
@@ -219,9 +220,12 @@ repos:
         name: Foundry release container scripts
         language: python
         entry: python -m unittest discover -s .github/scripts/tests -t .github/scripts/tests
+        additional_dependencies: [PyYAML]
         pass_filenames: false
         # Only the extracted release-container helpers and their tests; release.yml no longer
         # carries logic these tests execute, so editing the workflow does not trigger them.
+        # Discovery also picks up the workflow graph contracts, which is why this hook needs
+        # PyYAML; running them a second time is cheap and loses nothing.
         files: |
           (?x)^\.github/scripts/(
             resolve_channel_tag_freshness\.sh|
@@ -231,17 +235,21 @@ repos:
             tests/.*\.py
           )$
 
-      - id: foundry-pr-platform-checks-workflow
-        name: Foundry PR platform checks workflow
+      - id: foundry-workflow-graph-contracts
+        name: Foundry workflow graph contracts
         language: python
-        entry: python .github/scripts/test_pr_platform_checks_workflow.py
+        entry: python -m unittest discover -s .github/scripts/tests -t .github/scripts/tests -p test_workflow_graph*.py
+        additional_dependencies: [PyYAML]
         pass_filenames: false
+        # Structural contracts over the parsed workflow graph. `actionlint` gates
+        # workflow syntax; these gate the job/step/matrix relationships it cannot see.
         files: |
           (?x)^(
             \.pre-commit-config\.yaml|
-            \.github/scripts/test_pr_platform_checks_workflow\.py|
-            \.github/workflows/(?:android|ios|linux|macos|web|windows)_builds\.yml|
-            \.github/workflows/pr_platform_checks\.yml
+            \.github/actions/foundry-build/action\.yml|
+            \.github/scripts/workflow_graph\.py|
+            \.github/scripts/tests/test_workflow_graph.*\.py|
+            \.github/workflows/.*\.yml
           )$
 
       - id: foundry-android-runtime-identifiers
@@ -321,23 +329,6 @@ repos:
             tests/python_build/(?:android_native_test_support|test_android_(?:jni_contract|native_staging|runtime_contract))\.py
           )$
 
-      - id: foundry-android-runtime-workflows
-        name: Foundry Android runtime workflows
-        language: python
-        entry: python .github/scripts/test_android_runtime_workflows.py
-        pass_filenames: false
-        files: |
-          (?x)^(
-            \.pre-commit-config\.yaml|
-            \.github/actions/foundry-build/action\.yml|
-            \.github/scripts/test_android_runtime_workflows\.py|
-            \.github/workflows/(android_builds|android_java_check|release)\.yml|
-            misc/scripts/test_release_resolver\.py|
-            platform/android/(?:android_jni_contract|android_native_contract|android_native_staging|platform_android_builders)\.py|
-            platform/android/java/(?:build|lib/build)\.gradle|
-            tests/python_build/test_android_runtime_surface\.py
-          )$
-
       - id: foundry-android-device-acceptance
         name: Foundry Android device acceptance
         language: python
@@ -349,7 +340,6 @@ repos:
         files: |
           (?x)^(
             \.pre-commit-config\.yaml|
-            \.github/scripts/test_android_runtime_workflows\.py|
             \.github/workflows/android_builds\.yml|
             misc/scripts/test_android_runtime_identifiers\.py|
             platform/android/ANDROID_RUNTIME\.md|
@@ -360,3 +350,13 @@ repos:
             tests/python_build/test_android_device_acceptance\.py|
             tests/python_build/test_android_gradle_runtime_contract\.py
           )$
+
+  # `actionlint` is the primary gate on workflow syntax, expressions, action inputs,
+  # and embedded shell. It parses workflow files only; composite actions have no
+  # `jobs:` section and are rejected as malformed workflows, so they stay out of
+  # scope here and are covered by the workflow graph contracts instead.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        files: ^\.github/workflows/.*\.ya?ml$
