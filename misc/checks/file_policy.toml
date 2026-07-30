@@ -444,11 +444,18 @@ forbidden = [
 ]
 
 [[rule]]
-name = "android-app-sources-declare-the-application-package"
-reason = "Every application-template source belongs to `games.cafecito.foundry.game`; a file declaring anything else would be packaged into the APK under a namespace the manifest does not describe."
+name = "android-app-main-sources-declare-the-exact-application-package"
+reason = "The application class the manifest names by fully qualified name lives directly in `games.cafecito.foundry.game`. Java terminates the package declaration, so this literal is exact: a class moved to any other package — including a sibling such as `games.cafecito.foundry.gameevil` — leaves the manifest resolving a class the APK does not contain, and the exported project installs and then fails to launch."
+paths = ["platform/android/java/app/src/main/**/*.java"]
+required = ["package games.cafecito.foundry.game;"]
+
+[[rule]]
+name = "android-app-test-sources-stay-under-the-application-package"
+reason = "The instrumented and androidTest sources live in subpackages of `games.cafecito.foundry.game`, and Kotlin's package declaration has no terminator, so this literal can only check the prefix. It catches a wholesale move out of the application package; the exactness that matters — the classes the manifest resolves by name — is pinned by the rule above."
 paths = [
-  "platform/android/java/app/src/**/*.java",
-  "platform/android/java/app/src/**/*.kt",
+  "platform/android/java/app/src/instrumented/**/*.java",
+  "platform/android/java/app/src/instrumented/**/*.kt",
+  "platform/android/java/app/src/androidTestInstrumented/**/*.kt",
 ]
 required = ["package games.cafecito.foundry.game"]
 

@@ -32,6 +32,8 @@ SEAM_METHOD = "getFoundryExtensionConfigFiles"
 # A `javap -c` method declaration: indented two spaces, ends in a semicolon, and
 # is followed by the indented `descriptor:`/`Code:` block that belongs to it.
 JAVAP_METHOD_DECLARATION = re.compile(r"^ {2}(?!descriptor:|flags:|Code:)\S.*?(\w+)\([^)]*\);\s*$")
+# A `javap -c` instruction line: an offset, a colon, then the mnemonic.
+JAVAP_INSTRUCTION = re.compile(r"^\s+\d+: \S")
 
 
 def find_java_home() -> Path:
@@ -161,6 +163,12 @@ def javap_method_bodies(disassembly: str) -> dict[str, str]:
         if current is not None:
             current.append(line)
     return {name: "\n".join(body) for name, body in bodies.items()}
+
+
+def javap_instructions(body: str) -> list[str]:
+    """Return the ordered bytecode instructions of one disassembled method body."""
+
+    return [line.strip() for line in body.splitlines() if JAVAP_INSTRUCTION.match(line)]
 
 
 def staged_libraries(stage: Path) -> list[str]:
@@ -360,10 +368,18 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             bodies,
             f"the compiled host declares no {SEAM_METHOD}; disassembled methods: {sorted(bodies)}",
         )
+        seam = javap_instructions(bodies[SEAM_METHOD])
+        # Calling the discovery object is not enough: the seam has to *return* what
+        # it produced. Requiring the call to be the instruction the return consumes
+        # rejects both `return emptyArray()` and a call whose result is discarded.
+        self.assertTrue(
+            seam and seam[-1].endswith("areturn"),
+            f"the compiled {SEAM_METHOD} does not end in a reference return:\n{bodies[SEAM_METHOD]}",
+        )
         self.assertIn(
             "FoundryJavaExtension.configFiles",
-            bodies[SEAM_METHOD],
-            f"the compiled {SEAM_METHOD} does not call the discovery object:\n{bodies[SEAM_METHOD]}",
+            seam[-2],
+            f"the compiled {SEAM_METHOD} does not return the discovery object's result:\n{bodies[SEAM_METHOD]}",
         )
 
     def test_openxr_loader_is_a_fixed_version_only_dependency(self) -> None:
