@@ -10,6 +10,7 @@ Usage:
 
 Run from the worktree root.
 """
+
 import argparse
 import glob
 import json
@@ -55,9 +56,11 @@ def main():
     if args.limit:
         picks = picks[: args.limit]
 
-    print(f"{len(picks)} port-now PRs selected"
-          + (f" (risk in {sorted(risk_filter)})" if risk_filter else "")
-          + (" [DRY RUN]" if args.dry_run else ""))
+    print(
+        f"{len(picks)} port-now PRs selected"
+        + (f" (risk in {sorted(risk_filter)})" if risk_filter else "")
+        + (" [DRY RUN]" if args.dry_run else "")
+    )
 
     if not args.dry_run and git("status", "--porcelain").stdout.strip():
         sys.exit("Working tree not clean; aborting.")
@@ -85,8 +88,7 @@ def main():
     json.dump(log, open(f"{SPEC}/ported-log-wave9.json", "w"), indent=1)
     ported = sum(1 for x in log if x["outcome"] == "ported")
     confl = sum(1 for x in log if x["outcome"] == "conflicted")
-    print(f"\nDone: {ported} ported, {confl} conflicted. "
-          f"Log -> {SPEC}/ported-log-wave9.json")
+    print(f"\nDone: {ported} ported, {confl} conflicted. Log -> {SPEC}/ported-log-wave9.json")
 
 
 if __name__ == "__main__":

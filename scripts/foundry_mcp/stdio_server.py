@@ -21,7 +21,9 @@ INTERNAL_ERROR = -32603
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _object_schema(description: str, properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
+def _object_schema(
+    description: str, properties: dict[str, Any] | None = None, required: list[str] | None = None
+) -> dict[str, Any]:
     schema: dict[str, Any] = {"type": "object", "description": description, "properties": properties or {}}
     if required:
         schema["required"] = required
@@ -144,8 +146,14 @@ class FoundryMCPStdioServer:
                         "display": _string_schema("DISPLAY value for GUI-capable runs."),
                         "port": {"type": "integer", "description": "Automation port, or 0 for any free port."},
                         "token": _string_schema("Optional automation token."),
-                        "startup_timeout_s": {"type": "number", "description": "Seconds to wait for FOUNDRY_AUTOMATION."},
-                        "initialize": {"type": "boolean", "description": "Initialize the editor MCP client after launch."},
+                        "startup_timeout_s": {
+                            "type": "number",
+                            "description": "Seconds to wait for FOUNDRY_AUTOMATION.",
+                        },
+                        "initialize": {
+                            "type": "boolean",
+                            "description": "Initialize the editor MCP client after launch.",
+                        },
                         "extra_args": {"type": "array", "items": {"type": "string"}, "description": "Extra CLI args."},
                     },
                     ["project"],
@@ -159,12 +167,19 @@ class FoundryMCPStdioServer:
                     {
                         "endpoint": _string_schema("Foundry automation MCP endpoint URL."),
                         "token": _string_schema("Bearer token printed in FOUNDRY_AUTOMATION."),
-                        "initialize": {"type": "boolean", "description": "Initialize the editor MCP client after connect."},
+                        "initialize": {
+                            "type": "boolean",
+                            "description": "Initialize the editor MCP client after connect.",
+                        },
                     },
                     ["endpoint", "token"],
                 ),
             ),
-            _tool("foundry_disconnect", "Close the retained Foundry editor automation session.", _object_schema("No arguments.")),
+            _tool(
+                "foundry_disconnect",
+                "Close the retained Foundry editor automation session.",
+                _object_schema("No arguments."),
+            ),
             _tool("foundry_status", "Return bridge connection status.", _object_schema("No arguments.")),
             _tool(
                 "foundry_call_tool",
@@ -196,7 +211,9 @@ class FoundryMCPStdioServer:
             _tool(
                 "foundry_run_command",
                 "Call editor run_command.",
-                _object_schema("run_command arguments.", {"command": _string_schema("Command key or name.")}, ["command"]),
+                _object_schema(
+                    "run_command arguments.", {"command": _string_schema("Command key or name.")}, ["command"]
+                ),
             ),
             _tool("foundry_list_commands", "Call editor list_commands.", any_args),
             _tool("foundry_poll_events", "Call editor poll_events.", any_args),
@@ -211,12 +228,16 @@ class FoundryMCPStdioServer:
     def _handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name")
         if not isinstance(name, str) or not name:
-            return self._tool_result({"ok": False, "kind": "invalid_params", "message": "tools/call requires a name."}, True)
+            return self._tool_result(
+                {"ok": False, "kind": "invalid_params", "message": "tools/call requires a name."}, True
+            )
         arguments = params.get("arguments", {})
         if arguments is None:
             arguments = {}
         if not isinstance(arguments, dict):
-            return self._tool_result({"ok": False, "kind": "invalid_params", "message": "Tool arguments must be an object."}, True)
+            return self._tool_result(
+                {"ok": False, "kind": "invalid_params", "message": "Tool arguments must be an object."}, True
+            )
 
         try:
             if name == "foundry_launch_editor":
@@ -237,7 +258,9 @@ class FoundryMCPStdioServer:
         except (FoundryAutomationStartupError, FoundryMCPError, OSError, ValueError, TypeError) as exc:
             return self._tool_result({"ok": False, "kind": "bridge_error", "message": str(exc)}, True)
 
-        return self._tool_result({"ok": False, "kind": "unknown_tool", "message": f"Unknown bridge tool '{name}'."}, True)
+        return self._tool_result(
+            {"ok": False, "kind": "unknown_tool", "message": f"Unknown bridge tool '{name}'."}, True
+        )
 
     def _tool_launch_editor(self, arguments: dict[str, Any]) -> dict[str, Any]:
         binary = self._launch_binary(arguments)

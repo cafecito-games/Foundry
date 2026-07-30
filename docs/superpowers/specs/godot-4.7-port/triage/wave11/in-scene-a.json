@@ -261,7 +261,7 @@
  {
   "pr": "116238",
   "sha": "c3afd5b8e1a77fdc4e236c9ab8a95585f26b7e73",
-  "title": "Restore `canvas_item_add_polyline` useage for transform gizmo rotation arc",
+  "title": "Restore `canvas_item_add_polyline` usage for transform gizmo rotation arc",
   "subsystem": "editor/scene",
   "nfiles": 1
  },

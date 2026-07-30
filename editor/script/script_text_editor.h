@@ -2,7 +2,7 @@
 /*  script_text_editor.h                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -34,8 +34,8 @@
 #include "script_editor_plugin.h"
 #include "script_refactor_apply.h"
 
-#include "editor/gui/code_editor.h"
 #include "editor/editor_script_node_drop.h"
+#include "editor/gui/code_editor.h"
 #include "scene/gui/color_picker.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/item_list.h"

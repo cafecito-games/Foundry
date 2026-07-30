@@ -2,7 +2,7 @@
 /*  history_dock.cpp                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -35,11 +35,11 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
-#include "scene/resources/3d/world_3d.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #include "scene/gui/check_box.h"
 #include "scene/gui/item_list.h"
+#include "scene/resources/3d/world_3d.h"
 
 struct SortActionsByTimestamp {
 	bool operator()(const EditorUndoRedoManager::Action &l, const EditorUndoRedoManager::Action &r) const {

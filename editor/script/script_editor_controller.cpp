@@ -1,12 +1,38 @@
 /**************************************************************************/
 /*  script_editor_controller.cpp                                          */
 /**************************************************************************/
+/*                         This file is part of:                          */
+/*                             FOUNDRY ENGINE                             */
+/*          A fork of the Godot Engine (https://godotengine.org)          */
+/*                       https://www.cafecito.games                       */
+/**************************************************************************/
+/* Copyright (c) 2026-present Cafecito Games LLC.                         */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
 
 #include "script_editor_controller.h"
 
 #include "editor/editor_script_leaf.h"
-#include "script_editor_view.h"
 #include "script_editor_plugin.h"
+#include "script_editor_view.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/config_file.h"
@@ -19,14 +45,10 @@
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/docks/inspector_dock.h"
-#include "scene/gui/box_container.h"
-#include "scene/gui/dialogs.h"
-#include "scene/gui/tree.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_string_names.h"
-#include "scene/gui/control.h"
 #include "editor/file_system/editor_file_system.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/editor_file_dialog.h"
@@ -36,11 +58,15 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/shader/shader_editor_plugin.h"
 #include "editor/shader/text_shader_editor.h"
-#include "script_text_editor.h"
-#include "text_editor.h"
-#include "servers/display/display_server.h"
-#include "scene/main/timer.h"
+#include "scene/gui/box_container.h"
+#include "scene/gui/control.h"
+#include "scene/gui/dialogs.h"
 #include "scene/gui/tab_container.h"
+#include "scene/gui/tree.h"
+#include "scene/main/timer.h"
+#include "script_text_editor.h"
+#include "servers/display/display_server.h"
+#include "text_editor.h"
 
 ScriptEditorController *ScriptEditorController::singleton = nullptr;
 int ScriptEditorController::script_editor_func_count = 0;

@@ -24,7 +24,9 @@ class FakeClient:
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.resources: list[str] = []
 
-    def initialize(self, *, client_name: str = "foundry_mcp_stdio_bridge", client_version: str = "1.0") -> dict[str, Any]:
+    def initialize(
+        self, *, client_name: str = "foundry_mcp_stdio_bridge", client_version: str = "1.0"
+    ) -> dict[str, Any]:
         self.initialized = True
         return {"protocolVersion": "2025-11-25", "clientInfo": {"name": client_name, "version": client_version}}
 
@@ -236,8 +238,7 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
     def test_stdio_loop_reports_parse_error_with_jsonl_hint(self) -> None:
         server = FoundryMCPStdioServer(session_factory=FakeSessionFactory())
         input_stream = io.StringIO(
-            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":\n'
-            '{"protocolVersion":"2025-11-25"}}\n'
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":\n{"protocolVersion":"2025-11-25"}}\n'
         )
         output_stream = io.StringIO()
 

@@ -2,7 +2,7 @@
 /*  editor_automation_selector.cpp                                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -30,9 +30,9 @@
 
 #include "editor_automation_selector.h"
 
-#include "editor/automation/editor_automation_workspace.h"
 #include "core/object/object.h"
 #include "core/variant/variant.h"
+#include "editor/automation/editor_automation_workspace.h"
 #include "scene/main/node.h"
 
 namespace {

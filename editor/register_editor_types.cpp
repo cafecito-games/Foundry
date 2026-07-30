@@ -2,7 +2,7 @@
 /*  register_editor_types.cpp                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -32,9 +32,9 @@
 
 #include "core/object/script_language.h"
 #include "editor/animation/animation_tree_editor_plugin.h"
-#include "editor/automation/editor_automation_server.h"
 #include "editor/audio/audio_stream_editor_plugin.h"
 #include "editor/audio/audio_stream_randomizer_editor_plugin.h"
+#include "editor/automation/editor_automation_server.h"
 #include "editor/debugger/debug_adapter/debug_adapter_server.h"
 #include "editor/debugger/editor_debugger_plugin.h"
 #include "editor/docks/filesystem_dock.h"
@@ -43,9 +43,9 @@
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/docks/signals_dock.h"
-#include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_node.h"
+#include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/export/editor_export_platform.h"

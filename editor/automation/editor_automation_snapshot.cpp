@@ -2,7 +2,7 @@
 /*  editor_automation_snapshot.cpp                                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -37,8 +37,8 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_pane_tile.h"
-#include "editor/scene/editor_scene_tabs.h"
 #include "editor/inspector/editor_inspector.h"
+#include "editor/scene/editor_scene_tabs.h"
 #include "editor/workspace/workspace_pane.h"
 #include "scene/gui/base_button.h"
 #include "scene/gui/button.h"

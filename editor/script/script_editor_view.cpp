@@ -1,8 +1,8 @@
 /**************************************************************************/
-/*  script_editor_view.cpp                                               */
+/*  script_editor_view.cpp                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -28,8 +28,8 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "script_editor_controller.h"
 #include "script_editor_view.h"
+#include "script_editor_controller.h"
 #include "script_editor_plugin.h"
 
 #include "core/config/project_build_pipeline_config.h"
@@ -38,8 +38,8 @@
 #include "core/io/config_file.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
-#include "core/io/resource_loader.h"
 #include "core/io/resource.h"
+#include "core/io/resource_loader.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "core/string/fuzzy_search.h"
@@ -132,7 +132,6 @@ void warn_if_saving_declared_build_output(const String &p_path) {
 
 /////////////////////////////////
 
-
 /*** SCRIPT EDITOR ******/
 
 String ScriptEditorView::_get_debug_tooltip(const String &p_text, Node *p_se) {
@@ -156,15 +155,12 @@ String ScriptEditorView::_get_debug_tooltip(const String &p_text, Node *p_se) {
 	return debug_value;
 }
 
-
-
 void ScriptEditorView::_goto_script_line2(int p_line) {
 	ScriptEditorBase *current = _get_current_editor();
 	if (current) {
 		current->goto_line(p_line);
 	}
 }
-
 
 ScriptEditorBase *ScriptEditorView::_get_current_editor() const {
 	int selected = tab_container->get_current_tab();
@@ -614,7 +610,6 @@ bool ScriptEditorView::request_close_active_tab(const Callable &p_on_closed) {
 	return false;
 }
 
-
 void ScriptEditorView::_res_saved_callback(const Ref<Resource> &p_res) {
 	const String built_in_parent_prefix = vformat("%s::", p_res->get_path());
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
@@ -854,7 +849,6 @@ bool ScriptEditorView::_script_exists(const String &p_path) const {
 	}
 	return FileAccess::exists(p_path);
 }
-
 
 Ref<Script> ScriptEditorView::_get_current_script() {
 	ScriptEditorBase *current = _get_current_editor();
@@ -1376,7 +1370,6 @@ void ScriptEditorView::_notification(int p_what) {
 void ScriptEditorView::edited_scene_changed() {
 	_update_modified_scripts_for_external_editor();
 }
-
 
 void ScriptEditorView::_members_overview_selected(int p_idx) {
 	int line = members_overview->get_item_metadata(p_idx);
@@ -1991,7 +1984,6 @@ bool ScriptEditorView::edit(const Ref<Resource> &p_resource, int p_line, int p_c
 	return true;
 }
 
-
 void ScriptEditorView::save_current_script() {
 	ScriptEditorBase *current = _get_current_editor();
 	if (!current || controller->test_script_times_on_disk(current->get_edited_resource())) {
@@ -2042,7 +2034,6 @@ void ScriptEditorView::save_current_script() {
 		update_docs_from_script(scr);
 	}
 }
-
 
 void ScriptEditorView::update_script_times() {
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
@@ -2200,7 +2191,6 @@ void ScriptEditorView::_reload_scripts(bool p_refresh_only) {
 	_update_script_names();
 }
 
-
 Ref<Resource> ScriptEditorView::open_file(const String &p_file) {
 	List<String> extensions;
 	ResourceLoader::get_recognized_extensions_for_type("Script", &extensions);
@@ -2334,7 +2324,6 @@ void ScriptEditorView::_apply_editor_settings() {
 	}
 }
 
-
 void ScriptEditorView::_update_find_replace_bar() {
 	ScriptEditorBase *se = _get_current_editor();
 	if (se) {
@@ -2344,7 +2333,6 @@ void ScriptEditorView::_update_find_replace_bar() {
 		find_replace_bar->hide();
 	}
 }
-
 
 void ScriptEditorView::_tree_changed() {
 	if (waiting_update_names) {
@@ -2918,7 +2906,6 @@ void ScriptEditorView::_history_back() {
 	}
 }
 
-
 TypedArray<ScriptEditorBase> ScriptEditorView::_get_open_script_editors() const {
 	TypedArray<ScriptEditorBase> script_editors;
 	for (int i = 0; i < tab_container->get_tab_count(); i++) {
@@ -2953,14 +2940,9 @@ bool ScriptEditorView::script_goto_method(Ref<Script> p_script, const String &p_
 	return edit(p_script, line, 0);
 }
 
-
 void ScriptEditorView::_help_search(const String &p_text) {
 	controller->get_help_search_dialog()->popup_dialog(p_text);
 }
-
-
-
-
 
 void ScriptEditorView::_script_changed() {
 	if (EditorNode *editor_node = EditorNode::get_singleton()) {
@@ -2969,7 +2951,6 @@ void ScriptEditorView::_script_changed() {
 		}
 	}
 }
-
 
 void ScriptEditorView::_set_script_zoom_factor(float p_zoom_factor) {
 	if (zoom_factor == p_zoom_factor) {
@@ -2999,7 +2980,6 @@ void ScriptEditorView::_filter_scripts_text_changed(const String &p_newtext) {
 void ScriptEditorView::_filter_methods_text_changed(const String &p_newtext) {
 	_update_members_overview();
 }
-
 
 ScriptEditorView::ScriptEditorView(ScriptEditorController *p_controller, ScriptLeaf *p_leaf) {
 	ERR_FAIL_NULL(p_controller);
@@ -3266,7 +3246,6 @@ void ScriptEditorView::setup_view_chrome(WindowWrapper *p_wrapper) {
 
 	_update_online_doc();
 }
-
 
 void ScriptEditorView::collect_breakpoints(List<String> *p_breakpoints) const {
 	ERR_FAIL_NULL(p_breakpoints);

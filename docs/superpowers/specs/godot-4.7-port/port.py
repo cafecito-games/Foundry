@@ -11,10 +11,10 @@ Usage:
 
 Run from the worktree root.
 """
+
 import argparse
 import glob
 import json
-import os
 import subprocess
 import sys
 
@@ -61,9 +61,11 @@ def main():
     if args.limit:
         picks = picks[: args.limit]
 
-    print(f"{len(picks)} port-now PRs selected"
-          + (f" (risk in {sorted(risk_filter)})" if risk_filter else "")
-          + (" [DRY RUN]" if args.dry_run else ""))
+    print(
+        f"{len(picks)} port-now PRs selected"
+        + (f" (risk in {sorted(risk_filter)})" if risk_filter else "")
+        + (" [DRY RUN]" if args.dry_run else "")
+    )
 
     # Verify clean tree before starting real picks.
     if not args.dry_run and git("status", "--porcelain").stdout.strip():

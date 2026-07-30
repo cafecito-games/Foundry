@@ -905,10 +905,10 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 		Result fail;
 		fail.ok = false;
-			fail.workflow = result.workflow;
-			fail.message = vformat("Root dialog decisions were not context-aware: left=%s right=%s.",
-					left_shows_root_dialog ? "true" : "false",
-					right_shows_root_dialog ? "true" : "false");
+		fail.workflow = result.workflow;
+		fail.message = vformat("Root dialog decisions were not context-aware: left=%s right=%s.",
+				left_shows_root_dialog ? "true" : "false",
+				right_shows_root_dialog ? "true" : "false");
 		Dictionary details = p_driver.make_failure_details("verify_root_dialog_decisions");
 		details["editor_state"] = state;
 		details["left_context_root"] = left_context_root ? String(left_context_root->get_name()) : String("<none>");

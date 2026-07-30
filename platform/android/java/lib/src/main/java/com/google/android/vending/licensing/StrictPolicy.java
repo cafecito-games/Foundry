@@ -1,3 +1,33 @@
+/**************************************************************************/
+/*  StrictPolicy.java                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             FOUNDRY ENGINE                             */
+/*          A fork of the Godot Engine (https://godotengine.org)          */
+/*                       https://www.cafecito.games                       */
+/**************************************************************************/
+/* Copyright (c) 2026-present Cafecito Games LLC.                         */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
 /*
  * Copyright (C) 2010 The Android Open Source Project
  *
@@ -17,7 +47,9 @@
 package com.google.android.vending.licensing;
 
 import android.util.Log;
+
 import com.google.android.vending.licensing.util.URIQueryDecoder;
+
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
@@ -37,64 +69,62 @@ import java.util.Map;
  * received. All other responses (including RETRY) will deny access.
  */
 public class StrictPolicy implements Policy {
+	private static final String TAG = "StrictPolicy";
 
-    private static final String TAG = "StrictPolicy";
+	private int mLastResponse;
+	private String mLicensingUrl;
 
-    private int mLastResponse;
-    private String mLicensingUrl;
+	public StrictPolicy() {
+		// Set default policy. This will force the application to check the policy on launch.
+		mLastResponse = Policy.RETRY;
+		mLicensingUrl = null;
+	}
 
-    public StrictPolicy() {
-        // Set default policy. This will force the application to check the policy on launch.
-        mLastResponse = Policy.RETRY;
-        mLicensingUrl = null;
-    }
+	/**
+	 * Process a new response from the license server. Since we aren't
+	 * performing any caching, this equates to reading the LicenseResponse.
+	 * Any cache-related ResponseData is ignored, but the licensing URL
+	 * extra is still extracted in cases where the app is unlicensed.
+	 *
+	 * @param response the result from validating the server response
+	 * @param rawData the raw server response data
+	 */
+	public void processServerResponse(int response, ResponseData rawData) {
+		mLastResponse = response;
 
-    /**
-     * Process a new response from the license server. Since we aren't
-     * performing any caching, this equates to reading the LicenseResponse.
-     * Any cache-related ResponseData is ignored, but the licensing URL
-     * extra is still extracted in cases where the app is unlicensed.
-     *
-     * @param response the result from validating the server response
-     * @param rawData the raw server response data
-     */
-    public void processServerResponse(int response, ResponseData rawData) {
-        mLastResponse = response;
+		if (response == Policy.NOT_LICENSED) {
+			Map<String, String> extras = decodeExtras(rawData);
+			mLicensingUrl = extras.get("LU");
+		}
+	}
 
-        if (response == Policy.NOT_LICENSED) {
-            Map<String, String> extras = decodeExtras(rawData);
-            mLicensingUrl = extras.get("LU");
-        }
-    }
+	/**
+	 * {@inheritDoc}
+	 *
+	 * This implementation allows access if and only if a LICENSED response
+	 * was received the last time the server was contacted.
+	 */
+	public boolean allowAccess() {
+		return (mLastResponse == Policy.LICENSED);
+	}
 
-    /**
-     * {@inheritDoc}
-     *
-     * This implementation allows access if and only if a LICENSED response
-     * was received the last time the server was contacted.
-     */
-    public boolean allowAccess() {
-        return (mLastResponse == Policy.LICENSED);
-    }
+	public String getLicensingUrl() {
+		return mLicensingUrl;
+	}
 
-    public String getLicensingUrl() {
-        return mLicensingUrl;
-    }
+	private Map<String, String> decodeExtras(
+			com.google.android.vending.licensing.ResponseData rawData) {
+		Map<String, String> results = new HashMap<String, String>();
+		if (rawData == null) {
+			return results;
+		}
 
-    private Map<String, String> decodeExtras(
-        com.google.android.vending.licensing.ResponseData rawData) {
-        Map<String, String> results = new HashMap<String, String>();
-        if (rawData == null) {
-            return results;
-        }
-
-        try {
-            URI rawExtras = new URI("?" + rawData.extra);
-            URIQueryDecoder.DecodeQuery(rawExtras, results);
-        } catch (URISyntaxException e) {
-            Log.w(TAG, "Invalid syntax error while decoding extras data from server.");
-        }
-        return results;
-    }
-
+		try {
+			URI rawExtras = new URI("?" + rawData.extra);
+			URIQueryDecoder.DecodeQuery(rawExtras, results);
+		} catch (URISyntaxException e) {
+			Log.w(TAG, "Invalid syntax error while decoding extras data from server.");
+		}
+		return results;
+	}
 }

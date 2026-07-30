@@ -2,7 +2,7 @@
 /*  editor_automation_state.cpp                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -40,8 +40,8 @@
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/run/editor_run_bar.h"
-#include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/script/script_editor_plugin.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/main/window.h"

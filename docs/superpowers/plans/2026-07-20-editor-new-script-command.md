@@ -8,8 +8,8 @@
 
 **Tech Stack:** C++ editor code, doctest, SCons. Spec: `docs/superpowers/specs/2026-07-20-editor-new-script-command-design.md`.
 
-**Build (macOS):** `scons platform=macos target=editor dev_build=yes tests=yes`  
-**Binary:** `bin/foundry.macos.editor.dev.arm64`  
+**Build (macOS):** `scons platform=macos target=editor dev_build=yes tests=yes`
+**Binary:** `bin/foundry.macos.editor.dev.arm64`
 **Focused tests:** `./bin/foundry.macos.editor.dev.arm64 --headless test run --case "*NewScript*" --force-colors`
 
 ---
@@ -251,9 +251,9 @@ Expected: `[doctest] Status: SUCCESS!` for the NewScript cases. If a case is ski
 ./bin/foundry.macos.editor.dev.arm64 editor open --project <any-project-with-project.foundry>
 ```
 
-- Command palette → “New Script…” → dialog opens under current FileSystem folder  
-- Shortcut Cmd+Option+N (macOS) / Ctrl+Alt+N → same  
-- Create → script opens in focused pane, reusing an existing script leaf when one is present  
+- Command palette → “New Script…” → dialog opens under current FileSystem folder
+- Shortcut Cmd+Option+N (macOS) / Ctrl+Alt+N → same
+- Create → script opens in focused pane, reusing an existing script leaf when one is present
 
 ---
 

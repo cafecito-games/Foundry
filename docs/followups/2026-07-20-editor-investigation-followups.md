@@ -1,7 +1,7 @@
 # Editor / Foundry Script investigation follow-ups
 
-Date: 2026-07-20  
-Context: exploratory pass over the Foundry editor + `modules/foundry_script`.  
+Date: 2026-07-20
+Context: exploratory pass over the Foundry editor + `modules/foundry_script`.
 Active workstream (this branch): **A — Profile/fix docked scene-switch hitch**.
 
 This file parks the other digs so they are not lost.
@@ -67,9 +67,9 @@ Still expensive on a real focus switch (expected until deglobalization — see C
 
 ## Suggested order after A
 
-1. **B2** (correctness of multi-tile trees — interacts with focus)  
-2. **B1** (script leaves — multi-leaf fan-out amplifies switch cost)  
-3. **C** deglobalization / LIVE preview update modes  
+1. **B2** (correctness of multi-tile trees — interacts with focus)
+2. **B1** (script leaves — multi-leaf fan-out amplifies switch cost)
+3. **C** deglobalization / LIVE preview update modes
 4. **D** LSP/completion (independent of workspace tiling)
 
 ---

@@ -2,7 +2,7 @@
 /*  scene_tree_dock.cpp                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1259,14 +1259,14 @@ void SceneTreeDock::_tool_selected(int p_tool, bool p_confirm_override) {
 			const List<Node *>::Element *e = selection.front();
 			if (e) {
 				Node *node = e->get();
-					if (node) {
-						Node *root = _get_edited_scene_root();
-						if (!root) {
-							break;
-						}
-						NodePath path = root->get_path().rel_path_to(node->get_path());
-						DisplayServer::get_singleton()->clipboard_set(String(path));
+				if (node) {
+					Node *root = _get_edited_scene_root();
+					if (!root) {
+						break;
 					}
+					NodePath path = root->get_path().rel_path_to(node->get_path());
+					DisplayServer::get_singleton()->clipboard_set(String(path));
+				}
 			}
 		} break;
 		case TOOL_SHOW_IN_FILE_SYSTEM: {

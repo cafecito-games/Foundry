@@ -56,7 +56,7 @@ links to the workflow run rather than duplicating job logs in the PR thread, and
 not listed in the result summary.
 
 Use per-platform concurrency groups keyed by PR head SHA, with `cancel-in-progress: false`. Repeated requests for the
-same commit and platform should queue instead of cancelling an already-running expensive matrix, while different
+same commit and platform should queue instead of canceling an already-running expensive matrix, while different
 platforms can still run in parallel.
 
 ## Security notes

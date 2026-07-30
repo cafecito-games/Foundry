@@ -2,7 +2,7 @@
 /*  grid_map_editor_plugin.cpp                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -43,13 +43,13 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/3d/camera_3d.h"
-#include "scene/resources/3d/world_3d.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/label.h"
 #include "scene/gui/margin_container.h"
 #include "scene/gui/menu_button.h"
 #include "scene/gui/separator.h"
 #include "scene/main/window.h"
+#include "scene/resources/3d/world_3d.h"
 
 void GridMapEditor::_menu_option(int p_option) {
 	switch (p_option) {

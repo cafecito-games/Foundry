@@ -114,4 +114,3 @@ Tests are added before implementation and must fail against the #1119 base:
 - loader hardening tests corrupt enum and function names to create duplicate table references and
   require a clean `ERR_INVALID_DATA`;
 - the format-version pin advances to 3 and the hostile-buffer corpus continues to run.
-

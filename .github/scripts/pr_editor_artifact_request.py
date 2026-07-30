@@ -10,7 +10,6 @@ import sys
 import urllib.request
 from typing import Any
 
-
 ALLOWED_PERMISSIONS = {"write", "maintain", "admin"}
 REQUEST_PATTERN = re.compile(r"\bbuild\s+me\s+(?:an?\s+)?(?P<platform>macos|mac|osx|linux|linuxbsd)\s+editor\b", re.I)
 FOLLOWUP_PLATFORM_PATTERN = re.compile(

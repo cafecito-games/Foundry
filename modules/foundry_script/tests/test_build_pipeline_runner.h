@@ -2,7 +2,7 @@
 /*  test_build_pipeline_runner.h                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -41,10 +41,10 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
+#include "modules/foundry_script/tests/fs_test_python.h"
 #include "tests/core/config/test_project_settings.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
-#include "modules/foundry_script/tests/fs_test_python.h"
 
 namespace FSTests {
 

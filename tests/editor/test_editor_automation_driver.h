@@ -2,7 +2,7 @@
 /*  test_editor_automation_driver.h                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -38,8 +38,10 @@
 
 #include "core/input/input_event.h"
 #include "core/input/shortcut.h"
+#include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/code_edit.h"
+#include "scene/gui/dialogs.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
@@ -50,8 +52,6 @@
 #include "scene/gui/subviewport_container.h"
 #include "scene/gui/text_edit.h"
 #include "scene/gui/tree.h"
-#include "scene/gui/box_container.h"
-#include "scene/gui/dialogs.h"
 #include "scene/main/viewport.h"
 
 #include "tests/test_macros.h"

@@ -101,7 +101,9 @@ class FoundryEditorAutomationSession:
                 break
             else:
                 time.sleep(0.05)
-        raise FoundryAutomationStartupError(f"Timed out waiting for FOUNDRY_AUTOMATION line.\nCaptured output:\n{output}")
+        raise FoundryAutomationStartupError(
+            f"Timed out waiting for FOUNDRY_AUTOMATION line.\nCaptured output:\n{output}"
+        )
 
     def close(self, *, terminate_timeout_s: float = 10.0) -> None:
         if self.process is None:

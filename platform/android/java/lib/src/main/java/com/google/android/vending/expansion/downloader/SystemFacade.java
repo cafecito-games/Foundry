@@ -1,3 +1,33 @@
+/**************************************************************************/
+/*  SystemFacade.java                                                     */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             FOUNDRY ENGINE                             */
+/*          A fork of the Godot Engine (https://godotengine.org)          */
+/*                       https://www.cafecito.games                       */
+/**************************************************************************/
+/* Copyright (c) 2026-present Cafecito Games LLC.                         */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
 /*
  * Copyright (C) 2012 The Android Open Source Project
  *
@@ -16,6 +46,8 @@
 
 package com.google.android.vending.expansion.downloader;
 
+// -- FOUNDRY start --
+import android.annotation.SuppressLint;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -25,105 +57,102 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.telephony.TelephonyManager;
 import android.util.Log;
-
-// -- FOUNDRY start --
-import android.annotation.SuppressLint;
 // -- FOUNDRY end --
 
 /**
  * Contains useful helper functions, typically tied to the application context.
  */
 class SystemFacade {
-    private Context mContext;
-    private NotificationManager mNotificationManager;
+	private Context mContext;
+	private NotificationManager mNotificationManager;
 
-    public SystemFacade(Context context) {
-        mContext = context;
-        mNotificationManager = (NotificationManager)
-                mContext.getSystemService(Context.NOTIFICATION_SERVICE);
-    }
+	public SystemFacade(Context context) {
+		mContext = context;
+		mNotificationManager = (NotificationManager)
+									   mContext.getSystemService(Context.NOTIFICATION_SERVICE);
+	}
 
-    public long currentTimeMillis() {
-        return System.currentTimeMillis();
-    }
+	public long currentTimeMillis() {
+		return System.currentTimeMillis();
+	}
 
-    public Integer getActiveNetworkType() {
-        ConnectivityManager connectivity =
-                (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-        if (connectivity == null) {
-            Log.w(Constants.TAG, "couldn't get connectivity manager");
-            return null;
-        }
+	public Integer getActiveNetworkType() {
+		ConnectivityManager connectivity =
+				(ConnectivityManager)mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+		if (connectivity == null) {
+			Log.w(Constants.TAG, "couldn't get connectivity manager");
+			return null;
+		}
 
-        @SuppressLint("MissingPermission")
-        NetworkInfo activeInfo = connectivity.getActiveNetworkInfo();
-        if (activeInfo == null) {
-            if (Constants.LOGVV) {
-                Log.v(Constants.TAG, "network is not available");
-            }
-            return null;
-        }
-        return activeInfo.getType();
-    }
+		@SuppressLint("MissingPermission")
+		NetworkInfo activeInfo = connectivity.getActiveNetworkInfo();
+		if (activeInfo == null) {
+			if (Constants.LOGVV) {
+				Log.v(Constants.TAG, "network is not available");
+			}
+			return null;
+		}
+		return activeInfo.getType();
+	}
 
-    public boolean isNetworkRoaming() {
-        ConnectivityManager connectivity =
-                (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
-        if (connectivity == null) {
-            Log.w(Constants.TAG, "couldn't get connectivity manager");
-            return false;
-        }
+	public boolean isNetworkRoaming() {
+		ConnectivityManager connectivity =
+				(ConnectivityManager)mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+		if (connectivity == null) {
+			Log.w(Constants.TAG, "couldn't get connectivity manager");
+			return false;
+		}
 
-        @SuppressLint("MissingPermission")
-        NetworkInfo info = connectivity.getActiveNetworkInfo();
-        boolean isMobile = (info != null && info.getType() == ConnectivityManager.TYPE_MOBILE);
-        TelephonyManager tm = (TelephonyManager) mContext
-                .getSystemService(Context.TELEPHONY_SERVICE);
-        if (null == tm) {
-            Log.w(Constants.TAG, "couldn't get telephony manager");
-            return false;
-        }
-        boolean isRoaming = isMobile && tm.isNetworkRoaming();
-        if (Constants.LOGVV && isRoaming) {
-            Log.v(Constants.TAG, "network is roaming");
-        }
-        return isRoaming;
-    }
+		@SuppressLint("MissingPermission")
+		NetworkInfo info = connectivity.getActiveNetworkInfo();
+		boolean isMobile = (info != null && info.getType() == ConnectivityManager.TYPE_MOBILE);
+		TelephonyManager tm = (TelephonyManager)mContext
+									  .getSystemService(Context.TELEPHONY_SERVICE);
+		if (null == tm) {
+			Log.w(Constants.TAG, "couldn't get telephony manager");
+			return false;
+		}
+		boolean isRoaming = isMobile && tm.isNetworkRoaming();
+		if (Constants.LOGVV && isRoaming) {
+			Log.v(Constants.TAG, "network is roaming");
+		}
+		return isRoaming;
+	}
 
-    public Long getMaxBytesOverMobile() {
-        return (long) Integer.MAX_VALUE;
-    }
+	public Long getMaxBytesOverMobile() {
+		return (long)Integer.MAX_VALUE;
+	}
 
-    public Long getRecommendedMaxBytesOverMobile() {
-        return 2097152L;
-    }
+	public Long getRecommendedMaxBytesOverMobile() {
+		return 2097152L;
+	}
 
-    public void sendBroadcast(Intent intent) {
-        mContext.sendBroadcast(intent);
-    }
+	public void sendBroadcast(Intent intent) {
+		mContext.sendBroadcast(intent);
+	}
 
-    public boolean userOwnsPackage(int uid, String packageName) throws NameNotFoundException {
-        return mContext.getPackageManager().getApplicationInfo(packageName, 0).uid == uid;
-    }
+	public boolean userOwnsPackage(int uid, String packageName) throws NameNotFoundException {
+		return mContext.getPackageManager().getApplicationInfo(packageName, 0).uid == uid;
+	}
 
-    public void postNotification(long id, Notification notification) {
-        /**
-         * TODO: The system notification manager takes ints, not longs, as IDs,
-         * but the download manager uses IDs take straight from the database,
-         * which are longs. This will have to be dealt with at some point.
-         */
-        mNotificationManager.notify((int) id, notification);
-    }
+	public void postNotification(long id, Notification notification) {
+		/**
+		 * TODO: The system notification manager takes ints, not longs, as IDs,
+		 * but the download manager uses IDs take straight from the database,
+		 * which are longs. This will have to be dealt with at some point.
+		 */
+		mNotificationManager.notify((int)id, notification);
+	}
 
-    public void cancelNotification(long id) {
-        mNotificationManager.cancel((int) id);
-    }
+	public void cancelNotification(long id) {
+		mNotificationManager.cancel((int)id);
+	}
 
-    public void cancelAllNotifications() {
-        mNotificationManager.cancelAll();
-    }
+	public void cancelAllNotifications() {
+		mNotificationManager.cancelAll();
+	}
 
-    public void startThread(Thread thread) {
-        thread.start();
-    }
+	public void startThread(Thread thread) {
+		thread.start();
+	}
 }

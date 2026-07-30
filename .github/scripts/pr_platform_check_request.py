@@ -7,7 +7,6 @@ import os
 import re
 from typing import Any
 
-
 ALLOWED_PERMISSIONS = {"write", "maintain", "admin"}
 SUPPORTED_PLATFORMS = ("linux", "macos", "windows", "android", "ios", "web")
 PLATFORM_LABELS = {

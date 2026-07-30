@@ -2,7 +2,7 @@
 /*  test_project_scripts.h                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -32,10 +32,10 @@
 
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 
+#include "../foundry_script.h"
 #include "../fs_cache.h"
 #include "../fs_project_scripts.h"
 #include "../fs_reflection.h"
-#include "../foundry_script.h"
 #include "fs_temporary_project_tree.h"
 
 #include "core/config/project_settings.h"

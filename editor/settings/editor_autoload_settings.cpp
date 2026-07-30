@@ -2,7 +2,7 @@
 /*  editor_autoload_settings.cpp                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1171,8 +1171,8 @@ bool EditorAutoloadSettings::autoload_add(const String &p_name, const String &p_
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 
 	undo_redo->create_action(TTR("Add Autoload"));
-		// Singleton autoloads are represented with a leading "*" in their path.
-		undo_redo->add_do_property(ProjectSettings::get_singleton(), name, ProjectSettings::stringify_autoload_value(p_path, true));
+	// Singleton autoloads are represented with a leading "*" in their path.
+	undo_redo->add_do_property(ProjectSettings::get_singleton(), name, ProjectSettings::stringify_autoload_value(p_path, true));
 
 	if (ProjectSettings::get_singleton()->has_setting(name)) {
 		undo_redo->add_undo_property(ProjectSettings::get_singleton(), name, GLOBAL_GET(name));

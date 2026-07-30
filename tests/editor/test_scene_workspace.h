@@ -4000,7 +4000,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] mixed-close-dirty-and-collapse") 
 	WorkspacePane *pane_b = get_leaf_pane(leaf_b);
 	REQUIRE(pane_b != nullptr);
 
-	// Pane B hosts a dirty tab whose close defers, modelling the save/discard prompt.
+	// Pane B hosts a dirty tab whose close defers, modeling the save/discard prompt.
 	WorkspaceTabRegistry registry;
 	registry.reset_stable_id_counter();
 	registry.clear_canonical_index();

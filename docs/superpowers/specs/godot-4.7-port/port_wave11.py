@@ -11,6 +11,7 @@ Usage:
 
 Run from the worktree root.
 """
+
 import argparse
 import glob
 import json
@@ -56,9 +57,11 @@ def main():
     if args.limit:
         picks = picks[: args.limit]
 
-    print(f"{len(picks)} wave-11 port-now PRs selected"
-          + (f" (risk in {sorted(risk_filter)})" if risk_filter else "")
-          + (" [DRY RUN]" if args.dry_run else ""))
+    print(
+        f"{len(picks)} wave-11 port-now PRs selected"
+        + (f" (risk in {sorted(risk_filter)})" if risk_filter else "")
+        + (" [DRY RUN]" if args.dry_run else "")
+    )
 
     if not args.dry_run and git("status", "--porcelain").stdout.strip():
         sys.exit("Working tree not clean; aborting.")
@@ -66,7 +69,7 @@ def main():
     log = []
     for i, rec in enumerate(picks, 1):
         sha, pr = rec["sha"], rec["pr"]
-        label = f"[{i}/{len(picks)}] PR#{pr} {sha[:10]} risk={rec.get('risk')} {rec.get('subsystem','')}"
+        label = f"[{i}/{len(picks)}] PR#{pr} {sha[:10]} risk={rec.get('risk')} {rec.get('subsystem', '')}"
         if args.dry_run:
             print(f"would pick {label}")
             log.append({**rec, "outcome": "dry-run"})

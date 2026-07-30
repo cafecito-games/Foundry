@@ -492,7 +492,7 @@
  {
   "sha": "6e96b028e10dbe7381bdeecde80fe7492f4b810c",
   "pr": "116676",
-  "title": "Check `playback_queue` existance after emit `animation_finished` signal",
+  "title": "Check `playback_queue` existence after emit `animation_finished` signal",
   "subsystem": "scene/animation",
   "nfiles": 1
  },

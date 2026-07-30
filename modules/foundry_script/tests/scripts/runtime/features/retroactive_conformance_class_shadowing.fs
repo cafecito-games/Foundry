@@ -1,4 +1,4 @@
-# FS-class analogue of native inheritance-chain shadowing: most-derived witness wins.
+# FS-class analog of native inheritance-chain shadowing: most-derived witness wins.
 extend RtcClassShadowBase uses RtcClassShadowTrait:
 	func value() -> int:
 		return 10

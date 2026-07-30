@@ -2,7 +2,7 @@
 /*  foundry_app_delegate.mm                                               */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -74,7 +74,10 @@ static void _forward_user_activities_to_services(UIApplication *application, NSS
 				continue;
 			}
 
-			[service application:application continueUserActivity:user_activity restorationHandler:^(__unused NSArray<id<UIUserActivityRestoring>> *restorable_objects) {}];
+			[service application:application
+					continueUserActivity:user_activity
+					  restorationHandler:^(__unused NSArray<id<UIUserActivityRestoring>> *restorable_objects){
+					  }];
 		}
 	}
 }

@@ -1,3 +1,33 @@
+/**************************************************************************/
+/*  CustomIntentService.java                                              */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             FOUNDRY ENGINE                             */
+/*          A fork of the Godot Engine (https://godotengine.org)          */
+/*                       https://www.cafecito.games                       */
+/**************************************************************************/
+/* Copyright (c) 2026-present Cafecito Games LLC.                         */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
 /*
  * Copyright (C) 2012 The Android Open Source Project
  *
@@ -32,81 +62,80 @@ import android.util.Log;
  * intent, it does not queue up batches of intents of the same type.
  */
 public abstract class CustomIntentService extends Service {
-    private String mName;
-    private boolean mRedelivery;
-    private volatile ServiceHandler mServiceHandler;
-    private volatile Looper mServiceLooper;
-    private static final String LOG_TAG = "CustomIntentService";
-    private static final int WHAT_MESSAGE = -10;
+	private String mName;
+	private boolean mRedelivery;
+	private volatile ServiceHandler mServiceHandler;
+	private volatile Looper mServiceLooper;
+	private static final String LOG_TAG = "CustomIntentService";
+	private static final int WHAT_MESSAGE = -10;
 
-    public CustomIntentService(String paramString) {
-        this.mName = paramString;
-    }
+	public CustomIntentService(String paramString) {
+		this.mName = paramString;
+	}
 
-    @Override
-    public IBinder onBind(Intent paramIntent) {
-        return null;
-    }
+	@Override
+	public IBinder onBind(Intent paramIntent) {
+		return null;
+	}
 
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        HandlerThread localHandlerThread = new HandlerThread("IntentService["
-                + this.mName + "]");
-        localHandlerThread.start();
-        this.mServiceLooper = localHandlerThread.getLooper();
-        this.mServiceHandler = new ServiceHandler(this.mServiceLooper);
-    }
+	@Override
+	public void onCreate() {
+		super.onCreate();
+		HandlerThread localHandlerThread = new HandlerThread("IntentService[" + this.mName + "]");
+		localHandlerThread.start();
+		this.mServiceLooper = localHandlerThread.getLooper();
+		this.mServiceHandler = new ServiceHandler(this.mServiceLooper);
+	}
 
-    @Override
-    public void onDestroy() {
-        Thread localThread = this.mServiceLooper.getThread();
-        if ((localThread != null) && (localThread.isAlive())) {
-            localThread.interrupt();
-        }
-        this.mServiceLooper.quit();
-        Log.d(LOG_TAG, "onDestroy");
-    }
+	@Override
+	public void onDestroy() {
+		Thread localThread = this.mServiceLooper.getThread();
+		if ((localThread != null) && (localThread.isAlive())) {
+			localThread.interrupt();
+		}
+		this.mServiceLooper.quit();
+		Log.d(LOG_TAG, "onDestroy");
+	}
 
-    protected abstract void onHandleIntent(Intent paramIntent);
+	protected abstract void onHandleIntent(Intent paramIntent);
 
-    protected abstract boolean shouldStop();
+	protected abstract boolean shouldStop();
 
-    @Override
-    public void onStart(Intent paramIntent, int startId) {
-        if (!this.mServiceHandler.hasMessages(WHAT_MESSAGE)) {
-            Message localMessage = this.mServiceHandler.obtainMessage();
-            localMessage.arg1 = startId;
-            localMessage.obj = paramIntent;
-            localMessage.what = WHAT_MESSAGE;
-            this.mServiceHandler.sendMessage(localMessage);
-        }
-    }
+	@Override
+	public void onStart(Intent paramIntent, int startId) {
+		if (!this.mServiceHandler.hasMessages(WHAT_MESSAGE)) {
+			Message localMessage = this.mServiceHandler.obtainMessage();
+			localMessage.arg1 = startId;
+			localMessage.obj = paramIntent;
+			localMessage.what = WHAT_MESSAGE;
+			this.mServiceHandler.sendMessage(localMessage);
+		}
+	}
 
-    @Override
-    public int onStartCommand(Intent paramIntent, int flags, int startId) {
-        onStart(paramIntent, startId);
-        return mRedelivery ? START_REDELIVER_INTENT : START_NOT_STICKY;
-    }
+	@Override
+	public int onStartCommand(Intent paramIntent, int flags, int startId) {
+		onStart(paramIntent, startId);
+		return mRedelivery ? START_REDELIVER_INTENT : START_NOT_STICKY;
+	}
 
-    public void setIntentRedelivery(boolean enabled) {
-        this.mRedelivery = enabled;
-    }
+	public void setIntentRedelivery(boolean enabled) {
+		this.mRedelivery = enabled;
+	}
 
-    private final class ServiceHandler extends Handler {
-        public ServiceHandler(Looper looper) {
-            super(looper);
-        }
+	private final class ServiceHandler extends Handler {
+		public ServiceHandler(Looper looper) {
+			super(looper);
+		}
 
-        @Override
-        public void handleMessage(Message paramMessage) {
-            CustomIntentService.this
-                    .onHandleIntent((Intent) paramMessage.obj);
-            if (shouldStop()) {
-                Log.d(LOG_TAG, "stopSelf");
-                CustomIntentService.this.stopSelf(paramMessage.arg1);
-                Log.d(LOG_TAG, "afterStopSelf");
-            }
-        }
-    }
+		@Override
+		public void handleMessage(Message paramMessage) {
+			CustomIntentService.this
+					.onHandleIntent((Intent)paramMessage.obj);
+			if (shouldStop()) {
+				Log.d(LOG_TAG, "stopSelf");
+				CustomIntentService.this.stopSelf(paramMessage.arg1);
+				Log.d(LOG_TAG, "afterStopSelf");
+			}
+		}
+	}
 }
