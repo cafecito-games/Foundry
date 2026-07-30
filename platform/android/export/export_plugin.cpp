@@ -34,6 +34,7 @@
 #include "run_icon_svg.gen.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/image_loader.h"
@@ -1978,6 +1979,9 @@ static constexpr uint64_t FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES = 1024 * 1
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES = 131072;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
+// The extension descriptor is parsed, not just streamed, so it gets a cap tight
+// enough to buffer whole instead of the shared required-entry limit.
+static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES = 64 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES = 16383;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES = 16 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_BYTES = 128 * 1024 * 1024;
@@ -3341,6 +3345,183 @@ static bool _foundry_java_validate_current_archive_entry_payload(unzFile p_archi
 	return valid && bytes_read == p_info.uncompressed_size && close_result == UNZ_OK;
 }
 
+static bool _foundry_java_read_current_archive_entry_payload(unzFile p_archive, const unz_file_info64 &p_info, uint64_t p_max_bytes, Vector<uint8_t> &r_payload) {
+	r_payload.clear();
+	if (p_info.uncompressed_size > p_max_bytes) {
+		return false;
+	}
+	if (unzOpenCurrentFile(p_archive) != UNZ_OK) {
+		return false;
+	}
+
+	Vector<uint8_t> buffer;
+	buffer.resize(MIN(FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES, p_max_bytes));
+	uint64_t bytes_read = 0;
+	bool valid = true;
+	while (true) {
+		const int result = unzReadCurrentFile(p_archive, buffer.ptrw(), buffer.size());
+		if (result < 0) {
+			valid = false;
+			break;
+		}
+		if (result == 0) {
+			break;
+		}
+		if (bytes_read > p_info.uncompressed_size || uint64_t(result) > p_info.uncompressed_size - bytes_read) {
+			valid = false;
+			break;
+		}
+		const int64_t offset = r_payload.size();
+		r_payload.resize(offset + result);
+		memcpy(r_payload.ptrw() + offset, buffer.ptr(), result);
+		bytes_read += result;
+	}
+	const int close_result = unzCloseCurrentFile(p_archive);
+	valid = valid && bytes_read == p_info.uncompressed_size && close_result == UNZ_OK;
+	if (!valid) {
+		r_payload.clear();
+	}
+	return valid;
+}
+
+// Mirrors FoundryExtensionLibraryLoader::find_extension_library's explicit
+// `[libraries]` matching for a device that reports only the Android feature tags
+// an exported ABI implies. Autodetection is deliberately not honored: an export
+// cannot observe the on-device directory the loader would scan.
+static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_arch) {
+	if (!p_descriptor->has_section("libraries")) {
+		return false;
+	}
+	for (const String &key : p_descriptor->get_section_keys("libraries")) {
+		const Vector<String> tags = key.split(".");
+		if (tags.is_empty()) {
+			continue;
+		}
+		bool all_tags_met = true;
+		for (const String &raw_tag : tags) {
+			const String tag = raw_tag.strip_edges();
+			if (tag != "android" && tag != p_arch) {
+				all_tags_met = false;
+				break;
+			}
+		}
+		if (!all_tags_met) {
+			continue;
+		}
+		const String library = String(p_descriptor->get_value("libraries", key, String())).strip_edges();
+		if (!library.is_empty()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static void _foundry_java_parse_descriptor_version(const String &p_value, bool p_fill_missing_parts, uint32_t r_version[3]) {
+	const Vector<int> parts = p_value.split_ints(".");
+	for (int i = 0; i < 3; i++) {
+		if (i < parts.size() && parts[i] >= 0) {
+			r_version[i] = parts[i];
+		} else if (p_fill_missing_parts) {
+			// A missing maximum component means "any", matching the loader.
+			r_version[i] = 9999;
+		} else {
+			r_version[i] = 0;
+		}
+	}
+}
+
+static uint64_t _foundry_java_packed_version(const uint32_t p_version[3]) {
+	return ((uint64_t)p_version[0] << 32) | ((uint64_t)p_version[1] << 16) | (uint64_t)p_version[2];
+}
+
+// Rejects at export time every descriptor the runtime extension loader would
+// refuse to load, so a packaged-but-dead binding fails the export that produced
+// it instead of the device that runs it.
+Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
+		const Vector<uint8_t> &p_payload,
+		const String &p_entry,
+		const Vector<ABI> &p_enabled_abis,
+		String &r_error) {
+	const String diagnostic_entry = _foundry_java_safe_diagnostic_value(p_entry);
+
+	String text;
+	if (text.append_utf8((const char *)p_payload.ptr(), p_payload.size()) != OK) {
+		r_error = vformat(TTR("entry '%s' is not valid UTF-8 and cannot be parsed as a FoundryExtension descriptor."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+
+	Ref<ConfigFile> descriptor;
+	descriptor.instantiate();
+	if (descriptor->parse(text) != OK) {
+		r_error = vformat(TTR("entry '%s' does not parse as a FoundryExtension descriptor."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+
+	if (!descriptor->has_section_key("configuration", "entry_symbol") ||
+			String(descriptor->get_value("configuration", "entry_symbol")).strip_edges().is_empty()) {
+		r_error = vformat(TTR("entry '%s' must define a non-empty \"configuration/entry_symbol\" key."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+
+	if (!descriptor->has_section_key("configuration", "compatibility_minimum")) {
+		r_error = vformat(TTR("entry '%s' must define a \"configuration/compatibility_minimum\" key."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+
+	const uint32_t engine_version_parts[3] = { FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR, FOUNDRY_VERSION_PATCH };
+	const uint64_t engine_version = _foundry_java_packed_version(engine_version_parts);
+
+	const String minimum_value = descriptor->get_value("configuration", "compatibility_minimum");
+	uint32_t compatibility_minimum[3] = { 0, 0, 0 };
+	_foundry_java_parse_descriptor_version(minimum_value, false, compatibility_minimum);
+	if (compatibility_minimum[0] == 0 && compatibility_minimum[1] == 0) {
+		r_error = vformat(
+				TTR("entry '%s' declares \"configuration/compatibility_minimum\" '%s', which must be at least 0.1.0."),
+				diagnostic_entry,
+				_foundry_java_safe_diagnostic_value(minimum_value));
+		return ERR_INVALID_DATA;
+	}
+	if (engine_version < _foundry_java_packed_version(compatibility_minimum)) {
+		r_error = vformat(
+				TTR("entry '%s' declares \"configuration/compatibility_minimum\" '%s', which is newer than the exporting engine version %d.%d.%d."),
+				diagnostic_entry,
+				_foundry_java_safe_diagnostic_value(minimum_value),
+				FOUNDRY_VERSION_MAJOR,
+				FOUNDRY_VERSION_MINOR,
+				FOUNDRY_VERSION_PATCH);
+		return ERR_INVALID_DATA;
+	}
+
+	if (descriptor->has_section_key("configuration", "compatibility_maximum")) {
+		const String maximum_value = descriptor->get_value("configuration", "compatibility_maximum");
+		uint32_t compatibility_maximum[3] = { 0, 0, 0 };
+		_foundry_java_parse_descriptor_version(maximum_value, true, compatibility_maximum);
+		if (engine_version > _foundry_java_packed_version(compatibility_maximum)) {
+			r_error = vformat(
+					TTR("entry '%s' declares \"configuration/compatibility_maximum\" '%s', which is older than the exporting engine version %d.%d.%d."),
+					diagnostic_entry,
+					_foundry_java_safe_diagnostic_value(maximum_value),
+					FOUNDRY_VERSION_MAJOR,
+					FOUNDRY_VERSION_MINOR,
+					FOUNDRY_VERSION_PATCH);
+			return ERR_INVALID_DATA;
+		}
+	}
+
+	for (const ABI &abi : p_enabled_abis) {
+		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.arch)) {
+			r_error = vformat(
+					TTR("entry '%s' resolves no \"[libraries]\" entry for requested ABI '%s' (feature tag 'android.%s')."),
+					diagnostic_entry,
+					abi.abi,
+					abi.arch);
+			return ERR_INVALID_DATA;
+		}
+	}
+
+	return OK;
+}
+
 Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, String &r_error) const {
 	const String artifact_kind = p_export_format == EXPORT_FORMAT_AAB ? "AAB" : "APK";
 	const String root = p_export_format == EXPORT_FORMAT_AAB ? "base/" : "";
@@ -3436,7 +3617,8 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 			return ERR_FILE_CORRUPT;
 		}
 		bool is_required_entry = false;
-		if (entry == configuration) {
+		const bool is_configuration_entry = entry == configuration;
+		if (is_configuration_entry) {
 			configuration_count++;
 			is_required_entry = true;
 		}
@@ -3469,10 +3651,45 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 			unzClose(artifact);
 			return ERR_FILE_CORRUPT;
 		}
+		if (is_configuration_entry &&
+				info.uncompressed_size > FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES) {
+			r_error = vformat(
+					TTR("Unable to inspect final Foundry-Java %s: descriptor entry '%s' exceeds the %d-byte decompressed size limit."),
+					artifact_kind,
+					_foundry_java_safe_diagnostic_value(entry),
+					FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
 		if (is_required_entry) {
 			total_required_entry_uncompressed_bytes += info.uncompressed_size;
 		}
-		if (is_required_entry && !_foundry_java_validate_current_archive_entry_payload(artifact, info)) {
+		if (is_configuration_entry) {
+			Vector<uint8_t> descriptor_payload;
+			if (!_foundry_java_read_current_archive_entry_payload(
+						artifact,
+						info,
+						FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES,
+						descriptor_payload)) {
+				r_error = vformat(
+						TTR("Unable to inspect final Foundry-Java %s: required entry '%s' failed integrity validation."),
+						artifact_kind,
+						_foundry_java_safe_diagnostic_value(entry));
+				unzClose(artifact);
+				return ERR_FILE_CORRUPT;
+			}
+			String descriptor_error;
+			const Error descriptor_result = _validate_foundry_java_extension_descriptor(
+					descriptor_payload,
+					entry,
+					p_enabled_abis,
+					descriptor_error);
+			if (descriptor_result != OK) {
+				r_error = vformat(TTR("Final Foundry-Java %s %s"), artifact_kind, descriptor_error);
+				unzClose(artifact);
+				return descriptor_result;
+			}
+		} else if (is_required_entry && !_foundry_java_validate_current_archive_entry_payload(artifact, info)) {
 			r_error = vformat(
 					TTR("Unable to inspect final Foundry-Java %s: required entry '%s' failed integrity validation."),
 					artifact_kind,

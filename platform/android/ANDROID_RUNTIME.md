@@ -108,6 +108,24 @@ success. Required payload inspection is limited to 128 MiB per entry and
 512 MiB in aggregate. Unrequested bridge names are still collected for the ABI
 set diagnostic, but their payloads are not read.
 
+Byte integrity is not loadability, so the packaged descriptor is also parsed as
+part of the same inspection. `assets/FoundryJava.foundryextension` is rejected,
+naming the entry and the exact violated requirement, unless it parses as a
+configuration file and declares:
+
+- a non-empty `configuration/entry_symbol`,
+- a `configuration/compatibility_minimum` that is at least `0.1.0` and not newer
+  than the exporting engine,
+- a `configuration/compatibility_maximum`, when present, that is not older than
+  the exporting engine, and
+- a `[libraries]` entry that resolves under the `android.<arch>` feature tag of
+  every requested ABI.
+
+That is the runtime extension loader's mandatory contract, enforced by the export
+that produces the binding instead of by the device that runs it. Because the
+descriptor is buffered to be parsed, it carries its own 64 KiB decompressed limit
+and a larger payload fails inspection without being read.
+
 The existing architecture selection remains authoritative:
 
 | Foundry SCons architecture | Android ABI |
