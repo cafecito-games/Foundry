@@ -6325,6 +6325,7 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		ed.pd.use_sparse_pck = true;
 		err = export_project_files(p_preset, p_debug, save_apk_file, nullptr, &ed, save_apk_so);
 		if (err != OK) {
+			zipClose(unaligned_apk, nullptr);
 			unzClose(pkg);
 			add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Could not export project files."));
 			CLEANUP_AND_RETURN(ERR_SKIP);
