@@ -33,7 +33,8 @@ jobs:
             tests.python_build.test_android_gradle_runtime_contract \
             tests.python_build.test_android_device_acceptance -v
           python3 tests/python_build/test_android_runtime_surface.py
-          python3 .github/scripts/test_android_runtime_workflows.py
+          python3 -m unittest discover \
+            -s .github/scripts/tests -t .github/scripts/tests -p 'test_workflow_graph*.py'
 
   validate-foundry-java-export:
     runs-on: ubuntu-24.04

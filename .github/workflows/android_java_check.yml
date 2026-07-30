@@ -8,7 +8,8 @@ on:
     paths:
       - "platform/android/**"
       - "tests/python_build/test_android_*"
-      - ".github/scripts/test_android_runtime_workflows.py"
+      - ".github/scripts/workflow_graph.py"
+      - ".github/scripts/tests/test_workflow_graph_contracts.py"
       - ".github/workflows/android_builds.yml"
       - ".github/workflows/android_java_check.yml"
   push:
@@ -17,7 +18,8 @@ on:
     paths:
       - "platform/android/**"
       - "tests/python_build/test_android_*"
-      - ".github/scripts/test_android_runtime_workflows.py"
+      - ".github/scripts/workflow_graph.py"
+      - ".github/scripts/tests/test_workflow_graph_contracts.py"
       - ".github/workflows/android_builds.yml"
       - ".github/workflows/android_java_check.yml"
   workflow_dispatch:

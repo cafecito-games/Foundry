@@ -5,3 +5,9 @@ paths:
   .github/workflows/release.yml:
     ignore:
       - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'
+  # The Windows runners ship Git for Windows, so `sh` resolves and the step has always
+  # run. actionlint only knows GitHub's documented shell keywords for Windows.
+  # Switching to `bash` would change the interpreter, so it is tracked separately.
+  .github/workflows/windows_builds.yml:
+    ignore:
+      - '^shell name "sh" is invalid on Windows\.'
