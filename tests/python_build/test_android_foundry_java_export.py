@@ -36,9 +36,7 @@ from tests.python_build.test_android_gradle_behavioral import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 EXPORTER = REPO_ROOT / "platform/android/export/export_plugin.cpp"
-EDITOR_NODE = REPO_ROOT / "editor/editor_node.cpp"
 APP_BUILD = REPO_ROOT / "platform/android/java/app/build.gradle"
-APP_CONFIG = REPO_ROOT / "platform/android/java/app/config.gradle"
 SOURCE_TEMPLATE_TOOL = REPO_ROOT / "platform/android/android_source_template.py"
 DEVICE_ACCEPTANCE_TOOL = REPO_ROOT / "platform/android/android_device_acceptance.py"
 NATIVE_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_native_contract.py"
@@ -47,19 +45,7 @@ JAVA_ROOT = REPO_ROOT / "platform/android/java"
 APP_ROOT = REPO_ROOT / "platform/android/java/app"
 INTEGRATION_FIXTURE = REPO_ROOT / "tests/fixtures/android_foundry_java"
 ACCEPTANCE_MAIN_SCRIPT = INTEGRATION_FIXTURE / "acceptance/main.fs"
-FOUNDRY_KOTLIN_HOST = REPO_ROOT / "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt"
-FOUNDRY_JAVA_EXTENSION_KOTLIN = (
-    REPO_ROOT / "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryJavaExtension.kt"
-)
-FOUNDRY_JAVA_EXTENSION_KOTLIN_TEST = (
-    REPO_ROOT / "platform/android/java/lib/src/test/java/games/cafecito/foundry/FoundryJavaExtensionTest.kt"
-)
-OS_ANDROID = REPO_ROOT / "platform/android/os_android.cpp"
 FOUNDRY_JAVA_EXTENSION_ASSET = "FoundryJava.foundryextension"
-FOUNDRY_JAVA_EXTENSION_CONFIG_PATH = "res://FoundryJava.foundryextension"
-PLATFORM_EXTENSION_LOAD_FAILED_TOKEN = "FOUNDRY_JAVA_PLATFORM_EXTENSION_LOAD_FAILED"
-ACCEPTANCE_READY_MARKER = "FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY"
-ANDROID_RUNTIME_GUIDE = REPO_ROOT / "platform/android/ANDROID_RUNTIME.md"
 ANDROID_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/android_builds.yml"
 FOUNDRY_JAVA_PIN = load_foundry_java_pin()
 FOUNDRY_JAVA_GROUP = "games.cafecito.foundry"
@@ -87,22 +73,6 @@ LOADABLE_FOUNDRY_JAVA_DESCRIPTOR = textwrap.dedent(
 UNLOADABLE_FOUNDRY_JAVA_DESCRIPTOR = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
     'compatibility_minimum = "0.1.0"\n',
     "",
-)
-
-EXPORT_OPTIONS = (
-    "gradle_build/foundry_java/enabled",
-    "gradle_build/foundry_java/gradle_plugin_maven",
-    "gradle_build/foundry_java/gradle_plugin_local",
-    "gradle_build/foundry_java/maven_repositories",
-    "gradle_build/foundry_java/maven_artifacts",
-    "gradle_build/foundry_java/local_artifacts",
-)
-ORDINARY_DEPENDENCY_FRAGMENTS = (
-    'implementation project(":lib")',
-    "debugImplementation fileTree(dir: 'libs/debug', include: ['*.aar'])",
-    "devImplementation fileTree(dir: 'libs/dev', include: ['*.aar'])",
-    "releaseImplementation fileTree(dir: 'libs/release', include: ['*.aar'])",
-    "implementation fileTree(dir: \"$addonsDirectory\", include: ['**/*.jar', '**/*.aar'])",
 )
 
 
@@ -338,151 +308,10 @@ class FoundryJavaPinTests(unittest.TestCase):
         self.assertEqual(["platform/android/foundry_java_pin.json"], matches)
 
 
-class FoundryJavaExportSurfaceTests(unittest.TestCase):
-    def test_exporter_exposes_only_the_versioned_explicit_handoff(self) -> None:
-        exporter = EXPORTER.read_text(encoding="utf-8")
-        for option in EXPORT_OPTIONS:
-            with self.subTest(option=option):
-                self.assertIn(option, exporter)
-        self.assertIn("foundry_java_registry_marker=registry-index-v2", exporter)
-
-    def test_platform_extension_seam_reports_the_single_fixed_binding_path(self) -> None:
-        extension = FOUNDRY_JAVA_EXTENSION_KOTLIN.read_text(encoding="utf-8")
-        self.assertEqual(1, extension.count(f'"{FOUNDRY_JAVA_EXTENSION_ASSET}"'))
-        self.assertEqual(1, extension.count(f'"{FOUNDRY_JAVA_EXTENSION_CONFIG_PATH}"'))
-        self.assertIn(f'const val ASSET_NAME = "{FOUNDRY_JAVA_EXTENSION_ASSET}"', extension)
-        self.assertIn(f'const val CONFIG_PATH = "{FOUNDRY_JAVA_EXTENSION_CONFIG_PATH}"', extension)
-
-        host = FOUNDRY_KOTLIN_HOST.read_text(encoding="utf-8")
-        seam = host.split("private fun getFoundryExtensionConfigFiles(): Array<String> {", maxsplit=1)[1].split(
-            "\n\t}",
-            maxsplit=1,
-        )[0]
-        # The dead seam this issue replaced returned no paths at all, so the binding
-        # was packaged and never loaded. Guard the exact regression.
-        self.assertNotIn("emptyArray()", seam)
-        self.assertIn("FoundryJavaExtension.configFiles", seam)
-        self.assertIn("@Keep\n\tprivate fun getFoundryExtensionConfigFiles(): Array<String> {", host)
-
-    def test_platform_extension_discovery_never_scans(self) -> None:
-        host = FOUNDRY_KOTLIN_HOST.read_text(encoding="utf-8")
-        # Scoped to the discovery seam itself: the surrounding host class legitimately uses
-        # package and asset APIs for unrelated runtime concerns.
-        discovery = host.split("private fun getFoundryExtensionConfigFiles(): Array<String> {", maxsplit=1)[1].split(
-            "\n\t@Keep",
-            maxsplit=1,
-        )[0]
-        sources = {
-            "Foundry.kt discovery seam": discovery,
-            "FoundryJavaExtension.kt": FOUNDRY_JAVA_EXTENSION_KOTLIN.read_text(encoding="utf-8"),
-        }
-        for name, source in sources.items():
-            for forbidden in (
-                "assets.list(",
-                "getAssets().list(",
-                "Class.forName",
-                "::class.java.getDeclaredMethod",
-                "getPackageInfo",
-                "queryIntentActivities",
-                "GET_META_DATA",
-            ):
-                with self.subTest(source=name, forbidden=forbidden):
-                    self.assertNotIn(forbidden, source)
-
-    def test_platform_extension_surfaces_name_the_foundry_project_data_directory(self) -> None:
-        # This fork's project data directory is `.foundry`, not the upstream `.godot`.
-        for path in (
-            FOUNDRY_KOTLIN_HOST,
-            FOUNDRY_JAVA_EXTENSION_KOTLIN,
-            ANDROID_RUNTIME_GUIDE,
-        ):
-            with self.subTest(path=path.name):
-                self.assertNotIn(".godot/", path.read_text(encoding="utf-8"))
-        self.assertIn("res://.foundry/extension_list.cfg", FOUNDRY_JAVA_EXTENSION_KOTLIN.read_text(encoding="utf-8"))
-
-    def test_platform_extension_load_failure_is_diagnosable_and_non_fatal(self) -> None:
-        os_android = OS_ANDROID.read_text(encoding="utf-8")
-        loader = os_android.split("void OS_Android::load_platform_foundry_extensions() const {", maxsplit=1)[1].split(
-            "\n}",
-            maxsplit=1,
-        )[0]
-        self.assertIn(PLATFORM_EXTENSION_LOAD_FAILED_TOKEN, loader)
-        self.assertIn("config_file_path", loader)
-        # Startup must survive a failed binding load so the harness sees the token
-        # instead of a dead process with no attributable cause.
-        self.assertIn("ERR_CONTINUE_MSG", loader)
-        self.assertNotIn("ERR_FAIL", loader)
-
-        acceptance = DEVICE_ACCEPTANCE_TOOL.read_text(encoding="utf-8")
-        self.assertIn(
-            f'PLATFORM_EXTENSION_LOAD_FAILED_TOKEN = "{PLATFORM_EXTENSION_LOAD_FAILED_TOKEN}"',
-            acceptance,
-        )
-        patterns = acceptance.split("RUNTIME_FAILURE_PATTERNS = (", maxsplit=1)[1].split("\n)", maxsplit=1)[0]
-        self.assertIn("PLATFORM_EXTENSION_LOAD_FAILED_TOKEN,", patterns)
-
-    def test_acceptance_fixture_gates_the_marker_behind_a_live_binding(self) -> None:
-        script = ACCEPTANCE_MAIN_SCRIPT.read_text(encoding="utf-8")
-        self.assertEqual(1, script.count(f'print("{ACCEPTANCE_READY_MARKER}")'))
-        preamble = script.split(f'print("{ACCEPTANCE_READY_MARKER}")', maxsplit=1)[0]
-        # Every proof step must precede the marker, or a dead binding still passes
-        # the device gate exactly as it did before this issue.
-        for gate in (
-            'ClassDB.class_exists("DemoExtension")',
-            'ClassDB.instantiate("DemoExtension")',
-            'probe.call("callback_probe", 41)',
-            "result != 42",
-        ):
-            with self.subTest(gate=gate):
-                self.assertIn(gate, preamble)
-        # Resolution stays dynamic so the project still exports where no binding exists.
-        self.assertNotIn("extends DemoExtension", script)
-        self.assertNotIn(": DemoExtension", script)
-
-    def test_acceptance_project_writes_the_reviewable_fixture(self) -> None:
-        suite = Path(__file__).read_text(encoding="utf-8")
-        writer = suite.split("\n    def _write_command_first_project(\n", maxsplit=1)[1].split(
-            "\n    def ",
-            maxsplit=1,
-        )[0]
-        self.assertIn("ACCEPTANCE_MAIN_SCRIPT", writer)
-        self.assertNotIn(ACCEPTANCE_READY_MARKER, writer)
-
-    def test_ordinary_gradle_dependencies_remain_owned_by_foundry(self) -> None:
-        build = APP_BUILD.read_text(encoding="utf-8")
-        for fragment in ORDINARY_DEPENDENCY_FRAGMENTS:
-            with self.subTest(fragment=fragment):
-                self.assertIn(fragment, build)
-
-    def test_foundry_java_gradle_wiring_is_conditional(self) -> None:
-        build = APP_BUILD.read_text(encoding="utf-8")
-        config = APP_CONFIG.read_text(encoding="utf-8")
-        self.assertIn("getFoundryJavaRegistryMarker", config)
-        self.assertIn("if (getFoundryJavaEnabled())", build)
-        self.assertNotIn('implementation "games.cafecito.foundry:', build)
-
-    def test_foundry_java_application_repositories_precede_public_repositories(self) -> None:
-        build = APP_BUILD.read_text(encoding="utf-8")
-        application_repositories = build.split("allprojects {", maxsplit=1)[1].split(
-            "configurations {",
-            maxsplit=1,
-        )[0]
-        configured_repository = application_repositories.index("getFoundryJavaMavenRepositories()")
-        for public_repository in (
-            "google()",
-            "mavenCentral()",
-            "gradlePluginPortal()",
-            'maven { url "https://plugins.gradle.org/m2/" }',
-            'maven { url "https://central.sonatype.com/repository/maven-snapshots/"}',
-        ):
-            with self.subTest(public_repository=public_repository):
-                self.assertLess(
-                    configured_repository,
-                    application_repositories.index(public_repository),
-                )
-
+class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
     def test_source_template_embeds_only_foundry_host_aars(self) -> None:
         inspector = load_source_template_module()
+
         self.assertEqual(
             {
                 "libs/debug/foundry-debug.aar",
@@ -501,93 +330,6 @@ class FoundryJavaExportSurfaceTests(unittest.TestCase):
             inspector.FORBIDDEN_BINDING_FRAGMENTS,
         )
 
-    def test_large_command_first_evidence_artifacts_use_streamed_hashing(self) -> None:
-        source = Path(__file__).read_text(encoding="utf-8")
-        self.assertIn("def sha256_file(", source)
-        for eager_hash in (
-            f"hashlib.sha256({'apk'}.read_bytes())",
-            f"hashlib.sha256({'editor'}.read_bytes())",
-            f"hashlib.sha256({'source_template'}.read_bytes())",
-        ):
-            with self.subTest(eager_hash=eager_hash):
-                self.assertNotIn(eager_hash, source)
-
-    def test_central_directory_validation_bounds_the_local_compressed_payload(self) -> None:
-        exporter = EXPORTER.read_text(encoding="utf-8")
-        validator_start = exporter.index("static bool _foundry_java_validate_central_directory_entry(")
-        validator_end = exporter.index(
-            "static bool _foundry_java_validate_current_central_directory_entry(",
-            validator_start,
-        )
-        validator = exporter[validator_start:validator_end]
-        self.assertIn(
-            "_foundry_java_checked_add(local_extra_end, central_compressed_size, local_payload_end)",
-            validator,
-        )
-        self.assertIn("local_payload_end > p_central_directory_start", validator)
-
-    def test_redacted_execute_output_keeps_the_editor_responsive(self) -> None:
-        editor_node = EDITOR_NODE.read_text(encoding="utf-8")
-        function_start = editor_node.index("int EditorNode::execute_and_show_output(")
-        wait_start = editor_node.index("while (!eta.done.is_set())", function_start)
-        wait_end = editor_node.index("eta.execute_output_thread.wait_to_finish()", wait_start)
-        wait_loop = editor_node[wait_start:wait_end]
-        self.assertIn("bool should_process_events = !p_output_redactions.is_empty();", wait_loop)
-        redaction_guard = wait_loop.index("if (p_output_redactions.is_empty()")
-        redaction_guard_end = wait_loop.index("\n\t\t\t}", redaction_guard)
-        process_events = wait_loop.index("DisplayServer::get_singleton()->process_events()")
-        main_iteration = wait_loop.index("Main::iteration()")
-        self.assertIn("if (should_process_events)", wait_loop)
-        self.assertGreater(process_events, redaction_guard_end)
-        self.assertGreater(main_iteration, redaction_guard_end)
-
-    def test_property_warnings_are_shallow_but_preflight_and_export_scan_archives(self) -> None:
-        exporter = EXPORTER.read_text(encoding="utf-8")
-        config_start = exporter.index("Error EditorExportPlatformAndroid::_get_foundry_java_export_config(")
-        config_end = exporter.index("void EditorExportPlatformAndroid::get_preset_features", config_start)
-        config = exporter[config_start:config_end]
-        warning_start = exporter.index("String EditorExportPlatformAndroid::get_export_option_warning")
-        warning_end = exporter.index("bool EditorExportPlatformAndroid::get_export_option_visibility", warning_start)
-        warning = exporter[warning_start:warning_end]
-        validity_start = exporter.index("bool EditorExportPlatformAndroid::has_valid_project_configuration")
-        validity_end = exporter.index("bool EditorExportPlatformAndroid::_is_clean_build_required", validity_start)
-        validity = exporter[validity_start:validity_end]
-        helper = exporter.split("Error EditorExportPlatformAndroid::export_project_helper", maxsplit=1)[1]
-
-        # Property warnings are queried repeatedly by the inspector and must not
-        # traverse archives. Project validity is the authoritative command-first
-        # diagnostic boundary, while the export helper repeats deep validation as
-        # defense in depth.
-        self.assertIn("bool p_scan_archives", config)
-        self.assertEqual(2, config.count("if (p_scan_archives)"))
-        self.assertIn("_get_foundry_java_export_config(p_preset, config, error, false)", warning)
-        self.assertNotIn("_get_foundry_java_export_config(p_preset, config, error, true)", warning)
-        self.assertIn(
-            "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true)", validity
-        )
-        self.assertNotIn(
-            "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, false)", validity
-        )
-        self.assertIn("_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true)", helper)
-        self.assertNotIn(
-            "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, false)", helper
-        )
-
-    def test_symlink_validation_preserves_windows_unc_roots(self) -> None:
-        exporter = EXPORTER.read_text(encoding="utf-8")
-        checker_start = exporter.index("static bool _foundry_java_path_has_symlink(")
-        checker_end = exporter.index(
-            "static constexpr uint64_t FOUNDRY_JAVA_MAX_INPUT_ARCHIVE_ENTRIES",
-            checker_start,
-        )
-        checker = exporter[checker_start:checker_end]
-        network_root = checker.index("if (with_normalized_separators.is_network_share_path())")
-        component_loop = checker.index("for (const String &component : components)")
-        self.assertIn('current = "//";', checker)
-        self.assertLess(network_root, component_loop)
-
-
-class FoundryJavaSourceTemplateResourceTests(unittest.TestCase):
     @staticmethod
     def _archive(entries: tuple[tuple[str, bytes], ...]) -> bytes:
         contents = io.BytesIO()

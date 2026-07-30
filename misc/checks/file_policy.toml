@@ -1,0 +1,800 @@
+# Declarative file-content policy, evaluated by misc/checks/check_file_policy.py.
+#
+# Each [[rule]] says one of exactly four things about the files its `paths`
+# globs match: a literal token must appear, must not appear, a path must exist,
+# or must not exist. Literal substrings only — no regex, no scoping to a
+# function body. If an invariant cannot be stated that way it does not belong
+# here; write a test that executes the thing instead.
+#
+# `reason` is required. A rule nobody can explain is a rule nobody can safely
+# delete, so an unexplained rule gets removed rather than kept.
+#
+# A `paths` glob that matches no files is a violation, not a pass: a rule with
+# no files to police is decoration.
+
+# ---------------------------------------------------------------------------
+# Android: Foundry owns its host runtime, and publication happens elsewhere.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "android-publication-stays-out-of-tree"
+reason = "Foundry owns the Android producer and host runtime in-tree, but publishing the artifacts is a release-tooling concern that never lived in the engine repository."
+forbidden_paths = [
+  "platform/android/java/scripts/publish-module.gradle",
+  "platform/android/java/scripts/publish-root.gradle",
+  "platform/android/java/PUBLISHING.md",
+]
+
+[[rule]]
+name = "android-host-runtime-is-in-tree"
+reason = "The Java/Kotlin/AIDL host runtime, its resources, and its tests are Foundry-owned sources; losing any of them silently reduces the Android runtime to a native library with no host."
+required_paths = [
+  "platform/android/SCsub",
+  "platform/android/api/api.cpp",
+  "platform/android/android_jni_contract.py",
+  "platform/android/android_native_contract.py",
+  "platform/android/android_native_staging.py",
+  "platform/android/export/export_plugin.cpp",
+  "platform/android/java/app",
+  "platform/android/java/app/build.gradle",
+  "platform/android/java/app/config.gradle",
+  "platform/android/java/app/src/main/AndroidManifest.xml",
+  "platform/android/java/app/src/instrumented/AndroidManifest.xml",
+  "platform/android/java/app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestBridge.java",
+  "platform/android/java/lib/build.gradle",
+  "platform/android/java/lib/src/main/AndroidManifest.xml",
+  "platform/android/java/lib/src/main/aidl/com/android/vending/licensing/ILicenseResultListener.aidl",
+  "platform/android/java/lib/src/main/aidl/com/android/vending/licensing/ILicensingService.aidl",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryHost.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryLib.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/service/FoundryService.kt",
+  "platform/android/java/lib/src/main/res/layout/foundry_app_layout.xml",
+  "platform/android/java/lib/src/main/res/values/strings.xml",
+  "platform/android/java/lib/src/main/res/xml/foundry_provider_paths.xml",
+  "platform/android/java/lib/src/main/resources/META-INF/foundry/LICENSE.txt",
+  "platform/android/java/lib/src/main/resources/META-INF/foundry/NOTICE",
+  "platform/android/java/lib/src/test/java/games/cafecito/foundry/RuntimeIdentityTest.java",
+  "platform/android/java/lib/src/test/java/games/cafecito/foundry/utils/CommandLineFileParserTest.kt",
+  "platform/android/java/lib/src/androidTest/java/games/cafecito/foundry/RuntimeIdentityInstrumentedTest.kt",
+  "platform/android/java/nativeSrcsConfigs",
+]
+
+[[rule]]
+name = "android-runtime-is-not-fetched-from-outside"
+reason = "The Android host runtime is built from this repository; the fetch-and-stage machinery that pulled it from a separate artifact was removed and must not return."
+forbidden_paths = [
+  "platform/android/foundry_android_runtime.json",
+  "platform/android/android_runtime_build.py",
+  "platform/android/android_runtime_contract.py",
+  "platform/android/android_native_bundle.py",
+]
+
+# ---------------------------------------------------------------------------
+# Android: the legacy plugin model is gone.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "android-legacy-plugin-model-files-are-gone"
+reason = "The legacy Android plugin model (registry, JNI singletons, per-plugin config) was removed in favour of the in-tree host runtime; restoring any of these files restores the whole model."
+forbidden_paths = [
+  "platform/android/plugin/foundry_plugin_jni.h",
+  "platform/android/plugin/foundry_plugin_jni.cpp",
+  "platform/android/export/foundry_plugin_config.h",
+  "platform/android/export/foundry_plugin_config.cpp",
+  "platform/android/api/jni_singleton.h",
+  "doc/classes/JNISingleton.xml",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/FoundryPlugin.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/FoundryPluginRegistry.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/UsedByFoundry.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/SignalInfo.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/plugin/AndroidRuntimePlugin.kt",
+  "platform/android/java/lib/src/test/java/games/cafecito/foundry/plugin/FoundryPluginRegistryTest.java",
+  "platform/android/java/lib/src/androidTest/java/games/cafecito/foundry/plugin/FoundryPluginProtocolInstrumentedTest.java",
+  "platform/android/java/app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestPlugin.kt",
+]
+
+[[rule]]
+name = "android-legacy-plugin-model-is-unreferenced"
+reason = "Every surface that used to load, export, or keep Android plugins was rewritten around the in-tree host runtime; a surviving reference means a half-restored plugin model that fails at runtime rather than at build time."
+paths = [
+  "platform/android/SCsub",
+  "platform/android/api/api.cpp",
+  "platform/android/java_foundry_lib_jni.cpp",
+  "platform/android/export/export_plugin.cpp",
+  "platform/android/java/app/build.gradle",
+  "platform/android/java/app/config.gradle",
+  "platform/android/java/app/src/instrumented/AndroidManifest.xml",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryHost.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryFragment.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/gl/FoundryRenderer.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/vulkan/VkRenderer.kt",
+]
+forbidden = [
+  "FoundryPlugin",
+  "FoundryPluginRegistry",
+  "AndroidRuntimePlugin",
+  "games.cafecito.foundry.plugin.v1.",
+  "foundry_plugin_jni",
+  "plugins_maven_repos",
+  "plugins_remote_binaries",
+  "plugins_local_binaries",
+  "getFoundryPluginsMavenRepos",
+  "getFoundryPluginsRemoteBinaries",
+  "getFoundryPluginsLocalBinaries",
+  "-keep class games.cafecito.foundry.plugin.**",
+]
+
+# ---------------------------------------------------------------------------
+# Android: there is no on-device editor.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "android-editor-application-is-gone"
+reason = "The on-device Android editor application and its touch-only editor UI were removed; Android is a runtime target only, and `platform/android/detect.py` rejects `target=editor`."
+forbidden_paths = [
+  "platform/android/java/editor",
+  "platform/android/editor",
+  "platform/android/export/android_editor_gradle_runner.cpp",
+  "platform/android/export/android_editor_gradle_runner.h",
+  "editor/gui/touch_actions_panel.cpp",
+  "editor/gui/touch_actions_panel.h",
+]
+
+[[rule]]
+name = "android-gradle-settings-have-no-editor-module"
+reason = "The Gradle build has no `:editor` module since the on-device editor was removed; including one would fail late, during configuration of a module that does not exist."
+paths = ["platform/android/java/settings.gradle"]
+forbidden = ["include ':editor'"]
+
+[[rule]]
+name = "android-gradle-includes-the-in-tree-modules"
+reason = "The producer builds exactly the app template, the host library, and the native source configuration; a missing include silently drops a module from every generated template."
+paths = ["platform/android/java/settings.gradle"]
+required = ["include ':app'", "include ':lib'", "include ':nativeSrcsConfigs'"]
+
+[[rule]]
+name = "android-gradle-build-has-no-editor-tasks"
+reason = "Android editor template generation, its HorizonOS and PicoOS variants, and the external runtime staging tasks were all removed; a surviving task name means a build path that cannot succeed."
+paths = ["platform/android/java/build.gradle"]
+forbidden = [
+  '"editor"',
+  '"horizonos"',
+  '"picoos"',
+  "androidEditorBuildsDir",
+  "generateFoundryEditor",
+  "generateFoundryHorizonOSEditor",
+  "generateFoundryPicoOSEditor",
+  "cleanFoundryEditor",
+  "android-editor-",
+  ":editor:",
+  "prepareFoundryAndroidRuntime",
+  "../android_runtime_build.py",
+  "../foundry_android_runtime.json",
+]
+
+[[rule]]
+name = "android-gradle-build-generates-the-templates"
+reason = "Template generation depends on the in-tree library and app assembly; losing a dependency produces an export template that is missing the host AAR or the application APK."
+paths = ["platform/android/java/build.gradle"]
+required = [
+  'dependsOn ":lib:assembleTemplate${capitalizedTarget}"',
+  'dependsOn ":app:assemble${capitalizedEdition}${capitalizedTarget}"',
+  "foundry-${target}.aar",
+  'into("libs/${target}")',
+  "task generateFoundryTemplates",
+  "task generateFoundryMonoTemplates",
+]
+
+[[rule]]
+name = "android-gradle-does-not-publish-or-fetch-the-runtime"
+reason = "The active Gradle build neither publishes the host runtime to a Maven repository nor fetches it from one; both directions were removed when the runtime came back in-tree."
+paths = [
+  "platform/android/java/settings.gradle",
+  "platform/android/java/build.gradle",
+  "platform/android/java/app/build.gradle",
+  "platform/android/java/lib/build.gradle",
+]
+forbidden = [
+  "maven-publish",
+  "MavenPublication",
+  "nexusPublishing",
+  "prepareFoundryAndroidRuntime",
+  "Foundry-Android",
+  "foundryAndroidSource",
+  "foundryAndroidFetch",
+  "foundryNativeBundle",
+  "foundryRuntimeScratch",
+  "WS2_REMOVE_ANDROID_RUNTIME_COMPAT_BRIDGE",
+]
+
+[[rule]]
+name = "android-library-does-not-publish"
+reason = "The host library is consumed from this repository's own build, never from a published coordinate, so its build script carries no publishing or signing plugins and no compatibility descriptor."
+paths = ["platform/android/java/lib/build.gradle"]
+forbidden = ["signing", "publishing {", "compatibility/foundry-engine.json"]
+
+[[rule]]
+name = "android-library-consumes-the-in-tree-native-root"
+reason = "The library stages native libraries from the SCons output root; without this property the AAR is assembled with no native payload at all."
+paths = ["platform/android/java/lib/build.gradle"]
+required = ["foundryNativeRoot"]
+
+[[rule]]
+name = "android-builders-have-no-editor-target"
+reason = "`platform_android_builders.py` no longer special-cases an editor target or invokes editor template generation; Android rejects `target=editor` outright."
+paths = ["platform/android/platform_android_builders.py"]
+forbidden = [
+  'env["target"] == "editor"',
+  "generateFoundryEditor",
+  "generateFoundryHorizonOSEditor",
+  "generateFoundryPicoOSEditor",
+]
+
+[[rule]]
+name = "android-scsub-has-no-editor-surface"
+reason = "The Android SCons build compiles no editor-only JNI sources and stages nothing into the removed in-tree library `libs/` directory."
+paths = ["platform/android/SCsub"]
+forbidden = [
+  "editor/game_menu_utils_jni.cpp",
+  "editor/editor_utils_jni.cpp",
+  'lib_tools_dir = "tools/"',
+  "android-editor-",
+  "#platform/android/java/lib/libs/",
+]
+
+[[rule]]
+name = "android-scsub-emits-native-provenance"
+reason = "Every native cell is written under `bin/android-native/` with a provenance record, which is what the native contract and the Gradle staging both read to prove a template was assembled from the expected build."
+paths = ["platform/android/SCsub"]
+required = ["#bin/android-native/", "provenance.json", "write_android_native_provenance"]
+
+[[rule]]
+name = "android-detect-rejects-the-editor-target"
+reason = "Android is a runtime-only target; the detection script must reject `target=editor` with a clear message rather than start a build that cannot link."
+paths = ["platform/android/detect.py"]
+required = ["Android does not support target=editor"]
+forbidden = ["store_release"]
+
+[[rule]]
+name = "android-jni-has-no-editor-entry-points"
+reason = "The editor-only JNI entry points (benchmarking, APK signing, the in-editor build environment, editor settings and project metadata) were removed with the on-device editor; a surviving declaration is an exported symbol with no implementation behind it."
+paths = ["platform/android/java_foundry_wrapper.cpp"]
+forbidden = [
+  "nativeBeginBenchmarkMeasure",
+  "nativeEndBenchmarkMeasure",
+  "nativeDumpBenchmark",
+  "nativeSignApk",
+  "nativeVerifyApk",
+  "nativeOnEditorWorkspaceSelected",
+  "nativeBuildEnvConnect",
+  "nativeBuildEnvDisconnect",
+  "nativeBuildEnvExecute",
+  "nativeBuildEnvCancel",
+  "nativeBuildEnvCleanProject",
+]
+
+[[rule]]
+name = "android-lib-jni-has-no-editor-bridge"
+reason = "`FoundryLib` no longer bridges editor settings, project metadata, or editor-hint queries, so the runtime library does not link against editor-only headers."
+paths = ["platform/android/java_foundry_lib_jni.cpp"]
+forbidden = [
+  "FoundryLib_getEditorSetting",
+  "FoundryLib_setEditorSetting",
+  "FoundryLib_getEditorProjectMetadata",
+  "FoundryLib_setEditorProjectMetadata",
+  "FoundryLib_isEditorHint",
+  "FoundryLib_isProjectManagerHint",
+  "editor/settings/editor_settings.h",
+]
+
+[[rule]]
+name = "android-os-has-no-tools-only-branches"
+reason = "`os_android.cpp` compiles identically for every Android target now that there is no on-device editor; a `TOOLS_ENABLED` branch would reintroduce a configuration nothing builds."
+paths = ["platform/android/os_android.cpp"]
+forbidden = ["#ifdef TOOLS_ENABLED", "#else // TOOLS_ENABLED"]
+
+[[rule]]
+name = "android-workflow-has-no-editor-build"
+reason = "CI builds Android runtime templates only; an editor job or artifact name would produce release inputs for a target this fork does not ship."
+paths = [".github/workflows/android_builds.yml"]
+forbidden = [
+  "android-editor",
+  "Generate Foundry editor",
+  "generateFoundryEditor",
+  "generateFoundryHorizonOSEditor",
+  "generateFoundryPicoOSEditor",
+  "android_editor_builds",
+]
+
+[[rule]]
+name = "editor-settings-have-no-android-editor-surface"
+reason = "The desktop editor exposes no on-device Android editor settings, window placement, touch action panel, or XR editor feature; leaving them would advertise configuration that does nothing."
+paths = ["editor/settings/editor_settings.cpp"]
+forbidden = [
+  "is_android_editor",
+  "run/window_placement/android_window",
+  "interface/touchscreen/touch_actions_panel",
+  'has_feature("xr_editor")',
+]
+
+[[rule]]
+name = "editor-node-has-no-touch-actions-panel"
+reason = "The touch actions panel was part of the removed on-device editor; a surviving reference would not compile against the deleted header."
+paths = ["editor/editor_node.cpp"]
+forbidden = ["TouchActionsPanel", "_touch_actions_panel_mode_changed"]
+
+[[rule]]
+name = "editor-settings-docs-have-no-android-editor"
+reason = "The class reference must not document settings that only existed for the removed on-device Android editor."
+paths = ["doc/classes/EditorSettings.xml"]
+forbidden = ["Android editor"]
+
+# ---------------------------------------------------------------------------
+# Android: the shipped host runtime surface.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "android-library-build-declares-the-template-surface"
+reason = "The host library's plugin set, SDK levels, AIDL support, template flavour, lint gate, and version fields are what the assembled AAR and its manifest metadata are derived from; dropping one produces an AAR that builds and then misreports or misbehaves at runtime."
+paths = ["platform/android/java/lib/build.gradle"]
+required = [
+  "id 'com.android.library'",
+  "id 'org.jetbrains.kotlin.android'",
+  "namespace = 'games.cafecito.foundry'",
+  "compileSdkVersion versions.compileSdk",
+  "targetSdkVersion versions.targetSdk",
+  "testInstrumentationRunner",
+  "aidl = true",
+  "template {}",
+  "abortOnError true",
+  "FOUNDRY_BINDINGS_VERSION",
+  "FOUNDRY_ENGINE_VERSION",
+  "FOUNDRY_ENGINE_REVISION",
+  "FOUNDRY_JNI_CONTRACT_VERSION",
+]
+
+[[rule]]
+name = "android-app-build-consumes-the-in-tree-library"
+reason = "The application template depends on the in-tree host library, the user's addon archives, and the OpenXR loader; a missing dependency yields an APK that starts and immediately fails to resolve the runtime."
+paths = ["platform/android/java/app/build.gradle"]
+required = [
+  'implementation project(":lib")',
+  "fileTree(dir: \"$addonsDirectory\", include: ['**/*.jar', '**/*.aar'])",
+  "libopenxr_loader.so",
+  "debugImplementation fileTree(dir: 'libs/debug', include: ['*.aar'])",
+  "devImplementation fileTree(dir: 'libs/dev', include: ['*.aar'])",
+  "releaseImplementation fileTree(dir: 'libs/release', include: ['*.aar'])",
+]
+forbidden = ['implementation project(":godot:lib")', "foundryRuntimeAarRoot"]
+
+[[rule]]
+name = "android-library-manifest-declares-runtime-metadata"
+reason = "The host library manifest carries the version and JNI contract metadata the device acceptance harness reads back to prove which runtime an APK actually contains, plus the expansion downloader receiver."
+paths = ["platform/android/java/lib/src/main/AndroidManifest.xml"]
+required = [
+  "games.cafecito.foundry.library.version",
+  "games.cafecito.foundry.engine.version",
+  "games.cafecito.foundry.engine.revision",
+  "games.cafecito.foundry.jni.contract",
+  ".FoundryDownloaderAlarmReceiver",
+]
+
+[[rule]]
+name = "android-downloader-uses-immutable-pending-intents"
+reason = "Android 12 and later reject a PendingIntent that declares neither mutability flag, so the expansion downloader would crash on construction."
+paths = [
+  "platform/android/java/lib/src/main/java/com/google/android/vending/expansion/downloader/impl/DownloaderService.java",
+]
+required = ["PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE"]
+
+[[rule]]
+name = "android-service-guards-the-host-input-transfer-token"
+reason = "The host input transfer token only exists on newer platform versions; without the version and null guards the service throws on older devices."
+paths = ["platform/android/java/lib/src/main/java/games/cafecito/foundry/service/FoundryService.kt"]
+required = ["Build.VERSION_CODES.BAKLAVA", "hostInputTransferToken != null"]
+
+[[rule]]
+name = "android-runtime-compat-is-api-guarded"
+reason = "The compatibility helper calls APIs that do not exist below its declared level and needs a permission the library does not hold statically; removing the annotations turns a compile-time guard into a device crash."
+paths = ["platform/android/java/lib/src/main/java/games/cafecito/foundry/utils/AndroidRuntimeCompat.kt"]
+required = ["@RequiresApi(Build.VERSION_CODES.R)", '@SuppressLint("MissingPermission")']
+
+[[rule]]
+name = "android-exporter-signs-with-apksigner"
+reason = "Signing and verification moved out of the removed on-device editor and into the desktop exporter, which shells out to `apksigner` and streams its output; losing this leaves exports unsigned."
+paths = ["platform/android/export/export_plugin.cpp"]
+required = [
+  "get_apksigner_path",
+  'args.push_back("sign")',
+  'args.push_back("verify")',
+  "OS::get_singleton()->execute(apksigner",
+  "execute_and_show_output",
+  "--xr_mode_openxr",
+]
+forbidden = [
+  "AndroidEditorGradleRunner",
+  "android_editor_gradle_runner",
+  "OS_Android::get_singleton()->sign_apk",
+  "OS_Android::get_singleton()->verify_apk",
+  "_copy_keystore_to_temp",
+]
+
+# ---------------------------------------------------------------------------
+# Android: the application template's own identity.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "android-app-sources-carry-no-upstream-identifiers"
+reason = "The application template is Foundry's own; an upstream package or a legacy plugin identifier in it means a source file was copied back rather than ported."
+paths = [
+  "platform/android/java/app/**/*.java",
+  "platform/android/java/app/**/*.kt",
+  "platform/android/java/app/**/*.xml",
+  "platform/android/java/app/**/*.gradle",
+  "platform/android/java/app/**/*.fs",
+]
+forbidden = [
+  "com.godot",
+  "org.godotengine",
+  "org.godot.game",
+  "games.cafecito.foundry.plugin.v1.",
+  "FoundryAppInstrumentedTestPlugin",
+]
+
+[[rule]]
+name = "android-app-sources-declare-the-application-package"
+reason = "Every application-template source belongs to `games.cafecito.foundry.game`; a file declaring anything else would be packaged into the APK under a namespace the manifest does not describe."
+paths = [
+  "platform/android/java/app/src/**/*.java",
+  "platform/android/java/app/src/**/*.kt",
+]
+required = ["package games.cafecito.foundry.game"]
+
+[[rule]]
+name = "android-app-has-no-upstream-source-roots"
+reason = "An upstream-named source root under the application template is the signature of a partially reverted rename; the packages themselves are already forbidden, and the empty directories must go too."
+forbidden_paths = [
+  "platform/android/java/app/src/main/java/com/godot",
+  "platform/android/java/app/src/androidTestInstrumented/java/com/godot",
+  "platform/android/java/app/src/instrumented/java/com/godot",
+  "platform/android/java/app/src/main/java/org/godotengine",
+  "platform/android/java/app/src/androidTestInstrumented/java/org/godotengine",
+  "platform/android/java/app/src/instrumented/java/org/godotengine",
+]
+
+[[rule]]
+name = "android-app-identity-is-the-foundry-game-package"
+reason = "The application id, namespace, manifest entries, and the exporter's launcher activity path must all name the same package, or an exported APK launches an activity that does not exist."
+paths = ["platform/android/java/app/build.gradle"]
+required = ["namespace = 'games.cafecito.foundry.game'"]
+
+[[rule]]
+name = "android-app-config-declares-the-application-id"
+reason = "The application id is the identity a device acceptance run installs and launches by; a mismatch makes every install-and-launch step target a package that was never built."
+paths = ["platform/android/java/app/config.gradle"]
+required = ['appId = "games.cafecito.foundry.game"']
+
+[[rule]]
+name = "android-app-manifest-names-the-foundry-activities"
+reason = "The manifest wires the application activity and its launcher alias; a wrong name produces an APK that installs and then fails to start."
+paths = ["platform/android/java/app/src/main/AndroidManifest.xml"]
+required = [
+  'android:name="games.cafecito.foundry.game.FoundryApp"',
+  'android:name="games.cafecito.foundry.game.FoundryAppLauncher"',
+  'android:targetActivity="games.cafecito.foundry.game.FoundryApp"',
+]
+
+[[rule]]
+name = "android-instrumented-manifest-declares-no-application"
+reason = "The instrumented source set contributes test code only; declaring an application element there would override the template's own manifest during the merge."
+paths = ["platform/android/java/app/src/instrumented/AndroidManifest.xml"]
+required = ["<application/>"]
+
+[[rule]]
+name = "android-instrumented-bridge-and-scene-stay-addressable"
+reason = "The instrumented bridge class and the packed scene's script path are what the on-device test harness resolves by name; renaming either breaks the acceptance run with a reflection failure rather than a build error."
+paths = [
+  "platform/android/java/app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestBridge.java",
+]
+required = ["public final class FoundryAppInstrumentedTestBridge"]
+
+[[rule]]
+name = "android-instrumented-scene-points-at-the-entry-script"
+reason = "The instrumented scene loads the entry script by resource path; a stale path yields a scene that instantiates with no behaviour and an acceptance run that passes vacuously."
+paths = ["platform/android/java/app/src/instrumented/assets/main.tscn"]
+required = ['path="res://main.fs"']
+
+[[rule]]
+name = "android-instrumented-test-rejects-legacy-plugin-metadata"
+reason = "The on-device test asserting that no plugin metadata is present is the runtime half of the legacy-plugin removal; without it the source-level rules above are unverified on a real device."
+paths = ["platform/android/java/app/src/androidTestInstrumented/java/games/cafecito/foundry/game/FoundryAppTest.kt"]
+required = ["runtimeBootsWithoutLegacyPluginMetadata", 'it.contains(".plugin.")']
+
+[[rule]]
+name = "android-exporter-launches-the-app-launcher-alias"
+reason = "The exporter starts the launcher alias by fully qualified name; if it drifts from the manifest the exported project installs and never launches."
+paths = ["platform/android/export/export_plugin.cpp"]
+required = ['"/games.cafecito.foundry.game.FoundryAppLauncher"']
+
+# ---------------------------------------------------------------------------
+# Android: the Foundry-Java binding seam.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "android-foundry-java-export-options-are-the-versioned-handoff"
+reason = "These preset keys and the registry marker are the entire Foundry-Java export surface; renaming one silently drops a configured binding from every export preset that already uses it."
+paths = ["platform/android/export/export_plugin.cpp"]
+required = [
+  "gradle_build/foundry_java/enabled",
+  "gradle_build/foundry_java/gradle_plugin_maven",
+  "gradle_build/foundry_java/gradle_plugin_local",
+  "gradle_build/foundry_java/maven_repositories",
+  "gradle_build/foundry_java/maven_artifacts",
+  "gradle_build/foundry_java/local_artifacts",
+  "foundry_java_registry_marker=registry-index-v2",
+]
+
+[[rule]]
+name = "android-foundry-java-discovery-never-scans"
+reason = "Binding discovery is one lookup of one fixed asset name. Asset enumeration, reflection, or manifest queries would turn a deterministic seam into a scan whose result depends on what else the application happens to ship."
+paths = ["platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryJavaExtension.kt"]
+required = [
+  'const val ASSET_NAME = "FoundryJava.foundryextension"',
+  'const val CONFIG_PATH = "res://FoundryJava.foundryextension"',
+]
+forbidden = [
+  "assets.list(",
+  "getAssets().list(",
+  "Class.forName",
+  "::class.java.getDeclaredMethod",
+  "getPackageInfo",
+  "queryIntentActivities",
+  "GET_META_DATA",
+]
+
+[[rule]]
+name = "android-surfaces-name-the-foundry-project-data-directory"
+reason = "This fork's project data directory is `.foundry`, not the upstream `.godot`. A stale path in the Android host, the binding seam, or the runtime guide sends the runtime looking for a directory exported projects do not contain."
+paths = [
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryJavaExtension.kt",
+  "platform/android/ANDROID_RUNTIME.md",
+]
+forbidden = [".godot/"]
+
+[[rule]]
+name = "android-foundry-java-extension-list-path-is-the-foundry-one"
+reason = "The binding seam documents why it is not discovered through the project's extension list; naming the upstream directory there would misdescribe where the engine looks."
+paths = ["platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryJavaExtension.kt"]
+required = ["res://.foundry/extension_list.cfg"]
+
+[[rule]]
+name = "android-platform-extension-load-failure-is-diagnosable"
+reason = "A binding that fails to load must leave an attributable token and the offending config path in the log and let startup continue, so a device acceptance run reports the cause instead of a dead process."
+paths = ["platform/android/os_android.cpp"]
+required = ["FOUNDRY_JAVA_PLATFORM_EXTENSION_LOAD_FAILED", "config_file_path", "ERR_CONTINUE_MSG"]
+
+[[rule]]
+name = "android-device-acceptance-detects-a-failed-binding-load"
+reason = "The acceptance harness only reports a failed binding load if that token is one of the runtime failure patterns it scans for; without it a dead binding reads as a clean run."
+paths = ["platform/android/android_device_acceptance.py"]
+required = [
+  'PLATFORM_EXTENSION_LOAD_FAILED_TOKEN = "FOUNDRY_JAVA_PLATFORM_EXTENSION_LOAD_FAILED"',
+  "PLATFORM_EXTENSION_LOAD_FAILED_TOKEN,",
+]
+
+[[rule]]
+name = "android-acceptance-fixture-proves-a-live-binding"
+reason = "The device gate is only meaningful if the ready marker is preceded by a real call through the binding; a fixture that merely prints the marker passes with a binding that never loaded."
+paths = ["tests/fixtures/android_foundry_java/acceptance/main.fs"]
+required = [
+  'ClassDB.class_exists("DemoExtension")',
+  'ClassDB.instantiate("DemoExtension")',
+  'probe.call("callback_probe", 41)',
+  "result != 42",
+  'print("FOUNDRY_JAVA_EXPORT_ACCEPTANCE_READY")',
+]
+forbidden = ["extends DemoExtension", ": DemoExtension"]
+
+[[rule]]
+name = "android-foundry-java-gradle-wiring-is-conditional"
+reason = "Foundry-Java is optional. Its Gradle wiring must stay behind the enabled flag and must never become an unconditional dependency, or every Android export starts requiring the binding."
+paths = ["platform/android/java/app/build.gradle"]
+required = ["if (getFoundryJavaEnabled())"]
+forbidden = ['implementation "games.cafecito.foundry:']
+
+[[rule]]
+name = "android-foundry-java-registry-marker-is-declared"
+reason = "The registry marker is how the application build recognises a configured binding source; without it an enabled export resolves plugins from wherever Gradle happens to look."
+paths = ["platform/android/java/app/config.gradle"]
+required = ["getFoundryJavaRegistryMarker"]
+
+# ---------------------------------------------------------------------------
+# Android: R8 keep rules for the native-to-Java lookup direction.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "android-library-ships-keep-rules-to-consumers"
+reason = "Native code resolves host members by name, so the keep rules must travel with the AAR; a consumer that minifies without them renames the members and the runtime fails on the first lookup."
+paths = ["platform/android/java/lib/build.gradle"]
+required = ["consumerProguardFiles 'proguard-rules.pro'"]
+
+[[rule]]
+name = "android-library-verifies-the-keep-rules-are-current"
+reason = "The checked-in keep rules are derived from the native sources; the build must re-derive and compare them, or a new lookup ships with no rule protecting it."
+paths = ["platform/android/java/lib/build.gradle"]
+required = ["verifyFoundryHostKeepRules", 'hostContractTool.absolutePath, "--check"']
+
+[[rule]]
+name = "android-release-builds-still-minify"
+reason = "The keep rules only matter because Foundry-Java release builds minify; silently disabling minification would leave the whole keep-rule contract untested in practice."
+paths = ["platform/android/java/app/build.gradle"]
+required = ["minifyEnabled getFoundryJavaEnabled()"]
+
+# ---------------------------------------------------------------------------
+# Exporter and editor internals whose literals are load-bearing.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "android-export-archive-validation-bounds-the-local-payload"
+reason = "A central directory entry may claim a compressed size that runs past the start of the central directory itself; the checked addition and the bound are what stop a crafted archive from being read out of range."
+paths = ["platform/android/export/export_plugin.cpp"]
+required = [
+  "_foundry_java_checked_add(local_extra_end, central_compressed_size, local_payload_end)",
+  "local_payload_end > p_central_directory_start",
+]
+
+[[rule]]
+name = "android-export-symlink-check-preserves-unc-roots"
+reason = "A Windows UNC path's leading double separator is part of its root; normalising it away makes every network-share export path resolve against the wrong root."
+paths = ["platform/android/export/export_plugin.cpp"]
+required = ['current = "//";', "if (with_normalized_separators.is_network_share_path())"]
+
+[[rule]]
+name = "android-export-property-warnings-stay-shallow"
+reason = "The inspector queries property warnings repeatedly, so that path must not traverse archives; project validity and the export helper are the deep checks. Inverting either argument makes the editor stall on every redraw or lets a broken archive reach a device."
+paths = ["platform/android/export/export_plugin.cpp"]
+required = [
+  "bool p_scan_archives",
+  "_get_foundry_java_export_config(p_preset, config, error, false)",
+  "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, true)",
+]
+forbidden = [
+  "_get_foundry_java_export_config(p_preset, config, error, true)",
+  "_get_foundry_java_export_config(p_preset.ptr(), foundry_java, foundry_java_error, false)",
+]
+
+[[rule]]
+name = "editor-redacted-execute-output-keeps-the-editor-responsive"
+reason = "Export shells out to `apksigner` with redacted output; without pumping events while it runs the editor freezes for the duration of the signing step."
+paths = ["editor/editor_node.cpp"]
+required = [
+  "bool should_process_events = !p_output_redactions.is_empty();",
+  "if (should_process_events)",
+]
+
+# ---------------------------------------------------------------------------
+# Public API naming: this fork's own names in its own surfaces.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "gltf-bindings-use-foundry-names"
+reason = "The glTF module's bound method and property names are public API for this fork; an upstream spelling in a binding is a name scripts would have to keep using forever."
+paths = [
+  "modules/gltf/gltf_document.cpp",
+  "modules/gltf/gltf_state.cpp",
+  "modules/gltf/extensions/gltf_document_extension.cpp",
+  "modules/gltf/structures/gltf_object_model_property.cpp",
+  "modules/gltf/structures/gltf_skeleton.cpp",
+  "modules/gltf/structures/gltf_skin.cpp",
+]
+forbidden = [
+  'D_METHOD("export_object_model_property", "state", "node_path", "godot_node"',
+  'FOUNDRY_VIRTUAL_BIND(_export_object_model_property, "state", "node_path", "godot_node"',
+  'D_METHOD("append_gltf_node", "gltf_node", "godot_scene_node"',
+  'D_METHOD("get_gltf_to_godot_expression"',
+  'D_METHOD("set_gltf_to_godot_expression"',
+  'D_METHOD("get_godot_to_gltf_expression"',
+  'D_METHOD("set_godot_to_gltf_expression"',
+  '"gltf_to_godot_expression"',
+  '"godot_to_gltf_expression"',
+  'D_METHOD("get_godot_skeleton"',
+  'D_METHOD("get_godot_bone_node"',
+  'D_METHOD("set_godot_bone_node"',
+  '"godot_bone_node"',
+  'D_METHOD("get_godot_skin"',
+  'D_METHOD("set_godot_skin"',
+  '"godot_skin"',
+]
+
+[[rule]]
+name = "extension-interface-json-names-foundry"
+reason = "The extension interface JSON is the contract every native extension compiles against, and its prose is copied verbatim into the generated header shipped to extension authors."
+paths = ["core/extension/foundry_extension_interface.json"]
+required = ["FOUNDRY ENGINE", "https://docs.cafecito.games/foundry", "interface to Foundry"]
+forbidden = [
+  "GODOT ENGINE",
+  "https://godotengine.org",
+  "interface to Godot",
+  "Godot's built-in debugger",
+  "built-in godot class",
+  "recompile Godot",
+  "Gets the Godot version",
+  "Godot is started",
+  "Godot is shutdown",
+]
+
+[[rule]]
+name = "extension-interface-implementation-names-foundry"
+reason = "The interface implementation registers the version entry point by name; an upstream spelling here would be exported to extensions under a symbol this fork does not document."
+paths = ["core/extension/foundry_extension_interface.cpp"]
+required = [
+  "foundry_extension_get_foundry_version",
+  "REGISTER_INTERFACE_FUNC(get_foundry_version",
+  "FoundryExtensionFoundryVersion",
+  "r_foundry_version",
+]
+forbidden = [
+  "foundry_extension_get_godot_version",
+  "REGISTER_INTERFACE_FUNC(get_godot_version",
+  "FoundryExtensionGodotVersion",
+  "r_godot_version",
+]
+
+[[rule]]
+name = "extension-header-generators-name-foundry"
+reason = "Both generators emit deprecation notices into the public extension header, so an upstream spelling reaches every extension author who regenerates it."
+paths = [
+  "core/extension/make_interface_header.py",
+  "core/extension/foundry_extension_interface_header_generator.cpp",
+]
+required = ["Deprecated in Foundry"]
+forbidden = ["Deprecated in Godot"]
+
+[[rule]]
+name = "embedded-instance-docs-name-foundry"
+reason = "The embedded-instance classes are this fork's own API; their class reference must name the fork's URI scheme and entry point, not the upstream one."
+paths = ["doc/classes/FoundryInstance.xml"]
+required = ["embedded Foundry instance", "running Foundry instance", "libfoundry_create_foundry_instance"]
+forbidden = ["libgodot://", "embedded Godot instance", "running Godot instance", "libgodot_create_foundry_instance"]
+
+[[rule]]
+name = "extension-manager-docs-name-the-foundry-uri-scheme"
+reason = "The extension manager documents the URI scheme the engine actually registers; documenting the upstream scheme sends extension authors to a scheme that does not resolve."
+paths = ["doc/classes/FoundryExtensionManager.xml"]
+required = ["libfoundry://"]
+forbidden = ["libgodot://", "embedded Godot instance", "running Godot instance", "libgodot_create_foundry_instance"]
+
+[[rule]]
+name = "global-scope-docs-name-the-foundry-debugger"
+reason = "`@GlobalScope` is the most-read page in the class reference; the debugger it describes is this fork's."
+paths = ["doc/classes/@GlobalScope.xml"]
+required = ["Foundry's built-in debugger"]
+forbidden = ["Godot's built-in debugger"]
+
+# ---------------------------------------------------------------------------
+# Headless container: the parts the built-image verification cannot see.
+# ---------------------------------------------------------------------------
+
+[[rule]]
+name = "headless-container-context-is-deny-by-default"
+reason = "The Docker build context is the whole repository unless it is denied by default and the release binary explicitly allowed; without both lines a build uploads the entire tree. `.github/scripts/verify_headless_image.sh` inspects the built image and never sees the context."
+paths = ["docker/.dockerignore"]
+required = ["*", "!foundry.linuxbsd.editor.x86_64"]
+
+[[rule]]
+name = "headless-container-release-binary-is-untracked"
+reason = "The release binary is staged into `docker/` during the release build; without the ignore entry a release run leaves a multi-hundred-megabyte binary in `git status`."
+paths = [".gitignore"]
+required = ["/docker/foundry.linuxbsd.editor.x86_64"]
+
+[[rule]]
+name = "headless-container-smoke-fixture-exists"
+reason = "`verify_headless_image.sh` lints this fixture project inside the built image; if the fixture is gone the verification silently degrades to linting an empty directory."
+required_paths = [
+  "tests/fixtures/headless_container/project.foundry",
+  "tests/fixtures/headless_container/scripts/valid.fs",
+  "docker/foundry-headless.Dockerfile",
+]

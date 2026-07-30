@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -27,6 +28,10 @@ ANDROID_TOOLS = (
 ALL_SCONS_ABIS = ("arm32", "arm64", "x86_32", "x86_64")
 ALL_ANDROID_ABIS = tuple(sorted(ABI_SPECS))
 ZERO_REVISION = "0" * 40
+SEAM_METHOD = "getFoundryExtensionConfigFiles"
+# A `javap -c` method declaration: indented two spaces, ends in a semicolon, and
+# is followed by the indented `descriptor:`/`Code:` block that belongs to it.
+JAVAP_METHOD_DECLARATION = re.compile(r"^ {2}(?!descriptor:|flags:|Code:)\S.*?(\w+)\([^)]*\);\s*$")
 
 
 def find_java_home() -> Path:
@@ -137,6 +142,25 @@ def expected_stage(
 ) -> Path:
     digest = hashlib.sha256(f"{revision}\0{input_identity}\0{','.join(selected_abis)}".encode()).hexdigest()[:20]
     return java_root / "lib/build/android-native-stage" / revision / digest / "-".join(selected_abis) / build_type
+
+
+def javap_method_bodies(disassembly: str) -> dict[str, str]:
+    """Split `javap -c` output into one disassembled block per declared method.
+
+    Reading the compiled artifact is the point: a source-text check cannot tell
+    whether the seam the JVM will actually execute delegates or returns nothing.
+    """
+
+    bodies: dict[str, list[str]] = {}
+    current: list[str] | None = None
+    for line in disassembly.splitlines():
+        declaration = JAVAP_METHOD_DECLARATION.match(line)
+        if declaration:
+            current = bodies.setdefault(declaration.group(1), [])
+            continue
+        if current is not None:
+            current.append(line)
+    return {name: "\n".join(body) for name, body in bodies.items()}
 
 
 def staged_libraries(stage: Path) -> list[str]:
@@ -302,6 +326,45 @@ class AndroidGradleBehavioralTests(unittest.TestCase):
             path=str(no_git_path),
         )
         self.assert_gradle_succeeded(stage_result)
+
+    def test_extension_config_seam_returns_the_packaged_binding_path(self) -> None:
+        # Regression guard for #1251: the seam was compiled into `return emptyArray()`,
+        # so the Foundry-Java binding was packaged into every APK and then never
+        # loaded — a silent failure with no log line. Prove the invariant against
+        # what the build actually produces: run the library's own unit tests for the
+        # discovery object, then disassemble the compiled host and confirm the JNI
+        # seam really delegates to it.
+        result = self.run_gradle(
+            ":lib:testTemplateDebugUnitTest",
+            "--tests",
+            "games.cafecito.foundry.FoundryJavaExtensionTest",
+            properties={"selectedAbis": ""},
+        )
+        self.assert_gradle_succeeded(result)
+
+        compile_result = self.run_gradle(":lib:compileTemplateDebugKotlin", properties={"selectedAbis": ""})
+        self.assert_gradle_succeeded(compile_result)
+
+        host_class = sorted((self.java_root / "lib/build").rglob("games/cafecito/foundry/Foundry.class"))
+        self.assertNotEqual([], host_class, "the Kotlin host was not compiled into a class file")
+        disassembly = subprocess.run(
+            [str(self.java_home / "bin/javap"), "-p", "-c", str(host_class[0])],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+
+        bodies = javap_method_bodies(disassembly)
+        self.assertIn(
+            SEAM_METHOD,
+            bodies,
+            f"the compiled host declares no {SEAM_METHOD}; disassembled methods: {sorted(bodies)}",
+        )
+        self.assertIn(
+            "FoundryJavaExtension.configFiles",
+            bodies[SEAM_METHOD],
+            f"the compiled {SEAM_METHOD} does not call the discovery object:\n{bodies[SEAM_METHOD]}",
+        )
 
     def test_openxr_loader_is_a_fixed_version_only_dependency(self) -> None:
         valid = self.run_gradle(
