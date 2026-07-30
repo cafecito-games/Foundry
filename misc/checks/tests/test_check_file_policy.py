@@ -41,7 +41,8 @@ class FilePolicyRunnerTests(unittest.TestCase):
 
     def evaluate(self, policy: str, files: dict[str, str]) -> list[str]:
         rules = check_file_policy.load_rules(textwrap.dedent(policy))
-        return check_file_policy.find_policy_violations(rules, self.build_tree(files))
+        violations: list[str] = check_file_policy.find_policy_violations(rules, self.build_tree(files))
+        return violations
 
     def test_required_token_present_passes(self) -> None:
         violations = self.evaluate(

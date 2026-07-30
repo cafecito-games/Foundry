@@ -76,7 +76,7 @@ forbidden_paths = [
 
 [[rule]]
 name = "android-legacy-plugin-model-files-are-gone"
-reason = "The legacy Android plugin model (registry, JNI singletons, per-plugin config) was removed in favour of the in-tree host runtime; restoring any of these files restores the whole model."
+reason = "The legacy Android plugin model (registry, JNI singletons, per-plugin config) was removed in favor of the in-tree host runtime; restoring any of these files restores the whole model."
 forbidden_paths = [
   "platform/android/plugin/foundry_plugin_jni.h",
   "platform/android/plugin/foundry_plugin_jni.cpp",
@@ -337,7 +337,7 @@ forbidden = ["Android editor"]
 
 [[rule]]
 name = "android-library-build-declares-the-template-surface"
-reason = "The host library's plugin set, SDK levels, AIDL support, template flavour, lint gate, and version fields are what the assembled AAR and its manifest metadata are derived from; dropping one produces an AAR that builds and then misreports or misbehaves at runtime."
+reason = "The host library's plugin set, SDK levels, AIDL support, template flavor, lint gate, and version fields are what the assembled AAR and its manifest metadata are derived from; dropping one produces an AAR that builds and then misreports or misbehaves at runtime."
 paths = ["platform/android/java/lib/build.gradle"]
 required = [
   "id 'com.android.library'",
@@ -502,7 +502,7 @@ required = ["public final class FoundryAppInstrumentedTestBridge"]
 
 [[rule]]
 name = "android-instrumented-scene-points-at-the-entry-script"
-reason = "The instrumented scene loads the entry script by resource path; a stale path yields a scene that instantiates with no behaviour and an acceptance run that passes vacuously."
+reason = "The instrumented scene loads the entry script by resource path; a stale path yields a scene that instantiates with no behavior and an acceptance run that passes vacuously."
 paths = ["platform/android/java/app/src/instrumented/assets/main.tscn"]
 required = ['path="res://main.fs"']
 
@@ -607,7 +607,7 @@ forbidden = ['implementation "games.cafecito.foundry:']
 
 [[rule]]
 name = "android-foundry-java-registry-marker-is-declared"
-reason = "The registry marker is how the application build recognises a configured binding source; without it an enabled export resolves plugins from wherever Gradle happens to look."
+reason = "The registry marker is how the application build recognizes a configured binding source; without it an enabled export resolves plugins from wherever Gradle happens to look."
 paths = ["platform/android/java/app/config.gradle"]
 required = ["getFoundryJavaRegistryMarker"]
 
@@ -648,7 +648,7 @@ required = [
 
 [[rule]]
 name = "android-export-symlink-check-preserves-unc-roots"
-reason = "A Windows UNC path's leading double separator is part of its root; normalising it away makes every network-share export path resolve against the wrong root."
+reason = "A Windows UNC path's leading double separator is part of its root; normalizing it away makes every network-share export path resolve against the wrong root."
 paths = ["platform/android/export/export_plugin.cpp"]
 required = ['current = "//";', "if (with_normalized_separators.is_network_share_path())"]
 

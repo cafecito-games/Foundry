@@ -18,10 +18,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
+
+import tomllib
 
 DEFAULT_POLICY = Path(__file__).resolve().parent / "file_policy.toml"
 DEFAULT_ROOT = Path(__file__).resolve().parents[2]
@@ -156,8 +157,7 @@ def find_policy_violations(rules: Sequence[Rule], root: Path) -> list[str]:
             matches = _matching_files(root, pattern)
             if not matches:
                 violations.append(
-                    f"{pattern}: {rule.name}: path pattern matched no files, so the rule "
-                    f"asserts nothing: {rule.reason}"
+                    f"{pattern}: {rule.name}: path pattern matched no files, so the rule asserts nothing: {rule.reason}"
                 )
                 continue
             for path in matches:
