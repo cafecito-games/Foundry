@@ -60,3 +60,60 @@ voidpf zipio_alloc(voidpf opaque, uInt items, uInt size);
 void zipio_free(voidpf opaque, voidpf address);
 
 zlib_filefunc_def zipio_create_io(Ref<FileAccess> *p_data);
+
+// Owns a minizip handle for the duration of a scope.
+//
+// Writers in particular have to be closed: minizip only writes an archive's
+// central directory on close, so an archive abandoned by an early return is
+// both a leak and an unreadable file. Functions that open an archive and then
+// have several failure exits are the usual place this goes wrong, so let the
+// scope own the handle instead of repeating the close on every path.
+//
+// Closing is idempotent: `close()` may be called explicitly when ordering
+// matters (for instance before reopening the same path for reading), and the
+// destructor will not close a second time. Constructing from `nullptr` is
+// allowed so the result of a failed open can be adopted unconditionally.
+template <typename T, void (*CloseFunction)(T)>
+class ZipHandleGuard {
+	T handle = nullptr;
+
+public:
+	ZipHandleGuard(const ZipHandleGuard &) = delete;
+	ZipHandleGuard &operator=(const ZipHandleGuard &) = delete;
+
+	explicit ZipHandleGuard(T p_handle) :
+			handle(p_handle) {}
+
+	~ZipHandleGuard() { close(); }
+
+	bool is_valid() const { return handle != nullptr; }
+	T get() const { return handle; }
+
+	void close() {
+		if (handle) {
+			// Clear first: a closer that re-enters must not see a dangling handle.
+			T closing = handle;
+			handle = nullptr;
+			CloseFunction(closing);
+		}
+	}
+
+	// Gives up ownership without closing, for the rare caller that has to hand
+	// the handle to something else.
+	T release() {
+		T released = handle;
+		handle = nullptr;
+		return released;
+	}
+};
+
+inline void zipio_close_write_handle(zipFile p_handle) {
+	zipClose(p_handle, nullptr);
+}
+
+inline void zipio_close_read_handle(unzFile p_handle) {
+	unzClose(p_handle);
+}
+
+using ZipFileGuard = ZipHandleGuard<zipFile, zipio_close_write_handle>;
+using UnzFileGuard = ZipHandleGuard<unzFile, zipio_close_read_handle>;

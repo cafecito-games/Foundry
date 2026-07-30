@@ -127,6 +127,7 @@
 #include "tests/core/io/test_udp_server.h"
 #include "tests/core/io/test_uds_server.h"
 #include "tests/core/io/test_xml_parser.h"
+#include "tests/core/io/test_zip_io.h"
 #include "tests/core/math/test_aabb.h"
 #include "tests/core/math/test_astar.h"
 #include "tests/core/math/test_basis.h"
