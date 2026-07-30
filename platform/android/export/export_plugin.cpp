@@ -3392,9 +3392,13 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 	if (!p_descriptor->has_section("libraries")) {
 		return false;
 	}
+	// The loader keeps only the most specific match, so a more specific entry
+	// shadows a general one even when its value names no library at all.
+	String best_library;
+	int best_tag_count = 0;
 	for (const String &key : p_descriptor->get_section_keys("libraries")) {
 		const Vector<String> tags = key.split(".");
-		if (tags.is_empty()) {
+		if (tags.is_empty() || tags.size() <= best_tag_count) {
 			continue;
 		}
 		bool all_tags_met = true;
@@ -3408,12 +3412,10 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 		if (!all_tags_met) {
 			continue;
 		}
-		const String library = String(p_descriptor->get_value("libraries", key, String())).strip_edges();
-		if (!library.is_empty()) {
-			return true;
-		}
+		best_library = p_descriptor->get_value("libraries", key, String());
+		best_tag_count = tags.size();
 	}
-	return false;
+	return !best_library.strip_edges().is_empty();
 }
 
 static void _foundry_java_parse_descriptor_version(const String &p_value, bool p_fill_missing_parts, uint32_t r_version[3]) {

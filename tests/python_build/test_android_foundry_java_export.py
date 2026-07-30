@@ -4326,6 +4326,12 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             'android.arm64 = "libfoundry_java.so"\n',
             "",
         )
+        # The loader keeps only the most specific match, so the empty android.arm64
+        # entry shadows the general android entry and resolves no library.
+        shadowed_by_empty_specific_entry = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"\n',
+            'android.arm64 = ""\nandroid = "libfoundry_java.so"\n',
+        )
         cases = (
             (
                 "unparsable",
@@ -4390,6 +4396,12 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             (
                 "unresolved-requested-abi",
                 arm32_only.encode("utf-8"),
+                0,
+                "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            ),
+            (
+                "requested-abi-shadowed-by-empty-entry",
+                shadowed_by_empty_specific_entry.encode("utf-8"),
                 0,
                 "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
             ),
