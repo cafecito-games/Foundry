@@ -559,7 +559,8 @@ class AndroidRuntimeWorkflowTests(WorkflowContractTestCase):
             "tests.python_build.test_android_gradle_behavioral",
             "tests.python_build.test_android_gradle_runtime_contract",
             "tests.python_build.test_android_device_acceptance",
-            "tests/python_build/test_android_runtime_surface.py",
+            "misc/checks/check_file_policy.py",
+            "misc/checks/check_extension_api_naming.py",
         ):
             with self.subTest(module=module):
                 self.assertIn(module, validation)
@@ -769,7 +770,6 @@ class PreCommitRegistrationTests(WorkflowContractTestCase):
         self.assertEqual(
             [
                 "tests.python_build.test_android_foundry_java_export.FoundryJavaPinTests",
-                "tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests",
                 "tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests",
                 "tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests",
             ],
