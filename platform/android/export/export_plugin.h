@@ -189,8 +189,8 @@ class EditorExportPlatformAndroid : public EditorExportPlatform {
 
 	Error _generate_sparse_pck_metadata(const Ref<EditorExportPreset> &p_preset, PackData &p_pack_data, Vector<uint8_t> &r_data);
 	Error _get_foundry_java_export_config(const EditorExportPreset *p_preset, FoundryJavaExportConfig &r_config, String &r_error, bool p_scan_archives) const;
-	Error _inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, String &r_error) const;
-	static Error _validate_foundry_java_extension_descriptor(const Vector<uint8_t> &p_payload, const String &p_entry, const Vector<ABI> &p_enabled_abis, String &r_error);
+	Error _inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, bool p_debug, String &r_error) const;
+	static Error _validate_foundry_java_extension_descriptor(const Vector<uint8_t> &p_payload, const String &p_entry, const Vector<ABI> &p_enabled_abis, bool p_debug, String &r_error);
 
 protected:
 	void _notification(int p_what);
