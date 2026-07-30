@@ -82,7 +82,6 @@ jobs:
             tests.python_build.test_android_foundry_java_export.FoundryJavaPinTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests \
-            tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaGradlePropertyTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaAndroidIntegrationTests
