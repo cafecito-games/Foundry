@@ -4349,6 +4349,13 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 "does not parse as a FoundryExtension descriptor",
             ),
             (
+                "embedded-nul",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8")
+                + b"\x00[configuration]\ncompatibility_minimum = \"9.9.9\"\n",
+                0,
+                "contains an embedded NUL byte and cannot be parsed as a FoundryExtension descriptor",
+            ),
+            (
                 "invalid-utf8",
                 b'[configuration]\nentry_symbol = "\xff\xfe"\n',
                 0,
@@ -4564,10 +4571,9 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         final_artifact_path = export_helper.find("String final_artifact_path = p_path;")
         base_dir = export_helper.find("const String base_dir = final_artifact_path.get_base_dir();")
         copy_result = export_helper.find("int copy_result =")
-        inspection = export_helper.find(
-            "_inspect_foundry_java_artifact(final_artifact_path",
-            copy_result,
-        )
+        inspection = export_helper.find("_inspect_foundry_java_artifact(", copy_result)
+        inspection_call = export_helper[inspection : export_helper.find(");", inspection)]
+        self.assertIn("final_artifact_path", inspection_call)
         removal = export_helper.find("DirAccess::remove_absolute(final_artifact_path)", inspection)
         existence_check = export_helper.find("FileAccess::exists(final_artifact_path)", removal)
         diagnostic = export_helper.find(

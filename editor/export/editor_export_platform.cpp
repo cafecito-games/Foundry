@@ -636,6 +636,26 @@ void EditorExportPlatform::_edit_filter_list(HashSet<String> &r_list, const Stri
 	_edit_files_with_filter(da, filters, r_list, exclude);
 }
 
+// The custom feature tags written into the exported project settings, and so the
+// tags the exported application reports on top of its platform and build features.
+// The plugin list is supplied by the caller: an export run has already prepared its
+// own, and a caller outside a running export may have none.
+Vector<String> EditorExportPlatform::get_custom_project_features(const Ref<EditorExportPreset> &p_preset, bool p_debug, const Vector<Ref<EditorExportPlugin>> &p_export_plugins) const {
+	Vector<String> features;
+	if (!p_preset->get_custom_features().is_empty()) {
+		for (const String &raw_feature : p_preset->get_custom_features().split(",")) {
+			const String feature = raw_feature.strip_edges();
+			if (!feature.is_empty()) {
+				features.push_back(feature);
+			}
+		}
+	}
+	for (const Ref<EditorExportPlugin> &export_plugin : p_export_plugins) {
+		features.append_array(export_plugin->_get_export_features(Ref<EditorExportPlatform>(this), p_debug));
+	}
+	return features;
+}
+
 HashSet<String> EditorExportPlatform::get_features(const Ref<EditorExportPreset> &p_preset, bool p_debug) const {
 	Ref<EditorExportPlatform> platform = p_preset->get_platform();
 	List<String> feature_list;
@@ -1846,21 +1866,7 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 
 	//save config!
 
-	Vector<String> custom_list;
-
-	if (!p_preset->get_custom_features().is_empty()) {
-		Vector<String> tmp_custom_list = p_preset->get_custom_features().split(",");
-
-		for (int i = 0; i < tmp_custom_list.size(); i++) {
-			String f = tmp_custom_list[i].strip_edges();
-			if (!f.is_empty()) {
-				custom_list.push_back(f);
-			}
-		}
-	}
-	for (int i = 0; i < export_plugins.size(); i++) {
-		custom_list.append_array(export_plugins[i]->_get_export_features(Ref<EditorExportPlatform>(this), p_debug));
-	}
+	const Vector<String> custom_list = get_custom_project_features(p_preset, p_debug, export_plugins);
 
 	if (path_remaps.size()) {
 		for (int i = 0; i < path_remaps.size(); i += 2) {

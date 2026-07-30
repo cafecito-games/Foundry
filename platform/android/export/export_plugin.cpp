@@ -3398,8 +3398,8 @@ static bool _foundry_java_android_export_reports_feature(const String &p_tag, co
 	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts") {
 		return true;
 	}
-	// Preset custom features are serialized into the exported project settings, so
-	// the device reports them too.
+	// Preset and export-plugin custom features are serialized into the exported
+	// project settings, so the device reports them too.
 	if (p_custom_features.has(p_tag)) {
 		return true;
 	}
@@ -3509,6 +3509,16 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 		const HashSet<String> &p_custom_features,
 		String &r_error) {
 	const String diagnostic_entry = _foundry_java_safe_diagnostic_value(p_entry);
+
+	// String::append_utf8() stops at the first NUL byte and still reports success,
+	// so a descriptor carrying one would have only its prefix validated while the
+	// runtime parser keeps reading.
+	for (int i = 0; i < p_payload.size(); i++) {
+		if (p_payload[i] == 0) {
+			r_error = vformat(TTR("entry '%s' contains an embedded NUL byte and cannot be parsed as a FoundryExtension descriptor."), diagnostic_entry);
+			return ERR_INVALID_DATA;
+		}
+	}
 
 	String text;
 	if (text.append_utf8((const char *)p_payload.ptr(), p_payload.size()) != OK) {
@@ -6042,19 +6052,18 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 		if (foundry_java.enabled) {
 			String final_artifact_error;
-			HashSet<String> preset_custom_features;
-			for (const String &raw_feature : p_preset->get_custom_features().split(",")) {
-				const String feature = raw_feature.strip_edges();
-				if (!feature.is_empty()) {
-					preset_custom_features.insert(feature);
-				}
+			HashSet<String> custom_features;
+			const Vector<Ref<EditorExportPlugin>> feature_export_plugins =
+					EditorExport::get_singleton() ? EditorExport::get_singleton()->get_export_plugins() : Vector<Ref<EditorExportPlugin>>();
+			for (const String &feature : get_custom_project_features(p_preset, p_debug, feature_export_plugins)) {
+				custom_features.insert(feature);
 			}
 			err = _inspect_foundry_java_artifact(
 					final_artifact_path,
 					enabled_abis,
 					export_format,
 					p_debug,
-					preset_custom_features,
+					custom_features,
 					final_artifact_error);
 			if (err != OK) {
 				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), final_artifact_error);
