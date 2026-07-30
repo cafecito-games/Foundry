@@ -119,7 +119,9 @@ configuration file and declares:
 - a `configuration/compatibility_maximum`, when present, that is not older than
   the exporting engine, and
 - a `[libraries]` entry that resolves under the `android.<arch>` feature tag of
-  every requested ABI.
+  every requested ABI, and no `[libraries]` key that names no library at all. A
+  device reports more feature tags than an export can enumerate, so any key can
+  turn out to be the loader's most specific match and shadow a populated one.
 
 That is the runtime extension loader's mandatory contract, enforced by the export
 that produces the binding instead of by the device that runs it. Because the

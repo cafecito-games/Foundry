@@ -4326,11 +4326,16 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             'android.arm64 = "libfoundry_java.so"\n',
             "",
         )
-        # The loader keeps only the most specific match, so the empty android.arm64
-        # entry shadows the general android entry and resolves no library.
-        shadowed_by_empty_specific_entry = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+        # The loader keeps only the most specific match, so an entry that names no
+        # library can shadow a populated one -- including through a device feature
+        # tag the export cannot enumerate, such as Android's always-on `mobile`.
+        shadowed_by_empty_key = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
             'android.arm64 = "libfoundry_java.so"\n',
             'android.arm64 = ""\nandroid = "libfoundry_java.so"\n',
+        )
+        shadowed_by_empty_device_feature_key = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"\n',
+            'android.arm64 = "libfoundry_java.so"\nandroid.arm64.mobile = ""\n',
         )
         cases = (
             (
@@ -4400,10 +4405,16 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
             ),
             (
-                "requested-abi-shadowed-by-empty-entry",
-                shadowed_by_empty_specific_entry.encode("utf-8"),
+                "empty-library-key",
+                shadowed_by_empty_key.encode("utf-8"),
                 0,
-                "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+                'declares the "[libraries]" key \'android.arm64\' with no library',
+            ),
+            (
+                "empty-device-feature-library-key",
+                shadowed_by_empty_device_feature_key.encode("utf-8"),
+                0,
+                'declares the "[libraries]" key \'android.arm64.mobile\' with no library',
             ),
         )
         for defect, descriptor, export_format, diagnostic in cases:

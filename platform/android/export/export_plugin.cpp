@@ -3393,7 +3393,9 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 		return false;
 	}
 	// The loader keeps only the most specific match, so a more specific entry
-	// shadows a general one even when its value names no library at all.
+	// shadows a general one. An entry that names no library is rejected outright
+	// by _foundry_java_descriptor_empty_library_key(), which is what makes
+	// checking the best match here sufficient.
 	String best_library;
 	int best_tag_count = 0;
 	for (const String &key : p_descriptor->get_section_keys("libraries")) {
@@ -3416,6 +3418,23 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 		best_tag_count = tags.size();
 	}
 	return !best_library.strip_edges().is_empty();
+}
+
+// A device reports far more feature tags than an export can enumerate (Android
+// always reports `mobile`, plus the build type and any project features), so any
+// entry can turn out to be the loader's most specific match. An entry that names
+// no library therefore cannot be dismissed as unreachable: it is rejected wherever
+// it appears, which is what keeps the per-ABI check above from being shadowed.
+static String _foundry_java_descriptor_empty_library_key(const Ref<ConfigFile> &p_descriptor) {
+	if (!p_descriptor->has_section("libraries")) {
+		return String();
+	}
+	for (const String &key : p_descriptor->get_section_keys("libraries")) {
+		if (String(p_descriptor->get_value("libraries", key, String())).strip_edges().is_empty()) {
+			return key;
+		}
+	}
+	return String();
 }
 
 static void _foundry_java_parse_descriptor_version(const String &p_value, bool p_fill_missing_parts, uint32_t r_version[3]) {
@@ -3508,6 +3527,15 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 					FOUNDRY_VERSION_PATCH);
 			return ERR_INVALID_DATA;
 		}
+	}
+
+	const String empty_library_key = _foundry_java_descriptor_empty_library_key(descriptor);
+	if (!empty_library_key.is_empty()) {
+		r_error = vformat(
+				TTR("entry '%s' declares the \"[libraries]\" key '%s' with no library, which the loader can select over a populated key."),
+				diagnostic_entry,
+				_foundry_java_safe_diagnostic_value(empty_library_key));
+		return ERR_INVALID_DATA;
 	}
 
 	for (const ABI &abi : p_enabled_abis) {
