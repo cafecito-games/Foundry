@@ -4351,7 +4351,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             (
                 "embedded-nul",
                 LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8")
-                + b"\x00[configuration]\ncompatibility_minimum = \"9.9.9\"\n",
+                + b'\x00[configuration]\ncompatibility_minimum = "9.9.9"\n',
                 0,
                 "contains an embedded NUL byte and cannot be parsed as a FoundryExtension descriptor",
             ),
@@ -4440,7 +4440,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     'android.arm64 = " libfoundry_java.so "',
                 ).encode("utf-8"),
                 0,
-                'declares the "[libraries]" key \'android.arm64\', which pads its library path with whitespace',
+                "declares the \"[libraries]\" key 'android.arm64', which pads its library path with whitespace",
             ),
             (
                 "padded-entry-symbol",
@@ -4464,13 +4464,13 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 "empty-library-key",
                 shadowed_by_empty_key.encode("utf-8"),
                 0,
-                'declares the "[libraries]" key \'android.arm64\', which names no library',
+                "declares the \"[libraries]\" key 'android.arm64', which names no library",
             ),
             (
                 "empty-device-feature-library-key",
                 shadowed_by_empty_device_feature_key.encode("utf-8"),
                 0,
-                'declares the "[libraries]" key \'android.arm64.mobile\', which names no library',
+                "declares the \"[libraries]\" key 'android.arm64.mobile', which names no library",
             ),
         )
         for defect, descriptor, export_format, diagnostic in cases:
