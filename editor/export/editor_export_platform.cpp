@@ -641,18 +641,23 @@ void EditorExportPlatform::_edit_filter_list(HashSet<String> &r_list, const Stri
 // The plugin list is supplied by the caller: an export run has already prepared its
 // own, and a caller outside a running export may have none.
 Vector<String> EditorExportPlatform::get_custom_project_features(const Ref<EditorExportPreset> &p_preset, bool p_debug, const Vector<Ref<EditorExportPlugin>> &p_export_plugins) const {
-	Vector<String> features;
+	Vector<String> raw_features;
 	if (!p_preset->get_custom_features().is_empty()) {
-		for (const String &raw_feature : p_preset->get_custom_features().split(",")) {
-			const String feature = raw_feature.strip_edges();
-			if (!feature.is_empty()) {
-				features.push_back(feature);
-			}
-		}
+		raw_features.append_array(p_preset->get_custom_features().split(","));
 	}
 	const Ref<EditorExportPlatform> platform = p_preset->get_platform();
 	for (const Ref<EditorExportPlugin> &export_plugin : p_export_plugins) {
-		features.append_array(export_plugin->_get_export_features(platform, p_debug));
+		raw_features.append_array(export_plugin->_get_export_features(platform, p_debug));
+	}
+
+	// Normalized the way ProjectSettings::save_custom() writes them, so this is the
+	// exact set the exported application reports.
+	Vector<String> features;
+	for (const String &raw_feature : raw_features) {
+		const String feature = raw_feature.strip_edges().remove_char('"');
+		if (!feature.is_empty()) {
+			features.push_back(feature);
+		}
 	}
 	return features;
 }
