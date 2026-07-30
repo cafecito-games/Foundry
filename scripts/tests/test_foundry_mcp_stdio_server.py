@@ -13,7 +13,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.foundry_mcp import FoundryMCPStdioServer
+from scripts.foundry_mcp import FoundryMCPStdioServer  # noqa: E402
 
 
 class FakeClient:
@@ -77,16 +77,23 @@ def request(message_id: int, method: str, params: dict[str, Any] | None = None) 
     return message
 
 
+def handle(server: FoundryMCPStdioServer, message: dict[str, Any]) -> dict[str, Any]:
+    response = server.handle_message(message)
+    assert response is not None, f"{message['method']} produced no response"
+    return response
+
+
 def tool_args(response: dict[str, Any]) -> dict[str, Any]:
-    return response["result"]["structuredContent"]
+    structured: dict[str, Any] = response["result"]["structuredContent"]
+    return structured
 
 
 class FoundryMCPStdioServerTestCase(unittest.TestCase):
     def test_initialize_and_tools_list_expose_bridge_tools(self) -> None:
         server = FoundryMCPStdioServer(session_factory=FakeSessionFactory())
 
-        init = server.handle_message(request(1, "initialize", {"protocolVersion": "2025-11-25"}))
-        tools = server.handle_message(request(2, "tools/list"))
+        init = handle(server, request(1, "initialize", {"protocolVersion": "2025-11-25"}))
+        tools = handle(server, request(2, "tools/list"))
 
         self.assertEqual(init["result"]["serverInfo"]["name"], "foundry-editor-automation-bridge")
         tool_names = [tool["name"] for tool in tools["result"]["tools"]]
@@ -99,7 +106,8 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
         factory = FakeSessionFactory()
         server = FoundryMCPStdioServer(session_factory=factory)
 
-        response = server.handle_message(
+        response = handle(
+            server,
             request(
                 1,
                 "tools/call",
@@ -107,7 +115,7 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
                     "name": "foundry_connect",
                     "arguments": {"endpoint": "http://127.0.0.1:1/mcp", "token": "abc"},
                 },
-            )
+            ),
         )
 
         structured = tool_args(response)
@@ -121,12 +129,13 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
         factory = FakeSessionFactory()
         server = FoundryMCPStdioServer(session_factory=factory, default_binary="~/bin/foundry")
 
-        response = server.handle_message(
+        response = handle(
+            server,
             request(
                 1,
                 "tools/call",
                 {"name": "foundry_launch_editor", "arguments": {"project": "~/test-foundry-project-2"}},
-            )
+            ),
         )
 
         self.assertFalse(response["result"]["isError"])
@@ -144,17 +153,20 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
             )
         )
 
-        response = server.handle_message(
+        response = handle(
+            server,
             request(
                 2,
                 "tools/call",
                 {"name": "foundry_observe_ui", "arguments": {"max_depth": 2}},
-            )
+            ),
         )
 
         self.assertFalse(response["result"]["isError"])
         self.assertEqual(tool_args(response), {"ok": True, "tool": "observe_ui", "arguments": {"max_depth": 2}})
-        self.assertEqual(factory.last_session.client.calls[-1], ("observe_ui", {"max_depth": 2}))
+        session = factory.last_session
+        assert session is not None
+        self.assertEqual(session.client.calls[-1], ("observe_ui", {"max_depth": 2}))
 
     def test_generic_call_tool_and_read_resource_proxy_to_editor(self) -> None:
         factory = FakeSessionFactory()
@@ -167,7 +179,8 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
             )
         )
 
-        call = server.handle_message(
+        call = handle(
+            server,
             request(
                 2,
                 "tools/call",
@@ -175,14 +188,15 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
                     "name": "foundry_call_tool",
                     "arguments": {"name": "custom_editor_tool", "arguments": {"value": 5}},
                 },
-            )
+            ),
         )
-        resource = server.handle_message(
+        resource = handle(
+            server,
             request(
                 3,
                 "tools/call",
                 {"name": "foundry_read_resource", "arguments": {"uri": "foundry://editor/state"}},
-            )
+            ),
         )
 
         self.assertEqual(tool_args(call), {"ok": True, "tool": "custom_editor_tool", "arguments": {"value": 5}})
@@ -191,8 +205,8 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
     def test_tool_call_without_session_returns_tool_error(self) -> None:
         server = FoundryMCPStdioServer(session_factory=FakeSessionFactory())
 
-        response = server.handle_message(
-            request(1, "tools/call", {"name": "foundry_observe_ui", "arguments": {"max_depth": 2}})
+        response = handle(
+            server, request(1, "tools/call", {"name": "foundry_observe_ui", "arguments": {"max_depth": 2}})
         )
 
         self.assertTrue(response["result"]["isError"])
@@ -209,10 +223,12 @@ class FoundryMCPStdioServerTestCase(unittest.TestCase):
             )
         )
 
-        response = server.handle_message(request(2, "tools/call", {"name": "foundry_disconnect", "arguments": {}}))
+        response = handle(server, request(2, "tools/call", {"name": "foundry_disconnect", "arguments": {}}))
 
         self.assertFalse(response["result"]["isError"])
-        self.assertTrue(factory.last_session.closed)
+        session = factory.last_session
+        assert session is not None
+        self.assertTrue(session.closed)
         self.assertIsNone(server.session)
 
     def test_stdio_loop_writes_one_response_per_request_and_skips_notifications(self) -> None:

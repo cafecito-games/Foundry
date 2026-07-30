@@ -81,7 +81,8 @@ def wait_for_automation_line(proc: subprocess.Popen[str], timeout_s: float = 180
             if "FOUNDRY_AUTOMATION " in line:
                 marker = "FOUNDRY_AUTOMATION "
                 idx = line.index(marker) + len(marker)
-                return json.loads(line[idx:].strip())
+                automation: dict[str, Any] = json.loads(line[idx:].strip())
+                return automation
             if "FOUNDRY_AUTOMATION_ERROR" in line:
                 raise RuntimeError(f"Editor automation failed to start: {line.strip()}")
         elif proc.poll() is not None:
@@ -91,10 +92,11 @@ def wait_for_automation_line(proc: subprocess.Popen[str], timeout_s: float = 180
 
 
 def structured_content(tool_result: dict[str, Any]) -> dict[str, Any]:
-    return tool_result.get("structuredContent", {})
+    structured: dict[str, Any] = tool_result.get("structuredContent", {})
+    return structured
 
 
-def assert_ok(name: str, condition: bool, message: str, failures: list[Failure], **details: Any) -> None:
+def assert_ok(name: str, condition: object, message: str, failures: list[Failure], **details: Any) -> None:
     if not condition:
         failures.append(Failure(name=name, message=message, details=details))
 
@@ -389,7 +391,6 @@ def exercise_incremental_reads(client: FoundryMCPClient, context: dict[str, Any]
 
     if context.get("event_marker"):
         poll2 = client.call_tool("poll_events", {"since": context["event_marker"]})
-        poll2_structured = structured_content(poll2)
         assert_ok("poll_events.since", not poll2.get("isError"), "since-marker poll failed", failures)
 
 

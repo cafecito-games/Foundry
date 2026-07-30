@@ -6,4 +6,6 @@
 	<description>
 		Embedded scene-tree widget used by [SceneTreeDock]. Not intended for direct scripting use.
 	</description>
+	<tutorials>
+	</tutorials>
 </class>

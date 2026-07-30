@@ -6,4 +6,6 @@
 	<description>
 		Built-in editor dock hosted inside each scene tile's dock region. Access the focused tile's instance via [method EditorInterface.get_focused_scene_tree_dock].
 	</description>
+	<tutorials>
+	</tutorials>
 </class>

@@ -10,29 +10,6 @@
 	</description>
 	<tutorials>
 	</tutorials>
-	<members>
-		<member name="base_type" type="StringName" setter="" getter="get_base_type">
-			The native base or base script class name declared by the script.
-		</member>
-		<member name="fully_qualified_name" type="StringName" setter="" getter="get_fully_qualified_name">
-			The namespace-qualified fully qualified class name when the script declares a namespace.
-		</member>
-		<member name="global_class_name" type="StringName" setter="" getter="get_global_class_name">
-			The [code]class_name[/code] identity when declared; empty otherwise.
-		</member>
-		<member name="indexed_ok" type="bool" setter="" getter="get_indexed_ok">
-			[code]false[/code] when parsing or indexing failed. Runners should treat the file as broken rather than silently skipping it.
-		</member>
-		<member name="is_abstract" type="bool" setter="" getter="get_is_abstract">
-			[code]true[/code] when the script is declared [code]abstract[/code].
-		</member>
-		<member name="is_trait" type="bool" setter="" getter="get_is_trait">
-			[code]true[/code] when the script is a trait declaration.
-		</member>
-		<member name="path" type="String" setter="" getter="get_path">
-			The script resource path, for example [code]res://tests/inventory_tests.fs[/code].
-		</member>
-	</members>
 	<methods>
 		<method name="get_class_annotations" qualifiers="const">
 			<return type="FSAnnotation[]" />
@@ -66,4 +43,27 @@
 			</description>
 		</method>
 	</methods>
+	<members>
+		<member name="base_type" type="StringName" setter="" getter="get_base_type">
+			The native base or base script class name declared by the script.
+		</member>
+		<member name="fully_qualified_name" type="StringName" setter="" getter="get_fully_qualified_name">
+			The namespace-qualified fully qualified class name when the script declares a namespace.
+		</member>
+		<member name="global_class_name" type="StringName" setter="" getter="get_global_class_name">
+			The [code]class_name[/code] identity when declared; empty otherwise.
+		</member>
+		<member name="indexed_ok" type="bool" setter="" getter="get_indexed_ok">
+			[code]false[/code] when parsing or indexing failed. Runners should treat the file as broken rather than silently skipping it.
+		</member>
+		<member name="is_abstract" type="bool" setter="" getter="get_is_abstract">
+			[code]true[/code] when the script is declared [code]abstract[/code].
+		</member>
+		<member name="is_trait" type="bool" setter="" getter="get_is_trait">
+			[code]true[/code] when the script is a trait declaration.
+		</member>
+		<member name="path" type="String" setter="" getter="get_path">
+			The script resource path, for example [code]res://tests/inventory_tests.fs[/code].
+		</member>
+	</members>
 </class>

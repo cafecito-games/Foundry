@@ -769,7 +769,7 @@
 				Multiple raytracing lists cannot be created at the same time; you must finish the previous raytracing list first using [method raytracing_list_end].
 				A simple raytracing operation might look like this (code is not a complete example):
 				[codeblocks]
-				[gdscript]
+				[foundry_script]
 				var rd = RenderingDevice.new()
 				assert(rd.has_feature(RenderingDevice.SUPPORTS_RAYTRACING_PIPELINE))
 
@@ -812,7 +812,7 @@
 				rd.raytracing_list_trace_rays(raylist, 0, hit_sbt, width, height, 1)
 
 				rd.raytracing_list_end()
-				[/gdscript]
+				[/foundry_script]
 				[/codeblocks]
 			</description>
 		</method>
@@ -2266,12 +2266,12 @@
 		<constant name="BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT" value="8" enum="BufferCreationBits" is_bitfield="true">
 			Allows usage of this buffer as input data for an acceleration structure build operation. You must first check that the GPU supports it:
 			[codeblocks]
-			[gdscript]
+			[foundry_script]
 			rd = RenderingServer.get_rendering_device()
 
 			if rd.has_feature(RenderingDevice.SUPPORTS_RAYTRACING_PIPELINE):
 			    storage_buffer = rd.storage_buffer_create(bytes.size(), bytes, RenderingDevice.BUFFER_CREATION_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT)
-			[/gdscript]
+			[/foundry_script]
 			[/codeblocks]
 		</constant>
 		<constant name="ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT" value="1" enum="AccelerationStructureFlagBits" is_bitfield="true">

@@ -73,7 +73,7 @@ def main():
 
     log = []
     for i, rec in enumerate(picks, 1):
-        sha, pr, title = rec["sha"], rec["pr"], rec.get("rationale", "")
+        sha, pr = rec["sha"], rec["pr"]
         label = f"[{i}/{len(picks)}] PR#{pr} {sha[:10]} risk={rec.get('risk')}"
         if args.dry_run:
             print(f"would pick {label}")

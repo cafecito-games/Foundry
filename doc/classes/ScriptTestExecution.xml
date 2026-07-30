@@ -16,6 +16,8 @@
 		A single blocking native call cannot be interrupted; enforcement happens at script line checkpoints and [code]await[/code] boundaries only.
 		Release-profile compiled-bytecode exports strip line checkpoints, so CPU-loop timeouts fall back to await-boundary enforcement there. Editor and headless project test runs retain line checkpoints.
 	</description>
+	<tutorials>
+	</tutorials>
 	<methods>
 		<method name="guard_callv">
 			<return type="Variant" />

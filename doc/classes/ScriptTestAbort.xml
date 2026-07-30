@@ -6,6 +6,8 @@
 	<description>
 		Static helpers that let guarded test code request an immediate abort at the next script checkpoint. Abort unwinds are internal to the guard and are not catchable by test code.
 	</description>
+	<tutorials>
+	</tutorials>
 	<methods>
 		<method name="abort_current" qualifiers="static">
 			<return type="bool" />

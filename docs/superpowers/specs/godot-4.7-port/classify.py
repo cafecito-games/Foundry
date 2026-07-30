@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from typing import Counter as CounterType
 
 RANGE = "4.6.3-stable..4.7-stable"
 
@@ -70,8 +71,8 @@ def bucket_for(paths):
 
 
 # Get changed files per merge (net PR delta). Batch for speed.
-bucket_counts = Counter()
-subsys_counts = Counter()
+bucket_counts: CounterType[str] = Counter()
+subsys_counts: CounterType[str] = Counter()
 for r in records:
     out = git("diff", "--name-only", f"{r['sha']}^1", r["sha"])
     paths = out.splitlines()

@@ -118,13 +118,15 @@ def artifact_web_url(repository: str, artifact: dict[str, Any]) -> str:
     run_id = workflow_run.get("id")
     if artifact_id and run_id:
         return f"https://github.com/{repository}/actions/runs/{run_id}/artifacts/{artifact_id}"
-    return artifact.get("archive_download_url", "")
+    download_url: str = artifact.get("archive_download_url", "")
+    return download_url
 
 
 def artifact_run_url(repository: str, artifact: dict[str, Any]) -> str:
     workflow_run = artifact.get("workflow_run") or {}
     if workflow_run.get("html_url"):
-        return workflow_run["html_url"]
+        html_url: str = workflow_run["html_url"]
+        return html_url
     if workflow_run.get("id"):
         return f"https://github.com/{repository}/actions/runs/{workflow_run['id']}"
     return ""
@@ -230,7 +232,10 @@ def build_parser() -> argparse.ArgumentParser:
     plan = subparsers.add_parser("plan", help="Emit GitHub outputs for a PR editor artifact request.")
     plan.add_argument("--body", required=True)
     plan.add_argument("--permission", required=True)
-    plan.add_argument("--is-pr", action=argparse.BooleanOptionalAction, default=False)
+    pr_group = plan.add_mutually_exclusive_group()
+    pr_group.add_argument("--is-pr", dest="is_pr", action="store_true")
+    pr_group.add_argument("--no-is-pr", dest="is_pr", action="store_false")
+    plan.set_defaults(is_pr=False)
     plan.add_argument("--pr-number", required=True, type=int)
     plan.add_argument("--head-sha", required=True)
     plan.add_argument("--head-repo", required=True)
@@ -249,7 +254,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str]) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    exit_code: int = args.func(args)
+    return exit_code
 
 
 if __name__ == "__main__":

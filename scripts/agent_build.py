@@ -17,7 +17,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import NamedTuple, TextIO
+from typing import NamedTuple, TextIO, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LOG = Path("/tmp/foundry-build.log")
@@ -70,7 +70,7 @@ class ProgressReporter:
         if self.progress_path is not None:
             self.progress_path.parent.mkdir(parents=True, exist_ok=True)
             mode = "a" if self.append_progress else "w"
-            self.progress_file = self.progress_path.open(mode, encoding="utf-8")
+            self.progress_file = cast(TextIO, self.progress_path.open(mode, encoding="utf-8"))
         return self
 
     def __exit__(self, _exc_type, _exc_value, _traceback) -> None:
@@ -256,7 +256,7 @@ def arch_from_args(args: argparse.Namespace) -> str:
     for raw_arg in reversed(args.scons_arg):
         key, separator, value = raw_arg.partition("=")
         if key == "arch" and separator and value:
-            return value
+            return str(value)
     return normalize_arch()
 
 
@@ -393,7 +393,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def progress_path_from_args(args: argparse.Namespace) -> Path | None:
     if args.no_progress_file:
         return None
-    return args.progress_file
+    progress_file: Path | None = args.progress_file
+    return progress_file
 
 
 def main(argv: list[str]) -> int:

@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, TextIO, cast
 
 from scripts.foundry_mcp.client import PROTOCOL_VERSION, FoundryMCPError
 from scripts.foundry_mcp.session import FoundryAutomationStartupError, FoundryEditorAutomationSession
@@ -328,10 +328,11 @@ class FoundryMCPStdioServer:
         }
         return mapping.get(bridge_tool)
 
-    def _require_session(self) -> Any:
+    def _require_session(self) -> FoundryEditorAutomationSession:
         if self.session is None:
             raise FoundryMCPBridgeError("not_connected", "No Foundry editor automation session is connected.")
-        return self.session
+        # The session factory is intentionally untyped so tests can inject fakes.
+        return cast(FoundryEditorAutomationSession, self.session)
 
     def _close_existing_session(self) -> None:
         if self.session is not None:
