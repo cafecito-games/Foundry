@@ -125,14 +125,14 @@ TEST_CASE("[Editor][EditorExportPlatformAndroid] Foundry-Java suboptions follow 
 	SUBCASE("hidden when the toggle is disabled") {
 		Ref<EditorExportPreset> preset = make_preset(true, false);
 		for (const char *option : FOUNDRY_JAVA_SUBOPTIONS) {
-			CHECK_FALSE_MESSAGE(platform->get_export_option_visibility(preset.ptr(), option), option);
+			CHECK_FALSE_MESSAGE(platform->get_export_option_visibility(preset.ptr(), option), String(option));
 		}
 	}
 
 	SUBCASE("shown when the toggle is enabled, even without Gradle builds") {
 		Ref<EditorExportPreset> preset = make_preset(false, true);
 		for (const char *option : FOUNDRY_JAVA_SUBOPTIONS) {
-			CHECK_MESSAGE(platform->get_export_option_visibility(preset.ptr(), option), option);
+			CHECK_MESSAGE(platform->get_export_option_visibility(preset.ptr(), option), String(option));
 		}
 	}
 }
