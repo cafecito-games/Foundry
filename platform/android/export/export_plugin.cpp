@@ -1982,6 +1982,8 @@ static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOM
 // The extension descriptor is parsed, not just streamed, so it gets a cap tight
 // enough to buffer whole instead of the shared required-entry limit.
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES = 64 * 1024;
+// The single bridge the binding AAR is allowed to package, under lib/<abi>/.
+static constexpr const char *FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME = "libfoundry_java.so";
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES = 16383;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES = 16 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_BYTES = 128 * 1024 * 1024;
@@ -3452,7 +3454,8 @@ static bool _foundry_java_android_export_reports_feature(const String &p_tag, co
 // `[libraries]` matching for a device running the requested ABI. Autodetection is
 // deliberately not honored: an export cannot observe the on-device directory the
 // loader would scan.
-static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
+static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features, String &r_library) {
+	r_library = String();
 	if (!p_descriptor->has_section("libraries")) {
 		return false;
 	}
@@ -3480,7 +3483,21 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 		best_library = p_descriptor->get_value("libraries", key, String());
 		best_tag_count = tags.size();
 	}
+	r_library = best_library;
 	return !best_library.strip_edges().is_empty();
+}
+
+// The resolved value must name the one bridge the same inspection pass requires
+// under lib/<abi>/, or the export ships a binding that only dies on device, at
+// dlopen(). Only the file name is compared: the loader turns a relative value
+// into a res:// path that is not a real file on device, and
+// OS_Android::open_dynamic_library() then falls back to dlopen()ing
+// String::get_file() of it so the packaged lib/<abi>/ entry is found by name. A
+// path-qualified value is therefore accepted, matching that resolution exactly --
+// including String::get_file()'s treatment of a backslash as a separator, which
+// the runtime inherits by using the same call.
+static bool _foundry_java_library_names_packaged_bridge(const String &p_library) {
+	return p_library.get_file() == String(FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME);
 }
 
 // A device reports far more feature tags than an export can enumerate (Android
@@ -3633,12 +3650,22 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 	}
 
 	for (const ABI &abi : p_enabled_abis) {
-		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.abi, abi.arch, p_debug, p_custom_features)) {
+		String resolved_library;
+		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.abi, abi.arch, p_debug, p_custom_features, resolved_library)) {
 			r_error = vformat(
 					TTR("entry '%s' resolves no \"[libraries]\" entry for requested ABI '%s' (feature tag 'android.%s')."),
 					diagnostic_entry,
 					abi.abi,
 					abi.arch);
+			return ERR_INVALID_DATA;
+		}
+		if (!_foundry_java_library_names_packaged_bridge(resolved_library)) {
+			r_error = vformat(
+					TTR("entry '%s' resolves the \"[libraries]\" value '%s' for requested ABI '%s', which does not name the packaged bridge '%s'."),
+					diagnostic_entry,
+					_foundry_java_safe_diagnostic_value(resolved_library),
+					abi.abi,
+					String(FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME));
 			return ERR_INVALID_DATA;
 		}
 	}
@@ -3653,7 +3680,7 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 	const String registry_index = root + "assets/foundry_java/registry-index-v2.txt";
 	Vector<String> expected_bridges;
 	for (const ABI &abi : p_enabled_abis) {
-		expected_bridges.push_back(root + "lib/" + abi.abi + "/libfoundry_java.so");
+		expected_bridges.push_back(root + "lib/" + abi.abi + "/" + FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME);
 	}
 
 	Ref<FileAccess> artifact_file;

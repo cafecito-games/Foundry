@@ -4617,6 +4617,64 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 0,
                 "declares the \"[libraries]\" key 'android.arm64.mobile', which names no library",
             ),
+            # A value the loader resolves but that names something other than the
+            # one bridge the export packages is the same packaged-but-dead binding:
+            # it only fails on device, at dlopen().
+            (
+                "resolved-library-names-another-library",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libsomething_else.so"',
+                ).encode("utf-8"),
+                0,
+                "resolves the \"[libraries]\" value 'libsomething_else.so' for requested ABI"
+                " 'arm64-v8a', which does not name the packaged bridge 'libfoundry_java.so'",
+            ),
+            (
+                "resolved-library-names-another-library-aab",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libsomething_else.so"',
+                ).encode("utf-8"),
+                1,
+                "resolves the \"[libraries]\" value 'libsomething_else.so' for requested ABI"
+                " 'arm64-v8a', which does not name the packaged bridge 'libfoundry_java.so'",
+            ),
+            # The bridge name is compared, not merely contained: a longer name the
+            # linker would not resolve to the packaged bridge is still rejected.
+            (
+                "resolved-library-only-suffixes-the-bridge-name",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libfoundry_java.so.1"',
+                ).encode("utf-8"),
+                0,
+                "resolves the \"[libraries]\" value 'libfoundry_java.so.1' for requested ABI"
+                " 'arm64-v8a', which does not name the packaged bridge 'libfoundry_java.so'",
+            ),
+            # A directory-only value has no file component to name the bridge with.
+            (
+                "resolved-library-names-a-directory",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "res://"',
+                ).encode("utf-8"),
+                0,
+                "resolves the \"[libraries]\" value 'res://' for requested ABI"
+                " 'arm64-v8a', which does not name the packaged bridge 'libfoundry_java.so'",
+            ),
+            # A more specific key that resolves on device shadows the canonical one,
+            # so the bridge name is checked against the value the loader would pick.
+            (
+                "shadowing-key-names-another-library",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libfoundry_java.so"\nandroid.arm64.mobile = "libsomething_else.so"\n',
+                ).encode("utf-8"),
+                0,
+                "resolves the \"[libraries]\" value 'libsomething_else.so' for requested ABI"
+                " 'arm64-v8a', which does not name the packaged bridge 'libfoundry_java.so'",
+            ),
         )
         for defect, descriptor, export_format, diagnostic in cases:
             with self.subTest(defect=defect):
@@ -4651,6 +4709,24 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 output = result.stdout + result.stderr
                 self.assertEqual(0, result.returncode, output)
                 self.assertTrue(artifact.is_file())
+
+    def test_export_accepts_a_path_qualified_packaged_bridge_value(self) -> None:
+        # Android resolves a packaged native library by file name: the loader turns a
+        # relative value into a res:// path that is not a real file on device, and
+        # OS_Android::open_dynamic_library() then dlopen()s the file name, so the
+        # packaged lib/<abi>/libfoundry_java.so is what loads either way.
+        descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            '= "libfoundry_java.so"',
+            '= "res://libfoundry_java.so"',
+        )
+        result, artifact = self._export_packaged_descriptor(
+            "path-qualified-bridge",
+            descriptor.encode("utf-8"),
+            requested_abis=("armeabi-v7a", "arm64-v8a", "x86", "x86_64"),
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(0, result.returncode, output)
+        self.assertTrue(artifact.is_file())
 
     def test_export_rejects_library_keys_gated_on_a_reserved_custom_feature_name(self) -> None:
         # OS::has_feature() answers reserved tags itself before it reaches the

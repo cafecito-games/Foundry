@@ -127,9 +127,21 @@ configuration file and declares:
   precision or threading, fails closed. An empty key is rejected wherever it appears, because a
   device reports more feature tags than an export can enumerate, so any key can
   turn out to be the loader's most specific match and shadow a populated one.
+- a resolved `[libraries]` value, for every requested ABI, that names the
+  packaged bridge `libfoundry_java.so` rather than some other library. A
+  path-qualified value such as `res://libfoundry_java.so` is accepted: the loader
+  turns a relative value into a `res://` path that is not a real file on device,
+  and `OS_Android::open_dynamic_library()` then falls back to `dlopen()`ing the
+  file name so the packaged `lib/<abi>/` entry is what loads. Only the file name
+  decides the outcome, so only the file name is checked. This is the one check
+  the runtime loader does not perform itself -- it discovers the mismatch later,
+  at `dlopen()`, on device -- and the export can make it because the same
+  inspection pass already requires the packaged bridge set to be exactly
+  `lib/<requested-abi>/libfoundry_java.so`.
 
-That is the runtime extension loader's mandatory contract, enforced by the export
-that produces the binding instead of by the device that runs it. Because the
+That is the runtime extension loader's mandatory contract, plus the packaged
+bridge name it can only discover at `dlopen()`, enforced by the export that
+produces the binding instead of by the device that runs it. Because the
 descriptor is buffered to be parsed, it carries its own 64 KiB decompressed limit
 and a larger payload fails inspection without being read.
 
