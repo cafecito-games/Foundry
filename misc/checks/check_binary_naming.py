@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""Scan a built Foundry binary for leaked upstream identifiers.
+
+Needs a compiled artifact, so it is invoked from build/release workflows rather
+than from `pre-commit`. The token matching itself is pure and lives in
+`find_forbidden_tokens`, which `misc/checks/tests/test_check_binary_naming.py`
+drives with synthetic `strings`/`nm` output.
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -44,6 +52,11 @@ FORBIDDEN_BINARY_STRINGS = [
 ]
 
 
+def find_forbidden_tokens(scan_text: str) -> list[str]:
+    """Return every forbidden token present in `scan_text`, in policy order."""
+    return [token for token in FORBIDDEN_BINARY_STRINGS if token in scan_text]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Scan a Foundry binary for high-signal internal Godot spellings.")
     parser.add_argument("binary", type=Path)
@@ -56,12 +69,12 @@ def main() -> int:
     strings = subprocess.run(["strings", "-a", str(args.binary)], check=True, text=True, stdout=subprocess.PIPE).stdout
     nm = subprocess.run(["nm", "-a", str(args.binary)], check=False, text=True, stdout=subprocess.PIPE).stdout
     scan_text = f"{strings}\n{nm}"
-    leaked = [token for token in FORBIDDEN_BINARY_STRINGS if token in scan_text]
+    leaked = find_forbidden_tokens(scan_text)
     if leaked:
         print(f"{args.binary} still contains forbidden binary spellings: {leaked}", file=sys.stderr)
         return 1
 
-    print("Foundry binary naming tests passed")
+    print("Foundry binary naming check passed")
     return 0
 
 

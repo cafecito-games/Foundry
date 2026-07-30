@@ -13,7 +13,7 @@
 ## File map
 
 - Create: `misc/scripts/package_ios_templates.py` — deterministic cross-job assembler for the iOS Xcode template zip.
-- Create: `misc/scripts/test_package_ios_templates.py` — executable regression test using temporary fixtures and a fake `lipo` executable.
+- Create: `misc/checks/check_ios_template_package.py` — executable regression test using temporary fixtures and a fake `lipo` executable.
 - Modify: `.github/workflows/release.yml:790-860` — turn `build-ios` into a four-entry matrix, use unique cache/artifact names, and add the `assemble-ios` job.
 - Modify: `.github/scripts/test_release_ios_workflow.py` — assert the matrix, simulator architecture steps, assembly dependency, and final package wiring.
 - Create: `docs/superpowers/specs/2026-07-24-split-ios-template-builds-design.md` — approved design, already committed as `57265ee2d5`.
@@ -21,7 +21,7 @@
 ### Task 1: Add a failing packaging-helper regression test
 
 **Files:**
-- Create: `misc/scripts/test_package_ios_templates.py`
+- Create: `misc/checks/check_ios_template_package.py`
 
 - [x] **Step 1: Write the failing test**
 
@@ -37,14 +37,14 @@ with zipfile.ZipFile(output) as archive:
     assert not any("visionos" in name for name in names)
 ```
 
-Also run the helper with one required raw library removed and assert it exits non-zero with the missing filename in stderr. Keep the test executable with `python3 misc/scripts/test_package_ios_templates.py` and use only the Python standard library.
+Also run the helper with one required raw library removed and assert it exits non-zero with the missing filename in stderr. Keep the test executable with `python3 misc/checks/check_ios_template_package.py` and use only the Python standard library.
 
 - [x] **Step 2: Run the test to verify it fails**
 
 Run:
 
 ```bash
-python3 misc/scripts/test_package_ios_templates.py
+python3 misc/checks/check_ios_template_package.py
 ```
 
 Expected: FAIL because `misc/scripts/package_ios_templates.py` does not exist yet.
@@ -102,7 +102,7 @@ Remove every top-level `libfoundry.*.xcframework` whose name is not an iOS relea
 Run:
 
 ```bash
-python3 misc/scripts/test_package_ios_templates.py
+python3 misc/checks/check_ios_template_package.py
 ```
 
 Expected: PASS, including the archive layout and missing-input failure case.
@@ -206,7 +206,7 @@ In `package.needs`, replace `build-ios` with `assemble-ios`, and assert that `bu
 Run:
 
 ```bash
-python3 misc/scripts/test_package_ios_templates.py
+python3 misc/checks/check_ios_template_package.py
 python3 .github/scripts/test_release_ios_workflow.py
 ```
 
@@ -232,8 +232,8 @@ Expected: no diagnostics and exit status 0.
 Run:
 
 ```bash
-python3 -m compileall -q misc/scripts/package_ios_templates.py misc/scripts/test_package_ios_templates.py .github/scripts/test_release_ios_workflow.py
-python3 misc/scripts/test_package_ios_templates.py
+python3 -m compileall -q misc/scripts/package_ios_templates.py misc/checks/check_ios_template_package.py .github/scripts/test_release_ios_workflow.py
+python3 misc/checks/check_ios_template_package.py
 python3 .github/scripts/test_release_ios_workflow.py
 ```
 
@@ -246,7 +246,7 @@ Run:
 ```bash
 git status --short
 git diff --check HEAD
-git diff HEAD -- .github/workflows/release.yml misc/scripts/package_ios_templates.py misc/scripts/test_package_ios_templates.py .github/scripts/test_release_ios_workflow.py
+git diff HEAD -- .github/workflows/release.yml misc/scripts/package_ios_templates.py misc/checks/check_ios_template_package.py .github/scripts/test_release_ios_workflow.py
 ```
 
 Confirm only the intended implementation files are changed after the already-committed design document, with no generated archives or temporary files tracked.
@@ -254,6 +254,6 @@ Confirm only the intended implementation files are changed after the already-com
 - [x] **Step 4: Commit the implementation**
 
 ```bash
-git add .github/workflows/release.yml .github/scripts/test_release_ios_workflow.py misc/scripts/package_ios_templates.py misc/scripts/test_package_ios_templates.py
+git add .github/workflows/release.yml .github/scripts/test_release_ios_workflow.py misc/scripts/package_ios_templates.py misc/checks/check_ios_template_package.py
 git commit -m "ci: parallelize iOS template builds"
 ```
