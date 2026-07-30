@@ -3454,8 +3454,7 @@ static bool _foundry_java_android_export_reports_feature(const String &p_tag, co
 // `[libraries]` matching for a device running the requested ABI. Autodetection is
 // deliberately not honored: an export cannot observe the on-device directory the
 // loader would scan.
-static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features, String &r_library) {
-	r_library = String();
+static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
 	if (!p_descriptor->has_section("libraries")) {
 		return false;
 	}
@@ -3483,21 +3482,7 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 		best_library = p_descriptor->get_value("libraries", key, String());
 		best_tag_count = tags.size();
 	}
-	r_library = best_library;
 	return !best_library.strip_edges().is_empty();
-}
-
-// The resolved value must name the one bridge the same inspection pass requires
-// under lib/<abi>/, or the export ships a binding that only dies on device, at
-// dlopen(). Only the file name is compared: the loader turns a relative value
-// into a res:// path that is not a real file on device, and
-// OS_Android::open_dynamic_library() then falls back to dlopen()ing
-// String::get_file() of it so the packaged lib/<abi>/ entry is found by name. A
-// path-qualified value is therefore accepted, matching that resolution exactly --
-// including String::get_file()'s treatment of a backslash as a separator, which
-// the runtime inherits by using the same call.
-static bool _foundry_java_library_names_packaged_bridge(const String &p_library) {
-	return p_library.get_file() == String(FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME);
 }
 
 // A device reports far more feature tags than an export can enumerate (Android
@@ -3507,6 +3492,24 @@ static bool _foundry_java_library_names_packaged_bridge(const String &p_library)
 // wherever it appears, which is what keeps the per-ABI check above from being
 // shadowed. The loader resolves the value verbatim, so surrounding whitespace makes
 // a library path as unusable as an absent one.
+//
+// Naming a library other than the packaged bridge makes a key just as unusable,
+// and for the same reason it cannot be dismissed as unreachable. An export cannot
+// bound which keys a device selects at all: OS_Android::_check_internal_feature_support()
+// hard-answers only `macos`, `web_ios`, `web_macos`, and `windows` false, and every
+// other tag it does not recognize is forwarded to the host plugin's
+// supportsFeature(), which may answer anything true. So any key -- including one
+// the export models as unmet, such as a key gated on the template's threading --
+// can become the loader's most specific match on device, and must therefore name
+// the one bridge this inspection pass requires under lib/<abi>/.
+//
+// The name must be exactly that bridge, with no directory part. Android resolves
+// a packaged native library by file name only because
+// OS_Android::open_dynamic_library() falls back to dlopen()ing
+// String::get_file() for a path that is not a real file; when the path does
+// exist, that path is loaded instead. A path-qualified value is therefore either
+// dead weight or a way to load native code the export never packaged or
+// inspected, so it is rejected rather than silently reduced to its file name.
 static String _foundry_java_descriptor_unusable_library_key(const Ref<ConfigFile> &p_descriptor, String &r_reason) {
 	r_reason = String();
 	if (!p_descriptor->has_section("libraries")) {
@@ -3520,6 +3523,13 @@ static String _foundry_java_descriptor_unusable_library_key(const Ref<ConfigFile
 		}
 		if (library != library.strip_edges()) {
 			r_reason = TTR("pads its library path with whitespace");
+			return key;
+		}
+		if (library != String(FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME)) {
+			r_reason = vformat(
+					TTR("names '%s' instead of the packaged bridge '%s'"),
+					_foundry_java_safe_diagnostic_value(library),
+					String(FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME));
 			return key;
 		}
 	}
@@ -3650,22 +3660,12 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 	}
 
 	for (const ABI &abi : p_enabled_abis) {
-		String resolved_library;
-		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.abi, abi.arch, p_debug, p_custom_features, resolved_library)) {
+		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.abi, abi.arch, p_debug, p_custom_features)) {
 			r_error = vformat(
 					TTR("entry '%s' resolves no \"[libraries]\" entry for requested ABI '%s' (feature tag 'android.%s')."),
 					diagnostic_entry,
 					abi.abi,
 					abi.arch);
-			return ERR_INVALID_DATA;
-		}
-		if (!_foundry_java_library_names_packaged_bridge(resolved_library)) {
-			r_error = vformat(
-					TTR("entry '%s' resolves the \"[libraries]\" value '%s' for requested ABI '%s', which does not name the packaged bridge '%s'."),
-					diagnostic_entry,
-					_foundry_java_safe_diagnostic_value(resolved_library),
-					abi.abi,
-					String(FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME));
 			return ERR_INVALID_DATA;
 		}
 	}
