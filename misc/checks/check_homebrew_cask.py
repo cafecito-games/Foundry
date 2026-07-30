@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+"""Check the generated Homebrew cask and the release workflow's tap wiring.
+
+`find_workflow_wiring_violations` is pure over the workflow text and is driven
+by `misc/checks/tests/test_check_homebrew_cask.py`; the rest of the check
+executes `.github/scripts/generate_homebrew_cask.py` for real.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -33,22 +40,22 @@ def load_generator():
     return module
 
 
-def assert_equal(actual, expected, message: str) -> None:
+def require_equal(actual, expected, message: str) -> None:
     if actual != expected:
         fail(f"{message}: expected {expected!r}, got {actual!r}")
 
 
-def assert_contains(haystack: str, needle: str, message: str) -> None:
+def require_contains(haystack: str, needle: str, message: str) -> None:
     if needle not in haystack:
         fail(f"{message}: missing {needle!r}")
 
 
-def assert_not_contains(haystack: str, needle: str, message: str) -> None:
+def require_absent(haystack: str, needle: str, message: str) -> None:
     if needle in haystack:
         fail(f"{message}: unexpected {needle!r}")
 
 
-def assert_raises(expected_message: str, callback) -> None:
+def require_raises(expected_message: str, callback) -> None:
     try:
         callback()
     except ValueError as exc:
@@ -58,7 +65,7 @@ def assert_raises(expected_message: str, callback) -> None:
     fail(f"expected ValueError containing {expected_message!r}")
 
 
-def test_status_maps_to_cask_tokens(generator) -> None:
+def check_status_maps_to_cask_tokens(generator) -> None:
     cases = {
         "stable": "foundry",
         "alpha1": "foundry@alpha",
@@ -69,17 +76,17 @@ def test_status_maps_to_cask_tokens(generator) -> None:
         "rc8": "foundry@rc",
     }
     for status, expected_token in cases.items():
-        assert_equal(generator.token_for_status(status), expected_token, f"token for {status}")
+        require_equal(generator.token_for_status(status), expected_token, f"token for {status}")
 
 
-def test_status_mapping_rejects_unknown_statuses(generator) -> None:
+def check_status_mapping_rejects_unknown_statuses(generator) -> None:
     for status in ["dev", "alpha0", "preview1", "rc", "stable1", ""]:
-        assert_raises(
+        require_raises(
             "does not map to a Homebrew cask channel", lambda status=status: generator.token_for_status(status)
         )
 
 
-def test_render_stable_cask(generator) -> None:
+def check_render_stable_cask(generator) -> None:
     cask = generator.render_cask(
         token="foundry",
         version="0.1.0",
@@ -107,13 +114,13 @@ def test_render_stable_cask(generator) -> None:
         'binary "foundry.linuxbsd.editor.x86_64", target: "foundry"',
     ]
     for snippet in required:
-        assert_contains(cask, snippet, "stable cask")
+        require_contains(cask, snippet, "stable cask")
 
-    assert_not_contains(cask, 'conflicts_with cask: ["foundry",', "stable cask should not conflict with itself")
-    assert_not_contains(cask, 'conflicts_with cask: "foundry@alpha"', "stable cask should use one conflicts array")
+    require_absent(cask, 'conflicts_with cask: ["foundry",', "stable cask should not conflict with itself")
+    require_absent(cask, 'conflicts_with cask: "foundry@alpha"', "stable cask should use one conflicts array")
 
 
-def test_render_alpha_cask(generator) -> None:
+def check_render_alpha_cask(generator) -> None:
     cask = generator.render_cask(
         token="foundry@alpha",
         version="0.1.0-alpha.3",
@@ -131,15 +138,15 @@ def test_render_alpha_cask(generator) -> None:
         'binary "foundry.linuxbsd.editor.x86_64", target: "foundry"',
     ]
     for snippet in required:
-        assert_contains(cask, snippet, "alpha cask")
+        require_contains(cask, snippet, "alpha cask")
 
-    assert_not_contains(
+    require_absent(
         cask, 'conflicts_with cask: ["foundry", "foundry@alpha"', "alpha cask should not conflict with itself"
     )
-    assert_not_contains(cask, 'conflicts_with cask: "foundry"', "alpha cask should use one conflicts array")
+    require_absent(cask, 'conflicts_with cask: "foundry"', "alpha cask should use one conflicts array")
 
 
-def test_cli_writes_expected_cask_and_checksum(generator) -> None:
+def check_cli_writes_expected_cask_and_checksum(generator) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         casks_dir = tmp_path / "Casks"
@@ -172,19 +179,19 @@ def test_cli_writes_expected_cask_and_checksum(generator) -> None:
         )
 
         cask_path = casks_dir / "foundry@beta.rb"
-        assert_equal(result.stdout.strip(), str(cask_path), "generator stdout")
+        require_equal(result.stdout.strip(), str(cask_path), "generator stdout")
         if result.stderr:
             fail(f"generator should not write stderr on success: {result.stderr}")
         if not cask_path.is_file():
             fail(f"missing generated cask: {cask_path}")
 
         cask = cask_path.read_text()
-        assert_contains(cask, f'sha256 "{expected_macos_sha}"', "generated macOS checksum")
-        assert_contains(cask, f'sha256 "{expected_linux_sha}"', "generated Linux checksum")
-        assert_contains(cask, 'cask "foundry@beta" do', "generated beta cask")
-        assert_contains(cask, "on_macos do", "generated beta cask macOS block")
-        assert_contains(cask, "on_linux do", "generated beta cask Linux block")
-        assert_contains(
+        require_contains(cask, f'sha256 "{expected_macos_sha}"', "generated macOS checksum")
+        require_contains(cask, f'sha256 "{expected_linux_sha}"', "generated Linux checksum")
+        require_contains(cask, 'cask "foundry@beta" do', "generated beta cask")
+        require_contains(cask, "on_macos do", "generated beta cask macOS block")
+        require_contains(cask, "on_linux do", "generated beta cask Linux block")
+        require_contains(
             cask,
             'conflicts_with cask: ["foundry", "foundry@alpha", "foundry@rc"]',
             "generated beta cask conflicts",
@@ -195,7 +202,7 @@ def test_cli_writes_expected_cask_and_checksum(generator) -> None:
             subprocess.run([ruby, "-c", str(cask_path)], check=True, capture_output=True, text=True)
 
 
-def test_cli_accepts_explicit_sha256_values() -> None:
+def check_cli_accepts_explicit_sha256_values() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         casks_dir = Path(tmp) / "Casks"
         expected_macos_sha = "b" * 64
@@ -223,14 +230,16 @@ def test_cli_accepts_explicit_sha256_values() -> None:
         )
 
         cask_path = casks_dir / "foundry@rc.rb"
-        assert_equal(result.stdout.strip(), str(cask_path), "generator stdout for explicit checksum")
+        require_equal(result.stdout.strip(), str(cask_path), "generator stdout for explicit checksum")
         cask = cask_path.read_text()
-        assert_contains(cask, f'sha256 "{expected_macos_sha}"', "explicit macOS checksum")
-        assert_contains(cask, f'sha256 "{expected_linux_sha}"', "explicit Linux checksum")
+        require_contains(cask, f'sha256 "{expected_macos_sha}"', "explicit macOS checksum")
+        require_contains(cask, f'sha256 "{expected_linux_sha}"', "explicit Linux checksum")
 
 
-def test_release_workflow_wires_homebrew_tap_update() -> None:
-    workflow = RELEASE_WORKFLOW.read_text()
+def find_workflow_wiring_violations(workflow: str) -> list[str]:
+    """Return every Homebrew tap wiring violation in the release workflow text."""
+    violations: list[str] = []
+
     required_snippets = [
         "- name: Checkout\n        uses: actions/checkout@v6",
         "name: Update Homebrew tap",
@@ -257,7 +266,7 @@ def test_release_workflow_wires_homebrew_tap_update() -> None:
     ]
     missing = [snippet for snippet in required_snippets if snippet not in workflow]
     if missing:
-        fail(f"release workflow is missing Homebrew tap wiring: {missing}")
+        violations.append(f"release workflow is missing Homebrew tap wiring: {missing}")
 
     forbidden_snippets = [
         '(cd "$tap_dir" && brew audit --cask "$cask_token")',
@@ -266,7 +275,7 @@ def test_release_workflow_wires_homebrew_tap_update() -> None:
     ]
     present = [snippet for snippet in forbidden_snippets if snippet in workflow]
     if present:
-        fail(f"release workflow still contains broken Homebrew tap wiring: {present}")
+        violations.append(f"release workflow still contains broken Homebrew tap wiring: {present}")
 
     audit_sequence = [
         'brew tap cafecito-games/tap "$tap_dir"',
@@ -274,21 +283,32 @@ def test_release_workflow_wires_homebrew_tap_update() -> None:
         'cp "$cask_path" "$brew_tap_dir/Casks/${cask_token}.rb"',
         'brew audit --cask --tap cafecito-games/tap "$cask_token"',
     ]
-    positions = [workflow.index(snippet) for snippet in audit_sequence]
-    if positions != sorted(positions):
-        fail("release workflow audits the cask before copying generated content into the Homebrew tap checkout")
+    if all(snippet in workflow for snippet in audit_sequence):
+        positions = [workflow.index(snippet) for snippet in audit_sequence]
+        if positions != sorted(positions):
+            violations.append(
+                "release workflow audits the cask before copying generated content into the Homebrew tap checkout"
+            )
+
+    return violations
+
+
+def check_release_workflow_wires_homebrew_tap_update() -> None:
+    violations = find_workflow_wiring_violations(RELEASE_WORKFLOW.read_text())
+    if violations:
+        fail("\n".join(violations))
 
 
 def main() -> None:
     generator = load_generator()
-    test_status_maps_to_cask_tokens(generator)
-    test_status_mapping_rejects_unknown_statuses(generator)
-    test_render_stable_cask(generator)
-    test_render_alpha_cask(generator)
-    test_cli_writes_expected_cask_and_checksum(generator)
-    test_cli_accepts_explicit_sha256_values()
-    test_release_workflow_wires_homebrew_tap_update()
-    print("homebrew cask tests passed")
+    check_status_maps_to_cask_tokens(generator)
+    check_status_mapping_rejects_unknown_statuses(generator)
+    check_render_stable_cask(generator)
+    check_render_alpha_cask(generator)
+    check_cli_writes_expected_cask_and_checksum(generator)
+    check_cli_accepts_explicit_sha256_values()
+    check_release_workflow_wires_homebrew_tap_update()
+    print("homebrew cask check passed")
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@
 ## File Structure
 
 - Create `.github/scripts/generate_homebrew_cask.py`: deterministic cask generator and CLI used by GitHub Actions.
-- Create `misc/scripts/test_homebrew_cask.py`: script-level tests for channel mapping, cask rendering, CLI output, syntax validation, and release workflow wiring.
+- Create `misc/checks/check_homebrew_cask.py`: script-level tests for channel mapping, cask rendering, CLI output, syntax validation, and release workflow wiring.
 - Modify `.github/workflows/release.yml`: make publish checkout unconditional and add the Homebrew tap update step after GitHub Release publication.
 
 ## Linux x86_64 Amendment
@@ -23,11 +23,11 @@ After the initial macOS cask implementation, the same casks were extended to sup
 ### Task 1: Add Failing Homebrew Cask Generator Tests
 
 **Files:**
-- Create: `misc/scripts/test_homebrew_cask.py`
+- Create: `misc/checks/check_homebrew_cask.py`
 
 - [ ] **Step 1: Write the failing test file**
 
-Create `misc/scripts/test_homebrew_cask.py` with this complete content:
+Create `misc/checks/check_homebrew_cask.py` with this complete content:
 
 ```python
 #!/usr/bin/env python3
@@ -272,7 +272,7 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-python3 misc/scripts/test_homebrew_cask.py
+python3 misc/checks/check_homebrew_cask.py
 ```
 
 Expected: FAIL with a message containing `could not load generator module at` because `.github/scripts/generate_homebrew_cask.py` does not exist yet.
@@ -280,7 +280,7 @@ Expected: FAIL with a message containing `could not load generator module at` be
 - [ ] **Step 3: Commit the failing test**
 
 ```bash
-git add misc/scripts/test_homebrew_cask.py
+git add misc/checks/check_homebrew_cask.py
 git commit -m "test: cover Foundry Homebrew cask generation"
 ```
 
@@ -288,7 +288,7 @@ git commit -m "test: cover Foundry Homebrew cask generation"
 
 **Files:**
 - Create: `.github/scripts/generate_homebrew_cask.py`
-- Test: `misc/scripts/test_homebrew_cask.py`
+- Test: `misc/checks/check_homebrew_cask.py`
 
 - [ ] **Step 1: Add the generator script**
 
@@ -438,7 +438,7 @@ if __name__ == "__main__":
 Run:
 
 ```bash
-python3 misc/scripts/test_homebrew_cask.py
+python3 misc/checks/check_homebrew_cask.py
 ```
 
 Expected: FAIL with a message containing `release workflow is missing Homebrew tap wiring` because the generator works but `.github/workflows/release.yml` is not wired yet.
@@ -448,8 +448,8 @@ Expected: FAIL with a message containing `release workflow is missing Homebrew t
 Run:
 
 ```bash
-ruff format .github/scripts/generate_homebrew_cask.py misc/scripts/test_homebrew_cask.py
-ruff check .github/scripts/generate_homebrew_cask.py misc/scripts/test_homebrew_cask.py
+ruff format .github/scripts/generate_homebrew_cask.py misc/checks/check_homebrew_cask.py
+ruff check .github/scripts/generate_homebrew_cask.py misc/checks/check_homebrew_cask.py
 ```
 
 Expected: both commands exit 0.
@@ -457,7 +457,7 @@ Expected: both commands exit 0.
 - [ ] **Step 4: Commit the generator**
 
 ```bash
-git add .github/scripts/generate_homebrew_cask.py misc/scripts/test_homebrew_cask.py
+git add .github/scripts/generate_homebrew_cask.py misc/checks/check_homebrew_cask.py
 git commit -m "ci(release): generate Foundry Homebrew casks"
 ```
 
@@ -465,7 +465,7 @@ git commit -m "ci(release): generate Foundry Homebrew casks"
 
 **Files:**
 - Modify: `.github/workflows/release.yml`
-- Test: `misc/scripts/test_homebrew_cask.py`
+- Test: `misc/checks/check_homebrew_cask.py`
 
 - [ ] **Step 1: Make publish checkout unconditional**
 
@@ -542,7 +542,7 @@ In `.github/workflows/release.yml`, add this step immediately after `Publish Git
 Run:
 
 ```bash
-python3 misc/scripts/test_homebrew_cask.py
+python3 misc/checks/check_homebrew_cask.py
 ```
 
 Expected: PASS with `homebrew cask tests passed`.
@@ -553,7 +553,7 @@ Run:
 
 ```bash
 python3 misc/scripts/test_release_resolver.py
-python3 misc/scripts/test_release_api_artifacts.py
+python3 misc/checks/check_release_api_artifacts.py
 ```
 
 Expected:
@@ -566,7 +566,7 @@ release API artifact tests passed
 - [ ] **Step 5: Commit workflow integration**
 
 ```bash
-git add .github/workflows/release.yml misc/scripts/test_homebrew_cask.py
+git add .github/workflows/release.yml misc/checks/check_homebrew_cask.py
 git commit -m "ci(release): update Homebrew tap on publish"
 ```
 
@@ -574,7 +574,7 @@ git commit -m "ci(release): update Homebrew tap on publish"
 
 **Files:**
 - Verify: `.github/scripts/generate_homebrew_cask.py`
-- Verify: `misc/scripts/test_homebrew_cask.py`
+- Verify: `misc/checks/check_homebrew_cask.py`
 - Verify: `.github/workflows/release.yml`
 
 - [ ] **Step 1: Run all release helper tests**
@@ -582,9 +582,9 @@ git commit -m "ci(release): update Homebrew tap on publish"
 Run:
 
 ```bash
-python3 misc/scripts/test_homebrew_cask.py
+python3 misc/checks/check_homebrew_cask.py
 python3 misc/scripts/test_release_resolver.py
-python3 misc/scripts/test_release_api_artifacts.py
+python3 misc/checks/check_release_api_artifacts.py
 ```
 
 Expected:

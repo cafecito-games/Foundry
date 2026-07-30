@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""Check that `misc/scripts/package_ios_templates.py` produces an iOS-only bundle.
+
+`find_archive_violations` is pure over an archive's entry names and is driven by
+`misc/checks/tests/test_check_ios_template_package.py`; the rest of the check
+runs the real packager against synthetic inputs and a fake `lipo`.
+"""
+
+from __future__ import annotations
 
 import os
 import stat
@@ -22,9 +30,32 @@ LIBRARY_NAMES = [
 ]
 
 
+EXPECTED_ARCHIVE_ENTRIES = {
+    "ios_xcode/libfoundry.ios.release.xcframework/ios-arm64/libfoundry.a",
+    "ios_xcode/libfoundry.ios.release.xcframework/ios-arm64_x86_64-simulator/libfoundry.a",
+    "ios_xcode/libfoundry.ios.debug.xcframework/ios-arm64/libfoundry.a",
+    "ios_xcode/libfoundry.ios.debug.xcframework/ios-arm64_x86_64-simulator/libfoundry.a",
+}
+
+
 def fail(message: str) -> None:
     print(message, file=sys.stderr)
     raise SystemExit(1)
+
+
+def find_archive_violations(names: set[str]) -> list[str]:
+    """Return every packaging violation implied by an archive's entry names."""
+    violations: list[str] = []
+
+    missing = EXPECTED_ARCHIVE_ENTRIES - names
+    if missing:
+        violations.append(f"iOS archive is missing expected entries: {sorted(missing)}")
+
+    non_ios = sorted(name for name in names if "visionos" in name)
+    if non_ios:
+        violations.append(f"iOS archive contains non-iOS framework entries: {non_ios}")
+
+    return violations
 
 
 def make_fake_lipo(path: Path) -> None:
@@ -80,7 +111,7 @@ def run_packager(bin_dir: Path, template_dir: Path, output: Path, path: str) -> 
     )
 
 
-def test_package_contains_all_ios_slices() -> None:
+def check_package_contains_all_ios_slices() -> None:
     with tempfile.TemporaryDirectory() as temporary_directory:
         root = Path(temporary_directory)
         bin_dir = root / "bin"
@@ -103,21 +134,12 @@ def test_package_contains_all_ios_slices() -> None:
             fail(f"packager did not create {output}")
 
         with zipfile.ZipFile(output) as archive:
-            names = set(archive.namelist())
-            expected = {
-                "ios_xcode/libfoundry.ios.release.xcframework/ios-arm64/libfoundry.a",
-                "ios_xcode/libfoundry.ios.release.xcframework/ios-arm64_x86_64-simulator/libfoundry.a",
-                "ios_xcode/libfoundry.ios.debug.xcframework/ios-arm64/libfoundry.a",
-                "ios_xcode/libfoundry.ios.debug.xcframework/ios-arm64_x86_64-simulator/libfoundry.a",
-            }
-            missing = expected - names
-            if missing:
-                fail(f"iOS archive is missing expected entries: {sorted(missing)}")
-            if any("visionos" in name for name in names):
-                fail(f"iOS archive contains non-iOS framework entries: {sorted(names)}")
+            violations = find_archive_violations(set(archive.namelist()))
+            if violations:
+                fail("\n".join(violations))
 
 
-def test_package_reports_missing_input() -> None:
+def check_package_reports_missing_input() -> None:
     with tempfile.TemporaryDirectory() as temporary_directory:
         root = Path(temporary_directory)
         bin_dir = root / "bin"
@@ -141,9 +163,9 @@ def test_package_reports_missing_input() -> None:
 
 
 def main() -> None:
-    test_package_contains_all_ios_slices()
-    test_package_reports_missing_input()
-    print("iOS template packaging tests passed")
+    check_package_contains_all_ios_slices()
+    check_package_reports_missing_input()
+    print("iOS template packaging check passed")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""Check the shape of the release API artifact bundle and its workflow wiring.
+
+`find_bundle_violations` and `find_workflow_wiring_violations` are pure and are
+driven by `misc/checks/tests/test_check_release_api_artifacts.py`; the rest of
+the check runs `misc/scripts/package_foundry_api_artifacts.py` against a fake
+`foundry` binary.
+"""
+
+from __future__ import annotations
 
 import json
 import subprocess
@@ -6,16 +15,77 @@ import sys
 import tempfile
 import textwrap
 import zipfile
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGER = REPO_ROOT / "misc/scripts/package_foundry_api_artifacts.py"
 RELEASE_WORKFLOW = REPO_ROOT / ".github/workflows/release.yml"
 
 
+EXPECTED_BUNDLE_ENTRIES = {
+    "extension_api.json",
+    "extension_api_with_docs.json",
+    "foundry_extension_interface.h",
+    "foundry_extension_interface.json",
+    "metadata.json",
+}
+
+REQUIRED_WORKFLOW_SNIPPETS = [
+    "package_foundry_api_artifacts.py",
+    "name: release-api",
+    "api-artifacts/*",
+    "artifacts/release-api/*.zip",
+]
+
+
 def fail(message: str) -> None:
     print(message, file=sys.stderr)
     sys.exit(1)
+
+
+def find_bundle_violations(
+    names: Iterable[str],
+    metadata: dict[str, Any],
+    version: str,
+    tag: str,
+    commit: str,
+    header_full_name: str,
+) -> list[str]:
+    """Return every violation of the API bundle contract, not just the first."""
+    violations: list[str] = []
+
+    entries = set(names)
+    if entries != EXPECTED_BUNDLE_ENTRIES:
+        violations.append(f"unexpected zip entries: {sorted(entries)}")
+
+    for field, expected in (("version", version), ("tag", tag), ("commit", commit)):
+        if metadata.get(field) != expected:
+            violations.append(f"metadata {field} mismatch: expected {expected!r}, got {metadata.get(field)!r}")
+
+    header = metadata.get("extension_api_header") or {}
+    if header.get("version_full_name") != header_full_name:
+        violations.append("metadata did not preserve extension API header")
+
+    files = metadata.get("files") or []
+    inventory = sorted(entry["name"] for entry in files)
+    if inventory != sorted(EXPECTED_BUNDLE_ENTRIES - {"metadata.json"}):
+        violations.append(f"metadata file inventory mismatch: {inventory}")
+
+    bad_digests = sorted(entry["name"] for entry in files if len(entry.get("sha256", "")) != 64)
+    if bad_digests:
+        violations.append(f"metadata sha256 values are not hex digests: {bad_digests}")
+
+    return violations
+
+
+def find_workflow_wiring_violations(workflow: str) -> list[str]:
+    """Return every missing API-artifact wiring snippet in the release workflow."""
+    missing = [snippet for snippet in REQUIRED_WORKFLOW_SNIPPETS if snippet not in workflow]
+    if missing:
+        return [f"release workflow is missing API artifact wiring: {missing}"]
+    return []
 
 
 def make_fake_foundry_binary(path: Path) -> None:
@@ -103,7 +173,7 @@ def make_fake_foundry_binary(path: Path) -> None:
     path.chmod(0o755)
 
 
-def test_packager() -> None:
+def check_packager() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         fake_binary = tmp_path / "foundry"
@@ -144,49 +214,28 @@ def test_packager() -> None:
             fail(f"missing API zip: {zip_path}")
 
         with zipfile.ZipFile(zip_path) as archive:
-            names = set(archive.namelist())
-            expected = {
-                "extension_api.json",
-                "extension_api_with_docs.json",
-                "foundry_extension_interface.h",
-                "foundry_extension_interface.json",
-                "metadata.json",
-            }
-            if names != expected:
-                fail(f"unexpected zip entries: {sorted(names)}")
-
-            metadata = json.loads(archive.read("metadata.json"))
-            if metadata["version"] != "0.1.0-alpha.1":
-                fail("metadata version mismatch")
-            if metadata["tag"] != "v0.1.0-alpha.1":
-                fail("metadata tag mismatch")
-            if metadata["commit"] != "abc123":
-                fail("metadata commit mismatch")
-            if metadata["extension_api_header"]["version_full_name"] != "Foundry v0.1.alpha1.test_build":
-                fail("metadata did not preserve extension API header")
-            if sorted(file["name"] for file in metadata["files"]) != sorted(expected - {"metadata.json"}):
-                fail("metadata file inventory mismatch")
-            if any(len(file["sha256"]) != 64 for file in metadata["files"]):
-                fail("metadata sha256 values are not hex digests")
+            violations = find_bundle_violations(
+                archive.namelist(),
+                json.loads(archive.read("metadata.json")),
+                version="0.1.0-alpha.1",
+                tag="v0.1.0-alpha.1",
+                commit="abc123",
+                header_full_name="Foundry v0.1.alpha1.test_build",
+            )
+            if violations:
+                fail("\n".join(violations))
 
 
-def test_release_workflow_wires_api_bundle() -> None:
-    workflow = RELEASE_WORKFLOW.read_text()
-    required_snippets = [
-        "package_foundry_api_artifacts.py",
-        "name: release-api",
-        "api-artifacts/*",
-        "artifacts/release-api/*.zip",
-    ]
-    missing = [snippet for snippet in required_snippets if snippet not in workflow]
-    if missing:
-        fail(f"release workflow is missing API artifact wiring: {missing}")
+def check_release_workflow_wires_api_bundle() -> None:
+    violations = find_workflow_wiring_violations(RELEASE_WORKFLOW.read_text())
+    if violations:
+        fail("\n".join(violations))
 
 
 def main() -> None:
-    test_packager()
-    test_release_workflow_wires_api_bundle()
-    print("release API artifact tests passed")
+    check_packager()
+    check_release_workflow_wires_api_bundle()
+    print("release API artifact check passed")
 
 
 if __name__ == "__main__":

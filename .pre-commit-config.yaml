@@ -209,6 +209,23 @@ repos:
 # To add external repo hooks, bring the indentation back to:
 # - repo: my-remote-hook
 
+      - id: foundry-repository-checks
+        name: Foundry repository checks
+        language: python
+        entry: python -m unittest discover -s misc/checks/tests -t .
+        pass_filenames: false
+        # The checks themselves need a built binary or a packaged release artifact,
+        # so they cannot run here; their unit tests can, and they cover the same
+        # violation logic. `release.yml` is in the trigger set because two of those
+        # tests assert the real workflow still satisfies its check — without that,
+        # a broken release path would only surface at release time.
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            \.github/workflows/release\.yml|
+            misc/checks/.*\.py
+          )$
+
       - id: foundry-headless-docker-contract
         name: Foundry headless Docker contract
         language: python
