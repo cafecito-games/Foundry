@@ -444,18 +444,17 @@ forbidden = [
 ]
 
 [[rule]]
-name = "android-app-main-sources-declare-the-exact-application-package"
-reason = "The application class the manifest names by fully qualified name lives directly in `games.cafecito.foundry.game`. Java terminates the package declaration, so this literal is exact: a class moved to any other package — including a sibling such as `games.cafecito.foundry.gameevil` — leaves the manifest resolving a class the APK does not contain, and the exported project installs and then fails to launch."
-paths = ["platform/android/java/app/src/main/**/*.java"]
+name = "android-app-application-class-is-in-the-exact-package"
+reason = "This is the one class the manifest resolves by fully qualified name, so it must sit directly in `games.cafecito.foundry.game`. Java terminates the package declaration, which makes this literal exact: moving the class to any other package — including a sibling such as `games.cafecito.foundry.gameevil` — leaves the manifest naming a class the APK does not contain, and the exported project installs and then fails to launch."
+paths = ["platform/android/java/app/src/main/java/games/cafecito/foundry/game/FoundryApp.java"]
 required = ["package games.cafecito.foundry.game;"]
 
 [[rule]]
-name = "android-app-test-sources-stay-under-the-application-package"
-reason = "The instrumented and androidTest sources live in subpackages of `games.cafecito.foundry.game`, and Kotlin's package declaration has no terminator, so this literal can only check the prefix. It catches a wholesale move out of the application package; the exactness that matters — the classes the manifest resolves by name — is pinned by the rule above."
+name = "android-app-sources-stay-under-the-application-package"
+reason = "Every application-template source belongs to `games.cafecito.foundry.game` or a subpackage of it. Kotlin's package declaration has no terminator and helpers legitimately live in subpackages, so this literal can only check the prefix; it catches a wholesale move out of the application package, and the one fully qualified name the manifest depends on is pinned exactly by the rule above."
 paths = [
-  "platform/android/java/app/src/instrumented/**/*.java",
-  "platform/android/java/app/src/instrumented/**/*.kt",
-  "platform/android/java/app/src/androidTestInstrumented/**/*.kt",
+  "platform/android/java/app/src/**/*.java",
+  "platform/android/java/app/src/**/*.kt",
 ]
 required = ["package games.cafecito.foundry.game"]
 
