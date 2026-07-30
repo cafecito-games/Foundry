@@ -338,6 +338,29 @@ class FilePolicyRunnerTests(unittest.TestCase):
                 )
             )
 
+    def test_misspelled_top_level_table_is_a_configuration_error(self) -> None:
+        # A silently discarded `[[rul]]` is a rule that does not exist while the
+        # runner still reports success — the same failure mode as a glob that
+        # matches nothing, one level up.
+        with self.assertRaisesRegex(check_file_policy.FilePolicyError, "rul"):
+            check_file_policy.load_rules(
+                textwrap.dedent(
+                    """
+                    [[rule]]
+                    name = "real"
+                    reason = "A rule that loads."
+                    paths = ["a.txt"]
+                    required = ["a"]
+
+                    [[rul]]
+                    name = "typo"
+                    reason = "A rule nobody notices is missing."
+                    paths = ["b.txt"]
+                    required = ["b"]
+                    """
+                )
+            )
+
     def test_malformed_policy_text_fails_with_a_clear_message(self) -> None:
         with self.assertRaisesRegex(check_file_policy.FilePolicyError, "is not valid TOML"):
             check_file_policy.load_rules("[[rule]\nname = 'broken'\n")

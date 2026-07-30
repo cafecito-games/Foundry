@@ -594,7 +594,7 @@ required = [
 
 [[rule]]
 name = "android-acceptance-fixture-proves-a-live-binding"
-reason = "The device gate is only meaningful if the ready marker is preceded by a real call through the binding; a fixture that merely prints the marker passes with a binding that never loaded."
+reason = "The device gate is only meaningful if the ready marker is backed by a real call through the binding; a fixture that merely prints the marker passes with a binding that never loaded. The table cannot express ordering, so it proves the proof steps are present but not that they run before the marker — tracked as a follow-up for a real device-side assertion."
 paths = ["tests/fixtures/android_foundry_java/acceptance/main.fs"]
 required = [
   'ClassDB.class_exists("DemoExtension")',
@@ -796,6 +796,13 @@ name = "headless-container-release-binary-is-untracked"
 reason = "The release binary is staged into `docker/` during the release build; without the ignore entry a release run leaves a multi-hundred-megabyte binary in `git status`."
 paths = [".gitignore"]
 required = ["/docker/foundry.linuxbsd.editor.x86_64"]
+
+[[rule]]
+name = "headless-container-has-a-default-command"
+reason = "`docker run <image>` with no arguments must print help rather than sit in an engine main loop. `.github/scripts/verify_headless_image.sh` always passes an explicit command, so the default is the one part of the image contract it never exercises. The chmod is forbidden because the binary is copied with its mode already set; a separate RUN layer would duplicate the whole binary in the image."
+paths = ["docker/foundry-headless.Dockerfile"]
+required = ['CMD ["--help"]']
+forbidden = ["RUN chmod 0755 /usr/local/bin/foundry"]
 
 [[rule]]
 name = "headless-container-smoke-fixture-exists"

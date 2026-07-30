@@ -80,6 +80,12 @@ def load_rules(policy_text: str) -> list[Rule]:
     except tomllib.TOMLDecodeError as error:
         raise FilePolicyError(f"the policy is not valid TOML: {error}") from error
 
+    # A misspelled `[[rul]]` would otherwise be discarded in silence, so an
+    # intended rule could be absent while the runner reported success.
+    stray = sorted(set(document) - {"rule"})
+    if stray:
+        raise FilePolicyError(f"the policy declares unknown top-level table(s): {', '.join(stray)}")
+
     entries = document.get("rule")
     if not isinstance(entries, list) or not entries:
         raise FilePolicyError("the policy must declare at least one [[rule]] entry")
