@@ -70,6 +70,7 @@
 #include "tests/editor/test_editor_data.h"
 #include "tests/editor/test_editor_export_manifest.h"
 #include "tests/editor/test_editor_export_name_mangling.h"
+#include "tests/editor/test_editor_export_platform_android.h"
 #include "tests/editor/test_editor_export_platform_autoload.h"
 #include "tests/editor/test_editor_help_type_links.h"
 #include "tests/editor/test_editor_layout_store.h"

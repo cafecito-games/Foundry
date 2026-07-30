@@ -594,7 +594,7 @@ Run:
 
 ```sh
 python3 -m unittest \
-  tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests -v
+  tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests -v
 ```
 
 Expected: missing documentation and pre-commit registration failures.
@@ -618,7 +618,6 @@ and verbose command logging.
   args:
     - tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests
     - tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests
-    - tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests
     - tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests
   pass_filenames: false
 ```
@@ -635,7 +634,6 @@ Run:
 python3 -m unittest -v \
   tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests \
   tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests \
-  tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests \
   tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests
 python3 misc/scripts/validate_xml.py platform/android/doc_classes/EditorExportPlatformAndroid.xml
 pre-commit run foundry-java-android-export --all-files
