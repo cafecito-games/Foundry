@@ -71,13 +71,13 @@ android {
             foundryLibraryVersion: foundryLibraryVersion,
             foundryEngineVersion: foundryLibraryVersion,
             foundryEngineRevision: foundryEngineRevision,
-            foundryJniContractVersion: "1",
+            foundryJniContractVersion: "2",
         ]
 
         buildConfigField 'String', 'FOUNDRY_BINDINGS_VERSION', "\"${foundryLibraryVersion}\""
         buildConfigField 'String', 'FOUNDRY_ENGINE_VERSION', "\"${foundryLibraryVersion}\""
         buildConfigField 'String', 'FOUNDRY_ENGINE_REVISION', "\"${foundryEngineRevision}\""
-        buildConfigField 'int', 'FOUNDRY_JNI_CONTRACT_VERSION', '1'
+        buildConfigField 'int', 'FOUNDRY_JNI_CONTRACT_VERSION', '2'
     }
 
     namespace = 'games.cafecito.foundry'
@@ -92,7 +92,6 @@ android {
     }
 
     buildFeatures {
-        aidl = true
         buildConfig = true
     }
 

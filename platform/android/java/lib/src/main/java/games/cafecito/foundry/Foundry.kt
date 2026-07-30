@@ -55,7 +55,6 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsAnimationCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.google.android.vending.expansion.downloader.*
 import games.cafecito.foundry.input.FoundryEditText
 import games.cafecito.foundry.input.FoundryInputHandler
 import games.cafecito.foundry.io.FilePicker
@@ -67,16 +66,11 @@ import games.cafecito.foundry.utils.FoundryNetUtils
 import games.cafecito.foundry.utils.PermissionsUtil
 import games.cafecito.foundry.utils.PermissionsUtil.requestPermission
 import games.cafecito.foundry.utils.addTranslucentSystemBarFlagsCompat
-import games.cafecito.foundry.utils.getLongVersionCodeCompat
 import games.cafecito.foundry.utils.getVibratorServiceCompat
 import games.cafecito.foundry.utils.turnScreenOnCompat
 import games.cafecito.foundry.utils.vibrateCompat
 import games.cafecito.foundry.xr.XRMode
-import java.io.File
-import java.io.FileInputStream
 import java.io.IOException
-import java.io.InputStream
-import java.security.MessageDigest
 import java.util.*
 import java.util.concurrent.Callable
 import java.util.concurrent.FutureTask
@@ -218,9 +212,6 @@ class Foundry private constructor(val context: Context) {
 	 * This must be followed by [onInitRenderView] to complete initialization of the engine.
 	 *
 	 * @return false if initialization of the native layer fails, true otherwise.
-	 *
-	 * @throws IllegalArgumentException exception if the specified expansion pack (if any)
-	 * is invalid.
 	 */
 	fun initEngine(host: FoundryHost?, commandLineParams: List<String>): Boolean {
 		if (isNativeInitialized()) {
@@ -235,11 +226,7 @@ class Foundry private constructor(val context: Context) {
 		run {
 			this.primaryHost = host
 
-			// check for apk expansion API
 			commandLine.addAll(commandLineParams)
-			var mainPackMd5: String? = null
-			var mainPackKey: String? = null
-			var useApkExpansion = false
 			val newArgs: MutableList<String> = ArrayList()
 			var i = 0
 			while (i < commandLine.size) {
@@ -257,21 +244,6 @@ class Foundry private constructor(val context: Context) {
 					newArgs.add(commandLine[i])
 				} else if (commandLine[i] == "--background_color") {
 					setWindowColor(commandLine[i + 1])
-				} else if (commandLine[i] == "--use_apk_expansion") {
-					useApkExpansion = true
-				} else if (hasExtra && commandLine[i] == "--apk_expansion_md5") {
-					mainPackMd5 = commandLine[i + 1]
-					i++
-				} else if (hasExtra && commandLine[i] == "--apk_expansion_key") {
-					mainPackKey = commandLine[i + 1]
-					val prefs = context.getSharedPreferences(
-							"app_data_keys",
-							Context.MODE_PRIVATE
-					)
-					val editor = prefs.edit()
-					editor.putString("store_public_key", mainPackKey)
-					editor.apply()
-					i++
 				} else if (commandLine[i] == "--benchmark") {
 					newArgs.add(commandLine[i])
 				} else if (hasExtra && commandLine[i] == "--benchmark-file") {
@@ -284,41 +256,7 @@ class Foundry private constructor(val context: Context) {
 				i++
 			}
 
-			var expansionPackPath = ""
 			commandLine = if (newArgs.isEmpty()) { mutableListOf() } else { newArgs }
-			if (useApkExpansion && mainPackMd5 != null && mainPackKey != null) {
-				// Build the full path to the app's expansion files
-				try {
-					expansionPackPath = Helpers.getSaveFilePath(context)
-					val packageInfo = context.packageManager.getPackageInfo(
-							context.packageName,
-							0
-					)
-					expansionPackPath += "/main." + packageInfo.getLongVersionCodeCompat() + "." + context.packageName + ".obb"
-				} catch (e: java.lang.Exception) {
-					Log.e(TAG, "Unable to build full path to the app's expansion files", e)
-				}
-				val f = File(expansionPackPath)
-				var packValid = true
-				if (!f.exists()) {
-					packValid = false
-				} else if (obbIsCorrupted(expansionPackPath, mainPackMd5)) {
-					packValid = false
-					try {
-						f.delete()
-					} catch (_: java.lang.Exception) {
-					}
-				}
-				if (!packValid) {
-					// Aborting engine initialization
-					throw IllegalArgumentException("Invalid expansion pack")
-				}
-			}
-
-			if (expansionPackPath.isNotEmpty()) {
-				commandLine.add("--main-pack")
-				commandLine.add(expansionPackPath)
-			}
 			if (!nativeLayerInitializeCompleted) {
 				nativeLayerInitializeCompleted = FoundryLib.initialize(
 					this,
@@ -327,7 +265,6 @@ class Foundry private constructor(val context: Context) {
 					netUtils,
 					directoryAccessHandler,
 					fileAccessHandler,
-					useApkExpansion,
 				)
 				Log.v(TAG, "Foundry native layer initialization completed: $nativeLayerInitializeCompleted")
 			}
@@ -1145,40 +1082,6 @@ class Foundry private constructor(val context: Context) {
 	@Keep
 	private fun getCACertificates(): String {
 		return FoundryNetUtils.getCACertificates()
-	}
-
-	private fun obbIsCorrupted(f: String, mainPackMd5: String): Boolean {
-		return try {
-			val fis: InputStream = FileInputStream(f)
-
-			// Create MD5 Hash
-			val buffer = ByteArray(16384)
-			val complete = MessageDigest.getInstance("MD5")
-			var numRead: Int
-			do {
-				numRead = fis.read(buffer)
-				if (numRead > 0) {
-					complete.update(buffer, 0, numRead)
-				}
-			} while (numRead != -1)
-			fis.close()
-			val messageDigest = complete.digest()
-
-			// Create Hex String
-			val hexString = StringBuilder()
-			for (b in messageDigest) {
-				var s = Integer.toHexString(0xFF and b.toInt())
-				if (s.length == 1) {
-					s = "0$s"
-				}
-				hexString.append(s)
-			}
-			val md5str = hexString.toString()
-			md5str != mainPackMd5
-		} catch (e: java.lang.Exception) {
-			e.printStackTrace()
-			true
-		}
 	}
 
 	@Keep

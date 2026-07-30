@@ -137,6 +137,34 @@ TEST_CASE("[Editor][EditorExportPlatformAndroid] Foundry-Java suboptions follow 
 	}
 }
 
+TEST_CASE("[Editor][EditorExportPlatformAndroid] APK expansion is not an export option") {
+	Ref<EditorExportPlatformAndroid> platform;
+	platform.instantiate();
+
+	List<EditorExportPlatform::ExportOption> options;
+	platform->get_export_options(&options);
+	for (const EditorExportPlatform::ExportOption &option : options) {
+		CHECK_FALSE_MESSAGE(String(option.option.name).begins_with("apk_expansion/"), String(option.option.name));
+	}
+}
+
+TEST_CASE("[Editor][EditorExportPlatformAndroid] Stale APK expansion preset keys are inert") {
+	Ref<EditorExportPlatformAndroid> platform;
+	platform.instantiate();
+	ScopedAdvancedOptionsSetting advanced_options(true);
+
+	// A preset written before APK expansion was removed keeps its keys, because
+	// `EditorExportPreset` retains values for options no platform registers. They
+	// have to stay inert: no diagnostic, no effect on the export.
+	Ref<EditorExportPreset> preset = make_preset(true, false);
+	preset->set("apk_expansion/enable", true);
+	preset->set("apk_expansion/SALT", "stale-salt");
+	preset->set("apk_expansion/public_key", "");
+
+	CHECK(platform->get_export_option_warning(preset.ptr(), "apk_expansion/enable").is_empty());
+	CHECK(platform->get_export_option_warning(preset.ptr(), "apk_expansion/public_key").is_empty());
+}
+
 } // namespace TestEditorExportPlatformAndroid
 
 #endif // TOOLS_ENABLED

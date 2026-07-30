@@ -36,7 +36,7 @@
 // These functions can be called from within JAVA and are the means by which our JAVA implementation calls back into our C++ code.
 // See java/src/games/cafecito/foundry/FoundryLib.java for the JAVA side of this (yes that's why we have the long names)
 extern "C" {
-JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_foundry_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler, jboolean p_use_apk_expansion);
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_foundry_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler);
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_ondestroy(JNIEnv *env, jclass clazz);
 JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_setup(JNIEnv *env, jclass clazz, jobjectArray p_cmdline, jobject p_foundry_tts);
 JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_resize(JNIEnv *env, jclass clazz, jobject p_surface, jint p_width, jint p_height);
