@@ -1982,6 +1982,8 @@ static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOM
 // The extension descriptor is parsed, not just streamed, so it gets a cap tight
 // enough to buffer whole instead of the shared required-entry limit.
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES = 64 * 1024;
+// The single bridge the binding AAR is allowed to package, under lib/<abi>/.
+static constexpr const char *FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME = "libfoundry_java.so";
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES = 16383;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES = 16 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_BYTES = 128 * 1024 * 1024;
@@ -3490,6 +3492,24 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 // wherever it appears, which is what keeps the per-ABI check above from being
 // shadowed. The loader resolves the value verbatim, so surrounding whitespace makes
 // a library path as unusable as an absent one.
+//
+// Naming a library other than the packaged bridge makes a key just as unusable,
+// and for the same reason it cannot be dismissed as unreachable. An export cannot
+// bound which keys a device selects at all: OS_Android::_check_internal_feature_support()
+// hard-answers only `macos`, `web_ios`, `web_macos`, and `windows` false, and every
+// other tag it does not recognize is forwarded to the host plugin's
+// supportsFeature(), which may answer anything true. So any key -- including one
+// the export models as unmet, such as a key gated on the template's threading --
+// can become the loader's most specific match on device, and must therefore name
+// the one bridge this inspection pass requires under lib/<abi>/.
+//
+// The name must be exactly that bridge, with no directory part. Android resolves
+// a packaged native library by file name only because
+// OS_Android::open_dynamic_library() falls back to dlopen()ing
+// String::get_file() for a path that is not a real file; when the path does
+// exist, that path is loaded instead. A path-qualified value is therefore either
+// dead weight or a way to load native code the export never packaged or
+// inspected, so it is rejected rather than silently reduced to its file name.
 static String _foundry_java_descriptor_unusable_library_key(const Ref<ConfigFile> &p_descriptor, String &r_reason) {
 	r_reason = String();
 	if (!p_descriptor->has_section("libraries")) {
@@ -3503,6 +3523,13 @@ static String _foundry_java_descriptor_unusable_library_key(const Ref<ConfigFile
 		}
 		if (library != library.strip_edges()) {
 			r_reason = TTR("pads its library path with whitespace");
+			return key;
+		}
+		if (library != String(FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME)) {
+			r_reason = vformat(
+					TTR("names '%s' instead of the packaged bridge '%s'"),
+					_foundry_java_safe_diagnostic_value(library),
+					String(FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME));
 			return key;
 		}
 	}
@@ -3653,7 +3680,7 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 	const String registry_index = root + "assets/foundry_java/registry-index-v2.txt";
 	Vector<String> expected_bridges;
 	for (const ABI &abi : p_enabled_abis) {
-		expected_bridges.push_back(root + "lib/" + abi.abi + "/libfoundry_java.so");
+		expected_bridges.push_back(root + "lib/" + abi.abi + "/" + FOUNDRY_JAVA_BRIDGE_LIBRARY_NAME);
 	}
 
 	Ref<FileAccess> artifact_file;

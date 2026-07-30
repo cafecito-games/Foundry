@@ -4617,6 +4617,111 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 0,
                 "declares the \"[libraries]\" key 'android.arm64.mobile', which names no library",
             ),
+            # A key the loader resolves but that names something other than the one
+            # bridge the export packages is the same packaged-but-dead binding: it
+            # only fails on device, at dlopen().
+            (
+                "library-key-names-another-library",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libsomething_else.so"',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64', which names 'libsomething_else.so'"
+                " instead of the packaged bridge 'libfoundry_java.so'",
+            ),
+            (
+                "library-key-names-another-library-aab",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libsomething_else.so"',
+                ).encode("utf-8"),
+                1,
+                "declares the \"[libraries]\" key 'android.arm64', which names 'libsomething_else.so'"
+                " instead of the packaged bridge 'libfoundry_java.so'",
+            ),
+            # The bridge name is compared whole: a longer name the linker would not
+            # resolve to the packaged bridge is still rejected.
+            (
+                "library-key-only-suffixes-the-bridge-name",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libfoundry_java.so.1"',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64', which names 'libfoundry_java.so.1'"
+                " instead of the packaged bridge 'libfoundry_java.so'",
+            ),
+            # A path-qualified value only reaches the packaged bridge when nothing
+            # exists at that path; when something does, that is what Android loads,
+            # so the value must be the bare bridge name.
+            (
+                "library-key-qualifies-the-bridge-name-with-a-path",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "res://libfoundry_java.so"',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64', which names 'res://libfoundry_java.so'"
+                " instead of the packaged bridge 'libfoundry_java.so'",
+            ),
+            (
+                "library-key-names-an-absolute-path",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "/data/local/tmp/libfoundry_java.so"',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64', which names"
+                " '/data/local/tmp/libfoundry_java.so' instead of the packaged bridge 'libfoundry_java.so'",
+            ),
+            # A directory-only value names no library file at all.
+            (
+                "library-key-names-a-directory",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "res://"',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64', which names 'res://'"
+                " instead of the packaged bridge 'libfoundry_java.so'",
+            ),
+            # The export cannot bound which keys a device selects: every tag it does
+            # not recognize is forwarded to the host plugin's supportsFeature(), which
+            # may answer anything true. So a key the export models as unmet -- gated
+            # on the template's threading, or on a tag the export never enumerates --
+            # can still win on device and is checked wherever it appears.
+            (
+                "unobservable-key-names-another-library",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libfoundry_java.so"\nandroid.arm64.threads = "libsomething_else.so"\n',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64.threads', which names 'libsomething_else.so'"
+                " instead of the packaged bridge 'libfoundry_java.so'",
+            ),
+            (
+                "host-plugin-feature-key-names-another-library",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libfoundry_java.so"\nandroid.arm64.host_plugin_only = "libsomething_else.so"\n',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64.host_plugin_only', which names"
+                " 'libsomething_else.so' instead of the packaged bridge 'libfoundry_java.so'",
+            ),
+            # A more specific key the export does observe shadows the canonical one.
+            (
+                "shadowing-key-names-another-library",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = "libfoundry_java.so"\nandroid.arm64.mobile = "libsomething_else.so"\n',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64.mobile', which names 'libsomething_else.so'"
+                " instead of the packaged bridge 'libfoundry_java.so'",
+            ),
         )
         for defect, descriptor, export_format, diagnostic in cases:
             with self.subTest(defect=defect):
@@ -4651,6 +4756,19 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 output = result.stdout + result.stderr
                 self.assertEqual(0, result.returncode, output)
                 self.assertTrue(artifact.is_file())
+
+    def test_export_accepts_a_bridge_key_for_an_unrequested_abi(self) -> None:
+        # Every [libraries] key must name the packaged bridge, but a key for an ABI
+        # this export does not request is still a bridge key and must not be rejected
+        # just because no bridge is packaged for it.
+        result, artifact = self._export_packaged_descriptor(
+            "unrequested-abi-bridge-key",
+            LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8"),
+            requested_abis=("arm64-v8a",),
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(0, result.returncode, output)
+        self.assertTrue(artifact.is_file())
 
     def test_export_rejects_library_keys_gated_on_a_reserved_custom_feature_name(self) -> None:
         # OS::has_feature() answers reserved tags itself before it reaches the

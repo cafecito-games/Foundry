@@ -127,9 +127,27 @@ configuration file and declares:
   precision or threading, fails closed. An empty key is rejected wherever it appears, because a
   device reports more feature tags than an export can enumerate, so any key can
   turn out to be the loader's most specific match and shadow a populated one.
+- no `[libraries]` key naming anything but the packaged bridge, which must be
+  written as exactly `libfoundry_java.so`. Like the empty-key rule, this applies
+  to every key rather than only the ones the export resolves, and for a stronger
+  reason: an export cannot bound which keys a device selects at all.
+  `OS_Android::_check_internal_feature_support()` hard-answers only `macos`,
+  `web_ios`, `web_macos`, and `windows` false, and forwards every other tag it
+  does not recognize to the host plugin's `supportsFeature()`, which may answer
+  anything true. A key gated on the template's threading, or on a tag the export
+  never enumerates, can therefore become the loader's most specific match on
+  device. A path-qualified value such as `res://libfoundry_java.so` is rejected
+  too: Android reaches a packaged native library by file name only because
+  `OS_Android::open_dynamic_library()` falls back to `dlopen()`ing the file name
+  for a path that is not a real file, and when the path does exist that path is
+  loaded instead -- so a directory part is either dead weight or a way to load
+  native code the export never packaged or inspected. This is the one check the
+  runtime loader does not perform itself: it discovers the mismatch later, at
+  `dlopen()`, on device.
 
-That is the runtime extension loader's mandatory contract, enforced by the export
-that produces the binding instead of by the device that runs it. Because the
+That is the runtime extension loader's mandatory contract, plus the packaged
+bridge name it can only discover at `dlopen()`, enforced by the export that
+produces the binding instead of by the device that runs it. Because the
 descriptor is buffered to be parsed, it carries its own 64 KiB decompressed limit
 and a larger payload fails inspection without being read.
 
