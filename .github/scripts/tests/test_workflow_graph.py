@@ -213,6 +213,16 @@ class WorkflowGraphTests(unittest.TestCase):
             workflow_graph.normalize_expression("${{\n  always()\n  && a == 'b'\n}}"),
         )
 
+    def test_normalize_expression_preserves_whitespace_inside_string_literals(self) -> None:
+        self.assertNotEqual(
+            workflow_graph.normalize_expression("${{ a == 'one two' }}"),
+            workflow_graph.normalize_expression("${{ a == 'one  two' }}"),
+        )
+        self.assertEqual(
+            "${{ a == 'one  two' && b == \"three  four\" }}",
+            workflow_graph.normalize_expression("${{ a == 'one  two'\n  && b == \"three  four\" }}"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

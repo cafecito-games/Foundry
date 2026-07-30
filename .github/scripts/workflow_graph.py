@@ -20,6 +20,9 @@ from typing import Any, Iterator
 import yaml
 
 WHITESPACE = re.compile(r"\s+")
+# Single- and double-quoted spans of a GitHub expression, whose interior whitespace
+# is part of the compared value and must survive normalization.
+QUOTED_SPAN = re.compile(r"'(?:''|[^'])*'|\"(?:\\.|[^\"\\])*\"")
 
 # GitHub parses the unquoted key `on:` as the YAML boolean `True`. Workflows say
 # `on:`, so the parsed document keys the trigger block under `True`.
@@ -35,10 +38,20 @@ def normalize_expression(expression: str) -> str:
 
     GitHub expressions may be wrapped across lines with folded or literal block
     scalars without changing meaning, so contracts compare them whitespace-normalized.
+    Whitespace inside a quoted string literal is part of the compared value and is
+    left alone, so `== 'a b'` never normalizes to the same text as `== 'a  b'`.
     Expressions are never evaluated.
     """
 
-    return WHITESPACE.sub(" ", str(expression)).strip()
+    text = str(expression)
+    normalized: list[str] = []
+    cursor = 0
+    for quoted in QUOTED_SPAN.finditer(text):
+        normalized.append(WHITESPACE.sub(" ", text[cursor : quoted.start()]))
+        normalized.append(quoted.group())
+        cursor = quoted.end()
+    normalized.append(WHITESPACE.sub(" ", text[cursor:]))
+    return "".join(normalized).strip()
 
 
 def load(path: Path | str) -> Workflow:

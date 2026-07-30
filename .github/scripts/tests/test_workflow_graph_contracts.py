@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -144,11 +145,49 @@ class WorkflowContractTestCase(unittest.TestCase):
             with self.subTest(relative_path=relative_path):
                 self.assertRegex(relative_path, trigger)
 
+    def keyed_cells(
+        self,
+        workflow: workflow_graph.Workflow,
+        job: str,
+        dimensions: tuple[str, ...],
+    ) -> dict[tuple[Any, ...], dict[str, Any]]:
+        """Key a job's matrix cells, rejecting duplicates.
+
+        Two cells with the same key would schedule two builds that publish the same
+        artifact name, and keying them into a mapping would otherwise hide the second.
+        """
+
+        cells = workflow.matrix_cells(job)
+        keys = [tuple(cell[dimension] for dimension in dimensions) for cell in cells]
+        self.assertEqual(len(keys), len(set(keys)), f"job {job!r} declares duplicate matrix cells")
+        return dict(zip(keys, cells))
+
     def assert_no_scalar_contains(self, workflow: workflow_graph.Workflow, fragments: tuple[str, ...]) -> None:
         scalars = list(workflow.scalars())
         for fragment in fragments:
             with self.subTest(fragment=fragment):
                 self.assertEqual([], [scalar for scalar in scalars if fragment in scalar])
+
+
+class KeyedCellsTests(WorkflowContractTestCase):
+    """The duplicate-cell guard the matrix contracts rely on."""
+
+    def keyed_cells_for(self, cells: str) -> dict[tuple[Any, ...], dict[str, Any]]:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.yml"
+            path.write_text(
+                "on: workflow_dispatch\njobs:\n  build:\n    strategy:\n      matrix:\n        include:\n" + cells,
+                encoding="utf-8",
+            )
+            return self.keyed_cells(workflow_graph.load(path), "build", ("abi",))
+
+    def test_distinct_cells_are_keyed_by_their_dimensions(self) -> None:
+        cells = self.keyed_cells_for("          - abi: arm64-v8a\n          - abi: x86_64\n")
+        self.assertEqual({("arm64-v8a",), ("x86_64",)}, set(cells))
+
+    def test_a_duplicate_cell_fails_the_contract(self) -> None:
+        with self.assertRaises(AssertionError):
+            self.keyed_cells_for("          - abi: arm64-v8a\n          - abi: arm64-v8a\n")
 
 
 class PrPlatformChecksWorkflowTests(WorkflowContractTestCase):
@@ -324,7 +363,7 @@ class ReleaseIosWorkflowTests(WorkflowContractTestCase):
         self.assertIs(False, self.workflow.strategy("build-ios")["fail-fast"])
         self.assertEqual("iOS ${{ matrix.name }}", self.workflow.job_name("build-ios"))
 
-        cells = {cell["name"]: cell for cell in self.workflow.matrix_cells("build-ios")}
+        cells = {key[0]: cell for key, cell in self.keyed_cells(self.workflow, "build-ios", ("name",)).items()}
         self.assertEqual(
             {"release-ios-device", "release-ios-simulator", "debug-ios-device", "debug-ios-simulator"},
             set(cells),
@@ -431,7 +470,7 @@ class AndroidRuntimeWorkflowTests(WorkflowContractTestCase):
         job: str,
         artifact_prefix: str,
     ) -> None:
-        cells = {(cell["build_type"], cell["abi"]): cell for cell in workflow.matrix_cells(job)}
+        cells = self.keyed_cells(workflow, job, ("build_type", "abi"))
         self.assertEqual(
             {(build_type, abi) for build_type in ANDROID_BUILD_TYPES for abi in ANDROID_ABI_ARCHITECTURES},
             set(cells),
