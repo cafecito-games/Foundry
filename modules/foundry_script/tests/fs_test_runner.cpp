@@ -930,12 +930,15 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 		err = script->reload();
 		if (err) {
 			enable_stdout();
+			// Report what the compiler said, the way the compiled-bytecode branch above does; without it
+			// a reload failure is indistinguishable from any other and gives nothing to debug.
+			const String captured_output = result.output;
 			result.status = FS_TEST_LOAD_ERROR;
 			result.output = "";
 			result.passed = false;
 			remove_print_handler(&_print_handler);
 			remove_error_handler(&_error_handler);
-			ERR_FAIL_V_MSG(result, "\nCould not reload script: '" + source_file + "'");
+			ERR_FAIL_V_MSG(result, "\nCould not reload script: '" + source_file + "'\n" + captured_output);
 		}
 	}
 

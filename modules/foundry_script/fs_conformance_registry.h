@@ -65,6 +65,10 @@ public:
 		Vector<String> target_keys;
 		StringName trait_name;
 		String source_file;
+		// Position of the declaring `ConformanceNode` in the source file's root-class conformance list.
+		// Lets a consumer re-find this conformance in a *live* parse tree instead of dereferencing the
+		// borrowed witness nodes below, which a registration can outlive.
+		int conformance_index = -1;
 		WitnessMap witnesses;
 	};
 
@@ -162,6 +166,13 @@ public:
 	// The declaring file and trait identity of a witness for `(target, method)`, or empty values when
 	// none exists. Used for diagnosing cross-file witness method-name collisions.
 	String get_witness_source(const String &p_target_key, const StringName &p_method, StringName &r_trait_name) const;
+
+	// Locates the conformance that supplies a witness for `p_method` on a target alias `p_target_key`,
+	// reporting the declaring file and the conformance's position in that file's root-class conformance
+	// list. Returns identifiers only — never the borrowed witness node, which does not outlive the
+	// declaring file's parse tree — so a caller that needs the node can re-find it in a live parse tree.
+	bool find_witness_location(const String &p_target_key, const StringName &p_method,
+			String &r_source_file, int &r_conformance_index) const;
 
 	// Replaces every compiled runtime witness previously registered by `p_source_file`. The
 	// `FSFunction *` in `p_conformances` stay owned by the declaring script; the registry borrows
