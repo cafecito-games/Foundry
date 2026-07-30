@@ -2,7 +2,7 @@
 /*  editor_automation_mcp_contracts.cpp                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -629,7 +629,7 @@ void EditorAutomationMCPFailureAttachmentOptionsInput::append_to_dictionary(Dict
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPSelector::schema(const String &p_description) {
 	const String description = p_description.is_empty()
 			? String("Semantic selector used by find_elements, act, wait_for, and nested action targets. Prefer role plus name/text "
-					  "for resilient automation; use id for immediate follow-up or handle when reusing an element across snapshots.")
+					 "for resilient automation; use id for immediate follow-up or handle when reusing an element across snapshots.")
 			: p_description;
 	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(description);
 	schema->add_property("id", EditorAutomationMCPJsonSchema::string("Snapshot-scoped opaque element id returned by observe_ui/find_elements."));

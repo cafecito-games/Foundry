@@ -2,7 +2,7 @@
 /*  scene_tree_editor.cpp                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -46,8 +46,8 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/2d/node_2d.h"
-#include "scene/gui/label.h"
 #include "scene/gui/flow_container.h"
+#include "scene/gui/label.h"
 #include "scene/gui/texture_rect.h"
 #include "scene/main/window.h"
 #include "scene/resources/packed_scene.h"
@@ -1494,18 +1494,18 @@ void SceneTreeEditor::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_VISIBILITY_CHANGED: {
-				if (is_visible()) {
-					TreeItem *item = nullptr;
-					if (_can_use_node_path(selected)) {
-						// Scroll to selected node.
-						item = _find(tree->get_root(), selected->get_path());
-					} else if (marked.size() == 1) {
-						// Scroll to a single marked node.
-						Node *marked_node = *marked.begin();
-						if (_can_use_node_path(marked_node)) {
-							item = _find(tree->get_root(), marked_node->get_path());
-						}
+			if (is_visible()) {
+				TreeItem *item = nullptr;
+				if (_can_use_node_path(selected)) {
+					// Scroll to selected node.
+					item = _find(tree->get_root(), selected->get_path());
+				} else if (marked.size() == 1) {
+					// Scroll to a single marked node.
+					Node *marked_node = *marked.begin();
+					if (_can_use_node_path(marked_node)) {
+						item = _find(tree->get_root(), marked_node->get_path());
 					}
+				}
 
 				bool has_item = item;
 

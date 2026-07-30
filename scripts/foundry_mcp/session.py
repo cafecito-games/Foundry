@@ -27,7 +27,7 @@ def parse_automation_line(line: str) -> dict[str, Any]:
         raise FoundryAutomationStartupError("Line does not contain FOUNDRY_AUTOMATION marker.")
     raw = line[line.index(AUTOMATION_MARKER) + len(AUTOMATION_MARKER) :].strip()
     try:
-        data = json.loads(raw)
+        data: dict[str, Any] = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise FoundryAutomationStartupError(f"Malformed FOUNDRY_AUTOMATION payload: {raw}") from exc
     if not data.get("endpoint") or not data.get("token"):
@@ -101,7 +101,9 @@ class FoundryEditorAutomationSession:
                 break
             else:
                 time.sleep(0.05)
-        raise FoundryAutomationStartupError(f"Timed out waiting for FOUNDRY_AUTOMATION line.\nCaptured output:\n{output}")
+        raise FoundryAutomationStartupError(
+            f"Timed out waiting for FOUNDRY_AUTOMATION line.\nCaptured output:\n{output}"
+        )
 
     def close(self, *, terminate_timeout_s: float = 10.0) -> None:
         if self.process is None:

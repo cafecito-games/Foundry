@@ -2,7 +2,7 @@
 /*  editor_automation_input.cpp                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -30,9 +30,9 @@
 
 #include "editor_automation_input.h"
 
-#include "core/math/math_funcs.h"
 #include "core/input/input.h"
 #include "core/input/input_map.h"
+#include "core/math/math_funcs.h"
 #include "core/object/message_queue.h"
 #include "core/os/keyboard.h"
 #include "scene/gui/control.h"

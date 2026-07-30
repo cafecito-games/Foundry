@@ -2,7 +2,7 @@
 /*  editor_automation_input.h                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -30,8 +30,8 @@
 
 #pragma once
 
-#include "core/input/input_event.h"
 #include "core/input/input_enums.h"
+#include "core/input/input_event.h"
 #include "core/math/rect2i.h"
 #include "core/string/ustring.h"
 #include "core/variant/variant.h"

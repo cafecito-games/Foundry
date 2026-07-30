@@ -7,6 +7,8 @@
 		Returned when a guarded call finishes, times out, aborts, or fails with a script runtime error. Pass/fail policy is left to the runner; [constant STATUS_COMPLETED] only means the guarded method returned without guard interruption.
 		Diagnostic events are not recorded here; compose diagnostic capture separately when needed.
 	</description>
+	<tutorials>
+	</tutorials>
 	<members>
 		<member name="elapsed_seconds" type="float" setter="" getter="get_elapsed_seconds" default="0.0">
 			Wall time spent in the guarded call.

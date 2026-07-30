@@ -65,7 +65,7 @@
  {
   "pr": "118896",
   "sha": "651bc9d79c0edb51b6756f50582032caa52f0119",
-  "title": "Fix audio import dialog improperly reseting the \"Master\" bus",
+  "title": "Fix audio import dialog improperly resetting the \"Master\" bus",
   "subsystem": "editor/import",
   "nfiles": 1
  },
@@ -170,7 +170,7 @@
  {
   "pr": "115197",
   "sha": "530fb8551d48e257b829ce74a5dd32c0d198c435",
-  "title": "Fix editor colors reseting while the color chooser is still open",
+  "title": "Fix editor colors resetting while the color chooser is still open",
   "subsystem": "editor/settings",
   "nfiles": 2
  }

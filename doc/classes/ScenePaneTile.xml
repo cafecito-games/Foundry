@@ -6,4 +6,6 @@
 	<description>
 		Each scene tile hosts its own scene tabs, scene tree, viewport content, inspector, signals, groups, and history docks. Access the focused tile via [method EditorInterface.get_focused_tile].
 	</description>
+	<tutorials>
+	</tutorials>
 </class>

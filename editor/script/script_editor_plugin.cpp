@@ -2,7 +2,7 @@
 /*  script_editor_plugin.cpp                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -52,9 +52,7 @@
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_workspace.h"
-#include "editor/workspace/workspace_pane.h"
 #include "editor/editor_script_leaf.h"
-#include "editor/script/script_editor_controller.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_file_system.h"
@@ -68,6 +66,7 @@
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/script/editor_script.h"
 #include "editor/script/find_in_files.h"
+#include "editor/script/script_editor_controller.h"
 #include "editor/script/script_refactor_apply.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
@@ -75,6 +74,7 @@
 #include "editor/shader/text_shader_editor.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
+#include "editor/workspace/workspace_pane.h"
 #include "modules/modules_enabled.gen.h"
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
@@ -491,9 +491,7 @@ ScriptEditorQuickOpen::ScriptEditorQuickOpen() {
 	search_options->add_theme_constant_override("draw_guides", 1);
 }
 
-
 /*** SCRIPT EDITOR split to script_editor_controller/view ***/
-
 
 void ScriptEditorPlugin::_save_last_editor(const String &p_editor) {
 	if (p_editor != get_plugin_name()) {

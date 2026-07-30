@@ -2,7 +2,7 @@
 /*  test_script_test_execution.h                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -30,10 +30,10 @@
 
 #pragma once
 
-#include "../fs_script_test_execution.h"
-#include "../fs_script_test_guard.h"
 #include "../foundry_script.h"
 #include "../fs_function.h"
+#include "../fs_script_test_execution.h"
+#include "../fs_script_test_guard.h"
 #include "fs_test_runner.h"
 
 #include "core/io/resource_loader.h"

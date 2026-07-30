@@ -18,6 +18,8 @@
 		context.set_diagnostics(diagnostics.capture)
 		[/codeblock]
 	</description>
+	<tutorials>
+	</tutorials>
 	<methods>
 		<method name="clear">
 			<return type="void" />

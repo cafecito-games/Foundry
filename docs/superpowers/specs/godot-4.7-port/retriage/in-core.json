@@ -552,7 +552,7 @@
  {
   "pr": "119254",
   "sha": "303364492042fbd7a3562ff8f4ddbad85c168bfd",
-  "title": "Deprecate GDExtension's `object_cast_to` and `classdb_get_class_tag`, in favour of `is_class` casts.",
+  "title": "Deprecate GDExtension's `object_cast_to` and `classdb_get_class_tag`, in favor of `is_class` casts.",
   "subsystem": "core/extension",
   "nfiles": 2,
   "orig_risk": "med",

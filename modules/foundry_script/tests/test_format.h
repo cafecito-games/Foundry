@@ -889,7 +889,7 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	// A bodyless lambda only parses when its `:` is closed on the same line, so it
 	// never holds comment trivia of its own. The comments that can sit next to one
 	// belong to the enclosing expression and must survive the bodyless path.
-	TEST_CASE("[Format] Keeps comments neighbouring a bodyless lambda") {
+	TEST_CASE("[Format] Keeps comments neighboring a bodyless lambda") {
 		String source = "func f():\n\tvar items = [\n\t\t(func():),\n\t\t# note\n\t\t1,\n\t]\n";
 		CHECK_EQ(format_or_fail(source), source);
 	}

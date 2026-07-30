@@ -1,3 +1,33 @@
+/**************************************************************************/
+/*  DownloadProgressInfo.java                                             */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             FOUNDRY ENGINE                             */
+/*          A fork of the Godot Engine (https://godotengine.org)          */
+/*                       https://www.cafecito.games                       */
+/**************************************************************************/
+/* Copyright (c) 2026-present Cafecito Games LLC.                         */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
 /*
  * Copyright (C) 2012 The Android Open Source Project
  *
@@ -19,7 +49,6 @@ package com.google.android.vending.expansion.downloader;
 import android.os.Parcel;
 import android.os.Parcelable;
 
-
 /**
  * This class contains progress information about the active download(s).
  *
@@ -31,50 +60,49 @@ import android.os.Parcelable;
  * as the progress so far, time remaining and current speed.
  */
 public class DownloadProgressInfo implements Parcelable {
-    public long mOverallTotal;
-    public long mOverallProgress;
-    public long mTimeRemaining; // time remaining
-    public float mCurrentSpeed; // speed in KB/S
+	public long mOverallTotal;
+	public long mOverallProgress;
+	public long mTimeRemaining; // time remaining
+	public float mCurrentSpeed; // speed in KB/S
 
-    @Override
-    public int describeContents() {
-        return 0;
-    }
+	@Override
+	public int describeContents() {
+		return 0;
+	}
 
-    @Override
-    public void writeToParcel(Parcel p, int i) {
-        p.writeLong(mOverallTotal);
-        p.writeLong(mOverallProgress);
-        p.writeLong(mTimeRemaining);
-        p.writeFloat(mCurrentSpeed);
-    }
+	@Override
+	public void writeToParcel(Parcel p, int i) {
+		p.writeLong(mOverallTotal);
+		p.writeLong(mOverallProgress);
+		p.writeLong(mTimeRemaining);
+		p.writeFloat(mCurrentSpeed);
+	}
 
-    public DownloadProgressInfo(Parcel p) {
-        mOverallTotal = p.readLong();
-        mOverallProgress = p.readLong();
-        mTimeRemaining = p.readLong();
-        mCurrentSpeed = p.readFloat();
-    }
+	public DownloadProgressInfo(Parcel p) {
+		mOverallTotal = p.readLong();
+		mOverallProgress = p.readLong();
+		mTimeRemaining = p.readLong();
+		mCurrentSpeed = p.readFloat();
+	}
 
-    public DownloadProgressInfo(long overallTotal, long overallProgress,
-            long timeRemaining,
-            float currentSpeed) {
-        this.mOverallTotal = overallTotal;
-        this.mOverallProgress = overallProgress;
-        this.mTimeRemaining = timeRemaining;
-        this.mCurrentSpeed = currentSpeed;
-    }
+	public DownloadProgressInfo(long overallTotal, long overallProgress,
+			long timeRemaining,
+			float currentSpeed) {
+		this.mOverallTotal = overallTotal;
+		this.mOverallProgress = overallProgress;
+		this.mTimeRemaining = timeRemaining;
+		this.mCurrentSpeed = currentSpeed;
+	}
 
-    public static final Creator<DownloadProgressInfo> CREATOR = new Creator<DownloadProgressInfo>() {
-        @Override
-        public DownloadProgressInfo createFromParcel(Parcel parcel) {
-            return new DownloadProgressInfo(parcel);
-        }
+	public static final Creator<DownloadProgressInfo> CREATOR = new Creator<DownloadProgressInfo>() {
+		@Override
+		public DownloadProgressInfo createFromParcel(Parcel parcel) {
+			return new DownloadProgressInfo(parcel);
+		}
 
-        @Override
-        public DownloadProgressInfo[] newArray(int i) {
-            return new DownloadProgressInfo[i];
-        }
-    };
-
+		@Override
+		public DownloadProgressInfo[] newArray(int i) {
+			return new DownloadProgressInfo[i];
+		}
+	};
 }

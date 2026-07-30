@@ -247,7 +247,7 @@
  {
   "sha": "9268bc73a060c9615053e6375c7a9d332f73ba91",
   "pr": "117619",
-  "title": "Fix assymmetrical rendering of reflections in SDFGI",
+  "title": "Fix asymmetrical rendering of reflections in SDFGI",
   "subsystem": "servers/rendering",
   "nfiles": 2
  },

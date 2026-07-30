@@ -17,6 +17,8 @@
 		[b]Async helpers[/b]
 		[method capture_async] records script runtime errors as ordinary diagnostic events but does not alter error control flow. Whether a captured diagnostic fails a test remains runner policy.
 	</description>
+	<tutorials>
+	</tutorials>
 	<methods>
 		<method name="capture" qualifiers="static">
 			<return type="ScriptDiagnosticCaptureResult" />

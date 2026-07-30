@@ -2,7 +2,7 @@
 /*  test_mobile_text_context_menu.h                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -30,10 +30,10 @@
 
 #pragma once
 
+#include "core/object/message_queue.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/rich_text_label.h"
 #include "scene/gui/text_edit.h"
-#include "core/object/message_queue.h"
 #include "scene/main/scene_tree.h"
 
 #include "tests/test_macros.h"

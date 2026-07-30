@@ -2,7 +2,7 @@
 /*  editor_automation_wait.cpp                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -30,13 +30,13 @@
 
 #include "editor_automation_wait.h"
 
+#include "core/object/message_queue.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_workspace.h"
 #include "editor/editor_node.h"
 #include "editor/file_system/editor_file_system.h"
-#include "core/object/message_queue.h"
 #include "scene/main/scene_tree.h"
 
 namespace {

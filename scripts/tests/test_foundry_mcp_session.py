@@ -8,12 +8,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.foundry_mcp import (
+from scripts.foundry_mcp import (  # noqa: E402
     FoundryAutomationStartupError,
     FoundryEditorAutomationSession,
     parse_automation_line,
@@ -49,7 +49,7 @@ class _FakeProcess:
 
     def wait(self, timeout: float | None = None) -> int:
         if self.wait_timeout and not self.killed:
-            raise subprocess.TimeoutExpired("foundry", timeout)
+            raise subprocess.TimeoutExpired("foundry", timeout or 0.0)
         self.returncode = 0
         return 0
 
@@ -96,7 +96,7 @@ class FoundryMCPSessionTestCase(unittest.TestCase):
                 display=":9",
                 token="tok",
                 port=0,
-                popen=fake_popen,
+                popen=cast("Callable[..., subprocess.Popen[str]]", fake_popen),
             )
 
             self.assertEqual(calls[0]["command"][:5], ["/tmp/foundry", "editor", "open", "--project", tmp])
@@ -112,7 +112,7 @@ class FoundryMCPSessionTestCase(unittest.TestCase):
     def test_context_manager_kills_process_when_terminate_times_out(self) -> None:
         process = _FakeProcess([], wait_timeout=True)
         session = FoundryEditorAutomationSession.connect("http://127.0.0.1:9/mcp", "secret")
-        session.process = process
+        session.process = cast("subprocess.Popen[str]", process)
 
         with session:
             pass

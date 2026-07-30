@@ -311,7 +311,7 @@
   "pr": "115954",
   "sha": "7c2a32498c5c4938403c2965bd38ba0a9e3f4bbc",
   "subsystem": "editor/docks",
-  "title": "Fix missing tooltip for panel with shortcuts without configurated keys",
+  "title": "Fix missing tooltip for panel with shortcuts without configured keys",
   "decision": "port-later",
   "kind": "bugfix",
   "risk": "low",

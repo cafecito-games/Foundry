@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.foundry_mcp import FoundryMCPStdioServer
+from scripts.foundry_mcp import FoundryMCPStdioServer  # noqa: E402
 
 
 def main() -> int:

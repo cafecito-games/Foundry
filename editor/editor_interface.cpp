@@ -2,7 +2,7 @@
 /*  editor_interface.cpp                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -33,14 +33,14 @@
 #include "core/config/project_settings.h"
 #include "core/io/resource_loader.h"
 #include "editor/docks/filesystem_dock.h"
+#include "editor/docks/groups_dock.h"
+#include "editor/docks/history_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/docks/signals_dock.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_pane_tile.h"
-#include "editor/docks/groups_dock.h"
-#include "editor/docks/history_dock.h"
-#include "editor/docks/signals_dock.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/create_dialog.h"

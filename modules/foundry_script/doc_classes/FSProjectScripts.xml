@@ -5,8 +5,8 @@
 	</brief_description>
 	<description>
 		Exposes read-only discovery over the project's FoundryScript files without loading or executing them. Access it through [member FSNamespace.project_scripts] as [code]foundry.project_scripts[/code].
-		[code]list_scripts_under()[/code] walks a [code]res://[/code] directory and returns one [FSScriptDescriptor] per [code].fs[/code] file, including scripts that fail to parse or index. Filtering policy (name prefixes, annotation matching, excluded directories) stays in runner code; descriptors carry the metadata needed to decide what to run.
-		Descriptors are built from parser-level indexing via [FSCache] at interface-resolved status. Discovery never runs static initializers, [code]_init[/code], or other user code, and does not print indexing diagnostics to the console. Broken files remain enumerable with [member FSScriptDescriptor.indexed_ok] set to [code]false[/code] and diagnostics available from [method FSScriptDescriptor.get_index_diagnostics].
+		[method list_scripts_under] walks a [code]res://[/code] directory and returns one [FSScriptDescriptor] per [code].fs[/code] file, including scripts that fail to parse or index. Filtering policy (name prefixes, annotation matching, excluded directories) stays in runner code; descriptors carry the metadata needed to decide what to run.
+		Descriptors are built from parser-level indexing via the script cache at interface-resolved status. Discovery never runs static initializers, [code]_init[/code], or other user code, and does not print indexing diagnostics to the console. Broken files remain enumerable with [member FSScriptDescriptor.indexed_ok] set to [code]false[/code] and diagnostics available from [method FSScriptDescriptor.get_index_diagnostics].
 		Example:
 		[codeblock]
 		for descriptor in foundry.project_scripts.list_scripts_under("res://tests"):

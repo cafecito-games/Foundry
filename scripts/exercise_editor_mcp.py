@@ -81,7 +81,8 @@ def wait_for_automation_line(proc: subprocess.Popen[str], timeout_s: float = 180
             if "FOUNDRY_AUTOMATION " in line:
                 marker = "FOUNDRY_AUTOMATION "
                 idx = line.index(marker) + len(marker)
-                return json.loads(line[idx:].strip())
+                automation: dict[str, Any] = json.loads(line[idx:].strip())
+                return automation
             if "FOUNDRY_AUTOMATION_ERROR" in line:
                 raise RuntimeError(f"Editor automation failed to start: {line.strip()}")
         elif proc.poll() is not None:
@@ -91,17 +92,20 @@ def wait_for_automation_line(proc: subprocess.Popen[str], timeout_s: float = 180
 
 
 def structured_content(tool_result: dict[str, Any]) -> dict[str, Any]:
-    return tool_result.get("structuredContent", {})
+    structured: dict[str, Any] = tool_result.get("structuredContent", {})
+    return structured
 
 
-def assert_ok(name: str, condition: bool, message: str, failures: list[Failure], **details: Any) -> None:
+def assert_ok(name: str, condition: object, message: str, failures: list[Failure], **details: Any) -> None:
     if not condition:
         failures.append(Failure(name=name, message=message, details=details))
 
 
 def exercise_protocol(client: FoundryMCPClient, failures: list[Failure]) -> None:
     init = client.initialize(client_name="exercise_editor_mcp", client_version="1.0")
-    assert_ok("initialize", init.get("protocolVersion") == PROTOCOL_VERSION, "protocol version mismatch", failures, init=init)
+    assert_ok(
+        "initialize", init.get("protocolVersion") == PROTOCOL_VERSION, "protocol version mismatch", failures, init=init
+    )
     caps = init.get("capabilities", {})
     assert_ok("initialize.tools", "tools" in caps, "missing tools capability", failures)
     assert_ok("initialize.resources", "resources" in caps, "missing resources capability", failures)
@@ -128,7 +132,9 @@ def exercise_protocol(client: FoundryMCPClient, failures: list[Failure]) -> None
 
     templates = client.list_resource_templates()
     template_uris = [t.get("uriTemplate") for t in templates]
-    assert_ok("resources/templates/list.count", len(templates) == 4, f"expected 4 templates, got {len(templates)}", failures)
+    assert_ok(
+        "resources/templates/list.count", len(templates) == 4, f"expected 4 templates, got {len(templates)}", failures
+    )
     for expected in EXPECTED_RESOURCE_TEMPLATES:
         assert_ok(
             f"resources/templates/list.{expected}",
@@ -180,12 +186,20 @@ def exercise_tools(client: FoundryMCPClient, failures: list[Failure]) -> dict[st
         {"selector": {"role": "dock", "name": "Scene"}, "max_results": 5},
     )
     find_match_structured = structured_content(find_match)
-    assert_ok("find_elements.match", find_match_structured.get("ok"), "Scene dock not found", failures, result=find_match_structured)
+    assert_ok(
+        "find_elements.match",
+        find_match_structured.get("ok"),
+        "Scene dock not found",
+        failures,
+        result=find_match_structured,
+    )
     if find_match_structured.get("elements"):
         context["scene_dock"] = find_match_structured["elements"][0]
 
     # find_elements - no match (should be error)
-    find_nomatch = client.call_tool("find_elements", {"selector": {"role": "button", "name": "Definitely Missing Button XYZ"}})
+    find_nomatch = client.call_tool(
+        "find_elements", {"selector": {"role": "button", "name": "Definitely Missing Button XYZ"}}
+    )
     assert_ok("find_elements.no_match", find_nomatch.get("isError"), "no-match should set isError", failures)
 
     # find_elements pagination
@@ -210,7 +224,12 @@ def exercise_tools(client: FoundryMCPClient, failures: list[Failure]) -> dict[st
     state_result = client.call_tool("read_editor_state")
     state = structured_content(state_result)
     assert_ok("read_editor_state", not state_result.get("isError"), "read_editor_state failed", failures)
-    assert_ok("read_editor_state.supported", "supported" in state or state.get("supported") is not False, "missing supported", failures)
+    assert_ok(
+        "read_editor_state.supported",
+        "supported" in state or state.get("supported") is not False,
+        "missing supported",
+        failures,
+    )
     context["editor_state"] = state
 
     # read_editor_log
@@ -287,7 +306,9 @@ def exercise_tools(client: FoundryMCPClient, failures: list[Failure]) -> dict[st
     assert_ok("wait_for.editor_idle", wait_idle_structured.get("ok"), "editor_idle wait failed", failures)
 
     # act - click a button if we can find one
-    button_find = client.call_tool("find_elements", {"selector": {"role": "button", "name": "Add Child Node"}, "max_results": 1})
+    button_find = client.call_tool(
+        "find_elements", {"selector": {"role": "button", "name": "Add Child Node"}, "max_results": 1}
+    )
     button_find_structured = structured_content(button_find)
     if button_find_structured.get("ok") and button_find_structured.get("elements"):
         button = button_find_structured["elements"][0]
@@ -300,7 +321,13 @@ def exercise_tools(client: FoundryMCPClient, failures: list[Failure]) -> dict[st
         )
         act_click_structured = structured_content(act_click)
         # Click may open dialog - that's fine; we just verify the tool works
-        assert_ok("act.click", act_click_structured.get("ok") or act_click.get("isError") is False, "act click failed", failures, result=act_click_structured)
+        assert_ok(
+            "act.click",
+            act_click_structured.get("ok") or act_click.get("isError") is False,
+            "act click failed",
+            failures,
+            result=act_click_structured,
+        )
 
         # Try to dismiss dialog if opened
         time.sleep(0.5)
@@ -364,7 +391,6 @@ def exercise_incremental_reads(client: FoundryMCPClient, context: dict[str, Any]
 
     if context.get("event_marker"):
         poll2 = client.call_tool("poll_events", {"since": context["event_marker"]})
-        poll2_structured = structured_content(poll2)
         assert_ok("poll_events.since", not poll2.get("isError"), "since-marker poll failed", failures)
 
 

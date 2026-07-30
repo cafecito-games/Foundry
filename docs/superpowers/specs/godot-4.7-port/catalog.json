@@ -2218,7 +2218,7 @@
  {
   "sha": "303364492042fbd7a3562ff8f4ddbad85c168bfd",
   "pr": "119254",
-  "title": "Deprecate GDExtension's `object_cast_to` and `classdb_get_class_tag`, in favour of `is_class` casts.",
+  "title": "Deprecate GDExtension's `object_cast_to` and `classdb_get_class_tag`, in favor of `is_class` casts.",
   "bucket": "candidate",
   "subsystem": "core/extension",
   "nfiles": 2
@@ -2794,7 +2794,7 @@
  {
   "sha": "651bc9d79c0edb51b6756f50582032caa52f0119",
   "pr": "118896",
-  "title": "Fix audio import dialog improperly reseting the \"Master\" bus",
+  "title": "Fix audio import dialog improperly resetting the \"Master\" bus",
   "bucket": "candidate",
   "subsystem": "editor/import",
   "nfiles": 1
@@ -4522,7 +4522,7 @@
  {
   "sha": "9268bc73a060c9615053e6375c7a9d332f73ba91",
   "pr": "117619",
-  "title": "Fix assymmetrical rendering of reflections in SDFGI",
+  "title": "Fix asymmetrical rendering of reflections in SDFGI",
   "bucket": "candidate",
   "subsystem": "servers/rendering",
   "nfiles": 2
@@ -4850,7 +4850,7 @@
  {
   "sha": "c3afd5b8e1a77fdc4e236c9ab8a95585f26b7e73",
   "pr": "116238",
-  "title": "Restore `canvas_item_add_polyline` useage for transform gizmo rotation arc",
+  "title": "Restore `canvas_item_add_polyline` usage for transform gizmo rotation arc",
   "bucket": "candidate",
   "subsystem": "editor/scene",
   "nfiles": 1
@@ -6082,7 +6082,7 @@
  {
   "sha": "7c2a32498c5c4938403c2965bd38ba0a9e3f4bbc",
   "pr": "115954",
-  "title": "Fix missing tooltip for panel with shortcuts without configurated keys",
+  "title": "Fix missing tooltip for panel with shortcuts without configured keys",
   "bucket": "candidate",
   "subsystem": "editor/docks",
   "nfiles": 1
@@ -7218,7 +7218,7 @@
  {
   "sha": "6e07a6c3c95a3fb68b4b952707ca625a36c92d99",
   "pr": "117442",
-  "title": "De-duplicate name and inherits `StringName` properties from `ClassDB::ClassInfo`, in favour of `GDType`",
+  "title": "De-duplicate name and inherits `StringName` properties from `ClassDB::ClassInfo`, in favor of `GDType`",
   "bucket": "manual-flag",
   "subsystem": "diverged",
   "nfiles": 7
@@ -8866,7 +8866,7 @@
  {
   "sha": "634220e9fcf912dd0f4c1fbc7400bdb5fb2999fe",
   "pr": "114971",
-  "title": "Reorganize interface/editor setttings",
+  "title": "Reorganize interface/editor settings",
   "bucket": "manual-flag",
   "subsystem": "diverged",
   "nfiles": 29
@@ -9394,7 +9394,7 @@
  {
   "sha": "6e96b028e10dbe7381bdeecde80fe7492f4b810c",
   "pr": "116676",
-  "title": "Check `playback_queue` existance after emit `animation_finished` signal",
+  "title": "Check `playback_queue` existence after emit `animation_finished` signal",
   "bucket": "candidate",
   "subsystem": "scene/animation",
   "nfiles": 1
@@ -12802,7 +12802,7 @@
  {
   "sha": "530fb8551d48e257b829ce74a5dd32c0d198c435",
   "pr": "115197",
-  "title": "Fix editor colors reseting while the color chooser is still open",
+  "title": "Fix editor colors resetting while the color chooser is still open",
   "bucket": "candidate",
   "subsystem": "editor/settings",
   "nfiles": 2

@@ -112,8 +112,8 @@
 #endif // XR_DISABLED
 
 #ifdef TESTS_ENABLED
-#include "tests/test_main.h"
 #include "tests/foundry_test_progress.h"
+#include "tests/test_main.h"
 #endif
 
 #ifdef TOOLS_ENABLED
@@ -1016,7 +1016,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		new_cwd = OS::get_singleton()->get_executable_path().get_base_dir();
 	}
 #else
-	String new_cwd = OS::get_singleton()->get_executable_path().get_base_dir();
+		String new_cwd = OS::get_singleton()->get_executable_path().get_base_dir();
 #endif
 	if (!new_cwd.is_empty()) {
 		OS::get_singleton()->set_cwd(new_cwd);
@@ -2131,7 +2131,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		I = N;
 	}
 
-
 #if defined(DEBUG_ENABLED) || defined(TOOLS_ENABLED)
 	// Network file system needs to be configured before globals, since globals are based on the
 	// 'project.foundry' file which will only be available through the network if this is enabled
@@ -2302,7 +2301,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 #if defined(WINDOWS_ENABLED) || defined(LINUXBSD_ENABLED)
 		if (editor || test_rd_support || test_rd_creation) {
 #else
-		if (editor) {
+			if (editor) {
 #endif
 			// Disable Vulkan overlays in editor, they cause various issues.
 			for (const String &layer_disable : layers_to_disable) {
@@ -2790,7 +2789,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 
 	OS::get_singleton()->set_current_rendering_driver_name(rendering_driver);
 	OS::get_singleton()->set_current_rendering_method(rendering_method);
-
 
 	if (use_custom_res) {
 		if (!force_res) {
@@ -4058,7 +4056,7 @@ void Main::setup_boot_logo() {
 #if defined(TOOLS_ENABLED) && !defined(NO_EDITOR_SPLASH)
 			Ref<Image> splash = editor ? memnew(Image(boot_splash_editor_png)) : memnew(Image(boot_splash_png));
 #else
-			Ref<Image> splash = memnew(Image(boot_splash_png));
+				Ref<Image> splash = memnew(Image(boot_splash_png));
 #endif
 
 			MAIN_PRINT("Main: ClearColor");
@@ -4398,7 +4396,7 @@ int Main::start() {
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	if (!doc_tool_path.is_empty() && fs_docs_path.is_empty()) {
 #else
-	if (!doc_tool_path.is_empty()) {
+		if (!doc_tool_path.is_empty()) {
 #endif
 		// Needed to instance editor-only classes for their default values
 		Engine::get_singleton()->set_editor_hint(true);

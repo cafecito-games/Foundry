@@ -6,6 +6,8 @@
 	<description>
 		Produced when a scoped capture helper finishes running a callable. [member return_value] is [code]null[/code] when the callable ended via runtime error. [member capture] is the stopped capture containing every recorded event.
 	</description>
+	<tutorials>
+	</tutorials>
 	<members>
 		<member name="capture" type="ScriptDiagnosticCapture" setter="" getter="get_capture">
 			The stopped capture with all recorded diagnostic events.

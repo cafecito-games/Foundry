@@ -9,17 +9,17 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.foundry_mcp import FoundryMCPClient, FoundryMCPError
+from scripts.foundry_mcp import FoundryMCPClient, FoundryMCPError  # noqa: E402
 
 
 class _FakeMCPHandler(BaseHTTPRequestHandler):
     requests: list[dict[str, Any]] = []
-    responses: list[tuple[int, dict[str, Any] | str]] = []
+    queued_responses: list[tuple[int, dict[str, Any] | str]] = []
 
     def do_POST(self) -> None:
         body = self.rfile.read(int(self.headers.get("Content-Length", "0"))).decode("utf-8")
@@ -31,7 +31,7 @@ class _FakeMCPHandler(BaseHTTPRequestHandler):
                 "payload": payload,
             }
         )
-        status, response = self.__class__.responses.pop(0)
+        status, response = self.__class__.queued_responses.pop(0)
         raw = response if isinstance(response, str) else json.dumps(response)
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -48,12 +48,12 @@ class FakeMCPServer:
 
     def __enter__(self) -> FakeMCPServer:
         _FakeMCPHandler.requests = []
-        _FakeMCPHandler.responses = []
+        _FakeMCPHandler.queued_responses = []
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeMCPHandler)
         self.thread = threading.Thread(target=self.server.serve_forever)
         self.thread.daemon = True
         self.thread.start()
-        host, port = self.server.server_address
+        host, port = cast("tuple[str, int]", self.server.server_address)
         self.endpoint = f"http://{host}:{port}/mcp"
         return self
 
@@ -67,7 +67,7 @@ class FakeMCPServer:
         return _FakeMCPHandler.requests
 
     def queue(self, status: int, response: dict[str, Any] | str) -> None:
-        _FakeMCPHandler.responses.append((status, response))
+        _FakeMCPHandler.queued_responses.append((status, response))
 
 
 class FoundryMCPClientTestCase(unittest.TestCase):

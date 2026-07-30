@@ -6,7 +6,6 @@ import ast
 import pathlib
 import sys
 
-
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCONSTRUCT = ROOT / "SConstruct"
 

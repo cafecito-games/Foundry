@@ -1,3 +1,33 @@
+/**************************************************************************/
+/*  LicenseCheckerCallback.java                                           */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             FOUNDRY ENGINE                             */
+/*          A fork of the Godot Engine (https://godotengine.org)          */
+/*                       https://www.cafecito.games                       */
+/**************************************************************************/
+/* Copyright (c) 2026-present Cafecito Games LLC.                         */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
 /*
  * Copyright (C) 2010 The Android Open Source Project
  *
@@ -33,35 +63,36 @@ package com.google.android.vending.licensing;
  * Policy.LICENSED will Allow.
  */
 public interface LicenseCheckerCallback {
+	/**
+	 * Allow use. App should proceed as normal.
+	 *
+	 * @param reason Policy.LICENSED or Policy.RETRY typically. (although in
+	 *            theory the policy can return Policy.NOT_LICENSED here as well)
+	 */
+	public void allow(int reason);
 
-    /**
-     * Allow use. App should proceed as normal.
-     *
-     * @param reason Policy.LICENSED or Policy.RETRY typically. (although in
-     *            theory the policy can return Policy.NOT_LICENSED here as well)
-     */
-    public void allow(int reason);
+	/**
+	 * Don't allow use. App should inform user and take appropriate action.
+	 *
+	 * @param reason Policy.NOT_LICENSED or Policy.RETRY. (although in theory
+	 *            the policy can return Policy.LICENSED here as well ---
+	 *            perhaps the call to the LVL took too long, for example)
+	 */
+	public void dontAllow(int reason);
 
-    /**
-     * Don't allow use. App should inform user and take appropriate action.
-     *
-     * @param reason Policy.NOT_LICENSED or Policy.RETRY. (although in theory
-     *            the policy can return Policy.LICENSED here as well ---
-     *            perhaps the call to the LVL took too long, for example)
-     */
-    public void dontAllow(int reason);
+	/**
+	 * Application error codes.
+	 */
+	public static final int ERROR_INVALID_PACKAGE_NAME = 1;
+	public static final int ERROR_NON_MATCHING_UID = 2;
+	public static final int ERROR_NOT_MARKET_MANAGED = 3;
+	public static final int ERROR_CHECK_IN_PROGRESS = 4;
+	public static final int ERROR_INVALID_PUBLIC_KEY = 5;
+	public static final int ERROR_MISSING_PERMISSION = 6;
 
-    /** Application error codes. */
-    public static final int ERROR_INVALID_PACKAGE_NAME = 1;
-    public static final int ERROR_NON_MATCHING_UID = 2;
-    public static final int ERROR_NOT_MARKET_MANAGED = 3;
-    public static final int ERROR_CHECK_IN_PROGRESS = 4;
-    public static final int ERROR_INVALID_PUBLIC_KEY = 5;
-    public static final int ERROR_MISSING_PERMISSION = 6;
-
-    /**
-     * Error in application code. Caller did not call or set up license checker
-     * correctly. Should be considered fatal.
-     */
-    public void applicationError(int errorCode);
+	/**
+	 * Error in application code. Caller did not call or set up license checker
+	 * correctly. Should be considered fatal.
+	 */
+	public void applicationError(int errorCode);
 }

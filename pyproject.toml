@@ -63,6 +63,8 @@ skip = [
 	"COPYRIGHT.txt",
 	"core/input/gamecontrollerdb.txt",
 	"core/string/locales.h",
+	"docs/superpowers/specs/godot-4.7-port/catalog.json",
+	"docs/superpowers/specs/godot-4.7-port/triage/*",
 	"DONORS.md",
 	"editor/project_converter_3_to_4.cpp",
 	"platform/web/package-lock.json",

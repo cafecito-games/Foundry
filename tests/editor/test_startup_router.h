@@ -2,7 +2,7 @@
 /*  test_startup_router.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -108,7 +108,7 @@ TEST_CASE("[StartupRouter][Editor] is_openable_project recognizes project.foundr
 	CHECK_FALSE(StartupRouter::is_openable_project("/definitely/not/here"));
 	CHECK_FALSE(StartupRouter::is_openable_project(String()));
 
-	// A present but unparseable project.foundry is not openable.
+	// A present but unparsable project.foundry is not openable.
 	const String malformed_dir = make_malformed_project(scratch, "malformed");
 	CHECK_FALSE(StartupRouter::is_openable_project(malformed_dir));
 

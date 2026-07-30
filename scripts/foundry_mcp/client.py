@@ -56,7 +56,8 @@ class FoundryMCPClient:
                 code=error.get("code"),
                 data=error.get("data"),
             )
-        return response.get("result", {})
+        result: dict[str, Any] = response.get("result", {})
+        return result
 
     def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         payload: dict[str, Any] = {"jsonrpc": "2.0", "method": method}
@@ -90,7 +91,8 @@ class FoundryMCPClient:
             return {}
         if not raw:
             return {}
-        return json.loads(raw)
+        decoded: dict[str, Any] = json.loads(raw)
+        return decoded
 
     def initialize(self, *, client_name: str = "foundry_mcp", client_version: str = "1.0") -> dict[str, Any]:
         result = self.request(
@@ -106,13 +108,15 @@ class FoundryMCPClient:
         return result
 
     def list_tools(self) -> list[dict[str, Any]]:
-        return self.request("tools/list").get("tools", [])
+        tools: list[dict[str, Any]] = self.request("tools/list").get("tools", [])
+        return tools
 
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         return self.request("tools/call", {"name": name, "arguments": arguments or {}})
 
     def structured_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
-        return self.call_tool(name, arguments).get("structuredContent", {})
+        structured: dict[str, Any] = self.call_tool(name, arguments).get("structuredContent", {})
+        return structured
 
     def observe_ui(self, **arguments: Any) -> dict[str, Any]:
         return self.call_tool("observe_ui", arguments)
@@ -159,10 +163,12 @@ class FoundryMCPClient:
         return self.call_tool("capture_screenshot", arguments)
 
     def list_resources(self) -> list[dict[str, Any]]:
-        return self.request("resources/list").get("resources", [])
+        resources: list[dict[str, Any]] = self.request("resources/list").get("resources", [])
+        return resources
 
     def list_resource_templates(self) -> list[dict[str, Any]]:
-        return self.request("resources/templates/list").get("resourceTemplates", [])
+        templates: list[dict[str, Any]] = self.request("resources/templates/list").get("resourceTemplates", [])
+        return templates
 
     def read_resource(self, uri: str) -> dict[str, Any]:
         return self.request("resources/read", {"uri": uri})

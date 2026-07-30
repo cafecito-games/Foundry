@@ -1,6 +1,6 @@
 # Editor New Script Command — Design
 
-Date: 2026-07-20  
+Date: 2026-07-20
 Status: Approved for implementation after user review of this spec
 
 ## Problem

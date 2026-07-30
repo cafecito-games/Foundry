@@ -99,4 +99,3 @@ exact owner script, and keep cross-file calls resolved from their scalar owner i
    auto-merge, and monitor required checks through the actual merge.
 5. Verify issue #1120 and its Experiment project item are Done, then remove the worktree and local
    branch.
-
