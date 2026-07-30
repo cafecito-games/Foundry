@@ -124,7 +124,7 @@ configuration file and declares:
   type, and the preset's custom features -- and no `[libraries]` key that names no
   library at all. A key that
   resolves only under a tag the export cannot observe, such as the template's
-  precision, fails closed. An empty key is rejected wherever it appears, because a
+  precision or threading, fails closed. An empty key is rejected wherever it appears, because a
   device reports more feature tags than an export can enumerate, so any key can
   turn out to be the loader's most specific match and shadow a populated one.
 

@@ -4452,6 +4452,15 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 "pads its \"configuration/entry_symbol\" value ' foundry_java_library_init ' with whitespace",
             ),
             (
+                "requested-abi-only-under-an-unobservable-tag",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64.threads = "libfoundry_java.so"',
+                ).encode("utf-8"),
+                0,
+                "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            ),
+            (
                 "empty-library-key",
                 shadowed_by_empty_key.encode("utf-8"),
                 0,

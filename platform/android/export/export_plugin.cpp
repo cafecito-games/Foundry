@@ -3402,12 +3402,13 @@ static bool _foundry_java_read_current_archive_entry_payload(unzFile p_archive, 
 // serialized into the exported project settings, so the device reports those too,
 // except where the engine answers the tag false before it ever consults them. Tags
 // outside all of this may still be true on a device, so they are only ever treated
-// as unmet here, never as met -- including the precision tags, which the export
-// cannot observe because the template binary, not the export, decides them. A
+// as unmet here, never as met -- including the precision and threading tags, which
+// the export cannot observe because the template binary, not the export, decides
+// them. A
 // descriptor that resolves only under an unmodeled tag therefore fails the export
 // instead of shipping a binding that may be dead on device.
 static bool _foundry_java_android_export_reports_feature(const String &p_tag, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
-	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts" || p_tag == "threads") {
+	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts") {
 		return true;
 	}
 	if (p_tag == p_abi || p_tag == p_arch) {
@@ -3437,9 +3438,11 @@ static bool _foundry_java_android_export_reports_feature(const String &p_tag, co
 		}
 	}
 	// OS::has_feature() and OS_Android::_check_internal_feature_support() answer
-	// these false outright, before reaching the project's custom features, so a
-	// custom feature named after one is never observed on a device.
-	if (p_tag == "movie" || p_tag == "nothreads" || p_tag == "macos" || p_tag == "web_ios" || p_tag == "web_macos" || p_tag == "windows") {
+	// these themselves, before reaching the project's custom features, so a custom
+	// feature named after one cannot make it observable. `threads` and `nothreads`
+	// are among them and depend on how the template was built, which the export
+	// cannot observe, so both stay unmet rather than guessing one.
+	if (p_tag == "movie" || p_tag == "threads" || p_tag == "nothreads" || p_tag == "macos" || p_tag == "web_ios" || p_tag == "web_macos" || p_tag == "windows") {
 		return false;
 	}
 	return p_custom_features.has(p_tag);
