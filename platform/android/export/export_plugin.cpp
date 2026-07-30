@@ -3394,13 +3394,43 @@ static bool _foundry_java_read_current_archive_entry_payload(unzFile p_archive, 
 // not the export, decides them. A descriptor that resolves only under an
 // unmodeled tag therefore fails the export instead of shipping a binding that may
 // be dead on device.
+// The tags OS::has_feature() answers itself, before it consults the project's
+// custom features. A custom feature that collides with one of these is never
+// observed on a device, so it must not satisfy a descriptor tag here either.
+static bool _foundry_java_feature_is_engine_reserved(const String &p_tag) {
+	static const char *reserved_features[] = {
+		// Platform identifiers.
+		"android", "ios", "linuxbsd", "macos", "visionos", "web", "web_android",
+		"web_ios", "web_linuxbsd", "web_macos", "web_windows", "windows",
+		// Build configuration and host role.
+		"debug", "editor", "editor_hint", "editor_runtime", "embedded_in_editor",
+		"movie", "release", "template", "template_debug", "template_release",
+		// Precision, pointer width, and threading.
+		"32", "64", "double", "nothreads", "single", "threads",
+		// Architectures and their aliases.
+		"arm", "arm32", "arm64", "arm64-v8a", "armeabi", "armeabi-v7a", "armv7",
+		"armv7a", "armv7s", "loongarch64", "ppc", "ppc32", "ppc64", "riscv", "rv64",
+		"simulator", "universal", "wasm", "wasm32", "wasm64", "x86", "x86_32",
+		"x86_64",
+		// Android features reported by the platform itself.
+		"mobile", "system_fonts"
+	};
+	for (const char *reserved_feature : reserved_features) {
+		if (p_tag == reserved_feature) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool _foundry_java_android_export_reports_feature(const String &p_tag, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
 	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts") {
 		return true;
 	}
 	// Preset and export-plugin custom features are serialized into the exported
-	// project settings, so the device reports them too.
-	if (p_custom_features.has(p_tag)) {
+	// project settings, so the device reports them too -- unless the engine already
+	// answers that tag itself.
+	if (!_foundry_java_feature_is_engine_reserved(p_tag) && p_custom_features.has(p_tag)) {
 		return true;
 	}
 	if (p_tag == p_abi || p_tag == p_arch) {
@@ -3465,15 +3495,24 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 
 // A device reports far more feature tags than an export can enumerate (Android
 // always reports `mobile`, plus the build type and any project features), so any
-// entry can turn out to be the loader's most specific match. An entry that names
-// no library therefore cannot be dismissed as unreachable: it is rejected wherever
-// it appears, which is what keeps the per-ABI check above from being shadowed.
-static String _foundry_java_descriptor_empty_library_key(const Ref<ConfigFile> &p_descriptor) {
+// entry can turn out to be the loader's most specific match. An entry the loader
+// could not use therefore cannot be dismissed as unreachable: it is rejected
+// wherever it appears, which is what keeps the per-ABI check above from being
+// shadowed. The loader resolves the value verbatim, so surrounding whitespace makes
+// a library path as unusable as an absent one.
+static String _foundry_java_descriptor_unusable_library_key(const Ref<ConfigFile> &p_descriptor, String &r_reason) {
+	r_reason = String();
 	if (!p_descriptor->has_section("libraries")) {
 		return String();
 	}
 	for (const String &key : p_descriptor->get_section_keys("libraries")) {
-		if (String(p_descriptor->get_value("libraries", key, String())).strip_edges().is_empty()) {
+		const String library = p_descriptor->get_value("libraries", key, String());
+		if (library.strip_edges().is_empty()) {
+			r_reason = TTR("names no library");
+			return key;
+		}
+		if (library != library.strip_edges()) {
+			r_reason = TTR("pads its library path with whitespace");
 			return key;
 		}
 	}
@@ -3533,9 +3572,17 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 		return ERR_INVALID_DATA;
 	}
 
-	if (!descriptor->has_section_key("configuration", "entry_symbol") ||
-			String(descriptor->get_value("configuration", "entry_symbol")).strip_edges().is_empty()) {
+	const String entry_symbol = descriptor->get_value("configuration", "entry_symbol", String());
+	if (!descriptor->has_section_key("configuration", "entry_symbol") || entry_symbol.strip_edges().is_empty()) {
 		r_error = vformat(TTR("entry '%s' must define a non-empty \"configuration/entry_symbol\" key."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+	// The loader looks the symbol up verbatim, so padding it is a load failure.
+	if (entry_symbol != entry_symbol.strip_edges()) {
+		r_error = vformat(
+				TTR("entry '%s' pads its \"configuration/entry_symbol\" value '%s' with whitespace."),
+				diagnostic_entry,
+				_foundry_java_safe_diagnostic_value(entry_symbol));
 		return ERR_INVALID_DATA;
 	}
 
@@ -3584,12 +3631,14 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 		}
 	}
 
-	const String empty_library_key = _foundry_java_descriptor_empty_library_key(descriptor);
-	if (!empty_library_key.is_empty()) {
+	String unusable_library_reason;
+	const String unusable_library_key = _foundry_java_descriptor_unusable_library_key(descriptor, unusable_library_reason);
+	if (!unusable_library_key.is_empty()) {
 		r_error = vformat(
-				TTR("entry '%s' declares the \"[libraries]\" key '%s' with no library, which the loader can select over a populated key."),
+				TTR("entry '%s' declares the \"[libraries]\" key '%s', which %s and which the loader can select over a usable key."),
 				diagnostic_entry,
-				_foundry_java_safe_diagnostic_value(empty_library_key));
+				_foundry_java_safe_diagnostic_value(unusable_library_key),
+				unusable_library_reason);
 		return ERR_INVALID_DATA;
 	}
 

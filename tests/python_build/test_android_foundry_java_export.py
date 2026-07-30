@@ -4434,16 +4434,34 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
             ),
             (
+                "padded-library-key",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = " libfoundry_java.so "',
+                ).encode("utf-8"),
+                0,
+                'declares the "[libraries]" key \'android.arm64\', which pads its library path with whitespace',
+            ),
+            (
+                "padded-entry-symbol",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'entry_symbol = "foundry_java_library_init"',
+                    'entry_symbol = " foundry_java_library_init "',
+                ).encode("utf-8"),
+                0,
+                "pads its \"configuration/entry_symbol\" value ' foundry_java_library_init ' with whitespace",
+            ),
+            (
                 "empty-library-key",
                 shadowed_by_empty_key.encode("utf-8"),
                 0,
-                'declares the "[libraries]" key \'android.arm64\' with no library',
+                'declares the "[libraries]" key \'android.arm64\', which names no library',
             ),
             (
                 "empty-device-feature-library-key",
                 shadowed_by_empty_device_feature_key.encode("utf-8"),
                 0,
-                'declares the "[libraries]" key \'android.arm64.mobile\' with no library',
+                'declares the "[libraries]" key \'android.arm64.mobile\', which names no library',
             ),
         )
         for defect, descriptor, export_format, diagnostic in cases:
@@ -4479,6 +4497,26 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 output = result.stdout + result.stderr
                 self.assertEqual(0, result.returncode, output)
                 self.assertTrue(artifact.is_file())
+
+    def test_export_rejects_library_keys_gated_on_a_reserved_custom_feature_name(self) -> None:
+        # OS::has_feature() answers reserved tags itself before it reaches the
+        # project's custom features, so a custom feature named after one is never
+        # observed on device and cannot make a key resolve.
+        descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"',
+            'android.arm64.movie = "libfoundry_java.so"',
+        )
+        result, _ = self._export_packaged_descriptor(
+            "reserved-custom-feature",
+            descriptor.encode("utf-8"),
+            custom_features="movie",
+        )
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode, output)
+        self.assertIn(
+            "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            output,
+        )
 
     def test_export_accepts_library_keys_gated_on_preset_custom_features(self) -> None:
         # Custom features are serialized into the exported project settings, so the
