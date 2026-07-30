@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import struct
 from pathlib import Path
 from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FOUNDRY_JAVA_PIN_PATH = REPO_ROOT / "platform/android/foundry_java_pin.json"
+FOUNDRY_JAVA_PIN_FIELDS = ("repository", "commit", "reason")
+_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 
 BUILD_TYPES = ("debug", "dev", "release")
 BUILD_SPECS = {
@@ -108,6 +115,50 @@ EXTERNAL_JNI_EXPORTS = (
     },
 )
 EXTERNAL_JNI_SYMBOLS = tuple(entry["symbol"] for entry in EXTERNAL_JNI_EXPORTS)
+
+
+def load_foundry_java_pin(pin_path: Path | None = None) -> dict[str, str]:
+    """Read the single declared Foundry-Java dependency pin.
+
+    The pin file is the only place the dependency commit is written; CI, the
+    integration tests, and the documentation all resolve it from here instead of
+    keeping hand-synchronised copies.
+    """
+
+    path = Path(pin_path) if pin_path is not None else FOUNDRY_JAVA_PIN_PATH
+    try:
+        contents = path.read_text(encoding="utf-8")
+    except FileNotFoundError as error:
+        raise FileNotFoundError(
+            f"Foundry-Java pin file is missing at {path}; it must declare {', '.join(FOUNDRY_JAVA_PIN_FIELDS)}"
+        ) from error
+    try:
+        document = json.loads(contents)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Foundry-Java pin file at {path} is not valid JSON: {error}") from error
+    if not isinstance(document, dict):
+        raise ValueError(f"Foundry-Java pin file at {path} must contain a JSON object, found {type(document).__name__}")
+
+    pin: dict[str, str] = {}
+    for field in FOUNDRY_JAVA_PIN_FIELDS:
+        if field not in document:
+            raise ValueError(f"Foundry-Java pin file at {path} is missing the required '{field}' field")
+        value = document[field]
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Foundry-Java pin file at {path} must declare a non-empty string '{field}'")
+        pin[field] = value
+
+    if not _REPOSITORY_PATTERN.match(pin["repository"]):
+        raise ValueError(
+            f"Foundry-Java pin file at {path} declares repository '{pin['repository']}', "
+            "which is not in 'owner/name' form"
+        )
+    if not _COMMIT_PATTERN.match(pin["commit"]):
+        raise ValueError(
+            f"Foundry-Java pin file at {path} declares commit '{pin['commit']}', "
+            "which is not a 40-character lowercase hexadecimal SHA"
+        )
+    return pin
 
 
 def canonical_json(value: Any) -> bytes:

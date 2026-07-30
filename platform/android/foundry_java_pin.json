@@ -1,0 +1,5 @@
+{
+  "repository": "cafecito-games/Foundry-Java",
+  "commit": "499cf13bdf7cebce4639b898f2ad3520d81571f2",
+  "reason": "The Foundry-Java Android export integration tests build this repository from source, and only this binding configuration produces a FoundryJava.foundryextension descriptor the runtime extension loader accepts together with matching per-ABI native libraries. Bump by editing this file only; CI, the tests, and the documentation all resolve the commit from here."
+}

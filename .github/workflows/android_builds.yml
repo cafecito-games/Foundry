@@ -49,11 +49,23 @@ jobs:
           ref: ${{ inputs.checkout-ref || github.sha }}
           submodules: recursive
 
+      - name: Resolve the declared Foundry-Java pin
+        id: foundry-java-pin
+        run: |
+          set -euo pipefail
+          commit="$(python3 -c 'from tests.python_build.android_native_test_support import load_foundry_java_pin; print(load_foundry_java_pin()["commit"])')"
+          if [ -z "${commit}" ]; then
+            echo "platform/android/foundry_java_pin.json resolved to an empty commit" >&2
+            exit 1
+          fi
+          echo "Pinned Foundry-Java commit: ${commit}"
+          echo "commit=${commit}" >> "${GITHUB_OUTPUT}"
+
       - name: Checkout exact Foundry-Java
         uses: actions/checkout@v6
         with:
           repository: cafecito-games/Foundry-Java
-          ref: 499cf13bdf7cebce4639b898f2ad3520d81571f2
+          ref: ${{ steps.foundry-java-pin.outputs.commit }}
           path: foundry-java-dependency
           persist-credentials: false
 
@@ -67,6 +79,7 @@ jobs:
       - name: Run exact Foundry-Java Android export matrix
         run: |
           python3 -m unittest -v \
+            tests.python_build.test_android_foundry_java_export.FoundryJavaPinTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaDocumentationTests \
@@ -405,11 +418,23 @@ jobs:
           ref: ${{ inputs.checkout-ref || github.sha }}
           submodules: recursive
 
+      - name: Resolve the declared Foundry-Java pin
+        id: foundry-java-pin
+        run: |
+          set -euo pipefail
+          commit="$(python3 -c 'from tests.python_build.android_native_test_support import load_foundry_java_pin; print(load_foundry_java_pin()["commit"])')"
+          if [ -z "${commit}" ]; then
+            echo "platform/android/foundry_java_pin.json resolved to an empty commit" >&2
+            exit 1
+          fi
+          echo "Pinned Foundry-Java commit: ${commit}"
+          echo "commit=${commit}" >> "${GITHUB_OUTPUT}"
+
       - name: Checkout exact Foundry-Java
         uses: actions/checkout@v6
         with:
           repository: cafecito-games/Foundry-Java
-          ref: 499cf13bdf7cebce4639b898f2ad3520d81571f2
+          ref: ${{ steps.foundry-java-pin.outputs.commit }}
           path: foundry-java-dependency
           persist-credentials: false
 
