@@ -1833,6 +1833,21 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         )
         return target
 
+    def _module_api_sha256(self) -> bytes:
+        """Return the api_sha256 the generator actually emitted for the demo module.
+
+        The digest covers the generated API surface, so it changes whenever that
+        surface changes. Pinning it as a literal makes every API change look like
+        a provenance-validation failure; these tests only care that the value is
+        consistent across artifacts, never what it happens to be.
+        """
+        with zipfile.ZipFile(self.module_jar) as archive:
+            descriptor = archive.read("META-INF/foundry-java/modules/demo.descriptor")
+        for line in descriptor.splitlines():
+            if line.startswith(b"api_sha256="):
+                return line.split(b"=", maxsplit=1)[1]
+        raise AssertionError(f"demo module descriptor has no api_sha256 line: {descriptor!r}")
+
     def _mutate_module(
         self,
         name: str,
@@ -2490,7 +2505,7 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
         expected_configuration = self._binding_configuration()
         expected_index = (
             "format=2\n"
-            "api_sha256=85e91174c1a8a48629223d6459bb2ef595ad1da405b2ce88435c24fe221aec51\n"
+            f"api_sha256={self._module_api_sha256().decode()}\n"
             "generator_version=1\n"
             "runtime_contract_version=1\n"
             "bridge_contract_version=1\n"
@@ -2659,11 +2674,15 @@ class FoundryJavaAndroidIntegrationTests(unittest.TestCase):
                     ),
                 )
 
+        api_sha256 = self._module_api_sha256()
+        # Flip the leading nibble so the mutant stays a well-formed digest that
+        # simply disagrees with every other artifact in the graph.
+        mutated_api_sha256 = (b"1" if not api_sha256.startswith(b"1") else b"2") + api_sha256[1:]
         provenance_cases = (
             (
                 "api_sha256",
-                b"85e91174c1a8a48629223d6459bb2ef595ad1da405b2ce88435c24fe221aec51",
-                b"15e91174c1a8a48629223d6459bb2ef595ad1da405b2ce88435c24fe221aec51",
+                b"api_sha256=" + api_sha256,
+                b"api_sha256=" + mutated_api_sha256,
             ),
             ("generator_version", b"generator_version=1", b"generator_version=2"),
             (
