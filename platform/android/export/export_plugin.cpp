@@ -5821,6 +5821,10 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 			user_data.pd.path = "assets.sparsepck";
 			user_data.pd.use_sparse_pck = true;
 			err = export_project_files(p_preset, p_debug, rename_and_store_file_in_gradle_project, nullptr, &user_data, copy_gradle_so);
+			if (err != OK) {
+				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Could not export project files to gradle project."));
+				return err;
+			}
 
 			Vector<uint8_t> enc_data;
 			err = _generate_sparse_pck_metadata(p_preset, user_data.pd, enc_data);
@@ -6320,6 +6324,11 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		ed.pd.path = "assets.sparsepck";
 		ed.pd.use_sparse_pck = true;
 		err = export_project_files(p_preset, p_debug, save_apk_file, nullptr, &ed, save_apk_so);
+		if (err != OK) {
+			unzClose(pkg);
+			add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Could not export project files."));
+			CLEANUP_AND_RETURN(ERR_SKIP);
+		}
 
 		Vector<uint8_t> enc_data;
 		err = _generate_sparse_pck_metadata(p_preset, ed.pd, enc_data);
