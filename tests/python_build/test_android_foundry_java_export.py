@@ -4456,10 +4456,10 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         # from them resolve on device and must not be rejected at export.
         descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
             'android.arm64 = "libfoundry_java.so"\n',
-            'android.arm64.mobile = "libfoundry_java.so"\n',
+            'android.arm64.mobile.64 = "libfoundry_java.so"\n',
         ).replace(
             'android.arm32 = "libfoundry_java.so"\n',
-            'android.armeabi-v7a = "libfoundry_java.so"\n',
+            'android.armeabi-v7a.32 = "libfoundry_java.so"\n',
         )
         result, artifact = self._export_packaged_descriptor(
             "reported-device-features",

@@ -3396,6 +3396,10 @@ static bool _foundry_java_android_export_reports_feature(const String &p_tag, co
 	if (p_tag == p_abi || p_tag == p_arch) {
 		return true;
 	}
+	const bool is_64_bit = p_arch == "arm64" || p_arch == "x86_64";
+	if (p_tag == (is_64_bit ? "64" : "32")) {
+		return true;
+	}
 	if (p_arch == "arm32") {
 		return p_tag == "armeabi" || p_tag == "armv7a" || p_tag == "armv7" || p_tag == "arm";
 	}
