@@ -4451,6 +4451,25 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 self.assertEqual(0, result.returncode, output)
                 self.assertTrue(artifact.is_file())
 
+    def test_export_accepts_library_keys_using_reported_device_features(self) -> None:
+        # Every Android runtime reports `mobile` and the ABI aliases, so keys built
+        # from them resolve on device and must not be rejected at export.
+        descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"\n',
+            'android.arm64.mobile = "libfoundry_java.so"\n',
+        ).replace(
+            'android.arm32 = "libfoundry_java.so"\n',
+            'android.armeabi-v7a = "libfoundry_java.so"\n',
+        )
+        result, artifact = self._export_packaged_descriptor(
+            "reported-device-features",
+            descriptor.encode("utf-8"),
+            requested_abis=("armeabi-v7a", "arm64-v8a"),
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(0, result.returncode, output)
+        self.assertTrue(artifact.is_file())
+
     def test_preflight_names_every_fail_closed_boundary(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
         for fragment in (

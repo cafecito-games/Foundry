@@ -3384,11 +3384,35 @@ static bool _foundry_java_read_current_archive_entry_payload(unzFile p_archive, 
 	return valid;
 }
 
+// The tags an exported Android application reports unconditionally, for the
+// requested ABI: the platform identifier, the always-on Android features from
+// OS_Android::_check_internal_feature_support(), and every architecture alias
+// OS::has_feature() answers for that ABI. Tags outside this set may still be true
+// on a device, so they are only ever treated as unmet here, never as met.
+static bool _foundry_java_android_export_reports_feature(const String &p_tag, const String &p_abi, const String &p_arch) {
+	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts") {
+		return true;
+	}
+	if (p_tag == p_abi || p_tag == p_arch) {
+		return true;
+	}
+	if (p_arch == "arm32") {
+		return p_tag == "armeabi" || p_tag == "armv7a" || p_tag == "armv7" || p_tag == "arm";
+	}
+	if (p_arch == "arm64") {
+		return p_tag == "arm";
+	}
+	if (p_arch == "x86_64" || p_arch == "x86_32") {
+		return p_tag == "x86";
+	}
+	return false;
+}
+
 // Mirrors FoundryExtensionLibraryLoader::find_extension_library's explicit
-// `[libraries]` matching for a device that reports only the Android feature tags
-// an exported ABI implies. Autodetection is deliberately not honored: an export
-// cannot observe the on-device directory the loader would scan.
-static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_arch) {
+// `[libraries]` matching for a device running the requested ABI. Autodetection is
+// deliberately not honored: an export cannot observe the on-device directory the
+// loader would scan.
+static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_abi, const String &p_arch) {
 	if (!p_descriptor->has_section("libraries")) {
 		return false;
 	}
@@ -3405,8 +3429,7 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 		}
 		bool all_tags_met = true;
 		for (const String &raw_tag : tags) {
-			const String tag = raw_tag.strip_edges();
-			if (tag != "android" && tag != p_arch) {
+			if (!_foundry_java_android_export_reports_feature(raw_tag.strip_edges(), p_abi, p_arch)) {
 				all_tags_met = false;
 				break;
 			}
@@ -3539,7 +3562,7 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 	}
 
 	for (const ABI &abi : p_enabled_abis) {
-		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.arch)) {
+		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.abi, abi.arch)) {
 			r_error = vformat(
 					TTR("entry '%s' resolves no \"[libraries]\" entry for requested ABI '%s' (feature tag 'android.%s')."),
 					diagnostic_entry,
