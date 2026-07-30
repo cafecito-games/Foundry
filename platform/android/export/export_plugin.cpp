@@ -6124,11 +6124,15 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		return ERR_SKIP;
 	}
 
-	unzFile pkg = unzOpen2(src_apk.utf8().get_data(), &io);
-	if (!pkg) {
+	// The archives below are owned by scope guards: this function has many early
+	// exits, and an abandoned write handle both leaks and leaves the archive
+	// without a central directory.
+	UnzFileGuard pkg_guard(unzOpen2(src_apk.utf8().get_data(), &io));
+	if (!pkg_guard.is_valid()) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not find template APK to export: \"%s\"."), src_apk));
 		return ERR_FILE_NOT_FOUND;
 	}
+	unzFile pkg = pkg_guard.get();
 
 	int ret = unzGoToFirstFile(pkg);
 
@@ -6137,14 +6141,26 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 	String tmp_unaligned_path = EditorPaths::get_singleton()->get_temp_dir().path_join("tmpexport-unaligned." + uitos(OS::get_singleton()->get_unix_time()) + ".apk");
 
-#define CLEANUP_AND_RETURN(m_err)                            \
-	{                                                        \
-		DirAccess::remove_file_or_error(tmp_unaligned_path); \
-		return m_err;                                        \
-	}                                                        \
-	((void)0)
+	// Removes the intermediate archive however this function exits. Declared
+	// before the archive guards below so it is destroyed after them: Windows
+	// refuses to delete a file while a handle to it is open, so the handles have
+	// to close first. Skips a path that was never created, because removing a
+	// non-existent file is itself reported as an error.
+	struct TemporaryArchiveRemover {
+		String path;
+		~TemporaryArchiveRemover() {
+			if (FileAccess::exists(path)) {
+				DirAccess::remove_file_or_error(path);
+			}
+		}
+	} tmp_unaligned_remover{ tmp_unaligned_path };
 
-	zipFile unaligned_apk = zipOpen2(tmp_unaligned_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io2);
+	ZipFileGuard unaligned_apk_guard(zipOpen2(tmp_unaligned_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io2));
+	if (!unaligned_apk_guard.is_valid()) {
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not create temporary unaligned APK: \"%s\"."), tmp_unaligned_path));
+		return ERR_CANT_CREATE;
+	}
+	zipFile unaligned_apk = unaligned_apk_guard.get();
 
 	String cmdline = p_preset->get("command_line/extra_args");
 
@@ -6304,11 +6320,11 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 	if (!invalid_abis.is_empty()) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Missing libraries in the export template for the selected architectures: %s. Please build a template with all required libraries, or uncheck the missing architectures in the export preset."), join_abis(invalid_abis, ", ", false)));
-		CLEANUP_AND_RETURN(ERR_FILE_NOT_FOUND);
+		return ERR_FILE_NOT_FOUND;
 	}
 
 	if (ep.step(TTR("Adding files..."), 1)) {
-		CLEANUP_AND_RETURN(ERR_SKIP);
+		return ERR_SKIP;
 	}
 	err = OK;
 
@@ -6325,10 +6341,8 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		ed.pd.use_sparse_pck = true;
 		err = export_project_files(p_preset, p_debug, save_apk_file, nullptr, &ed, save_apk_so);
 		if (err != OK) {
-			zipClose(unaligned_apk, nullptr);
-			unzClose(pkg);
 			add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), TTR("Could not export project files."));
-			CLEANUP_AND_RETURN(ERR_SKIP);
+			return ERR_SKIP;
 		}
 
 		Vector<uint8_t> enc_data;
@@ -6342,9 +6356,8 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	}
 
 	if (err != OK) {
-		unzClose(pkg);
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not export project files.")));
-		CLEANUP_AND_RETURN(ERR_SKIP);
+		return ERR_SKIP;
 	}
 
 	zip_fileinfo zipfi = get_zip_fileinfo();
@@ -6360,8 +6373,10 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 			Z_DEFAULT_COMPRESSION);
 	zipWriteInFileInZip(unaligned_apk, command_line_flags.ptr(), command_line_flags.size());
 	zipCloseFileInZip(unaligned_apk);
-	zipClose(unaligned_apk, nullptr);
-	unzClose(pkg);
+	// Close explicitly: the unaligned archive is reopened for reading below, so
+	// its central directory has to be on disk first.
+	unaligned_apk_guard.close();
+	pkg_guard.close();
 
 	// Let's zip-align (must be done before signing)
 
@@ -6371,19 +6386,25 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 	// If we're not signing the apk, then the next step should be the last.
 	const int next_step = should_sign ? 103 : 105;
 	if (ep.step(TTR("Aligning APK..."), next_step)) {
-		CLEANUP_AND_RETURN(ERR_SKIP);
+		return ERR_SKIP;
 	}
 
-	unzFile tmp_unaligned = unzOpen2(tmp_unaligned_path.utf8().get_data(), &io);
-	if (!tmp_unaligned) {
+	UnzFileGuard tmp_unaligned_guard(unzOpen2(tmp_unaligned_path.utf8().get_data(), &io));
+	if (!tmp_unaligned_guard.is_valid()) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not unzip temporary unaligned APK.")));
-		CLEANUP_AND_RETURN(ERR_FILE_NOT_FOUND);
+		return ERR_FILE_NOT_FOUND;
 	}
+	unzFile tmp_unaligned = tmp_unaligned_guard.get();
 
 	ret = unzGoToFirstFile(tmp_unaligned);
 
 	io2 = zipio_create_io(&io2_fa);
-	zipFile final_apk = zipOpen2(final_artifact_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io2);
+	ZipFileGuard final_apk_guard(zipOpen2(final_artifact_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io2));
+	if (!final_apk_guard.is_valid()) {
+		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not create APK file: \"%s\"."), final_artifact_path));
+		return ERR_CANT_CREATE;
+	}
+	zipFile final_apk = final_apk_guard.get();
 
 	// Take files from the unaligned APK and write them out to the aligned one
 	// in raw mode, i.e. not uncompressing and recompressing, aligning them as needed,
@@ -6447,8 +6468,9 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		ret = unzGoToNextFile(tmp_unaligned);
 	}
 
-	zipClose(final_apk, nullptr);
-	unzClose(tmp_unaligned);
+	// Close explicitly: signing reads the finished archive back from disk.
+	final_apk_guard.close();
+	tmp_unaligned_guard.close();
 
 	if (should_sign) {
 		// Signing must be done last as any additional modifications to the
@@ -6456,11 +6478,11 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 		err = sign_apk(p_preset, p_debug, final_artifact_path, ep);
 		if (err != OK) {
 			// Message is supplied by the subroutine method.
-			CLEANUP_AND_RETURN(err);
+			return err;
 		}
 	}
 
-	CLEANUP_AND_RETURN(OK);
+	return OK;
 }
 
 void EditorExportPlatformAndroid::get_platform_features(List<String> *r_features) const {
