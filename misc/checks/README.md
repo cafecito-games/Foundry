@@ -6,10 +6,30 @@ every violation it finds so one run tells you everything that is wrong.
 
 | File | Inspects | Invoked from |
 | --- | --- | --- |
+| `check_file_policy.py` | every rule in `file_policy.toml`: required and forbidden literal tokens, required and forbidden paths | the `foundry-file-policy` pre-commit hook (always runs) and `android_builds.yml` |
+| `check_extension_api_naming.py` | name sets extracted from the glTF class reference and `core/extension/foundry_extension_interface.json` | the `foundry-extension-api-naming` pre-commit hook and `android_builds.yml` |
 | `check_binary_naming.py` | `strings -a` / `nm -a` over a built `foundry` binary, for leaked upstream identifiers | build and release workflows (needs a compiled binary) |
 | `check_homebrew_cask.py` | the generated Homebrew cask and the release workflow's tap wiring | release tooling, run by hand |
 | `check_ios_template_package.py` | the iOS template bundle produced by `misc/scripts/package_ios_templates.py` | release tooling, run by hand |
 | `check_release_api_artifacts.py` | the release API artifact bundle produced by `misc/scripts/package_foundry_api_artifacts.py` | release tooling, run by hand |
+
+## Token policy is data
+
+`file_policy.toml` is the single home for "this literal must / must not appear
+in these files" and "this path must / must not exist". Adding an invariant is
+three lines of data, not a new `check_*.py` and a new `pre-commit` regex.
+
+The schema is deliberately closed — `name`, `reason`, `paths`, `required`,
+`forbidden`, `required_paths`, `forbidden_paths` — and the runner rejects
+anything else. There is no regex support and no way to scope a token to part of
+a file. If a rule needs either, it is not policy: write a test that executes the
+thing. `reason` is required, and a `paths` glob that matches no files is a
+violation rather than a pass, so a rule can never quietly become decoration.
+
+```sh
+python3 misc/checks/check_file_policy.py
+python3 misc/checks/check_extension_api_naming.py
+```
 
 ## `check_*` versus `test_*`
 

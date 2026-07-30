@@ -223,15 +223,31 @@ repos:
           (?x)^(
             \.pre-commit-config\.yaml|
             \.github/workflows/release\.yml|
-            misc/checks/.*\.py
+            misc/checks/.*\.(?:py|toml)
           )$
 
-      - id: foundry-headless-docker-contract
-        name: Foundry headless Docker contract
+      - id: foundry-file-policy
+        name: Foundry file policy
         language: python
-        entry: python .github/scripts/test_foundry_headless_docker.py
+        entry: python misc/checks/check_file_policy.py
         pass_filenames: false
-        files: ^(?:\.gitignore$|docker(?:/|$)|tests/fixtures/headless_container(?:/|$)|\.github/scripts/test_foundry_headless_docker\.py$)
+        # The runner reads the whole table in well under a second, so it always
+        # runs rather than carrying a `files:` regex that has to be kept in sync
+        # with every glob in `misc/checks/file_policy.toml`.
+        always_run: true
+
+      - id: foundry-extension-api-naming
+        name: Foundry extension API naming
+        language: python
+        entry: python misc/checks/check_extension_api_naming.py
+        pass_filenames: false
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            core/extension/foundry_extension_interface\.json|
+            misc/checks/check_extension_api_naming\.py|
+            modules/gltf/doc_classes/.*\.xml
+          )$
 
       - id: foundry-release-container-scripts
         name: Foundry release container scripts
@@ -269,22 +285,6 @@ repos:
             \.github/workflows/.*\.yml
           )$
 
-      - id: foundry-android-runtime-identifiers
-        name: Foundry Android runtime identifiers
-        language: python
-        entry: python misc/scripts/test_android_runtime_identifiers.py
-        pass_filenames: false
-        files: |
-          (?x)^(
-            \.pre-commit-config\.yaml|
-            misc/scripts/test_android_runtime_identifiers\.py|
-            platform/android/(?:android_jni_contract\.py|android_native_contract\.py|android_native_staging\.py|SCsub)|
-            platform/android/export/export_plugin\.cpp|
-            platform/android/java/(?:app/|lib(?:/|$)|build\.gradle|settings\.gradle)|
-            platform/android/java_foundry_(?:lib_jni|wrapper)\.cpp|
-            tests/python_build/test_android_runtime_surface\.py
-          )$
-
       - id: foundry-android-host-jni-contract
         name: Foundry Android host JNI keep rules
         language: python
@@ -308,7 +308,6 @@ repos:
         entry: python -m unittest
         args:
           - tests.python_build.test_android_foundry_java_export.FoundryJavaPinTests
-          - tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests
           - tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests
           - tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests
         pass_filenames: false
@@ -358,7 +357,6 @@ repos:
           (?x)^(
             \.pre-commit-config\.yaml|
             \.github/workflows/android_builds\.yml|
-            misc/scripts/test_android_runtime_identifiers\.py|
             platform/android/ANDROID_RUNTIME\.md|
             platform/android/android_device_acceptance\.py|
             platform/android/java/app/src/androidTestInstrumented/.*/FoundryAppTest\.kt|

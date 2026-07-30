@@ -11,8 +11,6 @@ from types import ModuleType
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HOST_CONTRACT_PATH = REPO_ROOT / "platform/android/android_host_contract.py"
 KEEP_RULES_PATH = REPO_ROOT / "platform/android/java/lib/proguard-rules.pro"
-LIB_BUILD_GRADLE = REPO_ROOT / "platform/android/java/lib/build.gradle"
-APP_BUILD_GRADLE = REPO_ROOT / "platform/android/java/app/build.gradle"
 
 
 def load_contract() -> ModuleType:
@@ -77,39 +75,24 @@ class AndroidHostContractTests(unittest.TestCase):
             self.assertIn(("games.cafecito.foundry.Foundry", member_name, descriptor), members)
 
     def test_by_name_classes_keep_their_own_name(self) -> None:
-        rules = KEEP_RULES_PATH.read_text(encoding="utf-8")
+        derived = self.contract.emit_keep_rules(self.contract.derive_host_members(REPO_ROOT))
 
         # jni_find_class/FindClass resolve these by string, so the class name itself
         # must survive; instance-derived classes only need their members pinned.
-        self.assertIn("-keep,includedescriptorclasses class games.cafecito.foundry.Foundry {", rules)
-        self.assertIn("-keep,includedescriptorclasses class games.cafecito.foundry.Dictionary {", rules)
-        self.assertIn("-keep,includedescriptorclasses class games.cafecito.foundry.variant.Callable {", rules)
-        self.assertIn("-keepclassmembers,includedescriptorclasses class games.cafecito.foundry.FoundryIO {", rules)
+        self.assertIn("-keep,includedescriptorclasses class games.cafecito.foundry.Foundry {", derived)
+        self.assertIn("-keep,includedescriptorclasses class games.cafecito.foundry.Dictionary {", derived)
+        self.assertIn("-keep,includedescriptorclasses class games.cafecito.foundry.variant.Callable {", derived)
+        self.assertIn("-keepclassmembers,includedescriptorclasses class games.cafecito.foundry.FoundryIO {", derived)
 
     def test_keep_rules_never_allow_optimization(self) -> None:
-        directives = "\n".join(
-            line for line in KEEP_RULES_PATH.read_text(encoding="utf-8").splitlines() if not line.startswith("#")
-        )
+        derived = self.contract.emit_keep_rules(self.contract.derive_host_members(REPO_ROOT))
+        directives = "\n".join(line for line in derived.splitlines() if not line.startswith("#"))
 
         # allowoptimization would let R8 inline or staticize a member, which breaks
         # GetMethodID exactly as a rename does.
         self.assertNotIn("allowoptimization", directives)
         self.assertNotIn("allowobfuscation", directives)
         self.assertNotIn("allowshrinking", directives)
-
-    def test_library_ships_the_rules_to_minifying_consumers(self) -> None:
-        self.assertIn("consumerProguardFiles 'proguard-rules.pro'", LIB_BUILD_GRADLE.read_text(encoding="utf-8"))
-
-    def test_release_minification_stays_enabled_for_foundry_java_builds(self) -> None:
-        # The keep rules only matter because release builds minify; a silent revert
-        # of either half would make this contract untested in practice.
-        application = APP_BUILD_GRADLE.read_text(encoding="utf-8")
-        self.assertIn("minifyEnabled getFoundryJavaEnabled()", application)
-
-    def test_gradle_verifies_the_rules_are_current(self) -> None:
-        library = LIB_BUILD_GRADLE.read_text(encoding="utf-8")
-        self.assertIn("verifyFoundryHostKeepRules", library)
-        self.assertIn('hostContractTool.absolutePath, "--check"', library)
 
     def test_check_mode_rejects_stale_rules(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -32,7 +32,8 @@ jobs:
             tests.python_build.test_android_gradle_behavioral \
             tests.python_build.test_android_gradle_runtime_contract \
             tests.python_build.test_android_device_acceptance -v
-          python3 tests/python_build/test_android_runtime_surface.py
+          python3 misc/checks/check_file_policy.py
+          python3 misc/checks/check_extension_api_naming.py
           python3 -m unittest discover \
             -s .github/scripts/tests -t .github/scripts/tests -p 'test_workflow_graph*.py'
 
@@ -81,7 +82,6 @@ jobs:
         run: |
           python3 -m unittest -v \
             tests.python_build.test_android_foundry_java_export.FoundryJavaPinTests \
-            tests.python_build.test_android_foundry_java_export.FoundryJavaExportSurfaceTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaFinalArtifactInspectorTests \
             tests.python_build.test_android_foundry_java_export.FoundryJavaGradlePropertyTests \
