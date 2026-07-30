@@ -1359,29 +1359,18 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The listing needs the workflow token, so it stays here; the decision logic is testable.
           releases_json="$RUNNER_TEMP/published-releases.json"
-          publish_channel_tag=false
-          if gh api \
+          if ! gh api \
             --paginate \
             --slurp \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
             > "$releases_json"; then
-            if resolved="$(python3 .github/scripts/resolve_container_alias.py \
-              --releases-json "$releases_json" \
-              --release-tag "$RELEASE_TAG" \
-              --channel "$RELEASE_CHANNEL")"; then
-              if [ "$resolved" = "true" ]; then
-                publish_channel_tag=true
-              fi
-            else
-              echo "::warning::Could not evaluate moving container alias freshness; publishing the exact tag only."
-            fi
-          else
-            echo "::warning::Could not list published GitHub releases; publishing the exact tag only."
+            rm -f "$releases_json"
           fi
-          echo "publish_channel_tag=$publish_channel_tag" >> "$GITHUB_OUTPUT"
+          RELEASES_JSON="$releases_json" .github/scripts/resolve_channel_tag_freshness.sh
 
       - name: Resolve image metadata
         id: metadata
@@ -1419,46 +1408,7 @@ jobs:
           RELEASE_CHANNEL: ${{ needs.resolve.outputs.channel }}
           SOURCE_REPOSITORY: https://github.com/cafecito-games/Foundry
           SOURCE_REVISION: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-
-          test "$(docker image inspect "$IMAGE_REF" --format '{{.Architecture}}')" = "amd64"
-          test "$(docker image inspect "$IMAGE_REF" --format '{{.Config.User}}')" = "10001:10001"
-
-          version_json="$(docker run --rm "$IMAGE_REF" --version --json)"
-          VERSION_JSON="$version_json" python3 - <<'PY'
-          import json
-          import os
-
-          metadata = json.loads(os.environ["VERSION_JSON"])
-          expected = {
-              "product": "Foundry",
-              "version": os.environ["ENGINE_VERSION"],
-              "release_tag": os.environ["RELEASE_TAG"],
-              "channel": os.environ["RELEASE_CHANNEL"],
-              "git_commit": os.environ["SOURCE_REVISION"],
-          }
-          for key, value in expected.items():
-              if metadata.get(key) != value:
-                  raise SystemExit(f"{key}: expected {value!r}, got {metadata.get(key)!r}")
-          PY
-
-          docker run --rm "$IMAGE_REF" script eval 'print("ok")' | grep -Fx "ok"
-          fixture_dir="$RUNNER_TEMP/headless-container-fixture"
-          mkdir "$fixture_dir"
-          cp -R tests/fixtures/headless_container/. "$fixture_dir"
-          mkdir "$fixture_dir/.foundry"
-          docker run --rm \
-            -v "$fixture_dir:/workspace:ro" \
-            --tmpfs /workspace/.foundry:rw,uid=10001,gid=10001,mode=0700 \
-            "$IMAGE_REF" script lint --project . scripts
-
-          test "$(docker image inspect "$IMAGE_REF" \
-            --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')" = "$RELEASE_VERSION"
-          test "$(docker image inspect "$IMAGE_REF" \
-            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')" = "$SOURCE_REVISION"
-          test "$(docker image inspect "$IMAGE_REF" \
-            --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')" = "$SOURCE_REPOSITORY"
+        run: .github/scripts/verify_headless_image.sh
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

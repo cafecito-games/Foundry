@@ -215,12 +215,21 @@ repos:
         pass_filenames: false
         files: ^(?:\.gitignore$|docker(?:/|$)|tests/fixtures/headless_container(?:/|$)|\.github/scripts/test_foundry_headless_docker\.py$)
 
-      - id: foundry-release-container-workflow
-        name: Foundry release container workflow
+      - id: foundry-release-container-scripts
+        name: Foundry release container scripts
         language: python
-        entry: python .github/scripts/test_release_container_workflow.py
+        entry: python -m unittest discover -s .github/scripts/tests -t .github/scripts/tests
         pass_filenames: false
-        files: ^(?:\.gitignore$|\.github/(?:workflows/release\.yml$|actionlint\.yaml$|scripts/(?:resolve_container_alias\.py$|test_(?:foundry_headless_docker|release_container_workflow)\.py$))|docker(?:/|$)|tests/fixtures/headless_container(?:/|$))
+        # Only the extracted release-container helpers and their tests; release.yml no longer
+        # carries logic these tests execute, so editing the workflow does not trigger them.
+        files: |
+          (?x)^\.github/scripts/(
+            resolve_channel_tag_freshness\.sh|
+            resolve_container_alias\.py|
+            verify_container_version_metadata\.py|
+            verify_headless_image\.sh|
+            tests/.*\.py
+          )$
 
       - id: foundry-pr-platform-checks-workflow
         name: Foundry PR platform checks workflow
