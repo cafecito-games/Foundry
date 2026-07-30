@@ -34,6 +34,7 @@
 #include "run_icon_svg.gen.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/image_loader.h"
@@ -1978,6 +1979,9 @@ static constexpr uint64_t FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES = 1024 * 1
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_ENTRIES = 131072;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRY_UNCOMPRESSED_BYTES = 128 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_REQUIRED_ENTRIES_UNCOMPRESSED_BYTES = 512 * 1024 * 1024;
+// The extension descriptor is parsed, not just streamed, so it gets a cap tight
+// enough to buffer whole instead of the shared required-entry limit.
+static constexpr uint64_t FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES = 64 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAME_BYTES = 16383;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_ARCHIVE_ENTRY_NAMES_BYTES = 16 * 1024 * 1024;
 static constexpr uint64_t FOUNDRY_JAVA_MAX_APK_SIGNING_BLOCK_BYTES = 128 * 1024 * 1024;
@@ -3341,7 +3345,308 @@ static bool _foundry_java_validate_current_archive_entry_payload(unzFile p_archi
 	return valid && bytes_read == p_info.uncompressed_size && close_result == UNZ_OK;
 }
 
-Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, String &r_error) const {
+static bool _foundry_java_read_current_archive_entry_payload(unzFile p_archive, const unz_file_info64 &p_info, uint64_t p_max_bytes, Vector<uint8_t> &r_payload) {
+	r_payload.clear();
+	if (p_info.uncompressed_size > p_max_bytes) {
+		return false;
+	}
+	if (unzOpenCurrentFile(p_archive) != UNZ_OK) {
+		return false;
+	}
+
+	Vector<uint8_t> buffer;
+	buffer.resize(MIN(FOUNDRY_JAVA_INPUT_ARCHIVE_READ_CHUNK_BYTES, p_max_bytes));
+	uint64_t bytes_read = 0;
+	bool valid = true;
+	while (true) {
+		const int result = unzReadCurrentFile(p_archive, buffer.ptrw(), buffer.size());
+		if (result < 0) {
+			valid = false;
+			break;
+		}
+		if (result == 0) {
+			break;
+		}
+		if (bytes_read > p_info.uncompressed_size || uint64_t(result) > p_info.uncompressed_size - bytes_read) {
+			valid = false;
+			break;
+		}
+		const int64_t offset = r_payload.size();
+		r_payload.resize(offset + result);
+		memcpy(r_payload.ptrw() + offset, buffer.ptr(), result);
+		bytes_read += result;
+	}
+	const int close_result = unzCloseCurrentFile(p_archive);
+	valid = valid && bytes_read == p_info.uncompressed_size && close_result == UNZ_OK;
+	if (!valid) {
+		r_payload.clear();
+	}
+	return valid;
+}
+
+// The tags an exported Android application reports, for the requested ABI and
+// build type: the platform identifier, the always-on Android features from
+// OS_Android::_check_internal_feature_support(), every architecture alias
+// OS::has_feature() answers for that ABI, the pointer width, and the export
+// template's build-type tags. Tags outside this set may still be true on a device,
+// so they are only ever treated as unmet here, never as met -- including the
+// precision tags, which the export cannot observe because the template binary,
+// not the export, decides them. A descriptor that resolves only under an
+// unmodeled tag therefore fails the export instead of shipping a binding that may
+// be dead on device.
+// The tags an exported Android application reports, for the requested ABI and
+// build type: the platform identifier, the always-on Android features from
+// OS_Android::_check_internal_feature_support(), every architecture alias
+// OS::has_feature() answers for that ABI, the pointer width, and the export
+// template's build-type tags. Preset and export-plugin custom features are
+// serialized into the exported project settings, so the device reports those too,
+// except where the engine answers the tag false before it ever consults them. Tags
+// outside all of this may still be true on a device, so they are only ever treated
+// as unmet here, never as met -- including the precision and threading tags, which
+// the export cannot observe because the template binary, not the export, decides
+// them. A
+// descriptor that resolves only under an unmodeled tag therefore fails the export
+// instead of shipping a binding that may be dead on device.
+static bool _foundry_java_android_export_reports_feature(const String &p_tag, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
+	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts") {
+		return true;
+	}
+	if (p_tag == p_abi || p_tag == p_arch) {
+		return true;
+	}
+	const bool is_64_bit = p_arch == "arm64" || p_arch == "x86_64";
+	if (p_tag == (is_64_bit ? "64" : "32")) {
+		return true;
+	}
+	if (p_tag == "template") {
+		return true;
+	}
+	if (p_debug ? (p_tag == "template_debug" || p_tag == "debug") : (p_tag == "template_release" || p_tag == "release")) {
+		return true;
+	}
+	if (p_arch == "arm32") {
+		if (p_tag == "armeabi" || p_tag == "armv7a" || p_tag == "armv7" || p_tag == "arm") {
+			return true;
+		}
+	} else if (p_arch == "arm64") {
+		if (p_tag == "arm") {
+			return true;
+		}
+	} else if (p_arch == "x86_64" || p_arch == "x86_32") {
+		if (p_tag == "x86") {
+			return true;
+		}
+	}
+	// OS::has_feature() and OS_Android::_check_internal_feature_support() answer
+	// these themselves, before reaching the project's custom features, so a custom
+	// feature named after one cannot make it observable. `threads` and `nothreads`
+	// are among them and depend on how the template was built, which the export
+	// cannot observe, so both stay unmet rather than guessing one.
+	if (p_tag == "movie" || p_tag == "threads" || p_tag == "nothreads" || p_tag == "macos" || p_tag == "web_ios" || p_tag == "web_macos" || p_tag == "windows") {
+		return false;
+	}
+	return p_custom_features.has(p_tag);
+}
+
+// Mirrors FoundryExtensionLibraryLoader::find_extension_library's explicit
+// `[libraries]` matching for a device running the requested ABI. Autodetection is
+// deliberately not honored: an export cannot observe the on-device directory the
+// loader would scan.
+static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
+	if (!p_descriptor->has_section("libraries")) {
+		return false;
+	}
+	// The loader keeps only the most specific match, so a more specific entry
+	// shadows a general one. An entry that names no library is rejected outright
+	// by _foundry_java_descriptor_empty_library_key(), which is what makes
+	// checking the best match here sufficient.
+	String best_library;
+	int best_tag_count = 0;
+	for (const String &key : p_descriptor->get_section_keys("libraries")) {
+		const Vector<String> tags = key.split(".");
+		if (tags.is_empty() || tags.size() <= best_tag_count) {
+			continue;
+		}
+		bool all_tags_met = true;
+		for (const String &raw_tag : tags) {
+			if (!_foundry_java_android_export_reports_feature(raw_tag.strip_edges(), p_abi, p_arch, p_debug, p_custom_features)) {
+				all_tags_met = false;
+				break;
+			}
+		}
+		if (!all_tags_met) {
+			continue;
+		}
+		best_library = p_descriptor->get_value("libraries", key, String());
+		best_tag_count = tags.size();
+	}
+	return !best_library.strip_edges().is_empty();
+}
+
+// A device reports far more feature tags than an export can enumerate (Android
+// always reports `mobile`, plus the build type and any project features), so any
+// entry can turn out to be the loader's most specific match. An entry the loader
+// could not use therefore cannot be dismissed as unreachable: it is rejected
+// wherever it appears, which is what keeps the per-ABI check above from being
+// shadowed. The loader resolves the value verbatim, so surrounding whitespace makes
+// a library path as unusable as an absent one.
+static String _foundry_java_descriptor_unusable_library_key(const Ref<ConfigFile> &p_descriptor, String &r_reason) {
+	r_reason = String();
+	if (!p_descriptor->has_section("libraries")) {
+		return String();
+	}
+	for (const String &key : p_descriptor->get_section_keys("libraries")) {
+		const String library = p_descriptor->get_value("libraries", key, String());
+		if (library.strip_edges().is_empty()) {
+			r_reason = TTR("names no library");
+			return key;
+		}
+		if (library != library.strip_edges()) {
+			r_reason = TTR("pads its library path with whitespace");
+			return key;
+		}
+	}
+	return String();
+}
+
+static void _foundry_java_parse_descriptor_version(const String &p_value, bool p_fill_missing_parts, uint32_t r_version[3]) {
+	const Vector<int> parts = p_value.split_ints(".");
+	for (int i = 0; i < 3; i++) {
+		if (i < parts.size() && parts[i] >= 0) {
+			r_version[i] = parts[i];
+		} else if (p_fill_missing_parts) {
+			// A missing maximum component means "any", matching the loader.
+			r_version[i] = 9999;
+		} else {
+			r_version[i] = 0;
+		}
+	}
+}
+
+static uint64_t _foundry_java_packed_version(const uint32_t p_version[3]) {
+	return ((uint64_t)p_version[0] << 32) | ((uint64_t)p_version[1] << 16) | (uint64_t)p_version[2];
+}
+
+// Rejects at export time every descriptor the runtime extension loader would
+// refuse to load, so a packaged-but-dead binding fails the export that produced
+// it instead of the device that runs it.
+Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
+		const Vector<uint8_t> &p_payload,
+		const String &p_entry,
+		const Vector<ABI> &p_enabled_abis,
+		bool p_debug,
+		const HashSet<String> &p_custom_features,
+		String &r_error) {
+	const String diagnostic_entry = _foundry_java_safe_diagnostic_value(p_entry);
+
+	// String::append_utf8() stops at the first NUL byte and still reports success,
+	// so a descriptor carrying one would have only its prefix validated while the
+	// runtime parser keeps reading.
+	for (int i = 0; i < p_payload.size(); i++) {
+		if (p_payload[i] == 0) {
+			r_error = vformat(TTR("entry '%s' contains an embedded NUL byte and cannot be parsed as a FoundryExtension descriptor."), diagnostic_entry);
+			return ERR_INVALID_DATA;
+		}
+	}
+
+	String text;
+	if (text.append_utf8((const char *)p_payload.ptr(), p_payload.size()) != OK) {
+		r_error = vformat(TTR("entry '%s' is not valid UTF-8 and cannot be parsed as a FoundryExtension descriptor."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+
+	Ref<ConfigFile> descriptor;
+	descriptor.instantiate();
+	if (descriptor->parse(text) != OK) {
+		r_error = vformat(TTR("entry '%s' does not parse as a FoundryExtension descriptor."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+
+	const String entry_symbol = descriptor->get_value("configuration", "entry_symbol", String());
+	if (!descriptor->has_section_key("configuration", "entry_symbol") || entry_symbol.strip_edges().is_empty()) {
+		r_error = vformat(TTR("entry '%s' must define a non-empty \"configuration/entry_symbol\" key."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+	// The loader looks the symbol up verbatim, so padding it is a load failure.
+	if (entry_symbol != entry_symbol.strip_edges()) {
+		r_error = vformat(
+				TTR("entry '%s' pads its \"configuration/entry_symbol\" value '%s' with whitespace."),
+				diagnostic_entry,
+				_foundry_java_safe_diagnostic_value(entry_symbol));
+		return ERR_INVALID_DATA;
+	}
+
+	if (!descriptor->has_section_key("configuration", "compatibility_minimum")) {
+		r_error = vformat(TTR("entry '%s' must define a \"configuration/compatibility_minimum\" key."), diagnostic_entry);
+		return ERR_INVALID_DATA;
+	}
+
+	const uint32_t engine_version_parts[3] = { FOUNDRY_VERSION_MAJOR, FOUNDRY_VERSION_MINOR, FOUNDRY_VERSION_PATCH };
+	const uint64_t engine_version = _foundry_java_packed_version(engine_version_parts);
+
+	const String minimum_value = descriptor->get_value("configuration", "compatibility_minimum");
+	uint32_t compatibility_minimum[3] = { 0, 0, 0 };
+	_foundry_java_parse_descriptor_version(minimum_value, false, compatibility_minimum);
+	if (compatibility_minimum[0] == 0 && compatibility_minimum[1] == 0) {
+		r_error = vformat(
+				TTR("entry '%s' declares \"configuration/compatibility_minimum\" '%s', which must be at least 0.1.0."),
+				diagnostic_entry,
+				_foundry_java_safe_diagnostic_value(minimum_value));
+		return ERR_INVALID_DATA;
+	}
+	if (engine_version < _foundry_java_packed_version(compatibility_minimum)) {
+		r_error = vformat(
+				TTR("entry '%s' declares \"configuration/compatibility_minimum\" '%s', which is newer than the exporting engine version %d.%d.%d."),
+				diagnostic_entry,
+				_foundry_java_safe_diagnostic_value(minimum_value),
+				FOUNDRY_VERSION_MAJOR,
+				FOUNDRY_VERSION_MINOR,
+				FOUNDRY_VERSION_PATCH);
+		return ERR_INVALID_DATA;
+	}
+
+	if (descriptor->has_section_key("configuration", "compatibility_maximum")) {
+		const String maximum_value = descriptor->get_value("configuration", "compatibility_maximum");
+		uint32_t compatibility_maximum[3] = { 0, 0, 0 };
+		_foundry_java_parse_descriptor_version(maximum_value, true, compatibility_maximum);
+		if (engine_version > _foundry_java_packed_version(compatibility_maximum)) {
+			r_error = vformat(
+					TTR("entry '%s' declares \"configuration/compatibility_maximum\" '%s', which is older than the exporting engine version %d.%d.%d."),
+					diagnostic_entry,
+					_foundry_java_safe_diagnostic_value(maximum_value),
+					FOUNDRY_VERSION_MAJOR,
+					FOUNDRY_VERSION_MINOR,
+					FOUNDRY_VERSION_PATCH);
+			return ERR_INVALID_DATA;
+		}
+	}
+
+	String unusable_library_reason;
+	const String unusable_library_key = _foundry_java_descriptor_unusable_library_key(descriptor, unusable_library_reason);
+	if (!unusable_library_key.is_empty()) {
+		r_error = vformat(
+				TTR("entry '%s' declares the \"[libraries]\" key '%s', which %s and which the loader can select over a usable key."),
+				diagnostic_entry,
+				_foundry_java_safe_diagnostic_value(unusable_library_key),
+				unusable_library_reason);
+		return ERR_INVALID_DATA;
+	}
+
+	for (const ABI &abi : p_enabled_abis) {
+		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.abi, abi.arch, p_debug, p_custom_features)) {
+			r_error = vformat(
+					TTR("entry '%s' resolves no \"[libraries]\" entry for requested ABI '%s' (feature tag 'android.%s')."),
+					diagnostic_entry,
+					abi.abi,
+					abi.arch);
+			return ERR_INVALID_DATA;
+		}
+	}
+
+	return OK;
+}
+
+Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, bool p_debug, const HashSet<String> &p_custom_features, String &r_error) const {
 	const String artifact_kind = p_export_format == EXPORT_FORMAT_AAB ? "AAB" : "APK";
 	const String root = p_export_format == EXPORT_FORMAT_AAB ? "base/" : "";
 	const String configuration = root + "assets/FoundryJava.foundryextension";
@@ -3436,7 +3741,8 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 			return ERR_FILE_CORRUPT;
 		}
 		bool is_required_entry = false;
-		if (entry == configuration) {
+		const bool is_configuration_entry = entry == configuration;
+		if (is_configuration_entry) {
 			configuration_count++;
 			is_required_entry = true;
 		}
@@ -3469,10 +3775,47 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 			unzClose(artifact);
 			return ERR_FILE_CORRUPT;
 		}
+		if (is_configuration_entry &&
+				info.uncompressed_size > FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES) {
+			r_error = vformat(
+					TTR("Unable to inspect final Foundry-Java %s: descriptor entry '%s' exceeds the %d-byte decompressed size limit."),
+					artifact_kind,
+					_foundry_java_safe_diagnostic_value(entry),
+					FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES);
+			unzClose(artifact);
+			return ERR_FILE_CORRUPT;
+		}
 		if (is_required_entry) {
 			total_required_entry_uncompressed_bytes += info.uncompressed_size;
 		}
-		if (is_required_entry && !_foundry_java_validate_current_archive_entry_payload(artifact, info)) {
+		if (is_configuration_entry) {
+			Vector<uint8_t> descriptor_payload;
+			if (!_foundry_java_read_current_archive_entry_payload(
+						artifact,
+						info,
+						FOUNDRY_JAVA_MAX_FINAL_ARTIFACT_DESCRIPTOR_UNCOMPRESSED_BYTES,
+						descriptor_payload)) {
+				r_error = vformat(
+						TTR("Unable to inspect final Foundry-Java %s: required entry '%s' failed integrity validation."),
+						artifact_kind,
+						_foundry_java_safe_diagnostic_value(entry));
+				unzClose(artifact);
+				return ERR_FILE_CORRUPT;
+			}
+			String descriptor_error;
+			const Error descriptor_result = _validate_foundry_java_extension_descriptor(
+					descriptor_payload,
+					entry,
+					p_enabled_abis,
+					p_debug,
+					p_custom_features,
+					descriptor_error);
+			if (descriptor_result != OK) {
+				r_error = vformat(TTR("Final Foundry-Java %s %s"), artifact_kind, descriptor_error);
+				unzClose(artifact);
+				return descriptor_result;
+			}
+		} else if (is_required_entry && !_foundry_java_validate_current_archive_entry_payload(artifact, info)) {
 			r_error = vformat(
 					TTR("Unable to inspect final Foundry-Java %s: required entry '%s' failed integrity validation."),
 					artifact_kind,
@@ -5748,7 +6091,19 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 		if (foundry_java.enabled) {
 			String final_artifact_error;
-			err = _inspect_foundry_java_artifact(final_artifact_path, enabled_abis, export_format, final_artifact_error);
+			HashSet<String> custom_features;
+			const Vector<Ref<EditorExportPlugin>> feature_export_plugins =
+					EditorExport::get_singleton() ? EditorExport::get_singleton()->get_export_plugins() : Vector<Ref<EditorExportPlugin>>();
+			for (const String &feature : get_custom_project_features(p_preset, p_debug, feature_export_plugins)) {
+				custom_features.insert(feature);
+			}
+			err = _inspect_foundry_java_artifact(
+					final_artifact_path,
+					enabled_abis,
+					export_format,
+					p_debug,
+					custom_features,
+					final_artifact_error);
 			if (err != OK) {
 				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), final_artifact_error);
 				const Error remove_error = DirAccess::remove_absolute(final_artifact_path);

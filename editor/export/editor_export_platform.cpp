@@ -2,7 +2,7 @@
 /*  editor_export_platform.cpp                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -634,6 +634,32 @@ void EditorExportPlatform::_edit_filter_list(HashSet<String> &r_list, const Stri
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_RESOURCES);
 	ERR_FAIL_COND(da.is_null());
 	_edit_files_with_filter(da, filters, r_list, exclude);
+}
+
+// The custom feature tags written into the exported project settings, and so the
+// tags the exported application reports on top of its platform and build features.
+// The plugin list is supplied by the caller: an export run has already prepared its
+// own, and a caller outside a running export may have none.
+Vector<String> EditorExportPlatform::get_custom_project_features(const Ref<EditorExportPreset> &p_preset, bool p_debug, const Vector<Ref<EditorExportPlugin>> &p_export_plugins) const {
+	Vector<String> raw_features;
+	if (!p_preset->get_custom_features().is_empty()) {
+		raw_features.append_array(p_preset->get_custom_features().split(","));
+	}
+	const Ref<EditorExportPlatform> platform = p_preset->get_platform();
+	for (const Ref<EditorExportPlugin> &export_plugin : p_export_plugins) {
+		raw_features.append_array(export_plugin->_get_export_features(platform, p_debug));
+	}
+
+	// Normalized the way ProjectSettings::save_custom() writes them, so this is the
+	// exact set the exported application reports.
+	Vector<String> features;
+	for (const String &raw_feature : raw_features) {
+		const String feature = raw_feature.strip_edges().remove_char('"');
+		if (!feature.is_empty()) {
+			features.push_back(feature);
+		}
+	}
+	return features;
 }
 
 HashSet<String> EditorExportPlatform::get_features(const Ref<EditorExportPreset> &p_preset, bool p_debug) const {
@@ -1846,21 +1872,7 @@ Error EditorExportPlatform::_export_project_files_with_manifest(const Ref<Editor
 
 	//save config!
 
-	Vector<String> custom_list;
-
-	if (!p_preset->get_custom_features().is_empty()) {
-		Vector<String> tmp_custom_list = p_preset->get_custom_features().split(",");
-
-		for (int i = 0; i < tmp_custom_list.size(); i++) {
-			String f = tmp_custom_list[i].strip_edges();
-			if (!f.is_empty()) {
-				custom_list.push_back(f);
-			}
-		}
-	}
-	for (int i = 0; i < export_plugins.size(); i++) {
-		custom_list.append_array(export_plugins[i]->_get_export_features(Ref<EditorExportPlatform>(this), p_debug));
-	}
+	const Vector<String> custom_list = get_custom_project_features(p_preset, p_debug, export_plugins);
 
 	if (path_remaps.size()) {
 		for (int i = 0; i < path_remaps.size(); i += 2) {

@@ -2,7 +2,7 @@
 /*  editor_export_platform.h                                              */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -173,6 +173,7 @@ protected:
 	};
 
 	HashSet<String> get_features(const Ref<EditorExportPreset> &p_preset, bool p_debug) const;
+	Vector<String> get_custom_project_features(const Ref<EditorExportPreset> &p_preset, bool p_debug, const Vector<Ref<EditorExportPlugin>> &p_export_plugins) const;
 	static Error _collect_autoload_export_paths(const Ref<EditorExportPreset> &p_preset, Vector<String> &r_paths);
 	Error _export_project_files_with_manifest(const Ref<EditorExportPreset> &p_preset, bool p_debug, const HashSet<String> &p_paths, const Vector<Ref<EditorExportPlugin>> &p_export_plugins, EditorExportSaveFunction p_save_func, EditorExportRemoveFunction p_remove_func, void *p_udata, EditorExportSaveSharedObject p_so_func = nullptr);
 

@@ -67,6 +67,30 @@ EXACT_FOUNDRY_JAVA_COMMIT = "499cf13bdf7cebce4639b898f2ad3520d81571f2"
 FOUNDRY_JAVA_GROUP = "games.cafecito.foundry"
 FOUNDRY_JAVA_VERSION = "0.1.0-SNAPSHOT"
 
+# The descriptor the pinned Foundry-Java binding packages: the exact shape the
+# runtime extension loader accepts.
+LOADABLE_FOUNDRY_JAVA_DESCRIPTOR = textwrap.dedent(
+    """\
+    [configuration]
+
+    entry_symbol = "foundry_java_library_init"
+    compatibility_minimum = "0.1.0"
+
+    [libraries]
+
+    android.arm32 = "libfoundry_java.so"
+    android.arm64 = "libfoundry_java.so"
+    android.x86_32 = "libfoundry_java.so"
+    android.x86_64 = "libfoundry_java.so"
+    """
+)
+# The descriptor Foundry-Java shipped before cafecito-games/Foundry-Java#51: byte
+# perfect, uniquely packaged, and rejected by the loader on device.
+UNLOADABLE_FOUNDRY_JAVA_DESCRIPTOR = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+    'compatibility_minimum = "0.1.0"\n',
+    "",
+)
+
 EXPORT_OPTIONS = (
     "gradle_build/foundry_java/enabled",
     "gradle_build/foundry_java/gradle_plugin_maven",
@@ -589,6 +613,39 @@ class FoundryJavaDocumentationTests(unittest.TestCase):
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, guide)
+
+    def test_documentation_describes_packaged_descriptor_validation(self) -> None:
+        guide = ANDROID_RUNTIME_GUIDE.read_text(encoding="utf-8")
+        class_reference = ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8")
+        for surface, document, keys in (
+            (
+                "runtime guide",
+                guide,
+                (
+                    "configuration/entry_symbol",
+                    "configuration/compatibility_minimum",
+                    "configuration/compatibility_maximum",
+                    "`[libraries]`",
+                    "`android.<arch>`",
+                    "64 KiB",
+                ),
+            ),
+            (
+                "class reference",
+                class_reference,
+                (
+                    "configuration/entry_symbol",
+                    "configuration/compatibility_minimum",
+                    "configuration/compatibility_maximum",
+                    "[code][libraries][/code]",
+                    "android.&lt;arch&gt;",
+                    "64 KiB",
+                ),
+            ),
+        ):
+            for key in keys:
+                with self.subTest(surface=surface, key=key):
+                    self.assertIn(key, document)
 
     def test_class_reference_documents_the_runtime_load_consequence(self) -> None:
         class_reference = ANDROID_EXPORT_CLASS_REFERENCE.read_text(encoding="utf-8")
@@ -3489,6 +3546,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         local_artifacts: tuple[Path, ...] = (),
         use_gradle: bool,
         extra_options: tuple[str, ...] = (),
+        custom_features: str = "",
     ) -> None:
         options = [
             f"gradle_build/use_gradle_build={'true' if use_gradle else 'false'}",
@@ -3509,6 +3567,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 name="Android"
                 platform="Android"
                 runnable=false
+                custom_features="{custom_features}"
                 export_filter="all_resources"
                 include_filter=""
                 exclude_filter=""
@@ -3548,6 +3607,15 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
             timeout=timeout,
         )
 
+    @staticmethod
+    def _default_entry_payload(entry: str) -> bytes:
+        # The extension descriptor is parsed by the exporter, so an artifact that
+        # is meant to be valid has to carry a loadable descriptor rather than the
+        # entry name every other fixture entry uses as filler.
+        if entry == f"assets/{FOUNDRY_JAVA_EXTENSION_ASSET}" or entry == f"base/assets/{FOUNDRY_JAVA_EXTENSION_ASSET}":
+            return LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8")
+        return entry.encode("utf-8")
+
     @classmethod
     def _write_fake_gradle_wrapper(
         cls,
@@ -3567,11 +3635,18 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         corrupt_entry_payload: str | None = None,
         entry_name_replacement: tuple[str, bytes] | None = None,
         uncompressed_sizes: tuple[int, ...] | None = None,
-        entry_payload_sizes: tuple[int, ...] | None = None,
+        entry_payload_sizes: tuple[int | None, ...] | None = None,
+        entry_payloads: dict[str, bytes] | None = None,
         build_stdout_fragments: tuple[str, ...] = (),
         build_stderr_fragments: tuple[str, ...] = (),
         build_exit_code: int = 0,
     ) -> Path:
+        resolved_entry_payloads = {
+            entry: cls._default_entry_payload(entry)
+            if entry_payloads is None or entry not in entry_payloads
+            else entry_payloads[entry]
+            for entry in entries
+        }
         gradle_root = project / "android"
         build = gradle_root / "build"
         (build / "src/debug").mkdir(parents=True)
@@ -3609,12 +3684,13 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         self.output.flush()
 
                 entry_payload_sizes = {entry_payload_sizes!r}
+                entry_payloads = {resolved_entry_payloads!r}
 
                 def write_entries(archive):
                     if entry_payload_sizes is not None and len(entry_payload_sizes) != len({entries!r}):
                         raise RuntimeError("fake Gradle output entry count does not match payload-size fixture")
                     for index, entry in enumerate({entries!r}):
-                        if entry_payload_sizes is not None:
+                        if entry_payload_sizes is not None and entry_payload_sizes[index] is not None:
                             remaining = entry_payload_sizes[index]
                             chunk = b"\\x00" * (1024 * 1024)
                             with archive.open(entry, "w") as output:
@@ -3624,13 +3700,13 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                                     remaining -= written
                         elif {force_local_zip64_sizes!r}:
                             with archive.open(entry, "w", force_zip64=True) as output:
-                                output.write(entry.encode("utf-8"))
+                                output.write(entry_payloads[entry])
                         elif {force_zip64!r}:
                             entry_info = zipfile.ZipInfo(entry)
                             entry_info.extra = struct.pack("<HHQ", 0x0001, 8, 0)
-                            archive.writestr(entry_info, entry)
+                            archive.writestr(entry_info, entry_payloads[entry])
                         else:
-                            archive.writestr(entry, entry)
+                            archive.writestr(entry, entry_payloads[entry])
 
                 arguments = sys.argv[1:]
                 export_path = next(
@@ -4168,6 +4244,328 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         wrapper.chmod(0o755)
         return gradle_root
 
+    def _export_packaged_descriptor(
+        self,
+        name: str,
+        descriptor: bytes,
+        *,
+        export_format: int = 0,
+        requested_abis: tuple[str, ...] = ("arm64-v8a",),
+        declared_descriptor_size: int | None = None,
+        custom_features: str = "",
+    ) -> tuple[subprocess.CompletedProcess[str], Path]:
+        """Export a project whose final artifact packages exactly `descriptor`."""
+        root = "base/" if export_format == 1 else ""
+        workspace = tempfile.TemporaryDirectory(
+            prefix=f"foundry-java-descriptor-{name}.",
+            dir=test_scratch_directory(),
+        )
+        self.addCleanup(workspace.cleanup)
+        project = Path(workspace.name)
+        project.joinpath("project.foundry").write_text(
+            textwrap.dedent(
+                """\
+                [application]
+                config/name="Foundry Java Packaged Descriptor"
+
+                [rendering]
+                textures/vram_compression/import_etc2_astc=true
+                """
+            ),
+            encoding="utf-8",
+        )
+        plugin = project / "plugin.jar"
+        module = project / "module.jar"
+        with zipfile.ZipFile(plugin, "w") as archive:
+            archive.writestr(
+                "META-INF/gradle-plugins/games.cafecito.foundry.java.properties",
+                "implementation-class=test.Fixture\n",
+            )
+        with zipfile.ZipFile(module, "w"):
+            pass
+        configuration = f"{root}assets/{FOUNDRY_JAVA_EXTENSION_ASSET}"
+        entries = (
+            configuration,
+            f"{root}assets/foundry_java/registry-index-v2.txt",
+            *(f"{root}lib/{abi}/libfoundry_java.so" for abi in requested_abis),
+        )
+        uncompressed_sizes = None
+        if declared_descriptor_size is not None:
+            uncompressed_sizes = (declared_descriptor_size, *((1,) * (len(entries) - 1)))
+        gradle_root = self._write_fake_gradle_wrapper(
+            project,
+            entries,
+            entry_payloads={configuration: descriptor},
+            uncompressed_sizes=uncompressed_sizes,
+        )
+        self._write_export_preset(
+            project,
+            plugin_local=plugin,
+            local_artifacts=(module,),
+            use_gradle=True,
+            extra_options=(
+                f'gradle_build/gradle_build_directory="{gradle_root}"',
+                f"gradle_build/export_format={export_format}",
+                "package/signed=false",
+                *(
+                    f"architectures/{abi}={'true' if abi in requested_abis else 'false'}"
+                    for abi in ("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+                ),
+            ),
+            custom_features=custom_features,
+        )
+        output_name = f"{name}.{'aab' if export_format == 1 else 'apk'}"
+        artifact = project / output_name
+        result = self._run_export(project, output_name)
+        if result.returncode != 0:
+            self.assertFalse(artifact.exists(), "a rejected export must not leave its final artifact behind")
+        return result, artifact
+
+    def test_export_rejects_a_packaged_descriptor_the_loader_would_refuse(self) -> None:
+        without_entry_symbol = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'entry_symbol = "foundry_java_library_init"\n',
+            "",
+        )
+        arm32_only = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"\n',
+            "",
+        )
+        # The loader keeps only the most specific match, so an entry that names no
+        # library can shadow a populated one -- including through a device feature
+        # tag the export cannot enumerate, such as Android's always-on `mobile`.
+        shadowed_by_empty_key = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"\n',
+            'android.arm64 = ""\nandroid = "libfoundry_java.so"\n',
+        )
+        shadowed_by_empty_device_feature_key = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"\n',
+            'android.arm64 = "libfoundry_java.so"\nandroid.arm64.mobile = ""\n',
+        )
+        cases = (
+            (
+                "unparsable",
+                b'[configuration\nentry_symbol = "foundry_java_library_init"\n',
+                0,
+                "does not parse as a FoundryExtension descriptor",
+            ),
+            (
+                "embedded-nul",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8")
+                + b'\x00[configuration]\ncompatibility_minimum = "9.9.9"\n',
+                0,
+                "contains an embedded NUL byte and cannot be parsed as a FoundryExtension descriptor",
+            ),
+            (
+                "invalid-utf8",
+                b'[configuration]\nentry_symbol = "\xff\xfe"\n',
+                0,
+                "is not valid UTF-8 and cannot be parsed as a FoundryExtension descriptor",
+            ),
+            (
+                "missing-entry-symbol",
+                without_entry_symbol.encode("utf-8"),
+                0,
+                'must define a non-empty "configuration/entry_symbol" key',
+            ),
+            (
+                "empty-entry-symbol",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    '"foundry_java_library_init"',
+                    '""',
+                ).encode("utf-8"),
+                0,
+                'must define a non-empty "configuration/entry_symbol" key',
+            ),
+            (
+                "missing-compatibility-minimum",
+                UNLOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8"),
+                0,
+                'must define a "configuration/compatibility_minimum" key',
+            ),
+            (
+                "missing-compatibility-minimum-aab",
+                UNLOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8"),
+                1,
+                'must define a "configuration/compatibility_minimum" key',
+            ),
+            (
+                "compatibility-minimum-below-floor",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace('"0.1.0"', '"0.0.9"').encode("utf-8"),
+                0,
+                "declares \"configuration/compatibility_minimum\" '0.0.9', which must be at least 0.1.0",
+            ),
+            (
+                "compatibility-minimum-newer-than-engine",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace('"0.1.0"', '"9.9.9"').encode("utf-8"),
+                0,
+                "declares \"configuration/compatibility_minimum\" '9.9.9', which is newer than the exporting engine version",
+            ),
+            (
+                "compatibility-maximum-older-than-engine",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'compatibility_minimum = "0.1.0"',
+                    'compatibility_minimum = "0.1.0"\ncompatibility_maximum = "0.0.9"',
+                ).encode("utf-8"),
+                0,
+                "declares \"configuration/compatibility_maximum\" '0.0.9', which is older than the exporting engine version",
+            ),
+            (
+                "requested-abi-only-under-mutually-exclusive-tags",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64.single.double = "libfoundry_java.so"',
+                ).encode("utf-8"),
+                0,
+                "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            ),
+            (
+                "requested-abi-only-for-the-other-build-type",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64.template_debug = "libfoundry_java.so"',
+                ).encode("utf-8"),
+                0,
+                "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            ),
+            (
+                "unresolved-requested-abi",
+                arm32_only.encode("utf-8"),
+                0,
+                "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            ),
+            (
+                "padded-library-key",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64 = " libfoundry_java.so "',
+                ).encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64', which pads its library path with whitespace",
+            ),
+            (
+                "padded-entry-symbol",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'entry_symbol = "foundry_java_library_init"',
+                    'entry_symbol = " foundry_java_library_init "',
+                ).encode("utf-8"),
+                0,
+                "pads its \"configuration/entry_symbol\" value ' foundry_java_library_init ' with whitespace",
+            ),
+            (
+                "requested-abi-only-under-an-unobservable-tag",
+                LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    'android.arm64.threads = "libfoundry_java.so"',
+                ).encode("utf-8"),
+                0,
+                "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            ),
+            (
+                "empty-library-key",
+                shadowed_by_empty_key.encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64', which names no library",
+            ),
+            (
+                "empty-device-feature-library-key",
+                shadowed_by_empty_device_feature_key.encode("utf-8"),
+                0,
+                "declares the \"[libraries]\" key 'android.arm64.mobile', which names no library",
+            ),
+        )
+        for defect, descriptor, export_format, diagnostic in cases:
+            with self.subTest(defect=defect):
+                result, _ = self._export_packaged_descriptor(defect, descriptor, export_format=export_format)
+                output = result.stdout + result.stderr
+                self.assertNotEqual(0, result.returncode, output)
+                root = "base/" if export_format == 1 else ""
+                self.assertIn(f"entry '{root}assets/{FOUNDRY_JAVA_EXTENSION_ASSET}' {diagnostic}", output)
+
+    def test_export_rejects_an_oversized_packaged_descriptor_without_buffering_it(self) -> None:
+        result, _ = self._export_packaged_descriptor(
+            "oversized-descriptor",
+            LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8"),
+            declared_descriptor_size=64 * 1024 + 1,
+        )
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode, output)
+        self.assertIn(
+            f"descriptor entry 'assets/{FOUNDRY_JAVA_EXTENSION_ASSET}' exceeds the 65536-byte decompressed size limit",
+            output,
+        )
+
+    def test_export_accepts_the_pinned_loadable_descriptor(self) -> None:
+        for export_format, extension in ((0, "apk"), (1, "aab")):
+            with self.subTest(extension=extension):
+                result, artifact = self._export_packaged_descriptor(
+                    f"loadable-{extension}",
+                    LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.encode("utf-8"),
+                    export_format=export_format,
+                    requested_abis=("armeabi-v7a", "arm64-v8a", "x86", "x86_64"),
+                )
+                output = result.stdout + result.stderr
+                self.assertEqual(0, result.returncode, output)
+                self.assertTrue(artifact.is_file())
+
+    def test_export_rejects_library_keys_gated_on_a_reserved_custom_feature_name(self) -> None:
+        # OS::has_feature() answers reserved tags itself before it reaches the
+        # project's custom features, so a custom feature named after one is never
+        # observed on device and cannot make a key resolve.
+        descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"',
+            'android.arm64.movie = "libfoundry_java.so"',
+        )
+        result, _ = self._export_packaged_descriptor(
+            "reserved-custom-feature",
+            descriptor.encode("utf-8"),
+            custom_features="movie",
+        )
+        output = result.stdout + result.stderr
+        self.assertNotEqual(0, result.returncode, output)
+        self.assertIn(
+            "resolves no \"[libraries]\" entry for requested ABI 'arm64-v8a' (feature tag 'android.arm64')",
+            output,
+        )
+
+    def test_export_accepts_library_keys_gated_on_preset_custom_features(self) -> None:
+        # Custom features are serialized into the exported project settings, so the
+        # device reports them and a key built from one resolves there. That includes
+        # a name the engine only answers when true, such as another platform's tag,
+        # because those checks fall through to the project's custom features.
+        for defect, feature in (("plain", "premium_binding"), ("engine-name", "linuxbsd")):
+            with self.subTest(feature=feature):
+                descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+                    'android.arm64 = "libfoundry_java.so"',
+                    f'android.arm64.{feature} = "libfoundry_java.so"',
+                )
+                result, artifact = self._export_packaged_descriptor(
+                    f"preset-custom-feature-{defect}",
+                    descriptor.encode("utf-8"),
+                    custom_features=feature,
+                )
+                output = result.stdout + result.stderr
+                self.assertEqual(0, result.returncode, output)
+                self.assertTrue(artifact.is_file())
+
+    def test_export_accepts_library_keys_using_reported_device_features(self) -> None:
+        # Every Android runtime reports `mobile` and the ABI aliases, so keys built
+        # from them resolve on device and must not be rejected at export.
+        descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"\n',
+            'android.arm64.mobile.64.template_release = "libfoundry_java.so"\n',
+        ).replace(
+            'android.arm32 = "libfoundry_java.so"\n',
+            'android.armeabi-v7a.32.template = "libfoundry_java.so"\n',
+        )
+        result, artifact = self._export_packaged_descriptor(
+            "reported-device-features",
+            descriptor.encode("utf-8"),
+            requested_abis=("armeabi-v7a", "arm64-v8a"),
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(0, result.returncode, output)
+        self.assertTrue(artifact.is_file())
+
     def test_preflight_names_every_fail_closed_boundary(self) -> None:
         exporter = EXPORTER.read_text(encoding="utf-8")
         for fragment in (
@@ -4224,10 +4622,9 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         final_artifact_path = export_helper.find("String final_artifact_path = p_path;")
         base_dir = export_helper.find("const String base_dir = final_artifact_path.get_base_dir();")
         copy_result = export_helper.find("int copy_result =")
-        inspection = export_helper.find(
-            "_inspect_foundry_java_artifact(final_artifact_path",
-            copy_result,
-        )
+        inspection = export_helper.find("_inspect_foundry_java_artifact(", copy_result)
+        inspection_call = export_helper[inspection : export_helper.find(");", inspection)]
+        self.assertIn("final_artifact_path", inspection_call)
         removal = export_helper.find("DirAccess::remove_absolute(final_artifact_path)", inspection)
         existence_check = export_helper.find("FileAccess::exists(final_artifact_path)", removal)
         diagnostic = export_helper.find(
@@ -4561,7 +4958,9 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     "lib/x86_64/libfoundry_java.so",
                 ),
                 None,
-                (90 * mib,) * 6,
+                # The descriptor keeps its loadable payload so the aggregate limit,
+                # not descriptor validation, is what rejects this artifact.
+                (None, *((103 * mib,) * 5)),
                 (
                     "architectures/armeabi-v7a=true",
                     "architectures/arm64-v8a=true",
@@ -4914,7 +5313,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                         f"{root}assets/unrequested-next-header.bin",
                         *valid_entries,
                     ),
-                    (0x00080014, 1, 1, 1, 1),
+                    (0x00080014, 1, None, 1, 1),
                     True,
                     None,
                     "missing-next-header-prefix",
@@ -4923,7 +5322,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 (
                     "wrong-width-trailing",
                     (f"{root}assets/unrequested-wrong-width.bin", *valid_entries),
-                    (0, 1, 1, 1),
+                    (0, None, 1, 1),
                     True,
                     None,
                     "wrong-width-trailing",
@@ -5285,7 +5684,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     f"{root}assets/foundry_java/registry-index-v2.txt",
                     f"{root}lib/arm64-v8a/libfoundry_java.so",
                 ),
-                entry_payload_sizes=(1, 1, 1, 1) if data_descriptor_mutation == "unsigned-signature-crc" else None,
+                entry_payload_sizes=(1, None, 1, 1) if data_descriptor_mutation == "unsigned-signature-crc" else None,
                 store_entry_payloads=data_descriptor_mutation == "unsigned-signature-crc",
                 force_zip64=force_zip64,
                 force_local_zip64_sizes=force_local_zip64_sizes,
