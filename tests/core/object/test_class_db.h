@@ -2,7 +2,7 @@
 /*  test_class_db.h                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -44,7 +44,7 @@
 class _TestClassDBDefaultCacheObject : public Object {
 	FOUNDRY_CLASS(_TestClassDBDefaultCacheObject, Object);
 
-	static inline SafeNumeric<uint32_t> getter_calls{0};
+	static inline SafeNumeric<uint32_t> getter_calls{ 0 };
 	static inline Semaphore first_getter_entered;
 	static inline Semaphore release_first_getter;
 
@@ -920,6 +920,37 @@ void add_global_enums(Context &r_context) {
 }
 
 TEST_SUITE("[ClassDB]") {
+	TEST_CASE("[ClassDB] Exposed class list matches the script-visible native class set") {
+		CoreBind::Special::ClassDB script_class_db;
+		const Variant result = script_class_db.call("get_exposed_class_list");
+		CHECK_EQ(result.get_type(), Variant::PACKED_STRING_ARRAY);
+		if (result.get_type() != Variant::PACKED_STRING_ARRAY) {
+			return;
+		}
+
+		const PackedStringArray exposed_classes = result;
+		LocalVector<StringName> all_classes;
+		ClassDB::get_class_list(all_classes);
+
+		LocalVector<StringName> expected_classes;
+		for (const StringName &class_name : all_classes) {
+			if (ClassDB::is_class_exposed(class_name)) {
+				expected_classes.push_back(class_name);
+			}
+		}
+
+		CHECK_EQ(exposed_classes.size(), int64_t(expected_classes.size()));
+		if (exposed_classes.size() != int64_t(expected_classes.size())) {
+			return;
+		}
+		for (uint32_t i = 0; i < expected_classes.size(); i++) {
+			CHECK_EQ(exposed_classes[i], String(expected_classes[i]));
+		}
+		CHECK(exposed_classes.find("Node") >= 0);
+		CHECK_EQ(exposed_classes.find("FSNativeClass"), -1);
+		CHECK_EQ(exposed_classes.find("ThemeContext"), -1);
+	}
+
 #ifdef THREADS_ENABLED
 	TEST_CASE("[ClassDB] Default property cache is populated once across threads") {
 		struct Lookup {

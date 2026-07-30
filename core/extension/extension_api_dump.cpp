@@ -2,7 +2,7 @@
 /*  extension_api_dump.cpp                                                */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -913,12 +913,9 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 
 		LocalVector<StringName> class_list;
 
-		ClassDB::get_class_list(class_list);
+		ClassDB::get_exposed_class_list(class_list);
 
 		for (const StringName &class_name : class_list) {
-			if (!ClassDB::is_class_exposed(class_name)) {
-				continue;
-			}
 			Dictionary d;
 			d["name"] = String(class_name);
 			d["is_refcounted"] = ClassDB::is_parent_class(class_name, "RefCounted");
