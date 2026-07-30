@@ -32,6 +32,168 @@
 
 #include "core/debugger/engine_debugger.h"
 
+// Appends every float reachable from `p_value`, in a fixed order, so two constants that are equal
+// as Variants can still be told apart by the bits of their floats. Types that cannot hold a float
+// contribute nothing and are left to the regular Variant comparison.
+static void _collect_constant_floats(const Variant &p_value, LocalVector<double> &r_floats, int p_recursion_count) {
+	if (unlikely(p_recursion_count > Variant::MAX_RECURSION_DEPTH)) {
+		return;
+	}
+	const int next_recursion_count = p_recursion_count + 1;
+
+	switch (p_value.get_type()) {
+		case Variant::FLOAT: {
+			r_floats.push_back(p_value.operator double());
+		} break;
+		case Variant::VECTOR2: {
+			const Vector2 value = p_value;
+			r_floats.push_back(value.x);
+			r_floats.push_back(value.y);
+		} break;
+		case Variant::VECTOR3: {
+			const Vector3 value = p_value;
+			r_floats.push_back(value.x);
+			r_floats.push_back(value.y);
+			r_floats.push_back(value.z);
+		} break;
+		case Variant::VECTOR4: {
+			const Vector4 value = p_value;
+			r_floats.push_back(value.x);
+			r_floats.push_back(value.y);
+			r_floats.push_back(value.z);
+			r_floats.push_back(value.w);
+		} break;
+		case Variant::RECT2: {
+			const Rect2 value = p_value;
+			_collect_constant_floats(value.position, r_floats, next_recursion_count);
+			_collect_constant_floats(value.size, r_floats, next_recursion_count);
+		} break;
+		case Variant::TRANSFORM2D: {
+			const Transform2D value = p_value;
+			for (int i = 0; i < 3; i++) {
+				_collect_constant_floats(value.columns[i], r_floats, next_recursion_count);
+			}
+		} break;
+		case Variant::PLANE: {
+			const Plane value = p_value;
+			_collect_constant_floats(value.normal, r_floats, next_recursion_count);
+			r_floats.push_back(value.d);
+		} break;
+		case Variant::QUATERNION: {
+			const Quaternion value = p_value;
+			r_floats.push_back(value.x);
+			r_floats.push_back(value.y);
+			r_floats.push_back(value.z);
+			r_floats.push_back(value.w);
+		} break;
+		case Variant::AABB: {
+			const AABB value = p_value;
+			_collect_constant_floats(value.position, r_floats, next_recursion_count);
+			_collect_constant_floats(value.size, r_floats, next_recursion_count);
+		} break;
+		case Variant::BASIS: {
+			const Basis value = p_value;
+			for (int i = 0; i < 3; i++) {
+				_collect_constant_floats(value.rows[i], r_floats, next_recursion_count);
+			}
+		} break;
+		case Variant::TRANSFORM3D: {
+			const Transform3D value = p_value;
+			_collect_constant_floats(value.basis, r_floats, next_recursion_count);
+			_collect_constant_floats(value.origin, r_floats, next_recursion_count);
+		} break;
+		case Variant::PROJECTION: {
+			const Projection value = p_value;
+			for (int i = 0; i < 4; i++) {
+				_collect_constant_floats(value.columns[i], r_floats, next_recursion_count);
+			}
+		} break;
+		case Variant::COLOR: {
+			const Color value = p_value;
+			r_floats.push_back(value.r);
+			r_floats.push_back(value.g);
+			r_floats.push_back(value.b);
+			r_floats.push_back(value.a);
+		} break;
+		case Variant::PACKED_FLOAT32_ARRAY: {
+			const PackedFloat32Array value = p_value;
+			for (const float element : value) {
+				r_floats.push_back(element);
+			}
+		} break;
+		case Variant::PACKED_FLOAT64_ARRAY: {
+			const PackedFloat64Array value = p_value;
+			for (const double element : value) {
+				r_floats.push_back(element);
+			}
+		} break;
+		case Variant::PACKED_VECTOR2_ARRAY: {
+			const PackedVector2Array value = p_value;
+			for (const Vector2 &element : value) {
+				_collect_constant_floats(element, r_floats, next_recursion_count);
+			}
+		} break;
+		case Variant::PACKED_VECTOR3_ARRAY: {
+			const PackedVector3Array value = p_value;
+			for (const Vector3 &element : value) {
+				_collect_constant_floats(element, r_floats, next_recursion_count);
+			}
+		} break;
+		case Variant::PACKED_VECTOR4_ARRAY: {
+			const PackedVector4Array value = p_value;
+			for (const Vector4 &element : value) {
+				_collect_constant_floats(element, r_floats, next_recursion_count);
+			}
+		} break;
+		case Variant::PACKED_COLOR_ARRAY: {
+			const PackedColorArray value = p_value;
+			for (const Color &element : value) {
+				_collect_constant_floats(element, r_floats, next_recursion_count);
+			}
+		} break;
+		case Variant::ARRAY: {
+			const Array value = p_value;
+			for (const Variant &element : value) {
+				_collect_constant_floats(element, r_floats, next_recursion_count);
+			}
+		} break;
+		case Variant::DICTIONARY: {
+			// Iterated in insertion order on both sides, which is how two dictionaries that compare
+			// equal line their entries up.
+			const Dictionary value = p_value;
+			for (const KeyValue<Variant, Variant> &element : value) {
+				_collect_constant_floats(element.key, r_floats, next_recursion_count);
+				_collect_constant_floats(element.value, r_floats, next_recursion_count);
+			}
+		} break;
+		default: {
+		} break;
+	}
+}
+
+bool FSConstantPoolComparator::compare(const Variant &p_lhs, const Variant &p_rhs) {
+	if (!p_lhs.hash_compare(p_rhs)) {
+		return false;
+	}
+
+	LocalVector<double> lhs_floats;
+	LocalVector<double> rhs_floats;
+	_collect_constant_floats(p_lhs, lhs_floats, 0);
+	_collect_constant_floats(p_rhs, rhs_floats, 0);
+	if (lhs_floats.size() != rhs_floats.size()) {
+		return false;
+	}
+
+	for (uint32_t i = 0; i < lhs_floats.size(); i++) {
+		// Compared as bits rather than as values: `0.0 == -0.0` is true, but the two are distinct
+		// constants, and a script that spells both must get both.
+		if (memcmp(&lhs_floats[i], &rhs_floats[i], sizeof(double)) != 0) {
+			return false;
+		}
+	}
+	return true;
+}
+
 Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_type) const {
 	Dictionary descriptor;
 	descriptor["builtin_type"] = p_type.builtin_type;

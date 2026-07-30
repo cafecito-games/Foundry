@@ -37,6 +37,14 @@
 
 #include "core/templates/rb_map.h"
 
+// Keys the constant pool by the exact bits of every float a constant contains, on top of the
+// regular Variant equality. Variant hashing considers `0.0` and `-0.0` the same key, so pooling
+// by value alone would collapse the two literals into a single entry and hand every later
+// occurrence the sign of whichever spelling was compiled first.
+struct FSConstantPoolComparator {
+	static bool compare(const Variant &p_lhs, const Variant &p_rhs);
+};
+
 class FSByteCodeGenerator : public FSCodeGenerator {
 	struct StackSlot {
 		Variant::Type type = Variant::NIL;
@@ -104,7 +112,7 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 	List<int> temp_stack;
 #endif
 
-	HashMap<Variant, int> constant_map;
+	HashMap<Variant, int, HashMapHasherDefault, FSConstantPoolComparator> constant_map;
 	RBMap<StringName, int> name_map;
 #ifdef TOOLS_ENABLED
 	Vector<StringName> named_globals;
