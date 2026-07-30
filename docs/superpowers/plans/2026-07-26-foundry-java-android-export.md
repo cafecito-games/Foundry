@@ -419,7 +419,7 @@ git commit -m "Keep Android source templates binding-free"
 The test helper resolves `FOUNDRY_JAVA_REPO`, defaulting to the sibling
 `/Users/christian/CafecitoGames/Foundry-Java`, and requires
 `git rev-parse HEAD` to equal
-`0db6970116de257fffffffe2a55e89543d4a12b5`. With Java 17, run:
+`499cf13bdf7cebce4639b898f2ad3520d81571f2`. With Java 17, run:
 
 ```sh
 ./gradlew --no-daemon \

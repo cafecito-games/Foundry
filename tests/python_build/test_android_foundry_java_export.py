@@ -63,7 +63,7 @@ ANDROID_EXPORT_PLAN = REPO_ROOT / "docs/superpowers/plans/2026-07-26-foundry-jav
 PRE_COMMIT_CONFIG = REPO_ROOT / ".pre-commit-config.yaml"
 ANDROID_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/android_builds.yml"
 MACOS_BUILDS_WORKFLOW = REPO_ROOT / ".github/workflows/macos_builds.yml"
-EXACT_FOUNDRY_JAVA_COMMIT = "0db6970116de257fffffffe2a55e89543d4a12b5"
+EXACT_FOUNDRY_JAVA_COMMIT = "499cf13bdf7cebce4639b898f2ad3520d81571f2"
 FOUNDRY_JAVA_GROUP = "games.cafecito.foundry"
 FOUNDRY_JAVA_VERSION = "0.1.0-SNAPSHOT"
 

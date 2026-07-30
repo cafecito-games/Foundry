@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: cafecito-games/Foundry-Java
-          ref: 0db6970116de257fffffffe2a55e89543d4a12b5
+          ref: 499cf13bdf7cebce4639b898f2ad3520d81571f2
           path: foundry-java-dependency
           persist-credentials: false
 
@@ -409,7 +409,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: cafecito-games/Foundry-Java
-          ref: 0db6970116de257fffffffe2a55e89543d4a12b5
+          ref: 499cf13bdf7cebce4639b898f2ad3520d81571f2
           path: foundry-java-dependency
           persist-credentials: false
 
