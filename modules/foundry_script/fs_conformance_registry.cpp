@@ -385,17 +385,17 @@ String FSConformanceRegistry::get_witness_source(const String &p_target_key, con
 	return String();
 }
 
-bool FSConformanceRegistry::find_witness_location(const String &p_target_key, const StringName &p_method,
+bool FSConformanceRegistry::find_witness_location(const String &p_target_fqcn, const StringName &p_method,
 		String &r_source_file, int &r_conformance_index) const {
 	r_source_file = String();
 	r_conformance_index = -1;
-	if (p_target_key.is_empty() || p_method == StringName()) {
+	if (p_target_fqcn.is_empty() || p_method == StringName()) {
 		return false;
 	}
 	MutexLock lock(mutex);
 	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
 		for (const Conformance &conformance : file_entry.value) {
-			if (conformance.conformance_index < 0 || !conformance.target_keys.has(p_target_key) ||
+			if (conformance.conformance_index < 0 || conformance.target_fqcn != p_target_fqcn ||
 					!conformance.witnesses.has(p_method)) {
 				continue;
 			}

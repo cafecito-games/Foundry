@@ -1466,9 +1466,9 @@ Variant FoundryScript::callp(const StringName &p_method, const Variant **p_args,
 	// and dispatch the compiled witness with no instance. Instance witnesses are reached through
 	// `FSInstance::callp` instead and are skipped here.
 	//
-	// The registry also aliases a target by its script path, but that alias is deliberately not
-	// consulted: every class in a file, inner classes included, shares it, so keying on it would let one
-	// class answer with a sibling's witness. A root class's FQCN already is its path.
+	// Neither alias identifies a class on its own — every class in a file, inner classes included,
+	// registers the file's path, and a root class without `class_name` has that same path as its FQCN —
+	// so a match is only accepted once the witness proves it was compiled against this very class.
 	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
 	for (const FoundryScript *cursor = this; cursor != nullptr; cursor = cursor->base.ptr()) {
 		FSFunction *witness = registry->find_witness_function(cursor->get_fully_qualified_name(), p_method);
@@ -1478,7 +1478,7 @@ Variant FoundryScript::callp(const StringName &p_method, const Variant **p_args,
 				witness = registry->find_witness_function(String(cursor_global_name), p_method);
 			}
 		}
-		if (witness != nullptr && witness->is_static()) {
+		if (witness != nullptr && witness->is_static() && witness->get_script() == cursor) {
 			return witness->call(nullptr, p_args, p_argcount, r_error);
 		}
 	}

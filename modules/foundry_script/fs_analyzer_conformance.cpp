@@ -215,10 +215,10 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 	// The registry's own witness nodes are borrowed from the declaring file's parse tree, which a
 	// registration can outlive, so they are never dereferenced here. The registry only reports *where*
 	// the conformance was declared; the node is then re-found in a parse tree this analysis holds live.
-	auto static_witness_for_key = [&](const String &p_target_key) -> FSParser::FunctionNode * {
+	auto static_witness_for_target = [&](const String &p_target_fqcn) -> FSParser::FunctionNode * {
 		String declaring_file;
 		int conformance_index = -1;
-		if (!registry->find_witness_location(p_target_key, p_method, declaring_file, conformance_index)) {
+		if (!registry->find_witness_location(p_target_fqcn, p_method, declaring_file, conformance_index)) {
 			return nullptr;
 		}
 
@@ -248,29 +248,24 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 		return nullptr;
 	};
 
-	// Alias keys mirror the ones the conformance registration records, and the base chain is walked so a
-	// witness declared on a base class is reachable through a derived type, matching how the runtime
-	// resolves a static witness in `FoundryScript::callp`.
+	// Lookups go strictly by a target's fully-qualified class name. A conformance is also registered
+	// under looser aliases (global class name, script path) that the runtime uses, but those do not
+	// identify a class on their own: every class declared in a file, inner classes included, shares the
+	// file's path, and a root class without `class_name` has that same path as its FQCN. Matching an
+	// alias would let one class answer a call with an unrelated sibling's witness.
 	//
-	// Resolution goes by class identity, because a script path is NOT a unique target identity: every
-	// class declared in a file, inner classes included, registers that same path. Keying on it for a
-	// target that has a ClassNode would make a sibling class's witnesses callable on unrelated classes
-	// in the same file. The path is consulted only for a target that reached here as a bare script
-	// reference with no ClassNode at all, where it is the only identity available.
+	// The base chain is walked so a witness declared on a base class stays reachable through a derived
+	// type, matching how the runtime resolves a static witness in `FoundryScript::callp`.
 	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
-		FSParser::FunctionNode *witness = static_witness_for_key(cursor->fqcn);
-		if (witness == nullptr) {
-			const StringName global_name = cursor->get_global_name();
-			if (global_name != StringName()) {
-				witness = static_witness_for_key(String(global_name));
-			}
-		}
+		FSParser::FunctionNode *witness = static_witness_for_target(cursor->fqcn);
 		if (witness != nullptr) {
 			return witness;
 		}
 	}
+	// A target that arrives as a bare script reference has no ClassNode to read an FQCN from, but a root
+	// class's FQCN *is* its script path, so the path identifies it exactly.
 	if (p_target_type.class_type == nullptr && !p_target_type.script_path.is_empty()) {
-		return static_witness_for_key(p_target_type.script_path);
+		return static_witness_for_target(p_target_type.script_path);
 	}
 	return nullptr;
 }
@@ -532,6 +527,7 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 
 			FSConformanceRegistry::Conformance entry;
 			entry.target_keys = target_keys;
+			entry.target_fqcn = target->fqcn;
 			entry.trait_name = trait_identity;
 			entry.source_file = source_file;
 			entry.conformance_index = conformance_index;

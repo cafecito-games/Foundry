@@ -63,6 +63,11 @@ public:
 	struct Conformance {
 		// Alias keys the target can be looked up by (FQCN, global class name, script path).
 		Vector<String> target_keys;
+		// The target's fully-qualified class name: the one alias in `target_keys` that identifies the
+		// target exactly. The others are shared — every class in a file registers the file's path, and a
+		// root class without `class_name` has that path as its FQCN — so a lookup that must not cross
+		// class boundaries matches on this instead.
+		String target_fqcn;
 		StringName trait_name;
 		String source_file;
 		// Position of the declaring `ConformanceNode` in the source file's root-class conformance list.
@@ -167,11 +172,13 @@ public:
 	// none exists. Used for diagnosing cross-file witness method-name collisions.
 	String get_witness_source(const String &p_target_key, const StringName &p_method, StringName &r_trait_name) const;
 
-	// Locates the conformance that supplies a witness for `p_method` on a target alias `p_target_key`,
-	// reporting the declaring file and the conformance's position in that file's root-class conformance
-	// list. Returns identifiers only — never the borrowed witness node, which does not outlive the
-	// declaring file's parse tree — so a caller that needs the node can re-find it in a live parse tree.
-	bool find_witness_location(const String &p_target_key, const StringName &p_method,
+	// Locates the conformance that supplies a witness for `p_method` on the target whose fully-qualified
+	// class name is `p_target_fqcn`, reporting the declaring file and the conformance's position in that
+	// file's root-class conformance list. Matching is on the exact FQCN, not the looser aliases, so a
+	// witness can never be found through a class it was not declared for. Returns identifiers only —
+	// never the borrowed witness node, which does not outlive the declaring file's parse tree — so a
+	// caller that needs the node can re-find it in a live parse tree.
+	bool find_witness_location(const String &p_target_fqcn, const StringName &p_method,
 			String &r_source_file, int &r_conformance_index) const;
 
 	// Replaces every compiled runtime witness previously registered by `p_source_file`. The
