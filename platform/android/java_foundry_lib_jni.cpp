@@ -137,7 +137,7 @@ JNIEXPORT void JNICALL Java_games_cafecito_foundry_FoundryLib_setVirtualKeyboard
 	}
 }
 
-JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_foundry_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler, jboolean p_use_apk_expansion) {
+JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNIEnv *env, jclass clazz, jobject p_foundry_instance, jobject p_asset_manager, jobject p_foundry_io, jobject p_net_utils, jobject p_directory_access_handler, jobject p_file_access_handler) {
 	foundry_init_profiler();
 
 	JavaVM *jvm;
@@ -155,7 +155,7 @@ JNIEXPORT jboolean JNICALL Java_games_cafecito_foundry_FoundryLib_initialize(JNI
 	FileAccessFilesystemJAndroid::setup(p_file_access_handler);
 	NetSocketAndroid::setup(p_net_utils);
 
-	os_android = new OS_Android(foundry_java, foundry_io_java, p_use_apk_expansion);
+	os_android = new OS_Android(foundry_java, foundry_io_java);
 
 	return true;
 }

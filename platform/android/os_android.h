@@ -45,8 +45,6 @@ class OS_Android : public OS_Unix {
 private:
 	Size2i display_size;
 
-	bool use_apk_expansion;
-
 #if defined(GLES3_ENABLED)
 	const char *gl_extensions;
 #endif
@@ -171,7 +169,7 @@ public:
 	virtual void load_platform_foundry_extensions() const override;
 
 	virtual bool _check_internal_feature_support(const String &p_feature) override;
-	OS_Android(FoundryJavaWrapper *p_foundry_java, FoundryIOJavaWrapper *p_foundry_io_java, bool p_use_apk_expansion);
+	OS_Android(FoundryJavaWrapper *p_foundry_java, FoundryIOJavaWrapper *p_foundry_io_java);
 	~OS_Android();
 
 private:

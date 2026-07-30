@@ -43,8 +43,6 @@ required_paths = [
   "platform/android/java/app/src/instrumented/java/games/cafecito/foundry/game/test/FoundryAppInstrumentedTestBridge.java",
   "platform/android/java/lib/build.gradle",
   "platform/android/java/lib/src/main/AndroidManifest.xml",
-  "platform/android/java/lib/src/main/aidl/com/android/vending/licensing/ILicenseResultListener.aidl",
-  "platform/android/java/lib/src/main/aidl/com/android/vending/licensing/ILicensingService.aidl",
   "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
   "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryHost.java",
   "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryLib.java",
@@ -337,7 +335,7 @@ forbidden = ["Android editor"]
 
 [[rule]]
 name = "android-library-build-declares-the-template-surface"
-reason = "The host library's plugin set, SDK levels, AIDL support, template flavor, lint gate, and version fields are what the assembled AAR and its manifest metadata are derived from; dropping one produces an AAR that builds and then misreports or misbehaves at runtime."
+reason = "The host library's plugin set, SDK levels, template flavor, lint gate, and version fields are what the assembled AAR and its manifest metadata are derived from; dropping one produces an AAR that builds and then misreports or misbehaves at runtime."
 paths = ["platform/android/java/lib/build.gradle"]
 required = [
   "id 'com.android.library'",
@@ -346,7 +344,6 @@ required = [
   "compileSdkVersion versions.compileSdk",
   "targetSdkVersion versions.targetSdk",
   "testInstrumentationRunner",
-  "aidl = true",
   "template {}",
   "abortOnError true",
   "FOUNDRY_BINDINGS_VERSION",
@@ -371,23 +368,49 @@ forbidden = ['implementation project(":godot:lib")', "foundryRuntimeAarRoot"]
 
 [[rule]]
 name = "android-library-manifest-declares-runtime-metadata"
-reason = "The host library manifest carries the version and JNI contract metadata the device acceptance harness reads back to prove which runtime an APK actually contains, plus the expansion downloader receiver."
+reason = "The host library manifest carries the version and JNI contract metadata the device acceptance harness reads back to prove which runtime an APK actually contains."
 paths = ["platform/android/java/lib/src/main/AndroidManifest.xml"]
 required = [
   "games.cafecito.foundry.library.version",
   "games.cafecito.foundry.engine.version",
   "games.cafecito.foundry.engine.revision",
   "games.cafecito.foundry.jni.contract",
-  ".FoundryDownloaderAlarmReceiver",
 ]
 
 [[rule]]
-name = "android-downloader-uses-immutable-pending-intents"
-reason = "Android 12 and later reject a PendingIntent that declares neither mutability flag, so the expansion downloader would crash on construction."
+name = "android-has-no-apk-expansion-surface"
+reason = "Play APK expansion could never run on a shipped template: the expansion pack lives outside ACCESS_RESOURCES, so main.cpp aborts startup on any binary built without path overrides, and the only store-accepted format already rejected it. Reintroducing the option would resurrect an unrunnable configuration and the res:// redirection that made the Foundry-Java binding unreachable."
 paths = [
-  "platform/android/java/lib/src/main/java/com/google/android/vending/expansion/downloader/impl/DownloaderService.java",
+  "platform/android/export/export_plugin.cpp",
+  "platform/android/export/export_plugin.h",
+  "platform/android/os_android.cpp",
+  "platform/android/os_android.h",
+  "platform/android/java_foundry_lib_jni.cpp",
+  "platform/android/java_foundry_lib_jni.h",
+  "platform/android/java/lib/src/main/AndroidManifest.xml",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/Foundry.kt",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryFragment.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryLib.java",
 ]
-required = ["PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE"]
+forbidden = [
+  "apk_expansion",
+  "ApkExpansion",
+  "com.google.android.vending",
+  "FoundryDownloader",
+]
+
+[[rule]]
+name = "android-expansion-downloader-sources-are-gone"
+reason = "The vendored Play downloader and licensing trees, their AIDL interfaces, and their resources only ever served APK expansion; with expansion removed they are dead weight shipped inside every exported application."
+forbidden_paths = [
+  "platform/android/java/lib/src/main/java/com/google/android/vending",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryDownloaderService.java",
+  "platform/android/java/lib/src/main/java/games/cafecito/foundry/FoundryDownloaderAlarmReceiver.java",
+  "platform/android/java/lib/src/main/res/layout/downloading_expansion.xml",
+  "platform/android/java/lib/src/main/aidl",
+  "platform/android/java/lib/patches/com.google.android.vending.expansion.downloader.patch",
+  "platform/android/java/lib/patches/com.google.android.vending.licensing.patch",
+]
 
 [[rule]]
 name = "android-service-guards-the-host-input-transfer-token"

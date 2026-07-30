@@ -4252,11 +4252,6 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         self.assertIn("get_command_line_flags(p_preset, final_artifact_path, p_flags", export_helper)
         self.assertIn("String export_filename = final_artifact_path.get_file();", export_helper)
         self.assertIn("String export_path = final_artifact_path.get_base_dir();", export_helper)
-        self.assertEqual(
-            2,
-            export_helper.count("save_apk_expansion_file(p_preset, p_debug, final_artifact_path)"),
-        )
-        self.assertNotIn("save_apk_expansion_file(p_preset, p_debug, p_path)", export_helper)
         self.assertIn("zipOpen2(final_artifact_path.utf8().get_data()", export_helper)
         self.assertIn("sign_apk(p_preset, p_debug, final_artifact_path, ep)", export_helper)
         self.assertGreater(base_dir, final_artifact_path)

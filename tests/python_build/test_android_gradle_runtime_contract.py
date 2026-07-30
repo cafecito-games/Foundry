@@ -20,7 +20,6 @@ APP_CONFIG = JAVA_ROOT / "app/config.gradle"
 LIB_BUILD = JAVA_ROOT / "lib/build.gradle"
 LIB_MANIFEST = JAVA_ROOT / "lib/src/main/AndroidManifest.xml"
 LIB_JAVA = JAVA_ROOT / "lib/src/main/java"
-LIB_AIDL = JAVA_ROOT / "lib/src/main/aidl"
 LIB_RESOURCES = JAVA_ROOT / "lib/src/main/res"
 LIB_TESTS = JAVA_ROOT / "lib/src/test"
 LIB_ANDROID_TESTS = JAVA_ROOT / "lib/src/androidTest"
@@ -426,7 +425,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "minSdkVersion versions.minSdk",
             "targetSdkVersion versions.targetSdk",
             "testInstrumentationRunner",
-            "aidl = true",
             "buildConfig = true",
             "template {}",
             "abortOnError true",
@@ -458,8 +456,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             LIB_JAVA / "games/cafecito/foundry/Foundry.kt",
             LIB_JAVA / "games/cafecito/foundry/FoundryLib.java",
             LIB_JAVA / "games/cafecito/foundry/service/FoundryService.kt",
-            LIB_AIDL / "com/android/vending/licensing/ILicenseResultListener.aidl",
-            LIB_AIDL / "com/android/vending/licensing/ILicensingService.aidl",
             LIB_RESOURCES / "layout/foundry_app_layout.xml",
             LIB_RESOURCES / "values/strings.xml",
             LIB_RESOURCES / "xml/foundry_provider_paths.xml",
@@ -478,14 +474,11 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
             "games.cafecito.foundry.engine.version",
             "games.cafecito.foundry.engine.revision",
             "games.cafecito.foundry.jni.contract",
-            ".FoundryDownloaderAlarmReceiver",
         ):
             self.assertIn(metadata, manifest)
 
-        downloader = read(LIB_JAVA / "com/google/android/vending/expansion/downloader/impl/DownloaderService.java")
         service = read(LIB_JAVA / "games/cafecito/foundry/service/FoundryService.kt")
         compat = read(LIB_JAVA / "games/cafecito/foundry/utils/AndroidRuntimeCompat.kt")
-        self.assertIn("PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE", downloader)
         self.assertIn("Build.VERSION_CODES.BAKLAVA", service)
         self.assertIn("hostInputTransferToken != null", service)
         self.assertIn("@RequiresApi(Build.VERSION_CODES.R)", compat)
@@ -593,22 +586,12 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
     def test_third_party_provenance_describes_the_in_tree_sources_precisely(self) -> None:
         third_party = read(THIRDPARTY)
 
-        for fragment in (
-            "lib/src/main/java/com/google/android/vending/expansion/downloader",
-            "lib/src/main/aidl/com/android/vending/licensing",
-            "lib/src/main/java/com/google/android/vending/licensing",
-            "Handler ownership leaks",
-            "Foundry resource package",
-            "locale-stable",
-            "PendingIntent",
-            "immutable",
-            "asynchronous preference behavior",
-            "debug-only runtime check",
-        ):
+        for fragment in ("com.android.apksig",):
             self.assertIn(fragment, third_party)
         for stale in (
             "lib/src/com/google",
             "lib/aidl/com/android",
+            "com.google.android.vending",
             "yet unclear",
         ):
             self.assertNotIn(stale, third_party)

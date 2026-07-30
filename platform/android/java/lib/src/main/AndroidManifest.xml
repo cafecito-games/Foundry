@@ -22,12 +22,6 @@
             android:name="games.cafecito.foundry.jni.contract"
             android:value="${foundryJniContractVersion}" />
 
-        <service android:name=".FoundryDownloaderService" />
-
-        <receiver
-            android:name=".FoundryDownloaderAlarmReceiver"
-            android:exported="false" />
-
         <activity
             android:name=".utils.ProcessPhoenix"
             android:theme="@android:style/Theme.Translucent.NoTitleBar"

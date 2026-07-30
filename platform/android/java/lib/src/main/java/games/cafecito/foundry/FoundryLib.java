@@ -61,8 +61,7 @@ public class FoundryLib {
 			FoundryIO foundryIO,
 			FoundryNetUtils netUtils,
 			DirectoryAccessHandler directoryAccessHandler,
-			FileAccessHandler fileAccessHandler,
-			boolean use_apk_expansion);
+			FileAccessHandler fileAccessHandler);
 
 	/**
 	 * Invoked on the main thread to clean up Foundry native layer.

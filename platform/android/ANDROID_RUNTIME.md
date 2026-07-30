@@ -180,6 +180,14 @@ propagates rather than being reported as an application that ships no binding.
 There is no manifest scanning, no class scanning, no asset enumeration, and no
 reflection.
 
+That single fixed path is sound because `res://` on Android always resolves
+through the APK `AssetManager`, in every build configuration. Nothing redirects
+it at a filesystem location, so the path the seam reports and the file it opens
+are always the same file. Delivering assets larger than the store limit is a
+packaging concern, handled with Play Asset Delivery on an Android App Bundle or
+by downloading a pack into `user://` at runtime and mounting it with
+`ProjectSettings.load_resource_pack()`.
+
 Startup order:
 
 ```text

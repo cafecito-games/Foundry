@@ -89,20 +89,10 @@ void OS_Android::initialize_core() {
 	OS_Unix::initialize_core();
 
 	FileAccess::make_default<FileAccessAndroid>(FileAccess::ACCESS_RESOURCES);
-#if defined(OVERRIDE_PATH_ENABLED)
-	if (use_apk_expansion) {
-		FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_RESOURCES);
-	}
-#endif // defined(OVERRIDE_PATH_ENABLED)
 	FileAccess::make_default<FileAccessUnix>(FileAccess::ACCESS_USERDATA);
 	FileAccess::make_default<FileAccessFilesystemJAndroid>(FileAccess::ACCESS_FILESYSTEM);
 
 	DirAccess::make_default<DirAccessJAndroid>(DirAccess::ACCESS_RESOURCES);
-#if defined(OVERRIDE_PATH_ENABLED)
-	if (use_apk_expansion) {
-		DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_RESOURCES);
-	}
-#endif // defined(OVERRIDE_PATH_ENABLED)
 	DirAccess::make_default<DirAccessUnix>(DirAccess::ACCESS_USERDATA);
 	DirAccess::make_default<DirAccessJAndroid>(DirAccess::ACCESS_FILESYSTEM);
 
@@ -806,11 +796,9 @@ bool OS_Android::_check_internal_feature_support(const String &p_feature) {
 	return false;
 }
 
-OS_Android::OS_Android(FoundryJavaWrapper *p_foundry_java, FoundryIOJavaWrapper *p_foundry_io_java, bool p_use_apk_expansion) {
+OS_Android::OS_Android(FoundryJavaWrapper *p_foundry_java, FoundryIOJavaWrapper *p_foundry_io_java) {
 	display_size.width = DEFAULT_WINDOW_WIDTH;
 	display_size.height = DEFAULT_WINDOW_HEIGHT;
-
-	use_apk_expansion = p_use_apk_expansion;
 
 	main_loop = nullptr;
 
