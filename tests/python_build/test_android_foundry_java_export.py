@@ -3546,6 +3546,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         local_artifacts: tuple[Path, ...] = (),
         use_gradle: bool,
         extra_options: tuple[str, ...] = (),
+        custom_features: str = "",
     ) -> None:
         options = [
             f"gradle_build/use_gradle_build={'true' if use_gradle else 'false'}",
@@ -3566,6 +3567,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 name="Android"
                 platform="Android"
                 runnable=false
+                custom_features="{custom_features}"
                 export_filter="all_resources"
                 include_filter=""
                 exclude_filter=""
@@ -4250,6 +4252,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
         export_format: int = 0,
         requested_abis: tuple[str, ...] = ("arm64-v8a",),
         declared_descriptor_size: int | None = None,
+        custom_features: str = "",
     ) -> tuple[subprocess.CompletedProcess[str], Path]:
         """Export a project whose final artifact packages exactly `descriptor`."""
         root = "base/" if export_format == 1 else ""
@@ -4309,6 +4312,7 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                     for abi in ("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
                 ),
             ),
+            custom_features=custom_features,
         )
         output_name = f"{name}.{'aab' if export_format == 1 else 'apk'}"
         artifact = project / output_name
@@ -4468,6 +4472,22 @@ class FoundryJavaExporterContractTests(unittest.TestCase):
                 output = result.stdout + result.stderr
                 self.assertEqual(0, result.returncode, output)
                 self.assertTrue(artifact.is_file())
+
+    def test_export_accepts_library_keys_gated_on_preset_custom_features(self) -> None:
+        # Custom features are serialized into the exported project settings, so the
+        # device reports them and a key built from one resolves there.
+        descriptor = LOADABLE_FOUNDRY_JAVA_DESCRIPTOR.replace(
+            'android.arm64 = "libfoundry_java.so"',
+            'android.arm64.premium_binding = "libfoundry_java.so"',
+        )
+        result, artifact = self._export_packaged_descriptor(
+            "preset-custom-feature",
+            descriptor.encode("utf-8"),
+            custom_features="premium_binding",
+        )
+        output = result.stdout + result.stderr
+        self.assertEqual(0, result.returncode, output)
+        self.assertTrue(artifact.is_file())
 
     def test_export_accepts_library_keys_using_reported_device_features(self) -> None:
         # Every Android runtime reports `mobile` and the ABI aliases, so keys built

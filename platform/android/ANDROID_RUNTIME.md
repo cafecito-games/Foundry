@@ -120,8 +120,9 @@ configuration file and declares:
   the exporting engine, and
 - a `[libraries]` entry that resolves for every requested ABI from the tags an
   exported application reports -- the canonical `android.<arch>` key, plus the
-  always-on Android features, the ABI's architecture aliases and width, and the
-  build type -- and no `[libraries]` key that names no library at all. A key that
+  always-on Android features, the ABI's architecture aliases and width, the build
+  type, and the preset's custom features -- and no `[libraries]` key that names no
+  library at all. A key that
   resolves only under a tag the export cannot observe, such as the template's
   precision, fails closed. An empty key is rejected wherever it appears, because a
   device reports more feature tags than an export can enumerate, so any key can

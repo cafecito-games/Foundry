@@ -3394,8 +3394,13 @@ static bool _foundry_java_read_current_archive_entry_payload(unzFile p_archive, 
 // not the export, decides them. A descriptor that resolves only under an
 // unmodeled tag therefore fails the export instead of shipping a binding that may
 // be dead on device.
-static bool _foundry_java_android_export_reports_feature(const String &p_tag, const String &p_abi, const String &p_arch, bool p_debug) {
+static bool _foundry_java_android_export_reports_feature(const String &p_tag, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
 	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts") {
+		return true;
+	}
+	// Preset custom features are serialized into the exported project settings, so
+	// the device reports them too.
+	if (p_custom_features.has(p_tag)) {
 		return true;
 	}
 	if (p_tag == p_abi || p_tag == p_arch) {
@@ -3427,7 +3432,7 @@ static bool _foundry_java_android_export_reports_feature(const String &p_tag, co
 // `[libraries]` matching for a device running the requested ABI. Autodetection is
 // deliberately not honored: an export cannot observe the on-device directory the
 // loader would scan.
-static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_abi, const String &p_arch, bool p_debug) {
+static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_descriptor, const String &p_abi, const String &p_arch, bool p_debug, const HashSet<String> &p_custom_features) {
 	if (!p_descriptor->has_section("libraries")) {
 		return false;
 	}
@@ -3444,7 +3449,7 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 		}
 		bool all_tags_met = true;
 		for (const String &raw_tag : tags) {
-			if (!_foundry_java_android_export_reports_feature(raw_tag.strip_edges(), p_abi, p_arch, p_debug)) {
+			if (!_foundry_java_android_export_reports_feature(raw_tag.strip_edges(), p_abi, p_arch, p_debug, p_custom_features)) {
 				all_tags_met = false;
 				break;
 			}
@@ -3501,6 +3506,7 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 		const String &p_entry,
 		const Vector<ABI> &p_enabled_abis,
 		bool p_debug,
+		const HashSet<String> &p_custom_features,
 		String &r_error) {
 	const String diagnostic_entry = _foundry_java_safe_diagnostic_value(p_entry);
 
@@ -3578,7 +3584,7 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 	}
 
 	for (const ABI &abi : p_enabled_abis) {
-		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.abi, abi.arch, p_debug)) {
+		if (!_foundry_java_descriptor_resolves_library(descriptor, abi.abi, abi.arch, p_debug, p_custom_features)) {
 			r_error = vformat(
 					TTR("entry '%s' resolves no \"[libraries]\" entry for requested ABI '%s' (feature tag 'android.%s')."),
 					diagnostic_entry,
@@ -3591,7 +3597,7 @@ Error EditorExportPlatformAndroid::_validate_foundry_java_extension_descriptor(
 	return OK;
 }
 
-Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, bool p_debug, String &r_error) const {
+Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &p_path, const Vector<ABI> &p_enabled_abis, int p_export_format, bool p_debug, const HashSet<String> &p_custom_features, String &r_error) const {
 	const String artifact_kind = p_export_format == EXPORT_FORMAT_AAB ? "AAB" : "APK";
 	const String root = p_export_format == EXPORT_FORMAT_AAB ? "base/" : "";
 	const String configuration = root + "assets/FoundryJava.foundryextension";
@@ -3753,6 +3759,7 @@ Error EditorExportPlatformAndroid::_inspect_foundry_java_artifact(const String &
 					entry,
 					p_enabled_abis,
 					p_debug,
+					p_custom_features,
 					descriptor_error);
 			if (descriptor_result != OK) {
 				r_error = vformat(TTR("Final Foundry-Java %s %s"), artifact_kind, descriptor_error);
@@ -6035,7 +6042,20 @@ Error EditorExportPlatformAndroid::export_project_helper(const Ref<EditorExportP
 
 		if (foundry_java.enabled) {
 			String final_artifact_error;
-			err = _inspect_foundry_java_artifact(final_artifact_path, enabled_abis, export_format, p_debug, final_artifact_error);
+			HashSet<String> preset_custom_features;
+			for (const String &raw_feature : p_preset->get_custom_features().split(",")) {
+				const String feature = raw_feature.strip_edges();
+				if (!feature.is_empty()) {
+					preset_custom_features.insert(feature);
+				}
+			}
+			err = _inspect_foundry_java_artifact(
+					final_artifact_path,
+					enabled_abis,
+					export_format,
+					p_debug,
+					preset_custom_features,
+					final_artifact_error);
 			if (err != OK) {
 				add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), final_artifact_error);
 				const Error remove_error = DirAccess::remove_absolute(final_artifact_path);
