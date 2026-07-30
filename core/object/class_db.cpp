@@ -2,7 +2,7 @@
 /*  class_db.cpp                                                          */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -259,6 +259,27 @@ void ClassDB::get_class_list(LocalVector<StringName> &p_classes) {
 
 	SortArray<StringName, StringName::AlphCompare> sorter;
 	sorter.sort(&p_classes[p_classes.size() - classes.size()], classes.size());
+}
+
+// This function only sorts items added by this function.
+// If `p_classes` is not empty before calling and a global sort is needed, caller must handle that separately.
+void ClassDB::get_exposed_class_list(LocalVector<StringName> &p_classes) {
+	Locker::Lock lock(Locker::STATE_READ);
+
+	const uint32_t original_size = p_classes.size();
+	for (const KeyValue<StringName, ClassInfo> &class_info : classes) {
+		if (class_info.value.exposed) {
+			p_classes.push_back(class_info.key);
+		}
+	}
+
+	// Nothing appended.
+	if (p_classes.size() == original_size) {
+		return;
+	}
+
+	SortArray<StringName, StringName::AlphCompare> sorter;
+	sorter.sort(&p_classes[original_size], p_classes.size() - original_size);
 }
 
 #ifdef TOOLS_ENABLED

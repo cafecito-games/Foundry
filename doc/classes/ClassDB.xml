@@ -201,7 +201,14 @@
 		<method name="get_class_list" qualifiers="const">
 			<return type="PackedStringArray" />
 			<description>
-				Returns the names of all engine classes available.
+				Returns the names of all registered engine classes, including internal classes that are not exposed to scripts. To retrieve only script-visible native classes, use [method get_exposed_class_list].
+				[b]Note:[/b] Script-defined classes with [code]class_name[/code] are not included in this list. Use [method ProjectSettings.get_global_class_list] to get a list of script-defined classes instead.
+			</description>
+		</method>
+		<method name="get_exposed_class_list" qualifiers="const">
+			<return type="PackedStringArray" />
+			<description>
+				Returns the lexically sorted names of all native engine classes exposed to scripts. This list matches the native class names Foundry Script treats as visible and reserved, and omits internal registrations.
 				[b]Note:[/b] Script-defined classes with [code]class_name[/code] are not included in this list. Use [method ProjectSettings.get_global_class_list] to get a list of script-defined classes instead.
 			</description>
 		</method>

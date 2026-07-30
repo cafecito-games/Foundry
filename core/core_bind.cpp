@@ -2,7 +2,7 @@
 /*  core_bind.cpp                                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -1569,6 +1569,22 @@ PackedStringArray ClassDB::get_class_list() const {
 	return ret;
 }
 
+PackedStringArray ClassDB::get_exposed_class_list() const {
+	LocalVector<StringName> classes;
+	::ClassDB::get_exposed_class_list(classes);
+
+	PackedStringArray ret;
+	ret.resize(classes.size());
+	String *ptrw = ret.ptrw();
+	int idx = 0;
+	for (const StringName &cls : classes) {
+		ptrw[idx] = cls;
+		idx++;
+	}
+
+	return ret;
+}
+
 PackedStringArray ClassDB::get_inheriters_from_class(const StringName &p_class) const {
 	LocalVector<StringName> classes;
 	::ClassDB::get_inheriters_from_class(p_class, classes);
@@ -1812,11 +1828,9 @@ void ClassDB::get_argument_options(const StringName &p_function, int p_idx, List
 	}
 	if (first_argument_is_class || pf == "is_parent_class") {
 		LocalVector<StringName> classes;
-		::ClassDB::get_class_list(classes);
+		::ClassDB::get_exposed_class_list(classes);
 		for (const StringName &E : classes) {
-			if (::ClassDB::is_class_exposed(E)) {
-				r_options->push_back(E.operator String().quote());
-			}
+			r_options->push_back(E.operator String().quote());
 		}
 	}
 
@@ -1826,6 +1840,7 @@ void ClassDB::get_argument_options(const StringName &p_function, int p_idx, List
 
 void ClassDB::_bind_methods() {
 	::ClassDB::bind_method(D_METHOD("get_class_list"), &ClassDB::get_class_list);
+	::ClassDB::bind_method(D_METHOD("get_exposed_class_list"), &ClassDB::get_exposed_class_list);
 	::ClassDB::bind_method(D_METHOD("get_inheriters_from_class", "class"), &ClassDB::get_inheriters_from_class);
 	::ClassDB::bind_method(D_METHOD("get_parent_class", "class"), &ClassDB::get_parent_class);
 	::ClassDB::bind_method(D_METHOD("class_exists", "class"), &ClassDB::class_exists);

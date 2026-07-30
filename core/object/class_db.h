@@ -2,7 +2,7 @@
 /*  class_db.h                                                            */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -334,6 +334,7 @@ public:
 	}
 
 	static void get_class_list(LocalVector<StringName> &p_classes);
+	static void get_exposed_class_list(LocalVector<StringName> &p_classes);
 #ifdef TOOLS_ENABLED
 	static void get_extensions_class_list(LocalVector<StringName> &p_classes);
 	static void get_extension_class_list(const Ref<FoundryExtension> &p_extension, List<StringName> *p_classes);

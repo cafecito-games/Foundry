@@ -2,7 +2,7 @@
 /*  test_foundry_cli_project_test.h                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
-/*                             GODOT ENGINE                               */
+/*                              GODOT ENGINE                              */
 /*                        https://godotengine.org                         */
 /**************************************************************************/
 /* Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md). */
@@ -266,6 +266,26 @@ TEST_CASE("[FoundryCLI][ScriptEval] Inline eval prints and exits zero") {
 	const String output = run_foundry_subprocess(arguments, exit_code);
 	INFO("Subprocess output:\n", output);
 	CHECK(output.contains("eval-ok"));
+	CHECK_EQ(exit_code, 0);
+}
+
+TEST_CASE("[FoundryCLI][ScriptEval] Exposed native classes are available projectless") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("script");
+	arguments.push_back("eval");
+	arguments.push_back(
+			"var classes := ClassDB.get_exposed_class_list(); "
+			"print(\"has-node=\", classes.has(\"Node\")); "
+			"print(\"has-fs-native-class=\", classes.has(\"FSNativeClass\")); "
+			"print(\"has-theme-context=\", classes.has(\"ThemeContext\"))");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK(output.contains("has-node=true"));
+	CHECK(output.contains("has-fs-native-class=false"));
+	CHECK(output.contains("has-theme-context=false"));
 	CHECK_EQ(exit_code, 0);
 }
 
