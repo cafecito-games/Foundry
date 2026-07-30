@@ -251,12 +251,12 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 	// Alias keys mirror the ones the conformance registration records, and the base chain is walked so a
 	// witness declared on a base class is reachable through a derived type, matching how the runtime
 	// resolves a static witness in `FoundryScript::callp`.
-	if (!p_target_type.script_path.is_empty()) {
-		FSParser::FunctionNode *witness = static_witness_for_key(p_target_type.script_path);
-		if (witness != nullptr) {
-			return witness;
-		}
-	}
+	//
+	// The class-identity aliases are tried first, across the whole chain, because a script path is NOT a
+	// unique target identity: every class declared in a file, inner classes included, registers that same
+	// path. Falling back to it before an FQCN would let a sibling class's witness win a lookup the
+	// runtime resolves by identity. The path is only a last resort, for a target that reached here as a
+	// bare script reference with no ClassNode.
 	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
 		FSParser::FunctionNode *witness = static_witness_for_key(cursor->fqcn);
 		if (witness == nullptr) {
@@ -265,12 +265,12 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 				witness = static_witness_for_key(String(global_name));
 			}
 		}
-		if (witness == nullptr && !cursor->base_type.script_path.is_empty()) {
-			witness = static_witness_for_key(cursor->base_type.script_path);
-		}
 		if (witness != nullptr) {
 			return witness;
 		}
+	}
+	if (!p_target_type.script_path.is_empty()) {
+		return static_witness_for_key(p_target_type.script_path);
 	}
 	return nullptr;
 }
