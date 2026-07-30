@@ -3388,9 +3388,12 @@ static bool _foundry_java_read_current_archive_entry_payload(unzFile p_archive, 
 // build type: the platform identifier, the always-on Android features from
 // OS_Android::_check_internal_feature_support(), every architecture alias
 // OS::has_feature() answers for that ABI, the pointer width, and the export
-// template's build-type tags. Precision counts as met either way because the
-// template binary, not the export, decides it. Tags outside this set may still be
-// true on a device, so they are only ever treated as unmet here, never as met.
+// template's build-type tags. Tags outside this set may still be true on a device,
+// so they are only ever treated as unmet here, never as met -- including the
+// precision tags, which the export cannot observe because the template binary,
+// not the export, decides them. A descriptor that resolves only under an
+// unmodeled tag therefore fails the export instead of shipping a binding that may
+// be dead on device.
 static bool _foundry_java_android_export_reports_feature(const String &p_tag, const String &p_abi, const String &p_arch, bool p_debug) {
 	if (p_tag == "android" || p_tag == "mobile" || p_tag == "system_fonts") {
 		return true;
@@ -3402,7 +3405,7 @@ static bool _foundry_java_android_export_reports_feature(const String &p_tag, co
 	if (p_tag == (is_64_bit ? "64" : "32")) {
 		return true;
 	}
-	if (p_tag == "template" || p_tag == "single" || p_tag == "double") {
+	if (p_tag == "template") {
 		return true;
 	}
 	if (p_debug ? (p_tag == "template_debug" || p_tag == "debug") : (p_tag == "template_release" || p_tag == "release")) {
@@ -3440,20 +3443,13 @@ static bool _foundry_java_descriptor_resolves_library(const Ref<ConfigFile> &p_d
 			continue;
 		}
 		bool all_tags_met = true;
-		bool requires_single = false;
-		bool requires_double = false;
 		for (const String &raw_tag : tags) {
-			const String tag = raw_tag.strip_edges();
-			if (!_foundry_java_android_export_reports_feature(tag, p_abi, p_arch, p_debug)) {
+			if (!_foundry_java_android_export_reports_feature(raw_tag.strip_edges(), p_abi, p_arch, p_debug)) {
 				all_tags_met = false;
 				break;
 			}
-			requires_single = requires_single || tag == "single";
-			requires_double = requires_double || tag == "double";
 		}
-		// Precision counts as met either way because the template decides it, so a
-		// key demanding both is unmatchable on every template rather than on none.
-		if (!all_tags_met || (requires_single && requires_double)) {
+		if (!all_tags_met) {
 			continue;
 		}
 		best_library = p_descriptor->get_value("libraries", key, String());
