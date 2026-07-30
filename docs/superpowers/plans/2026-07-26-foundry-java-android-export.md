@@ -580,26 +580,7 @@ git commit -m "Prove Foundry-Java ABI and release exports"
 - Modify: `.pre-commit-config.yaml`
 - Modify: `tests/python_build/test_android_foundry_java_export.py`
 
-- [ ] **Step 1: Add RED documentation/gate assertions**
-
-Require the runtime guide and class reference to document every option, the
-fixed marker, exact plugin ID, Maven/local examples, zero-descriptor behavior,
-ABI mapping, generated asset paths, and ordinary-export isolation. Require
-pre-commit to run the four bounded pure-Python contract classes when any
-exporter, app Gradle, source-template, fixture, doc, or test surface changes.
-
-- [ ] **Step 2: Run and verify RED**
-
-Run:
-
-```sh
-python3 -m unittest \
-  tests.python_build.test_android_foundry_java_export.FoundryJavaSourceTemplateResourceTests -v
-```
-
-Expected: missing documentation and pre-commit registration failures.
-
-- [ ] **Step 3: Write docs and hook registration**
+- [ ] **Step 1: Write docs and hook registration**
 
 Add a concise "Optional Foundry-Java extensions" section to
 `ANDROID_RUNTIME.md`, six export-option members to
@@ -626,7 +607,7 @@ Scope the hook to the exact files listed in this plan.
 Gradle-, integration-, and editor-binary-dependent contract classes remain in CI
 because they are not bounded pure-Python pre-commit checks.
 
-- [ ] **Step 4: Validate and commit**
+- [ ] **Step 2: Validate and commit**
 
 Run:
 
