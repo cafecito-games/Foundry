@@ -362,6 +362,64 @@ TEST_CASE("[Modules][FoundryScript][Lint] Analyzer errors become diagnostics") {
 	CHECK(diagnostic->message.contains("int"));
 }
 
+TEST_CASE("[Modules][FoundryScript][Lint] An enum_name file resolves its own name inside its body") {
+	const String source =
+			"enum_name ScratchUnion:\n"
+			"\tEnd\n"
+			"\tWrapped(value: int)\n"
+			"\n"
+			"\tfunc describe() -> String:\n"
+			"\t\tmatch self:\n"
+			"\t\t\tScratchUnion.Wrapped(var value):\n"
+			"\t\t\t\treturn str(value)\n"
+			"\t\t\tScratchUnion.End:\n"
+			"\t\t\t\treturn \"end\"\n"
+			"\t\treturn \"\"\n"
+			"\n"
+			"\tstatic func wrap(value: int) -> ScratchUnion:\n"
+			"\t\treturn ScratchUnion.Wrapped(value)\n"
+			"\n"
+			"\tstatic func wrap_twice(value: int) -> ScratchUnion:\n"
+			"\t\treturn ScratchUnion.wrap(value + value)\n";
+	TemporaryLintTree tree("fs_lint_enum_name_self_reference");
+	const String path = tree.root.path_join("scratch_union.fs");
+	tree.write_file("scratch_union.fs", source);
+
+	Vector<String> paths;
+	paths.push_back(path);
+	FSLintCLI::Options options;
+	const FSLintCLI::Result result = FSLintCLI::lint_paths(paths, options);
+
+	CHECK_FALSE(result.had_command_error);
+	for (int i = 0; i < result.diagnostics.size(); i++) {
+		CHECK_MESSAGE(result.diagnostics[i].severity != FSLintCLI::SEVERITY_ERROR, result.diagnostics[i].message);
+	}
+	CHECK(find_diagnostic(result, "analyzer-error") == nullptr);
+}
+
+TEST_CASE("[Modules][FoundryScript][Lint] A payload case in an enum_name body still needs the enum name") {
+	const String source =
+			"enum_name ScratchUnion:\n"
+			"\tEnd\n"
+			"\tWrapped(value: int)\n"
+			"\n"
+			"\tstatic func wrap(value: int) -> ScratchUnion:\n"
+			"\t\treturn Wrapped(value)\n";
+	TemporaryLintTree tree("fs_lint_enum_name_bare_payload_case");
+	const String path = tree.root.path_join("scratch_union.fs");
+	tree.write_file("scratch_union.fs", source);
+
+	Vector<String> paths;
+	paths.push_back(path);
+	FSLintCLI::Options options;
+	const FSLintCLI::Result result = FSLintCLI::lint_paths(paths, options);
+
+	CHECK_FALSE(result.had_command_error);
+	const FSLintCLI::Diagnostic *diagnostic = find_diagnostic(result, "analyzer-error", "Wrapped");
+	REQUIRE(diagnostic != nullptr);
+	check_diagnostic_basics(*diagnostic, path, FSLintCLI::SEVERITY_ERROR);
+}
+
 TEST_CASE("[Modules][FoundryScript][Lint] Project files report resource and relative SARIF paths") {
 	const String source = "func run() -> void\n\tpass\n";
 	TemporaryLintTree tree("fs_lint_project_paths");
