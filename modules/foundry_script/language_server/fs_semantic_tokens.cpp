@@ -91,6 +91,39 @@ bool is_reserved_word(FSTokenizer::Token::Type p_type) {
 	}
 }
 
+bool is_layout_token(FSTokenizer::Token::Type p_type) {
+	return p_type == FSTokenizer::Token::NEWLINE ||
+			p_type == FSTokenizer::Token::INDENT ||
+			p_type == FSTokenizer::Token::DEDENT;
+}
+
+// How far into a get-node path the scan currently is. `FSParser::parse_get_node` accepts
+// `("$" | "%") ["/"] segment? (("/" | "%") segment?)*`, so a node name is only a path segment
+// directly after a path opener or separator, and everything after a consumed segment is ordinary
+// code again unless another separator follows.
+enum NodePathState {
+	NODE_PATH_NONE,
+	NODE_PATH_EXPECTS_NAME,
+	NODE_PATH_AFTER_NAME,
+};
+
+NodePathState next_node_path_state(NodePathState p_state, const FSTokenizer::Token &p_token, bool p_previous_can_precede_bin_op) {
+	switch (p_token.type) {
+		case FSTokenizer::Token::DOLLAR:
+			return NODE_PATH_EXPECTS_NAME;
+		case FSTokenizer::Token::SLASH:
+			return p_state == NODE_PATH_NONE ? NODE_PATH_NONE : NODE_PATH_EXPECTS_NAME;
+		case FSTokenizer::Token::PERCENT:
+			// `%` opens a unique-name path in prefix position and separates segments inside a path;
+			// after a token that can end a value it is the modulo operator instead.
+			return (p_state != NODE_PATH_NONE || !p_previous_can_precede_bin_op) ? NODE_PATH_EXPECTS_NAME : NODE_PATH_NONE;
+		default:
+			break;
+	}
+	const bool is_segment = p_token.is_node_name() || p_token.type == FSTokenizer::Token::LITERAL;
+	return (p_state == NODE_PATH_EXPECTS_NAME && is_segment) ? NODE_PATH_AFTER_NAME : NODE_PATH_NONE;
+}
+
 } // namespace
 
 uint32_t FSSemanticTokens::modifier_bit(LSP::SemanticTokenModifier p_modifier) {
@@ -196,28 +229,26 @@ Vector<FSSemanticTokens::Span> FSSemanticTokens::collect(const String &p_source,
 	// pathological or truncated document cannot spin here forever.
 	const int scan_limit = p_source.length() * 4 + 64;
 	bool previous_was_period = false;
-	bool in_node_path = false;
+	bool previous_can_precede_bin_op = false;
+	NodePathState node_path_state = NODE_PATH_NONE;
 
 	for (int scanned = 0; scanned < scan_limit; scanned++) {
 		const FSTokenizer::Token token = tokenizer.scan();
 		if (token.type == FSTokenizer::Token::TK_EOF) {
 			break;
 		}
+		// Layout tokens carry no source of their own and must not break the surrounding context: a
+		// grouping construct keeps an attribute or a node path readable across a line break.
+		if (is_layout_token(token.type)) {
+			continue;
+		}
 
 		const bool after_period = previous_was_period;
 		previous_was_period = token.type == FSTokenizer::Token::PERIOD;
 
-		// A get-node path runs from `$` until the first token that cannot continue it, and every
-		// segment inside it is a node name rather than a keyword (`GRAMMAR.md` section 2.5).
-		const bool after_node_path_start = in_node_path;
-		if (token.type == FSTokenizer::Token::DOLLAR) {
-			in_node_path = true;
-		} else if (!in_node_path ||
-				!(token.type == FSTokenizer::Token::SLASH ||
-						token.type == FSTokenizer::Token::PERCENT ||
-						token.is_node_name())) {
-			in_node_path = false;
-		}
+		const NodePathState previous_path_state = node_path_state;
+		node_path_state = next_node_path_state(previous_path_state, token, previous_can_precede_bin_op);
+		previous_can_precede_bin_op = token.can_precede_bin_op();
 
 		if (!is_reserved_word(token.type)) {
 			continue;
@@ -227,7 +258,8 @@ Vector<FSSemanticTokens::Span> FSSemanticTokens::collect(const String &p_source,
 		if (after_period) {
 			continue;
 		}
-		if (after_node_path_start && token.is_node_name()) {
+		// `$class/signal`: every path segment is a node name, not a keyword.
+		if (previous_path_state == NODE_PATH_EXPECTS_NAME && token.is_node_name()) {
 			continue;
 		}
 		// Reserved words never span lines; anything that claims to did not come from real source.

@@ -3308,12 +3308,36 @@ func f():
 
 		SUBCASE("a node path segment is not a keyword") {
 			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_node_path.fs");
-			text_document->didOpen(make_did_open_params(uri, "var node = $class/signal\nvar other = $Sprite\n"));
+			text_document->didOpen(make_did_open_params(uri, "var node = $class/signal\nvar unique = %class\n"));
 
 			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
 			REQUIRE_EQ(tokens.size(), 2);
 			check_semantic_token(tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
 			check_semantic_token(tokens, 1, 1, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+		}
+
+		SUBCASE("a keyword after a node path is still a keyword") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_node_path_end.fs");
+			text_document->didOpen(make_did_open_params(uri, "func check():\n\tif $Node and ready:\n\t\tpass\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			REQUIRE_EQ(tokens.size(), 4);
+			check_semantic_token(tokens, 0, 0, 0, 4, LSP::SemanticTokenType::KEYWORD); // func
+			check_semantic_token(tokens, 1, 1, 1, 2, LSP::SemanticTokenType::KEYWORD); // if
+			check_semantic_token(tokens, 2, 1, 10, 3, LSP::SemanticTokenType::KEYWORD); // and
+			check_semantic_token(tokens, 3, 2, 2, 4, LSP::SemanticTokenType::KEYWORD); // pass
+		}
+
+		SUBCASE("an attribute split across lines is not a keyword") {
+			// A grouping construct lets an attribute continue on the next line; the intervening
+			// layout tokens must not lose the `.` that makes `class` an attribute name.
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_multiline_attribute.fs");
+			text_document->didOpen(make_did_open_params(uri, "var kind = (self.\n\tclass)\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			REQUIRE_EQ(tokens.size(), 2);
+			check_semantic_token(tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+			check_semantic_token(tokens, 1, 0, 12, 4, LSP::SemanticTokenType::KEYWORD); // self
 		}
 
 		SUBCASE("a reserved word in attribute position is not a keyword") {
