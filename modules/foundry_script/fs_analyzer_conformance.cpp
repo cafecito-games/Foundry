@@ -345,28 +345,25 @@ bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_tar
 		return false;
 	}
 
-	// The same target identities `find_static_conformance_witness` resolves against, so an instance
-	// call is diagnosed for exactly the conformances a static call would have been.
-	if (p_target_type.kind == FSParser::DataType::NATIVE) {
-		for (StringName cursor = p_target_type.native_type; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
-			if (registry->find_hidden_witness_declaration(String(cursor), p_method, r_source_file, r_trait_name)) {
-				return true;
-			}
-		}
-		return false;
-	}
+	// Only a receiver whose runtime type is exactly its static type is diagnosed. An unresolved method
+	// on an open type is legal and merely unsafe: the value may be a subtype that declares the method
+	// normally, and the runtime resolves it. Turning that into an error on the strength of a
+	// same-named hidden witness would reject working code. A builtin has no subtypes, and neither does
+	// a `final` class, so for those the hidden witness is the only thing the call could have meant.
 	if (p_target_type.kind == FSParser::DataType::BUILTIN) {
 		return registry->find_hidden_witness_declaration(String(Variant::get_type_name(p_target_type.builtin_type)),
 				p_method, r_source_file, r_trait_name);
 	}
+	if (p_target_type.class_type == nullptr || !p_target_type.class_type->is_final) {
+		return false;
+	}
 
+	// The base chain is walked because a conformance declared on a base stays reachable through the
+	// derived type, matching `find_static_conformance_witness` and the runtime's witness lookup.
 	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
 		if (registry->find_hidden_witness_declaration(cursor->fqcn, p_method, r_source_file, r_trait_name)) {
 			return true;
 		}
-	}
-	if (p_target_type.class_type == nullptr && !p_target_type.script_path.is_empty()) {
-		return registry->find_hidden_witness_declaration(p_target_type.script_path, p_method, r_source_file, r_trait_name);
 	}
 	return false;
 }

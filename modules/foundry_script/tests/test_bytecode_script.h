@@ -100,6 +100,14 @@ public:
 		return p_script->witness_target_scripts.has(p_target);
 	}
 
+	static void add_namespace_conformance_script(const Ref<FoundryScript> &p_script, const Ref<Script> &p_conformance) {
+		p_script->namespace_conformance_scripts.push_back(p_conformance);
+	}
+
+	static bool retains_namespace_conformance_script(const Ref<FoundryScript> &p_script, const Ref<Script> &p_conformance) {
+		return p_script->namespace_conformance_scripts.has(p_conformance);
+	}
+
 	static FSFunction *get_initializer(const Ref<FoundryScript> &p_script) {
 		return p_script->initializer;
 	}
@@ -637,6 +645,41 @@ TEST_CASE("[FoundryScript][BytecodeScript] Generic type parameter bindings re-ke
 	// The `value: T` member slot binding follows the same specialization.
 	CHECK(TestFSBytecodeScriptAccessor::get_member_binding_kind(restored_box, SNAME("value")) == 2);
 	CHECK(TestFSBytecodeScriptAccessor::get_member_binding_kind(restored_int_box, SNAME("value")) == 1);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges survive serialization") {
+	// A conformance file reached through a namespace is the one script a compiled file references
+	// nowhere: no constant, no type, no base. Only the declaring script's own compilation registers
+	// its witnesses, so if the edge did not survive serialization an exported game would type-check
+	// against a conformance whose witnesses never get registered.
+	const Ref<FoundryScript> conformance_library = compile_bytecode_test_source(
+			"class Marker:\n"
+			"\tpass\n");
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"func run() -> int:\n"
+			"\treturn 1\n");
+	TestFSBytecodeScriptAccessor::add_namespace_conformance_script(original, conformance_library);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// The library must also be packaged, or the exported game would ship a dangling path.
+	Vector<String> dependencies;
+	FSBytecodeLoader dependency_reader;
+	REQUIRE(dependency_reader.read_dependencies(buffer, dependencies) == OK);
+	CHECK(dependencies.has(conformance_library->get_path()));
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(original->get_script_path());
+	BytecodeTestResolver resolver;
+	resolver.scripts[conformance_library->get_path() + "::"] = conformance_library;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	CHECK(TestFSBytecodeScriptAccessor::retains_namespace_conformance_script(restored, conformance_library));
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register with the registry") {

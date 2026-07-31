@@ -762,6 +762,23 @@ Error FSBytecodeExporter::serialize(const Ref<FoundryScript> &p_script, Vector<u
 		return error;
 	}
 
+	// Conformance files reached through a namespace are the one script reference the sections above
+	// cannot discover: the compiled code never names them, so nothing encodes a script reference for
+	// them. List their paths so the loader can reload them, and record them as dependencies so export
+	// packaging ships them.
+	Vector<String> namespace_conformance_paths;
+	for (const Ref<Script> &conformance_script : p_script->namespace_conformance_scripts) {
+		if (conformance_script.is_null()) {
+			continue;
+		}
+		const String conformance_path = conformance_script->get_path();
+		if (conformance_path.is_empty() || namespace_conformance_paths.has(conformance_path)) {
+			continue;
+		}
+		namespace_conformance_paths.push_back(conformance_path);
+		_record_external_dependency(conformance_path);
+	}
+
 	// The dependency section is assembled after the sections above discovered every external path,
 	// but is spliced in ahead of them so it can be read without touching class data.
 	Ref<StreamPeerBuffer> dependency_section;
@@ -770,6 +787,11 @@ Error FSBytecodeExporter::serialize(const Ref<FoundryScript> &p_script, Vector<u
 	dependency_section->put_u32((uint32_t)external_dependencies.size());
 	for (const String &dependency_path : external_dependencies) {
 		dependency_section->put_u32(string_table.insert(dependency_path));
+	}
+	dependency_section->put_u32(FSBytecodeFormat::SECTION_NAMESPACE_CONFORMANCES);
+	dependency_section->put_u32((uint32_t)namespace_conformance_paths.size());
+	for (const String &conformance_path : namespace_conformance_paths) {
+		dependency_section->put_u32(string_table.insert(conformance_path));
 	}
 
 	Ref<StreamPeerBuffer> output;

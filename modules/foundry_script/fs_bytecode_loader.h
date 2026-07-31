@@ -126,6 +126,7 @@ private:
 	Error _open_script_stream(const Vector<uint8_t> &p_buffer, Ref<StreamPeerBuffer> &r_stream);
 	Error _expect_section(StreamPeerBuffer *p_stream, FSBytecodeFormat::SectionId p_section);
 	Error _read_dependency_section(StreamPeerBuffer *p_stream, Vector<String> *r_dependencies);
+	Error _read_namespace_conformance_section(StreamPeerBuffer *p_stream, Vector<String> *r_paths);
 	Error _read_skeleton_class(StreamPeerBuffer *p_stream, const Ref<FoundryScript> &p_class, const String &p_root_path,
 			Vector<SkeletonBaseReference> &r_base_references, int p_depth);
 	Error _read_member_info(StreamPeerBuffer *p_stream, const String &p_script_path, StringName &r_name,

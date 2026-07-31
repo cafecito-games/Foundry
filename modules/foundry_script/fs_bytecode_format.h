@@ -58,7 +58,7 @@ class FSBytecodeFormat {
 public:
 	static constexpr uint8_t MAGIC[4] = { 'F', 'S', 'B', 'C' };
 	// Bump on ANY layout change; the reader rejects other versions outright.
-	static constexpr uint32_t FORMAT_VERSION = 5;
+	static constexpr uint32_t FORMAT_VERSION = 6;
 
 	enum SectionId : uint32_t {
 		SECTION_STRING_TABLE,
@@ -67,6 +67,12 @@ public:
 		SECTION_CLASS_BODIES,
 		SECTION_WITNESSES,
 		SECTION_DEPENDENCIES,
+		// Paths of the retroactive-conformance files this script reaches through its own namespace or
+		// one it imports. Nothing in the compiled code references them, so unlike every other script
+		// reference in the file they cannot be recovered from constants or type data — yet a
+		// conformance exists at run time only once its declaring script has loaded and registered its
+		// witnesses. They are listed explicitly so an exported game loads them.
+		SECTION_NAMESPACE_CONFORMANCES,
 		SECTION_MAX,
 	};
 

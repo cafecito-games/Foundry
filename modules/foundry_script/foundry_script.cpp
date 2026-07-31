@@ -1321,6 +1321,7 @@ void FoundryScript::_clear_partial_bytecode_link_state() {
 	}
 	witness_functions.clear();
 	witness_target_scripts.clear();
+	namespace_conformance_scripts.clear();
 
 	for (const KeyValue<StringName, FSFunction *> &entry : member_functions) {
 		_erase_function_lambda_info(this, entry.value);
@@ -2178,6 +2179,7 @@ void FoundryScript::clear() {
 	}
 	witness_functions.clear();
 	witness_target_scripts.clear();
+	namespace_conformance_scripts.clear();
 
 	for (KeyValue<StringName, MemberInfo> &E : member_indices) {
 		E.value.data_type.script_type_ref = Ref<Script>();

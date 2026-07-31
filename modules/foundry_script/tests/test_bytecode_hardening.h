@@ -54,7 +54,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Format version is pinned") {
 	// The reader rejects any other version outright, so the on-disk layout and this constant move
 	// together. Bump FORMAT_VERSION in the same change as ANY layout change to the `.fsb` format
 	// (sections, field order/width, opcode operand layout, tag/fixup sets) and update this pin.
-	CHECK(FSBytecodeFormat::FORMAT_VERSION == 5);
+	CHECK(FSBytecodeFormat::FORMAT_VERSION == 6);
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects a stale format version") {

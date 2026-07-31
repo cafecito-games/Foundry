@@ -1256,6 +1256,30 @@ Error FSBytecodeLoader::_read_dependency_section(StreamPeerBuffer *p_stream, Vec
 	return OK;
 }
 
+// Reads the paths of the conformance files this script reaches through a namespace. They sit next to
+// the dependency list, ahead of any class data, because they are consumed as plain paths: no compiled
+// reference names them, which is exactly why they have to be listed.
+Error FSBytecodeLoader::_read_namespace_conformance_section(StreamPeerBuffer *p_stream, Vector<String> *r_paths) {
+	Error error = _expect_section(p_stream, FSBytecodeFormat::SECTION_NAMESPACE_CONFORMANCES);
+	if (error != OK) {
+		return error;
+	}
+	const uint32_t conformance_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)conformance_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			"Truncated namespace conformance list in compiled script data.");
+	for (uint32_t i = 0; i < conformance_count; i++) {
+		String conformance_path;
+		error = _get_string(p_stream->get_u32(), conformance_path);
+		if (error != OK) {
+			return error;
+		}
+		if (r_paths != nullptr) {
+			r_paths->push_back(conformance_path);
+		}
+	}
+	return OK;
+}
+
 Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const Ref<FoundryScript> &p_class, const String &p_root_path,
 		Vector<SkeletonBaseReference> &r_base_references, int p_depth) {
 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_DATA,
@@ -1386,6 +1410,12 @@ Error FSBytecodeLoader::load_skeleton(const Vector<uint8_t> &p_buffer, const Ref
 		return error;
 	}
 	error = _read_dependency_section(stream.ptr(), nullptr);
+	if (error != OK) {
+		return error;
+	}
+	// A skeleton carries no runtime behavior, so the conformance paths are consumed only to keep the
+	// stream positioned; `load_full` is what loads them.
+	error = _read_namespace_conformance_section(stream.ptr(), nullptr);
 	if (error != OK) {
 		return error;
 	}
@@ -2022,6 +2052,11 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 	if (error != OK) {
 		return error;
 	}
+	Vector<String> namespace_conformance_paths;
+	error = _read_namespace_conformance_section(stream.ptr(), &namespace_conformance_paths);
+	if (error != OK) {
+		return error;
+	}
 
 	error = _expect_section(stream.ptr(), FSBytecodeFormat::SECTION_SKELETON);
 	if (error != OK) {
@@ -2088,6 +2123,24 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 	error = _read_witness_section(stream.ptr(), p_script.ptr());
 	if (error != OK) {
 		return error;
+	}
+
+	// Load the conformance files reached through a namespace, mirroring
+	// `FSCompiler::_load_namespace_conformance_scripts`. Deferred to here, after this script is fully
+	// linked, so a conformance library that reaches back to this script finds it complete. A library
+	// that fails to load reports its own error; this script stays valid without it, exactly as on the
+	// source path.
+	for (const String &conformance_path : namespace_conformance_paths) {
+		if (conformance_path == script_path) {
+			continue;
+		}
+		ERR_FAIL_NULL_V_MSG(resolver, ERR_UNCONFIGURED,
+				"No external-reference resolver is set on the bytecode loader.");
+		bool conformance_is_local = false;
+		const Ref<Script> conformance_script = resolver->resolve_script(conformance_path, String(), conformance_is_local);
+		if (conformance_script.is_valid() && !p_script->namespace_conformance_scripts.has(conformance_script)) {
+			p_script->namespace_conformance_scripts.push_back(conformance_script);
+		}
 	}
 
 	// Finalization mirrors `_compile_class`'s per-class tail and `reload()`'s root tail: static

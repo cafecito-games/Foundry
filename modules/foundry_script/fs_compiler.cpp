@@ -5368,7 +5368,7 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 	return OK;
 }
 
-void FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
+Error FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
 	// The analyzer type-checks against a conformance the moment this file's namespace or one of its
 	// imports declares it. Nothing in the emitted code references the declaring file, though, so
 	// without this it would never be loaded and the call would miss at run time: witnesses are
@@ -5382,12 +5382,18 @@ void FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
 		}
 		Error load_err = OK;
 		const Ref<FoundryScript> conformance_script = FSCache::get_full_script(conformance_path, load_err, source_file);
-		// A conformance library that fails to load is reported by its own compilation; this script is
-		// still valid, so keep compiling rather than failing it for a dependency's error.
-		if (load_err == OK && conformance_script.is_valid() && !p_script->namespace_conformance_scripts.has(conformance_script)) {
+		if (load_err != OK || conformance_script.is_null()) {
+			// This script's analysis already type-checked calls and assignments against the
+			// conformance, so shipping it without the library would produce exactly the failure this
+			// edge exists to prevent: a witness that is missing only at run time. Fail here instead.
+			_set_error(vformat(R"(Could not load "%s", which declares a retroactive conformance this file uses through its namespace.)", conformance_path), nullptr);
+			return load_err != OK ? load_err : ERR_CANT_RESOLVE;
+		}
+		if (!p_script->namespace_conformance_scripts.has(conformance_script)) {
 			p_script->namespace_conformance_scripts.push_back(conformance_script);
 		}
 	}
+	return OK;
 }
 
 Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, bool p_keep_state) {
@@ -5424,7 +5430,10 @@ Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, boo
 		return err;
 	}
 
-	_load_namespace_conformance_scripts(main_script);
+	err = _load_namespace_conformance_scripts(main_script);
+	if (err) {
+		return err;
+	}
 
 	ScriptLambdaInfo new_lambda_info = _get_script_lambda_replacement_info(p_script);
 

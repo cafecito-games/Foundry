@@ -161,7 +161,7 @@ struct NamespacedConformanceFixture {
 
 	NamespacedConformanceFixture() {
 		dir = OS::get_singleton()->get_temp_path().path_join("foundry_namespaced_conformance");
-		widget_path = write("fsn_widget.fs", R"(class_name FsnWidget extends RefCounted
+		widget_path = write("fsn_widget.fs", R"(final class_name FsnWidget extends RefCounted
 
 var fsn_label: String = "widget"
 )");
@@ -300,6 +300,37 @@ func probe() -> String:
 		CHECK(NamespacedConformanceFixture::any_error_contains(errors, "fsn_gadget()"));
 		// The diagnostic has to name the file to load, or it is no better than the run-time failure.
 		CHECK(NamespacedConformanceFixture::any_error_contains(errors, fixture.conformance_path));
+	}
+
+	SUBCASE("an open receiver keeps its unsafe-but-legal call") {
+		// `FsnOpenWidget` is not `final`, so a subtype could declare `fsn_gadget()` of its own and the
+		// runtime would resolve it. Rejecting the call because a conformance this file cannot reach
+		// happens to supply the same name would reject working code, so it stays merely unsafe.
+		const String open_widget_path = fixture.write("fsn_open_widget.fs", R"(class_name FsnOpenWidget extends RefCounted
+)");
+		const String open_conformance_path = fixture.write("fsn_open_conformance.fs", R"(namespace fsn
+
+extend FsnOpenWidget uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "open"
+)");
+		ConformanceVisibilityFixture::register_global_class("FsnOpenWidget", open_widget_path, "RefCounted", false);
+		FSLanguage::get_singleton()->add_conformance_file(open_conformance_path, "fsn");
+		REQUIRE(fixture.analysis_errors(open_conformance_path).is_empty());
+
+		const String consumer_path = fixture.write("fsn_consumer_open_call.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnOpenWidget.new()
+	return str(widget.fsn_gadget())
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsnOpenWidget");
+		FSLanguage::get_singleton()->remove_conformance_file(open_conformance_path);
+
+		CHECK(errors.is_empty());
 	}
 }
 
