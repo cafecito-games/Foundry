@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_script_extensible_native_hooks.cpp                                 */
+/*  fs_json_marshal.cpp                                                   */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,72 +28,31 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "fs_script_extensible_native_hooks.h"
+#include "fs_json_marshal.h"
 
-#include "core/object/class_db.h"
+#include "core/object/object.h"
 
-namespace {
+StringName FSJsonMarshal::to_json_method_name() {
+	return SNAME("to_json");
+}
 
-struct ScriptExtensibleNativeHook {
-	const char *native_base;
-	const char *method_name;
-};
+bool FSJsonMarshal::has_to_json(Object *p_object) {
+	if (p_object == nullptr) {
+		return false;
+	}
+	return p_object->has_method(to_json_method_name());
+}
 
-static const ScriptExtensibleNativeHook script_extensible_native_hooks[] = {
-	{ "FoundryBuildTask", "get_config_schema" },
-	{ "FoundryBuildTask", "run" },
-	{ "ScriptRunner", "run" },
-	// `to_json` belongs to the builtin `JsonSerializable` trait rather than to one native
-	// class, so any object may implement it and the hook is registered on `Object`. Native
-	// code reaches it only through `FSJsonMarshal::call_to_json`.
-	{ "Object", "to_json" },
-};
+bool FSJsonMarshal::call_to_json(Object *p_object, Variant &r_node) {
+	ERR_FAIL_NULL_V(p_object, false);
 
-static const ScriptExtensibleNativeHook flexible_async_native_hooks[] = {
-	{ "ScriptRunner", "run" },
-};
-
-} // namespace
-
-bool FSScriptExtensibleNativeHooks::is_allowed_override(
-		const StringName &p_native_base, const StringName &p_method_name) {
-	if (p_native_base == StringName() || p_method_name == StringName()) {
+	Callable::CallError call_error;
+	const Variant node = p_object->callp(to_json_method_name(), nullptr, 0, call_error);
+	if (call_error.error != Callable::CallError::CALL_OK) {
+		ERR_PRINT(vformat(R"(Calling to_json() on an instance of "%s" failed.)", p_object->get_class()));
 		return false;
 	}
 
-	for (const ScriptExtensibleNativeHook &hook : script_extensible_native_hooks) {
-		if (p_method_name == StringName(hook.method_name) &&
-				ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
-			return true;
-		}
-	}
-	return false;
-}
-
-bool FSScriptExtensibleNativeHooks::allows_async_override_of_sync_hook(
-		const StringName &p_native_base, const StringName &p_method_name) {
-	if (p_native_base == StringName() || p_method_name == StringName()) {
-		return false;
-	}
-
-	for (const ScriptExtensibleNativeHook &hook : flexible_async_native_hooks) {
-		if (p_method_name == StringName(hook.method_name) &&
-				ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
-			return true;
-		}
-	}
-	return false;
-}
-
-void FSScriptExtensibleNativeHooks::collect_allowed_overrides(
-		const StringName &p_native_base, List<StringName> &r_method_names) {
-	if (p_native_base == StringName()) {
-		return;
-	}
-
-	for (const ScriptExtensibleNativeHook &hook : script_extensible_native_hooks) {
-		if (ClassDB::is_parent_class(p_native_base, StringName(hook.native_base))) {
-			r_method_names.push_back(StringName(hook.method_name));
-		}
-	}
+	r_node = node;
+	return true;
 }
