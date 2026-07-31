@@ -5262,7 +5262,12 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 					target_script = Ref<FoundryScript>(found);
 				} else if (!target_type.script_path.is_empty()) {
 					Error script_err = OK;
-					target_script = FSCache::get_full_script(target_type.script_path, script_err, source_file);
+					const Ref<FoundryScript> loaded_script = FSCache::get_full_script(target_type.script_path, script_err, source_file);
+					// Loading a path yields that file's *root* class. An inner class is a distinct target
+					// with its own member layout, so descend to it; otherwise the witness would be compiled
+					// against the root's layout and registered under the root's identity.
+					FoundryScript *found_in_loaded = loaded_script.is_valid() ? loaded_script->find_class(target_class->fqcn) : nullptr;
+					target_script = found_in_loaded != nullptr ? Ref<FoundryScript>(found_in_loaded) : loaded_script;
 				}
 			}
 
