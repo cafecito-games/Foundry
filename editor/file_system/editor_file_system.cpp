@@ -1749,6 +1749,10 @@ bool EditorFileSystem::_remove_invalid_global_class_names(const HashSet<String> 
 	bool must_save = false;
 	ScriptServer::get_global_class_list(global_classes);
 	for (const StringName &class_name : global_classes) {
+		// Builtin types have no file in the project, so a scan of project files never sees them.
+		if (ScriptServer::is_builtin_global_class(class_name)) {
+			continue;
+		}
 		if (!p_existing_class_names.has(class_name)) {
 			ScriptServer::remove_global_class(class_name);
 			must_save = true;

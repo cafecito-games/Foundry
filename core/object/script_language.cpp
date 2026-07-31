@@ -576,6 +576,11 @@ void ScriptServer::clear_builtin_global_classes() {
 }
 
 void ScriptServer::remove_global_class(const StringName &p_class) {
+	// A builtin type is not owned by the project, so project-driven reconciliation (an editor
+	// scan finds no file declaring it) must not be able to drop it.
+	if (builtin_global_classes.has(p_class)) {
+		return;
+	}
 	if (global_classes.erase(p_class)) {
 		inheriters_cache_dirty = true;
 		global_classes_version++;
@@ -618,7 +623,7 @@ void ScriptServer::get_indirect_inheriters_list(const StringName &p_base_type, L
 
 void ScriptServer::remove_global_class_by_path(const String &p_path) {
 	for (const KeyValue<StringName, GlobalScriptClass> &kv : global_classes) {
-		if (kv.value.path == p_path) {
+		if (kv.value.path == p_path && !builtin_global_classes.has(kv.key)) {
 			global_classes.erase(kv.key);
 			inheriters_cache_dirty = true;
 			global_classes_version++;

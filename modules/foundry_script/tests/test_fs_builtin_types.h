@@ -140,4 +140,14 @@ TEST_CASE("[FSBuiltinTypes] A project class cannot take over a builtin type name
 	CHECK_EQ(String(ScriptServer::get_global_class_base("JsonNode")), "");
 }
 
+TEST_CASE("[FSBuiltinTypes] A project scan cannot remove a builtin global class") {
+	// The editor reconciles the global class table against the files it finds on disk. A builtin
+	// type has no file, so it must not be reconciled away.
+	ScriptServer::remove_global_class(SNAME("JsonNode"));
+	CHECK(ScriptServer::is_global_class("JsonNode"));
+
+	ScriptServer::remove_global_class_by_path("foundry://builtin/json_serializable.fs");
+	CHECK(ScriptServer::is_global_class("JsonSerializable"));
+}
+
 } // namespace TestFSBuiltinTypes
