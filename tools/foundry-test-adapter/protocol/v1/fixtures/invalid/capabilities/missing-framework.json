@@ -1,0 +1,7 @@
+{
+  "protocol": "foundry-test-adapter",
+  "supported_versions": [
+    1
+  ],
+  "extensions": []
+}

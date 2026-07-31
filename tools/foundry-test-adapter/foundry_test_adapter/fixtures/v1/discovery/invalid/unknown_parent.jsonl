@@ -1,3 +1,0 @@
-{"protocol":"foundry-test-adapter","version":1,"event":"discovery_start","root":"res://tests"}
-{"protocol":"foundry-test-adapter","version":1,"event":"test","id":"S:math::adds","label":"adds","parent_id":"S:missing","path":"res://tests/math_tests.fs","range":null,"runnable":true,"skipped":false,"skip_reason":null,"case_key":null}
-{"protocol":"foundry-test-adapter","version":1,"event":"discovery_end","suite_count":0,"test_count":1,"error_count":0}

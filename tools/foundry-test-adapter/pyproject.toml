@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "foundry-test-adapter"
+version = "1.0.0"
+description = "Foundry Test Adapter Protocol conformance validator"
+requires-python = ">=3.8"
+dependencies = [
+  "jsonschema==4.23.0",
+  "PyYAML==6.0.3",
+]
+
+[project.scripts]
+foundry-test-adapter = "foundry_test_adapter.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/foundry_test_adapter"]

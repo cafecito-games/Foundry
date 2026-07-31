@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:foundry:test-adapter:v1:discovery-record",
+  "title": "Foundry Test Adapter discovery record",
+  "type": "object",
+  "required": ["protocol", "version", "event"],
+  "properties": {
+    "protocol": { "const": "foundry-test-adapter" },
+    "version": { "const": 1 },
+    "event": {
+      "enum": ["discovery_start", "suite", "test", "discovery_error", "discovery_end"]
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/discovery_start" },
+    { "$ref": "#/$defs/suite" },
+    { "$ref": "#/$defs/test" },
+    { "$ref": "#/$defs/discovery_error" },
+    { "$ref": "#/$defs/discovery_end" }
+  ],
+  "$defs": {
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "nullable_text": {
+      "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/text" }]
+    },
+    "resource_path": {
+      "type": "string",
+      "minLength": 7,
+      "pattern": "^res://[^\\u0000-\\u001f\\u007f]*$"
+    },
+    "nullable_resource_path": {
+      "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/resource_path" }]
+    },
+    "position": {
+      "type": "object",
+      "required": ["line", "character"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 0 },
+        "character": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "range": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "$ref": "#/$defs/position" },
+        "end": { "$ref": "#/$defs/position" }
+      }
+    },
+    "nullable_range": {
+      "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/range" }]
+    },
+    "discovery_start": {
+      "type": "object",
+      "properties": {
+        "event": { "const": "discovery_start" },
+        "root": { "$ref": "#/$defs/resource_path" }
+      },
+      "required": ["event", "root"]
+    },
+    "suite": {
+      "type": "object",
+      "properties": {
+        "event": { "const": "suite" },
+        "id": { "$ref": "#/$defs/text" },
+        "label": { "$ref": "#/$defs/text" },
+        "parent_id": { "$ref": "#/$defs/nullable_text" },
+        "path": { "$ref": "#/$defs/nullable_resource_path" },
+        "range": { "$ref": "#/$defs/nullable_range" },
+        "runnable": { "type": "boolean" },
+        "skipped": { "type": "boolean" },
+        "skip_reason": { "$ref": "#/$defs/nullable_text" }
+      },
+      "required": ["event", "id", "label", "parent_id", "path", "range", "runnable", "skipped", "skip_reason"]
+    },
+    "test": {
+      "type": "object",
+      "properties": {
+        "event": { "const": "test" },
+        "id": { "$ref": "#/$defs/text" },
+        "label": { "$ref": "#/$defs/text" },
+        "parent_id": { "$ref": "#/$defs/nullable_text" },
+        "path": { "$ref": "#/$defs/nullable_resource_path" },
+        "range": { "$ref": "#/$defs/nullable_range" },
+        "runnable": { "type": "boolean" },
+        "skipped": { "type": "boolean" },
+        "skip_reason": { "$ref": "#/$defs/nullable_text" },
+        "case_key": { "$ref": "#/$defs/nullable_text" }
+      },
+      "required": [
+        "event",
+        "id",
+        "label",
+        "parent_id",
+        "path",
+        "range",
+        "runnable",
+        "skipped",
+        "skip_reason",
+        "case_key"
+      ]
+    },
+    "discovery_error": {
+      "type": "object",
+      "properties": {
+        "event": { "const": "discovery_error" },
+        "id": { "$ref": "#/$defs/text" },
+        "label": { "$ref": "#/$defs/text" },
+        "parent_id": { "$ref": "#/$defs/nullable_text" },
+        "message": { "$ref": "#/$defs/text" },
+        "path": { "$ref": "#/$defs/nullable_resource_path" },
+        "range": { "$ref": "#/$defs/nullable_range" }
+      },
+      "required": ["event", "id", "label", "parent_id", "message", "path", "range"]
+    },
+    "discovery_end": {
+      "type": "object",
+      "properties": {
+        "event": { "const": "discovery_end" },
+        "suite_count": { "type": "integer", "minimum": 0 },
+        "test_count": { "type": "integer", "minimum": 0 },
+        "error_count": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["event", "suite_count", "test_count", "error_count"]
+    }
+  }
+}
