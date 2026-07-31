@@ -32,6 +32,7 @@
 
 #include "foundry_build_task.h"
 #include "foundry_script.h"
+#include "fs_builtin_sources.h"
 #include "fs_cache.h"
 #include "fs_parser.h"
 #include "fs_project_scripts.h"
@@ -193,6 +194,8 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 void uninitialize_foundry_script_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
 		ScriptServer::unregister_language(script_language_gd);
+
+		FSBuiltinSources::clear();
 
 		if (fs_cache) {
 			memdelete(fs_cache);

@@ -31,6 +31,7 @@
 #include "fs_cache.h"
 
 #include "foundry_script.h"
+#include "fs_builtin_sources.h"
 #include "fs_bytecode_loader.h"
 #include "fs_no_frontend.h"
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
@@ -250,7 +251,14 @@ Ref<FSParserRef> FSCache::get_parser(const String &p_path, FSParserRef::Status p
 		}
 	} else {
 		String remapped_path = ResourceLoader::path_remap(p_path);
-		if (!FileAccess::exists(remapped_path)) {
+		if (FSBuiltinSources::is_builtin_path(p_path)) {
+			// Builtin declarations ship inside the binary; there is no file to stat.
+			String unused_source;
+			if (!FSBuiltinSources::get_source(p_path, unused_source)) {
+				r_error = ERR_FILE_NOT_FOUND;
+				return ref;
+			}
+		} else if (!FileAccess::exists(remapped_path)) {
 			r_error = ERR_FILE_NOT_FOUND;
 			return ref;
 		}
@@ -353,6 +361,11 @@ void FSCache::remove_parser(const String &p_path) {
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
 String FSCache::get_source_code(const String &p_path) {
+	String builtin_source;
+	if (FSBuiltinSources::get_source(p_path, builtin_source)) {
+		return builtin_source;
+	}
+
 	if (singleton != nullptr) {
 		MutexLock lock(singleton->mutex);
 		if (HashMap<String, String>::ConstIterator override = singleton->source_overrides.find(p_path)) {
