@@ -354,6 +354,15 @@ Array ScriptServer::get_global_conformances() {
 	return conformances;
 }
 
+void ScriptServer::prune_missing_global_conformances() {
+	MutexLock lock(languages_mutex);
+	for (int i = 0; i < _language_count; i++) {
+		if (_languages[i] != nullptr) {
+			_languages[i]->prune_missing_indexed_conformances();
+		}
+	}
+}
+
 void ScriptServer::init_languages() {
 	reload_global_classes_from_project();
 

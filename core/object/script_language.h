@@ -101,6 +101,7 @@ public:
 	static void reload_global_conformances_from_project(bool p_clear_existing);
 	// Every indexed conformance-declaring file across all languages, tagged with its language name.
 	static Array get_global_conformances();
+	static void prune_missing_global_conformances();
 	static void add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait, bool p_is_enum = false);
 	static void remove_global_class(const StringName &p_class);
 	static void remove_global_class_by_path(const String &p_path);
@@ -520,6 +521,11 @@ public:
 	// Drops every indexed conformance. Used when the project's cache is reloaded wholesale, so
 	// entries belonging to a previously opened project cannot survive into the new one.
 	virtual void clear_indexed_conformances() {}
+	// Drops indexed conformances whose file no longer exists. A file deleted while the editor was
+	// closed is restored from the cache at startup and never visited by the scan that follows, so
+	// nothing else would evict it and consumers of its namespace would take a dependency on a path
+	// that cannot be loaded.
+	virtual void prune_missing_indexed_conformances() {}
 
 	virtual ~ScriptLanguage() {}
 };

@@ -3991,6 +3991,21 @@ void FSLanguage::clear_indexed_conformances() {
 	clear_conformance_files();
 }
 
+void FSLanguage::prune_missing_indexed_conformances() {
+	List<String> missing_paths;
+	{
+		MutexLock lock(conformance_index_mutex);
+		for (const KeyValue<String, String> &entry : conformance_namespace_by_file) {
+			if (!FileAccess::exists(entry.key)) {
+				missing_paths.push_back(entry.key);
+			}
+		}
+	}
+	for (const String &path : missing_paths) {
+		remove_conformance_file(path);
+	}
+}
+
 void FSLanguage::clear_global_declaration_index_under(const String &p_root_prefix) {
 	if (p_root_prefix.is_empty()) {
 		return;

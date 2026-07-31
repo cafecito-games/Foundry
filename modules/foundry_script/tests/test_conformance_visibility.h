@@ -402,6 +402,11 @@ TEST_CASE("[Modules][FoundryScript][Conformance] the conformance index survives 
 	language->add_indexed_conformance(conformance_path, "fsp");
 	CHECK(language->get_conformance_files_in_namespace("fsp").has(conformance_path));
 
+	// A file deleted between editor sessions comes back from the cache and is never visited by the
+	// scan, so the prune the editor runs before rewriting the cache is what evicts it.
+	ScriptServer::prune_missing_global_conformances();
+	CHECK(language->get_conformance_files_in_namespace("fsp").is_empty());
+
 	language->remove_conformance_file(conformance_path);
 }
 

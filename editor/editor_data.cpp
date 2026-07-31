@@ -1376,6 +1376,9 @@ void EditorData::script_class_save_global_classes() {
 	ProjectSettings::get_singleton()->store_global_class_list(array_classes);
 	// Files that declare only cross-file declarations (retroactive conformances) export no global
 	// class, so they need their own entry in the same cache to survive into an exported project.
+	// This runs after a scan, when the filesystem is authoritative, so it is also where an entry
+	// restored from the cache for a file deleted between sessions is evicted.
+	ScriptServer::prune_missing_global_conformances();
 	ProjectSettings::get_singleton()->store_global_conformance_list(ScriptServer::get_global_conformances());
 }
 
