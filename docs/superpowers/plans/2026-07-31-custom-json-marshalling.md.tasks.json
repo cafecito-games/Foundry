@@ -1,0 +1,65 @@
+{
+  "planPath": "docs/superpowers/plans/2026-07-31-custom-json-marshalling.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Allow self-recursive tagged unions",
+      "status": "pending",
+      "description": "**Goal:** A tagged union's payload field types may reference the enum itself, directly and indirectly through typed collections, in both `enum` and `enum_name` forms.\n\n**Verify:** `./bin/foundry.macos.editor.arm64 --headless test run --case \"*FoundryScript*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_analyzer.cpp\", \"modules/foundry_script/fs_analyzer_surface.cpp\", \"modules/foundry_script/GRAMMAR.md\"], \"verifyCommand\": \"./bin/foundry.macos.editor.arm64 --headless test run --case \\\"*FoundryScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"direct payload recursion analyzes cleanly\", \"Array[T] recursion analyzes cleanly\", \"Dictionary[K,V] recursion analyzes cleanly\", \"inner enum form works\", \"recursive tree constructs and match-destructures at runtime\", \"int-backed self-referential value still rejected\", \"GRAMMAR.md updated\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Report enum cyclic-reference errors when linting a file alone",
+      "status": "pending",
+      "description": "**Goal:** A whole-file `enum_name` that will fail global resolution reports its error when linted on its own.\n\n**Verify:** `script lint` on a bad enum_name file returns non-zero error count.\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_analyzer.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.arm64 --headless test run --case \\\"*FoundryScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"unresolvable payload type errors when linted alone\", \"valid enum_name file still reports zero errors\", \"no double-reporting\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Builtin source provider",
+      "status": "pending",
+      "description": "**Goal:** The module can register a global Foundry Script type whose source is compiled into the binary and served under `foundry://builtin/`.\n\n**Verify:** `./bin/foundry.macos.editor.arm64 --headless test run --case \"*FSBuiltinSources*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_builtin_sources.h\", \"modules/foundry_script/fs_builtin_sources.cpp\", \"modules/foundry_script/register_types.cpp\", \"modules/foundry_script/fs_analyzer.cpp\", \"modules/foundry_script/tests/test_fs_builtin_sources.h\", \"tests/test_main.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.arm64 --headless test run --case \\\"*FSBuiltinSources*\\\" --force-colors\", \"acceptanceCriteria\": [\"get_source returns registered text\", \"is_builtin_path only true for reserved prefix\", \"builtin path parses through dependency-parser path\", \"project file cannot shadow builtin path\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: JSONObjectMarshaller seam in core",
+      "status": "pending",
+      "description": "**Goal:** `core/io/json.cpp` gains an object-marshalling registration point and a `Variant::OBJECT` case, preserving today's behavior when nothing is registered.\n\n**Verify:** `./bin/foundry.macos.editor.arm64 --headless test run --case \"*JSONMarshal*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"core/io/json.h\", \"core/io/json.cpp\", \"tests/core/io/test_json_marshaller.h\", \"tests/test_main.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.arm64 --headless test run --case \\\"*JSONMarshal*\\\" --force-colors\", \"acceptanceCriteria\": [\"no marshaller preserves byte-identical output\", \"declining marshaller leaves output unchanged\", \"marshalled tree honors indent/sort_keys/full_precision\", \"freed object encodes as null\", \"object cycle caught\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: Declare the builtin marshalling types",
+      "status": "pending",
+      "blockedBy": [1, 3],
+      "description": "**Goal:** `JsonNode`, `JsonDecodeError`, `JsonResult[T]`, and `JsonSerializable` exist as builtin global types.\n\n**Verify:** `./bin/foundry.macos.editor.arm64 --headless test run --case \"*FSBuiltinTypes*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/builtin/json_node.fs\", \"modules/foundry_script/builtin/json_decode_error.fs\", \"modules/foundry_script/builtin/json_result.fs\", \"modules/foundry_script/builtin/json_serializable.fs\", \"modules/foundry_script/SCsub\", \"modules/foundry_script/register_types.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.arm64 --headless test run --case \\\"*FSBuiltinTypes*\\\" --force-colors\", \"acceptanceCriteria\": [\"uses JsonSerializable works with no import\", \"wrong from_json return rejected\", \"JsonNode ordinals are Null=0..Object=6\", \"every builtin analyzes with zero errors\", \"JsonNode.of wraps a Variant tree\"]}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Register the to_json script-dispatched hook",
+      "status": "pending",
+      "blockedBy": [5],
+      "description": "**Goal:** `to_json` is a registered script-dispatched hook with exactly one native invoker.\n\n**Verify:** `./bin/foundry.macos.editor.arm64 --headless test run --case \"*FoundryScript*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/foundry_script.h\", \"modules/foundry_script/fs_json_marshal.h\", \"modules/foundry_script/fs_json_marshal.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.arm64 --headless test run --case \\\"*FoundryScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"to_json listed in FSScriptExtensibleNativeHooks\", \"script override produces no analyzer warning\", \"unrelated native override still warns\", \"single native call site\"]}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 7: Module-side encode handler",
+      "status": "pending",
+      "blockedBy": [4, 5, 6],
+      "description": "**Goal:** `JSON.stringify()` marshals a conforming Foundry Script object through its `to_json()`.\n\n**Verify:** `./bin/foundry.macos.editor.arm64 --headless test run --case \"*FoundryScript*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_json_marshal.h\", \"modules/foundry_script/fs_json_marshal.cpp\", \"modules/foundry_script/register_types.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.arm64 --headless test run --case \\\"*FoundryScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"stringify uses to_json representation\", \"nested in Dictionary and Array marshalled\", \"non-conforming object unchanged\", \"malformed JsonNode push_errors and yields null\", \"depth limit enforced\"]}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 8: JSON.parse_to_node and the decode path",
+      "status": "pending",
+      "blockedBy": [7],
+      "description": "**Goal:** JSON text parses into a `JsonNode` tree and decodes into a typed instance, with errors carrying a path.\n\n**Verify:** `./bin/foundry.macos.editor.arm64 --headless test run --case \"*FoundryScript*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"core/io/json.h\", \"core/io/json.cpp\", \"modules/foundry_script/fs_json_marshal.h\", \"modules/foundry_script/fs_json_marshal.cpp\"], \"verifyCommand\": \"./bin/foundry.macos.editor.arm64 --headless test run --case \\\"*FoundryScript*\\\" --force-colors\", \"acceptanceCriteria\": [\"parse_to_node returns JsonResult[JsonNode]\", \"syntax error carries message and line\", \"round-trip preserves values\", \"shape mismatch yields expected path\", \"nested failure propagates path\"]}\n```"
+    },
+    {
+      "id": 9,
+      "subject": "Task 9: Documentation",
+      "status": "pending",
+      "blockedBy": [8],
+      "description": "**Goal:** The class reference documents the new API and the doc-sync check passes.\n\n**Verify:** `pre-commit run --all-files`\n\n```json:metadata\n{\"files\": [\"doc/classes/JSON.xml\"], \"verifyCommand\": \"pre-commit run --all-files\", \"acceptanceCriteria\": [\"parse_to_node documented with example\", \"pre-commit passes including generated-doc dry run\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-07-31"
+}
