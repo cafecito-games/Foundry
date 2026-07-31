@@ -204,7 +204,15 @@ def validate_tap_report(text: str) -> TapReport:
             )
             continue
 
-        block, index = _collect_diagnostic_block(numbered, index)
+        block, index, terminated = _collect_diagnostic_block(numbered, index)
+        if block is not None and not terminated:
+            violations.append(
+                Violation(
+                    ViolationCode.INVALID_DIAGNOSTIC_BLOCK,
+                    "Diagnostic block is not terminated by '{}...'".format(_BLOCK_INDENT),
+                    _at(line_number),
+                )
+            )
         point = _build_point(point_match, block, line_number, violations)
         if point is not None:
             expected_number = len(points) + 1
@@ -267,21 +275,27 @@ def _check_duplicate_ids(points: list[TapPoint], violations: list[Violation]) ->
 
 def _collect_diagnostic_block(
     numbered: list[tuple[int, str]], index: int
-) -> tuple[Optional[list[tuple[int, str]]], int]:
-    """Consumes an indented YAML block following a test point, if present."""
+) -> tuple[Optional[list[tuple[int, str]]], int, bool]:
+    """Consumes an indented YAML block following a test point, if present.
+
+    Returns the block lines, the index of the first line after it, and whether
+    the block was terminated. A report truncated part-way through a diagnostic
+    block leaves an unterminated block, which is an incomplete point rather than
+    a usable result.
+    """
 
     if index >= len(numbered) or numbered[index][1] != _BLOCK_INDENT + "---":
-        return (None, index)
+        return (None, index, True)
     block: list[tuple[int, str]] = []
     index += 1
     while index < len(numbered):
         line_number, line = numbered[index]
         index += 1
         if line == _BLOCK_INDENT + "...":
-            return (block, index)
+            return (block, index, True)
         block.append((line_number, line))
     # An unterminated block is still returned so its contents can be reported.
-    return (block, index)
+    return (block, index, False)
 
 
 def _build_point(

@@ -229,7 +229,8 @@ ok 1 - MathTests.adds_numbers
 - Test points MUST be numbered from 1 without gaps, and MUST appear in the same deterministic order
   as discovery.
 - A test point line is `ok <n> - <description>` or `not ok <n> - <description>`, optionally followed
-  by ` # SKIP <reason>`. A description MUST NOT contain ` # `.
+  by ` # SKIP <reason>`. A description MUST NOT contain `#`, so the optional directive is
+  unambiguous.
 - Further `#` comment lines carry no protocol meaning and are ignored.
 
 ### 5.1 Diagnostic blocks
@@ -238,6 +239,9 @@ Every test point MUST be followed by a YAML diagnostic block delimited by `  ---
 a restricted YAML subset: block mappings only, two-space indentation steps starting at column 3, and
 scalar values that are double-quoted strings, integers, `true`, `false`, or `null`. Anything outside
 that subset is a conformance failure, so consumers never need a full YAML implementation.
+
+A block MUST be terminated by its closing `  ...` line. A report truncated part-way through a block
+has an incomplete final point rather than a usable result, and that point MUST NOT be consumed.
 
 The block MUST contain a `_foundry` mapping with:
 

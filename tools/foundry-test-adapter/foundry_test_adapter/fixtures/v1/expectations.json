@@ -245,6 +245,13 @@
       "point_count": 1,
       "complete": false
     },
+    "invalid/truncated_diagnostic_block.tap": {
+      "violations": [
+        { "code": "invalid_diagnostic_block", "location": "line 11" },
+        { "code": "missing_field", "location": "line 11" },
+        { "code": "missing_field", "location": "line 11" }
+      ]
+    },
     "invalid/unknown_status_detail.tap": {
       "violations": [
         { "code": "invalid_field_value", "location": "line 4" }
