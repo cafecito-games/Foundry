@@ -759,6 +759,55 @@ void FSAnalyzer::resolve_function_signature_in_class(FSParser::FunctionNode *p_f
 	parser->current_class = previous_class;
 }
 
+// A tagged union's payload field type may name the union itself, in which case it was captured
+// while only the union's identity was published (see `resolve_enum_values`) and carries no cases.
+// Re-read the declaration so a value typed from that field — a `match` bind, an element of a
+// payload collection — sees the union's complete case set instead of the identity shell.
+FSParser::DataType FSAnalyzer::complete_self_referential_enum_type(const FSParser::DataType &p_type) {
+	FSParser::DataType completed = p_type;
+
+	if (completed.kind == FSParser::DataType::ENUM && completed.is_tagged_union &&
+			completed.enum_values.is_empty() && completed.class_type != nullptr) {
+		const FSParser::ClassNode *owner = completed.class_type;
+		const FSParser::EnumNode *declaration = nullptr;
+		if (owner->is_enum_file) {
+			declaration = owner->enum_file_decl;
+		} else if (owner->has_member(completed.enum_type)) {
+			const FSParser::ClassNode::Member member = owner->get_member(completed.enum_type);
+			if (member.type == FSParser::ClassNode::Member::ENUM) {
+				declaration = member.m_enum;
+			}
+		}
+
+		if (declaration != nullptr) {
+			const FSParser::DataType declared_type = declaration->get_datatype();
+			if (declared_type.is_set() && declared_type.kind == FSParser::DataType::ENUM &&
+					!declared_type.enum_values.is_empty()) {
+				completed.enum_values = declared_type.enum_values;
+				completed.enum_case_payloads = declared_type.enum_case_payloads;
+			}
+		}
+	}
+
+	// A payload field may nest the union anywhere a datatype can appear: a typed collection or
+	// tuple (`Array[Chain]`), a callable signature (`Callable[[], Chain]`), a generic argument
+	// (`Box[Chain]`), or a type-parameter bound. Descend into every such slot. `enum_case_payloads`
+	// is deliberately excluded: a union's payload map names the union itself, so it has no finite
+	// fixed point, and each level reaches this helper again when it is used to type a value.
+	auto complete_each = [](Vector<FSParser::DataType> &r_types) {
+		for (int i = 0; i < r_types.size(); i++) {
+			r_types.write[i] = complete_self_referential_enum_type(r_types[i]);
+		}
+	};
+	complete_each(completed.container_element_types);
+	complete_each(completed.method_parameter_types);
+	complete_each(completed.method_return_type);
+	complete_each(completed.type_parameter_bound);
+	complete_each(completed.type_arguments);
+
+	return completed;
+}
+
 FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 		const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner) {
 	ERR_FAIL_NULL_V(p_enum, p_enum_type);
@@ -773,6 +822,18 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 
 	FSParser::DataType enum_type = p_enum_type;
 	enum_type.is_tagged_union = p_enum->is_tagged_union;
+
+	// A tagged union's payload fields are types only (the grammar admits no default-value
+	// expressions there), so a payload type that names this same union needs the union's
+	// identity, not its values. Publishing the identity before the value loop lets that
+	// reference resolve instead of re-entering resolution and reporting a false cycle. The
+	// complete type — values, dictionary, and payloads — replaces it once the loop finishes.
+	// Int-backed enums keep the stricter guard: their `= expression` values can form a cycle
+	// that genuinely has no resolution.
+	if (enum_type.is_tagged_union) {
+		p_enum->set_datatype(enum_type);
+	}
+
 	Dictionary dictionary;
 	for (int i = 0; i < p_enum->values.size(); i++) {
 		FSParser::EnumNode::Value &element = p_enum->values.write[i];

@@ -4779,7 +4779,7 @@ void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_patte
 		FSParser::DataType field_type;
 		FSParser::DataType *field_type_ptr = nullptr;
 		if (payload != nullptr && i < payload->field_types.size()) {
-			field_type = payload->field_types[i];
+			field_type = complete_self_referential_enum_type(payload->field_types[i]);
 			field_type_ptr = &field_type;
 		}
 		resolve_match_pattern(p_match_pattern->array[i], nullptr, field_type_ptr);
@@ -6948,6 +6948,9 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_current_parser(const S
 		return error_type;
 	}
 	if (enum_node->get_datatype().is_set()) {
+		// A tagged union publishes its identity before resolving payload types, so a payload field
+		// naming this same union lands here and gets the identity shell. That is the correct answer
+		// in a type position, and the complete type replaces the shell once resolution finishes.
 		return enum_node->get_datatype();
 	}
 
@@ -9955,7 +9958,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	}
 
 	for (int i = 0; i < expected_count; i++) {
-		const FSParser::DataType field_type = payload->field_types[i];
+		const FSParser::DataType field_type = complete_self_referential_enum_type(payload->field_types[i]);
 		FSParser::ExpressionNode *argument = p_call->arguments[i];
 		const FSParser::DataType argument_type = argument->get_datatype();
 		if (!argument_type.is_set()) {
@@ -9972,6 +9975,21 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 			update_const_expression_builtin_type(argument, field_type, "pass");
 		} else if (!field_type.is_variant() && (argument_type.is_variant() || !argument_type.is_hard_type())) {
 			mark_node_unsafe(p_call);
+		}
+
+		// A collection literal in payload position stays untyped unless the declared field type is
+		// pushed into it, exactly as an ordinary call does for its typed parameters. Without this,
+		// `Case(children: Array[T])` rejects `Case([...])` at runtime as an untyped `Array`.
+		if (!field_type.is_hard_type()) {
+			continue;
+		}
+		if (argument->type == FSParser::Node::ARRAY && field_type.has_container_element_type(0)) {
+			update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(argument),
+					field_type.get_container_element_type(0));
+		} else if (argument->type == FSParser::Node::DICTIONARY && field_type.has_container_element_types()) {
+			update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(argument),
+					field_type.get_container_element_type_or_variant(0),
+					field_type.get_container_element_type_or_variant(1));
 		}
 	}
 
@@ -10681,7 +10699,7 @@ void FSAnalyzer::resolve_type_test_case_binds(FSParser::TypeTestNode *p_type_tes
 		}
 		FSParser::DataType bind_type;
 		if (payload != nullptr && i < payload->field_types.size()) {
-			bind_type = payload->field_types[i];
+			bind_type = complete_self_referential_enum_type(payload->field_types[i]);
 		} else {
 			bind_type.kind = FSParser::DataType::VARIANT;
 			bind_type.type_source = FSParser::DataType::INFERRED;
