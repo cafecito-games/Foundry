@@ -653,6 +653,26 @@ names on different levels of the chain (e.g. a base conformance to trait A suppl
 a derived conformance to trait B supplies `foo()`) follow this shadowing rule and are not
 rejected.
 
+**Reach.** A conformance takes effect for the files that **load** its declaring file, not for
+the whole project. A file loads it when it:
+
+1. declares it itself;
+2. `preload`s (or `extends`) the declaring file, directly or transitively; or
+3. is in the same **named** namespace as the declaring file, or `import`s that namespace
+   (§4.2). A file's own namespace counts as implicitly imported, exactly as it does for short
+   class names and custom annotations.
+
+The global namespace is excluded from rule 3: it has no `import` syntax, so being in it is not
+a choice a file makes, and treating it as implicitly imported would make every script in a
+project load every other one that happens to declare a conformance. A conformance declared in a
+file with no `namespace` declaration is reached only by rules 1 and 2.
+
+Reach is a load edge, not just a name-resolution one: a conformance only exists at run time
+once its declaring script has been compiled, so a file that reaches a conformance through
+rule 3 keeps that file loaded even though nothing in its emitted code names it. A call to a
+witness supplied by a conformance the file does **not** reach is an analysis error naming the
+declaring file — never an accepted call that misses at run time.
+
 ---
 
 ## 5. Expressions (Pratt parser)

@@ -96,6 +96,12 @@ public:
 	// loaded in-process, so consumers that run before the first filesystem scan see the
 	// opened project's global classes rather than the projectless/previous ones.
 	static void reload_global_classes_from_project();
+	// `p_clear_existing` distinguishes a wholesale project reload, which must not keep the previous
+	// project's entries, from a resource-pack mount, which adds to what is already indexed.
+	static void reload_global_conformances_from_project(bool p_clear_existing);
+	// Every indexed conformance-declaring file across all languages, tagged with its language name.
+	static Array get_global_conformances();
+	static void prune_missing_global_conformances();
 	static void add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait, bool p_is_enum = false);
 	static void remove_global_class(const StringName &p_class);
 	static void remove_global_class_by_path(const String &p_path);
@@ -491,14 +497,35 @@ public:
 	virtual bool handles_global_class_type(const String &p_type) const { return false; }
 	virtual String get_global_class_name(const String &p_path, String *r_base_type = nullptr, String *r_icon_path = nullptr, bool *r_is_abstract = nullptr, bool *r_is_tool = nullptr, bool *r_is_trait = nullptr, bool *r_is_enum = nullptr) const { return String(); }
 
-	// Refresh the language's cross-file custom annotation index for a script path, so editor
-	// tooling can resolve annotation-only namespaces and detect duplicate annotation declarations
-	// across files. Mirrors `get_global_class_name`: it runs during the editor file-system scan
-	// and must not depend on the analyzer. `p_search_path` is the path previously indexed (dropped
-	// here, in case the file moved) and `p_target_path` is the path to re-index. A path that no
-	// longer exists is simply removed. The default is a no-op for languages without custom
-	// annotations.
-	virtual void update_global_class_annotations(const String &p_search_path, const String &p_target_path) {}
+	// Refresh the language's cross-file declaration indexes for a script path, so editor tooling can
+	// resolve declarations that live in files exporting no global class — custom annotations and
+	// retroactive trait conformances. Mirrors `get_global_class_name`: it runs during the editor
+	// file-system scan and must not depend on the analyzer. `p_search_path` is the path previously
+	// indexed (dropped here, in case the file moved) and `p_target_path` is the path to re-index. A
+	// path that no longer exists is simply removed. The default is a no-op for languages with no
+	// such declarations.
+	virtual void update_global_declaration_index(const String &p_search_path, const String &p_target_path) {}
+
+	// Drop every indexed cross-file declaration whose declaring file lives under `p_root_prefix`
+	// (a directory path ending in `/`). A rescan of that root is the source of truth for it, so
+	// entries are dropped first and re-added by re-indexing the files that still exist; otherwise a
+	// deleted declaration library would linger and keep being offered to importers.
+	virtual void clear_global_declaration_index_under(const String &p_root_prefix) {}
+
+	// Every file this language has indexed as declaring retroactive conformances, as
+	// `{"path": String, "namespace": String}` dictionaries. Such a file exports no global class, so
+	// this index is the only record that it exists — and an exported project never rescans, which is
+	// why it is persisted with the global class cache and restored through `add_indexed_conformance`.
+	virtual void get_indexed_conformances(Array &r_conformances) const {}
+	virtual void add_indexed_conformance(const String &p_path, const String &p_namespace) {}
+	// Drops every indexed conformance. Used when the project's cache is reloaded wholesale, so
+	// entries belonging to a previously opened project cannot survive into the new one.
+	virtual void clear_indexed_conformances() {}
+	// Drops indexed conformances whose file no longer exists. A file deleted while the editor was
+	// closed is restored from the cache at startup and never visited by the scan that follows, so
+	// nothing else would evict it and consumers of its namespace would take a dependency on a path
+	// that cannot be loaded.
+	virtual void prune_missing_indexed_conformances() {}
 
 	virtual ~ScriptLanguage() {}
 };

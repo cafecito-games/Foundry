@@ -214,6 +214,15 @@ public:
 	bool find_witness_location(const String &p_target_fqcn, const StringName &p_method,
 			String &r_source_file, int &r_conformance_index) const;
 
+	// The declaring file and trait of a witness for `(p_target_fqcn, p_method)` that the installed
+	// `Visibility` *hides*. The deliberate inverse of the queries the type system asks: it reports
+	// exactly the conformances a caller must not type-check against, so an otherwise unresolved call
+	// can be rejected with the reason instead of being deferred to a run-time member-miss that finds
+	// nothing. Matches on the exact FQCN, like `find_witness_location`, so a diagnostic can never be
+	// raised on behalf of an unrelated class that merely shares a file with the target.
+	bool find_hidden_witness_declaration(const String &p_target_fqcn, const StringName &p_method,
+			String &r_source_file, StringName &r_trait_name) const;
+
 	// Replaces every compiled runtime witness previously registered by `p_source_file`. The
 	// `FSFunction *` in `p_conformances` stay owned by the declaring script; the registry borrows
 	// them until the next re-registration or `clear_runtime_witnesses`.

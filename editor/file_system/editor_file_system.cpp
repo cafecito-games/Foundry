@@ -339,8 +339,17 @@ void EditorFileSystem::_first_scan_filesystem() {
 	// Removing invalid global class to prevent having invalid paths in ScriptServer.
 	bool save_scripts = _remove_invalid_global_class_names(existing_class_names);
 
-	// If a global class is found or removed, we sync global_script_class_cache.cfg with the ScriptServer
-	if (!existing_class_names.is_empty() || save_scripts) {
+	// Declarations that export no global class (retroactive conformances) are restored from the same
+	// cache but are not covered by the class reconciliation above, and a project may have nothing but
+	// those. Evict the ones whose file is gone before deciding whether the cache needs rewriting, so
+	// a deleted declaration library cannot survive a scan that found no class changes.
+	ScriptServer::prune_missing_global_conformances();
+	const bool conformances_changed =
+			ProjectSettings::get_singleton()->get_global_conformance_list() != ScriptServer::get_global_conformances();
+
+	// If a global class or a cross-file declaration is found or removed, we sync
+	// global_script_class_cache.cfg with the ScriptServer
+	if (!existing_class_names.is_empty() || save_scripts || conformances_changed) {
 		EditorNode::get_editor_data().script_class_save_global_classes();
 	}
 
@@ -2932,24 +2941,24 @@ HashSet<String> EditorFileSystem::get_valid_extensions() const {
 void EditorFileSystem::_register_global_class_script(const String &p_search_path, const String &p_target_path, const ScriptClassInfoUpdate &p_script_update) {
 	ScriptServer::remove_global_class_by_path(p_search_path); // First remove, just in case it changed
 
-	// Refresh the owning language's cross-file custom annotation index for this path. This must run
-	// even for annotation-only files that declare no global class (which return early below), so
-	// pure annotation libraries are discoverable by imports and duplicate-identity checks. Match the
-	// language by file extension, since a removed file carries no resource type to dispatch on. A
-	// rename can change the extension, so the language owning the new path (which re-indexes it) and
-	// the one that owned the old path (which must drop its stale entries) can differ; handle both so
-	// a `.fs` renamed to a non-script extension does not leave annotations behind.
+	// Refresh the owning language's cross-file declaration indexes for this path. This must run even
+	// for files that declare no global class (which return early below), so pure annotation and
+	// retroactive-conformance libraries are discoverable by imports and duplicate-identity checks.
+	// Match the language by file extension, since a removed file carries no resource type to
+	// dispatch on. A rename can change the extension, so the language owning the new path (which
+	// re-indexes it) and the one that owned the old path (which must drop its stale entries) can
+	// differ; handle both so a `.fs` renamed to a non-script extension leaves nothing behind.
 	const String search_extension = p_search_path.get_extension().to_lower();
 	const String target_extension = p_target_path.get_extension().to_lower();
 	for (int i = 0; i < ScriptServer::get_language_count(); i++) {
 		ScriptLanguage *language = ScriptServer::get_language(i);
 		const String language_extension = language->get_extension();
 		if (language_extension == target_extension) {
-			language->update_global_class_annotations(p_search_path, p_target_path);
+			language->update_global_declaration_index(p_search_path, p_target_path);
 		} else if (language_extension == search_extension) {
 			// The old path's language no longer owns the new path: just drop the old path's entries
 			// (its file is gone after the rename, so re-indexing it collapses to a removal).
-			language->update_global_class_annotations(p_search_path, p_search_path);
+			language->update_global_declaration_index(p_search_path, p_search_path);
 		}
 	}
 

@@ -100,6 +100,14 @@ public:
 		return p_script->witness_target_scripts.has(p_target);
 	}
 
+	static void add_namespace_conformance_script(const Ref<FoundryScript> &p_script, const Ref<Script> &p_conformance) {
+		p_script->namespace_conformance_scripts.push_back(p_conformance);
+	}
+
+	static bool retains_namespace_conformance_script(const Ref<FoundryScript> &p_script, const Ref<Script> &p_conformance) {
+		return p_script->namespace_conformance_scripts.has(p_conformance);
+	}
+
 	static FSFunction *get_initializer(const Ref<FoundryScript> &p_script) {
 		return p_script->initializer;
 	}
@@ -637,6 +645,73 @@ TEST_CASE("[FoundryScript][BytecodeScript] Generic type parameter bindings re-ke
 	// The `value: T` member slot binding follows the same specialization.
 	CHECK(TestFSBytecodeScriptAccessor::get_member_binding_kind(restored_box, SNAME("value")) == 2);
 	CHECK(TestFSBytecodeScriptAccessor::get_member_binding_kind(restored_int_box, SNAME("value")) == 1);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges survive serialization") {
+	// A conformance file reached through a namespace is the one script a compiled file references
+	// nowhere: no constant, no type, no base. Only the declaring script's own compilation registers
+	// its witnesses, so if the edge did not survive serialization an exported game would type-check
+	// against a conformance whose witnesses never get registered.
+	const Ref<FoundryScript> conformance_library = compile_bytecode_test_source(
+			"class Marker:\n"
+			"\tpass\n");
+	// The consumer declares a conformance of its own too, so the failure path below can show that a
+	// script which fails to load stops supplying witnesses to the rest of the process.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"trait Pingable:\n"
+			"\tabstract func ping() -> int\n"
+			"\n"
+			"class Gadget:\n"
+			"\tvar power: int = 21\n"
+			"\n"
+			"extend Gadget uses Pingable:\n"
+			"\tfunc ping() -> int:\n"
+			"\t\treturn power * 2\n"
+			"\n"
+			"func run() -> int:\n"
+			"\treturn 1\n");
+	const String consumer_path = original->get_script_path();
+	const String gadget_key = original->get_subclasses().find(SNAME("Gadget"))->value->get_fully_qualified_name();
+	BytecodeConformanceRegistryRestore registry_restore(consumer_path);
+	TestFSBytecodeScriptAccessor::add_namespace_conformance_script(original, conformance_library);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// The library must also be packaged, or the exported game would ship a dangling path.
+	Vector<String> dependencies;
+	FSBytecodeLoader dependency_reader;
+	REQUIRE(dependency_reader.read_dependencies(buffer, dependencies) == OK);
+	CHECK(dependencies.has(conformance_library->get_path()));
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(original->get_script_path());
+	BytecodeTestResolver resolver;
+	resolver.scripts[conformance_library->get_path() + "::"] = conformance_library;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	CHECK(TestFSBytecodeScriptAccessor::retains_namespace_conformance_script(restored, conformance_library));
+
+	// A library that cannot be resolved fails the load rather than producing a consumer whose
+	// conformance witnesses are never registered.
+	Ref<FoundryScript> restored_without_library;
+	restored_without_library.instantiate();
+	restored_without_library->set_path_cache(original->get_script_path());
+	BytecodeTestResolver empty_resolver;
+	FSBytecodeLoader failing_loader;
+	failing_loader.set_resolver(&empty_resolver);
+	ERR_PRINT_OFF;
+	CHECK(failing_loader.load_full(buffer, restored_without_library) != OK);
+	ERR_PRINT_ON;
+	// A caller that only checks `is_valid()` — the resource loader among them — must not be handed
+	// this script despite the error, nor may the witnesses decoded earlier in that same load stay
+	// registered for the rest of the process to dispatch through.
+	CHECK_FALSE(restored_without_library->is_valid());
+	CHECK(FSConformanceRegistry::get_singleton()->find_witness_function(gadget_key, SNAME("ping")) == nullptr);
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register with the registry") {

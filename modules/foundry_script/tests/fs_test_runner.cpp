@@ -526,10 +526,10 @@ static bool generate_class_index_recursive(const String &p_dir) {
 				ScriptServer::add_global_class(class_name, base_type, fs_name, source_file, is_abstract, is_tool, is_trait, is_enum);
 			}
 
-			// Index custom annotation declarations even for annotation-only files that declare
-			// no `class_name`/`trait_name`, so imports and duplicate-identity checks can see them.
-			// Mirrors the editor file-system scan, which refreshes the index through the same call.
-			FSLanguage::get_singleton()->update_global_class_annotations(source_file, source_file);
+			// Index custom annotation and retroactive-conformance declarations even for files that
+			// declare no `class_name`/`trait_name`, so imports and duplicate-identity checks can see
+			// them. Mirrors the editor file-system scan, which refreshes them through the same call.
+			FSLanguage::get_singleton()->update_global_declaration_index(source_file, source_file);
 		}
 
 		next = dir->get_next();

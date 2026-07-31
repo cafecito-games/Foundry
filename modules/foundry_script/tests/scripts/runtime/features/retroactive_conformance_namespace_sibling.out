@@ -1,0 +1,4 @@
+FS_TEST_OK
+~~ WARNING at line 10: (UNSAFE_METHOD_ACCESS) The method "gadget()" is not present on the inferred type "RtcNs2Widget" (but may be present on a subtype).
+true
+gadget:panel

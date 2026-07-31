@@ -333,6 +333,53 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 	return nullptr;
 }
 
+bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method,
+		String &r_source_file, StringName &r_trait_name) {
+	r_source_file = String();
+	r_trait_name = StringName();
+	if (p_method == StringName()) {
+		return false;
+	}
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	if (registry == nullptr) {
+		return false;
+	}
+
+	// Only a receiver whose runtime type is exactly its static type is diagnosed. An unresolved method
+	// on an open type is legal and merely unsafe: the value may be a subtype that declares the method
+	// normally, and the runtime resolves it. Turning that into an error on the strength of a
+	// same-named hidden witness would reject working code. A builtin has no subtypes, and neither does
+	// a `final` class, so for those the hidden witness is the only thing the call could have meant.
+	if (p_target_type.kind == FSParser::DataType::BUILTIN) {
+		return registry->find_hidden_witness_declaration(String(Variant::get_type_name(p_target_type.builtin_type)),
+				p_method, r_source_file, r_trait_name);
+	}
+	if (p_target_type.class_type == nullptr || !p_target_type.class_type->is_final) {
+		return false;
+	}
+
+	// The base chain is walked because a conformance declared on a base stays reachable through the
+	// derived type, matching `find_static_conformance_witness` and the runtime's witness lookup.
+	//
+	// A conformance this file *can* reach, anywhere on that chain, means the call has a well-defined
+	// meaning for this file and is left alone — whether it sits below the hidden one (shadowing it) or
+	// above (the level the call falls through to). Only a name that no reachable conformance supplies
+	// at all is reported, so the diagnostic can never take away a call that works.
+	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
+		String visible_source;
+		int visible_conformance_index = -1;
+		if (registry->find_witness_location(cursor->fqcn, p_method, visible_source, visible_conformance_index)) {
+			return false;
+		}
+	}
+	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
+		if (registry->find_hidden_witness_declaration(cursor->fqcn, p_method, r_source_file, r_trait_name)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, FSParser::ClassNode *p_target,
 		FSParser::ClassNode *p_trait, const HashMap<StringName, FSParser::DataType> &p_trait_substitution) {
 	// Witnesses are looked up by method name; the same name supplied by the target's own surface or by

@@ -1985,6 +1985,10 @@ EditorExportPlatform::FilteredCache EditorExportPlatform::_get_filtered_cache(co
 	}
 
 	HashMap<String, Dictionary> class_by_path;
+	// Conformance-declaring files export no global class, so they are cached separately; they are
+	// filtered by exported path exactly like classes, or the exported project would be told to load a
+	// declaration file that was never packaged.
+	HashMap<String, Dictionary> conformance_by_path;
 	Ref<ConfigFile> global_class_cf;
 	global_class_cf.instantiate();
 	if (global_class_cf->load(ProjectSettings::get_singleton()->get_global_class_list_path()) == OK) {
@@ -1995,10 +1999,18 @@ EditorExportPlatform::FilteredCache EditorExportPlatform::_get_filtered_cache(co
 			ERR_CONTINUE(!class_dict.has("path"));
 			class_by_path[class_dict["path"]] = class_dict;
 		}
+		Array original_conformances = global_class_cf->get_value("", "conformances", Array());
+		conformance_by_path.reserve(original_conformances.size());
+		for (const Variant &item : original_conformances) {
+			const Dictionary &conformance_dict = item;
+			ERR_CONTINUE(!conformance_dict.has("path"));
+			conformance_by_path[conformance_dict["path"]] = conformance_dict;
+		}
 	}
 
 	Vector<String> extension_lines;
 	Array global_class_list;
+	Array global_conformance_list;
 	Vector<Pair<ResourceUID::ID, String>> uid_entries;
 	extension_lines.reserve(extension_list_lines.size());
 	global_class_list.reserve(class_by_path.size());
@@ -2010,6 +2022,9 @@ EditorExportPlatform::FilteredCache EditorExportPlatform::_get_filtered_cache(co
 		}
 		if (class_by_path.has(path)) {
 			global_class_list.push_back(class_by_path[path]);
+		}
+		if (conformance_by_path.has(path)) {
+			global_conformance_list.push_back(conformance_by_path[path]);
 		}
 		ResourceUID::ID uid = EditorFileSystem::get_singleton()->get_file_uid(path);
 		if (uid != ResourceUID::INVALID_ID) {
@@ -2025,6 +2040,7 @@ EditorExportPlatform::FilteredCache EditorExportPlatform::_get_filtered_cache(co
 
 	// Encode global classes.
 	global_class_cf->set_value("", "list", global_class_list);
+	global_class_cf->set_value("", "conformances", global_conformance_list);
 	result.global_class_list = global_class_cf->encode_to_text().to_utf8_buffer();
 
 	// Encode UIDs.

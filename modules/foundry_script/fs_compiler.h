@@ -197,6 +197,9 @@ class FSCompiler {
 	Error _compile_enum_functions(
 			FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum);
 	Error _compile_conformance_witnesses(FoundryScript *p_script, const FSParser::ClassNode *p_class);
+	Error _load_namespace_conformance_scripts(FoundryScript *p_script);
+	void _invalidate_compiled_classes(FoundryScript *p_script);
+	void _withdraw_runtime_witnesses(FoundryScript *p_script);
 	FSFunction *_make_static_initializer(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class);
 	Error _parse_setter_getter(FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::VariableNode *p_variable, bool p_is_setter);
 	Error _prepare_compilation(FoundryScript *p_script, const FSParser::ClassNode *p_class, bool p_keep_state);

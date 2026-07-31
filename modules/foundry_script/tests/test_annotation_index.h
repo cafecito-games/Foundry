@@ -91,7 +91,7 @@ TEST_CASE("[Modules][FoundryScript] Annotation index resolves namespaces and dup
 	language->clear_global_annotations();
 }
 
-// These tests exercise `update_global_class_annotations`, the entry point the editor file-system
+// These tests exercise `update_global_declaration_index`, the entry point the editor file-system
 // scan and the LSP call to refresh the index from real files on disk. They write throwaway scripts
 // under the OS temp path so the disk-extraction path runs against actual files.
 
@@ -118,7 +118,7 @@ TEST_CASE("[Modules][FoundryScript] Annotation index refreshes from disk") {
 			"annotation suite targets CLASS\n"
 			"annotation fixture targets VARIABLE\n");
 
-	language->update_global_class_annotations(library_path, library_path);
+	language->update_global_declaration_index(library_path, library_path);
 
 	SUBCASE("Annotation-only files are indexed by the scan entry point") {
 		CHECK(language->is_global_annotation(SNAME("cafecito.test.suite")));
@@ -128,7 +128,7 @@ TEST_CASE("[Modules][FoundryScript] Annotation index refreshes from disk") {
 	}
 
 	SUBCASE("Re-scanning the same file does not create duplicates") {
-		language->update_global_class_annotations(library_path, library_path);
+		language->update_global_declaration_index(library_path, library_path);
 		CHECK_FALSE(language->is_duplicated_global_annotation(SNAME("cafecito.test.suite")));
 	}
 
@@ -136,7 +136,7 @@ TEST_CASE("[Modules][FoundryScript] Annotation index refreshes from disk") {
 		write_file(library_path,
 				"namespace cafecito.test\n"
 				"annotation suite targets CLASS\n");
-		language->update_global_class_annotations(library_path, library_path);
+		language->update_global_declaration_index(library_path, library_path);
 
 		CHECK(language->is_global_annotation(SNAME("cafecito.test.suite")));
 		// The removed declaration is no longer indexed.
@@ -146,7 +146,7 @@ TEST_CASE("[Modules][FoundryScript] Annotation index refreshes from disk") {
 	SUBCASE("Removing a file drops its declarations from the index") {
 		REQUIRE_EQ(dir->remove(library_path), OK);
 		// Re-running against the now-missing path mirrors the editor's file-removal path.
-		language->update_global_class_annotations(library_path, library_path);
+		language->update_global_declaration_index(library_path, library_path);
 
 		CHECK_FALSE(language->is_global_annotation(SNAME("cafecito.test.suite")));
 		CHECK_FALSE(language->is_global_annotation(SNAME("cafecito.test.fixture")));
@@ -156,7 +156,7 @@ TEST_CASE("[Modules][FoundryScript] Annotation index refreshes from disk") {
 	SUBCASE("Renaming a file moves its declarations to the new path") {
 		const String renamed_path = root.path_join("renamed.fs");
 		REQUIRE_EQ(dir->rename(library_path, renamed_path), OK);
-		language->update_global_class_annotations(library_path, renamed_path);
+		language->update_global_declaration_index(library_path, renamed_path);
 
 		CHECK(language->is_global_annotation(SNAME("cafecito.test.suite")));
 		// The identity is declared by exactly one path, not duplicated across old and new.
@@ -171,7 +171,7 @@ TEST_CASE("[Modules][FoundryScript] Annotation index refreshes from disk") {
 		write_file(broken_path,
 				"namespace cafecito.broken\n"
 				"annotation suite targets\n"); // Missing target list: a parse error.
-		language->update_global_class_annotations(broken_path, broken_path);
+		language->update_global_declaration_index(broken_path, broken_path);
 
 		CHECK_FALSE(language->is_global_annotation(SNAME("cafecito.broken.suite")));
 		CHECK_FALSE(language->namespace_has_annotations("cafecito.broken"));
@@ -208,7 +208,7 @@ TEST_CASE("[Modules][FoundryScript] Annotation extraction ignores analyzer error
 				"var broken: int = \"not an int\"\n");
 	}
 
-	language->update_global_class_annotations(library_path, library_path);
+	language->update_global_declaration_index(library_path, library_path);
 	CHECK(language->is_global_annotation(SNAME("cafecito.test.suite")));
 
 	language->clear_global_annotations();

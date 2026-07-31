@@ -1256,6 +1256,30 @@ Error FSBytecodeLoader::_read_dependency_section(StreamPeerBuffer *p_stream, Vec
 	return OK;
 }
 
+// Reads the paths of the conformance files this script reaches through a namespace. They sit next to
+// the dependency list, ahead of any class data, because they are consumed as plain paths: no compiled
+// reference names them, which is exactly why they have to be listed.
+Error FSBytecodeLoader::_read_namespace_conformance_section(StreamPeerBuffer *p_stream, Vector<String> *r_paths) {
+	Error error = _expect_section(p_stream, FSBytecodeFormat::SECTION_NAMESPACE_CONFORMANCES);
+	if (error != OK) {
+		return error;
+	}
+	const uint32_t conformance_count = p_stream->get_u32();
+	ERR_FAIL_COND_V_MSG((int64_t)conformance_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+			"Truncated namespace conformance list in compiled script data.");
+	for (uint32_t i = 0; i < conformance_count; i++) {
+		String conformance_path;
+		error = _get_string(p_stream->get_u32(), conformance_path);
+		if (error != OK) {
+			return error;
+		}
+		if (r_paths != nullptr) {
+			r_paths->push_back(conformance_path);
+		}
+	}
+	return OK;
+}
+
 Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const Ref<FoundryScript> &p_class, const String &p_root_path,
 		Vector<SkeletonBaseReference> &r_base_references, int p_depth) {
 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_DATA,
@@ -1386,6 +1410,12 @@ Error FSBytecodeLoader::load_skeleton(const Vector<uint8_t> &p_buffer, const Ref
 		return error;
 	}
 	error = _read_dependency_section(stream.ptr(), nullptr);
+	if (error != OK) {
+		return error;
+	}
+	// A skeleton carries no runtime behavior, so the conformance paths are consumed only to keep the
+	// stream positioned; `load_full` is what loads them.
+	error = _read_namespace_conformance_section(stream.ptr(), nullptr);
 	if (error != OK) {
 		return error;
 	}
@@ -2022,6 +2052,11 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 	if (error != OK) {
 		return error;
 	}
+	Vector<String> namespace_conformance_paths;
+	error = _read_namespace_conformance_section(stream.ptr(), &namespace_conformance_paths);
+	if (error != OK) {
+		return error;
+	}
 
 	error = _expect_section(stream.ptr(), FSBytecodeFormat::SECTION_SKELETON);
 	if (error != OK) {
@@ -2095,6 +2130,47 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 	for (FoundryScript *loaded_class : local_classes) {
 		loaded_class->_static_default_init();
 		loaded_class->valid = true;
+	}
+
+	// Load the conformance files reached through a namespace, mirroring
+	// `FSCompiler::_load_namespace_conformance_scripts`. It runs after this script is linked and
+	// marked valid, matching the source path, where `_compile_class` has already done both: a
+	// conformance library that reaches back to this script has to find it usable. Failing to load one
+	// fails this script, because its calls and assignments were type-checked against a conformance
+	// whose witnesses only that library registers.
+	//
+	// The classes were marked valid just above, and the witness section was decoded earlier in this
+	// same load, so a failure here has two things to take back: a caller that only checks
+	// `is_valid()` would cache and hand out this script whatever error is returned, and a script that
+	// failed to load must not go on supplying witnesses process-wide.
+	auto withdraw_failed_load = [&]() {
+		for (FoundryScript *loaded_class : local_classes) {
+			loaded_class->valid = false;
+		}
+		if (!p_script->registered_conformance_source.is_empty()) {
+			FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(p_script->registered_conformance_source);
+			p_script->registered_conformance_source = String();
+		}
+	};
+	for (const String &conformance_path : namespace_conformance_paths) {
+		if (conformance_path == script_path) {
+			continue;
+		}
+		if (resolver == nullptr) {
+			withdraw_failed_load();
+			ERR_FAIL_V_MSG(ERR_UNCONFIGURED, "No external-reference resolver is set on the bytecode loader.");
+		}
+		bool conformance_is_local = false;
+		const Ref<Script> conformance_script = resolver->resolve_script(conformance_path, String(), conformance_is_local);
+		if (conformance_script.is_null()) {
+			withdraw_failed_load();
+			ERR_FAIL_V_MSG(ERR_CANT_RESOLVE,
+					vformat("Cannot load compiled script '%s': could not load '%s', which declares a retroactive conformance it uses through its namespace.",
+							script_path, conformance_path));
+		}
+		if (!p_script->namespace_conformance_scripts.has(conformance_script)) {
+			p_script->namespace_conformance_scripts.push_back(conformance_script);
+		}
 	}
 	if (ScriptServer::is_scripting_enabled() || p_script->is_tool()) {
 		error = p_script->_static_init();

@@ -4290,6 +4290,9 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 	}
 	p_script->witness_functions.clear();
 	p_script->witness_target_scripts.clear();
+	// Recompilation re-derives which namespaces this file imports, so the previous set of
+	// conformance-declaring files it kept loaded is dropped and rebuilt from the new parse.
+	p_script->namespace_conformance_scripts.clear();
 
 	p_script->static_variables.clear();
 
@@ -5365,6 +5368,69 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 	return OK;
 }
 
+void FSCompiler::_invalidate_compiled_classes(FoundryScript *p_script) {
+	if (p_script == nullptr) {
+		return;
+	}
+	p_script->valid = false;
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_script->subclasses) {
+		_invalidate_compiled_classes(subclass.value.ptr());
+	}
+}
+
+void FSCompiler::_withdraw_runtime_witnesses(FoundryScript *p_script) {
+	// A script that failed to compile must not keep supplying witnesses to the rest of the process.
+	// The registry only borrows the compiled functions, so dropping the registration here is enough;
+	// the script still owns them and frees them on its next `_prepare_compilation` or `clear()`.
+	if (p_script == nullptr || p_script->registered_conformance_source.is_empty()) {
+		return;
+	}
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(p_script->registered_conformance_source);
+	p_script->registered_conformance_source = String();
+}
+
+Error FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
+	// The analyzer type-checks against a conformance the moment this file's namespace or one of its
+	// imports declares it. Nothing in the emitted code references the declaring file, though, so
+	// without this it would never be loaded and the call would miss at run time: witnesses are
+	// registered by `_compile_conformance_witnesses` when the *declaring* script compiles. Load each
+	// one through the cache (which resolves compile cycles via the owner) and keep it alive for as
+	// long as this script can dispatch through it.
+	const String source_file = p_script->get_path();
+	for (const String &conformance_path : parser->get_namespace_conformance_dependencies()) {
+		if (conformance_path == source_file) {
+			continue;
+		}
+		Error load_err = OK;
+		const Ref<FoundryScript> conformance_script = FSCache::get_full_script(conformance_path, load_err, source_file);
+		// `FSCache` caches a script whose `reload()` failed and reports OK for every later hit, so a
+		// second attempt at this consumer would otherwise accept a library that never compiled and
+		// never registered its witnesses. Check the library itself, not just this call's error.
+		// A script that is still `reloading` is the cycle terminator, not a failure: two conformance
+		// files in one namespace reach each other, and the inner one legitimately sees the outer as an
+		// invalid-but-error-free shell that finishes compiling once the stack unwinds.
+		const bool conformance_failed = conformance_script.is_null() ||
+				(!conformance_script->is_valid() && !conformance_script->is_reloading());
+		if (load_err != OK || conformance_failed) {
+			// This script's analysis already type-checked calls and assignments against the
+			// conformance, so shipping it without the library would produce exactly the failure this
+			// edge exists to prevent: a witness that is missing only at run time. Fail here instead.
+			//
+			// `_compile_class` has already marked the class tree valid, and a caller that only checks
+			// `is_valid()` (the resource loader among them) would cache and hand out this script
+			// regardless of the error returned here. Take that back before returning.
+			_invalidate_compiled_classes(p_script);
+			_withdraw_runtime_witnesses(p_script);
+			_set_error(vformat(R"(Could not load "%s", which declares a retroactive conformance this file uses through its namespace.)", conformance_path), nullptr);
+			return load_err != OK ? load_err : ERR_CANT_RESOLVE;
+		}
+		if (!p_script->namespace_conformance_scripts.has(conformance_script)) {
+			p_script->namespace_conformance_scripts.push_back(conformance_script);
+		}
+	}
+	return OK;
+}
+
 Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, bool p_keep_state) {
 	err_line = -1;
 	err_column = -1;
@@ -5395,6 +5461,11 @@ Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, boo
 	// Compile retroactive-conformance witnesses against their target classes and register the compiled
 	// functions for runtime dispatch. Done after the head class so member layouts are settled.
 	err = _compile_conformance_witnesses(main_script, root);
+	if (err) {
+		return err;
+	}
+
+	err = _load_namespace_conformance_scripts(main_script);
 	if (err) {
 		return err;
 	}

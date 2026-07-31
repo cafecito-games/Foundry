@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_cache.h"
 #include "modules/foundry_script/fs_conformance_registry.h"
@@ -141,6 +142,317 @@ func probe() -> int:
 )");
 		CHECK_FALSE(ConformanceVisibilityFixture::analyze_is_clean(consumer_path));
 	}
+}
+
+// A conformance-only file exports no global class, so no consumer can name it and name resolution
+// alone never reaches it. The namespace it declares its conformances in is the reachable identity:
+// a file that imports that namespace — or is in it — loads the file, exactly as a `preload` would.
+// The project-wide index that makes such a file discoverable is filled by the file-system scan, which
+// this fixture stands in for by calling the same entry point.
+//
+// Only the conformance file is namespaced. Both the target and the trait are global classes, so no
+// consumer picks the conformance up as a side effect of loading a *different* file in `fsn` — the
+// namespace edge under test is the only route to it.
+struct NamespacedConformanceFixture {
+	String dir;
+	String widget_path;
+	String trait_path;
+	String conformance_path;
+
+	NamespacedConformanceFixture() {
+		dir = OS::get_singleton()->get_temp_path().path_join("foundry_namespaced_conformance");
+		widget_path = write("fsn_widget.fs", R"(final class_name FsnWidget extends RefCounted
+
+var fsn_label: String = "widget"
+)");
+		trait_path = write("fsn_gadgetlike.fs", R"(trait_name FsnGadgetlike
+
+abstract func fsn_gadget() -> String
+)");
+		conformance_path = write("fsn_conformance.fs", R"(namespace fsn
+
+extend FsnWidget uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "gadget:" + fsn_label
+)");
+		ConformanceVisibilityFixture::register_global_class("FsnWidget", widget_path, "RefCounted", false);
+		ConformanceVisibilityFixture::register_global_class("FsnGadgetlike", trait_path, "RefCounted", true);
+		FSLanguage::get_singleton()->update_global_declaration_index(conformance_path, conformance_path);
+	}
+
+	~NamespacedConformanceFixture() {
+		ScriptServer::remove_global_class("FsnWidget");
+		ScriptServer::remove_global_class("FsnGadgetlike");
+		FSLanguage::get_singleton()->remove_conformance_file(conformance_path);
+		FSConformanceRegistry::get_singleton()->clear();
+	}
+
+	String write(const String &p_file_name, const String &p_source) {
+		Ref<DirAccess> dir_access = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(dir_access.is_valid());
+		REQUIRE_EQ(dir_access->make_dir_recursive(dir), OK);
+		const String path = dir.path_join(p_file_name);
+		Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_string(p_source);
+		file->flush();
+		FSCache::remove_parser(path);
+		return path;
+	}
+
+	// Analyzes `p_path` and returns every error message it reported, so a test can assert both that a
+	// consumer is clean and that a rejected one is rejected for the stated reason.
+	static Vector<String> analysis_errors(const String &p_path) {
+		FSCache::remove_parser(p_path);
+		Vector<String> messages;
+		FSParser parser;
+		if (parser.parse(FileAccess::get_file_as_string(p_path), p_path, false) != OK) {
+			messages.push_back("parse failed");
+			return messages;
+		}
+		FSAnalyzer analyzer(&parser);
+		analyzer.analyze();
+		for (const FSParser::ParserError &error : parser.get_errors()) {
+			messages.push_back(error.message);
+		}
+		return messages;
+	}
+
+	static bool any_error_contains(const Vector<String> &p_messages, const String &p_needle) {
+		for (const String &message : p_messages) {
+			if (message.contains(p_needle)) {
+				return true;
+			}
+		}
+		return false;
+	}
+};
+
+TEST_CASE("[Modules][FoundryScript][Conformance] a namespace import reaches the conformances declared in it") {
+	NamespacedConformanceFixture fixture;
+
+	SUBCASE("importing the namespace reports the declaring file as a dependency") {
+		const String consumer_path = fixture.write("fsn_consumer_dependency.fs", R"(import fsn
+
+extends RefCounted
+)");
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(FileAccess::get_file_as_string(consumer_path), consumer_path, false), OK);
+		CHECK(parser.get_namespace_conformance_dependencies().find(fixture.conformance_path) != nullptr);
+		// The generic dependency list carries it too, so cache invalidation and export packaging both
+		// follow the same edge the analyzer does.
+		CHECK(parser.get_dependencies().find(fixture.conformance_path) != nullptr);
+	}
+
+	SUBCASE("a file importing the namespace type-checks against the conformance") {
+		const String consumer_path = fixture.write("fsn_consumer_importing.fs", R"(import fsn
+
+extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnWidget.new()
+	var gadget: FsnGadgetlike = widget
+	return gadget.fsn_gadget() + str(widget is FsnGadgetlike) + widget.fsn_gadget()
+)");
+		CHECK(fixture.analysis_errors(consumer_path).is_empty());
+	}
+
+	SUBCASE("a file in the namespace reaches it without importing anything") {
+		const String consumer_path = fixture.write("fsn_consumer_sibling.fs", R"(namespace fsn
+
+extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnWidget.new()
+	var gadget: FsnGadgetlike = widget
+	return gadget.fsn_gadget()
+)");
+		CHECK(fixture.analysis_errors(consumer_path).is_empty());
+	}
+
+	SUBCASE("a file outside the namespace still does not reach it") {
+		const String consumer_path = fixture.write("fsn_consumer_outside.fs", R"(extends RefCounted
+
+
+func probe() -> bool:
+	var widget := FsnWidget.new()
+	var gadget: FsnGadgetlike = widget
+	return gadget != null
+)");
+		CHECK_FALSE(fixture.analysis_errors(consumer_path).is_empty());
+	}
+
+	SUBCASE("an instance call on a witness it cannot reach is rejected, not deferred to run time") {
+		// The registry has to hold the conformance for this to be the case under test at all: without
+		// it the call is merely unresolved, which is a different (and pre-existing) diagnostic.
+		REQUIRE(fixture.analysis_errors(fixture.conformance_path).is_empty());
+
+		const String consumer_path = fixture.write("fsn_consumer_hidden_call.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnWidget.new()
+	return widget.fsn_gadget()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+		CHECK(NamespacedConformanceFixture::any_error_contains(errors, "fsn_gadget()"));
+		// The diagnostic has to name the file to load, or it is no better than the run-time failure.
+		CHECK(NamespacedConformanceFixture::any_error_contains(errors, fixture.conformance_path));
+	}
+
+	SUBCASE("a visible witness on the receiver shadows a hidden one on its base") {
+		// Witness dispatch is most-derived-first, so a conformance the file *can* reach on the
+		// receiver itself is what the call lands on. A hidden conformance further up the chain is
+		// shadowed and must not turn a working call into an error.
+		const String base_path = fixture.write("fsn_base_widget.fs", R"(class_name FsnBaseWidget extends RefCounted
+)");
+		const String derived_path = fixture.write("fsn_derived_widget.fs", R"(final class_name FsnDerivedWidget extends FsnBaseWidget
+)");
+		const String hidden_base_conformance = fixture.write("fsn_base_conformance.fs", R"(namespace fsn
+
+extend FsnBaseWidget uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "base"
+)");
+		const String visible_conformance = fixture.write("fsn_derived_conformance.fs", R"(extend FsnDerivedWidget uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "derived"
+)");
+		ConformanceVisibilityFixture::register_global_class("FsnBaseWidget", base_path, "RefCounted", false);
+		ConformanceVisibilityFixture::register_global_class("FsnDerivedWidget", derived_path, "FsnBaseWidget", false);
+		FSLanguage::get_singleton()->add_conformance_file(hidden_base_conformance, "fsn");
+		REQUIRE(fixture.analysis_errors(hidden_base_conformance).is_empty());
+
+		const String consumer_path = fixture.write("fsn_consumer_shadowed.fs", R"(extends RefCounted
+
+const _Conformance = preload("fsn_derived_conformance.fs")
+
+
+func probe() -> String:
+	var widget := FsnDerivedWidget.new()
+	return widget.fsn_gadget()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsnBaseWidget");
+		ScriptServer::remove_global_class("FsnDerivedWidget");
+		FSLanguage::get_singleton()->remove_conformance_file(hidden_base_conformance);
+		FSConformanceRegistry::get_singleton()->clear_file(visible_conformance);
+
+		CHECK(errors.is_empty());
+	}
+
+	SUBCASE("an open receiver keeps its unsafe-but-legal call") {
+		// `FsnOpenWidget` is not `final`, so a subtype could declare `fsn_gadget()` of its own and the
+		// runtime would resolve it. Rejecting the call because a conformance this file cannot reach
+		// happens to supply the same name would reject working code, so it stays merely unsafe.
+		const String open_widget_path = fixture.write("fsn_open_widget.fs", R"(class_name FsnOpenWidget extends RefCounted
+)");
+		const String open_conformance_path = fixture.write("fsn_open_conformance.fs", R"(namespace fsn
+
+extend FsnOpenWidget uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "open"
+)");
+		ConformanceVisibilityFixture::register_global_class("FsnOpenWidget", open_widget_path, "RefCounted", false);
+		FSLanguage::get_singleton()->add_conformance_file(open_conformance_path, "fsn");
+		REQUIRE(fixture.analysis_errors(open_conformance_path).is_empty());
+
+		const String consumer_path = fixture.write("fsn_consumer_open_call.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnOpenWidget.new()
+	return str(widget.fsn_gadget())
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsnOpenWidget");
+		FSLanguage::get_singleton()->remove_conformance_file(open_conformance_path);
+
+		CHECK(errors.is_empty());
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] the conformance index survives a project cache round trip") {
+	// An exported project never rescans its scripts: the cache written at export time is the only
+	// record that a conformance-only file exists. Without this round trip a namespace import would
+	// resolve in the editor and fail in the exported game.
+	FSLanguage *language = FSLanguage::get_singleton();
+	const String conformance_path = "res://exported/fsp_conformance.fs";
+	language->add_conformance_file(conformance_path, "fsp");
+
+	const Array persisted = ScriptServer::get_global_conformances();
+	bool found = false;
+	for (const Variant &entry : persisted) {
+		const Dictionary conformance = entry;
+		if (String(conformance.get("path", String())) == conformance_path) {
+			found = true;
+			CHECK_EQ(String(conformance.get("namespace", String())), "fsp");
+			CHECK_EQ(String(conformance.get("language", String())), String(language->get_name()));
+		}
+	}
+	CHECK(found);
+
+	// Restoring from the cache is what an exported project does at startup.
+	language->remove_conformance_file(conformance_path);
+	REQUIRE(language->get_conformance_files_in_namespace("fsp").is_empty());
+	language->add_indexed_conformance(conformance_path, "fsp");
+	CHECK(language->get_conformance_files_in_namespace("fsp").has(conformance_path));
+
+	// A file deleted between editor sessions comes back from the cache and is never visited by the
+	// scan, so the prune the editor runs before rewriting the cache is what evicts it.
+	ScriptServer::prune_missing_global_conformances();
+	CHECK(language->get_conformance_files_in_namespace("fsp").is_empty());
+
+	language->remove_conformance_file(conformance_path);
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] a bootstrap root bounds namespace conformance reach") {
+	// A build task bootstrap may only reach files inside its provider root. Namespace membership is
+	// not a per-dependency opt-in, so a conformance file outside the root is simply not reachable
+	// while a bootstrap is active — otherwise being in a shared namespace would be enough to pull an
+	// arbitrary script into the bootstrap and run it.
+	NamespacedConformanceFixture fixture;
+	const String consumer_path = fixture.write("fsn_bootstrap_consumer.fs", R"(import fsn
+
+extends RefCounted
+)");
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(FileAccess::get_file_as_string(consumer_path), consumer_path, false), OK);
+	REQUIRE(parser.get_namespace_conformance_dependencies().find(fixture.conformance_path) != nullptr);
+
+	FSAnalyzer::set_bootstrap_allowed_dependency_root(fixture.dir.path_join("provider_root"));
+	const List<String> bounded = parser.get_namespace_conformance_dependencies();
+	FSAnalyzer::set_bootstrap_allowed_dependency_root(String());
+
+	CHECK(bounded.find(fixture.conformance_path) == nullptr);
+	// The bound is the root, not a blanket refusal: the same file inside it stays reachable.
+	CHECK(FSAnalyzer::is_bootstrap_path_allowed(fixture.conformance_path));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] a rescan drops conformance files that no longer exist") {
+	// A rescan of a root is the source of truth for it. A conformance file deleted since the last
+	// scan has to stop being advertised: it is reached by importing its namespace, so a stale entry
+	// would make the compiler try to load a path that is gone and fail an otherwise valid import.
+	FSLanguage *language = FSLanguage::get_singleton();
+	const String scanned_path = "res://scanned_root/fsr_conformance.fs";
+	const String outside_path = "res://other_root/fsr_conformance.fs";
+	language->add_conformance_file(scanned_path, "fsr");
+	language->add_conformance_file(outside_path, "fsr");
+	REQUIRE_EQ(language->get_conformance_files_in_namespace("fsr").size(), 2);
+
+	language->clear_global_declaration_index_under("res://scanned_root/");
+
+	const Vector<String> remaining = language->get_conformance_files_in_namespace("fsr");
+	CHECK_EQ(remaining.size(), 1);
+	CHECK(remaining.has(outside_path));
+	CHECK_FALSE(remaining.has(scanned_path));
+
+	language->remove_conformance_file(outside_path);
+	CHECK(language->get_conformance_files_in_namespace("fsr").is_empty());
 }
 
 } // namespace FSTests

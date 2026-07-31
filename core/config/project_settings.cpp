@@ -909,6 +909,8 @@ void ProjectSettings::clear_project_state_for_reload() {
 	// project's global_script_class_cache.cfg instead of the shell's cached (empty) one.
 	global_class_list.clear();
 	is_global_class_list_loaded = false;
+	global_conformance_list.clear();
+	is_global_conformance_list_loaded = false;
 	resource_path = String();
 	project_loaded = false;
 
@@ -1435,6 +1437,7 @@ bool ProjectSettings::check_changed_settings_in_group(const String &p_setting_pr
 void ProjectSettings::refresh_global_class_list() {
 	// This is called after mounting a new PCK file to pick up class changes.
 	is_global_class_list_loaded = false; // Make sure we read from the freshly mounted PCK.
+	is_global_conformance_list_loaded = false;
 	Array script_classes = get_global_class_list();
 	for (int i = 0; i < script_classes.size(); i++) {
 		Dictionary c = script_classes[i];
@@ -1446,6 +1449,9 @@ void ProjectSettings::refresh_global_class_list() {
 		const bool is_enum = c.has("is_enum") && c["is_enum"];
 		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
 	}
+	// A pack can also bring conformance-declaring files, which export no global class and so appear
+	// only in the companion list. Added, not replaced, exactly like the classes above.
+	ScriptServer::reload_global_conformances_from_project(false);
 }
 
 TypedArray<Dictionary> ProjectSettings::get_global_class_list() {
@@ -1475,13 +1481,44 @@ String ProjectSettings::get_global_class_list_path() const {
 	return get_project_data_path().path_join("global_script_class_cache.cfg");
 }
 
-void ProjectSettings::store_global_class_list(const Array &p_classes) {
+void ProjectSettings::_store_global_declaration_cache() {
+	// Both lists live in one file, so every write has to carry both or the other would be dropped.
 	Ref<ConfigFile> cf;
 	cf.instantiate();
-	cf->set_value("", "list", p_classes);
+	cf->set_value("", "list", global_class_list);
+	cf->set_value("", "conformances", global_conformance_list);
 	cf->save(get_global_class_list_path());
+}
 
+void ProjectSettings::store_global_class_list(const Array &p_classes) {
 	global_class_list = p_classes;
+	// Make sure the other list is the loaded one, not an empty default, before rewriting the file.
+	get_global_conformance_list();
+	_store_global_declaration_cache();
+}
+
+TypedArray<Dictionary> ProjectSettings::get_global_conformance_list() {
+	if (is_global_conformance_list_loaded) {
+		return global_conformance_list;
+	}
+
+	Ref<ConfigFile> cf;
+	cf.instantiate();
+	if (cf->load(get_global_class_list_path()) == OK) {
+		global_conformance_list = cf->get_value("", "conformances", Array());
+	}
+	// A cache written before this key existed simply has no conformance-only files to report; the
+	// missing-file case is already reported by `get_global_class_list`.
+	is_global_conformance_list_loaded = true;
+
+	return global_conformance_list;
+}
+
+void ProjectSettings::store_global_conformance_list(const Array &p_conformances) {
+	global_conformance_list = p_conformances;
+	is_global_conformance_list_loaded = true;
+	get_global_class_list();
+	_store_global_declaration_cache();
 }
 
 bool ProjectSettings::has_custom_feature(const String &p_feature) const {
