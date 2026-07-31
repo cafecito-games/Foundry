@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 2: Could not find type "NoSuchType" in the current scope.
