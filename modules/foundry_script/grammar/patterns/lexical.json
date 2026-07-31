@@ -128,7 +128,7 @@
   },
   "string-escapes": {
     "name": "constant.character.escape.foundryscript",
-    "match": "\\\\(?:[abfnrtv'\\\"\\\\]|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{6})"
+    "match": "\\\\(?:[abfnrtv'\\\"\\\\]|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{6}|\\r?\\n)"
   },
   "numbers": {
     "patterns": [
@@ -164,29 +164,10 @@
   "node-references": {
     "patterns": [
       {
-        "match": "(\\$)(?:(\\\"[^\\\"]*\\\"|'[^']*')|((?:[\\p{L}_%][\\p{L}\\p{N}_%]*)(?:/[\\p{L}\\p{N}_%]+)*))",
-        "captures": {
-          "1": {
-            "name": "punctuation.definition.node.foundryscript"
-          },
-          "2": {
-            "name": "string.quoted.node.foundryscript"
-          },
-          "3": {
-            "name": "variable.other.node.foundryscript"
-          }
-        }
+        "include": "#node-path-expression"
       },
       {
-        "match": "(?<![\\p{L}\\p{N}_)\\]\\\"'])(%)([\\p{L}_][\\p{L}\\p{N}_]*(?:/[\\p{L}\\p{N}_%]+)*)",
-        "captures": {
-          "1": {
-            "name": "punctuation.definition.node.foundryscript"
-          },
-          "2": {
-            "name": "variable.other.node.foundryscript"
-          }
-        }
+        "include": "#unique-name-reference"
       }
     ]
   },
@@ -263,6 +244,56 @@
       {
         "name": "invalid.illegal.backtick.foundryscript",
         "match": "`"
+      }
+    ]
+  },
+  "node-path-expression": {
+    "name": "meta.node-path.foundryscript",
+    "begin": "(\\$)(?=[\\\"'%/\\p{L}\\p{N}_])",
+    "beginCaptures": {
+      "1": {
+        "name": "punctuation.definition.node.foundryscript"
+      }
+    },
+    "end": "(?=[^\\\"'%/\\p{L}\\p{N}_])|$",
+    "patterns": [
+      {
+        "include": "#node-path-segments"
+      }
+    ]
+  },
+  "unique-name-reference": {
+    "name": "meta.node-path.foundryscript",
+    "begin": "(?<![\\p{L}\\p{N}_)\\]\"'])(%)(?=[\"'\\p{L}_])",
+    "beginCaptures": {
+      "1": {
+        "name": "punctuation.definition.node.foundryscript"
+      }
+    },
+    "end": "(?=[^\\\"'%/\\p{L}\\p{N}_])|$",
+    "patterns": [
+      {
+        "include": "#node-path-segments"
+      }
+    ]
+  },
+  "node-path-segments": {
+    "patterns": [
+      {
+        "name": "punctuation.separator.node.foundryscript",
+        "match": "/"
+      },
+      {
+        "name": "punctuation.definition.node.unique.foundryscript",
+        "match": "%"
+      },
+      {
+        "name": "string.quoted.node.foundryscript",
+        "match": "\"[^\"]*\"|'[^']*'"
+      },
+      {
+        "name": "variable.other.node.foundryscript",
+        "match": "[\\p{L}\\p{N}_]+"
       }
     ]
   }

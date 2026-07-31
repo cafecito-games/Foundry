@@ -160,6 +160,13 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped("\\n \\u00e9", "constant.character.escape.foundryscript")
         self.assertScoped("\\u00e9", "constant.character.escape.foundryscript")
 
+    def test_a_backslash_before_the_newline_continues_the_string(self) -> None:
+        self.assertScoped("\\\nsecond part", "constant.character.escape.foundryscript")
+        self.assertScoped("second part", "string.quoted.double.foundryscript")
+        self.assertNotScoped("\\\nsecond part", "invalid.illegal.unclosed-string.foundryscript", offset=1)
+        # The string closes on its own line, so the next declaration is code again.
+        self.assertScoped("var annotation", "storage.type.var.foundryscript")
+
     def test_a_raw_string_body_stays_a_string(self) -> None:
         self.assertScoped("C:\\path", "string.quoted.double.foundryscript", offset=2)
 
@@ -221,6 +228,15 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped('$"Player Two"', "punctuation.definition.node.foundryscript")
         self.assertScoped('$"Player Two"', "string.quoted.node.foundryscript", offset=1)
 
+    def test_a_quoted_segment_inside_a_node_path_stays_a_node_reference(self) -> None:
+        marker = '$Player/"Weapon Slot"/%Barrel'
+        self.assertScoped(marker, "punctuation.definition.node.foundryscript")
+        self.assertScoped(marker, "string.quoted.node.foundryscript", offset=8)
+        self.assertScoped(marker, "punctuation.definition.node.unique.foundryscript", offset=22)
+        self.assertScoped(marker, "variable.other.node.foundryscript", offset=23)
+        # The path separators must not be read as division around a string.
+        self.assertNotScoped(marker, "keyword.operator.arithmetic.foundryscript", offset=7)
+
     def test_a_leading_percent_is_a_unique_name_reference(self) -> None:
         self.assertScoped(":= %Weapon", "punctuation.definition.node.foundryscript", offset=3)
         self.assertScoped(":= %Weapon", "variable.other.node.foundryscript", offset=4)
@@ -256,6 +272,12 @@ class TokenizationTests(unittest.TestCase):
             with self.subTest(identifier=marker):
                 self.assertNotScoped(marker, forbidden, offset=4)
                 self.assertScoped(marker, "variable.other.declaration.foundryscript", offset=4)
+
+    def test_a_statement_level_get_or_set_call_is_not_an_accessor(self) -> None:
+        for marker in ('get("health")', 'set("health", 1)'):
+            with self.subTest(call=marker):
+                self.assertNotScoped(marker, "storage.type.accessor.foundryscript")
+                self.assertScoped(marker, "entity.name.function.call.foundryscript")
 
     # -- declarations and types -------------------------------------------
 

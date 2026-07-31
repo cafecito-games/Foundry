@@ -163,7 +163,10 @@ class TextMateGrammar:
                 assign(position, end_match.start(), frame.scopes)
                 apply(end_match, frame.outer_scopes, frame.end_captures, None)
                 stack.pop()
-                position = end_match.end() if end_match.end() > end_match.start() else end_match.start() + 1
+                # A zero-width `end` still makes progress: it pops a frame, and every
+                # `begin` consumes at least one character, so the frame cannot come back
+                # at the same offset.
+                position = end_match.end()
                 continue
 
             if best is None:

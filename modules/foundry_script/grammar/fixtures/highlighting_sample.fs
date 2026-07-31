@@ -20,6 +20,8 @@ const OTHER = '''single triple'''
 
 var health: int = 100
 var label := "escaped \n \u00e9 text"
+var continued := "first part \
+second part"
 var annotation := "contextual word used as an identifier"
 var extend := 1
 var async := 2
@@ -46,6 +48,7 @@ async func fetch(path: String) -> Coroutine[int]:
 	var node := $Player/%Weapon/Barrel
 	var other := %Weapon
 	var quoted := $"Player Two"
+	var mixed := $Player/"Weapon Slot"/%Barrel
 	if node != null and not other.is_queued_for_deletion():
 		await node.ready
 	match path:
@@ -53,6 +56,16 @@ async func fetch(path: String) -> Coroutine[int]:
 			return 1
 		_:
 			return 0
+
+func get(key: String) -> int:
+	return health
+
+func set(key: String, value: int) -> void:
+	health = value
+
+func use_accessors() -> void:
+	get("health")
+	set("health", 1)
 
 var scaled: float:
 	get:

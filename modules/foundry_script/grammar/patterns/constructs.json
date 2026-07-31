@@ -77,7 +77,15 @@
         }
       },
       {
-        "match": "^\\s*(get|set)\\b(?=\\s*[:(=])",
+        "match": "^\\s*(get)\\b(?=\\s*[:=])",
+        "captures": {
+          "1": {
+            "name": "storage.type.accessor.foundryscript"
+          }
+        }
+      },
+      {
+        "match": "^\\s*(set)\\b(?=\\s*(?:[:=]|\\([^)]*\\)\\s*:))",
         "captures": {
           "1": {
             "name": "storage.type.accessor.foundryscript"
