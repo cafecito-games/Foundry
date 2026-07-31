@@ -39,6 +39,7 @@
 #include "../language_server/foundry_lsp.h"
 #include "../language_server/fs_extend_parser.h"
 #include "../language_server/fs_language_protocol.h"
+#include "../language_server/fs_semantic_tokens.h"
 #include "../language_server/fs_workspace.h"
 
 #include "fs_temporary_project_tree.h"
@@ -2983,6 +2984,393 @@ func f():
 		// other, especially with urls that use brackets in markdown.
 		CHECK_EQ(LSP::marked_documentation("Class [Sprite2D] with [url=https://docs.cafecito.games/foundry]link[/url]"),
 				"Class `Sprite2D` with [link](https://docs.cafecito.games/foundry)");
+	}
+
+	struct DecodedSemanticToken {
+		int line = 0;
+		int start = 0;
+		int length = 0;
+		int type = 0;
+		int modifiers = 0;
+	};
+
+	// Reverses the protocol's delta encoding so assertions can talk about absolute positions
+	// instead of comparing opaque integer arrays, and checks the structural invariants of the
+	// stream on the way through.
+	Vector<DecodedSemanticToken> decode_semantic_tokens(const PackedInt32Array &p_data) {
+		Vector<DecodedSemanticToken> decoded;
+		REQUIRE_EQ(p_data.size() % 5, 0);
+
+		int absolute_line = 0;
+		int absolute_start = 0;
+		for (int i = 0; i < p_data.size(); i += 5) {
+			const int delta_line = p_data[i];
+			const int delta_start = p_data[i + 1];
+			const int length = p_data[i + 2];
+			// Every field of a semantic token record is an unsigned integer on the wire, and a
+			// zero-length token is not representable.
+			CHECK(delta_line >= 0);
+			CHECK(delta_start >= 0);
+			CHECK(length > 0);
+
+			absolute_line += delta_line;
+			absolute_start = delta_line == 0 ? absolute_start + delta_start : delta_start;
+
+			DecodedSemanticToken token;
+			token.line = absolute_line;
+			token.start = absolute_start;
+			token.length = length;
+			token.type = p_data[i + 3];
+			token.modifiers = p_data[i + 4];
+			decoded.push_back(token);
+		}
+		return decoded;
+	}
+
+	void check_semantic_token(const Vector<DecodedSemanticToken> &p_tokens, int p_index, int p_line, int p_start, int p_length, LSP::SemanticTokenType p_type, uint32_t p_modifiers = 0) {
+		// `REQUIRE` does not unwind in this engine's `-fno-exceptions` builds, so guard the
+		// indexing explicitly instead of letting a short result crash the whole run.
+		REQUIRE(p_index < p_tokens.size());
+		if (p_index >= p_tokens.size()) {
+			return;
+		}
+		const DecodedSemanticToken &token = p_tokens[p_index];
+		CHECK_EQ(token.line, p_line);
+		CHECK_EQ(token.start, p_start);
+		CHECK_EQ(token.length, p_length);
+		CHECK_EQ(token.type, int(p_type));
+		CHECK_EQ(uint32_t(token.modifiers), p_modifiers);
+	}
+
+	FSSemanticTokens::Span make_semantic_span(int p_line, int p_start_column, int p_length, LSP::SemanticTokenType p_type = LSP::SemanticTokenType::KEYWORD, uint32_t p_modifiers = 0) {
+		FSSemanticTokens::Span span;
+		span.line = p_line;
+		span.start_column = p_start_column;
+		span.length = p_length;
+		span.type = p_type;
+		span.modifiers = p_modifiers;
+		return span;
+	}
+
+	Dictionary request_semantic_tokens(const String &p_uri) {
+		Dictionary request;
+		request["jsonrpc"] = "2.0";
+		request["id"] = 7;
+		request["method"] = "textDocument/semanticTokens/full";
+
+		Dictionary params;
+		params["textDocument"] = make_text_document_identifier(p_uri);
+		request["params"] = params;
+		return FSLanguageProtocol::get_singleton()->process_action(request);
+	}
+
+	PackedInt32Array semantic_token_data(const Dictionary &p_response) {
+		REQUIRE(p_response.has("result"));
+		Dictionary result = p_response["result"];
+		REQUIRE(result.has("data"));
+		return result["data"];
+	}
+
+	TEST_CASE("[textDocument][semanticTokens] advertises a stable legend and full-only support") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		TestFSLanguageProtocolInitializer::mark_initialized(proto);
+
+		Dictionary init_params;
+		init_params["rootUri"] = workspace->root_uri;
+		init_params["rootPath"] = workspace->root;
+
+		Dictionary request;
+		request["jsonrpc"] = "2.0";
+		request["id"] = 1;
+		request["method"] = "initialize";
+		request["params"] = init_params;
+
+		Dictionary response = proto->process_action(request);
+		Dictionary result = response["result"];
+		Dictionary capabilities = result["capabilities"];
+		REQUIRE(capabilities["semanticTokensProvider"].get_type() == Variant::DICTIONARY);
+
+		Dictionary provider = capabilities["semanticTokensProvider"];
+		// `full` must be a plain boolean: a dictionary would advertise delta support.
+		CHECK_EQ(provider["full"].get_type(), Variant::BOOL);
+		CHECK(bool(provider["full"]));
+		CHECK_EQ(provider["range"].get_type(), Variant::BOOL);
+		CHECK_FALSE(bool(provider["range"]));
+
+		Dictionary legend = provider["legend"];
+		PackedStringArray token_types = legend["tokenTypes"];
+		PackedStringArray expected_types;
+		expected_types.push_back("namespace");
+		expected_types.push_back("class");
+		expected_types.push_back("interface");
+		expected_types.push_back("struct");
+		expected_types.push_back("enum");
+		expected_types.push_back("enumMember");
+		expected_types.push_back("event");
+		expected_types.push_back("type");
+		expected_types.push_back("typeParameter");
+		expected_types.push_back("function");
+		expected_types.push_back("method");
+		expected_types.push_back("property");
+		expected_types.push_back("variable");
+		expected_types.push_back("parameter");
+		expected_types.push_back("decorator");
+		expected_types.push_back("keyword");
+		CHECK_EQ(token_types, expected_types);
+
+		PackedStringArray token_modifiers = legend["tokenModifiers"];
+		PackedStringArray expected_modifiers;
+		expected_modifiers.push_back("declaration");
+		expected_modifiers.push_back("static");
+		expected_modifiers.push_back("abstract");
+		expected_modifiers.push_back("final");
+		expected_modifiers.push_back("async");
+		expected_modifiers.push_back("readonly");
+		expected_modifiers.push_back("defaultLibrary");
+		CHECK_EQ(token_modifiers, expected_modifiers);
+
+		// The legend indices the encoder emits must line up with the advertised order.
+		CHECK_EQ(token_types[int(LSP::SemanticTokenType::KEYWORD)], "keyword");
+		CHECK_EQ(token_types[int(LSP::SemanticTokenType::NAMESPACE)], "namespace");
+		CHECK_EQ(token_modifiers[int(LSP::SemanticTokenModifier::FINAL)], "final");
+		CHECK_EQ(FSSemanticTokens::modifier_bit(LSP::SemanticTokenModifier::DECLARATION), 1u);
+		CHECK_EQ(FSSemanticTokens::modifier_bit(LSP::SemanticTokenModifier::FINAL), 8u);
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][semanticTokens] encodes UTF-16 delta records") {
+		SUBCASE("an empty document produces no records") {
+			CHECK_EQ(FSSemanticTokens::encode(Vector<FSSemanticTokens::Span>(), FSSemanticTokens::split_lines("")).size(), 0);
+			CHECK_EQ(FSSemanticTokens::split_lines("").size(), 0);
+		}
+
+		SUBCASE("the first record is absolute and later records are relative") {
+			Vector<String> lines = FSSemanticTokens::split_lines("var a = 1\nvar b = 2\nvar c = 3\n");
+			Vector<FSSemanticTokens::Span> spans;
+			spans.push_back(make_semantic_span(1, 0, 3));
+			spans.push_back(make_semantic_span(2, 0, 3));
+
+			PackedInt32Array data = FSSemanticTokens::encode(spans, lines);
+			REQUIRE_EQ(data.size(), 10);
+			CHECK_EQ(data[0], 1); // Absolute line for the first record.
+			CHECK_EQ(data[1], 0);
+			CHECK_EQ(data[5], 1); // Relative line for the second record.
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(data);
+			check_semantic_token(tokens, 0, 1, 0, 3, LSP::SemanticTokenType::KEYWORD);
+			check_semantic_token(tokens, 1, 2, 0, 3, LSP::SemanticTokenType::KEYWORD);
+		}
+
+		SUBCASE("tokens on the same line encode a relative start") {
+			Vector<String> lines = FSSemanticTokens::split_lines("if not ready:\n");
+			Vector<FSSemanticTokens::Span> spans;
+			spans.push_back(make_semantic_span(0, 0, 2));
+			spans.push_back(make_semantic_span(0, 3, 3));
+
+			PackedInt32Array data = FSSemanticTokens::encode(spans, lines);
+			REQUIRE_EQ(data.size(), 10);
+			CHECK_EQ(data[5], 0); // Same line.
+			CHECK_EQ(data[6], 3); // Relative to the previous start, not absolute.
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(data);
+			check_semantic_token(tokens, 0, 0, 0, 2, LSP::SemanticTokenType::KEYWORD);
+			check_semantic_token(tokens, 1, 0, 3, 3, LSP::SemanticTokenType::KEYWORD);
+		}
+
+		SUBCASE("a tab counts as a single code unit") {
+			Vector<String> lines = FSSemanticTokens::split_lines("\t\tpass\n");
+			Vector<FSSemanticTokens::Span> spans;
+			spans.push_back(make_semantic_span(0, 2, 4));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(FSSemanticTokens::encode(spans, lines));
+			REQUIRE_EQ(tokens.size(), 1);
+			check_semantic_token(tokens, 0, 0, 2, 4, LSP::SemanticTokenType::KEYWORD);
+		}
+
+		SUBCASE("a token starting after an astral character is offset by a surrogate pair") {
+			// `😀` is a single code point but two UTF-16 code units, so the token two code points
+			// into the line starts at UTF-16 column 3.
+			Vector<String> lines = FSSemanticTokens::split_lines(String::utf8("😀 var\n"));
+			REQUIRE_EQ(lines[0].length(), 5);
+			REQUIRE_EQ(FSSemanticTokens::utf16_length(lines[0]), 6);
+
+			Vector<FSSemanticTokens::Span> spans;
+			spans.push_back(make_semantic_span(0, 2, 3, LSP::SemanticTokenType::VARIABLE));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(FSSemanticTokens::encode(spans, lines));
+			REQUIRE_EQ(tokens.size(), 1);
+			check_semantic_token(tokens, 0, 0, 3, 3, LSP::SemanticTokenType::VARIABLE);
+		}
+
+		SUBCASE("a token containing an astral character is two code units longer") {
+			Vector<String> lines = FSSemanticTokens::split_lines(String::utf8("var a = \"x😀y\"\n"));
+			// The five code points of `"x😀y"` occupy six UTF-16 code units.
+			Vector<FSSemanticTokens::Span> spans;
+			spans.push_back(make_semantic_span(0, 8, 5, LSP::SemanticTokenType::VARIABLE));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(FSSemanticTokens::encode(spans, lines));
+			REQUIRE_EQ(tokens.size(), 1);
+			check_semantic_token(tokens, 0, 0, 8, 6, LSP::SemanticTokenType::VARIABLE);
+		}
+
+		SUBCASE("modifier bits round-trip through the encoding") {
+			Vector<String> lines = FSSemanticTokens::split_lines("final var speed = 1\n");
+			const uint32_t modifiers = FSSemanticTokens::modifier_bit(LSP::SemanticTokenModifier::DECLARATION) |
+					FSSemanticTokens::modifier_bit(LSP::SemanticTokenModifier::FINAL) |
+					FSSemanticTokens::modifier_bit(LSP::SemanticTokenModifier::READONLY);
+
+			Vector<FSSemanticTokens::Span> spans;
+			spans.push_back(make_semantic_span(0, 10, 5, LSP::SemanticTokenType::PROPERTY, modifiers));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(FSSemanticTokens::encode(spans, lines));
+			REQUIRE_EQ(tokens.size(), 1);
+			check_semantic_token(tokens, 0, 0, 10, 5, LSP::SemanticTokenType::PROPERTY, modifiers);
+		}
+
+		SUBCASE("unusable spans are dropped instead of corrupting the stream") {
+			Vector<String> lines = FSSemanticTokens::split_lines("var a = 1\nvar b = 2\n");
+
+			Vector<FSSemanticTokens::Span> spans;
+			spans.push_back(make_semantic_span(-1, 0, 3)); // Before the document.
+			spans.push_back(make_semantic_span(9, 0, 3)); // After the document.
+			spans.push_back(make_semantic_span(0, 0, 0)); // Empty.
+			spans.push_back(make_semantic_span(0, -2, 3)); // Negative column.
+			spans.push_back(make_semantic_span(0, 40, 3)); // Past the end of the line.
+			spans.push_back(make_semantic_span(0, 0, 3, LSP::SemanticTokenType::MAX)); // Outside the legend.
+			spans.push_back(make_semantic_span(0, 4, 1)); // The only valid span.
+			spans.push_back(make_semantic_span(0, 4, 1)); // Overlaps the previous span.
+			spans.push_back(make_semantic_span(0, 0, 3)); // Regresses behind the previous span.
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(FSSemanticTokens::encode(spans, lines));
+			REQUIRE_EQ(tokens.size(), 1);
+			check_semantic_token(tokens, 0, 0, 4, 1, LSP::SemanticTokenType::KEYWORD);
+		}
+
+		SUBCASE("a span that overruns its line is clamped to the line") {
+			Vector<String> lines = FSSemanticTokens::split_lines("var a\n");
+			Vector<FSSemanticTokens::Span> spans;
+			spans.push_back(make_semantic_span(0, 4, 40));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(FSSemanticTokens::encode(spans, lines));
+			REQUIRE_EQ(tokens.size(), 1);
+			check_semantic_token(tokens, 0, 0, 4, 1, LSP::SemanticTokenType::KEYWORD);
+		}
+	}
+
+	TEST_CASE("[textDocument][semanticTokens] answers a full request through the protocol") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		Ref<FSTextDocument> text_document = proto->get_text_document();
+
+		SUBCASE("reserved words are reported at their UTF-16 positions") {
+			const String source =
+					"var health = 1\n"
+					"func heal():\n"
+					"\tif not health:\n"
+					"\t\tpass\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_basic.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			PackedInt32Array data = semantic_token_data(request_semantic_tokens(uri));
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(data);
+			REQUIRE_EQ(tokens.size(), 5);
+			check_semantic_token(tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+			check_semantic_token(tokens, 1, 1, 0, 4, LSP::SemanticTokenType::KEYWORD); // func
+			check_semantic_token(tokens, 2, 2, 1, 2, LSP::SemanticTokenType::KEYWORD); // if
+			check_semantic_token(tokens, 3, 2, 4, 3, LSP::SemanticTokenType::KEYWORD); // not
+			check_semantic_token(tokens, 4, 3, 2, 4, LSP::SemanticTokenType::KEYWORD); // pass
+
+			// The two tokens on line 2 must be encoded relative to each other.
+			CHECK_EQ(data[15], 0);
+			CHECK_EQ(data[16], 3);
+		}
+
+		SUBCASE("a reserved word in attribute position is not a keyword") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_attribute.fs");
+			text_document->didOpen(make_did_open_params(uri, "var kind = self.class\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			REQUIRE_EQ(tokens.size(), 2);
+			check_semantic_token(tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+			check_semantic_token(tokens, 1, 0, 11, 4, LSP::SemanticTokenType::KEYWORD); // self
+		}
+
+		SUBCASE("a keyword after an astral character keeps UTF-16 columns") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_astral.fs");
+			text_document->didOpen(make_did_open_params(uri, String::utf8("# 😀 note\nvar a = 1\n")));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			REQUIRE_EQ(tokens.size(), 1);
+			check_semantic_token(tokens, 0, 1, 0, 3, LSP::SemanticTokenType::KEYWORD);
+		}
+
+		SUBCASE("an empty document produces no records") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_empty.fs");
+			text_document->didOpen(make_did_open_params(uri, ""));
+
+			CHECK_EQ(semantic_token_data(request_semantic_tokens(uri)).size(), 0);
+		}
+
+		SUBCASE("an unopened document that is not on disk produces no records") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_missing.fs");
+
+			CHECK_EQ(semantic_token_data(request_semantic_tokens(uri)).size(), 0);
+		}
+
+		SUBCASE("incomplete source still produces a well-formed partial result") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_incomplete.fs");
+			text_document->didOpen(make_did_open_params(uri, "func broken(:\n\tvar x = \"unterminated\n\t\t\tpass"));
+
+			PackedInt32Array data = semantic_token_data(request_semantic_tokens(uri));
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(data);
+			REQUIRE_FALSE(tokens.is_empty());
+			check_semantic_token(tokens, 0, 0, 0, 4, LSP::SemanticTokenType::KEYWORD); // func
+		}
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
+	}
+
+	TEST_CASE("[textDocument][semanticTokens] reads the managed buffer, not disk") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		Ref<FSTextDocument> text_document = proto->get_text_document();
+
+		const String resource_path = "res://lsp/semantic_tokens_buffer.fs";
+		ScopedLSPTempFile on_disk(resource_path, "var stale = 1\n");
+		const String uri = workspace->get_file_uri(resource_path);
+
+		// Before the client claims the document the server may only answer from disk.
+		Vector<DecodedSemanticToken> disk_tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+		REQUIRE_EQ(disk_tokens.size(), 1);
+		check_semantic_token(disk_tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+
+		text_document->didOpen(make_did_open_params(uri, "func opened():\n\tpass\n"));
+		Vector<DecodedSemanticToken> opened_tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+		REQUIRE_EQ(opened_tokens.size(), 2);
+		check_semantic_token(opened_tokens, 0, 0, 0, 4, LSP::SemanticTokenType::KEYWORD); // func
+		check_semantic_token(opened_tokens, 1, 1, 1, 4, LSP::SemanticTokenType::KEYWORD); // pass
+
+		text_document->didChange(make_did_change_params(uri, "class Changed:\n\tpass\n"));
+		Vector<DecodedSemanticToken> changed_tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+		REQUIRE_EQ(changed_tokens.size(), 2);
+		check_semantic_token(changed_tokens, 0, 0, 0, 5, LSP::SemanticTokenType::KEYWORD); // class
+		check_semantic_token(changed_tokens, 1, 1, 1, 4, LSP::SemanticTokenType::KEYWORD); // pass
+
+		memdelete(proto);
+		memdelete(efs);
+		finish_language();
 	}
 }
 
