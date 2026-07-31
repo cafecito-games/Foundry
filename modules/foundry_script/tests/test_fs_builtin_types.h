@@ -31,13 +31,17 @@
 #pragma once
 
 #include "modules/foundry_script/foundry_script.h"
+#include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_builtin_sources.h"
 #include "modules/foundry_script/fs_cache.h"
+#include "modules/foundry_script/fs_compiler.h"
 #include "modules/foundry_script/fs_parser.h"
 
 #include "core/object/script_language.h"
+#include "core/variant/variant.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestFSBuiltinTypes {
 
@@ -138,6 +142,105 @@ TEST_CASE("[FSBuiltinTypes] A project class cannot take over a builtin type name
 	CHECK_EQ(ScriptServer::get_global_class_path("JsonNode"), "foundry://builtin/json_node.fs");
 	CHECK(ScriptServer::is_global_class_enum("JsonNode"));
 	CHECK_EQ(String(ScriptServer::get_global_class_base("JsonNode")), "");
+}
+
+// `JsonNode` is a global builtin, so a plain script can name it with no import. This helper
+// compiles such a probe script that funnels `JsonNode.of()` through a `match` and reports back
+// a plain string, so the test can assert on `JsonNode.of()`'s behavior without reaching into the
+// enum instance's internal representation.
+static Ref<FoundryScript> compile_json_of_probe() {
+	static int unique_index = 0;
+	const String path = vformat("user://test_json_of_probe_%d.fs", unique_index++);
+
+	const char *source =
+			"class_name JsonOfProbe extends RefCounted\n"
+			"\n"
+			"static func describe(value: Variant) -> String:\n"
+			"\tvar node := JsonNode.of(value)\n"
+			"\tmatch node:\n"
+			"\t\tJsonNode.Null:\n"
+			"\t\t\treturn \"Null\"\n"
+			"\t\tJsonNode.Bool(var payload):\n"
+			"\t\t\treturn \"Bool:%s\" % payload\n"
+			"\t\tJsonNode.Int(var payload):\n"
+			"\t\t\treturn \"Int:%s\" % payload\n"
+			"\t\tJsonNode.Float(var payload):\n"
+			"\t\t\treturn \"Float:%s\" % payload\n"
+			"\t\tJsonNode.Str(var payload):\n"
+			"\t\t\treturn \"Str:%s\" % payload\n"
+			"\t\tJsonNode.Array(var payload):\n"
+			"\t\t\treturn \"Array:%d\" % payload.size()\n"
+			"\t\tJsonNode.Object(var payload):\n"
+			"\t\t\treturn \"Object:%d\" % payload.size()\n"
+			"\treturn \"Unknown\"\n";
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path(path);
+	script->set_source_code(source);
+
+	FSParser parser;
+	Error error = parser.parse(source, script->get_path(), false);
+	REQUIRE(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	error = analyzer.analyze();
+	REQUIRE(error == OK);
+
+	FSCompiler compiler;
+	error = compiler.compile(&parser, script.ptr(), false);
+	REQUIRE(error == OK);
+
+	error = script->reload();
+	REQUIRE(error == OK);
+
+	return script;
+}
+
+static String describe_json_of(const Ref<FoundryScript> &p_probe, const Variant &p_value) {
+	// `FoundryScript::callp` overrides `Object::callp` as protected, so dispatch through the
+	// `Object` base (as the bytecode static-method tests do) rather than the derived pointer.
+	Object *probe_object = p_probe.ptr();
+	const Variant *args[1] = { &p_value };
+	Callable::CallError call_error;
+	const Variant result = probe_object->callp(SNAME("describe"), args, 1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	return result;
+}
+
+TEST_CASE("[FSBuiltinTypes] JsonNode.of() wraps a plain Variant tree") {
+	FSLanguage::get_singleton()->init();
+	const Ref<FoundryScript> probe = compile_json_of_probe();
+
+	CHECK_EQ(describe_json_of(probe, Variant()), "Null");
+	CHECK_EQ(describe_json_of(probe, Variant(true)), "Bool:true");
+	CHECK_EQ(describe_json_of(probe, Variant(int64_t(7))), "Int:7");
+	CHECK_EQ(describe_json_of(probe, Variant(1.5)), "Float:1.5");
+	CHECK_EQ(describe_json_of(probe, Variant(String("hello"))), "Str:hello");
+
+	Array nested_array;
+	nested_array.push_back(1);
+	nested_array.push_back("two");
+	CHECK_EQ(describe_json_of(probe, Variant(nested_array)), "Array:2");
+
+	Dictionary nested_dictionary;
+	nested_dictionary["a"] = 1;
+	nested_dictionary["b"] = 2;
+	nested_dictionary["c"] = 3;
+	CHECK_EQ(describe_json_of(probe, Variant(nested_dictionary)), "Object:3");
+}
+
+TEST_CASE("[FSBuiltinTypes] JsonNode.of() push_errors and returns Null for an unsupported type") {
+	FSLanguage::get_singleton()->init();
+	const Ref<FoundryScript> probe = compile_json_of_probe();
+
+	ErrorDetector detector;
+	ERR_PRINT_OFF;
+	const String description = describe_json_of(probe, Variant(Vector2(1, 2)));
+	ERR_PRINT_ON;
+
+	CHECK_EQ(description, "Null");
+	CHECK(detector.has_error);
 }
 
 TEST_CASE("[FSBuiltinTypes] A project scan cannot remove a builtin global class") {
