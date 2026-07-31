@@ -557,6 +557,7 @@ private:
 	bool type_satisfies_trait(const FSParser::DataType &p_argument, const FSParser::DataType &p_trait_bound);
 	void validate_trait_conflicts(FSParser::ClassNode *p_class);
 	void validate_trait_requirements(FSParser::ClassNode *p_class);
+	void raise_declared_conformance_dependencies();
 	void resolve_conformances(FSParser::ClassNode *p_class);
 	void resolve_conformance_bodies(FSParser::ClassNode *p_class);
 	FSParser::ClassNode *resolve_conformance_target(FSParser::ConformanceNode *p_conformance, FSParser::DataType &r_target_type);

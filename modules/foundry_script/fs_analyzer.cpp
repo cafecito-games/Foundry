@@ -354,6 +354,7 @@ Error FSAnalyzer::run_phase_interface_and_member_surface() {
 // Must not: resolve witness bodies.
 Error FSAnalyzer::run_phase_trait_conformance_registration() {
 	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION);
+	raise_declared_conformance_dependencies();
 	resolve_conformances(parser->head);
 
 	// Validate custom annotation declaration signatures after the class interface so constant
