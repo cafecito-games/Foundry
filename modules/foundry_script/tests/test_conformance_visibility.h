@@ -386,6 +386,32 @@ func probe() -> String:
 
 		CHECK(errors.is_empty());
 	}
+
+	SUBCASE("a final receiver with no witness anywhere is a hard error") {
+		// The contrast to the carve-out cases above: the class is closed, so no subtype can ever
+		// declare the name, and no conformance — reachable or hidden — supplies it either. Nothing can
+		// make this call resolve, and before this it produced no diagnostic at all by default.
+		const String closed_widget_path = fixture.write("fsn_closed_widget.fs", R"(final class_name FsnClosedWidget extends RefCounted
+
+
+func fsn_present() -> String:
+	return "present"
+)");
+		ConformanceVisibilityFixture::register_global_class("FsnClosedWidget", closed_widget_path, "RefCounted", false);
+
+		const String consumer_path = fixture.write("fsn_consumer_closed_call.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnClosedWidget.new()
+	return widget.fsn_missing()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsnClosedWidget");
+
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_missing()", "so no subtype can supply it"));
+	}
 }
 
 // The registry is filled as a side effect of analyzing files, so before this the hidden-witness
@@ -499,10 +525,11 @@ func probe() -> String:
 		ScriptServer::remove_global_class("FsuWidget");
 		ScriptServer::remove_global_class("FsuGadgetlike");
 
-		// The index is the only source of truth the probe has, so a file it does not list keeps the
-		// pre-existing behavior: an unresolved call that is merely unsafe, not an error.
+		// The index is the only source of truth the probe has, so a file it does not list can neither
+		// be named by a diagnostic nor make the call reachable. What is left is the plain closed-class
+		// rejection: `FsuWidget` is `final` and nothing this file reaches supplies the name.
 		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, conformance_path));
-		CHECK(errors.is_empty());
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsu_gadget()", "so no subtype can supply it"));
 	}
 
 	SUBCASE("a conformance file that fails to parse is skipped") {
@@ -522,9 +549,10 @@ func probe() -> String:
 
 		FSLanguage::get_singleton()->remove_conformance_file(broken_path);
 
-		// A broken probed file contributes nothing, and its own errors stay in its own parser.
+		// A broken probed file contributes nothing, and its own errors stay in its own parser. The call
+		// is left to the plain closed-class rejection, with nothing pointing at the broken file.
 		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, broken_path));
-		CHECK(errors.is_empty());
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_absent()", "so no subtype can supply it"));
 	}
 
 	SUBCASE("a declaring file that preloads the consumer does not create a false cycle") {

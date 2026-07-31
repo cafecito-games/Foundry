@@ -575,6 +575,10 @@ private:
 	// index knows about, so the hidden-witness diagnostic reflects the project on disk instead of
 	// whatever this process happened to analyze first. Creates no reach.
 	void ensure_indexed_conformance_files_registered();
+	// True when a retroactive conformance this file can reach supplies `p_method` anywhere on
+	// `p_target_type`'s base chain. Only the name is checked: instance witnesses are not resolved
+	// statically, so this answers "could this call mean something" and never types it.
+	bool reachable_conformance_supplies_method(const FSParser::DataType &p_target_type, const StringName &p_method);
 	// True when a retroactive conformance supplies `p_method` for `p_target_type` but this file does
 	// not load its declaring file, reporting where it was declared. Lets an unresolved call say why
 	// it cannot be typed instead of passing analysis and missing at run time.
