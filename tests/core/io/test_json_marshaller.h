@@ -183,4 +183,35 @@ TEST_CASE("[JSONMarshal] Object cycle is reported, not infinite-looped") {
 	JSON::set_object_marshaller(nullptr);
 }
 
+TEST_CASE("[JSONMarshal] Object-to-object marshaling chain is bounded, not unbounded") {
+	class ChainingMarshaller : public JSONObjectMarshaller {
+	public:
+		List<Object *> spawned;
+
+		virtual bool marshal_object(Object *p_object, Variant &r_result) override {
+			Object *next = memnew(Object);
+			spawned.push_back(next);
+			r_result = Variant(next);
+			return true;
+		}
+	};
+
+	ChainingMarshaller marshaller;
+	JSON::set_object_marshaller(&marshaller);
+
+	Object *root = memnew(Object);
+
+	ERR_PRINT_OFF
+	String result = JSON::stringify(root);
+	ERR_PRINT_ON
+
+	CHECK(result.contains("..."));
+
+	memdelete(root);
+	for (Object *spawned_object : marshaller.spawned) {
+		memdelete(spawned_object);
+	}
+	JSON::set_object_marshaller(nullptr);
+}
+
 } // namespace TestJSONMarshaller

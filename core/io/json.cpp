@@ -216,6 +216,15 @@ void JSON::_stringify(String &r_result, const Variant &p_var, const String &p_in
 				return;
 			}
 
+			// A marshaller can return a fresh, distinct Object on every call (a chain rather
+			// than a cycle), which the identity-based marker set alone cannot bound. Cap the
+			// marshaling chain length the same way array/dictionary nesting is capped, since
+			// the outer indent-based depth check never advances across this recursion.
+			if (p_object_markers.size() > (uint32_t)Variant::MAX_RECURSION_DEPTH) {
+				r_result += "...";
+				ERR_FAIL_MSG("JSON structure is too deep. Bailing.");
+			}
+
 			const uint64_t object_id = object->get_instance_id();
 			if (p_object_markers.has(object_id)) {
 				r_result += "\"{...}\"";
