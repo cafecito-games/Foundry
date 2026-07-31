@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: The function "from_json()" signature does not match required trait method "JsonSerializable.from_json()".

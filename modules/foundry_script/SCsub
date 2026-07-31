@@ -4,10 +4,20 @@ from misc.utility.scons_hints import *
 import glob
 import os
 
+import fs_builtin_source_builders
+
 Import("env")
 Import("env_modules")
 
 env_foundry_script = env_modules.Clone()
+
+# The Foundry Script types that ship with the engine are embedded as source text, so they are
+# available to every project without being files on disk.
+env_foundry_script.CommandNoCache(
+    "builtin/fs_builtin_types.gen.h",
+    Glob("builtin/*.fs"),
+    env.Run(fs_builtin_source_builders.make_builtin_sources),
+)
 
 frontend_sources = {
     "fs_tokenizer.cpp",

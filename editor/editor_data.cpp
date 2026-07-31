@@ -1360,6 +1360,10 @@ void EditorData::script_class_save_global_classes() {
 	ScriptServer::get_global_class_list(global_classes);
 	Array array_classes;
 	for (const StringName &class_name : global_classes) {
+		// Builtin types ship in the binary, so they are not part of the project being saved.
+		if (ScriptServer::is_builtin_global_class(class_name)) {
+			continue;
+		}
 		Dictionary d;
 		String *icon = _script_class_icon_paths.getptr(class_name);
 		d["class"] = class_name;

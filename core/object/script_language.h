@@ -69,6 +69,7 @@ class ScriptServer {
 	};
 
 	static HashMap<StringName, GlobalScriptClass> global_classes;
+	static HashMap<StringName, GlobalScriptClass> builtin_global_classes;
 	static uint64_t global_classes_version;
 	static HashMap<StringName, Vector<StringName>> inheriters_cache;
 	static bool inheriters_cache_dirty;
@@ -103,6 +104,12 @@ public:
 	static Array get_global_conformances();
 	static void prune_missing_global_conformances();
 	static void add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait, bool p_is_enum = false);
+	// A global class that ships inside the binary instead of in a project. Builtin globals are
+	// re-seeded after every `global_classes_clear()` and are skipped by `save_global_classes()`,
+	// so loading a project can neither drop them nor persist them into its class cache.
+	static void add_builtin_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait, bool p_is_enum = false);
+	static bool is_builtin_global_class(const StringName &p_class);
+	static void clear_builtin_global_classes();
 	static void remove_global_class(const StringName &p_class);
 	static void remove_global_class_by_path(const String &p_path);
 	static void get_global_class_name_parts(const StringName &p_class, StringName *r_class_name,

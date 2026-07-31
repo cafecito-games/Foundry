@@ -58,7 +58,7 @@ public:
 	~ScopedBuiltinGlobalClass() {
 		ScriptServer::remove_global_class(class_name);
 		FSCache::remove_parser(path);
-		FSBuiltinSources::clear();
+		FSBuiltinSources::unregister_source(path);
 	}
 };
 
