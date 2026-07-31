@@ -1,0 +1,3 @@
+# Protocol fixtures are byte-exact conformance inputs, including deliberate
+# CRLF, missing-terminal-LF, and non-UTF-8 cases.
+* -text
