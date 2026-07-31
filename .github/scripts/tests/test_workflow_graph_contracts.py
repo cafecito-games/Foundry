@@ -790,6 +790,82 @@ class PreCommitRegistrationTests(WorkflowContractTestCase):
             ),
         )
 
+    def test_the_tmlanguage_hooks_cover_every_input_they_reconcile(self) -> None:
+        drift = local_hook("foundry-foundryscript-tmlanguage-drift")
+        self.assertIn("check_foundryscript_tmlanguage.py", drift["entry"])
+        self.assertIs(False, drift["pass_filenames"])
+        self.assert_hook_covers(
+            drift,
+            (
+                "misc/checks/check_foundryscript_tmlanguage.py",
+                "modules/foundry_script/GRAMMAR.md",
+                "modules/foundry_script/fs_tokenizer.cpp",
+                "modules/foundry_script/grammar/tmlanguage_builder.py",
+                "modules/foundry_script/grammar/patterns/keyword_scopes.json",
+                "modules/foundry_script/grammar/patterns/lexical.json",
+                "modules/foundry_script/grammar/patterns/constructs.json",
+            ),
+        )
+
+        tokenization = local_hook("foundry-foundryscript-tmlanguage")
+        self.assertEqual(["tests.python_build.test_foundryscript_tmlanguage"], tokenization["args"])
+        # Python `re` cannot evaluate these patterns, so the real engine is a hard dependency.
+        self.assertEqual(["onigurumacffi"], tokenization["additional_dependencies"])
+        self.assert_hook_covers(
+            tokenization,
+            (
+                "modules/foundry_script/grammar/tmlanguage_builder.py",
+                "modules/foundry_script/grammar/fixtures/highlighting_sample.fs",
+                "tests/python_build/textmate_tokenizer.py",
+                "tests/python_build/test_foundryscript_tmlanguage.py",
+            ),
+        )
+
+
+class ReleaseTmlanguageWorkflowTests(WorkflowContractTestCase):
+    """The generated grammar has to reach packaging and the published release."""
+
+    workflow: workflow_graph.Workflow
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.workflow = load_workflow("release.yml")
+
+    def test_the_grammar_is_generated_before_the_build_matrix(self) -> None:
+        # `resolve` needs nothing, so a broken generator fails in seconds.
+        self.assertIs(False, self.workflow.has_needs("resolve"))
+        generate = "Generate FoundryScript TextMate grammar"
+        self.assertLess(
+            self.workflow.step_index("resolve", "Resolve version and publish mode"),
+            self.workflow.step_index("resolve", generate),
+        )
+        run = self.workflow.step_run("resolve", generate)
+        self.assertIn("modules/foundry_script/grammar/tmlanguage_builder.py", run)
+        self.assertIn("foundryscript-tmlanguage-${VERSION}.json", run)
+        self.assertEqual(
+            "${{ steps.resolve.outputs.release_version }}",
+            self.workflow.step_key("resolve", generate, "env")["VERSION"],
+        )
+
+    def test_the_grammar_is_uploaded_under_its_own_artifact_name(self) -> None:
+        upload = self.workflow.step("resolve", "Upload FoundryScript TextMate grammar")
+        self.assertEqual("./.github/actions/upload-artifact", upload["uses"])
+        self.assertEqual("release-tmlanguage", upload["with"]["name"])
+        self.assertEqual("tmlanguage/*", upload["with"]["path"])
+
+    def test_packaging_copies_the_grammar_into_the_published_asset_set(self) -> None:
+        self.assertIn("resolve", self.workflow.needs("package"))
+        assemble = self.workflow.step_run("package", "Assemble release assets")
+        self.assertIn("cp artifacts/release-tmlanguage/foundryscript-tmlanguage-*.json dist/", assemble)
+        self.assertEqual("dist/*", self.workflow.step_with("package", "Upload release assets")["path"])
+
+    def test_publication_uploads_every_packaged_asset(self) -> None:
+        self.assertEqual(("resolve", "package"), self.workflow.needs("publish"))
+        download = self.workflow.step("publish", "Download release assets")
+        self.assertEqual("release-assets", download["with"]["name"])
+        self.assertEqual("dist", download["with"]["path"])
+        self.assertEqual("dist/*", self.workflow.step_with("publish", "Publish GitHub Release")["files"])
+
 
 if __name__ == "__main__":
     unittest.main()

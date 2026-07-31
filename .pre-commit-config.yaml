@@ -367,6 +367,40 @@ repos:
             tests/python_build/test_android_gradle_runtime_contract\.py
           )$
 
+      - id: foundry-foundryscript-tmlanguage-drift
+        name: FoundryScript TextMate grammar drift
+        language: python
+        entry: python misc/checks/check_foundryscript_tmlanguage.py
+        pass_filenames: false
+        # The three descriptions of the keyword layer this check reconciles: the
+        # tokenizer table, `GRAMMAR.md` section 2.5, and the generated grammar.
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            misc/checks/check_foundryscript_tmlanguage\.py|
+            modules/foundry_script/GRAMMAR\.md|
+            modules/foundry_script/fs_tokenizer\.cpp|
+            modules/foundry_script/grammar/.*
+          )$
+
+      - id: foundry-foundryscript-tmlanguage
+        name: FoundryScript TextMate grammar tokenization
+        language: python
+        entry: python -m unittest
+        args:
+          - tests.python_build.test_foundryscript_tmlanguage
+        # TextMate grammars are Oniguruma regular expressions; Python `re` accepts a
+        # different language, so the tokenization evidence needs the real engine.
+        additional_dependencies: [onigurumacffi]
+        pass_filenames: false
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            modules/foundry_script/fs_tokenizer\.cpp|
+            modules/foundry_script/grammar/.*|
+            tests/python_build/(?:textmate_tokenizer|test_foundryscript_tmlanguage)\.py
+          )$
+
   # `actionlint` is the primary gate on workflow syntax, expressions, action inputs,
   # and embedded shell. It parses workflow files only; composite actions have no
   # `jobs:` section and are rejected as malformed workflows, so they stay out of

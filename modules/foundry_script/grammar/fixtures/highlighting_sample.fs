@@ -1,0 +1,61 @@
+## Documentation comment for the sample class.
+# Ordinary comment.
+@tool
+@cafecito.test.timeout(5.0)
+namespace Sample.Highlighting
+import Sample.Support
+
+class_name GrammarSample extends Node uses Printable
+
+const LIMIT = 0xFF_00
+const MASK = 0b1010_1010
+const RATIO = 1.5e-3
+const RAW = r"C:\path\no\escapes"
+const NAME = &"unique_name"
+const PATH = ^"res://scene.tscn"
+const DOC = """
+Triple-quoted body with a # that is not a comment.
+"""
+const OTHER = '''single triple'''
+
+var health: int = 100
+var label := "escaped \n \u00e9 text"
+var annotation := "contextual word used as an identifier"
+var extend := 1
+var async := 2
+var targets := 3
+var get := 4
+
+signal damaged(amount: int)
+
+annotation Timeout(seconds: float) targets METHOD, CLASS:
+	pass
+
+extend Sample.Support.Helper uses Printable:
+	pass
+
+func remainder(left: int, right: int) -> int:
+	for step in 1..2:
+		health += step
+	return left % right
+
+func first(pair: Tuple[int, int]) -> int:
+	return pair.0
+
+async func fetch(path: String) -> Coroutine[int]:
+	var node := $Player/%Weapon/Barrel
+	var other := %Weapon
+	var quoted := $"Player Two"
+	if node != null and not other.is_queued_for_deletion():
+		await node.ready
+	match path:
+		"a" when true:
+			return 1
+		_:
+			return 0
+
+var scaled: float:
+	get:
+		return health * TAU / PI
+	set(value):
+		health = int(value if value < INF else NAN)
