@@ -132,14 +132,14 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a rescan sweep drops an in-flig
 	// must not commit afterwards and resurrect an entry the sweep just dropped.
 	DeclarationIndexGenerationFixture fixture;
 
-	const String root = "res://fsg_swept/";
-	const String path = root + "library.fs";
+	const String corpus_root = "res://fsg_swept/";
+	const String path = corpus_root + "library.fs";
 
 	const uint64_t seeded_token = TestFSDeclarationIndexAccessor::claim(fixture.language, path);
 	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, path, seeded_token, declaration_index_annotations(SNAME("fsg.swept")), true, "fsg.swept"));
 
 	const uint64_t in_flight_token = TestFSDeclarationIndexAccessor::claim(fixture.language, path);
-	fixture.language->clear_global_declaration_index_under(root);
+	fixture.language->clear_global_declaration_index_under(corpus_root);
 
 	CHECK_FALSE(TestFSDeclarationIndexAccessor::commit(fixture.language, path, in_flight_token, declaration_index_annotations(SNAME("fsg.swept")), true, "fsg.swept"));
 	CHECK_FALSE(fixture.language->is_global_annotation(SNAME("fsg.swept")));
