@@ -11914,13 +11914,6 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		}
 	}
 
-	// A script class or a native engine class reaches its static witnesses here, once its own members,
-	// base chain, and applied traits have all missed.
-	if (found_function == nullptr && !p_is_constructor && p_base_type.is_meta_type &&
-			apply_static_conformance_witness(original_base_class)) {
-		return true;
-	}
-
 	if (found_function != nullptr) {
 		if (r_found_function) {
 			*r_found_function = found_function;
@@ -12201,6 +12194,16 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		}
 #endif // DEBUG_ENABLED
 		return valid;
+	}
+
+	// Last resort for a script class or a native engine class: its own members, base chain, applied
+	// traits, base scripts, and native surface have all missed, so a `static` witness from a retroactive
+	// conformance is the only thing left. It has to be last, because that is the order the runtime
+	// resolves in — `FSNativeClass::callp` tries the `MethodBind` first, and codegen only routes a call
+	// to the witness path for a name ClassDB does not know. Resolving a witness any earlier would give
+	// the analyzer one signature and the runtime a different function.
+	if (!p_is_constructor && p_base_type.is_meta_type && apply_static_conformance_witness(original_base_class)) {
+		return true;
 	}
 
 	return false;

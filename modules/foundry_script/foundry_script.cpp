@@ -1468,12 +1468,21 @@ Variant FoundryScript::callp(const StringName &p_method, const Variant **p_args,
 		top = top->base.ptr();
 	}
 
-	// Retroactive-conformance fallback (only on a member-function miss, to keep the hot path fast). A
-	// `static` witness supplied by an external `extend Target uses Trait: ...` is not in any class's
-	// `member_functions` because the declaring file does not own this class. Consult the conformance
-	// registry by this script's class identity (FQCN, then global class name), walking the base chain,
-	// and dispatch the compiled witness with no instance. Instance witnesses are reached through
-	// `FSInstance::callp` instead and are skipped here.
+	//none found, regular
+
+	const Variant result = Script::callp(p_method, p_args, p_argcount, r_error);
+	if (r_error.error != Callable::CallError::CALL_ERROR_INVALID_METHOD) {
+		return result;
+	}
+
+	// Retroactive-conformance fallback, last (which also keeps it off the hot path). A `static` witness
+	// supplied by an external `extend Target uses Trait: ...` is not in any class's `member_functions`
+	// because the declaring file does not own this class, so nothing above can find it. It is dispatched
+	// with no instance; instance witnesses are reached through `FSInstance::callp` and skipped here.
+	//
+	// Last, and not before `Script::callp`, so that a witness never shadows a real method of the script
+	// object — the analyzer resolves in this same order, and the two must agree on which function a call
+	// means.
 	//
 	// The lookup is by target script rather than by the registry's string aliases: every class in a file,
 	// inner classes included, registers the file's path, and a root class without `class_name` has that
@@ -1482,13 +1491,12 @@ Variant FoundryScript::callp(const StringName &p_method, const Variant **p_args,
 	for (const FoundryScript *cursor = this; cursor != nullptr; cursor = cursor->base.ptr()) {
 		FSFunction *witness = registry->find_witness_function_for_target(cursor, p_method);
 		if (witness != nullptr && witness->is_static()) {
+			r_error.error = Callable::CallError::CALL_OK;
 			return witness->call(nullptr, p_args, p_argcount, r_error);
 		}
 	}
 
-	//none found, regular
-
-	return Script::callp(p_method, p_args, p_argcount, r_error);
+	return result;
 }
 
 bool FoundryScript::_get(const StringName &p_name, Variant &r_ret) const {
