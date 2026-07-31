@@ -78,6 +78,7 @@ public:
 	Variant declaration(const Dictionary &p_params);
 	Variant signatureHelp(const Dictionary &p_params);
 	Array formatting(const Dictionary &p_params);
+	Dictionary semanticTokensFull(const Dictionary &p_params);
 
 	void initialize();
 

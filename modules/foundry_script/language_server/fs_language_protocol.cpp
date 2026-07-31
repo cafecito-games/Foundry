@@ -458,6 +458,22 @@ ExtendFSParser *FSLanguageProtocol::get_parse_result(const String &p_path) {
 	return *cached_parser;
 }
 
+bool FSLanguageProtocol::get_managed_document_text(const String &p_path, String &r_text) const {
+	if (latest_client_id == LSP_NO_CLIENT) {
+		return false;
+	}
+	const Ref<LSPeer> *client = clients.getptr(latest_client_id);
+	if (client == nullptr || client->is_null()) {
+		return false;
+	}
+	const LSP::TextDocumentItem *document = (*client)->managed_files.getptr(p_path);
+	if (document == nullptr || document->languageId != LSP::LanguageId::FOUNDRY_SCRIPT) {
+		return false;
+	}
+	r_text = document->text;
+	return true;
+}
+
 ExtendFSParser *FSLanguageProtocol::peek_parse_result(const String &p_path) {
 	LSP_CLIENT_V(nullptr);
 
@@ -668,6 +684,10 @@ FSLanguageProtocol::FSLanguageProtocol() {
 	SET_DOCUMENT_METHOD(declaration);
 	SET_DOCUMENT_METHOD(signatureHelp);
 	SET_DOCUMENT_METHOD(formatting);
+
+	// Spelled out rather than routed through `SET_DOCUMENT_METHOD`: the protocol method name has a
+	// second path segment, so it is not a valid C++ identifier to stringify.
+	set_method("textDocument/semanticTokens/full", callable_mp(text_document.ptr(), &FSTextDocument::semanticTokensFull));
 
 	SET_DOCUMENT_METHOD(nativeSymbol); // Custom method.
 

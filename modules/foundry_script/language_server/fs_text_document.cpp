@@ -35,6 +35,7 @@
 #include "../fs_format.h"
 #include "fs_extend_parser.h"
 #include "fs_language_protocol.h"
+#include "fs_semantic_tokens.h"
 
 #include "core/io/file_access.h"
 #include "editor/script/script_text_editor.h"
@@ -250,6 +251,7 @@ void FSTextDocument::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("definition"), &FSTextDocument::definition);
 	ClassDB::bind_method(D_METHOD("declaration"), &FSTextDocument::declaration);
 	ClassDB::bind_method(D_METHOD("signatureHelp"), &FSTextDocument::signatureHelp);
+	ClassDB::bind_method(D_METHOD("semanticTokensFull"), &FSTextDocument::semanticTokensFull);
 	ClassDB::bind_method(D_METHOD("show_native_symbol_in_editor"), &FSTextDocument::show_native_symbol_in_editor);
 }
 
@@ -803,6 +805,42 @@ Array FSTextDocument::formatting(const Dictionary &p_params) {
 
 	edits.push_back(edit.to_json());
 	return edits;
+}
+
+Dictionary FSTextDocument::semanticTokensFull(const Dictionary &p_params) {
+	LSP::SemanticTokens tokens;
+
+	LSP::SemanticTokensParams params;
+	params.load(p_params);
+
+	FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
+	ERR_FAIL_NULL_V(protocol, tokens.to_json());
+
+	Ref<FSWorkspace> workspace = protocol->get_workspace();
+	ERR_FAIL_COND_V(workspace.is_null(), tokens.to_json());
+
+	const String path = workspace->get_file_path(params.textDocument.uri);
+	if (path.is_empty()) {
+		return tokens.to_json();
+	}
+
+	// The managed buffer is authoritative: a client that has sent `didOpen`/`didChange` expects its
+	// unsaved text to be highlighted, not whatever is still on disk.
+	String source;
+	if (!protocol->get_managed_document_text(path, source)) {
+		if (!path.has_extension("fs")) {
+			return tokens.to_json();
+		}
+		Error err = OK;
+		source = FileAccess::get_file_as_string(path, &err);
+		if (err != OK) {
+			return tokens.to_json();
+		}
+	}
+
+	const Vector<String> lines = FSSemanticTokens::split_lines(source);
+	tokens.data = FSSemanticTokens::encode(FSSemanticTokens::collect(source, lines), lines);
+	return tokens.to_json();
 }
 
 FSTextDocument::FSTextDocument() {

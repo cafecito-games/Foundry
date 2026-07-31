@@ -146,6 +146,16 @@ public:
 	void resolve_related_symbols(const LSP::TextDocumentPositionParams &p_doc_pos, List<const LSP::DocumentSymbol *> &r_list);
 
 	/**
+	 * Copies the current client's managed buffer for `p_path` into `r_text`, returning `false` when
+	 * the client does not own the document or the document is not FoundryScript.
+	 *
+	 * Reads the same per-client open-document cache the synchronization notifications write, so a
+	 * request answered from it sees unsaved edits instead of stale disk contents. Like every other
+	 * accessor of that cache, it must be called from the request-handling funnel.
+	 */
+	bool get_managed_document_text(const String &p_path, String &r_text) const;
+
+	/**
 	 * Returns parse results for the given path, using the cache if available.
 	 * If no such file exists, or the file is not a FoundryScript file a `nullptr` is returned.
 	 */

@@ -1843,6 +1843,141 @@ struct Workspace {
 	}
 };
 
+/**
+ * Semantic token types, in the stable order they are advertised in the server legend.
+ *
+ * The enumerator value is the `tokenType` index a client resolves against that legend, so
+ * entries may only be appended; reordering silently re-colors every client.
+ */
+enum class SemanticTokenType {
+	NAMESPACE = 0,
+	CLASS,
+	INTERFACE,
+	STRUCT,
+	ENUM,
+	ENUM_MEMBER,
+	EVENT,
+	TYPE,
+	TYPE_PARAMETER,
+	FUNCTION,
+	METHOD,
+	PROPERTY,
+	VARIABLE,
+	PARAMETER,
+	DECORATOR,
+	KEYWORD,
+	MAX,
+};
+
+/**
+ * Semantic token modifiers, in the stable order they are advertised in the server legend.
+ *
+ * The enumerator value is the bit index inside the `tokenModifiers` bit set, so entries may only
+ * be appended. `FINAL` is a Foundry-specific modifier with no counterpart in the LSP defaults;
+ * clients contribute it from this legend instead of maintaining a second ordered copy.
+ */
+enum class SemanticTokenModifier {
+	DECLARATION = 0,
+	STATIC,
+	ABSTRACT,
+	FINAL,
+	ASYNC,
+	READONLY,
+	DEFAULT_LIBRARY,
+	MAX,
+};
+
+/**
+ * The legend a client uses to decode the `tokenType` index and `tokenModifiers` bit set of every
+ * encoded token.
+ */
+struct SemanticTokensLegend {
+	Vector<String> tokenTypes;
+	Vector<String> tokenModifiers;
+
+	SemanticTokensLegend() {
+		tokenTypes = {
+			"namespace",
+			"class",
+			"interface",
+			"struct",
+			"enum",
+			"enumMember",
+			"event",
+			"type",
+			"typeParameter",
+			"function",
+			"method",
+			"property",
+			"variable",
+			"parameter",
+			"decorator",
+			"keyword",
+		};
+		tokenModifiers = {
+			"declaration",
+			"static",
+			"abstract",
+			"final",
+			"async",
+			"readonly",
+			"defaultLibrary",
+		};
+	}
+
+	Dictionary to_json() const {
+		Dictionary dict;
+		dict["tokenTypes"] = tokenTypes;
+		dict["tokenModifiers"] = tokenModifiers;
+		return dict;
+	}
+};
+
+/**
+ * Semantic token server capabilities.
+ *
+ * Only whole-document requests are supported: no range requests, and `full` is advertised as a
+ * plain `true` rather than `{ "delta": true }` so clients never issue a delta request.
+ */
+struct SemanticTokensOptions {
+	SemanticTokensLegend legend;
+	bool full = true;
+	bool range = false;
+
+	Dictionary to_json() const {
+		Dictionary dict;
+		dict["legend"] = legend.to_json();
+		dict["full"] = full;
+		dict["range"] = range;
+		return dict;
+	}
+};
+
+/**
+ * Parameters of a `textDocument/semanticTokens/full` request.
+ */
+struct SemanticTokensParams {
+	TextDocumentIdentifier textDocument;
+
+	_FORCE_INLINE_ void load(const Dictionary &p_params) {
+		textDocument.load(p_params["textDocument"]);
+	}
+};
+
+/**
+ * The result of a `textDocument/semanticTokens/full` request: a flat run of five-integer records
+ * (`deltaLine`, `deltaStart`, `length`, `tokenType`, `tokenModifiers`).
+ */
+struct SemanticTokens {
+	PackedInt32Array data;
+
+	Dictionary to_json() const {
+		Dictionary dict;
+		dict["data"] = data;
+		return dict;
+	}
+};
+
 struct ServerCapabilities {
 	/**
 	 * Defines how text documents are synced. Is either a detailed structure defining each notification or
@@ -1972,6 +2107,13 @@ struct ServerCapabilities {
 	 */
 	ExecuteCommandOptions executeCommandProvider;
 
+	/**
+	 * The server provides whole-document semantic tokens.
+	 *
+	 * Since 3.16.0
+	 */
+	SemanticTokensOptions semanticTokensProvider;
+
 	_FORCE_INLINE_ Dictionary to_json() {
 		Dictionary dict;
 		dict["textDocumentSync"] = textDocumentSync.to_json();
@@ -1999,6 +2141,7 @@ struct ServerCapabilities {
 		dict["documentFormattingProvider"] = documentFormattingProvider;
 		dict["documentRangeFormattingProvider"] = documentRangeFormattingProvider;
 		dict["declarationProvider"] = declarationProvider;
+		dict["semanticTokensProvider"] = semanticTokensProvider.to_json();
 		return dict;
 	}
 };
