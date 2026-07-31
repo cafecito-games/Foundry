@@ -165,6 +165,12 @@ public:
 	void reparse_open_scripts();
 	void reparse_open_scripts(const HashSet<String> &p_paths);
 
+	// Paths of open documents whose last parse reaches `p_namespace`: the document is in it, or
+	// imports it. An open document is not necessarily backed by a cached FSCache parser, so a
+	// namespace-keyed invalidation cannot find it through the cache alone. Empty for the global
+	// namespace, which no document reaches implicitly.
+	HashSet<String> collect_open_scripts_reaching_namespace(const String &p_namespace) const;
+
 	FSLanguageProtocol();
 	~FSLanguageProtocol();
 };

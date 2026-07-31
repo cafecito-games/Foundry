@@ -3985,6 +3985,9 @@ bool FSLanguage::commit_declaration_index_refresh(const String &p_search_path, u
 	const bool moved = p_search_path != p_target_path;
 	// Side effects on other subsystems are collected here and run after every lock is released.
 	List<String> cleared_conformance_files;
+	// Only a committed mutation changes a namespace's conformance file set, so the deltas are
+	// gathered inside the generation-guarded block and notified outside it.
+	List<String> changed_conformance_namespaces;
 
 	bool committed = false;
 	{
@@ -3998,20 +4001,23 @@ bool FSLanguage::commit_declaration_index_refresh(const String &p_search_path, u
 		const bool target_current = _is_declaration_index_token_current(p_target_path, p_target_token);
 		const bool search_current = moved && _is_declaration_index_token_current(p_search_path, p_search_token);
 
+		String removed_namespace;
 		if (search_current) {
 			// The file moved: the old path's entries go away.
 			remove_global_annotations_by_path(p_search_path);
-			if (_erase_conformance_file(p_search_path)) {
+			if (_erase_conformance_file(p_search_path, &removed_namespace)) {
 				cleared_conformance_files.push_back(p_search_path);
+				changed_conformance_namespaces.push_back(removed_namespace);
 			}
 		}
 
 		if (target_current) {
 			replace_global_annotations(p_target_path, p_annotations);
 			if (p_declares_conformances) {
-				add_conformance_file(p_target_path, p_conformance_namespace);
-			} else if (_erase_conformance_file(p_target_path)) {
+				_index_conformance_file(p_target_path, p_conformance_namespace, &changed_conformance_namespaces);
+			} else if (_erase_conformance_file(p_target_path, &removed_namespace)) {
 				cleared_conformance_files.push_back(p_target_path);
+				changed_conformance_namespaces.push_back(removed_namespace);
 			}
 		}
 
@@ -4021,6 +4027,7 @@ bool FSLanguage::commit_declaration_index_refresh(const String &p_search_path, u
 	for (const String &path : cleared_conformance_files) {
 		FSConformanceRegistry::get_singleton()->clear_file(path);
 	}
+	_notify_conformance_namespaces_changed(changed_conformance_namespaces);
 	return committed;
 }
 
@@ -4158,40 +4165,54 @@ void FSLanguage::clear_global_declaration_index_under(const String &p_root_prefi
 	}
 }
 
-void FSLanguage::add_conformance_file(const String &p_path, const String &p_namespace) {
-	// Scoped so this mutator matches `remove_conformance_file`: anything added after the block runs
-	// with no index lock held.
-	{
-		MutexLock lock(conformance_index_mutex);
+void FSLanguage::_index_conformance_file(const String &p_path, const String &p_namespace, List<String> *r_changed_namespaces) {
+	MutexLock lock(conformance_index_mutex);
 
-		const String *previous_namespace = conformance_namespace_by_file.getptr(p_path);
-		if (previous_namespace != nullptr) {
-			if (*previous_namespace == p_namespace) {
-				return;
-			}
-			Vector<String> *previous_files = conformance_files_by_namespace.getptr(*previous_namespace);
-			if (previous_files != nullptr) {
-				previous_files->erase(p_path);
-				if (previous_files->is_empty()) {
-					conformance_files_by_namespace.erase(*previous_namespace);
-				}
+	const String *previous_namespace = conformance_namespace_by_file.getptr(p_path);
+	if (previous_namespace != nullptr) {
+		if (*previous_namespace == p_namespace) {
+			// Re-indexing an unchanged file leaves every namespace's file set exactly as it was.
+			return;
+		}
+		Vector<String> *previous_files = conformance_files_by_namespace.getptr(*previous_namespace);
+		if (previous_files != nullptr) {
+			previous_files->erase(p_path);
+			if (previous_files->is_empty()) {
+				conformance_files_by_namespace.erase(*previous_namespace);
 			}
 		}
-
-		conformance_namespace_by_file[p_path] = p_namespace;
-		Vector<String> &files = conformance_files_by_namespace[p_namespace];
-		if (!files.has(p_path)) {
-			files.push_back(p_path);
+		if (r_changed_namespaces != nullptr) {
+			r_changed_namespaces->push_back(*previous_namespace);
 		}
+	}
+
+	conformance_namespace_by_file[p_path] = p_namespace;
+	Vector<String> &files = conformance_files_by_namespace[p_namespace];
+	if (!files.has(p_path)) {
+		files.push_back(p_path);
+	}
+	if (r_changed_namespaces != nullptr) {
+		r_changed_namespaces->push_back(p_namespace);
 	}
 }
 
-bool FSLanguage::_erase_conformance_file(const String &p_path) {
+void FSLanguage::add_conformance_file(const String &p_path, const String &p_namespace) {
+	// Scoped so this mutator matches `remove_conformance_file`: the notification below runs with no
+	// index lock held.
+	List<String> changed_namespaces;
+	_index_conformance_file(p_path, p_namespace, &changed_namespaces);
+	_notify_conformance_namespaces_changed(changed_namespaces);
+}
+
+bool FSLanguage::_erase_conformance_file(const String &p_path, String *r_removed_namespace) {
 	MutexLock lock(conformance_index_mutex);
 
 	const String *declared_namespace = conformance_namespace_by_file.getptr(p_path);
 	if (declared_namespace == nullptr) {
 		return false;
+	}
+	if (r_removed_namespace != nullptr) {
+		*r_removed_namespace = *declared_namespace;
 	}
 	Vector<String> *files = conformance_files_by_namespace.getptr(*declared_namespace);
 	if (files != nullptr) {
@@ -4205,7 +4226,8 @@ bool FSLanguage::_erase_conformance_file(const String &p_path) {
 }
 
 void FSLanguage::remove_conformance_file(const String &p_path) {
-	if (!_erase_conformance_file(p_path)) {
+	String removed_namespace;
+	if (!_erase_conformance_file(p_path, &removed_namespace)) {
 		return;
 	}
 
@@ -4214,6 +4236,27 @@ void FSLanguage::remove_conformance_file(const String &p_path) {
 	// registry to decide whether a call names a conformance it cannot reach, so leaving it would keep
 	// producing diagnostics that point at a file that is gone. Analyzing the file again re-registers.
 	FSConformanceRegistry::get_singleton()->clear_file(p_path);
+
+	List<String> changed_namespaces;
+	changed_namespaces.push_back(removed_namespace);
+	_notify_conformance_namespaces_changed(changed_namespaces);
+}
+
+void FSLanguage::_notify_conformance_namespaces_changed(const List<String> &p_namespaces) {
+#ifdef TOOLS_ENABLED
+	HashSet<String> notified;
+	for (const String &changed_namespace : p_namespaces) {
+		// The global namespace is never reached implicitly, so no parser holds a namespace-derived
+		// edge to it and there is nothing a change to its file set can make stale.
+		if (changed_namespace.is_empty() || notified.has(changed_namespace)) {
+			continue;
+		}
+		notified.insert(changed_namespace);
+		notify_conformance_namespace_changed(changed_namespace);
+	}
+#else
+	(void)p_namespaces;
+#endif // TOOLS_ENABLED
 }
 
 void FSLanguage::clear_conformance_files() {
@@ -4254,6 +4297,44 @@ void FSLanguage::notify_disk_source_changed(const String &p_path) {
 	FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
 	if (protocol != nullptr && protocol->is_initialized()) {
 		protocol->reparse_open_scripts(affected);
+	}
+#endif
+}
+
+void FSLanguage::notify_conformance_namespace_changed(const String &p_namespace) {
+	// Must run with no declaration-index lock held: the sweep and the eviction below take
+	// `FSCache::mutex`, and the established order is `FSCache::mutex` -> `conformance_index_mutex`
+	// (a cache-driven parse resolves its conformance dependencies through the index). Every caller
+	// therefore collects its deltas under the index locks and notifies after releasing them.
+	if (p_namespace.is_empty()) {
+		return;
+	}
+
+	const Vector<String> members = FSCache::collect_parsers_reaching_namespace(p_namespace);
+
+	HashSet<String> affected;
+	for (const String &member : members) {
+		for (const String &path : FSCache::collect_parser_invalidation_closure(member)) {
+			affected.insert(path);
+		}
+	}
+	for (const String &member : members) {
+		// Eviction, never removal: an analysis in flight may still hold a Ref to one of these parsers,
+		// and `remove_parser` abandons the entry instead of destroying it.
+		FSCache::remove_parser(member);
+	}
+
+#if !defined(FOUNDRY_SCRIPT_NO_LSP)
+	FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
+	if (protocol != nullptr && protocol->is_initialized()) {
+		// An open document reaches the namespace whether or not the shared cache happens to hold a
+		// parser for it, so the documents to republish are collected from the language server too.
+		for (const String &path : protocol->collect_open_scripts_reaching_namespace(p_namespace)) {
+			affected.insert(path);
+		}
+		if (!affected.is_empty()) {
+			protocol->reparse_open_scripts(affected);
+		}
 	}
 #endif
 }
