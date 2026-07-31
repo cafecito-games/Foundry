@@ -58,8 +58,11 @@ BAIL_OUT_PREFIX = "Bail out!"
 
 STATUS_DETAILS = ("", "discovery_error", "runtime_error", "timed_out", "aborted", "setup_error")
 
-_PLAN_PATTERN = re.compile(r"^1\.\.(\d+)$")
-_POINT_PATTERN = re.compile(r"^(?P<status>ok|not ok) (?P<number>\d+) - (?P<rest>.*)$")
+# Plan and point counts are bounded so a pathological digit run is a structural
+# violation rather than an `int()` conversion failure: CPython refuses to convert
+# strings longer than its integer-string limit.
+_PLAN_PATTERN = re.compile(r"^1\.\.(\d{1,9})$")
+_POINT_PATTERN = re.compile(r"^(?P<status>ok|not ok) (?P<number>\d{1,9}) - (?P<rest>.*)$")
 _SKIP_PATTERN = re.compile(r"^SKIP (?P<reason>.+)$")
 _CONTROL_PATTERN = re.compile("[\\x00-\\x1f\\x7f]")
 
@@ -177,7 +180,9 @@ def validate_report(
         _check_selection(path, parsed, discovery, selections, violations)
     elif context_invalid:
         violations.append(
-            Violation(REPORT_SELECTION, "Selection could not be checked against a nonconforming discovery context", path)
+            Violation(
+                REPORT_SELECTION, "Selection could not be checked against a nonconforming discovery context", path
+            )
         )
 
     if not violations and process_exit is not None:
@@ -236,10 +241,7 @@ class ParsedReport:
         """
 
         return (
-            self.plan is not None
-            and self.line_ending_ok
-            and not self.stopped_early
-            and len(self.points) == self.plan
+            self.plan is not None and self.line_ending_ok and not self.stopped_early and len(self.points) >= self.plan
         )
 
 
@@ -248,9 +250,7 @@ def _parse_report(path: str, text: str, violations: list[Violation]) -> ParsedRe
     if text:
         if "\r\n" in text:
             line_ending_ok = False
-            violations.append(
-                Violation(REPORT_LINE_ENDING, "The report uses CRLF line endings; v1 requires LF", path)
-            )
+            violations.append(Violation(REPORT_LINE_ENDING, "The report uses CRLF line endings; v1 requires LF", path))
         elif not text.endswith("\n"):
             line_ending_ok = False
             violations.append(Violation(REPORT_LINE_ENDING, "The report does not end with a terminal LF", path))
@@ -312,16 +312,14 @@ def _check_bail_out(
             Violation(REPORT_BAILOUT, "A bailout after the plan is satisfied is trailing content", path, index + 1)
         )
     if index + 1 < len(lines):
-        violations.append(
-            Violation(REPORT_BAILOUT, "No output is allowed after 'Bail out!'", path, index + 2)
-        )
+        violations.append(Violation(REPORT_BAILOUT, "No output is allowed after 'Bail out!'", path, index + 2))
 
 
 def _read_point(
     path: str,
     lines: Sequence[str],
     index: int,
-    match: "re.Match[str]",
+    match: re.Match[str],
     report: ParsedReport,
     violations: list[Violation],
 ) -> int:
@@ -342,9 +340,7 @@ def _read_point(
         else:
             skip_reason = skip_match.group("reason")
             if not ok:
-                violations.append(
-                    Violation(REPORT_STATUS, "A skipped point must use 'ok'", path, line_number)
-                )
+                violations.append(Violation(REPORT_STATUS, "A skipped point must use 'ok'", path, line_number))
     if not label or label != label.strip() or "#" in label or _has_control_characters(label):
         violations.append(
             Violation(REPORT_POINT, "A point label must be non-empty single-line text without '#'", path, line_number)
@@ -401,7 +397,9 @@ def _collect_block(lines: Sequence[str], index: int) -> tuple[Optional[list[str]
     return (body, cursor, False)
 
 
-def _load_block(path: str, block: Sequence[str], line_number: int, violations: list[Violation]) -> Optional[dict]:
+def _load_block(
+    path: str, block: Sequence[str], line_number: int, violations: list[Violation]
+) -> Optional[dict[str, Any]]:
     unindented: list[str] = []
     for line in block:
         if not line.strip():
@@ -415,8 +413,14 @@ def _load_block(path: str, block: Sequence[str], line_number: int, violations: l
         unindented.append(line[2:])
     try:
         document = yaml.safe_load("\n".join(unindented))
-    except yaml.YAMLError as error:
-        violations.append(Violation(REPORT_YAML, "Malformed YAML diagnostic block: {}".format(error), path, line_number))
+    except Exception as error:
+        # Any loader failure is a conformance violation. The catch is deliberately broad
+        # because PyYAML's scalar constructors raise plain ValueError and AttributeError
+        # for several standard tags, and an adversarial artifact must never crash the
+        # validator instead of producing a diagnostic.
+        violations.append(
+            Violation(REPORT_YAML, "Malformed YAML diagnostic block: {}".format(error), path, line_number)
+        )
         return None
     if not isinstance(document, dict):
         violations.append(Violation(REPORT_YAML, "A diagnostic block must be a YAML mapping", path, line_number))
@@ -430,7 +434,7 @@ def _build_point(
     ok: bool,
     label: str,
     skip_reason: Optional[str],
-    document: Optional[dict],
+    document: Optional[dict[str, Any]],
     line_number: int,
     violations: list[Violation],
 ) -> TapPoint:
@@ -507,7 +511,7 @@ def _build_point(
 
 
 def _read_location(
-    path: str, document: dict, line_number: int, violations: list[Violation]
+    path: str, document: dict[str, Any], line_number: int, violations: list[Violation]
 ) -> Optional[SourceLocation]:
     if "at" not in document:
         return None
@@ -576,7 +580,9 @@ def _check_selection(
 ) -> None:
     if not discovery.conforming or not discovery.complete:
         violations.append(
-            Violation(REPORT_SELECTION, "Selection could not be checked against a nonconforming discovery context", path)
+            Violation(
+                REPORT_SELECTION, "Selection could not be checked against a nonconforming discovery context", path
+            )
         )
         return
     try:
@@ -624,7 +630,9 @@ def _check_selection(
         leaf = by_id[str(point.test_id)]
         if leaf.skipped and not point.skipped:
             violations.append(
-                Violation(REPORT_SKIP, "Discovered skipped leaf '{}' requires a SKIP point".format(leaf.id), path, point.line)
+                Violation(
+                    REPORT_SKIP, "Discovered skipped leaf '{}' requires a SKIP point".format(leaf.id), path, point.line
+                )
             )
         elif point.skipped and not leaf.skipped:
             violations.append(

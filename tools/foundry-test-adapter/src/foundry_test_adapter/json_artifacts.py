@@ -72,25 +72,25 @@ def discovery_record_schema() -> Draft202012Validator:
     return _discovery_validator
 
 
-def read_artifact(path: str) -> tuple[Optional[str], Optional[str]]:
+def read_artifact(path: str) -> tuple[str, Optional[str]]:
     """Reads one artifact as UTF-8 text.
 
-    Returns the decoded text, or `None` plus one of `missing`, `encoding`, or
-    `read` describing why the artifact could not be examined.
+    Returns the decoded text plus `None`, or empty text plus one of `missing`,
+    `encoding`, or `read` describing why the artifact could not be examined.
     """
 
     try:
         data = Path(path).read_bytes()
     except FileNotFoundError:
-        return (None, "missing")
+        return ("", "missing")
     except OSError:
-        return (None, "read")
+        return ("", "read")
     if data.startswith(_BYTE_ORDER_MARK):
-        return (None, "encoding")
+        return ("", "encoding")
     try:
         return (data.decode("utf-8"), None)
     except UnicodeDecodeError:
-        return (None, "encoding")
+        return ("", "encoding")
 
 
 def _reject_constant(value: str) -> Any:
@@ -156,9 +156,9 @@ def validate_capabilities(path: str, process_exit: Optional[int] = None) -> Vali
     else:
         try:
             document = parse_strict_json(text)
-        except ValueError as error:
+        except ValueError as parse_error:
             complete = False
-            violations.append(Violation(CAPABILITIES_JSON, "Malformed JSON document: {}".format(error), path))
+            violations.append(Violation(CAPABILITIES_JSON, "Malformed JSON document: {}".format(parse_error), path))
         else:
             if not isinstance(document, dict):
                 violations.append(
@@ -293,6 +293,7 @@ def validate_discovery(
         violations.append(Violation(DISCOVERY_LINE_ENDING, line_ending, path))
 
     records: list[tuple[int, dict[str, Any]]] = []
+    rejected_ids: set[str] = set()
     rejected = False
     if text:
         segments = text.split("\n")
@@ -306,10 +307,10 @@ def validate_discovery(
                 continue
             try:
                 value = parse_strict_json(segment)
-            except ValueError as error:
+            except ValueError as parse_error:
                 rejected = True
                 violations.append(
-                    Violation(DISCOVERY_JSON, "Malformed JSON record: {}".format(error), path, line_number)
+                    Violation(DISCOVERY_JSON, "Malformed JSON record: {}".format(parse_error), path, line_number)
                 )
                 continue
             if not isinstance(value, dict):
@@ -321,6 +322,9 @@ def validate_discovery(
             )
             if schema_errors:
                 rejected = True
+                identifier = value.get("id")
+                if isinstance(identifier, str) and identifier:
+                    rejected_ids.add(identifier)
                 for error in schema_errors:
                     violations.append(
                         Violation(
@@ -334,7 +338,7 @@ def validate_discovery(
                 continue
             records.append((line_number, value))
 
-    model, complete = _validate_discovery_records(path, records, rejected, violations)
+    model, complete = _validate_discovery_records(path, records, rejected, rejected_ids, violations)
     if truncated:
         complete = False
         violations.append(Violation(DISCOVERY_INCOMPLETE, "The discovery stream is truncated", path))
@@ -378,6 +382,7 @@ def _validate_discovery_records(
     path: str,
     records: Sequence[tuple[int, dict[str, Any]]],
     rejected: bool,
+    rejected_ids: set[str],
     violations: list[Violation],
 ) -> tuple[DiscoveryModel, bool]:
     root: Optional[str] = None
@@ -426,7 +431,9 @@ def _validate_discovery_records(
             seen_ids[identifier] = line_number
 
         parent_id = record["parent_id"]
-        if parent_id is not None and parent_id not in suite_ids:
+        # A parent check that depends on a record the validator already rejected would
+        # cascade a second diagnostic out of one defect, so it is suppressed.
+        if parent_id is not None and parent_id not in suite_ids and parent_id not in rejected_ids:
             violations.append(
                 Violation(
                     DISCOVERY_PARENT,

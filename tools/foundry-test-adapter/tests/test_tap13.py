@@ -25,8 +25,9 @@ class ReportTests(ScratchTestCase):
         self.assertEqual("conforming", result.classification)
 
     def test_failing_report_is_test_failures(self) -> None:
-        content = report(1, point(1, ok=False, message="expected 4, got 5",
-                                  location=("res://tests/math_tests.fs", 5, 1)))
+        content = report(
+            1, point(1, ok=False, message="expected 4, got 5", location=("res://tests/math_tests.fs", 5, 1))
+        )
         result = self.validate(content, process_exit=1)
         self.assertTrue(result.valid)
         self.assertEqual("test_failures", result.classification)
@@ -90,7 +91,7 @@ class ReportTests(ScratchTestCase):
     def test_metadata_requirements(self) -> None:
         cases = {
             "missing id": PREAMBLE + "1..1\nok 1 - L\n  ---\n  _foundry:\n"
-                          "    duration_ms: 1\n    status_detail: \"\"\n  ...\n",
+            '    duration_ms: 1\n    status_detail: ""\n  ...\n',
             "negative duration": report(1, point(1, duration=-1)),
             "boolean duration": report(1, point(1, duration="true")),
             "unknown detail": report(1, point(1, ok=False, status_detail="exploded", message="boom")),
@@ -109,8 +110,7 @@ class ReportTests(ScratchTestCase):
         self.assertEqual(("report.status",), self.validate(content).codes)
 
     def test_source_locations_are_one_based(self) -> None:
-        content = report(1, point(1, ok=False, message="failed",
-                                  location=("res://tests/math_tests.fs", 0, 1)))
+        content = report(1, point(1, ok=False, message="failed", location=("res://tests/math_tests.fs", 0, 1)))
         self.assertEqual(("report.location",), self.validate(content).codes)
 
     def test_duplicate_point_identifiers_are_rejected(self) -> None:
@@ -166,6 +166,33 @@ class ReportTests(ScratchTestCase):
         result = validate_report(self.missing("absent.tap"))
         self.assertEqual(("artifact.missing",), result.codes)
         self.assertEqual("infrastructure_failure", result.classification)
+
+    def test_an_oversized_plan_number_is_a_structural_violation(self) -> None:
+        # CPython refuses to convert very long digit strings, so the parser must reject the
+        # line rather than raise out of the validator.
+        content = "TAP version 13\n# foundry-test-adapter: 1\n1.." + ("9" * 5000) + "\n"
+        result = self.validate(content)
+        self.assertEqual({"report.plan", "report.incomplete"}, set(result.codes))
+
+    def test_an_oversized_point_number_is_a_structural_violation(self) -> None:
+        content = "TAP version 13\n# foundry-test-adapter: 1\n1..1\nok " + ("9" * 5000) + " - L\n  ---\n  ...\n"
+        self.assertIn("report.point", self.validate(content).codes)
+
+    def test_yaml_tags_that_fail_to_construct_report_report_yaml(self) -> None:
+        for body in (
+            '  message: !!timestamp "not-a-date"\n',
+            '  _foundry:\n    id: "a"\n    duration_ms: ' + ("9" * 5000) + "\n",
+        ):
+            with self.subTest(body=body[:24]):
+                content = PREAMBLE + "1..1\nok 1 - L\n  ---\n" + body + "  ...\n"
+                self.assertEqual(("report.yaml",), self.validate(content).codes)
+
+    def test_a_satisfied_plan_stays_complete_when_extra_points_follow(self) -> None:
+        content = report(1, point(1, test_id="test-a"), point(2, test_id="test-b"))
+        result = self.validate(content)
+        self.assertEqual(("report.point",), result.codes)
+        self.assertTrue(result.complete)
+        self.assertEqual("invalid", result.classification)
 
     def test_wrong_supplied_exit_is_invalid(self) -> None:
         result = self.validate(report(1, point(1)), process_exit=1)

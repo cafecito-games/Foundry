@@ -154,18 +154,30 @@ class DiscoveryTests(ScratchTestCase):
                 result, _ = self.validate(content)
                 self.assertIn("discovery.parent", result.codes)
 
-    def test_non_canonical_paths_are_rejected(self) -> None:
-        result, _ = self.validate(
-            stream(start(), suite(path="res://tests/../tests/a.fs"), end(1, 0, 0))
+    def test_a_rejected_parent_record_does_not_cascade(self) -> None:
+        # The suite line fails its schema, so the child's parent reference must not raise a
+        # second diagnostic out of the same defect.
+        broken_suite = record(
+            event="suite",
+            id="suite-a",
+            label="MathTests",
+            parent_id=None,
+            path="res://tests/math_tests.fs",
+            range=None,
+            runnable=True,
+            skipped=False,
         )
+        result, _ = self.validate(stream(start(), broken_suite, test_record(), end(1, 1, 0)))
+        self.assertEqual(("discovery.schema",), result.codes)
+
+    def test_non_canonical_paths_are_rejected(self) -> None:
+        result, _ = self.validate(stream(start(), suite(path="res://tests/../tests/a.fs"), end(1, 0, 0)))
         self.assertEqual(("discovery.path",), result.codes)
 
     def test_range_requires_a_path_and_forward_order(self) -> None:
         without_path, _ = self.validate(stream(start(), suite(path=None), end(1, 0, 0)))
         self.assertEqual(("discovery.range",), without_path.codes)
-        reversed_range, _ = self.validate(
-            stream(start(), suite(range=item_range(9, 0, 2, 0)), end(1, 0, 0))
-        )
+        reversed_range, _ = self.validate(stream(start(), suite(range=item_range(9, 0, 2, 0)), end(1, 0, 0)))
         self.assertEqual(("discovery.range",), reversed_range.codes)
 
     def test_skip_state_invariants(self) -> None:

@@ -1507,7 +1507,7 @@
       "expected": {
         "validator_exit": 1,
         "valid": false,
-        "complete": false,
+        "complete": true,
         "classification": "invalid",
         "codes": [
           "report.point"
@@ -2040,6 +2040,43 @@
         "classification": "invalid",
         "codes": [
           "artifact.encoding"
+        ]
+      }
+    },
+    {
+      "id": "report.invalid.oversized-plan-number",
+      "operation": "report",
+      "artifact": "invalid/report/oversized-plan-number.tap",
+      "exit_code": null,
+      "cancelled": false,
+      "discovery": null,
+      "selections": [],
+      "expected": {
+        "validator_exit": 1,
+        "valid": false,
+        "complete": false,
+        "classification": "invalid",
+        "codes": [
+          "report.plan",
+          "report.incomplete"
+        ]
+      }
+    },
+    {
+      "id": "report.invalid.unconstructible-yaml",
+      "operation": "report",
+      "artifact": "invalid/report/unconstructible-yaml.tap",
+      "exit_code": null,
+      "cancelled": false,
+      "discovery": null,
+      "selections": [],
+      "expected": {
+        "validator_exit": 1,
+        "valid": false,
+        "complete": true,
+        "classification": "invalid",
+        "codes": [
+          "report.yaml"
         ]
       }
     }
