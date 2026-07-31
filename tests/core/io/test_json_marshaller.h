@@ -63,6 +63,17 @@ TEST_CASE("[JSONMarshal] No marshaller preserves existing output") {
 	memdelete(object);
 }
 
+TEST_CASE("[JSONMarshal] No marshaller preserves existing output for null and freed objects") {
+	JSON::set_object_marshaller(nullptr);
+
+	CHECK(JSON::stringify(Variant((Object *)nullptr)) == "\"<Object#null>\"");
+
+	Object *object = memnew(Object);
+	Variant object_variant = object;
+	memdelete(object);
+	CHECK(JSON::stringify(object_variant) == "\"<Freed Object>\"");
+}
+
 TEST_CASE("[JSONMarshal] Declining marshaller leaves output unchanged") {
 	RecordingMarshaller marshaller;
 	marshaller.should_handle = false;

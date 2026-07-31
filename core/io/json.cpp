@@ -203,14 +203,16 @@ void JSON::_stringify(String &r_result, const Variant &p_var, const String &p_in
 			return;
 		}
 		case Variant::OBJECT: {
-			Object *object = p_var.get_validated_object();
-			if (object == nullptr) {
-				r_result += "null";
+			if (object_marshaller == nullptr) {
+				// No marshaller registered: keep the exact pre-existing behavior for every
+				// Object variant, including null and freed references.
+				_stringify_quoted(r_result, p_var);
 				return;
 			}
 
-			if (object_marshaller == nullptr) {
-				_stringify_quoted(r_result, p_var);
+			Object *object = p_var.get_validated_object();
+			if (object == nullptr) {
+				r_result += "null";
 				return;
 			}
 
