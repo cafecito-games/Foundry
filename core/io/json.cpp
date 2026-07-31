@@ -48,13 +48,25 @@ const char *JSON::tk_name[TK_MAX] = {
 	"EOF",
 };
 
+JSONObjectMarshaller *JSON::object_marshaller = nullptr;
+
+void JSON::set_object_marshaller(JSONObjectMarshaller *p_marshaller) {
+	object_marshaller = p_marshaller;
+}
+
 void JSON::_add_indent(String &r_result, const String &p_indent, int p_size) {
 	for (int i = 0; i < p_size; i++) {
 		r_result += p_indent;
 	}
 }
 
-void JSON::_stringify(String &r_result, const Variant &p_var, const String &p_indent, int p_cur_indent, bool p_sort_keys, HashSet<const void *> &p_markers, bool p_full_precision) {
+static void _stringify_quoted(String &r_result, const Variant &p_var) {
+	r_result += '"';
+	r_result += String(p_var).json_escape();
+	r_result += '"';
+}
+
+void JSON::_stringify(String &r_result, const Variant &p_var, const String &p_indent, int p_cur_indent, bool p_sort_keys, HashSet<const void *> &p_markers, bool p_full_precision, HashSet<uint64_t> &p_object_markers) {
 	if (p_cur_indent > Variant::MAX_RECURSION_DEPTH) {
 		r_result += "...";
 		ERR_FAIL_MSG("JSON structure is too deep. Bailing.");
@@ -140,7 +152,7 @@ void JSON::_stringify(String &r_result, const Variant &p_var, const String &p_in
 					r_result += end_statement;
 				}
 				_add_indent(r_result, p_indent, p_cur_indent + 1);
-				_stringify(r_result, var, p_indent, p_cur_indent + 1, p_sort_keys, p_markers, p_full_precision);
+				_stringify(r_result, var, p_indent, p_cur_indent + 1, p_sort_keys, p_markers, p_full_precision, p_object_markers);
 			}
 			r_result += end_statement;
 			_add_indent(r_result, p_indent, p_cur_indent);
@@ -179,9 +191,9 @@ void JSON::_stringify(String &r_result, const Variant &p_var, const String &p_in
 					r_result += end_statement;
 				}
 				_add_indent(r_result, p_indent, p_cur_indent + 1);
-				_stringify(r_result, String(key), p_indent, p_cur_indent + 1, p_sort_keys, p_markers, p_full_precision);
+				_stringify(r_result, String(key), p_indent, p_cur_indent + 1, p_sort_keys, p_markers, p_full_precision, p_object_markers);
 				r_result += colon;
-				_stringify(r_result, d[key], p_indent, p_cur_indent + 1, p_sort_keys, p_markers, p_full_precision);
+				_stringify(r_result, d[key], p_indent, p_cur_indent + 1, p_sort_keys, p_markers, p_full_precision, p_object_markers);
 			}
 
 			r_result += end_statement;
@@ -190,10 +202,39 @@ void JSON::_stringify(String &r_result, const Variant &p_var, const String &p_in
 			p_markers.erase(d.id());
 			return;
 		}
+		case Variant::OBJECT: {
+			Object *object = p_var.get_validated_object();
+			if (object == nullptr) {
+				r_result += "null";
+				return;
+			}
+
+			if (object_marshaller == nullptr) {
+				_stringify_quoted(r_result, p_var);
+				return;
+			}
+
+			const uint64_t object_id = object->get_instance_id();
+			if (p_object_markers.has(object_id)) {
+				r_result += "\"{...}\"";
+				ERR_FAIL_MSG("Converting circular structure to JSON.");
+			}
+
+			Variant marshaled;
+			p_object_markers.insert(object_id);
+			const bool handled = object_marshaller->marshal_object(object, marshaled);
+			if (handled) {
+				_stringify(r_result, marshaled, p_indent, p_cur_indent, p_sort_keys, p_markers, p_full_precision, p_object_markers);
+			}
+			p_object_markers.erase(object_id);
+
+			if (!handled) {
+				_stringify_quoted(r_result, p_var);
+			}
+			return;
+		}
 		default:
-			r_result += '"';
-			r_result += String(p_var).json_escape();
-			r_result += '"';
+			_stringify_quoted(r_result, p_var);
 			return;
 	}
 }
@@ -618,7 +659,8 @@ String JSON::get_parsed_text() const {
 String JSON::stringify(const Variant &p_var, const String &p_indent, bool p_sort_keys, bool p_full_precision) {
 	String result;
 	HashSet<const void *> markers;
-	_stringify(result, p_var, p_indent, 0, p_sort_keys, markers, p_full_precision);
+	HashSet<uint64_t> object_markers;
+	_stringify(result, p_var, p_indent, 0, p_sort_keys, markers, p_full_precision, object_markers);
 	return result;
 }
 
