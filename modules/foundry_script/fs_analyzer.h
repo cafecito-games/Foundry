@@ -548,6 +548,7 @@ private:
 			FSParser::ClassNode *p_trait, const HashMap<StringName, FSParser::DataType> &p_trait_substitution);
 	HashMap<StringName, FSParser::DataType> conformance_trait_substitution(FSParser::ClassNode *p_trait,
 			const FSParser::ClassNode::TraitUse &p_trait_use);
+	FSParser::FunctionNode *find_static_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method);
 	bool find_trait_implementation(FSParser::ClassNode *p_class, const StringName &p_function_name,
 			TraitMethodImplementation &r_implementation);
 	HashMap<StringName, FSParser::DataType> trait_type_argument_substitution(FSParser::ClassNode *p_class, FSParser::ClassNode *p_trait);

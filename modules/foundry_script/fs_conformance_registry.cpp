@@ -247,6 +247,25 @@ FSFunction *FSConformanceRegistry::find_witness_function(const String &p_target_
 	return function != nullptr ? *function : nullptr;
 }
 
+FSFunction *FSConformanceRegistry::find_witness_function_for_target(const FoundryScript *p_target_script, const StringName &p_method) const {
+	if (p_target_script == nullptr || p_method == StringName()) {
+		return nullptr;
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<RuntimeConformance>> &file_entry : runtime_by_file) {
+		for (const RuntimeConformance &conformance : file_entry.value) {
+			if (conformance.target_script != p_target_script) {
+				continue;
+			}
+			FSFunction *const *function = conformance.functions.getptr(p_method);
+			if (function != nullptr && *function != nullptr) {
+				return *function;
+			}
+		}
+	}
+	return nullptr;
+}
+
 FSFunction *FSConformanceRegistry::find_native_witness_function(const StringName &p_native_class, const StringName &p_method) const {
 	if (p_native_class == StringName() || p_method == StringName()) {
 		return nullptr;
@@ -383,6 +402,28 @@ String FSConformanceRegistry::get_witness_source(const String &p_target_key, con
 		}
 	}
 	return String();
+}
+
+bool FSConformanceRegistry::find_witness_location(const String &p_target_fqcn, const StringName &p_method,
+		String &r_source_file, int &r_conformance_index) const {
+	r_source_file = String();
+	r_conformance_index = -1;
+	if (p_target_fqcn.is_empty() || p_method == StringName()) {
+		return false;
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		for (const Conformance &conformance : file_entry.value) {
+			if (conformance.conformance_index < 0 || conformance.target_fqcn != p_target_fqcn ||
+					!conformance.witnesses.has(p_method)) {
+				continue;
+			}
+			r_source_file = conformance.source_file;
+			r_conformance_index = conformance.conformance_index;
+			return true;
+		}
+	}
+	return false;
 }
 
 FSConformanceRegistry::FSConformanceRegistry() {

@@ -199,6 +199,77 @@ HashMap<StringName, FSParser::DataType> FSAnalyzer::conformance_trait_substituti
 	return bindings;
 }
 
+FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method) {
+	if (p_method == StringName()) {
+		return nullptr;
+	}
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	if (registry == nullptr) {
+		return nullptr;
+	}
+
+	// Only a `static` witness is resolved here. An instance witness is reached through the receiver and
+	// already dispatches via the runtime's member-miss fallback; resolving it statically would change
+	// how instance calls on a conformed target are typed, which this lookup deliberately leaves alone.
+	//
+	// The registry's own witness nodes are borrowed from the declaring file's parse tree, which a
+	// registration can outlive, so they are never dereferenced here. The registry only reports *where*
+	// the conformance was declared; the node is then re-found in a parse tree this analysis holds live.
+	auto static_witness_for_target = [&](const String &p_target_fqcn) -> FSParser::FunctionNode * {
+		String declaring_file;
+		int conformance_index = -1;
+		if (!registry->find_witness_location(p_target_fqcn, p_method, declaring_file, conformance_index)) {
+			return nullptr;
+		}
+
+		FSParser::ClassNode *declaring_class = nullptr;
+		if (declaring_file == parser->script_path) {
+			declaring_class = parser->head;
+		} else {
+			const Ref<FSParserRef> declaring_ref =
+					dependency_parser_access.depended_parser_for(declaring_file, FSParserRef::INTERFACE_SOLVED);
+			if (declaring_ref.is_valid() && declaring_ref->get_parser() != nullptr) {
+				declaring_class = declaring_ref->get_parser()->head;
+			}
+		}
+		if (declaring_class == nullptr || conformance_index >= declaring_class->conformances.size()) {
+			return nullptr;
+		}
+
+		const FSParser::ConformanceNode *conformance = declaring_class->conformances[conformance_index];
+		if (conformance == nullptr) {
+			return nullptr;
+		}
+		for (FSParser::FunctionNode *witness : conformance->witnesses) {
+			if (witness != nullptr && witness->identifier != nullptr && witness->identifier->name == p_method) {
+				return witness->is_static ? witness : nullptr;
+			}
+		}
+		return nullptr;
+	};
+
+	// Lookups go strictly by a target's fully-qualified class name. A conformance is also registered
+	// under looser aliases (global class name, script path) that the runtime uses, but those do not
+	// identify a class on their own: every class declared in a file, inner classes included, shares the
+	// file's path, and a root class without `class_name` has that same path as its FQCN. Matching an
+	// alias would let one class answer a call with an unrelated sibling's witness.
+	//
+	// The base chain is walked so a witness declared on a base class stays reachable through a derived
+	// type, matching how the runtime resolves a static witness in `FoundryScript::callp`.
+	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
+		FSParser::FunctionNode *witness = static_witness_for_target(cursor->fqcn);
+		if (witness != nullptr) {
+			return witness;
+		}
+	}
+	// A target that arrives as a bare script reference has no ClassNode to read an FQCN from, but a root
+	// class's FQCN *is* its script path, so the path identifies it exactly.
+	if (p_target_type.class_type == nullptr && !p_target_type.script_path.is_empty()) {
+		return static_witness_for_target(p_target_type.script_path);
+	}
+	return nullptr;
+}
+
 bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, FSParser::ClassNode *p_target,
 		FSParser::ClassNode *p_trait, const HashMap<StringName, FSParser::DataType> &p_trait_substitution) {
 	// Witnesses are looked up by method name; the same name supplied by the target's own surface or by
@@ -308,7 +379,8 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 	HashMap<String, HashMap<StringName, StringName>> seen_witnesses_by_target;
 	Vector<FSConformanceRegistry::Conformance> valid_entries;
 
-	for (FSParser::ConformanceNode *conformance : p_class->conformances) {
+	for (int conformance_index = 0; conformance_index < p_class->conformances.size(); conformance_index++) {
+		FSParser::ConformanceNode *conformance = p_class->conformances[conformance_index];
 		if (conformance == nullptr) {
 			continue;
 		}
@@ -455,8 +527,10 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 
 			FSConformanceRegistry::Conformance entry;
 			entry.target_keys = target_keys;
+			entry.target_fqcn = target->fqcn;
 			entry.trait_name = trait_identity;
 			entry.source_file = source_file;
+			entry.conformance_index = conformance_index;
 			for (FSParser::FunctionNode *witness : conformance->witnesses) {
 				if (witness != nullptr && witness->identifier != nullptr) {
 					entry.witnesses.insert(witness->identifier->name, witness);

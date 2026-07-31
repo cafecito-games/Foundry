@@ -11864,6 +11864,47 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		}
 	}
 
+	// A retroactive conformance (`extend Target uses Trait: ...`) supplies its witnesses from outside the
+	// target's own definition, so they are absent from the target's member surface. An instance witness
+	// still reaches its receiver through the runtime's member-miss fallback, but a `static` witness is
+	// only ever named through the target type, where an unresolved call is a hard error with no dynamic
+	// fallback. Resolve it from the conformance registry so the call type-checks; the emitted call is
+	// unchanged and lands on the runtime's static witness fallback.
+	if (found_function == nullptr && !p_is_constructor && p_base_type.is_meta_type &&
+			(p_base_type.kind == FSParser::DataType::CLASS || p_base_type.kind == FSParser::DataType::SCRIPT)) {
+		FSParser::FunctionNode *witness = find_static_conformance_witness(p_base_type, function_name);
+		if (witness != nullptr) {
+			if (r_found_function) {
+				*r_found_function = witness;
+			}
+			if (r_found_in_class) {
+				*r_found_in_class = original_base_class;
+			}
+			if (r_is_noreturn) {
+				*r_is_noreturn = witness->is_noreturn;
+			}
+			r_method_flags.set_flag(METHOD_FLAG_STATIC);
+			if (witness->is_coroutine) {
+				r_method_flags.set_flag(METHOD_FLAG_ASYNC);
+			}
+			if (witness->is_vararg()) {
+				r_method_flags.set_flag(METHOD_FLAG_VARARG);
+			}
+			for (FSParser::ParameterNode *parameter : witness->parameters) {
+				r_par_types.push_back(substitute_member_type(parameter->get_datatype(), p_base_type, witness, &self_type));
+				if (parameter->initializer != nullptr) {
+					r_default_arg_count++;
+				}
+			}
+			r_return_type = substitute_member_type(witness->get_datatype(), p_base_type, witness, &self_type);
+			r_return_type.is_meta_type = false;
+			if (witness->is_coroutine) {
+				r_return_type = make_coroutine_type(r_return_type);
+			}
+			return true;
+		}
+	}
+
 	if (found_function != nullptr) {
 		if (r_found_function) {
 			*r_found_function = found_function;
