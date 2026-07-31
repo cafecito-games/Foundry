@@ -250,17 +250,18 @@ repos:
           )$
 
       - id: foundry-release-container-scripts
-        name: Foundry release container scripts
+        name: Foundry release helper scripts
         language: python
         entry: python -m unittest discover -s .github/scripts/tests -t .github/scripts/tests
         additional_dependencies: [PyYAML]
         pass_filenames: false
-        # Only the extracted release-container helpers and their tests; release.yml no longer
-        # carries logic these tests execute, so editing the workflow does not trigger them.
-        # Discovery also picks up the workflow graph contracts, which is why this hook needs
-        # PyYAML; running them a second time is cheap and loses nothing.
+        # Only the extracted release helpers and their tests; the workflows that call them
+        # no longer carry logic these tests execute, so editing a workflow does not trigger
+        # them. Discovery also picks up the workflow graph contracts, which is why this hook
+        # needs PyYAML; running them a second time is cheap and loses nothing.
         files: |
           (?x)^\.github/scripts/(
+            prune_prereleases\.py|
             resolve_channel_tag_freshness\.sh|
             resolve_container_alias\.py|
             verify_container_version_metadata\.py|
