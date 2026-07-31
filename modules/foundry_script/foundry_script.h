@@ -805,6 +805,12 @@ class FSReflection;
 class FSNamespace;
 class FSProjectScripts;
 
+#ifdef TESTS_ENABLED
+namespace FSTests {
+class TestFSDeclarationIndexAccessor;
+}
+#endif // TESTS_ENABLED
+
 class FSLanguage : public ScriptLanguage {
 	friend class FSFunctionState;
 #ifdef TESTS_ENABLED
@@ -863,6 +869,8 @@ class FSLanguage : public ScriptLanguage {
 	// distinct source paths that declare it so duplicate canonical identities and
 	// annotation-only namespaces can be discovered for import resolution.
 	HashMap<StringName, Vector<String>> global_annotations;
+	// Lock order: `declaration_index_generation_mutex` is always taken *outside* this mutex. Nothing
+	// may acquire the generation mutex while holding this one.
 	mutable Mutex annotation_index_mutex;
 
 	// Cross-file index of the files that declare retroactive conformances (`extend Target uses
@@ -872,7 +880,53 @@ class FSLanguage : public ScriptLanguage {
 	HashMap<String, Vector<String>> conformance_files_by_namespace;
 	// Reverse lookup so re-indexing or removing a single path does not scan every namespace.
 	HashMap<String, String> conformance_namespace_by_file;
+	// Lock order: `declaration_index_generation_mutex` is always taken *outside* this mutex. Nothing
+	// may acquire the generation mutex while holding this one.
 	mutable Mutex conformance_index_mutex;
+
+	// Orders concurrent refreshes of the same path across the editor file-system scan (main thread)
+	// and the language server (its own thread when `use_thread` is on). A refresh claims a monotonic
+	// token for its target path *before* reading the file from disk and commits only while that
+	// token is still the path's latest claim, so a parse that started earlier can never overwrite a
+	// newer refresh's result in either index. A superseded commit is dropped whole.
+	//
+	// Lock order: this mutex is taken *outside* `annotation_index_mutex` and
+	// `conformance_index_mutex`; nothing ever takes it while holding either index mutex.
+	mutable Mutex declaration_index_generation_mutex;
+	uint64_t declaration_index_generation_counter = 0;
+	HashMap<String, uint64_t> declaration_index_generations;
+	// Raised by a full clear, which must not have to enumerate paths: a token at or below the floor
+	// was claimed before the clear and can no longer commit.
+	uint64_t declaration_index_generation_floor = 0;
+
+	// Reserve the right to publish a refresh of `p_path`, superseding any claim already outstanding
+	// for it. Must be called before the file is read.
+	uint64_t claim_declaration_index_refresh(const String &p_path);
+	// The rename form of the claim. Both paths are claimed in one critical section: a refresh of
+	// either path that landed between two separate claims would be newer than this rename and still
+	// end up superseded by it.
+	void claim_declaration_index_rename_refresh(const String &p_search_path, const String &p_target_path, uint64_t &r_search_token, uint64_t &r_target_token);
+	// Must be called with `declaration_index_generation_mutex` held.
+	uint64_t _claim_declaration_index_generation(const String &p_path);
+	// Publish a refresh's parse results into both declaration indexes, dropping whatever a newer claim
+	// (or a sweep) has superseded. On a rename the two paths are guarded by their own tokens, so a
+	// superseded side is left to the refresh that superseded it. Returns whether anything was
+	// published.
+	bool commit_declaration_index_refresh(const String &p_search_path, uint64_t p_search_token, const String &p_target_path, uint64_t p_target_token, const List<StringName> &p_annotations, bool p_declares_conformances, const String &p_conformance_namespace);
+	// Supersede every outstanding claim for `p_path`, so a refresh already in flight cannot
+	// resurrect an entry a sweep just dropped.
+	void invalidate_declaration_index_claims(const String &p_path);
+	// Supersede every outstanding claim for every path, without enumerating them.
+	void invalidate_all_declaration_index_claims();
+	// Must be called with `declaration_index_generation_mutex` held.
+	bool _is_declaration_index_token_current(const String &p_path, uint64_t p_token) const;
+	// Drops the conformance index entry for `p_path`, reporting whether one existed. The caller runs
+	// the registry side effect after releasing the index locks.
+	bool _erase_conformance_file(const String &p_path);
+
+#ifdef TESTS_ENABLED
+	friend class FSTests::TestFSDeclarationIndexAccessor;
+#endif // TESTS_ENABLED
 
 	friend class FSInstance;
 

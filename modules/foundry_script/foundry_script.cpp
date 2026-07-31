@@ -3919,6 +3919,8 @@ void FSLanguage::replace_global_annotations(const String &p_path, const List<Str
 	// Drop every entry currently registered for this path and register the new set under a single
 	// lock, so a concurrent refresh of the same path (LSP reparse vs. editor scan with the threaded
 	// language server) cannot interleave the remove and add steps and strand an older parse's data.
+	// Which of two concurrent refreshes wins is decided one level up, by the generation tokens
+	// `commit_declaration_index_refresh` checks: this lock only keeps a single refresh atomic.
 	MutexLock lock(annotation_index_mutex);
 
 	List<StringName> emptied;
@@ -3940,11 +3942,102 @@ void FSLanguage::replace_global_annotations(const String &p_path, const List<Str
 	}
 }
 
+uint64_t FSLanguage::_claim_declaration_index_generation(const String &p_path) {
+	const uint64_t token = ++declaration_index_generation_counter;
+	declaration_index_generations[p_path] = token;
+	return token;
+}
+
+uint64_t FSLanguage::claim_declaration_index_refresh(const String &p_path) {
+	MutexLock lock(declaration_index_generation_mutex);
+	return _claim_declaration_index_generation(p_path);
+}
+
+void FSLanguage::claim_declaration_index_rename_refresh(const String &p_search_path, const String &p_target_path, uint64_t &r_search_token, uint64_t &r_target_token) {
+	MutexLock lock(declaration_index_generation_mutex);
+	r_target_token = _claim_declaration_index_generation(p_target_path);
+	r_search_token = _claim_declaration_index_generation(p_search_path);
+}
+
+bool FSLanguage::_is_declaration_index_token_current(const String &p_path, uint64_t p_token) const {
+	if (p_token <= declaration_index_generation_floor) {
+		return false;
+	}
+	const uint64_t *claimed = declaration_index_generations.getptr(p_path);
+	return claimed != nullptr && *claimed == p_token;
+}
+
+void FSLanguage::invalidate_declaration_index_claims(const String &p_path) {
+	MutexLock lock(declaration_index_generation_mutex);
+	// Stamping a token nobody holds is what invalidates the outstanding claims: no in-flight refresh
+	// can match it, and the next refresh claims a newer one and commits normally.
+	declaration_index_generations[p_path] = ++declaration_index_generation_counter;
+}
+
+void FSLanguage::invalidate_all_declaration_index_claims() {
+	MutexLock lock(declaration_index_generation_mutex);
+	// A floor rather than per-path stamps: a full clear must not have to enumerate paths, and
+	// emptying the generation map would let every stale claim through instead of rejecting it.
+	declaration_index_generation_floor = ++declaration_index_generation_counter;
+}
+
+bool FSLanguage::commit_declaration_index_refresh(const String &p_search_path, uint64_t p_search_token, const String &p_target_path, uint64_t p_target_token, const List<StringName> &p_annotations, bool p_declares_conformances, const String &p_conformance_namespace) {
+	const bool moved = p_search_path != p_target_path;
+	// Side effects on other subsystems are collected here and run after every lock is released.
+	List<String> cleared_conformance_files;
+
+	bool committed = false;
+	{
+		MutexLock generation_lock(declaration_index_generation_mutex);
+		// Each path is guarded by its own token. A superseded path is left to the refresh that
+		// superseded it: that refresh is either the last claimant, which always commits, or is itself
+		// superseded by an even newer one, so every superseded path is published by somebody. What
+		// must not happen is dropping a side nobody else can publish — only this refresh knows the
+		// file moved away from the search path, so that removal is committed whenever the search
+		// path's own token is still current, even if the target side was superseded.
+		const bool target_current = _is_declaration_index_token_current(p_target_path, p_target_token);
+		const bool search_current = moved && _is_declaration_index_token_current(p_search_path, p_search_token);
+
+		if (search_current) {
+			// The file moved: the old path's entries go away.
+			remove_global_annotations_by_path(p_search_path);
+			if (_erase_conformance_file(p_search_path)) {
+				cleared_conformance_files.push_back(p_search_path);
+			}
+		}
+
+		if (target_current) {
+			replace_global_annotations(p_target_path, p_annotations);
+			if (p_declares_conformances) {
+				add_conformance_file(p_target_path, p_conformance_namespace);
+			} else if (_erase_conformance_file(p_target_path)) {
+				cleared_conformance_files.push_back(p_target_path);
+			}
+		}
+
+		committed = target_current || search_current;
+	}
+
+	for (const String &path : cleared_conformance_files) {
+		FSConformanceRegistry::get_singleton()->clear_file(path);
+	}
+	return committed;
+}
+
 void FSLanguage::update_global_declaration_index(const String &p_search_path, const String &p_target_path) {
-	// The file may have moved: drop the old path's entries before re-indexing the new one.
-	if (p_search_path != p_target_path) {
-		remove_global_annotations_by_path(p_search_path);
-		remove_conformance_file(p_search_path);
+	// Claim before reading the file, so the refresh that commits is guaranteed to have read the file
+	// no earlier than any refresh it supersedes: the loser's content is never newer than the winner's
+	// at the moment the loser claimed. This is per-trigger eventual consistency, not a serialization
+	// of the disk reads themselves — an edit landing after the winner's read is picked up by the
+	// refresh that edit's own scan/notify trigger starts. A rename claims both paths because it
+	// publishes a removal at one and an addition at the other, both claimed together.
+	uint64_t target_token = 0;
+	uint64_t search_token = 0;
+	if (p_search_path == p_target_path) {
+		target_token = claim_declaration_index_refresh(p_target_path);
+		search_token = target_token;
+	} else {
+		claim_declaration_index_rename_refresh(p_search_path, p_target_path, search_token, target_token);
 	}
 
 	// A path that no longer exists or fails to parse yields no declarations, so a removed/renamed
@@ -3965,12 +4058,7 @@ void FSLanguage::update_global_declaration_index(const String &p_search_path, co
 	}
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 
-	replace_global_annotations(p_target_path, annotations);
-	if (declares_conformances) {
-		add_conformance_file(p_target_path, conformance_namespace);
-	} else {
-		remove_conformance_file(p_target_path);
-	}
+	commit_declaration_index_refresh(p_search_path, search_token, p_target_path, target_token, annotations, declares_conformances, conformance_namespace);
 }
 
 void FSLanguage::get_indexed_conformances(Array &r_conformances) const {
@@ -4002,6 +4090,9 @@ void FSLanguage::prune_missing_indexed_conformances() {
 		}
 	}
 	for (const String &path : missing_paths) {
+		// Supersede any refresh already in flight for the path so it cannot re-add what the sweep is
+		// about to drop, then drop it.
+		invalidate_declaration_index_claims(path);
 		remove_conformance_file(path);
 	}
 }
@@ -4009,6 +4100,39 @@ void FSLanguage::prune_missing_indexed_conformances() {
 void FSLanguage::clear_global_declaration_index_under(const String &p_root_prefix) {
 	if (p_root_prefix.is_empty()) {
 		return;
+	}
+
+	// Supersede every in-flight claim for a path under the prefix before dropping anything: a refresh
+	// that read the file before the sweep must not commit afterwards and resurrect an entry the sweep
+	// is removing. A refresh that claims after this point is newer than the sweep and commits
+	// normally, which is why the claims are enumerated first and the removals happen second.
+	HashSet<String> dropped_paths;
+	{
+		MutexLock lock(annotation_index_mutex);
+		for (const KeyValue<StringName, Vector<String>> &entry : global_annotations) {
+			for (const String &path : entry.value) {
+				if (path.begins_with(p_root_prefix)) {
+					dropped_paths.insert(path);
+				}
+			}
+		}
+	}
+
+	List<String> dropped_conformance_paths;
+	{
+		MutexLock lock(conformance_index_mutex);
+		for (const KeyValue<String, String> &entry : conformance_namespace_by_file) {
+			if (entry.key.begins_with(p_root_prefix)) {
+				dropped_conformance_paths.push_back(entry.key);
+			}
+		}
+	}
+	for (const String &path : dropped_conformance_paths) {
+		dropped_paths.insert(path);
+	}
+
+	for (const String &path : dropped_paths) {
+		invalidate_declaration_index_claims(path);
 	}
 
 	{
@@ -4029,60 +4153,60 @@ void FSLanguage::clear_global_declaration_index_under(const String &p_root_prefi
 		}
 	}
 
-	List<String> dropped_paths;
-	{
-		MutexLock lock(conformance_index_mutex);
-		for (const KeyValue<String, String> &entry : conformance_namespace_by_file) {
-			if (entry.key.begins_with(p_root_prefix)) {
-				dropped_paths.push_back(entry.key);
-			}
-		}
-	}
-	for (const String &path : dropped_paths) {
+	for (const String &path : dropped_conformance_paths) {
 		remove_conformance_file(path);
 	}
 }
 
 void FSLanguage::add_conformance_file(const String &p_path, const String &p_namespace) {
-	MutexLock lock(conformance_index_mutex);
-
-	const String *previous_namespace = conformance_namespace_by_file.getptr(p_path);
-	if (previous_namespace != nullptr) {
-		if (*previous_namespace == p_namespace) {
-			return;
-		}
-		Vector<String> *previous_files = conformance_files_by_namespace.getptr(*previous_namespace);
-		if (previous_files != nullptr) {
-			previous_files->erase(p_path);
-			if (previous_files->is_empty()) {
-				conformance_files_by_namespace.erase(*previous_namespace);
-			}
-		}
-	}
-
-	conformance_namespace_by_file[p_path] = p_namespace;
-	Vector<String> &files = conformance_files_by_namespace[p_namespace];
-	if (!files.has(p_path)) {
-		files.push_back(p_path);
-	}
-}
-
-void FSLanguage::remove_conformance_file(const String &p_path) {
+	// Scoped so this mutator matches `remove_conformance_file`: anything added after the block runs
+	// with no index lock held.
 	{
 		MutexLock lock(conformance_index_mutex);
 
-		const String *declared_namespace = conformance_namespace_by_file.getptr(p_path);
-		if (declared_namespace == nullptr) {
-			return;
-		}
-		Vector<String> *files = conformance_files_by_namespace.getptr(*declared_namespace);
-		if (files != nullptr) {
-			files->erase(p_path);
-			if (files->is_empty()) {
-				conformance_files_by_namespace.erase(*declared_namespace);
+		const String *previous_namespace = conformance_namespace_by_file.getptr(p_path);
+		if (previous_namespace != nullptr) {
+			if (*previous_namespace == p_namespace) {
+				return;
+			}
+			Vector<String> *previous_files = conformance_files_by_namespace.getptr(*previous_namespace);
+			if (previous_files != nullptr) {
+				previous_files->erase(p_path);
+				if (previous_files->is_empty()) {
+					conformance_files_by_namespace.erase(*previous_namespace);
+				}
 			}
 		}
-		conformance_namespace_by_file.erase(p_path);
+
+		conformance_namespace_by_file[p_path] = p_namespace;
+		Vector<String> &files = conformance_files_by_namespace[p_namespace];
+		if (!files.has(p_path)) {
+			files.push_back(p_path);
+		}
+	}
+}
+
+bool FSLanguage::_erase_conformance_file(const String &p_path) {
+	MutexLock lock(conformance_index_mutex);
+
+	const String *declared_namespace = conformance_namespace_by_file.getptr(p_path);
+	if (declared_namespace == nullptr) {
+		return false;
+	}
+	Vector<String> *files = conformance_files_by_namespace.getptr(*declared_namespace);
+	if (files != nullptr) {
+		files->erase(p_path);
+		if (files->is_empty()) {
+			conformance_files_by_namespace.erase(*declared_namespace);
+		}
+	}
+	conformance_namespace_by_file.erase(p_path);
+	return true;
+}
+
+void FSLanguage::remove_conformance_file(const String &p_path) {
+	if (!_erase_conformance_file(p_path)) {
+		return;
 	}
 
 	// The file was indexed and no longer declares conformances — it was deleted, moved, or stopped
@@ -4093,6 +4217,8 @@ void FSLanguage::remove_conformance_file(const String &p_path) {
 }
 
 void FSLanguage::clear_conformance_files() {
+	invalidate_all_declaration_index_claims();
+
 	MutexLock lock(conformance_index_mutex);
 	conformance_files_by_namespace.clear();
 	conformance_namespace_by_file.clear();
@@ -4158,6 +4284,8 @@ void FSLanguage::remove_global_annotations_by_path(const String &p_path) {
 }
 
 void FSLanguage::clear_global_annotations() {
+	invalidate_all_declaration_index_claims();
+
 	MutexLock lock(annotation_index_mutex);
 	global_annotations.clear();
 }
