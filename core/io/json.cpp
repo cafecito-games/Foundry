@@ -54,6 +54,10 @@ void JSON::set_object_marshaller(JSONObjectMarshaller *p_marshaller) {
 	object_marshaller = p_marshaller;
 }
 
+JSONObjectMarshaller *JSON::get_object_marshaller() {
+	return object_marshaller;
+}
+
 void JSON::_add_indent(String &r_result, const String &p_indent, int p_size) {
 	for (int i = 0; i < p_size; i++) {
 		r_result += p_indent;

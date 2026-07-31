@@ -31,6 +31,7 @@
 #include "fs_json_marshal.h"
 
 #include "core/object/object.h"
+#include "core/object/script_language.h"
 
 StringName FSJsonMarshal::to_json_method_name() {
 	return SNAME("to_json");
@@ -54,5 +55,167 @@ bool FSJsonMarshal::call_to_json(Object *p_object, Variant &r_node) {
 	}
 
 	r_node = node;
+	return true;
+}
+
+StringName FSJsonObjectMarshaller::serializable_trait_name() {
+	return SNAME("JsonSerializable");
+}
+
+// A script instance's `get_class()` is its native base, which says nothing about which script
+// produced a bad node, so prefer the script's own identity when there is one.
+static String _describe_marshal_source(Object *p_object) {
+	const ScriptInstance *instance = p_object->get_script_instance();
+	if (instance != nullptr) {
+		const Ref<Script> script = instance->get_script();
+		if (script.is_valid()) {
+			const StringName global_name = script->get_global_name();
+			if (global_name != StringName()) {
+				return String(global_name);
+			}
+			const String path = script->get_path();
+			if (!path.is_empty()) {
+				return path;
+			}
+		}
+	}
+	return p_object->get_class();
+}
+
+bool FSJsonObjectMarshaller::lower_node(const Variant &p_node, Variant &r_result, int p_depth, const String &p_source_name) {
+	// A well-formed node tree is finite, but a hand-built one need not be, so bound the recursion
+	// the same way core bounds container nesting.
+	if (p_depth > Variant::MAX_RECURSION_DEPTH) {
+		ERR_PRINT(vformat(R"(The JsonNode tree returned by to_json() on "%s" is too deep.)", p_source_name));
+		return false;
+	}
+
+	if (p_node.get_type() != Variant::ARRAY) {
+		ERR_PRINT(vformat(R"(to_json() on "%s" did not return a JsonNode.)", p_source_name));
+		return false;
+	}
+
+	const Array node = p_node;
+	if (node.is_empty() || node[0].get_type() != Variant::INT) {
+		ERR_PRINT(vformat(R"(to_json() on "%s" returned a malformed JsonNode.)", p_source_name));
+		return false;
+	}
+
+	// Every case checks its own payload arity: a mismatch means the value did not come from the
+	// builtin declaration, which must be reported rather than trusted.
+	const int64_t tag = node[0];
+	switch (tag) {
+		case TAG_NULL: {
+			if (node.size() != 1) {
+				break;
+			}
+			r_result = Variant();
+			return true;
+		}
+		case TAG_BOOL: {
+			if (node.size() != 2 || node[1].get_type() != Variant::BOOL) {
+				break;
+			}
+			r_result = bool(node[1]);
+			return true;
+		}
+		case TAG_INT: {
+			if (node.size() != 2 || node[1].get_type() != Variant::INT) {
+				break;
+			}
+			r_result = int64_t(node[1]);
+			return true;
+		}
+		case TAG_FLOAT: {
+			// An `int` reaching a `float` payload slot is still a Float node; coercing here is what
+			// keeps `Float` and `Int` distinguishable in the output.
+			const Variant::Type payload_type = node.size() == 2 ? node[1].get_type() : Variant::NIL;
+			if (payload_type != Variant::FLOAT && payload_type != Variant::INT) {
+				break;
+			}
+			r_result = double(node[1]);
+			return true;
+		}
+		case TAG_STR: {
+			const Variant::Type payload_type = node.size() == 2 ? node[1].get_type() : Variant::NIL;
+			if (payload_type != Variant::STRING && payload_type != Variant::STRING_NAME) {
+				break;
+			}
+			r_result = String(node[1]);
+			return true;
+		}
+		case TAG_ARRAY: {
+			if (node.size() != 2 || node[1].get_type() != Variant::ARRAY) {
+				break;
+			}
+			const Array items = node[1];
+			Array lowered;
+			lowered.resize(items.size());
+			for (int i = 0; i < items.size(); i++) {
+				Variant lowered_item;
+				if (!lower_node(items[i], lowered_item, p_depth + 1, p_source_name)) {
+					return false;
+				}
+				lowered[i] = lowered_item;
+			}
+			r_result = lowered;
+			return true;
+		}
+		case TAG_OBJECT: {
+			if (node.size() != 2 || node[1].get_type() != Variant::DICTIONARY) {
+				break;
+			}
+			const Dictionary entries = node[1];
+			Dictionary lowered;
+			for (const Variant &key : entries.get_key_list()) {
+				// The payload is declared `Dictionary[String, JsonNode]`. Coercing a key of another
+				// type would let two distinct keys collapse into one member and silently drop data,
+				// so a key that is not a string fails the whole node instead.
+				const Variant::Type key_type = key.get_type();
+				if (key_type != Variant::STRING && key_type != Variant::STRING_NAME) {
+					ERR_PRINT(vformat(R"(to_json() on "%s" returned a JsonNode object with a non-string key.)", p_source_name));
+					return false;
+				}
+				Variant lowered_value;
+				if (!lower_node(entries[key], lowered_value, p_depth + 1, p_source_name)) {
+					return false;
+				}
+				lowered[String(key)] = lowered_value;
+			}
+			r_result = lowered;
+			return true;
+		}
+		default:
+			break;
+	}
+
+	ERR_PRINT(vformat(R"(to_json() on "%s" returned a JsonNode with an unknown tag or a mismatched payload (tag %d).)",
+			p_source_name, tag));
+	return false;
+}
+
+bool FSJsonObjectMarshaller::marshal_object(Object *p_object, Variant &r_result) {
+	ERR_FAIL_NULL_V(p_object, false);
+
+	const ScriptInstance *instance = p_object->get_script_instance();
+	if (instance == nullptr) {
+		return false;
+	}
+	const Ref<Script> script = instance->get_script();
+	if (script.is_null() || !script->has_script_trait(serializable_trait_name())) {
+		return false;
+	}
+
+	// From here the object is known to opt into custom marshaling, so a failure is reported and
+	// encoded as `null` rather than declined: falling back to the quoted `to_string` would hide a
+	// broken `to_json()` behind output that looks deliberate.
+	Variant node;
+	if (!FSJsonMarshal::call_to_json(p_object, node)) {
+		r_result = Variant();
+		return true;
+	}
+	if (!lower_node(node, r_result, 0, _describe_marshal_source(p_object))) {
+		r_result = Variant();
+	}
 	return true;
 }

@@ -1,0 +1,5 @@
+FS_TEST_OK
+{"level":3,"name":"Captain"}
+[{"level":3,"name":"Captain"}]
+{"hero":{"level":3,"name":"Captain"}}
+{"party":[{"level":3,"name":"Captain"},{"level":3,"name":"Captain"}]}

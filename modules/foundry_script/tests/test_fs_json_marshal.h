@@ -38,6 +38,7 @@
 #include "fs_test_runner.h"
 #include "test_analyzer_finalization.h"
 
+#include "core/io/json.h"
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
 #include "core/object/ref_counted.h"
@@ -75,6 +76,33 @@ struct JsonMarshalProjectFixture {
 		REQUIRE_MESSAGE(is_fs_language_active(), "Failed to initialize the marshal test project.");
 	}
 };
+
+// Installs the module's marshaller for the duration of a case and puts the previous registration
+// back, so these cases do not depend on the order they run in relative to the core seam tests.
+class JsonMarshallerScope {
+	JSONObjectMarshaller *previous = JSON::get_object_marshaller();
+	FSJsonObjectMarshaller marshaller;
+
+public:
+	JsonMarshallerScope() { JSON::set_object_marshaller(&marshaller); }
+	~JsonMarshallerScope() { JSON::set_object_marshaller(previous); }
+};
+
+// Builds the `[tag, payload...]` read-only Array a tagged-union case erases to.
+static Array make_json_node(int64_t p_tag) {
+	Array node;
+	node.push_back(p_tag);
+	node.make_read_only();
+	return node;
+}
+
+static Array make_json_node(int64_t p_tag, const Variant &p_payload) {
+	Array node;
+	node.push_back(p_tag);
+	node.push_back(p_payload);
+	node.make_read_only();
+	return node;
+}
 
 static Ref<RefCounted> instantiate_script_host(const String &p_res_path) {
 	const Ref<Script> host_script = ResourceLoader::load(p_res_path);
@@ -176,6 +204,136 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A script without the hook repor
 	CHECK_FALSE(FSJsonMarshal::call_to_json(host.ptr(), node));
 	ERR_PRINT_ON;
 	CHECK_EQ(String(node), "untouched");
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] Every JsonNode case lowers to a plain Variant") {
+	Variant lowered;
+
+	REQUIRE(FSJsonObjectMarshaller::lower_node(make_json_node(0), lowered, 0, "Fixture"));
+	CHECK_EQ(lowered.get_type(), Variant::NIL);
+
+	REQUIRE(FSJsonObjectMarshaller::lower_node(make_json_node(1, true), lowered, 0, "Fixture"));
+	CHECK_EQ(lowered.get_type(), Variant::BOOL);
+	CHECK(bool(lowered));
+
+	REQUIRE(FSJsonObjectMarshaller::lower_node(make_json_node(2, 7), lowered, 0, "Fixture"));
+	CHECK_EQ(lowered.get_type(), Variant::INT);
+	CHECK_EQ(int64_t(lowered), 7);
+
+	// An `int` in a `float` payload slot still lowers to a float, which is what keeps `Int` and
+	// `Float` distinguishable in the encoded output.
+	REQUIRE(FSJsonObjectMarshaller::lower_node(make_json_node(3, 2), lowered, 0, "Fixture"));
+	CHECK_EQ(lowered.get_type(), Variant::FLOAT);
+	CHECK_EQ(double(lowered), doctest::Approx(2.0));
+
+	REQUIRE(FSJsonObjectMarshaller::lower_node(make_json_node(4, "text"), lowered, 0, "Fixture"));
+	CHECK_EQ(String(lowered), "text");
+
+	Array items;
+	items.push_back(make_json_node(2, 1));
+	items.push_back(make_json_node(0));
+	REQUIRE(FSJsonObjectMarshaller::lower_node(make_json_node(5, items), lowered, 0, "Fixture"));
+	REQUIRE_EQ(lowered.get_type(), Variant::ARRAY);
+	const Array lowered_items = lowered;
+	REQUIRE_EQ(lowered_items.size(), 2);
+	CHECK_EQ(int64_t(lowered_items[0]), 1);
+	CHECK_EQ(lowered_items[1].get_type(), Variant::NIL);
+
+	Dictionary entries;
+	entries["level"] = make_json_node(2, 3);
+	REQUIRE(FSJsonObjectMarshaller::lower_node(make_json_node(6, entries), lowered, 0, "Fixture"));
+	REQUIRE_EQ(lowered.get_type(), Variant::DICTIONARY);
+	const Dictionary lowered_entries = lowered;
+	CHECK_EQ(int64_t(lowered_entries["level"]), 3);
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A malformed JsonNode is rejected") {
+	Variant lowered;
+
+	ERR_PRINT_OFF;
+	// Not an Array at all.
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node("not a node", lowered, 0, "Fixture"));
+	// Empty, and a non-integer tag.
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(Array(), lowered, 0, "Fixture"));
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(0, 1), lowered, 0, "Fixture"));
+	// A tag outside the wire contract.
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(7, 1), lowered, 0, "Fixture"));
+	// Payload arity and type mismatches.
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(4), lowered, 0, "Fixture"));
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(4, 1), lowered, 0, "Fixture"));
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(5, "not an array"), lowered, 0, "Fixture"));
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(6, "not a dictionary"), lowered, 0, "Fixture"));
+	// A malformed child fails the whole tree rather than being silently dropped.
+	Array bad_items;
+	bad_items.push_back("not a node");
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(5, bad_items), lowered, 0, "Fixture"));
+	// A non-string object key fails too: coercing it could collapse two members into one.
+	Dictionary bad_entries;
+	bad_entries[1] = make_json_node(2, 1);
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(6, bad_entries), lowered, 0, "Fixture"));
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] Lowering is bounded by the recursion limit") {
+	Variant deep_node = make_json_node(2, 1);
+	for (int i = 0; i <= Variant::MAX_RECURSION_DEPTH; i++) {
+		Array items;
+		items.push_back(deep_node);
+		deep_node = make_json_node(5, items);
+	}
+
+	Variant lowered;
+	ERR_PRINT_OFF;
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(deep_node, lowered, 0, "Fixture"));
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A non-conforming object is declined") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	const Ref<RefCounted> host = instantiate_script_host("res://json_marshal_host/plain_host.notest.fs");
+
+	// Declining keeps the pre-existing quoted `to_string` representation.
+	const String encoded = JSON::stringify(Variant(host.ptr()));
+	CHECK(encoded.begins_with("\""));
+
+	// An object with no script at all is declined too.
+	Ref<RefCounted> bare_host(memnew(RefCounted));
+	CHECK(JSON::stringify(Variant(bare_host.ptr())).begins_with("\""));
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A conforming object is marshaled through to_json") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	const Ref<RefCounted> host =
+			instantiate_script_host("res://json_marshal_host/serializable_host.notest.fs");
+
+	CHECK_EQ(JSON::stringify(Variant(host.ptr())), "\"from script\"");
+
+	// Nesting works at any depth because core recurses back into `_stringify` with the lowered tree.
+	Array container;
+	container.push_back(host.ptr());
+	CHECK_EQ(JSON::stringify(container), "[\"from script\"]");
+
+	Dictionary keyed;
+	keyed["hero"] = host.ptr();
+	CHECK_EQ(JSON::stringify(keyed), "{\"hero\":\"from script\"}");
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A conforming object returning a bad node encodes as null") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	const Ref<RefCounted> host = instantiate_script_host("res://json_marshal_host/bad_node_host.notest.fs");
+
+	// Declining here would hide a broken `to_json()` behind the quoted `to_string` fallback, so the
+	// object is still claimed and written as `null` after the error is reported.
+	ERR_PRINT_OFF;
+	const String encoded = JSON::stringify(Variant(host.ptr()));
+	ERR_PRINT_ON;
+	CHECK_EQ(encoded, "null");
 }
 
 #if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
