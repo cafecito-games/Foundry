@@ -11,6 +11,7 @@ const LIMIT = 0xFF_00
 const MASK = 0b1010_1010
 const RATIO = 1.5e-3
 const RAW = r"C:\path\no\escapes"
+const RAW_QUOTE = r"a \" b \\ c"
 const NAME = &"unique_name"
 const PATH = ^"res://scene.tscn"
 const DOC = """
@@ -37,6 +38,7 @@ extend Sample.Support.Helper uses Printable:
 	pass
 
 func remainder(left: int, right: int) -> int:
+	var tight := left %right
 	for step in 1..2:
 		health += step
 	return left % right
@@ -49,6 +51,7 @@ async func fetch(path: String) -> Coroutine[int]:
 	var other := %Weapon
 	var quoted := $"Player Two"
 	var mixed := $Player/"Weapon Slot"/%Barrel
+	var toggled := not %Weapon.visible
 	if node != null and not other.is_queued_for_deletion():
 		await node.ready
 	match path:

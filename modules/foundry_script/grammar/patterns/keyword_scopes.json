@@ -46,10 +46,21 @@
     "while": "keyword.control.loop.while.foundryscript",
     "yield": "invalid.illegal.yield.foundryscript"
   },
+  "value_ending_reserved_words": {
+    "$comment": "Reserved words that can end a value. A `%` after one of them is the modulo operator; after any other reserved word it starts a unique-name node reference. Used to build the `{{value_ending_guard}}` lookbehind.",
+    "words": [
+      "self",
+      "super"
+    ]
+  },
   "numeric_constants_scope": "constant.language.numeric.foundryscript",
   "literal_constants": {
     "$comment": "true/false/null are ordinary identifiers resolved during analysis, so they are deliberately absent from the tokenizer keyword table and are listed here instead. The drift check fails if any of them ever becomes a reserved word.",
-    "words": ["true", "false", "null"],
+    "words": [
+      "true",
+      "false",
+      "null"
+    ],
     "scope": "constant.language.foundryscript"
   }
 }

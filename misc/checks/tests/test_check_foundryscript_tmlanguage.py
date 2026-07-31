@@ -236,6 +236,18 @@ class CheckerExecutionTests(unittest.TestCase):
         self.assertEqual(1, result.returncode)
         self.assertIn("async", result.stderr)
 
+    def test_a_value_ending_word_the_tokenizer_does_not_reserve_fails_the_check(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            patterns = Path(directory) / "patterns"
+            shutil.copytree(PATTERNS, patterns)
+            scopes_path = patterns / "keyword_scopes.json"
+            scopes = json.loads(scopes_path.read_text(encoding="utf-8"))
+            scopes["value_ending_reserved_words"]["words"].append("myself")
+            scopes_path.write_text(json.dumps(scopes, indent=2) + "\n", encoding="utf-8")
+            result = self.run_checker("--patterns-dir", str(patterns))
+        self.assertEqual(1, result.returncode)
+        self.assertIn("myself", result.stderr)
+
     def test_a_missing_specification_is_reported_rather_than_crashing(self) -> None:
         result = self.run_checker("--specification", str(REPO_ROOT / "does-not-exist.md"))
         self.assertEqual(1, result.returncode)

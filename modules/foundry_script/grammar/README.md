@@ -16,7 +16,7 @@ byte-deterministic: identical inputs always produce an identical file.
 | Input | Owns |
 | --- | --- |
 | `../fs_tokenizer.cpp` | The reserved words and the numeric keyword constants, derived from the `KEYWORDS` table. |
-| `patterns/keyword_scopes.json` | Which TextMate scope each derived keyword carries, plus the boolean/null literals the tokenizer deliberately does not reserve. |
+| `patterns/keyword_scopes.json` | Which TextMate scope each derived keyword carries, the boolean/null literals the tokenizer deliberately does not reserve, and which reserved words can end a value. |
 | `patterns/lexical.json` | Comments, strings, numbers, annotations, node references, operators, and punctuation. |
 | `patterns/constructs.json` | Declaration names, calls, type positions, and the contextual keywords. |
 
@@ -25,6 +25,11 @@ numeric keyword constants get their own rules. Contextual keywords (`annotation`
 `async`, `targets`, `get`, `set`) are ordinary identifiers, so they only ever reach the
 grammar through the narrowly anchored rules in `patterns/constructs.json`; they are never
 emitted into a keyword alternation.
+
+A pattern input may embed `{{value_ending_guard}}` in a regular expression. The generator
+replaces it with a lookbehind that distinguishes a unique-name node reference from the
+modulo operator: `%` starts a node path only where the preceding token cannot end a value,
+so `return %Node` is a node path and `left %right` is modulo.
 
 Reserved words are never scoped in `patterns/constructs.json`. Declaration rules match
 through a lookbehind on the already-consumed keyword, so a keyword's scope is stated in

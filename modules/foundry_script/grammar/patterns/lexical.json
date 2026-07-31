@@ -15,6 +15,18 @@
   "strings": {
     "patterns": [
       {
+        "include": "#raw-triple-quoted-string-double"
+      },
+      {
+        "include": "#raw-triple-quoted-string-single"
+      },
+      {
+        "include": "#raw-quoted-string-double"
+      },
+      {
+        "include": "#raw-quoted-string-single"
+      },
+      {
         "include": "#triple-quoted-string-double"
       },
       {
@@ -28,9 +40,107 @@
       }
     ]
   },
+  "raw-triple-quoted-string-double": {
+    "name": "string.quoted.triple.double.raw.foundryscript",
+    "begin": "(r)(\\\"\\\"\\\")",
+    "beginCaptures": {
+      "1": {
+        "name": "storage.type.string.foundryscript"
+      },
+      "2": {
+        "name": "punctuation.definition.string.begin.foundryscript"
+      }
+    },
+    "end": "(\\\"\\\"\\\")",
+    "endCaptures": {
+      "1": {
+        "name": "punctuation.definition.string.end.foundryscript"
+      }
+    },
+    "patterns": [
+      {
+        "include": "#raw-string-escapes"
+      }
+    ]
+  },
+  "raw-triple-quoted-string-single": {
+    "name": "string.quoted.triple.single.raw.foundryscript",
+    "begin": "(r)(''')",
+    "beginCaptures": {
+      "1": {
+        "name": "storage.type.string.foundryscript"
+      },
+      "2": {
+        "name": "punctuation.definition.string.begin.foundryscript"
+      }
+    },
+    "end": "(''')",
+    "endCaptures": {
+      "1": {
+        "name": "punctuation.definition.string.end.foundryscript"
+      }
+    },
+    "patterns": [
+      {
+        "include": "#raw-string-escapes"
+      }
+    ]
+  },
+  "raw-quoted-string-double": {
+    "name": "string.quoted.double.raw.foundryscript",
+    "begin": "(r)(\\\")",
+    "beginCaptures": {
+      "1": {
+        "name": "storage.type.string.foundryscript"
+      },
+      "2": {
+        "name": "punctuation.definition.string.begin.foundryscript"
+      }
+    },
+    "end": "(\\\")|(\\n)",
+    "endCaptures": {
+      "1": {
+        "name": "punctuation.definition.string.end.foundryscript"
+      },
+      "2": {
+        "name": "invalid.illegal.unclosed-string.foundryscript"
+      }
+    },
+    "patterns": [
+      {
+        "include": "#raw-string-escapes"
+      }
+    ]
+  },
+  "raw-quoted-string-single": {
+    "name": "string.quoted.single.raw.foundryscript",
+    "begin": "(r)(')",
+    "beginCaptures": {
+      "1": {
+        "name": "storage.type.string.foundryscript"
+      },
+      "2": {
+        "name": "punctuation.definition.string.begin.foundryscript"
+      }
+    },
+    "end": "(')|(\\n)",
+    "endCaptures": {
+      "1": {
+        "name": "punctuation.definition.string.end.foundryscript"
+      },
+      "2": {
+        "name": "invalid.illegal.unclosed-string.foundryscript"
+      }
+    },
+    "patterns": [
+      {
+        "include": "#raw-string-escapes"
+      }
+    ]
+  },
   "triple-quoted-string-double": {
     "name": "string.quoted.triple.double.foundryscript",
-    "begin": "(r|&|\\^)?(\\\"\\\"\\\")",
+    "begin": "(&|\\^)?(\\\"\\\"\\\")",
     "beginCaptures": {
       "1": {
         "name": "storage.type.string.foundryscript"
@@ -53,7 +163,7 @@
   },
   "triple-quoted-string-single": {
     "name": "string.quoted.triple.single.foundryscript",
-    "begin": "(r|&|\\^)?(''')",
+    "begin": "(&|\\^)?(''')",
     "beginCaptures": {
       "1": {
         "name": "storage.type.string.foundryscript"
@@ -76,7 +186,7 @@
   },
   "quoted-string-double": {
     "name": "string.quoted.double.foundryscript",
-    "begin": "(r|&|\\^)?(\\\")",
+    "begin": "(&|\\^)?(\\\")",
     "beginCaptures": {
       "1": {
         "name": "storage.type.string.foundryscript"
@@ -102,7 +212,7 @@
   },
   "quoted-string-single": {
     "name": "string.quoted.single.foundryscript",
-    "begin": "(r|&|\\^)?(')",
+    "begin": "(&|\\^)?(')",
     "beginCaptures": {
       "1": {
         "name": "storage.type.string.foundryscript"
@@ -264,7 +374,7 @@
   },
   "unique-name-reference": {
     "name": "meta.node-path.foundryscript",
-    "begin": "(?<![\\p{L}\\p{N}_)\\]\"'])(%)(?=[\"'\\p{L}_])",
+    "begin": "{{value_ending_guard}}(%)(?=[\"'\\p{L}_])",
     "beginCaptures": {
       "1": {
         "name": "punctuation.definition.node.foundryscript"
@@ -296,5 +406,10 @@
         "match": "[\\p{L}\\p{N}_]+"
       }
     ]
+  },
+  "raw-string-escapes": {
+    "$comment": "A raw string keeps every backslash literal except the two that let it hold a quote, and a doubled backslash.",
+    "name": "constant.character.escape.foundryscript",
+    "match": "\\\\[\"'\\\\]"
   }
 }

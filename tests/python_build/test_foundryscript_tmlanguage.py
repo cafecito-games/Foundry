@@ -167,8 +167,13 @@ class TokenizationTests(unittest.TestCase):
         # The string closes on its own line, so the next declaration is code again.
         self.assertScoped("var annotation", "storage.type.var.foundryscript")
 
-    def test_a_raw_string_body_stays_a_string(self) -> None:
-        self.assertScoped("C:\\path", "string.quoted.double.foundryscript", offset=2)
+    def test_a_raw_string_keeps_ordinary_backslashes_literal(self) -> None:
+        self.assertScoped("C:\\path", "string.quoted.double.raw.foundryscript", offset=2)
+        # `\\n` inside `\\no` is an ordinary character pair in a raw string.
+        self.assertNotScoped("\\no\\escapes", "constant.character.escape.foundryscript")
+        # The two sequences a raw string still honors, so it can hold a quote.
+        self.assertScoped('a \\" b', "constant.character.escape.foundryscript", offset=2)
+        self.assertScoped("b \\\\ c", "constant.character.escape.foundryscript", offset=2)
 
     # -- numbers ----------------------------------------------------------
 
@@ -244,6 +249,14 @@ class TokenizationTests(unittest.TestCase):
     def test_a_percent_between_values_is_the_modulo_operator(self) -> None:
         self.assertScoped("left % right", "keyword.operator.arithmetic.foundryscript", offset=5)
         self.assertNotScoped("left % right", "punctuation.definition.node.foundryscript", offset=5)
+
+    def test_one_sided_spacing_does_not_turn_modulo_into_a_node_reference(self) -> None:
+        self.assertScoped("left %right", "keyword.operator.arithmetic.foundryscript", offset=5)
+        self.assertNotScoped("left %right", "variable.other.node.foundryscript", offset=6)
+
+    def test_a_percent_after_a_keyword_is_still_a_node_reference(self) -> None:
+        self.assertScoped("not %Weapon", "punctuation.definition.node.foundryscript", offset=4)
+        self.assertScoped("not %Weapon", "variable.other.node.foundryscript", offset=5)
 
     def test_modulo_without_spaces_is_still_an_operator(self) -> None:
         source = "var remainder := left%right\n"
