@@ -333,6 +333,60 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 	return nullptr;
 }
 
+// Guards a probe already under way on this thread. A probed file resolving its own interface can
+// reach an unresolved call on a final receiver and ask the same question; that nested query answers
+// from the registry as it stands rather than starting a second, re-entrant sweep.
+static thread_local bool indexed_conformance_probe_in_progress = false;
+
+void FSAnalyzer::ensure_indexed_conformance_files_registered() {
+	// The conformance registry is process-global and fills up as a side effect of analyzing files, so
+	// on a cold run it holds nothing and the hidden-witness diagnostic below cannot fire — the call
+	// degrades to an unsafe-access warning and fails at run time instead. The project-wide declaration
+	// index knows every conformance-declaring file on disk, so raising those files to
+	// `INTERFACE_SOLVED` here makes the diagnostic depend on the project rather than on analysis order.
+	//
+	// This deliberately does NOT go through `get_depended_parser_for` /
+	// `raise_depended_parser_for` the way `raise_declared_conformance_dependencies` does. Those
+	// memoize into `depended_parsers`, which `ConformanceVisibility::can_see` walks: a probed file
+	// landing there would make its conformances *visible* to this file, type-checking a call with no
+	// load edge behind it and reinstating the run-time failure this diagnostic exists to prevent.
+	// The probe also passes no cache owner: `FSCache::get_parser`'s owner argument records a *compile*
+	// dependency, which `FSCache::finish_compiling` then forces a full load of. Naming this file there
+	// would make every conformance file in the project a runtime dependency of it — a load edge with
+	// no visibility behind it, the mirror image of the bug. The cost is that a probed file's contents
+	// are not part of this file's cache invalidation closure; index freshness is tracked separately.
+	//
+	// `raise_status()` advances a parser's status before running each phase, so a probed file that
+	// leads back here cannot recurse, and its sticky error result makes re-probing a broken file
+	// cheap. Anything a probed file fails at stays in its own parser and is never reported here.
+	if (indexed_conformance_files_probed) {
+		return;
+	}
+	indexed_conformance_files_probed = true;
+	if (indexed_conformance_probe_in_progress) {
+		return;
+	}
+	indexed_conformance_probe_in_progress = true;
+
+	for (const String &conformance_file : FSLanguage::get_singleton()->get_all_conformance_files()) {
+		if (conformance_file == parser->script_path) {
+			continue;
+		}
+		Error error = OK;
+		Ref<FSParserRef> conformance_ref = FSCache::get_parser(conformance_file, FSParserRef::PARSED, error);
+		if (error != OK || conformance_ref.is_null()) {
+			continue;
+		}
+		const FSParser *conformance_parser = conformance_ref->get_parser();
+		if (conformance_parser == nullptr || conformance_parser->head == nullptr || conformance_parser->head->conformances.is_empty()) {
+			continue;
+		}
+		conformance_ref->raise_status(FSParserRef::INTERFACE_SOLVED);
+	}
+
+	indexed_conformance_probe_in_progress = false;
+}
+
 bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method,
 		String &r_source_file, StringName &r_trait_name) {
 	r_source_file = String();
@@ -350,12 +404,18 @@ bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_tar
 	// normally, and the runtime resolves it. Turning that into an error on the strength of a
 	// same-named hidden witness would reject working code. A builtin has no subtypes, and neither does
 	// a `final` class, so for those the hidden witness is the only thing the call could have meant.
-	if (p_target_type.kind == FSParser::DataType::BUILTIN) {
+	const bool is_builtin_receiver = p_target_type.kind == FSParser::DataType::BUILTIN;
+	if (!is_builtin_receiver && (p_target_type.class_type == nullptr || !p_target_type.class_type->is_final)) {
+		return false;
+	}
+
+	// Past the receiver gate this is already the unresolved-call miss path, so the sweep that makes
+	// the answer order-independent is paid for only by code that is about to be diagnosed anyway.
+	ensure_indexed_conformance_files_registered();
+
+	if (is_builtin_receiver) {
 		return registry->find_hidden_witness_declaration(String(Variant::get_type_name(p_target_type.builtin_type)),
 				p_method, r_source_file, r_trait_name);
-	}
-	if (p_target_type.class_type == nullptr || !p_target_type.class_type->is_final) {
-		return false;
 	}
 
 	// The base chain is walked because a conformance declared on a base stays reachable through the

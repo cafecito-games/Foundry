@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Cannot call "cold_gadget()" on "RtcColdWidget": it is supplied by the retroactive conformance to trait "RtcColdTrait" declared in "analyzer/errors/rtc_cold_conformance.notest.fs", which this file does not load. Import that file's namespace, or preload it.

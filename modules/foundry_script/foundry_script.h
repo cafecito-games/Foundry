@@ -1171,6 +1171,8 @@ public:
 	// Every indexed file declaring retroactive conformances in `p_namespace` (empty for the global
 	// namespace), in indexing order.
 	Vector<String> get_conformance_files_in_namespace(const String &p_namespace) const;
+	// Every indexed file declaring retroactive conformances, across all namespaces, once each.
+	Vector<String> get_all_conformance_files() const;
 
 	void add_orphan_subclass(const String &p_qualified_name, const ObjectID &p_subclass);
 	Ref<FoundryScript> get_orphan_subclass(const String &p_qualified_name);
