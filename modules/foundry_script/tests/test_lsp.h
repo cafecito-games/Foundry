@@ -3293,6 +3293,29 @@ func f():
 			CHECK_EQ(data[16], 3);
 		}
 
+		SUBCASE("a keyword usable as an identifier is not a keyword") {
+			// `match`, `when`, and `uses` are accepted wherever an identifier is expected, so a
+			// lexical pass must not claim them.
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_identifier_keyword.fs");
+			text_document->didOpen(make_did_open_params(uri, "var match = 1\nvar when = 2\nvar uses = 3\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			REQUIRE_EQ(tokens.size(), 3);
+			check_semantic_token(tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+			check_semantic_token(tokens, 1, 1, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+			check_semantic_token(tokens, 2, 2, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+		}
+
+		SUBCASE("a node path segment is not a keyword") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_node_path.fs");
+			text_document->didOpen(make_did_open_params(uri, "var node = $class/signal\nvar other = $Sprite\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			REQUIRE_EQ(tokens.size(), 2);
+			check_semantic_token(tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+			check_semantic_token(tokens, 1, 1, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+		}
+
 		SUBCASE("a reserved word in attribute position is not a keyword") {
 			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_attribute.fs");
 			text_document->didOpen(make_did_open_params(uri, "var kind = self.class\n"));

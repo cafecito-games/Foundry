@@ -35,9 +35,13 @@
 
 namespace {
 
-// The reserved words of the language, as spelled in `GRAMMAR.md` section 2.5. The numeric keyword
-// constants (`PI`, `TAU`, `INF`, `NAN`) are deliberately excluded: they are values, not reserved
-// words, and belong to symbol classification rather than to this lexical pass.
+// The reserved words of the language, as spelled in `GRAMMAR.md` section 2.5.
+//
+// Two groups are deliberately excluded because a purely lexical pass cannot tell them apart from
+// ordinary names, and emitting a wrong classification is worse than emitting none:
+//   - the numeric keyword constants (`PI`, `TAU`, `INF`, `NAN`), which are values;
+//   - `match`, `when`, and `uses`, which `Token::is_identifier()` accepts wherever an identifier is
+//     expected, so `var match = 1` declares a variable rather than opening a match statement.
 bool is_reserved_word(FSTokenizer::Token::Type p_type) {
 	switch (p_type) {
 		case FSTokenizer::Token::AND:
@@ -52,8 +56,6 @@ bool is_reserved_word(FSTokenizer::Token::Type p_type) {
 		case FSTokenizer::Token::CONTINUE:
 		case FSTokenizer::Token::PASS:
 		case FSTokenizer::Token::RETURN:
-		case FSTokenizer::Token::MATCH:
-		case FSTokenizer::Token::WHEN:
 		case FSTokenizer::Token::ABSTRACT:
 		case FSTokenizer::Token::AS:
 		case FSTokenizer::Token::ASSERT:
@@ -80,7 +82,6 @@ bool is_reserved_word(FSTokenizer::Token::Type p_type) {
 		case FSTokenizer::Token::TRAIT_NAME:
 		case FSTokenizer::Token::TUPLE:
 		case FSTokenizer::Token::TUPLE_NAME:
-		case FSTokenizer::Token::USES:
 		case FSTokenizer::Token::VAR:
 		case FSTokenizer::Token::TK_VOID:
 		case FSTokenizer::Token::YIELD:
@@ -195,6 +196,7 @@ Vector<FSSemanticTokens::Span> FSSemanticTokens::collect(const String &p_source,
 	// pathological or truncated document cannot spin here forever.
 	const int scan_limit = p_source.length() * 4 + 64;
 	bool previous_was_period = false;
+	bool in_node_path = false;
 
 	for (int scanned = 0; scanned < scan_limit; scanned++) {
 		const FSTokenizer::Token token = tokenizer.scan();
@@ -202,9 +204,20 @@ Vector<FSSemanticTokens::Span> FSSemanticTokens::collect(const String &p_source,
 			break;
 		}
 
-		const bool is_period = token.type == FSTokenizer::Token::PERIOD;
 		const bool after_period = previous_was_period;
-		previous_was_period = is_period;
+		previous_was_period = token.type == FSTokenizer::Token::PERIOD;
+
+		// A get-node path runs from `$` until the first token that cannot continue it, and every
+		// segment inside it is a node name rather than a keyword (`GRAMMAR.md` section 2.5).
+		const bool after_node_path_start = in_node_path;
+		if (token.type == FSTokenizer::Token::DOLLAR) {
+			in_node_path = true;
+		} else if (!in_node_path ||
+				!(token.type == FSTokenizer::Token::SLASH ||
+						token.type == FSTokenizer::Token::PERCENT ||
+						token.is_node_name())) {
+			in_node_path = false;
+		}
 
 		if (!is_reserved_word(token.type)) {
 			continue;
@@ -212,6 +225,9 @@ Vector<FSSemanticTokens::Span> FSSemanticTokens::collect(const String &p_source,
 		// `self.class`, `node.signal`: the parser re-spells a reserved word in attribute position as
 		// an ordinary identifier, so highlighting it as a keyword would be plainly wrong.
 		if (after_period) {
+			continue;
+		}
+		if (after_node_path_start && token.is_node_name()) {
 			continue;
 		}
 		// Reserved words never span lines; anything that claims to did not come from real source.
