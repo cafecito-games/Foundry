@@ -127,4 +127,17 @@ TEST_CASE("[FSBuiltinTypes] Builtin global classes survive a project reload") {
 	CHECK_FALSE(ScriptServer::is_builtin_global_class("RefCounted"));
 }
 
+TEST_CASE("[FSBuiltinTypes] A project class cannot take over a builtin type name") {
+	// A stale project class cache from before these types existed must not redefine what
+	// `JsonNode` means, and must not be silently dropped from that project's cache either.
+	ERR_PRINT_OFF;
+	ScriptServer::add_global_class(SNAME("JsonNode"), SNAME("RefCounted"), SNAME("FoundryScript"),
+			"res://project_json_node.fs", false, false, false, false);
+	ERR_PRINT_ON;
+
+	CHECK_EQ(ScriptServer::get_global_class_path("JsonNode"), "foundry://builtin/json_node.fs");
+	CHECK(ScriptServer::is_global_class_enum("JsonNode"));
+	CHECK_EQ(String(ScriptServer::get_global_class_base("JsonNode")), "");
+}
+
 } // namespace TestFSBuiltinTypes

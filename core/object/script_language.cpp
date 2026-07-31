@@ -507,6 +507,13 @@ void ScriptServer::get_global_class_name_parts(const StringName &p_class, String
 void ScriptServer::add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait, bool p_is_enum) {
 	ERR_FAIL_COND_MSG(p_class == p_base || (global_classes.has(p_base) && get_global_class_native_base(p_base) == p_class), "Cyclic inheritance in script class.");
 
+	// A type that ships in the binary owns its name: letting a project class take it over would
+	// change what the name means for one session and then drop that class from the project's own
+	// class cache, which is filtered by builtin name when it is written back.
+	const GlobalScriptClass *builtin_class = builtin_global_classes.getptr(p_class);
+	ERR_FAIL_COND_MSG(builtin_class != nullptr && builtin_class->path != p_path,
+			vformat("Script class name \"%s\" is a built-in type declared by \"%s\" and cannot be redeclared by \"%s\".", p_class, builtin_class->path, p_path));
+
 	GlobalScriptClass *existing = global_classes.getptr(p_class);
 	if (existing) {
 		// Update an existing class (only set dirty if something changed).
