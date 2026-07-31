@@ -6879,6 +6879,13 @@ String FSAnalyzer::get_bootstrap_allowed_dependency_root() {
 	return bootstrap_allowed_dependency_root;
 }
 
+bool FSAnalyzer::is_bootstrap_path_allowed(const String &p_path) {
+	if (bootstrap_allowed_dependency_root.is_empty()) {
+		return true;
+	}
+	return _bootstrap_path_is_within_root(p_path, bootstrap_allowed_dependency_root);
+}
+
 FSParser::DataType FSAnalyzer::make_global_class_meta_type(const StringName &p_class_name, const FSParser::Node *p_source) {
 	FSParser::DataType type;
 

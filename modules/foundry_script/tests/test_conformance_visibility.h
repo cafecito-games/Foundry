@@ -376,6 +376,29 @@ func probe() -> String:
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][Conformance] a bootstrap root bounds namespace conformance reach") {
+	// A build task bootstrap may only reach files inside its provider root. Namespace membership is
+	// not a per-dependency opt-in, so a conformance file outside the root is simply not reachable
+	// while a bootstrap is active — otherwise being in a shared namespace would be enough to pull an
+	// arbitrary script into the bootstrap and run it.
+	NamespacedConformanceFixture fixture;
+	const String consumer_path = fixture.write("fsn_bootstrap_consumer.fs", R"(import fsn
+
+extends RefCounted
+)");
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(FileAccess::get_file_as_string(consumer_path), consumer_path, false), OK);
+	REQUIRE(parser.get_namespace_conformance_dependencies().find(fixture.conformance_path) != nullptr);
+
+	FSAnalyzer::set_bootstrap_allowed_dependency_root(fixture.dir.path_join("provider_root"));
+	const List<String> bounded = parser.get_namespace_conformance_dependencies();
+	FSAnalyzer::set_bootstrap_allowed_dependency_root(String());
+
+	CHECK(bounded.find(fixture.conformance_path) == nullptr);
+	// The bound is the root, not a blanket refusal: the same file inside it stays reachable.
+	CHECK(FSAnalyzer::is_bootstrap_path_allowed(fixture.conformance_path));
+}
+
 TEST_CASE("[Modules][FoundryScript][Conformance] a rescan drops conformance files that no longer exist") {
 	// A rescan of a root is the source of truth for it. A conformance file deleted since the last
 	// scan has to stop being advertised: it is reached by importing its namespace, so a stale entry

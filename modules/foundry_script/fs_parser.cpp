@@ -31,6 +31,7 @@
 #include "fs_parser.h"
 
 #include "foundry_script.h"
+#include "fs_analyzer.h"
 #include "fs_cache.h"
 #include "fs_tokenizer_buffer.h"
 
@@ -1171,6 +1172,12 @@ List<String> FSParser::get_namespace_conformance_dependencies() const {
 		return conformance_paths;
 	}
 
+	// A build task bootstrap compiles inside a dependency root it may not reach outside of. Namespace
+	// membership is not something the bootstrapped file opts into per dependency, so an out-of-root
+	// conformance file is filtered out here rather than reported: it is simply not reachable, so
+	// nothing type-checks against it and nothing loads it. An explicit `import` of a namespace whose
+	// conformances lie outside the root is still an error (`validate_bootstrap_namespace_import`),
+	// because there the file did ask for it.
 	HashSet<String> seen_namespaces;
 	auto collect_namespace = [&](const String &p_namespace) {
 		if (p_namespace.is_empty() || seen_namespaces.has(p_namespace)) {
@@ -1180,9 +1187,13 @@ List<String> FSParser::get_namespace_conformance_dependencies() const {
 		for (const String &path : language->get_conformance_files_in_namespace(p_namespace)) {
 			// A file never depends on itself, and a conformance it declares is already registered by
 			// its own analysis.
-			if (path != script_path) {
-				conformance_paths.push_back(path);
+			if (path == script_path) {
+				continue;
 			}
+			if (!FSAnalyzer::is_bootstrap_path_allowed(path)) {
+				continue;
+			}
+			conformance_paths.push_back(path);
 		}
 	};
 

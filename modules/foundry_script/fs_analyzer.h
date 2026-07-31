@@ -649,6 +649,10 @@ public:
 	static bool class_exists(const StringName &p_class);
 	static void set_bootstrap_allowed_dependency_root(const String &p_root);
 	static String get_bootstrap_allowed_dependency_root();
+	// Whether `p_path` is inside the build-task bootstrap root active on this thread, or true when no
+	// bootstrap is in progress. The static form of `is_bootstrap_dependency_path_allowed`, for callers
+	// outside an analysis that must respect the same boundary.
+	static bool is_bootstrap_path_allowed(const String &p_path);
 
 	FSAnalyzer(FSParser *p_parser);
 
