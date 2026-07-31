@@ -2027,7 +2027,17 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				}
 
 				if (script_class->identifier && script_class->identifier->name == first) {
-					result = script_class->get_datatype();
+					// An `enum_name` file's name denotes its enum in a type position, so inside the file
+					// itself `EnumName.Case` has to reach the case through the enum rather than through
+					// the declaring script handle, which carries no case types.
+					const FSParser::DataType enum_file_type = script_class->is_enum_file && script_class->enum_file_decl != nullptr
+							? script_class->enum_file_decl->get_datatype()
+							: FSParser::DataType();
+					if (enum_file_type.is_set() && enum_file_type.kind == FSParser::DataType::ENUM) {
+						result = enum_file_type;
+					} else {
+						result = script_class->get_datatype();
+					}
 					break;
 				}
 				if (script_class->members_indices.has(first)) {
@@ -8792,6 +8802,23 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 	}
 
 	StringName name = p_identifier->name;
+
+	// An `enum_name` file names an enum, not a script: inside the file's own body the bare name has
+	// to mean the enum type, the same way a consumer sees it, so the enum's methods can construct
+	// its cases and reach its own static functions. Resolving through the declaring script handle
+	// instead would only expose the case constants and reject payload construction.
+	if (p_base == nullptr) {
+		const FSParser::ClassNode *head = parser->head;
+		const FSParser::EnumNode *enum_file_declaration = head != nullptr && head->is_enum_file ? head->enum_file_decl : nullptr;
+		if (enum_file_declaration != nullptr && enum_file_declaration->identifier != nullptr &&
+				enum_file_declaration->identifier->name == name) {
+			const FSParser::DataType enum_type = enum_file_declaration->get_datatype();
+			if (enum_type.is_set() && enum_type.kind == FSParser::DataType::ENUM && enum_type.is_meta_type) {
+				set_enum_meta_identifier_constant(p_identifier, enum_type);
+				return;
+			}
+		}
+	}
 
 	if (base.kind == FSParser::DataType::ENUM) {
 		if (base.is_meta_type) {

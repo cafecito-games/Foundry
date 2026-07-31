@@ -69,6 +69,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: python3 .github/scripts/resolve_release.py
 
+      # The TextMate grammar is generated from checked-in engine sources alone, so it is
+      # produced here rather than in a build job: a broken generator fails in seconds
+      # instead of after the ~1h build matrix.
+      - name: Generate FoundryScript TextMate grammar
+        env:
+          VERSION: ${{ steps.resolve.outputs.release_version }}
+        run: |
+          python3 modules/foundry_script/grammar/tmlanguage_builder.py \
+            --output "tmlanguage/foundryscript-tmlanguage-${VERSION}.json"
+
+      - name: Upload FoundryScript TextMate grammar
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: release-tmlanguage
+          path: tmlanguage/*
+
       # Mint the tag credential before the ~1h build matrix rather than in
       # `publish`, so a bad secret, an expired key, or an installation that no
       # longer covers this repository is reported in seconds instead of after
@@ -1088,6 +1104,9 @@ jobs:
 
           # API artifacts for language bindings and other external generators.
           cp artifacts/release-api/*.zip dist/
+
+          # The FoundryScript TextMate grammar editor extensions consume.
+          cp artifacts/release-tmlanguage/foundryscript-tmlanguage-*.json dist/
 
           # --- Export templates package (.tpz) ------------------------------
           # The editor expects a single top-level "templates/" directory holding
