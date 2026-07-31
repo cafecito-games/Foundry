@@ -1652,11 +1652,14 @@ Error EditorExportPlatformMacOS::export_project(const Ref<EditorExportPreset> &p
 		return ERR_SKIP;
 	}
 
-	unzFile src_pkg_zip = unzOpen2(src_pkg_name.utf8().get_data(), &io);
-	if (!src_pkg_zip) {
+	// Owned by a scope guard: the export format is validated below with this
+	// archive already open, so an early return there would otherwise leak it.
+	UnzFileGuard src_pkg_zip_guard(unzOpen2(src_pkg_name.utf8().get_data(), &io));
+	if (!src_pkg_zip_guard.is_valid()) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Prepare Templates"), vformat(TTR("Could not find template app to export: \"%s\"."), src_pkg_name));
 		return ERR_FILE_NOT_FOUND;
 	}
+	unzFile src_pkg_zip = src_pkg_zip_guard.get();
 
 	int ret = unzGoToFirstFile(src_pkg_zip);
 
@@ -2045,7 +2048,7 @@ Error EditorExportPlatformMacOS::export_project(const Ref<EditorExportPreset> &p
 	}
 
 	// We're done with our source zip.
-	unzClose(src_pkg_zip);
+	src_pkg_zip_guard.close();
 
 	if (!found_binary) {
 		add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Requested template binary \"%s\" not found. It might be missing from your template archive."), binary_to_use));
@@ -2383,11 +2386,20 @@ Error EditorExportPlatformMacOS::export_project(const Ref<EditorExportPreset> &p
 
 				Ref<FileAccess> io_fa_dst;
 				zlib_filefunc_def io_dst = zipio_create_io(&io_fa_dst);
-				zipFile zip = zipOpen2(p_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io_dst);
-
-				zip_folder_recursive(zip, tmp_base_path_name, "", pkg_name);
-
-				zipClose(zip, nullptr);
+				ZipFileGuard zip_guard(zipOpen2(p_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io_dst));
+				if (zip_guard.is_valid()) {
+					// `zip_folder_recursive()` takes a non-const reference but never
+					// reassigns it, so the guard keeps owning this handle.
+					zipFile zip = zip_guard.get();
+					zip_folder_recursive(zip, tmp_base_path_name, "", pkg_name);
+					zip_guard.close();
+				} else {
+					// minizip answers every call on a null handle with ZIP_PARAMERROR,
+					// so an unchecked failure here reports a successful export that
+					// produced no archive at all.
+					add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not create ZIP file: \"%s\"."), p_path));
+					err = ERR_CANT_CREATE;
+				}
 			}
 		} else if (export_format == "app" && noto_enabled) {
 			// Create temporary ZIP.
@@ -2403,11 +2415,17 @@ Error EditorExportPlatformMacOS::export_project(const Ref<EditorExportPreset> &p
 
 				Ref<FileAccess> io_fa_dst;
 				zlib_filefunc_def io_dst = zipio_create_io(&io_fa_dst);
-				zipFile zip = zipOpen2(noto_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io_dst);
-
-				zip_folder_recursive(zip, tmp_base_path_name, tmp_app_dir_name, pkg_name);
-
-				zipClose(zip, nullptr);
+				ZipFileGuard zip_guard(zipOpen2(noto_path.utf8().get_data(), APPEND_STATUS_CREATE, nullptr, &io_dst));
+				if (zip_guard.is_valid()) {
+					zipFile zip = zip_guard.get();
+					zip_folder_recursive(zip, tmp_base_path_name, tmp_app_dir_name, pkg_name);
+					zip_guard.close();
+				} else {
+					// Notarization reads this archive back, so failing to create it
+					// has to stop the export rather than notarize a missing file.
+					add_message(EXPORT_MESSAGE_ERROR, TTR("Export"), vformat(TTR("Could not create ZIP file for notarization: \"%s\"."), noto_path));
+					err = ERR_CANT_CREATE;
+				}
 			}
 		}
 
