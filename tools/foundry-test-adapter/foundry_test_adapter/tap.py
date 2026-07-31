@@ -225,7 +225,7 @@ def validate_tap_report(text: str) -> TapReport:
             violations.append(
                 Violation(
                     ViolationCode.PLAN_EXCEEDED,
-                    "Plan declares {} tests but {} points were emitted".format(plan, len(points)),
+                    "Plan declares {} test points but the report emitted {}".format(plan, len(points)),
                     _at(plan_line) if plan_line is not None else "",
                 )
             )
@@ -233,7 +233,7 @@ def validate_tap_report(text: str) -> TapReport:
             violations.append(
                 Violation(
                     ViolationCode.PLAN_UNSATISFIED,
-                    "Plan declares {} tests but only {} points were emitted".format(plan, len(points)),
+                    "Plan declares {} test points but the report emitted only {}".format(plan, len(points)),
                     _at(plan_line) if plan_line is not None else "",
                 )
             )
