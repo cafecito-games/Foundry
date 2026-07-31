@@ -3942,11 +3942,21 @@ void FSLanguage::replace_global_annotations(const String &p_path, const List<Str
 	}
 }
 
-uint64_t FSLanguage::claim_declaration_index_refresh(const String &p_path) {
-	MutexLock lock(declaration_index_generation_mutex);
+uint64_t FSLanguage::_claim_declaration_index_generation(const String &p_path) {
 	const uint64_t token = ++declaration_index_generation_counter;
 	declaration_index_generations[p_path] = token;
 	return token;
+}
+
+uint64_t FSLanguage::claim_declaration_index_refresh(const String &p_path) {
+	MutexLock lock(declaration_index_generation_mutex);
+	return _claim_declaration_index_generation(p_path);
+}
+
+void FSLanguage::claim_declaration_index_rename_refresh(const String &p_search_path, const String &p_target_path, uint64_t &r_search_token, uint64_t &r_target_token) {
+	MutexLock lock(declaration_index_generation_mutex);
+	r_target_token = _claim_declaration_index_generation(p_target_path);
+	r_search_token = _claim_declaration_index_generation(p_search_path);
 }
 
 bool FSLanguage::_is_declaration_index_token_current(const String &p_path, uint64_t p_token) const {
@@ -4020,9 +4030,15 @@ void FSLanguage::update_global_declaration_index(const String &p_search_path, co
 	// at the moment the loser claimed. This is per-trigger eventual consistency, not a serialization
 	// of the disk reads themselves — an edit landing after the winner's read is picked up by the
 	// refresh that edit's own scan/notify trigger starts. A rename claims both paths because it
-	// publishes a removal at one and an addition at the other.
-	const uint64_t target_token = claim_declaration_index_refresh(p_target_path);
-	const uint64_t search_token = p_search_path == p_target_path ? target_token : claim_declaration_index_refresh(p_search_path);
+	// publishes a removal at one and an addition at the other, both claimed together.
+	uint64_t target_token = 0;
+	uint64_t search_token = 0;
+	if (p_search_path == p_target_path) {
+		target_token = claim_declaration_index_refresh(p_target_path);
+		search_token = target_token;
+	} else {
+		claim_declaration_index_rename_refresh(p_search_path, p_target_path, search_token, target_token);
+	}
 
 	// A path that no longer exists or fails to parse yields no declarations, so a removed/renamed
 	// file collapses to an empty replacement, dropping its stale entries.

@@ -902,6 +902,12 @@ class FSLanguage : public ScriptLanguage {
 	// Reserve the right to publish a refresh of `p_path`, superseding any claim already outstanding
 	// for it. Must be called before the file is read.
 	uint64_t claim_declaration_index_refresh(const String &p_path);
+	// The rename form of the claim. Both paths are claimed in one critical section: a refresh of
+	// either path that landed between two separate claims would be newer than this rename and still
+	// end up superseded by it.
+	void claim_declaration_index_rename_refresh(const String &p_search_path, const String &p_target_path, uint64_t &r_search_token, uint64_t &r_target_token);
+	// Must be called with `declaration_index_generation_mutex` held.
+	uint64_t _claim_declaration_index_generation(const String &p_path);
 	// Publish a refresh's parse results into both declaration indexes, dropping whatever a newer claim
 	// (or a sweep) has superseded. On a rename the two paths are guarded by their own tokens, so a
 	// superseded side is left to the refresh that superseded it. Returns whether anything was

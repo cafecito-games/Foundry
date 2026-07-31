@@ -46,6 +46,10 @@ public:
 		return p_language->claim_declaration_index_refresh(p_path);
 	}
 
+	static void claim_rename(FSLanguage *p_language, const String &p_search_path, const String &p_target_path, uint64_t &r_search_token, uint64_t &r_target_token) {
+		p_language->claim_declaration_index_rename_refresh(p_search_path, p_target_path, r_search_token, r_target_token);
+	}
+
 	static bool commit(FSLanguage *p_language, const String &p_path, uint64_t p_token, const List<StringName> &p_annotations, bool p_declares_conformances, const String &p_conformance_namespace) {
 		return p_language->commit_declaration_index_refresh(p_path, p_token, p_path, p_token, p_annotations, p_declares_conformances, p_conformance_namespace);
 	}
@@ -180,9 +184,10 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a rename keeps the side a newer
 	const uint64_t seeded_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
 	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, old_path, seeded_token, declaration_index_annotations(SNAME("fsg.moved")), true, "fsg.moved"));
 
-	// The rename claims both paths before reading the file.
-	const uint64_t rename_target_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
-	const uint64_t rename_search_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
+	// The rename claims both paths together before reading the file.
+	uint64_t rename_search_token = 0;
+	uint64_t rename_target_token = 0;
+	TestFSDeclarationIndexAccessor::claim_rename(fixture.language, old_path, new_path, rename_search_token, rename_target_token);
 
 	// A newer refresh of the old path wins the race and owns the outcome for it.
 	const uint64_t superseding_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
@@ -211,8 +216,9 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a superseded rename target stil
 	const uint64_t seeded_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
 	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, old_path, seeded_token, declaration_index_annotations(SNAME("fsg.stranded")), true, "fsg.stranded"));
 
-	const uint64_t rename_target_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
-	const uint64_t rename_search_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
+	uint64_t rename_search_token = 0;
+	uint64_t rename_target_token = 0;
+	TestFSDeclarationIndexAccessor::claim_rename(fixture.language, old_path, new_path, rename_search_token, rename_target_token);
 
 	// A newer refresh of the new path wins the race and owns the outcome for it.
 	const uint64_t superseding_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
@@ -234,8 +240,9 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a fully superseded rename publi
 	const String old_path = "res://fsg_dropped_old.fs";
 	const String new_path = "res://fsg_dropped_new.fs";
 
-	const uint64_t rename_target_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
-	const uint64_t rename_search_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
+	uint64_t rename_search_token = 0;
+	uint64_t rename_target_token = 0;
+	TestFSDeclarationIndexAccessor::claim_rename(fixture.language, old_path, new_path, rename_search_token, rename_target_token);
 
 	const uint64_t old_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
 	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, old_path, old_token, declaration_index_annotations(SNAME("fsg.kept_old")), true, "fsg.kept"));
@@ -263,8 +270,9 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a current rename commit moves b
 	const uint64_t seeded_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
 	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, old_path, seeded_token, declaration_index_annotations(SNAME("fsg.rename")), true, "fsg.rename"));
 
-	const uint64_t target_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
-	const uint64_t search_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
+	uint64_t search_token = 0;
+	uint64_t target_token = 0;
+	TestFSDeclarationIndexAccessor::claim_rename(fixture.language, old_path, new_path, search_token, target_token);
 	CHECK(TestFSDeclarationIndexAccessor::commit_rename(fixture.language, old_path, search_token, new_path, target_token, declaration_index_annotations(SNAME("fsg.rename")), true, "fsg.rename"));
 
 	CHECK_EQ(fixture.language->get_global_annotation_path(SNAME("fsg.rename")), new_path);
