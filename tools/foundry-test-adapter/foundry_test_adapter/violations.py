@@ -46,6 +46,8 @@ class ViolationCode:
     PLAN_EXCEEDED = "plan_exceeded"
     POINT_OUT_OF_ORDER = "point_out_of_order"
     UNRECOGNIZED_LINE = "unrecognized_line"
+    INVALID_DIRECTIVE = "invalid_directive"
+    INVALID_DIRECTIVE = "invalid_directive"
     MISSING_DIAGNOSTIC_BLOCK = "missing_diagnostic_block"
     INVALID_DIAGNOSTIC_BLOCK = "invalid_diagnostic_block"
     CONTENT_AFTER_BAIL_OUT = "content_after_bail_out"
@@ -56,6 +58,8 @@ class ViolationCode:
     UNEXPECTED_RESULT_ID = "unexpected_result_id"
     MISSING_RESULT_ID = "missing_result_id"
     RESULT_ORDER_MISMATCH = "result_order_mismatch"
+    SKIP_STATE_MISMATCH = "skip_state_mismatch"
+    SKIP_STATE_MISMATCH = "skip_state_mismatch"
 
 
 ALL_VIOLATION_CODES: frozenset[str] = frozenset(

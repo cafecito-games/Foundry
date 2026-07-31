@@ -97,6 +97,8 @@ def validate_run(
                     )
                 )
 
+    violations.extend(_validate_skip_state(discovery, report))
+
     reported_in_order = [identifier for identifier in actual if identifier in expected_set]
     expected_in_report = [identifier for identifier in expected if identifier in actual_set]
     if reported_in_order != expected_in_report:
@@ -126,3 +128,45 @@ def _closure(discovery: DiscoveryResult, item: DiscoveryItem) -> list[DiscoveryI
             visited.add(child.id)
             collected.append(child)
     return collected
+
+
+def _validate_skip_state(discovery: DiscoveryResult, report: TapReport) -> list[Violation]:
+    """Checks that each point's skip directive matches the discovered skip state.
+
+    Skip state is discovery-owned, so a report may neither silently run a test the
+    framework declared skipped nor skip one it did not.
+    """
+
+    violations: list[Violation] = []
+    for point in report.points:
+        if point.id is None:
+            continue
+        item = discovery.item_by_id(point.id)
+        if item is None:
+            continue
+        if item.skipped and not point.skipped:
+            violations.append(
+                Violation(
+                    ViolationCode.SKIP_STATE_MISMATCH,
+                    "Test '{}' was discovered as skipped but its point carries no '# SKIP'".format(point.id),
+                )
+            )
+            continue
+        if point.skipped and not item.skipped:
+            violations.append(
+                Violation(
+                    ViolationCode.SKIP_STATE_MISMATCH,
+                    "Test '{}' was not discovered as skipped but its point is skipped".format(point.id),
+                )
+            )
+            continue
+        if item.skipped and point.skip_reason != item.skip_reason:
+            violations.append(
+                Violation(
+                    ViolationCode.SKIP_STATE_MISMATCH,
+                    "Test '{}' reports skip reason '{}' instead of the discovered '{}'".format(
+                        point.id, point.skip_reason, item.skip_reason
+                    ),
+                )
+            )
+    return violations

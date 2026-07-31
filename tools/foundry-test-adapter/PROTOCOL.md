@@ -129,6 +129,8 @@ MUST be the first record and MUST appear exactly once.
   string; `label` is the display string and carries no identity.
 - `parent_id`, `path`, `range`, and `skip_reason` MUST be present, and are either a non-empty value
   or JSON `null`. A field that is absent is a violation; a field that does not apply is `null`.
+- A non-null `parent_id` MUST identify a record emitted strictly earlier in the stream. A record
+  MUST NOT name itself as its parent.
 - `runnable` MUST be a boolean and says whether the item may be selected directly.
 - `skipped` MUST be a boolean and says a selected test will report TAP `# SKIP`. A skipped item MUST
   carry a non-empty `skip_reason`.
@@ -272,6 +274,9 @@ different convention from the zero-based discovery ranges of section 4.3, becaus
 conventions of the format they belong to.
 
 A skipped test reports `ok <n> - <description> # SKIP <reason>` and still carries a `_foundry` block.
+The reason MUST be non-empty, and a skip MUST use `ok`: `not ok ... # SKIP` is a conformance failure.
+Skip state is discovery-owned, so a point's skip state and reason MUST match the discovered
+`skipped` and `skip_reason` of the test it reports.
 
 ### 5.2 Bail out and completeness
 

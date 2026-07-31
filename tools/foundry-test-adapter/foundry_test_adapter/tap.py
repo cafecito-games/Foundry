@@ -332,6 +332,22 @@ def _build_point(
         else:
             skipped = True
             skip_reason = (directive_match.group("reason") or "").strip() or None
+            if not ok:
+                violations.append(
+                    Violation(
+                        ViolationCode.INVALID_DIRECTIVE,
+                        "A skipped test point uses 'ok', not 'not ok'",
+                        _at(line_number),
+                    )
+                )
+            if skip_reason is None:
+                violations.append(
+                    Violation(
+                        ViolationCode.INVALID_DIRECTIVE,
+                        "A '# SKIP' directive requires a non-empty reason",
+                        _at(line_number),
+                    )
+                )
 
     if block is None:
         violations.append(
@@ -364,7 +380,7 @@ def _build_point(
         duration_ms = _read_duration(metadata, line_number, violations)
         status_detail = _read_status_detail(metadata, line_number, violations)
 
-    message = _read_message(document, ok, skipped, line_number, violations)
+    message = _read_message(document, ok, line_number, violations)
     at = _read_location(document, line_number, violations)
     return TapPoint(number, ok, description, skipped, skip_reason, identifier, duration_ms, status_detail, message, at)
 
@@ -446,12 +462,13 @@ def _read_status_detail(metadata: dict[str, Any], line_number: int, violations: 
 def _read_message(
     document: dict[str, Any],
     ok: bool,
-    skipped: bool,
     line_number: int,
     violations: list[Violation],
 ) -> Optional[str]:
     if "message" not in document:
-        if not ok and not skipped:
+        # A conforming skip is an `ok` point, so a failing point never earns the
+        # skip exemption from carrying a diagnostic message.
+        if not ok:
             violations.append(
                 Violation(
                     ViolationCode.MISSING_FIELD,

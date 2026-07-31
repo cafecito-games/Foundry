@@ -11,6 +11,7 @@ import unittest
 from foundry_test_adapter import (
     ALL_VIOLATION_CODES,
     PROTOCOL_NAME,
+    TapReport,
     Violation,
     ViolationCode,
     expected_leaf_ids,
@@ -211,3 +212,57 @@ class MalformedInputTerminationTests(unittest.TestCase):
         self.assertFalse(worker.is_alive(), msg="Selection resolution did not terminate")
         self.assertEqual(1, len(resolved))
         self.assertLessEqual(len(resolved[0]), len(discovery.items))
+
+
+class SkipSemanticsTests(unittest.TestCase):
+    """Skip state is discovery-owned and must survive into the report unchanged."""
+
+    def _report(self, point_line: str) -> TapReport:
+        return validate_tap_report(
+            "TAP version 13\n"
+            "# foundry-test-adapter: 1\n"
+            "1..1\n" + point_line + "  ---\n"
+            "  _foundry:\n"
+            '    id: "S1::a"\n'
+            "    duration_ms: 0\n"
+            '    status_detail: ""\n'
+            "  ...\n"
+        )
+
+    def test_a_failing_point_cannot_be_a_skip(self) -> None:
+        report = self._report("not ok 1 - a # SKIP pending\n")
+        codes = [violation.code for violation in report.violations]
+        self.assertIn(ViolationCode.INVALID_DIRECTIVE, codes)
+        self.assertIn(ViolationCode.MISSING_FIELD, codes)
+
+    def test_a_skip_requires_a_reason(self) -> None:
+        report = self._report("ok 1 - a # SKIP\n")
+        self.assertEqual(
+            [ViolationCode.INVALID_DIRECTIVE],
+            [violation.code for violation in report.violations],
+        )
+
+    def test_a_report_may_not_change_the_discovered_skip_reason(self) -> None:
+        discovery = validate_discovery_stream(
+            (fixtures_root() / "run/discovery_with_skip.jsonl").read_text(encoding="utf-8")
+        )
+        self.assertTrue(discovery.conforms, msg=str(discovery.violations))
+        report = self._report("ok 1 - a # SKIP a different reason\n")
+        self.assertTrue(report.conforms, msg=str(report.violations))
+        self.assertEqual(
+            [ViolationCode.SKIP_STATE_MISMATCH],
+            [violation.code for violation in validate_run(discovery, report, [])],
+        )
+
+
+class ParentIdentityTests(unittest.TestCase):
+    def test_a_record_cannot_be_its_own_parent(self) -> None:
+        # Self-parenting would otherwise satisfy the parent check and then hide the
+        # item from every run, because an item that is its own child is never a leaf.
+        result = validate_discovery_stream(
+            (fixtures_root() / "discovery/invalid/self_parented.jsonl").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            [ViolationCode.UNKNOWN_PARENT],
+            [violation.code for violation in result.violations],
+        )

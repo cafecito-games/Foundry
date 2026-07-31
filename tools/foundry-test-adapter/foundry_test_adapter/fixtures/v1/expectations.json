@@ -105,6 +105,12 @@
       ],
       "complete": true
     },
+    "invalid/self_parented.jsonl": {
+      "violations": [
+        { "code": "unknown_parent", "location": "line 2 /parent_id" }
+      ],
+      "complete": true
+    },
     "invalid/skipped_without_reason.jsonl": {
       "violations": [
         { "code": "missing_skip_reason", "location": "line 3 /skip_reason" }
@@ -188,6 +194,12 @@
         { "code": "missing_field", "location": "line 4" }
       ]
     },
+    "invalid/failing_skip.tap": {
+      "violations": [
+        { "code": "invalid_directive", "location": "line 4" },
+        { "code": "missing_field", "location": "line 4" }
+      ]
+    },
     "invalid/garbage_line.tap": {
       "violations": [
         { "code": "unrecognized_line", "location": "line 4" }
@@ -261,6 +273,11 @@
       ],
       "bailed_out": true,
       "complete": false
+    },
+    "invalid/skip_without_reason.tap": {
+      "violations": [
+        { "code": "invalid_directive", "location": "line 4" }
+      ]
     },
     "invalid/todo_directive.tap": {
       "violations": [
@@ -340,6 +357,24 @@
       "expected_leaves": [],
       "violations": [
         { "code": "unknown_selection_id", "location": "" }
+      ]
+    },
+    {
+      "name": "a discovered skip is reported as a TAP skip",
+      "discovery": "run/discovery_with_skip.jsonl",
+      "report": "run/report_skip_honored.tap",
+      "select": [],
+      "expected_leaves": ["S1::a"],
+      "violations": []
+    },
+    {
+      "name": "a report may not silently run a discovered skip",
+      "discovery": "run/discovery_with_skip.jsonl",
+      "report": "run/report_skip_ignored.tap",
+      "select": [],
+      "expected_leaves": ["S1::a"],
+      "violations": [
+        { "code": "skip_state_mismatch", "location": "" }
       ]
     },
     {

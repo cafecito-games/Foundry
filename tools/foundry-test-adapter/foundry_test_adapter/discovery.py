@@ -392,9 +392,11 @@ def _validate_item(
 ) -> Optional[DiscoveryItem]:
     location = _at(line_number)
     identifier = require_string(record, "id", violations, prefix=location)
-    _register_id(identifier, known_ids, violations, line_number)
     label = require_string(record, "label", violations, prefix=location)
+    # The parent is resolved against the identifiers emitted *before* this record, so a
+    # record cannot satisfy the parents-precede-children rule by naming itself.
     parent_id = _validate_parent(record, known_ids, violations, location)
+    _register_id(identifier, known_ids, violations, line_number)
     path = require_nullable_string(record, "path", violations, prefix=location)
     item_range = _validate_range(record, violations, location)
     runnable = require_bool(record, "runnable", violations, prefix=location)
@@ -428,9 +430,9 @@ def _validate_discovery_error(
 ) -> Optional[DiscoveryError]:
     location = _at(line_number)
     identifier = require_string(record, "id", violations, prefix=location)
-    _register_id(identifier, known_ids, violations, line_number)
     label = require_string(record, "label", violations, prefix=location)
     parent_id = _validate_parent(record, known_ids, violations, location)
+    _register_id(identifier, known_ids, violations, line_number)
     message = require_string(record, "message", violations, prefix=location)
     path = require_nullable_string(record, "path", violations, prefix=location)
     error_range = _validate_range(record, violations, location)
