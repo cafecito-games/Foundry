@@ -35,6 +35,16 @@
 #include "core/io/resource_saver.h"
 #include "core/variant/variant.h"
 
+// Lets a scripting module decide how an Object is represented in JSON without core/io
+// learning any language-specific concept. Core keeps behaving exactly as before when no
+// marshaller is registered.
+class JSONObjectMarshaller {
+public:
+	// Returns true if this object was handled; r_result is then a plain Variant tree.
+	virtual bool marshal_object(Object *p_object, Variant &r_result) = 0;
+	virtual ~JSONObjectMarshaller() {}
+};
+
 class JSON : public Resource {
 	FOUNDRY_CLASS(JSON, Resource);
 
@@ -71,8 +81,10 @@ class JSON : public Resource {
 
 	static const char *tk_name[];
 
+	static JSONObjectMarshaller *object_marshaller;
+
 	static void _add_indent(String &r_result, const String &p_indent, int p_size);
-	static void _stringify(String &r_result, const Variant &p_var, const String &p_indent, int p_cur_indent, bool p_sort_keys, HashSet<const void *> &p_markers, bool p_full_precision);
+	static void _stringify(String &r_result, const Variant &p_var, const String &p_indent, int p_cur_indent, bool p_sort_keys, HashSet<const void *> &p_markers, bool p_full_precision, HashSet<uint64_t> &p_object_markers);
 	static Error _get_token(const char32_t *p_str, int &index, int p_len, Token &r_token, int &line, String &r_err_str);
 	static Error _parse_value(Variant &value, Token &token, const char32_t *p_str, int &index, int p_len, int &line, int p_depth, String &r_err_str);
 	static Error _parse_array(Array &array, const char32_t *p_str, int &index, int p_len, int &line, int p_depth, String &r_err_str);
@@ -91,6 +103,8 @@ public:
 
 	static String stringify(const Variant &p_var, const String &p_indent = "", bool p_sort_keys = true, bool p_full_precision = false);
 	static Variant parse_string(const String &p_json_string);
+
+	static void set_object_marshaller(JSONObjectMarshaller *p_marshaller);
 
 	_FORCE_INLINE_ static Variant from_native(const Variant &p_variant, bool p_full_objects = false) {
 		return _from_native(p_variant, p_full_objects, 0);
