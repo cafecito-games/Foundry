@@ -156,11 +156,9 @@ def validate_tap_report(text: str) -> TapReport:
         if line == PROTOCOL_COMMENT_LINE and len(significant) > 1 and line_number == significant[1][0]:
             continue
 
-        if line.startswith("Bail out!"):
-            bailed_out = True
-            bail_message = line[len("Bail out!") :].strip()
-            continue
-
+        # Checked before the bail-out line itself is handled, so a second
+        # `Bail out!` is reported as forbidden trailing output instead of
+        # silently replacing the first failure message.
         if bailed_out and not reported_content_after_bail_out:
             violations.append(
                 Violation(
@@ -170,6 +168,12 @@ def validate_tap_report(text: str) -> TapReport:
                 )
             )
             reported_content_after_bail_out = True
+
+        if line.startswith("Bail out!"):
+            if not bailed_out:
+                bailed_out = True
+                bail_message = line[len("Bail out!") :].strip()
+            continue
 
         plan_match = _PLAN_PATTERN.match(line)
         if plan_match is not None:
@@ -206,6 +210,9 @@ def validate_tap_report(text: str) -> TapReport:
 
         block, index, terminated = _collect_diagnostic_block(numbered, index)
         if block is not None and not terminated:
+            # An unterminated block means the report stopped mid-point. The point was
+            # never completely flushed, so it is not counted: the plan then reports the
+            # report as unsatisfied rather than letting a partial result look complete.
             violations.append(
                 Violation(
                     ViolationCode.INVALID_DIAGNOSTIC_BLOCK,
@@ -213,6 +220,7 @@ def validate_tap_report(text: str) -> TapReport:
                     _at(line_number),
                 )
             )
+            continue
         point = _build_point(point_match, block, line_number, violations)
         if point is not None:
             expected_number = len(points) + 1

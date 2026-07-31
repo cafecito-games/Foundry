@@ -245,12 +245,21 @@
       "point_count": 1,
       "complete": false
     },
+    "invalid/repeated_bail_out.tap": {
+      "violations": [
+        { "code": "content_after_bail_out", "location": "line 12" }
+      ],
+      "bailed_out": true,
+      "complete": false
+    },
     "invalid/truncated_diagnostic_block.tap": {
       "violations": [
         { "code": "invalid_diagnostic_block", "location": "line 11" },
-        { "code": "missing_field", "location": "line 11" },
-        { "code": "missing_field", "location": "line 11" }
-      ]
+        { "code": "plan_unsatisfied", "location": "line 3" }
+      ],
+      "plan": 2,
+      "point_count": 1,
+      "complete": false
     },
     "invalid/unknown_status_detail.tap": {
       "violations": [

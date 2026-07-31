@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import unittest
 
 from foundry_test_adapter import (
@@ -13,6 +14,7 @@ from foundry_test_adapter import (
     Violation,
     ViolationCode,
     expected_leaf_ids,
+    fixtures_root,
     utf16_length,
     utf16_offset_to_index,
     validate_discovery_stream,
@@ -168,3 +170,44 @@ class SelectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MalformedInputTerminationTests(unittest.TestCase):
+    """A non-conforming artifact must still produce violations rather than hang or lie."""
+
+    def test_a_repeated_bail_out_keeps_the_first_failure_message(self) -> None:
+        report = validate_tap_report(
+            (fixtures_root() / "tap/invalid/repeated_bail_out.tap").read_text(encoding="utf-8")
+        )
+        self.assertTrue(report.bailed_out)
+        self.assertEqual("Test host terminated", report.bail_message)
+        self.assertEqual(
+            [ViolationCode.CONTENT_AFTER_BAIL_OUT],
+            [violation.code for violation in report.violations],
+        )
+
+    def test_an_unterminated_diagnostic_block_is_not_counted_as_a_result(self) -> None:
+        report = validate_tap_report(
+            (fixtures_root() / "tap/invalid/truncated_diagnostic_block.tap").read_text(encoding="utf-8")
+        )
+        self.assertEqual(["id-1"], report.point_ids())
+        self.assertFalse(report.complete)
+
+    def test_a_duplicated_identifier_cannot_make_selection_loop_forever(self) -> None:
+        # A repeated identifier can make an item its own descendant. Traversal must
+        # terminate and hand the caller the violations it already collected.
+        discovery = validate_discovery_stream(
+            (fixtures_root() / "discovery/invalid/duplicate_id.jsonl").read_text(encoding="utf-8")
+        )
+        self.assertIn(ViolationCode.DUPLICATE_ID, [violation.code for violation in discovery.violations])
+
+        resolved: list[list[str]] = []
+        worker = threading.Thread(target=lambda: resolved.append(expected_leaf_ids(discovery, ["S:math"])[0]))
+        worker.daemon = True
+        worker.start()
+        # A correct implementation returns immediately; the timeout only bounds how
+        # long a regression is allowed to spin before the test reports it.
+        worker.join(5)
+        self.assertFalse(worker.is_alive(), msg="Selection resolution did not terminate")
+        self.assertEqual(1, len(resolved))
+        self.assertLessEqual(len(resolved[0]), len(discovery.items))

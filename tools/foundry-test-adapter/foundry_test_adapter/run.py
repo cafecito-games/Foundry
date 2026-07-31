@@ -109,10 +109,18 @@ def validate_run(
 
 
 def _closure(discovery: DiscoveryResult, item: DiscoveryItem) -> list[DiscoveryItem]:
+    # Identifiers are tracked while walking because a non-conforming stream may repeat
+    # an identifier, which makes an item its own descendant. Traversal must still
+    # terminate so the caller gets its collected violations back.
     collected = [item]
+    visited = {item.id}
     index = 0
     while index < len(collected):
         current = collected[index]
         index += 1
-        collected.extend(discovery.children_of(current.id))
+        for child in discovery.children_of(current.id):
+            if child.id in visited:
+                continue
+            visited.add(child.id)
+            collected.append(child)
     return collected
