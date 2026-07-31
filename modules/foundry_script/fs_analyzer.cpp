@@ -6597,6 +6597,18 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			}
 		}
 
+		// A `final` class receiver is exactly its static type and has no subtype that could declare the
+		// method later, so unless a conformance this file reaches supplies the name, nothing can ever
+		// resolve the call. The soft "may be present on a subtype" treatment below is a bet on a
+		// subtype that cannot exist, so such receivers skip it and are rejected outright. The carve-out
+		// is what keeps the rule true: an instance witness is deliberately not resolved statically, so
+		// a call a reachable conformance supplies is legal and dispatches at run time even though
+		// nothing here types it.
+		const bool receiver_is_closed_final = !found && !is_self && !p_call->is_super &&
+				base_type.is_hard_type() && !base_type.is_meta_type &&
+				_datatype_represents_final_class(base_type) &&
+				!reachable_conformance_supplies_method(base_type, p_call->function_name);
+
 		if (!found && base_type.kind == FSParser::DataType::ENUM) {
 			if (!base_type.is_meta_type) {
 				push_error(vformat(R"*(Function "%s()" does not exist for enum value "%s".)*",
@@ -6628,7 +6640,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 					} else {
 						push_error(vformat(R"*(Name "%s" called as a function but is a "%s".)*", p_call->function_name, callee_datatype.to_string()), p_call->callee);
 					}
-				} else if (!is_self && !(base_type.is_hard_type() && base_type.kind == FSParser::DataType::BUILTIN)) {
+				} else if (!is_self && !receiver_is_closed_final && !(base_type.is_hard_type() && base_type.kind == FSParser::DataType::BUILTIN)) {
 					if (strict_dynamic_checks) {
 						push_error(vformat(R"*(Cannot resolve method "%s" on type "%s" in strict dynamic mode.)*", p_call->function_name, base_type.to_string()), p_call->callee);
 					} else {
@@ -6645,6 +6657,10 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			push_error(vformat(R"*(Function "%s()" not found in base %s.)*", p_call->function_name, base_name), p_call->is_super ? p_call : p_call->callee);
 		} else if (!found && (!p_call->is_super && base_type.is_hard_type() && base_type.is_meta_type)) {
 			push_error(vformat(R"*(Static function "%s()" not found in base "%s".)*", p_call->function_name, base_type.to_string()), p_call);
+		} else if (!found && receiver_is_closed_final) {
+			push_error(vformat(R"*(Cannot call "%s()" on "%s": the method does not exist, and the class is final, so no subtype can supply it.)*",
+							   p_call->function_name, base_type.to_string()),
+					p_call->callee != nullptr ? p_call->callee : p_call);
 		}
 	}
 

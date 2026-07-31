@@ -1,0 +1,2 @@
+FS_TEST_OK
+~~ WARNING at line 10: (UNSAFE_METHOD_ACCESS) The method "frw_gadget()" is not present on the inferred type "FrwWidget" (but may be present on a subtype).

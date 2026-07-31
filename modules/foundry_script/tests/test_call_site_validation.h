@@ -145,4 +145,50 @@ TEST_CASE("[Modules][FoundryScript][CallSiteValidation] Strict dynamic mode reje
 	CHECK(analyzer_reports_substring(parser, "Callable construction in strict dynamic mode"));
 }
 
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A final receiver's unresolved call keeps its own message in strict dynamic mode") {
+	// The closed-class rejection is unconditional, so strict mode has nothing to add here and must not
+	// shadow the specific diagnosis with its generic one.
+	FSParser parser;
+	const Error error = parser.parse(
+			"final class Worker:\n"
+			"\tfunc work() -> void:\n"
+			"\t\tpass\n"
+			"func test() -> void:\n"
+			"\tvar worker := Worker.new()\n"
+			"\tworker.perform()\n",
+			"user://strict_final_receiver.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.set_strict_dynamic_checks(true);
+	analyzer.analyze();
+
+	CHECK(analyzer_reports_substring(parser, "so no subtype can supply it"));
+	CHECK_FALSE(analyzer_reports_substring(parser, "in strict dynamic mode"));
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] Strict dynamic mode still rejects an open receiver's unresolved call") {
+	// An open class keeps the strict-mode diagnosis: a subtype really could declare the method, so the
+	// rejection is a policy choice rather than a fact about the type.
+	FSParser parser;
+	const Error error = parser.parse(
+			"class Worker:\n"
+			"\tfunc work() -> void:\n"
+			"\t\tpass\n"
+			"func test() -> void:\n"
+			"\tvar worker := Worker.new()\n"
+			"\tworker.perform()\n",
+			"user://strict_open_receiver.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.set_strict_dynamic_checks(true);
+	analyzer.analyze();
+
+	CHECK(analyzer_reports_substring(parser, "in strict dynamic mode"));
+	CHECK_FALSE(analyzer_reports_substring(parser, "so no subtype can supply it"));
+}
+
 } // namespace FSTests

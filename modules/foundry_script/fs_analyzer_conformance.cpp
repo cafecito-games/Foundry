@@ -387,6 +387,33 @@ void FSAnalyzer::ensure_indexed_conformance_files_registered() {
 	indexed_conformance_probe_in_progress = false;
 }
 
+bool FSAnalyzer::reachable_conformance_supplies_method(const FSParser::DataType &p_target_type, const StringName &p_method) {
+	if (p_method == StringName()) {
+		return false;
+	}
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	if (registry == nullptr) {
+		return false;
+	}
+
+	// Callers ask this on the unresolved-call miss path, where the answer decides whether a call is
+	// rejected. It has to reflect the project rather than whatever this process analyzed first, so the
+	// index sweep runs here too — it is idempotent per analysis, so a caller that already probed pays
+	// nothing.
+	ensure_indexed_conformance_files_registered();
+
+	// The base chain is walked because a conformance declared on a base stays reachable through the
+	// derived type, matching `find_static_conformance_witness` and the runtime's witness lookup.
+	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
+		String witness_source;
+		int witness_conformance_index = -1;
+		if (registry->find_witness_location(cursor->fqcn, p_method, witness_source, witness_conformance_index)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method,
 		String &r_source_file, StringName &r_trait_name) {
 	r_source_file = String();
@@ -418,19 +445,12 @@ bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_tar
 				p_method, r_source_file, r_trait_name);
 	}
 
-	// The base chain is walked because a conformance declared on a base stays reachable through the
-	// derived type, matching `find_static_conformance_witness` and the runtime's witness lookup.
-	//
-	// A conformance this file *can* reach, anywhere on that chain, means the call has a well-defined
-	// meaning for this file and is left alone — whether it sits below the hidden one (shadowing it) or
-	// above (the level the call falls through to). Only a name that no reachable conformance supplies
-	// at all is reported, so the diagnostic can never take away a call that works.
-	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
-		String visible_source;
-		int visible_conformance_index = -1;
-		if (registry->find_witness_location(cursor->fqcn, p_method, visible_source, visible_conformance_index)) {
-			return false;
-		}
+	// A conformance this file *can* reach means the call has a well-defined meaning for this file and
+	// is left alone — whether it sits below the hidden one (shadowing it) or above (the level the call
+	// falls through to). Only a name that no reachable conformance supplies at all is reported, so the
+	// diagnostic can never take away a call that works.
+	if (reachable_conformance_supplies_method(p_target_type, p_method)) {
+		return false;
 	}
 	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
 		if (registry->find_hidden_witness_declaration(cursor->fqcn, p_method, r_source_file, r_trait_name)) {
