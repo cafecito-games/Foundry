@@ -2138,26 +2138,32 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 	// conformance library that reaches back to this script has to find it usable. Failing to load one
 	// fails this script, because its calls and assignments were type-checked against a conformance
 	// whose witnesses only that library registers.
+	//
+	// The classes were marked valid just above, and the witness section was decoded earlier in this
+	// same load, so a failure here has two things to take back: a caller that only checks
+	// `is_valid()` would cache and hand out this script whatever error is returned, and a script that
+	// failed to load must not go on supplying witnesses process-wide.
+	auto withdraw_failed_load = [&]() {
+		for (FoundryScript *loaded_class : local_classes) {
+			loaded_class->valid = false;
+		}
+		if (!p_script->registered_conformance_source.is_empty()) {
+			FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(p_script->registered_conformance_source);
+			p_script->registered_conformance_source = String();
+		}
+	};
 	for (const String &conformance_path : namespace_conformance_paths) {
 		if (conformance_path == script_path) {
 			continue;
 		}
-		ERR_FAIL_NULL_V_MSG(resolver, ERR_UNCONFIGURED,
-				"No external-reference resolver is set on the bytecode loader.");
+		if (resolver == nullptr) {
+			withdraw_failed_load();
+			ERR_FAIL_V_MSG(ERR_UNCONFIGURED, "No external-reference resolver is set on the bytecode loader.");
+		}
 		bool conformance_is_local = false;
 		const Ref<Script> conformance_script = resolver->resolve_script(conformance_path, String(), conformance_is_local);
 		if (conformance_script.is_null()) {
-			// The classes were marked valid just above; a caller that only checks `is_valid()` would
-			// cache and hand out this script whatever error is returned here, so take that back.
-			for (FoundryScript *loaded_class : local_classes) {
-				loaded_class->valid = false;
-			}
-			// The witness section was decoded earlier in this same load, so this script is already
-			// supplying witnesses process-wide. A script that failed to load must not.
-			if (!p_script->registered_conformance_source.is_empty()) {
-				FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(p_script->registered_conformance_source);
-				p_script->registered_conformance_source = String();
-			}
+			withdraw_failed_load();
 			ERR_FAIL_V_MSG(ERR_CANT_RESOLVE,
 					vformat("Cannot load compiled script '%s': could not load '%s', which declares a retroactive conformance it uses through its namespace.",
 							script_path, conformance_path));
