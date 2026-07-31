@@ -267,6 +267,10 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A malformed JsonNode is rejecte
 	Array bad_items;
 	bad_items.push_back("not a node");
 	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(5, bad_items), lowered, 0, "Fixture"));
+	// A non-string object key fails too: coercing it could collapse two members into one.
+	Dictionary bad_entries;
+	bad_entries[1] = make_json_node(2, 1);
+	CHECK_FALSE(FSJsonObjectMarshaller::lower_node(make_json_node(6, bad_entries), lowered, 0, "Fixture"));
 	ERR_PRINT_ON;
 }
 

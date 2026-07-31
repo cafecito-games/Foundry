@@ -168,6 +168,14 @@ bool FSJsonObjectMarshaller::lower_node(const Variant &p_node, Variant &r_result
 			const Dictionary entries = node[1];
 			Dictionary lowered;
 			for (const Variant &key : entries.get_key_list()) {
+				// The payload is declared `Dictionary[String, JsonNode]`. Coercing a key of another
+				// type would let two distinct keys collapse into one member and silently drop data,
+				// so a key that is not a string fails the whole node instead.
+				const Variant::Type key_type = key.get_type();
+				if (key_type != Variant::STRING && key_type != Variant::STRING_NAME) {
+					ERR_PRINT(vformat(R"(to_json() on "%s" returned a JsonNode object with a non-string key.)", p_source_name));
+					return false;
+				}
 				Variant lowered_value;
 				if (!lower_node(entries[key], lowered_value, p_depth + 1, p_source_name)) {
 					return false;
