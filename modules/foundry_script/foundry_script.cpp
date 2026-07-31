@@ -3973,6 +3973,20 @@ void FSLanguage::update_global_declaration_index(const String &p_search_path, co
 	}
 }
 
+void FSLanguage::get_indexed_conformances(Array &r_conformances) const {
+	MutexLock lock(conformance_index_mutex);
+	for (const KeyValue<String, String> &entry : conformance_namespace_by_file) {
+		Dictionary conformance;
+		conformance["path"] = entry.key;
+		conformance["namespace"] = entry.value;
+		r_conformances.push_back(conformance);
+	}
+}
+
+void FSLanguage::add_indexed_conformance(const String &p_path, const String &p_namespace) {
+	add_conformance_file(p_path, p_namespace);
+}
+
 void FSLanguage::clear_global_declaration_index_under(const String &p_root_prefix) {
 	if (p_root_prefix.is_empty()) {
 		return;

@@ -1129,6 +1129,8 @@ public:
 	// `ScriptLanguage::update_global_declaration_index`).
 	virtual void update_global_declaration_index(const String &p_search_path, const String &p_target_path) override;
 	virtual void clear_global_declaration_index_under(const String &p_root_prefix) override;
+	virtual void get_indexed_conformances(Array &r_conformances) const override;
+	virtual void add_indexed_conformance(const String &p_path, const String &p_namespace) override;
 #ifdef TOOLS_ENABLED
 	// Drops cached parsers for p_path and its transitive dependents, then re-parses any
 	// client-managed LSP documents in that affected set so diagnostics refresh after a

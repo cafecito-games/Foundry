@@ -302,6 +302,47 @@ void ScriptServer::reload_global_classes_from_project() {
 		const bool is_enum = c.has("is_enum") && c["is_enum"];
 		add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
 	}
+
+	reload_global_conformances_from_project();
+}
+
+void ScriptServer::reload_global_conformances_from_project() {
+	// An exported project never rescans its scripts, so the cache written at export time is the only
+	// thing that can tell a language which files declare conformances. Without it a namespace import
+	// would resolve in the editor and fail in the exported game.
+	Array conformances = ProjectSettings::get_singleton()->get_global_conformance_list();
+	for (const Variant &conformance : conformances) {
+		Dictionary entry = conformance;
+		if (!entry.has("path") || !entry.has("language")) {
+			continue;
+		}
+		const String language_name = entry["language"];
+		MutexLock lock(languages_mutex);
+		for (int i = 0; i < _language_count; i++) {
+			if (_languages[i] != nullptr && _languages[i]->get_name() == language_name) {
+				_languages[i]->add_indexed_conformance(entry["path"], entry.get("namespace", String()));
+				break;
+			}
+		}
+	}
+}
+
+Array ScriptServer::get_global_conformances() {
+	Array conformances;
+	MutexLock lock(languages_mutex);
+	for (int i = 0; i < _language_count; i++) {
+		if (_languages[i] == nullptr) {
+			continue;
+		}
+		Array language_conformances;
+		_languages[i]->get_indexed_conformances(language_conformances);
+		for (const Variant &entry : language_conformances) {
+			Dictionary conformance = entry;
+			conformance["language"] = _languages[i]->get_name();
+			conformances.push_back(conformance);
+		}
+	}
+	return conformances;
 }
 
 void ScriptServer::init_languages() {
@@ -624,6 +665,7 @@ void ScriptServer::save_global_classes() {
 		gcarr.push_back(d);
 	}
 	ProjectSettings::get_singleton()->store_global_class_list(gcarr);
+	ProjectSettings::get_singleton()->store_global_conformance_list(get_global_conformances());
 }
 
 // Recursively collects script files under p_directory_path, mirroring the directories the editor

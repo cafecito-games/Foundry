@@ -118,6 +118,12 @@ protected:
 
 	Array global_class_list;
 	bool is_global_class_list_loaded = false;
+	// Cross-file declarations that no global class exports (retroactive conformances). They share the
+	// global class cache file because they share its lifecycle exactly: written by the editor scan,
+	// shipped in the export, and the only record an exported project has, since it never rescans.
+	Array global_conformance_list;
+	bool is_global_conformance_list_loaded = false;
+	void _store_global_declaration_cache();
 
 	String project_data_dir_name;
 
@@ -172,6 +178,10 @@ public:
 	TypedArray<Dictionary> get_global_class_list();
 	void refresh_global_class_list();
 	void store_global_class_list(const Array &p_classes);
+	// Entries are `{"path": String, "namespace": String, "language": String}` for each file that
+	// declares retroactive conformances.
+	TypedArray<Dictionary> get_global_conformance_list();
+	void store_global_conformance_list(const Array &p_conformances);
 	String get_global_class_list_path() const;
 
 	bool has_setting(const String &p_var) const;

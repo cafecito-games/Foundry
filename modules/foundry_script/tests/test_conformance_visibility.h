@@ -376,6 +376,35 @@ func probe() -> String:
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][Conformance] the conformance index survives a project cache round trip") {
+	// An exported project never rescans its scripts: the cache written at export time is the only
+	// record that a conformance-only file exists. Without this round trip a namespace import would
+	// resolve in the editor and fail in the exported game.
+	FSLanguage *language = FSLanguage::get_singleton();
+	const String conformance_path = "res://exported/fsp_conformance.fs";
+	language->add_conformance_file(conformance_path, "fsp");
+
+	const Array persisted = ScriptServer::get_global_conformances();
+	bool found = false;
+	for (const Variant &entry : persisted) {
+		const Dictionary conformance = entry;
+		if (String(conformance.get("path", String())) == conformance_path) {
+			found = true;
+			CHECK_EQ(String(conformance.get("namespace", String())), "fsp");
+			CHECK_EQ(String(conformance.get("language", String())), String(language->get_name()));
+		}
+	}
+	CHECK(found);
+
+	// Restoring from the cache is what an exported project does at startup.
+	language->remove_conformance_file(conformance_path);
+	REQUIRE(language->get_conformance_files_in_namespace("fsp").is_empty());
+	language->add_indexed_conformance(conformance_path, "fsp");
+	CHECK(language->get_conformance_files_in_namespace("fsp").has(conformance_path));
+
+	language->remove_conformance_file(conformance_path);
+}
+
 TEST_CASE("[Modules][FoundryScript][Conformance] a bootstrap root bounds namespace conformance reach") {
 	// A build task bootstrap may only reach files inside its provider root. Namespace membership is
 	// not a per-dependency opt-in, so a conformance file outside the root is simply not reachable

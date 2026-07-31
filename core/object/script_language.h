@@ -96,6 +96,9 @@ public:
 	// loaded in-process, so consumers that run before the first filesystem scan see the
 	// opened project's global classes rather than the projectless/previous ones.
 	static void reload_global_classes_from_project();
+	static void reload_global_conformances_from_project();
+	// Every indexed conformance-declaring file across all languages, tagged with its language name.
+	static Array get_global_conformances();
 	static void add_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait, bool p_is_enum = false);
 	static void remove_global_class(const StringName &p_class);
 	static void remove_global_class_by_path(const String &p_path);
@@ -505,6 +508,13 @@ public:
 	// entries are dropped first and re-added by re-indexing the files that still exist; otherwise a
 	// deleted declaration library would linger and keep being offered to importers.
 	virtual void clear_global_declaration_index_under(const String &p_root_prefix) {}
+
+	// Every file this language has indexed as declaring retroactive conformances, as
+	// `{"path": String, "namespace": String}` dictionaries. Such a file exports no global class, so
+	// this index is the only record that it exists — and an exported project never rescans, which is
+	// why it is persisted with the global class cache and restored through `add_indexed_conformance`.
+	virtual void get_indexed_conformances(Array &r_conformances) const {}
+	virtual void add_indexed_conformance(const String &p_path, const String &p_namespace) {}
 
 	virtual ~ScriptLanguage() {}
 };
