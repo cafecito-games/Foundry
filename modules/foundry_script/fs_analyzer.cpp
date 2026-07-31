@@ -2361,6 +2361,13 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 	}
 
 	if (p_class == parser->head && p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
+		// A consumer normally forces this through `make_global_enum_type_from_current_parser`.
+		// Linting the file alone has no consumer, so resolve it here or payload-type errors
+		// never surface and the file appears clean. `resolve_enum_values` early-returns once the
+		// datatype is set, so a later consumer-driven resolution will not re-emit these errors.
+		resolve_enum_values(p_class->enum_file_decl,
+				make_standalone_global_enum_type(p_class->enum_file_decl->identifier->name, true),
+				p_class);
 		resolve_enum_bodies(p_class->enum_file_decl, p_class);
 	}
 
