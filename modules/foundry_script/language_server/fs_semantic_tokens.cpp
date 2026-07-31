@@ -231,16 +231,38 @@ Vector<FSSemanticTokens::Span> FSSemanticTokens::collect(const String &p_source,
 	bool previous_was_period = false;
 	bool previous_can_precede_bin_op = false;
 	NodePathState node_path_state = NODE_PATH_NONE;
+	int bracket_depth = 0;
 
 	for (int scanned = 0; scanned < scan_limit; scanned++) {
 		const FSTokenizer::Token token = tokenizer.scan();
 		if (token.type == FSTokenizer::Token::TK_EOF) {
 			break;
 		}
-		// Layout tokens carry no source of their own and must not break the surrounding context: a
-		// grouping construct keeps an attribute or a node path readable across a line break.
+		// Layout tokens carry no source of their own. Inside a grouping construct a line break is a
+		// continuation, so an attribute or node path stays readable across it; at statement level it
+		// ends the logical line and nothing before it can influence what comes next.
 		if (is_layout_token(token.type)) {
+			if (bracket_depth == 0) {
+				previous_was_period = false;
+				previous_can_precede_bin_op = false;
+				node_path_state = NODE_PATH_NONE;
+			}
 			continue;
+		}
+
+		switch (token.type) {
+			case FSTokenizer::Token::PARENTHESIS_OPEN:
+			case FSTokenizer::Token::BRACKET_OPEN:
+			case FSTokenizer::Token::BRACE_OPEN:
+				bracket_depth++;
+				break;
+			case FSTokenizer::Token::PARENTHESIS_CLOSE:
+			case FSTokenizer::Token::BRACKET_CLOSE:
+			case FSTokenizer::Token::BRACE_CLOSE:
+				bracket_depth = MAX(bracket_depth - 1, 0);
+				break;
+			default:
+				break;
 		}
 
 		const bool after_period = previous_was_period;

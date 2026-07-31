@@ -3328,6 +3328,15 @@ func f():
 			check_semantic_token(tokens, 3, 2, 2, 4, LSP::SemanticTokenType::KEYWORD); // pass
 		}
 
+		SUBCASE("a unique-name path opening a statement is not read as modulo") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_unique_path_statement.fs");
+			text_document->didOpen(make_did_open_params(uri, "var count = 1\n%class.visible = count\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			REQUIRE_EQ(tokens.size(), 1);
+			check_semantic_token(tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+		}
+
 		SUBCASE("modulo after a keyword-named attribute does not open a node path") {
 			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_attribute_modulo.fs");
 			text_document->didOpen(make_did_open_params(uri, "var value = self.class % self.size\n"));
