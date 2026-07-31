@@ -1,0 +1,101 @@
+name: 🧹 Prune stale prereleases
+
+# Release assets never expire, and every alpha carries a ~1.1 GB export template
+# bundle, so unbounded prerelease retention dominates repository storage within
+# days. This deletes prerelease *releases* (and their assets) once they are
+# older than the age limit, always retaining the newest one. Tags are left
+# alone: they cost nothing and preserve the provenance of each build.
+on:
+  schedule:
+    # 09:00 UTC daily, after the usual release cadence has settled.
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      max-age-hours:
+        description: Delete prereleases published more than this many hours ago.
+        type: number
+        default: 24
+      keep-newest:
+        description: Always retain this many of the newest prereleases.
+        type: number
+        default: 1
+      dry-run:
+        description: Report what would be deleted without deleting it.
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  prune:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Select stale prereleases
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MAX_AGE_HOURS: ${{ inputs.max-age-hours || 24 }}
+          KEEP_NEWEST: ${{ inputs.keep-newest || 1 }}
+        run: |
+          set -euo pipefail
+
+          gh api "/repos/$GH_REPO/releases" --paginate --slurp > releases.json
+
+          python3 .github/scripts/prune_prereleases.py \
+            --releases-json releases.json \
+            --max-age-hours "$MAX_AGE_HOURS" \
+            --keep-newest "$KEEP_NEWEST" > stale-tags.txt
+
+          echo "count=$(wc -l < stale-tags.txt | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Delete stale prereleases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          DRY_RUN: ${{ inputs.dry-run || 'false' }}
+          STALE_COUNT: ${{ steps.select.outputs.count }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "### Stale prerelease prune"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$STALE_COUNT" -eq 0 ]; then
+            echo "No stale prereleases to prune." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run: would delete $STALE_COUNT prerelease(s)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Deleting $STALE_COUNT prerelease(s)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo >> "$GITHUB_STEP_SUMMARY"
+
+          # `gh release delete` without --cleanup-tag removes the release and its
+          # assets while leaving the tag in place.
+          while read -r tag; do
+            [ -n "$tag" ] || continue
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "- \`$tag\` (dry run)" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            if gh release delete "$tag" --repo "$GH_REPO" --yes; then
+              echo "- \`$tag\` deleted" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "::error::Failed to delete prerelease $tag."
+              echo "- \`$tag\` **failed**" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          done < stale-tags.txt
