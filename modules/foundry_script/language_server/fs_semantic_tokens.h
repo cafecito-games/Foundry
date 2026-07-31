@@ -36,6 +36,8 @@
 #include "core/templates/vector.h"
 #include "core/variant/variant.h"
 
+class FSParser;
+
 /**
  * Encoding side of the `textDocument/semanticTokens/full` request.
  *
@@ -91,12 +93,21 @@ public:
 	static Vector<String> split_lines(const String &p_source);
 
 	/**
-	 * Collects the spans for a document.
+	 * Collects the classified spans of a document.
 	 *
-	 * This transport-level pass is purely lexical: it marks reserved words so the request has
-	 * observable output end to end. Symbol and contextual classification (types, members,
-	 * parameters, annotations, and the modifier bits that go with them) is a separate concern and
-	 * extends this producer rather than replacing the encoder.
+	 * Two producers contribute candidates. A lexical pass over the token stream marks reserved
+	 * words, plus the namespace segments of `namespace`/`import`, which the tree does not record as
+	 * nodes. A symbol pass walks `p_parser`'s analyzed tree and classifies declarations and
+	 * references from resolved sources and data types, which is the only way to tell a contextual
+	 * keyword from an identifier that merely spells the same word.
+	 *
+	 * `p_parser` may be null (or hold no tree) when the document could not be parsed at all; the
+	 * lexical candidates are still produced so highlighting degrades instead of disappearing.
+	 *
+	 * Candidates are resolved into a source-sorted, non-overlapping stream: an exact identifier
+	 * classification outranks a contextual one, which outranks a reserved-word one; identical spans
+	 * of the same type merge their modifiers; and any remaining overlap drops the lower-ranked
+	 * candidate.
 	 */
-	static Vector<Span> collect(const String &p_source, const Vector<String> &p_lines);
+	static Vector<Span> collect(const FSParser *p_parser, const String &p_source, const Vector<String> &p_lines);
 };
