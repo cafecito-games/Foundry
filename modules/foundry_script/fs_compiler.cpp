@@ -1370,8 +1370,13 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 								// May be static built-in method call.
 								gen->write_call_builtin_type_static(result, FSParser::get_builtin_type(static_cast<FSParser::IdentifierNode *>(subscript->base)->name), subscript->attribute->name, arguments);
 							} else if (!call->is_super && subscript->base->type == FSParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
-									static_cast<FSParser::IdentifierNode *>(subscript->base)->source == FSParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(static_cast<FSParser::IdentifierNode *>(subscript->base)->name)) {
-								// It's a static native method call.
+									static_cast<FSParser::IdentifierNode *>(subscript->base)->source == FSParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(static_cast<FSParser::IdentifierNode *>(subscript->base)->name) &&
+									ClassDB::get_method(static_cast<FSParser::IdentifierNode *>(subscript->base)->name, subscript->attribute->name) != nullptr) {
+								// It's a static native method call. A name ClassDB does not know is not one —
+								// it is a `static` witness from a retroactive conformance on this engine class,
+								// which has no `MethodBind` to encode. That falls through to the generic call
+								// below, where the class evaluates to its `FSNativeClass` and dispatches the
+								// witness. (Encoding a null `MethodBind` here would crash the VM.)
 								StringName class_name = static_cast<FSParser::IdentifierNode *>(subscript->base)->name;
 								MethodBind *method = ClassDB::get_method(class_name, subscript->attribute->name);
 								if (_can_use_validate_call(method, arguments)) {

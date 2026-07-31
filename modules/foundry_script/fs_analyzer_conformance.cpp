@@ -248,6 +248,24 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 		return nullptr;
 	};
 
+	// A native engine class and a builtin value type are conformance targets too. Each is registered
+	// under a synthesized stand-in whose FQCN is the bare class name or `Variant` type name, and the
+	// engine inheritance chain is walked so a witness declared on a base class stays reachable from a
+	// subclass — the same reach `FSConformanceRegistry::find_native_witness_function` gives the runtime.
+	if (p_target_type.kind == FSParser::DataType::NATIVE) {
+		for (StringName cursor = p_target_type.native_type; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
+			FSParser::FunctionNode *witness = static_witness_for_target(String(cursor));
+			if (witness != nullptr) {
+				return witness;
+			}
+		}
+		return nullptr;
+	}
+	if (p_target_type.kind == FSParser::DataType::BUILTIN) {
+		// Builtins have no inheritance chain, so this is an exact lookup.
+		return static_witness_for_target(String(Variant::get_type_name(p_target_type.builtin_type)));
+	}
+
 	// Lookups go strictly by a target's fully-qualified class name. A conformance is also registered
 	// under looser aliases (global class name, script path) that the runtime uses, but those do not
 	// identify a class on their own: every class declared in a file, inner classes included, shares the

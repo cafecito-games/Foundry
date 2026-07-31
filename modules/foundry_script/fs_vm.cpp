@@ -3265,6 +3265,18 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				Callable::CallError err;
 				Variant::call_static(builtin_type, *methodname, argptrs, argc, *ret, err);
 
+				// Retroactive-conformance fallback. A `static` witness supplied by an external
+				// `extend <BuiltinType> uses Trait: ...` is not part of the builtin's own static surface,
+				// so it misses `Variant::call_static`; consult the conformance registry and dispatch it
+				// with no instance (runs in both debug and release builds).
+				if (err.error == Callable::CallError::CALL_ERROR_INVALID_METHOD) {
+					FSFunction *witness = FSConformanceRegistry::get_singleton()->find_builtin_witness_function(builtin_type, *methodname);
+					if (witness != nullptr && witness->is_static()) {
+						err.error = Callable::CallError::CALL_OK;
+						*ret = witness->call(nullptr, argptrs, argc, err);
+					}
+				}
+
 #ifdef DEBUG_ENABLED
 				if (err.error != Callable::CallError::CALL_OK) {
 					err_text = _get_call_error("static function '" + methodname->operator String() + "' in type '" + Variant::get_type_name(builtin_type) + "'", argptrs, argc, *ret, err);

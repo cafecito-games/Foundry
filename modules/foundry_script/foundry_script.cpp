@@ -394,6 +394,15 @@ Variant FSNativeClass::callp(const StringName &p_method, const Variant **p_args,
 		return method->call(nullptr, p_args, p_argcount, r_error);
 	}
 
+	// Retroactive-conformance fallback. A `static` witness supplied by an external
+	// `extend <EngineClass> uses Trait: ...` has no `MethodBind` and is reachable only through the class,
+	// so it is dispatched here with no instance. The engine inheritance chain is walked, so a witness
+	// declared on a base class answers for a subclass as well.
+	FSFunction *witness = FSConformanceRegistry::get_singleton()->find_native_witness_function(name, p_method);
+	if (witness != nullptr && witness->is_static()) {
+		return witness->call(nullptr, p_args, p_argcount, r_error);
+	}
+
 	r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 	return Variant();
 }
