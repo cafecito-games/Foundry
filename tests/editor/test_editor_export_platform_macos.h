@@ -47,14 +47,14 @@ namespace TestEditorExportPlatformMacOS {
 
 // `EditorExportPlatform::ExportNotifier` dereferences `EditorExport`'s singleton
 // on both construction and destruction, and only the full editor creates one.
+// `EditorExport`'s destructor gives the singleton back up, so the surrounding
+// run is left exactly as it was found.
 class ScopedEditorExport {
-	EditorExport *previous = nullptr;
 	EditorExport *owned = nullptr;
 
 public:
 	ScopedEditorExport() {
-		previous = EditorExport::get_singleton();
-		if (!previous) {
+		if (!EditorExport::get_singleton()) {
 			owned = memnew(EditorExport);
 			// Setting a preset value schedules a deferred save through a Timer,
 			// which errors unless it is inside the tree.
@@ -66,6 +66,8 @@ public:
 		if (owned) {
 			SceneTree::get_singleton()->get_root()->remove_child(owned);
 			memdelete(owned);
+			CHECK_MESSAGE(EditorExport::get_singleton() == nullptr,
+					"Tearing the fixture down must not leave a dangling singleton for later tests.");
 		}
 	}
 };

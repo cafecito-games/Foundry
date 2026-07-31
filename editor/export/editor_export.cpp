@@ -501,3 +501,12 @@ EditorExport::EditorExport() {
 	singleton = this;
 	set_process(true);
 }
+
+EditorExport::~EditorExport() {
+	// The constructor claims the singleton, so give it up here rather than leave
+	// a dangling pointer behind: `EditorExportPreset` reaches for it whenever a
+	// preset value changes.
+	if (singleton == this) {
+		singleton = nullptr;
+	}
+}
