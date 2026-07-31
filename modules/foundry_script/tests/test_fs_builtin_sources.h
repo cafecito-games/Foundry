@@ -43,7 +43,7 @@ TEST_CASE("[FSBuiltinSources] Registered source is retrievable by path") {
 	CHECK(FSBuiltinSources::get_source("foundry://builtin/test_only.fs", source));
 	CHECK(source.contains("enum_name TestOnly"));
 
-	FSBuiltinSources::clear();
+	FSBuiltinSources::unregister_source("foundry://builtin/test_only.fs");
 }
 
 TEST_CASE("[FSBuiltinSources] Unknown path reports absence") {
@@ -70,7 +70,7 @@ TEST_CASE("[FSBuiltinSources] Project paths cannot masquerade as builtin") {
 	ERR_PRINT_ON;
 	CHECK_FALSE(FSBuiltinSources::get_source("res://not_builtin.fs", source));
 
-	FSBuiltinSources::clear();
+	FSBuiltinSources::unregister_source("foundry://builtin/shadow_test.fs");
 }
 
 } // namespace TestFSBuiltinSources

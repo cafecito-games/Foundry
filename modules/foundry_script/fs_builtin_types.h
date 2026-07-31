@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_builtin_sources.h                                                  */
+/*  fs_builtin_types.h                                                    */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -30,24 +30,11 @@
 
 #pragma once
 
-#include "core/string/ustring.h"
-#include "core/templates/hash_map.h"
-#include "core/templates/list.h"
-
-// Source text for Foundry Script types that ship inside the binary rather than as project
-// files. A global type is resolved by path (see `ScriptServer::get_global_class_path`), so a
-// built-in type still needs parseable source behind a path; these paths use a reserved scheme
-// that no project can write to or shadow.
-class FSBuiltinSources {
-	static HashMap<String, String> sources;
-
+// The Foundry Script types that ship inside the binary: their source text is embedded at build
+// time from `builtin/*.fs`, and their names are registered as global classes so any script can
+// use them without an import.
+class FSBuiltinTypes {
 public:
-	static const char *PATH_PREFIX;
-
-	static bool is_builtin_path(const String &p_path);
-	static void register_source(const String &p_path, const String &p_source);
-	static void unregister_source(const String &p_path);
-	static bool get_source(const String &p_path, String &r_source);
-	static void get_registered_paths(List<String> *r_paths);
-	static void clear();
+	static void register_types();
+	static void unregister_types();
 };

@@ -463,6 +463,7 @@ void ScriptServer::thread_exit() {
 }
 
 HashMap<StringName, ScriptServer::GlobalScriptClass> ScriptServer::global_classes;
+HashMap<StringName, ScriptServer::GlobalScriptClass> ScriptServer::builtin_global_classes;
 uint64_t ScriptServer::global_classes_version = 0;
 HashMap<StringName, Vector<StringName>> ScriptServer::inheriters_cache;
 bool ScriptServer::inheriters_cache_dirty = true;
@@ -470,6 +471,13 @@ bool ScriptServer::inheriters_cache_dirty = true;
 void ScriptServer::global_classes_clear() {
 	global_classes.clear();
 	inheriters_cache.clear();
+	// Types that ship inside the binary are not part of any project's class cache, so they are
+	// restored immediately: clearing the table means "forget this project", not "forget the
+	// language's own types".
+	for (const KeyValue<StringName, GlobalScriptClass> &builtin_class : builtin_global_classes) {
+		global_classes.insert(builtin_class.key, builtin_class.value);
+	}
+	inheriters_cache_dirty = true;
 	global_classes_version++;
 }
 
@@ -533,6 +541,31 @@ void ScriptServer::add_global_class(const StringName &p_class, const StringName 
 		inheriters_cache_dirty = true;
 		global_classes_version++;
 	}
+}
+
+void ScriptServer::add_builtin_global_class(const StringName &p_class, const StringName &p_base, const StringName &p_language, const String &p_path, bool p_is_abstract, bool p_is_tool, bool p_is_trait, bool p_is_enum) {
+	add_global_class(p_class, p_base, p_language, p_path, p_is_abstract, p_is_tool, p_is_trait, p_is_enum);
+
+	const GlobalScriptClass *registered = global_classes.getptr(p_class);
+	if (registered == nullptr) {
+		// `add_global_class()` rejected the registration; do not remember a class that does not exist.
+		return;
+	}
+	builtin_global_classes[p_class] = *registered;
+}
+
+bool ScriptServer::is_builtin_global_class(const StringName &p_class) {
+	return builtin_global_classes.has(p_class);
+}
+
+void ScriptServer::clear_builtin_global_classes() {
+	for (const KeyValue<StringName, GlobalScriptClass> &builtin_class : builtin_global_classes) {
+		global_classes.erase(builtin_class.key);
+	}
+	builtin_global_classes.clear();
+	inheriters_cache.clear();
+	inheriters_cache_dirty = true;
+	global_classes_version++;
 }
 
 void ScriptServer::remove_global_class(const StringName &p_class) {
@@ -669,6 +702,10 @@ void ScriptServer::save_global_classes() {
 	get_global_class_list(gc);
 	Array gcarr;
 	for (const StringName &class_name : gc) {
+		if (builtin_global_classes.has(class_name)) {
+			// Builtin types come from the binary, not from the project being saved.
+			continue;
+		}
 		const GlobalScriptClass &global_class = global_classes[class_name];
 		Dictionary d;
 		d["class"] = class_name;

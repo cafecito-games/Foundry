@@ -505,6 +505,15 @@ Ref<FoundryScript> FSCache::get_shallow_script(const String &p_path, Error &r_er
 	} else if (singleton->source_overrides.has(remapped_path)) {
 		script->set_source_code(singleton->source_overrides[remapped_path]);
 		script->set_path_cache(p_path);
+	} else if (FSBuiltinSources::is_builtin_path(remapped_path)) {
+		// Builtin declarations ship inside the binary; there is no file to read.
+		String builtin_source;
+		if (FSBuiltinSources::get_source(remapped_path, builtin_source)) {
+			script->set_source_code(builtin_source);
+			script->set_path_cache(p_path);
+		} else {
+			r_error = ERR_FILE_NOT_FOUND;
+		}
 	} else {
 		r_error = script->load_source_code(remapped_path);
 	}
@@ -564,6 +573,14 @@ Ref<FoundryScript> FSCache::get_full_script(const String &p_path, Error &r_error
 			script->set_binary_tokens_source(buffer);
 		} else if (singleton->source_overrides.has(remapped_path)) {
 			script->set_source_code(singleton->source_overrides[remapped_path]);
+		} else if (FSBuiltinSources::is_builtin_path(remapped_path)) {
+			// Builtin declarations ship inside the binary; there is no file to refresh from.
+			String builtin_source;
+			if (!FSBuiltinSources::get_source(remapped_path, builtin_source)) {
+				r_error = ERR_FILE_NOT_FOUND;
+				goto finish;
+			}
+			script->set_source_code(builtin_source);
 		} else {
 			r_error = script->load_source_code(remapped_path);
 			if (r_error) {

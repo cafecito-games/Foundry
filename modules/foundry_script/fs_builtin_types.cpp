@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_builtin_sources.h                                                  */
+/*  fs_builtin_types.cpp                                                  */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,26 +28,30 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
+#include "fs_builtin_types.h"
 
-#include "core/string/ustring.h"
-#include "core/templates/hash_map.h"
-#include "core/templates/list.h"
+#include "builtin/fs_builtin_types.gen.h"
+#include "fs_builtin_sources.h"
 
-// Source text for Foundry Script types that ship inside the binary rather than as project
-// files. A global type is resolved by path (see `ScriptServer::get_global_class_path`), so a
-// built-in type still needs parseable source behind a path; these paths use a reserved scheme
-// that no project can write to or shadow.
-class FSBuiltinSources {
-	static HashMap<String, String> sources;
+#include "core/object/script_language.h"
 
-public:
-	static const char *PATH_PREFIX;
+void FSBuiltinTypes::register_types() {
+	for (int i = 0; i < FS_BUILTIN_SOURCE_COUNT; i++) {
+		FSBuiltinSources::register_source(FS_BUILTIN_SOURCES[i].path, FS_BUILTIN_SOURCES[i].source);
+	}
 
-	static bool is_builtin_path(const String &p_path);
-	static void register_source(const String &p_path, const String &p_source);
-	static void unregister_source(const String &p_path);
-	static bool get_source(const String &p_path, String &r_source);
-	static void get_registered_paths(List<String> *r_paths);
-	static void clear();
-};
+	const StringName language = SNAME("FoundryScript");
+	ScriptServer::add_builtin_global_class(SNAME("JsonNode"), StringName(), language,
+			"foundry://builtin/json_node.fs", false, false, false, true);
+	ScriptServer::add_builtin_global_class(SNAME("JsonDecodeError"), SNAME("RefCounted"), language,
+			"foundry://builtin/json_decode_error.fs", false, false, false, false);
+	ScriptServer::add_builtin_global_class(SNAME("JsonResult"), SNAME("RefCounted"), language,
+			"foundry://builtin/json_result.fs", false, false, false, false);
+	ScriptServer::add_builtin_global_class(SNAME("JsonSerializable"), StringName(), language,
+			"foundry://builtin/json_serializable.fs", false, false, true, false);
+}
+
+void FSBuiltinTypes::unregister_types() {
+	ScriptServer::clear_builtin_global_classes();
+	FSBuiltinSources::clear();
+}

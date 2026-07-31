@@ -47,6 +47,10 @@ void FSBuiltinSources::register_source(const String &p_path, const String &p_sou
 	sources[p_path] = p_source;
 }
 
+void FSBuiltinSources::unregister_source(const String &p_path) {
+	sources.erase(p_path);
+}
+
 bool FSBuiltinSources::get_source(const String &p_path, String &r_source) {
 	const String *found = sources.getptr(p_path);
 	if (found == nullptr) {
