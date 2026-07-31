@@ -302,6 +302,48 @@ func probe() -> String:
 		CHECK(NamespacedConformanceFixture::any_error_contains(errors, fixture.conformance_path));
 	}
 
+	SUBCASE("a visible witness on the receiver shadows a hidden one on its base") {
+		// Witness dispatch is most-derived-first, so a conformance the file *can* reach on the
+		// receiver itself is what the call lands on. A hidden conformance further up the chain is
+		// shadowed and must not turn a working call into an error.
+		const String base_path = fixture.write("fsn_base_widget.fs", R"(class_name FsnBaseWidget extends RefCounted
+)");
+		const String derived_path = fixture.write("fsn_derived_widget.fs", R"(final class_name FsnDerivedWidget extends FsnBaseWidget
+)");
+		const String hidden_base_conformance = fixture.write("fsn_base_conformance.fs", R"(namespace fsn
+
+extend FsnBaseWidget uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "base"
+)");
+		const String visible_conformance = fixture.write("fsn_derived_conformance.fs", R"(extend FsnDerivedWidget uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "derived"
+)");
+		ConformanceVisibilityFixture::register_global_class("FsnBaseWidget", base_path, "RefCounted", false);
+		ConformanceVisibilityFixture::register_global_class("FsnDerivedWidget", derived_path, "FsnBaseWidget", false);
+		FSLanguage::get_singleton()->add_conformance_file(hidden_base_conformance, "fsn");
+		REQUIRE(fixture.analysis_errors(hidden_base_conformance).is_empty());
+
+		const String consumer_path = fixture.write("fsn_consumer_shadowed.fs", R"(extends RefCounted
+
+const _Conformance = preload("fsn_derived_conformance.fs")
+
+
+func probe() -> String:
+	var widget := FsnDerivedWidget.new()
+	return widget.fsn_gadget()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsnBaseWidget");
+		ScriptServer::remove_global_class("FsnDerivedWidget");
+		FSLanguage::get_singleton()->remove_conformance_file(hidden_base_conformance);
+		FSConformanceRegistry::get_singleton()->clear_file(visible_conformance);
+
+		CHECK(errors.is_empty());
+	}
+
 	SUBCASE("an open receiver keeps its unsafe-but-legal call") {
 		// `FsnOpenWidget` is not `final`, so a subtype could declare `fsn_gadget()` of its own and the
 		// runtime would resolve it. Rejecting the call because a conformance this file cannot reach

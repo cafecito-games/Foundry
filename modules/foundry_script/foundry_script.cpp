@@ -4035,20 +4035,28 @@ void FSLanguage::add_conformance_file(const String &p_path, const String &p_name
 }
 
 void FSLanguage::remove_conformance_file(const String &p_path) {
-	MutexLock lock(conformance_index_mutex);
+	{
+		MutexLock lock(conformance_index_mutex);
 
-	const String *declared_namespace = conformance_namespace_by_file.getptr(p_path);
-	if (declared_namespace == nullptr) {
-		return;
-	}
-	Vector<String> *files = conformance_files_by_namespace.getptr(*declared_namespace);
-	if (files != nullptr) {
-		files->erase(p_path);
-		if (files->is_empty()) {
-			conformance_files_by_namespace.erase(*declared_namespace);
+		const String *declared_namespace = conformance_namespace_by_file.getptr(p_path);
+		if (declared_namespace == nullptr) {
+			return;
 		}
+		Vector<String> *files = conformance_files_by_namespace.getptr(*declared_namespace);
+		if (files != nullptr) {
+			files->erase(p_path);
+			if (files->is_empty()) {
+				conformance_files_by_namespace.erase(*declared_namespace);
+			}
+		}
+		conformance_namespace_by_file.erase(p_path);
 	}
-	conformance_namespace_by_file.erase(p_path);
+
+	// The file was indexed and no longer declares conformances — it was deleted, moved, or stopped
+	// parsing. Whatever a previous analysis registered for it is stale, and the analyzer reads that
+	// registry to decide whether a call names a conformance it cannot reach, so leaving it would keep
+	// producing diagnostics that point at a file that is gone. Analyzing the file again re-registers.
+	FSConformanceRegistry::get_singleton()->clear_file(p_path);
 }
 
 void FSLanguage::clear_conformance_files() {

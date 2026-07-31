@@ -291,6 +291,14 @@ private:
 	// in a compiled project references such a file, so holding it here is what loads it — and a
 	// conformance only exists at run time once its declaring script has been compiled and has
 	// registered its witnesses.
+	//
+	// Unlike `witness_target_scripts`, these references can form a cycle: two files declaring
+	// conformances in one namespace reach each other, so each retains the other and neither is freed
+	// by refcount alone. That is accepted rather than weakened, because the alternative is worse — a
+	// conformance the analyzer type-checked against would be free to unload out from under code that
+	// dispatches through it, and a file reached only by `preload` still needs its namespace siblings,
+	// which visibility makes reachable transitively. `clear()` drops these on reload and unload, and
+	// `FSLanguage::finish()` clears every script, so the cycle never outlives the language.
 	Vector<Ref<Script>> namespace_conformance_scripts;
 	// Registry key under which this script's runtime witnesses were registered, so they can be dropped
 	// from the registry before the owned `FSFunction`s are freed. Empty when none were registered.
