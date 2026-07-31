@@ -115,7 +115,9 @@ NodePathState next_node_path_state(NodePathState p_state, const FSTokenizer::Tok
 			return p_state == NODE_PATH_NONE ? NODE_PATH_NONE : NODE_PATH_EXPECTS_NAME;
 		case FSTokenizer::Token::PERCENT:
 			// `%` opens a unique-name path in prefix position and separates segments inside a path;
-			// after a token that can end a value it is the modulo operator instead.
+			// after a token that can end a value it is the modulo operator instead. This shares the
+			// tokenizer's documented blind spot for a bare `match`/`when` used as an identifier,
+			// which `Token::can_precede_bin_op()` deliberately does not treat as a value.
 			return (p_state != NODE_PATH_NONE || !p_previous_can_precede_bin_op) ? NODE_PATH_EXPECTS_NAME : NODE_PATH_NONE;
 		default:
 			break;
