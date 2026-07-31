@@ -1120,6 +1120,7 @@ public:
 	// (custom annotations and retroactive conformances). Called by the editor file-system scan (see
 	// `ScriptLanguage::update_global_declaration_index`).
 	virtual void update_global_declaration_index(const String &p_search_path, const String &p_target_path) override;
+	virtual void clear_global_declaration_index_under(const String &p_root_prefix) override;
 #ifdef TOOLS_ENABLED
 	// Drops cached parsers for p_path and its transitive dependents, then re-parses any
 	// client-managed LSP documents in that affected set so diagnostics refresh after a

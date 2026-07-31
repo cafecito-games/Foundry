@@ -500,6 +500,12 @@ public:
 	// such declarations.
 	virtual void update_global_declaration_index(const String &p_search_path, const String &p_target_path) {}
 
+	// Drop every indexed cross-file declaration whose declaring file lives under `p_root_prefix`
+	// (a directory path ending in `/`). A rescan of that root is the source of truth for it, so
+	// entries are dropped first and re-added by re-indexing the files that still exist; otherwise a
+	// deleted declaration library would linger and keep being offered to importers.
+	virtual void clear_global_declaration_index_under(const String &p_root_prefix) {}
+
 	virtual ~ScriptLanguage() {}
 };
 

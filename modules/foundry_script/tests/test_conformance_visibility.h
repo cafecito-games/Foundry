@@ -334,4 +334,26 @@ func probe() -> String:
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][Conformance] a rescan drops conformance files that no longer exist") {
+	// A rescan of a root is the source of truth for it. A conformance file deleted since the last
+	// scan has to stop being advertised: it is reached by importing its namespace, so a stale entry
+	// would make the compiler try to load a path that is gone and fail an otherwise valid import.
+	FSLanguage *language = FSLanguage::get_singleton();
+	const String scanned_path = "res://scanned_root/fsr_conformance.fs";
+	const String outside_path = "res://other_root/fsr_conformance.fs";
+	language->add_conformance_file(scanned_path, "fsr");
+	language->add_conformance_file(outside_path, "fsr");
+	REQUIRE_EQ(language->get_conformance_files_in_namespace("fsr").size(), 2);
+
+	language->clear_global_declaration_index_under("res://scanned_root/");
+
+	const Vector<String> remaining = language->get_conformance_files_in_namespace("fsr");
+	CHECK_EQ(remaining.size(), 1);
+	CHECK(remaining.has(outside_path));
+	CHECK_FALSE(remaining.has(scanned_path));
+
+	language->remove_conformance_file(outside_path);
+	CHECK(language->get_conformance_files_in_namespace("fsr").is_empty());
+}
+
 } // namespace FSTests

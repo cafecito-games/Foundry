@@ -2125,11 +2125,19 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 		return error;
 	}
 
+	// Finalization mirrors `_compile_class`'s per-class tail and `reload()`'s root tail: static
+	// defaults, then `valid`, then the static initializers.
+	for (FoundryScript *loaded_class : local_classes) {
+		loaded_class->_static_default_init();
+		loaded_class->valid = true;
+	}
+
 	// Load the conformance files reached through a namespace, mirroring
-	// `FSCompiler::_load_namespace_conformance_scripts`. Deferred to here, after this script is fully
-	// linked, so a conformance library that reaches back to this script finds it complete. A library
-	// that fails to load reports its own error; this script stays valid without it, exactly as on the
-	// source path.
+	// `FSCompiler::_load_namespace_conformance_scripts`. It runs after this script is linked and
+	// marked valid, matching the source path, where `_compile_class` has already done both: a
+	// conformance library that reaches back to this script has to find it usable. Failing to load one
+	// fails this script, because its calls and assignments were type-checked against a conformance
+	// whose witnesses only that library registers.
 	for (const String &conformance_path : namespace_conformance_paths) {
 		if (conformance_path == script_path) {
 			continue;
@@ -2138,16 +2146,12 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 				"No external-reference resolver is set on the bytecode loader.");
 		bool conformance_is_local = false;
 		const Ref<Script> conformance_script = resolver->resolve_script(conformance_path, String(), conformance_is_local);
-		if (conformance_script.is_valid() && !p_script->namespace_conformance_scripts.has(conformance_script)) {
+		ERR_FAIL_COND_V_MSG(conformance_script.is_null(), ERR_CANT_RESOLVE,
+				vformat("Cannot load compiled script '%s': could not load '%s', which declares a retroactive conformance it uses through its namespace.",
+						script_path, conformance_path));
+		if (!p_script->namespace_conformance_scripts.has(conformance_script)) {
 			p_script->namespace_conformance_scripts.push_back(conformance_script);
 		}
-	}
-
-	// Finalization mirrors `_compile_class`'s per-class tail and `reload()`'s root tail: static
-	// defaults, then `valid`, then the static initializers.
-	for (FoundryScript *loaded_class : local_classes) {
-		loaded_class->_static_default_init();
-		loaded_class->valid = true;
 	}
 	if (ScriptServer::is_scripting_enabled() || p_script->is_tool()) {
 		error = p_script->_static_init();

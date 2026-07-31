@@ -3973,6 +3973,43 @@ void FSLanguage::update_global_declaration_index(const String &p_search_path, co
 	}
 }
 
+void FSLanguage::clear_global_declaration_index_under(const String &p_root_prefix) {
+	if (p_root_prefix.is_empty()) {
+		return;
+	}
+
+	{
+		MutexLock lock(annotation_index_mutex);
+		List<StringName> emptied;
+		for (KeyValue<StringName, Vector<String>> &entry : global_annotations) {
+			for (int i = entry.value.size() - 1; i >= 0; i--) {
+				if (entry.value[i].begins_with(p_root_prefix)) {
+					entry.value.remove_at(i);
+				}
+			}
+			if (entry.value.is_empty()) {
+				emptied.push_back(entry.key);
+			}
+		}
+		for (const StringName &name : emptied) {
+			global_annotations.erase(name);
+		}
+	}
+
+	List<String> dropped_paths;
+	{
+		MutexLock lock(conformance_index_mutex);
+		for (const KeyValue<String, String> &entry : conformance_namespace_by_file) {
+			if (entry.key.begins_with(p_root_prefix)) {
+				dropped_paths.push_back(entry.key);
+			}
+		}
+	}
+	for (const String &path : dropped_paths) {
+		remove_conformance_file(path);
+	}
+}
+
 void FSLanguage::add_conformance_file(const String &p_path, const String &p_namespace) {
 	MutexLock lock(conformance_index_mutex);
 

@@ -680,6 +680,18 @@ TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges surv
 	REQUIRE(loader.load_full(buffer, restored) == OK);
 
 	CHECK(TestFSBytecodeScriptAccessor::retains_namespace_conformance_script(restored, conformance_library));
+
+	// A library that cannot be resolved fails the load rather than producing a consumer whose
+	// conformance witnesses are never registered.
+	Ref<FoundryScript> restored_without_library;
+	restored_without_library.instantiate();
+	restored_without_library->set_path_cache(original->get_script_path());
+	BytecodeTestResolver empty_resolver;
+	FSBytecodeLoader failing_loader;
+	failing_loader.set_resolver(&empty_resolver);
+	ERR_PRINT_OFF;
+	CHECK(failing_loader.load_full(buffer, restored_without_library) != OK);
+	ERR_PRINT_ON;
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register with the registry") {

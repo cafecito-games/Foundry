@@ -720,6 +720,14 @@ void ScriptServer::scan_global_classes(const String &p_root) {
 		remove_global_class(stale_class);
 	}
 
+	// Same reconciliation for declarations that export no global class (custom annotations,
+	// retroactive conformances): a file deleted since the last scan must stop being advertised, or
+	// an import would keep resolving to a path that no longer exists. Re-indexing below restores
+	// every file the scan still finds.
+	for (const KeyValue<String, ScriptLanguage *> &language_entry : language_by_extension) {
+		language_entry.value->clear_global_declaration_index_under(root_prefix);
+	}
+
 	for (const String &file : files) {
 		ScriptLanguage *language = language_by_extension[file.get_extension().to_lower()];
 
