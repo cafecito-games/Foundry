@@ -1,0 +1,10 @@
+{
+  "protocol": "foundry-test-adapter",
+  "supported_versions": [],
+  "framework": {
+    "id": "example.framework",
+    "name": "Example Framework",
+    "version": "0.1.0"
+  },
+  "extensions": []
+}

@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://foundry.cafecitogames.com/schemas/test-adapter/v1/discovery-record.schema.json",
+  "title": "Foundry Test Adapter Protocol v1 discovery record",
+  "description": "One newline-delimited JSON record written by `adapter discover --output <file>`. Stream-level rules (ordering, unique identifiers, parents preceding children, and counts matching emitted records) are not expressible here and are enforced by the conformance validator.",
+  "type": "object",
+  "required": ["protocol", "version", "event"],
+  "properties": {
+    "protocol": {
+      "const": "foundry-test-adapter"
+    },
+    "version": {
+      "const": 1
+    },
+    "event": {
+      "enum": ["discovery_start", "suite", "test", "discovery_error", "discovery_end"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "discovery_start"
+          }
+        }
+      },
+      "then": {
+        "required": ["root"],
+        "properties": {
+          "root": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "suite"
+          }
+        }
+      },
+      "then": {
+        "$ref": "#/$defs/item"
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "test"
+          }
+        }
+      },
+      "then": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/item"
+          },
+          {
+            "required": ["case_key"],
+            "properties": {
+              "case_key": {
+                "$ref": "#/$defs/nullableName"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "discovery_error"
+          }
+        }
+      },
+      "then": {
+        "required": ["id", "label", "parent_id", "message", "path", "range"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent_id": {
+            "$ref": "#/$defs/nullableName"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "$ref": "#/$defs/nullableName"
+          },
+          "range": {
+            "$ref": "#/$defs/nullableRange"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event": {
+            "const": "discovery_end"
+          }
+        }
+      },
+      "then": {
+        "required": ["suite_count", "test_count", "error_count"],
+        "properties": {
+          "suite_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "test_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "error_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nullableName": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "position": {
+      "description": "Zero-based line and UTF-16 code-unit character offset.",
+      "type": "object",
+      "required": ["line", "character"],
+      "properties": {
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "character": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "nullableRange": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "description": "Zero-based, end-exclusive range counting UTF-16 code units.",
+          "type": "object",
+          "required": ["start", "end"],
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/position"
+            },
+            "end": {
+              "$ref": "#/$defs/position"
+            }
+          }
+        }
+      ]
+    },
+    "item": {
+      "required": ["id", "label", "parent_id", "path", "range", "runnable", "skipped", "skip_reason"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_id": {
+          "$ref": "#/$defs/nullableName"
+        },
+        "path": {
+          "$ref": "#/$defs/nullableName"
+        },
+        "range": {
+          "$ref": "#/$defs/nullableRange"
+        },
+        "runnable": {
+          "type": "boolean"
+        },
+        "skipped": {
+          "type": "boolean"
+        },
+        "skip_reason": {
+          "$ref": "#/$defs/nullableName"
+        }
+      }
+    }
+  }
+}

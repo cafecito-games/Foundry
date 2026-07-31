@@ -1,0 +1,7 @@
+{"protocol":"foundry-test-adapter","version":1,"event":"discovery_start","root":"res://tests"}
+{"protocol":"foundry-test-adapter","version":1,"event":"suite","id":"S1","label":"MathTests","parent_id":null,"path":"res://tests/math_tests.fs","range":null,"runnable":true,"skipped":false,"skip_reason":null}
+{"protocol":"foundry-test-adapter","version":1,"event":"test","id":"S1::a","label":"a","parent_id":"S1","path":"res://tests/math_tests.fs","range":null,"runnable":true,"skipped":false,"skip_reason":null,"case_key":null}
+{"protocol":"foundry-test-adapter","version":1,"event":"test","id":"S1::b","label":"b","parent_id":"S1","path":"res://tests/math_tests.fs","range":null,"runnable":true,"skipped":false,"skip_reason":null,"case_key":null}
+{"protocol":"foundry-test-adapter","version":1,"event":"suite","id":"S2","label":"VectorTests","parent_id":null,"path":"res://tests/vector_tests.fs","range":null,"runnable":true,"skipped":false,"skip_reason":null}
+{"protocol":"foundry-test-adapter","version":1,"event":"test","id":"S2::c","label":"c","parent_id":"S2","path":"res://tests/vector_tests.fs","range":null,"runnable":true,"skipped":false,"skip_reason":null,"case_key":null}
+{"protocol":"foundry-test-adapter","version":1,"event":"discovery_end","suite_count":2,"test_count":3,"error_count":0}

@@ -1,0 +1,24 @@
+TAP version 13
+# foundry-test-adapter: 1
+1..3
+ok 1 - MathTests.b
+  ---
+  _foundry:
+    id: "S1::b"
+    duration_ms: 1
+    status_detail: ""
+  ...
+ok 2 - MathTests.a
+  ---
+  _foundry:
+    id: "S1::a"
+    duration_ms: 1
+    status_detail: ""
+  ...
+ok 3 - VectorTests.c
+  ---
+  _foundry:
+    id: "S2::c"
+    duration_ms: 1
+    status_detail: ""
+  ...
