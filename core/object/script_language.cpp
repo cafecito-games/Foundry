@@ -723,10 +723,10 @@ void ScriptServer::scan_global_classes(const String &p_root) {
 	for (const String &file : files) {
 		ScriptLanguage *language = language_by_extension[file.get_extension().to_lower()];
 
-		// Refresh the language's cross-file annotation index even for files that declare no global
-		// class, so annotation-only libraries stay resolvable (mirrors the editor scan, see
-		// EditorFileSystem::_register_global_class_script).
-		language->update_global_class_annotations(file, file);
+		// Refresh the language's cross-file declaration indexes even for files that declare no
+		// global class, so annotation-only and conformance-only libraries stay resolvable (mirrors
+		// the editor scan, see EditorFileSystem::_register_global_class_script).
+		language->update_global_declaration_index(file, file);
 
 		String base_type;
 		bool is_abstract = false;

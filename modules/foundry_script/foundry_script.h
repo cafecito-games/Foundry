@@ -286,6 +286,12 @@ private:
 	// a dangling target even for marker conformances with no witness functions. The target never
 	// references the declaring script, so this introduces no reference cycle.
 	Vector<Ref<Script>> witness_target_scripts;
+	// Strong references to the conformance-declaring files this script reaches through its own
+	// namespace or a namespace it imports, rather than through an explicit `preload`. Nothing else
+	// in a compiled project references such a file, so holding it here is what loads it — and a
+	// conformance only exists at run time once its declaring script has been compiled and has
+	// registered its witnesses.
+	Vector<Ref<Script>> namespace_conformance_scripts;
 	// Registry key under which this script's runtime witnesses were registered, so they can be dropped
 	// from the registry before the owned `FSFunction`s are freed. Empty when none were registered.
 	String registered_conformance_source;
@@ -851,6 +857,15 @@ class FSLanguage : public ScriptLanguage {
 	HashMap<StringName, Vector<String>> global_annotations;
 	mutable Mutex annotation_index_mutex;
 
+	// Cross-file index of the files that declare retroactive conformances (`extend Target uses
+	// Trait: ...`), keyed by the namespace the declaring file is in (empty for the global
+	// namespace). A conformance-only file declares no global class, so nothing else in the project
+	// records that it exists; without this index a consumer could only reach it by `preload`.
+	HashMap<String, Vector<String>> conformance_files_by_namespace;
+	// Reverse lookup so re-indexing or removing a single path does not scan every namespace.
+	HashMap<String, String> conformance_namespace_by_file;
+	mutable Mutex conformance_index_mutex;
+
 	friend class FSInstance;
 
 	Mutex mutex;
@@ -1101,9 +1116,10 @@ public:
 	// Replace every annotation declaration indexed for `p_path` with `p_annotations`, dropping any
 	// previously registered for that path. Refreshes the index from a freshly parsed file.
 	void replace_global_annotations(const String &p_path, const List<StringName> &p_annotations);
-	// Re-extract a file's annotation declarations from disk and refresh the index. Called by the
-	// editor file-system scan (see `ScriptLanguage::update_global_class_annotations`).
-	virtual void update_global_class_annotations(const String &p_search_path, const String &p_target_path) override;
+	// Re-extract a file's cross-file declarations from disk and refresh every index built from them
+	// (custom annotations and retroactive conformances). Called by the editor file-system scan (see
+	// `ScriptLanguage::update_global_declaration_index`).
+	virtual void update_global_declaration_index(const String &p_search_path, const String &p_target_path) override;
 #ifdef TOOLS_ENABLED
 	// Drops cached parsers for p_path and its transitive dependents, then re-parses any
 	// client-managed LSP documents in that affected set so diagnostics refresh after a
@@ -1127,6 +1143,21 @@ public:
 	// Append every indexed canonical annotation identity. Used by editor tooling (completion and
 	// go-to-definition) to enumerate annotations visible through the current namespace or imports.
 	void get_global_annotation_list(List<StringName> *r_annotations) const;
+
+	/* RETROACTIVE CONFORMANCE INDEX */
+
+	// Parse `p_path` (without running the analyzer, mirroring `get_global_class_name`) and report
+	// whether it declares any retroactive conformance, and if so which namespace it declares them
+	// in (empty for the global namespace).
+	bool get_declared_conformance_namespace(const String &p_path, String &r_namespace) const;
+	// Index `p_path` as declaring conformances in `p_namespace`, replacing any entry it already has.
+	void add_conformance_file(const String &p_path, const String &p_namespace);
+	// Drop the conformance-index entry for `p_path`, if it has one.
+	void remove_conformance_file(const String &p_path);
+	void clear_conformance_files();
+	// Every indexed file declaring retroactive conformances in `p_namespace` (empty for the global
+	// namespace), in indexing order.
+	Vector<String> get_conformance_files_in_namespace(const String &p_namespace) const;
 
 	void add_orphan_subclass(const String &p_qualified_name, const ObjectID &p_subclass);
 	Ref<FoundryScript> get_orphan_subclass(const String &p_qualified_name);

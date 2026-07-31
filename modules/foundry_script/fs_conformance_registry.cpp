@@ -452,6 +452,30 @@ bool FSConformanceRegistry::find_witness_location(const String &p_target_fqcn, c
 	return false;
 }
 
+bool FSConformanceRegistry::find_hidden_witness_declaration(const String &p_target_fqcn, const StringName &p_method,
+		String &r_source_file, StringName &r_trait_name) const {
+	r_source_file = String();
+	r_trait_name = StringName();
+	if (p_target_fqcn.is_empty() || p_method == StringName()) {
+		return false;
+	}
+	MutexLock lock(mutex);
+	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		if (_is_visible(file_entry.key)) {
+			continue;
+		}
+		for (const Conformance &conformance : file_entry.value) {
+			if (conformance.target_fqcn != p_target_fqcn || !conformance.witnesses.has(p_method)) {
+				continue;
+			}
+			r_source_file = conformance.source_file;
+			r_trait_name = conformance.trait_name;
+			return true;
+		}
+	}
+	return false;
+}
+
 FSConformanceRegistry::FSConformanceRegistry() {
 	if (singleton == nullptr) {
 		singleton = this;

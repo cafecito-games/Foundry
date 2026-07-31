@@ -415,7 +415,7 @@ ExtendFSParser *FSLanguageProtocol::LSPeer::parse_script(const String &p_path) {
 	// Index disk rather than the unsaved buffer on purpose: cross-file annotation resolution loads
 	// declarations through FSCache/disk, so indexing buffer-only declarations would advertise
 	// annotations whose declaration cannot yet be loaded. This mirrors the editor file-system scan.
-	FSLanguage::get_singleton()->update_global_class_annotations(p_path, p_path);
+	FSLanguage::get_singleton()->update_global_declaration_index(p_path, p_path);
 
 	ExtendFSParser *parser = memnew(ExtendFSParser);
 	parse_results[p_path] = parser;

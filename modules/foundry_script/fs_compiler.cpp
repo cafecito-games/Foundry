@@ -4290,6 +4290,9 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 	}
 	p_script->witness_functions.clear();
 	p_script->witness_target_scripts.clear();
+	// Recompilation re-derives which namespaces this file imports, so the previous set of
+	// conformance-declaring files it kept loaded is dropped and rebuilt from the new parse.
+	p_script->namespace_conformance_scripts.clear();
 
 	p_script->static_variables.clear();
 
@@ -5365,6 +5368,28 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 	return OK;
 }
 
+void FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
+	// The analyzer type-checks against a conformance the moment this file's namespace or one of its
+	// imports declares it. Nothing in the emitted code references the declaring file, though, so
+	// without this it would never be loaded and the call would miss at run time: witnesses are
+	// registered by `_compile_conformance_witnesses` when the *declaring* script compiles. Load each
+	// one through the cache (which resolves compile cycles via the owner) and keep it alive for as
+	// long as this script can dispatch through it.
+	const String source_file = p_script->get_path();
+	for (const String &conformance_path : parser->get_namespace_conformance_dependencies()) {
+		if (conformance_path == source_file) {
+			continue;
+		}
+		Error load_err = OK;
+		const Ref<FoundryScript> conformance_script = FSCache::get_full_script(conformance_path, load_err, source_file);
+		// A conformance library that fails to load is reported by its own compilation; this script is
+		// still valid, so keep compiling rather than failing it for a dependency's error.
+		if (load_err == OK && conformance_script.is_valid() && !p_script->namespace_conformance_scripts.has(conformance_script)) {
+			p_script->namespace_conformance_scripts.push_back(conformance_script);
+		}
+	}
+}
+
 Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, bool p_keep_state) {
 	err_line = -1;
 	err_column = -1;
@@ -5398,6 +5423,8 @@ Error FSCompiler::compile(const FSParser *p_parser, FoundryScript *p_script, boo
 	if (err) {
 		return err;
 	}
+
+	_load_namespace_conformance_scripts(main_script);
 
 	ScriptLambdaInfo new_lambda_info = _get_script_lambda_replacement_info(p_script);
 

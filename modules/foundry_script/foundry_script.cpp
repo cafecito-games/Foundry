@@ -3104,6 +3104,7 @@ void FSLanguage::finish() {
 	finishing = true;
 
 	clear_global_annotations();
+	clear_conformance_files();
 
 	// Clear the cache before parsing the script_list
 	FSCache::clear();
@@ -3849,42 +3850,66 @@ String FSLanguage::_get_global_class_name(const String &p_path, String *r_base_t
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
+// Parses `p_path` into `r_parser` for the cross-file declaration indexes, and reports the root class
+// on success.
+//
+// Like `get_global_class_name`, this must not rely on the analyzer: these declarations are indexed
+// before dependencies are guaranteed to be resolvable. Unlike class-name extraction, a file that
+// fails to parse is not indexed: a broken source cannot be a reliable declaration library, and
+// indexing partial declarations would surface spurious duplicate-identity collisions. Only the
+// syntactic parse is consulted (the analyzer is not run), so a file with valid declarations but
+// unrelated analyzer errors is still indexed. The full body must be parsed because annotation and
+// conformance declarations are root body declarations; the class-name fast path (which skips the
+// body) would never see them.
+static const FSParser::ClassNode *_parse_indexed_declarations(const String &p_path, FSParser &r_parser) {
+	Error err = OK;
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ, &err);
+	if (err) {
+		return nullptr;
+	}
+	if (r_parser.parse(file->get_as_utf8_string(), p_path, false, true) != OK) {
+		return nullptr;
+	}
+	return r_parser.get_tree();
+}
+
+static void _collect_global_annotations(const FSParser::ClassNode *p_root, List<StringName> *r_annotations) {
+	for (const FSParser::AnnotationDeclarationNode *declaration : p_root->annotation_declarations) {
+		if (declaration->identifier == nullptr || declaration->qualified_name.is_empty()) {
+			continue;
+		}
+		r_annotations->push_back(StringName(declaration->qualified_name));
+	}
+}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+
 void FSLanguage::get_global_annotations(const String &p_path, List<StringName> *r_annotations) const {
 	ERR_FAIL_NULL(r_annotations);
 
 #ifdef FOUNDRY_SCRIPT_NO_FRONTEND
 	return;
 #else
-	Error err = OK;
-	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ, &err);
-	if (err) {
-		return;
-	}
-
-	// Like `get_global_class_name`, this must not rely on the analyzer: annotation declarations
-	// are indexed before dependencies are guaranteed to be resolvable. Unlike class-name
-	// extraction, a file that fails to parse is not indexed: a broken source cannot be a
-	// reliable annotation library, and indexing partial declarations would surface spurious
-	// duplicate-identity collisions. Only the syntactic parse is consulted (the analyzer is not
-	// run), so a file with valid declarations but unrelated analyzer errors is still indexed.
-	// The full body must be parsed because annotation declarations are root body declarations;
-	// the class-name fast path (which skips the body) would never see them.
 	FSParser parser;
-	if (parser.parse(file->get_as_utf8_string(), p_path, false, true) != OK) {
-		return;
-	}
-
-	const FSParser::ClassNode *root = parser.get_tree();
+	const FSParser::ClassNode *root = _parse_indexed_declarations(p_path, parser);
 	if (root == nullptr) {
 		return;
 	}
+	_collect_global_annotations(root, r_annotations);
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+}
 
-	for (const FSParser::AnnotationDeclarationNode *declaration : root->annotation_declarations) {
-		if (declaration->identifier == nullptr || declaration->qualified_name.is_empty()) {
-			continue;
-		}
-		r_annotations->push_back(StringName(declaration->qualified_name));
+bool FSLanguage::get_declared_conformance_namespace(const String &p_path, String &r_namespace) const {
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	return false;
+#else
+	FSParser parser;
+	const FSParser::ClassNode *root = _parse_indexed_declarations(p_path, parser);
+	if (root == nullptr || root->conformances.is_empty()) {
+		return false;
 	}
+	r_namespace = root->namespace_name;
+	return true;
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 }
 
@@ -3913,17 +3938,90 @@ void FSLanguage::replace_global_annotations(const String &p_path, const List<Str
 	}
 }
 
-void FSLanguage::update_global_class_annotations(const String &p_search_path, const String &p_target_path) {
+void FSLanguage::update_global_declaration_index(const String &p_search_path, const String &p_target_path) {
 	// The file may have moved: drop the old path's entries before re-indexing the new one.
 	if (p_search_path != p_target_path) {
 		remove_global_annotations_by_path(p_search_path);
+		remove_conformance_file(p_search_path);
 	}
 
-	// `get_global_annotations` indexes nothing for a path that no longer exists or fails to parse,
-	// so a removed/renamed file collapses to an empty replacement, dropping its stale entries.
+	// A path that no longer exists or fails to parse yields no declarations, so a removed/renamed
+	// file collapses to an empty replacement, dropping its stale entries.
 	List<StringName> annotations;
-	get_global_annotations(p_target_path, &annotations);
+	String conformance_namespace;
+	bool declares_conformances = false;
+
+#ifndef FOUNDRY_SCRIPT_NO_FRONTEND
+	// One parse feeds every index built from this file's syntactic declarations; the editor
+	// file-system scan calls this for every `.fs` file in the project.
+	FSParser parser;
+	const FSParser::ClassNode *root = _parse_indexed_declarations(p_target_path, parser);
+	if (root != nullptr) {
+		_collect_global_annotations(root, &annotations);
+		declares_conformances = !root->conformances.is_empty();
+		conformance_namespace = root->namespace_name;
+	}
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+
 	replace_global_annotations(p_target_path, annotations);
+	if (declares_conformances) {
+		add_conformance_file(p_target_path, conformance_namespace);
+	} else {
+		remove_conformance_file(p_target_path);
+	}
+}
+
+void FSLanguage::add_conformance_file(const String &p_path, const String &p_namespace) {
+	MutexLock lock(conformance_index_mutex);
+
+	const String *previous_namespace = conformance_namespace_by_file.getptr(p_path);
+	if (previous_namespace != nullptr) {
+		if (*previous_namespace == p_namespace) {
+			return;
+		}
+		Vector<String> *previous_files = conformance_files_by_namespace.getptr(*previous_namespace);
+		if (previous_files != nullptr) {
+			previous_files->erase(p_path);
+			if (previous_files->is_empty()) {
+				conformance_files_by_namespace.erase(*previous_namespace);
+			}
+		}
+	}
+
+	conformance_namespace_by_file[p_path] = p_namespace;
+	Vector<String> &files = conformance_files_by_namespace[p_namespace];
+	if (!files.has(p_path)) {
+		files.push_back(p_path);
+	}
+}
+
+void FSLanguage::remove_conformance_file(const String &p_path) {
+	MutexLock lock(conformance_index_mutex);
+
+	const String *declared_namespace = conformance_namespace_by_file.getptr(p_path);
+	if (declared_namespace == nullptr) {
+		return;
+	}
+	Vector<String> *files = conformance_files_by_namespace.getptr(*declared_namespace);
+	if (files != nullptr) {
+		files->erase(p_path);
+		if (files->is_empty()) {
+			conformance_files_by_namespace.erase(*declared_namespace);
+		}
+	}
+	conformance_namespace_by_file.erase(p_path);
+}
+
+void FSLanguage::clear_conformance_files() {
+	MutexLock lock(conformance_index_mutex);
+	conformance_files_by_namespace.clear();
+	conformance_namespace_by_file.clear();
+}
+
+Vector<String> FSLanguage::get_conformance_files_in_namespace(const String &p_namespace) const {
+	MutexLock lock(conformance_index_mutex);
+	const Vector<String> *files = conformance_files_by_namespace.getptr(p_namespace);
+	return files == nullptr ? Vector<String>() : *files;
 }
 
 #ifdef TOOLS_ENABLED

@@ -568,6 +568,11 @@ private:
 	HashMap<StringName, FSParser::DataType> conformance_trait_substitution(FSParser::ClassNode *p_trait,
 			const FSParser::ClassNode::TraitUse &p_trait_use);
 	FSParser::FunctionNode *find_static_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method);
+	// True when a retroactive conformance supplies `p_method` for `p_target_type` but this file does
+	// not load its declaring file, reporting where it was declared. Lets an unresolved call say why
+	// it cannot be typed instead of passing analysis and missing at run time.
+	bool find_hidden_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method,
+			String &r_source_file, StringName &r_trait_name);
 	bool find_trait_implementation(FSParser::ClassNode *p_class, const StringName &p_function_name,
 			TraitMethodImplementation &r_implementation);
 	HashMap<StringName, FSParser::DataType> trait_type_argument_substitution(FSParser::ClassNode *p_class, FSParser::ClassNode *p_trait);

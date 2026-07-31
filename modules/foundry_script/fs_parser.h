@@ -2325,6 +2325,10 @@ public:
 
 	const List<ParserError> &get_errors() const { return errors; }
 	List<String> get_dependencies() const;
+	// The files this one loads solely because they declare retroactive conformances in its own
+	// namespace or in a namespace it imports. Included in `get_dependencies()`; reported separately
+	// so the compiler can load exactly these at run time, where nothing else references them.
+	List<String> get_namespace_conformance_dependencies() const;
 
 #if defined(DEBUG_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_FRONTEND)
 	static void update_project_settings();

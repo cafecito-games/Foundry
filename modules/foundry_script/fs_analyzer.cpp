@@ -6582,7 +6582,22 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 
 		bool found = false;
 
-		if (base_type.kind == FSParser::DataType::ENUM) {
+		// An unresolved call whose name a retroactive conformance does supply — in a file this one
+		// does not load — is rejected here instead of being left to a run-time member miss. The
+		// conformance is real and the fix is concrete, so naming both beats accepting the call and
+		// failing the first time the line runs.
+		if (!p_call->is_super) {
+			String hidden_conformance_source;
+			StringName hidden_conformance_trait;
+			if (find_hidden_conformance_witness(base_type, p_call->function_name, hidden_conformance_source, hidden_conformance_trait)) {
+				push_error(vformat(R"*(Cannot call "%s()" on "%s": it is supplied by the retroactive conformance to trait "%s" declared in "%s", which this file does not load. Import that file's namespace, or preload it.)*",
+								   p_call->function_name, base_type.to_string(), hidden_conformance_trait, hidden_conformance_source),
+						p_call->callee != nullptr ? p_call->callee : p_call);
+				found = true;
+			}
+		}
+
+		if (!found && base_type.kind == FSParser::DataType::ENUM) {
 			if (!base_type.is_meta_type) {
 				push_error(vformat(R"*(Function "%s()" does not exist for enum value "%s".)*",
 								   p_call->function_name, base_type.enum_type),
@@ -6595,7 +6610,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 				push_error(vformat(R"*(The native enum "%s" does not behave like Dictionary and does not have methods of its own.)*", base_type.enum_type), p_call->callee);
 			}
 			found = true;
-		} else if (!p_call->is_super && callee_type != FSParser::Node::NONE) { // Check if the name exists as something else.
+		} else if (!found && !p_call->is_super && callee_type != FSParser::Node::NONE) { // Check if the name exists as something else.
 			FSParser::IdentifierNode *callee_id;
 			if (callee_type == FSParser::Node::IDENTIFIER) {
 				callee_id = static_cast<FSParser::IdentifierNode *>(p_call->callee);
@@ -6807,6 +6822,20 @@ bool FSAnalyzer::validate_bootstrap_namespace_import(
 			if (!_bootstrap_path_is_within_root(path, bootstrap_allowed_dependency_root)) {
 				push_error(vformat(R"(Build task bootstrap cannot import namespace "%s"; annotation "%s" from "%s" is outside the provider bootstrap root "%s".)",
 								   p_import, annotation, path, bootstrap_allowed_dependency_root),
+						parser->head);
+				return false;
+			}
+		}
+	}
+
+	if (language != nullptr) {
+		// A conformance-only file exports nothing nameable, so it is reached purely by importing its
+		// namespace — which for a bootstrap means it is loaded and must satisfy the same root rule.
+		for (const String &conformance_path : language->get_conformance_files_in_namespace(p_import)) {
+			found_namespace_member = true;
+			if (!_bootstrap_path_is_within_root(conformance_path, bootstrap_allowed_dependency_root)) {
+				push_error(vformat(R"(Build task bootstrap cannot import namespace "%s"; retroactive conformance from "%s" is outside the provider bootstrap root "%s".)",
+								   p_import, conformance_path, bootstrap_allowed_dependency_root),
 						parser->head);
 				return false;
 			}
@@ -8449,11 +8478,13 @@ Error FSAnalyzer::validate_imports() {
 			continue;
 		}
 
-		// A namespace is a valid import target when it exposes any global class/trait or any
-		// custom annotation declaration. Annotation-only libraries declare no `class_name`, so
-		// they would otherwise be invisible to import validation.
+		// A namespace is a valid import target when it exposes any global class/trait, any custom
+		// annotation declaration, or any retroactive conformance. Annotation-only and
+		// conformance-only libraries declare no `class_name`, so they would otherwise be invisible
+		// to import validation — and importing the namespace is the only way to reach them.
 		if (!_namespace_exists_in_global_classes(global_classes, import) &&
-				!FSLanguage::get_singleton()->namespace_has_annotations(import)) {
+				!FSLanguage::get_singleton()->namespace_has_annotations(import) &&
+				FSLanguage::get_singleton()->get_conformance_files_in_namespace(import).is_empty()) {
 			push_error(vformat(R"(Could not find imported namespace "%s".)", import), parser->head);
 		}
 	}

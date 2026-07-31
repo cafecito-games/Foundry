@@ -1,0 +1,6 @@
+FS_TEST_OK
+~~ WARNING at line 19: (UNSAFE_METHOD_ACCESS) The method "gadget()" is not present on the inferred type "RtcNsWidget" (but may be present on a subtype).
+true
+gadget:widget
+gadget:widget
+gadget:widget

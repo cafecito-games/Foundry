@@ -1142,7 +1142,55 @@ List<String> FSParser::get_dependencies() const {
 		}
 	}
 
+	for (const String &conformance_path : get_namespace_conformance_dependencies()) {
+		add_dependency(conformance_path);
+	}
+
 	return dependencies;
+}
+
+List<String> FSParser::get_namespace_conformance_dependencies() const {
+	// A retroactive conformance takes effect for code that loads its declaring file. A conformance-only
+	// file exports no global class, so name resolution alone never reaches it — which is why an
+	// `import` of the namespace it lives in is what establishes the edge, and why a file's own
+	// namespace counts as implicitly imported (the same rule short names and custom annotations
+	// follow). The project-wide index is the only thing that knows such a file exists; it is filled by
+	// the same file-system scan that indexes global classes.
+	//
+	// The global namespace is deliberately excluded. It has no `import` syntax, so membership in it is
+	// not a choice a file makes — every file with no `namespace` declaration is in it. Treating it as
+	// implicitly imported would make every script in a project load every other one that happens to
+	// declare a conformance, whatever else that file does. An unnamespaced conformance is therefore
+	// reached only by loading its declaring file explicitly.
+	List<String> conformance_paths;
+	if (head == nullptr) {
+		return conformance_paths;
+	}
+	FSLanguage *language = FSLanguage::get_singleton();
+	if (language == nullptr) {
+		return conformance_paths;
+	}
+
+	HashSet<String> seen_namespaces;
+	auto collect_namespace = [&](const String &p_namespace) {
+		if (p_namespace.is_empty() || seen_namespaces.has(p_namespace)) {
+			return;
+		}
+		seen_namespaces.insert(p_namespace);
+		for (const String &path : language->get_conformance_files_in_namespace(p_namespace)) {
+			// A file never depends on itself, and a conformance it declares is already registered by
+			// its own analysis.
+			if (path != script_path) {
+				conformance_paths.push_back(path);
+			}
+		}
+	};
+
+	collect_namespace(head->namespace_name);
+	for (const String &import : head->imports) {
+		collect_namespace(import);
+	}
+	return conformance_paths;
 }
 
 FSParser::ClassNode *FSParser::find_class(const String &p_qualified_name) const {
