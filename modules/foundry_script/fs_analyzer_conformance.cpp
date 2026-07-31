@@ -199,6 +199,43 @@ HashMap<StringName, FSParser::DataType> FSAnalyzer::conformance_trait_substituti
 	return bindings;
 }
 
+FSAnalyzer::ConformanceVisibility::ConformanceVisibility(FSAnalyzer *p_analyzer) {
+	analyzer = p_analyzer;
+}
+
+bool FSAnalyzer::ConformanceVisibility::can_see(const String &p_source_file) const {
+	if (analyzer == nullptr || analyzer->parser == nullptr || p_source_file.is_empty()) {
+		return true;
+	}
+	if (p_source_file == analyzer->parser->script_path || visible_files.has(p_source_file)) {
+		return true;
+	}
+
+	// Breadth-first over the dependency graph the analysis has resolved so far. Every file reached on
+	// the way is a dependency too, so the whole visited set is memoized, not just the hit.
+	List<FSParser *> pending;
+	HashSet<const FSParser *> seen;
+	pending.push_back(analyzer->parser);
+	seen.insert(analyzer->parser);
+	bool found = false;
+	while (!pending.is_empty()) {
+		FSParser *current = pending.front()->get();
+		pending.pop_front();
+		for (const KeyValue<String, Ref<FSParserRef>> &dependency : current->get_depended_parsers()) {
+			visible_files.insert(dependency.key);
+			if (dependency.key == p_source_file) {
+				found = true;
+			}
+			FSParser *dependency_parser = dependency.value.is_valid() ? dependency.value->get_parser() : nullptr;
+			if (dependency_parser != nullptr && !seen.has(dependency_parser)) {
+				seen.insert(dependency_parser);
+				pending.push_back(dependency_parser);
+			}
+		}
+	}
+	return found;
+}
+
 FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method) {
 	if (p_method == StringName()) {
 		return nullptr;

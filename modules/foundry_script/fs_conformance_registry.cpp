@@ -36,6 +36,20 @@
 #include "core/object/class_db.h"
 
 FSConformanceRegistry *FSConformanceRegistry::singleton = nullptr;
+thread_local const FSConformanceRegistry::Visibility *FSConformanceRegistry::active_visibility = nullptr;
+
+FSConformanceRegistry::ScopedVisibility::ScopedVisibility(const Visibility *p_visibility) {
+	previous = active_visibility;
+	active_visibility = p_visibility;
+}
+
+FSConformanceRegistry::ScopedVisibility::~ScopedVisibility() {
+	active_visibility = previous;
+}
+
+bool FSConformanceRegistry::_is_visible(const String &p_source_file) {
+	return active_visibility == nullptr || active_visibility->can_see(p_source_file);
+}
 
 bool FSConformanceRegistry::validate_runtime_conformance_target(
 		const RuntimeConformance &p_conformance,
@@ -301,8 +315,11 @@ bool FSConformanceRegistry::has_conformance(const String &p_target_key, const St
 	}
 	MutexLock lock(mutex);
 	const HashMap<StringName, String> *traits = index.getptr(p_target_key);
-	if (traits != nullptr && traits->has(p_trait_name)) {
-		return true;
+	if (traits != nullptr) {
+		const String *source_file = traits->getptr(p_trait_name);
+		if (source_file != nullptr && _is_visible(*source_file)) {
+			return true;
+		}
 	}
 	if (!p_include_runtime) {
 		return false;
@@ -335,8 +352,11 @@ bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_cla
 	// subclass instance (e.g. a `Sprite2D` satisfies `extend Node2D uses ...`).
 	for (StringName cursor = p_native_class; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
 		const HashMap<StringName, String> *traits = index.getptr(String(cursor));
-		if (traits != nullptr && traits->has(p_trait_name)) {
-			return true;
+		if (traits != nullptr) {
+			const String *source_file = traits->getptr(p_trait_name);
+			if (source_file != nullptr && _is_visible(*source_file)) {
+				return true;
+			}
 		}
 		if (p_include_runtime) {
 			const HashMap<StringName, String> *runtime_traits =
@@ -366,6 +386,9 @@ String FSConformanceRegistry::get_conformance_source(const String &p_target_key,
 FSConformanceRegistry::WitnessMap FSConformanceRegistry::get_witnesses(const String &p_target_key, const StringName &p_trait_name) const {
 	MutexLock lock(mutex);
 	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		if (!_is_visible(file_entry.key)) {
+			continue;
+		}
 		for (const Conformance &conformance : file_entry.value) {
 			if (conformance.trait_name != p_trait_name) {
 				continue;
@@ -413,6 +436,9 @@ bool FSConformanceRegistry::find_witness_location(const String &p_target_fqcn, c
 	}
 	MutexLock lock(mutex);
 	for (const KeyValue<String, Vector<Conformance>> &file_entry : conformances_by_file) {
+		if (!_is_visible(file_entry.key)) {
+			continue;
+		}
 		for (const Conformance &conformance : file_entry.value) {
 			if (conformance.conformance_index < 0 || conformance.target_fqcn != p_target_fqcn ||
 					!conformance.witnesses.has(p_method)) {

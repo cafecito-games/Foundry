@@ -13012,11 +13012,16 @@ void FSAnalyzer::ensure_autoload_index_current() {
 	autoload_index_settings_hash = settings_hash;
 }
 
+// Every public entry point scopes conformance visibility to this file and its dependencies for the
+// duration of its work, because a parser can be raised one phase at a time rather than through
+// `analyze()`.
 Error FSAnalyzer::resolve_inheritance() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	return run_phase_inheritance_resolution();
 }
 
 Error FSAnalyzer::resolve_interface() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	Error err = run_phase_interface_and_member_surface();
 	if (err) {
 		return err;
@@ -13025,6 +13030,7 @@ Error FSAnalyzer::resolve_interface() {
 }
 
 Error FSAnalyzer::resolve_body() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	Error err = run_phase_body_expression_callable_signal();
 	if (err) {
 		return err;
@@ -13039,6 +13045,7 @@ Error FSAnalyzer::resolve_body() {
 }
 
 Error FSAnalyzer::resolve_dependencies() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	return run_phase_final_diagnostics_and_dependencies();
 }
 
@@ -13048,6 +13055,7 @@ Error FSAnalyzer::resolve_dependencies() {
 // 5 Body/expression/callable/signal analysis -> 6 Flow/finality invariants ->
 // 7 Conformance witness bodies -> 8 Final diagnostics and dependency finalization.
 Error FSAnalyzer::analyze() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	Error err = run_phase_preflight();
 	if (err) {
 		return err;
@@ -13112,6 +13120,7 @@ bool FSAnalyzer::signature_type_involves_type_parameter(const FSParser::DataType
 FSAnalyzer::FSAnalyzer(FSParser *p_parser) :
 		parser(p_parser),
 		dependency_parser_access(this),
+		conformance_visibility(this),
 		flow_finality(this),
 		call_site_validation(this) {
 	strict_null_checks = GLOBAL_GET_CACHED(bool, "debug/foundry_script/analysis/strict_null_checks");
