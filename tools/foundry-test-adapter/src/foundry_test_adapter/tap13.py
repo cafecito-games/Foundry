@@ -177,7 +177,11 @@ def validate_report(
     parsed = _parse_report(path, text, violations)
     _check_lifecycle(path, parsed, violations)
     if discovery is not None and not suppress_selection:
-        _check_selection(path, parsed, discovery, selections, violations)
+        # Cross-artifact checks need a successfully parsed plan and point set; running
+        # them over a structurally broken report would cascade a second diagnostic out
+        # of one defect.
+        if not violations:
+            _check_selection(path, parsed, discovery, selections, violations)
     elif context_invalid:
         violations.append(
             Violation(

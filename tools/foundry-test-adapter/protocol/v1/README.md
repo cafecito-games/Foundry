@@ -151,7 +151,8 @@ TAP version 13
 <point N and YAML block>
 ```
 
-The first three lines are exact once the plan is known. V1 permits no late plan, `TODO`, pragmas,
+The first three lines are exact once the plan is known. A plan or point number is at most nine
+decimal digits; a longer digit run is malformed structure, not a very large count. V1 permits no late plan, `TODO`, pragmas,
 nested TAP, or unrelated top-level content. Point numbers are contiguous from `1` through `N`. Labels
 are non-empty single-line display text, may collide, never establish identity, and cannot end in text
 that parses as a TAP directive. A skipped point is `ok N - label # SKIP reason` with a non-empty
