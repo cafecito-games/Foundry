@@ -655,9 +655,24 @@ TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges surv
 	const Ref<FoundryScript> conformance_library = compile_bytecode_test_source(
 			"class Marker:\n"
 			"\tpass\n");
+	// The consumer declares a conformance of its own too, so the failure path below can show that a
+	// script which fails to load stops supplying witnesses to the rest of the process.
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"trait Pingable:\n"
+			"\tabstract func ping() -> int\n"
+			"\n"
+			"class Gadget:\n"
+			"\tvar power: int = 21\n"
+			"\n"
+			"extend Gadget uses Pingable:\n"
+			"\tfunc ping() -> int:\n"
+			"\t\treturn power * 2\n"
+			"\n"
 			"func run() -> int:\n"
 			"\treturn 1\n");
+	const String consumer_path = original->get_script_path();
+	const String gadget_key = original->get_subclasses().find(SNAME("Gadget"))->value->get_fully_qualified_name();
+	BytecodeConformanceRegistryRestore registry_restore(consumer_path);
 	TestFSBytecodeScriptAccessor::add_namespace_conformance_script(original, conformance_library);
 
 	FSBytecodeExporter exporter;
@@ -693,8 +708,10 @@ TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges surv
 	CHECK(failing_loader.load_full(buffer, restored_without_library) != OK);
 	ERR_PRINT_ON;
 	// A caller that only checks `is_valid()` — the resource loader among them — must not be handed
-	// this script despite the error.
+	// this script despite the error, nor may the witnesses decoded earlier in that same load stay
+	// registered for the rest of the process to dispatch through.
 	CHECK_FALSE(restored_without_library->is_valid());
+	CHECK(FSConformanceRegistry::get_singleton()->find_witness_function(gadget_key, SNAME("ping")) == nullptr);
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register with the registry") {

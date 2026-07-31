@@ -2152,6 +2152,12 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 			for (FoundryScript *loaded_class : local_classes) {
 				loaded_class->valid = false;
 			}
+			// The witness section was decoded earlier in this same load, so this script is already
+			// supplying witnesses process-wide. A script that failed to load must not.
+			if (!p_script->registered_conformance_source.is_empty()) {
+				FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(p_script->registered_conformance_source);
+				p_script->registered_conformance_source = String();
+			}
 			ERR_FAIL_V_MSG(ERR_CANT_RESOLVE,
 					vformat("Cannot load compiled script '%s': could not load '%s', which declares a retroactive conformance it uses through its namespace.",
 							script_path, conformance_path));

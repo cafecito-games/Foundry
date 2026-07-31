@@ -5378,6 +5378,17 @@ void FSCompiler::_invalidate_compiled_classes(FoundryScript *p_script) {
 	}
 }
 
+void FSCompiler::_withdraw_runtime_witnesses(FoundryScript *p_script) {
+	// A script that failed to compile must not keep supplying witnesses to the rest of the process.
+	// The registry only borrows the compiled functions, so dropping the registration here is enough;
+	// the script still owns them and frees them on its next `_prepare_compilation` or `clear()`.
+	if (p_script == nullptr || p_script->registered_conformance_source.is_empty()) {
+		return;
+	}
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(p_script->registered_conformance_source);
+	p_script->registered_conformance_source = String();
+}
+
 Error FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
 	// The analyzer type-checks against a conformance the moment this file's namespace or one of its
 	// imports declares it. Nothing in the emitted code references the declaring file, though, so
@@ -5401,6 +5412,7 @@ Error FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
 			// `is_valid()` (the resource loader among them) would cache and hand out this script
 			// regardless of the error returned here. Take that back before returning.
 			_invalidate_compiled_classes(p_script);
+			_withdraw_runtime_witnesses(p_script);
 			_set_error(vformat(R"(Could not load "%s", which declares a retroactive conformance this file uses through its namespace.)", conformance_path), nullptr);
 			return load_err != OK ? load_err : ERR_CANT_RESOLVE;
 		}
