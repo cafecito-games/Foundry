@@ -3328,6 +3328,17 @@ func f():
 			check_semantic_token(tokens, 3, 2, 2, 4, LSP::SemanticTokenType::KEYWORD); // pass
 		}
 
+		SUBCASE("modulo after a keyword-named attribute does not open a node path") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_attribute_modulo.fs");
+			text_document->didOpen(make_did_open_params(uri, "var value = self.class % self.size\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			REQUIRE_EQ(tokens.size(), 3);
+			check_semantic_token(tokens, 0, 0, 0, 3, LSP::SemanticTokenType::KEYWORD); // var
+			check_semantic_token(tokens, 1, 0, 12, 4, LSP::SemanticTokenType::KEYWORD); // self
+			check_semantic_token(tokens, 2, 0, 25, 4, LSP::SemanticTokenType::KEYWORD); // self
+		}
+
 		SUBCASE("an attribute split across lines is not a keyword") {
 			// A grouping construct lets an attribute continue on the next line; the intervening
 			// layout tokens must not lose the `.` that makes `class` an attribute name.

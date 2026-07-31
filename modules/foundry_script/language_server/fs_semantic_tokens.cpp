@@ -248,7 +248,10 @@ Vector<FSSemanticTokens::Span> FSSemanticTokens::collect(const String &p_source,
 
 		const NodePathState previous_path_state = node_path_state;
 		node_path_state = next_node_path_state(previous_path_state, token, previous_can_precede_bin_op);
-		previous_can_precede_bin_op = token.can_precede_bin_op();
+		// A keyword spelled in attribute position is an ordinary attribute name, so it ends a value
+		// just like an identifier would. Without this, the `%` in `self.class % 2` would look like a
+		// unique-name path opener. Mirrors the tokenizer's own `last_token_is_keyword_attribute`.
+		previous_can_precede_bin_op = token.can_precede_bin_op() || (after_period && token.is_node_name());
 
 		if (!is_reserved_word(token.type)) {
 			continue;
