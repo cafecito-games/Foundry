@@ -339,8 +339,17 @@ void EditorFileSystem::_first_scan_filesystem() {
 	// Removing invalid global class to prevent having invalid paths in ScriptServer.
 	bool save_scripts = _remove_invalid_global_class_names(existing_class_names);
 
-	// If a global class is found or removed, we sync global_script_class_cache.cfg with the ScriptServer
-	if (!existing_class_names.is_empty() || save_scripts) {
+	// Declarations that export no global class (retroactive conformances) are restored from the same
+	// cache but are not covered by the class reconciliation above, and a project may have nothing but
+	// those. Evict the ones whose file is gone before deciding whether the cache needs rewriting, so
+	// a deleted declaration library cannot survive a scan that found no class changes.
+	ScriptServer::prune_missing_global_conformances();
+	const bool conformances_changed =
+			ProjectSettings::get_singleton()->get_global_conformance_list() != ScriptServer::get_global_conformances();
+
+	// If a global class or a cross-file declaration is found or removed, we sync
+	// global_script_class_cache.cfg with the ScriptServer
+	if (!existing_class_names.is_empty() || save_scripts || conformances_changed) {
 		EditorNode::get_editor_data().script_class_save_global_classes();
 	}
 
