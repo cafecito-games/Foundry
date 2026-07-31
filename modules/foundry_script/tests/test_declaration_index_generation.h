@@ -166,9 +166,12 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a full declaration-index clear 
 	CHECK(TestFSDeclarationIndexAccessor::commit(fixture.language, path, later_token, declaration_index_annotations(SNAME("fsg.cleared")), true, "fsg.cleared"));
 }
 
-TEST_CASE("[Modules][FoundryScript][Conformance] a superseded rename commit publishes neither path") {
-	// A rename publishes a removal at the old path and an addition at the new one. If only half of it
-	// could land, a superseded rename would erase entries a newer refresh had just written.
+TEST_CASE("[Modules][FoundryScript][Conformance] a rename keeps the side a newer refresh owns") {
+	// A rename publishes a removal at the old path and an addition at the new one, each guarded by
+	// that path's own token. When a newer refresh takes over the old path — the file was recreated
+	// there — the rename must not erase what that refresh wrote, but its own reading of the new path
+	// is still the newest one anybody has, and dropping it would leave the new path unindexed with no
+	// other refresh in line to publish it.
 	DeclarationIndexGenerationFixture fixture;
 
 	const String old_path = "res://fsg_old.fs";
@@ -185,14 +188,69 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a superseded rename commit publ
 	const uint64_t superseding_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
 	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, old_path, superseding_token, declaration_index_annotations(SNAME("fsg.recreated")), true, "fsg.recreated"));
 
-	CHECK_FALSE(TestFSDeclarationIndexAccessor::commit_rename(fixture.language, old_path, rename_search_token, new_path, rename_target_token, declaration_index_annotations(SNAME("fsg.moved")), true, "fsg.moved"));
+	CHECK(TestFSDeclarationIndexAccessor::commit_rename(fixture.language, old_path, rename_search_token, new_path, rename_target_token, declaration_index_annotations(SNAME("fsg.moved")), true, "fsg.moved"));
 
-	// The superseding refresh's entries stand, and the rename's target was never published.
-	CHECK(fixture.language->is_global_annotation(SNAME("fsg.recreated")));
+	// The superseding refresh's entries at the old path stand: the rename's removal was dropped.
 	CHECK_EQ(fixture.language->get_global_annotation_path(SNAME("fsg.recreated")), old_path);
-	CHECK_FALSE(fixture.language->is_global_annotation(SNAME("fsg.moved")));
 	CHECK(fixture.language->get_conformance_files_in_namespace("fsg.recreated").has(old_path));
-	CHECK(fixture.language->get_conformance_files_in_namespace("fsg.moved").is_empty());
+	// The new path is still indexed by the rename, which is the only refresh that ever read it.
+	CHECK_EQ(fixture.language->get_global_annotation_path(SNAME("fsg.moved")), new_path);
+	CHECK(fixture.language->get_conformance_files_in_namespace("fsg.moved").has(new_path));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] a superseded rename target still clears the old path") {
+	// Only the rename knows the file moved away from the old path, so its removal has to land even
+	// when a newer refresh has taken over the new path. Dropping it would strand the old path's
+	// entries with no refresh in line to remove them, and nothing rescans a path that no longer
+	// exists.
+	DeclarationIndexGenerationFixture fixture;
+
+	const String old_path = "res://fsg_stranded_old.fs";
+	const String new_path = "res://fsg_stranded_new.fs";
+
+	const uint64_t seeded_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
+	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, old_path, seeded_token, declaration_index_annotations(SNAME("fsg.stranded")), true, "fsg.stranded"));
+
+	const uint64_t rename_target_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
+	const uint64_t rename_search_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
+
+	// A newer refresh of the new path wins the race and owns the outcome for it.
+	const uint64_t superseding_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
+	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, new_path, superseding_token, declaration_index_annotations(SNAME("fsg.landed")), true, "fsg.landed"));
+
+	CHECK(TestFSDeclarationIndexAccessor::commit_rename(fixture.language, old_path, rename_search_token, new_path, rename_target_token, declaration_index_annotations(SNAME("fsg.stranded")), true, "fsg.stranded"));
+
+	// The old path is gone from both indexes, and the superseding refresh's new-path entries stand.
+	CHECK_FALSE(fixture.language->is_global_annotation(SNAME("fsg.stranded")));
+	CHECK(fixture.language->get_conformance_files_in_namespace("fsg.stranded").is_empty());
+	CHECK_EQ(fixture.language->get_global_annotation_path(SNAME("fsg.landed")), new_path);
+	CHECK(fixture.language->get_conformance_files_in_namespace("fsg.landed").has(new_path));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] a fully superseded rename publishes nothing") {
+	// Both sides taken over by newer refreshes: this one has nothing left to say.
+	DeclarationIndexGenerationFixture fixture;
+
+	const String old_path = "res://fsg_dropped_old.fs";
+	const String new_path = "res://fsg_dropped_new.fs";
+
+	const uint64_t rename_target_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
+	const uint64_t rename_search_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
+
+	const uint64_t old_token = TestFSDeclarationIndexAccessor::claim(fixture.language, old_path);
+	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, old_path, old_token, declaration_index_annotations(SNAME("fsg.kept_old")), true, "fsg.kept"));
+	const uint64_t new_token = TestFSDeclarationIndexAccessor::claim(fixture.language, new_path);
+	REQUIRE(TestFSDeclarationIndexAccessor::commit(fixture.language, new_path, new_token, declaration_index_annotations(SNAME("fsg.kept_new")), true, "fsg.kept"));
+
+	CHECK_FALSE(TestFSDeclarationIndexAccessor::commit_rename(fixture.language, old_path, rename_search_token, new_path, rename_target_token, declaration_index_annotations(SNAME("fsg.dropped")), true, "fsg.dropped"));
+
+	CHECK(fixture.language->is_global_annotation(SNAME("fsg.kept_old")));
+	CHECK(fixture.language->is_global_annotation(SNAME("fsg.kept_new")));
+	CHECK_FALSE(fixture.language->is_global_annotation(SNAME("fsg.dropped")));
+	CHECK(fixture.language->get_conformance_files_in_namespace("fsg.dropped").is_empty());
+	const Vector<String> kept = fixture.language->get_conformance_files_in_namespace("fsg.kept");
+	CHECK(kept.has(old_path));
+	CHECK(kept.has(new_path));
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] a current rename commit moves both index entries") {

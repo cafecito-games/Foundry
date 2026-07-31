@@ -3976,44 +3976,51 @@ bool FSLanguage::commit_declaration_index_refresh(const String &p_search_path, u
 	// Side effects on other subsystems are collected here and run after every lock is released.
 	List<String> cleared_conformance_files;
 
+	bool committed = false;
 	{
 		MutexLock generation_lock(declaration_index_generation_mutex);
-		if (!_is_declaration_index_token_current(p_target_path, p_target_token)) {
-			return false;
-		}
-		// A rename is all-or-nothing: if either side has been superseded, the refresh that superseded
-		// it owns the outcome, and committing half of this one would tear the two paths apart.
-		if (moved && !_is_declaration_index_token_current(p_search_path, p_search_token)) {
-			return false;
-		}
+		// Each path is guarded by its own token. A superseded path is left to the refresh that
+		// superseded it: that refresh is either the last claimant, which always commits, or is itself
+		// superseded by an even newer one, so every superseded path is published by somebody. What
+		// must not happen is dropping a side nobody else can publish — only this refresh knows the
+		// file moved away from the search path, so that removal is committed whenever the search
+		// path's own token is still current, even if the target side was superseded.
+		const bool target_current = _is_declaration_index_token_current(p_target_path, p_target_token);
+		const bool search_current = moved && _is_declaration_index_token_current(p_search_path, p_search_token);
 
-		if (moved) {
-			// The file moved, so the old path's entries go away as part of publishing the new ones.
+		if (search_current) {
+			// The file moved: the old path's entries go away.
 			remove_global_annotations_by_path(p_search_path);
 			if (_erase_conformance_file(p_search_path)) {
 				cleared_conformance_files.push_back(p_search_path);
 			}
 		}
 
-		replace_global_annotations(p_target_path, p_annotations);
-		if (p_declares_conformances) {
-			add_conformance_file(p_target_path, p_conformance_namespace);
-		} else if (_erase_conformance_file(p_target_path)) {
-			cleared_conformance_files.push_back(p_target_path);
+		if (target_current) {
+			replace_global_annotations(p_target_path, p_annotations);
+			if (p_declares_conformances) {
+				add_conformance_file(p_target_path, p_conformance_namespace);
+			} else if (_erase_conformance_file(p_target_path)) {
+				cleared_conformance_files.push_back(p_target_path);
+			}
 		}
+
+		committed = target_current || search_current;
 	}
 
 	for (const String &path : cleared_conformance_files) {
 		FSConformanceRegistry::get_singleton()->clear_file(path);
 	}
-	return true;
+	return committed;
 }
 
 void FSLanguage::update_global_declaration_index(const String &p_search_path, const String &p_target_path) {
-	// Claim before reading the file: the refresh that ends up committing is then guaranteed to have
-	// read the file no earlier than any refresh it supersedes, so the surviving index entry always
-	// describes the newest content any of the racing refreshes saw. A rename claims both paths
-	// because it publishes a removal and an addition as one unit.
+	// Claim before reading the file, so the refresh that commits is guaranteed to have read the file
+	// no earlier than any refresh it supersedes: the loser's content is never newer than the winner's
+	// at the moment the loser claimed. This is per-trigger eventual consistency, not a serialization
+	// of the disk reads themselves — an edit landing after the winner's read is picked up by the
+	// refresh that edit's own scan/notify trigger starts. A rename claims both paths because it
+	// publishes a removal at one and an addition at the other.
 	const uint64_t target_token = claim_declaration_index_refresh(p_target_path);
 	const uint64_t search_token = p_search_path == p_target_path ? target_token : claim_declaration_index_refresh(p_search_path);
 

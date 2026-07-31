@@ -902,8 +902,10 @@ class FSLanguage : public ScriptLanguage {
 	// Reserve the right to publish a refresh of `p_path`, superseding any claim already outstanding
 	// for it. Must be called before the file is read.
 	uint64_t claim_declaration_index_refresh(const String &p_path);
-	// Publish a refresh's parse results into both declaration indexes, or drop them entirely when a
-	// newer claim (or a sweep) has superseded the tokens. Returns whether the commit happened.
+	// Publish a refresh's parse results into both declaration indexes, dropping whatever a newer claim
+	// (or a sweep) has superseded. On a rename the two paths are guarded by their own tokens, so a
+	// superseded side is left to the refresh that superseded it. Returns whether anything was
+	// published.
 	bool commit_declaration_index_refresh(const String &p_search_path, uint64_t p_search_token, const String &p_target_path, uint64_t p_target_token, const List<StringName> &p_annotations, bool p_declares_conformances, const String &p_conformance_namespace);
 	// Supersede every outstanding claim for `p_path`, so a refresh already in flight cannot
 	// resurrect an entry a sweep just dropped.
