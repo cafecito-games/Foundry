@@ -53,7 +53,17 @@ public:
 	}
 };
 
+// Saves and restores the process-wide registration so a case that installs a test marshaller does
+// not clear whatever a module registered at startup for the rest of the run.
+class MarshallerScope {
+	JSONObjectMarshaller *previous = JSON::get_object_marshaller();
+
+public:
+	~MarshallerScope() { JSON::set_object_marshaller(previous); }
+};
+
 TEST_CASE("[JSONMarshal] No marshaller preserves existing output") {
+	MarshallerScope marshaller_scope;
 	JSON::set_object_marshaller(nullptr);
 
 	Object *object = memnew(Object);
@@ -64,6 +74,7 @@ TEST_CASE("[JSONMarshal] No marshaller preserves existing output") {
 }
 
 TEST_CASE("[JSONMarshal] No marshaller preserves existing output for null and freed objects") {
+	MarshallerScope marshaller_scope;
 	JSON::set_object_marshaller(nullptr);
 
 	CHECK(JSON::stringify(Variant((Object *)nullptr)) == "\"<Object#null>\"");
@@ -75,6 +86,7 @@ TEST_CASE("[JSONMarshal] No marshaller preserves existing output for null and fr
 }
 
 TEST_CASE("[JSONMarshal] Declining marshaller leaves output unchanged") {
+	MarshallerScope marshaller_scope;
 	RecordingMarshaller marshaller;
 	marshaller.should_handle = false;
 	JSON::set_object_marshaller(&marshaller);
@@ -87,10 +99,10 @@ TEST_CASE("[JSONMarshal] Declining marshaller leaves output unchanged") {
 	CHECK(result.ends_with("\""));
 
 	memdelete(object);
-	JSON::set_object_marshaller(nullptr);
 }
 
 TEST_CASE("[JSONMarshal] Marshaled tree is encoded") {
+	MarshallerScope marshaller_scope;
 	RecordingMarshaller marshaller;
 	Dictionary payload;
 	payload["level"] = 3;
@@ -105,10 +117,10 @@ TEST_CASE("[JSONMarshal] Marshaled tree is encoded") {
 	CHECK(result == "{\"level\":3,\"name\":\"Captain\"}");
 
 	memdelete(object);
-	JSON::set_object_marshaller(nullptr);
 }
 
 TEST_CASE("[JSONMarshal] Marshaled tree respects indent, sort_keys, and full_precision") {
+	MarshallerScope marshaller_scope;
 	RecordingMarshaller marshaller;
 	Dictionary payload;
 	payload["b"] = 0.12345678901234568;
@@ -122,10 +134,10 @@ TEST_CASE("[JSONMarshal] Marshaled tree respects indent, sort_keys, and full_pre
 	CHECK(result == "{\n\t\"a\": 1,\n\t\"b\": 0.12345678901234568\n}");
 
 	memdelete(object);
-	JSON::set_object_marshaller(nullptr);
 }
 
 TEST_CASE("[JSONMarshal] Nested in a container") {
+	MarshallerScope marshaller_scope;
 	RecordingMarshaller marshaller;
 	marshaller.payload = 7;
 	JSON::set_object_marshaller(&marshaller);
@@ -138,10 +150,10 @@ TEST_CASE("[JSONMarshal] Nested in a container") {
 	CHECK(result == "[7]");
 
 	memdelete(object);
-	JSON::set_object_marshaller(nullptr);
 }
 
 TEST_CASE("[JSONMarshal] Freed object encodes as null") {
+	MarshallerScope marshaller_scope;
 	RecordingMarshaller marshaller;
 	marshaller.payload = 42;
 	JSON::set_object_marshaller(&marshaller);
@@ -153,11 +165,10 @@ TEST_CASE("[JSONMarshal] Freed object encodes as null") {
 	String result = JSON::stringify(object_variant);
 	CHECK(result == "null");
 	CHECK_FALSE(marshaller.handled);
-
-	JSON::set_object_marshaller(nullptr);
 }
 
 TEST_CASE("[JSONMarshal] Object cycle is reported, not infinite-looped") {
+	MarshallerScope marshaller_scope;
 	class SelfReturningMarshaller : public JSONObjectMarshaller {
 	public:
 		Object *object = nullptr;
@@ -180,10 +191,10 @@ TEST_CASE("[JSONMarshal] Object cycle is reported, not infinite-looped") {
 	CHECK(result == "\"{...}\"");
 
 	memdelete(object);
-	JSON::set_object_marshaller(nullptr);
 }
 
 TEST_CASE("[JSONMarshal] Object-to-object marshaling chain is bounded, not unbounded") {
+	MarshallerScope marshaller_scope;
 	class ChainingMarshaller : public JSONObjectMarshaller {
 	public:
 		List<Object *> spawned;
@@ -211,7 +222,6 @@ TEST_CASE("[JSONMarshal] Object-to-object marshaling chain is bounded, not unbou
 	for (Object *spawned_object : marshaller.spawned) {
 		memdelete(spawned_object);
 	}
-	JSON::set_object_marshaller(nullptr);
 }
 
 } // namespace TestJSONMarshaller

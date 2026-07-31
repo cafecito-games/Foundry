@@ -105,6 +105,9 @@ public:
 	static Variant parse_string(const String &p_json_string);
 
 	static void set_object_marshaller(JSONObjectMarshaller *p_marshaller);
+	// Lets a caller that temporarily swaps the marshaller put the previous one back instead of
+	// clearing the process-wide registration a module installed at startup.
+	static JSONObjectMarshaller *get_object_marshaller();
 
 	_FORCE_INLINE_ static Variant from_native(const Variant &p_variant, bool p_full_objects = false) {
 		return _from_native(p_variant, p_full_objects, 0);

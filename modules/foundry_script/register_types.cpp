@@ -35,6 +35,7 @@
 #include "fs_builtin_sources.h"
 #include "fs_builtin_types.h"
 #include "fs_cache.h"
+#include "fs_json_marshal.h"
 #include "fs_parser.h"
 #include "fs_project_scripts.h"
 #include "fs_reflection.h"
@@ -80,6 +81,7 @@ FSLanguage *script_language_gd = nullptr;
 Ref<ResourceFormatLoaderFoundryScript> resource_loader_gd;
 Ref<ResourceFormatSaverFoundryScript> resource_saver_gd;
 FSCache *fs_cache = nullptr;
+static FSJsonObjectMarshaller *fs_json_object_marshaller = nullptr;
 
 #ifdef TOOLS_ENABLED
 
@@ -182,6 +184,12 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 		// Registered after `ScriptServer` exists but before languages are initialized; the global
 		// class table is rebuilt from the project at that point, and builtin globals survive it.
 		FSBuiltinTypes::register_types();
+
+		// `JSON.stringify()` consults this to encode objects conforming to the builtin
+		// `JsonSerializable` trait; the module owns the instance and `JSON` holds it as a raw
+		// non-owning pointer.
+		fs_json_object_marshaller = memnew(FSJsonObjectMarshaller);
+		JSON::set_object_marshaller(fs_json_object_marshaller);
 	}
 
 #ifdef TOOLS_ENABLED
@@ -201,6 +209,14 @@ void initialize_foundry_script_module(ModuleInitializationLevel p_level) {
 void uninitialize_foundry_script_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
 		ScriptServer::unregister_language(script_language_gd);
+
+		// Unregister before deleting: leaving a dangling pointer in `JSON` would crash any later
+		// `stringify()` call.
+		JSON::set_object_marshaller(nullptr);
+		if (fs_json_object_marshaller != nullptr) {
+			memdelete(fs_json_object_marshaller);
+			fs_json_object_marshaller = nullptr;
+		}
 
 		FSBuiltinTypes::unregister_types();
 

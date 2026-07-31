@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/json.h"
 #include "core/variant/variant.h"
 
 class Object;
@@ -51,4 +52,34 @@ public:
 	// Invokes the hook and stores its return value in `r_node`. Returns false, leaving
 	// `r_node` untouched, when the object is null or the call fails.
 	static bool call_to_json(Object *p_object, Variant &r_node);
+};
+
+// Teaches `JSON.stringify()` how to encode a Foundry Script object that conforms to the builtin
+// `JsonSerializable` trait: the object's `to_json()` is called through `FSJsonMarshal`, and the
+// `JsonNode` it returns is lowered to a plain Variant tree that core can serialize. Objects that
+// do not conform are declined, so they keep the pre-existing quoted `to_string` representation.
+class FSJsonObjectMarshaller : public JSONObjectMarshaller {
+public:
+	// Case ordinals of the builtin `JsonNode` tagged union. This is a wire contract shared with
+	// `modules/foundry_script/builtin/json_node.fs`; the two must stay in sync and must not be
+	// reordered.
+	enum Tag {
+		TAG_NULL = 0,
+		TAG_BOOL = 1,
+		TAG_INT = 2,
+		TAG_FLOAT = 3,
+		TAG_STR = 4,
+		TAG_ARRAY = 5,
+		TAG_OBJECT = 6,
+	};
+
+	// Name of the builtin trait an object must conform to for its `to_json()` to be honored.
+	static StringName serializable_trait_name();
+
+	// Lowers a `JsonNode` value (a `[tag, payload...]` read-only Array) to a plain Variant tree.
+	// Reports an error and returns false for anything that is not a well-formed node, including a
+	// tree deeper than `Variant::MAX_RECURSION_DEPTH`. Exposed for tests.
+	static bool lower_node(const Variant &p_node, Variant &r_result, int p_depth, const String &p_source_name);
+
+	virtual bool marshal_object(Object *p_object, Variant &r_result) override;
 };
