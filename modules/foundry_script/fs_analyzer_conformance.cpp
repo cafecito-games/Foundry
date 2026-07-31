@@ -359,17 +359,20 @@ bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_tar
 	}
 
 	// The base chain is walked because a conformance declared on a base stays reachable through the
-	// derived type, matching `find_static_conformance_witness` and the runtime's witness lookup. It is
-	// walked most-derived-first and stops at the first level that supplies the method, because that is
-	// the level the runtime would dispatch to (GRAMMAR.md 4.8, inheritance-chain shadowing). A
-	// *visible* witness there means the call is fine and a hidden one further up the chain is
-	// shadowed — reporting it would reject working code.
+	// derived type, matching `find_static_conformance_witness` and the runtime's witness lookup.
+	//
+	// A conformance this file *can* reach, anywhere on that chain, means the call has a well-defined
+	// meaning for this file and is left alone — whether it sits below the hidden one (shadowing it) or
+	// above (the level the call falls through to). Only a name that no reachable conformance supplies
+	// at all is reported, so the diagnostic can never take away a call that works.
 	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
 		String visible_source;
 		int visible_conformance_index = -1;
 		if (registry->find_witness_location(cursor->fqcn, p_method, visible_source, visible_conformance_index)) {
 			return false;
 		}
+	}
+	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
 		if (registry->find_hidden_witness_declaration(cursor->fqcn, p_method, r_source_file, r_trait_name)) {
 			return true;
 		}
