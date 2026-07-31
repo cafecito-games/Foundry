@@ -151,6 +151,13 @@ public:
 	// Returns every path whose cached parser would be evicted by remove_parser(p_path),
 	// including p_path itself and all transitive inverse dependents recorded in the cache.
 	static HashSet<String> collect_parser_invalidation_closure(const String &p_path);
+	// Returns every cached parser that reaches p_namespace: one whose file is in that namespace or
+	// imports it. Those are exactly the parsers whose snapshotted retroactive-conformance
+	// dependencies were derived from the namespace's conformance file set, so they are the ones a
+	// change to that set makes stale. Never-raised (EMPTY) entries are skipped: they snapshotted
+	// nothing yet and read the fresh index when they are first raised. Empty for the global
+	// namespace, which no file reaches implicitly.
+	static Vector<String> collect_parsers_reaching_namespace(const String &p_namespace);
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 	static String get_source_code(const String &p_path);
 

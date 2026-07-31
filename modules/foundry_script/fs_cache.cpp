@@ -328,6 +328,35 @@ HashSet<String> FSCache::collect_parser_invalidation_closure(const String &p_pat
 	return closure;
 }
 
+Vector<String> FSCache::collect_parsers_reaching_namespace(const String &p_namespace) {
+	Vector<String> members;
+	if (singleton == nullptr || p_namespace.is_empty()) {
+		return members;
+	}
+
+	MutexLock lock(singleton->mutex);
+	for (const KeyValue<String, FSParserRef *> &entry : singleton->parser_map) {
+		const FSParserRef *parser_ref = entry.value;
+		if (parser_ref == nullptr || parser_ref->status == FSParserRef::EMPTY) {
+			continue;
+		}
+		// Reading the ref's parser directly rather than through get_parser(), which would lazily
+		// allocate one for an entry that has none and turn this read-only sweep into a mutation.
+		const FSParser *parser = parser_ref->parser;
+		if (parser == nullptr) {
+			continue;
+		}
+		const FSParser::ClassNode *head = parser->get_tree();
+		if (head == nullptr) {
+			continue;
+		}
+		if (head->namespace_name == p_namespace || head->imports.has(p_namespace)) {
+			members.push_back(entry.key);
+		}
+	}
+	return members;
+}
+
 void FSCache::remove_parser(const String &p_path) {
 	MutexLock lock(singleton->mutex);
 

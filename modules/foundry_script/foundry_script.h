@@ -920,9 +920,18 @@ class FSLanguage : public ScriptLanguage {
 	void invalidate_all_declaration_index_claims();
 	// Must be called with `declaration_index_generation_mutex` held.
 	bool _is_declaration_index_token_current(const String &p_path, uint64_t p_token) const;
-	// Drops the conformance index entry for `p_path`, reporting whether one existed. The caller runs
-	// the registry side effect after releasing the index locks.
-	bool _erase_conformance_file(const String &p_path);
+	// Drops the conformance index entry for `p_path`, reporting whether one existed and, through
+	// `r_removed_namespace`, which namespace lost it. The caller runs the registry side effect and
+	// the namespace-change notification after releasing the index locks.
+	bool _erase_conformance_file(const String &p_path, String *r_removed_namespace = nullptr);
+	// Indexes `p_path` under `p_namespace`, appending every namespace whose file set actually changed
+	// to `r_changed_namespaces` (none when the path is re-indexed unchanged; the old and the new one
+	// when the file moved between namespaces). The caller notifies after releasing the index locks.
+	void _index_conformance_file(const String &p_path, const String &p_namespace, List<String> *r_changed_namespaces);
+	// Runs the namespace-change notification for each distinct, non-global entry. Must be called with
+	// no index lock and no generation lock held: the notification takes `FSCache::mutex`, which is
+	// always the outermost of the two (see `conformance_index_mutex`'s lock-order note).
+	void _notify_conformance_namespaces_changed(const List<String> &p_namespaces);
 
 #ifdef TESTS_ENABLED
 	friend class FSTests::TestFSDeclarationIndexAccessor;
@@ -1192,6 +1201,12 @@ public:
 	// client-managed LSP documents in that affected set so diagnostics refresh after a
 	// dependency edit (save or external disk change).
 	void notify_disk_source_changed(const String &p_path);
+	// Drops every cached parser that reaches `p_namespace` — a file in it, or one that imports it —
+	// along with their transitive dependents, then re-parses the affected client-managed LSP
+	// documents. A file's retroactive-conformance reach is snapshotted from the project index when it
+	// parses, so a parser cached before the namespace's conformance file set changed holds no
+	// dependency edge to the added file and would otherwise never be invalidated.
+	void notify_conformance_namespace_changed(const String &p_namespace);
 #endif
 	// Register a custom annotation declaration under its canonical identity for `p_path`.
 	void add_global_annotation(const StringName &p_qualified_name, const String &p_path);

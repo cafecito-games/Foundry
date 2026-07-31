@@ -601,6 +601,32 @@ void FSLanguageProtocol::reparse_open_scripts(const HashSet<String> &p_paths) {
 	latest_client_id = previous_latest_client_id;
 }
 
+HashSet<String> FSLanguageProtocol::collect_open_scripts_reaching_namespace(const String &p_namespace) const {
+	HashSet<String> paths;
+	if (p_namespace.is_empty()) {
+		return paths;
+	}
+
+	for (const KeyValue<int, Ref<LSPeer>> &client : clients) {
+		if (client.value.is_null()) {
+			continue;
+		}
+		for (const KeyValue<String, ExtendFSParser *> &result : client.value->parse_results) {
+			if (result.value == nullptr) {
+				continue;
+			}
+			const FSParser::ClassNode *head = result.value->get_tree();
+			if (head == nullptr) {
+				continue;
+			}
+			if (head->namespace_name == p_namespace || head->imports.has(p_namespace)) {
+				paths.insert(result.key);
+			}
+		}
+	}
+	return paths;
+}
+
 FSLanguageProtocol::LSPeer::~LSPeer() {
 	while (!parse_results.is_empty()) {
 		String path = parse_results.begin()->key;
