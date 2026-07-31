@@ -5368,6 +5368,16 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 	return OK;
 }
 
+void FSCompiler::_invalidate_compiled_classes(FoundryScript *p_script) {
+	if (p_script == nullptr) {
+		return;
+	}
+	p_script->valid = false;
+	for (const KeyValue<StringName, Ref<FoundryScript>> &subclass : p_script->subclasses) {
+		_invalidate_compiled_classes(subclass.value.ptr());
+	}
+}
+
 Error FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
 	// The analyzer type-checks against a conformance the moment this file's namespace or one of its
 	// imports declares it. Nothing in the emitted code references the declaring file, though, so
@@ -5386,6 +5396,11 @@ Error FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
 			// This script's analysis already type-checked calls and assignments against the
 			// conformance, so shipping it without the library would produce exactly the failure this
 			// edge exists to prevent: a witness that is missing only at run time. Fail here instead.
+			//
+			// `_compile_class` has already marked the class tree valid, and a caller that only checks
+			// `is_valid()` (the resource loader among them) would cache and hand out this script
+			// regardless of the error returned here. Take that back before returning.
+			_invalidate_compiled_classes(p_script);
 			_set_error(vformat(R"(Could not load "%s", which declares a retroactive conformance this file uses through its namespace.)", conformance_path), nullptr);
 			return load_err != OK ? load_err : ERR_CANT_RESOLVE;
 		}

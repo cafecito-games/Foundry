@@ -692,6 +692,9 @@ TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges surv
 	ERR_PRINT_OFF;
 	CHECK(failing_loader.load_full(buffer, restored_without_library) != OK);
 	ERR_PRINT_ON;
+	// A caller that only checks `is_valid()` — the resource loader among them — must not be handed
+	// this script despite the error.
+	CHECK_FALSE(restored_without_library->is_valid());
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register with the registry") {

@@ -2146,9 +2146,16 @@ Error FSBytecodeLoader::load_full(const Vector<uint8_t> &p_buffer, const Ref<Fou
 				"No external-reference resolver is set on the bytecode loader.");
 		bool conformance_is_local = false;
 		const Ref<Script> conformance_script = resolver->resolve_script(conformance_path, String(), conformance_is_local);
-		ERR_FAIL_COND_V_MSG(conformance_script.is_null(), ERR_CANT_RESOLVE,
-				vformat("Cannot load compiled script '%s': could not load '%s', which declares a retroactive conformance it uses through its namespace.",
-						script_path, conformance_path));
+		if (conformance_script.is_null()) {
+			// The classes were marked valid just above; a caller that only checks `is_valid()` would
+			// cache and hand out this script whatever error is returned here, so take that back.
+			for (FoundryScript *loaded_class : local_classes) {
+				loaded_class->valid = false;
+			}
+			ERR_FAIL_V_MSG(ERR_CANT_RESOLVE,
+					vformat("Cannot load compiled script '%s': could not load '%s', which declares a retroactive conformance it uses through its namespace.",
+							script_path, conformance_path));
+		}
 		if (!p_script->namespace_conformance_scripts.has(conformance_script)) {
 			p_script->namespace_conformance_scripts.push_back(conformance_script);
 		}
