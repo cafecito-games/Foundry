@@ -32,6 +32,7 @@
 
 #include "fs_autoload_index.h"
 #include "fs_cache.h"
+#include "fs_conformance_registry.h"
 #include "fs_parser.h"
 
 #include "core/object/object.h"
@@ -153,6 +154,23 @@ private:
 	};
 
 	DependencyParserAccess dependency_parser_access;
+
+	// Decides which files' retroactive conformances this analysis is allowed to honor: its own, and
+	// whatever it transitively depends on. A conformance takes effect for code that loads its declaring
+	// file, so honoring one from an unrelated file would type-check code that fails at run time, and
+	// would make results depend on which files the process happened to analyze first.
+	class ConformanceVisibility : public FSConformanceRegistry::Visibility {
+		FSAnalyzer *analyzer = nullptr;
+		// Memoized per analysis. The dependency graph only grows during one analysis, so a `true` stays
+		// true; a `false` is not cached, since a file may become a dependency later on.
+		mutable HashSet<String> visible_files;
+
+	public:
+		explicit ConformanceVisibility(FSAnalyzer *p_analyzer);
+		bool can_see(const String &p_source_file) const override;
+	};
+
+	ConformanceVisibility conformance_visibility;
 
 	// Owns flow-sensitive narrowing state and definite-assignment analysis for `final` variables.
 	// Lifetime: `flow_narrowed_types` and `flow_narrowing_captured_sources` are active during body
@@ -539,6 +557,7 @@ private:
 	bool type_satisfies_trait(const FSParser::DataType &p_argument, const FSParser::DataType &p_trait_bound);
 	void validate_trait_conflicts(FSParser::ClassNode *p_class);
 	void validate_trait_requirements(FSParser::ClassNode *p_class);
+	void raise_declared_conformance_dependencies();
 	void resolve_conformances(FSParser::ClassNode *p_class);
 	void resolve_conformance_bodies(FSParser::ClassNode *p_class);
 	FSParser::ClassNode *resolve_conformance_target(FSParser::ConformanceNode *p_conformance, FSParser::DataType &r_target_type);

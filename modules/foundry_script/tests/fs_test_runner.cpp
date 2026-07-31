@@ -845,14 +845,19 @@ FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	// serialization, so error fixtures take the unchanged text path in this mode too.
 	Vector<uint8_t> bytecode_buffer;
 	if (use_compiled_bytecode) {
+		// The exporter reports why it refused through `ERR_*`, but console output is suppressed for the
+		// duration of a fixture run, so that message was being dropped and the failure reported only the
+		// file name. A serialization error is a hard failure, never expected fixture output, so let it
+		// through for this step alone.
+		enable_stdout();
 		FSBytecodeExporter exporter;
 		err = exporter.serialize(script, bytecode_buffer, parser.get_tree()->annotated_static_unload);
 		if (err != OK) {
-			enable_stdout();
 			result.status = FS_TEST_LOAD_ERROR;
 			result.passed = false;
 			ERR_FAIL_V_MSG(result, "\nCould not serialize compiled bytecode for: '" + source_file + "'");
 		}
+		disable_stdout();
 	}
 #endif // TOOLS_ENABLED
 

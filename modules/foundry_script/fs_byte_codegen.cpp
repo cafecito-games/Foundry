@@ -1524,7 +1524,13 @@ void FSByteCodeGenerator::write_call_builtin_type(const Address &p_target, const
 	bool is_validated = false;
 
 	// Check if all types are correct.
-	if (Variant::is_builtin_method_vararg(p_type, p_method)) {
+	if (!Variant::has_builtin_method(p_type, p_method)) {
+		// Not a method of this builtin at all — it is a `static` witness from a retroactive conformance
+		// on the type. There is no validated function pointer to encode (asking for one yields null, and
+		// the VM would call straight through it), so this has to go out as a regular call, which carries
+		// the type and method name and resolves the witness at dispatch time.
+		is_validated = false;
+	} else if (Variant::is_builtin_method_vararg(p_type, p_method)) {
 		is_validated = false; // Vararg needs runtime checks, can't use validated call.
 	} else if (!p_is_static && p_base.type.is_nullable) {
 		// A nullable receiver may hold null, which the validated call would read as the underlying

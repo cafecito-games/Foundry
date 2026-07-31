@@ -1370,8 +1370,13 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 								// May be static built-in method call.
 								gen->write_call_builtin_type_static(result, FSParser::get_builtin_type(static_cast<FSParser::IdentifierNode *>(subscript->base)->name), subscript->attribute->name, arguments);
 							} else if (!call->is_super && subscript->base->type == FSParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
-									static_cast<FSParser::IdentifierNode *>(subscript->base)->source == FSParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(static_cast<FSParser::IdentifierNode *>(subscript->base)->name)) {
-								// It's a static native method call.
+									static_cast<FSParser::IdentifierNode *>(subscript->base)->source == FSParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(static_cast<FSParser::IdentifierNode *>(subscript->base)->name) &&
+									ClassDB::get_method(static_cast<FSParser::IdentifierNode *>(subscript->base)->name, subscript->attribute->name) != nullptr) {
+								// It's a static native method call. A name ClassDB does not know is not one —
+								// it is a `static` witness from a retroactive conformance on this engine class,
+								// which has no `MethodBind` to encode. That falls through to the generic call
+								// below, where the class evaluates to its `FSNativeClass` and dispatches the
+								// witness. (Encoding a null `MethodBind` here would crash the VM.)
 								StringName class_name = static_cast<FSParser::IdentifierNode *>(subscript->base)->name;
 								MethodBind *method = ClassDB::get_method(class_name, subscript->attribute->name);
 								if (_can_use_validate_call(method, arguments)) {
@@ -5262,7 +5267,12 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 					target_script = Ref<FoundryScript>(found);
 				} else if (!target_type.script_path.is_empty()) {
 					Error script_err = OK;
-					target_script = FSCache::get_full_script(target_type.script_path, script_err, source_file);
+					const Ref<FoundryScript> loaded_script = FSCache::get_full_script(target_type.script_path, script_err, source_file);
+					// Loading a path yields that file's *root* class. An inner class is a distinct target
+					// with its own member layout, so descend to it; otherwise the witness would be compiled
+					// against the root's layout and registered under the root's identity.
+					FoundryScript *found_in_loaded = loaded_script.is_valid() ? loaded_script->find_class(target_class->fqcn) : nullptr;
+					target_script = found_in_loaded != nullptr ? Ref<FoundryScript>(found_in_loaded) : loaded_script;
 				}
 			}
 

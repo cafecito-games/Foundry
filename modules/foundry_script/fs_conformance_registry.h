@@ -77,6 +77,32 @@ public:
 		WitnessMap witnesses;
 	};
 
+	// Limits which declaring files a caller is allowed to see.
+	//
+	// A conformance takes effect for code that loads its declaring file, the way an import does. The
+	// registry itself is process-global and is filled as a side effect of analyzing whatever files a
+	// process happens to touch, so without a filter a conformance would type-check in a file that never
+	// loads it and then fail at run time, where nothing registered the witness. A caller that knows its
+	// own dependencies installs one of these for the duration of its work; with none installed every
+	// entry is visible, which is what the runtime and the tooling that reports on the whole registry
+	// want.
+	class Visibility {
+	public:
+		virtual bool can_see(const String &p_source_file) const = 0;
+		virtual ~Visibility() = default;
+	};
+
+	// Installs a `Visibility` for the current thread until it goes out of scope. Thread-local because
+	// parsers are analyzed concurrently and each has its own dependency set. Nests: the previous
+	// visibility is restored, so a nested analysis cannot widen an outer one by accident.
+	class ScopedVisibility {
+		const Visibility *previous = nullptr;
+
+	public:
+		explicit ScopedVisibility(const Visibility *p_visibility);
+		~ScopedVisibility();
+	};
+
 	// Runtime witnesses for a single (target, trait) conformance, keyed by method name. These are
 	// compiled `FSFunction *` owned by the conformance-declaring `FoundryScript`; the registry only
 	// borrows them and must drop them (via `clear_runtime_witnesses`) when that script is reloaded
@@ -104,6 +130,12 @@ public:
 
 private:
 	static FSConformanceRegistry *singleton;
+	static thread_local const Visibility *active_visibility;
+
+	// True when the installed `Visibility`, if any, allows `p_source_file`. Guards the queries the type
+	// system asks — never the cross-file collision diagnostics, which must see every declaring file to
+	// report a duplicate, and never the runtime witness store, whose contents are by definition loaded.
+	static bool _is_visible(const String &p_source_file);
 
 	mutable Mutex mutex;
 
@@ -142,7 +174,8 @@ public:
 
 	void clear();
 
-	// True when some target alias `p_target_key` declares an external conformance to `p_trait_name`.
+	// True when some *visible* target alias `p_target_key` declares an external conformance to
+	// `p_trait_name`.
 	// Analyzer/type-system callers use the parse registry alone. Runtime checks for bytecode-loaded
 	// scripts opt into serialized runtime membership with `p_include_runtime`.
 	bool has_conformance(const String &p_target_key, const StringName &p_trait_name, bool p_include_runtime = false) const;

@@ -199,6 +199,51 @@ HashMap<StringName, FSParser::DataType> FSAnalyzer::conformance_trait_substituti
 	return bindings;
 }
 
+FSAnalyzer::ConformanceVisibility::ConformanceVisibility(FSAnalyzer *p_analyzer) {
+	analyzer = p_analyzer;
+}
+
+bool FSAnalyzer::ConformanceVisibility::can_see(const String &p_source_file) const {
+	if (analyzer == nullptr || analyzer->parser == nullptr || p_source_file.is_empty()) {
+		return true;
+	}
+	if (p_source_file == analyzer->parser->script_path || visible_files.has(p_source_file)) {
+		return true;
+	}
+
+	// Breadth-first over the dependency graph, from two sources per file:
+	//
+	//  - What it *declares*: the `preload` and `extends` paths its parse tree carries. These come from
+	//    the whole file at once, so a `preload` is a dependency no matter where it sits relative to the
+	//    code that needs the conformance. Reading the resolved dependencies alone would make visibility
+	//    depend on statement order, and an error reported before a later `preload` is never revisited.
+	//  - What it has *resolved*: `depended_parsers`, which reaches on through files this analysis has
+	//    already pulled in.
+	//
+	// Every file reached on the way is a dependency too, so the whole visited set is memoized. Only
+	// positive answers are kept: the graph grows during an analysis, so a "no" can become a "yes".
+	List<FSParser *> pending;
+	HashSet<const FSParser *> seen;
+	pending.push_back(analyzer->parser);
+	seen.insert(analyzer->parser);
+	while (!pending.is_empty()) {
+		FSParser *current = pending.front()->get();
+		pending.pop_front();
+		for (const String &declared : current->get_dependencies()) {
+			visible_files.insert(declared);
+		}
+		for (const KeyValue<String, Ref<FSParserRef>> &dependency : current->get_depended_parsers()) {
+			visible_files.insert(dependency.key);
+			FSParser *dependency_parser = dependency.value.is_valid() ? dependency.value->get_parser() : nullptr;
+			if (dependency_parser != nullptr && !seen.has(dependency_parser)) {
+				seen.insert(dependency_parser);
+				pending.push_back(dependency_parser);
+			}
+		}
+	}
+	return visible_files.has(p_source_file);
+}
+
 FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method) {
 	if (p_method == StringName()) {
 		return nullptr;
@@ -247,6 +292,24 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 		}
 		return nullptr;
 	};
+
+	// A native engine class and a builtin value type are conformance targets too. Each is registered
+	// under a synthesized stand-in whose FQCN is the bare class name or `Variant` type name, and the
+	// engine inheritance chain is walked so a witness declared on a base class stays reachable from a
+	// subclass — the same reach `FSConformanceRegistry::find_native_witness_function` gives the runtime.
+	if (p_target_type.kind == FSParser::DataType::NATIVE) {
+		for (StringName cursor = p_target_type.native_type; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
+			FSParser::FunctionNode *witness = static_witness_for_target(String(cursor));
+			if (witness != nullptr) {
+				return witness;
+			}
+		}
+		return nullptr;
+	}
+	if (p_target_type.kind == FSParser::DataType::BUILTIN) {
+		// Builtins have no inheritance chain, so this is an exact lookup.
+		return static_witness_for_target(String(Variant::get_type_name(p_target_type.builtin_type)));
+	}
 
 	// Lookups go strictly by a target's fully-qualified class name. A conformance is also registered
 	// under looser aliases (global class name, script path) that the runtime uses, but those do not
@@ -354,6 +417,33 @@ bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, 
 	}
 
 	return valid;
+}
+
+void FSAnalyzer::raise_declared_conformance_dependencies() {
+	// A conformance takes effect when its declaring file is loaded, and `preload`/`extends` load a file
+	// for the whole script, not from the statement they appear on. Registration used to happen as a side
+	// effect of *reducing* each `preload` expression, so a conformance used above the `preload` that
+	// brings it in was not registered yet and the use failed. Register everything this file declares it
+	// loads, up front.
+	//
+	// Only files that actually declare conformances are raised, so this stays a no-op for the vast
+	// majority of dependencies. `raise_status()` advances a parser's status before running each phase, so
+	// a cycle re-entering the same file returns instead of recursing.
+	const String extension = FSLanguage::get_singleton()->get_extension();
+	for (const String &dependency_path : parser->get_dependencies()) {
+		if (dependency_path.get_extension() != extension || dependency_path == parser->script_path) {
+			continue;
+		}
+		Ref<FSParserRef> dependency_ref;
+		if (dependency_parser_access.raise_depended_parser_for(dependency_path, FSParserRef::PARSED, dependency_ref) != OK) {
+			continue;
+		}
+		const FSParser *dependency_parser = dependency_ref.is_valid() ? dependency_ref->get_parser() : nullptr;
+		if (dependency_parser == nullptr || dependency_parser->head == nullptr || dependency_parser->head->conformances.is_empty()) {
+			continue;
+		}
+		dependency_parser_access.raise_parser_to_status(dependency_ref, FSParserRef::INTERFACE_SOLVED);
+	}
 }
 
 void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {

@@ -354,6 +354,7 @@ Error FSAnalyzer::run_phase_interface_and_member_surface() {
 // Must not: resolve witness bodies.
 Error FSAnalyzer::run_phase_trait_conformance_registration() {
 	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::TRAIT_CONFORMANCE_REGISTRATION);
+	raise_declared_conformance_dependencies();
 	resolve_conformances(parser->head);
 
 	// Validate custom annotation declaration signatures after the class interface so constant
@@ -11308,6 +11309,50 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		p_base_type.is_meta_type = was_meta_type;
 	}
 
+	// A retroactive conformance (`extend Target uses Trait: ...`) supplies its witnesses from outside the
+	// target's own definition, so they are absent from the target's member surface. An instance witness
+	// still reaches its receiver through the runtime's member-miss fallback, but a `static` witness is
+	// only ever named through the target type, where an unresolved call is a hard error with no dynamic
+	// fallback. This fills the signature from such a witness so the call type-checks; the emitted call is
+	// unchanged and lands on the runtime's static witness fallback.
+	//
+	// It is a *fallback*: every call site below runs it only after the target's own surface has missed,
+	// so a witness can never shadow a real member.
+	auto apply_static_conformance_witness = [&](FSParser::ClassNode *p_found_in_class) -> bool {
+		FSParser::FunctionNode *witness = find_static_conformance_witness(p_base_type, function_name);
+		if (witness == nullptr) {
+			return false;
+		}
+		if (r_found_function) {
+			*r_found_function = witness;
+		}
+		if (r_found_in_class) {
+			*r_found_in_class = p_found_in_class;
+		}
+		if (r_is_noreturn) {
+			*r_is_noreturn = witness->is_noreturn;
+		}
+		r_method_flags.set_flag(METHOD_FLAG_STATIC);
+		if (witness->is_coroutine) {
+			r_method_flags.set_flag(METHOD_FLAG_ASYNC);
+		}
+		if (witness->is_vararg()) {
+			r_method_flags.set_flag(METHOD_FLAG_VARARG);
+		}
+		for (FSParser::ParameterNode *parameter : witness->parameters) {
+			r_par_types.push_back(substitute_member_type(parameter->get_datatype(), p_base_type, witness, &self_type));
+			if (parameter->initializer != nullptr) {
+				r_default_arg_count++;
+			}
+		}
+		r_return_type = substitute_member_type(witness->get_datatype(), p_base_type, witness, &self_type);
+		r_return_type.is_meta_type = false;
+		if (witness->is_coroutine) {
+			r_return_type = make_coroutine_type(r_return_type);
+		}
+		return true;
+	};
+
 	if (!p_is_constructor && p_base_type.kind == FSParser::DataType::ENUM) {
 		FSParser::EnumNode *enum_declaration = resolve_enum_declaration(p_base_type, p_source);
 		const int *function_index = enum_declaration != nullptr ? enum_declaration->functions_indices.getptr(function_name) : nullptr;
@@ -11776,6 +11821,12 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			}
 		}
 
+		// A builtin value type is a supported retroactive-conformance target, so a static witness on it
+		// is reachable through the type name once its own static surface has missed.
+		if (!p_is_constructor && p_base_type.is_meta_type && apply_static_conformance_witness(nullptr)) {
+			return true;
+		}
+
 		return false;
 	}
 
@@ -11861,47 +11912,6 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			found_function = member.function;
 			found_in_class = trait;
 			break;
-		}
-	}
-
-	// A retroactive conformance (`extend Target uses Trait: ...`) supplies its witnesses from outside the
-	// target's own definition, so they are absent from the target's member surface. An instance witness
-	// still reaches its receiver through the runtime's member-miss fallback, but a `static` witness is
-	// only ever named through the target type, where an unresolved call is a hard error with no dynamic
-	// fallback. Resolve it from the conformance registry so the call type-checks; the emitted call is
-	// unchanged and lands on the runtime's static witness fallback.
-	if (found_function == nullptr && !p_is_constructor && p_base_type.is_meta_type &&
-			(p_base_type.kind == FSParser::DataType::CLASS || p_base_type.kind == FSParser::DataType::SCRIPT)) {
-		FSParser::FunctionNode *witness = find_static_conformance_witness(p_base_type, function_name);
-		if (witness != nullptr) {
-			if (r_found_function) {
-				*r_found_function = witness;
-			}
-			if (r_found_in_class) {
-				*r_found_in_class = original_base_class;
-			}
-			if (r_is_noreturn) {
-				*r_is_noreturn = witness->is_noreturn;
-			}
-			r_method_flags.set_flag(METHOD_FLAG_STATIC);
-			if (witness->is_coroutine) {
-				r_method_flags.set_flag(METHOD_FLAG_ASYNC);
-			}
-			if (witness->is_vararg()) {
-				r_method_flags.set_flag(METHOD_FLAG_VARARG);
-			}
-			for (FSParser::ParameterNode *parameter : witness->parameters) {
-				r_par_types.push_back(substitute_member_type(parameter->get_datatype(), p_base_type, witness, &self_type));
-				if (parameter->initializer != nullptr) {
-					r_default_arg_count++;
-				}
-			}
-			r_return_type = substitute_member_type(witness->get_datatype(), p_base_type, witness, &self_type);
-			r_return_type.is_meta_type = false;
-			if (witness->is_coroutine) {
-				r_return_type = make_coroutine_type(r_return_type);
-			}
-			return true;
 		}
 	}
 
@@ -12185,6 +12195,16 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		}
 #endif // DEBUG_ENABLED
 		return valid;
+	}
+
+	// Last resort for a script class or a native engine class: its own members, base chain, applied
+	// traits, base scripts, and native surface have all missed, so a `static` witness from a retroactive
+	// conformance is the only thing left. It has to be last, because that is the order the runtime
+	// resolves in — `FSNativeClass::callp` tries the `MethodBind` first, and codegen only routes a call
+	// to the witness path for a name ClassDB does not know. Resolving a witness any earlier would give
+	// the analyzer one signature and the runtime a different function.
+	if (!p_is_constructor && p_base_type.is_meta_type && apply_static_conformance_witness(original_base_class)) {
+		return true;
 	}
 
 	return false;
@@ -12996,11 +13016,16 @@ void FSAnalyzer::ensure_autoload_index_current() {
 	autoload_index_settings_hash = settings_hash;
 }
 
+// Every public entry point scopes conformance visibility to this file and its dependencies for the
+// duration of its work, because a parser can be raised one phase at a time rather than through
+// `analyze()`.
 Error FSAnalyzer::resolve_inheritance() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	return run_phase_inheritance_resolution();
 }
 
 Error FSAnalyzer::resolve_interface() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	Error err = run_phase_interface_and_member_surface();
 	if (err) {
 		return err;
@@ -13009,6 +13034,7 @@ Error FSAnalyzer::resolve_interface() {
 }
 
 Error FSAnalyzer::resolve_body() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	Error err = run_phase_body_expression_callable_signal();
 	if (err) {
 		return err;
@@ -13023,6 +13049,7 @@ Error FSAnalyzer::resolve_body() {
 }
 
 Error FSAnalyzer::resolve_dependencies() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	return run_phase_final_diagnostics_and_dependencies();
 }
 
@@ -13032,6 +13059,7 @@ Error FSAnalyzer::resolve_dependencies() {
 // 5 Body/expression/callable/signal analysis -> 6 Flow/finality invariants ->
 // 7 Conformance witness bodies -> 8 Final diagnostics and dependency finalization.
 Error FSAnalyzer::analyze() {
+	const FSConformanceRegistry::ScopedVisibility conformance_scope(&conformance_visibility);
 	Error err = run_phase_preflight();
 	if (err) {
 		return err;
@@ -13096,6 +13124,7 @@ bool FSAnalyzer::signature_type_involves_type_parameter(const FSParser::DataType
 FSAnalyzer::FSAnalyzer(FSParser *p_parser) :
 		parser(p_parser),
 		dependency_parser_access(this),
+		conformance_visibility(this),
 		flow_finality(this),
 		call_site_validation(this) {
 	strict_null_checks = GLOBAL_GET_CACHED(bool, "debug/foundry_script/analysis/strict_null_checks");
