@@ -9931,6 +9931,21 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 		} else if (!field_type.is_variant() && (argument_type.is_variant() || !argument_type.is_hard_type())) {
 			mark_node_unsafe(p_call);
 		}
+
+		// A collection literal in field position stays untyped unless the declared field type is
+		// pushed into it, exactly as an ordinary call does for its typed parameters. Without this,
+		// `Bag(items: Array[int])` rejects `Bag([1, 2])` at runtime as an untyped `Array`.
+		if (!field_type.is_hard_type()) {
+			continue;
+		}
+		if (argument->type == FSParser::Node::ARRAY && field_type.has_container_element_type(0)) {
+			update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(argument),
+					field_type.get_container_element_type(0));
+		} else if (argument->type == FSParser::Node::DICTIONARY && field_type.has_container_element_types()) {
+			update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(argument),
+					field_type.get_container_element_type_or_variant(0),
+					field_type.get_container_element_type_or_variant(1));
+		}
 	}
 
 	p_call->set_datatype(tuple_type);
