@@ -789,17 +789,21 @@ FSParser::DataType FSAnalyzer::complete_self_referential_enum_type(const FSParse
 		}
 	}
 
-	// A payload field may also nest the union inside a typed collection (`Array[Chain]`) or a
-	// callable signature (`Callable[[], Chain]`), whose rich slots hold datatypes of their own.
-	for (int i = 0; i < completed.get_container_element_type_count(); i++) {
-		completed.set_container_element_type(i, complete_self_referential_enum_type(completed.get_container_element_type(i)));
-	}
-	for (int i = 0; i < completed.method_parameter_types.size(); i++) {
-		completed.method_parameter_types.write[i] = complete_self_referential_enum_type(completed.method_parameter_types[i]);
-	}
-	for (int i = 0; i < completed.method_return_type.size(); i++) {
-		completed.method_return_type.write[i] = complete_self_referential_enum_type(completed.method_return_type[i]);
-	}
+	// A payload field may nest the union anywhere a datatype can appear: a typed collection or
+	// tuple (`Array[Chain]`), a callable signature (`Callable[[], Chain]`), a generic argument
+	// (`Box[Chain]`), or a type-parameter bound. Descend into every such slot. `enum_case_payloads`
+	// is deliberately excluded: a union's payload map names the union itself, so it has no finite
+	// fixed point, and each level reaches this helper again when it is used to type a value.
+	auto complete_each = [](Vector<FSParser::DataType> &r_types) {
+		for (int i = 0; i < r_types.size(); i++) {
+			r_types.write[i] = complete_self_referential_enum_type(r_types[i]);
+		}
+	};
+	complete_each(completed.container_element_types);
+	complete_each(completed.method_parameter_types);
+	complete_each(completed.method_return_type);
+	complete_each(completed.type_parameter_bound);
+	complete_each(completed.type_arguments);
 
 	return completed;
 }

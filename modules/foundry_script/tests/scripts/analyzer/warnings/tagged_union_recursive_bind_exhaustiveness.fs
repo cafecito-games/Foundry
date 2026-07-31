@@ -5,6 +5,14 @@ enum Chain:
 	Link(next: Chain)
 	Branch(children: Array[Chain])
 	Maker(build: Callable[[], Chain])
+	Boxed(box: Box[Chain])
+	Pair(both: (Chain, int))
+
+class Box[T]:
+	var value: T
+
+	func _init(initial: T):
+		value = initial
 
 func from_parameter(node: Chain) -> int:
 	match node:
@@ -46,6 +54,22 @@ func from_callable_bind(node: Chain) -> int:
 					return 1
 	return 0
 
+func from_generic_bind(node: Chain) -> int:
+	match node:
+		Chain.Boxed(var box):
+			match box.value:
+				Chain.End:
+					return 1
+	return 0
+
+func from_tuple_bind(node: Chain) -> int:
+	match node:
+		Chain.Pair(var both):
+			match both[0]:
+				Chain.End:
+					return 1
+	return 0
+
 func make_end() -> Chain:
 	return Chain.End
 
@@ -55,3 +79,5 @@ func test():
 	print(from_collection_bind(Chain.Branch([Chain.End])))
 	print(from_nested_bind(Chain.Link(Chain.Link(Chain.End))))
 	print(from_callable_bind(Chain.Maker(make_end)))
+	print(from_generic_bind(Chain.Boxed(Box[Chain].new(Chain.End))))
+	print(from_tuple_bind(Chain.Pair((Chain.End, 1))))
