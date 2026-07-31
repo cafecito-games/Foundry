@@ -303,13 +303,22 @@ void ScriptServer::reload_global_classes_from_project() {
 		add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
 	}
 
-	reload_global_conformances_from_project();
+	reload_global_conformances_from_project(true);
 }
 
-void ScriptServer::reload_global_conformances_from_project() {
+void ScriptServer::reload_global_conformances_from_project(bool p_clear_existing) {
 	// An exported project never rescans its scripts, so the cache written at export time is the only
 	// thing that can tell a language which files declare conformances. Without it a namespace import
 	// would resolve in the editor and fail in the exported game.
+	if (p_clear_existing) {
+		MutexLock lock(languages_mutex);
+		for (int i = 0; i < _language_count; i++) {
+			if (_languages[i] != nullptr) {
+				_languages[i]->clear_indexed_conformances();
+			}
+		}
+	}
+
 	Array conformances = ProjectSettings::get_singleton()->get_global_conformance_list();
 	for (const Variant &conformance : conformances) {
 		Dictionary entry = conformance;

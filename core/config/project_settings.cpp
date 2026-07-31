@@ -1449,6 +1449,9 @@ void ProjectSettings::refresh_global_class_list() {
 		const bool is_enum = c.has("is_enum") && c["is_enum"];
 		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"], is_trait, is_enum);
 	}
+	// A pack can also bring conformance-declaring files, which export no global class and so appear
+	// only in the companion list. Added, not replaced, exactly like the classes above.
+	ScriptServer::reload_global_conformances_from_project(false);
 }
 
 TypedArray<Dictionary> ProjectSettings::get_global_class_list() {

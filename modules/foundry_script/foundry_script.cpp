@@ -3987,6 +3987,10 @@ void FSLanguage::add_indexed_conformance(const String &p_path, const String &p_n
 	add_conformance_file(p_path, p_namespace);
 }
 
+void FSLanguage::clear_indexed_conformances() {
+	clear_conformance_files();
+}
+
 void FSLanguage::clear_global_declaration_index_under(const String &p_root_prefix) {
 	if (p_root_prefix.is_empty()) {
 		return;
