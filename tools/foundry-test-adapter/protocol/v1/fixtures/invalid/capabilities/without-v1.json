@@ -1,0 +1,12 @@
+{
+  "protocol": "foundry-test-adapter",
+  "supported_versions": [
+    2
+  ],
+  "framework": {
+    "id": "fixture",
+    "name": "Fixture Framework",
+    "version": "1.0.0"
+  },
+  "extensions": []
+}

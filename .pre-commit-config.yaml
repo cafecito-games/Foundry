@@ -226,6 +226,24 @@ repos:
             misc/checks/.*\.(?:py|toml)
           )$
 
+      - id: foundry-test-adapter
+        name: Foundry test adapter protocol
+        language: system
+        entry: >-
+          uv run --frozen --project tools/foundry-test-adapter
+          python -m unittest discover -s tools/foundry-test-adapter/tests
+        pass_filenames: false
+        # The normative schemas, fixtures, manifest, and validator are one artifact:
+        # downstream repositories pin them together. Anything under the tool directory
+        # can therefore break conformance, so the whole directory triggers the suite and
+        # nothing outside it does. The hook config itself is included so a change to this
+        # entry is exercised by the hook it defines.
+        files: |
+          (?x)^(
+            \.pre-commit-config\.yaml|
+            tools/foundry-test-adapter/.*
+          )$
+
       - id: foundry-file-policy
         name: Foundry file policy
         language: python

@@ -374,6 +374,435 @@ TEST_CASE("[FoundryCLI][ScriptEval] Nonexistent project path is an error") {
 	CHECK_NE(exit_code, 0);
 }
 
+// Observable engine-side guarantees of the Foundry Test Adapter Protocol: runner
+// arguments cross both separators unchanged, the runner owns its artifact files,
+// deliberate process output stays outside them, flushed points are visible while the
+// process is alive, and the runner's return value becomes the process exit code. The
+// protocol itself lives entirely in the runner, so these tests assert only what the
+// transport must preserve.
+
+constexpr uint64_t ADAPTER_TIMEOUT_MSEC = 120000;
+constexpr uint64_t ADAPTER_POLL_USEC = 20000;
+
+static String adapter_scratch_root() {
+	if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+		const String configured = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+		if (!configured.is_empty()) {
+			return configured.simplify_path();
+		}
+	}
+	const String directory_name = vformat("foundry-tests-%d", OS::get_singleton()->get_process_id());
+	return OS::get_singleton()->get_temp_path().path_join(directory_name).simplify_path();
+}
+
+// Stages the checked-in transport fixture project beneath a unique scratch directory so
+// each case owns its artifacts and an aborted run never pollutes the repository.
+struct StagedAdapterProject {
+	String project_root;
+
+	explicit StagedAdapterProject(const String &p_name) {
+		const String unique_name = vformat("adapter_transport_%s_%d", p_name, OS::get_singleton()->get_process_id());
+		project_root = adapter_scratch_root().path_join(unique_name).simplify_path();
+		TemporaryNoMainSceneProject::remove_recursive(project_root);
+		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE_EQ(dir->make_dir_recursive(project_root), OK);
+
+		const String fixture_root = TestUtils::get_executable_dir()
+											.path_join("../tests/fixtures/foundry_test_adapter_transport")
+											.simplify_path();
+		stage("project.foundry", fixture_root);
+		stage("adapter_transport_runner.fs", fixture_root);
+	}
+
+	~StagedAdapterProject() {
+		TemporaryNoMainSceneProject::remove_recursive(project_root);
+	}
+
+	void stage(const String &p_file_name, const String &p_fixture_root) const {
+		Error error = OK;
+		const String source = FileAccess::get_file_as_string(p_fixture_root.path_join(p_file_name), &error);
+		REQUIRE_MESSAGE(error == OK, vformat("Cannot read transport fixture '%s'", p_file_name));
+		write(p_file_name, source);
+	}
+
+	void write(const String &p_relative_path, const String &p_contents) const {
+		Ref<FileAccess> file = FileAccess::open(project_root.path_join(p_relative_path), FileAccess::WRITE);
+		REQUIRE_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", p_relative_path));
+		file->store_string(p_contents);
+	}
+
+	String path(const String &p_relative_path) const {
+		return project_root.path_join(p_relative_path);
+	}
+
+	List<String> arguments() const {
+		List<String> list;
+		list.push_back("--headless");
+		list.push_back("--no-header");
+		list.push_back("project");
+		list.push_back("test");
+		list.push_back("--project");
+		list.push_back(project_root);
+		list.push_back("--runner");
+		list.push_back("res://adapter_transport_runner.fs");
+		list.push_back("--");
+		return list;
+	}
+};
+
+static String read_artifact(const String &p_path) {
+	if (!FileAccess::exists(p_path)) {
+		return String();
+	}
+	return FileAccess::get_file_as_string(p_path);
+}
+
+// Owns one asynchronously launched adapter child, drains its pipes while polling, and
+// always reaps the process even when a condition never becomes true.
+struct AdapterChild {
+	OS::ProcessID pid = 0;
+	Ref<FileAccess> stdout_pipe;
+	Ref<FileAccess> stderr_pipe;
+	Vector<uint8_t> stdout_bytes;
+	Vector<uint8_t> stderr_bytes;
+	bool running = false;
+
+	explicit AdapterChild(const List<String> &p_arguments) {
+		Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
+				OS::get_singleton()->get_executable_path(), p_arguments, false, String(), Dictionary(), false);
+		REQUIRE_MESSAGE(!pipe_info.is_empty(), "Cannot launch the adapter subprocess");
+		stdout_pipe = pipe_info["stdio"];
+		stderr_pipe = pipe_info["stderr"];
+		pid = pipe_info["pid"];
+		running = true;
+	}
+
+	~AdapterChild() {
+		if (running && OS::get_singleton()->is_process_running(pid)) {
+			OS::get_singleton()->kill(pid);
+		}
+		close_pipes();
+	}
+
+	void close_pipes() {
+		if (stdout_pipe.is_valid()) {
+			stdout_pipe->close();
+			stdout_pipe.unref();
+		}
+		if (stderr_pipe.is_valid()) {
+			stderr_pipe->close();
+			stderr_pipe.unref();
+		}
+	}
+
+	void pump() {
+		drain(stdout_pipe, stdout_bytes);
+		drain(stderr_pipe, stderr_bytes);
+	}
+
+	static void drain(const Ref<FileAccess> &p_pipe, Vector<uint8_t> &r_bytes) {
+		if (p_pipe.is_null() || !p_pipe->is_open()) {
+			return;
+		}
+		const uint64_t available = p_pipe->get_length();
+		if (available == 0) {
+			return;
+		}
+		Vector<uint8_t> chunk;
+		chunk.resize(available);
+		const uint64_t read = p_pipe->get_buffer(chunk.ptrw(), available);
+		if (read > 0) {
+			const int offset = r_bytes.size();
+			r_bytes.resize(offset + read);
+			memcpy(r_bytes.ptrw() + offset, chunk.ptr(), read);
+		}
+	}
+
+	String captured_output() const {
+		String text = String::utf8((const char *)stdout_bytes.ptr(), stdout_bytes.size());
+		text += "\n--- stderr ---\n";
+		text += String::utf8((const char *)stderr_bytes.ptr(), stderr_bytes.size());
+		return text;
+	}
+
+	// Polls until the artifact at `p_path` contains `p_needle`. Returns false on timeout
+	// so the caller can report the captured output and the partial artifact.
+	bool wait_for_artifact(const String &p_path, const String &p_needle) {
+		const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + ADAPTER_TIMEOUT_MSEC;
+		while (OS::get_singleton()->get_ticks_msec() < deadline) {
+			pump();
+			if (read_artifact(p_path).contains(p_needle)) {
+				return true;
+			}
+			OS::get_singleton()->delay_usec(ADAPTER_POLL_USEC);
+		}
+		return false;
+	}
+
+	bool wait_for_exit(int &r_exit_code) {
+		const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + ADAPTER_TIMEOUT_MSEC;
+		while (OS::get_singleton()->get_ticks_msec() < deadline) {
+			pump();
+			if (!OS::get_singleton()->is_process_running(pid)) {
+				pump();
+				running = false;
+				r_exit_code = OS::get_singleton()->get_process_exit_code(pid);
+				return true;
+			}
+			OS::get_singleton()->delay_usec(ADAPTER_POLL_USEC);
+		}
+		return false;
+	}
+
+	// `OS::kill()` reaps the child, so the process must not be polled afterwards.
+	void terminate() {
+		if (!running) {
+			return;
+		}
+		pump();
+		OS::get_singleton()->kill(pid);
+		running = false;
+		close_pipes();
+	}
+};
+
+static int run_adapter(const List<String> &p_arguments, String &r_stdout, String &r_stderr) {
+	AdapterChild child(p_arguments);
+	int exit_code = -1;
+	const bool exited = child.wait_for_exit(exit_code);
+	child.close_pipes();
+	r_stdout = String::utf8((const char *)child.stdout_bytes.ptr(), child.stdout_bytes.size());
+	r_stderr = String::utf8((const char *)child.stderr_bytes.ptr(), child.stderr_bytes.size());
+	REQUIRE_MESSAGE(exited, "The adapter subprocess did not exit before the timeout");
+	return exit_code;
+}
+
+TEST_CASE("[FoundryCLI][Adapter] Runner arguments cross both separators unchanged") {
+	StagedAdapterProject project("argument_passthrough");
+	const String output_path = project.path("capabilities.json");
+
+	List<String> arguments = project.arguments();
+	arguments.push_back("adapter");
+	arguments.push_back("capabilities");
+	arguments.push_back("--output");
+	arguments.push_back(output_path);
+	arguments.push_back("--");
+	// Every argument after the adapter separator is opaque framework input, including
+	// arguments spelled like reserved options.
+	arguments.push_back("--output");
+	arguments.push_back("--select");
+	arguments.push_back("--");
+	arguments.push_back("--protocol-version");
+	arguments.push_back("trailing value");
+
+	String captured_stdout;
+	String captured_stderr;
+	const int exit_code = run_adapter(arguments, captured_stdout, captured_stderr);
+	INFO("stdout:\n", captured_stdout, "\nstderr:\n", captured_stderr);
+	CHECK_EQ(exit_code, 0);
+
+	const String document = read_artifact(output_path);
+	INFO("Capabilities:\n", document);
+	CHECK(document.contains(
+			"\"framework_args\":[\"--output\",\"--select\",\"--\",\"--protocol-version\",\"trailing value\"]"));
+}
+
+TEST_CASE("[FoundryCLI][Adapter] A reserved option consumes a separator-looking value") {
+	StagedAdapterProject project("opaque_selection");
+	const String report_path = project.path("report.tap");
+
+	List<String> arguments = project.arguments();
+	arguments.push_back("adapter");
+	arguments.push_back("run");
+	arguments.push_back("--protocol-version");
+	arguments.push_back("1");
+	arguments.push_back("--report");
+	arguments.push_back(report_path);
+	// `--select --` selects the opaque ID `--`; it must not begin framework arguments.
+	arguments.push_back("--select");
+	arguments.push_back("--");
+
+	String captured_stdout;
+	String captured_stderr;
+	const int exit_code = run_adapter(arguments, captured_stdout, captured_stderr);
+	INFO("stdout:\n", captured_stdout, "\nstderr:\n", captured_stderr);
+	CHECK_EQ(exit_code, 0);
+
+	const String report = read_artifact(report_path);
+	INFO("Report:\n", report);
+	CHECK(report.begins_with("TAP version 13\n# foundry-test-adapter: 1\n1..1\n"));
+	CHECK(report.contains("id: \"--\""));
+}
+
+TEST_CASE("[FoundryCLI][Adapter] A valid operation truncates a pre-existing artifact") {
+	StagedAdapterProject project("artifact_truncation");
+	const String output_path = project.path("capabilities.json");
+	project.write("capabilities.json", "stale content that must not survive\n");
+
+	List<String> arguments = project.arguments();
+	arguments.push_back("adapter");
+	arguments.push_back("capabilities");
+	arguments.push_back("--output");
+	arguments.push_back(output_path);
+
+	String captured_stdout;
+	String captured_stderr;
+	CHECK_EQ(run_adapter(arguments, captured_stdout, captured_stderr), 0);
+
+	const String document = read_artifact(output_path);
+	INFO("Capabilities:\n", document);
+	CHECK_FALSE(document.contains("stale content"));
+	CHECK(document.begins_with("{\"protocol\":\"foundry-test-adapter\""));
+	CHECK(document.ends_with("}\n"));
+}
+
+TEST_CASE("[FoundryCLI][Adapter] Process output stays outside protocol artifacts") {
+	StagedAdapterProject project("output_isolation");
+	const String output_path = project.path("capabilities.json");
+
+	List<String> arguments = project.arguments();
+	arguments.push_back("adapter");
+	arguments.push_back("capabilities");
+	arguments.push_back("--output");
+	arguments.push_back(output_path);
+	arguments.push_back("--");
+	arguments.push_back("noise");
+
+	String captured_stdout;
+	String captured_stderr;
+	CHECK_EQ(run_adapter(arguments, captured_stdout, captured_stderr), 0);
+	INFO("stdout:\n", captured_stdout, "\nstderr:\n", captured_stderr);
+	CHECK(captured_stdout.contains("adapter-transport-stdout"));
+	CHECK(captured_stderr.contains("adapter-transport-stderr"));
+
+	const String document = read_artifact(output_path);
+	CHECK_FALSE(document.contains("adapter-transport-stdout"));
+	CHECK_FALSE(document.contains("adapter-transport-stderr"));
+}
+
+TEST_CASE("[FoundryCLI][Adapter] A flushed point is observable before the run completes") {
+	StagedAdapterProject project("incremental_flush");
+	const String report_path = project.path("report.tap");
+	const String continuation_path = project.path("continue.marker");
+
+	List<String> arguments = project.arguments();
+	arguments.push_back("adapter");
+	arguments.push_back("run");
+	arguments.push_back("--protocol-version");
+	arguments.push_back("1");
+	arguments.push_back("--report");
+	arguments.push_back(report_path);
+	arguments.push_back("--");
+	arguments.push_back("delayed-report=" + continuation_path);
+
+	AdapterChild child(arguments);
+	const bool observed = child.wait_for_artifact(report_path, "transport::first");
+	const String partial = read_artifact(report_path);
+	INFO("Partial report:\n", partial, "\nProcess output:\n", child.captured_output());
+	REQUIRE(observed);
+	CHECK(partial.ends_with("  ...\n"));
+	CHECK_FALSE(partial.contains("transport::second"));
+	CHECK(OS::get_singleton()->is_process_running(child.pid));
+
+	project.write("continue.marker", "go\n");
+
+	int exit_code = -1;
+	const bool exited = child.wait_for_exit(exit_code);
+	INFO("Process output:\n", child.captured_output());
+	REQUIRE(exited);
+	CHECK_EQ(exit_code, 0);
+
+	const String report = read_artifact(report_path);
+	INFO("Final report:\n", report);
+	CHECK(report.begins_with("TAP version 13\n# foundry-test-adapter: 1\n1..2\n"));
+	CHECK(report.contains("transport::second"));
+}
+
+TEST_CASE("[FoundryCLI][Adapter] Runner return values propagate as process exit codes") {
+	const int expected_exit_codes[] = { 0, 1, 2 };
+	for (int expected : expected_exit_codes) {
+		StagedAdapterProject project(vformat("exit_%d", expected));
+		const String output_path = project.path("capabilities.json");
+
+		List<String> arguments = project.arguments();
+		arguments.push_back("adapter");
+		arguments.push_back("capabilities");
+		arguments.push_back("--output");
+		arguments.push_back(output_path);
+		arguments.push_back("--");
+		arguments.push_back(vformat("return-code=%d", expected));
+
+		String captured_stdout;
+		String captured_stderr;
+		const int exit_code = run_adapter(arguments, captured_stdout, captured_stderr);
+		INFO("Return code ", expected, " stdout:\n", captured_stdout, "\nstderr:\n", captured_stderr);
+		CHECK_EQ(exit_code, expected);
+		CHECK(FileAccess::exists(output_path));
+	}
+}
+
+TEST_CASE("[FoundryCLI][Adapter] An uncaught runner failure exits 1 and leaves an incomplete report") {
+	StagedAdapterProject project("uncaught_failure");
+	const String report_path = project.path("report.tap");
+
+	List<String> arguments = project.arguments();
+	arguments.push_back("adapter");
+	arguments.push_back("run");
+	arguments.push_back("--protocol-version");
+	arguments.push_back("1");
+	arguments.push_back("--report");
+	arguments.push_back(report_path);
+	arguments.push_back("--");
+	arguments.push_back("uncaught-error");
+
+	String captured_stdout;
+	String captured_stderr;
+	const int exit_code = run_adapter(arguments, captured_stdout, captured_stderr);
+	INFO("stdout:\n", captured_stdout, "\nstderr:\n", captured_stderr);
+	CHECK_EQ(exit_code, 1);
+
+	// The unsatisfied plan, not the exit code alone, is what marks this infrastructure
+	// failure rather than a represented test failure.
+	const String report = read_artifact(report_path);
+	INFO("Report:\n", report);
+	CHECK(report.contains("1..2"));
+	CHECK(report.contains("transport::first"));
+	CHECK_FALSE(report.contains("transport::second"));
+	CHECK_FALSE(report.contains("Bail out!"));
+}
+
+TEST_CASE("[FoundryCLI][Adapter] Terminating the runner preserves only complete points") {
+	StagedAdapterProject project("external_cancellation");
+	const String report_path = project.path("report.tap");
+	const String continuation_path = project.path("continue.marker");
+
+	List<String> arguments = project.arguments();
+	arguments.push_back("adapter");
+	arguments.push_back("run");
+	arguments.push_back("--protocol-version");
+	arguments.push_back("1");
+	arguments.push_back("--report");
+	arguments.push_back(report_path);
+	arguments.push_back("--");
+	arguments.push_back("delayed-report=" + continuation_path);
+
+	AdapterChild child(arguments);
+	const bool observed = child.wait_for_artifact(report_path, "transport::first");
+	INFO("Process output:\n", child.captured_output());
+	REQUIRE(observed);
+
+	// The continuation file is never created, so the child is still between points.
+	child.terminate();
+
+	const String report = read_artifact(report_path);
+	INFO("Report after termination:\n", report);
+	CHECK(report.begins_with("TAP version 13\n# foundry-test-adapter: 1\n1..2\n"));
+	CHECK(report.contains("transport::first"));
+	CHECK_FALSE(report.contains("transport::second"));
+	CHECK_EQ(report.count("  ...\n"), 1);
+	CHECK(report.ends_with("  ...\n"));
+}
+
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 } // namespace TestFoundryCLIProjectTest
