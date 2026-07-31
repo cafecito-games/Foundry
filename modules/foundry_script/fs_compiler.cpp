@@ -5403,7 +5403,15 @@ Error FSCompiler::_load_namespace_conformance_scripts(FoundryScript *p_script) {
 		}
 		Error load_err = OK;
 		const Ref<FoundryScript> conformance_script = FSCache::get_full_script(conformance_path, load_err, source_file);
-		if (load_err != OK || conformance_script.is_null()) {
+		// `FSCache` caches a script whose `reload()` failed and reports OK for every later hit, so a
+		// second attempt at this consumer would otherwise accept a library that never compiled and
+		// never registered its witnesses. Check the library itself, not just this call's error.
+		// A script that is still `reloading` is the cycle terminator, not a failure: two conformance
+		// files in one namespace reach each other, and the inner one legitimately sees the outer as an
+		// invalid-but-error-free shell that finishes compiling once the stack unwinds.
+		const bool conformance_failed = conformance_script.is_null() ||
+				(!conformance_script->is_valid() && !conformance_script->is_reloading());
+		if (load_err != OK || conformance_failed) {
 			// This script's analysis already type-checked calls and assignments against the
 			// conformance, so shipping it without the library would produce exactly the failure this
 			// edge exists to prevent: a witness that is missing only at run time. Fail here instead.
