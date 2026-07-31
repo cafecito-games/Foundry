@@ -4779,7 +4779,7 @@ void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_patte
 		FSParser::DataType field_type;
 		FSParser::DataType *field_type_ptr = nullptr;
 		if (payload != nullptr && i < payload->field_types.size()) {
-			field_type = payload->field_types[i];
+			field_type = complete_self_referential_enum_type(payload->field_types[i]);
 			field_type_ptr = &field_type;
 		}
 		resolve_match_pattern(p_match_pattern->array[i], nullptr, field_type_ptr);
@@ -9958,7 +9958,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	}
 
 	for (int i = 0; i < expected_count; i++) {
-		const FSParser::DataType field_type = payload->field_types[i];
+		const FSParser::DataType field_type = complete_self_referential_enum_type(payload->field_types[i]);
 		FSParser::ExpressionNode *argument = p_call->arguments[i];
 		const FSParser::DataType argument_type = argument->get_datatype();
 		if (!argument_type.is_set()) {
@@ -10699,7 +10699,7 @@ void FSAnalyzer::resolve_type_test_case_binds(FSParser::TypeTestNode *p_type_tes
 		}
 		FSParser::DataType bind_type;
 		if (payload != nullptr && i < payload->field_types.size()) {
-			bind_type = payload->field_types[i];
+			bind_type = complete_self_referential_enum_type(payload->field_types[i]);
 		} else {
 			bind_type.kind = FSParser::DataType::VARIANT;
 			bind_type.type_source = FSParser::DataType::INFERRED;

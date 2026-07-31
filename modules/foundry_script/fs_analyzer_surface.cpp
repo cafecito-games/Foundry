@@ -759,6 +759,44 @@ void FSAnalyzer::resolve_function_signature_in_class(FSParser::FunctionNode *p_f
 	parser->current_class = previous_class;
 }
 
+// A tagged union's payload field type may name the union itself, in which case it was captured
+// while only the union's identity was published (see `resolve_enum_values`) and carries no cases.
+// Re-read the declaration so a value typed from that field — a `match` bind, an element of a
+// payload collection — sees the union's complete case set instead of the identity shell.
+FSParser::DataType FSAnalyzer::complete_self_referential_enum_type(const FSParser::DataType &p_type) {
+	FSParser::DataType completed = p_type;
+
+	if (completed.kind == FSParser::DataType::ENUM && completed.is_tagged_union &&
+			completed.enum_values.is_empty() && completed.class_type != nullptr) {
+		const FSParser::ClassNode *owner = completed.class_type;
+		const FSParser::EnumNode *declaration = nullptr;
+		if (owner->is_enum_file) {
+			declaration = owner->enum_file_decl;
+		} else if (owner->has_member(completed.enum_type)) {
+			const FSParser::ClassNode::Member member = owner->get_member(completed.enum_type);
+			if (member.type == FSParser::ClassNode::Member::ENUM) {
+				declaration = member.m_enum;
+			}
+		}
+
+		if (declaration != nullptr) {
+			const FSParser::DataType declared_type = declaration->get_datatype();
+			if (declared_type.is_set() && declared_type.kind == FSParser::DataType::ENUM &&
+					!declared_type.enum_values.is_empty()) {
+				completed.enum_values = declared_type.enum_values;
+				completed.enum_case_payloads = declared_type.enum_case_payloads;
+			}
+		}
+	}
+
+	// A payload field may also nest the union inside a typed collection (`Array[Chain]`).
+	for (int i = 0; i < completed.get_container_element_type_count(); i++) {
+		completed.set_container_element_type(i, complete_self_referential_enum_type(completed.get_container_element_type(i)));
+	}
+
+	return completed;
+}
+
 FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 		const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner) {
 	ERR_FAIL_NULL_V(p_enum, p_enum_type);
