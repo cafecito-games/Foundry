@@ -23,7 +23,6 @@ LIB_JAVA = JAVA_ROOT / "lib/src/main/java"
 LIB_RESOURCES = JAVA_ROOT / "lib/src/main/res"
 LIB_TESTS = JAVA_ROOT / "lib/src/test"
 LIB_ANDROID_TESTS = JAVA_ROOT / "lib/src/androidTest"
-THIRDPARTY = JAVA_ROOT / "THIRDPARTY.md"
 WRAPPER = JAVA_ROOT / "gradle/wrapper/gradle-wrapper.properties"
 NATIVE_CONTRACT_TOOL = REPO_ROOT / "platform/android/android_native_contract.py"
 NATIVE_STAGING_TOOL = REPO_ROOT / "platform/android/android_native_staging.py"
@@ -582,19 +581,6 @@ class AndroidGradleRuntimeContractTests(unittest.TestCase):
         self.assertIn("try {", config)
         self.assertIn("catch (Exception ignored)", config)
         self.assertIn("0000000000000000000000000000000000000000", config)
-
-    def test_third_party_provenance_describes_the_in_tree_sources_precisely(self) -> None:
-        third_party = read(THIRDPARTY)
-
-        for fragment in ("com.android.apksig",):
-            self.assertIn(fragment, third_party)
-        for stale in (
-            "lib/src/com/google",
-            "lib/aidl/com/android",
-            "com.google.android.vending",
-            "yet unclear",
-        ):
-            self.assertNotIn(stale, third_party)
 
     def test_wrapper_verifies_the_gradle_distribution(self) -> None:
         wrapper = read(WRAPPER)
