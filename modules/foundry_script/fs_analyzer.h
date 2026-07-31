@@ -569,6 +569,12 @@ private:
 	HashMap<StringName, FSParser::DataType> conformance_trait_substitution(FSParser::ClassNode *p_trait,
 			const FSParser::ClassNode::TraitUse &p_trait_use);
 	FSParser::FunctionNode *find_static_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method);
+	// True once this analysis has run the conformance-index probe, so it runs at most once per file.
+	bool indexed_conformance_files_probed = false;
+	// Registers the conformances of every conformance-declaring file the project-wide declaration
+	// index knows about, so the hidden-witness diagnostic reflects the project on disk instead of
+	// whatever this process happened to analyze first. Creates no reach.
+	void ensure_indexed_conformance_files_registered();
 	// True when a retroactive conformance supplies `p_method` for `p_target_type` but this file does
 	// not load its declaring file, reporting where it was declared. Lets an unresolved call say why
 	// it cannot be typed instead of passing analysis and missing at run time.

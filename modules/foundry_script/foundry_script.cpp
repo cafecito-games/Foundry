@@ -4104,6 +4104,17 @@ Vector<String> FSLanguage::get_conformance_files_in_namespace(const String &p_na
 	return files == nullptr ? Vector<String>() : *files;
 }
 
+Vector<String> FSLanguage::get_all_conformance_files() const {
+	MutexLock lock(conformance_index_mutex);
+	Vector<String> files;
+	files.resize(conformance_namespace_by_file.size());
+	int index = 0;
+	for (const KeyValue<String, String> &entry : conformance_namespace_by_file) {
+		files.write[index++] = entry.key;
+	}
+	return files;
+}
+
 #ifdef TOOLS_ENABLED
 void FSLanguage::notify_disk_source_changed(const String &p_path) {
 	if (p_path.is_empty()) {

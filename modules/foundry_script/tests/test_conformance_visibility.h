@@ -226,6 +226,17 @@ extend FsnWidget uses FsnGadgetlike:
 		}
 		return false;
 	}
+
+	// Both needles in *one* message, so a pair of unrelated diagnostics cannot stand in for the
+	// hidden-witness error, which names the call and the file to load in the same sentence.
+	static bool any_error_contains_both(const Vector<String> &p_messages, const String &p_first, const String &p_second) {
+		for (const String &message : p_messages) {
+			if (message.contains(p_first) && message.contains(p_second)) {
+				return true;
+			}
+		}
+		return false;
+	}
 };
 
 TEST_CASE("[Modules][FoundryScript][Conformance] a namespace import reaches the conformances declared in it") {
@@ -285,8 +296,9 @@ func probe() -> bool:
 	}
 
 	SUBCASE("an instance call on a witness it cannot reach is rejected, not deferred to run time") {
-		// The registry has to hold the conformance for this to be the case under test at all: without
-		// it the call is merely unresolved, which is a different (and pre-existing) diagnostic.
+		// Analyzing the declaring file first puts its conformance in the process-global registry. The
+		// cold counterpart — declaring file indexed but never analyzed — is covered by "the
+		// hidden-witness diagnostic does not depend on analysis order" below.
 		REQUIRE(fixture.analysis_errors(fixture.conformance_path).is_empty());
 
 		const String consumer_path = fixture.write("fsn_consumer_hidden_call.fs", R"(extends RefCounted
@@ -373,6 +385,174 @@ func probe() -> String:
 		FSLanguage::get_singleton()->remove_conformance_file(open_conformance_path);
 
 		CHECK(errors.is_empty());
+	}
+}
+
+// The registry is filled as a side effect of analyzing files, so before this the hidden-witness
+// diagnostic could only fire when something else in the same process had already analyzed the
+// declaring file. On a cold run the call degraded to an unsafe-access warning and failed at run time.
+// Every subcase below analyzes the consumer with the declaring file never analyzed, only indexed.
+TEST_CASE("[Modules][FoundryScript][Conformance] the hidden-witness diagnostic does not depend on analysis order") {
+	NamespacedConformanceFixture fixture;
+	// Nothing may carry over from an earlier test: a warm registry would answer these on its own.
+	FSConformanceRegistry::get_singleton()->clear();
+
+	SUBCASE("a cold registry still rejects a call on an unreachable namespace conformance") {
+		const String consumer_path = fixture.write("fsn_consumer_cold_call.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnWidget.new()
+	return widget.fsn_gadget()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path));
+	}
+
+	SUBCASE("a cold registry still rejects a call on an unreachable global-namespace conformance") {
+		// The flat shape: no `namespace` anywhere, so no import could have brought the conformance in
+		// and nothing but the index knows the declaring file exists.
+		const String widget_path = fixture.write("fsg_widget.fs", R"(final class_name FsgWidget extends RefCounted
+
+var fsg_label: String = "widget"
+)");
+		const String trait_path = fixture.write("fsg_gadgetlike.fs", R"(trait_name FsgGadgetlike
+
+abstract func fsg_gadget() -> String
+)");
+		const String conformance_path = fixture.write("fsg_conformance.fs", R"(extend FsgWidget uses FsgGadgetlike:
+	func fsg_gadget() -> String:
+		return "gadget:" + fsg_label
+)");
+		ConformanceVisibilityFixture::register_global_class("FsgWidget", widget_path, "RefCounted", false);
+		ConformanceVisibilityFixture::register_global_class("FsgGadgetlike", trait_path, "RefCounted", true);
+		FSLanguage::get_singleton()->add_conformance_file(conformance_path, "");
+
+		const String consumer_path = fixture.write("fsg_consumer_cold_call.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsgWidget.new()
+	return widget.fsg_gadget()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsgWidget");
+		ScriptServer::remove_global_class("FsgGadgetlike");
+		FSLanguage::get_singleton()->remove_conformance_file(conformance_path);
+
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsg_gadget()", conformance_path));
+	}
+
+	SUBCASE("the probe does not make the hidden witness reachable") {
+		// Registering a file's conformances must not put it in the dependency graph: that would make
+		// the conformance *visible*, type-checking the call with no load edge behind it and bringing
+		// back the run-time failure the diagnostic exists to prevent.
+		const String consumer_path = fixture.write("fsn_consumer_cold_reach.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnWidget.new()
+	var gadget: FsnGadgetlike = widget
+	return widget.fsn_gadget() + str(gadget != null)
+)");
+		FSCache::remove_parser(consumer_path);
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(FileAccess::get_file_as_string(consumer_path), consumer_path, false), OK);
+		FSAnalyzer analyzer(&parser);
+		analyzer.analyze();
+
+		Vector<String> errors;
+		for (const FSParser::ParserError &error : parser.get_errors()) {
+			errors.push_back(error.message);
+		}
+		// The trait-typed assignment stays rejected, and the call is still named as hidden.
+		CHECK(NamespacedConformanceFixture::any_error_contains(errors, "with specified type FsnGadgetlike"));
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path));
+		CHECK(parser.get_dependencies().find(fixture.conformance_path) == nullptr);
+		CHECK_FALSE(parser.get_depended_parsers().has(fixture.conformance_path));
+	}
+
+	SUBCASE("an unindexed conformance file changes nothing") {
+		const String widget_path = fixture.write("fsu_widget.fs", R"(final class_name FsuWidget extends RefCounted
+)");
+		const String trait_path = fixture.write("fsu_gadgetlike.fs", R"(trait_name FsuGadgetlike
+
+abstract func fsu_gadget() -> String
+)");
+		const String conformance_path = fixture.write("fsu_conformance.fs", R"(extend FsuWidget uses FsuGadgetlike:
+	func fsu_gadget() -> String:
+		return "gadget"
+)");
+		ConformanceVisibilityFixture::register_global_class("FsuWidget", widget_path, "RefCounted", false);
+		ConformanceVisibilityFixture::register_global_class("FsuGadgetlike", trait_path, "RefCounted", true);
+
+		const String consumer_path = fixture.write("fsu_consumer.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsuWidget.new()
+	return str(widget.fsu_gadget())
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsuWidget");
+		ScriptServer::remove_global_class("FsuGadgetlike");
+
+		// The index is the only source of truth the probe has, so a file it does not list keeps the
+		// pre-existing behavior: an unresolved call that is merely unsafe, not an error.
+		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, conformance_path));
+		CHECK(errors.is_empty());
+	}
+
+	SUBCASE("a conformance file that fails to parse is skipped") {
+		const String broken_path = fixture.write("fsn_broken_conformance.fs", R"(extend FsnWidget uses
+	func (
+)");
+		FSLanguage::get_singleton()->add_conformance_file(broken_path, "");
+
+		const String consumer_path = fixture.write("fsn_consumer_broken_probe.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FsnWidget.new()
+	return str(widget.fsn_absent())
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		FSLanguage::get_singleton()->remove_conformance_file(broken_path);
+
+		// A broken probed file contributes nothing, and its own errors stay in its own parser.
+		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, broken_path));
+		CHECK(errors.is_empty());
+	}
+
+	SUBCASE("a declaring file that preloads the consumer does not create a false cycle") {
+		const String widget_path = fixture.write("fsc_widget.fs", R"(final class_name FscWidget extends RefCounted
+)");
+		ConformanceVisibilityFixture::register_global_class("FscWidget", widget_path, "RefCounted", false);
+		const String consumer_path = fixture.write("fsc_consumer.fs", R"(extends RefCounted
+
+
+func probe() -> String:
+	var widget := FscWidget.new()
+	return widget.fsn_gadget()
+)");
+		const String conformance_path = fixture.write("fsc_conformance.fs", R"(const _Consumer = preload("fsc_consumer.fs")
+
+extend FscWidget uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "cycle"
+)");
+		FSLanguage::get_singleton()->add_conformance_file(conformance_path, "");
+
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FscWidget");
+		FSLanguage::get_singleton()->remove_conformance_file(conformance_path);
+
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", conformance_path));
+		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, "Cyclic reference"));
 	}
 }
 
