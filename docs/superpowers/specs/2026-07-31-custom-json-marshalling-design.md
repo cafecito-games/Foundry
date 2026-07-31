@@ -24,9 +24,11 @@ serializer for engine round-tripping, which is a different concern from user-def
 ## 2. Locked decisions
 
 1. **Scope is encode + decode**, both routed through a single trait.
-2. **The trait and its supporting types are engine-registered**, defined natively by the
-   `foundry_script` module. They resolve with no import and no file on disk. No bundled `.fs` stdlib
-   is introduced.
+2. **The trait and its supporting types are built in**, declared in `.fs` source that is compiled
+   into the `foundry_script` module and served under a reserved `foundry://builtin/` path scheme.
+   They resolve with no import and no file the user can edit or delete. See §3.2 — this replaces an
+   earlier "no source at all" position, which is not implementable: global-name resolution requires
+   parseable source behind a path.
 3. **Non-conforming objects keep today's behavior** — the quoted `to_string`. The feature is purely
    additive; no existing output changes.
 4. **`to_json` returns a `JsonNode` tagged union, not a `Variant`**, so the analyzer rejects a
@@ -45,11 +47,15 @@ serializer for engine round-tripping, which is a different concern from user-def
 9. **Classes only. Enums, tuples, and builtin value types are out of scope.** Their runtime values
    carry no type identity, so `JSON.stringify` has nothing to dispatch on. See §8.
 10. **Self-recursive tagged unions are a prerequisite**, landed as a separate issue before any of
-    this work. See §3.
+    this work. See §3.1.
 11. **`GRAMMAR.md` is updated in the same change as any syntax-affecting PR**, per the repo's
     normative-spec rule.
 
-## 3. Prerequisite — self-recursive tagged unions
+## 3. Prerequisites
+
+Two pieces of language/module infrastructure must land before any marshalling work.
+
+## 3.1 Self-recursive tagged unions
 
 `JsonNode` needs `Array(items: Array[JsonNode])` and `Object(entries: Dictionary[String, JsonNode])`.
 The current analyzer rejects this. Measured against `bin/foundry.macos.editor.dev.arm64` (build
@@ -91,6 +97,35 @@ The prerequisite issue delivers:
 Genuinely cyclic constructs that have no valid representation must still be rejected. Recursion
 through a payload slot terminates at runtime because a value is finite; the analyzer's job is to stop
 treating the type-level reference as an error.
+
+## 3.2 Builtin source provider
+
+A global Foundry Script type is resolved by looking up its path with
+`ScriptServer::get_global_class_path` (`fs_analyzer.cpp:6892`) and parsing that path through the
+dependency-parser machinery. `ScriptServer::add_global_class`
+(`core/object/script_language.cpp:499`) requires a path. There is no embedded- or builtin-source
+mechanism in the module today, so a built-in type must have parseable source behind some path.
+
+The prerequisite adds the smallest mechanism that satisfies this:
+
+1. A reserved path scheme, `foundry://builtin/<name>.fs`, that never collides with `res://` or
+   `user://` and is not writable from a project.
+2. A native registry mapping each builtin path to its `.fs` source text, compiled into the module as
+   string data so it ships inside the binary — no export packing, no versioning, no loose files a
+   user can edit or delete.
+3. Source resolution for that scheme in the parser-ref/dependency layer, so an existing
+   `raise_depended_parser_for(path, ...)` call transparently serves builtin source.
+4. Registration of each builtin global name at module init through the normal
+   `ScriptServer::add_global_class` path, with the correct `is_trait`/`is_enum` flags.
+
+Everything downstream — analysis, codegen, completion, LSP, documentation — then works through the
+existing machinery with no special cases. Alternatives considered and rejected: shipping loose `.fs`
+files into the project (user-editable, needs export packing), implementing the types via ClassDB
+(no generics, no tagged unions), and special-casing them as analyzer intrinsics like `Self`
+(hand-built DataTypes plus repeated special-casing across analyzer, codegen, completion, and LSP).
+
+Builtin sources are parsed with the same analyzer as user code, so an error in one is a module bug,
+not a user error. A test asserts every registered builtin parses and analyzes cleanly.
 
 ## 4. User-facing surface
 
@@ -301,13 +336,21 @@ than left implied.
 Per the repo's test-authoring rules, every test executes code and asserts on results. No test asserts
 on the source text of another file, on documentation prose, or on the existence of another test.
 
-**Prerequisite (§3)**
+**Prerequisite — recursive tagged unions (§3.1)**
 
 - Analyzer fixtures for direct recursion, indirect recursion through `Array[T]`, and indirect
   recursion through `Dictionary[K, V]`, in both `enum` and `enum_name` forms.
 - A runtime fixture constructing a recursive tree and `match`-destructuring it back.
 - An error fixture pinning the standalone-lint regression, so a file that will fail global resolution
   fails when linted alone.
+- A negative fixture proving genuinely unrepresentable cycles are still rejected.
+
+**Prerequisite — builtin source provider (§3.2)**
+
+- A C++ doctest asserting a registered builtin path resolves to its source and parses.
+- A test asserting every registered builtin analyzes with zero errors, so a malformed builtin fails
+  the suite rather than surfacing as a confusing user-facing error.
+- A test asserting a project file cannot shadow or write a `foundry://builtin/` path.
 
 **Encode**
 
@@ -341,12 +384,13 @@ tracked directories.
 
 ## 10. Implementation order
 
-1. Self-recursive tagged unions, plus the false-negative lint fix (§3). Blocks everything else.
-2. `JsonNode`, `JsonDecodeError`, `JsonResult[T]`, and `JsonSerializable` registered natively, with
-   `JsonNode`'s static helpers.
-3. The `JSONObjectMarshaller` seam in `core/io/json.cpp`, with the `Variant::OBJECT` case and the
+1. Self-recursive tagged unions, plus the false-negative lint fix (§3.1). Blocks everything else.
+2. The builtin source provider (§3.2). Independent of step 1; both must land before step 3.
+3. `JsonNode`, `JsonDecodeError`, `JsonResult[T]`, and `JsonSerializable` declared as builtin
+   sources, with `JsonNode`'s static helpers.
+4. The `JSONObjectMarshaller` seam in `core/io/json.cpp`, with the `Variant::OBJECT` case and the
    `ObjectID` cycle guard. Landable and testable before any module handler exists, since the
-   no-marshaller path is the current behavior.
-4. The module-side encode handler: trait check, `Object::call` dispatch, `JsonNode` lowering.
-5. `JSON.parse_to_node` and the module-side lifting.
-6. Round-trip fixtures and documentation.
+   no-marshaller path is the current behavior, and independent of steps 1-3.
+5. The module-side encode handler: trait check, `Object::call` dispatch, `JsonNode` lowering.
+6. `JSON.parse_to_node` and the module-side lifting.
+7. Round-trip fixtures and documentation.
