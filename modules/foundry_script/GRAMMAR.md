@@ -252,15 +252,15 @@ ANNOTATION = "@", identifier, { ".", identifier } ;
 
 The `@` plus following dotted name is lexed as a single `ANNOTATION` token (e.g. `@export`,
 `@onready`, `@cafecito.test.timeout`). There is no separate "qualified annotation" token type:
-`@export` and `@cafecito.test.timeout` are both single `ANNOTATION` tokens whose `literal` is
-the full dotted name.
+`@export` and `@cafecito.test.timeout` are both single `ANNOTATION` tokens, and the token's
+`literal` includes the leading `@` (e.g. `@cafecito.test.timeout` has literal `"@cafecito.test.timeout"`).
 
 A "." only extends the annotation name when it is *immediately* followed by an `id_start`
 character; a "." not followed by an `id_start` character (a stray "." or one that begins
 something else, e.g. `@export.5`) is left unconsumed for the regular tokenizer and is not part
 of the `ANNOTATION` token. There is no dedicated syntax for a dotted name that ends in a
 trailing "." — outside of completion, such a "." is simply not absorbed into the token, so
-`@cafecito.` lexes as `ANNOTATION("cafecito")` followed by a separate `.` token, which the
+`@cafecito.` lexes as `ANNOTATION("@cafecito")` followed by a separate `.` token, which the
 parser (§4.6) is not expecting after an annotation name and rejects. As an editor-tooling
 exception, when the tokenizer is running in completion mode and a trailing "." sits
 immediately before the completion cursor (e.g. `@cafecito.|`), that "." *is* absorbed into the
