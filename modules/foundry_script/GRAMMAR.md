@@ -490,6 +490,13 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
   value on its own; a payload-carrying case is only usable when constructed with its
   declared field types (`Name.Case(argument, ...)`), and its payload fields are not
   reachable directly on a value of the union type.
+- A tagged union's payload field types **may reference the union itself**, directly
+  (`Link(next: Chain)`) or indirectly through a typed collection
+  (`Branch(children: Array[Tree])`, `Section(entries: Dictionary[String, Config])`). This
+  is valid in both the inner `enum` and whole-file `enum_name` forms. Recursion terminates
+  at runtime because a value is finite: a payload slot holds another `[tag, payload...]`
+  read-only array. Int-backed enums are unaffected — their `= expression` values still
+  cannot reference the enum being declared.
 - Enum values must appear before enum functions. A functions-only named enum is valid.
   Enum functions reuse ordinary function signatures and bodies, allow `static` and
   `async`, and reject `abstract` and `final`. Variables, constants, signals, nested

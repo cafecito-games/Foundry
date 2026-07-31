@@ -773,6 +773,18 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 
 	FSParser::DataType enum_type = p_enum_type;
 	enum_type.is_tagged_union = p_enum->is_tagged_union;
+
+	// A tagged union's payload fields are types only (the grammar admits no default-value
+	// expressions there), so a payload type that names this same union needs the union's
+	// identity, not its values. Publishing the identity before the value loop lets that
+	// reference resolve instead of re-entering resolution and reporting a false cycle. The
+	// complete type — values, dictionary, and payloads — replaces it once the loop finishes.
+	// Int-backed enums keep the stricter guard: their `= expression` values can form a cycle
+	// that genuinely has no resolution.
+	if (enum_type.is_tagged_union) {
+		p_enum->set_datatype(enum_type);
+	}
+
 	Dictionary dictionary;
 	for (int i = 0; i < p_enum->values.size(); i++) {
 		FSParser::EnumNode::Value &element = p_enum->values.write[i];

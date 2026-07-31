@@ -6948,6 +6948,9 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_current_parser(const S
 		return error_type;
 	}
 	if (enum_node->get_datatype().is_set()) {
+		// A tagged union publishes its identity before resolving payload types, so a payload field
+		// naming this same union lands here and gets the identity shell. That is the correct answer
+		// in a type position, and the complete type replaces the shell once resolution finishes.
 		return enum_node->get_datatype();
 	}
 
@@ -9972,6 +9975,21 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 			update_const_expression_builtin_type(argument, field_type, "pass");
 		} else if (!field_type.is_variant() && (argument_type.is_variant() || !argument_type.is_hard_type())) {
 			mark_node_unsafe(p_call);
+		}
+
+		// A collection literal in payload position stays untyped unless the declared field type is
+		// pushed into it, exactly as an ordinary call does for its typed parameters. Without this,
+		// `Case(children: Array[T])` rejects `Case([...])` at runtime as an untyped `Array`.
+		if (!field_type.is_hard_type()) {
+			continue;
+		}
+		if (argument->type == FSParser::Node::ARRAY && field_type.has_container_element_type(0)) {
+			update_array_literal_element_type(static_cast<FSParser::ArrayNode *>(argument),
+					field_type.get_container_element_type(0));
+		} else if (argument->type == FSParser::Node::DICTIONARY && field_type.has_container_element_types()) {
+			update_dictionary_literal_element_type(static_cast<FSParser::DictionaryNode *>(argument),
+					field_type.get_container_element_type_or_variant(0),
+					field_type.get_container_element_type_or_variant(1));
 		}
 	}
 
