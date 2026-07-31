@@ -3780,6 +3780,47 @@ func f():
 			check_semantic_token_at(tokens, 9, 17, 4, LSP::SemanticTokenType::PROPERTY, static_modifier | readonly_modifier | default_library_modifier); // ZERO
 		}
 
+		SUBCASE("a whole-file enum or tuple keeps its own kind") {
+			// `enum_name`/`tuple_name` build a synthetic head class around the declaration; the
+			// declaration must still read as an enum or a tuple, not as that class.
+			const String enum_uri = workspace->get_file_uri("res://lsp/semantic_tokens_enum_file.fs");
+			text_document->didOpen(make_did_open_params(enum_uri, "enum_name Direction:\n\tUP\n\tDOWN\n"));
+
+			Vector<DecodedSemanticToken> enum_tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(enum_uri)));
+			check_semantic_token_at(enum_tokens, 0, 10, 9, LSP::SemanticTokenType::ENUM, declaration_modifier); // Direction
+			check_semantic_token_at(enum_tokens, 1, 1, 2, LSP::SemanticTokenType::ENUM_MEMBER, declaration_modifier | readonly_modifier); // UP
+			check_semantic_token_at(enum_tokens, 2, 1, 4, LSP::SemanticTokenType::ENUM_MEMBER, declaration_modifier | readonly_modifier); // DOWN
+
+			const String tuple_uri = workspace->get_file_uri("res://lsp/semantic_tokens_tuple_file.fs");
+			text_document->didOpen(make_did_open_params(tuple_uri, "tuple_name Point(x: float, y: float)\n"));
+
+			Vector<DecodedSemanticToken> tuple_tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(tuple_uri)));
+			check_semantic_token_at(tuple_tokens, 0, 11, 5, LSP::SemanticTokenType::STRUCT, declaration_modifier); // Point
+			check_semantic_token_at(tuple_tokens, 0, 17, 1, LSP::SemanticTokenType::PROPERTY, declaration_modifier | readonly_modifier); // x
+			check_semantic_token_at(tuple_tokens, 0, 20, 5, LSP::SemanticTokenType::TYPE, default_library_modifier); // float
+		}
+
+		SUBCASE("a method used as a value stays a method") {
+			const String source =
+					"class Inner:\n"
+					"\tconst VALUE := 1\n"
+					"\n"
+					"func handler() -> void:\n"
+					"\tpass\n"
+					"\n"
+					"func hook() -> void:\n"
+					"\tvar callback := self.handler\n"
+					"\tprint(callback, Inner.VALUE)\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_member_values.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			// A `Callable`-typed attribute is only known to be a method through its resolved source.
+			check_semantic_token_at(tokens, 7, 22, 7, LSP::SemanticTokenType::METHOD); // handler
+			check_semantic_token_at(tokens, 8, 17, 5, LSP::SemanticTokenType::CLASS); // Inner
+			check_semantic_token_at(tokens, 8, 23, 5, LSP::SemanticTokenType::PROPERTY, static_modifier | readonly_modifier); // VALUE
+		}
+
 		SUBCASE("the resolved stream stays sorted, non-overlapping, and deterministic") {
 			// Every word below is described by more than one producer: `match` and `set` are lexical
 			// identifiers the tree reclassifies, and `Node` is both a type chain segment and an

@@ -314,7 +314,9 @@ TypeClassification classify_datatype(const FSParser::DataType &p_datatype) {
 // The namespace a resolved type lives in, or an empty string when it has none. Used to tell a
 // namespace-qualified reference (`game.Player`) from an outer-class-qualified one (`Outer.Inner`).
 String namespace_of_datatype(const FSParser::DataType &p_datatype) {
-	if (p_datatype.kind != FSParser::DataType::CLASS || p_datatype.class_type == nullptr) {
+	// Enums and tuples declared globally keep their declaring class too, so the namespace of a
+	// qualified reference is wherever that class ended up, whatever the type's kind is.
+	if (p_datatype.class_type == nullptr) {
 		return String();
 	}
 	const FSParser::ClassNode *root = p_datatype.class_type;
@@ -660,6 +662,11 @@ bool DocumentClassifier::classify_identifier_reference(const FSParser::Identifie
 		}
 		return add_identifier(p_identifier, TokenType::ENUM_MEMBER, modifiers);
 	}
+	// The analyzer resolves an inner class lazily, so a reference to one can carry no usable data
+	// type; the recorded source still says the name is a class.
+	if (p_identifier->source == FSParser::IdentifierNode::MEMBER_CLASS) {
+		return add_identifier(p_identifier, TokenType::CLASS, 0);
+	}
 	return false;
 }
 
@@ -741,7 +748,15 @@ void DocumentClassifier::walk_class(const FSParser::ClassNode *p_class) {
 	if (p_class->is_final) {
 		modifiers |= bit(TokenModifier::FINAL);
 	}
-	add_identifier(p_class->identifier, p_class->is_trait ? TokenType::INTERFACE : TokenType::CLASS, modifiers);
+	// An `enum_name`/`tuple_name` file has a synthetic head class that borrows the declaration's
+	// identifier, so classifying it as a class would rename the only declaration in the file.
+	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
+		walk_enum(p_class->enum_file_decl);
+	} else if (p_class->is_tuple_file && p_class->tuple_file_decl != nullptr) {
+		walk_tuple(p_class->tuple_file_decl);
+	} else {
+		add_identifier(p_class->identifier, p_class->is_trait ? TokenType::INTERFACE : TokenType::CLASS, modifiers);
+	}
 
 	for (const FSParser::TypeParameterNode *type_parameter : p_class->type_parameters) {
 		walk_type_parameter(type_parameter);
@@ -989,6 +1004,19 @@ void DocumentClassifier::walk_subscript(const FSParser::SubscriptNode *p_subscri
 		modifiers |= bit(TokenModifier::DEFAULT_LIBRARY);
 	}
 
+	// A member the analyzer already resolved says what it is; the data type of a method or signal
+	// used as a value is only `Callable`/`Signal`, which a property could carry as well.
+	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_FUNCTION) {
+		if (base_type.is_meta_type) {
+			modifiers |= bit(TokenModifier::STATIC);
+		}
+		add_identifier(p_subscript->attribute, TokenType::METHOD, modifiers);
+		return;
+	}
+	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_SIGNAL) {
+		add_identifier(p_subscript->attribute, TokenType::EVENT, modifiers);
+		return;
+	}
 	if (attribute_type.is_meta_type) {
 		const TypeClassification classification = classify_datatype(attribute_type);
 		if (classification.valid) {
@@ -1126,6 +1154,11 @@ void DocumentClassifier::walk_call(const FSParser::CallNode *p_call) {
 			// functions but name a value shape, not a method.
 			if (p_call->is_enum_case_construction || (attribute_type.kind == FSParser::DataType::ENUM && attribute_type.enum_case_name != StringName())) {
 				walk_subscript(subscript, false);
+				return;
+			}
+			if (p_call->is_tuple_construction) {
+				walk_subscript(subscript, true);
+				add_identifier(subscript->attribute, TokenType::STRUCT, 0);
 				return;
 			}
 			walk_subscript(subscript, true);
