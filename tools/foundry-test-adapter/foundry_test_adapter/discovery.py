@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Optional
 
+from . import strict_json
 from .fields import (
     is_integer,
     require_bool,
@@ -167,7 +167,7 @@ def validate_discovery_stream(text: str) -> DiscoveryResult:
         if not raw_line.strip():
             continue
         try:
-            records.append((line_number, json.loads(raw_line)))
+            records.append((line_number, strict_json.loads(raw_line)))
         except ValueError as error:
             violations.append(Violation(ViolationCode.INVALID_JSON, str(error), _at(line_number)))
 

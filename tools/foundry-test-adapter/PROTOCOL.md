@@ -41,7 +41,8 @@ fail in any particular way. Clients detect support solely by the capabilities ar
 
 Every operation writes its artifact to a caller-provided path. Callers MUST provide unique scratch
 paths; runners MUST NOT write protocol artifacts into tracked fixture directories. Artifacts are
-UTF-8 encoded and use LF line endings.
+UTF-8 encoded and use LF line endings. JSON artifacts are strict RFC 8259 JSON: the non-standard
+`NaN`, `Infinity`, and `-Infinity` literals are syntax errors, not ignorable values.
 
 ## 3. Capabilities
 
@@ -223,14 +224,18 @@ ok 1 - MathTests.adds_numbers
   ...
 ```
 
-- Line 1 MUST be `TAP version 13`. Line 2 MUST be `# foundry-test-adapter: 1`.
+- Physical line 1 MUST be `TAP version 13` and physical line 2 MUST be
+  `# foundry-test-adapter: 1`. A blank line before or between them is a violation.
 - The plan `1..N` MUST appear exactly once, before any test point, and N MUST equal the deduplicated
-  number of selected runnable leaves. An empty selection therefore emits `1..0`.
+  number of selected runnable leaves. An empty selection therefore emits `1..0`. Because the plan is
+  written before any point, bailing out later never excuses a plan that disagrees with the
+  selection.
 - Test points MUST be numbered from 1 without gaps, and MUST appear in the same deterministic order
   as discovery.
 - A test point line is `ok <n> - <description>` or `not ok <n> - <description>`, optionally followed
   by ` # SKIP <reason>`. A description MUST NOT contain `#`, so the optional directive is
-  unambiguous.
+  unambiguous. `# SKIP` is the only directive version 1 defines; any other directive, including
+  `# TODO`, is outside the profile.
 - Further `#` comment lines carry no protocol meaning and are ignored.
 
 ### 5.1 Diagnostic blocks
@@ -271,7 +276,7 @@ A skipped test reports `ok <n> - <description> # SKIP <reason>` and still carrie
 ### 5.2 Bail out and completeness
 
 An adapter that detects catastrophic infrastructure failure after starting a report MUST write
-`Bail out! <message>` and MUST NOT write further TAP output. A process crash or forced kill cannot be
+`Bail out! <message>` and MUST NOT write further TAP output, including a second `Bail out!` line. A process crash or forced kill cannot be
 required to append any terminal marker.
 
 A report is complete only when it declares a plan, is not bailed out, and emitted exactly as many

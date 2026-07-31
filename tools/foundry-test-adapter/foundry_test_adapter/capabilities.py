@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Optional
 
+from . import strict_json
 from .fields import is_integer, require_present, require_string
 from .paths import PROTOCOL_NAME
 from .violations import Violation, ViolationCode
@@ -60,7 +60,7 @@ def validate_capabilities_document(text: str) -> CapabilitiesResult:
 
     violations: list[Violation] = []
     try:
-        document: Any = json.loads(text)
+        document: Any = strict_json.loads(text)
     except ValueError as error:
         violations.append(Violation(ViolationCode.INVALID_JSON, str(error)))
         return CapabilitiesResult(violations)

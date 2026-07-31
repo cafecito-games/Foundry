@@ -18,7 +18,7 @@ _PLAN_PATTERN = re.compile(r"^1\.\.(\d+)$")
 _POINT_PATTERN = re.compile(
     r"^(?P<status>not ok|ok) (?P<number>\d+) - (?P<description>[^#]*?)(?: # (?P<directive>.*))?$"
 )
-_DIRECTIVE_PATTERN = re.compile(r"^(?P<name>SKIP|TODO)(?: (?P<reason>.*))?$")
+_DIRECTIVE_PATTERN = re.compile(r"^SKIP(?: (?P<reason>.*))?$")
 _INTEGER_PATTERN = re.compile(r"^-?\d+$")
 
 _BLOCK_INDENT = "  "
@@ -131,17 +131,16 @@ def validate_tap_report(text: str) -> TapReport:
 
     lines = text.splitlines()
     numbered = [(index + 1, line) for index, line in enumerate(lines)]
-    significant = [(number, line) for number, line in numbered if line.strip()]
 
-    if not significant or significant[0][1] != TAP_VERSION_LINE:
-        violations.append(
-            Violation(ViolationCode.MISSING_TAP_VERSION, "Report must start with '{}'".format(TAP_VERSION_LINE))
-        )
-    if len(significant) < 2 or significant[1][1] != PROTOCOL_COMMENT_LINE:
+    # The two header lines are required at physical lines 1 and 2, so a leading or
+    # interleaved blank line is a violation rather than something to skip past.
+    if not lines or lines[0] != TAP_VERSION_LINE:
+        violations.append(Violation(ViolationCode.MISSING_TAP_VERSION, "Line 1 must be '{}'".format(TAP_VERSION_LINE)))
+    if len(lines) < 2 or lines[1] != PROTOCOL_COMMENT_LINE:
         violations.append(
             Violation(
                 ViolationCode.MISSING_PROTOCOL_COMMENT,
-                "The second line must be '{}'".format(PROTOCOL_COMMENT_LINE),
+                "Line 2 must be '{}'".format(PROTOCOL_COMMENT_LINE),
             )
         )
 
@@ -151,9 +150,9 @@ def validate_tap_report(text: str) -> TapReport:
         index += 1
         if not line.strip():
             continue
-        if line == TAP_VERSION_LINE and line_number == significant[0][0]:
+        if line_number == 1 and line == TAP_VERSION_LINE:
             continue
-        if line == PROTOCOL_COMMENT_LINE and len(significant) > 1 and line_number == significant[1][0]:
+        if line_number == 2 and line == PROTOCOL_COMMENT_LINE:
             continue
 
         # Checked before the bail-out line itself is handled, so a second
@@ -321,6 +320,8 @@ def _build_point(
     if directive is not None:
         directive_match = _DIRECTIVE_PATTERN.match(directive.strip())
         if directive_match is None:
+            # Version 1 defines only `# SKIP`; every other TAP directive, including
+            # `# TODO`, is outside the profile.
             violations.append(
                 Violation(
                     ViolationCode.UNRECOGNIZED_LINE,
@@ -328,7 +329,7 @@ def _build_point(
                     _at(line_number),
                 )
             )
-        elif directive_match.group("name") == "SKIP":
+        else:
             skipped = True
             skip_reason = (directive_match.group("reason") or "").strip() or None
 

@@ -66,7 +66,9 @@ def validate_run(
     expected, violations = expected_leaf_ids(discovery, selection)
     actual = report.point_ids()
 
-    if report.plan is not None and not report.bailed_out and report.plan != len(expected):
+    # The plan is written before any point, so bailing out later never excuses a plan
+    # that disagrees with the selection.
+    if report.plan is not None and report.plan != len(expected):
         violations.append(
             Violation(
                 ViolationCode.INVALID_PLAN,

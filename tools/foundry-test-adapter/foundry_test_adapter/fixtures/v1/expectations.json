@@ -41,6 +41,11 @@
         { "code": "invalid_field_type", "location": "/supported_versions/0" }
       ]
     },
+    "invalid/non_standard_json_constant.json": {
+      "violations": [
+        { "code": "invalid_json", "location": "" }
+      ]
+    },
     "invalid/not_an_object.json": {
       "violations": [
         { "code": "document_not_object", "location": "" }
@@ -161,6 +166,11 @@
         { "code": "invalid_field_value", "location": "line 4" }
       ]
     },
+    "invalid/blank_line_between_headers.tap": {
+      "violations": [
+        { "code": "missing_protocol_comment", "location": "" }
+      ]
+    },
     "invalid/content_after_bail_out.tap": {
       "violations": [
         { "code": "content_after_bail_out", "location": "line 12" }
@@ -251,6 +261,11 @@
       ],
       "bailed_out": true,
       "complete": false
+    },
+    "invalid/todo_directive.tap": {
+      "violations": [
+        { "code": "unrecognized_line", "location": "line 4" }
+      ]
     },
     "invalid/truncated_diagnostic_block.tap": {
       "violations": [
