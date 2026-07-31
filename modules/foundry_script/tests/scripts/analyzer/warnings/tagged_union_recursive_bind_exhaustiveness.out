@@ -1,12 +1,15 @@
 FS_TEST_OK
-~~ WARNING at line 9: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch. Add the missing patterns or a "_" wildcard branch.
-~~ WARNING at line 15: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Branch. Add the missing patterns or a "_" wildcard branch.
-~~ WARNING at line 17: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch. Add the missing patterns or a "_" wildcard branch.
-~~ WARNING at line 23: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Link. Add the missing patterns or a "_" wildcard branch.
-~~ WARNING at line 25: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch. Add the missing patterns or a "_" wildcard branch.
-~~ WARNING at line 31: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Branch. Add the missing patterns or a "_" wildcard branch.
-~~ WARNING at line 33: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Branch. Add the missing patterns or a "_" wildcard branch.
-~~ WARNING at line 35: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 10: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch, Maker. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 16: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Branch, Maker. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 18: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch, Maker. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 24: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Link, Maker. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 26: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch, Maker. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 32: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Branch, Maker. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 34: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Branch, Maker. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 36: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch, Maker. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 42: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: End, Link, Branch. Add the missing patterns or a "_" wildcard branch.
+~~ WARNING at line 44: (NON_EXHAUSTIVE_MATCH) The "match" statement does not cover all values of "Chain". Unhandled: Link, Branch, Maker. Add the missing patterns or a "_" wildcard branch.
+1
 1
 1
 1

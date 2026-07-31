@@ -4,6 +4,7 @@ enum Chain:
 	End
 	Link(next: Chain)
 	Branch(children: Array[Chain])
+	Maker(build: Callable[[], Chain])
 
 func from_parameter(node: Chain) -> int:
 	match node:
@@ -37,8 +38,20 @@ func from_nested_bind(node: Chain) -> int:
 							return 1
 	return 0
 
+func from_callable_bind(node: Chain) -> int:
+	match node:
+		Chain.Maker(var build):
+			match build.call():
+				Chain.End:
+					return 1
+	return 0
+
+func make_end() -> Chain:
+	return Chain.End
+
 func test():
 	print(from_parameter(Chain.End))
 	print(from_direct_bind(Chain.Link(Chain.End)))
 	print(from_collection_bind(Chain.Branch([Chain.End])))
 	print(from_nested_bind(Chain.Link(Chain.Link(Chain.End))))
+	print(from_callable_bind(Chain.Maker(make_end)))

@@ -789,9 +789,16 @@ FSParser::DataType FSAnalyzer::complete_self_referential_enum_type(const FSParse
 		}
 	}
 
-	// A payload field may also nest the union inside a typed collection (`Array[Chain]`).
+	// A payload field may also nest the union inside a typed collection (`Array[Chain]`) or a
+	// callable signature (`Callable[[], Chain]`), whose rich slots hold datatypes of their own.
 	for (int i = 0; i < completed.get_container_element_type_count(); i++) {
 		completed.set_container_element_type(i, complete_self_referential_enum_type(completed.get_container_element_type(i)));
+	}
+	for (int i = 0; i < completed.method_parameter_types.size(); i++) {
+		completed.method_parameter_types.write[i] = complete_self_referential_enum_type(completed.method_parameter_types[i]);
+	}
+	for (int i = 0; i < completed.method_return_type.size(); i++) {
+		completed.method_return_type.write[i] = complete_self_referential_enum_type(completed.method_return_type[i]);
 	}
 
 	return completed;
