@@ -87,6 +87,21 @@
 				Attempts to parse the [param json_string] provided and returns the parsed data. Returns [code]null[/code] if parse failed.
 			</description>
 		</method>
+		<method name="parse_to_node" qualifiers="static">
+			<return type="Variant" />
+			<param index="0" name="json_text" type="String" />
+			<description>
+				Attempts to parse the [param json_text] provided and returns a [code]JsonResult[JsonNode][/code]: either the parsed document as a [code]JsonNode[/code] tree, or the error explaining why there is none. Unlike [method parse_string], a parse failure is carried in the returned value instead of being reported as [code]null[/code].
+				Pass the parsed tree to a type's [code]from_json()[/code] to decode it, which is the counterpart of the [code]to_json()[/code] that [method stringify] honors for a value conforming to the [code]JsonSerializable[/code] trait.
+				[codeblock]
+				var parsed: JsonResult[JsonNode] = JSON.parse_to_node('{"level": 3}')
+				if parsed.is_ok():
+					var player := Player.from_json(parsed.value)
+				[/codeblock]
+				[b]Note:[/b] JSON has a single number type, so a number with no fractional part is reported as an [code]Int[/code] node and any other number as a [code]Float[/code] node. A decoder for a float field should accept both. Numbers are parsed as doubles, so a literal too large to be held exactly is rounded before it reaches the tree.
+				[b]Note:[/b] The [code]JsonNode[/code] and [code]JsonResult[/code] types are provided by the scripting language. Calling this method fails when no scripting module supplies them.
+			</description>
+		</method>
 		<method name="stringify" qualifiers="static">
 			<return type="String" />
 			<param index="0" name="data" type="Variant" />
