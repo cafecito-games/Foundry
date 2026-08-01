@@ -74,6 +74,9 @@ public:
 		String resource_path;
 		String debug_uri;
 		OS::ProcessID editor_pid = 0;
+		// True when this editor's own display server has no real backend (for example a
+		// headless tooling host), so a launched child must not attempt one either.
+		bool headless = false;
 	};
 
 	struct WindowPlacement {

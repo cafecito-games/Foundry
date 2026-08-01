@@ -39,6 +39,16 @@
 #include "main/main.h"
 #include "servers/display/display_server.h"
 
+namespace {
+// A launched child inherits its display backend request from the CLI, never from
+// whatever the running editor happens to have; an editor with no real display server
+// (a headless tooling host, for example) must not let a child default to trying one.
+bool current_display_is_headless() {
+	const DisplayServer *display_server = DisplayServer::get_singleton();
+	return display_server == nullptr || display_server->get_name() == "headless";
+}
+} // namespace
+
 EditorRun::Status EditorRun::get_status() const {
 	return status;
 }
@@ -55,6 +65,7 @@ EditorRun::LaunchContext EditorRun::build_launch_context() {
 	context.resource_path = ProjectSettings::get_singleton()->get_resource_path();
 	context.debug_uri = EditorDebuggerNode::get_singleton()->get_server_uri();
 	context.editor_pid = OS::get_singleton()->get_process_id();
+	context.headless = current_display_is_headless();
 	return context;
 }
 
@@ -62,6 +73,9 @@ List<String> EditorRun::build_project_test_arguments(const LaunchContext &p_cont
 	List<String> args;
 	for (const String &a : p_context.forwardable_arguments) {
 		args.push_back(a);
+	}
+	if (p_context.headless) {
+		args.push_back("--headless");
 	}
 
 	args.push_back("project");
@@ -133,6 +147,9 @@ Error EditorRun::run(const String &p_scene, const String &p_write_movie, const V
 
 	for (const String &a : Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_PROJECT)) {
 		args.push_back(a);
+	}
+	if (current_display_is_headless()) {
+		args.push_back("--headless");
 	}
 
 	String resource_path = ProjectSettings::get_singleton()->get_resource_path();

@@ -149,6 +149,26 @@ TEST_CASE("[Editor][EditorRun] A project_test launch without a debug host omits 
 	CHECK_EQ(index_of(arguments, "--editor-pid"), -1);
 }
 
+TEST_CASE("[Editor][EditorRun] A headless editor's project_test launch never lets its child pick its own display") {
+	// A launched child otherwise defaults to a real display backend even from a
+	// headless host, which is wrong for a debug-adapter-driven launch that has no
+	// window to show and no display server to attach to.
+	EditorRun::LaunchContext context = make_context();
+	context.headless = true;
+
+	const PackedStringArray arguments = to_array(EditorRun::build_project_test_arguments(context, make_launch()));
+	const int headless_index = index_of(arguments, "--headless");
+	const int separator = index_of(arguments, "--");
+	REQUIRE(headless_index >= 0);
+	REQUIRE(separator > 0);
+	CHECK(headless_index < separator);
+}
+
+TEST_CASE("[Editor][EditorRun] A non-headless editor's project_test launch requests no display override") {
+	const PackedStringArray arguments = to_array(EditorRun::build_project_test_arguments(make_context(), make_launch()));
+	CHECK_EQ(index_of(arguments, "--headless"), -1);
+}
+
 TEST_CASE("[Editor][EditorRun] The built project_test command parses back into a runnable invocation") {
 	PackedStringArray command;
 	command.push_back("foundry");
