@@ -540,6 +540,15 @@ class TokenizationTests(unittest.TestCase):
         self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
         self.assertNotScoped("int,", "entity.name.type.foundryscript", source=source)
 
+    def test_a_reassignment_inside_a_lambda_body_nested_in_a_dictionary_value_is_unaffected(self) -> None:
+        # `result = Node.new()` on its own line has the exact same shape as a Lua-style
+        # dictionary key, but it is a plain reassignment statement inside the lambda's
+        # body, not a fresh dictionary entry; the dictionary context must not swallow it.
+        source = 'var factories = {\n\t"build": func() -> Node:\n\t\tresult = Node.new()\n\t\treturn result,\n}\n'
+        self.assertScoped("result = Node.new()", "keyword.operator.assignment.foundryscript", offset=7, source=source)
+        self.assertScoped("Node.new()", "entity.name.function.call.foundryscript", offset=5, source=source)
+        self.assertNotScoped("result = Node.new()", "storage.type.accessor.foundryscript", source=source)
+
     def test_accessor_shaped_dictionary_keys_are_not_scoped_as_accessors(self) -> None:
         source = (
             "var python_entries = {\n"
