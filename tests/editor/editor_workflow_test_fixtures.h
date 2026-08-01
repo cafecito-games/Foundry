@@ -47,7 +47,7 @@ struct DisposableProjectSpec {
 };
 
 static String fixture_project_path(const String &p_fixture_name = "editor_automation_workflow") {
-	return TestUtils::get_executable_dir().path_join("../tests/fixtures").path_join(p_fixture_name).simplify_path();
+	return TestUtils::get_fixture_path(p_fixture_name);
 }
 
 static bool copy_relative_file(const String &p_source_root, const String &p_dest_root, const String &p_relative_path) {

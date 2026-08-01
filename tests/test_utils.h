@@ -36,5 +36,10 @@ namespace TestUtils {
 
 String get_data_path(const String &p_file);
 String get_executable_dir();
+// The `tests/` directory of the checkout the running binary was built from. Unlike a
+// path relative to the executable, this also resolves when the binary runs from inside
+// an application bundle, where the executable sits under `<name>.app/Contents/MacOS`.
+String get_tests_dir();
+String get_fixture_path(const String &p_relative_path);
 String get_temp_path(const String &p_suffix);
 } // namespace TestUtils

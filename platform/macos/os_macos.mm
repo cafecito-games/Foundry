@@ -51,10 +51,16 @@
 #endif
 
 #include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <libproc.h>
 #import <mach-o/dyld.h>
 #include <os/log.h>
+#include <signal.h>
+#include <sys/event.h>
 #include <sys/sysctl.h>
+#include <sys/time.h>
+#include <sys/wait.h>
 
 void OS_MacOS::add_frame_delay(bool p_can_draw, bool p_wake_for_events) {
 	bool wake_for_events = p_wake_for_events;
@@ -249,6 +255,8 @@ void OS_MacOS::finalize() {
 		memdelete(joypad_sdl);
 	}
 #endif
+
+	_close_bundle_processes();
 }
 
 void OS_MacOS::initialize_joypads() {
@@ -801,6 +809,103 @@ String OS_MacOS::get_executable_path() const {
 	}
 }
 
+void OS_MacOS::_track_bundle_process(ProcessID p_pid) {
+	if (p_pid <= 0) {
+		return;
+	}
+
+	// Non-parent `NOTE_EXITSTATUS` delivery is only part of the public kernel contract
+	// from macOS 11 onwards, so older systems keep no tracker and report no status.
+	if (@available(macOS 11.0, *)) {
+		const int queue_descriptor = kqueue();
+		if (queue_descriptor == -1) {
+			return;
+		}
+		// The tracker is private to this process; a launched child must never inherit it.
+		if (fcntl(queue_descriptor, F_SETFD, FD_CLOEXEC) == -1) {
+			close(queue_descriptor);
+			return;
+		}
+
+		struct kevent change;
+		EV_SET(&change, (uintptr_t)p_pid, EVFILT_PROC, EV_ADD | EV_ENABLE | EV_ONESHOT, NOTE_EXIT | NOTE_EXITSTATUS, 0, nullptr);
+		if (kevent(queue_descriptor, &change, 1, nullptr, 0, nullptr) == -1) {
+			close(queue_descriptor);
+			return;
+		}
+
+		MutexLock lock(bundle_process_mutex);
+		// A reused PID starts from scratch, so no earlier launch can satisfy this one.
+		BundleProcess *previous = bundle_processes.getptr(p_pid);
+		if (previous) {
+			if (previous->queue_descriptor != -1) {
+				close(previous->queue_descriptor);
+			}
+			bundle_processes.erase(p_pid);
+		}
+
+		BundleProcess tracker;
+		tracker.queue_descriptor = queue_descriptor;
+		bundle_processes.insert(p_pid, tracker);
+	}
+}
+
+void OS_MacOS::_forget_bundle_process(ProcessID p_pid) {
+	MutexLock lock(bundle_process_mutex);
+
+	BundleProcess *tracker = bundle_processes.getptr(p_pid);
+	if (!tracker) {
+		return;
+	}
+	if (tracker->queue_descriptor != -1) {
+		close(tracker->queue_descriptor);
+	}
+	bundle_processes.erase(p_pid);
+}
+
+void OS_MacOS::_close_bundle_processes() {
+	MutexLock lock(bundle_process_mutex);
+
+	for (KeyValue<ProcessID, BundleProcess> &entry : bundle_processes) {
+		if (entry.value.queue_descriptor != -1) {
+			close(entry.value.queue_descriptor);
+			entry.value.queue_descriptor = -1;
+		}
+	}
+	bundle_processes.clear();
+}
+
+bool OS_MacOS::_poll_bundle_process(ProcessID p_pid, BundleProcess &r_state) const {
+	MutexLock lock(bundle_process_mutex);
+
+	BundleProcess *tracker = bundle_processes.getptr(p_pid);
+	if (!tracker) {
+		return false;
+	}
+
+	if (!tracker->exited && tracker->queue_descriptor != -1) {
+		struct kevent event;
+		const struct timespec immediate = { 0, 0 };
+		const int received = kevent(tracker->queue_descriptor, nullptr, 0, &event, 1, &immediate);
+		if (received > 0 && (event.fflags & NOTE_EXIT)) {
+			tracker->exited = true;
+			if (event.fflags & NOTE_EXITSTATUS) {
+				// Decode the wait-family status exactly like the Unix child path does, so a
+				// bundled result is indistinguishable from a forked one.
+				const int status = (int)event.data;
+				tracker->exit_code = WIFEXITED(status) ? WEXITSTATUS(status) : status;
+				tracker->has_exit_code = true;
+			}
+			// `EV_ONESHOT` already removed the filter, so nothing else can arrive.
+			close(tracker->queue_descriptor);
+			tracker->queue_descriptor = -1;
+		}
+	}
+
+	r_state = *tracker;
+	return true;
+}
+
 Error OS_MacOS::create_process(const String &p_path, const List<String> &p_arguments, ProcessID *r_child_id, bool p_open_console) {
 	// Use NSWorkspace if path is an .app bundle.
 	NSURL *url = [NSURL fileURLWithPath:@(p_path.utf8().get_data())];
@@ -837,6 +942,10 @@ Error OS_MacOS::create_process(const String &p_path, const List<String> &p_argum
 
 			if (err == OK) {
 				if (r_child_id) {
+					// Only a caller that takes the PID can observe or release a result, so
+					// bookkeeping is created exactly for those launches. Failing to track the
+					// application never turns a successful launch into a failed one.
+					_track_bundle_process((ProcessID)pid);
 					*r_child_id = (ProcessID)pid;
 				}
 			}
@@ -957,12 +1066,62 @@ Error OS_MacOS::open_with_program(const String &p_program_path, const List<Strin
 }
 
 bool OS_MacOS::is_process_running(const ProcessID &p_pid) const {
+	BundleProcess tracker;
+	if (_poll_bundle_process(p_pid, tracker)) {
+		// For a tracked bundled application the kernel exit event is authoritative: the
+		// process stays "running" until that event has been consumed, so a liveness poll
+		// can never race ahead of the status it carries.
+		return !tracker.exited;
+	}
+
 	NSRunningApplication *app = [NSRunningApplication runningApplicationWithProcessIdentifier:(pid_t)p_pid];
 	if (!app) {
 		return OS_Unix::is_process_running(p_pid);
 	}
+	if ([app isTerminated]) {
+		return false;
+	}
 
-	return ![app isTerminated];
+	// `NSRunningApplication` refreshes its termination flag from the main run loop, so an
+	// application that already exited can still describe itself as live. Confirming that
+	// the process still exists can only retract a stale affirmative answer; it never
+	// reports a process this instance does not own as running.
+	return ::kill((pid_t)p_pid, 0) == 0 || errno != ESRCH;
+}
+
+int OS_MacOS::get_process_exit_code(const ProcessID &p_pid) const {
+	BundleProcess tracker;
+	if (_poll_bundle_process(p_pid, tracker)) {
+		if (!tracker.exited || !tracker.has_exit_code) {
+			return -1;
+		}
+		return tracker.exit_code;
+	}
+
+	return OS_Unix::get_process_exit_code(p_pid);
+}
+
+void OS_MacOS::release_finished_process(const ProcessID &p_pid) {
+	BundleProcess tracker;
+	if (_poll_bundle_process(p_pid, tracker)) {
+		// Releasing a process that is still running would abandon the queue it needs.
+		if (tracker.exited) {
+			_forget_bundle_process(p_pid);
+		}
+		return;
+	}
+
+	OS_Unix::release_finished_process(p_pid);
+}
+
+Error OS_MacOS::kill(const ProcessID &p_pid) {
+	const Error error = OS_Unix::kill(p_pid);
+	if (error == OK) {
+		// A forced stop is cleanup, not a natural completion, so the tracker is dropped
+		// without ever publishing the signal status as a result.
+		_forget_bundle_process(p_pid);
+	}
+	return error;
 }
 
 String OS_MacOS::get_unique_id() const {
@@ -1088,6 +1247,12 @@ OS_MacOS::OS_MacOS(const char *p_execpath, int p_argc, char **p_argv) {
 #endif
 
 	DisplayServerMacOS::register_macos_driver();
+}
+
+OS_MacOS::~OS_MacOS() {
+	// `finalize()` is not reached on every shutdown path, and an abandoned kernel queue
+	// would outlive the platform it belongs to.
+	_close_bundle_processes();
 }
 
 // MARK: - OS_MacOS_NSApp

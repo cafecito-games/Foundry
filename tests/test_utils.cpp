@@ -42,6 +42,20 @@ String TestUtils::get_executable_dir() {
 	return OS::get_singleton()->get_executable_path().get_base_dir();
 }
 
+String TestUtils::get_tests_dir() {
+	String binary_dir = get_executable_dir();
+	// A bundled macOS binary lives in `<checkout>/bin/<name>.app/Contents/MacOS`, so the
+	// checkout is three levels further up than for a plain `<checkout>/bin` executable.
+	if (binary_dir.get_file() == "MacOS" && binary_dir.get_base_dir().get_file() == "Contents") {
+		binary_dir = binary_dir.get_base_dir().get_base_dir().get_base_dir();
+	}
+	return binary_dir.path_join("../tests").simplify_path();
+}
+
+String TestUtils::get_fixture_path(const String &p_relative_path) {
+	return get_tests_dir().path_join("fixtures").path_join(p_relative_path).simplify_path();
+}
+
 String TestUtils::get_temp_path(const String &p_suffix) {
 	const String temp_root = OS::get_singleton()->get_cache_path().path_join("godot_test");
 	const String temp_process_root = temp_root.path_join("process_" + itos(OS::get_singleton()->get_process_id()));

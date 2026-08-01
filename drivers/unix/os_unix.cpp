@@ -867,7 +867,15 @@ int OS_Unix::_wait_for_pid_completion(const pid_t p_pid, int *r_status, int p_op
 bool OS_Unix::_check_pid_is_running(const pid_t p_pid, int *r_status) const {
 	const ProcessInfo *pi = process_map->getptr(p_pid);
 
-	if (pi && !pi->is_running) {
+	// Only a process this instance spawned can be waited on. A PID that is absent from
+	// the process table has no Unix child status at all, so liveness is answered
+	// conservatively instead of letting `waitpid()` fail with `ECHILD` and report a
+	// spurious error for every completed non-child, such as a macOS bundled application.
+	if (!pi) {
+		return false;
+	}
+
+	if (!pi->is_running) {
 		// Can return cached value.
 		if (r_status) {
 			*r_status = pi->exit_code;
@@ -888,10 +896,8 @@ bool OS_Unix::_check_pid_is_running(const pid_t p_pid, int *r_status) const {
 	// Thread exited normally.
 	status = WIFEXITED(status) ? WEXITSTATUS(status) : status;
 
-	if (pi) {
-		pi->is_running = false;
-		pi->exit_code = status;
-	}
+	pi->is_running = false;
+	pi->exit_code = status;
 
 	if (r_status) {
 		*r_status = status;
