@@ -31,6 +31,7 @@
 #pragma once
 
 #include "../fs_analyzer.h"
+#include "../fs_conformance_registry.h"
 #include "../fs_json_marshal.h"
 #include "../fs_parser.h"
 #include "../fs_script_extensible_native_hooks.h"
@@ -38,6 +39,7 @@
 #include "fs_test_runner.h"
 #include "test_analyzer_finalization.h"
 
+#include "core/io/image.h"
 #include "core/io/json.h"
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
@@ -320,6 +322,134 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A conforming object is marshale
 	Dictionary keyed;
 	keyed["hero"] = host.ptr();
 	CHECK_EQ(JSON::stringify(keyed), "{\"hero\":\"from script\"}");
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A retroactive conformance on a native class is honored") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	// Loading the declaring file is what installs the conformance; the Ref is held for the whole case
+	// so the compiled witnesses stay registered, and dropping it unregisters them again.
+	const Ref<Script> conformance_script =
+			ResourceLoader::load("res://json_marshal_host/native_image_ext.notest.fs");
+	REQUIRE(conformance_script.is_valid());
+	REQUIRE(conformance_script->is_valid());
+
+	// The conformance target has no script, so nothing installs the hook on the instance.
+	Ref<Image> image(memnew(Image));
+	CHECK(FSJsonObjectMarshaller::conforms_to_serializable(image.ptr()));
+	CHECK(FSJsonMarshal::has_to_json(image.ptr()));
+
+	Variant node;
+	REQUIRE(FSJsonMarshal::call_to_json(image.ptr(), node));
+
+	// `JsonNode.Str(...)` lowers to `[tag, payload]`, where `Str` is case 4 in the wire contract.
+	REQUIRE_EQ(node.get_type(), Variant::ARRAY);
+	const Array encoded_node = node;
+	REQUIRE_EQ(encoded_node.size(), 2);
+	CHECK_EQ(int(encoded_node[0]), 4);
+	CHECK_EQ(String(encoded_node[1]), "image:Image");
+
+	CHECK_EQ(JSON::stringify(Variant(image.ptr())), "\"image:Image\"");
+
+	Array container;
+	container.push_back(image.ptr());
+	CHECK_EQ(JSON::stringify(container), "[\"image:Image\"]");
+
+	// The inheritance walk only goes up: a base class of the conformance target is not conformed by
+	// it, and neither is a native class outside the hierarchy. Both keep the quoted `to_string`.
+	Ref<Resource> base_instance(memnew(Resource));
+	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(base_instance.ptr()));
+	CHECK(JSON::stringify(Variant(base_instance.ptr())).begins_with("\""));
+
+	Ref<RefCounted> unconformed(memnew(RefCounted));
+	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(unconformed.ptr()));
+	CHECK_FALSE(FSJsonMarshal::has_to_json(unconformed.ptr()));
+	CHECK(JSON::stringify(Variant(unconformed.ptr())).begins_with("\""));
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A witness of another trait does not opt a native class in") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	// Re-register a real compiled witness under an unrelated trait name, which is what a conformance
+	// to some other trait that happens to require a method named `to_json` leaves in the registry.
+	// The script Ref is held for the whole case, so the borrowed function stays owned and alive, and
+	// its `JsonSerializable` registration is dropped so only the unrelated trait remains loaded.
+	const Ref<Script> witness_owner =
+			ResourceLoader::load("res://json_marshal_host/native_image_ext.notest.fs");
+	REQUIRE(witness_owner.is_valid());
+	REQUIRE(witness_owner->is_valid());
+
+	const String owner_file = witness_owner->get_path();
+	Vector<FSConformanceRegistry::RuntimeConformance> compiled =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(owner_file);
+	REQUIRE_FALSE(compiled.is_empty());
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(owner_file);
+	FSConformanceRegistry::get_singleton()->clear_file(owner_file);
+
+	const String probe_file = "res://json_marshal_host/probe_only.notest.fs";
+	for (FSConformanceRegistry::RuntimeConformance &conformance : compiled) {
+		conformance.trait_name = SNAME("JsonMarshalProbe");
+	}
+	FSConformanceRegistry::get_singleton()->register_runtime_witnesses(probe_file, compiled);
+
+	// ...combined with a `JsonSerializable` declaration on a base class that was analyzed but never
+	// loaded. Neither half is a conformance that can be marshaled, and pairing the trait from one with
+	// the witness from the other would invoke a method that never agreed to produce a `JsonNode`.
+	const String analyzed_file = "res://json_marshal_host/analyzed_only.notest.fs";
+	FSConformanceRegistry::Conformance analyzed;
+	analyzed.target_keys.push_back("Resource");
+	analyzed.target_fqcn = "Resource";
+	analyzed.trait_name = FSJsonObjectMarshaller::serializable_trait_name();
+	analyzed.source_file = analyzed_file;
+
+	Vector<FSConformanceRegistry::Conformance> analyzed_conformances;
+	analyzed_conformances.push_back(analyzed);
+	FSConformanceRegistry::get_singleton()->register_file_conformances(analyzed_file, analyzed_conformances);
+
+	Ref<Image> image(memnew(Image));
+	REQUIRE(FSConformanceRegistry::get_singleton()->native_class_conforms(
+			SNAME("Image"), FSJsonObjectMarshaller::serializable_trait_name(), true));
+	REQUIRE(FSConformanceRegistry::get_singleton()->find_native_witness_function(
+					SNAME("Image"), FSJsonMarshal::to_json_method_name()) != nullptr);
+	CHECK(FSConformanceRegistry::get_singleton()->find_native_trait_witness_function(
+				  SNAME("Image"), FSJsonObjectMarshaller::serializable_trait_name(),
+				  FSJsonMarshal::to_json_method_name()) == nullptr);
+
+	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(image.ptr()));
+	CHECK(JSON::stringify(Variant(image.ptr())).begins_with("\""));
+
+	FSConformanceRegistry::get_singleton()->clear_file(analyzed_file);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(probe_file);
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] An analyzed but unloaded native conformance is declined") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	// Analysis alone registers a conformance: the editor and the language server analyze files that
+	// nothing loaded, which installs the declaration without ever compiling a witness. Claiming an
+	// object on that basis would replace its quoted `to_string()` with `null`, so the declaration is
+	// not enough on its own.
+	const String declaring_file = "res://json_marshal_host/analyzed_only.notest.fs";
+	FSConformanceRegistry::Conformance analyzed;
+	analyzed.target_keys.push_back("Resource");
+	analyzed.target_fqcn = "Resource";
+	analyzed.trait_name = FSJsonObjectMarshaller::serializable_trait_name();
+	analyzed.source_file = declaring_file;
+
+	Vector<FSConformanceRegistry::Conformance> analyzed_conformances;
+	analyzed_conformances.push_back(analyzed);
+	FSConformanceRegistry::get_singleton()->register_file_conformances(declaring_file, analyzed_conformances);
+
+	Ref<Resource> resource(memnew(Resource));
+	REQUIRE(FSConformanceRegistry::get_singleton()->native_class_conforms(
+			SNAME("Resource"), FSJsonObjectMarshaller::serializable_trait_name(), true));
+	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(resource.ptr()));
+	CHECK(JSON::stringify(Variant(resource.ptr())).begins_with("\""));
+
+	FSConformanceRegistry::get_singleton()->clear_file(declaring_file);
 }
 
 TEST_CASE("[Modules][FoundryScript][JsonMarshal] A conforming object returning a bad node encodes as null") {

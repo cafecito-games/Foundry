@@ -300,6 +300,32 @@ FSFunction *FSConformanceRegistry::find_native_witness_function(const StringName
 	return nullptr;
 }
 
+FSFunction *FSConformanceRegistry::find_native_trait_witness_function(const StringName &p_native_class,
+		const StringName &p_trait_name, const StringName &p_method) const {
+	if (p_native_class == StringName() || p_trait_name == StringName() || p_method == StringName()) {
+		return nullptr;
+	}
+	MutexLock lock(mutex);
+	// The alias index collapses every trait into one method map, so answering per trait means scanning
+	// the runtime store. The engine inheritance chain is the outer loop, so the nearest conforming
+	// ancestor wins even when a further ancestor conforms too.
+	for (StringName cursor = p_native_class; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
+		const String target_key = String(cursor);
+		for (const KeyValue<String, Vector<RuntimeConformance>> &file_entry : runtime_by_file) {
+			for (const RuntimeConformance &conformance : file_entry.value) {
+				if (conformance.trait_name != p_trait_name || !conformance.target_keys.has(target_key)) {
+					continue;
+				}
+				FSFunction *const *function = conformance.functions.getptr(p_method);
+				if (function != nullptr && *function != nullptr) {
+					return *function;
+				}
+			}
+		}
+	}
+	return nullptr;
+}
+
 void FSConformanceRegistry::clear() {
 	MutexLock lock(mutex);
 	conformances_by_file.clear();

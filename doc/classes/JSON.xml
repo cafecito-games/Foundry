@@ -28,6 +28,38 @@
 		[codeblock]
 		var data = JSON.parse_string(json_string) # Returns null if parsing failed.
 		[/codeblock]
+		A class can customize its own encoding and decoding by conforming to the [code]JsonSerializable[/code] trait, which declares [code]to_json() -> JsonNode[/code] and [code]static from_json(node: JsonNode) -> JsonResult[Self][/code]. [method stringify] calls [code]to_json()[/code] on any conforming value it encounters, at the top level, as an element of an [Array], or as a [Dictionary] [i]value[/i]; a conforming object used as a [Dictionary] [i]key[/i] does not go through [code]to_json()[/code], since keys are always converted to plain [String]s directly.
+		A conforming type that nests another conforming type composes by explicit delegation, not by any automatic mechanism: the parent's [code]to_json()[/code] calls the child's [code]to_json()[/code] directly, and the parent's [code]from_json()[/code] calls the child's [code]from_json()[/code] and forwards a failure with [code]JsonResult.nested(error, "key")[/code], which re-roots the reported error path at the document instead of at the nested value.
+		[codeblock]
+		class_name Player extends Node uses JsonSerializable
+
+		var weapon: Weapon
+
+		func to_json() -> JsonNode:
+			return JsonNode.object_of({"weapon": weapon.to_json()})
+
+		static func from_json(node: JsonNode) -> JsonResult[Player]:
+			match node:
+				JsonNode.Object(var entries):
+					var weapon_result := Weapon.from_json(entries.get("weapon", JsonNode.Null))
+					if not weapon_result.is_ok():
+						return JsonResult[Player].nested(weapon_result.error, "weapon")
+					var player := Player.new()
+					player.weapon = weapon_result.value
+					return JsonResult[Player].ok(player)
+				_:
+					return JsonResult[Player].fail("expected an object", "$")
+		[/codeblock]
+		A conformance can also be declared retroactively on an engine class from outside its definition, and [method stringify] honors it even though the objects it applies to carry no script. The witness is resolved through the engine inheritance chain, so a conformance declared on a base class also covers its subclasses, and an implementation an object already carries itself takes precedence over an external one.
+		[codeblock]
+		extend Resource uses JsonSerializable:
+		    func to_json() -&gt; JsonNode:
+		        return JsonNode.object_of({"path": JsonNode.Str(resource_path)})
+
+		    static func from_json(_node: JsonNode) -&gt; JsonResult[Self]:
+		        return JsonResult[Self].fail("not decodable", "$")
+		[/codeblock]
+		[b]Note:[/b] Custom marshaling has one known limitation. Enums, tuples, and builtin value types are never marshaled through [code]to_json()[/code]/[code]from_json()[/code]: a tagged union or tuple value is a read-only [Array] and a plain enum is an [int] at runtime, so neither carries the type identity [method stringify] needs to dispatch on.
 		[b]Note:[/b] Both parse methods do not fully comply with the JSON specification:
 		- Trailing commas in arrays or objects are ignored, instead of causing a parser error.
 		- New line and tab characters are accepted in string literals, and are treated like their corresponding escape sequences [code]\n[/code] and [code]\t[/code].
