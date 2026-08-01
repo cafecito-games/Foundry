@@ -924,6 +924,52 @@ static void parse_editor(CLIParseState &r_state) {
 	finalize_global_args(r_state);
 }
 
+// Tooling-host ports are strict decimal integers in [0, 65535]; 0 requests an
+// ephemeral port. `String::to_int()` silently maps garbage to 0, which would turn a
+// typo into an unpredictable ephemeral listener, so the value is validated here.
+static bool validate_tooling_port(CLIParseState &r_state, const String &p_option, const String &p_value) {
+	bool valid = !p_value.is_empty() && p_value.length() <= 5;
+	for (int i = 0; valid && i < p_value.length(); i++) {
+		valid = is_digit(p_value[i]);
+	}
+	if (valid) {
+		valid = p_value.to_int() <= 65535;
+	}
+	if (!valid) {
+		fail(r_state.result, p_option + " expects a decimal port in [0, 65535], got: " + p_value + ".");
+		return false;
+	}
+	return true;
+}
+
+// Shared tail for `tooling serve` and its deprecated `lsp serve` alias: both start the
+// same combined host, so both require a project and validated ports.
+static void finish_tooling_host_command(CLIParseState &r_state, const String &p_command_label) {
+	if (r_state.project_path.is_empty()) {
+		fail(r_state.result, p_command_label + " requires --project <dir>.");
+		return;
+	}
+	// Compare the effective ports, so an explicit override that equals the other
+	// service's default is rejected here instead of failing at bind time.
+	const String &lsp_port = r_state.result.invocation.lsp_port;
+	const String &dap_port = r_state.result.invocation.dap_port;
+	const int effective_lsp_port = lsp_port.is_empty() ? FoundryCLIParser::DEFAULT_LSP_PORT : lsp_port.to_int();
+	const int effective_dap_port = dap_port.is_empty() ? FoundryCLIParser::DEFAULT_DAP_PORT : dap_port.to_int();
+	if (effective_lsp_port != 0 && effective_lsp_port == effective_dap_port) {
+		fail(r_state.result, p_command_label + " requires distinct LSP and DAP ports, got " + itos(effective_lsp_port) + " for both.");
+		return;
+	}
+	if (has_arg(r_state.global_prefix, "--recovery-mode")) {
+		// Recovery mode never starts the debug adapter, so the host could not honor
+		// its own contract of serving both services.
+		fail(r_state.result, p_command_label + " does not support --recovery-mode; the debug adapter is unavailable there.");
+		return;
+	}
+
+	r_state.result.invocation.project_path = r_state.project_path;
+	finalize_global_args(r_state);
+}
+
 static void parse_lsp(CLIParseState &r_state) {
 	if (r_state.index >= r_state.args.size()) {
 		fail(r_state.result, "lsp requires a command.");
@@ -957,14 +1003,62 @@ static void parse_lsp(CLIParseState &r_state) {
 			if (!require_value(r_state, arg, r_state.result.invocation.lsp_port)) {
 				return;
 			}
+			if (!validate_tooling_port(r_state, arg, r_state.result.invocation.lsp_port)) {
+				return;
+			}
 		} else {
 			fail(r_state.result, "Unknown option for lsp serve: " + arg + ".");
 			return;
 		}
 	}
 
-	r_state.result.invocation.project_path = r_state.project_path;
-	finalize_global_args(r_state);
+	finish_tooling_host_command(r_state, "lsp serve");
+}
+
+static void parse_tooling(CLIParseState &r_state) {
+	if (r_state.index >= r_state.args.size()) {
+		fail(r_state.result, "tooling requires a command.");
+		return;
+	}
+	const String command = r_state.args[r_state.index++];
+	if (is_help_flag(command)) {
+		request_help(r_state);
+		return;
+	}
+	if (command != "serve") {
+		fail(r_state.result, "Unknown tooling command: " + command + ".");
+		return;
+	}
+	set_command_path(r_state.result, "tooling", command);
+	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TOOLING_SERVE;
+
+	while (r_state.index < r_state.args.size()) {
+		const String arg = r_state.args[r_state.index];
+		if (is_help_flag(arg)) {
+			request_help(r_state);
+			return;
+		}
+		if (consume_common_global_option(r_state, arg)) {
+			if (parse_stopped(r_state)) {
+				return;
+			}
+			continue;
+		}
+		if (arg == "--lsp-port" || arg == "--dap-port") {
+			String &target = arg == "--lsp-port" ? r_state.result.invocation.lsp_port : r_state.result.invocation.dap_port;
+			if (!require_value(r_state, arg, target)) {
+				return;
+			}
+			if (!validate_tooling_port(r_state, arg, target)) {
+				return;
+			}
+		} else {
+			fail(r_state.result, "Unknown option for tooling serve: " + arg + ".");
+			return;
+		}
+	}
+
+	finish_tooling_host_command(r_state, "tooling serve");
 }
 
 static void parse_docs(CLIParseState &r_state) {
@@ -1270,17 +1364,28 @@ static bool is_legacy_workflow_flag(const String &p_arg, String &r_replacement) 
 		return true;
 	}
 	if (p_arg == "--lsp-port") {
-		r_replacement = "`foundry lsp serve --port <port>`";
+		r_replacement = "`foundry tooling serve --project <dir> --lsp-port <port>`";
 		return true;
 	}
 	return false;
 }
 
 static bool reject_legacy_workflow_flags(CLIParseState &r_state, int p_start_index) {
+	bool inside_command = false;
 	for (int i = p_start_index; i < r_state.args.size(); i++) {
+		const String &arg = r_state.args[i];
+		if (!inside_command && FoundryCLIParser::is_new_cli_command(arg)) {
+			inside_command = true;
+			continue;
+		}
+		// `tooling serve` owns these option names, so they are only a removed legacy
+		// spelling in the pre-command global position.
+		if (inside_command && (arg == "--lsp-port" || arg == "--dap-port")) {
+			continue;
+		}
 		String replacement;
-		if (is_legacy_workflow_flag(r_state.args[i], replacement)) {
-			fail(r_state.result, vformat("`%s` has been removed. Use %s.", r_state.args[i], replacement));
+		if (is_legacy_workflow_flag(arg, replacement)) {
+			fail(r_state.result, vformat("`%s` has been removed. Use %s.", arg, replacement));
 			return true;
 		}
 	}
@@ -1319,6 +1424,7 @@ bool FoundryCLIParser::is_new_cli_command(const String &p_arg) {
 			p_arg == "script" ||
 			p_arg == "test" ||
 			p_arg == "lsp" ||
+			p_arg == "tooling" ||
 			p_arg == "docs" ||
 			p_arg == "extension" ||
 			p_arg == "diagnostics";
@@ -1396,6 +1502,8 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 				parse_editor(state);
 			} else if (arg == "lsp") {
 				parse_lsp(state);
+			} else if (arg == "tooling") {
+				parse_tooling(state);
 			} else if (arg == "docs") {
 				parse_docs(state);
 			} else if (arg == "extension") {

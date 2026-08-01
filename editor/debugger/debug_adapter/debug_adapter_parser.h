@@ -53,6 +53,22 @@ private:
 		return p_path.begins_with(ProjectSettings::get_singleton()->get_resource_path());
 	}
 
+	// A launch request names the project itself, not a file inside it. Prefix and
+	// substring matching would accept a sibling directory whose name merely starts
+	// with the project path, so the project identity check is exact.
+	_FORCE_INLINE_ bool is_valid_project(const String &p_path) const {
+		const String project_path = ProjectSettings::get_singleton()->get_resource_path();
+		String path = p_path.replace_char('\\', '/').simplify_path();
+		if (path.length() > 1 && path.ends_with("/")) {
+			path = path.substr(0, path.length() - 1);
+		}
+#ifdef WINDOWS_ENABLED
+		return path.nocasecmp_to(project_path) == 0;
+#else
+		return path == project_path;
+#endif
+	}
+
 protected:
 	static void _bind_methods();
 

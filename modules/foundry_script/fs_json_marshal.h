@@ -52,18 +52,6 @@ public:
 	// Invokes the hook and stores its return value in `r_node`. Returns false, leaving
 	// `r_node` untouched, when the object is null or the call fails.
 	static bool call_to_json(Object *p_object, Variant &r_node);
-
-	// Builds a `JsonNode` for a plain Variant tree produced by the JSON parser, by calling the
-	// builtin `JsonNode.of()` so the tagged union's representation stays defined in one place, in
-	// script. Returns false when the tree contains a value JSON has no node for, or is nested
-	// deeper than `Variant::MAX_RECURSION_DEPTH`.
-	static bool make_json_node(const Variant &p_value, Variant &r_node);
-
-	// Builds a successful `JsonResult` through the builtin `JsonResult.ok()`.
-	static bool make_result_ok(const Variant &p_value, Variant &r_result);
-
-	// Builds a failed `JsonResult` through the builtin `JsonResult.fail()`.
-	static bool make_result_failure(const String &p_message, const String &p_path, Variant &r_result);
 };
 
 // Teaches `JSON.stringify()` how to encode a Foundry Script object that conforms to the builtin
@@ -93,24 +81,5 @@ public:
 	// tree deeper than `Variant::MAX_RECURSION_DEPTH`. Exposed for tests.
 	static bool lower_node(const Variant &p_node, Variant &r_result, int p_depth, const String &p_source_name);
 
-	// Rewrites a plain Variant tree produced by the JSON parser into the form `JsonNode.of()`
-	// expects, and reports whether it can be represented at all. Returns false when a value has no
-	// `JsonNode` case, when an object key is not a String, or when the tree is nested deeper than
-	// `Variant::MAX_RECURSION_DEPTH`.
-	//
-	// JSON has a single number type, so the parser reports every number as a float. A number with
-	// no fractional part becomes an `Int` node here, otherwise the `Int` case would exist but never
-	// occur in a parsed document and an `int` field could not be decoded by matching it. A decoder
-	// for a `float` field therefore accepts both `Int` and `Float`, as JSON decoders generally do.
-	//
-	// The node carries exactly what the parser produced and never invents precision: a literal too
-	// large for a double to hold exactly has already been rounded before this runs, so it becomes
-	// the `Int` nearest to the rounded double rather than the digits in the text. A number no
-	// `int64_t` can hold stays a `Float`. Exposed for tests.
-	static bool prepare_parsed_value(const Variant &p_value, int p_depth, Variant &r_prepared);
-
 	virtual bool marshal_object(Object *p_object, Variant &r_result) override;
-	virtual bool lift_variant(const Variant &p_parsed, Variant &r_node) override;
-	virtual bool make_parse_failure(const String &p_message, int p_line, Variant &r_result) override;
-	virtual bool make_parse_success(const Variant &p_node, Variant &r_result) override;
 };

@@ -294,7 +294,7 @@ TEST_CASE("[FoundryCLIHelp] Registry nouns match the parser") {
 	int noun_count = 0;
 	const FoundryCLIHelp::NounSpec *nouns = FoundryCLIHelp::get_nouns(noun_count);
 	// Catches registry-side noun removal; additions must update this pin deliberately.
-	CHECK_EQ(noun_count, 8);
+	CHECK_EQ(noun_count, 9);
 	for (int i = 0; i < noun_count; i++) {
 		CHECK_MESSAGE(FoundryCLIParser::is_new_cli_command(nouns[i].name), nouns[i].name);
 	}

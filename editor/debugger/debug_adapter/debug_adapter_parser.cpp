@@ -169,7 +169,7 @@ Dictionary DebugAdapterParser::req_disconnect(const Dictionary &p_params) const 
 
 Dictionary DebugAdapterParser::req_launch(const Dictionary &p_params) const {
 	Dictionary args = p_params["arguments"];
-	if (args.has("project") && !is_valid_path(args["project"])) {
+	if (args.has("project") && !is_valid_project(args["project"])) {
 		Dictionary variables;
 		variables["clientPath"] = args["project"];
 		variables["editorPath"] = ProjectSettings::get_singleton()->get_resource_path();

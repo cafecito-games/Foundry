@@ -124,6 +124,8 @@ public:
 	bool complete_initialization_if_workspace_ready();
 	void poll(int p_limit_usec);
 	Error start(int p_port, const IPAddress &p_bind_ip);
+	// Actual bound port, which differs from the requested one when 0 was requested.
+	int get_local_port() const;
 	void stop();
 
 	void notify_client(const String &p_method, const Variant &p_params = Variant(), int p_client_id = -1);

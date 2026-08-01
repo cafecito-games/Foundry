@@ -79,6 +79,7 @@
 #include "tests/editor/test_editor_new_script_command.h"
 #include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
 #include "tests/editor/test_editor_scene_context.h"
+#include "tests/editor/test_editor_tooling_host.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_known_project_store.h"
 #include "tests/editor/test_node_3d_editor_world_scope.h"

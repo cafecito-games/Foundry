@@ -46,18 +46,10 @@ vars:
       fi
   JOBS:
     sh: 'printf "%s\n" "${JOBS:-{{.HOST_JOBS}}}"'
-  # Shared SCons object cache, matching scripts/agent_build.py. Set CACHE_PATH
-  # to the empty string to build without a cache.
   CACHE_PATH:
-    sh: 'printf "%s\n" "${CACHE_PATH-$HOME/.scons_cache}"'
+    sh: 'printf "%s\n" "${CACHE_PATH-}"'
   SCONS_FLAGS:
     sh: 'printf "%s\n" "${SCONS_FLAGS:-}"'
-  # Ad-hoc signature by default so the bundle launches from Finder without a
-  # Developer ID; override with a real identity to produce a distributable app.
-  SIGN_IDENTITY:
-    sh: 'printf "%s\n" "${SIGN_IDENTITY:--}"'
-  INSTALL_DIR:
-    sh: 'printf "%s\n" "${INSTALL_DIR:-/Applications}"'
 
 tasks:
   default:
@@ -119,35 +111,6 @@ tasks:
       - task: build
         vars:
           BUILD_PROFILE: dev_mode
-
-  bundle:
-    desc: Build and assemble the signed macOS Foundry.app bundle in bin/.
-    preconditions:
-      - sh: '[ "{{.PLATFORM}}" = "macos" ]'
-        msg: "bundle only applies to macOS builds (PLATFORM={{.PLATFORM}})."
-    cmds:
-      - task: build
-        vars:
-          SCONS_FLAGS: >-
-            generate_bundle=yes
-            bundle_sign_identity='{{.SIGN_IDENTITY}}'
-            {{.SCONS_FLAGS}}
-
-  install:
-    desc: Install the macOS Foundry.app bundle into INSTALL_DIR (default /Applications).
-    deps: [bundle]
-    cmds:
-      - |
-        app="bin/Foundry.app"
-        test -d "$app" || { echo "Missing $app. Run 'task bundle' first."; exit 1; }
-        destination="{{.INSTALL_DIR}}/Foundry.app"
-        rm -rf "$destination"
-        mkdir -p "{{.INSTALL_DIR}}"
-        cp -R "$app" "$destination"
-        # A locally built bundle carries no quarantine flag, but a copied one can
-        # inherit it from the enclosing directory on some setups.
-        xattr -dr com.apple.quarantine "$destination" 2>/dev/null || true
-        echo "Installed $destination"
 
   test:
     desc: Run the compiled C++ and Foundry Script test suite.
