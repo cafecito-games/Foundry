@@ -40,6 +40,7 @@
 // TestFSCacheAccessor, for asserting FSCache state after resource-pipeline loads.
 #include "fs_test_runner_suite.h"
 
+#include "modules/foundry_script/fs_builtin_sources.h"
 #include "modules/foundry_script/fs_conformance_registry.h"
 #include "modules/foundry_script/fs_name_mangler_analysis.h"
 
@@ -180,6 +181,21 @@ static Ref<FoundryScript> bytecode_round_trip_script(const Ref<FoundryScript> &p
 	CHECK(restored->is_valid());
 	CHECK(restored->is_compiled_binary());
 	return restored;
+}
+
+// A script whose signatures mention a builtin type (`JsonResult`, `JsonNode`, ...) encodes those
+// references by (path, fully qualified name); production loading resolves them through the cache, so
+// tests that round-trip such a script hand the resolver the same scripts.
+static void register_builtin_scripts_for_bytecode_resolver(BytecodeTestResolver &r_resolver) {
+	List<String> builtin_paths;
+	FSBuiltinSources::get_registered_paths(&builtin_paths);
+	for (const String &builtin_path : builtin_paths) {
+		Error builtin_error = OK;
+		const Ref<FoundryScript> builtin_script = FSCache::get_full_script(builtin_path, builtin_error);
+		if (builtin_script.is_valid()) {
+			r_resolver.scripts[builtin_path + "::" + builtin_script->get_fully_qualified_name()] = builtin_script;
+		}
+	}
 }
 
 static Variant bytecode_instance_call(Object *p_object, const StringName &p_method, const Vector<Variant> &p_arguments) {
@@ -1096,6 +1112,89 @@ TEST_CASE("[FoundryScript][BytecodeScript] Native and builtin conformance stand-
 	const Variant instance_variant = bytecode_new_instance(restored);
 	Object *instance = instance_variant;
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 42);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A native witness returning a generic over Self exports") {
+	// The stand-in ClassNode a native conformance analyzes through is never registered as a real
+	// class, so it has no serializable Foundry Script identity. Lowered as an ordinary class it would
+	// put a pathless script inside `JsonResult[Self]`, which compiled-bytecode export must reject;
+	// lowered with the native target's semantics it travels as a plain native type argument.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"trait Wrapping:\n"
+			"\tabstract static func wrapped() -> JsonResult[Self]\n"
+			"\n"
+			"extend RefCounted uses Wrapping:\n"
+			"\tstatic func wrapped() -> JsonResult[Self]:\n"
+			"\t\treturn JsonResult[Self].fail(\"nope\", \"$\")\n"
+			"\n"
+			"func run() -> String:\n"
+			"\treturn RefCounted.wrapped().error.message\n");
+	const String script_path = original->get_script_path();
+	const Ref<FoundryScript> original_wrapping =
+			original->get_subclasses().find(SNAME("Wrapping"))->value;
+	const StringName wrapping_trait = original_wrapping->get_trait_type_name();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	// Asserted on both the compiled and the restored witness: the `Self` argument is a native type
+	// naming the conformance target, and carries no script reference to encode.
+	const auto check_self_type_argument = [](const FSDataType &p_return_type) {
+		REQUIRE_EQ(p_return_type.type_arguments.size(), 1);
+		const FSDataType &self_argument = p_return_type.type_arguments[0];
+		CHECK(self_argument.kind == FSDataType::NATIVE);
+		CHECK(self_argument.builtin_type == Variant::OBJECT);
+		CHECK(self_argument.native_type == SNAME("RefCounted"));
+		CHECK(self_argument.is_self_type);
+		CHECK(self_argument.script_type == nullptr);
+		CHECK(self_argument.script_type_ref.is_null());
+	};
+
+	FSFunction *compiled_witness = nullptr;
+	for (FSFunction *witness_function : TestFSBytecodeScriptAccessor::get_witness_functions(original)) {
+		if (witness_function != nullptr && witness_function->get_name() == SNAME("wrapped")) {
+			compiled_witness = witness_function;
+		}
+	}
+	REQUIRE(compiled_witness != nullptr);
+	check_self_type_argument(compiled_witness->get_return_type());
+
+	{
+		const Variant instance_variant = bytecode_new_instance(original);
+		Object *instance = instance_variant;
+		CHECK(String(bytecode_instance_call(instance, SNAME("run"), {})) == "nope");
+	}
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+	CHECK(FSConformanceRegistry::get_singleton()
+					->find_native_witness_function(SNAME("RefCounted"), SNAME("wrapped")) == nullptr);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	// The witness signature names the builtin `JsonResult`, so loading has to resolve it the way the
+	// runtime resolver does.
+	BytecodeTestResolver resolver;
+	register_builtin_scripts_for_bytecode_resolver(resolver);
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	FSFunction *restored_witness =
+			FSConformanceRegistry::get_singleton()
+					->find_native_witness_function(SNAME("RefCounted"), SNAME("wrapped"));
+	REQUIRE(restored_witness != nullptr);
+	CHECK(TestFSBytecodeScriptAccessor::get_witness_functions(restored).has(restored_witness));
+	check_self_type_argument(restored_witness->get_return_type());
+	CHECK(FSConformanceRegistry::get_singleton()->native_class_conforms(
+			SNAME("RefCounted"), wrapping_trait, true));
+
+	const Variant restored_instance_variant = bytecode_new_instance(restored);
+	Object *restored_instance = restored_instance_variant;
+	CHECK(String(bytecode_instance_call(restored_instance, SNAME("run"), {})) == "nope");
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds") {
