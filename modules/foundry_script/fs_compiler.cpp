@@ -555,36 +555,54 @@ static void _rebind_self_data_type(FSDataType &p_type, FoundryScript *p_owner) {
 	}
 }
 
-bool FSCompiler::_find_class_scope_constant(FoundryScript *p_script, const StringName &p_name, Variant &r_value,
+void FSCompiler::_collect_class_scope_scripts(FoundryScript *p_script, LocalVector<FoundryScript *> &r_scripts,
 		HashSet<FoundryScript *> &r_visited) {
 	if (p_script == nullptr || r_visited.has(p_script)) {
-		return false;
+		return;
 	}
 	r_visited.insert(p_script);
-
-	if (p_script->constants.has(p_name)) {
-		r_value = p_script->constants[p_name];
-		return true;
-	}
+	r_scripts.push_back(p_script);
 
 	// The base subtree comes before the lexical outer chain, and a base contributes its own outer
 	// classes: a class that inherits an inner class sees that inner class's outer scope ahead of its
 	// own. This is the order the analyzer bound the name with, so the emitted declaration matches it.
-	if (_find_class_scope_constant(p_script->base.ptr(), p_name, r_value, r_visited)) {
-		return true;
+	_collect_class_scope_scripts(p_script->base.ptr(), r_scripts, r_visited);
+	_collect_class_scope_scripts(p_script->_owner, r_scripts, r_visited);
+}
+
+bool FSCompiler::_find_class_scope_constant(FoundryScript *p_script, const StringName &p_name, Variant &r_value) {
+	LocalVector<FoundryScript *> scope_scripts;
+	HashSet<FoundryScript *> visited;
+	_collect_class_scope_scripts(p_script, scope_scripts, visited);
+
+	for (FoundryScript *scope_script : scope_scripts) {
+		if (scope_script->constants.has(p_name)) {
+			r_value = scope_script->constants[p_name];
+			return true;
+		}
 	}
 
-	// Class C++ integer constant of the native class this one ultimately extends.
-	if (p_script->native.is_valid()) {
+	// The engine surface is consulted only once every Foundry Script scope is exhausted, so a class
+	// constant always outranks a same-named integer constant of the native class it extends.
+	HashSet<StringName> searched_native_types;
+	for (FoundryScript *scope_script : scope_scripts) {
+		if (scope_script->native.is_null()) {
+			continue;
+		}
+		const StringName native_type = scope_script->native->get_name();
+		if (searched_native_types.has(native_type)) {
+			continue;
+		}
+		searched_native_types.insert(native_type);
 		bool success = false;
-		const int64_t constant = ClassDB::get_integer_constant(p_script->native->get_name(), p_name, &success);
+		const int64_t constant = ClassDB::get_integer_constant(native_type, p_name, &success);
 		if (success) {
 			r_value = constant;
 			return true;
 		}
 	}
 
-	return _find_class_scope_constant(p_script->_owner, p_name, r_value, r_visited);
+	return false;
 }
 
 FoundryScript *FSCompiler::_resolve_class_handle_script(const FSParser::DataType &p_datatype, FoundryScript *p_owner) {
@@ -879,8 +897,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 
 					// Try class constants.
 					const auto find_class_constant = [&](FoundryScript *p_scope, Variant &r_value) -> bool {
-						HashSet<FoundryScript *> visited;
-						return _find_class_scope_constant(p_scope, identifier, r_value, visited);
+						return _find_class_scope_constant(p_scope, identifier, r_value);
 					};
 
 					Variant constant_value;

@@ -36,6 +36,7 @@
 #include "fs_parser.h"
 
 #include "core/templates/hash_set.h"
+#include "core/templates/local_vector.h"
 
 class FSCompiler {
 	const FSParser *parser = nullptr;
@@ -188,13 +189,16 @@ class FSCompiler {
 	// becomes FIXED. Used when a subclass inherits a base's member and per-ancestor parameter bindings.
 	void _specialize_type_argument_binding(FoundryScript::TypeArgumentBinding &r_binding, const Vector<FSParser::DataType> &p_base_specialization, FoundryScript *p_owner);
 
-	// Resolves a class constant / nested-class handle exactly the way the analyzer's scope walk does:
+	// Collects the scripts a name is visible from, in the order the analyzer's scope walk visits them:
 	// the script itself, then its complete base subtree (each base contributing its own lexical outer
 	// chain), then the script's own lexical outer chain. Visiting an inherited inner class's outer
 	// scope before the current class's outer scope is what keeps the emitted declaration identical to
 	// the one analysis chose. Scripts are pointer-deduplicated so a shared outer is walked once.
-	bool _find_class_scope_constant(FoundryScript *p_script, const StringName &p_name, Variant &r_value,
+	void _collect_class_scope_scripts(FoundryScript *p_script, LocalVector<FoundryScript *> &r_scripts,
 			HashSet<FoundryScript *> &r_visited);
+	// Resolves a class constant through that scope order, falling back to the engine class-constant
+	// surface only once every Foundry Script scope is exhausted.
+	bool _find_class_scope_constant(FoundryScript *p_script, const StringName &p_name, Variant &r_value);
 	// The live class a resolved class datatype denotes, or null when it cannot be recovered. Emitting
 	// this identity is preferred over a second name lookup: the declaration analysis chose can live in
 	// a script this compilation unit only holds shallowly, whose constant pool is not populated.
