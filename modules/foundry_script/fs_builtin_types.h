@@ -30,11 +30,21 @@
 
 #pragma once
 
+#include "core/string/string_name.h"
+#include "core/templates/vector.h"
+
 // The Foundry Script types that ship inside the binary: their source text is embedded at build
 // time from `builtin/*.fs`, and their names are registered as global classes so any script can
 // use them without an import.
 class FSBuiltinTypes {
 public:
+	// Native APIs cannot express script-defined generic return types through PropertyInfo. Builtin
+	// types that wrap native methods publish the missing Foundry Script surface here so the analyzer
+	// can recover it without teaching ClassDB about module-owned types.
+	static bool get_native_method_return_type_hint(
+			const StringName &p_native_method_owner, const StringName &p_method,
+			StringName &r_return_type, Vector<StringName> &r_type_arguments);
+
 	static void register_types();
 	static void unregister_types();
 };

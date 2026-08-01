@@ -233,6 +233,26 @@ TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads a simple script-ba
 	CHECK(Object::cast_to<FoundryBuildTask>(loaded->instance.ptr()) != nullptr);
 }
 
+TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads a provider that calls a builtin-hinted native API") {
+	ScopedBuildTaskProject project("build_task_bootstrap_builtin_hint");
+	const String script_path = project.write_script(
+			"res://addons/bootstrap/builtin_hint_provider.fs",
+			"class_name BootstrapBuiltinHintProvider extends FoundryBuildTask\n"
+			"\n"
+			"func parse_json() -> Variant:\n"
+			"\treturn JSON.parse_to_node(\"{}\")\n");
+
+	FoundryBuildTaskRegistry registry;
+	registry.register_provider_descriptor(
+			make_bootstrap_provider("bootstrap.builtin_hint", script_path, "BootstrapBuiltinHintProvider"),
+			make_bootstrap_source("bootstrap.builtin_hint"));
+
+	FoundryBuildTaskBootstrapLoader loader;
+	CHECK_EQ(loader.load_registered_providers(registry), OK);
+	CHECK_MESSAGE(loader.get_diagnostics().is_empty(), bootstrap_diagnostics_to_string(loader.get_diagnostics()));
+	CHECK(loader.has_loaded_provider("bootstrap.builtin_hint"));
+}
+
 TEST_CASE("[Modules][FoundryScript][BuildTaskBootstrap] Loads the native command provider") {
 	FoundryBuildTaskRegistry registry;
 	registry.register_builtin_providers();

@@ -33,6 +33,7 @@
 #include "modules/foundry_script/foundry_script.h"
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_builtin_sources.h"
+#include "modules/foundry_script/fs_builtin_types.h"
 #include "modules/foundry_script/fs_cache.h"
 #include "modules/foundry_script/fs_compiler.h"
 #include "modules/foundry_script/fs_parser.h"
@@ -114,6 +115,40 @@ TEST_CASE("[FSBuiltinTypes] Builtin types are registered as global classes") {
 
 	CHECK(ScriptServer::is_global_class("JsonResult"));
 	CHECK_EQ(String(ScriptServer::get_global_class_native_base("JsonResult")), "RefCounted");
+}
+
+TEST_CASE("[FSBuiltinTypes] Native JSON parsing infers its builtin result type") {
+	FSLanguage::get_singleton()->init();
+
+	FSParser parser;
+	const String source = "extends RefCounted\nvar parsed := JSON.parse_to_node(\"{}\")\n";
+	REQUIRE_EQ(parser.parse(source, "user://json_parse_to_node_inference.fs", false), OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	REQUIRE(root != nullptr);
+	REQUIRE(root->has_member(SNAME("parsed")));
+	const FSParser::ClassNode::Member parsed = root->get_member(SNAME("parsed"));
+	REQUIRE_EQ(parsed.type, FSParser::ClassNode::Member::VARIABLE);
+	REQUIRE(parsed.variable != nullptr);
+
+	const FSParser::DataType inferred = parsed.variable->get_datatype();
+	CHECK_EQ(inferred.to_string(), "JsonResult[JsonNode]");
+	REQUIRE_EQ(inferred.type_arguments.size(), 1);
+	CHECK_EQ(inferred.type_arguments[0].kind, FSParser::DataType::ENUM);
+	CHECK_EQ(inferred.type_arguments[0].to_string(), "JsonNode");
+
+	StringName hinted_return;
+	Vector<StringName> hinted_arguments;
+	REQUIRE(FSBuiltinTypes::get_native_method_return_type_hint(
+			SNAME("JSON"), SNAME("parse_to_node"), hinted_return, hinted_arguments));
+	CHECK_EQ(hinted_return, SNAME("JsonResult"));
+	REQUIRE_EQ(hinted_arguments.size(), 1);
+	CHECK_EQ(hinted_arguments[0], SNAME("JsonNode"));
+	CHECK_FALSE(FSBuiltinTypes::get_native_method_return_type_hint(
+			SNAME("CustomJSON"), SNAME("parse_to_node"), hinted_return, hinted_arguments));
 }
 
 TEST_CASE("[FSBuiltinTypes] Builtin global classes survive a project reload") {

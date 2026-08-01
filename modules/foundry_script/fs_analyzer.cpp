@@ -31,6 +31,8 @@
 #include "fs_analyzer.h"
 
 #include "foundry_script.h"
+#include "fs_builtin_sources.h"
+#include "fs_builtin_types.h"
 #include "fs_script_extensible_native_hooks.h"
 #include "fs_tagged_union.h"
 #include "fs_trait_utils.h"
@@ -6811,7 +6813,7 @@ void FSAnalyzer::reduce_get_node(FSParser::GetNodeNode *p_get_node) {
 }
 
 bool FSAnalyzer::is_bootstrap_dependency_path_allowed(const String &p_path) const {
-	if (bootstrap_allowed_dependency_root.is_empty()) {
+	if (bootstrap_allowed_dependency_root.is_empty() || FSBuiltinSources::is_builtin_path(p_path)) {
 		return true;
 	}
 
@@ -6833,7 +6835,7 @@ bool FSAnalyzer::validate_bootstrap_namespace_import(
 
 		found_namespace_member = true;
 		const String path = ScriptServer::get_global_class_path(global_class);
-		if (!_bootstrap_path_is_within_root(path, bootstrap_allowed_dependency_root)) {
+		if (!is_bootstrap_dependency_path_allowed(path)) {
 			push_error(vformat(R"(Build task bootstrap cannot import namespace "%s"; global class "%s" from "%s" is outside the provider bootstrap root "%s".)",
 							   p_import, global_class, path, bootstrap_allowed_dependency_root),
 					parser->head);
@@ -6891,7 +6893,7 @@ bool FSAnalyzer::reject_bootstrap_global_class_dependency(
 
 	const String path = ScriptServer::get_global_class_path(p_class_name);
 	if (FoundryScript::is_canonically_equal_paths(path, parser->script_path) ||
-			_bootstrap_path_is_within_root(path, bootstrap_allowed_dependency_root)) {
+			is_bootstrap_dependency_path_allowed(path)) {
 		return false;
 	}
 
@@ -6913,7 +6915,9 @@ String FSAnalyzer::get_bootstrap_allowed_dependency_root() {
 }
 
 bool FSAnalyzer::is_bootstrap_path_allowed(const String &p_path) {
-	if (bootstrap_allowed_dependency_root.is_empty()) {
+	// Builtin sources ship in the language binary and use a reserved, non-project-writable scheme.
+	// They are trusted language dependencies, not provider dependencies constrained by the root.
+	if (bootstrap_allowed_dependency_root.is_empty() || FSBuiltinSources::is_builtin_path(p_path)) {
 		return true;
 	}
 	return _bootstrap_path_is_within_root(p_path, bootstrap_allowed_dependency_root);
@@ -6923,7 +6927,7 @@ FSParser::DataType FSAnalyzer::make_global_class_meta_type(const StringName &p_c
 	FSParser::DataType type;
 
 	String path = ScriptServer::get_global_class_path(p_class_name);
-	if (!bootstrap_allowed_dependency_root.is_empty() && !_bootstrap_path_is_within_root(path, bootstrap_allowed_dependency_root)) {
+	if (!is_bootstrap_dependency_path_allowed(path)) {
 		push_error(vformat(R"(Build task bootstrap cannot use global class "%s" from "%s"; it is outside the provider bootstrap root "%s".)",
 						   p_class_name, path, bootstrap_allowed_dependency_root),
 				p_source);
@@ -7051,7 +7055,7 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_path(const StringName 
 	error_type.type_source = FSParser::DataType::UNDETECTED;
 	error_type.kind = FSParser::DataType::VARIANT;
 
-	if (!bootstrap_allowed_dependency_root.is_empty() && !_bootstrap_path_is_within_root(p_path, bootstrap_allowed_dependency_root)) {
+	if (!is_bootstrap_dependency_path_allowed(p_path)) {
 		push_error(vformat(R"(Build task bootstrap cannot use global enum "%s" from "%s"; it is outside the provider bootstrap root "%s".)",
 						   p_global_name, p_path, bootstrap_allowed_dependency_root),
 				p_source);
@@ -12302,7 +12306,12 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 
 	MethodInfo info;
 	if (ClassDB::get_method_info(base_native, function_name, &info)) {
+		MethodBind *native_method = ClassDB::get_method(base_native, function_name);
+		const StringName native_method_owner = native_method != nullptr ? native_method->get_instance_class() : base_native;
 		bool valid = function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
+		if (valid) {
+			valid = apply_builtin_native_return_type_hint(native_method_owner, function_name, p_source, r_return_type);
+		}
 		if (valid && Engine::get_singleton()->has_singleton(base_native)) {
 			r_method_flags.set_flag(METHOD_FLAG_STATIC);
 		}
@@ -12310,7 +12319,6 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			*r_is_noreturn = true;
 		}
 #ifdef DEBUG_ENABLED
-		MethodBind *native_method = ClassDB::get_method(base_native, function_name);
 		if (native_method && r_native_class) {
 			*r_native_class = native_method->get_instance_class();
 		}
@@ -12329,6 +12337,79 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	}
 
 	return false;
+}
+
+bool FSAnalyzer::apply_builtin_native_return_type_hint(
+		const StringName &p_native_method_owner, const StringName &p_method,
+		const FSParser::Node *p_source, FSParser::DataType &r_return_type) {
+	StringName return_type_name;
+	Vector<StringName> type_argument_names;
+	if (!FSBuiltinTypes::get_native_method_return_type_hint(
+				p_native_method_owner, p_method, return_type_name, type_argument_names)) {
+		return true;
+	}
+
+	if (!ScriptServer::is_builtin_global_class(return_type_name) ||
+			ScriptServer::is_global_class_enum(return_type_name)) {
+		push_error(vformat(R"(Builtin native return hint for "%s.%s" names invalid class "%s".)",
+						   p_native_method_owner, p_method, return_type_name),
+				p_source);
+		return false;
+	}
+
+	const int errors_before = parser->get_errors().size();
+	FSParser::DataType hinted_return = type_from_metatype(make_global_class_meta_type(return_type_name, p_source));
+	if (parser->get_errors().size() > errors_before || !hinted_return.is_set() ||
+			hinted_return.kind != FSParser::DataType::CLASS || hinted_return.class_type == nullptr) {
+		if (parser->get_errors().size() == errors_before) {
+			push_error(vformat(R"(Could not resolve builtin native return hint "%s" for "%s.%s".)",
+							   return_type_name, p_native_method_owner, p_method),
+					p_source);
+		}
+		return false;
+	}
+
+	const int expected_argument_count = hinted_return.class_type->type_parameters.size();
+	if (type_argument_names.size() != expected_argument_count) {
+		push_error(vformat(R"(Builtin native return hint "%s" for "%s.%s" expects %d type argument(s), but %d were provided.)",
+						   return_type_name, p_native_method_owner, p_method, expected_argument_count, type_argument_names.size()),
+				p_source);
+		return false;
+	}
+
+	Vector<FSParser::DataType> type_arguments;
+	Vector<bool> argument_failed;
+	Vector<const FSParser::Node *> argument_sources;
+	for (const StringName &argument_name : type_argument_names) {
+		const int argument_errors_before = parser->get_errors().size();
+		FSParser::DataType argument;
+		if (ScriptServer::is_builtin_global_class(argument_name)) {
+			if (ScriptServer::is_global_class_enum(argument_name)) {
+				argument = type_from_metatype(make_global_enum_type_from_path(
+						argument_name, ScriptServer::get_global_class_path(argument_name), p_source));
+			} else {
+				argument = type_from_metatype(make_global_class_meta_type(argument_name, p_source));
+			}
+		} else {
+			push_error(vformat(R"(Builtin native return hint for "%s.%s" names invalid type argument "%s".)",
+							   p_native_method_owner, p_method, argument_name),
+					p_source);
+		}
+
+		const bool failed = parser->get_errors().size() > argument_errors_before || !argument.is_set();
+		type_arguments.push_back(argument);
+		argument_failed.push_back(failed);
+		argument_sources.push_back(p_source);
+	}
+
+	if (argument_failed.has(true) ||
+			!bind_class_type_arguments(hinted_return, type_arguments, argument_failed, argument_sources, p_source)) {
+		return false;
+	}
+
+	hinted_return.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	r_return_type = hinted_return;
+	return true;
 }
 
 bool FSAnalyzer::function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags) {
