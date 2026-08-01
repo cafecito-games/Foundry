@@ -1194,6 +1194,7 @@ if env["ninja"]:
         ".godot",
         ".ninja",
         ".test_scratch",
+        ".worktrees",
         "__pycache__",
         "bin",
         "build",

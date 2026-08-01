@@ -286,6 +286,23 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
 
         self.assertNotEqual(before, after)
 
+    def test_ninja_state_ignores_sibling_worktrees_inside_the_main_checkout(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        args = agent_build.parse_args(["--backend", "ninja"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory) / "Foundry"
+            sibling_worktree = repo_root / ".worktrees" / "issue-1"
+            sibling_worktree.mkdir(parents=True)
+            (repo_root / "methods.py").write_text("VALUE = 1\n", encoding="utf-8")
+            sibling_methods = sibling_worktree / "methods.py"
+            sibling_methods.write_text("VALUE = 1\n", encoding="utf-8")
+            before = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+            sibling_methods.write_text("VALUE = 2\n", encoding="utf-8")
+            after = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertEqual(before, after)
+
     def test_ninja_state_changes_when_custom_configuration_is_created_or_changed(self) -> None:
         target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
         args = agent_build.parse_args(["--backend", "ninja"])
