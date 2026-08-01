@@ -504,7 +504,8 @@ def ninja_build_command(state: NinjaState, jobs: int) -> list[str]:
     ninja = shutil.which("ninja")
     if ninja is None:
         raise RuntimeError("Ninja is not available")
-    return [ninja, "-f", str(state.file), f"-j{jobs}"]
+    ninja_file = os.path.relpath(state.file, REPO_ROOT)
+    return [ninja, "-f", ninja_file, f"-j{jobs}"]
 
 
 def build_command(args: argparse.Namespace, target: BuildTarget | None = None) -> list[str]:

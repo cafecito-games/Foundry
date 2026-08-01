@@ -7,6 +7,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -288,12 +289,14 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
         self.assertFalse(any(argument.startswith("-j") for argument in command))
 
     def test_ninja_build_command_resolves_the_executable_and_state_file(self) -> None:
-        state = agent_build.NinjaState(Path("/work/.ninja/config"), Path("/work/.ninja/config/build.ninja"))
+        state = agent_build.NinjaState(
+            agent_build.REPO_ROOT / ".ninja/config", agent_build.REPO_ROOT / ".ninja/config/build.ninja"
+        )
         with mock.patch.object(agent_build.shutil, "which", return_value="/opt/bin/ninja") as which:
             command = agent_build.ninja_build_command(state, 9)
 
         which.assert_called_once_with("ninja")
-        self.assertEqual(command, ["/opt/bin/ninja", "-f", "/work/.ninja/config/build.ninja", "-j9"])
+        self.assertEqual(command, ["/opt/bin/ninja", "-f", ".ninja/config/build.ninja", "-j9"])
 
     def test_ninja_backend_rejects_wrapper_owned_scons_settings(self) -> None:
         for key in sorted(agent_build.NINJA_OWNED_SCONS_KEYS):
@@ -682,7 +685,10 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             self.assertEqual(build_call.kwargs["invocation_id"], "invocation-ninja")
 
             summary = json.loads(progress_path.read_text(encoding="utf-8"))
-            self.assertEqual(summary["build_command"], ["/bin/ninja", "-f", str(state.file), "-j4"])
+            self.assertEqual(
+                summary["build_command"],
+                ["/bin/ninja", "-f", os.path.relpath(state.file, agent_build.REPO_ROOT), "-j4"],
+            )
             self.assertEqual(summary["generation_command"], generation_call.args[0])
             self.assertEqual(summary["generation_exit_code"], 0)
             self.assertEqual(summary["status"], "failed")
