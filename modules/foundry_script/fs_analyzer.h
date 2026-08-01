@@ -638,6 +638,7 @@ private:
 	bool apply_builtin_native_return_type_hint(const StringName &p_native_method_owner, const StringName &p_method,
 			const FSParser::Node *p_source, FSParser::DataType &r_return_type);
 	bool resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument);
+	void apply_use_site_nullable_type_argument_marker(FSParser::DataType &r_type_argument, bool p_is_nullable);
 	void reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::SubscriptNode *p_callee);
 	bool function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
 	bool string_name_from_constant_arg(const FSParser::CallNode *p_call, int p_argument_index, StringName &r_name) const;

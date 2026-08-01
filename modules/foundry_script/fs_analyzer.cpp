@@ -10538,12 +10538,16 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 			} else {
 				argument_expressions = p_subscript->type_arguments;
 			}
-			for (FSParser::ExpressionNode *argument_expression : argument_expressions) {
+			for (int argument_index = 0; argument_index < argument_expressions.size(); argument_index++) {
+				FSParser::ExpressionNode *argument_expression = argument_expressions[argument_index];
 				// Resolve positionally: a failed argument keeps its slot (filled with the Variant
 				// fallback and flagged) so the arity check sees the count the user wrote and a later
 				// argument is never shifted into an earlier type parameter.
 				FSParser::DataType type_argument;
 				if (resolve_explicit_type_argument(argument_expression, type_argument)) {
+					if (argument_index < p_subscript->type_argument_is_nullable.size()) {
+						apply_use_site_nullable_type_argument_marker(type_argument, p_subscript->type_argument_is_nullable[argument_index]);
+					}
 					resolved_arguments.push_back(type_argument);
 					argument_failed.push_back(false);
 				} else {
@@ -12675,6 +12679,16 @@ bool FSAnalyzer::string_name_from_constant_arg(const FSParser::CallNode *p_call,
 	return true;
 }
 
+void FSAnalyzer::apply_use_site_nullable_type_argument_marker(FSParser::DataType &r_type_argument, bool p_is_nullable) {
+	if (!p_is_nullable || !r_type_argument.is_set() || r_type_argument.is_variant()) {
+		return;
+	}
+	if (r_type_argument.kind == FSParser::DataType::BUILTIN && r_type_argument.builtin_type == Variant::NIL) {
+		return;
+	}
+	r_type_argument.is_nullable = true;
+}
+
 bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument) {
 	if (p_expression == nullptr) {
 		return false;
@@ -12812,6 +12826,9 @@ void FSAnalyzer::reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::
 		p_call->set_datatype(error_type);
 		mark_node_unsafe(p_call);
 		return;
+	}
+	if (!p_callee->type_argument_is_nullable.is_empty()) {
+		apply_use_site_nullable_type_argument_marker(type_argument, p_callee->type_argument_is_nullable[0]);
 	}
 
 	// A forwarded class type parameter is reified onto the instance at construction

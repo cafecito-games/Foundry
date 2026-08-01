@@ -247,9 +247,13 @@ void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::
 			// parameter, and the arity check sees the count the user actually wrote.
 			Vector<FSParser::DataType> explicit_arguments;
 			Vector<bool> explicit_argument_failed;
-			for (FSParser::ExpressionNode *argument_expression : argument_expressions) {
+			for (int argument_index = 0; argument_index < argument_expressions.size(); argument_index++) {
+				FSParser::ExpressionNode *argument_expression = argument_expressions[argument_index];
 				FSParser::DataType type_argument;
 				if (analyzer->resolve_explicit_type_argument(argument_expression, type_argument)) {
+					if (argument_index < subscript->type_argument_is_nullable.size()) {
+						analyzer->apply_use_site_nullable_type_argument_marker(type_argument, subscript->type_argument_is_nullable[argument_index]);
+					}
 					explicit_arguments.push_back(type_argument);
 					explicit_argument_failed.push_back(false);
 				} else {
