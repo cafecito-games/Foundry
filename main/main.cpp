@@ -734,11 +734,16 @@ static void apply_foundry_cli_project_path(const String &p_project_path, String 
 #endif
 }
 
+// Passthrough arguments are appended to the engine argument list rather than
+// straight to the game argument list: engine-owned runtime options such as
+// `--remote-debug` and `--editor-pid` have to be seen by the runtime option
+// parser, and anything it does not recognize still falls through to the game
+// arguments from there.
 static void apply_foundry_cli_invocation(
 		const FoundryCLIParser::ParseResult &p_parse,
 		String &r_project_path,
 		String &r_audio_driver,
-		List<String> &r_main_args,
+		List<String> &r_engine_args,
 		bool &r_test_rd_support,
 		bool &r_test_rd_creation) {
 	using Kind = FoundryCLIParser::CLIInvocation::Kind;
@@ -755,15 +760,14 @@ static void apply_foundry_cli_invocation(
 			EditorAutomationServer::apply_cli_options(inv);
 #endif
 			for (int i = 0; i < inv.passthrough_args.size(); i++) {
-				r_main_args.push_back(inv.passthrough_args[i]);
+				r_engine_args.push_back(inv.passthrough_args[i]);
 			}
 			break;
 		case Kind::PROJECT_RUN:
-			for (int i = 0; i < inv.passthrough_args.size(); i++) {
-				r_main_args.push_back(inv.passthrough_args[i]);
-			}
-			break;
 		case Kind::PROJECT_TEST:
+			for (int i = 0; i < inv.passthrough_args.size(); i++) {
+				r_engine_args.push_back(inv.passthrough_args[i]);
+			}
 			break;
 		case Kind::PROJECT_EXPORT:
 			editor = true;
@@ -1183,7 +1187,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 
 #ifdef TOOLS_ENABLED
-	apply_foundry_cli_invocation(cli_parse, project_path, audio_driver, main_args, test_rd_support, test_rd_creation);
+	apply_foundry_cli_invocation(cli_parse, project_path, audio_driver, args, test_rd_support, test_rd_creation);
 	if (cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT ||
 			cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_LINT) {
 		Engine::get_singleton()->_print_header = false;
@@ -5320,6 +5324,12 @@ bool Main::iteration() {
 	FoundryProfileZone("Main::iteration");
 	FoundryProfileZoneGroupedFirst(_profile_zone, "prepare");
 	iterating++;
+
+#ifdef TOOLS_ENABLED
+	// A latched SIGINT/SIGTERM is serviced here rather than in the handler itself,
+	// so child cleanup and the tree quit happen on the main thread.
+	EditorToolingHost::process_pending_shutdown();
+#endif
 
 	const uint64_t ticks = OS::get_singleton()->get_ticks_usec();
 	Engine::get_singleton()->_frame_ticks = ticks;

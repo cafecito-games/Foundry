@@ -47,6 +47,87 @@ String EditorRun::get_running_scene() const {
 	return running_scene;
 }
 
+EditorRun::LaunchContext EditorRun::build_launch_context() {
+	LaunchContext context;
+	for (const String &a : Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_PROJECT)) {
+		context.forwardable_arguments.push_back(a);
+	}
+	context.resource_path = ProjectSettings::get_singleton()->get_resource_path();
+	context.debug_uri = EditorDebuggerNode::get_singleton()->get_server_uri();
+	context.editor_pid = OS::get_singleton()->get_process_id();
+	return context;
+}
+
+List<String> EditorRun::build_project_test_arguments(const LaunchContext &p_context, const TestLaunch &p_launch) {
+	List<String> args;
+	for (const String &a : p_context.forwardable_arguments) {
+		args.push_back(a);
+	}
+
+	args.push_back("project");
+	args.push_back("test");
+	if (!p_context.resource_path.is_empty()) {
+		args.push_back("--project");
+		args.push_back(p_context.resource_path.replace(" ", "%20"));
+	}
+	args.push_back("--runner");
+	args.push_back(p_launch.runner);
+
+	if (!p_context.debug_uri.is_empty()) {
+		args.push_back("--remote-debug");
+		args.push_back(p_context.debug_uri);
+	}
+	if (p_context.editor_pid != 0) {
+		args.push_back("--editor-pid");
+		args.push_back(itos(p_context.editor_pid));
+	}
+
+	// Everything past this point belongs to the runner script, not the engine.
+	args.push_back("--");
+	args.push_back("adapter");
+	args.push_back("run");
+	args.push_back("--protocol-version");
+	args.push_back(itos(p_launch.adapter_protocol_version));
+	if (!p_launch.report_path.is_empty()) {
+		args.push_back("--report");
+		args.push_back(p_launch.report_path);
+	}
+	for (const String &test_id : p_launch.test_ids) {
+		args.push_back("--select");
+		args.push_back(test_id);
+	}
+
+	return args;
+}
+
+Error EditorRun::run_project_test(const TestLaunch &p_launch) {
+	ERR_FAIL_COND_V_MSG(p_launch.runner.is_empty(), ERR_INVALID_PARAMETER, "A project_test launch requires a runner script path.");
+
+	List<String> args = build_project_test_arguments(build_launch_context(), p_launch);
+
+	if (OS::get_singleton()->is_stdout_verbose()) {
+		PackedStringArray output;
+		output.reserve_exact(args.size() + 1);
+		output.append(vformat("Running: %s", OS::get_singleton()->get_executable_path()));
+		for (const String &arg : args) {
+			output.append(arg);
+		}
+		print_line(String(" ").join(output));
+	}
+
+	OS::ProcessID pid = 0;
+	const Error err = OS::get_singleton()->create_instance(args, &pid);
+	ERR_FAIL_COND_V(err, err);
+	if (pid != 0) {
+		pids.push_back(pid);
+	}
+
+	status = STATUS_PLAY;
+	running_scene = "";
+	OS::get_singleton()->unset_environment("FOUNDRY_EDITOR_CUSTOM_FEATURES");
+	return OK;
+}
+
 Error EditorRun::run(const String &p_scene, const String &p_write_movie, const Vector<String> &p_run_args) {
 	List<String> args;
 
@@ -221,7 +302,9 @@ void EditorRun::stop_child_process(OS::ProcessID p_pid) {
 }
 
 void EditorRun::stop() {
-	if (status != STATUS_STOP && pids.size() > 0) {
+	// Tracked children are terminated whenever any remain, independent of the run
+	// status: a launch that never reached the playing state still owns processes.
+	if (pids.size() > 0) {
 		for (const OS::ProcessID &E : pids) {
 			OS::get_singleton()->kill(E);
 		}
@@ -347,7 +430,18 @@ EditorRun::WindowPlacement EditorRun::get_window_placement() {
 	return placement;
 }
 
+void EditorRun::stop_all_launched_children() {
+	for (EditorRun *instance : live_instances) {
+		instance->stop();
+	}
+}
+
 EditorRun::EditorRun() {
 	status = STATUS_STOP;
 	running_scene = "";
+	live_instances.push_back(this);
+}
+
+EditorRun::~EditorRun() {
+	live_instances.erase(this);
 }

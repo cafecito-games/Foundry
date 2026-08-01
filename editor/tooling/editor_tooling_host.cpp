@@ -33,8 +33,10 @@
 #include "core/config/project_settings.h"
 #include "core/io/json.h"
 #include "core/os/os.h"
+#include "editor/run/editor_run.h"
 #include "scene/main/scene_tree.h"
 
+#include <csignal>
 #include <cstdio>
 
 namespace {
@@ -54,6 +56,14 @@ ToolingHostState &state() {
 	return singleton_state;
 }
 
+// Kept outside `ToolingHostState` on purpose: the signal handler must not touch a
+// function-local static, whose lazy initialization guard is not async-signal-safe.
+volatile sig_atomic_t shutdown_requested = 0;
+
+extern "C" void tooling_host_signal_handler(int) {
+	shutdown_requested = 1;
+}
+
 // The readiness and failure records are the host's machine-readable contract with
 // its supervisor, so they must survive `--quiet` and a project that sets
 // `application/run/disable_stdout`, which suppress the ordinary logging path.
@@ -70,6 +80,33 @@ void EditorToolingHost::configure(int p_lsp_port, int p_dap_port) {
 	tooling_state.enabled = true;
 	tooling_state.requested_port[SERVICE_LSP] = p_lsp_port;
 	tooling_state.requested_port[SERVICE_DAP] = p_dap_port;
+	install_shutdown_handlers();
+}
+
+void EditorToolingHost::install_shutdown_handlers() {
+	signal(SIGINT, tooling_host_signal_handler);
+	signal(SIGTERM, tooling_host_signal_handler);
+}
+
+void EditorToolingHost::request_shutdown() {
+	shutdown_requested = 1;
+}
+
+bool EditorToolingHost::is_shutdown_requested() {
+	return shutdown_requested != 0;
+}
+
+void EditorToolingHost::process_pending_shutdown() {
+	if (shutdown_requested == 0) {
+		return;
+	}
+	shutdown_requested = 0;
+
+	EditorRun::stop_all_launched_children();
+
+	if (state().enabled && SceneTree::get_singleton() != nullptr) {
+		SceneTree::get_singleton()->quit(EXIT_SUCCESS);
+	}
 }
 
 bool EditorToolingHost::is_enabled() {

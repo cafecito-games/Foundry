@@ -1058,13 +1058,16 @@ Array DebugAdapterProtocol::update_breakpoints(const String &p_path, const Array
 
 void DebugAdapterProtocol::on_debug_paused() {
 	if (EditorRunBar::get_singleton()->get_pause_button()->is_pressed()) {
-		notify_stopped_paused();
+		// The debuggee has not broken yet; `stopped` follows its stack dump.
+		request_pause();
 	} else {
+		_pending_pause = false;
 		notify_continued();
 	}
 }
 
 void DebugAdapterProtocol::on_debug_stopped() {
+	_pending_pause = false;
 	notify_exited();
 	notify_terminated();
 	reset_ids();
@@ -1074,9 +1077,33 @@ void DebugAdapterProtocol::on_debug_output(const String &p_message, int p_type) 
 	notify_output(p_message, RemoteDebugger::MessageType(p_type));
 }
 
+void DebugAdapterProtocol::request_pause() {
+	_pending_pause = true;
+}
+
+void DebugAdapterProtocol::resolve_pending_pause() {
+	if (!_pending_pause) {
+		return;
+	}
+	_pending_pause = false;
+	notify_stopped_paused();
+}
+
 void DebugAdapterProtocol::on_debug_breaked(const bool &p_reallydid, const bool &p_can_debug, const String &p_reason, const bool &p_has_stackdump) {
 	if (!p_reallydid) {
+		_pending_pause = false;
 		notify_continued();
+		return;
+	}
+
+	if (_pending_pause) {
+		// The client asked for this break, so it is reported as a pause rather than
+		// as a breakpoint or an exception. Without a stack dump to wait for there is
+		// nothing left to synchronize against.
+		_processing_stackdump = p_has_stackdump;
+		if (!p_has_stackdump) {
+			resolve_pending_pause();
+		}
 		return;
 	}
 
@@ -1163,6 +1190,8 @@ void DebugAdapterProtocol::on_debug_stack_dump(const Array &p_stack_dump) {
 
 	_current_frame = 0;
 	_processing_stackdump = false;
+
+	resolve_pending_pause();
 }
 
 void DebugAdapterProtocol::on_debug_stack_frame_vars(const int &p_size) {

@@ -116,6 +116,10 @@ private:
 	bool _processing_breakpoint = false;
 	bool _stepping = false;
 	bool _processing_stackdump = false;
+	// A client-requested pause is only reported as `stopped` once the debuggee's
+	// asynchronous stack dump has arrived, so the stack trace the client asks for
+	// immediately afterwards is already populated.
+	bool _pending_pause = false;
 	int _remaining_vars = 0;
 	int _current_frame = 0;
 	uint64_t _request_timeout = 5000;
@@ -159,6 +163,11 @@ public:
 	void notify_stopped_breakpoint(const int &p_id);
 	void notify_stopped_step();
 	void notify_continued();
+	// Latches a client-requested pause so the `stopped` event is deferred until the
+	// stack dump lands; call `resolve_pending_pause()` when no dump will arrive.
+	void request_pause();
+	bool has_pending_pause() const { return _pending_pause; }
+	void resolve_pending_pause();
 	void notify_output(const String &p_message, RemoteDebugger::MessageType p_type);
 	void notify_custom_data(const String &p_msg, const Array &p_data);
 	void notify_breakpoint(const DAP::Breakpoint &p_breakpoint, const bool &p_enabled);

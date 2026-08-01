@@ -888,6 +888,58 @@ TEST_CASE("[FoundryCLIParser] Project run forwards passthrough runtime flags") {
 	CHECK_EQ(result.invocation.passthrough_args, make_args({ "--remote-debug", "tcp://127.0.0.1:6007", "--editor-pid", "42" }));
 }
 
+TEST_CASE("[FoundryCLIParser] Project test accepts the debug transport options") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"project",
+			"test",
+			"--project",
+			"demo",
+			"--runner",
+			"res://addons/example/run.fs",
+			"--remote-debug",
+			"tcp://127.0.0.1:6007",
+			"--editor-pid",
+			"42",
+			"--",
+			"adapter",
+			"run",
+			"--protocol-version",
+			"1",
+			"--select",
+			"suite::case",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, FoundryCLIParser::CLIInvocation::PROJECT_TEST);
+	CHECK_EQ(result.invocation.runner, "res://addons/example/run.fs");
+	CHECK_EQ(result.invocation.passthrough_args, make_args({ "--remote-debug", "tcp://127.0.0.1:6007", "--editor-pid", "42" }));
+	CHECK_EQ(result.user_args, make_args({ "adapter", "run", "--protocol-version", "1", "--select", "suite::case" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Project test rejects malformed debug transport values") {
+	FoundryCLIParser::ParseResult bad_uri = FoundryCLIParser::parse(make_args({
+			"foundry", "project", "test", "--runner", "res://run.fs", "--remote-debug", "127.0.0.1:6007" }));
+	CHECK_FALSE(bad_uri.ok);
+	CHECK(bad_uri.error.contains("--remote-debug"));
+
+	FoundryCLIParser::ParseResult bad_pid = FoundryCLIParser::parse(make_args({
+			"foundry", "project", "test", "--runner", "res://run.fs", "--editor-pid", "not-a-pid" }));
+	CHECK_FALSE(bad_pid.ok);
+	CHECK(bad_pid.error.contains("--editor-pid"));
+
+	FoundryCLIParser::ParseResult missing_value = FoundryCLIParser::parse(make_args({
+			"foundry", "project", "test", "--runner", "res://run.fs", "--remote-debug" }));
+	CHECK_FALSE(missing_value.ok);
+}
+
+TEST_CASE("[FoundryCLIParser] Project test still rejects unrelated unknown options") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry", "project", "test", "--runner", "res://run.fs", "--not-an-option" }));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("--not-an-option"));
+}
+
 TEST_CASE("[FoundryCLIParser] Editor open accepts a scene path to reopen") {
 	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
 			"foundry",

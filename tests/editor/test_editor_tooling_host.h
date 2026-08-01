@@ -37,10 +37,17 @@
 #include "core/os/os.h"
 #include "editor/debugger/debug_adapter/debug_adapter_protocol.h"
 #include "editor/debugger/debug_adapter/debug_adapter_types.h"
+#include "editor/run/editor_run.h"
 #include "editor/tooling/editor_tooling_host.h"
 
 #include "tests/editor/editor_workflow_test_fixtures.h"
 #include "tests/test_macros.h"
+
+#ifdef UNIX_ENABLED
+#include <cerrno>
+#include <csignal>
+#include <sys/wait.h>
+#endif
 
 namespace TestEditorToolingHost {
 
@@ -324,5 +331,115 @@ TEST_CASE("[Editor][ToolingHost] An occupied debug adapter port fails the whole 
 	CHECK_EQ(int(payload["requested_port"]), occupied_port);
 	CHECK_FALSE(host.output.contains("FOUNDRY_TOOLING {"));
 }
+
+#ifdef UNIX_ENABLED
+// A process that stays alive until it is signalled, standing in for a debuggee the
+// host launched. `sleep` is used directly rather than a second engine instance so
+// the check stays about process ownership, not about engine startup.
+static OS::ProcessID spawn_idle_child() {
+	List<String> arguments;
+	arguments.push_back("120");
+	OS::ProcessID pid = 0;
+	if (OS::get_singleton()->create_process("/bin/sleep", arguments, &pid) != OK) {
+		return 0;
+	}
+	return pid;
+}
+
+// Reaps directly rather than through `OS::is_process_running()`, which reports a
+// stale result for headless children on macOS (tracked separately).
+static bool has_exited(OS::ProcessID p_pid) {
+	int status = 0;
+	const pid_t reaped = waitpid((pid_t)p_pid, &status, WNOHANG);
+	if (reaped == (pid_t)p_pid) {
+		return true;
+	}
+	if (reaped == -1 && errno == ECHILD) {
+		return true;
+	}
+	return kill((pid_t)p_pid, 0) != 0;
+}
+
+static bool wait_until_gone(OS::ProcessID p_pid, uint64_t p_timeout_msec) {
+	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + p_timeout_msec;
+	while (OS::get_singleton()->get_ticks_msec() < deadline) {
+		if (has_exited(p_pid)) {
+			return true;
+		}
+		OS::get_singleton()->delay_usec(20000);
+	}
+	return has_exited(p_pid);
+}
+
+TEST_CASE("[Editor][ToolingHost] An orderly shutdown terminates the processes the host launched") {
+	const OS::ProcessID launched = spawn_idle_child();
+	REQUIRE_MESSAGE(launched != 0, "Failed to spawn a stand-in debuggee process.");
+	const OS::ProcessID attached = spawn_idle_child();
+	if (attached == 0) {
+		OS::get_singleton()->kill(launched);
+		FAIL("Failed to spawn a stand-in attached process.");
+		return;
+	}
+	CHECK_EQ(kill((pid_t)launched, 0), 0);
+
+	{
+		EditorRun run;
+		run.pids.push_back(launched);
+
+		CHECK_FALSE(EditorToolingHost::is_shutdown_requested());
+		EditorToolingHost::request_shutdown();
+		CHECK(EditorToolingHost::is_shutdown_requested());
+
+		EditorToolingHost::process_pending_shutdown();
+
+		CHECK_FALSE(EditorToolingHost::is_shutdown_requested());
+		CHECK_EQ(run.get_child_process_count(), 0);
+		CHECK_EQ(run.get_status(), EditorRun::STATUS_STOP);
+	}
+
+	CHECK(wait_until_gone(launched, 5000));
+	// A process the host never launched is not tracked, so it is left running.
+	CHECK_EQ(kill((pid_t)attached, 0), 0);
+	kill((pid_t)attached, SIGKILL);
+	wait_until_gone(attached, 5000);
+
+	// A second pass with no pending request must not touch anything.
+	EditorToolingHost::process_pending_shutdown();
+	CHECK_FALSE(EditorToolingHost::is_shutdown_requested());
+}
+
+TEST_CASE("[Editor][ToolingHost] A signalled host shuts itself down") {
+	const String project_path = EditorWorkflowTestFixtures::prepare_basic_scene_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a disposable tooling-host project.");
+
+	List<String> arguments;
+	arguments.push_back("tooling");
+	arguments.push_back("serve");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--lsp-port");
+	arguments.push_back("0");
+	arguments.push_back("--dap-port");
+	arguments.push_back("0");
+
+	HostProcess host = launch_tooling_host(arguments);
+	REQUIRE_MESSAGE(host.is_valid(), "Failed to launch the tooling host.");
+
+	const bool ready = wait_for_marker(host, "FOUNDRY_TOOLING {", 180000);
+	INFO("Tooling host output:\n", host.output);
+	if (!ready) {
+		shutdown_host(host);
+		FAIL("The tooling host never emitted a readiness record.");
+		return;
+	}
+
+	REQUIRE_EQ(kill((pid_t)host.pid, SIGINT), 0);
+	const bool exited = wait_until_gone(host.pid, 60000);
+	if (!exited) {
+		shutdown_host(host);
+	}
+	CHECK_MESSAGE(exited, "The tooling host ignored SIGINT.");
+}
+#endif // UNIX_ENABLED
 
 } // namespace TestEditorToolingHost

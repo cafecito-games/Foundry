@@ -33,6 +33,7 @@
 #include "core/config/project_settings.h"
 #include "core/debugger/remote_debugger.h"
 #include "editor/debugger/debug_adapter/debug_adapter_types.h"
+#include "editor/run/editor_run.h"
 
 struct DAPeer;
 class DebugAdapterProtocol;
@@ -79,6 +80,23 @@ protected:
 	Dictionary ev_stopped() const;
 
 public:
+	// A launch request either starts a scene, as DAP normally does, or the project's
+	// test runner with an exact selection of test ids.
+	struct LaunchRequest {
+		enum Kind {
+			KIND_SCENE,
+			KIND_PROJECT_TEST,
+		};
+
+		Kind kind = KIND_SCENE;
+		EditorRun::TestLaunch test_launch;
+	};
+
+	// Reads the `foundry/launch` object out of a `launch` request's arguments. An
+	// absent object means a plain scene launch. Returns false and fills `r_error`
+	// with a client-facing reason when the object is present but malformed.
+	static bool parse_launch_request(const Dictionary &p_arguments, LaunchRequest &r_request, String &r_error);
+
 	// Requests
 	Dictionary req_initialize(const Dictionary &p_params) const;
 	Dictionary req_launch(const Dictionary &p_params) const;
