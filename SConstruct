@@ -1201,9 +1201,24 @@ for key in (emitters := env.SharedObject.builder.emitter):
 # Prepend compiler launchers
 if "c_compiler_launcher" in env:
     env["CC"] = " ".join([env["c_compiler_launcher"], env["CC"]])
+    if env["ninja"]:
+        ninja_cc_provider = env.NinjaGenResponseFileProvider("CC", "$c_compiler_launcher")
+        env.NinjaRuleMapping("${CCCOM}", ninja_cc_provider)
+        if isinstance(env.get("CCCOM"), str):
+            env.NinjaRuleMapping(env["CCCOM"], ninja_cc_provider)
 
 if "cpp_compiler_launcher" in env:
     env["CXX"] = " ".join([env["cpp_compiler_launcher"], env["CXX"]])
+    if env["ninja"]:
+        ninja_cxx_provider = env.NinjaGenResponseFileProvider("CXX", "$cpp_compiler_launcher")
+        env.NinjaRuleMapping("${CXXCOM}", ninja_cxx_provider)
+        if isinstance(env.get("CXXCOM"), str):
+            env.NinjaRuleMapping(env["CXXCOM"], ninja_cxx_provider)
+        ninja_link_provider = env.NinjaGenResponseFileProvider("LINK", "$cpp_compiler_launcher")
+        for ninja_link_command in ("LINKCOM", "SHLINKCOM"):
+            env.NinjaRuleMapping("${" + ninja_link_command + "}", ninja_link_provider)
+            if isinstance(env.get(ninja_link_command), str):
+                env.NinjaRuleMapping(env[ninja_link_command], ninja_link_provider)
 
 # Build subdirs, the build order is dependent on link order.
 Export("env")
