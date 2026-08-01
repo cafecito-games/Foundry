@@ -549,6 +549,11 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped("Node.new()", "entity.name.function.call.foundryscript", offset=5, source=source)
         self.assertNotScoped("result = Node.new()", "storage.type.accessor.foundryscript", source=source)
 
+    def test_a_constructor_call_dictionary_value_keeps_call_scope(self) -> None:
+        source = "var by_index = {1: Vector2()}\n"
+        self.assertScoped("Vector2()", "entity.name.function.call.foundryscript", source=source)
+        self.assertNotScoped("Vector2()", "entity.name.type.foundryscript", source=source)
+
     def test_accessor_shaped_dictionary_keys_are_not_scoped_as_accessors(self) -> None:
         source = (
             "var python_entries = {\n"
