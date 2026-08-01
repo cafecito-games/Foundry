@@ -95,6 +95,13 @@ class EditorRunBar : public MarginContainer {
 	String run_custom_filename;
 	String run_current_filename;
 
+	// The child process a debug session represents: the launch's primary host child.
+	// Additional run instances stay tracked for cleanup but never supply the result.
+	OS::ProcessID represented_process = 0;
+
+	void _poll_child_processes();
+	void _finish_run();
+
 	void _reset_play_buttons();
 	void _update_play_buttons();
 
@@ -148,6 +155,10 @@ public:
 	String get_playing_scene() const;
 
 	Error start_native_device(int p_device_id) const;
+
+	// Identity of the launch currently owning host children, or 0 when the running
+	// debuggee is attached, native, or remote.
+	uint64_t get_current_launch_id() const;
 
 	OS::ProcessID has_child_process(OS::ProcessID p_pid) const;
 	void stop_child_process(OS::ProcessID p_pid);

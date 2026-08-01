@@ -46,6 +46,7 @@
 #include "tests/editor/project_manager/test_ios_project_template.h"
 #include "tests/editor/run/test_editor_run_bar.h"
 #include "tests/editor/run/test_editor_run_native.h"
+#include "tests/editor/run/test_editor_run_process_lifecycle.h"
 #include "tests/editor/run/test_editor_run_test_launch.h"
 #include "tests/editor/run/test_ios_run_target_platform.h"
 #include "tests/editor/run/test_run_target.h"

@@ -176,6 +176,9 @@ void DebugAdapterProtocol::reset_ids() {
 	breakpoint_list.clear();
 	breakpoint_source_list.clear();
 
+	eval_list.clear();
+	eval_pending_list.clear();
+
 	reset_stack_info();
 }
 
@@ -894,6 +897,11 @@ void DebugAdapterProtocol::notify_initialized() {
 void DebugAdapterProtocol::notify_process() {
 	String launch_mode = _current_peer->attached ? "attach" : "launch";
 
+	_debug_session_live = true;
+	// An attached debuggee owns no launch identity, and neither does a native or remote
+	// target, whose run bar reports no owned launch.
+	_active_launch_id = _current_peer->attached ? 0 : EditorRunBar::get_singleton()->get_current_launch_id();
+
 	Dictionary event = parser->ev_process(launch_mode);
 	for (const Ref<DAPeer> &peer : clients) {
 		peer->res_queue.push_back(event);
@@ -1066,9 +1074,22 @@ void DebugAdapterProtocol::on_debug_paused() {
 	}
 }
 
-void DebugAdapterProtocol::on_debug_stopped() {
+void DebugAdapterProtocol::on_debug_session_ended(int64_t p_launch_id, bool p_has_result, int p_exit_code) {
+	if (!_debug_session_live || (uint64_t)p_launch_id != _active_launch_id) {
+		// Either the session already ended, or this belongs to a launch this adapter
+		// never reported a `process` event for.
+		return;
+	}
+
+	_debug_session_live = false;
+	_active_launch_id = 0;
 	_pending_pause = false;
-	notify_exited();
+
+	// DAP allows `exited` to be omitted when no trustworthy result exists; a fabricated
+	// zero would be indistinguishable from a successful run.
+	if (p_has_result) {
+		notify_exited(p_exit_code);
+	}
 	notify_terminated();
 	reset_ids();
 }
@@ -1316,7 +1337,7 @@ DebugAdapterProtocol::DebugAdapterProtocol() {
 	EditorDebuggerNode *debugger_node = EditorDebuggerNode::get_singleton();
 	debugger_node->connect("breakpoint_toggled", callable_mp(this, &DebugAdapterProtocol::on_debug_breakpoint_toggled));
 
-	debugger_node->get_default_debugger()->connect("stopped", callable_mp(this, &DebugAdapterProtocol::on_debug_stopped));
+	debugger_node->connect("debug_session_ended", callable_mp(this, &DebugAdapterProtocol::on_debug_session_ended));
 	debugger_node->get_default_debugger()->connect(SceneStringName(output), callable_mp(this, &DebugAdapterProtocol::on_debug_output));
 	debugger_node->get_default_debugger()->connect("breaked", callable_mp(this, &DebugAdapterProtocol::on_debug_breaked));
 	debugger_node->get_default_debugger()->connect("stack_dump", callable_mp(this, &DebugAdapterProtocol::on_debug_stack_dump));

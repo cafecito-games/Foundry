@@ -621,7 +621,8 @@ TEST_CASE("[Editor][ToolingHost] An orderly shutdown terminates the processes th
 
 	{
 		EditorRun run;
-		run.pids.push_back(launched);
+		run.begin_launch();
+		run.adopt_child_process(launched);
 
 		CHECK_FALSE(EditorToolingHost::is_shutdown_requested());
 		EditorToolingHost::request_shutdown();

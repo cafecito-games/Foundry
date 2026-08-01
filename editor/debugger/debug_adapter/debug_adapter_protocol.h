@@ -87,7 +87,10 @@ private:
 	Error on_client_connected();
 	void on_client_disconnected(const Ref<DAPeer> &p_peer);
 	void on_debug_paused();
-	void on_debug_stopped();
+	// The coordinated end of a debug session, carrying the debuggee's real result when
+	// one could be recovered. The debugger socket closing is not proof of a result, so
+	// it is deliberately not consumed here.
+	void on_debug_session_ended(int64_t p_launch_id, bool p_has_result, int p_exit_code);
 	void on_debug_output(const String &p_message, int p_type);
 	void on_debug_breaked(const bool &p_reallydid, const bool &p_can_debug, const String &p_reason, const bool &p_has_stackdump);
 	void on_debug_breakpoint_toggled(const String &p_path, const int &p_line, const bool &p_enabled);
@@ -120,6 +123,10 @@ private:
 	// asynchronous stack dump has arrived, so the stack trace the client asks for
 	// immediately afterwards is already populated.
 	bool _pending_pause = false;
+	// The launch this adapter currently reports lifecycle events for. A session ended
+	// notification for any other launch identity is stale and is ignored.
+	bool _debug_session_live = false;
+	uint64_t _active_launch_id = 0;
 	int _remaining_vars = 0;
 	int _current_frame = 0;
 	uint64_t _request_timeout = 5000;
@@ -157,7 +164,9 @@ public:
 	void notify_initialized();
 	void notify_process();
 	void notify_terminated();
-	void notify_exited(const int &p_exitcode = 0);
+	// Only ever called with a result the debuggee actually produced; an unknown result
+	// is reported by omitting this event entirely.
+	void notify_exited(const int &p_exitcode);
 	void notify_stopped_paused();
 	void notify_stopped_exception(const String &p_error);
 	void notify_stopped_breakpoint(const int &p_id);

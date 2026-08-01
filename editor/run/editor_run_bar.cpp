@@ -69,6 +69,10 @@ void EditorRunBar::_notification(int p_what) {
 			}
 		} break;
 
+		case NOTIFICATION_PROCESS: {
+			_poll_child_processes();
+		} break;
+
 		case NOTIFICATION_THEME_CHANGED: {
 			if (Engine::get_singleton()->is_recovery_mode_hint()) {
 				main_panel->add_theme_style_override(SceneStringName(panel), get_theme_stylebox(SNAME("LaunchPadRecoveryMode"), EditorStringName(EditorStyles)));
@@ -114,6 +118,45 @@ void EditorRunBar::_notification(int p_what) {
 
 		} break;
 	}
+}
+
+void EditorRunBar::_poll_child_processes() {
+	if (editor_run.get_child_process_count() == 0) {
+		return;
+	}
+
+	EditorRun::ProcessCompletion completion;
+	while (editor_run.poll_child_completion(completion)) {
+		if (completion.pid != represented_process) {
+			// An extra run instance finished; it is dropped from ownership but does not
+			// speak for the launch.
+			continue;
+		}
+
+		represented_process = 0;
+		// The process result reaches the debug session before the run is torn down, so
+		// a session that ended on its own is never reported as a forced termination.
+		EditorDebuggerNode::get_singleton()->notify_owned_process_completed(completion.launch_id, completion.exit_code);
+		if (editor_run.get_status() != EditorRun::STATUS_STOP) {
+			_finish_run();
+		}
+		return;
+	}
+}
+
+void EditorRunBar::_finish_run() {
+	current_mode = RunMode::STOPPED;
+	represented_process = 0;
+	editor_run.stop();
+	EditorDebuggerNode::get_singleton()->stop();
+
+	run_custom_filename.clear();
+	run_current_filename.clear();
+	stop_button->set_pressed(false);
+	stop_button->set_disabled(true);
+	_reset_play_buttons();
+
+	emit_signal(SNAME("stop_pressed"));
 }
 
 void EditorRunBar::_reset_play_buttons() {
@@ -412,6 +455,9 @@ void EditorRunBar::_run_scene(const String &p_scene_path, const Vector<String> &
 		return;
 	}
 
+	represented_process = editor_run.get_current_process();
+	EditorDebuggerNode::get_singleton()->begin_owned_debug_session(editor_run.get_launch_id());
+
 	_update_play_buttons();
 	stop_button->set_disabled(false);
 
@@ -444,6 +490,9 @@ Error EditorRunBar::play_project_test(const EditorRun::TestLaunch &p_launch) {
 	}
 
 	current_mode = RunMode::RUN_CUSTOM;
+	represented_process = editor_run.get_current_process();
+	EditorDebuggerNode::get_singleton()->begin_owned_debug_session(editor_run.get_launch_id());
+
 	_update_play_buttons();
 	stop_button->set_disabled(false);
 	emit_signal(SNAME("play_pressed"));
@@ -461,6 +510,9 @@ void EditorRunBar::_run_native(const Ref<EditorExportPreset> &p_preset) {
 		}
 
 		EditorDebuggerNode::get_singleton()->start(p_preset->get_platform()->get_debug_protocol());
+		// A native target runs no process this editor owns, so its session can never
+		// report a result.
+		EditorDebuggerNode::get_singleton()->begin_unowned_debug_session();
 		emit_signal(SNAME("play_pressed"));
 		editor_run.run_native_notify();
 	}
@@ -540,17 +592,10 @@ void EditorRunBar::stop_playing() {
 		return;
 	}
 
-	current_mode = RunMode::STOPPED;
-	editor_run.stop();
-	EditorDebuggerNode::get_singleton()->stop();
-
-	run_custom_filename.clear();
-	run_current_filename.clear();
-	stop_button->set_pressed(false);
-	stop_button->set_disabled(true);
-	_reset_play_buttons();
-
-	emit_signal(SNAME("stop_pressed"));
+	// A stop kills whatever is still running, so no trustworthy process result can be
+	// recovered for the debug session it ends.
+	EditorDebuggerNode::get_singleton()->notify_debug_session_terminated();
+	_finish_run();
 }
 
 bool EditorRunBar::is_playing() const {
@@ -569,6 +614,10 @@ String EditorRunBar::get_playing_scene() const {
 
 Error EditorRunBar::start_native_device(int p_device_id) const {
 	return run_native->start_run_native(p_device_id);
+}
+
+uint64_t EditorRunBar::get_current_launch_id() const {
+	return editor_run.get_launch_id();
 }
 
 OS::ProcessID EditorRunBar::has_child_process(OS::ProcessID p_pid) const {
@@ -634,6 +683,9 @@ void EditorRunBar::_bind_methods() {
 EditorRunBar::EditorRunBar() {
 	singleton = this;
 	set_accessibility_name(TTRC("Run Bar"));
+	// Owned children are polled for natural completion every frame, so a debuggee that
+	// ends on its own is noticed without waiting for a user-initiated stop.
+	set_process(true);
 
 	outer_hbox = memnew(HBoxContainer);
 	add_child(outer_hbox);

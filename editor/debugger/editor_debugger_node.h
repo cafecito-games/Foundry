@@ -46,6 +46,44 @@ class ScriptEditorDebugger;
 class TabContainer;
 class UndoRedo;
 
+// Coordinates the two independent facts that end a debug session: the debugger
+// socket closing and the editor-owned child process completing. They can be observed
+// in either order, so neither one alone is treated as proof of a process result: the
+// session ends once, either with the result the OS recorded or with no result at all.
+class DebugSessionResultCoordinator {
+public:
+	// The OS process API reports this when it cannot supply a status for a process.
+	static const int UNAVAILABLE_EXIT_CODE = -1;
+
+	struct Outcome {
+		// False when the observation was stale, duplicated, or is not yet enough to end
+		// the session.
+		bool ended = false;
+		uint64_t launch_id = 0;
+		bool has_result = false;
+		int exit_code = 0;
+	};
+
+	// Starts a session for a launch whose child process this editor owns, so its
+	// result can be recovered from the OS.
+	void begin_owned_launch(uint64_t p_launch_id);
+	// Starts a session for an attached, remote, or native debuggee, whose result this
+	// editor has no trustworthy source for.
+	void begin_unowned_session();
+
+	Outcome observe_process_completed(uint64_t p_launch_id, int p_exit_code);
+	Outcome observe_debugger_stopped();
+	Outcome observe_forced_termination();
+
+	bool is_active() const { return active; }
+	uint64_t get_launch_id() const { return launch_id; }
+
+private:
+	bool active = false;
+	bool owned = false;
+	uint64_t launch_id = 0;
+};
+
 class EditorDebuggerNode : public EditorDock {
 	FOUNDRY_CLASS(EditorDebuggerNode, EditorDock);
 
@@ -128,6 +166,9 @@ private:
 	HashSet<Breakpoint, Breakpoint> breakpoints_syncing_to_gutter;
 
 	HashSet<Ref<EditorDebuggerPlugin>> debugger_plugins;
+
+	DebugSessionResultCoordinator session_coordinator;
+	void _finalize_debug_session(const DebugSessionResultCoordinator::Outcome &p_outcome);
 
 	ScriptEditorDebugger *_add_debugger();
 	void _update_errors();
@@ -237,6 +278,13 @@ public:
 	CameraOverride get_camera_override();
 
 	String get_server_uri() const;
+
+	// Debug-session result coordination. Each of these emits at most one
+	// "debug_session_ended" signal, carrying either a known process result or none.
+	void begin_owned_debug_session(uint64_t p_launch_id);
+	void begin_unowned_debug_session();
+	void notify_owned_process_completed(uint64_t p_launch_id, int p_exit_code);
+	void notify_debug_session_terminated();
 
 	void set_keep_open(bool p_keep_open);
 	Error start(const String &p_uri = "tcp://");
