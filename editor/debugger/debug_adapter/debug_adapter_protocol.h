@@ -164,9 +164,13 @@ public:
 	void notify_breakpoint(const DAP::Breakpoint &p_breakpoint, const bool &p_enabled);
 
 	Array update_breakpoints(const String &p_path, const Array &p_lines);
+	static bool can_verify_breakpoint(const String &p_path, int p_line);
+	static String breakpoint_script_path(const String &p_client_path, const String &p_resource_path);
 
 	void poll();
 	Error start(int p_port, const IPAddress &p_bind_ip);
+	// Actual bound port, which differs from the requested one when 0 was requested.
+	int get_local_port() const;
 	void stop();
 
 	DebugAdapterProtocol();

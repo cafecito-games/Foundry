@@ -838,12 +838,8 @@ Dictionary FSTextDocument::semanticTokensFull(const Dictionary &p_params) {
 		}
 	}
 
-	// Classification reads the analyzed tree, which the protocol re-parses from the managed buffer on
-	// every `didOpen`/`didChange`, so the tree and `source` above describe the same text.
-	const ExtendFSParser *parser = protocol->get_parse_result(path);
-
 	const Vector<String> lines = FSSemanticTokens::split_lines(source);
-	tokens.data = FSSemanticTokens::encode(FSSemanticTokens::collect(parser, source, lines), lines);
+	tokens.data = FSSemanticTokens::encode(FSSemanticTokens::collect(source, lines), lines);
 	return tokens.to_json();
 }
 

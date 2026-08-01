@@ -47,6 +47,7 @@ const NounSpec NOUNS[] = {
 	{ "script", "Format, lint, migrate, and evaluate Foundry Script code." },
 	{ "test", "Run the engine test suites." },
 	{ "lsp", "Run the Foundry Script language server." },
+	{ "tooling", "Run the combined editor tooling host (LSP and DAP)." },
 	{ "docs", "Generate engine and extension API documentation." },
 	{ "extension", "FoundryExtension interface tooling." },
 	{ "diagnostics", "Probe rendering and device support." },
@@ -137,8 +138,14 @@ const CommandOption TEST_GENERATE_FORMAT_FIXTURES_OPTIONS[] = {
 };
 
 const CommandOption LSP_SERVE_OPTIONS[] = {
-	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, false },
-	{ "--port", "port", "LSP port. Recommended range [1024, 49151].", false },
+	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, true },
+	{ "--port", "6005", "LSP port; 0 requests an ephemeral port.", false },
+};
+
+const CommandOption TOOLING_SERVE_OPTIONS[] = {
+	{ "--project", "dir", PROJECT_OPTION_DESCRIPTION, true },
+	{ "--lsp-port", "6005", "Language server port; 0 requests an ephemeral port.", false },
+	{ "--dap-port", "6006", "Debug adapter port; 0 requests an ephemeral port.", false },
 };
 
 const CommandOption DOCS_GENERATE_API_OPTIONS[] = {
@@ -190,7 +197,8 @@ const CommandSpec COMMANDS[] = {
 	{ "test", "run", "Run the engine doctest suites.", "[--project <dir>] [--case <pattern>] [--progress] [--progress-format=<text|jsonl>] [--progress-file <path>] [--progress-heartbeat-seconds <n>] [doctest-args...]", FoundryCLIHelp::AVAILABILITY_RELEASE, TEST_RUN_OPTIONS, FOUNDRY_CLI_COUNT(TEST_RUN_OPTIONS), DOCTEST_ARGS_POSITIONAL, FOUNDRY_CLI_COUNT(DOCTEST_ARGS_POSITIONAL), "foundry test run --case \"*FoundryScript*\"" },
 	{ "test", "generate-fixtures", "Regenerate Foundry Script integration test .out fixtures.", "[--project <dir>] [--print-filenames] [paths...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_GENERATE_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_GENERATE_FIXTURES_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry test generate-fixtures modules/foundry_script/tests/scripts" },
 	{ "test", "generate-format-fixtures", "Regenerate formatter golden expected.fs fixtures.", "[--project <dir>] [paths...]", FoundryCLIHelp::AVAILABILITY_EDITOR, TEST_GENERATE_FORMAT_FIXTURES_OPTIONS, FOUNDRY_CLI_COUNT(TEST_GENERATE_FORMAT_FIXTURES_OPTIONS), PATHS_POSITIONAL, FOUNDRY_CLI_COUNT(PATHS_POSITIONAL), "foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format" },
-	{ "lsp", "serve", "Start the Foundry Script language server.", "[--project <dir>] [--port <port>]", FoundryCLIHelp::AVAILABILITY_EDITOR, LSP_SERVE_OPTIONS, FOUNDRY_CLI_COUNT(LSP_SERVE_OPTIONS), nullptr, 0, "foundry lsp serve --project . --port 6005" },
+	{ "lsp", "serve", "Deprecated alias for `tooling serve`; starts the same combined host.", "--project <dir> [--port <port>]", FoundryCLIHelp::AVAILABILITY_EDITOR, LSP_SERVE_OPTIONS, FOUNDRY_CLI_COUNT(LSP_SERVE_OPTIONS), nullptr, 0, "foundry lsp serve --project . --port 6005" },
+	{ "tooling", "serve", "Start the combined LSP and debug adapter tooling host.", "--project <dir> [--lsp-port <port>] [--dap-port <port>]", FoundryCLIHelp::AVAILABILITY_EDITOR, TOOLING_SERVE_OPTIONS, FOUNDRY_CLI_COUNT(TOOLING_SERVE_OPTIONS), nullptr, 0, "foundry tooling serve --project . --lsp-port 0 --dap-port 0" },
 	{ "docs", "generate-api", "Generate the extension API JSON dump.", "[--include-docs]", FoundryCLIHelp::AVAILABILITY_EDITOR, DOCS_GENERATE_API_OPTIONS, FOUNDRY_CLI_COUNT(DOCS_GENERATE_API_OPTIONS), nullptr, 0, "foundry docs generate-api --include-docs" },
 	{ "docs", "generate-engine", "Dump the engine class reference XML.", "[--output <path>] [--no-docbase]", FoundryCLIHelp::AVAILABILITY_EDITOR, DOCS_GENERATE_ENGINE_OPTIONS, FOUNDRY_CLI_COUNT(DOCS_GENERATE_ENGINE_OPTIONS), nullptr, 0, "foundry docs generate-engine --output doc-out" },
 	{ "docs", "generate-script", "Generate API reference from Foundry Script sources.", "--source <path> [--output <path>]", FoundryCLIHelp::AVAILABILITY_EDITOR, DOCS_GENERATE_SCRIPT_OPTIONS, FOUNDRY_CLI_COUNT(DOCS_GENERATE_SCRIPT_OPTIONS), nullptr, 0, "foundry docs generate-script --source addons/library" },

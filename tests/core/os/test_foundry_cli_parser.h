@@ -385,6 +385,225 @@ TEST_CASE("[FoundryCLIParser] LSP serve records port") {
 	CHECK_EQ(result.invocation.lsp_port, "6005");
 }
 
+TEST_CASE("[FoundryCLIParser] Tooling serve records both ports") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+			"--lsp-port",
+			"6005",
+			"--dap-port",
+			"6006",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::TOOLING_SERVE);
+	CHECK_EQ(result.command_path, make_args({ "tooling", "serve" }));
+	CHECK_EQ(result.invocation.project_path, "demo");
+	CHECK_EQ(result.invocation.lsp_port, "6005");
+	CHECK_EQ(result.invocation.dap_port, "6006");
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve defaults both ports to the host defaults") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.invocation.lsp_port.is_empty());
+	CHECK(result.invocation.dap_port.is_empty());
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve accepts ephemeral port requests") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+			"--lsp-port",
+			"0",
+			"--dap-port",
+			"0",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.lsp_port, "0");
+	CHECK_EQ(result.invocation.dap_port, "0");
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve rejects invalid ports") {
+	auto expect_rejected = [](const String &p_value) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+				"foundry",
+				"tooling",
+				"serve",
+				"--project",
+				"demo",
+				"--lsp-port",
+				p_value,
+		}));
+		CHECK_FALSE_MESSAGE(result.ok, ("--lsp-port accepted " + p_value));
+		CHECK(result.error.contains("--lsp-port"));
+	};
+
+	expect_rejected("abc");
+	expect_rejected("-1");
+	expect_rejected("65536");
+	expect_rejected("123456");
+	expect_rejected("60 05");
+	expect_rejected("0x10");
+	expect_rejected("6005.5");
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve rejects identical explicit ports") {
+	FoundryCLIParser::ParseResult clash = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+			"--lsp-port",
+			"7000",
+			"--dap-port",
+			"7000",
+	}));
+	CHECK_FALSE(clash.ok);
+	CHECK(clash.error.contains("distinct"));
+
+	// Two ephemeral requests are not a clash: the kernel hands out distinct ports.
+	FoundryCLIParser::ParseResult ephemeral = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+			"--lsp-port",
+			"0",
+			"--dap-port",
+			"0",
+	}));
+	REQUIRE_MESSAGE(ephemeral.ok, ephemeral.error);
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve rejects an override that hits the other default") {
+	FoundryCLIParser::ParseResult lsp_on_dap_default = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+			"--lsp-port",
+			String::num_int64(FoundryCLIParser::DEFAULT_DAP_PORT),
+	}));
+	CHECK_FALSE(lsp_on_dap_default.ok);
+	CHECK(lsp_on_dap_default.error.contains("distinct"));
+
+	FoundryCLIParser::ParseResult dap_on_lsp_default = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+			"--dap-port",
+			String::num_int64(FoundryCLIParser::DEFAULT_LSP_PORT),
+	}));
+	CHECK_FALSE(dap_on_lsp_default.ok);
+	CHECK(dap_on_lsp_default.error.contains("distinct"));
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve rejects recovery mode") {
+	// Recovery mode never starts the debug adapter, so the combined host could not
+	// serve both advertised services.
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+			"--recovery-mode",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("--recovery-mode"));
+
+	FoundryCLIParser::ParseResult alias = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"lsp",
+			"serve",
+			"--project",
+			"demo",
+			"--recovery-mode",
+	}));
+	CHECK_FALSE(alias.ok);
+	CHECK(alias.error.contains("--recovery-mode"));
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve requires a project") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("--project"));
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve requests help without a project") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--help",
+	}));
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.help_requested);
+	CHECK_EQ(result.command_path, make_args({ "tooling", "serve" }));
+}
+
+TEST_CASE("[FoundryCLIParser] Tooling serve rejects unknown options") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"tooling",
+			"serve",
+			"--project",
+			"demo",
+			"--port",
+			"6005",
+	}));
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("Unknown option"));
+}
+
+TEST_CASE("[FoundryCLIParser] LSP serve is a deprecated alias with the same strictness") {
+	FoundryCLIParser::ParseResult missing_project = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"lsp",
+			"serve",
+			"--port",
+			"6005",
+	}));
+	CHECK_FALSE(missing_project.ok);
+	CHECK(missing_project.error.contains("--project"));
+
+	FoundryCLIParser::ParseResult bad_port = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"lsp",
+			"serve",
+			"--project",
+			"demo",
+			"--port",
+			"not-a-port",
+	}));
+	CHECK_FALSE(bad_port.ok);
+	CHECK(bad_port.error.contains("--port"));
+}
+
 TEST_CASE("[FoundryCLIParser] Docs and extension commands record generator options") {
 	FoundryCLIParser::ParseResult api = FoundryCLIParser::parse(make_args({
 			"foundry",
@@ -586,7 +805,7 @@ TEST_CASE("[FoundryCLIParser] Help flag as an option value requests help") {
 }
 
 TEST_CASE("[FoundryCLIParser] Unknown verb scope is the noun for every dispatcher") {
-	for (const String &noun : { String("editor"), String("lsp"), String("docs"), String("extension"), String("diagnostics") }) {
+	for (const String &noun : { String("editor"), String("lsp"), String("tooling"), String("docs"), String("extension"), String("diagnostics") }) {
 		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", noun, "bogus" }));
 		CHECK_FALSE(result.ok);
 		CHECK_EQ(result.command_path, make_args({ noun }));

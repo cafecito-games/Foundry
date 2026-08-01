@@ -130,6 +130,7 @@
 #include "editor/project_manager/startup_router.h"
 #include "editor/register_editor_types.h"
 #include "editor/settings/editor_settings.h"
+#include "editor/tooling/editor_tooling_host.h"
 #include "editor/translations/editor_translation.h"
 
 #if defined(TOOLS_ENABLED) && !defined(NO_EDITOR_SPLASH)
@@ -803,14 +804,26 @@ static void apply_foundry_cli_invocation(
 		case Kind::TEST_GENERATE_FORMAT_FIXTURES:
 			break;
 		case Kind::LSP_SERVE:
+		case Kind::TOOLING_SERVE:
+			// One combined host owns both tooling listeners. `lsp serve` is a deprecated
+			// alias that starts the very same host, so both kinds share this setup.
 			editor = true;
+			cmdline_tool = true;
+			r_audio_driver = NULL_AUDIO_DRIVER;
+			display_driver = NULL_DISPLAY_DRIVER;
+#if defined(TOOLS_ENABLED)
 #if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
-			if (!inv.lsp_port.is_empty()) {
-				const int port_override = inv.lsp_port.to_int();
-				if (port_override >= 0 && port_override <= 65535) {
-					FSLanguageServer::port_override = port_override;
-				}
-			}
+			EditorToolingHost::configure(
+					inv.lsp_port.is_empty() ? FoundryCLIParser::DEFAULT_LSP_PORT : inv.lsp_port.to_int(),
+					inv.dap_port.is_empty() ? FoundryCLIParser::DEFAULT_DAP_PORT : inv.dap_port.to_int());
+#else
+			// The host contract advertises both services; a build without the language
+			// server cannot honor it, so fail before any listener binds.
+			OS::get_singleton()->printerr("%s\n", "The tooling host requires the Foundry Script language server, which this build does not include.");
+			OS::get_singleton()->print("FOUNDRY_TOOLING_ERROR %s\n", "{\"error\":\"service_unavailable\",\"service\":\"lsp\"}");
+			OS::get_singleton()->set_exit_code(EXIT_FAILURE);
+			quit_after = 1;
+#endif
 #endif
 			break;
 		case Kind::DOCS_GENERATE_API:

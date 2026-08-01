@@ -325,6 +325,10 @@ Error FSLanguageProtocol::start(int p_port, const IPAddress &p_bind_ip) {
 	return server->listen(p_port, p_bind_ip);
 }
 
+int FSLanguageProtocol::get_local_port() const {
+	return server.is_valid() ? server->get_local_port() : -1;
+}
+
 void FSLanguageProtocol::stop() {
 	for (const KeyValue<int, Ref<LSPeer>> &E : clients) {
 		Ref<LSPeer> peer = clients.get(E.key);

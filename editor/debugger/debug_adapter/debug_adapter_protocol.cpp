@@ -34,6 +34,7 @@
 #include "core/debugger/debugger_marshalls.h"
 #include "core/io/json.h"
 #include "core/io/marshalls.h"
+#include "core/io/resource_loader.h"
 #include "editor/debugger/debug_adapter/debug_adapter_parser.h"
 #include "editor/debugger/script_editor_debugger.h"
 #include "editor/editor_log.h"
@@ -985,8 +986,33 @@ void DebugAdapterProtocol::notify_breakpoint(const DAP::Breakpoint &p_breakpoint
 	}
 }
 
+String DebugAdapterProtocol::breakpoint_script_path(const String &p_client_path, const String &p_resource_path) {
+	// Clients address sources by absolute path, but the debuggee matches breakpoints
+	// against the resource path stored on the compiled script, so registration has to
+	// use the project-local form. Sources outside the project keep their client path;
+	// they cannot resolve to a project script either way.
+	if (p_client_path.begins_with("res://") || p_client_path.begins_with("uid://")) {
+		return p_client_path;
+	}
+	const String path = p_client_path.replace_char('\\', '/').simplify_path();
+	if (p_resource_path.is_empty()) {
+		return path;
+	}
+	const String prefix = p_resource_path + "/";
+	if (path.length() <= prefix.length()) {
+		return path;
+	}
+#ifdef WINDOWS_ENABLED
+	const bool inside_project = path.left(prefix.length()).nocasecmp_to(prefix) == 0;
+#else
+	const bool inside_project = path.begins_with(prefix);
+#endif
+	return inside_project ? "res://" + path.substr(prefix.length()) : path;
+}
+
 Array DebugAdapterProtocol::update_breakpoints(const String &p_path, const Array &p_lines) {
 	Array updated_breakpoints;
+	const String script_path = breakpoint_script_path(p_path, ProjectSettings::get_singleton()->get_resource_path());
 
 	// Add breakpoints
 	for (int i = 0; i < p_lines.size(); i++) {
@@ -1000,7 +1026,10 @@ Array DebugAdapterProtocol::update_breakpoints(const String &p_path, const Array
 			continue;
 		}
 
-		EditorDebuggerNode::get_singleton()->get_default_debugger()->_set_breakpoint(p_path, p_lines[i], true);
+		// Register through the authoritative debugger entry point. The script-editor
+		// signal round trip only lands when the file is already open in a tab, so a
+		// headless tooling host would never register a breakpoint at all.
+		EditorDebuggerNode::get_singleton()->set_breakpoint(script_path, p_lines[i], true);
 
 		// Breakpoints are inserted at the end of the breakpoint list.
 		List<DAP::Breakpoint>::Element *added_breakpoint = breakpoint_list.back();
@@ -1021,7 +1050,7 @@ Array DebugAdapterProtocol::update_breakpoints(const String &p_path, const Array
 
 	// Safe to remove queued data now.
 	for (const int &line : to_remove) {
-		EditorDebuggerNode::get_singleton()->get_default_debugger()->_set_breakpoint(p_path, line, false);
+		EditorDebuggerNode::get_singleton()->set_breakpoint(script_path, line, false);
 	}
 
 	return updated_breakpoints;
@@ -1065,9 +1094,16 @@ void DebugAdapterProtocol::on_debug_breaked(const bool &p_reallydid, const bool 
 	_processing_stackdump = p_has_stackdump;
 }
 
+bool DebugAdapterProtocol::can_verify_breakpoint(const String &p_path, int p_line) {
+	// A breakpoint is only verifiable when it names a line of a script the project
+	// can actually load; reporting every requested line as verified hides typos and
+	// stale client state.
+	return p_line >= 1 && ResourceLoader::exists(p_path);
+}
+
 void DebugAdapterProtocol::on_debug_breakpoint_toggled(const String &p_path, const int &p_line, const bool &p_enabled) {
 	DAP::Breakpoint breakpoint(fetch_source(p_path));
-	breakpoint.verified = true;
+	breakpoint.verified = can_verify_breakpoint(p_path, p_line);
 	breakpoint.line = p_line;
 
 	if (p_enabled) {
@@ -1223,6 +1259,10 @@ Error DebugAdapterProtocol::start(int p_port, const IPAddress &p_bind_ip) {
 	_sync_breakpoints = (bool)_EDITOR_GET("network/debug_adapter/sync_breakpoints");
 	_initialized = true;
 	return server->listen(p_port, p_bind_ip);
+}
+
+int DebugAdapterProtocol::get_local_port() const {
+	return server.is_valid() ? server->get_local_port() : -1;
 }
 
 void DebugAdapterProtocol::stop() {
