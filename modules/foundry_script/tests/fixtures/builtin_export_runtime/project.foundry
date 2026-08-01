@@ -1,0 +1,11 @@
+config_version=5
+
+[application]
+
+config/name="Builtin Export Runtime"
+config/features=PackedStringArray("0.1")
+run/main_scene="res://main.tscn"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"

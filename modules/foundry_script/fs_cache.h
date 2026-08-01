@@ -175,6 +175,12 @@ public:
 	// inverse dependencies), as recorded during compilation. Empty if none are known.
 	// Snapshot-by-value so callers are safe against concurrent cache mutation.
 	static HashSet<String> get_inverse_dependencies(const String &p_path);
+	// File the compiled bytecode of p_path is read from. Builtin types keep their virtual
+	// `foundry://builtin/*.fs` identity everywhere (global class table, bytecode dependency
+	// records, diagnostics) but ship their bytes as a private companion artifact written by the
+	// compiled-bytecode exporter, so their bytecode lives at a different path than their identity.
+	// Every other script reads its own (already remapped) path.
+	static String get_bytecode_artifact_path(const String &p_path);
 	static Vector<uint8_t> get_binary_tokens(const String &p_path);
 	static Ref<FoundryScript> get_shallow_script(const String &p_path, Error &r_error, const String &p_owner = String());
 	/**

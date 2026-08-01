@@ -43,11 +43,20 @@ class FSBuiltinSources {
 
 public:
 	static const char *PATH_PREFIX;
+	// Reserved project directory holding the private compiled-bytecode companions emitted for
+	// builtins during a compiled-bytecode export. Nothing writes source files here.
+	static const char *EXPORTED_BYTECODE_PREFIX;
 
 	static bool is_builtin_path(const String &p_path);
+	// Canonical virtual-source to private-bytecode mapping. Preserves the builtin's relative
+	// subdirectories and replaces only the final `.fs` extension; returns an empty string for any
+	// path that is not a registrable `foundry://builtin/<relative>.fs` identity. Callers must never
+	// build this path themselves: the exporter and the stripped runtime have to agree exactly.
+	static String get_exported_bytecode_path(const String &p_path);
 	static void register_source(const String &p_path, const String &p_source);
 	static void unregister_source(const String &p_path);
 	static bool get_source(const String &p_path, String &r_source);
+	// Sorted so every consumer (notably the exporter) enumerates builtins deterministically.
 	static void get_registered_paths(List<String> *r_paths);
 	static void clear();
 };

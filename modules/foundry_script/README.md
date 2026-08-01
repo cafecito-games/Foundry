@@ -192,6 +192,18 @@ Export templates omit the Foundry Script front-end by default (`foundry_script_f
 - Runtime loading of `.fs` mods from `user://` is not supported.
 - Build-task bootstrap providers that compile script sources cannot run in export templates.
 
+**Builtin types in compiled-bytecode exports:**
+
+The builtin Foundry Script types (`JsonNode`, `JsonDecodeError`, `JsonResult[T]`, `JsonSerializable`) are declared in source that ships inside the binary under the reserved `foundry://builtin/<relative-path>.fs` identity. A stripped template has no front-end to compile that source, so a **Compiled bytecode** export packages every registered builtin as a private companion artifact at `res://.foundry/builtin/<relative-path>.fsb`:
+
+- The public identity of a builtin never changes: exported project bytecode keeps recording `foundry://builtin/*.fs`, and the runtime maps that identity to the private artifact when it needs the bytes.
+- All registered builtins are packaged unconditionally, in sorted order, with identical bytes across repeated exports of the same engine build and export profile.
+- The artifacts go through the same compiler profile, named-global validation, and `.fsb` loader as project scripts, and a failure anywhere aborts the export before anything is written to the pack.
+- A missing or corrupt artifact fails through the ordinary bytecode loader. There is no fallback to the embedded source in a stripped template.
+- Name-mangled exports treat builtins as engine-provided externals: they stay out of the project rename graph and the sealed project manifest, their declarations and members are never renamed, and both ordinary and name-mangled exports contain the same builtin artifact set.
+
+The **Text** and **Binary tokens** script export modes emit no private builtin artifacts and still require a custom template built with `foundry_script_frontend=yes`.
+
 **Building templates locally** (stripped front-end is the default):
 
 ```bash

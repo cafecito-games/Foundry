@@ -35,6 +35,7 @@
 #include "fs_export_compilation_scope.h"
 
 #include "../foundry_script.h"
+#include "../fs_builtin_sources.h"
 #include "../fs_bytecode_export.h"
 #include "../fs_bytecode_loader.h"
 #include "../fs_cache.h"
@@ -353,6 +354,14 @@ Error discover_graph(const FSNameManglerExport::Input &p_input,
 
 	for (const KeyValue<String, DiscoveredScript> &entry : r_graph.scripts) {
 		for (const String &dependency : entry.value.dependencies) {
+			// Builtin types are engine-provided externals: their declarations live in the binary
+			// under a virtual `foundry://builtin/*.fs` identity, they are never project files, and
+			// the compiled-bytecode exporter ships them as private companion artifacts outside the
+			// project rename graph. Pulling them into the sealed manifest would make engine-owned
+			// API participate in project renaming.
+			if (FSBuiltinSources::is_builtin_path(dependency)) {
+				continue;
+			}
 			const String normalized_dependency = normalized_manifest_path(dependency);
 			const String dependency_type =
 					ResourceLoader::get_resource_type(dependency);

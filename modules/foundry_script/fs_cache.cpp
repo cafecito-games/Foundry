@@ -471,16 +471,27 @@ HashSet<String> FSCache::get_inverse_dependencies(const String &p_path) {
 	return HashSet<String>();
 }
 
+String FSCache::get_bytecode_artifact_path(const String &p_path) {
+	if (!FSBuiltinSources::is_builtin_path(p_path)) {
+		return p_path;
+	}
+	const String artifact_path = FSBuiltinSources::get_exported_bytecode_path(p_path);
+	// An unmappable builtin path has no companion artifact; keeping the original path makes the
+	// failure surface as an ordinary "cannot read" error naming what was actually asked for.
+	return artifact_path.is_empty() ? p_path : artifact_path;
+}
+
 Vector<uint8_t> FSCache::get_binary_tokens(const String &p_path) {
+	const String artifact_path = get_bytecode_artifact_path(p_path);
 	Vector<uint8_t> buffer;
 	Error err = OK;
-	Ref<FileAccess> f = FileAccess::open(p_path, FileAccess::READ, &err);
-	ERR_FAIL_COND_V_MSG(err != OK, buffer, "Failed to open binary FoundryScript file '" + p_path + "'.");
+	Ref<FileAccess> f = FileAccess::open(artifact_path, FileAccess::READ, &err);
+	ERR_FAIL_COND_V_MSG(err != OK, buffer, "Failed to open binary FoundryScript file '" + artifact_path + "'.");
 
 	uint64_t len = f->get_length();
 	buffer.resize(len);
 	uint64_t read = f->get_buffer(buffer.ptrw(), buffer.size());
-	ERR_FAIL_COND_V_MSG(read != len, Vector<uint8_t>(), "Failed to read binary FoundryScript file '" + p_path + "'.");
+	ERR_FAIL_COND_V_MSG(read != len, Vector<uint8_t>(), "Failed to read binary FoundryScript file '" + artifact_path + "'.");
 
 	return buffer;
 }
@@ -504,7 +515,14 @@ Ref<FoundryScript> FSCache::get_shallow_script(const String &p_path, Error &r_er
 	script.instantiate();
 
 	script->set_path_cache(p_path);
-	if (remapped_path.has_extension("fsb")) {
+	bool load_from_bytecode = remapped_path.has_extension("fsb");
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	// A stripped template has no parser to run the embedded builtin source through, so builtins
+	// load from the private companion artifact the compiled-bytecode exporter packed. The script
+	// keeps its virtual `foundry://builtin/*.fs` identity; only the bytes come from elsewhere.
+	load_from_bytecode = load_from_bytecode || FSBuiltinSources::is_builtin_path(remapped_path);
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+	if (load_from_bytecode) {
 		// Compiled binaries never touch the parser pipeline: the skeleton section provides
 		// everything a shallow script carries (names, fully qualified names, flags, class tree).
 		Vector<uint8_t> buffer = get_binary_tokens(remapped_path);
@@ -589,10 +607,12 @@ Ref<FoundryScript> FSCache::get_full_script(const String &p_path, Error &r_error
 	const String remapped_path = ResourceLoader::path_remap(p_path);
 
 	if (p_update_from_disk) {
-		if (remapped_path.has_extension("fsb")) {
+		if (remapped_path.has_extension("fsb") || script->is_compiled_binary()) {
 			// Compiled binaries have no source to refresh; reload() below re-links from the
 			// binary when the script is not linked yet, and is a no-op otherwise (exported
-			// binaries are immutable, so there is nothing newer to pick up).
+			// binaries are immutable, so there is nothing newer to pick up). A builtin loaded
+			// from its private companion artifact in a stripped template lands here too: its
+			// path still ends in `.fs`, but there is no source behind it to read.
 		} else if (remapped_path.has_extension("fsc")) {
 			Vector<uint8_t> buffer = get_binary_tokens(remapped_path);
 			if (buffer.is_empty()) {
