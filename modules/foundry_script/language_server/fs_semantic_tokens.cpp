@@ -1337,21 +1337,26 @@ void DocumentClassifier::walk_subscript(const FSParser::SubscriptNode *p_subscri
 	// receiver's library-owned type does not make an arbitrary member a library symbol.
 	const bool has_dynamic_attributes = base_type.kind == FSParser::DataType::VARIANT ||
 			(base_type.kind == FSParser::DataType::BUILTIN && base_type.builtin_type == Variant::DICTIONARY);
-	if (!has_dynamic_attributes && (is_default_library_type(base_type) || datatype_has_native_property(base_type, p_subscript->attribute->name))) {
+	if (!has_dynamic_attributes && (is_default_library_type(base_type) || datatype_has_native_property(base_type, p_subscript->attribute->name) || datatype_has_native_signal(base_type, p_subscript->attribute->name))) {
 		modifiers |= bit(TokenModifier::DEFAULT_LIBRARY);
 	}
 
 	// A member the analyzer already resolved says what it is; the data type of a method or signal
-	// used as a value is only `Callable`/`Signal`, which a property could carry as well.
+	// used as a value is only `Callable`/`Signal`, which a property could carry as well. A
+	// `MEMBER_FUNCTION`/`MEMBER_SIGNAL` source is always a project (or external-script) declaration --
+	// native lookups reach here through `INHERITED_VARIABLE` -- so ownership modifiers come from the
+	// resolved declaration, never from whether the receiver spelling happens to be a type handle.
 	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_FUNCTION) {
-		if (base_type.is_meta_type) {
+		const bool is_static = p_subscript->attribute->function_source_is_static ||
+				(p_subscript->attribute->function_source != nullptr && p_subscript->attribute->function_source->is_static);
+		if (is_static) {
 			modifiers |= bit(TokenModifier::STATIC);
 		}
-		add_identifier(p_subscript->attribute, TokenType::METHOD, modifiers);
+		add_identifier(p_subscript->attribute, TokenType::METHOD, modifiers & ~bit(TokenModifier::DEFAULT_LIBRARY));
 		return;
 	}
 	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_SIGNAL) {
-		add_identifier(p_subscript->attribute, TokenType::EVENT, modifiers);
+		add_identifier(p_subscript->attribute, TokenType::EVENT, modifiers & ~bit(TokenModifier::DEFAULT_LIBRARY));
 		return;
 	}
 	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_VARIABLE ||

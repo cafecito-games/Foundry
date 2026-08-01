@@ -4170,6 +4170,74 @@ func f():
 			check_semantic_token_at(tokens, 4, 28, 5, LSP::SemanticTokenType::EVENT, default_library_modifier); // ready
 		}
 
+		SUBCASE("a native signal stays default-library through a project subclass receiver") {
+			const String source =
+					"class NativeHolder extends Node:\n"
+					"\tfunc capture_self() -> Signal:\n"
+					"\t\treturn self.ready\n"
+					"\n"
+					"\tfunc capture_via(other: NativeHolder) -> Signal:\n"
+					"\t\treturn other.ready\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_native_signal_project_receiver.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 2, 14, 5, LSP::SemanticTokenType::EVENT, default_library_modifier); // self.ready
+			check_semantic_token_at(tokens, 5, 15, 5, LSP::SemanticTokenType::EVENT, default_library_modifier); // other.ready
+		}
+
+		SUBCASE("a project-declared signal stays project-owned through a project receiver") {
+			const String source =
+					"class SignalHolder:\n"
+					"\tsignal ready_event\n"
+					"\n"
+					"\tfunc capture() -> Signal:\n"
+					"\t\treturn self.ready_event\n"
+					"\n"
+					"func capture_via(holder: SignalHolder) -> Signal:\n"
+					"\treturn holder.ready_event\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_project_signal_project_receiver.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 4, 14, 11, LSP::SemanticTokenType::EVENT); // self.ready_event
+			check_semantic_token_at(tokens, 7, 15, 11, LSP::SemanticTokenType::EVENT); // holder.ready_event
+		}
+
+		SUBCASE("a static project method value stays static through any receiver") {
+			const String source =
+					"class StaticHolder:\n"
+					"\tstatic func build() -> void:\n"
+					"\t\tpass\n"
+					"\n"
+					"func capture_instance(holder: StaticHolder) -> Callable:\n"
+					"\treturn holder.build\n"
+					"\n"
+					"func capture_type() -> Callable:\n"
+					"\treturn StaticHolder.build\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_static_method_value_receivers.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 5, 15, 5, LSP::SemanticTokenType::METHOD, static_modifier); // holder.build
+			check_semantic_token_at(tokens, 8, 21, 5, LSP::SemanticTokenType::METHOD, static_modifier); // StaticHolder.build
+		}
+
+		SUBCASE("an instance project method value stays instance-owned") {
+			const String source =
+					"class InstanceHolder:\n"
+					"\tfunc act() -> void:\n"
+					"\t\tpass\n"
+					"\n"
+					"func capture(holder: InstanceHolder) -> Callable:\n"
+					"\treturn holder.act\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_instance_method_value_receiver.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 5, 15, 3, LSP::SemanticTokenType::METHOD); // holder.act
+		}
+
 		SUBCASE("Dictionary dot keys are user properties, not default-library members") {
 			const String source =
 					"func read(data: Dictionary) -> Variant:\n"
