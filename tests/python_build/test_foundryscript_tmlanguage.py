@@ -310,6 +310,131 @@ class TokenizationTests(unittest.TestCase):
         self.assertNotScoped("if (a)", "entity.name.function.call.foundryscript", source=source)
         self.assertScoped("print(a)", "entity.name.function.call.foundryscript", source=source)
 
+    # -- lowercase built-in types in type positions ------------------------
+
+    def test_lowercase_built_in_types_are_scoped_in_syntactic_type_positions(self) -> None:
+        source = (
+            "var count: int = 0\n"
+            "\n"
+            "func convert(value: float) -> bool:\n"
+            "\treturn value != 0.0\n"
+            "\n"
+            "var values: Array[int] = []\n"
+        )
+        self.assertScoped(": int", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped(": float", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped("-> bool", "entity.name.type.foundryscript", offset=3, source=source)
+        self.assertScoped("Array[int]", "entity.name.type.foundryscript", offset=0, source=source)
+        self.assertScoped("Array[int]", "entity.name.type.foundryscript", offset=6, source=source)
+
+    def test_lowercase_built_in_types_stay_contextual_outside_type_positions(self) -> None:
+        source = "var int = 0\nint += 1\nprint(int)\n"
+        self.assertNotScoped("var int", "entity.name.type.foundryscript", offset=4, source=source)
+        self.assertScoped("var int", "variable.other.declaration.foundryscript", offset=4, source=source)
+        self.assertNotScoped("int += 1", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("print(int)", "entity.name.type.foundryscript", offset=6, source=source)
+        self.assertScoped("print(int)", "entity.name.function.call.foundryscript", source=source)
+
+    def test_capitalized_type_coverage_still_works(self) -> None:
+        self.assertScoped("-> Int", "entity.name.type.foundryscript", offset=3, source="func f() -> Int:\n\tpass\n")
+        self.assertScoped(": String", "entity.name.type.foundryscript", offset=2)
+
+    # -- annotation declaration `targets` -----------------------------------
+
+    def test_targets_is_scoped_in_both_annotation_declaration_forms(self) -> None:
+        parameterized = "annotation timed(seconds: float) targets CLASS, METHOD:\n\tpass\n"
+        parameterless = "annotation marker targets CLASS, METHOD:\n\tpass\n"
+        self.assertScoped("targets", "keyword.other.targets.foundryscript", source=parameterized)
+        self.assertScoped("targets", "keyword.other.targets.foundryscript", source=parameterless)
+
+    def test_targets_is_not_scoped_outside_an_annotation_declaration(self) -> None:
+        source = "var targets = 1\ntargets()\n"
+        self.assertNotScoped("var targets", "keyword.other.targets.foundryscript", offset=4, source=source)
+        self.assertScoped("var targets", "variable.other.declaration.foundryscript", offset=4, source=source)
+        self.assertNotScoped("targets()", "keyword.other.targets.foundryscript", source=source)
+        self.assertScoped("targets()", "entity.name.function.call.foundryscript", source=source)
+
+    # -- property accessors -------------------------------------------------
+
+    def test_every_accessor_form_is_scoped_as_an_accessor(self) -> None:
+        source = (
+            "var health: int:\n"
+            "\tget:\n"
+            "\t\treturn field\n"
+            "\n"
+            "var armor: int:\n"
+            "\tget():\n"
+            "\t\treturn field\n"
+            "\n"
+            "var speed: int:\n"
+            "\tget = read_speed\n"
+            "\tset = write_speed\n"
+            "\n"
+            "var mana: int:\n"
+            "\tset(value):\n"
+            "\t\tfield = value\n"
+        )
+        self.assertScoped("get:", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("get():", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("get = read_speed", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("set = write_speed", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("set(value):", "storage.type.accessor.foundryscript", source=source)
+
+    def test_get_and_set_declarations_are_unaffected(self) -> None:
+        source = "func get(key: String) -> int:\n\treturn 0\n\nfunc set(key: String, value: int) -> void:\n\tpass\n"
+        self.assertScoped("get", "entity.name.function.foundryscript", source=source)
+        self.assertNotScoped("get", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("set", "entity.name.function.foundryscript", source=source)
+        self.assertNotScoped("set", "storage.type.accessor.foundryscript", source=source)
+
+    # -- triple-quoted node-path components ---------------------------------
+
+    def test_triple_quoted_node_path_components_are_consumed_completely(self) -> None:
+        source = (
+            'var first = $"""Some\n'
+            'Node"""\n'
+            "\n"
+            "var second = $'''Some\n"
+            "Node'''\n"
+            "\n"
+            'var third = $Root/"""Some\n'
+            'Node"""\n'
+            "\n"
+            "var fourth = $Root/'''Some\n"
+            "Node'''\n"
+            "\n"
+            "var after = 1\n"
+        )
+        for marker in ('$"""Some', "$'''Some", '$Root/"""Some', "$Root/'''Some"):
+            with self.subTest(marker=marker):
+                dollar_offset = marker.index("$")
+                self.assertScoped(
+                    marker, "punctuation.definition.node.foundryscript", offset=dollar_offset, source=source
+                )
+                quote_offset = marker.index('"""') if '"""' in marker else marker.index("'''")
+                self.assertScoped(marker, "meta.node-path.foundryscript", offset=quote_offset, source=source)
+                self.assertScoped(marker, "string.quoted.node.foundryscript", offset=quote_offset, source=source)
+
+        self.assertScoped("var after", "source.foundryscript", source=source)
+        self.assertNotScoped("var after", "string.quoted.triple.double.foundryscript", source=source)
+        self.assertNotScoped("var after", "string.quoted.triple.single.foundryscript", source=source)
+        self.assertNotScoped("var after", "meta.node-path.foundryscript", source=source)
+
+    def test_short_quoted_node_paths_keep_their_scopes(self) -> None:
+        source = (
+            'var double_quoted = $"Some Node"\n'
+            "var single_quoted = $'Some Node'\n"
+            'var mixed = $Root/"Some Node"/%Child\n'
+        )
+        self.assertScoped('$"Some Node"', "string.quoted.node.foundryscript", offset=1, source=source)
+        self.assertScoped("$'Some Node'", "string.quoted.node.foundryscript", offset=1, source=source)
+        self.assertNotScoped(
+            '$Root/"Some Node"/%Child', "keyword.operator.arithmetic.foundryscript", offset=5, source=source
+        )
+        self.assertScoped(
+            '$Root/"Some Node"/%Child', "punctuation.separator.node.foundryscript", offset=5, source=source
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

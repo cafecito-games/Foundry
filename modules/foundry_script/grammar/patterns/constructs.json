@@ -69,7 +69,7 @@
         }
       },
       {
-        "match": "(?<=\\))\\s+(targets)\\b",
+        "match": "(?<=^\\s*annotation\\s+[\\p{L}_][\\p{L}\\p{N}_]*(?:\\s*\\([^)]*\\))?\\s+)(targets)\\b",
         "captures": {
           "1": {
             "name": "keyword.other.targets.foundryscript"
@@ -77,7 +77,7 @@
         }
       },
       {
-        "match": "^\\s*(get)\\b(?=\\s*[:=])",
+        "match": "^\\s*(get)\\b(?=\\s*(?:[:=]|\\([^)]*\\)\\s*:))",
         "captures": {
           "1": {
             "name": "storage.type.accessor.foundryscript"
@@ -103,11 +103,23 @@
     }
   },
   "type-positions": {
-    "match": "(?<=->|:)\\s*(\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)",
-    "captures": {
-      "1": {
-        "name": "entity.name.type.foundryscript"
+    "patterns": [
+      {
+        "match": "(?<=->|:)\\s*(\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)",
+        "captures": {
+          "1": {
+            "name": "entity.name.type.foundryscript"
+          }
+        }
+      },
+      {
+        "match": "(?<=->|:|\\[)\\s*\\b(int|float|bool)\\b",
+        "captures": {
+          "1": {
+            "name": "entity.name.type.foundryscript"
+          }
+        }
       }
-    }
+    ]
   }
 }

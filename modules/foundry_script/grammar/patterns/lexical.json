@@ -398,6 +398,12 @@
         "match": "%"
       },
       {
+        "include": "#node-path-quoted-triple-double"
+      },
+      {
+        "include": "#node-path-quoted-triple-single"
+      },
+      {
         "name": "string.quoted.node.foundryscript",
         "match": "\"[^\"]*\"|'[^']*'"
       },
@@ -406,6 +412,16 @@
         "match": "[\\p{L}\\p{N}_]+"
       }
     ]
+  },
+  "node-path-quoted-triple-double": {
+    "name": "string.quoted.node.foundryscript",
+    "begin": "\\\"\\\"\\\"",
+    "end": "\\\"\\\"\\\""
+  },
+  "node-path-quoted-triple-single": {
+    "name": "string.quoted.node.foundryscript",
+    "begin": "'''",
+    "end": "'''"
   },
   "raw-string-escapes": {
     "$comment": "A raw string keeps every backslash literal except the two that let it hold a quote, and a doubled backslash.",
