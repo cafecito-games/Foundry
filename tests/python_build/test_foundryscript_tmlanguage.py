@@ -554,6 +554,19 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped("Vector2()", "entity.name.function.call.foundryscript", source=source)
         self.assertNotScoped("Vector2()", "entity.name.type.foundryscript", source=source)
 
+    def test_a_spaced_constructor_call_dictionary_value_keeps_call_scope(self) -> None:
+        source = "var by_index = {1: Vector2 ()}\n"
+        self.assertScoped("Vector2 ()", "entity.name.function.call.foundryscript", source=source)
+        self.assertNotScoped("Vector2 ()", "entity.name.type.foundryscript", source=source)
+
+    def test_an_unclosed_parenthesis_in_a_dictionary_value_does_not_leak_past_the_dictionary(self) -> None:
+        # Mid-edit input: the lambda's parameter list is never closed. The dictionary must
+        # still close on its own '}', and code after it must get normal scopes again.
+        source = 'var broken = {\n\t"build": func(value: int\n}\nvar after: Player = Player.new()\n'
+        self.assertScoped("var after", "variable.other.declaration.foundryscript", offset=4, source=source)
+        self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertNotScoped("var after", "meta.dictionary.foundryscript", source=source)
+
     def test_accessor_shaped_dictionary_keys_are_not_scoped_as_accessors(self) -> None:
         source = (
             "var python_entries = {\n"

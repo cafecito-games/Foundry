@@ -129,7 +129,7 @@
   "dictionary-entry-separator": {
     "$comment": "Consumes a dictionary entry's Python-style ':' separator together with an immediately following type-shaped token, so the generic type-positions rule never sees that token: the lookbehind requires the separator to be directly preceded (on the same physical line, allowing only indentation-width whitespace) by a dictionary key shape -- a quoted string, a numeric literal, or a bare/dotted identifier chain with an optional simple call/argument list -- anchored to the start of a dictionary entry (the start of a line inside the dictionary, or right after '{' or ','). A colon that instead follows a parameter name inside a nested call or lambda signature is shielded from this anchor by #dictionary-value-parentheses, so it is left for #type-positions to scope normally. This rule intentionally does not also match a Lua-style '=' separator: the accessor scope such a key must not receive already comes from #contextual-keywords, which #dictionary-literal omits entirely, and matching '=' here would misread an ordinary reassignment statement inside a nested lambda body (e.g. 'result = Node.new()') as a dictionary entry, since the two are structurally identical from a single line alone. The trailing type-shaped token is only consumed when it is not itself the callable of a constructor/conversion call (e.g. 'Vector2()'), which #calls must keep scoping normally. A key that is a more general expression (grouped, subscripted, or built from operators) is not recognized by this shape and is a known, tracked limitation of this cosmetic heuristic.",
     "name": "meta.dictionary.entry-separator.foundryscript",
-    "match": "(?<=(?:^[ \\t]*|[{,][ \\t]{0,4})(?:\"(?:[^\"\\\\]|\\\\.)*\"|\\'(?:[^\\'\\\\]|\\\\.)*\\'|[\\p{L}_][\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*(?:\\([^()]*\\))?|\\d(?:_?\\d)*(?:\\.\\d(?:_?\\d)*)?)[ \\t]*)(:)[ \\t]*((?:(?>\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)|\\b(?:int|float|bool)\\b)(?!\\())?"
+    "match": "(?<=(?:^[ \\t]*|[{,][ \\t]{0,4})(?:\"(?:[^\"\\\\]|\\\\.)*\"|\\'(?:[^\\'\\\\]|\\\\.)*\\'|[\\p{L}_][\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*(?:\\([^()]*\\))?|\\d(?:_?\\d)*(?:\\.\\d(?:_?\\d)*)?)[ \\t]*)(:)[ \\t]*((?:(?>\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)|\\b(?:int|float|bool)\\b)(?!\\s*\\())?"
   },
   "dictionary-literal": {
     "name": "meta.dictionary.foundryscript",
@@ -194,7 +194,7 @@
     ]
   },
   "dictionary-value-parentheses": {
-    "$comment": "Shields a parenthesized region inside a dictionary value (a lambda's parameter list, or an ordinary call) from #dictionary-entry-separator. Without this, a parameter declaration that starts its own physical line inside a multiline parameter list -- 'value: int,' on its own line -- would satisfy the dictionary-entry-separator's start-of-line anchor and be mistaken for a fresh dictionary entry, suppressing the parameter's real type scope.",
+    "$comment": "Shields a parenthesized region inside a dictionary value (a lambda's parameter list, or an ordinary call) from #dictionary-entry-separator. Without this, a parameter declaration that starts its own physical line inside a multiline parameter list -- 'value: int,' on its own line -- would satisfy the dictionary-entry-separator's start-of-line anchor and be mistaken for a fresh dictionary entry, suppressing the parameter's real type scope. The 'end' pattern also bails out on an unclosed '(' the moment a '}' appears, without consuming it, so malformed or mid-edit input cannot leave this shield open past the dictionary that contains it.",
     "name": "meta.dictionary.value.parenthesized.foundryscript",
     "begin": "\\(",
     "beginCaptures": {
@@ -202,7 +202,7 @@
         "name": "punctuation.section.foundryscript"
       }
     },
-    "end": "\\)",
+    "end": "\\)|(?=\\})",
     "endCaptures": {
       "0": {
         "name": "punctuation.section.foundryscript"
