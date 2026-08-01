@@ -219,19 +219,22 @@ TEST_CASE("[FoundryScript][BuiltinBytecodeExport] A reserved output path fails b
 
 	Ref<NameManglerExportTestPlatform> platform =
 			memnew(NameManglerExportTestPlatform);
-	for (int round = 0; round < 2; round++) {
+	for (int round = 0; round < 3; round++) {
 		platform->clear_messages();
 		Ref<TestEditorExportFoundryScript> plugin = builtin_export_make_plugin(
 				platform, EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE, false);
 		NameManglerExportPluginEndGuard end_guard(plugin);
 
 		EditorExportPlugin::ExportFileManifest manifest;
-		// A project file and a previously generated file are equally disqualifying: the exporter
-		// must never overwrite either one.
+		// A project file, a previously generated file, and a project script whose compiled
+		// output would land on the artifact path are all equally disqualifying: the exporter
+		// must never publish a second record for a path a builtin already owns.
 		if (round == 0) {
 			manifest.source_paths.push_back(collided_path);
-		} else {
+		} else if (round == 1) {
 			manifest.generated_paths.push_back(collided_path);
+		} else {
+			manifest.source_paths.push_back(collided_path.get_basename() + ".fs");
 		}
 		String error;
 		ERR_PRINT_OFF;

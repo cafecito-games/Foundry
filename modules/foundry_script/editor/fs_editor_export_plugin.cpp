@@ -285,6 +285,14 @@ Error EditorExportFoundryScript::_prepare_builtin_bytecode(const ExportFileManif
 	HashSet<String> reserved_paths;
 	for (const String &path : p_manifest.source_paths) {
 		reserved_paths.insert(path.simplify_path());
+		// A project script reaches the pack as its compiled output, not as its source, so the
+		// derived path is what a builtin artifact can actually collide with. Without this, a
+		// project file placed next to the builtin artifacts would pass the check here and then
+		// publish a second record for a path a builtin already owns.
+		const String extension = path.get_extension().to_lower();
+		if (extension == "fs" || extension == "fsc" || extension == "fsb") {
+			reserved_paths.insert((path.get_basename() + ".fsb").simplify_path());
+		}
 	}
 	for (const String &path : p_manifest.generated_paths) {
 		reserved_paths.insert(path.simplify_path());
