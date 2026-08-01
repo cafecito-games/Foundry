@@ -128,8 +128,8 @@ void EditorRunBar::_poll_child_processes() {
 	EditorRun::ProcessCompletion completion;
 	while (editor_run.poll_child_completion(completion)) {
 		if (completion.pid != represented_process) {
-			// An extra run instance finished; it is dropped from ownership but does not
-			// speak for the launch.
+			// An extra run instance finished. It is dropped from ownership, but it never
+			// speaks for the launch and its siblings keep running.
 			continue;
 		}
 
@@ -137,6 +137,11 @@ void EditorRunBar::_poll_child_processes() {
 		// The process result reaches the debug session before the run is torn down, so
 		// a session that ended on its own is never reported as a forced termination.
 		EditorDebuggerNode::get_singleton()->notify_owned_process_completed(completion.launch_id, completion.exit_code);
+	}
+
+	// The run itself ends once nothing it launched is left, exactly as it does when
+	// children are stopped one at a time.
+	if (editor_run.get_child_process_count() == 0) {
 		if (editor_run.get_status() != EditorRun::STATUS_STOP) {
 			_finish_run();
 		}
