@@ -514,6 +514,27 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped(": int", "entity.name.type.foundryscript", offset=2, source=source)
         self.assertScoped("-> Player", "entity.name.type.foundryscript", offset=3, source=source)
 
+    def test_a_multiline_lambda_parameter_list_inside_a_dictionary_value_keeps_type_scopes(self) -> None:
+        # Each parameter starts its own physical line, which alone looks like a fresh
+        # dictionary entry; the parenthesized parameter list must shield them from that.
+        source = (
+            "var factories = {\n"
+            '\t"build": func(\n'
+            "\t\tvalue: int,\n"
+            "\t\tother: bool,\n"
+            "\t) -> Player:\n"
+            "\t\treturn Player.new(),\n"
+            "}\n"
+        )
+        self.assertScoped(": int", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped(": bool", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped("-> Player", "entity.name.type.foundryscript", offset=3, source=source)
+
+    def test_a_numeric_dictionary_key_still_hides_a_type_shaped_value(self) -> None:
+        source = "var by_index = {\n\t1: Node,\n\t2: int,\n}\n"
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("int,", "entity.name.type.foundryscript", source=source)
+
     def test_accessor_shaped_dictionary_keys_are_not_scoped_as_accessors(self) -> None:
         source = (
             "var python_entries = {\n"

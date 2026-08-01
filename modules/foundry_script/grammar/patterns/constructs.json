@@ -127,9 +127,9 @@
     ]
   },
   "dictionary-entry-separator": {
-    "$comment": "Consumes a dictionary entry's separator ('key: value' or Lua-style 'key = value') together with an immediately following type-shaped token, so the generic type-positions rule never sees that token: the lookbehind requires the separator to be directly preceded (on the same physical line, allowing only indentation-width whitespace) by a dictionary key shape -- a quoted string or a bare identifier with an optional simple call/argument list -- anchored to the start of a dictionary entry (the start of a line inside the dictionary, or right after '{' or ','). A colon that instead follows a parameter name inside a nested call or lambda signature is not preceded by that anchor, so it is left for #type-positions to scope normally.",
+    "$comment": "Consumes a dictionary entry's separator ('key: value' or Lua-style 'key = value') together with an immediately following type-shaped token, so the generic type-positions rule never sees that token: the lookbehind requires the separator to be directly preceded (on the same physical line, allowing only indentation-width whitespace) by a dictionary key shape -- a quoted string, a numeric literal, or a bare identifier with an optional simple call/argument list -- anchored to the start of a dictionary entry (the start of a line inside the dictionary, or right after '{' or ','). A colon that instead follows a parameter name inside a nested call or lambda signature is shielded from this anchor by #dictionary-value-parentheses, so it is left for #type-positions to scope normally.",
     "name": "meta.dictionary.entry-separator.foundryscript",
-    "match": "(?<=(?:^[ \\t]*|[{,][ \\t]{0,4})(?:\"(?:[^\"\\\\]|\\\\.)*\"|\\'(?:[^\\'\\\\]|\\\\.)*\\'|[\\p{L}_][\\p{L}\\p{N}_]*(?:\\([^()]*\\))?)[ \\t]*)(:|=)[ \\t]*(\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*|\\b(?:int|float|bool)\\b)?"
+    "match": "(?<=(?:^[ \\t]*|[{,][ \\t]{0,4})(?:\"(?:[^\"\\\\]|\\\\.)*\"|\\'(?:[^\\'\\\\]|\\\\.)*\\'|[\\p{L}_][\\p{L}\\p{N}_]*(?:\\([^()]*\\))?|\\d(?:_?\\d)*(?:\\.\\d(?:_?\\d)*)?)[ \\t]*)(:|=)[ \\t]*(\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*|\\b(?:int|float|bool)\\b)?"
   },
   "dictionary-literal": {
     "name": "meta.dictionary.foundryscript",
@@ -181,6 +181,69 @@
       },
       {
         "include": "#dictionary-literal"
+      },
+      {
+        "include": "#operators"
+      },
+      {
+        "include": "#dictionary-value-parentheses"
+      },
+      {
+        "include": "#punctuation"
+      }
+    ]
+  },
+  "dictionary-value-parentheses": {
+    "$comment": "Shields a parenthesized region inside a dictionary value (a lambda's parameter list, or an ordinary call) from #dictionary-entry-separator. Without this, a parameter declaration that starts its own physical line inside a multiline parameter list -- 'value: int,' on its own line -- would satisfy the dictionary-entry-separator's start-of-line anchor and be mistaken for a fresh dictionary entry, suppressing the parameter's real type scope.",
+    "name": "meta.dictionary.value.parenthesized.foundryscript",
+    "begin": "\\(",
+    "beginCaptures": {
+      "0": {
+        "name": "punctuation.section.foundryscript"
+      }
+    },
+    "end": "\\)",
+    "endCaptures": {
+      "0": {
+        "name": "punctuation.section.foundryscript"
+      }
+    },
+    "patterns": [
+      {
+        "include": "#comments"
+      },
+      {
+        "include": "#strings"
+      },
+      {
+        "include": "#annotations"
+      },
+      {
+        "include": "#keywords"
+      },
+      {
+        "include": "#constants"
+      },
+      {
+        "include": "#declaration-names"
+      },
+      {
+        "include": "#numbers"
+      },
+      {
+        "include": "#node-references"
+      },
+      {
+        "include": "#calls"
+      },
+      {
+        "include": "#type-positions"
+      },
+      {
+        "include": "#dictionary-literal"
+      },
+      {
+        "include": "#dictionary-value-parentheses"
       },
       {
         "include": "#operators"
