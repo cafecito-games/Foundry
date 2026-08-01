@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
 import platform as platform_module
 import queue
+import re
 import shlex
 import shutil
 import subprocess
@@ -20,11 +22,38 @@ from pathlib import Path
 from typing import NamedTuple, TextIO, cast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_LOG = Path("/tmp/foundry-build.log")
-DEFAULT_PROGRESS_LOG = Path("/tmp/foundry-build-progress.jsonl")
 DEFAULT_CACHE_PATH = Path.home() / ".scons_cache"
 DEFAULT_TEST_SCRATCH = REPO_ROOT / ".test_scratch"
 SUPPORTED_SCONS_PLATFORMS = ("linuxbsd", "macos")
+
+
+class OutputPaths(NamedTuple):
+    log: Path
+    progress: Path
+
+
+def _filename_slug(name: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("._-")[:80].rstrip("._-")
+    return slug or "worktree"
+
+
+def worktree_identity(repo_root: Path) -> str:
+    resolved = str(repo_root.resolve())
+    digest = hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:10]
+    return f"{_filename_slug(repo_root.name)}-{digest}"
+
+
+def default_output_paths(repo_root: Path, temp_root: Path = Path("/tmp")) -> OutputPaths:
+    identity = worktree_identity(repo_root)
+    return OutputPaths(
+        log=temp_root / f"foundry-build-{identity}.log",
+        progress=temp_root / f"foundry-build-{identity}-progress.jsonl",
+    )
+
+
+DEFAULT_OUTPUT_PATHS = default_output_paths(REPO_ROOT)
+DEFAULT_LOG = DEFAULT_OUTPUT_PATHS.log
+DEFAULT_PROGRESS_LOG = DEFAULT_OUTPUT_PATHS.progress
 
 
 class BuildTarget(NamedTuple):
@@ -338,13 +367,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         default=os.cpu_count() or 1,
         help="Parallel SCons jobs. Default: CPU count.",
     )
-    parser.add_argument("--log", type=Path, default=DEFAULT_LOG, help=f"Build log path. Default: {DEFAULT_LOG}.")
+    parser.add_argument(
+        "--log",
+        type=Path,
+        default=DEFAULT_LOG,
+        help=f"Build log path. Default for this worktree: {DEFAULT_LOG}.",
+    )
     parser.add_argument("--append-log", action="store_true", help="Append to the log instead of replacing it.")
     parser.add_argument(
         "--progress-file",
         type=Path,
         default=DEFAULT_PROGRESS_LOG,
-        help=f"Write command progress events as JSONL. Default: {DEFAULT_PROGRESS_LOG}.",
+        help=f"Write command progress events as JSONL. Default for this worktree: {DEFAULT_PROGRESS_LOG}.",
     )
     parser.add_argument(
         "--no-progress-file",
