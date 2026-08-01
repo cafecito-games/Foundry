@@ -45,6 +45,11 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	bool builtin_bytecode_prepared = false;
 	RBMap<String, FSNameManglerExport::PreparedScript> mangled_scripts;
 	mutable HashSet<String> pending_mangled_output_authorizations;
+	// Normalized private builtin artifact paths this export owns, and the single authorization
+	// each one gets for the exporter's own publication. Anything else landing on one of these
+	// paths would overwrite bytecode a stripped runtime needs.
+	HashSet<String> published_builtin_outputs;
+	mutable HashSet<String> pending_builtin_output_authorizations;
 
 	// One builtin's private compiled-bytecode companion, held until every builtin has compiled so
 	// a failure anywhere leaves nothing queued for the pack.
@@ -60,6 +65,7 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	void _add_export_warning(const String &p_message);
 	void _add_export_error(const String &p_message);
 	void _clear_name_mangling_state();
+	void _clear_builtin_bytecode_state();
 	String _describe_script_errors(const String &p_path, Error p_fallback_error);
 	bool _is_native_resource_file(const String &p_path);
 	bool _validate_native_resource_for_compiled_bytecode(const String &p_path);

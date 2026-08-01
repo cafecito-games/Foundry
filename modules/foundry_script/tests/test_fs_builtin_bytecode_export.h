@@ -140,6 +140,39 @@ TEST_CASE("[FoundryScript][BuiltinBytecodeExport] Compiled-bytecode preparation 
 	builtin_export_link_all(builtin_paths, buffers);
 }
 
+TEST_CASE("[FoundryScript][BuiltinBytecodeExport] Late files cannot overwrite a packaged builtin artifact") {
+	NameManglerExportFixture fixture("builtin_late_files");
+	const Vector<String> builtin_paths = builtin_export_registered_paths();
+	REQUIRE_FALSE(builtin_paths.is_empty());
+	const String artifact_path =
+			FSBuiltinSources::get_exported_bytecode_path(builtin_paths[0]);
+	REQUIRE_FALSE(artifact_path.is_empty());
+
+	Ref<NameManglerExportTestPlatform> platform =
+			memnew(NameManglerExportTestPlatform);
+	// Name mangling is what used to seal generated files; a builtin artifact must be protected
+	// with or without it, since another plugin could write over it either way.
+	for (const bool name_mangling : { false, true }) {
+		Ref<TestEditorExportFoundryScript> plugin = builtin_export_make_plugin(
+				platform, EditorExportPreset::MODE_SCRIPT_COMPILED_BYTECODE,
+				name_mangling);
+		NameManglerExportPluginEndGuard end_guard(plugin);
+
+		EditorExportPlugin::ExportFileManifest manifest;
+		String error;
+		REQUIRE_EQ(plugin->prepare_for_test(manifest, error), OK);
+
+		// The exporter's own publication is authorized exactly once.
+		String late_error;
+		CHECK_EQ(plugin->validate_late_for_test(artifact_path, late_error), OK);
+		CHECK(late_error.is_empty());
+		late_error.clear();
+		CHECK_EQ(plugin->validate_late_for_test(artifact_path, late_error),
+				ERR_INVALID_DATA);
+		CHECK(late_error.contains(artifact_path));
+	}
+}
+
 TEST_CASE("[FoundryScript][BuiltinBytecodeExport] Repeated preparation produces identical paths and bytes") {
 	NameManglerExportFixture fixture("builtin_determinism");
 	Ref<NameManglerExportTestPlatform> platform =

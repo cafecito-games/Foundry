@@ -78,6 +78,12 @@ void EditorExportFoundryScript::_clear_name_mangling_state() {
 	pending_mangled_output_authorizations.clear();
 }
 
+void EditorExportFoundryScript::_clear_builtin_bytecode_state() {
+	builtin_bytecode_prepared = false;
+	published_builtin_outputs.clear();
+	pending_builtin_output_authorizations.clear();
+}
+
 Error EditorExportFoundryScript::_compile_script_to_bytecode(const String &p_path, Vector<uint8_t> &r_buffer, String &r_error) {
 	r_error.clear();
 	Error error = OK;
@@ -334,11 +340,11 @@ Error EditorExportFoundryScript::_prepare_builtin_bytecode(const ExportFileManif
 	// Publication happens only once every builtin has compiled, so a failure above leaves nothing
 	// queued for the pack.
 	for (const StagedBuiltinBytecode &entry : staged) {
-		if (name_mangling_enabled) {
-			// These are deterministic engine-owned outputs, not project files, so they are
-			// explicitly authorized against the sealed sensitive-generated-file policy.
-			pending_mangled_output_authorizations.insert(entry.output_path);
-		}
+		// These are deterministic engine-owned outputs, not project files, so each one is
+		// explicitly authorized once against the sealed generated-file policy.
+		const String normalized_output = entry.output_path.simplify_path();
+		published_builtin_outputs.insert(normalized_output);
+		pending_builtin_output_authorizations.insert(normalized_output);
 		add_file(entry.output_path, entry.bytes, false);
 	}
 	builtin_bytecode_prepared = true;
@@ -406,6 +412,17 @@ Error EditorExportFoundryScript::_prepare_name_mangling(const ExportFileManifest
 
 Error EditorExportFoundryScript::_validate_late_export_file(const String &p_path, String &r_error) const {
 	r_error.clear();
+	const String normalized_path = p_path.simplify_path();
+	if (published_builtin_outputs.has(normalized_path)) {
+		// This exporter's own publication consumes the artifact's single authorization. Any other
+		// plugin adding a file here — whether name mangling is on or not — would overwrite the
+		// engine-owned bytecode a stripped runtime loads the builtin from.
+		if (pending_builtin_output_authorizations.erase(normalized_path)) {
+			return OK;
+		}
+		r_error = vformat(TTR("Generated file \"%s\" collides with the packaged builtin Foundry Script bytecode for this export."), p_path);
+		return ERR_INVALID_DATA;
+	}
 	if (!name_mangling_enabled || !name_mangling_prepared) {
 		return OK;
 	}
@@ -421,8 +438,8 @@ Error EditorExportFoundryScript::_validate_late_export_file(const String &p_path
 
 void EditorExportFoundryScript::_export_begin(const HashSet<String> &p_features, bool p_debug, const String &p_path, int p_flags) {
 	_clear_name_mangling_state();
+	_clear_builtin_bytecode_state();
 	name_mangling_enabled = false;
-	builtin_bytecode_prepared = false;
 	export_debug = p_debug;
 	script_mode = DEFAULT_SCRIPT_MODE;
 
@@ -435,8 +452,8 @@ void EditorExportFoundryScript::_export_begin(const HashSet<String> &p_features,
 
 void EditorExportFoundryScript::_export_end() {
 	_clear_name_mangling_state();
+	_clear_builtin_bytecode_state();
 	name_mangling_enabled = false;
-	builtin_bytecode_prepared = false;
 	script_mode = DEFAULT_SCRIPT_MODE;
 }
 
