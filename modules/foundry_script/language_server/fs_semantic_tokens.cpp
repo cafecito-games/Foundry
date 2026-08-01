@@ -30,6 +30,7 @@
 
 #include "fs_semantic_tokens.h"
 
+#include "core/object/class_db.h"
 #include "modules/foundry_script/fs_parser.h"
 #include "modules/foundry_script/fs_position.h"
 #include "modules/foundry_script/fs_tokenizer.h"
@@ -81,6 +82,22 @@ struct CandidateSorter {
 		}
 		return p_left.sequence < p_right.sequence;
 	}
+};
+
+enum DeclaredSymbolKind {
+	DECLARED_SYMBOL_NONE,
+	DECLARED_SYMBOL_CLASS,
+	DECLARED_SYMBOL_ENUM,
+	DECLARED_SYMBOL_ENUM_MEMBER,
+	DECLARED_SYMBOL_METHOD,
+	DECLARED_SYMBOL_TUPLE,
+};
+
+struct DeclaredSymbol {
+	DeclaredSymbolKind kind = DECLARED_SYMBOL_NONE;
+	const FSParser::ClassNode *class_node = nullptr;
+	const FSParser::EnumNode *enum_node = nullptr;
+	const FSParser::FunctionNode *function_node = nullptr;
 };
 
 // A single-line token of the document, in the code point coordinates the encoder consumes.
@@ -212,6 +229,9 @@ private:
 	const Vector<String> &lines;
 	Vector<LexicalToken> tokens;
 	Vector<Candidate> candidates;
+	const FSParser::ClassNode *current_class = nullptr;
+	FSParser::DataType current_dispatch_type;
+	bool has_current_dispatch_type = false;
 
 	void add_span(int p_line, int p_start_column, int p_length, TokenType p_type, uint32_t p_modifiers, int p_rank);
 	// Emits a span at a node's start position, but only when the source there really spells p_text.
@@ -220,13 +240,23 @@ private:
 	// Emits a contextual keyword found between two source positions, e.g. the `when` of a match
 	// guard. Positions are the parser's one-based, tab-expanded coordinates.
 	void add_contextual_keyword(const String &p_text, int p_from_line, int p_from_column, int p_to_line, int p_to_column);
-	// Searches from the start of `p_from` to the start of `p_to`, or to the end of `p_from` when
-	// `p_to` is null.
-	void add_contextual_keyword(const String &p_text, const FSParser::Node *p_from, const FSParser::Node *p_to);
+	// Like add_contextual_keyword(), but emits the last match in the range. This disambiguates a
+	// contextual delimiter from an earlier declaration identifier with the same spelling.
+	void add_last_contextual_keyword(const String &p_text, const FSParser::Node *p_from, const FSParser::Node *p_to);
 
 	void classify_chain(const Vector<FSParser::IdentifierNode *> &p_chain, const FSParser::DataType &p_datatype, TokenType p_fallback, bool p_allow_enum_case);
 	// Returns whether the identifier resolved to something classifiable.
 	bool classify_identifier_reference(const FSParser::IdentifierNode *p_identifier);
+	DeclaredSymbol declared_symbol_from_member(const FSParser::ClassNode::Member &p_member) const;
+	DeclaredSymbol find_declared_symbol(const StringName &p_name) const;
+	DeclaredSymbol resolve_declared_symbol(const FSParser::ExpressionNode *p_expression) const;
+	bool classify_declared_symbol(const FSParser::IdentifierNode *p_identifier, const DeclaredSymbol &p_symbol);
+	bool datatype_has_native_method(const FSParser::DataType &p_datatype, const StringName &p_name) const;
+	bool datatype_has_native_property(const FSParser::DataType &p_datatype, const StringName &p_name) const;
+	bool datatype_has_native_signal(const FSParser::DataType &p_datatype, const StringName &p_name) const;
+	bool current_class_has_native_method(const StringName &p_name) const;
+	bool current_class_has_native_property(const StringName &p_name) const;
+	bool current_class_has_native_signal(const StringName &p_name) const;
 
 	void walk_annotations(const FSParser::Node *p_node);
 	void walk_annotation(const FSParser::AnnotationNode *p_annotation);
@@ -374,17 +404,6 @@ bool DocumentClassifier::add_identifier(const FSParser::IdentifierNode *p_identi
 	return add_word(p_identifier->start_line, p_identifier->start_column, String(p_identifier->name), p_type, p_modifiers, RANK_SYMBOL);
 }
 
-void DocumentClassifier::add_contextual_keyword(const String &p_text, const FSParser::Node *p_from, const FSParser::Node *p_to) {
-	if (p_from == nullptr) {
-		return;
-	}
-	if (p_to != nullptr) {
-		add_contextual_keyword(p_text, p_from->start_line, p_from->start_column, p_to->start_line, p_to->start_column);
-	} else {
-		add_contextual_keyword(p_text, p_from->start_line, p_from->start_column, p_from->end_line, p_from->end_column);
-	}
-}
-
 void DocumentClassifier::add_contextual_keyword(const String &p_text, int p_from_line, int p_from_column, int p_to_line, int p_to_column) {
 	for (const LexicalToken &token : tokens) {
 		const int token_line = token.line + 1;
@@ -399,6 +418,31 @@ void DocumentClassifier::add_contextual_keyword(const String &p_text, int p_from
 			add_span(token.line, token.start_column, token.length, TokenType::KEYWORD, 0, RANK_CONTEXTUAL);
 			return;
 		}
+	}
+}
+
+void DocumentClassifier::add_last_contextual_keyword(const String &p_text, const FSParser::Node *p_from, const FSParser::Node *p_to) {
+	if (p_from == nullptr) {
+		return;
+	}
+	const int to_line = p_to != nullptr ? p_to->start_line : p_from->end_line;
+	const int to_column = p_to != nullptr ? p_to->start_column : p_from->end_column;
+	const LexicalToken *last_match = nullptr;
+	for (const LexicalToken &token : tokens) {
+		const int token_line = token.line + 1;
+		const int token_column = FSTextPosition::text_column_to_godot_column(lines[token.line], token.start_column);
+		if (token_line < p_from->start_line || (token_line == p_from->start_line && token_column < p_from->start_column)) {
+			continue;
+		}
+		if (token_line > to_line || (token_line == to_line && token_column >= to_column)) {
+			break;
+		}
+		if (token.text == p_text) {
+			last_match = &token;
+		}
+	}
+	if (last_match != nullptr) {
+		add_span(last_match->line, last_match->start_column, last_match->length, TokenType::KEYWORD, 0, RANK_CONTEXTUAL);
 	}
 }
 
@@ -491,7 +535,7 @@ void DocumentClassifier::scan_tokens(const String &p_source) {
 		} else if (token.type == FSTokenizer::Token::IMPORT) {
 			namespace_state = NAMESPACE_EXPECTS_SEGMENT;
 			namespace_modifiers = 0;
-		} else if (previous_namespace_state == NAMESPACE_EXPECTS_SEGMENT && token.type == FSTokenizer::Token::IDENTIFIER) {
+		} else if (previous_namespace_state == NAMESPACE_EXPECTS_SEGMENT && token.is_identifier()) {
 			namespace_state = NAMESPACE_AFTER_SEGMENT;
 			if (!tokens.is_empty()) {
 				const LexicalToken &lexical = tokens[tokens.size() - 1];
@@ -619,11 +663,24 @@ bool DocumentClassifier::classify_identifier_reference(const FSParser::Identifie
 		case FSParser::IdentifierNode::LOCAL_CONSTANT:
 			return add_identifier(p_identifier, TokenType::VARIABLE, bit(TokenModifier::READONLY));
 		case FSParser::IdentifierNode::MEMBER_VARIABLE:
-		case FSParser::IdentifierNode::INHERITED_VARIABLE:
 			return add_identifier(p_identifier, TokenType::PROPERTY, 0);
+		case FSParser::IdentifierNode::INHERITED_VARIABLE:
+			// Native methods and signals used as values arrive through the analyzer's inherited
+			// variable fallback, so recover their actual kind and ownership from the enclosing class.
+			if (current_class_has_native_method(p_identifier->name)) {
+				return add_identifier(p_identifier, TokenType::METHOD, bit(TokenModifier::DEFAULT_LIBRARY));
+			}
+			if (current_class_has_native_signal(p_identifier->name)) {
+				return add_identifier(p_identifier, TokenType::EVENT, bit(TokenModifier::DEFAULT_LIBRARY));
+			}
+			return add_identifier(p_identifier, TokenType::PROPERTY,
+					current_class_has_native_property(p_identifier->name) ? bit(TokenModifier::DEFAULT_LIBRARY) : 0);
 		case FSParser::IdentifierNode::STATIC_VARIABLE:
 			return add_identifier(p_identifier, TokenType::PROPERTY, bit(TokenModifier::STATIC));
 		case FSParser::IdentifierNode::MEMBER_CONSTANT:
+			// Classify the declaration, not its value: a project constant remains a property even
+			// when its resolved value has an enum data type. Enum declarations themselves reach the
+			// declaration lookup below and are classified as enums.
 			return add_identifier(p_identifier, TokenType::PROPERTY, bit(TokenModifier::READONLY));
 		case FSParser::IdentifierNode::MEMBER_FUNCTION: {
 			uint32_t modifiers = 0;
@@ -658,12 +715,265 @@ bool DocumentClassifier::classify_identifier_reference(const FSParser::Identifie
 		}
 		return add_identifier(p_identifier, TokenType::ENUM_MEMBER, modifiers);
 	}
+	// A managed buffer may not have a loadable script resource yet, leaving every segment of an
+	// otherwise valid inner-type chain unresolved. Consult declarations only after analyzer-backed
+	// sources and data types have had the opportunity to classify the identifier.
+	if (p_identifier->source == FSParser::IdentifierNode::UNDEFINED_SOURCE ||
+			p_identifier->source == FSParser::IdentifierNode::MEMBER_CLASS) {
+		const DeclaredSymbol symbol = find_declared_symbol(p_identifier->name);
+		if (classify_declared_symbol(p_identifier, symbol)) {
+			return true;
+		}
+	}
 	// The analyzer resolves an inner class lazily, so a reference to one can carry no usable data
 	// type; the recorded source still says the name is a class.
 	if (p_identifier->source == FSParser::IdentifierNode::MEMBER_CLASS) {
 		return add_identifier(p_identifier, TokenType::CLASS, 0);
 	}
 	return false;
+}
+
+DeclaredSymbol DocumentClassifier::declared_symbol_from_member(const FSParser::ClassNode::Member &p_member) const {
+	DeclaredSymbol result;
+	switch (p_member.type) {
+		case FSParser::ClassNode::Member::CLASS:
+			result.kind = DECLARED_SYMBOL_CLASS;
+			result.class_node = p_member.m_class;
+			break;
+		case FSParser::ClassNode::Member::ENUM:
+			result.kind = DECLARED_SYMBOL_ENUM;
+			result.enum_node = p_member.m_enum;
+			break;
+		case FSParser::ClassNode::Member::FUNCTION:
+			result.kind = DECLARED_SYMBOL_METHOD;
+			result.function_node = p_member.function;
+			break;
+		case FSParser::ClassNode::Member::TUPLE:
+			result.kind = DECLARED_SYMBOL_TUPLE;
+			break;
+		default:
+			break;
+	}
+	return result;
+}
+
+DeclaredSymbol DocumentClassifier::find_declared_symbol(const StringName &p_name) const {
+	for (const FSParser::ClassNode *scope = current_class; scope != nullptr; scope = scope->outer) {
+		const bool is_lexical_outer = scope != current_class;
+		HashSet<const FSParser::ClassNode *> visited;
+		for (const FSParser::ClassNode *owner = scope; owner != nullptr && !visited.has(owner);) {
+			visited.insert(owner);
+			if (owner->has_member(p_name)) {
+				const DeclaredSymbol symbol = declared_symbol_from_member(owner->get_member(p_name));
+				// A nested class can refer to types declared by a lexical outer, but it has no
+				// implicit outer instance and bare lookup does not import the outer's static methods.
+				if (!is_lexical_outer || symbol.kind != DECLARED_SYMBOL_METHOD) {
+					return symbol;
+				}
+			}
+			// Applied-trait methods are project declarations too. They must be considered before a
+			// same-named native method makes the bare-call fallback claim default-library ownership.
+			for (const FSParser::ClassNode *trait : owner->resolved_traits) {
+				if (trait != nullptr && trait->has_member(p_name)) {
+					const DeclaredSymbol symbol = declared_symbol_from_member(trait->get_member(p_name));
+					if (!is_lexical_outer || symbol.kind != DECLARED_SYMBOL_METHOD) {
+						return symbol;
+					}
+				}
+			}
+			owner = owner->base_type.kind == FSParser::DataType::CLASS ? owner->base_type.class_type : nullptr;
+		}
+	}
+	return DeclaredSymbol();
+}
+
+DeclaredSymbol DocumentClassifier::resolve_declared_symbol(const FSParser::ExpressionNode *p_expression) const {
+	if (p_expression == nullptr) {
+		return DeclaredSymbol();
+	}
+	if (p_expression->type == FSParser::Node::IDENTIFIER) {
+		const FSParser::IdentifierNode *identifier = static_cast<const FSParser::IdentifierNode *>(p_expression);
+		if (identifier->source != FSParser::IdentifierNode::UNDEFINED_SOURCE &&
+				identifier->source != FSParser::IdentifierNode::MEMBER_CLASS) {
+			return DeclaredSymbol();
+		}
+		return find_declared_symbol(identifier->name);
+	}
+	if (p_expression->type != FSParser::Node::SUBSCRIPT) {
+		return DeclaredSymbol();
+	}
+
+	const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(p_expression);
+	if (!subscript->is_attribute || subscript->attribute == nullptr) {
+		return DeclaredSymbol();
+	}
+	const DeclaredSymbol base = resolve_declared_symbol(subscript->base);
+	if (base.kind == DECLARED_SYMBOL_CLASS && base.class_node != nullptr && base.class_node->has_member(subscript->attribute->name)) {
+		return declared_symbol_from_member(base.class_node->get_member(subscript->attribute->name));
+	}
+	if (base.kind == DECLARED_SYMBOL_ENUM && base.enum_node != nullptr) {
+		for (const FSParser::EnumNode::Value &value : base.enum_node->values) {
+			if (value.identifier != nullptr && value.identifier->name == subscript->attribute->name) {
+				DeclaredSymbol result;
+				result.kind = DECLARED_SYMBOL_ENUM_MEMBER;
+				result.enum_node = base.enum_node;
+				return result;
+			}
+		}
+	}
+	return DeclaredSymbol();
+}
+
+bool DocumentClassifier::classify_declared_symbol(const FSParser::IdentifierNode *p_identifier, const DeclaredSymbol &p_symbol) {
+	switch (p_symbol.kind) {
+		case DECLARED_SYMBOL_CLASS:
+			return add_identifier(p_identifier, TokenType::CLASS, 0);
+		case DECLARED_SYMBOL_ENUM:
+			return add_identifier(p_identifier, TokenType::ENUM, 0);
+		case DECLARED_SYMBOL_ENUM_MEMBER:
+			return add_identifier(p_identifier, TokenType::ENUM_MEMBER, bit(TokenModifier::READONLY));
+		case DECLARED_SYMBOL_METHOD:
+			return add_identifier(p_identifier, TokenType::METHOD,
+					p_symbol.function_node != nullptr && p_symbol.function_node->is_static ? bit(TokenModifier::STATIC) : 0);
+		case DECLARED_SYMBOL_TUPLE:
+			return add_identifier(p_identifier, TokenType::STRUCT, 0);
+		case DECLARED_SYMBOL_NONE:
+			return false;
+	}
+	return false;
+}
+
+bool DocumentClassifier::datatype_has_native_method(const FSParser::DataType &p_datatype, const StringName &p_name) const {
+	FSParser::DataType datatype = p_datatype;
+	HashSet<const FSParser::ClassNode *> visited_classes;
+	while (datatype.kind == FSParser::DataType::CLASS && datatype.class_type != nullptr && !visited_classes.has(datatype.class_type)) {
+		const FSParser::ClassNode *owner = datatype.class_type;
+		visited_classes.insert(owner);
+		if (owner->has_member(p_name)) {
+			return false;
+		}
+		for (const FSParser::ClassNode *trait : owner->resolved_traits) {
+			if (trait != nullptr && trait->has_member(p_name)) {
+				return false;
+			}
+		}
+		datatype = owner->base_type;
+	}
+
+	if (datatype.kind == FSParser::DataType::BUILTIN) {
+		return Variant::has_builtin_method(datatype.builtin_type, p_name);
+	}
+	StringName native_base = datatype.native_type;
+	if (datatype.kind == FSParser::DataType::SCRIPT && datatype.script_type.is_valid()) {
+		HashSet<const Script *> visited_scripts;
+		for (Ref<Script> script = datatype.script_type;
+				script.is_valid() && !visited_scripts.has(script.ptr());
+				script = script->get_base_script()) {
+			visited_scripts.insert(script.ptr());
+			if (script->has_method(p_name)) {
+				return false;
+			}
+			if (script->get_instance_base_type() != StringName()) {
+				native_base = script->get_instance_base_type();
+			}
+		}
+	}
+	return native_base != StringName() && ClassDB::has_method(native_base, p_name);
+}
+
+bool DocumentClassifier::datatype_has_native_property(const FSParser::DataType &p_datatype, const StringName &p_name) const {
+	FSParser::DataType datatype = p_datatype;
+	HashSet<const FSParser::ClassNode *> visited_classes;
+	while (datatype.kind == FSParser::DataType::CLASS && datatype.class_type != nullptr && !visited_classes.has(datatype.class_type)) {
+		const FSParser::ClassNode *owner = datatype.class_type;
+		visited_classes.insert(owner);
+		if (owner->has_member(p_name)) {
+			return false;
+		}
+		for (const FSParser::ClassNode *trait : owner->resolved_traits) {
+			if (trait != nullptr && trait->has_member(p_name)) {
+				return false;
+			}
+		}
+		datatype = owner->base_type;
+	}
+
+	StringName native_base = datatype.native_type;
+	if (datatype.kind == FSParser::DataType::SCRIPT && datatype.script_type.is_valid()) {
+		HashSet<const Script *> visited_scripts;
+		for (Ref<Script> script = datatype.script_type;
+				script.is_valid() && !visited_scripts.has(script.ptr());
+				script = script->get_base_script()) {
+			visited_scripts.insert(script.ptr());
+			List<PropertyInfo> properties;
+			script->get_script_property_list(&properties);
+			for (const PropertyInfo &property : properties) {
+				if (property.name == p_name) {
+					return false;
+				}
+			}
+			if (script->get_instance_base_type() != StringName()) {
+				native_base = script->get_instance_base_type();
+			}
+		}
+	}
+	return native_base != StringName() && ClassDB::has_property(native_base, p_name);
+}
+
+bool DocumentClassifier::datatype_has_native_signal(const FSParser::DataType &p_datatype, const StringName &p_name) const {
+	FSParser::DataType datatype = p_datatype;
+	HashSet<const FSParser::ClassNode *> visited_classes;
+	while (datatype.kind == FSParser::DataType::CLASS && datatype.class_type != nullptr && !visited_classes.has(datatype.class_type)) {
+		const FSParser::ClassNode *owner = datatype.class_type;
+		visited_classes.insert(owner);
+		if (owner->has_member(p_name)) {
+			return false;
+		}
+		for (const FSParser::ClassNode *trait : owner->resolved_traits) {
+			if (trait != nullptr && trait->has_member(p_name)) {
+				return false;
+			}
+		}
+		datatype = owner->base_type;
+	}
+
+	StringName native_base = datatype.native_type;
+	if (datatype.kind == FSParser::DataType::SCRIPT && datatype.script_type.is_valid()) {
+		HashSet<const Script *> visited_scripts;
+		for (Ref<Script> script = datatype.script_type;
+				script.is_valid() && !visited_scripts.has(script.ptr());
+				script = script->get_base_script()) {
+			visited_scripts.insert(script.ptr());
+			if (script->has_script_signal(p_name)) {
+				return false;
+			}
+			if (script->get_instance_base_type() != StringName()) {
+				native_base = script->get_instance_base_type();
+			}
+		}
+	}
+	return native_base != StringName() && ClassDB::has_signal(native_base, p_name);
+}
+
+bool DocumentClassifier::current_class_has_native_method(const StringName &p_name) const {
+	if (has_current_dispatch_type) {
+		return datatype_has_native_method(current_dispatch_type, p_name);
+	}
+	return current_class != nullptr && datatype_has_native_method(current_class->get_datatype(), p_name);
+}
+
+bool DocumentClassifier::current_class_has_native_property(const StringName &p_name) const {
+	if (has_current_dispatch_type) {
+		return datatype_has_native_property(current_dispatch_type, p_name);
+	}
+	return current_class != nullptr && datatype_has_native_property(current_class->get_datatype(), p_name);
+}
+
+bool DocumentClassifier::current_class_has_native_signal(const StringName &p_name) const {
+	if (has_current_dispatch_type) {
+		return datatype_has_native_signal(current_dispatch_type, p_name);
+	}
+	return current_class != nullptr && datatype_has_native_signal(current_class->get_datatype(), p_name);
 }
 
 void DocumentClassifier::walk_annotations(const FSParser::Node *p_node) {
@@ -718,7 +1028,7 @@ void DocumentClassifier::walk_trait_use(const FSParser::ClassNode::TraitUse &p_u
 		return;
 	}
 	if (p_owner != nullptr) {
-		add_contextual_keyword("uses", p_owner, p_use.name[0]);
+		add_last_contextual_keyword("uses", p_owner, p_use.name[0]);
 	}
 	FSParser::DataType datatype;
 	if (p_use.resolved_trait != nullptr) {
@@ -735,6 +1045,8 @@ void DocumentClassifier::walk_class(const FSParser::ClassNode *p_class) {
 	if (p_class == nullptr) {
 		return;
 	}
+	const FSParser::ClassNode *previous_class = current_class;
+	current_class = p_class;
 	walk_annotations(p_class);
 
 	uint32_t modifiers = bit(TokenModifier::DECLARATION);
@@ -805,6 +1117,7 @@ void DocumentClassifier::walk_class(const FSParser::ClassNode *p_class) {
 	for (const FSParser::ConformanceNode *conformance : p_class->conformances) {
 		walk_conformance(conformance);
 	}
+	current_class = previous_class;
 }
 
 void DocumentClassifier::walk_conformance(const FSParser::ConformanceNode *p_conformance) {
@@ -817,9 +1130,33 @@ void DocumentClassifier::walk_conformance(const FSParser::ConformanceNode *p_con
 	for (const FSParser::ClassNode::TraitUse &use : p_conformance->traits) {
 		walk_trait_use(use, p_conformance);
 	}
+
+	const FSParser::ClassNode *previous_class = current_class;
+	const FSParser::DataType previous_dispatch_type = current_dispatch_type;
+	const bool previous_has_dispatch_type = has_current_dispatch_type;
+	const FSParser::DataType target_type = p_conformance->target != nullptr ? p_conformance->target->get_datatype() : FSParser::DataType();
+	if (target_type.kind == FSParser::DataType::CLASS) {
+		current_class = target_type.class_type;
+		has_current_dispatch_type = false;
+	} else if (target_type.kind == FSParser::DataType::NATIVE && p_conformance->native_target_shim != nullptr) {
+		current_class = p_conformance->native_target_shim;
+		has_current_dispatch_type = false;
+	} else if (target_type.kind == FSParser::DataType::BUILTIN && p_conformance->builtin_target_shim != nullptr) {
+		current_class = p_conformance->builtin_target_shim;
+		has_current_dispatch_type = false;
+	} else if (p_conformance->target != nullptr) {
+		// Cross-file script targets do not expose their parser node here. Keep their analyzed
+		// DataType so bare-call fallback can still distinguish script members from the native base.
+		current_class = nullptr;
+		current_dispatch_type = target_type;
+		has_current_dispatch_type = true;
+	}
 	for (const FSParser::FunctionNode *witness : p_conformance->witnesses) {
 		walk_function(witness, false);
 	}
+	current_class = previous_class;
+	current_dispatch_type = previous_dispatch_type;
+	has_current_dispatch_type = previous_has_dispatch_type;
 }
 
 void DocumentClassifier::walk_constant(const FSParser::ConstantNode *p_constant, bool p_is_member) {
@@ -996,7 +1333,11 @@ void DocumentClassifier::walk_subscript(const FSParser::SubscriptNode *p_subscri
 	const FSParser::DataType attribute_type = p_subscript->attribute->get_datatype();
 
 	uint32_t modifiers = 0;
-	if (is_default_library_type(base_type)) {
+	// Variant attributes and Dictionary dot keys are dynamically supplied by user data. The
+	// receiver's library-owned type does not make an arbitrary member a library symbol.
+	const bool has_dynamic_attributes = base_type.kind == FSParser::DataType::VARIANT ||
+			(base_type.kind == FSParser::DataType::BUILTIN && base_type.builtin_type == Variant::DICTIONARY);
+	if (!has_dynamic_attributes && (is_default_library_type(base_type) || datatype_has_native_property(base_type, p_subscript->attribute->name))) {
 		modifiers |= bit(TokenModifier::DEFAULT_LIBRARY);
 	}
 
@@ -1013,6 +1354,17 @@ void DocumentClassifier::walk_subscript(const FSParser::SubscriptNode *p_subscri
 		add_identifier(p_subscript->attribute, TokenType::EVENT, modifiers);
 		return;
 	}
+	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_VARIABLE ||
+			p_subscript->attribute->source == FSParser::IdentifierNode::STATIC_VARIABLE) {
+		if (p_subscript->attribute->source == FSParser::IdentifierNode::STATIC_VARIABLE) {
+			modifiers |= bit(TokenModifier::STATIC);
+		}
+		if (attribute_type.is_constant || attribute_type.is_read_only) {
+			modifiers |= bit(TokenModifier::READONLY);
+		}
+		add_identifier(p_subscript->attribute, TokenType::PROPERTY, modifiers);
+		return;
+	}
 	if (attribute_type.is_meta_type) {
 		const TypeClassification classification = classify_datatype(attribute_type);
 		if (classification.valid) {
@@ -1022,6 +1374,17 @@ void DocumentClassifier::walk_subscript(const FSParser::SubscriptNode *p_subscri
 	}
 	if (base_type.is_meta_type && base_type.kind == FSParser::DataType::ENUM) {
 		add_identifier(p_subscript->attribute, TokenType::ENUM_MEMBER, modifiers | bit(TokenModifier::READONLY));
+		return;
+	}
+	const DeclaredSymbol declared_symbol = resolve_declared_symbol(p_subscript);
+	if (classify_declared_symbol(p_subscript->attribute, declared_symbol)) {
+		return;
+	}
+	if (datatype_has_native_method(base_type, p_subscript->attribute->name)) {
+		if (base_type.is_meta_type) {
+			modifiers |= bit(TokenModifier::STATIC);
+		}
+		add_identifier(p_subscript->attribute, TokenType::METHOD, modifiers | bit(TokenModifier::DEFAULT_LIBRARY));
 		return;
 	}
 	if (attribute_type.kind == FSParser::DataType::BUILTIN && attribute_type.builtin_type == Variant::SIGNAL) {
@@ -1119,11 +1482,11 @@ void DocumentClassifier::walk_variable(const FSParser::VariableNode *p_variable,
 		} break;
 		case FSParser::VariableNode::PROP_SETGET: {
 			if (p_variable->getter_pointer != nullptr) {
-				add_contextual_keyword("get", p_variable, p_variable->getter_pointer);
+				add_last_contextual_keyword("get", p_variable, p_variable->getter_pointer);
 				add_identifier(p_variable->getter_pointer, TokenType::METHOD, 0);
 			}
 			if (p_variable->setter_pointer != nullptr) {
-				add_contextual_keyword("set", p_variable, p_variable->setter_pointer);
+				add_last_contextual_keyword("set", p_variable, p_variable->setter_pointer);
 				add_identifier(p_variable->setter_pointer, TokenType::METHOD, 0);
 			}
 		} break;
@@ -1159,15 +1522,36 @@ void DocumentClassifier::walk_call(const FSParser::CallNode *p_call) {
 			}
 			walk_subscript(subscript, true);
 			const FSParser::DataType base_type = subscript->base != nullptr ? subscript->base->get_datatype() : FSParser::DataType();
+			const FSParser::IdentifierNode::Source attribute_source = subscript->attribute->source;
+			const bool is_resolved_property = attribute_source == FSParser::IdentifierNode::MEMBER_VARIABLE ||
+					attribute_source == FSParser::IdentifierNode::STATIC_VARIABLE ||
+					(attribute_source == FSParser::IdentifierNode::INHERITED_VARIABLE &&
+							datatype_has_native_property(base_type, subscript->attribute->name));
+			if (is_resolved_property) {
+				walk_subscript(subscript, false);
+				return;
+			}
 			uint32_t modifiers = 0;
-			if (is_default_library_type(base_type)) {
+			// A library-owned receiver can still expose a project-owned retroactive-conformance
+			// witness. Only a method found on the native surface (or the built-in constructor
+			// spelling, which has no MethodBind) carries defaultLibrary.
+			const bool is_default_library_constructor = base_type.is_meta_type &&
+					subscript->attribute->name == SNAME("new") && is_default_library_type(base_type);
+			if (is_default_library_constructor || datatype_has_native_method(base_type, subscript->attribute->name)) {
 				modifiers |= bit(TokenModifier::DEFAULT_LIBRARY);
 			}
-			if (base_type.is_meta_type) {
+			// The analyzer records static dispatch on the call even when the receiver identifier's
+			// data type does not retain its meta-type flag (notably built-in type names).
+			if (p_call->is_static || base_type.is_meta_type) {
 				modifiers |= bit(TokenModifier::STATIC);
 			}
 			if (attribute_type.is_meta_type) {
 				// `Outer.Inner()` constructs a type rather than calling a method.
+				walk_subscript(subscript, false);
+				return;
+			}
+			const DeclaredSymbol declared_symbol = resolve_declared_symbol(subscript);
+			if (declared_symbol.kind != DECLARED_SYMBOL_NONE) {
 				walk_subscript(subscript, false);
 				return;
 			}
@@ -1190,6 +1574,11 @@ void DocumentClassifier::walk_call(const FSParser::CallNode *p_call) {
 		add_identifier(identifier, TokenType::STRUCT, 0);
 		return;
 	}
+	// Project declarations follow the analyzer's scope lookup and take precedence over utilities
+	// with the same spelling.
+	if (classify_identifier_reference(identifier)) {
+		return;
+	}
 	if (identifier->source == FSParser::IdentifierNode::UNDEFINED_SOURCE && !identifier->get_datatype().is_meta_type) {
 		// Utility functions are the language's only callables that are neither members nor locals.
 		if (FSUtilityFunctions::function_exists(identifier->name) || Variant::has_utility_function(identifier->name)) {
@@ -1197,11 +1586,12 @@ void DocumentClassifier::walk_call(const FSParser::CallNode *p_call) {
 			return;
 		}
 	}
-	if (!classify_identifier_reference(identifier)) {
-		// A bare call names a method of the enclosing class. The analyzer resolves the dispatch
-		// without rewriting the callee identifier's source, so nothing else identifies it.
-		add_identifier(identifier, TokenType::METHOD, 0);
-	}
+	// A bare call names a method of the enclosing class. The analyzer resolves the dispatch
+	// without rewriting the callee identifier's source, so nothing else identifies it.
+	const uint32_t modifiers = current_class_has_native_method(identifier->name)
+			? bit(TokenModifier::DEFAULT_LIBRARY)
+			: 0;
+	add_identifier(identifier, TokenType::METHOD, modifiers);
 }
 
 void DocumentClassifier::walk_expression(const FSParser::ExpressionNode *p_expression) {

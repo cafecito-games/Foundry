@@ -129,6 +129,48 @@ struct doctest::StringMaker<FoundryPosition> {
 
 namespace FSTests {
 
+class LSPSemanticExternalScript : public Script {
+	FOUNDRY_CLASS(LSPSemanticExternalScript, Script);
+
+	StringName method_name;
+
+protected:
+	static void _bind_methods() {}
+
+public:
+	void set_method_name(const StringName &p_name) { method_name = p_name; }
+	bool can_instantiate() const override { return false; }
+	Ref<Script> get_base_script() const override { return Ref<Script>(); }
+	StringName get_global_name() const override { return StringName(); }
+	bool inherits_script(const Ref<Script> &p_script) const override { return false; }
+	StringName get_instance_base_type() const override { return SNAME("Node"); }
+	ScriptInstance *instance_create(Object *p_this) override { return nullptr; }
+	bool instance_has(const Object *p_this) const override { return false; }
+	bool has_source_code() const override { return false; }
+	String get_source_code() const override { return String(); }
+	void set_source_code(const String &p_code) override {}
+	Error reload(bool p_keep_state = false) override { return OK; }
+	StringName get_doc_class_name() const override { return StringName(); }
+	Vector<DocData::ClassDoc> get_documentation() const override { return Vector<DocData::ClassDoc>(); }
+	String get_class_icon_path() const override { return String(); }
+	bool has_method(const StringName &p_method) const override { return p_method == method_name; }
+	MethodInfo get_method_info(const StringName &p_method) const override { return p_method == method_name ? MethodInfo(method_name) : MethodInfo(); }
+	bool is_tool() const override { return false; }
+	bool is_valid() const override { return true; }
+	bool is_abstract() const override { return false; }
+	ScriptLanguage *get_language() const override { return nullptr; }
+	bool has_script_signal(const StringName &p_signal) const override { return false; }
+	void get_script_signal_list(List<MethodInfo> *r_signals) const override {}
+	bool get_property_default_value(const StringName &p_property, Variant &r_value) const override { return false; }
+	void get_script_method_list(List<MethodInfo> *p_list) const override {
+		if (method_name != StringName()) {
+			p_list->push_back(MethodInfo(method_name));
+		}
+	}
+	void get_script_property_list(List<PropertyInfo> *p_list) const override {}
+	const Variant get_rpc_config() const override { return Variant(); }
+};
+
 // LSP FoundryScript test scripts are located inside project of other FoundryScript tests:
 // Cannot reset `ProjectSettings` (singleton) -> Cannot load another workspace and resources in there.
 // -> Reuse FoundryScript test project. LSP specific scripts are then placed inside `lsp` folder.
@@ -3537,6 +3579,32 @@ func f():
 			check_semantic_token_at(tokens, 2, 11, 6, LSP::SemanticTokenType::CLASS, declaration_modifier); // Widget
 		}
 
+		SUBCASE("contextual identifiers remain namespace segments") {
+			const String source =
+					"namespace uses.core\n"
+					"\n"
+					"import match.when\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_contextual_namespace.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 0, 10, 4, LSP::SemanticTokenType::NAMESPACE, declaration_modifier); // uses
+			check_semantic_token_at(tokens, 0, 15, 4, LSP::SemanticTokenType::NAMESPACE, declaration_modifier); // core
+			check_semantic_token_at(tokens, 2, 7, 5, LSP::SemanticTokenType::NAMESPACE); // match
+			check_semantic_token_at(tokens, 2, 13, 4, LSP::SemanticTokenType::NAMESPACE); // when
+		}
+
+		SUBCASE("cross-file qualified types classify namespace prefixes separately from the class") {
+			LSPGlobalScriptClassBackup global_class_backup;
+			register_lsp_namespace_global_classes();
+			const String uri = workspace->get_file_uri("res://lsp/namespace_lsp_user.fs");
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 7, 21, 3, LSP::SemanticTokenType::NAMESPACE); // lsp
+			check_semantic_token_at(tokens, 7, 25, 10, LSP::SemanticTokenType::NAMESPACE); // characters
+			check_semantic_token_at(tokens, 7, 36, 16, LSP::SemanticTokenType::CLASS); // LspBaseCharacter
+		}
+
 		SUBCASE("class, trait, tuple, and enum declarations map to distinct types") {
 			const String source =
 					"trait Greeter:\n"
@@ -3566,6 +3634,22 @@ func f():
 			check_semantic_token_at(tokens, 9, 1, 4, LSP::SemanticTokenType::ENUM_MEMBER, declaration_modifier | readonly_modifier); // Stop
 			check_semantic_token_at(tokens, 11, 6, 5, LSP::SemanticTokenType::STRUCT, declaration_modifier); // Point
 			check_semantic_token_at(tokens, 11, 12, 1, LSP::SemanticTokenType::PROPERTY, declaration_modifier | readonly_modifier); // x
+		}
+
+		SUBCASE("a declaration named uses does not hide the trait-list keyword") {
+			const String source =
+					"trait Marker:\n"
+					"\tpass\n"
+					"\n"
+					"class uses uses Marker:\n"
+					"\tpass\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_contextual_uses.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 6, 4, LSP::SemanticTokenType::CLASS, declaration_modifier); // uses (class)
+			check_semantic_token_at(tokens, 3, 11, 4, LSP::SemanticTokenType::KEYWORD); // uses (trait list)
+			check_semantic_token_at(tokens, 3, 16, 6, LSP::SemanticTokenType::INTERFACE); // Marker
 		}
 
 		SUBCASE("declared modifiers ride along with the declaration") {
@@ -3623,7 +3707,7 @@ func f():
 		SUBCASE("defaultLibrary follows resolution, not spelling") {
 			// Both calls are spelled `get_name`, but only one of them resolves to the engine's.
 			const String source =
-					"extends RefCounted\n"
+					"extends Node\n"
 					"\n"
 					"func get_name() -> String:\n"
 					"\treturn \"local\"\n"
@@ -3637,6 +3721,172 @@ func f():
 			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
 			check_semantic_token_at(tokens, 6, 7, 8, LSP::SemanticTokenType::METHOD); // get_name (project)
 			check_semantic_token_at(tokens, 7, 13, 8, LSP::SemanticTokenType::METHOD, default_library_modifier); // get_name (native)
+		}
+
+		SUBCASE("project methods take precedence over same-named utility functions") {
+			const String source =
+					"func print() -> void:\n"
+					"\tpass\n"
+					"\n"
+					"func invoke() -> void:\n"
+					"\tprint()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_utility_shadow.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 4, 1, 5, LSP::SemanticTokenType::METHOD); // print (project)
+		}
+
+		SUBCASE("bare calls to inherited native methods are part of the default library") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func dispose() -> void:\n"
+					"\tqueue_free()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_inherited_native_method.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 1, 10, LSP::SemanticTokenType::METHOD, default_library_modifier); // queue_free
+		}
+
+		SUBCASE("native methods stay defaultLibrary through a project-typed receiver") {
+			const String source =
+					"class Worker extends Node:\n"
+					"\tpass\n"
+					"\n"
+					"func dispose(worker: Worker) -> void:\n"
+					"\tworker.queue_free()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_project_receiver_native_method.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 4, 8, 10, LSP::SemanticTokenType::METHOD, default_library_modifier); // queue_free
+		}
+
+		SUBCASE("dynamic Variant calls are not assumed to be defaultLibrary") {
+			const String source =
+					"func invoke(value: Variant) -> void:\n"
+					"\tvalue.play()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_dynamic_variant_call.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 1, 7, 4, LSP::SemanticTokenType::METHOD); // play (dynamic)
+		}
+
+		SUBCASE("outer static methods do not shadow native methods in a nested class") {
+			const String source =
+					"class Outer:\n"
+					"\tstatic func queue_free() -> void:\n"
+					"\t\tpass\n"
+					"\n"
+					"\tclass Inner extends Node:\n"
+					"\t\tfunc dispose() -> void:\n"
+					"\t\t\tqueue_free()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_outer_static_native_name.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 6, 3, 10, LSP::SemanticTokenType::METHOD, default_library_modifier); // queue_free
+		}
+
+		SUBCASE("trait-provided methods take precedence over same-named native methods") {
+			const String source =
+					"trait Cleanup:\n"
+					"\tfunc queue_free() -> void:\n"
+					"\t\tpass\n"
+					"\n"
+					"class Worker extends Node uses Cleanup:\n"
+					"\tfunc dispose() -> void:\n"
+					"\t\tqueue_free()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_trait_native_shadow.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 6, 2, 10, LSP::SemanticTokenType::METHOD); // queue_free
+		}
+
+		SUBCASE("script-base overrides take precedence over same-named native methods") {
+			const String path = "res://lsp/semantic_tokens_script_native_shadow.fs";
+			const String uri = workspace->get_file_uri(path);
+			text_document->didOpen(make_did_open_params(uri,
+					"extends Node\n"
+					"\n"
+					"func read_name() -> void:\n"
+					"\tvar name := get_name()\n"));
+
+			Ref<LSPSemanticExternalScript> script_base;
+			script_base.instantiate();
+			script_base->set_method_name(SNAME("get_name"));
+
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			FSParser::DataType script_type;
+			script_type.kind = FSParser::DataType::SCRIPT;
+			script_type.builtin_type = Variant::OBJECT;
+			script_type.native_type = SNAME("Node");
+			script_type.script_type = script_base;
+			parser->get_tree()->base_type = script_type;
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 13, 8, LSP::SemanticTokenType::METHOD); // get_name
+		}
+
+		SUBCASE("conformance witnesses classify calls against the conformance target") {
+			const String source =
+					"extends RefCounted\n"
+					"\n"
+					"trait Disposable:\n"
+					"\tabstract func dispose() -> void\n"
+					"\n"
+					"extend Node uses Disposable:\n"
+					"\tfunc dispose() -> void:\n"
+					"\t\tqueue_free()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_conformance_target.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 7, 2, 10, LSP::SemanticTokenType::METHOD, default_library_modifier); // queue_free
+		}
+
+		SUBCASE("builtin conformance witnesses mark bare builtin methods as default library") {
+			const String source =
+					"trait Measurable:\n"
+					"\tabstract func measure() -> int\n"
+					"\n"
+					"extend String uses Measurable:\n"
+					"\tfunc measure() -> int:\n"
+					"\t\treturn length()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_builtin_conformance_target.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 5, 9, 6, LSP::SemanticTokenType::METHOD, default_library_modifier); // length
+		}
+
+		SUBCASE("static library-target conformance witnesses stay project methods") {
+			const String source =
+					"trait BuiltinTagged:\n"
+					"\tabstract static func builtin_tag() -> String\n"
+					"\n"
+					"extend int uses BuiltinTagged:\n"
+					"\tstatic func builtin_tag() -> String:\n"
+					"\t\treturn \"builtin-project\"\n"
+					"\n"
+					"extend RefCounted uses BuiltinTagged:\n"
+					"\tstatic func builtin_tag() -> String:\n"
+					"\t\treturn \"native-project\"\n"
+					"\n"
+					"func call_witnesses() -> String:\n"
+					"\tvar builtin = int.builtin_tag()\n"
+					"\treturn RefCounted.builtin_tag()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_static_library_conformance.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 12, 19, 11, LSP::SemanticTokenType::METHOD, static_modifier); // int.builtin_tag
+			check_semantic_token_at(tokens, 13, 19, 11, LSP::SemanticTokenType::METHOD, static_modifier); // RefCounted.builtin_tag
 		}
 
 		SUBCASE("annotation declarations and uses are decorators") {
@@ -3726,6 +3976,20 @@ func f():
 			check_semantic_token_at(tokens, 7, 27, 12, LSP::SemanticTokenType::METHOD); // _set_wrapped
 			// A local named `get` is still just a local.
 			check_semantic_token_at(tokens, 13, 5, 3, LSP::SemanticTokenType::VARIABLE, declaration_modifier); // get
+		}
+
+		SUBCASE("an accessor keyword is not hidden by a same-named property") {
+			const String source =
+					"var get: int: get = _read\n"
+					"\n"
+					"func _read() -> int:\n"
+					"\treturn 1\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_accessor_name_collision.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 0, 4, 3, LSP::SemanticTokenType::PROPERTY, declaration_modifier); // get (property)
+			check_semantic_token_at(tokens, 0, 14, 3, LSP::SemanticTokenType::KEYWORD); // get (accessor)
 		}
 
 		SUBCASE("generic type syntax is told apart from comparison") {
@@ -3819,6 +4083,134 @@ func f():
 			check_semantic_token_at(tokens, 7, 22, 7, LSP::SemanticTokenType::METHOD); // handler
 			check_semantic_token_at(tokens, 8, 17, 5, LSP::SemanticTokenType::CLASS); // Inner
 			check_semantic_token_at(tokens, 8, 23, 5, LSP::SemanticTokenType::PROPERTY, static_modifier | readonly_modifier); // VALUE
+		}
+
+		SUBCASE("a nested enum used as a value keeps the enum kind") {
+			const String source =
+					"class Holder:\n"
+					"\tenum Direction:\n"
+					"\t\tNORTH\n"
+					"\n"
+					"\tfunc reflect() -> Variant:\n"
+					"\t\treturn Direction\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_nested_enum_value.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 5, 9, 9, LSP::SemanticTokenType::ENUM); // Direction
+		}
+
+		SUBCASE("invoked callable properties stay properties") {
+			const String source =
+					"class CallbackHolder:\n"
+					"\tvar callback: Callable\n"
+					"\tfunc invoke() -> void:\n"
+					"\t\tself.callback()\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_invoked_callable_property.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 7, 8, LSP::SemanticTokenType::PROPERTY); // callback
+		}
+
+		SUBCASE("Signal-typed properties stay properties") {
+			const String source =
+					"class SignalHolder:\n"
+					"\tvar forwarded: Signal\n"
+					"\tfunc read() -> Signal:\n"
+					"\t\treturn self.forwarded\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_signal_property.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 14, 9, LSP::SemanticTokenType::PROPERTY); // forwarded
+		}
+
+		SUBCASE("inherited native properties keep default-library ownership") {
+			const String source =
+					"class NativeHolder extends Node:\n"
+					"\tfunc read() -> String:\n"
+					"\t\tvar inherited_name = name\n"
+					"\t\treturn self.name\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_inherited_native_property.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 2, 23, 4, LSP::SemanticTokenType::PROPERTY, default_library_modifier); // bare name
+			check_semantic_token_at(tokens, 3, 14, 4, LSP::SemanticTokenType::PROPERTY, default_library_modifier); // self.name
+		}
+
+		SUBCASE("builtin and native methods used as values stay methods") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func capture(array: Array) -> void:\n"
+					"\tvar clear_fn: Callable = array.clear\n"
+					"\tvar free_fn: Callable = self.queue_free\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_builtin_method_values.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 32, 5, LSP::SemanticTokenType::METHOD, default_library_modifier); // clear
+			check_semantic_token_at(tokens, 4, 30, 10, LSP::SemanticTokenType::METHOD, default_library_modifier); // queue_free
+		}
+
+		SUBCASE("bare inherited native members used as values keep their native kinds") {
+			const String source =
+					"extends Node\n"
+					"\n"
+					"func capture() -> void:\n"
+					"\tvar free_fn: Callable = queue_free\n"
+					"\tvar ready_signal: Signal = ready\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_bare_native_member_values.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 25, 10, LSP::SemanticTokenType::METHOD, default_library_modifier); // queue_free
+			check_semantic_token_at(tokens, 4, 28, 5, LSP::SemanticTokenType::EVENT, default_library_modifier); // ready
+		}
+
+		SUBCASE("Dictionary dot keys are user properties, not default-library members") {
+			const String source =
+					"func read(data: Dictionary) -> Variant:\n"
+					"\treturn data.player_name\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_dictionary_key.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 1, 13, 11, LSP::SemanticTokenType::PROPERTY); // player_name
+		}
+
+		SUBCASE("qualified references into an inner class keep the declaration kind") {
+			const String source =
+					"class EnumOuter:\n"
+					"\tenum Kind:\n"
+					"\t\tA\n"
+					"\n"
+					"class TupleOuter:\n"
+					"\ttuple Point(x: float)\n"
+					"\n"
+					"func build() -> void:\n"
+					"\tvar kind := EnumOuter.Kind.A\n"
+					"\tvar point := TupleOuter.Point(1.0)\n"
+					"\n"
+					"func shadow() -> void:\n"
+					"\tvar EnumOuter := { \"Kind\": { \"A\": 1 } }\n"
+					"\tprint(EnumOuter.Kind.A)\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_inner_class_qualified.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 8, 13, 9, LSP::SemanticTokenType::CLASS); // EnumOuter
+			check_semantic_token_at(tokens, 8, 23, 4, LSP::SemanticTokenType::ENUM); // Kind
+			check_semantic_token_at(tokens, 8, 28, 1, LSP::SemanticTokenType::ENUM_MEMBER, readonly_modifier); // A
+			check_semantic_token_at(tokens, 9, 14, 10, LSP::SemanticTokenType::CLASS); // TupleOuter
+			check_semantic_token_at(tokens, 9, 25, 5, LSP::SemanticTokenType::STRUCT); // Point
+			// Analyzer-backed local/property classifications take precedence over the fallback even
+			// when a local deliberately shadows the inner class name.
+			check_semantic_token_at(tokens, 13, 7, 9, LSP::SemanticTokenType::VARIABLE); // EnumOuter
+			check_semantic_token_at(tokens, 13, 17, 4, LSP::SemanticTokenType::PROPERTY); // Kind
+			check_semantic_token_at(tokens, 13, 22, 1, LSP::SemanticTokenType::PROPERTY); // A
 		}
 
 		SUBCASE("the resolved stream stays sorted, non-overlapping, and deterministic") {
