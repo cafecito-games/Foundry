@@ -56,6 +56,7 @@
 #include "tests/editor/test_canvas_item_editor_secondary_view.h"
 #include "tests/editor/test_canvas_item_editor_view.h"
 #include "tests/editor/test_canvas_item_editor_view_state.h"
+#include "tests/editor/test_debugger_breakpoint_gutter_sync.h"
 #include "tests/editor/test_doc_tools_tagged_union_xml.h"
 #include "tests/editor/test_dock_scene_context_binding.h"
 #include "tests/editor/test_editor_autoload_settings.h"

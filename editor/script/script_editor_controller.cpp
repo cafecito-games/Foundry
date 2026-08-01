@@ -258,6 +258,7 @@ void ScriptEditorController::_connect_global_signals() {
 		connect_if_needed(debugger, SNAME("clear_execution"), callable_mp(this, &ScriptEditorController::_clear_execution));
 		connect_if_needed(debugger, SNAME("breaked"), callable_mp(this, &ScriptEditorController::_breaked));
 		connect_if_needed(debugger, SNAME("breakpoint_set_in_tree"), callable_mp(this, &ScriptEditorController::_set_breakpoint));
+		connect_if_needed(debugger, SNAME("breakpoint_gutter_sync_requested"), callable_mp(this, &ScriptEditorController::_sync_breakpoint_gutter));
 		connect_if_needed(debugger, SNAME("breakpoints_cleared_in_tree"), callable_mp(this, &ScriptEditorController::_clear_breakpoints));
 	}
 }
@@ -1130,6 +1131,20 @@ void ScriptEditorController::_set_breakpoint(Ref<RefCounted> p_script, int p_lin
 	script_editor_cache->set_value(scr->get_path(), "state", state);
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
 		debugger->set_breakpoint(scr->get_path(), p_line + 1, p_enabled);
+	}
+}
+
+void ScriptEditorController::_sync_breakpoint_gutter(const String &p_path, int p_line, bool p_enabled) {
+	// EditorDebuggerNode::set_breakpoint() reports its own line numbers 1-indexed;
+	// the script tab's gutter API is 0-indexed.
+	const int gutter_line = p_line - 1;
+	for (ScriptEditorView *view : views) {
+		for (int i = 0; i < view->get_tab_container()->get_tab_count(); i++) {
+			ScriptEditorBase *se = Object::cast_to<ScriptEditorBase>(view->get_tab_container()->get_tab_control(i));
+			if (se && se->get_edited_resource().is_valid() && se->get_edited_resource()->get_path() == p_path) {
+				se->set_breakpoint(gutter_line, p_enabled);
+			}
+		}
 	}
 }
 

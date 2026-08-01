@@ -144,6 +144,7 @@ public:
 	void _clear_execution(Ref<RefCounted> p_script);
 	void _breaked(bool p_breaked, bool p_can_debug);
 	void _set_breakpoint(Ref<RefCounted> p_script, int p_line, bool p_enabled);
+	void _sync_breakpoint_gutter(const String &p_path, int p_line, bool p_enabled);
 	void _clear_breakpoints();
 	void _help_class_goto(const String &p_desc);
 

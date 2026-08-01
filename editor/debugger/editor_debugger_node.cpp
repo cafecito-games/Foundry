@@ -229,6 +229,7 @@ void EditorDebuggerNode::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("breaked", PropertyInfo(Variant::BOOL, "reallydid"), PropertyInfo(Variant::BOOL, "can_debug")));
 	ADD_SIGNAL(MethodInfo("breakpoint_toggled", PropertyInfo(Variant::STRING, "path"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::BOOL, "enabled")));
 	ADD_SIGNAL(MethodInfo("breakpoint_set_in_tree", PropertyInfo("script"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::BOOL, "enabled"), PropertyInfo(Variant::INT, "debugger")));
+	ADD_SIGNAL(MethodInfo("breakpoint_gutter_sync_requested", PropertyInfo(Variant::STRING, "path"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::BOOL, "enabled")));
 	ADD_SIGNAL(MethodInfo("breakpoints_cleared_in_tree", PropertyInfo(Variant::INT, "debugger")));
 }
 
@@ -695,12 +696,34 @@ bool EditorDebuggerNode::is_ignore_error_breaks() const {
 }
 
 void EditorDebuggerNode::set_breakpoint(const String &p_path, int p_line, bool p_enabled) {
-	breakpoints[Breakpoint(p_path, p_line)] = p_enabled;
+	const Breakpoint key(p_path, p_line);
+	const bool *existing = breakpoints.getptr(key);
+	const bool state_changed = !existing || *existing != p_enabled;
+
+	if (!state_changed) {
+		// A script-tab gutter refreshed from breakpoint_gutter_sync_requested reports
+		// its new state back here through the code editor's own toggle signal. That
+		// report always matches what we just stored, so treat it as a no-op instead
+		// of re-forwarding to sessions and re-emitting signals for a state nothing
+		// actually changed.
+		return;
+	}
+
+	breakpoints[key] = p_enabled;
 	_for_all(tabs, [&](ScriptEditorDebugger *dbg) {
 		dbg->set_breakpoint(p_path, p_line, p_enabled);
 	});
 
 	emit_signal(SNAME("breakpoint_toggled"), p_path, p_line, p_enabled);
+
+	// Callers that register breakpoints without going through a script tab's own
+	// gutter (currently only the DAP tooling host) still need already-open tabs to
+	// reflect the change. breakpoint_toggled and breakpoint_set_in_tree are not safe
+	// for that: their listeners re-enter this method through the gutter's own toggle
+	// signal, which the guard above only terminates after one redundant round trip.
+	// This signal exists so that round trip is the whole story instead of a general
+	// reentrancy hazard every listener has to reason about.
+	emit_signal(SNAME("breakpoint_gutter_sync_requested"), p_path, p_line, p_enabled);
 }
 
 void EditorDebuggerNode::set_breakpoints(const String &p_path, const Array &p_lines) {
