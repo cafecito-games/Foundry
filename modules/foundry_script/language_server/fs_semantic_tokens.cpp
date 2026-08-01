@@ -386,17 +386,13 @@ void DocumentClassifier::add_contextual_keyword(const String &p_text, const FSPa
 }
 
 void DocumentClassifier::add_contextual_keyword(const String &p_text, int p_from_line, int p_from_column, int p_to_line, int p_to_column) {
-	const int from_line = p_from_line;
-	const int from_column = p_from_column;
-	const int to_line = p_to_line;
-	const int to_column = p_to_column;
-
 	for (const LexicalToken &token : tokens) {
 		const int token_line = token.line + 1;
-		if (token_line < from_line || (token_line == from_line && FSTextPosition::text_column_to_godot_column(lines[token.line], token.start_column) < from_column)) {
+		const int token_column = FSTextPosition::text_column_to_godot_column(lines[token.line], token.start_column);
+		if (token_line < p_from_line || (token_line == p_from_line && token_column < p_from_column)) {
 			continue;
 		}
-		if (token_line > to_line || (token_line == to_line && FSTextPosition::text_column_to_godot_column(lines[token.line], token.start_column) >= to_column)) {
+		if (token_line > p_to_line || (token_line == p_to_line && token_column >= p_to_column)) {
 			break;
 		}
 		if (token.text == p_text) {
