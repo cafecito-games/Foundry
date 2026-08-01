@@ -103,3 +103,26 @@ var armor: int:
 var speed: int:
 	get = read_speed
 	set = write_speed
+
+var values = {
+	"builtin": int,
+	"native": Node,
+	"project": Player,
+	"qualified": Game.Player,
+}
+
+var factories = {
+	"build": func(value: int) -> Player:
+		return Player.new(),
+}
+
+var python_entries = {
+	get(): 1,
+	get: 2,
+	set(value): 3,
+}
+
+var lua_entries = {
+	get = read_value,
+	set = write_value,
+}

@@ -475,6 +475,127 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped("var after", "source.foundryscript", source=source)
         self.assertNotScoped("var after", "meta.node-path.foundryscript", source=source)
 
+    # -- dictionary-literal context ----------------------------------------
+
+    def test_a_single_line_dictionary_value_is_not_scoped_as_a_type(self) -> None:
+        source = 'var entry = {"key": int}\n'
+        self.assertNotScoped("int}", "entity.name.type.foundryscript", source=source)
+
+    def test_multiline_dictionary_values_are_not_scoped_as_types(self) -> None:
+        source = (
+            "var values = {\n"
+            '\t"builtin": int,\n'
+            '\t"native": Node,\n'
+            '\t"project": Player,\n'
+            '\t"qualified": Game.Player,\n'
+            "}\n"
+        )
+        for marker in ("int,", "Node,", "Player,", "Game.Player,"):
+            with self.subTest(value=marker):
+                value = marker[:-1]
+                self.assertNotScoped(value, "entity.name.type.foundryscript", source=source)
+
+    def test_nested_dictionary_values_are_not_scoped_as_types_at_every_level(self) -> None:
+        source = (
+            "var nested = {\n"
+            '\t"outer": {\n'
+            '\t\t"inner": Node,\n'
+            '\t\t"deepest": {\n'
+            '\t\t\t"leaf": Player,\n'
+            "\t\t},\n"
+            "\t},\n"
+            "}\n"
+        )
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("Player,", "entity.name.type.foundryscript", source=source)
+
+    def test_a_lambda_nested_inside_a_dictionary_value_keeps_its_own_type_scopes(self) -> None:
+        source = 'var factories = {\n\t"build": func(value: int) -> Player:\n\t\treturn Player.new(),\n}\n'
+        self.assertScoped(": int", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped("-> Player", "entity.name.type.foundryscript", offset=3, source=source)
+
+    def test_accessor_shaped_dictionary_keys_are_not_scoped_as_accessors(self) -> None:
+        source = (
+            "var python_entries = {\n"
+            "\tget(): 1,\n"
+            "\tget: 2,\n"
+            "\tset(value): 3,\n"
+            "}\n"
+            "\n"
+            "var lua_entries = {\n"
+            "\tget = read_value,\n"
+            "\tset = write_value,\n"
+            "}\n"
+        )
+        for marker in ("get():", "get:", "set(value):", "get = read_value,", "set = write_value,"):
+            with self.subTest(key=marker):
+                self.assertNotScoped(marker, "storage.type.accessor.foundryscript", source=source)
+
+    def test_callable_dictionary_keys_keep_call_scope(self) -> None:
+        source = "var python_entries = {\n\tget(): 1,\n\tset(value): 3,\n}\n"
+        self.assertScoped("get():", "entity.name.function.call.foundryscript", source=source)
+        self.assertScoped("set(value):", "entity.name.function.call.foundryscript", source=source)
+
+    def test_real_property_accessors_outside_dictionaries_still_scope(self) -> None:
+        source = (
+            "var health: int:\n"
+            "\tget:\n"
+            "\t\treturn field\n"
+            "\n"
+            "var armor: int:\n"
+            "\tget():\n"
+            "\t\treturn field\n"
+            "\n"
+            "var speed: int:\n"
+            "\tget = read_speed\n"
+            "\tset = write_speed\n"
+            "\n"
+            "var mana: int:\n"
+            "\tset(value):\n"
+            "\t\tfield = value\n"
+        )
+        self.assertScoped("get:", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("get():", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("get = read_speed", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("set = write_speed", "storage.type.accessor.foundryscript", source=source)
+        self.assertScoped("set(value):", "storage.type.accessor.foundryscript", source=source)
+
+    def test_real_type_positions_outside_dictionaries_still_scope(self) -> None:
+        source = (
+            "var count: int = 0\n"
+            "\n"
+            "func convert(value: float) -> bool:\n"
+            "\treturn value != 0.0\n"
+            "\n"
+            "var project: Player = Player.new()\n"
+            "var qualified: Game.Player = Game.Player.new()\n"
+        )
+        self.assertScoped(": int", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped(": float", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped("-> bool", "entity.name.type.foundryscript", offset=3, source=source)
+        self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped(": Game.Player", "entity.name.type.foundryscript", offset=2, source=source)
+
+    def test_braces_inside_strings_and_comments_do_not_open_or_close_dictionary_context(self) -> None:
+        source = 'var text = "not { a dict }"\n# a comment with { braces }\nvar values = {"key": int}\n'
+        self.assertNotScoped("key", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("int}", "entity.name.type.foundryscript", source=source)
+
+    def test_a_declaration_after_a_closed_dictionary_gets_normal_scopes(self) -> None:
+        source = (
+            'var values = {"key": int}\nvar project: Player = Player.new()\nvar speed: int:\n\tget:\n\t\treturn field\n'
+        )
+        self.assertScoped("var project", "variable.other.declaration.foundryscript", offset=4, source=source)
+        self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped("get:", "storage.type.accessor.foundryscript", source=source)
+
+    def test_short_dictionary_value_lowercase_builtins_are_not_types(self) -> None:
+        source = 'var values = {"a": int, "b": float, "c": bool}\n'
+        for marker in ("int,", "float,", "bool}"):
+            with self.subTest(value=marker):
+                value = marker[:-1]
+                self.assertNotScoped(value, "entity.name.type.foundryscript", source=source)
+
     def test_short_quoted_node_paths_keep_their_scopes(self) -> None:
         source = (
             'var double_quoted = $"Some Node"\n'
