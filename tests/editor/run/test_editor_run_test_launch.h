@@ -182,6 +182,24 @@ TEST_CASE("[Editor][EditorRun] The built project_test command parses back into a
 	CHECK_EQ(result.user_args, expected_user_args);
 }
 
+TEST_CASE("[Editor][EditorRun] A trusted editor's forwarded options keep the command recognizable") {
+	EditorRun::LaunchContext context = make_context();
+	// This is what `Main::get_forwardable_cli_arguments()` hands to a launched child
+	// when the editor itself was started in trusted mode.
+	context.forwardable_arguments.push_back("--foundry-build-trusted");
+	context.forwardable_arguments.push_back("--verbose");
+
+	PackedStringArray command;
+	command.push_back("foundry");
+	command.append_array(to_array(EditorRun::build_project_test_arguments(context, make_launch())));
+
+	const FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(command);
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, FoundryCLIParser::CLIInvocation::PROJECT_TEST);
+	CHECK(result.trusted);
+	CHECK_EQ(result.invocation.runner, "res://addons/example/run.fs");
+}
+
 TEST_CASE("[Editor][DebugAdapter] An absent foundry/launch object means a scene launch") {
 	Dictionary arguments;
 	arguments["project"] = "/projects/demo";

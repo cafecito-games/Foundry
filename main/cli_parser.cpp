@@ -222,7 +222,10 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 		r_state.index++;
 		return true;
 	}
-	if (p_arg == "--trusted") {
+	// `--foundry-build-trusted` is the forwarded spelling the engine uses internally
+	// and is what an editor hands to the processes it launches, so it has to be
+	// understood ahead of a command exactly like the user-facing `--trusted`.
+	if (p_arg == "--trusted" || p_arg == "--foundry-build-trusted") {
 		r_state.result.trusted = true;
 		r_state.result.used_new_cli = true;
 		r_state.index++;
