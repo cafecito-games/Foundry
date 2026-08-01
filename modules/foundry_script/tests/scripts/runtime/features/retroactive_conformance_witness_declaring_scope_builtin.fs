@@ -9,14 +9,14 @@ class Crate[T]:
 
 
 trait Cratable:
-	abstract static func crated() -> Crate[Self]
+	abstract static func packed() -> Crate[Self]
 
 
 extend int uses Cratable:
-	static func crated() -> Crate[Self]:
+	static func packed() -> Crate[Self]:
 		var made: Crate[Self] = Crate[Self].new()
 		return made
 
 
 func test() -> void:
-	print(int.crated().summary())
+	print(int.packed().summary())

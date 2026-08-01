@@ -9380,6 +9380,9 @@ bool FSAnalyzer::reduce_identifier_from_witness_declaration_scope(FSParser::Iden
 				return true;
 			}
 			case FSParser::ClassNode::Member::CONSTANT: {
+				if (member.constant == nullptr || member.constant->initializer == nullptr) {
+					continue;
+				}
 				p_identifier->set_datatype(member.get_datatype());
 				p_identifier->is_constant = true;
 				p_identifier->reduced_value = member.constant->initializer->reduced_value;

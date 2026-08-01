@@ -1293,13 +1293,13 @@ TEST_CASE("[FoundryScript][BytecodeScript] A builtin witness binds Self inside a
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
 			"class Crate[T]:\n"
 			"\tfunc marker() -> String:\n"
-			"\t\treturn \"crated\"\n"
+			"\t\treturn \"packed\"\n"
 			"\n"
 			"trait Crating:\n"
-			"\tabstract static func crated() -> Crate[Self]\n"
+			"\tabstract static func packed() -> Crate[Self]\n"
 			"\n"
 			"extend int uses Crating:\n"
-			"\tstatic func crated() -> Crate[Self]:\n"
+			"\tstatic func packed() -> Crate[Self]:\n"
 			"\t\treturn Crate[Self].new()\n");
 	const String script_path = original->get_script_path();
 	BytecodeConformanceRegistryRestore registry_restore(script_path);
@@ -1310,7 +1310,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] A builtin witness binds Self inside a
 
 	FSFunction *compiled_witness = nullptr;
 	for (FSFunction *witness_function : TestFSBytecodeScriptAccessor::get_witness_functions(original)) {
-		if (witness_function != nullptr && witness_function->get_name() == SNAME("crated")) {
+		if (witness_function != nullptr && witness_function->get_name() == SNAME("packed")) {
 			compiled_witness = witness_function;
 		}
 	}
