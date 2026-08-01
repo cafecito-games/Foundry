@@ -202,8 +202,15 @@ bool FSJsonObjectMarshaller::conforms_to_serializable(Object *p_object) {
 	// retroactively on an engine class is invisible there — including for a scripted object whose
 	// native base carries it. The registry answers on the engine class and walks its ancestors, the
 	// same reach the type system uses when it accepts such a value as the trait.
+	//
+	// A compiled witness is required on top of the declaration. The registry's conformance index is
+	// also filled by analysis alone (the editor and the language server analyze files nothing loaded),
+	// and claiming an object on the strength of a declaration that installed no callable witness would
+	// turn its quoted `to_string()` into `null`: an unloadable conformance must leave encoding exactly
+	// as it was.
 	return FSConformanceRegistry::get_singleton()->native_class_conforms(
-			p_object->get_class_name(), serializable_trait_name(), true);
+				   p_object->get_class_name(), serializable_trait_name(), true) &&
+			find_native_to_json_witness(p_object) != nullptr;
 }
 
 // A script instance's `get_class()` is its native base, which says nothing about which script

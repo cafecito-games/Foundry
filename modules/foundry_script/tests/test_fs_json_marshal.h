@@ -31,6 +31,7 @@
 #pragma once
 
 #include "../fs_analyzer.h"
+#include "../fs_conformance_registry.h"
 #include "../fs_json_marshal.h"
 #include "../fs_parser.h"
 #include "../fs_script_extensible_native_hooks.h"
@@ -365,6 +366,41 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A retroactive conformance on a 
 	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(unconformed.ptr()));
 	CHECK_FALSE(FSJsonMarshal::has_to_json(unconformed.ptr()));
 	CHECK(JSON::stringify(Variant(unconformed.ptr())).begins_with("\""));
+
+	// The registry is process-global and the script cache can outlive this case, so drop the
+	// registration explicitly rather than leaving `Image` conformed for whatever runs next.
+	const String declaring_file = conformance_script->get_path();
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(declaring_file);
+	FSConformanceRegistry::get_singleton()->clear_file(declaring_file);
+	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(image.ptr()));
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] An analyzed but unloaded native conformance is declined") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	// Analysis alone registers a conformance: the editor and the language server analyze files that
+	// nothing loaded, which installs the declaration without ever compiling a witness. Claiming an
+	// object on that basis would replace its quoted `to_string()` with `null`, so the declaration is
+	// not enough on its own.
+	const String declaring_file = "res://json_marshal_host/analyzed_only.notest.fs";
+	FSConformanceRegistry::Conformance analyzed;
+	analyzed.target_keys.push_back("Resource");
+	analyzed.target_fqcn = "Resource";
+	analyzed.trait_name = FSJsonObjectMarshaller::serializable_trait_name();
+	analyzed.source_file = declaring_file;
+
+	Vector<FSConformanceRegistry::Conformance> analyzed_conformances;
+	analyzed_conformances.push_back(analyzed);
+	FSConformanceRegistry::get_singleton()->register_file_conformances(declaring_file, analyzed_conformances);
+
+	Ref<Resource> resource(memnew(Resource));
+	REQUIRE(FSConformanceRegistry::get_singleton()->native_class_conforms(
+			SNAME("Resource"), FSJsonObjectMarshaller::serializable_trait_name(), true));
+	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(resource.ptr()));
+	CHECK(JSON::stringify(Variant(resource.ptr())).begins_with("\""));
+
+	FSConformanceRegistry::get_singleton()->clear_file(declaring_file);
 }
 
 TEST_CASE("[Modules][FoundryScript][JsonMarshal] A conforming object returning a bad node encodes as null") {
