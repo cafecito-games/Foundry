@@ -42,8 +42,22 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	bool export_debug = true;
 	bool name_mangling_enabled = false;
 	bool name_mangling_prepared = false;
+	bool builtin_bytecode_prepared = false;
 	RBMap<String, FSNameManglerExport::PreparedScript> mangled_scripts;
 	mutable HashSet<String> pending_mangled_output_authorizations;
+	// Normalized private builtin artifact paths this export owns, and the single authorization
+	// each one gets for the exporter's own publication. Anything else landing on one of these
+	// paths would overwrite bytecode a stripped runtime needs.
+	HashSet<String> published_builtin_outputs;
+	mutable HashSet<String> pending_builtin_output_authorizations;
+
+	// One builtin's private compiled-bytecode companion, held until every builtin has compiled so
+	// a failure anywhere leaves nothing queued for the pack.
+	struct StagedBuiltinBytecode {
+		String builtin_path;
+		String output_path;
+		Vector<uint8_t> bytes;
+	};
 
 	// Export plugin callbacks cannot return an error; an EXPORT_MESSAGE_ERROR on the platform is
 	// what fails the export (see EditorExportPlatform::export_project_files).
@@ -51,9 +65,16 @@ class EditorExportFoundryScript : public EditorExportPlugin {
 	void _add_export_warning(const String &p_message);
 	void _add_export_error(const String &p_message);
 	void _clear_name_mangling_state();
+	void _clear_builtin_bytecode_state();
 	String _describe_script_errors(const String &p_path, Error p_fallback_error);
 	bool _is_native_resource_file(const String &p_path);
 	bool _validate_native_resource_for_compiled_bytecode(const String &p_path);
+	// Compiles p_path under the caller's already-entered export compilation scope and serializes it
+	// to compiled bytecode, applying the named-global validation every exported script gets. On
+	// failure r_error carries the message to report and the buffer is left untouched.
+	Error _compile_script_to_bytecode(const String &p_path, Vector<uint8_t> &r_buffer, String &r_error);
+	Error _prepare_name_mangling(const ExportFileManifest &p_manifest, String &r_error);
+	Error _prepare_builtin_bytecode(const ExportFileManifest &p_manifest, String &r_error);
 	void _export_file_mangled_bytecode(const String &p_path);
 	void _export_file_compiled_bytecode(const String &p_path);
 

@@ -30,6 +30,7 @@
 
 #include "fs_name_mangler_application.h"
 
+#include "fs_builtin_sources.h"
 #include "fs_conformance_registry.h"
 #include "fs_utility_functions.h"
 
@@ -2960,6 +2961,10 @@ struct FSNameManglerApplication::Transaction::Data {
 		if (dependency_root != nullptr && p_roots.has(dependency_root)) {
 			return true;
 		}
+		if (script_is_engine_builtin(dependency_root) ||
+				script_is_engine_builtin(dependency)) {
+			return true;
+		}
 
 		Diagnostic diagnostic;
 		diagnostic.surface = "closed graph";
@@ -3215,6 +3220,23 @@ struct FSNameManglerApplication::Transaction::Data {
 				Variant::get_type_by_name(p_identity) < Variant::VARIANT_MAX;
 	}
 
+	// Builtin Foundry Script types are engine-provided externals: they are declared inside the
+	// binary, never renamed, and packaged separately from the project, so a project reference to
+	// one is resolvable without the builtin appearing in the closed project graph.
+	static bool identity_is_engine_builtin(const String &p_identity) {
+		const StringName identity_name = p_identity;
+		if (!ScriptServer::is_global_class(identity_name)) {
+			return false;
+		}
+		return FSBuiltinSources::is_builtin_path(
+				ScriptServer::get_global_class_path(identity_name));
+	}
+
+	static bool script_is_engine_builtin(const FoundryScript *p_script) {
+		return p_script != nullptr &&
+				FSBuiltinSources::is_builtin_path(p_script->get_script_path());
+	}
+
 	bool validate_identity_dependency(
 			const String &p_identity,
 			const FoundryScript *p_referring,
@@ -3222,6 +3244,7 @@ struct FSNameManglerApplication::Transaction::Data {
 			Vector<Diagnostic> &r_diagnostics,
 			bool p_allow_native_or_builtin = false) const {
 		if (p_identity.is_empty() || identity_is_included(p_identity) ||
+				identity_is_engine_builtin(p_identity) ||
 				(p_allow_native_or_builtin &&
 						identity_is_native_or_builtin(p_identity))) {
 			return true;
@@ -3249,6 +3272,7 @@ struct FSNameManglerApplication::Transaction::Data {
 			identity = identity.left(identity.length() - 1);
 		}
 		if (identity.is_empty() || identity_is_included(identity) ||
+				identity_is_engine_builtin(identity) ||
 				identity_is_native_or_builtin(identity) ||
 				!ScriptServer::is_global_class(StringName(identity))) {
 			return true;

@@ -34,6 +34,7 @@
 
 #include "fs_name_mangler_export_test_utils.h"
 #include "fs_temporary_project_tree.h"
+#include "modules/foundry_script/fs_builtin_sources.h"
 #include "modules/foundry_script/tests/test_bytecode_serialization.h"
 
 #include "core/io/dir_access.h"
@@ -147,8 +148,8 @@ name_mangler_acceptance_read_scripts(const String &p_pack_path) {
 static void name_mangler_acceptance_require_script_inventory(
 		const RBMap<String, Vector<uint8_t>> &p_scripts,
 		const String &p_label) {
-	static constexpr int expected_path_count = 7;
-	static const char *expected_paths[expected_path_count] = {
+	static constexpr int expected_project_path_count = 7;
+	static const char *expected_project_paths[expected_project_path_count] = {
 		"res://acceptance_base.fsb",
 		"res://acceptance_derived.fsb",
 		"res://acceptance_trait.fsb",
@@ -158,8 +159,26 @@ static void name_mangler_acceptance_require_script_inventory(
 		"res://reflector.fsb",
 	};
 	CAPTURE(p_label);
-	REQUIRE_EQ(p_scripts.size(), expected_path_count);
-	if (p_scripts.size() != expected_path_count) {
+
+	// A compiled-bytecode pack also carries one private companion artifact per registered
+	// builtin, so a stripped template can load the engine-provided types it has no front-end
+	// to compile. Both the ordinary and the name-mangled export must contain the same set.
+	Vector<String> expected_paths;
+	List<String> builtin_paths;
+	FSBuiltinSources::get_registered_paths(&builtin_paths);
+	for (const String &builtin_path : builtin_paths) {
+		const String artifact_path =
+				FSBuiltinSources::get_exported_bytecode_path(builtin_path);
+		REQUIRE_FALSE(artifact_path.is_empty());
+		expected_paths.push_back(artifact_path);
+	}
+	for (int i = 0; i < expected_project_path_count; i++) {
+		expected_paths.push_back(expected_project_paths[i]);
+	}
+	expected_paths.sort();
+
+	REQUIRE_EQ(p_scripts.size(), expected_paths.size());
+	if (p_scripts.size() != expected_paths.size()) {
 		return;
 	}
 	int index = 0;

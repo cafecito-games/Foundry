@@ -73,4 +73,47 @@ TEST_CASE("[FSBuiltinSources] Project paths cannot masquerade as builtin") {
 	FSBuiltinSources::unregister_source("foundry://builtin/shadow_test.fs");
 }
 
+TEST_CASE("[FSBuiltinSources] Registered paths enumerate in sorted order") {
+	FSBuiltinSources::register_source("foundry://builtin/zeta_order_test.fs", "enum_name ZetaOrderTest:\n\tA\n");
+	FSBuiltinSources::register_source("foundry://builtin/alpha_order_test.fs", "enum_name AlphaOrderTest:\n\tA\n");
+
+	List<String> paths;
+	FSBuiltinSources::get_registered_paths(&paths);
+	String previous_path;
+	for (const String &path : paths) {
+		CHECK(previous_path <= path);
+		previous_path = path;
+	}
+	CHECK(paths.find("foundry://builtin/alpha_order_test.fs") != nullptr);
+	CHECK(paths.find("foundry://builtin/zeta_order_test.fs") != nullptr);
+
+	FSBuiltinSources::unregister_source("foundry://builtin/zeta_order_test.fs");
+	FSBuiltinSources::unregister_source("foundry://builtin/alpha_order_test.fs");
+}
+
+TEST_CASE("[FSBuiltinSources] Exported bytecode path replaces only the final extension") {
+	CHECK_EQ(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/json_node.fs"),
+			"res://.foundry/builtin/json_node.fsb");
+	// Relative subdirectories are preserved so two builtins can share a leaf name.
+	CHECK_EQ(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/nested/dir/thing.fs"),
+			"res://.foundry/builtin/nested/dir/thing.fsb");
+	// Only the trailing `.fs` is replaced; interior dots stay part of the name.
+	CHECK_EQ(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/json.node.fs"),
+			"res://.foundry/builtin/json.node.fsb");
+	CHECK_EQ(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/CASE.FS"),
+			"res://.foundry/builtin/CASE.fsb");
+}
+
+TEST_CASE("[FSBuiltinSources] Exported bytecode path rejects non-builtin and non-source paths") {
+	CHECK(FSBuiltinSources::get_exported_bytecode_path("res://json_node.fs").is_empty());
+	CHECK(FSBuiltinSources::get_exported_bytecode_path("user://json_node.fs").is_empty());
+	CHECK(FSBuiltinSources::get_exported_bytecode_path("foundry://other/json_node.fs").is_empty());
+	CHECK(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/json_node.fsc").is_empty());
+	CHECK(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/json_node.fsb").is_empty());
+	CHECK(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/json_node").is_empty());
+	CHECK(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/").is_empty());
+	CHECK(FSBuiltinSources::get_exported_bytecode_path("foundry://builtin/.fs").is_empty());
+	CHECK(FSBuiltinSources::get_exported_bytecode_path(String()).is_empty());
+}
+
 } // namespace TestFSBuiltinSources

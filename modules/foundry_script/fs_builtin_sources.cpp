@@ -37,8 +37,25 @@ HashMap<String, String> FSBuiltinSources::sources;
 
 const char *FSBuiltinSources::PATH_PREFIX = "foundry://builtin/";
 
+const char *FSBuiltinSources::EXPORTED_BYTECODE_PREFIX = "res://.foundry/builtin/";
+
 bool FSBuiltinSources::is_builtin_path(const String &p_path) {
 	return p_path.begins_with(PATH_PREFIX);
+}
+
+String FSBuiltinSources::get_exported_bytecode_path(const String &p_path) {
+	if (!is_builtin_path(p_path)) {
+		return String();
+	}
+	const String relative_path = p_path.substr(String(PATH_PREFIX).length());
+	if (relative_path.get_extension().to_lower() != "fs") {
+		return String();
+	}
+	const String relative_basename = relative_path.get_basename();
+	if (relative_basename.is_empty()) {
+		return String();
+	}
+	return String(EXPORTED_BYTECODE_PREFIX) + relative_basename + ".fsb";
 }
 
 void FSBuiltinSources::register_source(const String &p_path, const String &p_source) {
@@ -66,6 +83,7 @@ void FSBuiltinSources::get_registered_paths(List<String> *r_paths) {
 	for (const KeyValue<String, String> &entry : sources) {
 		r_paths->push_back(entry.key);
 	}
+	r_paths->sort();
 }
 
 void FSBuiltinSources::clear() {
