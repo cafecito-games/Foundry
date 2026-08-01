@@ -18,5 +18,14 @@ extend int uses Cratable:
 		return made
 
 
+# A Dictionary target treats any unresolved name as a potential key, so the fallback has to be
+# consulted ahead of that catch-all or the helper type would silently widen to Variant.
+extend Dictionary uses Cratable:
+	static func packed() -> Crate[Self]:
+		var made: Crate[Self] = Crate[Self].new()
+		return made
+
+
 func test() -> void:
 	print(int.packed().summary())
+	print(Dictionary.packed().summary())

@@ -8965,6 +8965,12 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 					return;
 				}
 				case Variant::DICTIONARY: {
+					// Any name is a potential key on a Dictionary, so an unresolved one widens to
+					// Variant. That is a catch-all rather than a real member, so a witness's
+					// declaration-site fallback is consulted before it.
+					if (p_base == nullptr && reduce_identifier_from_witness_declaration_scope(p_identifier)) {
+						return;
+					}
 					FSParser::DataType dummy;
 					dummy.kind = FSParser::DataType::VARIANT;
 					p_identifier->set_datatype(dummy);
