@@ -535,6 +535,11 @@ class TokenizationTests(unittest.TestCase):
         self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
         self.assertNotScoped("int,", "entity.name.type.foundryscript", source=source)
 
+    def test_a_dotted_member_access_dictionary_key_still_hides_a_type_shaped_value(self) -> None:
+        source = "var by_owner = {\n\towner.key: Node,\n\towner.key: int,\n}\n"
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("int,", "entity.name.type.foundryscript", source=source)
+
     def test_accessor_shaped_dictionary_keys_are_not_scoped_as_accessors(self) -> None:
         source = (
             "var python_entries = {\n"
