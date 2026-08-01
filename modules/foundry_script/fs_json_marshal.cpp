@@ -108,11 +108,13 @@ bool call_builtin_enum_static(const char *p_builtin_path, const StringName &p_en
 
 // The compiled witness that a retroactive conformance (`extend <EngineClass> uses JsonSerializable`)
 // supplies for the instance hook, or `nullptr` when the object's engine class and its ancestors
-// declare none. A static witness is rejected: the hook is an instance method, and dispatching a
-// static one would drop the receiver.
+// declare none. The lookup is scoped to the trait: a witness another trait supplies under the same
+// method name is not this hook and must not be mistaken for opting into JSON marshaling. A static
+// witness is rejected too, since dispatching one would drop the receiver.
 FSFunction *find_native_to_json_witness(Object *p_object) {
-	FSFunction *witness = FSConformanceRegistry::get_singleton()->find_native_witness_function(
-			p_object->get_class_name(), FSJsonMarshal::to_json_method_name());
+	FSFunction *witness = FSConformanceRegistry::get_singleton()->find_native_trait_witness_function(
+			p_object->get_class_name(), FSJsonObjectMarshaller::serializable_trait_name(),
+			FSJsonMarshal::to_json_method_name());
 	if (witness == nullptr || witness->is_static()) {
 		return nullptr;
 	}
@@ -203,14 +205,12 @@ bool FSJsonObjectMarshaller::conforms_to_serializable(Object *p_object) {
 	// native base carries it. The registry answers on the engine class and walks its ancestors, the
 	// same reach the type system uses when it accepts such a value as the trait.
 	//
-	// A compiled witness is required on top of the declaration. The registry's conformance index is
-	// also filled by analysis alone (the editor and the language server analyze files nothing loaded),
-	// and claiming an object on the strength of a declaration that installed no callable witness would
-	// turn its quoted `to_string()` into `null`: an unloadable conformance must leave encoding exactly
-	// as it was.
-	return FSConformanceRegistry::get_singleton()->native_class_conforms(
-				   p_object->get_class_name(), serializable_trait_name(), true) &&
-			find_native_to_json_witness(p_object) != nullptr;
+	// The question asked is deliberately "is a callable `to_json` witness registered for this trait",
+	// not "is such a conformance declared". A declaration alone is also recorded by analysis (the
+	// editor and the language server analyze files nothing loaded), and claiming an object whose
+	// witness was never compiled would turn its quoted `to_string()` into `null`. One correlated query
+	// is what keeps the trait and the callable witness from being satisfied by different conformances.
+	return find_native_to_json_witness(p_object) != nullptr;
 }
 
 // A script instance's `get_class()` is its native base, which says nothing about which script

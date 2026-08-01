@@ -253,6 +253,15 @@ public:
 	// dispatches for a subclass instance. Consulted by the runtime after a native call misses.
 	FSFunction *find_native_witness_function(const StringName &p_native_class, const StringName &p_method) const;
 
+	// The compiled witness for `p_method` supplied by a conformance of `p_native_class`, or of its
+	// nearest conforming ancestor, to `p_trait_name` specifically. Unlike `find_native_witness_function`
+	// this cannot answer with a witness another trait happens to supply under the same method name,
+	// which matters for a caller that decides whether an object opted into a protocol at all: pairing
+	// an unrelated witness with a conformance the caller only *believes* is loaded would silently
+	// change behavior. Scans the runtime store, so it belongs on a decision path, not a hot one.
+	FSFunction *find_native_trait_witness_function(const StringName &p_native_class,
+			const StringName &p_trait_name, const StringName &p_method) const;
+
 	// The compiled witness for `p_method` on builtin type `p_type`, or `nullptr` when none is registered.
 	// Consulted by the runtime after a builtin `Variant::callp` misses.
 	FSFunction *find_builtin_witness_function(Variant::Type p_type, const StringName &p_method) const;

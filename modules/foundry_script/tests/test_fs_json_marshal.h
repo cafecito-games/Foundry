@@ -366,13 +366,62 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A retroactive conformance on a 
 	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(unconformed.ptr()));
 	CHECK_FALSE(FSJsonMarshal::has_to_json(unconformed.ptr()));
 	CHECK(JSON::stringify(Variant(unconformed.ptr())).begins_with("\""));
+}
 
-	// The registry is process-global and the script cache can outlive this case, so drop the
-	// registration explicitly rather than leaving `Image` conformed for whatever runs next.
-	const String declaring_file = conformance_script->get_path();
-	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(declaring_file);
-	FSConformanceRegistry::get_singleton()->clear_file(declaring_file);
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A witness of another trait does not opt a native class in") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	// Re-register a real compiled witness under an unrelated trait name, which is what a conformance
+	// to some other trait that happens to require a method named `to_json` leaves in the registry.
+	// The script Ref is held for the whole case, so the borrowed function stays owned and alive, and
+	// its `JsonSerializable` registration is dropped so only the unrelated trait remains loaded.
+	const Ref<Script> witness_owner =
+			ResourceLoader::load("res://json_marshal_host/native_image_ext.notest.fs");
+	REQUIRE(witness_owner.is_valid());
+	REQUIRE(witness_owner->is_valid());
+
+	const String owner_file = witness_owner->get_path();
+	Vector<FSConformanceRegistry::RuntimeConformance> compiled =
+			FSConformanceRegistry::get_singleton()->get_runtime_witnesses(owner_file);
+	REQUIRE_FALSE(compiled.is_empty());
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(owner_file);
+	FSConformanceRegistry::get_singleton()->clear_file(owner_file);
+
+	const String probe_file = "res://json_marshal_host/probe_only.notest.fs";
+	for (FSConformanceRegistry::RuntimeConformance &conformance : compiled) {
+		conformance.trait_name = SNAME("JsonMarshalProbe");
+	}
+	FSConformanceRegistry::get_singleton()->register_runtime_witnesses(probe_file, compiled);
+
+	// ...combined with a `JsonSerializable` declaration on a base class that was analyzed but never
+	// loaded. Neither half is a conformance that can be marshaled, and pairing the trait from one with
+	// the witness from the other would invoke a method that never agreed to produce a `JsonNode`.
+	const String analyzed_file = "res://json_marshal_host/analyzed_only.notest.fs";
+	FSConformanceRegistry::Conformance analyzed;
+	analyzed.target_keys.push_back("Resource");
+	analyzed.target_fqcn = "Resource";
+	analyzed.trait_name = FSJsonObjectMarshaller::serializable_trait_name();
+	analyzed.source_file = analyzed_file;
+
+	Vector<FSConformanceRegistry::Conformance> analyzed_conformances;
+	analyzed_conformances.push_back(analyzed);
+	FSConformanceRegistry::get_singleton()->register_file_conformances(analyzed_file, analyzed_conformances);
+
+	Ref<Image> image(memnew(Image));
+	REQUIRE(FSConformanceRegistry::get_singleton()->native_class_conforms(
+			SNAME("Image"), FSJsonObjectMarshaller::serializable_trait_name(), true));
+	REQUIRE(FSConformanceRegistry::get_singleton()->find_native_witness_function(
+					SNAME("Image"), FSJsonMarshal::to_json_method_name()) != nullptr);
+	CHECK(FSConformanceRegistry::get_singleton()->find_native_trait_witness_function(
+				  SNAME("Image"), FSJsonObjectMarshaller::serializable_trait_name(),
+				  FSJsonMarshal::to_json_method_name()) == nullptr);
+
 	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(image.ptr()));
+	CHECK(JSON::stringify(Variant(image.ptr())).begins_with("\""));
+
+	FSConformanceRegistry::get_singleton()->clear_file(analyzed_file);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(probe_file);
 }
 
 TEST_CASE("[Modules][FoundryScript][JsonMarshal] An analyzed but unloaded native conformance is declined") {
