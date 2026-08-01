@@ -42,6 +42,14 @@ class JSONObjectMarshaller {
 public:
 	// Returns true if this object was handled; r_result is then a plain Variant tree.
 	virtual bool marshal_object(Object *p_object, Variant &r_result) = 0;
+	// Builds the language's JSON tree value from a plain parsed Variant. Returns false if the
+	// language cannot represent it, in which case core reports a generic failure.
+	virtual bool lift_variant(const Variant &p_parsed, Variant &r_node) = 0;
+	// Builds the language's result value for a parse failure. `p_line` is the line the parser
+	// stopped on, or a negative value when the failure carries no line information.
+	virtual bool make_parse_failure(const String &p_message, int p_line, Variant &r_result) = 0;
+	// Wraps a successfully lifted tree in the language's success result value.
+	virtual bool make_parse_success(const Variant &p_node, Variant &r_result) = 0;
 	virtual ~JSONObjectMarshaller() {}
 };
 
@@ -103,6 +111,10 @@ public:
 
 	static String stringify(const Variant &p_var, const String &p_indent = "", bool p_sort_keys = true, bool p_full_precision = false);
 	static Variant parse_string(const String &p_json_string);
+	// Parses JSON text into the scripting module's JSON tree value, wrapped in that module's
+	// result value so a parse failure carries its message instead of being dropped. Requires a
+	// registered marshaller, since core owns the parse but not the tree type.
+	static Variant parse_to_node(const String &p_json_text);
 
 	static void set_object_marshaller(JSONObjectMarshaller *p_marshaller);
 	// Lets a caller that temporarily swaps the marshaller put the previous one back instead of

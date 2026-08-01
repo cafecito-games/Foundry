@@ -607,6 +607,8 @@ private:
 			FSParser::FunctionNode **r_found_function = nullptr,
 			FSParser::ClassNode **r_found_in_class = nullptr,
 			const FSParser::DataType *p_self_type_override = nullptr);
+	bool apply_builtin_native_return_type_hint(const StringName &p_native_method_owner, const StringName &p_method,
+			const FSParser::Node *p_source, FSParser::DataType &r_return_type);
 	bool resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument);
 	void reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::SubscriptNode *p_callee);
 	bool function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);

@@ -35,6 +35,49 @@
 
 #include "core/object/script_language.h"
 
+namespace {
+
+struct NativeMethodReturnTypeHint {
+	const char *native_class;
+	const char *method;
+	const char *return_type;
+	const char *const *type_arguments;
+};
+
+static const char *const json_parse_to_node_type_arguments[] = {
+	"JsonNode",
+	nullptr,
+};
+
+static const NativeMethodReturnTypeHint native_method_return_type_hints[] = {
+	{ "JSON", "parse_to_node", "JsonResult", json_parse_to_node_type_arguments },
+};
+
+} // namespace
+
+bool FSBuiltinTypes::get_native_method_return_type_hint(
+		const StringName &p_native_method_owner, const StringName &p_method,
+		StringName &r_return_type, Vector<StringName> &r_type_arguments) {
+	if (p_native_method_owner == StringName() || p_method == StringName()) {
+		return false;
+	}
+
+	for (const NativeMethodReturnTypeHint &hint : native_method_return_type_hints) {
+		if (p_method != StringName(hint.method) ||
+				p_native_method_owner != StringName(hint.native_class)) {
+			continue;
+		}
+
+		r_return_type = StringName(hint.return_type);
+		r_type_arguments.clear();
+		for (const char *const *argument = hint.type_arguments; *argument != nullptr; argument++) {
+			r_type_arguments.push_back(StringName(*argument));
+		}
+		return true;
+	}
+	return false;
+}
+
 void FSBuiltinTypes::register_types() {
 	for (int i = 0; i < FS_BUILTIN_SOURCE_COUNT; i++) {
 		FSBuiltinSources::register_source(FS_BUILTIN_SOURCES[i].path, FS_BUILTIN_SOURCES[i].source);

@@ -687,9 +687,41 @@ Variant JSON::parse_string(const String &p_json_string) {
 	return json->get_data();
 }
 
+Variant JSON::parse_to_node(const String &p_json_text) {
+	ERR_FAIL_NULL_V_MSG(object_marshaller, Variant(),
+			"JSON.parse_to_node() requires a scripting module to provide the JSON tree type.");
+
+	Variant parsed;
+	String error_message;
+	int error_line = 0;
+	const Error error = _parse_string(p_json_text, parsed, error_message, error_line);
+
+	Variant result;
+	if (error != OK) {
+		ERR_FAIL_COND_V_MSG(!object_marshaller->make_parse_failure(error_message, error_line, result), Variant(),
+				"JSON.parse_to_node() could not build a failure result.");
+		return result;
+	}
+
+	Variant node;
+	if (!object_marshaller->lift_variant(parsed, node)) {
+		// A negative line marks a failure that did not come from the parser, so the message is
+		// not tied to a position in the text.
+		ERR_FAIL_COND_V_MSG(
+				!object_marshaller->make_parse_failure("The parsed value cannot be represented as a JSON tree.", -1, result),
+				Variant(), "JSON.parse_to_node() could not build a failure result.");
+		return result;
+	}
+
+	ERR_FAIL_COND_V_MSG(!object_marshaller->make_parse_success(node, result), Variant(),
+			"JSON.parse_to_node() could not build a success result.");
+	return result;
+}
+
 void JSON::_bind_methods() {
 	ClassDB::bind_static_method("JSON", D_METHOD("stringify", "data", "indent", "sort_keys", "full_precision"), &JSON::stringify, DEFVAL(""), DEFVAL(true), DEFVAL(false));
 	ClassDB::bind_static_method("JSON", D_METHOD("parse_string", "json_string"), &JSON::parse_string);
+	ClassDB::bind_static_method("JSON", D_METHOD("parse_to_node", "json_text"), &JSON::parse_to_node);
 	ClassDB::bind_method(D_METHOD("parse", "json_text", "keep_text"), &JSON::parse, DEFVAL(false));
 
 	ClassDB::bind_method(D_METHOD("get_data"), &JSON::get_data);
