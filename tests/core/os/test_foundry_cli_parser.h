@@ -918,24 +918,20 @@ TEST_CASE("[FoundryCLIParser] Project test accepts the debug transport options")
 }
 
 TEST_CASE("[FoundryCLIParser] Project test rejects malformed debug transport values") {
-	FoundryCLIParser::ParseResult bad_uri = FoundryCLIParser::parse(make_args({
-			"foundry", "project", "test", "--runner", "res://run.fs", "--remote-debug", "127.0.0.1:6007" }));
+	FoundryCLIParser::ParseResult bad_uri = FoundryCLIParser::parse(make_args({ "foundry", "project", "test", "--runner", "res://run.fs", "--remote-debug", "127.0.0.1:6007" }));
 	CHECK_FALSE(bad_uri.ok);
 	CHECK(bad_uri.error.contains("--remote-debug"));
 
-	FoundryCLIParser::ParseResult bad_pid = FoundryCLIParser::parse(make_args({
-			"foundry", "project", "test", "--runner", "res://run.fs", "--editor-pid", "not-a-pid" }));
+	FoundryCLIParser::ParseResult bad_pid = FoundryCLIParser::parse(make_args({ "foundry", "project", "test", "--runner", "res://run.fs", "--editor-pid", "not-a-pid" }));
 	CHECK_FALSE(bad_pid.ok);
 	CHECK(bad_pid.error.contains("--editor-pid"));
 
-	FoundryCLIParser::ParseResult missing_value = FoundryCLIParser::parse(make_args({
-			"foundry", "project", "test", "--runner", "res://run.fs", "--remote-debug" }));
+	FoundryCLIParser::ParseResult missing_value = FoundryCLIParser::parse(make_args({ "foundry", "project", "test", "--runner", "res://run.fs", "--remote-debug" }));
 	CHECK_FALSE(missing_value.ok);
 }
 
 TEST_CASE("[FoundryCLIParser] Project test still rejects unrelated unknown options") {
-	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
-			"foundry", "project", "test", "--runner", "res://run.fs", "--not-an-option" }));
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", "project", "test", "--runner", "res://run.fs", "--not-an-option" }));
 	CHECK_FALSE(result.ok);
 	CHECK(result.error.contains("--not-an-option"));
 }
