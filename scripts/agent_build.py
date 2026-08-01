@@ -619,8 +619,8 @@ def test_command(args: argparse.Namespace, target: BuildTarget | None = None) ->
     if target is None:
         target = resolve_build_target(args)
     command = [str(target.binary_path), "--headless", "test", "run"]
-    if args.test_case:
-        command.extend(["--case", args.test_case])
+    for case_filter in args.test_case or []:
+        command.extend(["--case", case_filter])
     command.append("--force-colors")
     return command
 
@@ -680,7 +680,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         description="Build Foundry with stable logging and progress output for cloud agents."
     )
     parser.add_argument("--test", action="store_true", help="Run the Foundry test suite after a successful build.")
-    parser.add_argument("--case", dest="test_case", help="Run a focused doctest case after building. Implies --test.")
+    parser.add_argument(
+        "--case",
+        dest="test_case",
+        action="append",
+        help=(
+            "Run a focused doctest case filter after building. Repeatable: every occurrence "
+            "is retained and forwarded, and the selected tests are the union of all supplied "
+            "patterns (matches any). Implies --test."
+        ),
+    )
     parser.add_argument(
         "--platform",
         choices=["auto", *SUPPORTED_SCONS_PLATFORMS],

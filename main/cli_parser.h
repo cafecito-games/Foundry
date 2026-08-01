@@ -89,7 +89,9 @@ public:
 		bool migrate_acknowledge_vcs = false;
 		String migrate_follow_up;
 
-		String test_case;
+		// Every exact `--case <pattern>` occurrence, retained in CLI order. Repeated
+		// occurrences are additive: a test matching any retained pattern is selected.
+		PackedStringArray test_cases;
 
 		bool test_progress = false;
 		String test_progress_format;
@@ -146,4 +148,11 @@ public:
 	static ParseResult parse(int p_argc, char *p_argv[]);
 	static bool can_run_without_main_scene(const CLIInvocation &p_invocation);
 	static bool is_new_cli_command(const String &p_arg);
+
+	// Combines every retained `--case` value into the single doctest `--test-case=`
+	// filter that selects the union of all supplied patterns. Doctest scans repeated
+	// occurrences of the same option from the end and keeps only the last one, so this
+	// merges Foundry's collection into doctest's own comma-separated filter grammar
+	// (honoring `\,` and `\\` escapes) instead of forwarding multiple raw options.
+	static String build_doctest_case_filter(const PackedStringArray &p_case_filters);
 };
