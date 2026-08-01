@@ -375,6 +375,24 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			result.native_type = p_datatype.native_type;
 		} break;
 		case FSParser::DataType::CLASS: {
+			// A retroactive conformance on an engine class analyzes through a stand-in ClassNode that is
+			// never registered as a real class, so it has no Foundry Script identity to serialize. Its
+			// `Self` — on its own or as an argument of a generic such as `JsonResult[Self]` — takes the
+			// native target's semantics; the ordinary class path below would instead produce a pathless
+			// script that compiled-bytecode export cannot encode.
+			if (p_datatype.class_type != nullptr && p_datatype.class_type->is_native_conformance_shim) {
+				result.kind = FSDataType::NATIVE;
+				result.builtin_type = Variant::OBJECT;
+				if (p_handle_metatype && p_datatype.is_meta_type && !p_datatype.is_type_handle_annotation) {
+					// A class handle, matching how the native branch erases a metatype.
+					result.native_type = Object::get_class_static();
+				} else {
+					result.native_type = p_datatype.class_type->base_type.native_type;
+					result.is_self_type = true;
+				}
+				break;
+			}
+
 			if (p_handle_metatype && p_datatype.is_meta_type && !p_datatype.is_type_handle_annotation) {
 				result.kind = FSDataType::NATIVE;
 				result.builtin_type = Variant::OBJECT;
