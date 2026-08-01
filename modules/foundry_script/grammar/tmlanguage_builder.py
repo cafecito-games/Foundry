@@ -56,6 +56,7 @@ ROOT_INCLUDE_ORDER = (
     "node-references",
     "calls",
     "type-positions",
+    "dictionary-literal",
     "operators",
     "punctuation",
 )
