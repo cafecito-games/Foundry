@@ -75,6 +75,12 @@ class OS_Unix : public OS {
 	bool _check_pid_is_running(const pid_t p_pid, int *r_status) const;
 
 protected:
+	// Whether an uncollected child of this instance still holds `p_pid`. A collected child
+	// keeps a cached result but has released the number, so only an uncollected one proves
+	// the PID cannot currently belong to anything else. A platform that tracks other kinds
+	// of owned processes uses this to resolve a PID claimed by both.
+	bool _holds_child_pid(const ProcessID &p_pid) const;
+
 	// UNIX only handles the core functions.
 	// inheriting platforms under unix (eg. X11) should handle the rest
 

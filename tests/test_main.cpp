@@ -168,6 +168,7 @@
 #include "tests/core/os/test_foundry_test_progress.h"
 #include "tests/core/os/test_foundry_version_info.h"
 #include "tests/core/os/test_os.h"
+#include "tests/core/os/test_os_process.h"
 #include "tests/core/string/test_fuzzy_search.h"
 #include "tests/core/string/test_node_path.h"
 #include "tests/core/string/test_string.h"

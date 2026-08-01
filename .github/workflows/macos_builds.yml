@@ -125,6 +125,25 @@ jobs:
         if: matrix.target == 'editor'
         run: ${{ matrix.bin }} test run --force-colors
 
+      # A bundled editor launches GUI instances through Launch Services rather than
+      # `fork()`, which is the only configuration where the bundled process-status and
+      # debug-adapter exit-code paths are exercised. Assemble the same bundle layout
+      # `generate_bundle=yes` produces around the universal binary and run those cases
+      # through it, so an unbundled run can never stand in for this coverage.
+      - name: Bundled process status and debug adapter regression
+        if: matrix.target == 'editor'
+        run: |
+          rm -rf bin/Foundry.app
+          mkdir -p bin/Foundry.app/Contents/MacOS
+          cp -R misc/dist/macos_tools.app/Contents/. bin/Foundry.app/Contents/
+          sed -e "s/\$short_version/1.0/" -e "s/\$version/1.0/" \
+            misc/dist/macos/editor_info_plist.template > bin/Foundry.app/Contents/Info.plist
+          cp ${{ matrix.bin }} bin/Foundry.app/Contents/MacOS/Foundry
+          chmod +x bin/Foundry.app/Contents/MacOS/Foundry
+          codesign --force --deep --sign - bin/Foundry.app
+          ./bin/Foundry.app/Contents/MacOS/Foundry --headless test run --case "*macOS bundled process exit status*" --force-colors
+          ./bin/Foundry.app/Contents/MacOS/Foundry --headless test run --case "*ToolingHost*" --force-colors
+
       - name: Foundry-Java macOS local input path aliases
         if: matrix.target == 'editor'
         run: |

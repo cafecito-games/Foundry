@@ -407,9 +407,7 @@ struct StagedAdapterProject {
 		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		REQUIRE_EQ(dir->make_dir_recursive(project_root), OK);
 
-		const String fixture_root = TestUtils::get_executable_dir()
-											.path_join("../tests/fixtures/foundry_test_adapter_transport")
-											.simplify_path();
+		const String fixture_root = TestUtils::get_fixture_path("foundry_test_adapter_transport");
 		stage("project.foundry", fixture_root);
 		stage("adapter_transport_runner.fs", fixture_root);
 	}

@@ -52,6 +52,28 @@ class OS_MacOS : public OS_Unix {
 
 	List<String> launch_service_args;
 
+	// An application opened through Launch Services is owned by this instance but is not a
+	// POSIX child, so `waitpid()` can never supply its termination status. Starting with
+	// macOS 11 the kernel will deliver `NOTE_EXIT | NOTE_EXITSTATUS` for such a process to
+	// a non-parent that may signal it, which is the only public source of a trustworthy
+	// numeric result. Older systems keep no tracker and stay on the unavailable sentinel.
+	struct BundleProcess {
+		int queue_descriptor = -1;
+		bool exited = false;
+		bool has_exit_code = false;
+		int exit_code = -1;
+	};
+
+	mutable Mutex bundle_process_mutex;
+	mutable HashMap<ProcessID, BundleProcess> bundle_processes;
+
+	void _track_bundle_process(ProcessID p_pid);
+	void _forget_bundle_process(ProcessID p_pid);
+	void _close_bundle_processes();
+	// Drains the pending exit event for a tracked bundled application and copies its
+	// current state out. Returns `false` when the PID is not a tracked bundled process.
+	bool _poll_bundle_process(ProcessID p_pid, BundleProcess &r_state) const;
+
 	CGFloat _weight_to_ct(int p_weight) const;
 	CGFloat _stretch_to_ct(int p_stretch) const;
 	String _get_default_fontname(const String &p_font_name) const;
@@ -136,6 +158,9 @@ public:
 	virtual Error create_instance(const List<String> &p_arguments, ProcessID *r_child_id = nullptr) override;
 	virtual Error open_with_program(const String &p_program_path, const List<String> &p_paths) override;
 	virtual bool is_process_running(const ProcessID &p_pid) const override;
+	virtual int get_process_exit_code(const ProcessID &p_pid) const override;
+	virtual void release_finished_process(const ProcessID &p_pid) override;
+	virtual Error kill(const ProcessID &p_pid) override;
 
 	virtual String get_unique_id() const override;
 	virtual String get_processor_name() const override;
@@ -165,6 +190,7 @@ public:
 	virtual void run() = 0;
 
 	OS_MacOS(const char *p_execpath, int p_argc, char **p_argv);
+	~OS_MacOS();
 };
 
 class OS_MacOS_NSApp : public OS_MacOS {
