@@ -219,6 +219,21 @@ static Variant bytecode_new_instance(const Ref<FoundryScript> &p_script) {
 	return instance;
 }
 
+// The Foundry Script instance behind an object value, or null when the value is not a script
+// instance. Reified type arguments live on the instance, not on the script, so a runtime descriptor
+// assertion has to go through it.
+static FSInstance *bytecode_fs_instance_of(const Variant &p_value) {
+	Object *object = p_value;
+	if (object == nullptr) {
+		return nullptr;
+	}
+	ScriptInstance *script_instance = object->get_script_instance();
+	if (script_instance == nullptr || script_instance->is_synthetic()) {
+		return nullptr;
+	}
+	return static_cast<FSInstance *>(script_instance);
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Members, signals, constants, annotations, and rpc round-trip") {
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
 			"@keep_name\n"
@@ -1324,6 +1339,154 @@ TEST_CASE("[FoundryScript][BytecodeScript] A builtin witness binds Self inside a
 	REQUIRE_EQ(return_type.type_arguments.size(), 1);
 	CHECK(return_type.type_arguments[0].kind == FSDataType::BUILTIN);
 	CHECK(return_type.type_arguments[0].builtin_type == Variant::INT);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A builtin witness reifies Self on the constructed instance") {
+	// The compiled signature already reports `Crate[int]`; only executing the witness shows which type
+	// argument the construction opcode actually attached. The witness is compiled into the declaring
+	// script because a builtin owns no bytecode, so an owner-based reification would bind that script's
+	// runtime base instead of the conformance target.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tvar value: T\n"
+			"\n"
+			"\tfunc store(next: T) -> void:\n"
+			"\t\tvalue = next\n"
+			"\n"
+			"trait ReifyCrating:\n"
+			"\tabstract static func reified_packed(value: Self) -> Crate[Self]\n"
+			"\n"
+			"extend int uses ReifyCrating:\n"
+			"\tstatic func reified_packed(value: Self) -> Crate[Self]:\n"
+			"\t\tvar made: Crate[Self] = Crate[Self].new()\n"
+			"\t\tmade.store(value)\n"
+			"\t\treturn made\n"
+			"\n"
+			"func run() -> Crate[int]:\n"
+			"\treturn int.reified_packed(7)\n");
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	// The instance the witness built carries exactly one reified argument, and it is the builtin
+	// conformance target rather than a widened Variant or the declaring script's base.
+	const auto check_reified_instance = [](const Variant &p_crate) {
+		FSInstance *crate_instance = bytecode_fs_instance_of(p_crate);
+		REQUIRE(crate_instance != nullptr);
+		const Vector<ContainerType> &type_arguments = crate_instance->get_type_arguments();
+		REQUIRE_EQ(type_arguments.size(), 1);
+		CHECK(type_arguments[0].builtin_type == Variant::INT);
+		CHECK(type_arguments[0].script.is_null());
+		CHECK(type_arguments[0].class_name == StringName());
+		Object *crate_object = p_crate;
+		REQUIRE(crate_object != nullptr);
+		CHECK(crate_object->get("value") == Variant(7));
+	};
+
+	{
+		const Variant instance_variant = bytecode_new_instance(original);
+		Object *instance = instance_variant;
+		check_reified_instance(bytecode_instance_call(instance, SNAME("run"), {}));
+	}
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	const Variant restored_instance_variant = bytecode_new_instance(restored);
+	Object *restored_instance = restored_instance_variant;
+	check_reified_instance(bytecode_instance_call(restored_instance, SNAME("run"), {}));
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A witness binds an inherited inner class's outer scope") {
+	// `Token` is declared in the outer class of the inner class the target inherits, and the target's
+	// own outer class declares a different class under the same name. Analysis binds the inherited
+	// one, so compilation has to emit that identity: a lookup that skipped the inherited outer scope
+	// would silently emit the target's own `Token` instead, before and after a bytecode round-trip.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class BaseOuter:\n"
+			"\tclass Token:\n"
+			"\t\tfunc label() -> String:\n"
+			"\t\t\treturn \"inherited-outer\"\n"
+			"\n"
+			"\tclass Inner:\n"
+			"\t\tpass\n"
+			"\n"
+			"class TargetOuter:\n"
+			"\tclass Token:\n"
+			"\t\tfunc label() -> String:\n"
+			"\t\t\treturn \"target-outer\"\n"
+			"\n"
+			"\tclass Derived extends BaseOuter.Inner:\n"
+			"\t\tpass\n"
+			"\n"
+			"trait Taggable:\n"
+			"\tabstract func make_token() -> RefCounted\n"
+			"\n"
+			"extend TargetOuter.Derived uses Taggable:\n"
+			"\tfunc make_token() -> RefCounted:\n"
+			"\t\treturn Token.new()\n"
+			"\n"
+			"func run() -> RefCounted:\n"
+			"\tvar tagged: Taggable = TargetOuter.Derived.new()\n"
+			"\treturn tagged.make_token()\n");
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator base_outer =
+			original->get_subclasses().find(SNAME("BaseOuter"));
+	REQUIRE(base_outer);
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator inherited_token =
+			base_outer->value->get_subclasses().find(SNAME("Token"));
+	REQUIRE(inherited_token);
+	const String inherited_token_name = inherited_token->value->get_fully_qualified_name();
+
+	// The constructed object's own script is the identity assertion: same declaring file, and the
+	// inner-class name of the inherited outer scope rather than the target's own.
+	const auto check_token_identity = [&](const Variant &p_token) {
+		Object *token_object = p_token;
+		REQUIRE(token_object != nullptr);
+		const Ref<FoundryScript> token_script = token_object->get_script();
+		REQUIRE(token_script.is_valid());
+		CHECK(token_script->get_script_path() == script_path);
+		CHECK(token_script->get_fully_qualified_name() == inherited_token_name);
+		CHECK(String(bytecode_instance_call(token_object, SNAME("label"), {})) == "inherited-outer");
+	};
+
+	{
+		const Variant instance_variant = bytecode_new_instance(original);
+		Object *instance = instance_variant;
+		check_token_identity(bytecode_instance_call(instance, SNAME("run"), {}));
+	}
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	const Variant restored_instance_variant = bytecode_new_instance(restored);
+	Object *restored_instance = restored_instance_variant;
+	check_token_identity(bytecode_instance_call(restored_instance, SNAME("run"), {}));
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds") {
