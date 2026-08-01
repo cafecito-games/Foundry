@@ -98,7 +98,7 @@
 				if parsed.is_ok():
 					var player := Player.from_json(parsed.value)
 				[/codeblock]
-				[b]Note:[/b] JSON has a single number type, so a number with no fractional part is reported as an [code]Int[/code] node and any other number as a [code]Float[/code] node. A decoder for a float field should accept both.
+				[b]Note:[/b] JSON has a single number type, so a number with no fractional part is reported as an [code]Int[/code] node and any other number as a [code]Float[/code] node. A decoder for a float field should accept both. Numbers are parsed as doubles, so a literal too large to be held exactly is rounded before it reaches the tree.
 				[b]Note:[/b] The [code]JsonNode[/code] and [code]JsonResult[/code] types are provided by the scripting language. Calling this method fails when no scripting module supplies them.
 			</description>
 		</method>

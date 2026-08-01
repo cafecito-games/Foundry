@@ -394,6 +394,14 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A parsed whole number lifts as 
 	REQUIRE(FSJsonObjectMarshaller::prepare_parsed_value(1.0e30, 0, prepared));
 	CHECK_EQ(prepared.get_type(), Variant::FLOAT);
 
+	// A literal beyond a double's exact range is already rounded by the parser, so the node carries
+	// the rounded value rather than the digits in the text. Nothing here can recover them.
+	const Variant parsed_beyond_exact_range = JSON::parse_string("9007199254740993");
+	REQUIRE_EQ(parsed_beyond_exact_range.get_type(), Variant::FLOAT);
+	REQUIRE(FSJsonObjectMarshaller::prepare_parsed_value(parsed_beyond_exact_range, 0, prepared));
+	CHECK_EQ(prepared.get_type(), Variant::INT);
+	CHECK_EQ(int64_t(prepared), 9007199254740992);
+
 	// The rewrite reaches into containers.
 	Array items;
 	items.push_back(2.0);

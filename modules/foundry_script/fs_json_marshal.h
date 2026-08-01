@@ -102,7 +102,11 @@ public:
 	// no fractional part becomes an `Int` node here, otherwise the `Int` case would exist but never
 	// occur in a parsed document and an `int` field could not be decoded by matching it. A decoder
 	// for a `float` field therefore accepts both `Int` and `Float`, as JSON decoders generally do.
-	// Exposed for tests.
+	//
+	// The node carries exactly what the parser produced and never invents precision: a literal too
+	// large for a double to hold exactly has already been rounded before this runs, so it becomes
+	// the `Int` nearest to the rounded double rather than the digits in the text. A number no
+	// `int64_t` can hold stays a `Float`. Exposed for tests.
 	static bool prepare_parsed_value(const Variant &p_value, int p_depth, Variant &r_prepared);
 
 	virtual bool marshal_object(Object *p_object, Variant &r_result) override;
