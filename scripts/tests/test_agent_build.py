@@ -303,6 +303,23 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(before, after)
 
+    def test_ninja_state_ignores_foundry_project_state(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        args = agent_build.parse_args(["--backend", "ninja"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory) / "Foundry"
+            project_state = repo_root / ".foundry" / "editor"
+            project_state.mkdir(parents=True)
+            (repo_root / "methods.py").write_text("VALUE = 1\n", encoding="utf-8")
+            generated_state = project_state / "filesystem_cache.py"
+            generated_state.write_text("VALUE = 1\n", encoding="utf-8")
+            before = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+            generated_state.write_text("VALUE = 2\n", encoding="utf-8")
+            after = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertEqual(before, after)
+
     def test_ninja_state_changes_when_custom_configuration_is_created_or_changed(self) -> None:
         target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
         args = agent_build.parse_args(["--backend", "ninja"])

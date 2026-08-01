@@ -1191,7 +1191,7 @@ if env["ninja"]:
     ninja_regeneration_dependencies = set()
     excluded_build_description_directories = {
         ".git",
-        ".godot",
+        ".foundry",
         ".ninja",
         ".test_scratch",
         ".worktrees",

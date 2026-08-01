@@ -44,7 +44,7 @@ NINJA_OWNED_SCONS_KEYS = frozenset(
 )
 TELEMETRY_TIMEOUT_SECONDS = 5.0
 BUILD_DESCRIPTION_EXCLUDED_DIRECTORIES = frozenset(
-    {".git", ".godot", ".ninja", ".test_scratch", ".worktrees", "__pycache__", "bin", "build", "out"}
+    {".foundry", ".git", ".ninja", ".test_scratch", ".worktrees", "__pycache__", "bin", "build", "out"}
 )
 
 
