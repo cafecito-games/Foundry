@@ -9978,6 +9978,32 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 		return false;
 	}
 
+	// Walks one lexical chain. `r_name_taken` reports that some class in the chain declares the name,
+	// whether or not it was usable as a tuple, so an outer chain that shadows the name stops the search
+	// instead of falling through to another scope.
+	const auto find_in_lexical_chain = [&](FSParser::ClassNode *p_start, bool p_walk_outer, bool &r_name_taken) -> bool {
+		r_name_taken = false;
+		FSParser::ClassNode *candidate = p_start;
+		while (candidate != nullptr) {
+			if (candidate->has_member(p_name)) {
+				r_name_taken = true;
+				if (candidate->get_member(p_name).type != FSParser::ClassNode::Member::TUPLE) {
+					// A same-named member of another kind shadows any outer tuple declaration.
+					return false;
+				}
+				resolve_class_member(candidate, p_name, p_source);
+				const FSParser::DataType tuple_type = candidate->get_member(p_name).get_datatype();
+				if (!tuple_type.is_set() || tuple_type.kind != FSParser::DataType::TUPLE) {
+					return false;
+				}
+				r_tuple_meta_type = p_is_self ? tuple_type : substitute_member_type(tuple_type, p_base_type, nullptr, nullptr);
+				return true;
+			}
+			candidate = p_walk_outer ? candidate->outer : nullptr;
+		}
+		return false;
+	};
+
 	// A bare name is looked up in the enclosing class and then outwards through its lexical scopes;
 	// a qualified name only looks at the named class itself.
 	FSParser::ClassNode *candidate = p_is_self ? parser->current_class : nullptr;
@@ -9988,21 +10014,20 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 		candidate = p_base_type.class_type;
 	}
 
-	while (candidate != nullptr) {
-		if (candidate->has_member(p_name)) {
-			if (candidate->get_member(p_name).type != FSParser::ClassNode::Member::TUPLE) {
-				// A same-named member of another kind shadows any outer tuple declaration.
-				return false;
-			}
-			resolve_class_member(candidate, p_name, p_source);
-			const FSParser::DataType tuple_type = candidate->get_member(p_name).get_datatype();
-			if (!tuple_type.is_set() || tuple_type.kind != FSParser::DataType::TUPLE) {
-				return false;
-			}
-			r_tuple_meta_type = p_is_self ? tuple_type : substitute_member_type(tuple_type, p_base_type, nullptr, nullptr);
-			return true;
-		}
-		candidate = p_is_self ? candidate->outer : nullptr;
+	bool name_taken = false;
+	if (find_in_lexical_chain(candidate, p_is_self, name_taken)) {
+		return true;
+	}
+	if (name_taken) {
+		return false;
+	}
+
+	// A conformance witness falls back to the lexical type scope of the file declaring the `extend`, so
+	// a named tuple declared beside the conformance stays constructible from the witness even when the
+	// target is foreign, native, or builtin.
+	if (p_is_self && witness_declaration_scope != nullptr && parser->current_class == witness_target_class) {
+		bool fallback_name_taken = false;
+		return find_in_lexical_chain(witness_declaration_scope, true, fallback_name_taken);
 	}
 	return false;
 }
