@@ -430,6 +430,7 @@ private:
 	static bool is_type_bearing_member(const FSParser::ClassNode::Member &p_member);
 	bool declaration_site_class_declares_type(FSParser::ClassNode *p_class, const StringName &p_name, FSParser::Node *p_source);
 	bool reduce_identifier_from_witness_declaration_scope(FSParser::IdentifierNode *p_identifier);
+	bool witness_target_scope_declares_name(const StringName &p_name, const FSParser::Node *p_source);
 
 	Error resolve_class_inheritance(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_class_inheritance(FSParser::ClassNode *p_class, bool p_recursive);

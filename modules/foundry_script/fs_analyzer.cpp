@@ -10024,11 +10024,61 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 
 	// A conformance witness falls back to the lexical type scope of the file declaring the `extend`, so
 	// a named tuple declared beside the conformance stays constructible from the witness even when the
-	// target is foreign, native, or builtin.
-	if (p_is_self && witness_declaration_scope != nullptr && parser->current_class == witness_target_class) {
+	// target is foreign, native, or builtin. Tuple construction is decided before ordinary call
+	// resolution, so the target's full surface — including inherited and native members — is checked
+	// first; otherwise a declaring-file tuple could capture a call that means a target method.
+	if (p_is_self && witness_declaration_scope != nullptr && parser->current_class == witness_target_class &&
+			!witness_target_scope_declares_name(p_name, p_source)) {
 		bool fallback_name_taken = false;
 		return find_in_lexical_chain(witness_declaration_scope, true, fallback_name_taken);
 	}
+	return false;
+}
+
+// True when the conformance target under witness analysis already supplies `p_name` anywhere on its
+// surface: its own members, its base chain, its lexical outers, its builtin surface, or its native
+// base's ClassDB entry. The declaration-site fallback must never override any of those.
+bool FSAnalyzer::witness_target_scope_declares_name(const StringName &p_name, const FSParser::Node *p_source) {
+	if (witness_target_class == nullptr) {
+		return false;
+	}
+
+	List<FSParser::ClassNode *> target_scope_classes;
+	get_class_node_current_scope_classes(witness_target_class, &target_scope_classes, const_cast<FSParser::Node *>(p_source));
+	for (FSParser::ClassNode *target_scope_class : target_scope_classes) {
+		if (target_scope_class->has_member(p_name) ||
+				(target_scope_class->identifier != nullptr && target_scope_class->identifier->name == p_name)) {
+			return true;
+		}
+	}
+
+	const FSParser::DataType self_type = witness_target_class->get_datatype();
+	if (self_type.kind == FSParser::DataType::BUILTIN && self_type.builtin_type != Variant::NIL) {
+		if (Variant::has_builtin_method(self_type.builtin_type, p_name) ||
+				Variant::has_member(self_type.builtin_type, p_name) ||
+				Variant::has_constant(self_type.builtin_type, p_name)) {
+			return true;
+		}
+	}
+
+	StringName native_type;
+	for (FSParser::ClassNode *cursor = witness_target_class; cursor != nullptr; cursor = cursor->base_type.class_type) {
+		if (cursor->base_type.native_type != StringName()) {
+			native_type = cursor->base_type.native_type;
+		}
+	}
+	if (native_type != StringName() && class_exists(native_type)) {
+		if (ClassDB::has_method(native_type, p_name) || ClassDB::has_property(native_type, p_name) ||
+				ClassDB::has_signal(native_type, p_name) || ClassDB::has_enum(native_type, p_name)) {
+			return true;
+		}
+		bool valid = false;
+		ClassDB::get_integer_constant(native_type, p_name, &valid);
+		if (valid) {
+			return true;
+		}
+	}
+
 	return false;
 }
 
