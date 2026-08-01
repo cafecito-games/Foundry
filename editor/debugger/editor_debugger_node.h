@@ -120,6 +120,13 @@ private:
 	CameraOverride camera_override = OVERRIDE_NONE;
 	HashMap<Breakpoint, bool, Breakpoint> breakpoints;
 
+	// Breakpoints currently being reported to an open script tab's gutter via
+	// "breakpoint_gutter_sync_requested". The tab reports its new state back through
+	// the code editor's own toggle signal, which re-enters set_breakpoint() with the
+	// same (path, line, enabled) synchronously; this set makes that specific re-entry
+	// a no-op without otherwise changing set_breakpoint()'s behavior (see set_breakpoint()).
+	HashSet<Breakpoint, Breakpoint> breakpoints_syncing_to_gutter;
+
 	HashSet<Ref<EditorDebuggerPlugin>> debugger_plugins;
 
 	ScriptEditorDebugger *_add_debugger();

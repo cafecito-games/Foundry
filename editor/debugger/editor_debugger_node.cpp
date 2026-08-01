@@ -229,6 +229,7 @@ void EditorDebuggerNode::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("breaked", PropertyInfo(Variant::BOOL, "reallydid"), PropertyInfo(Variant::BOOL, "can_debug")));
 	ADD_SIGNAL(MethodInfo("breakpoint_toggled", PropertyInfo(Variant::STRING, "path"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::BOOL, "enabled")));
 	ADD_SIGNAL(MethodInfo("breakpoint_set_in_tree", PropertyInfo("script"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::BOOL, "enabled"), PropertyInfo(Variant::INT, "debugger")));
+	ADD_SIGNAL(MethodInfo("breakpoint_gutter_sync_requested", PropertyInfo(Variant::STRING, "path"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::BOOL, "enabled")));
 	ADD_SIGNAL(MethodInfo("breakpoints_cleared_in_tree", PropertyInfo(Variant::INT, "debugger")));
 }
 
@@ -695,12 +696,34 @@ bool EditorDebuggerNode::is_ignore_error_breaks() const {
 }
 
 void EditorDebuggerNode::set_breakpoint(const String &p_path, int p_line, bool p_enabled) {
-	breakpoints[Breakpoint(p_path, p_line)] = p_enabled;
+	const Breakpoint key(p_path, p_line);
+	if (breakpoints_syncing_to_gutter.has(key)) {
+		// Re-entered synchronously from the gutter refresh this same call triggered
+		// below (see breakpoint_gutter_sync_requested); the state it reports back
+		// always matches what was just stored, so this is a no-op. Everything else
+		// about set_breakpoint() stays unconditional: callers such as the DAP tooling
+		// host re-register already-known breakpoints on reconnect specifically to
+		// rebuild state that only lives on their side, so breakpoint_toggled has to
+		// fire on every top-level call, not just ones that change our own map.
+		return;
+	}
+
+	breakpoints[key] = p_enabled;
 	_for_all(tabs, [&](ScriptEditorDebugger *dbg) {
 		dbg->set_breakpoint(p_path, p_line, p_enabled);
 	});
 
 	emit_signal(SNAME("breakpoint_toggled"), p_path, p_line, p_enabled);
+
+	// Callers that register breakpoints without going through a script tab's own
+	// gutter (currently only the DAP tooling host) still need already-open tabs to
+	// reflect the change. The gutter reports its new state back through the code
+	// editor's own toggle signal, which re-enters this method with the same
+	// (path, line, enabled); the guard above turns that specific re-entry into a
+	// no-op instead of double-emitting breakpoint_toggled for one external call.
+	breakpoints_syncing_to_gutter.insert(key);
+	emit_signal(SNAME("breakpoint_gutter_sync_requested"), p_path, p_line, p_enabled);
+	breakpoints_syncing_to_gutter.erase(key);
 }
 
 void EditorDebuggerNode::set_breakpoints(const String &p_path, const Array &p_lines) {
