@@ -28,6 +28,29 @@
 		[codeblock]
 		var data = JSON.parse_string(json_string) # Returns null if parsing failed.
 		[/codeblock]
+		A class can customize its own encoding and decoding by conforming to the [code]JsonSerializable[/code] trait, which declares [code]to_json() -> JsonNode[/code] and [code]static from_json(node: JsonNode) -> JsonResult[Self][/code]. [method stringify] calls [code]to_json()[/code] on any conforming value it encounters, at the top level or nested inside an [Array] or [Dictionary]; [method parse_to_node] is the counterpart that hands a parsed document to [code]from_json()[/code].
+		A conforming type that nests another conforming type composes by explicit delegation, not by any automatic mechanism: the parent's [code]to_json()[/code] calls the child's [code]to_json()[/code] directly, and the parent's [code]from_json()[/code] calls the child's [code]from_json()[/code] and forwards a failure with [code]JsonResult.nested(error, "key")[/code], which re-roots the reported error path at the document instead of at the nested value.
+		[codeblock]
+		class_name Player extends Node uses JsonSerializable
+
+		var weapon: Weapon
+
+		func to_json() -> JsonNode:
+			return JsonNode.object_of({"weapon": weapon.to_json()})
+
+		static func from_json(node: JsonNode) -> JsonResult[Player]:
+			match node:
+				JsonNode.Object(var entries):
+					var weapon_result := Weapon.from_json(entries.get("weapon", JsonNode.Null))
+					if not weapon_result.is_ok():
+						return JsonResult[Player].nested(weapon_result.error, "weapon")
+					var player := Player.new()
+					player.weapon = weapon_result.value
+					return JsonResult[Player].ok(player)
+				_:
+					return JsonResult[Player].fail("expected an object", "$")
+		[/codeblock]
+		[b]Note:[/b] Custom marshaling has two known limitations. Enums, tuples, and builtin value types are never marshaled through [code]to_json()[/code]/[code]from_json()[/code]: a tagged union or tuple value is a read-only [Array] and a plain enum is an [int] at runtime, so neither carries the type identity [method stringify] needs to dispatch on. Retroactive conformance declared on a scriptless native class is not honored either, because dispatch is keyed on [method Object.get_script]; only a scripted class, or a native class instantiated with a script attached, is checked.
 		[b]Note:[/b] Both parse methods do not fully comply with the JSON specification:
 		- Trailing commas in arrays or objects are ignored, instead of causing a parser error.
 		- New line and tab characters are accepted in string literals, and are treated like their corresponding escape sequences [code]\n[/code] and [code]\t[/code].
@@ -98,7 +121,7 @@
 				if parsed.is_ok():
 					var player := Player.from_json(parsed.value)
 				[/codeblock]
-				[b]Note:[/b] JSON has a single number type, so a number with no fractional part is reported as an [code]Int[/code] node and any other number as a [code]Float[/code] node. A decoder for a float field should accept both. Numbers are parsed as doubles, so a literal too large to be held exactly is rounded before it reaches the tree.
+				[b]Note:[/b] JSON has a single number type, so a number with no fractional part is reported as an [code]Int[/code] node and any other number as a [code]Float[/code] node. These are kept as two separate cases rather than one: folding them together would force every whole number through the [code]Float[/code] case, so decoding a [code skip-lint]hp: int[/code] field would either lose the value's [code skip-lint]int[/code] type or print a whole number like [code]1.0[/code] instead of [code]1[/code]. A decoder for a [code skip-lint]float[/code] field should accept both cases, as most JSON decoders do. Numbers are parsed as doubles, so a literal too large to be held exactly is rounded before it reaches the tree.
 				[b]Note:[/b] The [code]JsonNode[/code] and [code]JsonResult[/code] types are provided by the scripting language. Calling this method fails when no scripting module supplies them.
 			</description>
 		</method>
@@ -110,6 +133,7 @@
 			<param index="3" name="full_precision" type="bool" default="false" />
 			<description>
 				Converts a [Variant] var to JSON text and returns the result. Useful for serializing data to store or send over the network.
+				[b]Note:[/b] An object that conforms to the [code]JsonSerializable[/code] trait is encoded through its own [code]to_json()[/code] instead of the default conversion below; see the class description for how to declare and compose it.
 				[b]Note:[/b] The JSON specification does not define integer or float types, but only a [i]number[/i] type. Therefore, converting a Variant to JSON text will convert all numerical values to [float] types.
 				[b]Note:[/b] If [param full_precision] is [code]true[/code], when stringifying floats, the unreliable digits are stringified in addition to the reliable digits to guarantee exact decoding.
 				The [param indent] parameter controls if and how something is indented; its contents will be used where there should be an indent in the output. Even spaces like [code]"   "[/code] will work. [code]\t[/code] and [code]\n[/code] can also be used for a tab indent, or to make a newline for each indent respectively.
