@@ -6,7 +6,10 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -69,6 +72,159 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
         self.assertEqual(agent_build.format_duration(0), "0s")
         self.assertEqual(agent_build.format_duration(65), "1m05s")
         self.assertEqual(agent_build.format_duration(3661), "1h01m01s")
+
+    def test_read_ccache_stats_parses_machine_output(self) -> None:
+        completed = subprocess.CompletedProcess(
+            ["ccache"], 0, stdout='{"cache_hit_direct": 7, "cache_miss": 3}', stderr=""
+        )
+        stats = agent_build.read_ccache_stats({"PATH": "/bin"}, run=lambda *args, **kwargs: completed)
+        self.assertEqual(stats, {"cache_hit_direct": 7, "cache_miss": 3})
+
+    def test_read_ccache_stats_uses_per_invocation_stats_log(self) -> None:
+        completed = subprocess.CompletedProcess(["ccache"], 0, stdout="{}", stderr="")
+        run = mock.Mock(return_value=completed)
+        env = {"PATH": "/bin", "CCACHE_STATSLOG": "/tmp/invocation.stats"}
+
+        self.assertEqual(agent_build.read_ccache_stats(env, run=run), {})
+
+        run.assert_called_once_with(
+            ["ccache", "--print-log-stats", "--format=json"],
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=agent_build.TELEMETRY_TIMEOUT_SECONDS,
+        )
+
+    def test_read_ccache_stats_reports_command_and_payload_errors(self) -> None:
+        cases = (
+            (
+                "nonzero",
+                subprocess.CompletedProcess(["ccache"], 1, stdout="", stderr="statistics unavailable"),
+                "statistics unavailable",
+            ),
+            (
+                "malformed",
+                subprocess.CompletedProcess(["ccache"], 0, stdout="{", stderr=""),
+                "invalid ccache statistics JSON",
+            ),
+            (
+                "non-object",
+                subprocess.CompletedProcess(["ccache"], 0, stdout="[]", stderr=""),
+                "ccache statistics were not a JSON object",
+            ),
+        )
+        for name, completed, expected_error in cases:
+            with self.subTest(name=name):
+                result = agent_build.read_ccache_stats({}, run=mock.Mock(return_value=completed))
+                self.assertIn(expected_error, str(result["error"]))
+
+    def test_read_ccache_stats_reports_timeout_and_os_errors(self) -> None:
+        cases = (
+            (
+                "timeout",
+                subprocess.TimeoutExpired(["ccache"], agent_build.TELEMETRY_TIMEOUT_SECONDS),
+                "timed out",
+            ),
+            ("os-error", OSError("ccache disappeared"), "could not execute ccache"),
+        )
+        for name, error, expected_error in cases:
+            with self.subTest(name=name):
+                result = agent_build.read_ccache_stats({}, run=mock.Mock(side_effect=error))
+                self.assertIn(expected_error, str(result["error"]))
+
+    def test_ccache_delta_only_contains_numeric_changes(self) -> None:
+        before = {"cache_hit_direct": 7, "cache_miss": 3, "cache_dir": "/tmp/cache", "enabled": False}
+        after = {"cache_hit_direct": 11, "cache_miss": 4, "cache_dir": "/tmp/cache", "enabled": True}
+        self.assertEqual(agent_build.stats_delta(before, after), {"cache_hit_direct": 4, "cache_miss": 1})
+
+    def test_invocation_ids_produce_distinct_ccache_stats_logs(self) -> None:
+        first_id = agent_build.new_invocation_id()
+        second_id = agent_build.new_invocation_id()
+        first_path = agent_build.ccache_stats_log_path(first_id, temp_root=Path("/tmp"))
+        second_path = agent_build.ccache_stats_log_path(second_id, temp_root=Path("/tmp"))
+        self.assertNotEqual(first_id, second_id)
+        self.assertNotEqual(first_path, second_path)
+
+    def test_append_progress_record_writes_valid_jsonl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "progress.jsonl"
+            agent_build.append_progress_record(path, "build_summary", backend="ninja", exit_code=0)
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["event"], "build_summary")
+        self.assertEqual(payload["backend"], "ninja")
+        self.assertEqual(payload["exit_code"], 0)
+
+    def test_append_progress_record_preserves_existing_events(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "progress.jsonl"
+            existing = {"event": "command_end", "invocation_id": "invocation-1"}
+            path.write_text(json.dumps(existing) + "\n", encoding="utf-8")
+            agent_build.append_progress_record(
+                path,
+                "build_summary",
+                invocation_id="invocation-1",
+                exit_code=0,
+            )
+            payloads = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(payloads[0], existing)
+        self.assertEqual(payloads[1]["event"], "build_summary")
+
+    def test_append_progress_record_is_a_noop_without_a_destination(self) -> None:
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            agent_build.append_progress_record(None, "ignored", unserializable=object())
+        self.assertEqual(stdout.getvalue(), "")
+
+    def test_append_progress_record_emits_stdout_without_a_progress_file(self) -> None:
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            agent_build.append_progress_record(
+                None,
+                "build_summary",
+                stdout_jsonl=True,
+                invocation_id="invocation-1",
+                exit_code=0,
+            )
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["event"], "build_summary")
+        self.assertEqual(payload["invocation_id"], "invocation-1")
+
+    def test_progress_reporter_records_invocation_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "progress.jsonl"
+            with mock.patch.object(agent_build.time, "monotonic", return_value=10.0):
+                with agent_build.ProgressReporter(
+                    phase="build",
+                    invocation_id="invocation-1",
+                    progress_path=path,
+                    append_progress=False,
+                    stdout_jsonl=False,
+                    started=10.0,
+                ) as progress:
+                    progress.emit("command_start", command=["scons"])
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["invocation_id"], "invocation-1")
+
+    def test_read_git_commit_has_explicit_timeout_fallback(self) -> None:
+        commit, error = agent_build.read_git_commit(
+            Path("/work/Foundry"),
+            run=mock.Mock(
+                side_effect=subprocess.TimeoutExpired(
+                    ["git", "rev-parse", "HEAD"], agent_build.TELEMETRY_TIMEOUT_SECONDS
+                )
+            ),
+        )
+        self.assertEqual(commit, "unknown")
+        self.assertIn("timed out", str(error))
+
+    def test_read_git_commit_has_explicit_unexpected_error_fallback(self) -> None:
+        commit, error = agent_build.read_git_commit(
+            Path("/work/Foundry"),
+            run=mock.Mock(side_effect=RuntimeError("git probe broke")),
+        )
+        self.assertEqual(commit, "unknown")
+        self.assertIn("unexpected git commit probe failure", str(error))
 
     def test_normalize_arch(self) -> None:
         self.assertEqual(agent_build.normalize_arch("AMD64"), "x86_64")
@@ -140,6 +296,16 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
         self.assertEqual(env["CCACHE_BASEDIR"], "/work/Foundry")
         self.assertEqual(env["CCACHE_NAMESPACE"], "foundry")
         self.assertEqual(env["CCACHE_FILECLONE"], "1")
+
+    def test_ccache_environment_owns_per_invocation_stats_log(self) -> None:
+        args = agent_build.parse_args(["--compiler-cache", "ccache"])
+        with mock.patch.dict(agent_build.os.environ, {"CCACHE_STATSLOG": "/tmp/global.stats"}, clear=True):
+            env = agent_build.build_environment(
+                args,
+                "ccache",
+                ccache_stats_log=Path("/tmp/invocation.stats"),
+            )
+        self.assertEqual(env["CCACHE_STATSLOG"], "/tmp/invocation.stats")
 
     def test_ccache_environment_overrides_polluted_cache_settings(self) -> None:
         args = agent_build.parse_args(
@@ -270,20 +436,173 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             "SCONS_CACHE": "/tmp/legacy-scons-cache",
             "CCACHE_DISABLE": "1",
         }
-        with mock.patch.dict(agent_build.os.environ, polluted, clear=True):
-            with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
-                with mock.patch.object(agent_build.shutil, "which", return_value="/bin/ccache"):
-                    with mock.patch.object(agent_build, "run_logged_command", return_value=23) as run_command:
-                        exit_code = agent_build.main(
-                            ["--compiler-cache", "ccache", "--ccache-dir", "/tmp/foundry-ccache"]
-                        )
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            progress_path = temp_root / "progress.jsonl"
+            log_path = temp_root / "build.log"
+            stats_log_path = temp_root / "ccache.stats"
+
+            def run_build(_command, **_kwargs):
+                stats_log_path.write_text("compiler entry\n", encoding="utf-8")
+                return 23
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                with mock.patch.dict(agent_build.os.environ, polluted, clear=True):
+                    with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                        with mock.patch.object(agent_build.shutil, "which", return_value="/bin/ccache"):
+                            with mock.patch.object(agent_build, "new_invocation_id", return_value="invocation-1"):
+                                with mock.patch.object(
+                                    agent_build,
+                                    "ccache_stats_log_path",
+                                    return_value=stats_log_path,
+                                ):
+                                    with mock.patch.object(
+                                        agent_build,
+                                        "read_git_commit",
+                                        return_value=("deadbeef", None),
+                                    ):
+                                        with mock.patch.object(
+                                            agent_build,
+                                            "read_ccache_stats",
+                                            side_effect=[{"cache_hit_direct": 0}, RuntimeError("probe exploded")],
+                                        ) as read_stats:
+                                            with mock.patch.object(
+                                                agent_build.time,
+                                                "monotonic",
+                                                side_effect=[100.0, 101.5],
+                                            ):
+                                                with mock.patch.object(
+                                                    agent_build,
+                                                    "run_logged_command",
+                                                    side_effect=run_build,
+                                                ) as run_command:
+                                                    exit_code = agent_build.main(
+                                                        [
+                                                            "--compiler-cache",
+                                                            "ccache",
+                                                            "--ccache-dir",
+                                                            "/tmp/foundry-ccache",
+                                                            "--platform",
+                                                            "macos",
+                                                            "--jobs",
+                                                            "2",
+                                                            "--scons-arg",
+                                                            "arch=arm64",
+                                                            "--log",
+                                                            str(log_path),
+                                                            "--progress-file",
+                                                            str(progress_path),
+                                                        ]
+                                                    )
+
+            self.assertEqual(exit_code, 23)
+            run_command.assert_called_once()
+            build_env = run_command.call_args.kwargs["env"]
+            self.assertEqual(build_env["CCACHE_DIR"], "/tmp/foundry-ccache")
+            self.assertEqual(build_env["CCACHE_BASEDIR"], str(agent_build.REPO_ROOT.resolve()))
+            self.assertEqual(build_env["CCACHE_STATSLOG"], str(stats_log_path))
+            self.assertNotIn("CCACHE", build_env)
+            self.assertNotIn("SCONS_CACHE", build_env)
+            self.assertEqual(read_stats.call_args_list, [mock.call(build_env), mock.call(build_env)])
+            self.assertEqual(run_command.call_args.kwargs["invocation_id"], "invocation-1")
+            self.assertFalse(stats_log_path.exists())
+
+            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            self.assertEqual(summary["event"], "build_summary")
+            self.assertEqual(summary["invocation_id"], "invocation-1")
+            self.assertEqual(summary["git_commit"], "deadbeef")
+            self.assertIsNone(summary["git_commit_error"])
+            self.assertEqual(summary["platform"], "macos")
+            self.assertEqual(summary["arch"], "arm64")
+            self.assertEqual(summary["jobs"], 2)
+            self.assertEqual(summary["build_command"][0], "scons")
+            self.assertEqual(summary["cache_dir"], "/tmp/foundry-ccache")
+            self.assertEqual(summary["cache_policy"], "wrapper-managed-ccache")
+            self.assertEqual(summary["cache_source"], "--ccache-dir")
+            self.assertEqual(summary["cache_stats_source"], "per-invocation-stats-log")
+            self.assertEqual(summary["cache_stats_status"], "error")
+            self.assertIn("probe exploded", summary["cache_stats_error"]["after"])
+            self.assertEqual(summary["cache_delta"], {})
+            self.assertEqual(summary["status"], "failed")
+            self.assertEqual(summary["exit_code"], 23)
+
+    def test_main_emits_summary_to_jsonl_stdout_without_progress_file(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "build.log"
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(agent_build, "new_invocation_id", return_value="invocation-stdout"):
+                        with mock.patch.object(
+                            agent_build,
+                            "read_git_commit",
+                            return_value=("deadbeef", None),
+                        ):
+                            with mock.patch.object(agent_build.time, "monotonic", side_effect=[100.0, 101.0]):
+                                with mock.patch.object(
+                                    agent_build,
+                                    "run_logged_command",
+                                    return_value=23,
+                                ) as run_command:
+                                    exit_code = agent_build.main(
+                                        [
+                                            "--platform",
+                                            "macos",
+                                            "--log",
+                                            str(log_path),
+                                            "--progress-format",
+                                            "jsonl",
+                                            "--no-progress-file",
+                                        ]
+                                    )
+
         self.assertEqual(exit_code, 23)
-        run_command.assert_called_once()
-        build_env = run_command.call_args.kwargs["env"]
-        self.assertEqual(build_env["CCACHE_DIR"], "/tmp/foundry-ccache")
-        self.assertEqual(build_env["CCACHE_BASEDIR"], str(agent_build.REPO_ROOT.resolve()))
-        self.assertNotIn("CCACHE", build_env)
-        self.assertNotIn("SCONS_CACHE", build_env)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["event"], "build_summary")
+        self.assertEqual(payload["invocation_id"], "invocation-stdout")
+        self.assertEqual(payload["cache_stats_status"], "disabled")
+        self.assertEqual(run_command.call_args.kwargs["invocation_id"], payload["invocation_id"])
+        self.assertIn("[agent-build] summary: backend=scons cache=none duration=1s", stderr.getvalue())
+
+    def test_main_records_spawn_error_summary_and_returns_127(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            progress_path = temp_root / "progress.jsonl"
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(agent_build, "new_invocation_id", return_value="invocation-error"):
+                        with mock.patch.object(
+                            agent_build,
+                            "read_git_commit",
+                            return_value=("deadbeef", None),
+                        ):
+                            with mock.patch.object(agent_build.time, "monotonic", side_effect=[100.0, 100.25]):
+                                with mock.patch.object(
+                                    agent_build,
+                                    "run_logged_command",
+                                    side_effect=OSError("missing executable"),
+                                ):
+                                    exit_code = agent_build.main(
+                                        [
+                                            "--platform",
+                                            "macos",
+                                            "--log",
+                                            str(temp_root / "build.log"),
+                                            "--progress-file",
+                                            str(progress_path),
+                                        ]
+                                    )
+
+            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+        self.assertEqual(exit_code, 127)
+        self.assertEqual(summary["event"], "build_summary")
+        self.assertEqual(summary["status"], "error")
+        self.assertEqual(summary["exit_code"], 127)
+        self.assertIn("missing executable", summary["error"])
+        self.assertIn("failed to start build command: missing executable", stderr.getvalue())
 
     def test_native_build_command_keeps_strict_defaults(self) -> None:
         args = agent_build.parse_args(["--jobs", "3"])

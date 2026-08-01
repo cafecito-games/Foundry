@@ -15,8 +15,10 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple, TextIO, cast
@@ -28,6 +30,7 @@ SUPPORTED_SCONS_PLATFORMS = ("linuxbsd", "macos")
 DEFAULT_CCACHE_PATH = Path.home() / ".cache" / "foundry-ccache"
 SUPPORTED_BUILD_BACKENDS = ("scons", "ninja")
 SUPPORTED_COMPILER_CACHES = ("auto", "none", "ccache")
+TELEMETRY_TIMEOUT_SECONDS = 5.0
 
 
 def resolve_compiler_cache(args: argparse.Namespace) -> str:
@@ -93,17 +96,130 @@ def timestamp_utc() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
+def new_invocation_id() -> str:
+    return str(uuid.uuid4())
+
+
+def ccache_stats_log_path(invocation_id: str, *, temp_root: Path | None = None) -> Path:
+    root = temp_root if temp_root is not None else Path(tempfile.gettempdir())
+    return root / f"foundry-ccache-{invocation_id}.stats"
+
+
+def read_git_commit(
+    repo_root: Path = REPO_ROOT,
+    *,
+    run=subprocess.run,
+) -> tuple[str, str | None]:
+    try:
+        completed = run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=TELEMETRY_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return "unknown", f"git commit probe timed out after {TELEMETRY_TIMEOUT_SECONDS:g} seconds"
+    except OSError as exc:
+        return "unknown", f"could not execute git commit probe: {exc}"
+    except Exception as exc:
+        return "unknown", f"unexpected git commit probe failure: {type(exc).__name__}: {exc}"
+    if completed.returncode != 0:
+        error = completed.stderr.strip() or f"git exited with {completed.returncode}"
+        return "unknown", error
+    commit = completed.stdout.strip()
+    if not commit:
+        return "unknown", "git commit probe returned empty output"
+    return commit, None
+
+
+def read_ccache_stats(
+    env: dict[str, str],
+    *,
+    run=subprocess.run,
+) -> dict[str, object]:
+    command = [
+        "ccache",
+        "--print-log-stats" if env.get("CCACHE_STATSLOG") else "--print-stats",
+        "--format=json",
+    ]
+    try:
+        completed = run(
+            command,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=TELEMETRY_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return {"error": f"ccache statistics probe timed out after {TELEMETRY_TIMEOUT_SECONDS:g} seconds"}
+    except OSError as exc:
+        return {"error": f"could not execute ccache statistics probe: {exc}"}
+    if completed.returncode != 0:
+        return {"error": completed.stderr.strip() or f"ccache exited with {completed.returncode}"}
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        return {"error": f"invalid ccache statistics JSON: {exc}"}
+    return payload if isinstance(payload, dict) else {"error": "ccache statistics were not a JSON object"}
+
+
+def read_ccache_stats_best_effort(env: dict[str, str]) -> dict[str, object]:
+    try:
+        return read_ccache_stats(env)
+    except Exception as exc:
+        return {"error": f"unexpected ccache statistics failure: {type(exc).__name__}: {exc}"}
+
+
+def stats_delta(before: dict[str, object], after: dict[str, object]) -> dict[str, int | float]:
+    delta: dict[str, int | float] = {}
+    for key, after_value in after.items():
+        before_value = before.get(key)
+        if (
+            isinstance(after_value, (int, float))
+            and not isinstance(after_value, bool)
+            and isinstance(before_value, (int, float))
+            and not isinstance(before_value, bool)
+        ):
+            delta[key] = after_value - before_value
+    return delta
+
+
+def append_progress_record(
+    path: Path | None,
+    event: str,
+    *,
+    stdout_jsonl: bool = False,
+    **fields: object,
+) -> None:
+    if path is None and not stdout_jsonl:
+        return
+    payload = {"version": 1, "event": event, "timestamp": timestamp_utc(), **fields}
+    line = json.dumps(payload, sort_keys=True)
+    if path is not None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as progress_file:
+            progress_file.write(line + "\n")
+    if stdout_jsonl:
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+
+
 class ProgressReporter:
     def __init__(
         self,
         *,
         phase: str,
+        invocation_id: str,
         progress_path: Path | None,
         append_progress: bool,
         stdout_jsonl: bool,
         started: float,
     ) -> None:
         self.phase = phase
+        self.invocation_id = invocation_id
         self.progress_path = progress_path
         self.append_progress = append_progress
         self.stdout_jsonl = stdout_jsonl
@@ -128,6 +244,7 @@ class ProgressReporter:
             "version": 1,
             "event": event,
             "phase": self.phase,
+            "invocation_id": self.invocation_id,
             "sequence": self.sequence,
             "timestamp": timestamp_utc(),
             "elapsed_ms": int((time.monotonic() - self.started) * 1000),
@@ -164,6 +281,7 @@ def run_logged_command(
     command: list[str],
     *,
     label: str,
+    invocation_id: str,
     log_path: Path,
     heartbeat: float,
     append_log: bool,
@@ -182,6 +300,7 @@ def run_logged_command(
         started = time.monotonic()
         with ProgressReporter(
             phase=label,
+            invocation_id=invocation_id,
             progress_path=progress_path,
             append_progress=append_progress,
             stdout_jsonl=progress_stdout_jsonl,
@@ -360,6 +479,7 @@ def build_environment(
     compiler_cache: str,
     *,
     repo_root: Path = REPO_ROOT,
+    ccache_stats_log: Path | None = None,
 ) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("CCACHE", None)
@@ -387,6 +507,8 @@ def build_environment(
         _set_ccache_boolean(env, "RECACHE", enabled=False)
         _set_ccache_boolean(env, "READONLY", enabled=False)
         _set_ccache_boolean(env, "READONLY_DIRECT", enabled=False)
+        if ccache_stats_log is not None:
+            env["CCACHE_STATSLOG"] = str(ccache_stats_log)
     return env
 
 
@@ -546,17 +668,117 @@ def main(argv: list[str]) -> int:
     progress_stdout_jsonl = args.progress_format == "jsonl"
     human_stream = sys.stderr if progress_stdout_jsonl else sys.stdout
 
-    build_exit = run_logged_command(
-        build_command(args, target),
-        label="build",
-        log_path=args.log,
-        heartbeat=args.heartbeat,
-        append_log=args.append_log,
-        progress_path=progress_path,
-        append_progress=args.append_progress,
-        progress_stdout_jsonl=progress_stdout_jsonl,
-        env=build_environment(args, compiler_cache),
-    )
+    invocation_id = new_invocation_id()
+    git_commit, git_commit_error = read_git_commit()
+    stats_log_path = ccache_stats_log_path(invocation_id) if compiler_cache == "ccache" else None
+    build_env = build_environment(args, compiler_cache, ccache_stats_log=stats_log_path)
+    cache_before = read_ccache_stats_best_effort(build_env) if compiler_cache == "ccache" else {}
+    build_command_args = build_command(args, target)
+    if compiler_cache == "ccache":
+        cache_dir: str | None = build_env.get("CCACHE_DIR")
+        cache_policy = "wrapper-managed-ccache"
+        cache_source = "--ccache-dir"
+        cache_stats_source = "per-invocation-stats-log"
+    else:
+        cache_dir = next(
+            (
+                argument.partition("=")[2]
+                for argument in reversed(build_command_args)
+                if argument.startswith("cache_path=")
+            ),
+            None,
+        )
+        cache_policy = "native-scons-cache"
+        cache_source = "effective-build-command"
+        cache_stats_source = "disabled"
+
+    build_started = time.monotonic()
+    build_exit: int | None = None
+    build_status = "error"
+    build_error: str | None = None
+    try:
+        build_exit = run_logged_command(
+            build_command_args,
+            label="build",
+            invocation_id=invocation_id,
+            log_path=args.log,
+            heartbeat=args.heartbeat,
+            append_log=args.append_log,
+            progress_path=progress_path,
+            append_progress=args.append_progress,
+            progress_stdout_jsonl=progress_stdout_jsonl,
+            env=build_env,
+        )
+        build_status = "success" if build_exit == 0 else "failed"
+    except OSError as exc:
+        build_exit = 127
+        build_error = f"{type(exc).__name__}: {exc}"
+        print(f"[agent-build] failed to start build command: {exc}", file=sys.stderr)
+    except BaseException as exc:
+        build_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "error"
+        build_error = f"{type(exc).__name__}: {exc}"
+        raise
+    finally:
+        build_duration = time.monotonic() - build_started
+        cache_after = read_ccache_stats_best_effort(build_env) if compiler_cache == "ccache" else {}
+        cache_delta = stats_delta(cache_before, cache_after)
+        cache_stats_errors = {
+            stage: str(stats["error"])
+            for stage, stats in (("before", cache_before), ("after", cache_after))
+            if "error" in stats
+        }
+        cache_stats_status = "error" if cache_stats_errors else ("ok" if compiler_cache == "ccache" else "disabled")
+        summary_fields: dict[str, object] = {
+            "phase": "build",
+            "invocation_id": invocation_id,
+            "backend": args.backend,
+            "compiler_cache": compiler_cache,
+            "worktree": str(REPO_ROOT),
+            "git_commit": git_commit,
+            "git_commit_error": git_commit_error,
+            "platform": target.scons_platform,
+            "arch": arch_from_args(args),
+            "jobs": args.jobs,
+            "build_command": build_command_args,
+            "duration_ms": int(build_duration * 1000),
+            "status": build_status,
+            "error": build_error,
+            "exit_code": build_exit,
+            "cache_dir": cache_dir,
+            "cache_policy": cache_policy,
+            "cache_source": cache_source,
+            "cache_stats_source": cache_stats_source,
+            "ccache_stats_log": str(stats_log_path) if stats_log_path is not None else None,
+            "cache_stats_status": cache_stats_status,
+            "cache_stats_error": cache_stats_errors or None,
+            "cache_stats_before": cache_before,
+            "cache_stats_after": cache_after,
+            "cache_delta": cache_delta,
+            "log_path": str(args.log),
+        }
+        try:
+            append_progress_record(
+                progress_path,
+                "build_summary",
+                stdout_jsonl=progress_stdout_jsonl,
+                **summary_fields,
+            )
+        except Exception as exc:
+            print(f"[agent-build] warning: could not emit build summary: {exc}", file=sys.stderr)
+        print(
+            f"[agent-build] summary: backend={args.backend} cache={compiler_cache} "
+            f"duration={format_duration(build_duration)} log={args.log}",
+            file=human_stream,
+        )
+        if stats_log_path is not None:
+            try:
+                stats_log_path.unlink(missing_ok=True)
+            except OSError as exc:
+                print(
+                    f"[agent-build] warning: could not remove ccache stats log {stats_log_path}: {exc}", file=sys.stderr
+                )
+
+    assert build_exit is not None
     if build_exit != 0:
         return build_exit
 
@@ -577,6 +799,7 @@ def main(argv: list[str]) -> int:
     return run_logged_command(
         test_command(args, target),
         label="test",
+        invocation_id=invocation_id,
         log_path=args.log,
         heartbeat=args.heartbeat,
         append_log=True,
