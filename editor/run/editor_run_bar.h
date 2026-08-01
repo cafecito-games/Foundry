@@ -99,6 +99,11 @@ class EditorRunBar : public MarginContainer {
 	// Additional run instances stay tracked for cleanup but never supply the result.
 	OS::ProcessID represented_process = 0;
 
+	// How long a debuggee that already closed its debug session is given to finish, so
+	// its real result can still be recovered instead of being killed as a forced stop.
+	static const uint64_t PROCESS_RESULT_GRACE_MSEC = 5000;
+	uint64_t process_result_deadline_msec = 0;
+
 	void _poll_child_processes();
 	void _finish_run();
 
@@ -151,6 +156,10 @@ public:
 	Error play_project_test(const EditorRun::TestLaunch &p_launch);
 
 	void stop_playing();
+	// Every debug session of this run ended. That is not proof the debuggee finished,
+	// so a launch that still owns its process waits for the process result instead of
+	// being torn down as a forced stop.
+	void debug_sessions_exited();
 	bool is_playing() const;
 	String get_playing_scene() const;
 

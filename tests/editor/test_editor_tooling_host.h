@@ -338,6 +338,11 @@ struct DebugAdapterClient {
 	Ref<StreamPeerTCP> peer;
 	String buffer;
 	int next_seq = 1;
+	// Every event received since the last `clear_events()`, in arrival order. Waiting
+	// for a response never consumes them, so a test can assert on the exact lifecycle
+	// sequence a launch produced.
+	Vector<Dictionary> events;
+	List<Dictionary> responses;
 
 	bool connect_to_port(int p_port) {
 		peer.instantiate();
@@ -423,20 +428,82 @@ struct DebugAdapterClient {
 		return parsed;
 	}
 
+	// Reads everything that arrived, sorting events and responses into their own
+	// queues so neither kind is lost while waiting for the other.
+	bool drain() {
+		if (!pump()) {
+			return false;
+		}
+		for (Dictionary message = take_message(); !message.is_empty(); message = take_message()) {
+			if (String(message.get("type", "")) == "event") {
+				events.push_back(message);
+			} else {
+				responses.push_back(message);
+			}
+		}
+		return true;
+	}
+
+	void clear_events() {
+		events.clear();
+	}
+
 	Dictionary await_response(int p_request_seq, uint64_t p_timeout_msec) {
 		const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + p_timeout_msec;
 		while (OS::get_singleton()->get_ticks_msec() < deadline) {
-			if (!pump()) {
+			if (!drain()) {
 				return Dictionary();
 			}
-			for (Dictionary message = take_message(); !message.is_empty(); message = take_message()) {
-				if (String(message.get("type", "")) == "response" && int(message.get("request_seq", -1)) == p_request_seq) {
-					return message;
+			for (List<Dictionary>::Element *E = responses.front(); E; E = E->next()) {
+				if (int(E->get().get("request_seq", -1)) == p_request_seq) {
+					const Dictionary response = E->get();
+					responses.erase(E);
+					return response;
 				}
 			}
 			OS::get_singleton()->delay_usec(20000);
 		}
 		return Dictionary();
+	}
+
+	// Waits for an event by name without consuming it or anything received earlier.
+	Dictionary await_event(const String &p_event, uint64_t p_timeout_msec) {
+		const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + p_timeout_msec;
+		while (OS::get_singleton()->get_ticks_msec() < deadline) {
+			if (!drain()) {
+				return Dictionary();
+			}
+			for (const Dictionary &event : events) {
+				if (String(event.get("event", "")) == p_event) {
+					return event;
+				}
+			}
+			OS::get_singleton()->delay_usec(20000);
+		}
+		return Dictionary();
+	}
+
+	// The ordered lifecycle events of the current window, which is what the DAP
+	// contract is expressed in.
+	PackedStringArray lifecycle_events() const {
+		PackedStringArray names;
+		for (const Dictionary &event : events) {
+			const String name = event.get("event", "");
+			if (name == "process" || name == "exited" || name == "terminated") {
+				names.push_back(name);
+			}
+		}
+		return names;
+	}
+
+	int exit_code_of_first_exited() const {
+		for (const Dictionary &event : events) {
+			if (String(event.get("event", "")) == "exited") {
+				const Dictionary body = event.get("body", Dictionary());
+				return body.get("exitCode", -1);
+			}
+		}
+		return -1;
 	}
 
 	void disconnect_from_host() {
@@ -567,6 +634,218 @@ TEST_CASE("[Editor][ToolingHost] A malformed project_test launch is refused over
 
 	client.disconnect_from_host();
 	shutdown_host(host);
+}
+
+// Stages the checked-in exit-status fixture project beneath the shared scratch space.
+// Its runner and scenes decide the child's real result, so the lifecycle assertions
+// below are about what the adapter reports, never about a script pinned in C++.
+static String prepare_exit_status_project() {
+	EditorWorkflowTestFixtures::DisposableProjectSpec spec;
+	spec.fixture_name = "dap_exit_status";
+	PackedStringArray paths;
+	paths.push_back("project.foundry");
+	paths.push_back("exit_status_runner.fs");
+	paths.push_back("main.tscn");
+	paths.push_back("quit_with_code.fs");
+	paths.push_back("idle.tscn");
+	paths.push_back("stay_running.fs");
+	spec.relative_paths = paths;
+	return EditorWorkflowTestFixtures::prepare_disposable_project(spec);
+}
+
+// Owns a tooling host serving the exit-status project, with a connected and
+// initialized debug adapter client.
+struct ExitStatusSession {
+	HostProcess host;
+	DebugAdapterClient client;
+	String project_path;
+	bool ready = false;
+
+	ExitStatusSession() {
+		project_path = prepare_exit_status_project();
+		if (project_path.is_empty()) {
+			return;
+		}
+
+		List<String> arguments;
+		arguments.push_back("tooling");
+		arguments.push_back("serve");
+		arguments.push_back("--project");
+		arguments.push_back(project_path);
+		arguments.push_back("--lsp-port");
+		arguments.push_back("0");
+		arguments.push_back("--dap-port");
+		arguments.push_back("0");
+
+		host = launch_tooling_host(arguments);
+		if (!host.is_valid()) {
+			return;
+		}
+		if (!wait_for_marker(host, "FOUNDRY_TOOLING {", 180000)) {
+			return;
+		}
+
+		const Dictionary payload = parse_marker_record(host.output, "FOUNDRY_TOOLING ");
+		if (!client.connect_to_port(payload["dap_port"])) {
+			return;
+		}
+
+		Dictionary initialize_arguments;
+		initialize_arguments["adapterID"] = "foundry";
+		initialize_arguments["linesStartAt1"] = true;
+		initialize_arguments["columnsStartAt1"] = true;
+		const Dictionary response = client.await_response(client.send_request("initialize", initialize_arguments), 30000);
+		ready = bool(response.get("success", false));
+	}
+
+	~ExitStatusSession() {
+		client.disconnect_from_host();
+		shutdown_host(host);
+	}
+
+	String artifact(const String &p_relative_path) const {
+		return project_path.path_join(p_relative_path);
+	}
+
+	// Runs one launch to completion and returns the lifecycle events it produced.
+	PackedStringArray run_launch(const Dictionary &p_launch_arguments, uint64_t p_timeout_msec = 180000) {
+		client.clear_events();
+		const int launch_seq = client.send_request("launch", p_launch_arguments);
+		client.await_response(client.send_request("configurationDone", Dictionary()), 30000);
+		client.await_response(launch_seq, 60000);
+		client.await_event("terminated", p_timeout_msec);
+		return client.lifecycle_events();
+	}
+};
+
+static Dictionary make_project_test_launch(const String &p_report_path, const String &p_selection) {
+	Dictionary adapter;
+	adapter["protocolVersion"] = EditorRun::TEST_ADAPTER_PROTOCOL_VERSION;
+	adapter["report"] = p_report_path;
+	if (!p_selection.is_empty()) {
+		Array test_ids;
+		test_ids.push_back(p_selection);
+		adapter["testIds"] = test_ids;
+	}
+
+	Dictionary launch;
+	launch["kind"] = "project_test";
+	launch["runner"] = "res://exit_status_runner.fs";
+	launch["adapter"] = adapter;
+
+	Dictionary arguments;
+	arguments["noDebug"] = false;
+	arguments["foundry/launch"] = launch;
+	return arguments;
+}
+
+static PackedStringArray expected_known_result_lifecycle() {
+	PackedStringArray expected;
+	expected.push_back("process");
+	expected.push_back("exited");
+	expected.push_back("terminated");
+	return expected;
+}
+
+TEST_CASE("[Editor][ToolingHost] A structured test launch reports the runner's real result") {
+	ExitStatusSession session;
+	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
+	INFO("Tooling host output:\n", session.host.output);
+	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+
+	// A passing run.
+	const String passing_report = session.artifact("passing.tap");
+	CHECK_EQ(session.run_launch(make_project_test_launch(passing_report, "exit::0")), expected_known_result_lifecycle());
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 0);
+
+	// A represented test failure.
+	const String failing_report = session.artifact("failing.tap");
+	CHECK_EQ(session.run_launch(make_project_test_launch(failing_report, "exit::1")), expected_known_result_lifecycle());
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 1);
+
+	// A real infrastructure failure: a report path inside a directory that does not
+	// exist, which the runner cannot open, so it returns the protocol's `2`.
+	const String broken_report = session.artifact("missing_directory/broken.tap");
+	CHECK_EQ(session.run_launch(make_project_test_launch(broken_report, String())), expected_known_result_lifecycle());
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 2);
+	CHECK_FALSE(FileAccess::exists(broken_report));
+
+	// Both complete reports stay available for independent validation.
+	REQUIRE(FileAccess::exists(passing_report));
+	const String passing_tap = FileAccess::get_file_as_string(passing_report);
+	CHECK(passing_tap.begins_with("TAP version 13"));
+	CHECK(passing_tap.contains("1..1"));
+	CHECK(passing_tap.contains("ok 1 - exit_status.point_1"));
+
+	REQUIRE(FileAccess::exists(failing_report));
+	const String failing_tap = FileAccess::get_file_as_string(failing_report);
+	CHECK(failing_tap.begins_with("TAP version 13"));
+	CHECK(failing_tap.contains("not ok 1 - exit_status.point_1"));
+}
+
+TEST_CASE("[Editor][ToolingHost] A replaced launch cannot leak its result into the next one") {
+	ExitStatusSession session;
+	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
+	INFO("Tooling host output:\n", session.host.output);
+	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+
+	const String infrastructure_report = session.artifact("missing_directory/first.tap");
+	CHECK_EQ(session.run_launch(make_project_test_launch(infrastructure_report, String())), expected_known_result_lifecycle());
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 2);
+
+	const String passing_report = session.artifact("second.tap");
+	CHECK_EQ(session.run_launch(make_project_test_launch(passing_report, "exit::0")), expected_known_result_lifecycle());
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 0);
+
+	// A finished session must not take the tooling host with it.
+	const Dictionary threads_response = session.client.await_response(
+			session.client.send_request("threads", Dictionary()), 30000);
+	REQUIRE_MESSAGE(!threads_response.is_empty(), "The host stopped answering after a session ended.");
+	CHECK(bool(threads_response.get("success", false)));
+}
+
+TEST_CASE("[Editor][ToolingHost] A scene launch reports the debuggee's own exit code") {
+	ExitStatusSession session;
+	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
+	INFO("Tooling host output:\n", session.host.output);
+	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+
+	// The main scene ends itself with a distinctive result, proving the lifecycle is
+	// not special-cased to structured test launches.
+	Dictionary arguments;
+	arguments["noDebug"] = false;
+	arguments["scene"] = "main";
+	CHECK_EQ(session.run_launch(arguments), expected_known_result_lifecycle());
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 3);
+}
+
+TEST_CASE("[Editor][ToolingHost] A forcibly terminated launch reports no exit code") {
+	ExitStatusSession session;
+	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
+	INFO("Tooling host output:\n", session.host.output);
+	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+
+	Dictionary arguments;
+	arguments["noDebug"] = false;
+	arguments["scene"] = "res://idle.tscn";
+
+	session.client.clear_events();
+	const int launch_seq = session.client.send_request("launch", arguments);
+	session.client.await_response(session.client.send_request("configurationDone", Dictionary()), 30000);
+	session.client.await_response(launch_seq, 60000);
+	REQUIRE_MESSAGE(!session.client.await_event("process", 120000).is_empty(), "The debuggee never started.");
+
+	const Dictionary terminate_response = session.client.await_response(
+			session.client.send_request("terminate", Dictionary()), 60000);
+	CHECK(bool(terminate_response.get("success", false)));
+	REQUIRE_MESSAGE(!session.client.await_event("terminated", 60000).is_empty(), "The session never ended.");
+
+	// A killed debuggee has no trustworthy result, and a fabricated zero would be
+	// indistinguishable from a successful run.
+	PackedStringArray expected;
+	expected.push_back("process");
+	expected.push_back("terminated");
+	CHECK_EQ(session.client.lifecycle_events(), expected);
 }
 
 #ifdef UNIX_ENABLED

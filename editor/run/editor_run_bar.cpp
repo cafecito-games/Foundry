@@ -142,11 +142,33 @@ void EditorRunBar::_poll_child_processes() {
 		}
 		return;
 	}
+
+	if (process_result_deadline_msec != 0 && OS::get_singleton()->get_ticks_msec() >= process_result_deadline_msec) {
+		// The debuggee outlived its debug session without producing a result, so the
+		// run is stopped the same way an explicit request stops it.
+		stop_playing();
+	}
+}
+
+void EditorRunBar::debug_sessions_exited() {
+	if (editor_run.get_status() == EditorRun::STATUS_STOP) {
+		return;
+	}
+
+	if (represented_process != 0 && editor_run.has_child_process(represented_process)) {
+		if (process_result_deadline_msec == 0) {
+			process_result_deadline_msec = OS::get_singleton()->get_ticks_msec() + PROCESS_RESULT_GRACE_MSEC;
+		}
+		return;
+	}
+
+	stop_playing();
 }
 
 void EditorRunBar::_finish_run() {
 	current_mode = RunMode::STOPPED;
 	represented_process = 0;
+	process_result_deadline_msec = 0;
 	editor_run.stop();
 	EditorDebuggerNode::get_singleton()->stop();
 
