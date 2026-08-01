@@ -843,6 +843,23 @@ bool DocumentClassifier::classify_declared_symbol(const FSParser::IdentifierNode
 	return false;
 }
 
+// Whether a non-FoundryScript script already declares `p_name` as a property, method, or signal.
+// A name claimed by any one of those kinds shadows every native lookup for that name -- a script
+// property named `ready` must not let a native-signal check fall through to `Node.ready`.
+bool script_declares_member(const Ref<Script> &p_script, const StringName &p_name) {
+	if (p_script->has_method(p_name) || p_script->has_script_signal(p_name)) {
+		return true;
+	}
+	List<PropertyInfo> properties;
+	p_script->get_script_property_list(&properties);
+	for (const PropertyInfo &property : properties) {
+		if (property.name == p_name) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool DocumentClassifier::datatype_has_native_method(const FSParser::DataType &p_datatype, const StringName &p_name) const {
 	FSParser::DataType datatype = p_datatype;
 	HashSet<const FSParser::ClassNode *> visited_classes;
@@ -870,7 +887,7 @@ bool DocumentClassifier::datatype_has_native_method(const FSParser::DataType &p_
 				script.is_valid() && !visited_scripts.has(script.ptr());
 				script = script->get_base_script()) {
 			visited_scripts.insert(script.ptr());
-			if (script->has_method(p_name)) {
+			if (script_declares_member(script, p_name)) {
 				return false;
 			}
 			if (script->get_instance_base_type() != StringName()) {
@@ -905,12 +922,8 @@ bool DocumentClassifier::datatype_has_native_property(const FSParser::DataType &
 				script.is_valid() && !visited_scripts.has(script.ptr());
 				script = script->get_base_script()) {
 			visited_scripts.insert(script.ptr());
-			List<PropertyInfo> properties;
-			script->get_script_property_list(&properties);
-			for (const PropertyInfo &property : properties) {
-				if (property.name == p_name) {
-					return false;
-				}
+			if (script_declares_member(script, p_name)) {
+				return false;
 			}
 			if (script->get_instance_base_type() != StringName()) {
 				native_base = script->get_instance_base_type();
@@ -944,7 +957,7 @@ bool DocumentClassifier::datatype_has_native_signal(const FSParser::DataType &p_
 				script.is_valid() && !visited_scripts.has(script.ptr());
 				script = script->get_base_script()) {
 			visited_scripts.insert(script.ptr());
-			if (script->has_script_signal(p_name)) {
+			if (script_declares_member(script, p_name)) {
 				return false;
 			}
 			if (script->get_instance_base_type() != StringName()) {
@@ -1337,21 +1350,26 @@ void DocumentClassifier::walk_subscript(const FSParser::SubscriptNode *p_subscri
 	// receiver's library-owned type does not make an arbitrary member a library symbol.
 	const bool has_dynamic_attributes = base_type.kind == FSParser::DataType::VARIANT ||
 			(base_type.kind == FSParser::DataType::BUILTIN && base_type.builtin_type == Variant::DICTIONARY);
-	if (!has_dynamic_attributes && (is_default_library_type(base_type) || datatype_has_native_property(base_type, p_subscript->attribute->name))) {
+	if (!has_dynamic_attributes && (is_default_library_type(base_type) || datatype_has_native_property(base_type, p_subscript->attribute->name) || datatype_has_native_signal(base_type, p_subscript->attribute->name))) {
 		modifiers |= bit(TokenModifier::DEFAULT_LIBRARY);
 	}
 
 	// A member the analyzer already resolved says what it is; the data type of a method or signal
-	// used as a value is only `Callable`/`Signal`, which a property could carry as well.
+	// used as a value is only `Callable`/`Signal`, which a property could carry as well. A
+	// `MEMBER_FUNCTION`/`MEMBER_SIGNAL` source is always a project (or external-script) declaration --
+	// native lookups reach here through `INHERITED_VARIABLE` -- so ownership modifiers come from the
+	// resolved declaration, never from whether the receiver spelling happens to be a type handle.
 	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_FUNCTION) {
-		if (base_type.is_meta_type) {
+		const bool is_static = p_subscript->attribute->function_source_is_static ||
+				(p_subscript->attribute->function_source != nullptr && p_subscript->attribute->function_source->is_static);
+		if (is_static) {
 			modifiers |= bit(TokenModifier::STATIC);
 		}
-		add_identifier(p_subscript->attribute, TokenType::METHOD, modifiers);
+		add_identifier(p_subscript->attribute, TokenType::METHOD, modifiers & ~bit(TokenModifier::DEFAULT_LIBRARY));
 		return;
 	}
 	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_SIGNAL) {
-		add_identifier(p_subscript->attribute, TokenType::EVENT, modifiers);
+		add_identifier(p_subscript->attribute, TokenType::EVENT, modifiers & ~bit(TokenModifier::DEFAULT_LIBRARY));
 		return;
 	}
 	if (p_subscript->attribute->source == FSParser::IdentifierNode::MEMBER_VARIABLE ||
