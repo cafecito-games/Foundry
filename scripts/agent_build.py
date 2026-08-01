@@ -25,6 +25,22 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CACHE_PATH = Path.home() / ".scons_cache"
 DEFAULT_TEST_SCRATCH = REPO_ROOT / ".test_scratch"
 SUPPORTED_SCONS_PLATFORMS = ("linuxbsd", "macos")
+DEFAULT_CCACHE_PATH = Path.home() / ".cache" / "foundry-ccache"
+SUPPORTED_BUILD_BACKENDS = ("scons", "ninja")
+SUPPORTED_COMPILER_CACHES = ("auto", "none", "ccache")
+
+
+def resolve_compiler_cache(args: argparse.Namespace) -> str:
+    if args.compiler_cache != "auto":
+        return str(args.compiler_cache)
+    return "ccache" if args.backend == "ninja" else "none"
+
+
+def _set_ccache_boolean(env: dict[str, str], name: str, *, enabled: bool) -> None:
+    positive = f"CCACHE_{name}"
+    negative = f"CCACHE_NO{name}"
+    env.pop(negative if enabled else positive, None)
+    env[positive if enabled else negative] = "1"
 
 
 class OutputPaths(NamedTuple):
@@ -301,6 +317,15 @@ def build_command(args: argparse.Namespace, target: BuildTarget | None = None) -
     if target is None:
         target = resolve_build_target(args)
     build_modes = ["dev_build=yes"] if args.dev_build else ["dev_mode=yes", "dev_build=yes"]
+    compiler_cache = resolve_compiler_cache(args)
+    cache_args = [f"cache_path={DEFAULT_CACHE_PATH}"]
+    if compiler_cache == "ccache":
+        cache_args = [
+            "cache_path=",
+            "c_compiler_launcher=ccache",
+            "cpp_compiler_launcher=ccache",
+            "debug_paths_relative=yes",
+        ]
     prefix = scons_prefix()
     if prefix is None:
         raise RuntimeError("SCons is not available")
@@ -310,10 +335,13 @@ def build_command(args: argparse.Namespace, target: BuildTarget | None = None) -
         *build_modes,
         "tests=yes",
         "module_text_server_fb_enabled=yes",
-        f"cache_path={DEFAULT_CACHE_PATH}",
-        f"-j{args.jobs}",
     ]
+    if compiler_cache == "none":
+        command.extend(cache_args)
+    command.append(f"-j{args.jobs}")
     command.extend(args.scons_arg)
+    if compiler_cache == "ccache":
+        command.extend(cache_args)
     return command
 
 
@@ -325,6 +353,41 @@ def test_command(args: argparse.Namespace, target: BuildTarget | None = None) ->
         command.extend(["--case", args.test_case])
     command.append("--force-colors")
     return command
+
+
+def build_environment(
+    args: argparse.Namespace,
+    compiler_cache: str,
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, str]:
+    env = os.environ.copy()
+    env.pop("CCACHE", None)
+    if compiler_cache == "ccache":
+        for variable in list(env):
+            if variable.startswith("CCACHE_"):
+                env.pop(variable)
+        for variable in ("SCONS_CACHE", "SCONS_CACHE_LIMIT"):
+            env.pop(variable, None)
+        ccache_dir = args.ccache_dir.expanduser()
+        if not ccache_dir.is_absolute():
+            ccache_dir = ccache_dir.resolve()
+        env["CCACHE_DIR"] = str(ccache_dir)
+        env["CCACHE_BASEDIR"] = str(repo_root.resolve())
+        env["CCACHE_NAMESPACE"] = "foundry"
+        # Ignore user and cache-local configuration; this environment is the complete cache policy.
+        env["CCACHE_CONFIGPATH"] = os.devnull
+        env["CCACHE_COMPILERCHECK"] = "content"
+        # ccache booleans are true whenever present, so CCACHE_NO* is required to force false.
+        _set_ccache_boolean(env, "HASHDIR", enabled=True)
+        _set_ccache_boolean(env, "HARDLINK", enabled=False)
+        _set_ccache_boolean(env, "FILECLONE", enabled=args.ccache_file_clone)
+        _set_ccache_boolean(env, "COMPRESS", enabled=not args.ccache_file_clone)
+        _set_ccache_boolean(env, "DISABLE", enabled=False)
+        _set_ccache_boolean(env, "RECACHE", enabled=False)
+        _set_ccache_boolean(env, "READONLY", enabled=False)
+        _set_ccache_boolean(env, "READONLY_DIRECT", enabled=False)
+    return env
 
 
 def test_environment(args: argparse.Namespace, target: BuildTarget | None = None) -> dict[str, str]:
@@ -360,6 +423,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--dev-mode",
         action="store_true",
         help="Compatibility no-op; dev_mode=yes is now the default.",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=SUPPORTED_BUILD_BACKENDS,
+        default="scons",
+        help="Build execution backend. Default: scons.",
+    )
+    parser.add_argument(
+        "--compiler-cache",
+        choices=SUPPORTED_COMPILER_CACHES,
+        default="auto",
+        help="Compiler cache. auto selects ccache for Ninja and none for native SCons.",
+    )
+    parser.add_argument(
+        "--ccache-dir",
+        type=Path,
+        default=DEFAULT_CCACHE_PATH,
+        help=f"Shared Foundry ccache directory. Default: {DEFAULT_CCACHE_PATH}.",
+    )
+    parser.add_argument(
+        "--ccache-file-clone",
+        action="store_true",
+        help="Use ccache file cloning when supported; disables compressed cache storage.",
     )
     parser.add_argument(
         "--jobs",
@@ -447,6 +533,15 @@ def main(argv: list[str]) -> int:
         )
         return 127
 
+    compiler_cache = resolve_compiler_cache(args)
+    if compiler_cache == "ccache" and shutil.which("ccache") is None:
+        print(
+            "[agent-build] ccache is required for this build mode but was not found in PATH. "
+            "Use --backend scons --compiler-cache none for the native fallback.",
+            file=sys.stderr,
+        )
+        return 127
+
     progress_path = progress_path_from_args(args)
     progress_stdout_jsonl = args.progress_format == "jsonl"
     human_stream = sys.stderr if progress_stdout_jsonl else sys.stdout
@@ -460,6 +555,7 @@ def main(argv: list[str]) -> int:
         progress_path=progress_path,
         append_progress=args.append_progress,
         progress_stdout_jsonl=progress_stdout_jsonl,
+        env=build_environment(args, compiler_cache),
     )
     if build_exit != 0:
         return build_exit
