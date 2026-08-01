@@ -41,6 +41,11 @@ annotation Timeout(seconds: float) targets METHOD, CLASS:
 annotation Marker targets CLASS, METHOD:
 	pass
 
+annotation Multiline(
+	seconds: float
+) targets METHOD, CLASS:
+	pass
+
 extend Sample.Support.Helper uses Printable:
 	pass
 

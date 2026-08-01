@@ -335,6 +335,14 @@ class TokenizationTests(unittest.TestCase):
         self.assertNotScoped("print(int)", "entity.name.type.foundryscript", offset=6, source=source)
         self.assertScoped("print(int)", "entity.name.function.call.foundryscript", source=source)
 
+    def test_a_bracket_only_opens_a_type_argument_position_after_a_type_name(self) -> None:
+        # `[` also opens an array literal; only an identifier immediately before `[`
+        # (a generic type argument list, e.g. `Array[int]`) is a type position.
+        source = "var literal = [int, float, bool]\n"
+        for marker, offset in (("int", 0), ("float", 0), ("bool", 0)):
+            with self.subTest(word=marker):
+                self.assertNotScoped(marker, "entity.name.type.foundryscript", offset=offset, source=source)
+
     def test_capitalized_type_coverage_still_works(self) -> None:
         self.assertScoped("-> Int", "entity.name.type.foundryscript", offset=3, source="func f() -> Int:\n\tpass\n")
         self.assertScoped(": String", "entity.name.type.foundryscript", offset=2)
@@ -353,6 +361,19 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped("var targets", "variable.other.declaration.foundryscript", offset=4, source=source)
         self.assertNotScoped("targets()", "keyword.other.targets.foundryscript", source=source)
         self.assertScoped("targets()", "entity.name.function.call.foundryscript", source=source)
+
+    def test_targets_is_scoped_when_the_parameter_list_spans_multiple_lines(self) -> None:
+        source = "annotation multiline(\n\tseconds: float\n) targets METHOD, CLASS:\n\tpass\n"
+        self.assertScoped(") targets", "keyword.other.targets.foundryscript", offset=2, source=source)
+        # The parameter list is still tokenized while the block is open.
+        self.assertScoped("float", "entity.name.type.foundryscript", source=source)
+
+    def test_a_declaration_without_targets_does_not_swallow_the_rest_of_the_file(self) -> None:
+        # Malformed/mid-edit input: the annotation body never reaches `targets`. The
+        # block must not leak its scope past the next root declaration.
+        source = "annotation broken(\n\nfunc after() -> int:\n\treturn 0\n"
+        self.assertScoped("func after", "storage.type.function.foundryscript", source=source)
+        self.assertScoped("after", "entity.name.function.foundryscript", source=source)
 
     # -- property accessors -------------------------------------------------
 
@@ -386,6 +407,16 @@ class TokenizationTests(unittest.TestCase):
         self.assertNotScoped("get", "storage.type.accessor.foundryscript", source=source)
         self.assertScoped("set", "entity.name.function.foundryscript", source=source)
         self.assertNotScoped("set", "storage.type.accessor.foundryscript", source=source)
+
+    def test_a_multi_argument_or_non_identifier_call_is_never_an_accessor(self) -> None:
+        # `get`'s inline form only ever has empty parens and `set`'s only ever takes a
+        # bare identifier (GRAMMAR.md 4.4); a call shaped any other way -- including one
+        # that happens to be followed by `:` because it is a dict-literal key -- is left
+        # to the ordinary call rule instead of being misread as an accessor.
+        source = 'get("health"): 1\nset("health", 1): 2\n'
+        for marker in ('get("health"):', 'set("health", 1):'):
+            with self.subTest(call=marker):
+                self.assertNotScoped(marker, "storage.type.accessor.foundryscript", source=source)
 
     # -- triple-quoted node-path components ---------------------------------
 
