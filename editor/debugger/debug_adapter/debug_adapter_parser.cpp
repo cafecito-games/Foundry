@@ -233,7 +233,14 @@ bool DebugAdapterParser::parse_launch_request(const Dictionary &p_arguments, Lau
 
 	const Dictionary adapter = adapter_value;
 	const Variant version_value = adapter.get("protocolVersion", Variant());
-	if (version_value.get_type() != Variant::INT && version_value.get_type() != Variant::FLOAT) {
+	// JSON has a single number type, so a whole float is accepted, but a fractional
+	// one must not be silently truncated into a version the client never asked for.
+	bool version_is_whole_number = version_value.get_type() == Variant::INT;
+	if (version_value.get_type() == Variant::FLOAT) {
+		const double version_number = version_value;
+		version_is_whole_number = version_number == Math::floor(version_number);
+	}
+	if (!version_is_whole_number) {
 		r_error = "the launch adapter requires an integer \"protocolVersion\".";
 		return false;
 	}
@@ -247,7 +254,14 @@ bool DebugAdapterParser::parse_launch_request(const Dictionary &p_arguments, Lau
 	}
 	r_request.test_launch.adapter_protocol_version = protocol_version;
 
-	r_request.test_launch.report_path = adapter.get("report", "");
+	// The TAP report is the authoritative result of a run, and the runner rejects an
+	// invocation without one, so an absent report is refused before anything starts.
+	const String report_path = adapter.get("report", "");
+	if (report_path.is_empty()) {
+		r_error = "the launch adapter requires a \"report\" path.";
+		return false;
+	}
+	r_request.test_launch.report_path = report_path;
 
 	const Variant ids_value = adapter.get("testIds", Variant());
 	if (ids_value.get_type() != Variant::NIL) {

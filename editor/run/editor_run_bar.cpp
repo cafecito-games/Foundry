@@ -419,9 +419,8 @@ void EditorRunBar::_run_scene(const String &p_scene_path, const Vector<String> &
 }
 
 Error EditorRunBar::play_project_test(const EditorRun::TestLaunch &p_launch) {
-	if (editor_run.get_status() == EditorRun::STATUS_PLAY) {
-		return ERR_ALREADY_IN_USE;
-	}
+	// A restart replaces the running launch, exactly as starting a scene does.
+	stop_playing();
 
 	_reset_play_buttons();
 

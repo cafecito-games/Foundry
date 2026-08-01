@@ -275,9 +275,43 @@ TEST_CASE("[Editor][DebugAdapter] A malformed project_test launch is rejected wi
 		CHECK(error.contains("protocol version"));
 	}
 
+	SUBCASE("missing report") {
+		Dictionary adapter;
+		adapter["protocolVersion"] = EditorRun::TEST_ADAPTER_PROTOCOL_VERSION;
+		Dictionary launch;
+		launch["kind"] = "project_test";
+		launch["runner"] = "res://run.fs";
+		launch["adapter"] = adapter;
+		Dictionary arguments;
+		arguments["foundry/launch"] = launch;
+
+		DebugAdapterParser::LaunchRequest request;
+		String error;
+		CHECK_FALSE(DebugAdapterParser::parse_launch_request(arguments, request, error));
+		CHECK(error.contains("report"));
+	}
+
+	SUBCASE("fractional protocol version") {
+		Dictionary adapter;
+		adapter["protocolVersion"] = 1.5;
+		adapter["report"] = "/scratch/report.tap";
+		Dictionary launch;
+		launch["kind"] = "project_test";
+		launch["runner"] = "res://run.fs";
+		launch["adapter"] = adapter;
+		Dictionary arguments;
+		arguments["foundry/launch"] = launch;
+
+		DebugAdapterParser::LaunchRequest request;
+		String error;
+		CHECK_FALSE(DebugAdapterParser::parse_launch_request(arguments, request, error));
+		CHECK(error.contains("integer"));
+	}
+
 	SUBCASE("empty selected id") {
 		Dictionary adapter;
 		adapter["protocolVersion"] = EditorRun::TEST_ADAPTER_PROTOCOL_VERSION;
+		adapter["report"] = "/scratch/report.tap";
 		Array ids;
 		ids.push_back("");
 		adapter["testIds"] = ids;
@@ -298,6 +332,7 @@ TEST_CASE("[Editor][DebugAdapter] A malformed project_test launch is rejected wi
 TEST_CASE("[Editor][DebugAdapter] Unknown selected ids are forwarded for the runner to reject") {
 	Dictionary adapter;
 	adapter["protocolVersion"] = EditorRun::TEST_ADAPTER_PROTOCOL_VERSION;
+	adapter["report"] = "/scratch/report.tap";
 	Array ids;
 	ids.push_back("suite::does_not_exist");
 	adapter["testIds"] = ids;
