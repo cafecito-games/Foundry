@@ -182,6 +182,18 @@ class FSCompiler {
 	// becomes FIXED. Used when a subclass inherits a base's member and per-ancestor parameter bindings.
 	void _specialize_type_argument_binding(FoundryScript::TypeArgumentBinding &r_binding, const Vector<FSParser::DataType> &p_base_specialization, FoundryScript *p_owner);
 
+	// Resolves a class constant / nested-class handle exactly the way the analyzer's scope walk does:
+	// the script itself, then its complete base subtree (each base contributing its own lexical outer
+	// chain), then the script's own lexical outer chain. Visiting an inherited inner class's outer
+	// scope before the current class's outer scope is what keeps the emitted declaration identical to
+	// the one analysis chose. Scripts are pointer-deduplicated so a shared outer is walked once.
+	bool _find_class_scope_constant(FoundryScript *p_script, const StringName &p_name, Variant &r_value,
+			HashSet<FoundryScript *> &r_visited);
+	// The live class a resolved class datatype denotes, or null when it cannot be recovered. Emitting
+	// this identity is preferred over a second name lookup: the declaration analysis chose can live in
+	// a script this compilation unit only holds shallowly, whose constant pool is not populated.
+	FoundryScript *_resolve_class_handle_script(const FSParser::DataType &p_datatype, FoundryScript *p_owner);
+
 	FSCodeGenerator::Address _emit_global_class_value(CodeGen &codegen, Error &r_error, const StringName &p_global_class, const FSParser::ExpressionNode *p_source);
 	FSCodeGenerator::Address _parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root = false, bool p_initializer = false);
 	FSCodeGenerator::Address _parse_match_pattern(CodeGen &codegen, Error &r_error, const FSParser::PatternNode *p_pattern, const FSCodeGenerator::Address &p_value_addr, const FSCodeGenerator::Address &p_type_addr, const FSCodeGenerator::Address &p_previous_test, bool p_is_first, bool p_is_nested);

@@ -542,6 +542,61 @@ static void _rebind_self_data_type(FSDataType &p_type, FoundryScript *p_owner) {
 	}
 }
 
+bool FSCompiler::_find_class_scope_constant(FoundryScript *p_script, const StringName &p_name, Variant &r_value,
+		HashSet<FoundryScript *> &r_visited) {
+	if (p_script == nullptr || r_visited.has(p_script)) {
+		return false;
+	}
+	r_visited.insert(p_script);
+
+	if (p_script->constants.has(p_name)) {
+		r_value = p_script->constants[p_name];
+		return true;
+	}
+
+	// The base subtree comes before the lexical outer chain, and a base contributes its own outer
+	// classes: a class that inherits an inner class sees that inner class's outer scope ahead of its
+	// own. This is the order the analyzer bound the name with, so the emitted declaration matches it.
+	if (_find_class_scope_constant(p_script->base.ptr(), p_name, r_value, r_visited)) {
+		return true;
+	}
+
+	// Class C++ integer constant of the native class this one ultimately extends.
+	if (p_script->native.is_valid()) {
+		bool success = false;
+		const int64_t constant = ClassDB::get_integer_constant(p_script->native->get_name(), p_name, &success);
+		if (success) {
+			r_value = constant;
+			return true;
+		}
+	}
+
+	return _find_class_scope_constant(p_script->_owner, p_name, r_value, r_visited);
+}
+
+FoundryScript *FSCompiler::_resolve_class_handle_script(const FSParser::DataType &p_datatype, FoundryScript *p_owner) {
+	if (p_datatype.kind != FSParser::DataType::CLASS || p_datatype.class_type == nullptr ||
+			p_datatype.class_type->is_native_conformance_shim || p_datatype.class_type->is_builtin_conformance_shim ||
+			p_datatype.class_type->is_trait) {
+		return nullptr;
+	}
+
+	Ref<FoundryScript> script;
+	if (parser->has_class(p_datatype.class_type)) {
+		script = Ref<FoundryScript>(main_script);
+	} else if (!p_datatype.script_path.is_empty()) {
+		Error err = OK;
+		script = FSCache::get_shallow_script(p_datatype.script_path, err, p_owner != nullptr ? p_owner->path : String());
+		if (err != OK) {
+			return nullptr;
+		}
+	}
+	if (script.is_null()) {
+		return nullptr;
+	}
+	return script->find_class(p_datatype.class_type->fqcn);
+}
+
 // Some typed-container calls need a converting retype rather than the strict validate that an ordinary
 // typed-array assignment emits: generic method `Array[T]` returns are runtime-erased, and inherited
 // `Array[Self]` returns are compiled with the declaring class while statically receiver-specialized.
@@ -785,37 +840,25 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				} break;
 				case FSParser::IdentifierNode::MEMBER_CONSTANT:
 				case FSParser::IdentifierNode::MEMBER_CLASS: {
-					// Try class constants.
-					const auto find_class_constant = [&](FoundryScript *p_owner, Variant &r_value) -> bool {
-						FoundryScript *owner = p_owner;
-						while (owner) {
-							FoundryScript *scr = owner;
-							FSNativeClass *nc = nullptr;
-
-							while (scr) {
-								if (scr->constants.has(identifier)) {
-									r_value = scr->constants[identifier];
-									return true;
-								}
-								if (scr->native.is_valid()) {
-									nc = scr->native.ptr();
-								}
-								scr = scr->base.ptr();
-							}
-
-							// Class C++ integer constant.
-							if (nc) {
-								bool success = false;
-								int64_t constant = ClassDB::get_integer_constant(nc->get_name(), identifier, &success);
-								if (success) {
-									r_value = constant;
-									return true;
-								}
-							}
-
-							owner = owner->_owner;
+					// A bare class handle — a nested class, or a `const` alias denoting one — is emitted
+					// from the identity analysis already selected. A second name-only lookup can differ:
+					// the declaration analysis chose may live in a script this unit only holds shallowly,
+					// whose constant pool is unpopulated, and the search would then fall through to a
+					// same-named declaration in a later scope. A specialized alias (`const B = Box[int]`)
+					// keeps its constant-pool handle, which carries the reified arguments.
+					const FSParser::DataType identifier_type = in->get_datatype();
+					if (identifier_type.is_meta_type && !identifier_type.is_type_handle_annotation &&
+							identifier_type.type_arguments.is_empty()) {
+						FoundryScript *handle_script = _resolve_class_handle_script(identifier_type, codegen.script);
+						if (handle_script != nullptr) {
+							return codegen.add_constant(Ref<FoundryScript>(handle_script));
 						}
-						return false;
+					}
+
+					// Try class constants.
+					const auto find_class_constant = [&](FoundryScript *p_scope, Variant &r_value) -> bool {
+						HashSet<FoundryScript *> visited;
+						return _find_class_scope_constant(p_scope, identifier, r_value, visited);
 					};
 
 					Variant constant_value;
@@ -5355,6 +5398,8 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 			continue;
 		}
 		runtime_entry.target_script = target_script.ptr();
+
+
 		// The declaring script's constant pool is the compile-time half of the witness's declaration-site
 		// scope, mirroring the analyzer's target-first, declaration-site-second lookup.
 		for (const FSParser::FunctionNode *witness : conformance->witnesses) {

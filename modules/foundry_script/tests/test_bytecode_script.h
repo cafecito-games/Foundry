@@ -1326,6 +1326,87 @@ TEST_CASE("[FoundryScript][BytecodeScript] A builtin witness binds Self inside a
 	CHECK(return_type.type_arguments[0].builtin_type == Variant::INT);
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] A witness binds an inherited inner class's outer scope") {
+	// `Token` is declared in the outer class of the inner class the target inherits, and the target's
+	// own outer class declares a different class under the same name. Analysis binds the inherited
+	// one, so compilation has to emit that identity: a lookup that skipped the inherited outer scope
+	// would silently emit the target's own `Token` instead, before and after a bytecode round-trip.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class BaseOuter:\n"
+			"\tclass Token:\n"
+			"\t\tfunc label() -> String:\n"
+			"\t\t\treturn \"inherited-outer\"\n"
+			"\n"
+			"\tclass Inner:\n"
+			"\t\tpass\n"
+			"\n"
+			"class TargetOuter:\n"
+			"\tclass Token:\n"
+			"\t\tfunc label() -> String:\n"
+			"\t\t\treturn \"target-outer\"\n"
+			"\n"
+			"\tclass Derived extends BaseOuter.Inner:\n"
+			"\t\tpass\n"
+			"\n"
+			"trait Taggable:\n"
+			"\tabstract func make_token() -> RefCounted\n"
+			"\n"
+			"extend TargetOuter.Derived uses Taggable:\n"
+			"\tfunc make_token() -> RefCounted:\n"
+			"\t\treturn Token.new()\n"
+			"\n"
+			"func run() -> RefCounted:\n"
+			"\tvar tagged: Taggable = TargetOuter.Derived.new()\n"
+			"\treturn tagged.make_token()\n");
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator base_outer =
+			original->get_subclasses().find(SNAME("BaseOuter"));
+	REQUIRE(base_outer);
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator inherited_token =
+			base_outer->value->get_subclasses().find(SNAME("Token"));
+	REQUIRE(inherited_token);
+	const String inherited_token_name = inherited_token->value->get_fully_qualified_name();
+
+	// The constructed object's own script is the identity assertion: same declaring file, and the
+	// inner-class name of the inherited outer scope rather than the target's own.
+	const auto check_token_identity = [&](const Variant &p_token) {
+		Object *token_object = p_token;
+		REQUIRE(token_object != nullptr);
+		const Ref<FoundryScript> token_script = token_object->get_script();
+		REQUIRE(token_script.is_valid());
+		CHECK(token_script->get_script_path() == script_path);
+		CHECK(token_script->get_fully_qualified_name() == inherited_token_name);
+		CHECK(String(bytecode_instance_call(token_object, SNAME("label"), {})) == "inherited-outer");
+	};
+
+	{
+		const Variant instance_variant = bytecode_new_instance(original);
+		Object *instance = instance_variant;
+		check_token_identity(bytecode_instance_call(instance, SNAME("run"), {}));
+	}
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	const Variant restored_instance_variant = bytecode_new_instance(restored);
+	Object *restored_instance = restored_instance_variant;
+	check_token_identity(bytecode_instance_call(restored_instance, SNAME("run"), {}));
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds") {
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
 			"func lambda_total(base: int) -> int:\n"
