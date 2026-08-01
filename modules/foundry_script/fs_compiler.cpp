@@ -871,12 +871,8 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				} break;
 				case FSParser::IdentifierNode::MEMBER_CONSTANT:
 				case FSParser::IdentifierNode::MEMBER_CLASS: {
-					// A nested-class name denotes exactly the class analysis bound it to, so it is emitted
-					// from that identity rather than from a second name-only lookup, which can differ: the
-					// declaration analysis chose may live in a script this unit only holds shallowly, whose
-					// constant pool is unpopulated, and the search would then fall through to a same-named
-					// declaration in a later scope. A specialized handle (`Box[int]`) is not a bare class
-					// object and keeps its own emission path.
+					// A bare nested-class name denotes exactly the class analysis bound it to. A specialized
+					// handle (`Box[int]`) is not a bare class object and keeps its own emission path below.
 					const FSParser::DataType identifier_type = in->get_datatype();
 					if (in->source == FSParser::IdentifierNode::MEMBER_CLASS && identifier_type.is_meta_type &&
 							!identifier_type.is_type_handle_annotation && identifier_type.type_arguments.is_empty()) {
@@ -884,6 +880,28 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 						if (handle_script != nullptr) {
 							return codegen.add_constant(Ref<FoundryScript>(handle_script));
 						}
+					}
+
+					// A class-valued constant already carries the exact declaration analysis selected, in
+					// `reduced_value`. That identity is emitted directly, ahead of any name-only scope
+					// walk: a same-named declaration in a different, lower-precedence scope must never be
+					// allowed to override it. This matters because the analyzer-selected declaration can
+					// live in a script this unit only holds shallowly, whose constant pool is unpopulated
+					// and so contributes nothing to the scope walk below, letting it fall through into a
+					// later scope that happens to share the name. Non-class constants (scalars, enums,
+					// containers) are untouched and still fold through the name-based lookup that follows.
+					if (in->is_constant && Object::cast_to<FoundryScript>(in->reduced_value.operator Object *()) != nullptr) {
+						// A `const` declared with a widened storage type (e.g. `const C: Variant = Box[int]`)
+						// keeps its reified type arguments in the declaration's own storage datatype, not in
+						// the identifier's reference-site datatype, which reflects the widened annotation. Use
+						// the declaration's storage datatype when this identifier actually names a `const`
+						// member, so identity-first emission does not erase a specialization the populated
+						// constant-pool lookup below would otherwise have preserved.
+						const FSParser::DataType storage_type = in->constant_source != nullptr
+								? _constant_storage_datatype(in->constant_source)
+								: identifier_type;
+						return codegen.add_constant(
+								_resolve_aliased_class_constant(in->reduced_value, storage_type, codegen.script));
 					}
 
 					// Try class constants.
@@ -905,15 +923,6 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					if (in->resolved_from_conformance_declaration_scope && codegen.declaration_site_script != nullptr &&
 							find_class_constant(codegen.declaration_site_script, constant_value)) {
 						return codegen.add_constant(constant_value);
-					}
-
-					// A class-valued `const` whose declaring class this unit only holds shallowly has no
-					// entry in any reachable constant pool. The value analysis folded is carried by the
-					// identifier itself, so it is emitted from there rather than reconstructed from the
-					// inferred type, which a folded value may legitimately differ from.
-					if (in->is_constant && Object::cast_to<FoundryScript>(in->reduced_value.operator Object *()) != nullptr) {
-						return codegen.add_constant(
-								_resolve_aliased_class_constant(in->reduced_value, identifier_type, codegen.script));
 					}
 				} break;
 				case FSParser::IdentifierNode::STATIC_VARIABLE: {
