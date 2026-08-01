@@ -934,8 +934,8 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			push_test_arg(cli_parse.global_args[i]);
 		}
 		push_test_arg("--test");
-		if (!cli_parse.invocation.test_case.is_empty()) {
-			push_test_arg("--test-case=" + cli_parse.invocation.test_case);
+		if (!cli_parse.invocation.test_cases.is_empty()) {
+			push_test_arg("--test-case=" + FoundryCLIParser::build_doctest_case_filter(cli_parse.invocation.test_cases));
 		}
 		for (int i = 0; i < cli_parse.invocation.passthrough_args.size(); i++) {
 			push_test_arg(cli_parse.invocation.passthrough_args[i]);

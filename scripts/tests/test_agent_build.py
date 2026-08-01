@@ -235,7 +235,53 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
     def test_case_implies_test(self) -> None:
         args = agent_build.parse_args(["--case", "*FoundryCLI*"])
         self.assertTrue(args.test)
-        self.assertEqual(args.test_case, "*FoundryCLI*")
+        self.assertEqual(args.test_case, ["*FoundryCLI*"])
+
+    def test_repeated_case_retains_every_value_in_order(self) -> None:
+        args = agent_build.parse_args(["--case", "*A*", "--case", "*B*", "--case", "*C*"])
+        self.assertTrue(args.test)
+        self.assertEqual(args.test_case, ["*A*", "*B*", "*C*"])
+
+    def test_no_case_leaves_the_filter_unset_and_does_not_imply_test(self) -> None:
+        args = agent_build.parse_args([])
+        self.assertIsNone(args.test_case)
+        self.assertFalse(args.test)
+
+    def test_command_forwards_every_repeated_case_filter_in_order(self) -> None:
+        args = agent_build.parse_args(["--case", "*A*", "--case", "*B*"])
+        target = agent_build.BuildTarget(
+            scons_platform="macos",
+            binary_path=Path("/tmp/foundry.macos.editor.dev.arm64"),
+            default_display=None,
+        )
+        command = agent_build.test_command(args, target)
+        self.assertEqual(
+            command,
+            [
+                str(target.binary_path),
+                "--headless",
+                "test",
+                "run",
+                "--case",
+                "*A*",
+                "--case",
+                "*B*",
+                "--force-colors",
+            ],
+        )
+
+    def test_command_omits_case_when_no_filter_was_supplied(self) -> None:
+        args = agent_build.parse_args([])
+        target = agent_build.BuildTarget(
+            scons_platform="macos",
+            binary_path=Path("/tmp/foundry.macos.editor.dev.arm64"),
+            default_display=None,
+        )
+        command = agent_build.test_command(args, target)
+        self.assertEqual(
+            command,
+            [str(target.binary_path), "--headless", "test", "run", "--force-colors"],
+        )
 
     def test_cache_mode_defaults_by_backend(self) -> None:
         native = agent_build.parse_args([])

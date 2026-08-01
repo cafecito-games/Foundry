@@ -166,6 +166,214 @@ static String run_foundry_subprocess(const List<String> &p_arguments, int &r_exi
 	return output;
 }
 
+static String foundry_test_scratch_root() {
+	if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+		const String configured = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+		if (!configured.is_empty()) {
+			return configured.simplify_path();
+		}
+	}
+	const String directory_name = vformat("foundry-cli-case-filter-tests-%d", OS::get_singleton()->get_process_id());
+	return OS::get_singleton()->get_temp_path().path_join(directory_name).simplify_path();
+}
+
+// Reproduces the bug fixed by this suite: repeated `--case` occurrences must be additive
+// (an OR set across doctest's own registered tests), never last-wins. `--list-test-cases`
+// makes the selected set directly observable without executing every test.
+TEST_CASE("[FoundryCLI][TestRun] Repeated case filters select the union of both patterns") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*Version query accepts JSON*");
+	arguments.push_back("--case");
+	arguments.push_back("*Test run records case filter*");
+	arguments.push_back("--list-test-cases");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(output.contains("[FoundryCLIParser] Version query accepts JSON in either option order"));
+	CHECK(output.contains("[FoundryCLIParser] Test run records case filter"));
+	CHECK_FALSE(output.contains("[FoundryCLIParser] Test run has no case filters when option is absent"));
+	CHECK(output.contains("unskipped test cases passing the current filters: 2"));
+}
+
+TEST_CASE("[FoundryCLI][TestRun] Reversing repeated case filters selects the same union") {
+	// Registration order, not filter order, determines the listed order; both orderings
+	// must therefore select the same two-case union.
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*Test run records case filter*");
+	arguments.push_back("--case");
+	arguments.push_back("*Version query accepts JSON*");
+	arguments.push_back("--list-test-cases");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(output.contains("[FoundryCLIParser] Version query accepts JSON in either option order"));
+	CHECK(output.contains("[FoundryCLIParser] Test run records case filter"));
+	CHECK(output.contains("unskipped test cases passing the current filters: 2"));
+}
+
+TEST_CASE("[FoundryCLI][TestRun] Three repeated case filters select the union of all three") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*Version query accepts JSON*");
+	arguments.push_back("--case");
+	arguments.push_back("*Test run records case filter*");
+	arguments.push_back("--case");
+	arguments.push_back("*build_doctest_case_filter merges filters with a single value unchanged*");
+	arguments.push_back("--list-test-cases");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(output.contains("unskipped test cases passing the current filters: 3"));
+}
+
+TEST_CASE("[FoundryCLI][TestRun] Repeating the same case filter does not duplicate the match") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*Version query accepts JSON*");
+	arguments.push_back("--case");
+	arguments.push_back("*Version query accepts JSON*");
+	arguments.push_back("--list-test-cases");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(output.contains("unskipped test cases passing the current filters: 1"));
+}
+
+TEST_CASE("[FoundryCLI][TestRun] A comma list combined with a repeated filter selects all three") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*Version query accepts JSON*,*Test run records case filter*");
+	arguments.push_back("--case");
+	arguments.push_back("*build_doctest_case_filter merges filters with a single value unchanged*");
+	arguments.push_back("--list-test-cases");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(output.contains("unskipped test cases passing the current filters: 3"));
+}
+
+TEST_CASE("[FoundryCLI][TestRun] An escaped comma inside one filter survives a repeated filter") {
+	// This doctest suite has no test name containing a literal comma, so this proves the
+	// escape only against a made-up pattern: the escaped comma must not split the first
+	// value, and the second value must still contribute its own match.
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*nonexistent case\\, with an escaped comma*");
+	arguments.push_back("--case");
+	arguments.push_back("*Version query accepts JSON*");
+	arguments.push_back("--list-test-cases");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(output.contains("[FoundryCLIParser] Version query accepts JSON in either option order"));
+	CHECK(output.contains("unskipped test cases passing the current filters: 1"));
+}
+
+TEST_CASE("[FoundryCLI][TestRun] JSONL progress accounts for the exact union of two repeated filters") {
+	const String scratch_root = foundry_test_scratch_root();
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	REQUIRE_EQ(dir->make_dir_recursive(scratch_root), OK);
+	const String progress_path = scratch_root.path_join(
+			vformat("foundry_cli_case_filter_progress_%d.jsonl", OS::get_singleton()->get_process_id()));
+	if (FileAccess::exists(progress_path)) {
+		DirAccess::remove_absolute(progress_path);
+	}
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*Version query accepts JSON*");
+	arguments.push_back("--case");
+	arguments.push_back("*Test run records case filter*");
+	arguments.push_back("--progress-format=jsonl");
+	arguments.push_back("--progress-file");
+	arguments.push_back(progress_path);
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+
+	REQUIRE_MESSAGE(FileAccess::exists(progress_path), "Progress file was not created");
+	const String progress_contents = FileAccess::get_file_as_string(progress_path);
+	INFO("Progress contents:\n", progress_contents);
+
+	Dictionary run_start;
+	Dictionary run_end;
+	Vector<String> test_start_names;
+	Vector<String> test_end_names;
+	for (const String &line : progress_contents.split("\n", false)) {
+		Variant parsed = JSON::parse_string(line);
+		if (parsed.get_type() != Variant::DICTIONARY) {
+			continue;
+		}
+		const Dictionary event = parsed;
+		const String event_name = event.get("event", "");
+		if (event_name == "run_start") {
+			run_start = event;
+		} else if (event_name == "run_end") {
+			run_end = event;
+		} else if (event_name == "test_start") {
+			test_start_names.push_back(event.get("name", ""));
+		} else if (event_name == "test_end") {
+			test_end_names.push_back(event.get("name", ""));
+		}
+	}
+
+	REQUIRE_MESSAGE(!run_start.is_empty(), "No run_start event observed");
+	REQUIRE_MESSAGE(!run_end.is_empty(), "No run_end event observed");
+	CHECK_EQ(int(run_start["test_count"]), 2);
+	CHECK_EQ(test_start_names.size(), 2);
+	CHECK(test_start_names.has("[FoundryCLIParser] Version query accepts JSON in either option order"));
+	CHECK(test_start_names.has("[FoundryCLIParser] Test run records case filter"));
+	CHECK_EQ(test_end_names.size(), 2);
+	CHECK(test_end_names.has("[FoundryCLIParser] Version query accepts JSON in either option order"));
+	CHECK(test_end_names.has("[FoundryCLIParser] Test run records case filter"));
+
+	DirAccess::remove_absolute(progress_path);
+}
+
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 
 TEST_CASE("[FoundryCLI][ProjectTest] Runner works without a main scene") {

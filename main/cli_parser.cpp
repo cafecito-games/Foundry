@@ -770,9 +770,11 @@ static void parse_test_run(CLIParseState &r_state) {
 			continue;
 		}
 		if (arg == "--case") {
-			if (!require_value(r_state, arg, r_state.result.invocation.test_case)) {
+			String value;
+			if (!require_value(r_state, arg, value)) {
 				return;
 			}
+			append(r_state.result.invocation.test_cases, value);
 		} else if (arg == "--progress") {
 			r_state.result.invocation.test_progress = true;
 			r_state.index++;
@@ -1612,4 +1614,31 @@ bool FoundryCLIParser::can_run_without_main_scene(const CLIInvocation &p_invocat
 		default:
 			return false;
 	}
+}
+
+String FoundryCLIParser::build_doctest_case_filter(const PackedStringArray &p_case_filters) {
+	if (p_case_filters.is_empty()) {
+		return String();
+	}
+
+	String joined = p_case_filters[0];
+	for (int i = 1; i < p_case_filters.size(); i++) {
+		// Doctest's comma tokenizer treats a run of trailing backslashes as escapes
+		// that consume the following character. If the previous value ends with an
+		// odd number of backslashes, the join comma would be swallowed as an escaped
+		// literal comma instead of acting as a real filter separator, silently
+		// merging two distinct patterns. Padding with one extra backslash keeps the
+		// original trailing-backslash meaning (an escaped pair still decodes to one
+		// literal backslash) while restoring the comma's role as a separator.
+		int trailing_backslashes = 0;
+		for (int c = joined.length() - 1; c >= 0 && joined[c] == '\\'; c--) {
+			trailing_backslashes++;
+		}
+		if (trailing_backslashes % 2 == 1) {
+			joined += "\\";
+		}
+		joined += ",";
+		joined += p_case_filters[i];
+	}
+	return joined;
 }

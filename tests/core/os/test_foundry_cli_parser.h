@@ -300,8 +300,100 @@ TEST_CASE("[FoundryCLIParser] Test run records case filter") {
 
 	REQUIRE_MESSAGE(result.ok, result.error);
 	CHECK_EQ(result.invocation.kind, Kind::TEST_RUN);
-	CHECK_EQ(result.invocation.test_case, "*FoundryScript*");
+	REQUIRE_EQ(result.invocation.test_cases.size(), 1);
+	CHECK_EQ(result.invocation.test_cases[0], "*FoundryScript*");
 	CHECK(has_arg(result.global_args, "--headless"));
+}
+
+TEST_CASE("[FoundryCLIParser] Test run has no case filters when option is absent") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--project",
+			"demo",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.invocation.test_cases.is_empty());
+}
+
+TEST_CASE("[FoundryCLIParser] Test run retains every repeated case filter in order") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--case",
+			"*Version query accepts JSON*",
+			"--case",
+			"*Test run records case filter*",
+			"--case",
+			"*A third disjoint pattern*",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	REQUIRE_EQ(result.invocation.test_cases.size(), 3);
+	CHECK_EQ(result.invocation.test_cases[0], "*Version query accepts JSON*");
+	CHECK_EQ(result.invocation.test_cases[1], "*Test run records case filter*");
+	CHECK_EQ(result.invocation.test_cases[2], "*A third disjoint pattern*");
+}
+
+TEST_CASE("[FoundryCLIParser] Test run reports missing value for a repeated case filter") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--case",
+			"*A*",
+			"--case",
+	}));
+
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("--case"));
+}
+
+TEST_CASE("[FoundryCLIParser] build_doctest_case_filter merges filters with a single value unchanged") {
+	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(PackedStringArray()), "");
+
+	PackedStringArray single;
+	single.push_back("*FoundryScript*");
+	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(single), "*FoundryScript*");
+}
+
+TEST_CASE("[FoundryCLIParser] build_doctest_case_filter joins repeated values as an OR set") {
+	PackedStringArray filters;
+	filters.push_back("*A*");
+	filters.push_back("*B*");
+	filters.push_back("*C*");
+	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(filters), "*A*,*B*,*C*");
+}
+
+TEST_CASE("[FoundryCLIParser] build_doctest_case_filter preserves an escaped comma at a value boundary") {
+	// A pattern that legitimately contains a comma escapes it with a backslash; a
+	// second, unrelated filter is then appended. The escaped comma inside the first
+	// value must remain part of that value instead of becoming a separator, and the
+	// join between the two values must remain a real separator.
+	PackedStringArray filters;
+	filters.push_back("*[TextServer] Init\\, font loading and shaping*");
+	filters.push_back("*Second disjoint pattern*");
+	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(filters),
+			"*[TextServer] Init\\, font loading and shaping*,*Second disjoint pattern*");
+}
+
+TEST_CASE("[FoundryCLIParser] build_doctest_case_filter keeps a trailing escaped backslash literal at the boundary") {
+	// A value whose raw doctest encoding ends with an odd number of backslashes (here
+	// one) means "one literal trailing backslash" when it is the only filter, because
+	// doctest's parser emits that literal backslash once it reaches the end of the
+	// string. Naively appending a join comma right after that dangling backslash
+	// would have doctest read it as an escaped, literal comma, silently merging this
+	// pattern with the next one into a single filter. The merge must instead pad with
+	// an extra backslash so the trailing backslash keeps its original literal meaning
+	// and the join comma still acts as a real separator between the two patterns.
+	PackedStringArray filters;
+	filters.push_back("*trailing backslash*\\");
+	filters.push_back("*Second disjoint pattern*");
+	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(filters),
+			"*trailing backslash*\\\\,*Second disjoint pattern*");
 }
 
 TEST_CASE("[FoundryCLIParser] Test run records progress options") {

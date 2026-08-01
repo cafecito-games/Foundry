@@ -25,6 +25,16 @@ iteration only; rerun the default native strict build before handoff.
   environment.
 - The benchmark runner targets POSIX macOS and Linux.
 
+## Focused test runs
+
+`--case <pattern>` is repeatable and implies `--test`. Every occurrence is retained and
+forwarded to `foundry test run` as its own `--case`, so the selected tests are the union
+of all supplied patterns (a test runs when its name matches any of them):
+
+```sh
+python3 scripts/agent_build.py --backend ninja --test --case "*FoundryCLIParser*" --case "*FoundryCLI*TestRun*"
+```
+
 ## Ninja + ccache pilot
 
 ```sh

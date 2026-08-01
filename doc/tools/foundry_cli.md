@@ -78,6 +78,7 @@ foundry script migrate --trusted --project . --apply --strict null,dynamic --con
 foundry --headless script eval 'print(Engine.get_version_info()["string"])'
 
 foundry test run --project . --case "*FoundryScript*"
+foundry test run --project . --case "*FoundryScript*" --case "*FoundryCLI*"
 foundry test generate-fixtures modules/foundry_script/tests/scripts
 foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format
 foundry lsp serve --project . --port 6005
@@ -87,6 +88,12 @@ foundry docs generate-engine --output doc-out
 foundry extension dump-interface --format json
 foundry diagnostics render-device-support
 ```
+
+`test run --case <pattern>` is repeatable: a test runs when its name matches
+*any* supplied pattern (an OR set), and a single occurrence may itself contain
+a doctest comma-separated list (`--case "*A*,*B*"`). Repeated occurrences and
+comma-separated patterns compose, so `--case "*A*,*B*" --case "*C*"` selects
+`*A*` OR `*B*` OR `*C*`.
 
 ## Inline script evaluation
 
