@@ -133,12 +133,14 @@ class LSPSemanticExternalScript : public Script {
 	FOUNDRY_CLASS(LSPSemanticExternalScript, Script);
 
 	StringName method_name;
+	StringName property_name;
 
 protected:
 	static void _bind_methods() {}
 
 public:
 	void set_method_name(const StringName &p_name) { method_name = p_name; }
+	void set_property_name(const StringName &p_name) { property_name = p_name; }
 	bool can_instantiate() const override { return false; }
 	Ref<Script> get_base_script() const override { return Ref<Script>(); }
 	StringName get_global_name() const override { return StringName(); }
@@ -167,7 +169,11 @@ public:
 			p_list->push_back(MethodInfo(method_name));
 		}
 	}
-	void get_script_property_list(List<PropertyInfo> *p_list) const override {}
+	void get_script_property_list(List<PropertyInfo> *p_list) const override {
+		if (property_name != StringName()) {
+			p_list->push_back(PropertyInfo(Variant::STRING, property_name));
+		}
+	}
 	const Variant get_rpc_config() const override { return Variant(); }
 };
 
@@ -4168,6 +4174,36 @@ func f():
 			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
 			check_semantic_token_at(tokens, 3, 25, 10, LSP::SemanticTokenType::METHOD, default_library_modifier); // queue_free
 			check_semantic_token_at(tokens, 4, 28, 5, LSP::SemanticTokenType::EVENT, default_library_modifier); // ready
+		}
+
+		SUBCASE("an external-script property shadows a same-named native signal") {
+			const String path = "res://lsp/semantic_tokens_script_property_signal_shadow.fs";
+			const String uri = workspace->get_file_uri(path);
+			text_document->didOpen(make_did_open_params(uri,
+					"extends Node\n"
+					"\n"
+					"func read_ready() -> String:\n"
+					"\treturn self.ready\n"));
+
+			Ref<LSPSemanticExternalScript> script_base;
+			script_base.instantiate();
+			script_base->set_property_name(SNAME("ready"));
+
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			FSParser::DataType script_type;
+			script_type.kind = FSParser::DataType::SCRIPT;
+			script_type.builtin_type = Variant::OBJECT;
+			script_type.native_type = SNAME("Node");
+			script_type.script_type = script_base;
+			parser->get_tree()->base_type = script_type;
+
+			// The resolved value is still `Signal`-typed (the base's cached native type still reads
+			// "Node" from the file's own `extends` clause), so the token stays `event`; what this
+			// guards is that the script's own property claim on the name keeps `defaultLibrary` off,
+			// the same way a project property of the same name would.
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 13, 5, LSP::SemanticTokenType::EVENT); // self.ready (script property)
 		}
 
 		SUBCASE("a native signal stays default-library through a project subclass receiver") {

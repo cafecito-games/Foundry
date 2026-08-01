@@ -843,6 +843,23 @@ bool DocumentClassifier::classify_declared_symbol(const FSParser::IdentifierNode
 	return false;
 }
 
+// Whether a non-FoundryScript script already declares `p_name` as a property, method, or signal.
+// A name claimed by any one of those kinds shadows every native lookup for that name -- a script
+// property named `ready` must not let a native-signal check fall through to `Node.ready`.
+bool script_declares_member(const Ref<Script> &p_script, const StringName &p_name) {
+	if (p_script->has_method(p_name) || p_script->has_script_signal(p_name)) {
+		return true;
+	}
+	List<PropertyInfo> properties;
+	p_script->get_script_property_list(&properties);
+	for (const PropertyInfo &property : properties) {
+		if (property.name == p_name) {
+			return true;
+		}
+	}
+	return false;
+}
+
 bool DocumentClassifier::datatype_has_native_method(const FSParser::DataType &p_datatype, const StringName &p_name) const {
 	FSParser::DataType datatype = p_datatype;
 	HashSet<const FSParser::ClassNode *> visited_classes;
@@ -870,7 +887,7 @@ bool DocumentClassifier::datatype_has_native_method(const FSParser::DataType &p_
 				script.is_valid() && !visited_scripts.has(script.ptr());
 				script = script->get_base_script()) {
 			visited_scripts.insert(script.ptr());
-			if (script->has_method(p_name)) {
+			if (script_declares_member(script, p_name)) {
 				return false;
 			}
 			if (script->get_instance_base_type() != StringName()) {
@@ -905,12 +922,8 @@ bool DocumentClassifier::datatype_has_native_property(const FSParser::DataType &
 				script.is_valid() && !visited_scripts.has(script.ptr());
 				script = script->get_base_script()) {
 			visited_scripts.insert(script.ptr());
-			List<PropertyInfo> properties;
-			script->get_script_property_list(&properties);
-			for (const PropertyInfo &property : properties) {
-				if (property.name == p_name) {
-					return false;
-				}
+			if (script_declares_member(script, p_name)) {
+				return false;
 			}
 			if (script->get_instance_base_type() != StringName()) {
 				native_base = script->get_instance_base_type();
@@ -944,7 +957,7 @@ bool DocumentClassifier::datatype_has_native_signal(const FSParser::DataType &p_
 				script.is_valid() && !visited_scripts.has(script.ptr());
 				script = script->get_base_script()) {
 			visited_scripts.insert(script.ptr());
-			if (script->has_script_signal(p_name)) {
+			if (script_declares_member(script, p_name)) {
 				return false;
 			}
 			if (script->get_instance_base_type() != StringName()) {
