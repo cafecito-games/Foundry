@@ -30,6 +30,18 @@ SUPPORTED_SCONS_PLATFORMS = ("linuxbsd", "macos")
 DEFAULT_CCACHE_PATH = Path.home() / ".cache" / "foundry-ccache"
 SUPPORTED_BUILD_BACKENDS = ("scons", "ninja")
 SUPPORTED_COMPILER_CACHES = ("auto", "none", "ccache")
+NINJA_OWNED_SCONS_KEYS = frozenset(
+    {
+        "cache_path",
+        "c_compiler_launcher",
+        "cpp_compiler_launcher",
+        "debug_paths_relative",
+        "ninja",
+        "ninja_auto_run",
+        "ninja_dir",
+        "ninja_file",
+    }
+)
 TELEMETRY_TIMEOUT_SECONDS = 5.0
 
 
@@ -79,6 +91,11 @@ class BuildTarget(NamedTuple):
     scons_platform: str
     binary_path: Path
     default_display: str | None
+
+
+class NinjaState(NamedTuple):
+    directory: Path
+    file: Path
 
 
 def format_duration(seconds: float) -> str:
@@ -432,10 +449,67 @@ def resolve_build_target(args: argparse.Namespace) -> BuildTarget:
     return BuildTarget(scons_platform=scons_platform, binary_path=binary_path, default_display=default_display)
 
 
+def build_modes(args: argparse.Namespace) -> list[str]:
+    return ["dev_build=yes"] if args.dev_build else ["dev_mode=yes", "dev_build=yes"]
+
+
+def build_configuration_payload(args: argparse.Namespace, target: BuildTarget) -> dict[str, object]:
+    return {
+        "platform": target.scons_platform,
+        "arch": arch_from_args(args),
+        "target": "editor",
+        "modes": build_modes(args),
+        "tests": True,
+        "module_text_server_fb_enabled": True,
+        "scons_arg": list(args.scons_arg),
+    }
+
+
+def resolve_ninja_state(
+    args: argparse.Namespace,
+    target: BuildTarget,
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> NinjaState:
+    payload = build_configuration_payload(args, target)
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    key = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
+    directory = repo_root / ".ninja" / "agent-build" / key
+    return NinjaState(directory=directory, file=directory / "build.ninja")
+
+
+def ninja_generation_command(args: argparse.Namespace, target: BuildTarget, state: NinjaState) -> list[str]:
+    prefix = scons_prefix()
+    if prefix is None:
+        raise RuntimeError("SCons is not available")
+    return prefix + [
+        f"platform={target.scons_platform}",
+        "target=editor",
+        *build_modes(args),
+        "tests=yes",
+        "module_text_server_fb_enabled=yes",
+        "cache_path=",
+        "c_compiler_launcher=ccache",
+        "cpp_compiler_launcher=ccache",
+        "debug_paths_relative=yes",
+        "ninja=yes",
+        "ninja_auto_run=no",
+        f"ninja_file={state.file}",
+        f"ninja_dir={state.directory}",
+        *args.scons_arg,
+    ]
+
+
+def ninja_build_command(state: NinjaState, jobs: int) -> list[str]:
+    ninja = shutil.which("ninja")
+    if ninja is None:
+        raise RuntimeError("Ninja is not available")
+    return [ninja, "-f", str(state.file), f"-j{jobs}"]
+
+
 def build_command(args: argparse.Namespace, target: BuildTarget | None = None) -> list[str]:
     if target is None:
         target = resolve_build_target(args)
-    build_modes = ["dev_build=yes"] if args.dev_build else ["dev_mode=yes", "dev_build=yes"]
     compiler_cache = resolve_compiler_cache(args)
     cache_args = [f"cache_path={DEFAULT_CACHE_PATH}"]
     if compiler_cache == "ccache":
@@ -451,7 +525,7 @@ def build_command(args: argparse.Namespace, target: BuildTarget | None = None) -
     command = prefix + [
         f"platform={target.scons_platform}",
         "target=editor",
-        *build_modes,
+        *build_modes(args),
         "tests=yes",
         "module_text_server_fb_enabled=yes",
     ]
@@ -629,6 +703,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         parser.error("--jobs must be at least 1")
     if args.heartbeat < 0:
         parser.error("--heartbeat must be non-negative")
+    if args.backend == "ninja":
+        if args.compiler_cache == "none":
+            parser.error(
+                "--backend ninja requires ccache; remove --compiler-cache none or use "
+                "--backend scons --compiler-cache none"
+            )
+        for raw_arg in args.scons_arg:
+            key = raw_arg.lstrip("-").partition("=")[0].strip().replace("-", "_").lower()
+            if key in NINJA_OWNED_SCONS_KEYS:
+                parser.error(f"--backend ninja owns the SCons setting {key!r}; remove that --scons-arg")
     return args
 
 
@@ -655,6 +739,14 @@ def main(argv: list[str]) -> int:
         )
         return 127
 
+    if args.backend == "ninja" and shutil.which("ninja") is None:
+        print(
+            "[agent-build] Ninja is required for --backend ninja but was not found in PATH. "
+            "Use --backend scons --compiler-cache none for the native fallback.",
+            file=sys.stderr,
+        )
+        return 127
+
     compiler_cache = resolve_compiler_cache(args)
     if compiler_cache == "ccache" and shutil.which("ccache") is None:
         print(
@@ -673,7 +765,15 @@ def main(argv: list[str]) -> int:
     stats_log_path = ccache_stats_log_path(invocation_id) if compiler_cache == "ccache" else None
     build_env = build_environment(args, compiler_cache, ccache_stats_log=stats_log_path)
     cache_before = read_ccache_stats_best_effort(build_env) if compiler_cache == "ccache" else {}
-    build_command_args = build_command(args, target)
+    generation_command_args: list[str] | None = None
+    if args.backend == "ninja":
+        ninja_state = resolve_ninja_state(args, target)
+        build_command_args = ninja_build_command(ninja_state, args.jobs)
+        if not ninja_state.file.exists():
+            generation_command_args = ninja_generation_command(args, target, ninja_state)
+    else:
+        ninja_state = None
+        build_command_args = build_command(args, target)
     if compiler_cache == "ccache":
         cache_dir: str | None = build_env.get("CCACHE_DIR")
         cache_policy = "wrapper-managed-ccache"
@@ -696,27 +796,70 @@ def main(argv: list[str]) -> int:
     build_exit: int | None = None
     build_status = "error"
     build_error: str | None = None
+    generation_exit: int | None = None
+    if generation_command_args is not None:
+        generation_status = "pending"
+    elif args.backend == "ninja":
+        generation_status = "skipped-existing"
+    else:
+        generation_status = "not-applicable"
+    generation_error: str | None = None
+    active_step = "build"
     try:
-        build_exit = run_logged_command(
-            build_command_args,
-            label="build",
-            invocation_id=invocation_id,
-            log_path=args.log,
-            heartbeat=args.heartbeat,
-            append_log=args.append_log,
-            progress_path=progress_path,
-            append_progress=args.append_progress,
-            progress_stdout_jsonl=progress_stdout_jsonl,
-            env=build_env,
-        )
-        build_status = "success" if build_exit == 0 else "failed"
+        append_log = args.append_log
+        append_progress = args.append_progress
+        if generation_command_args is not None:
+            assert ninja_state is not None
+            active_step = "generate"
+            ninja_state.directory.mkdir(parents=True, exist_ok=True)
+            generation_exit = run_logged_command(
+                generation_command_args,
+                label="generate",
+                invocation_id=invocation_id,
+                log_path=args.log,
+                heartbeat=args.heartbeat,
+                append_log=append_log,
+                progress_path=progress_path,
+                append_progress=append_progress,
+                progress_stdout_jsonl=progress_stdout_jsonl,
+                env=build_env,
+            )
+            generation_status = "success" if generation_exit == 0 else "failed"
+            if generation_exit != 0:
+                build_exit = generation_exit
+                build_status = "failed"
+            else:
+                append_log = True
+                append_progress = True
+
+        if build_exit is None:
+            active_step = "build"
+            build_exit = run_logged_command(
+                build_command_args,
+                label="build",
+                invocation_id=invocation_id,
+                log_path=args.log,
+                heartbeat=args.heartbeat,
+                append_log=append_log,
+                progress_path=progress_path,
+                append_progress=append_progress,
+                progress_stdout_jsonl=progress_stdout_jsonl,
+                env=build_env,
+            )
+            build_status = "success" if build_exit == 0 else "failed"
     except OSError as exc:
         build_exit = 127
         build_error = f"{type(exc).__name__}: {exc}"
+        if active_step == "generate":
+            generation_status = "error"
+            generation_error = build_error
         print(f"[agent-build] failed to start build command: {exc}", file=sys.stderr)
     except BaseException as exc:
         build_status = "interrupted" if isinstance(exc, (KeyboardInterrupt, SystemExit)) else "error"
         build_error = f"{type(exc).__name__}: {exc}"
+        if active_step == "generate":
+            generation_status = build_status
+            generation_error = build_error
         raise
     finally:
         build_duration = time.monotonic() - build_started
@@ -740,6 +883,10 @@ def main(argv: list[str]) -> int:
             "arch": arch_from_args(args),
             "jobs": args.jobs,
             "build_command": build_command_args,
+            "generation_command": generation_command_args,
+            "generation_status": generation_status,
+            "generation_error": generation_error,
+            "generation_exit_code": generation_exit,
             "duration_ms": int(build_duration * 1000),
             "status": build_status,
             "error": build_error,

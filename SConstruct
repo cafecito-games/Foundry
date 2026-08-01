@@ -234,6 +234,7 @@ opts.Add(BoolVariable("fast_unsafe", "Enable unsafe options for faster increment
 opts.Add(BoolVariable("ninja", "Use the ninja backend for faster rebuilds", False))
 opts.Add(BoolVariable("ninja_auto_run", "Run ninja automatically after generating the ninja file", True))
 opts.Add("ninja_file", "Path to the generated ninja file", "build.ninja")
+opts.Add("ninja_dir", "Directory for Ninja state and SCons daemon files", ".ninja")
 opts.Add(BoolVariable("compiledb", "Generate compilation DB (`compile_commands.json`) for external tools", False))
 opts.Add(
     "num_jobs",
@@ -556,8 +557,7 @@ else:
 # the default is that SCons won't mark files that were changed in the last second
 # as different. This is unlikely to be a problem in any real situation as just booting
 # up scons takes more than that time.
-# Renamed to `content-timestamp` in SCons >= 4.2, keeping MD5 for compat.
-env.Decider("MD5-timestamp")
+env.Decider("content-timestamp")
 
 # SCons speed optimization controlled by the `fast_unsafe` option, which provide
 # more than 10 s speed up for incremental rebuilds.
@@ -1182,6 +1182,7 @@ if env["ninja"]:
 
     SetOption("experimental", "ninja")
     env["NINJA_FILE_NAME"] = env["ninja_file"]
+    env["NINJA_DIR"] = env["ninja_dir"]
     env["NINJA_DISABLE_AUTO_RUN"] = not env["ninja_auto_run"]
     env.Tool("ninja", env["ninja_file"])
 

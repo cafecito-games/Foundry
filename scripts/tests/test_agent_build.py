@@ -242,6 +242,86 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
         self.assertEqual(agent_build.resolve_compiler_cache(native), "none")
         self.assertEqual(agent_build.resolve_compiler_cache(ninja), "ccache")
 
+    def test_ninja_state_is_specific_to_the_build_configuration(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        strict_args = agent_build.parse_args(["--backend", "ninja"])
+        dev_args = agent_build.parse_args(["--backend", "ninja", "--dev-build"])
+
+        strict_state = agent_build.resolve_ninja_state(strict_args, target, repo_root=Path("/work/Foundry"))
+        dev_state = agent_build.resolve_ninja_state(dev_args, target, repo_root=Path("/work/Foundry"))
+
+        self.assertNotEqual(strict_state, dev_state)
+        for state in (strict_state, dev_state):
+            self.assertEqual(state.file, state.directory / "build.ninja")
+            self.assertEqual(state.directory.parent, Path("/work/Foundry/.ninja/agent-build"))
+
+    def test_ninja_generation_command_owns_generation_and_cache_settings(self) -> None:
+        args = agent_build.parse_args(
+            ["--backend", "ninja", "--jobs", "7", "--scons-arg", "arch=arm64", "--scons-arg", "verbose=yes"]
+        )
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        state = agent_build.NinjaState(Path("/work/.ninja/config"), Path("/work/.ninja/config/build.ninja"))
+
+        with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+            command = agent_build.ninja_generation_command(args, target, state)
+
+        self.assertEqual(command[0], "scons")
+        for argument in (
+            "platform=macos",
+            "target=editor",
+            "dev_mode=yes",
+            "dev_build=yes",
+            "tests=yes",
+            "module_text_server_fb_enabled=yes",
+            "cache_path=",
+            "c_compiler_launcher=ccache",
+            "cpp_compiler_launcher=ccache",
+            "debug_paths_relative=yes",
+            "ninja=yes",
+            "ninja_auto_run=no",
+            "ninja_file=/work/.ninja/config/build.ninja",
+            "ninja_dir=/work/.ninja/config",
+            "arch=arm64",
+            "verbose=yes",
+        ):
+            self.assertIn(argument, command)
+        self.assertFalse(any(argument.startswith("-j") for argument in command))
+
+    def test_ninja_build_command_resolves_the_executable_and_state_file(self) -> None:
+        state = agent_build.NinjaState(Path("/work/.ninja/config"), Path("/work/.ninja/config/build.ninja"))
+        with mock.patch.object(agent_build.shutil, "which", return_value="/opt/bin/ninja") as which:
+            command = agent_build.ninja_build_command(state, 9)
+
+        which.assert_called_once_with("ninja")
+        self.assertEqual(command, ["/opt/bin/ninja", "-f", "/work/.ninja/config/build.ninja", "-j9"])
+
+    def test_ninja_backend_rejects_wrapper_owned_scons_settings(self) -> None:
+        for key in sorted(agent_build.NINJA_OWNED_SCONS_KEYS):
+            with self.subTest(key=key):
+                stderr = io.StringIO()
+                with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                    agent_build.parse_args(["--backend", "ninja", "--scons-arg", f"{key}=rogue"])
+                self.assertEqual(raised.exception.code, 2)
+                self.assertTrue(
+                    stderr.getvalue()
+                    .splitlines()[-1]
+                    .endswith(f": error: --backend ninja owns the SCons setting {key!r}; remove that --scons-arg")
+                )
+
+    def test_ninja_backend_rejects_disabling_the_compiler_cache(self) -> None:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            agent_build.parse_args(["--backend", "ninja", "--compiler-cache", "none"])
+        self.assertEqual(raised.exception.code, 2)
+        self.assertTrue(
+            stderr.getvalue()
+            .splitlines()[-1]
+            .endswith(
+                ": error: --backend ninja requires ccache; remove --compiler-cache none or use "
+                "--backend scons --compiler-cache none"
+            )
+        )
+
     def test_ccache_build_command_disables_scons_cache_and_normalizes_debug_paths(self) -> None:
         args = agent_build.parse_args(["--compiler-cache", "ccache", "--jobs", "2"])
         target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
@@ -429,6 +509,26 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             "Use --backend scons --compiler-cache none for the native fallback.\n",
         )
 
+    def test_missing_ninja_returns_actionable_failure(self) -> None:
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stderr(stderr):
+            with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                with mock.patch.object(
+                    agent_build.shutil,
+                    "which",
+                    side_effect=lambda executable: "/bin/ccache" if executable == "ccache" else None,
+                ):
+                    with mock.patch.object(agent_build, "run_logged_command", return_value=23):
+                        exit_code = agent_build.main(
+                            ["--backend", "ninja", "--log", str(Path(tmp) / "build.log"), "--no-progress-file"]
+                        )
+        self.assertEqual(exit_code, 127)
+        self.assertEqual(
+            stderr.getvalue(),
+            "[agent-build] Ninja is required for --backend ninja but was not found in PATH. "
+            "Use --backend scons --compiler-cache none for the native fallback.\n",
+        )
+
     def test_main_passes_normalized_ccache_environment_to_build(self) -> None:
         polluted = {
             "PATH": "/bin",
@@ -525,6 +625,145 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             self.assertEqual(summary["cache_delta"], {})
             self.assertEqual(summary["status"], "failed")
             self.assertEqual(summary["exit_code"], 23)
+
+    def test_ninja_main_generates_missing_state_then_builds_and_summarizes_both_steps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            state = agent_build.NinjaState(temp_root / "state", temp_root / "state" / "build.ninja")
+            progress_path = temp_root / "progress.jsonl"
+            log_path = temp_root / "build.log"
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(
+                        agent_build.shutil,
+                        "which",
+                        side_effect=lambda executable: f"/bin/{executable}",
+                    ):
+                        with mock.patch.object(agent_build, "resolve_ninja_state", return_value=state):
+                            with mock.patch.object(agent_build, "new_invocation_id", return_value="invocation-ninja"):
+                                with mock.patch.object(agent_build, "read_git_commit", return_value=("deadbeef", None)):
+                                    with mock.patch.object(
+                                        agent_build,
+                                        "read_ccache_stats_best_effort",
+                                        return_value={},
+                                    ):
+                                        with mock.patch.object(
+                                            agent_build,
+                                            "run_logged_command",
+                                            side_effect=[0, 23],
+                                        ) as run_command:
+                                            exit_code = agent_build.main(
+                                                [
+                                                    "--backend",
+                                                    "ninja",
+                                                    "--platform",
+                                                    "macos",
+                                                    "--jobs",
+                                                    "4",
+                                                    "--log",
+                                                    str(log_path),
+                                                    "--progress-file",
+                                                    str(progress_path),
+                                                ]
+                                            )
+
+            self.assertEqual(exit_code, 23)
+            self.assertTrue(state.directory.is_dir())
+            self.assertEqual(run_command.call_count, 2)
+            generation_call, build_call = run_command.call_args_list
+            self.assertEqual(generation_call.kwargs["label"], "generate")
+            self.assertFalse(generation_call.kwargs["append_log"])
+            self.assertFalse(generation_call.kwargs["append_progress"])
+            self.assertEqual(build_call.kwargs["label"], "build")
+            self.assertTrue(build_call.kwargs["append_log"])
+            self.assertTrue(build_call.kwargs["append_progress"])
+            self.assertEqual(generation_call.kwargs["invocation_id"], "invocation-ninja")
+            self.assertEqual(build_call.kwargs["invocation_id"], "invocation-ninja")
+
+            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            self.assertEqual(summary["build_command"], ["/bin/ninja", "-f", str(state.file), "-j4"])
+            self.assertEqual(summary["generation_command"], generation_call.args[0])
+            self.assertEqual(summary["generation_exit_code"], 0)
+            self.assertEqual(summary["status"], "failed")
+            self.assertEqual(summary["exit_code"], 23)
+
+    def test_ninja_main_reuses_existing_state_without_generation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            state = agent_build.NinjaState(temp_root / "state", temp_root / "state" / "build.ninja")
+            state.directory.mkdir()
+            state.file.write_text("# generated\n", encoding="utf-8")
+            progress_path = temp_root / "progress.jsonl"
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(agent_build.shutil, "which", side_effect=lambda name: f"/bin/{name}"):
+                        with mock.patch.object(agent_build, "resolve_ninja_state", return_value=state):
+                            with mock.patch.object(agent_build, "read_ccache_stats_best_effort", return_value={}):
+                                with mock.patch.object(
+                                    agent_build,
+                                    "run_logged_command",
+                                    return_value=23,
+                                ) as run_command:
+                                    exit_code = agent_build.main(
+                                        [
+                                            "--backend",
+                                            "ninja",
+                                            "--platform",
+                                            "macos",
+                                            "--append-log",
+                                            "--append-progress",
+                                            "--log",
+                                            str(temp_root / "build.log"),
+                                            "--progress-file",
+                                            str(progress_path),
+                                        ]
+                                    )
+
+            self.assertEqual(exit_code, 23)
+            run_command.assert_called_once()
+            self.assertEqual(run_command.call_args.kwargs["label"], "build")
+            self.assertTrue(run_command.call_args.kwargs["append_log"])
+            self.assertTrue(run_command.call_args.kwargs["append_progress"])
+            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            self.assertIsNone(summary["generation_command"])
+            self.assertEqual(summary["generation_status"], "skipped-existing")
+
+    def test_ninja_generation_setup_error_still_emits_a_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            state_directory = temp_root / "state"
+            state_directory.write_text("not a directory\n", encoding="utf-8")
+            state = agent_build.NinjaState(state_directory, state_directory / "build.ninja")
+            progress_path = temp_root / "progress.jsonl"
+
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                with mock.patch.object(agent_build, "scons_prefix", return_value=["scons"]):
+                    with mock.patch.object(agent_build.shutil, "which", side_effect=lambda name: f"/bin/{name}"):
+                        with mock.patch.object(agent_build, "resolve_ninja_state", return_value=state):
+                            with mock.patch.object(agent_build, "read_ccache_stats_best_effort", return_value={}):
+                                with mock.patch.object(agent_build, "run_logged_command") as run_command:
+                                    exit_code = agent_build.main(
+                                        [
+                                            "--backend",
+                                            "ninja",
+                                            "--platform",
+                                            "macos",
+                                            "--log",
+                                            str(temp_root / "build.log"),
+                                            "--progress-file",
+                                            str(progress_path),
+                                        ]
+                                    )
+
+            self.assertEqual(exit_code, 127)
+            run_command.assert_not_called()
+            summary = json.loads(progress_path.read_text(encoding="utf-8"))
+            self.assertEqual(summary["generation_status"], "error")
+            self.assertIn("FileExistsError", summary["generation_error"])
+            self.assertEqual(summary["status"], "error")
+            self.assertEqual(summary["exit_code"], 127)
 
     def test_main_emits_summary_to_jsonl_stdout_without_progress_file(self) -> None:
         stdout = io.StringIO()
