@@ -256,6 +256,83 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             self.assertEqual(state.file, state.directory / "build.ninja")
             self.assertEqual(state.directory.parent, Path("/work/Foundry/.ninja/agent-build"))
 
+    def test_ninja_state_is_stable_while_build_descriptions_are_unchanged(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        args = agent_build.parse_args(["--backend", "ninja"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory) / "Foundry"
+            (repo_root / "core").mkdir(parents=True)
+            (repo_root / "SConstruct").write_text("# root\n", encoding="utf-8")
+            (repo_root / "core" / "SCsub").write_text("# core\n", encoding="utf-8")
+            (repo_root / "methods.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            first = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+            second = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertEqual(first, second)
+
+    def test_ninja_state_changes_when_repository_python_changes(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        args = agent_build.parse_args(["--backend", "ninja"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory) / "Foundry"
+            repo_root.mkdir()
+            methods = repo_root / "methods.py"
+            methods.write_text("VALUE = 1\n", encoding="utf-8")
+            before = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+            methods.write_text("VALUE = 2\n", encoding="utf-8")
+            after = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertNotEqual(before, after)
+
+    def test_ninja_state_changes_when_custom_configuration_is_created_or_changed(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        args = agent_build.parse_args(["--backend", "ninja"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory) / "Foundry"
+            repo_root.mkdir()
+            missing = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+            custom = repo_root / "custom.py"
+            custom.write_text("dev_build = True\n", encoding="utf-8")
+            created = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+            custom.write_text("dev_build = False\n", encoding="utf-8")
+            changed = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertNotEqual(missing, created)
+        self.assertNotEqual(created, changed)
+
+    def test_ninja_state_changes_with_selected_external_profile_content(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            repo_root = temporary_root / "Foundry"
+            repo_root.mkdir()
+            profile = temporary_root / "profile.py"
+            build_profile = temporary_root / "features.json"
+            profile.write_text("dev_build = True\n", encoding="utf-8")
+            build_profile.write_text('{"disabled_classes": []}\n', encoding="utf-8")
+            args = agent_build.parse_args(
+                [
+                    "--backend",
+                    "ninja",
+                    "--scons-arg",
+                    f"profile={profile}",
+                    "--scons-arg",
+                    f"build_profile={build_profile}",
+                ]
+            )
+            initial = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+            profile.write_text("dev_build = False\n", encoding="utf-8")
+            profile_changed = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+            build_profile.write_text('{"disabled_classes": ["Node"]}\n', encoding="utf-8")
+            build_profile_changed = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertNotEqual(initial, profile_changed)
+        self.assertNotEqual(profile_changed, build_profile_changed)
+
     def test_ninja_generation_command_owns_generation_and_cache_settings(self) -> None:
         args = agent_build.parse_args(
             ["--backend", "ninja", "--jobs", "7", "--scons-arg", "arch=arm64", "--scons-arg", "verbose=yes"]

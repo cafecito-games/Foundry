@@ -7,6 +7,8 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
+import signal
 import sys
 import tempfile
 import unittest
@@ -32,6 +34,57 @@ class BenchmarkAgentBuildTests(unittest.TestCase):
         self.assertGreaterEqual(result.wall_ms, 0)
         self.assertGreaterEqual(result.user_ms, 0)
         self.assertGreaterEqual(result.system_ms, 0)
+        self.assertIsNone(result.error)
+
+    def test_missing_executable_records_exit_127_without_a_traceback(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            output = Path(temporary_directory) / "results.jsonl"
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                exit_code = benchmark_agent_build.main(
+                    [
+                        "--label",
+                        "missing",
+                        "--output",
+                        str(output),
+                        "--",
+                        "foundry-command-that-does-not-exist",
+                    ]
+                )
+            payloads = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual(exit_code, 127)
+        self.assertEqual(len(payloads), 1)
+        self.assertEqual(payloads[0]["exit_code"], 127)
+        self.assertEqual(payloads[0]["error"], "could not execute 'foundry-command-that-does-not-exist': not found")
+        self.assertEqual(stderr.getvalue(), "could not execute 'foundry-command-that-does-not-exist': not found\n")
+        self.assertNotIn("Traceback", stdout.getvalue() + stderr.getvalue())
+
+    @unittest.skipUnless(os.name == "posix", "signal exit semantics require POSIX")
+    def test_signal_termination_is_negative_in_result(self) -> None:
+        result = benchmark_agent_build.run_once(
+            [
+                sys.executable,
+                "-c",
+                "import os, signal; os.kill(os.getpid(), signal.SIGTERM)",
+            ],
+            label="signal",
+            repetition=1,
+        )
+
+        self.assertEqual(result.exit_code, -signal.SIGTERM)
+
+    def test_main_converts_negative_signal_to_shell_exit_code(self) -> None:
+        result = self._result("signal", 1, exit_code=-signal.SIGTERM)
+        with mock.patch.object(benchmark_agent_build, "run_once", return_value=result):
+            with mock.patch.object(benchmark_agent_build, "write_result"):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    exit_code = benchmark_agent_build.main(
+                        ["--label", "signal", "--output", "/tmp/out.jsonl", "echo", "ok"]
+                    )
+
+        self.assertEqual(exit_code, 128 + signal.SIGTERM)
 
     def test_write_result_appends_valid_jsonl(self) -> None:
         result = self._result("first", 1)
@@ -94,4 +147,5 @@ class BenchmarkAgentBuildTests(unittest.TestCase):
             max_rss_kib=4,
             input_blocks=5,
             output_blocks=6,
+            error=None,
         )

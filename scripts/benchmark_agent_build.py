@@ -27,6 +27,7 @@ class BenchmarkResult:
     max_rss_kib: int
     input_blocks: int
     output_blocks: int
+    error: str | None = None
 
 
 def _exit_code(status: int) -> int:
@@ -48,7 +49,25 @@ def run_once(command: Sequence[str], *, label: str, repetition: int) -> Benchmar
         raise ValueError("command must not be empty")
 
     started = time.monotonic_ns()
-    pid = os.posix_spawnp(command[0], list(command), os.environ)
+    try:
+        pid = os.posix_spawnp(command[0], list(command), os.environ)
+    except OSError as exc:
+        wall_ms = (time.monotonic_ns() - started) / 1_000_000
+        reason = "not found" if isinstance(exc, FileNotFoundError) else (exc.strerror or type(exc).__name__)
+        return BenchmarkResult(
+            version=1,
+            label=label,
+            repetition=repetition,
+            command=tuple(command),
+            exit_code=127,
+            wall_ms=wall_ms,
+            user_ms=0.0,
+            system_ms=0.0,
+            max_rss_kib=0,
+            input_blocks=0,
+            output_blocks=0,
+            error=f"could not execute {command[0]!r}: {reason}",
+        )
     _, status, usage = os.wait4(pid, 0)
     wall_ms = (time.monotonic_ns() - started) / 1_000_000
 
@@ -99,8 +118,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run_once(args.command, label=args.label, repetition=repetition)
         write_result(args.output, result)
         print(_result_json(result), flush=True)
+        if result.error is not None:
+            print(result.error, file=sys.stderr, flush=True)
         if result.exit_code != 0:
-            return result.exit_code
+            return 128 - result.exit_code if result.exit_code < 0 else result.exit_code
     return 0
 
 

@@ -36,6 +36,18 @@ paths, and defaults to the shared `$HOME/.cache/foundry-ccache`. Each configurat
 at `.ninja/agent-build/<hash>/build.ninja`. SCons generates cold state, then Ninja regeneration tracks
 build-description dependencies.
 
+## Known limitations
+
+This pilot supports normal fresh-worktree and incremental workflows. The wrapper never calls
+`ninja -t clean`, and wrapper-only builds after an external `ninja -t clean` are unsupported. SCons
+4.10.1's interactive Ninja `TEMPLATE` daemon can report generated `.inc` and `.cpp` targets complete
+before their files exist. The measured 47.480-second APFS materialization therefore required a
+synchronous 168-target generated-input preflight after cleaning compiled outputs; it is a qualified
+cache-materialization result, not a clean wrapper-only build result.
+
+Use a fresh worktree for a cold-output workflow. Do not clean an active Ninja graph and assume the
+wrapper can reconstruct its generated inputs until the upstream daemon race is resolved.
+
 For native SCons while still using ccache:
 
 ```sh
@@ -55,6 +67,15 @@ cache size:
 python3 scripts/agent_build.py --backend ninja --ccache-file-clone
 ```
 
+The hermetic ccache policy uses ccache's effective default maximum of 5 GiB. ccache evicts older
+entries as needed, and file-clone mode reaches that limit faster because cached objects are not
+compressed. Inspect a cache without deleting or mutating it:
+
+```sh
+CCACHE_DIR="$HOME/.cache/foundry-ccache" ccache --show-stats
+CCACHE_DIR="$HOME/.cache/foundry-ccache" ccache --show-config
+```
+
 ## Logs and progress
 
 Default log and progress-file names include a stable, safe hash of the resolved worktree path. Override
@@ -65,6 +86,9 @@ Use `--progress-format jsonl` when stdout must be machine-readable; human build 
 The wrapper collects ccache telemetry using a unique per-invocation `CCACHE_STATSLOG`, so concurrent
 worktrees do not race on statistics. Telemetry is best-effort: summaries report explicit status/errors,
 and telemetry never replaces the build result.
+
+Progress records cover wrapper command start, output, heartbeat, completion, and the final summary.
+They do not provide detailed visibility into every internal SCons or Ninja phase.
 
 ## Benchmarks
 
@@ -93,12 +117,23 @@ scripts/benchmark_agent_build.py --label ninja-no-op --output "$benchmark_dir/be
 
 Inspect representative object debug info with `dwarfdump` or `llvm-dwarfdump`: paths must resolve in
 the invoking worktree. Before handoff, run the default native strict SCons build and the full
-command-first test suite:
+command-first test suite for the host platform.
+
+macOS arm64:
 
 ```sh
 python3 scripts/agent_build.py
-./bin/foundry.* --headless test run --force-colors
+./bin/foundry.macos.editor.dev.arm64 --headless test run --force-colors
 ```
+
+Linux x86_64, including GUI-dependent acceptance subprocesses through the configured X display:
+
+```sh
+python3 scripts/agent_build.py --platform linuxbsd
+DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --force-colors
+```
+
+Substitute the architecture suffix when building for another host architecture.
 
 This pilot intentionally does not change the linker or add a global job coordinator. Those remain
 measurement-driven follow-ups, not hidden features.

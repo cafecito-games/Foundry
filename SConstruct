@@ -557,7 +557,7 @@ else:
 # the default is that SCons won't mark files that were changed in the last second
 # as different. This is unlikely to be a problem in any real situation as just booting
 # up scons takes more than that time.
-env.Decider("content-timestamp")
+env.Decider("MD5-timestamp")
 
 # SCons speed optimization controlled by the `fast_unsafe` option, which provide
 # more than 10 s speed up for incremental rebuilds.
@@ -1185,6 +1185,39 @@ if env["ninja"]:
     env["NINJA_DIR"] = env["ninja_dir"]
     env["NINJA_DISABLE_AUTO_RUN"] = not env["ninja_auto_run"]
     env["NINJA_GENERATED_SOURCE_SUFFIXES"] = [".h", ".hpp", ".inc"]
+
+    import SCons.Tool.ninja_tool as scons_ninja_tool
+
+    ninja_regeneration_dependencies = set()
+    excluded_build_description_directories = {
+        ".git",
+        ".godot",
+        ".ninja",
+        ".test_scratch",
+        "__pycache__",
+        "bin",
+        "build",
+        "out",
+    }
+    for root, directory_names, file_names in os.walk("."):
+        directory_names[:] = sorted(
+            name for name in directory_names if name not in excluded_build_description_directories
+        )
+        for file_name in file_names:
+            if file_name == "SConstruct" or file_name == "SCsub" or file_name.endswith(".py"):
+                ninja_regeneration_dependencies.add(os.path.normpath(os.path.join(root, file_name)))
+    for custom in customs:
+        if os.path.isfile(custom):
+            ninja_regeneration_dependencies.add(os.path.normpath(custom))
+    if env["build_profile"] and os.path.isfile(env["build_profile"]):
+        ninja_regeneration_dependencies.add(os.path.normpath(env["build_profile"]))
+    ninja_tool_directory = os.path.dirname(scons_ninja_tool.__file__)
+    ninja_regeneration_dependencies.update(
+        os.path.normpath(path)
+        for path in glob.glob(os.path.join(ninja_tool_directory, "**", "*.py"), recursive=True)
+        if os.path.isfile(path)
+    )
+    env["NINJA_REGENERATE_DEPS"] = sorted(ninja_regeneration_dependencies)
     env.Tool("ninja", env["ninja_file"])
 
 # Threads

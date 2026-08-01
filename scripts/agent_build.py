@@ -43,6 +43,9 @@ NINJA_OWNED_SCONS_KEYS = frozenset(
     }
 )
 TELEMETRY_TIMEOUT_SECONDS = 5.0
+BUILD_DESCRIPTION_EXCLUDED_DIRECTORIES = frozenset(
+    {".git", ".godot", ".ninja", ".test_scratch", "__pycache__", "bin", "build", "out"}
+)
 
 
 def resolve_compiler_cache(args: argparse.Namespace) -> str:
@@ -453,7 +456,79 @@ def build_modes(args: argparse.Namespace) -> list[str]:
     return ["dev_build=yes"] if args.dev_build else ["dev_mode=yes", "dev_build=yes"]
 
 
-def build_configuration_payload(args: argparse.Namespace, target: BuildTarget) -> dict[str, object]:
+def _raw_scons_setting(args: argparse.Namespace, name: str) -> str | None:
+    value = None
+    for raw_arg in args.scons_arg:
+        key, separator, candidate = raw_arg.lstrip("-").partition("=")
+        if separator and key.strip().replace("-", "_").lower() == name:
+            value = candidate
+    return value
+
+
+def _resolve_build_input(value: str, repo_root: Path) -> Path:
+    path = Path(value).expanduser()
+    return path if path.is_absolute() else repo_root / path
+
+
+def _repository_build_descriptions(repo_root: Path) -> list[Path]:
+    if not repo_root.is_dir():
+        return []
+    descriptions: list[Path] = []
+    for root, directory_names, file_names in os.walk(repo_root):
+        directory_names[:] = sorted(
+            name for name in directory_names if name not in BUILD_DESCRIPTION_EXCLUDED_DIRECTORIES
+        )
+        root_path = Path(root)
+        for file_name in sorted(file_names):
+            if file_name == "SConstruct" or file_name == "SCsub" or file_name.endswith(".py"):
+                descriptions.append(root_path / file_name)
+    return descriptions
+
+
+def _selected_build_description_inputs(args: argparse.Namespace, repo_root: Path) -> list[tuple[str, Path]]:
+    selected = [("custom", repo_root / "custom.py")]
+    profile = _raw_scons_setting(args, "profile")
+    if profile:
+        profile_path = _resolve_build_input(profile, repo_root)
+        selected.extend(("profile", candidate) for candidate in (profile_path, Path(f"{profile_path}.py")))
+    build_profile = _raw_scons_setting(args, "build_profile")
+    if build_profile:
+        selected.append(("build_profile", _resolve_build_input(build_profile, repo_root)))
+    return selected
+
+
+def _hash_build_description(hasher, identity: str, path: Path) -> None:
+    hasher.update(identity.encode("utf-8", errors="surrogateescape"))
+    hasher.update(b"\0")
+    try:
+        with path.open("rb") as source:
+            hasher.update(b"file\0")
+            while chunk := source.read(1024 * 1024):
+                hasher.update(chunk)
+    except FileNotFoundError:
+        hasher.update(b"missing\0")
+    except OSError as exc:
+        hasher.update(f"unreadable:{exc.errno}\0".encode("ascii"))
+
+
+def build_description_fingerprint(args: argparse.Namespace, repo_root: Path = REPO_ROOT) -> str:
+    hasher = hashlib.sha256()
+    if not repo_root.is_dir():
+        hasher.update(b"missing-repository-root\0")
+    for path in _repository_build_descriptions(repo_root):
+        relative_path = path.relative_to(repo_root).as_posix()
+        _hash_build_description(hasher, f"repository:{relative_path}", path)
+    for source, path in _selected_build_description_inputs(args, repo_root):
+        _hash_build_description(hasher, f"selected:{source}:{path.resolve(strict=False)}", path)
+    return hasher.hexdigest()
+
+
+def build_configuration_payload(
+    args: argparse.Namespace,
+    target: BuildTarget,
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> dict[str, object]:
     return {
         "platform": target.scons_platform,
         "arch": arch_from_args(args),
@@ -462,6 +537,7 @@ def build_configuration_payload(args: argparse.Namespace, target: BuildTarget) -
         "tests": True,
         "module_text_server_fb_enabled": True,
         "scons_arg": list(args.scons_arg),
+        "build_description_fingerprint": build_description_fingerprint(args, repo_root),
     }
 
 
@@ -471,7 +547,7 @@ def resolve_ninja_state(
     *,
     repo_root: Path = REPO_ROOT,
 ) -> NinjaState:
-    payload = build_configuration_payload(args, target)
+    payload = build_configuration_payload(args, target, repo_root=repo_root)
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     key = hashlib.sha256(serialized.encode("utf-8")).hexdigest()[:16]
     directory = repo_root / ".ninja" / "agent-build" / key
