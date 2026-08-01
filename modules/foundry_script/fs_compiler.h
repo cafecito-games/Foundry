@@ -42,6 +42,9 @@ class FSCompiler {
 	HashSet<FoundryScript *> parsed_classes;
 	HashSet<FoundryScript *> parsing_classes;
 	FoundryScript *main_script = nullptr;
+	// Set only while conformance witnesses are compiled, so a witness (and any lambda inside it) can
+	// still reach the constant pool of the file that declares the `extend`.
+	FoundryScript *witness_declaration_site_script = nullptr;
 
 	struct FunctionLambdaInfo {
 		FSFunction *function = nullptr;
@@ -79,6 +82,10 @@ class FSCompiler {
 
 	struct CodeGen {
 		FoundryScript *script = nullptr;
+		// While a conformance witness is compiled against a foreign target, `script` is the target's
+		// script; this is the script of the file that declares the `extend`, whose constant pool backs
+		// the declaration-site half of the witness's scope.
+		FoundryScript *declaration_site_script = nullptr;
 		const FSParser::ClassNode *class_node = nullptr;
 		const FSParser::FunctionNode *function_node = nullptr;
 		StringName function_name;

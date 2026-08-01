@@ -1402,6 +1402,11 @@ public:
 
 		int usages = 0; // Useful for binds/iterator variable.
 
+		// Set when a conformance witness resolved this name through the declaration-site half of its
+		// scope rather than through its target. Compilation binds a witness's members to the target's
+		// script, so it needs this to know which names to look up in the declaring script instead.
+		bool resolved_from_conformance_declaration_scope = false;
+
 		IdentifierNode() {
 			type = IDENTIFIER;
 		}

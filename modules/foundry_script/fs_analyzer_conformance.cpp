@@ -67,6 +67,21 @@ FSAnalyzer::ScopedCurrentClass::~ScopedCurrentClass() {
 	}
 }
 
+FSAnalyzer::ScopedWitnessScope::ScopedWitnessScope(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_target, FSParser::ClassNode *p_declaration_scope) {
+	analyzer = p_analyzer;
+	previous_target = analyzer->witness_target_class;
+	previous_declaration_scope = analyzer->witness_declaration_scope;
+	analyzer->witness_target_class = p_target;
+	analyzer->witness_declaration_scope = p_declaration_scope;
+}
+
+FSAnalyzer::ScopedWitnessScope::~ScopedWitnessScope() {
+	if (analyzer != nullptr) {
+		analyzer->witness_target_class = previous_target;
+		analyzer->witness_declaration_scope = previous_declaration_scope;
+	}
+}
+
 FSParser::ClassNode *FSAnalyzer::resolve_conformance_target(FSParser::ConformanceNode *p_conformance, FSParser::DataType &r_target_type) {
 	if (p_conformance->target == nullptr) {
 		// A missing target is already a parse error; nothing more to resolve.
@@ -512,6 +527,11 @@ bool FSAnalyzer::validate_conformance(FSParser::ConformanceNode *p_conformance, 
 				TraitMethodImplementation implementation;
 				implementation.function = *witness;
 				implementation.owner_class = p_target;
+				// A witness signature is resolved here, before its body, and must see the same dual
+				// scope the body does: the target first, then the declaring file's type scope. The
+				// binding is confined to the witness so the target's own methods, checked on the
+				// path below, keep their unaltered scope.
+				ScopedWitnessScope witness_scope(this, p_target, parser->head);
 				if (!validate_trait_method_signature(requirement_trait, p_target, required, implementation, substitution)) {
 					valid = false;
 				}
@@ -807,7 +827,15 @@ void FSAnalyzer::resolve_conformance_bodies(FSParser::ClassNode *p_class) {
 		// Witness bodies are resolved with the implicit `self`/enclosing type bound to the target, so
 		// `self`, member access, and type errors inside the witnesses are reported against the target's
 		// surface — the same body-resolution path class methods use.
+		//
+		// A witness has a dual scope: the target's member/type scope first, and the lexical type scope
+		// of the file declaring this `extend` as a fallback. Native and builtin stand-ins have no
+		// lexical outer, and a foreign target's outer chain belongs to another parse tree, so without
+		// that fallback a witness could not name the types declared beside it. The fallback supplies
+		// only type-bearing declarations and never becomes `parser->current_class`, so the target keeps
+		// winning on collisions and the declaring file's values stay out of the target's surface.
 		ScopedCurrentClass current_class_scope(this, target);
+		ScopedWitnessScope witness_scope(this, target, parser->head);
 		for (FSParser::FunctionNode *witness : conformance->witnesses) {
 			if (witness == nullptr) {
 				continue;

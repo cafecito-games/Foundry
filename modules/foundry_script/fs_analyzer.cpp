@@ -1935,8 +1935,16 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		} else {
 			bool current_scope_has_name = false;
 			List<FSParser::ClassNode *> script_classes;
-			get_class_node_current_scope_classes(parser->current_class, &script_classes, p_type);
+			HashSet<FSParser::ClassNode *> declaration_site_classes;
+			get_effective_scope_classes(parser->current_class, &script_classes, p_type, &declaration_site_classes);
 			for (FSParser::ClassNode *script_class : script_classes) {
+				if (declaration_site_classes.has(script_class)) {
+					if (declaration_site_class_declares_type(script_class, first, p_type)) {
+						current_scope_has_name = true;
+						break;
+					}
+					continue;
+				}
 				if ((script_class->identifier && script_class->identifier->name == first) || script_class->members_indices.has(first)) {
 					current_scope_has_name = true;
 					break;
@@ -2021,8 +2029,9 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		} else {
 			// Classes in current scope.
 			List<FSParser::ClassNode *> script_classes;
+			HashSet<FSParser::ClassNode *> declaration_site_classes;
 			bool found = false;
-			get_class_node_current_scope_classes(parser->current_class, &script_classes, p_type);
+			get_effective_scope_classes(parser->current_class, &script_classes, p_type, &declaration_site_classes);
 			for (FSParser::ClassNode *script_class : script_classes) {
 				if (found) {
 					break;
@@ -2046,6 +2055,12 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 					resolve_class_member(script_class, first, p_type);
 
 					FSParser::ClassNode::Member member = script_class->get_member(first);
+					// The declaring file of a conformance contributes only its type-bearing
+					// declarations to a witness, so a same-named value member is skipped rather than
+					// reported as "does not contain a type".
+					if (declaration_site_classes.has(script_class) && !is_type_bearing_member(member)) {
+						continue;
+					}
 					switch (member.type) {
 						case FSParser::ClassNode::Member::CLASS:
 							result = member.get_datatype();
@@ -7335,8 +7350,15 @@ bool FSAnalyzer::is_namespace_chain_root_shadowed(FSParser::IdentifierNode *p_id
 	}
 
 	List<FSParser::ClassNode *> script_classes;
-	get_class_node_current_scope_classes(parser->current_class, &script_classes, p_identifier);
+	HashSet<FSParser::ClassNode *> declaration_site_classes;
+	get_effective_scope_classes(parser->current_class, &script_classes, p_identifier, &declaration_site_classes);
 	for (FSParser::ClassNode *script_class : script_classes) {
+		if (declaration_site_classes.has(script_class)) {
+			if (declaration_site_class_declares_type(script_class, name, p_identifier)) {
+				return true;
+			}
+			continue;
+		}
 		if ((script_class->identifier && script_class->identifier->name == name) || script_class->members_indices.has(name)) {
 			return true;
 		}
@@ -8943,6 +8965,12 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 					return;
 				}
 				case Variant::DICTIONARY: {
+					// Any name is a potential key on a Dictionary, so an unresolved one widens to
+					// Variant. That is a catch-all rather than a real member, so a witness's
+					// declaration-site fallback is consulted before it.
+					if (p_base == nullptr && reduce_identifier_from_witness_declaration_scope(p_identifier)) {
+						return;
+					}
 					FSParser::DataType dummy;
 					dummy.kind = FSParser::DataType::VARIANT;
 					p_identifier->set_datatype(dummy);
@@ -8962,6 +8990,11 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 					}
 					if (Variant::has_builtin_method(base.builtin_type, name)) {
 						p_identifier->set_datatype(call_site_validation.explicit_callable_type_from_info(Variant::get_builtin_method_info(base.builtin_type, name)));
+						return;
+					}
+					// A builtin conformance target's stand-in has no class scope of its own, so the
+					// witness's declaration-site fallback is its only remaining lookup step.
+					if (p_base == nullptr && reduce_identifier_from_witness_declaration_scope(p_identifier)) {
 						return;
 					}
 					if (base.is_hard_type()) {
@@ -9291,6 +9324,91 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 	}
 }
 
+// Resolves a bare name a conformance witness could not find on its target against the lexical type
+// scope of the file that declares the `extend`. Only type-bearing declarations participate: the
+// declaring file's variables, functions, signals, and plain constants never become reachable through
+// the target, and the fallback never replaces `parser->current_class`.
+bool FSAnalyzer::reduce_identifier_from_witness_declaration_scope(FSParser::IdentifierNode *p_identifier) {
+	if (witness_declaration_scope == nullptr || witness_target_class == nullptr ||
+			parser->current_class != witness_target_class) {
+		return false;
+	}
+	if (!p_identifier->get_datatype().has_no_type()) {
+		return false;
+	}
+
+	List<FSParser::ClassNode *> scope_classes;
+	HashSet<FSParser::ClassNode *> declaration_site_classes;
+	get_effective_scope_classes(witness_target_class, &scope_classes, p_identifier, &declaration_site_classes);
+
+	const StringName &name = p_identifier->name;
+	for (FSParser::ClassNode *script_class : scope_classes) {
+		if (!declaration_site_classes.has(script_class)) {
+			continue;
+		}
+
+		if (script_class->identifier != nullptr && script_class->identifier->name == name) {
+			reduce_identifier_from_base_set_class(p_identifier, script_class->get_datatype());
+			if (script_class->outer != nullptr) {
+				p_identifier->source = FSParser::IdentifierNode::MEMBER_CLASS;
+			} else if (!script_class->qualified_global_name.is_empty()) {
+				p_identifier->resolved_global_class = script_class->qualified_global_name;
+			}
+			p_identifier->resolved_from_conformance_declaration_scope = true;
+			return true;
+		}
+
+		if (!script_class->members_indices.has(name)) {
+			continue;
+		}
+		resolve_class_member(script_class, name, p_identifier);
+		FSParser::ClassNode::Member member = script_class->get_member(name);
+		if (!is_type_bearing_member(member)) {
+			continue;
+		}
+
+		switch (member.type) {
+			case FSParser::ClassNode::Member::CLASS: {
+				reduce_identifier_from_base_set_class(p_identifier, member.get_datatype());
+				p_identifier->source = FSParser::IdentifierNode::MEMBER_CLASS;
+				p_identifier->resolved_from_conformance_declaration_scope = true;
+				return true;
+			}
+			case FSParser::ClassNode::Member::TUPLE: {
+				// A named tuple declaration is a type handle, reached the same way a nested class is.
+				p_identifier->set_datatype(member.get_datatype());
+				p_identifier->source = FSParser::IdentifierNode::MEMBER_CLASS;
+				p_identifier->resolved_from_conformance_declaration_scope = true;
+				return true;
+			}
+			case FSParser::ClassNode::Member::ENUM: {
+				p_identifier->set_datatype(member.get_datatype());
+				p_identifier->is_constant = true;
+				p_identifier->reduced_value = member.m_enum->dictionary;
+				p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
+				p_identifier->resolved_from_conformance_declaration_scope = true;
+				return true;
+			}
+			case FSParser::ClassNode::Member::CONSTANT: {
+				if (member.constant == nullptr || member.constant->initializer == nullptr) {
+					continue;
+				}
+				p_identifier->set_datatype(member.get_datatype());
+				p_identifier->is_constant = true;
+				p_identifier->reduced_value = member.constant->initializer->reduced_value;
+				p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
+				p_identifier->constant_source = member.constant;
+				p_identifier->resolved_from_conformance_declaration_scope = true;
+				return true;
+			}
+			default:
+				break;
+		}
+	}
+
+	return false;
+}
+
 void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool can_be_builtin) {
 	// TODO: This is an opportunity to further infer types.
 
@@ -9412,6 +9530,14 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 			// Found.
 			found_source = true;
 		}
+	}
+
+	// Inside a conformance witness, a name the target's own scope did not supply falls back to the
+	// type-bearing declarations of the file that declares the `extend`. This sits exactly where the
+	// current-class traversal above ended, so builtin, native, namespace, and global lookup below keep
+	// their existing precedence.
+	if (!found_source && reduce_identifier_from_witness_declaration_scope(p_identifier)) {
+		found_source = true;
 	}
 
 	if (found_source) {
@@ -9863,6 +9989,32 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 		return false;
 	}
 
+	// Walks one lexical chain. `r_name_taken` reports that some class in the chain declares the name,
+	// whether or not it was usable as a tuple, so an outer chain that shadows the name stops the search
+	// instead of falling through to another scope.
+	const auto find_in_lexical_chain = [&](FSParser::ClassNode *p_start, bool p_walk_outer, bool &r_name_taken) -> bool {
+		r_name_taken = false;
+		FSParser::ClassNode *candidate = p_start;
+		while (candidate != nullptr) {
+			if (candidate->has_member(p_name)) {
+				r_name_taken = true;
+				if (candidate->get_member(p_name).type != FSParser::ClassNode::Member::TUPLE) {
+					// A same-named member of another kind shadows any outer tuple declaration.
+					return false;
+				}
+				resolve_class_member(candidate, p_name, p_source);
+				const FSParser::DataType tuple_type = candidate->get_member(p_name).get_datatype();
+				if (!tuple_type.is_set() || tuple_type.kind != FSParser::DataType::TUPLE) {
+					return false;
+				}
+				r_tuple_meta_type = p_is_self ? tuple_type : substitute_member_type(tuple_type, p_base_type, nullptr, nullptr);
+				return true;
+			}
+			candidate = p_walk_outer ? candidate->outer : nullptr;
+		}
+		return false;
+	};
+
 	// A bare name is looked up in the enclosing class and then outwards through its lexical scopes;
 	// a qualified name only looks at the named class itself.
 	FSParser::ClassNode *candidate = p_is_self ? parser->current_class : nullptr;
@@ -9873,22 +10025,90 @@ bool FSAnalyzer::find_named_tuple_meta_type(const FSParser::DataType &p_base_typ
 		candidate = p_base_type.class_type;
 	}
 
-	while (candidate != nullptr) {
-		if (candidate->has_member(p_name)) {
-			if (candidate->get_member(p_name).type != FSParser::ClassNode::Member::TUPLE) {
-				// A same-named member of another kind shadows any outer tuple declaration.
-				return false;
+	bool name_taken = false;
+	if (find_in_lexical_chain(candidate, p_is_self, name_taken)) {
+		return true;
+	}
+	if (name_taken) {
+		return false;
+	}
+
+	// A conformance witness falls back to the lexical type scope of the file declaring the `extend`, so
+	// a named tuple declared beside the conformance stays constructible from the witness even when the
+	// target is foreign, native, or builtin. Tuple construction is decided before ordinary call
+	// resolution, so the target's full surface — including inherited and native members — is checked
+	// first; otherwise a declaring-file tuple could capture a call that means a target method.
+	if (p_is_self && witness_declaration_scope != nullptr && parser->current_class == witness_target_class &&
+			!witness_target_scope_declares_name(p_name, p_source)) {
+		bool fallback_name_taken = false;
+		return find_in_lexical_chain(witness_declaration_scope, true, fallback_name_taken);
+	}
+	return false;
+}
+
+// True when the conformance target under witness analysis already supplies `p_name` anywhere on its
+// surface: its own members, its base chain, its lexical outers, its builtin surface, or its native
+// base's ClassDB entry. The declaration-site fallback must never override any of those.
+bool FSAnalyzer::witness_target_scope_declares_name(const StringName &p_name, const FSParser::Node *p_source) {
+	if (witness_target_class == nullptr) {
+		return false;
+	}
+
+	List<FSParser::ClassNode *> target_scope_classes;
+	get_class_node_current_scope_classes(witness_target_class, &target_scope_classes, const_cast<FSParser::Node *>(p_source));
+	// A trait the target applies flattens its members into the target's callable surface, so those
+	// count as the target's own for precedence purposes.
+	for (FSParser::ClassNode *target_scope_class : target_scope_classes) {
+		if (target_scope_class->is_trait || !target_scope_class->used_traits.is_empty()) {
+			resolve_trait_uses(target_scope_class, p_source);
+		}
+	}
+	List<FSParser::ClassNode *> trait_classes;
+	for (FSParser::ClassNode *target_scope_class : target_scope_classes) {
+		for (FSParser::ClassNode *trait : target_scope_class->resolved_traits) {
+			if (trait != nullptr && target_scope_classes.find(trait) == nullptr && trait_classes.find(trait) == nullptr) {
+				trait_classes.push_back(trait);
 			}
-			resolve_class_member(candidate, p_name, p_source);
-			const FSParser::DataType tuple_type = candidate->get_member(p_name).get_datatype();
-			if (!tuple_type.is_set() || tuple_type.kind != FSParser::DataType::TUPLE) {
-				return false;
-			}
-			r_tuple_meta_type = p_is_self ? tuple_type : substitute_member_type(tuple_type, p_base_type, nullptr, nullptr);
+		}
+	}
+	for (FSParser::ClassNode *trait : trait_classes) {
+		target_scope_classes.push_back(trait);
+	}
+
+	for (FSParser::ClassNode *target_scope_class : target_scope_classes) {
+		if (target_scope_class->has_member(p_name) ||
+				(target_scope_class->identifier != nullptr && target_scope_class->identifier->name == p_name)) {
 			return true;
 		}
-		candidate = p_is_self ? candidate->outer : nullptr;
 	}
+
+	const FSParser::DataType self_type = witness_target_class->get_datatype();
+	if (self_type.kind == FSParser::DataType::BUILTIN && self_type.builtin_type != Variant::NIL) {
+		if (Variant::has_builtin_method(self_type.builtin_type, p_name) ||
+				Variant::has_member(self_type.builtin_type, p_name) ||
+				Variant::has_constant(self_type.builtin_type, p_name)) {
+			return true;
+		}
+	}
+
+	StringName native_type;
+	for (FSParser::ClassNode *cursor = witness_target_class; cursor != nullptr; cursor = cursor->base_type.class_type) {
+		if (cursor->base_type.native_type != StringName()) {
+			native_type = cursor->base_type.native_type;
+		}
+	}
+	if (native_type != StringName() && class_exists(native_type)) {
+		if (ClassDB::has_method(native_type, p_name) || ClassDB::has_property(native_type, p_name) ||
+				ClassDB::has_signal(native_type, p_name) || ClassDB::has_enum(native_type, p_name)) {
+			return true;
+		}
+		bool valid = false;
+		ClassDB::get_integer_constant(native_type, p_name, &valid);
+		if (valid) {
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -9902,8 +10122,15 @@ bool FSAnalyzer::find_global_tuple_meta_type(const StringName &p_name, FSParser:
 	}
 
 	List<FSParser::ClassNode *> scope_classes;
-	get_class_node_current_scope_classes(parser->current_class, &scope_classes, p_source);
+	HashSet<FSParser::ClassNode *> declaration_site_classes;
+	get_effective_scope_classes(parser->current_class, &scope_classes, p_source, &declaration_site_classes);
 	for (FSParser::ClassNode *scope_class : scope_classes) {
+		if (declaration_site_classes.has(scope_class)) {
+			if (declaration_site_class_declares_type(scope_class, p_name, p_source)) {
+				return false;
+			}
+			continue;
+		}
 		if (scope_class->members_indices.has(p_name) ||
 				(scope_class->identifier != nullptr && scope_class->identifier->name == p_name)) {
 			return false;
