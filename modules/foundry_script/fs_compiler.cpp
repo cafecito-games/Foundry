@@ -452,6 +452,19 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			result.builtin_type = p_datatype.builtin_type;
 			break;
 		case FSParser::DataType::TYPE_PARAMETER: {
+			// Inside a conformance witness `Self` is the conformance target, which is what analysis bound
+			// it to. The owner script is only the bytecode/storage context, and for a builtin or native
+			// target it is the file declaring the `extend`: reifying against it would hand a runtime type
+			// argument the declaring script's own base instead of the target.
+			if (p_datatype.type_parameter_name == SNAME("@Self") && witness_self_type.is_set()) {
+				result = _gdtype_from_datatype(witness_self_type, p_owner, p_handle_metatype);
+				if (result.kind == FSDataType::FOUNDRY_SCRIPT) {
+					// A native target already carries this from the shim conversion; a script target has to
+					// stay recognizable as `Self` for inherited-member rebinding, as it is outside a witness.
+					result.is_self_type = true;
+				}
+				break;
+			}
 			if (p_datatype.type_parameter_name == SNAME("@Self") && p_owner != nullptr) {
 				result.kind = FSDataType::FOUNDRY_SCRIPT;
 				result.builtin_type = Variant::OBJECT;
@@ -5399,6 +5412,33 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 		}
 		runtime_entry.target_script = target_script.ptr();
 
+		// Every runtime-reified `Self` in this conformance's witnesses denotes the target, not the script
+		// that owns the compiled bytecode. For a builtin or native target those differ: the owner is this
+		// declaring file. Restored on every exit path, so no conformance, function, or lambda inherits
+		// another one's target.
+		struct WitnessSelfTypeScope {
+			FSParser::DataType *slot = nullptr;
+			FSParser::DataType previous;
+
+			WitnessSelfTypeScope(FSParser::DataType *p_slot, const FSParser::DataType &p_self_type) :
+					slot(p_slot), previous(*p_slot) {
+				*slot = p_self_type;
+			}
+
+			~WitnessSelfTypeScope() {
+				*slot = previous;
+			}
+		};
+
+		FSParser::DataType target_self_type = _self_type_for_class(target_class);
+		// A generic target's own parameters are not bound by the conformance, so they cannot be reified
+		// from a witness; `Self` denotes the unspecialized target class, as it did before.
+		target_self_type.type_arguments.clear();
+		if (!conformance->witnesses.is_empty() && !target_self_type.is_set()) {
+			_set_error(vformat(R"(Compiler bug (please report): retroactive conformance target "%s" has no resolved type.)", target_class->fqcn), conformance->target);
+			return ERR_COMPILATION_FAILED;
+		}
+		WitnessSelfTypeScope self_type_scope(&witness_self_type, target_self_type);
 
 		// The declaring script's constant pool is the compile-time half of the witness's declaration-site
 		// scope, mirroring the analyzer's target-first, declaration-site-second lookup.

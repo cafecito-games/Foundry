@@ -1,3 +1,5 @@
 FS_TEST_OK
-crate:0
-crate:0
+crate:7
+crate:9
+crate:{ "key": 1 }
+crate:{ "other": 2 }

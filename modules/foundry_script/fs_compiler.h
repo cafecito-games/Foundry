@@ -45,6 +45,12 @@ class FSCompiler {
 	// Set only while conformance witnesses are compiled, so a witness (and any lambda inside it) can
 	// still reach the constant pool of the file that declares the `extend`.
 	FoundryScript *witness_declaration_site_script = nullptr;
+	// Set only while a conformance witness (and any lambda inside it) is compiled. Inside a witness,
+	// `Self` denotes the conformance target, exactly as it does during analysis; the script that owns
+	// the generated function is only the bytecode/storage context, and for a builtin or native target
+	// it is the declaring file. Unset outside witness compilation, where `Self` keeps lowering against
+	// the owning class.
+	FSParser::DataType witness_self_type;
 
 	struct FunctionLambdaInfo {
 		FSFunction *function = nullptr;
