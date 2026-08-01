@@ -28,7 +28,7 @@
 		[codeblock]
 		var data = JSON.parse_string(json_string) # Returns null if parsing failed.
 		[/codeblock]
-		A class can customize its own encoding and decoding by conforming to the [code]JsonSerializable[/code] trait, which declares [code]to_json() -> JsonNode[/code] and [code]static from_json(node: JsonNode) -> JsonResult[Self][/code]. [method stringify] calls [code]to_json()[/code] on any conforming value it encounters, at the top level or nested inside an [Array] or [Dictionary]; [method parse_to_node] is the counterpart that hands a parsed document to [code]from_json()[/code].
+		A class can customize its own encoding and decoding by conforming to the [code]JsonSerializable[/code] trait, which declares [code]to_json() -> JsonNode[/code] and [code]static from_json(node: JsonNode) -> JsonResult[Self][/code]. [method stringify] calls [code]to_json()[/code] on any conforming value it encounters, at the top level, as an element of an [Array], or as a [Dictionary] [i]value[/i]; a conforming object used as a [Dictionary] [i]key[/i] does not go through [code]to_json()[/code], since keys are always converted to plain [String]s directly. [method parse_to_node] is the counterpart that hands a parsed document to [code]from_json()[/code].
 		A conforming type that nests another conforming type composes by explicit delegation, not by any automatic mechanism: the parent's [code]to_json()[/code] calls the child's [code]to_json()[/code] directly, and the parent's [code]from_json()[/code] calls the child's [code]from_json()[/code] and forwards a failure with [code]JsonResult.nested(error, "key")[/code], which re-roots the reported error path at the document instead of at the nested value.
 		[codeblock]
 		class_name Player extends Node uses JsonSerializable
