@@ -871,25 +871,16 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				} break;
 				case FSParser::IdentifierNode::MEMBER_CONSTANT:
 				case FSParser::IdentifierNode::MEMBER_CLASS: {
-					// The live class an identifier's resolved type denotes, if any. A specialized alias
-					// (`const B = Box[int]`) is excluded: its constant-pool handle carries the reified
-					// arguments, which a bare class object cannot.
-					const auto find_class_handle = [&]() -> FoundryScript * {
-						const FSParser::DataType identifier_type = in->get_datatype();
-						if (!identifier_type.is_meta_type || identifier_type.is_type_handle_annotation ||
-								!identifier_type.type_arguments.is_empty()) {
-							return nullptr;
-						}
-						return _resolve_class_handle_script(identifier_type, codegen.script);
-					};
-
 					// A nested-class name denotes exactly the class analysis bound it to, so it is emitted
 					// from that identity rather than from a second name-only lookup, which can differ: the
 					// declaration analysis chose may live in a script this unit only holds shallowly, whose
 					// constant pool is unpopulated, and the search would then fall through to a same-named
-					// declaration in a later scope.
-					if (in->source == FSParser::IdentifierNode::MEMBER_CLASS) {
-						FoundryScript *handle_script = find_class_handle();
+					// declaration in a later scope. A specialized handle (`Box[int]`) is not a bare class
+					// object and keeps its own emission path.
+					const FSParser::DataType identifier_type = in->get_datatype();
+					if (in->source == FSParser::IdentifierNode::MEMBER_CLASS && identifier_type.is_meta_type &&
+							!identifier_type.is_type_handle_annotation && identifier_type.type_arguments.is_empty()) {
+						FoundryScript *handle_script = _resolve_class_handle_script(identifier_type, codegen.script);
 						if (handle_script != nullptr) {
 							return codegen.add_constant(Ref<FoundryScript>(handle_script));
 						}
@@ -916,15 +907,13 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 						return codegen.add_constant(constant_value);
 					}
 
-					// A type-denoting `const` alias whose declaring class this unit only holds shallowly has
-					// no entry in any reachable constant pool. Its folded value is the class analysis bound,
-					// so it is recovered from the resolved type. The stored value wins whenever there is one:
-					// a constant's value can legitimately differ from its inferred type.
-					{
-						FoundryScript *handle_script = find_class_handle();
-						if (handle_script != nullptr) {
-							return codegen.add_constant(Ref<FoundryScript>(handle_script));
-						}
+					// A class-valued `const` whose declaring class this unit only holds shallowly has no
+					// entry in any reachable constant pool. The value analysis folded is carried by the
+					// identifier itself, so it is emitted from there rather than reconstructed from the
+					// inferred type, which a folded value may legitimately differ from.
+					if (in->is_constant && Object::cast_to<FoundryScript>(in->reduced_value.operator Object *()) != nullptr) {
+						return codegen.add_constant(
+								_resolve_aliased_class_constant(in->reduced_value, identifier_type, codegen.script));
 					}
 				} break;
 				case FSParser::IdentifierNode::STATIC_VARIABLE: {
