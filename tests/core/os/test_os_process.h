@@ -174,6 +174,26 @@ TEST_CASE("[OS] Untracked Unix process liveness answers quietly") {
 		CHECK_FALSE(detector.has_error);
 	}
 
+	SUBCASE("A killed child reports no result and releases its PID") {
+		List<String> arguments;
+		arguments.push_back("-c");
+		arguments.push_back("sleep 120");
+		OS::ProcessID pid = 0;
+		REQUIRE_EQ(OS::get_singleton()->create_process("/bin/sh", arguments, &pid), OK);
+		REQUIRE(pid != 0);
+		CHECK(OS::get_singleton()->is_process_running(pid));
+
+		ErrorDetector detector;
+		REQUIRE_EQ(OS::get_singleton()->kill(pid), OK);
+
+		// The kill collected the child, so nothing may claim it is still running, and a
+		// forced stop is not a natural result a fabricated zero could stand in for.
+		CHECK_FALSE(OS::get_singleton()->is_process_running(pid));
+		CHECK_FALSE(OS::get_singleton()->is_process_running(pid));
+		CHECK_EQ(OS::get_singleton()->get_process_exit_code(pid), -1);
+		CHECK_FALSE(detector.has_error);
+	}
+
 	SUBCASE("A tracked child reaped behind the engine's back is still diagnosed") {
 		List<String> arguments;
 		arguments.push_back("-c");

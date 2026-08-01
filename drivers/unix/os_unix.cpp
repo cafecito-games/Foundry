@@ -1040,6 +1040,13 @@ Error OS_Unix::kill(const ProcessID &p_pid) {
 		//avoid zombie process
 		int st;
 		_wait_for_pid_completion(p_pid, &st, 0);
+
+		// The child was collected right here, so it no longer holds its PID and no later
+		// `waitpid()` for it can succeed. Keeping a record that still claims a running
+		// child would report a forced stop as a natural result and could answer for
+		// whatever the kernel hands that number to next.
+		MutexLock lock(process_map_mutex);
+		process_map->erase(p_pid);
 	}
 	return ret ? ERR_INVALID_PARAMETER : OK;
 }
