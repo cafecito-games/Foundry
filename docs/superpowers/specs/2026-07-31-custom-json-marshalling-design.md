@@ -177,7 +177,10 @@ An engine-registered generic class:
   this specialization from a child's error, prepending `key` to the child's path. Lets a parent's
   `from_json` forward a nested failure without losing location or re-typing the result by hand.
 
-Exactly one of `value` and `error` is set. Both null is a malformed implementation and is reported.
+Success is explicit state established by `ok(...)`; a successful nullable payload may have both
+`value` and `error` null. A default-constructed object with both fields null is malformed and
+`is_ok()` is false. When `error` is present it is authoritative and `is_ok()` is false even if the
+result was previously successful.
 
 ### 4.4 `JsonSerializable`
 
