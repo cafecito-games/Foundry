@@ -925,6 +925,9 @@ Error OS_MacOS::create_process(const String &p_path, const List<String> &p_argum
 			__block dispatch_semaphore_t lock = dispatch_semaphore_create(0);
 			__block Error err = ERR_TIMEOUT;
 			__block pid_t pid = 0;
+			// Only a caller that takes the PID can observe or release a result, so status
+			// bookkeeping is created exactly for those launches.
+			const bool track_status = r_child_id != nullptr;
 
 			[[NSWorkspace sharedWorkspace] openApplicationAtURL:url
 												  configuration:configuration
@@ -935,19 +938,21 @@ Error OS_MacOS::create_process(const String &p_path, const List<String> &p_argum
 												  } else {
 													  pid = [app processIdentifier];
 													  err = OK;
+													  if (track_status) {
+														  // Registered here rather than after the waiting thread wakes
+														  // up, so the shortest-lived application has the smallest
+														  // possible window in which its exit event can be missed.
+														  // Failing to register never turns a successful launch into a
+														  // failed one; it only leaves the result unavailable.
+														  _track_bundle_process((ProcessID)pid);
+													  }
 												  }
 												  dispatch_semaphore_signal(lock);
 											  }];
 			dispatch_semaphore_wait(lock, dispatch_time(DISPATCH_TIME_NOW, 20000000000)); // 20 sec timeout, wait for app to launch.
 
-			if (err == OK) {
-				if (r_child_id) {
-					// Only a caller that takes the PID can observe or release a result, so
-					// bookkeeping is created exactly for those launches. Failing to track the
-					// application never turns a successful launch into a failed one.
-					_track_bundle_process((ProcessID)pid);
-					*r_child_id = (ProcessID)pid;
-				}
+			if (err == OK && r_child_id) {
+				*r_child_id = (ProcessID)pid;
 			}
 
 			return err;

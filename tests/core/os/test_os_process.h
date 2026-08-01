@@ -400,6 +400,24 @@ TEST_CASE("[OS][macOS] macOS bundled process exit status survives the launch lif
 		CHECK_EQ(OS::get_singleton()->get_process_exit_code(second), -1);
 	}
 
+	SUBCASE("A short-lived bundled application never lingers as running") {
+		// Launch Services reports the process identifier asynchronously, so an application
+		// that ends immediately can outrun its own status registration.
+		const OS::ProcessID pid = app.launch(0, app.artifact("short.report"), String());
+		REQUIRE_MESSAGE(pid != 0, "Failed to open the probe application bundle.");
+		REQUIRE(await_termination(pid));
+
+		// Losing that race degrades to the unavailable sentinel. It must never surface a
+		// value the application did not return, and never leave the PID reported as alive.
+		const int result = OS::get_singleton()->get_process_exit_code(pid);
+		CHECK((result == 0 || result == -1));
+		CHECK_FALSE(OS::get_singleton()->is_process_running(pid));
+
+		OS::get_singleton()->release_finished_process(pid);
+		CHECK_EQ(OS::get_singleton()->get_process_exit_code(pid), -1);
+		CHECK_FALSE(detector.has_error);
+	}
+
 	SUBCASE("A forced stop cleans up without exposing a natural result") {
 		const OS::ProcessID pid = app.launch(9, app.artifact("forced.report"), app.artifact("never.marker"));
 		REQUIRE_MESSAGE(pid != 0, "Failed to open the probe application bundle.");
