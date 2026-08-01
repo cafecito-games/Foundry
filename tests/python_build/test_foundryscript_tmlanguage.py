@@ -343,6 +343,13 @@ class TokenizationTests(unittest.TestCase):
             with self.subTest(word=marker):
                 self.assertNotScoped(marker, "entity.name.type.foundryscript", offset=offset, source=source)
 
+    def test_a_lowercase_subscript_target_is_not_a_type_argument_list(self) -> None:
+        # `values[int]` is a subscript of the lowercase variable `values`, not a
+        # generic type-argument list; only a capitalized (type-shaped) identifier
+        # immediately before `[` introduces a type-argument position.
+        source = "var picked = values[int]\n"
+        self.assertNotScoped("[int]", "entity.name.type.foundryscript", offset=1, source=source)
+
     def test_capitalized_type_coverage_still_works(self) -> None:
         self.assertScoped("-> Int", "entity.name.type.foundryscript", offset=3, source="func f() -> Int:\n\tpass\n")
         self.assertScoped(": String", "entity.name.type.foundryscript", offset=2)
@@ -367,6 +374,11 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped(") targets", "keyword.other.targets.foundryscript", offset=2, source=source)
         # The parameter list is still tokenized while the block is open.
         self.assertScoped("float", "entity.name.type.foundryscript", source=source)
+
+    def test_a_typed_parameter_named_targets_does_not_end_the_header_early(self) -> None:
+        source = "annotation marker(targets: int) targets METHOD:\n\tpass\n"
+        # The real separator is the second `targets`, after the closing paren.
+        self.assertScoped(") targets", "keyword.other.targets.foundryscript", offset=2, source=source)
 
     def test_a_declaration_without_targets_does_not_swallow_the_rest_of_the_file(self) -> None:
         # Malformed/mid-edit input: the annotation body never reaches `targets`. The
