@@ -876,10 +876,11 @@ void OS_MacOS::_close_bundle_processes() {
 }
 
 bool OS_MacOS::_poll_bundle_process(ProcessID p_pid, BundleProcess &r_state) const {
-	// The kernel only reassigns a PID once its previous owner is gone, so a PID that the
-	// Unix process table now owns belongs to a freshly forked child. A completed bundle
-	// tracker that was never released must not answer for that child.
-	const bool reassigned_to_unix_child = _is_tracked_child(p_pid);
+	// The kernel only reassigns a PID once its previous owner is gone, so an uncollected
+	// Unix child holding this PID has to be newer than any bundle tracker for it. A
+	// completed tracker that was never released must not answer for that child. A merely
+	// cached Unix result does not hold the PID and so cannot outrank the tracker.
+	const bool reassigned_to_unix_child = _holds_child_pid(p_pid);
 
 	MutexLock lock(bundle_process_mutex);
 

@@ -864,9 +864,13 @@ int OS_Unix::_wait_for_pid_completion(const pid_t p_pid, int *r_status, int p_op
 	}
 }
 
-bool OS_Unix::_is_tracked_child(const ProcessID &p_pid) const {
+bool OS_Unix::_holds_child_pid(const ProcessID &p_pid) const {
 	MutexLock lock(process_map_mutex);
-	return process_map->has(p_pid);
+
+	// A child that has already been collected leaves its cached result behind but no
+	// longer occupies the PID, which the kernel is then free to hand to something else.
+	const ProcessInfo *pi = process_map->getptr(p_pid);
+	return pi && pi->is_running;
 }
 
 bool OS_Unix::_check_pid_is_running(const pid_t p_pid, int *r_status) const {
