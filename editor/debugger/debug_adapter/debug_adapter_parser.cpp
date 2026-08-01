@@ -197,6 +197,20 @@ Dictionary DebugAdapterParser::req_launch(const Dictionary &p_params) const {
 	return Dictionary();
 }
 
+// Reads a required string field without letting Variant's implicit conversions turn
+// a JSON number, boolean, or object into a plausible-looking path.
+static bool read_launch_string(const Dictionary &p_source, const String &p_key, String &r_value) {
+	if (!p_source.has(p_key)) {
+		return false;
+	}
+	const Variant value = p_source[p_key];
+	if (value.get_type() != Variant::STRING && value.get_type() != Variant::STRING_NAME) {
+		return false;
+	}
+	r_value = value;
+	return !r_value.is_empty();
+}
+
 bool DebugAdapterParser::parse_launch_request(const Dictionary &p_arguments, LaunchRequest &r_request, String &r_error) {
 	r_request = LaunchRequest();
 
@@ -211,15 +225,15 @@ bool DebugAdapterParser::parse_launch_request(const Dictionary &p_arguments, Lau
 	}
 
 	const Dictionary launch = launch_value;
-	const String kind = launch.get("kind", "");
-	if (kind != "project_test") {
+	String kind;
+	if (!read_launch_string(launch, "kind", kind) || kind != "project_test") {
 		r_error = vformat("unsupported launch kind \"%s\"; expected \"project_test\".", kind);
 		return false;
 	}
 	r_request.kind = LaunchRequest::KIND_PROJECT_TEST;
 
-	const String runner = launch.get("runner", "");
-	if (runner.is_empty()) {
+	String runner;
+	if (!read_launch_string(launch, "runner", runner)) {
 		r_error = "a \"project_test\" launch requires a \"runner\" script path.";
 		return false;
 	}
@@ -256,8 +270,8 @@ bool DebugAdapterParser::parse_launch_request(const Dictionary &p_arguments, Lau
 
 	// The TAP report is the authoritative result of a run, and the runner rejects an
 	// invocation without one, so an absent report is refused before anything starts.
-	const String report_path = adapter.get("report", "");
-	if (report_path.is_empty()) {
+	String report_path;
+	if (!read_launch_string(adapter, "report", report_path)) {
 		r_error = "the launch adapter requires a \"report\" path.";
 		return false;
 	}
@@ -271,6 +285,10 @@ bool DebugAdapterParser::parse_launch_request(const Dictionary &p_arguments, Lau
 		}
 		const Array ids = ids_value;
 		for (const Variant &id : ids) {
+			if (id.get_type() != Variant::STRING && id.get_type() != Variant::STRING_NAME) {
+				r_error = "the launch adapter's \"testIds\" must be an array of strings.";
+				return false;
+			}
 			const String test_id = id;
 			if (test_id.is_empty()) {
 				r_error = "the launch adapter's \"testIds\" must not contain empty ids.";

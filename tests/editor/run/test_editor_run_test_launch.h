@@ -275,6 +275,43 @@ TEST_CASE("[Editor][DebugAdapter] A malformed project_test launch is rejected wi
 		CHECK(error.contains("protocol version"));
 	}
 
+	SUBCASE("non-string runner") {
+		Dictionary adapter;
+		adapter["protocolVersion"] = EditorRun::TEST_ADAPTER_PROTOCOL_VERSION;
+		adapter["report"] = "/scratch/report.tap";
+		Dictionary launch;
+		launch["kind"] = "project_test";
+		launch["runner"] = 17;
+		launch["adapter"] = adapter;
+		Dictionary arguments;
+		arguments["foundry/launch"] = launch;
+
+		DebugAdapterParser::LaunchRequest request;
+		String error;
+		CHECK_FALSE(DebugAdapterParser::parse_launch_request(arguments, request, error));
+		CHECK(error.contains("runner"));
+	}
+
+	SUBCASE("non-string selected id") {
+		Dictionary adapter;
+		adapter["protocolVersion"] = EditorRun::TEST_ADAPTER_PROTOCOL_VERSION;
+		adapter["report"] = "/scratch/report.tap";
+		Array ids;
+		ids.push_back(3);
+		adapter["testIds"] = ids;
+		Dictionary launch;
+		launch["kind"] = "project_test";
+		launch["runner"] = "res://run.fs";
+		launch["adapter"] = adapter;
+		Dictionary arguments;
+		arguments["foundry/launch"] = launch;
+
+		DebugAdapterParser::LaunchRequest request;
+		String error;
+		CHECK_FALSE(DebugAdapterParser::parse_launch_request(arguments, request, error));
+		CHECK(error.contains("array of strings"));
+	}
+
 	SUBCASE("missing report") {
 		Dictionary adapter;
 		adapter["protocolVersion"] = EditorRun::TEST_ADAPTER_PROTOCOL_VERSION;
