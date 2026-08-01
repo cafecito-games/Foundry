@@ -101,7 +101,7 @@ class EditorRunBar : public MarginContainer {
 
 	// How long a debuggee that already closed its debug session is given to finish, so
 	// its real result can still be recovered instead of being killed as a forced stop.
-	static const uint64_t PROCESS_RESULT_GRACE_MSEC = 5000;
+	static constexpr uint64_t PROCESS_RESULT_GRACE_MSEC = 5000;
 	uint64_t process_result_deadline_msec = 0;
 
 	void _poll_child_processes();

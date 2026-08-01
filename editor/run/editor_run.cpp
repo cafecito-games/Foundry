@@ -311,6 +311,9 @@ bool EditorRun::poll_child_completion(ProcessCompletion &r_completion) {
 		r_completion.launch_id = child.launch_id;
 		r_completion.pid = child.pid;
 		r_completion.exit_code = OS::get_singleton()->get_process_exit_code(child.pid);
+		// The status has been read and this run will never touch the process again, so
+		// the platform can drop whatever it still keeps for it.
+		OS::get_singleton()->release_finished_process(child.pid);
 		children.erase(E);
 		return true;
 	}

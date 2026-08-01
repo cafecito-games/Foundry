@@ -1831,6 +1831,27 @@ int OS_Windows::get_process_exit_code(const ProcessID &p_pid) const {
 	return dw_exit_code;
 }
 
+void OS_Windows::release_finished_process(const ProcessID &p_pid) {
+	MutexLock lock(process_map_mutex);
+	if (!process_map->has(p_pid)) {
+		return;
+	}
+
+	const ProcessInfo info = (*process_map)[p_pid];
+	if (info.is_running) {
+		// Releasing a running process would abandon its handles without ever closing
+		// them; only a process already observed as finished can be released.
+		return;
+	}
+	process_map->erase(p_pid);
+
+	if (info.job_handle) {
+		CloseHandle(info.job_handle);
+	}
+	CloseHandle(info.pi.hProcess);
+	CloseHandle(info.pi.hThread);
+}
+
 Error OS_Windows::set_cwd(const String &p_cwd) {
 	if (_wchdir((LPCWSTR)(p_cwd.utf16().get_data())) != 0) {
 		return ERR_CANT_OPEN;

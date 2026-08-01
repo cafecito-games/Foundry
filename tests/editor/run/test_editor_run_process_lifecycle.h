@@ -215,6 +215,10 @@ TEST_CASE("[Editor][EditorRun] A completed child reports the status the OS recor
 		CHECK_FALSE(run.has_child_process(pid));
 		EditorRun::ProcessCompletion duplicate;
 		CHECK_FALSE(run.poll_child_completion(duplicate));
+
+		// Consuming the result also releases whatever the platform still kept for the
+		// finished process, so it no longer has a recoverable status.
+		CHECK_EQ(OS::get_singleton()->get_process_exit_code(pid), -1);
 	}
 }
 
@@ -260,6 +264,13 @@ TEST_CASE("[Editor][EditorRun] Every launch gets its own identity") {
 
 	EditorRun other_run;
 	CHECK_GT(other_run.begin_launch(), second);
+}
+
+TEST_CASE("[Editor][EditorRun] A process this instance never spawned has no status") {
+	// The lifecycle must never mistake "no status available" for a successful exit, so
+	// the platform reports the unavailable sentinel instead of a plausible zero.
+	CHECK_EQ(OS::get_singleton()->get_process_exit_code(OS::get_singleton()->get_process_id()),
+			DebugSessionResultCoordinator::UNAVAILABLE_EXIT_CODE);
 }
 
 TEST_CASE("[Editor][DebugSession] A known result ends the session exactly once") {

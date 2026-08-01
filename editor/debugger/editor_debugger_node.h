@@ -53,7 +53,7 @@ class UndoRedo;
 class DebugSessionResultCoordinator {
 public:
 	// The OS process API reports this when it cannot supply a status for a process.
-	static const int UNAVAILABLE_EXIT_CODE = -1;
+	static constexpr int UNAVAILABLE_EXIT_CODE = -1;
 
 	struct Outcome {
 		// False when the observation was stale, duplicated, or is not yet enough to end

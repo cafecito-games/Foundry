@@ -129,6 +129,7 @@ public:
 	virtual int get_process_id() const override;
 	virtual bool is_process_running(const ProcessID &p_pid) const override;
 	virtual int get_process_exit_code(const ProcessID &p_pid) const override;
+	virtual void release_finished_process(const ProcessID &p_pid) override;
 
 	virtual bool has_environment(const String &p_var) const override;
 	virtual String get_environment(const String &p_var) const override;
