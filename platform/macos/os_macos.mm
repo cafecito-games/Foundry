@@ -834,6 +834,11 @@ void OS_MacOS::_track_bundle_process(ProcessID p_pid) {
 			return;
 		}
 
+		// This application holds the PID from here on, so a Unix child result still cached
+		// under the same number describes a process that is long gone and must not outlive
+		// the tracker being installed for it.
+		OS_Unix::release_finished_process(p_pid);
+
 		MutexLock lock(bundle_process_mutex);
 		// A reused PID starts from scratch, so no earlier launch can satisfy this one.
 		BundleProcess *previous = bundle_processes.getptr(p_pid);
