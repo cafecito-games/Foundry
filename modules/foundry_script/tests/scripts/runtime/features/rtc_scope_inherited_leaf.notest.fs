@@ -1,4 +1,6 @@
-# Derived foreign target for the tuple-collision fixture. It adds nothing of its own, so `label()` is
-# inherited from RtcScopeInheritedBase.
+# Derived foreign target for the tuple-collision fixture. It declares nothing of its own: `label()` is
+# inherited and `stamp()` arrives through the applied trait.
 class_name RtcScopeInheritedLeaf
 extends RtcScopeInheritedBase
+
+uses RtcScopeStamping

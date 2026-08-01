@@ -10045,6 +10045,25 @@ bool FSAnalyzer::witness_target_scope_declares_name(const StringName &p_name, co
 
 	List<FSParser::ClassNode *> target_scope_classes;
 	get_class_node_current_scope_classes(witness_target_class, &target_scope_classes, const_cast<FSParser::Node *>(p_source));
+	// A trait the target applies flattens its members into the target's callable surface, so those
+	// count as the target's own for precedence purposes.
+	for (FSParser::ClassNode *target_scope_class : target_scope_classes) {
+		if (target_scope_class->is_trait || !target_scope_class->used_traits.is_empty()) {
+			resolve_trait_uses(target_scope_class, p_source);
+		}
+	}
+	List<FSParser::ClassNode *> trait_classes;
+	for (FSParser::ClassNode *target_scope_class : target_scope_classes) {
+		for (FSParser::ClassNode *trait : target_scope_class->resolved_traits) {
+			if (trait != nullptr && target_scope_classes.find(trait) == nullptr && trait_classes.find(trait) == nullptr) {
+				trait_classes.push_back(trait);
+			}
+		}
+	}
+	for (FSParser::ClassNode *trait : trait_classes) {
+		target_scope_classes.push_back(trait);
+	}
+
 	for (FSParser::ClassNode *target_scope_class : target_scope_classes) {
 		if (target_scope_class->has_member(p_name) ||
 				(target_scope_class->identifier != nullptr && target_scope_class->identifier->name == p_name)) {
