@@ -75,6 +75,11 @@ class OS_Unix : public OS {
 	bool _check_pid_is_running(const pid_t p_pid, int *r_status) const;
 
 protected:
+	// Whether this instance currently owns `p_pid` as a waitable child. A platform that
+	// tracks other kinds of owned processes uses this to detect a PID the kernel has
+	// already reassigned to a fresh child.
+	bool _is_tracked_child(const ProcessID &p_pid) const;
+
 	// UNIX only handles the core functions.
 	// inheriting platforms under unix (eg. X11) should handle the rest
 

@@ -864,6 +864,11 @@ int OS_Unix::_wait_for_pid_completion(const pid_t p_pid, int *r_status, int p_op
 	}
 }
 
+bool OS_Unix::_is_tracked_child(const ProcessID &p_pid) const {
+	MutexLock lock(process_map_mutex);
+	return process_map->has(p_pid);
+}
+
 bool OS_Unix::_check_pid_is_running(const pid_t p_pid, int *r_status) const {
 	const ProcessInfo *pi = process_map->getptr(p_pid);
 
