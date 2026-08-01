@@ -50,7 +50,16 @@
 				_:
 					return JsonResult[Player].fail("expected an object", "$")
 		[/codeblock]
-		[b]Note:[/b] Custom marshaling has two known limitations. Enums, tuples, and builtin value types are never marshaled through [code]to_json()[/code]/[code]from_json()[/code]: a tagged union or tuple value is a read-only [Array] and a plain enum is an [int] at runtime, so neither carries the type identity [method stringify] needs to dispatch on. Retroactive conformance declared on a scriptless native class is not honored either, because dispatch is keyed on [method Object.get_script]; only a scripted class, or a native class instantiated with a script attached, is checked.
+		A conformance can also be declared retroactively on an engine class from outside its definition, and [method stringify] honors it even though the objects it applies to carry no script. The witness is resolved through the engine inheritance chain, so a conformance declared on a base class also covers its subclasses, and an implementation an object already carries itself takes precedence over an external one.
+		[codeblock]
+		extend Resource uses JsonSerializable:
+		    func to_json() -&gt; JsonNode:
+		        return JsonNode.object_of({"path": JsonNode.Str(resource_path)})
+
+		    static func from_json(_node: JsonNode) -&gt; JsonResult[Self]:
+		        return JsonResult[Self].fail("not decodable", "$")
+		[/codeblock]
+		[b]Note:[/b] Custom marshaling has one known limitation. Enums, tuples, and builtin value types are never marshaled through [code]to_json()[/code]/[code]from_json()[/code]: a tagged union or tuple value is a read-only [Array] and a plain enum is an [int] at runtime, so neither carries the type identity [method stringify] needs to dispatch on.
 		[b]Note:[/b] Both parse methods do not fully comply with the JSON specification:
 		- Trailing commas in arrays or objects are ignored, instead of causing a parser error.
 		- New line and tab characters are accepted in string literals, and are treated like their corresponding escape sequences [code]\n[/code] and [code]\t[/code].

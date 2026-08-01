@@ -32,6 +32,7 @@
 
 #include "foundry_script.h"
 #include "fs_cache.h"
+#include "fs_conformance_registry.h"
 
 #include "core/object/object.h"
 #include "core/object/script_language.h"
@@ -105,6 +106,19 @@ bool call_builtin_enum_static(const char *p_builtin_path, const StringName &p_en
 	return true;
 }
 
+// The compiled witness that a retroactive conformance (`extend <EngineClass> uses JsonSerializable`)
+// supplies for the instance hook, or `nullptr` when the object's engine class and its ancestors
+// declare none. A static witness is rejected: the hook is an instance method, and dispatching a
+// static one would drop the receiver.
+FSFunction *find_native_to_json_witness(Object *p_object) {
+	FSFunction *witness = FSConformanceRegistry::get_singleton()->find_native_witness_function(
+			p_object->get_class_name(), FSJsonMarshal::to_json_method_name());
+	if (witness == nullptr || witness->is_static()) {
+		return nullptr;
+	}
+	return witness;
+}
+
 } // namespace
 
 StringName FSJsonMarshal::to_json_method_name() {
@@ -115,14 +129,29 @@ bool FSJsonMarshal::has_to_json(Object *p_object) {
 	if (p_object == nullptr) {
 		return false;
 	}
-	return p_object->has_method(to_json_method_name());
+	return p_object->has_method(to_json_method_name()) || find_native_to_json_witness(p_object) != nullptr;
 }
 
 bool FSJsonMarshal::call_to_json(Object *p_object, Variant &r_node) {
 	ERR_FAIL_NULL_V(p_object, false);
 
 	Callable::CallError call_error;
-	const Variant node = p_object->callp(to_json_method_name(), nullptr, 0, call_error);
+	Variant node = p_object->callp(to_json_method_name(), nullptr, 0, call_error);
+
+	// A retroactive conformance declared on an engine class supplies the hook from outside the
+	// object's own definition, so nothing is installed on the instance and the call above misses.
+	// Resolve the compiled witness the way the interpreter does for a native receiver and dispatch
+	// it with the object bound as `self`. Only a miss reaches here, so an implementation the object
+	// does carry keeps precedence.
+	if (call_error.error == Callable::CallError::CALL_ERROR_INVALID_METHOD) {
+		FSFunction *witness = find_native_to_json_witness(p_object);
+		if (witness != nullptr) {
+			call_error = Callable::CallError();
+			const Variant self = p_object;
+			node = witness->call_witness(self, nullptr, 0, call_error);
+		}
+	}
+
 	if (call_error.error != Callable::CallError::CALL_OK) {
 		ERR_PRINT(vformat(R"(Calling to_json() on an instance of "%s" failed.)", p_object->get_class()));
 		return false;
@@ -156,6 +185,25 @@ bool FSJsonMarshal::make_result_failure(const String &p_message, const String &p
 
 StringName FSJsonObjectMarshaller::serializable_trait_name() {
 	return SNAME("JsonSerializable");
+}
+
+bool FSJsonObjectMarshaller::conforms_to_serializable(Object *p_object) {
+	ERR_FAIL_NULL_V(p_object, false);
+
+	const ScriptInstance *instance = p_object->get_script_instance();
+	if (instance != nullptr) {
+		const Ref<Script> script = instance->get_script();
+		if (script.is_valid() && script->has_script_trait(serializable_trait_name())) {
+			return true;
+		}
+	}
+
+	// `Script::has_script_trait` only reaches a script's own identities, so a conformance declared
+	// retroactively on an engine class is invisible there — including for a scripted object whose
+	// native base carries it. The registry answers on the engine class and walks its ancestors, the
+	// same reach the type system uses when it accepts such a value as the trait.
+	return FSConformanceRegistry::get_singleton()->native_class_conforms(
+			p_object->get_class_name(), serializable_trait_name(), true);
 }
 
 // A script instance's `get_class()` is its native base, which says nothing about which script
@@ -293,12 +341,7 @@ bool FSJsonObjectMarshaller::lower_node(const Variant &p_node, Variant &r_result
 bool FSJsonObjectMarshaller::marshal_object(Object *p_object, Variant &r_result) {
 	ERR_FAIL_NULL_V(p_object, false);
 
-	const ScriptInstance *instance = p_object->get_script_instance();
-	if (instance == nullptr) {
-		return false;
-	}
-	const Ref<Script> script = instance->get_script();
-	if (script.is_null() || !script->has_script_trait(serializable_trait_name())) {
+	if (!conforms_to_serializable(p_object)) {
 		return false;
 	}
 

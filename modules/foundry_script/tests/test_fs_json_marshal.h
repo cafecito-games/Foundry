@@ -38,6 +38,7 @@
 #include "fs_test_runner.h"
 #include "test_analyzer_finalization.h"
 
+#include "core/io/image.h"
 #include "core/io/json.h"
 #include "core/io/resource_loader.h"
 #include "core/object/class_db.h"
@@ -320,6 +321,50 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A conforming object is marshale
 	Dictionary keyed;
 	keyed["hero"] = host.ptr();
 	CHECK_EQ(JSON::stringify(keyed), "{\"hero\":\"from script\"}");
+}
+
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A retroactive conformance on a native class is honored") {
+	JsonMarshalProjectFixture project;
+	JsonMarshallerScope marshaller_scope;
+
+	// Loading the declaring file is what installs the conformance; the Ref is held for the whole case
+	// so the compiled witnesses stay registered, and dropping it unregisters them again.
+	const Ref<Script> conformance_script =
+			ResourceLoader::load("res://json_marshal_host/native_image_ext.notest.fs");
+	REQUIRE(conformance_script.is_valid());
+	REQUIRE(conformance_script->is_valid());
+
+	// The conformance target has no script, so nothing installs the hook on the instance.
+	Ref<Image> image(memnew(Image));
+	CHECK(FSJsonObjectMarshaller::conforms_to_serializable(image.ptr()));
+	CHECK(FSJsonMarshal::has_to_json(image.ptr()));
+
+	Variant node;
+	REQUIRE(FSJsonMarshal::call_to_json(image.ptr(), node));
+
+	// `JsonNode.Str(...)` lowers to `[tag, payload]`, where `Str` is case 4 in the wire contract.
+	REQUIRE_EQ(node.get_type(), Variant::ARRAY);
+	const Array encoded_node = node;
+	REQUIRE_EQ(encoded_node.size(), 2);
+	CHECK_EQ(int(encoded_node[0]), 4);
+	CHECK_EQ(String(encoded_node[1]), "image:Image");
+
+	CHECK_EQ(JSON::stringify(Variant(image.ptr())), "\"image:Image\"");
+
+	Array container;
+	container.push_back(image.ptr());
+	CHECK_EQ(JSON::stringify(container), "[\"image:Image\"]");
+
+	// The inheritance walk only goes up: a base class of the conformance target is not conformed by
+	// it, and neither is a native class outside the hierarchy. Both keep the quoted `to_string`.
+	Ref<Resource> base_instance(memnew(Resource));
+	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(base_instance.ptr()));
+	CHECK(JSON::stringify(Variant(base_instance.ptr())).begins_with("\""));
+
+	Ref<RefCounted> unconformed(memnew(RefCounted));
+	CHECK_FALSE(FSJsonObjectMarshaller::conforms_to_serializable(unconformed.ptr()));
+	CHECK_FALSE(FSJsonMarshal::has_to_json(unconformed.ptr()));
+	CHECK(JSON::stringify(Variant(unconformed.ptr())).begins_with("\""));
 }
 
 TEST_CASE("[Modules][FoundryScript][JsonMarshal] A conforming object returning a bad node encodes as null") {

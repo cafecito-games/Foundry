@@ -45,11 +45,14 @@ public:
 	// re-spelling the literal.
 	static StringName to_json_method_name();
 
-	// True when `p_object` exposes the hook at all, whether from a script implementation or
-	// from a native class that binds the same name.
+	// True when `p_object` exposes the hook at all: from a script implementation, from a native
+	// class that binds the same name, or from a retroactive conformance witness declared on the
+	// object's engine class or one of its ancestors.
 	static bool has_to_json(Object *p_object);
 
-	// Invokes the hook and stores its return value in `r_node`. Returns false, leaving
+	// Invokes the hook and stores its return value in `r_node`. A hook the object itself exposes
+	// wins; a retroactive conformance witness is only consulted when that call finds no method, so
+	// an object's own implementation is never shadowed by an external one. Returns false, leaving
 	// `r_node` untouched, when the object is null or the call fails.
 	static bool call_to_json(Object *p_object, Variant &r_node);
 
@@ -87,6 +90,13 @@ public:
 
 	// Name of the builtin trait an object must conform to for its `to_json()` to be honored.
 	static StringName serializable_trait_name();
+
+	// True when `p_object` conforms to the builtin trait, whether the conformance is declared by the
+	// object's own script or retroactively on its engine class (or an ancestor of it). A retroactive
+	// conformance on a native class installs nothing on the instance, so it is invisible to the
+	// script-identity check and has to be resolved through the conformance registry. Exposed for
+	// tests.
+	static bool conforms_to_serializable(Object *p_object);
 
 	// Lowers a `JsonNode` value (a `[tag, payload...]` read-only Array) to a plain Variant tree.
 	// Reports an error and returns false for anything that is not a well-formed node, including a
