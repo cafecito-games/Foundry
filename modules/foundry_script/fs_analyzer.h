@@ -363,6 +363,24 @@ private:
 		~ScopedCurrentClass();
 	};
 
+	// A conformance witness resolves names against its target's member/type scope first and then falls
+	// back to the lexical type scope of the file that declares the `extend`. Both halves are bound only
+	// while a witness signature or body is analyzed, and both are restored on every exit path.
+	class ScopedWitnessScope {
+		FSAnalyzer *analyzer = nullptr;
+		FSParser::ClassNode *previous_target = nullptr;
+		FSParser::ClassNode *previous_declaration_scope = nullptr;
+
+	public:
+		ScopedWitnessScope(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_target, FSParser::ClassNode *p_declaration_scope);
+		~ScopedWitnessScope();
+	};
+
+	// The conformance target whose surface the witness currently under analysis binds to, and the root
+	// class of the file that declares that conformance. Both are null outside witness analysis.
+	FSParser::ClassNode *witness_target_class = nullptr;
+	FSParser::ClassNode *witness_declaration_scope = nullptr;
+
 	static const char *analyzer_phase_name(AnalyzerPhase p_phase);
 	static AnalyzerPhase analyzer_phase_predecessor(AnalyzerPhase p_phase);
 	void require_completed_analyzer_phase(AnalyzerPhase p_required_predecessor, AnalyzerPhase p_requested_phase) const;
@@ -403,6 +421,15 @@ private:
 	Error check_class_member_name_conflict(const FSParser::ClassNode *p_class_node, const StringName &p_member_name, const FSParser::Node *p_member_node);
 
 	void get_class_node_current_scope_classes(FSParser::ClassNode *p_node, List<FSParser::ClassNode *> *p_list, FSParser::Node *p_source);
+	// Collects the lookup chain a name in the current scope actually sees: `p_node`'s own base/outer
+	// chain first, then — while a conformance witness is being analyzed against `p_node` as its target —
+	// the declaring file's lexical type scope, pointer-deduplicated. Classes reached only through the
+	// fallback are reported in `r_declaration_site_classes`; they expose the type-bearing subset of an
+	// ordinary outer-class surface, never values or callable members.
+	void get_effective_scope_classes(FSParser::ClassNode *p_node, List<FSParser::ClassNode *> *p_list, FSParser::Node *p_source, HashSet<FSParser::ClassNode *> *r_declaration_site_classes = nullptr);
+	static bool is_type_bearing_member(const FSParser::ClassNode::Member &p_member);
+	bool declaration_site_class_declares_type(FSParser::ClassNode *p_class, const StringName &p_name, FSParser::Node *p_source);
+	bool reduce_identifier_from_witness_declaration_scope(FSParser::IdentifierNode *p_identifier);
 
 	Error resolve_class_inheritance(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_class_inheritance(FSParser::ClassNode *p_class, bool p_recursive);

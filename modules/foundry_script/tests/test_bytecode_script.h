@@ -1197,6 +1197,135 @@ TEST_CASE("[FoundryScript][BytecodeScript] A native witness returning a generic 
 	CHECK(String(bytecode_instance_call(restored_instance, SNAME("run"), {})) == "nope");
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] A witness keeps the declaring file's type through export") {
+	// A witness resolves names against its conformance target first and then against the type scope of
+	// the file declaring the `extend`. The identity that fallback produces has to be a real intra-file
+	// class reference: source execution can pass while serialization restores the wrong inner class, so
+	// both the compiled and the reloaded witness are inspected.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Box[T]:\n"
+			"\tfunc marker() -> String:\n"
+			"\t\treturn \"boxed\"\n"
+			"\n"
+			"trait Boxing:\n"
+			"\tabstract static func boxed() -> Box[Self]\n"
+			"\n"
+			"extend RefCounted uses Boxing:\n"
+			"\tstatic func boxed() -> Box[Self]:\n"
+			"\t\treturn Box[Self].new()\n"
+			"\n"
+			"func run() -> String:\n"
+			"\treturn RefCounted.boxed().marker()\n");
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator box_element =
+			original->get_subclasses().find(SNAME("Box"));
+	REQUIRE(box_element);
+	const String box_fully_qualified_name = box_element->value->get_fully_qualified_name();
+	REQUIRE(!box_fully_qualified_name.is_empty());
+
+	// The return type is the declaring file's own `Box`, keeping that file's script path and inner-class
+	// name, and its single argument is the conformance target rather than a widened Variant.
+	const auto check_return_type = [&](const FSDataType &p_return_type) {
+		CHECK(p_return_type.kind == FSDataType::FOUNDRY_SCRIPT);
+		const FoundryScript *return_script = Object::cast_to<FoundryScript>(p_return_type.script_type);
+		REQUIRE(return_script != nullptr);
+		CHECK(return_script->get_script_path() == script_path);
+		CHECK(return_script->get_fully_qualified_name() == box_fully_qualified_name);
+		REQUIRE_EQ(p_return_type.type_arguments.size(), 1);
+		const FSDataType &self_argument = p_return_type.type_arguments[0];
+		CHECK(self_argument.kind == FSDataType::NATIVE);
+		CHECK(self_argument.native_type == SNAME("RefCounted"));
+		CHECK(self_argument.is_self_type);
+	};
+
+	FSFunction *compiled_witness = nullptr;
+	for (FSFunction *witness_function : TestFSBytecodeScriptAccessor::get_witness_functions(original)) {
+		if (witness_function != nullptr && witness_function->get_name() == SNAME("boxed")) {
+			compiled_witness = witness_function;
+		}
+	}
+	REQUIRE(compiled_witness != nullptr);
+	check_return_type(compiled_witness->get_return_type());
+
+	{
+		const Variant instance_variant = bytecode_new_instance(original);
+		Object *instance = instance_variant;
+		CHECK(String(bytecode_instance_call(instance, SNAME("run"), {})) == "boxed");
+	}
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	FSFunction *restored_witness =
+			FSConformanceRegistry::get_singleton()
+					->find_native_witness_function(SNAME("RefCounted"), SNAME("boxed"));
+	REQUIRE(restored_witness != nullptr);
+	CHECK(TestFSBytecodeScriptAccessor::get_witness_functions(restored).has(restored_witness));
+	check_return_type(restored_witness->get_return_type());
+	// The restored `Box` is the reloaded script's own subclass, not a stale reference to the original.
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator restored_box =
+			restored->get_subclasses().find(SNAME("Box"));
+	REQUIRE(restored_box);
+	CHECK(restored_witness->get_return_type().script_type == restored_box->value.ptr());
+
+	const Variant restored_instance_variant = bytecode_new_instance(restored);
+	Object *restored_instance = restored_instance_variant;
+	CHECK(String(bytecode_instance_call(restored_instance, SNAME("run"), {})) == "boxed");
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A builtin witness binds Self inside a declaring-file generic") {
+	// The same fallback applies to a builtin value-type target, and `Self` inside the declaring file's
+	// generic has to stay the builtin target instead of widening to Variant.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tfunc marker() -> String:\n"
+			"\t\treturn \"crated\"\n"
+			"\n"
+			"trait Crating:\n"
+			"\tabstract static func crated() -> Crate[Self]\n"
+			"\n"
+			"extend int uses Crating:\n"
+			"\tstatic func crated() -> Crate[Self]:\n"
+			"\t\treturn Crate[Self].new()\n");
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate_element =
+			original->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate_element);
+
+	FSFunction *compiled_witness = nullptr;
+	for (FSFunction *witness_function : TestFSBytecodeScriptAccessor::get_witness_functions(original)) {
+		if (witness_function != nullptr && witness_function->get_name() == SNAME("crated")) {
+			compiled_witness = witness_function;
+		}
+	}
+	REQUIRE(compiled_witness != nullptr);
+
+	const FSDataType &return_type = compiled_witness->get_return_type();
+	CHECK(return_type.kind == FSDataType::FOUNDRY_SCRIPT);
+	const FoundryScript *return_script = Object::cast_to<FoundryScript>(return_type.script_type);
+	REQUIRE(return_script != nullptr);
+	CHECK(return_script->get_fully_qualified_name() == crate_element->value->get_fully_qualified_name());
+	REQUIRE_EQ(return_type.type_arguments.size(), 1);
+	CHECK(return_type.type_arguments[0].kind == FSDataType::BUILTIN);
+	CHECK(return_type.type_arguments[0].builtin_type == Variant::INT);
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] Script-level lambda metadata rebuilds") {
 	const Ref<FoundryScript> original = compile_bytecode_test_source(
 			"func lambda_total(base: int) -> int:\n"

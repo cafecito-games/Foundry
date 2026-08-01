@@ -660,6 +660,22 @@ rejected. Witness methods may carry the `static`/`async` modifiers. Inside the w
 `self` is a copy for scalars and strings (mutations do not propagate to the caller) but shares
 storage for `Array` and `Dictionary` (mutations through `self` are visible to the caller).
 
+**Witness scope.** A witness signature and body resolve names in a **dual scope**: first the
+target's own member/type scope (its members, its base chain, its inner types, `Self`, and the
+target's existing lexical outer chain), and then — only for names the target scope did not
+supply — the lexical **type** scope of the file that declares the `extend`. The target always
+wins on a collision, so an unqualified name that exists on both sides means the target's. This
+rule is uniform across every supported target kind: Foundry Script classes (same-file or
+foreign, root or inner), native engine classes, and builtin value types.
+
+The declaration-site half exposes only what an ordinary lexical outer class contributes as
+*types*: inner classes and traits, enums, named tuples, and constants that denote a type (such
+as a `preload`ed script or a class alias), together with their qualified nested types. The
+declaring file's variables, functions, signals, and plain value constants do **not** become
+members of the target and are not reachable from a witness. Declaration order does not matter:
+a helper type declared after the `extend` is as visible as one declared before it. A name that
+neither scope supplies remains an ordinary "could not find type" error.
+
 **Coherence.** The analyzer rejects duplicate `(target, trait)` conformances (same file or
 cross-file). It also rejects **witness method-name collisions** on the same target: runtime
 witness dispatch keys on `(target alias, method name)` only, so two conformances on the same

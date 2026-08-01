@@ -786,31 +786,53 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				case FSParser::IdentifierNode::MEMBER_CONSTANT:
 				case FSParser::IdentifierNode::MEMBER_CLASS: {
 					// Try class constants.
-					FoundryScript *owner = codegen.script;
-					while (owner) {
-						FoundryScript *scr = owner;
-						FSNativeClass *nc = nullptr;
+					const auto find_class_constant = [&](FoundryScript *p_owner, bool &r_found) -> FSCodeGenerator::Address {
+						r_found = false;
+						FoundryScript *owner = p_owner;
+						while (owner) {
+							FoundryScript *scr = owner;
+							FSNativeClass *nc = nullptr;
 
-						while (scr) {
-							if (scr->constants.has(identifier)) {
-								return codegen.add_constant(scr->constants[identifier]); // TODO: Get type here.
+							while (scr) {
+								if (scr->constants.has(identifier)) {
+									r_found = true;
+									return codegen.add_constant(scr->constants[identifier]); // TODO: Get type here.
+								}
+								if (scr->native.is_valid()) {
+									nc = scr->native.ptr();
+								}
+								scr = scr->base.ptr();
 							}
-							if (scr->native.is_valid()) {
-								nc = scr->native.ptr();
+
+							// Class C++ integer constant.
+							if (nc) {
+								bool success = false;
+								int64_t constant = ClassDB::get_integer_constant(nc->get_name(), identifier, &success);
+								if (success) {
+									r_found = true;
+									return codegen.add_constant(constant);
+								}
 							}
-							scr = scr->base.ptr();
+
+							owner = owner->_owner;
 						}
+						return FSCodeGenerator::Address();
+					};
 
-						// Class C++ integer constant.
-						if (nc) {
-							bool success = false;
-							int64_t constant = ClassDB::get_integer_constant(nc->get_name(), identifier, &success);
-							if (success) {
-								return codegen.add_constant(constant);
-							}
+					bool found_constant = false;
+					FSCodeGenerator::Address constant_address = find_class_constant(codegen.script, found_constant);
+					if (found_constant) {
+						return constant_address;
+					}
+
+					// A witness compiled against a foreign target binds member access to the target's
+					// script, but the analyzer also let it name the type-bearing declarations of the file
+					// that declares the `extend`. Those live in the declaring script's constant pool.
+					if (codegen.declaration_site_script != nullptr && codegen.declaration_site_script != codegen.script) {
+						constant_address = find_class_constant(codegen.declaration_site_script, found_constant);
+						if (found_constant) {
+							return constant_address;
 						}
-
-						owner = owner->_owner;
 					}
 				} break;
 				case FSParser::IdentifierNode::STATIC_VARIABLE: {
@@ -3722,6 +3744,7 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 
 	codegen.class_node = p_class;
 	codegen.script = p_script;
+	codegen.declaration_site_script = witness_declaration_site_script;
 	codegen.function_node = p_func;
 
 	StringName func_name;
@@ -5239,6 +5262,24 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 	const String source_file = p_script->get_script_path();
 	Vector<FSConformanceRegistry::RuntimeConformance> runtime_entries;
 
+	// The declaring script's constant pool is the compile-time half of a witness's declaration-site
+	// scope, mirroring the analyzer's target-first, declaration-site-second lookup. A witness compiled
+	// against a foreign target otherwise sees only the target script's constants. Restored on every
+	// exit path, including the error returns below.
+	struct WitnessDeclarationSiteScope {
+		FoundryScript **slot = nullptr;
+		FoundryScript *previous = nullptr;
+
+		WitnessDeclarationSiteScope(FoundryScript **p_slot, FoundryScript *p_script) :
+				slot(p_slot), previous(*p_slot) {
+			*slot = p_script;
+		}
+
+		~WitnessDeclarationSiteScope() {
+			*slot = previous;
+		}
+	} declaration_site_scope(&witness_declaration_site_script, p_script);
+
 	for (const FSParser::ConformanceNode *conformance : p_class->conformances) {
 		if (conformance == nullptr || conformance->target == nullptr) {
 			continue;
@@ -5315,6 +5356,8 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 			continue;
 		}
 		runtime_entry.target_script = target_script.ptr();
+		// The declaring script's constant pool is the compile-time half of the witness's declaration-site
+		// scope, mirroring the analyzer's target-first, declaration-site-second lookup.
 		for (const FSParser::FunctionNode *witness : conformance->witnesses) {
 			if (witness == nullptr || witness->identifier == nullptr) {
 				continue;

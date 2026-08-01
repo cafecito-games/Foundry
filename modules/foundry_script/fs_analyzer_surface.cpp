@@ -373,6 +373,65 @@ void FSAnalyzer::get_class_node_current_scope_classes(FSParser::ClassNode *p_nod
 	}
 }
 
+void FSAnalyzer::get_effective_scope_classes(FSParser::ClassNode *p_node, List<FSParser::ClassNode *> *p_list,
+		FSParser::Node *p_source, HashSet<FSParser::ClassNode *> *r_declaration_site_classes) {
+	get_class_node_current_scope_classes(p_node, p_list, p_source);
+
+	// The fallback belongs to the witness currently under analysis, so it applies only while the
+	// lookup starts from that witness's own conformance target. Resolving an unrelated class in this
+	// file (for instance the helper type the witness just named) must not inherit it.
+	if (witness_declaration_scope == nullptr || p_node == nullptr || p_node != witness_target_class) {
+		return;
+	}
+
+	List<FSParser::ClassNode *> declaration_site_classes;
+	get_class_node_current_scope_classes(witness_declaration_scope, &declaration_site_classes, p_source);
+	for (FSParser::ClassNode *declaration_site_class : declaration_site_classes) {
+		if (p_list->find(declaration_site_class) != nullptr) {
+			continue;
+		}
+		p_list->push_back(declaration_site_class);
+		if (r_declaration_site_classes != nullptr) {
+			r_declaration_site_classes->insert(declaration_site_class);
+		}
+	}
+}
+
+bool FSAnalyzer::is_type_bearing_member(const FSParser::ClassNode::Member &p_member) {
+	switch (p_member.type) {
+		case FSParser::ClassNode::Member::CLASS:
+		case FSParser::ClassNode::Member::ENUM:
+		case FSParser::ClassNode::Member::TUPLE:
+			return true;
+		case FSParser::ClassNode::Member::CONSTANT: {
+			// A `preload`ed script or a class alias denotes a type; a plain value constant does not.
+			if (p_member.get_datatype().is_meta_type) {
+				return true;
+			}
+			if (p_member.constant == nullptr || p_member.constant->initializer == nullptr) {
+				return false;
+			}
+			return Ref<Script>(p_member.constant->initializer->reduced_value).is_valid();
+		}
+		default:
+			return false;
+	}
+}
+
+bool FSAnalyzer::declaration_site_class_declares_type(FSParser::ClassNode *p_class, const StringName &p_name, FSParser::Node *p_source) {
+	if (p_class == nullptr) {
+		return false;
+	}
+	if (p_class->identifier != nullptr && p_class->identifier->name == p_name) {
+		return true;
+	}
+	if (!p_class->members_indices.has(p_name)) {
+		return false;
+	}
+	resolve_class_member(p_class, p_name, p_source);
+	return is_type_bearing_member(p_class->get_member(p_name));
+}
+
 Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const FSParser::Node *p_source) {
 	if (p_source == nullptr && parser->has_class(p_class)) {
 		p_source = p_class;
