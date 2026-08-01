@@ -37,17 +37,29 @@
     ]
   },
   "contextual-keywords": {
+    "$comment": "The annotation-declaration entry is a begin/end block, not a single-line match: an annotation's parameter list opens multiline mode (GRAMMAR.md 2.1), so the closing ')' and 'targets' keyword may be several physical lines below 'annotation NAME'. The block ends by consuming the real 'targets' separator, which is always immediately preceded (ignoring a run of spaces/tabs) by the closing ')' of a parameter list or by the declaration's own name -- never by punctuation such as '(' or '=' -- so the leading lookbehind and the '(?!\\s*:)' guard together keep a same-named parameter or default value (e.g. 'targets: int' or '= targets') from ending the block early. The alternate end branch is a zero-width lookahead bailout that closes the block (without consuming the triggering keyword, so it still gets its normal scope) if another root declaration keyword starts a line first, so a 'targets'-less declaration (mid-edit or malformed) cannot swallow the rest of the file.",
     "patterns": [
       {
-        "match": "^\\s*(annotation)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
-        "captures": {
+        "begin": "^\\s*(annotation)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
+        "beginCaptures": {
           "1": {
             "name": "storage.type.annotation.foundryscript"
           },
           "2": {
             "name": "entity.name.type.annotation.foundryscript"
           }
-        }
+        },
+        "end": "(?<=[)\\p{L}\\p{N}_][ \\t]{0,4})(targets)\\b(?!\\s*:)|(?=^\\s*(?:func|var|const|signal|enum|class_name|class|trait_name|trait|enum_name|tuple_name|tuple|namespace|import|annotation|extend)\\b)",
+        "endCaptures": {
+          "1": {
+            "name": "keyword.other.targets.foundryscript"
+          }
+        },
+        "patterns": [
+          {
+            "include": "$self"
+          }
+        ]
       },
       {
         "match": "^\\s*(extend)\\s+([\\p{L}_][\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)",
@@ -69,15 +81,7 @@
         }
       },
       {
-        "match": "(?<=\\))\\s+(targets)\\b",
-        "captures": {
-          "1": {
-            "name": "keyword.other.targets.foundryscript"
-          }
-        }
-      },
-      {
-        "match": "^\\s*(get)\\b(?=\\s*[:=])",
+        "match": "^\\s*(get)\\b(?=\\s*(?:[:=]|\\(\\)\\s*:))",
         "captures": {
           "1": {
             "name": "storage.type.accessor.foundryscript"
@@ -85,7 +89,7 @@
         }
       },
       {
-        "match": "^\\s*(set)\\b(?=\\s*(?:[:=]|\\([^)]*\\)\\s*:))",
+        "match": "^\\s*(set)\\b(?=\\s*(?:[:=]|\\([\\p{L}_][\\p{L}\\p{N}_]*\\)\\s*:))",
         "captures": {
           "1": {
             "name": "storage.type.accessor.foundryscript"
@@ -103,11 +107,23 @@
     }
   },
   "type-positions": {
-    "match": "(?<=->|:)\\s*(\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)",
-    "captures": {
-      "1": {
-        "name": "entity.name.type.foundryscript"
+    "patterns": [
+      {
+        "match": "(?<=->|:)\\s*(\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)",
+        "captures": {
+          "1": {
+            "name": "entity.name.type.foundryscript"
+          }
+        }
+      },
+      {
+        "match": "(?<=->|:|\\p{Lu}[\\p{L}\\p{N}_]*\\[)\\s*\\b(int|float|bool)\\b",
+        "captures": {
+          "1": {
+            "name": "entity.name.type.foundryscript"
+          }
+        }
       }
-    }
+    ]
   }
 }

@@ -20,6 +20,10 @@ Triple-quoted body with a # that is not a comment.
 const OTHER = '''single triple'''
 
 var health: int = 100
+var scores: Array[int] = []
+var int = 0
+int += 1
+print(int)
 var label := "escaped \n \u00e9 text"
 var continued := "first part \
 second part"
@@ -32,6 +36,14 @@ var get := 4
 signal damaged(amount: int)
 
 annotation Timeout(seconds: float) targets METHOD, CLASS:
+	pass
+
+annotation Marker targets CLASS, METHOD:
+	pass
+
+annotation Multiline(
+	seconds: float
+) targets METHOD, CLASS:
 	pass
 
 extend Sample.Support.Helper uses Printable:
@@ -51,6 +63,14 @@ async func fetch(path: String) -> Coroutine[int]:
 	var other := %Weapon
 	var quoted := $"Player Two"
 	var mixed := $Player/"Weapon Slot"/%Barrel
+	var triple_double := $"""Some
+Node"""
+	var triple_single := $'''Some
+Node'''
+	var rooted_triple_double := $Root/"""Some
+Node"""
+	var rooted_triple_single := $Root/'''Some
+Node'''
 	var toggled := not %Weapon.visible
 	if node != null and not other.is_queued_for_deletion():
 		await node.ready
@@ -75,3 +95,11 @@ var scaled: float:
 		return health * TAU / PI
 	set(value):
 		health = int(value if value < INF else NAN)
+
+var armor: int:
+	get():
+		return health
+
+var speed: int:
+	get = read_speed
+	set = write_speed

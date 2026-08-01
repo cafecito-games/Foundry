@@ -398,12 +398,38 @@
         "match": "%"
       },
       {
+        "include": "#node-path-quoted-triple-double"
+      },
+      {
+        "include": "#node-path-quoted-triple-single"
+      },
+      {
         "name": "string.quoted.node.foundryscript",
         "match": "\"[^\"]*\"|'[^']*'"
       },
       {
         "name": "variable.other.node.foundryscript",
         "match": "[\\p{L}\\p{N}_]+"
+      }
+    ]
+  },
+  "node-path-quoted-triple-double": {
+    "name": "string.quoted.node.foundryscript",
+    "begin": "\\\"\\\"\\\"",
+    "end": "\\\"\\\"\\\"",
+    "patterns": [
+      {
+        "include": "#string-escapes"
+      }
+    ]
+  },
+  "node-path-quoted-triple-single": {
+    "name": "string.quoted.node.foundryscript",
+    "begin": "'''",
+    "end": "'''",
+    "patterns": [
+      {
+        "include": "#string-escapes"
       }
     ]
   },
