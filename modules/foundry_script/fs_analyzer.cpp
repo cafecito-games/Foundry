@@ -9348,6 +9348,7 @@ bool FSAnalyzer::reduce_identifier_from_witness_declaration_scope(FSParser::Iden
 			} else if (!script_class->qualified_global_name.is_empty()) {
 				p_identifier->resolved_global_class = script_class->qualified_global_name;
 			}
+			p_identifier->resolved_from_conformance_declaration_scope = true;
 			return true;
 		}
 
@@ -9364,12 +9365,14 @@ bool FSAnalyzer::reduce_identifier_from_witness_declaration_scope(FSParser::Iden
 			case FSParser::ClassNode::Member::CLASS: {
 				reduce_identifier_from_base_set_class(p_identifier, member.get_datatype());
 				p_identifier->source = FSParser::IdentifierNode::MEMBER_CLASS;
+				p_identifier->resolved_from_conformance_declaration_scope = true;
 				return true;
 			}
 			case FSParser::ClassNode::Member::TUPLE: {
 				// A named tuple declaration is a type handle, reached the same way a nested class is.
 				p_identifier->set_datatype(member.get_datatype());
 				p_identifier->source = FSParser::IdentifierNode::MEMBER_CLASS;
+				p_identifier->resolved_from_conformance_declaration_scope = true;
 				return true;
 			}
 			case FSParser::ClassNode::Member::ENUM: {
@@ -9377,6 +9380,7 @@ bool FSAnalyzer::reduce_identifier_from_witness_declaration_scope(FSParser::Iden
 				p_identifier->is_constant = true;
 				p_identifier->reduced_value = member.m_enum->dictionary;
 				p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
+				p_identifier->resolved_from_conformance_declaration_scope = true;
 				return true;
 			}
 			case FSParser::ClassNode::Member::CONSTANT: {
@@ -9388,6 +9392,7 @@ bool FSAnalyzer::reduce_identifier_from_witness_declaration_scope(FSParser::Iden
 				p_identifier->reduced_value = member.constant->initializer->reduced_value;
 				p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
 				p_identifier->constant_source = member.constant;
+				p_identifier->resolved_from_conformance_declaration_scope = true;
 				return true;
 			}
 			default:

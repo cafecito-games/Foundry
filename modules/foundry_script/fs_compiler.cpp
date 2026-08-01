@@ -786,8 +786,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				case FSParser::IdentifierNode::MEMBER_CONSTANT:
 				case FSParser::IdentifierNode::MEMBER_CLASS: {
 					// Try class constants.
-					const auto find_class_constant = [&](FoundryScript *p_owner, bool &r_found) -> FSCodeGenerator::Address {
-						r_found = false;
+					const auto find_class_constant = [&](FoundryScript *p_owner, Variant &r_value) -> bool {
 						FoundryScript *owner = p_owner;
 						while (owner) {
 							FoundryScript *scr = owner;
@@ -795,8 +794,8 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 
 							while (scr) {
 								if (scr->constants.has(identifier)) {
-									r_found = true;
-									return codegen.add_constant(scr->constants[identifier]); // TODO: Get type here.
+									r_value = scr->constants[identifier];
+									return true;
 								}
 								if (scr->native.is_valid()) {
 									nc = scr->native.ptr();
@@ -809,30 +808,30 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 								bool success = false;
 								int64_t constant = ClassDB::get_integer_constant(nc->get_name(), identifier, &success);
 								if (success) {
-									r_found = true;
-									return codegen.add_constant(constant);
+									r_value = constant;
+									return true;
 								}
 							}
 
 							owner = owner->_owner;
 						}
-						return FSCodeGenerator::Address();
+						return false;
 					};
 
-					bool found_constant = false;
-					FSCodeGenerator::Address constant_address = find_class_constant(codegen.script, found_constant);
-					if (found_constant) {
-						return constant_address;
+					Variant constant_value;
+					if (find_class_constant(codegen.script, constant_value)) {
+						return codegen.add_constant(constant_value); // TODO: Get type here.
 					}
 
 					// A witness compiled against a foreign target binds member access to the target's
 					// script, but the analyzer also let it name the type-bearing declarations of the file
-					// that declares the `extend`. Those live in the declaring script's constant pool.
-					if (codegen.declaration_site_script != nullptr && codegen.declaration_site_script != codegen.script) {
-						constant_address = find_class_constant(codegen.declaration_site_script, found_constant);
-						if (found_constant) {
-							return constant_address;
-						}
+					// that declares the `extend`. Those live in the declaring script's constant pool, and
+					// only the names the analyzer actually resolved there are looked up in it, so a name
+					// it bound somewhere on the target side is never silently replaced by a same-named
+					// declaration of the conformance file.
+					if (in->resolved_from_conformance_declaration_scope && codegen.declaration_site_script != nullptr &&
+							find_class_constant(codegen.declaration_site_script, constant_value)) {
+						return codegen.add_constant(constant_value);
 					}
 				} break;
 				case FSParser::IdentifierNode::STATIC_VARIABLE: {
