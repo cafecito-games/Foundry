@@ -37,7 +37,7 @@
     ]
   },
   "contextual-keywords": {
-    "$comment": "The annotation-declaration entry is a begin/end block, not a single-line match: an annotation's parameter list opens multiline mode (GRAMMAR.md 2.1), so the closing ')' and 'targets' keyword may be several physical lines below 'annotation NAME'. The block always ends by consuming the 'targets' separator for valid input; the '(?!\\s*:)' guard keeps a same-named, colon-typed parameter (e.g. 'targets: int') from ending the block early. The alternate end branch is a zero-width lookahead bailout that closes the block (without consuming the triggering keyword, so it still gets its normal scope) if another root declaration keyword starts a line first, so a 'targets'-less declaration (mid-edit or malformed) cannot swallow the rest of the file.",
+    "$comment": "The annotation-declaration entry is a begin/end block, not a single-line match: an annotation's parameter list opens multiline mode (GRAMMAR.md 2.1), so the closing ')' and 'targets' keyword may be several physical lines below 'annotation NAME'. The block ends by consuming the real 'targets' separator, which is always immediately preceded (ignoring a run of spaces/tabs) by the closing ')' of a parameter list or by the declaration's own name -- never by punctuation such as '(' or '=' -- so the leading lookbehind and the '(?!\\s*:)' guard together keep a same-named parameter or default value (e.g. 'targets: int' or '= targets') from ending the block early. The alternate end branch is a zero-width lookahead bailout that closes the block (without consuming the triggering keyword, so it still gets its normal scope) if another root declaration keyword starts a line first, so a 'targets'-less declaration (mid-edit or malformed) cannot swallow the rest of the file.",
     "patterns": [
       {
         "begin": "^\\s*(annotation)\\s+([\\p{L}_][\\p{L}\\p{N}_]*)",
@@ -49,7 +49,7 @@
             "name": "entity.name.type.annotation.foundryscript"
           }
         },
-        "end": "(targets)\\b(?!\\s*:)|(?=^\\s*(?:func|var|const|signal|enum|class_name|class|trait_name|trait|enum_name|tuple_name|tuple|namespace|import|annotation|extend)\\b)",
+        "end": "(?<=[)\\p{L}\\p{N}_][ \\t]{0,4})(targets)\\b(?!\\s*:)|(?=^\\s*(?:func|var|const|signal|enum|class_name|class|trait_name|trait|enum_name|tuple_name|tuple|namespace|import|annotation|extend)\\b)",
         "endCaptures": {
           "1": {
             "name": "keyword.other.targets.foundryscript"

@@ -380,6 +380,11 @@ class TokenizationTests(unittest.TestCase):
         # The real separator is the second `targets`, after the closing paren.
         self.assertScoped(") targets", "keyword.other.targets.foundryscript", offset=2, source=source)
 
+    def test_a_default_value_named_targets_does_not_end_the_header_early(self) -> None:
+        source = "annotation marker(kind: String = targets) targets METHOD:\n\tpass\n"
+        # The real separator is the second `targets`, after the closing paren.
+        self.assertScoped(") targets", "keyword.other.targets.foundryscript", offset=2, source=source)
+
     def test_a_declaration_without_targets_does_not_swallow_the_rest_of_the_file(self) -> None:
         # Malformed/mid-edit input: the annotation body never reaches `targets`. The
         # block must not leak its scope past the next root declaration.
@@ -461,6 +466,13 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped("var after", "source.foundryscript", source=source)
         self.assertNotScoped("var after", "string.quoted.triple.double.foundryscript", source=source)
         self.assertNotScoped("var after", "string.quoted.triple.single.foundryscript", source=source)
+        self.assertNotScoped("var after", "meta.node-path.foundryscript", source=source)
+
+    def test_an_escaped_quote_does_not_end_a_triple_quoted_node_path_early(self) -> None:
+        source = 'var escaped = $"""Some \\"""Node"""\nvar after = 1\n'
+        self.assertScoped('\\"""Node', "string.quoted.node.foundryscript", offset=0, source=source)
+        self.assertScoped('\\"', "constant.character.escape.foundryscript", source=source)
+        self.assertScoped("var after", "source.foundryscript", source=source)
         self.assertNotScoped("var after", "meta.node-path.foundryscript", source=source)
 
     def test_short_quoted_node_paths_keep_their_scopes(self) -> None:
