@@ -30,82 +30,8 @@
 
 #include "fs_json_marshal.h"
 
-#include "foundry_script.h"
-#include "fs_cache.h"
-
 #include "core/object/object.h"
 #include "core/object/script_language.h"
-
-namespace {
-
-constexpr const char *JSON_NODE_BUILTIN_PATH = "foundry://builtin/json_node.fs";
-constexpr const char *JSON_RESULT_BUILTIN_PATH = "foundry://builtin/json_result.fs";
-
-Ref<FoundryScript> load_builtin_script(const char *p_builtin_path) {
-	Error error = OK;
-	const Ref<FoundryScript> script = FSCache::get_full_script(p_builtin_path, error);
-	if (error != OK || script.is_null() || !script->is_valid()) {
-		ERR_PRINT(vformat(R"(The builtin script "%s" is not available.)", p_builtin_path));
-		return Ref<FoundryScript>();
-	}
-	return script;
-}
-
-// The builtin types are declared in Foundry Script, so native code reaches their static functions
-// the same way it reaches an instance hook: by name, through `Object::callp()`. Keeping every such
-// call in one place is what stops the shape of a builtin type from being re-implemented natively.
-bool call_builtin_static(const char *p_builtin_path, const StringName &p_method,
-		const Variant **p_arguments, int p_argument_count, Variant &r_result) {
-	const Ref<FoundryScript> script = load_builtin_script(p_builtin_path);
-	if (script.is_null()) {
-		return false;
-	}
-
-	// `FoundryScript::callp` narrows `Object::callp` to protected, so dispatch through the base.
-	Object *script_object = script.ptr();
-	Callable::CallError call_error;
-	const Variant value = script_object->callp(p_method, p_arguments, p_argument_count, call_error);
-	if (call_error.error != Callable::CallError::CALL_OK) {
-		ERR_PRINT(vformat(R"(Calling %s() on the builtin script "%s" failed: %s)", String(p_method), p_builtin_path,
-				Variant::get_call_error_text(script_object, p_method, p_arguments, p_argument_count, call_error)));
-		return false;
-	}
-
-	r_result = value;
-	return true;
-}
-
-// An enum's own functions are not class members — they are compiled into the declaring script's
-// enum function table and dispatched by enum type — so they are unreachable through
-// `Object::callp()` and are resolved the same way the interpreter resolves an enum call.
-bool call_builtin_enum_static(const char *p_builtin_path, const StringName &p_enum_type,
-		const StringName &p_method, const Variant **p_arguments, int p_argument_count, Variant &r_result) {
-	const Ref<FoundryScript> script = load_builtin_script(p_builtin_path);
-	if (script.is_null()) {
-		return false;
-	}
-
-	FSFunction *enum_function = script->get_enum_function(p_enum_type, p_method, true);
-	if (enum_function == nullptr) {
-		ERR_PRINT(vformat(R"(The builtin script "%s" declares no static %s.%s().)", p_builtin_path,
-				String(p_enum_type), String(p_method)));
-		return false;
-	}
-
-	Callable::CallError call_error;
-	const Variant value = enum_function->call(nullptr, p_arguments, p_argument_count, call_error);
-	if (call_error.error != Callable::CallError::CALL_OK) {
-		ERR_PRINT(vformat(R"(Calling %s.%s() on the builtin script "%s" failed: %s)", String(p_enum_type),
-				String(p_method), p_builtin_path,
-				Variant::get_call_error_text(p_method, p_arguments, p_argument_count, call_error)));
-		return false;
-	}
-
-	r_result = value;
-	return true;
-}
-
-} // namespace
 
 StringName FSJsonMarshal::to_json_method_name() {
 	return SNAME("to_json");
@@ -130,28 +56,6 @@ bool FSJsonMarshal::call_to_json(Object *p_object, Variant &r_node) {
 
 	r_node = node;
 	return true;
-}
-
-bool FSJsonMarshal::make_json_node(const Variant &p_value, Variant &r_node) {
-	Variant prepared;
-	if (!FSJsonObjectMarshaller::prepare_parsed_value(p_value, 0, prepared)) {
-		return false;
-	}
-
-	const Variant *arguments[1] = { &prepared };
-	return call_builtin_enum_static(JSON_NODE_BUILTIN_PATH, SNAME("JsonNode"), SNAME("of"), arguments, 1, r_node);
-}
-
-bool FSJsonMarshal::make_result_ok(const Variant &p_value, Variant &r_result) {
-	const Variant *arguments[1] = { &p_value };
-	return call_builtin_static(JSON_RESULT_BUILTIN_PATH, SNAME("ok"), arguments, 1, r_result);
-}
-
-bool FSJsonMarshal::make_result_failure(const String &p_message, const String &p_path, Variant &r_result) {
-	const Variant message = p_message;
-	const Variant path = p_path;
-	const Variant *arguments[2] = { &message, &path };
-	return call_builtin_static(JSON_RESULT_BUILTIN_PATH, SNAME("fail"), arguments, 2, r_result);
 }
 
 StringName FSJsonObjectMarshaller::serializable_trait_name() {
@@ -314,82 +218,4 @@ bool FSJsonObjectMarshaller::marshal_object(Object *p_object, Variant &r_result)
 		r_result = Variant();
 	}
 	return true;
-}
-
-bool FSJsonObjectMarshaller::prepare_parsed_value(const Variant &p_value, int p_depth, Variant &r_prepared) {
-	// Bound the recursion the same way lowering does, so a tree core would refuse to encode is
-	// also refused on the way in rather than overflowing the script stack inside `JsonNode.of()`.
-	if (p_depth > Variant::MAX_RECURSION_DEPTH) {
-		return false;
-	}
-
-	switch (p_value.get_type()) {
-		case Variant::NIL:
-		case Variant::BOOL:
-		case Variant::INT:
-		case Variant::STRING: {
-			r_prepared = p_value;
-			return true;
-		}
-		case Variant::FLOAT: {
-			const double number = p_value;
-			// Only a value an `int64_t` round-trips exactly becomes an `Int` node; anything larger
-			// keeps its float form rather than being silently truncated.
-			const bool is_whole = number == Math::floor(number) &&
-					number >= -9223372036854775808.0 && number < 9223372036854775808.0 &&
-					number == double(int64_t(number));
-			r_prepared = is_whole ? Variant(int64_t(number)) : p_value;
-			return true;
-		}
-		case Variant::ARRAY: {
-			const Array items = p_value;
-			Array prepared_items;
-			prepared_items.resize(items.size());
-			for (int i = 0; i < items.size(); i++) {
-				Variant prepared_item;
-				if (!prepare_parsed_value(items[i], p_depth + 1, prepared_item)) {
-					return false;
-				}
-				prepared_items[i] = prepared_item;
-			}
-			r_prepared = prepared_items;
-			return true;
-		}
-		case Variant::DICTIONARY: {
-			const Dictionary entries = p_value;
-			Dictionary prepared_entries;
-			for (const Variant &key : entries.get_key_list()) {
-				// A `JsonNode.Object` is keyed by `String`. Coercing another key type would let two
-				// distinct keys collapse into one member, so the whole tree is refused instead.
-				if (key.get_type() != Variant::STRING) {
-					return false;
-				}
-				Variant prepared_value;
-				if (!prepare_parsed_value(entries[key], p_depth + 1, prepared_value)) {
-					return false;
-				}
-				prepared_entries[key] = prepared_value;
-			}
-			r_prepared = prepared_entries;
-			return true;
-		}
-		default:
-			return false;
-	}
-}
-
-bool FSJsonObjectMarshaller::lift_variant(const Variant &p_parsed, Variant &r_node) {
-	return FSJsonMarshal::make_json_node(p_parsed, r_node);
-}
-
-bool FSJsonObjectMarshaller::make_parse_failure(const String &p_message, int p_line, Variant &r_result) {
-	// `JsonDecodeError` carries a message and a document path, not a line, so a parse failure
-	// folds its line into the message and reports the document root as its path: a text that did
-	// not parse has no position inside a document that does not exist.
-	const String message = p_line >= 0 ? vformat("%s (line %d)", p_message, p_line) : p_message;
-	return FSJsonMarshal::make_result_failure(message, "$", r_result);
-}
-
-bool FSJsonObjectMarshaller::make_parse_success(const Variant &p_node, Variant &r_result) {
-	return FSJsonMarshal::make_result_ok(p_node, r_result);
 }

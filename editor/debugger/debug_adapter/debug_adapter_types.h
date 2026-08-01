@@ -84,9 +84,15 @@ public:
 	}
 
 	_FORCE_INLINE_ void from_json(const Dictionary &p_params) {
-		name = p_params["name"];
-		path = p_params["path"];
-		_checksums = p_params["checksums"];
+		name = p_params.get("name", String());
+		path = p_params.get("path", String());
+		// "checksums" is optional in the Debug Adapter Protocol; reading it
+		// unconditionally warns on every client that omits it.
+		if (p_params.has("checksums")) {
+			_checksums = p_params["checksums"];
+		} else {
+			_checksums.clear();
+		}
 	}
 
 	_FORCE_INLINE_ Dictionary to_json() const {

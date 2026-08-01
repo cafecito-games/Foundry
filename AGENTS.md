@@ -23,6 +23,7 @@ Use the supported command-first CLI: `foundry <command> <subcommand> [options]`.
 - Regenerate formatter `expected.fs` fixtures: `./bin/foundry.* --headless test generate-format-fixtures modules/foundry_script/tests/scripts/format`.
 - Run a project test runner script: `./bin/foundry.* --headless project test --project <project> --runner res://path/to/runner.fs -- <runner args>`.
 - Open the editor GUI: `DISPLAY=:1 ./bin/foundry.* editor open --project <project>`.
+- Start the combined editor tooling host (language server plus debug adapter) for an IDE integration: `./bin/foundry.* tooling serve --project <project> --lsp-port 0 --dap-port 0`. It always runs headless and loopback-only, and prints one `FOUNDRY_TOOLING {...}` readiness line with the actually bound ports (or one `FOUNDRY_TOOLING_ERROR {...}` line and a nonzero exit when either listener cannot bind). `lsp serve` is a deprecated alias for the same host.
 
 ### Test run progress events
 

@@ -51,6 +51,7 @@ public:
 			TEST_GENERATE_FIXTURES,
 			TEST_GENERATE_FORMAT_FIXTURES,
 			LSP_SERVE,
+			TOOLING_SERVE,
 			DOCS_GENERATE_API,
 			DOCS_GENERATE_ENGINE,
 			DOCS_GENERATE_SCRIPT,
@@ -97,7 +98,11 @@ public:
 
 		bool print_filenames = false;
 
+		// Empty means "use the tooling host default" (6005 for LSP, 6006 for DAP).
+		// Otherwise a validated decimal port in [0, 65535], where 0 requests an
+		// ephemeral port.
 		String lsp_port;
+		String dap_port;
 
 		bool automation = false;
 		String automation_transport;
@@ -130,6 +135,12 @@ public:
 		PackedStringArray user_args;
 		CLIInvocation invocation;
 	};
+
+	// Default tooling-host listener ports, shared by `tooling serve` validation and
+	// the editor-side host so a single override cannot silently collide with the
+	// other service's default.
+	static const int DEFAULT_LSP_PORT = 6005;
+	static const int DEFAULT_DAP_PORT = 6006;
 
 	static ParseResult parse(const PackedStringArray &p_args);
 	static ParseResult parse(int p_argc, char *p_argv[]);

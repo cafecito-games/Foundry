@@ -56,6 +56,7 @@ private:
 public:
 	static int port_override;
 	FSLanguageServer();
+	~FSLanguageServer();
 	void start();
 	void stop();
 };

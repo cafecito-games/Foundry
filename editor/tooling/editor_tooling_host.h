@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  debug_adapter_server.h                                                */
+/*  editor_tooling_host.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -30,26 +30,45 @@
 
 #pragma once
 
-#include "editor/debugger/debug_adapter/debug_adapter_protocol.h"
-#include "editor/plugins/editor_plugin.h"
+#include "core/error/error_list.h"
+#include "core/string/ustring.h"
 
-class DebugAdapterServer : public EditorPlugin {
-	FOUNDRY_CLASS(DebugAdapterServer, EditorPlugin);
-
-	DebugAdapterProtocol protocol;
-
-	int remote_port = 6006;
-	bool started = false;
-	bool polling = false;
-	static void thread_func(void *p_userdata);
-
-private:
-	void _notification(int p_what);
-
+// Coordinates the two listeners owned by a `foundry tooling serve` process.
+//
+// The language server and the debug adapter are independent editor plugins that
+// bind at different points of editor startup, but the tooling host contract is
+// atomic: either both listeners bind and one readiness record is emitted, or the
+// already-bound listener is closed, one error record is emitted, and the process
+// exits nonzero. This class is the only place that knows about both.
+class EditorToolingHost {
 public:
-	static int port_override;
-	DebugAdapterServer();
-	~DebugAdapterServer();
-	void start();
-	void stop();
+	enum Service {
+		SERVICE_LSP,
+		SERVICE_DAP,
+		SERVICE_MAX,
+	};
+
+	// Closes an already-bound listener when its sibling fails to bind. A plain
+	// function pointer keeps the owning plugins free of a second base class, which
+	// would break the single-Object-base assumption of the class bindings.
+	typedef void (*CloseListenerCallback)(void *p_userdata);
+
+	// Called from the command-line setup with the already-validated ports, where 0
+	// requests an ephemeral port.
+	static void configure(int p_lsp_port, int p_dap_port);
+	static bool is_enabled();
+
+	static int get_requested_port(Service p_service);
+	static String get_service_name(Service p_service);
+
+	static void register_listener(Service p_service, CloseListenerCallback p_close, void *p_userdata);
+	static void unregister_listener(Service p_service, void *p_userdata);
+
+	static void report_bound(Service p_service, int p_bound_port);
+	static void report_bind_failure(Service p_service, int p_requested_port, Error p_error, const String &p_message);
+
+	// Builds the readiness payload without emitting it, so tests can assert on the
+	// record shape without starting a real editor process.
+	static String build_readiness_record(const String &p_project, int p_process_id, int p_lsp_port, int p_dap_port);
+	static String build_failure_record(Service p_service, int p_requested_port, Error p_error, const String &p_message);
 };
