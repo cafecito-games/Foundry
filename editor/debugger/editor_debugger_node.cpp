@@ -213,6 +213,63 @@ void EditorDebuggerNode::_text_editor_stack_clear(const ScriptEditorDebugger *p_
 	stack_script.unref(); // Why?!?
 }
 
+void DebugSessionResultCoordinator::begin_owned_launch(uint64_t p_launch_id) {
+	active = true;
+	owned = true;
+	launch_id = p_launch_id;
+}
+
+void DebugSessionResultCoordinator::begin_unowned_session() {
+	active = true;
+	owned = false;
+	launch_id = 0;
+}
+
+DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_process_completed(uint64_t p_launch_id, int p_exit_code) {
+	Outcome outcome;
+	if (!active || !owned || p_launch_id != launch_id) {
+		// A completion belonging to a replaced launch, or a duplicate observation of
+		// one already finalized, must not end the current session.
+		return outcome;
+	}
+
+	outcome.ended = true;
+	outcome.launch_id = launch_id;
+	outcome.has_result = p_exit_code != UNAVAILABLE_EXIT_CODE;
+	outcome.exit_code = outcome.has_result ? p_exit_code : 0;
+	active = false;
+	return outcome;
+}
+
+DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_debugger_stopped() {
+	Outcome outcome;
+	if (!active) {
+		return outcome;
+	}
+	if (owned) {
+		// The socket closing says nothing about the process result, and the child may
+		// still be flushing its work; finalization waits for its completion.
+		return outcome;
+	}
+
+	outcome.ended = true;
+	outcome.launch_id = launch_id;
+	active = false;
+	return outcome;
+}
+
+DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_forced_termination() {
+	Outcome outcome;
+	if (!active) {
+		return outcome;
+	}
+
+	outcome.ended = true;
+	outcome.launch_id = launch_id;
+	active = false;
+	return outcome;
+}
+
 void EditorDebuggerNode::_bind_methods() {
 	// LiveDebug.
 	ClassDB::bind_method("live_debug_create_node", &EditorDebuggerNode::live_debug_create_node);
@@ -231,6 +288,30 @@ void EditorDebuggerNode::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("breakpoint_set_in_tree", PropertyInfo("script"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::BOOL, "enabled"), PropertyInfo(Variant::INT, "debugger")));
 	ADD_SIGNAL(MethodInfo("breakpoint_gutter_sync_requested", PropertyInfo(Variant::STRING, "path"), PropertyInfo(Variant::INT, "line"), PropertyInfo(Variant::BOOL, "enabled")));
 	ADD_SIGNAL(MethodInfo("breakpoints_cleared_in_tree", PropertyInfo(Variant::INT, "debugger")));
+	ADD_SIGNAL(MethodInfo("debug_session_ended", PropertyInfo(Variant::INT, "launch_id"), PropertyInfo(Variant::BOOL, "has_result"), PropertyInfo(Variant::INT, "exit_code")));
+}
+
+void EditorDebuggerNode::_finalize_debug_session(const DebugSessionResultCoordinator::Outcome &p_outcome) {
+	if (!p_outcome.ended) {
+		return;
+	}
+	emit_signal(SNAME("debug_session_ended"), (int64_t)p_outcome.launch_id, p_outcome.has_result, p_outcome.exit_code);
+}
+
+void EditorDebuggerNode::begin_owned_debug_session(uint64_t p_launch_id) {
+	session_coordinator.begin_owned_launch(p_launch_id);
+}
+
+void EditorDebuggerNode::begin_unowned_debug_session() {
+	session_coordinator.begin_unowned_session();
+}
+
+void EditorDebuggerNode::notify_owned_process_completed(uint64_t p_launch_id, int p_exit_code) {
+	_finalize_debug_session(session_coordinator.observe_process_completed(p_launch_id, p_exit_code));
+}
+
+void EditorDebuggerNode::notify_debug_session_terminated() {
+	_finalize_debug_session(session_coordinator.observe_forced_termination());
 }
 
 void EditorDebuggerNode::register_undo_redo(UndoRedo *p_undo_redo) {
@@ -496,6 +577,7 @@ void EditorDebuggerNode::_debugger_stopped(int p_id) {
 		}
 	});
 	if (!found) {
+		_finalize_debug_session(session_coordinator.observe_debugger_stopped());
 		EditorRunBar::get_singleton()->get_pause_button()->set_pressed(false);
 		EditorRunBar::get_singleton()->get_pause_button()->set_disabled(true);
 		SceneTreeDock *dock = EditorNode::get_singleton()->get_focused_scene_tree_dock();

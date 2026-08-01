@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dapexitstatusmain"]
+
+[ext_resource type="Script" path="res://quit_with_code.fs" id="1_quit"]
+
+[node name="Main" type="Node" unique_id=1579459023]
+script = ExtResource("1_quit")

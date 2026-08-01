@@ -1041,6 +1041,12 @@ bool OS_Unix::is_process_running(const ProcessID &p_pid) const {
 int OS_Unix::get_process_exit_code(const ProcessID &p_pid) const {
 	MutexLock lock(process_map_mutex);
 
+	// A process this instance did not spawn cannot be waited on, so no status exists
+	// for it. Reporting `0` would be indistinguishable from a real successful exit.
+	if (!process_map->has(p_pid)) {
+		return -1;
+	}
+
 	int exit_code = 0;
 	if (_check_pid_is_running(p_pid, &exit_code)) {
 		// Thread is still running
@@ -1048,6 +1054,16 @@ int OS_Unix::get_process_exit_code(const ProcessID &p_pid) const {
 	}
 
 	return exit_code;
+}
+
+void OS_Unix::release_finished_process(const ProcessID &p_pid) {
+	MutexLock lock(process_map_mutex);
+
+	const ProcessInfo *pi = process_map->getptr(p_pid);
+	if (!pi || pi->is_running) {
+		return;
+	}
+	process_map->erase(p_pid);
 }
 
 String OS_Unix::get_locale() const {

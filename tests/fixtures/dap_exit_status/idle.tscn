@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://dapexitstatusidle"]
+
+[ext_resource type="Script" path="res://stay_running.fs" id="1_idle"]
+
+[node name="Idle" type="Node" unique_id=1579459024]
+script = ExtResource("1_idle")

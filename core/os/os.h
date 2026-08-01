@@ -202,6 +202,10 @@ public:
 	virtual int get_process_id() const;
 	virtual bool is_process_running(const ProcessID &p_pid) const = 0;
 	virtual int get_process_exit_code(const ProcessID &p_pid) const = 0;
+	// Releases the bookkeeping a platform keeps for a process that already finished,
+	// after its status has been read. A process that is still running is left alone,
+	// and this never terminates anything.
+	virtual void release_finished_process(const ProcessID &p_pid) {}
 	virtual void vibrate_handheld(int p_duration_ms = 500, float p_amplitude = -1.0) {}
 
 	virtual Error shell_open(const String &p_uri);

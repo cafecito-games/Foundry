@@ -39,6 +39,16 @@
 #include "main/main.h"
 #include "servers/display/display_server.h"
 
+namespace {
+// A launched child inherits its display backend request from the CLI, never from
+// whatever the running editor happens to have; an editor with no real display server
+// (a headless tooling host, for example) must not let a child default to trying one.
+bool current_display_is_headless() {
+	const DisplayServer *display_server = DisplayServer::get_singleton();
+	return display_server == nullptr || display_server->get_name() == "headless";
+}
+} // namespace
+
 EditorRun::Status EditorRun::get_status() const {
 	return status;
 }
@@ -55,6 +65,7 @@ EditorRun::LaunchContext EditorRun::build_launch_context() {
 	context.resource_path = ProjectSettings::get_singleton()->get_resource_path();
 	context.debug_uri = EditorDebuggerNode::get_singleton()->get_server_uri();
 	context.editor_pid = OS::get_singleton()->get_process_id();
+	context.headless = current_display_is_headless();
 	return context;
 }
 
@@ -62,6 +73,9 @@ List<String> EditorRun::build_project_test_arguments(const LaunchContext &p_cont
 	List<String> args;
 	for (const String &a : p_context.forwardable_arguments) {
 		args.push_back(a);
+	}
+	if (p_context.headless) {
+		args.push_back("--headless");
 	}
 
 	args.push_back("project");
@@ -115,12 +129,12 @@ Error EditorRun::run_project_test(const TestLaunch &p_launch) {
 		print_line(String(" ").join(output));
 	}
 
+	begin_launch();
+
 	OS::ProcessID pid = 0;
 	const Error err = OS::get_singleton()->create_instance(args, &pid);
 	ERR_FAIL_COND_V(err, err);
-	if (pid != 0) {
-		pids.push_back(pid);
-	}
+	adopt_child_process(pid);
 
 	status = STATUS_PLAY;
 	running_scene = "";
@@ -133,6 +147,9 @@ Error EditorRun::run(const String &p_scene, const String &p_write_movie, const V
 
 	for (const String &a : Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_PROJECT)) {
 		args.push_back(a);
+	}
+	if (current_display_is_headless()) {
+		args.push_back("--headless");
 	}
 
 	String resource_path = ProjectSettings::get_singleton()->get_resource_path();
@@ -240,6 +257,8 @@ Error EditorRun::run(const String &p_scene, const String &p_write_movie, const V
 		}
 	}
 
+	begin_launch();
+
 	String exec = OS::get_singleton()->get_executable_path();
 	int instance_count = RunInstancesDialog::get_singleton()->get_instance_count();
 	for (int i = 0; i < instance_count; i++) {
@@ -263,9 +282,7 @@ Error EditorRun::run(const String &p_scene, const String &p_write_movie, const V
 		OS::ProcessID pid = 0;
 		Error err = OS::get_singleton()->create_instance(instance_args, &pid);
 		ERR_FAIL_COND_V(err, err);
-		if (pid != 0) {
-			pids.push_back(pid);
-		}
+		adopt_child_process(pid);
 	}
 
 	status = STATUS_PLAY;
@@ -285,9 +302,44 @@ bool EditorRun::request_screenshot(const Callable &p_callback) {
 	}
 }
 
+uint64_t EditorRun::begin_launch() {
+	launch_id = next_launch_id++;
+	return launch_id;
+}
+
+void EditorRun::adopt_child_process(OS::ProcessID p_pid) {
+	if (p_pid == 0) {
+		return;
+	}
+	OwnedChild child;
+	child.pid = p_pid;
+	child.launch_id = launch_id;
+	children.push_back(child);
+}
+
+bool EditorRun::poll_child_completion(ProcessCompletion &r_completion) {
+	for (List<OwnedChild>::Element *E = children.front(); E; E = E->next()) {
+		const OwnedChild &child = E->get();
+		if (OS::get_singleton()->is_process_running(child.pid)) {
+			continue;
+		}
+		// Only read the status once the OS agrees the process is gone; a running
+		// process has no result to report yet.
+		r_completion.launch_id = child.launch_id;
+		r_completion.pid = child.pid;
+		r_completion.exit_code = OS::get_singleton()->get_process_exit_code(child.pid);
+		// The status has been read and this run will never touch the process again, so
+		// the platform can drop whatever it still keeps for it.
+		OS::get_singleton()->release_finished_process(child.pid);
+		children.erase(E);
+		return true;
+	}
+	return false;
+}
+
 bool EditorRun::has_child_process(OS::ProcessID p_pid) const {
-	for (const OS::ProcessID &E : pids) {
-		if (E == p_pid) {
+	for (const OwnedChild &E : children) {
+		if (E.pid == p_pid) {
 			return true;
 		}
 	}
@@ -295,31 +347,38 @@ bool EditorRun::has_child_process(OS::ProcessID p_pid) const {
 }
 
 void EditorRun::stop_child_process(OS::ProcessID p_pid) {
-	if (has_child_process(p_pid)) {
+	for (List<OwnedChild>::Element *E = children.front(); E; E = E->next()) {
+		if (E->get().pid != p_pid) {
+			continue;
+		}
 		OS::get_singleton()->kill(p_pid);
-		pids.erase(p_pid);
+		children.erase(E);
+		return;
 	}
 }
 
 void EditorRun::stop() {
 	// Tracked children are terminated whenever any remain, independent of the run
 	// status: a launch that never reached the playing state still owns processes.
-	if (pids.size() > 0) {
-		for (const OS::ProcessID &E : pids) {
-			OS::get_singleton()->kill(E);
+	// A child that already completed on its own is no longer tracked, so it is never
+	// killed here.
+	if (children.size() > 0) {
+		for (const OwnedChild &E : children) {
+			OS::get_singleton()->kill(E.pid);
 		}
-		pids.clear();
+		children.clear();
 	}
 
 	status = STATUS_STOP;
 	running_scene = "";
+	launch_id = 0;
 }
 
 OS::ProcessID EditorRun::get_current_process() const {
-	if (pids.front() == nullptr) {
+	if (children.front() == nullptr) {
 		return 0;
 	}
-	return pids.front()->get();
+	return children.front()->get().pid;
 }
 
 EditorRun::WindowPlacement EditorRun::get_window_placement() {

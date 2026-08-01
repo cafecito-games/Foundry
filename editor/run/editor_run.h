@@ -44,7 +44,14 @@ public:
 		STATUS_STOP
 	};
 
-	List<OS::ProcessID> pids;
+	// One child of a launch that finished on its own, as recorded by the OS.
+	struct ProcessCompletion {
+		uint64_t launch_id = 0;
+		OS::ProcessID pid = 0;
+		// Taken straight from the OS record. `-1` means the platform could not supply
+		// a trustworthy result and must never be reported as a successful exit.
+		int exit_code = -1;
+	};
 
 	// The only runner adapter protocol revision this editor knows how to drive.
 	static const int TEST_ADAPTER_PROTOCOL_VERSION = 1;
@@ -67,6 +74,9 @@ public:
 		String resource_path;
 		String debug_uri;
 		OS::ProcessID editor_pid = 0;
+		// True when this editor's own display server has no real backend (for example a
+		// headless tooling host), so a launched child must not attempt one either.
+		bool headless = false;
 	};
 
 	struct WindowPlacement {
@@ -78,8 +88,17 @@ public:
 	};
 
 private:
+	// A child of this run, tagged with the launch that created it so a replaced
+	// launch's completion can never be attributed to its replacement.
+	struct OwnedChild {
+		OS::ProcessID pid = 0;
+		uint64_t launch_id = 0;
+	};
+
 	Status status;
 	String running_scene;
+	List<OwnedChild> children;
+	uint64_t launch_id = 0;
 
 public:
 	inline static EditorRunInstanceStarting instance_starting_callback = nullptr;
@@ -90,12 +109,29 @@ public:
 
 	Error run(const String &p_scene, const String &p_write_movie = "", const Vector<String> &p_run_args = Vector<String>());
 	Error run_project_test(const TestLaunch &p_launch);
-	void run_native_notify() { status = STATUS_PLAY; }
+	// A native run owns no local child, so it clears the launch identity: nothing it
+	// starts can supply a process result.
+	void run_native_notify() {
+		status = STATUS_PLAY;
+		launch_id = 0;
+	}
 	void stop();
+
+	// Opens a new launch identity. Identities are unique and increasing across every
+	// live run, so completions can be matched to the launch that produced them.
+	uint64_t begin_launch();
+	uint64_t get_launch_id() const { return launch_id; }
+
+	// Registers an already created process as a child of the current launch.
+	void adopt_child_process(OS::ProcessID p_pid);
+	// Nonblocking. Reports one child that finished on its own since the last call and
+	// drops it from ownership, so a naturally exited process is neither reported twice
+	// nor killed afterwards. Explicit stop/kill cleanup never produces a completion.
+	bool poll_child_completion(ProcessCompletion &r_completion);
 
 	void stop_child_process(OS::ProcessID p_pid);
 	bool has_child_process(OS::ProcessID p_pid) const;
-	int get_child_process_count() const { return pids.size(); }
+	int get_child_process_count() const { return children.size(); }
 	OS::ProcessID get_current_process() const;
 
 	static bool request_screenshot(const Callable &p_callback);
@@ -115,4 +151,5 @@ public:
 
 private:
 	inline static LocalVector<EditorRun *> live_instances;
+	inline static uint64_t next_launch_id = 1;
 };
