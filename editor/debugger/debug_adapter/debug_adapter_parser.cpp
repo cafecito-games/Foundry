@@ -109,6 +109,10 @@ Dictionary DebugAdapterParser::prepare_error_response(const Dictionary &p_params
 			error = "missing_device";
 			error_desc = "There's no connected device with specified id.";
 			break;
+		case DAP::ErrorType::INVALID_LAUNCH:
+			error = "invalid_launch";
+			error_desc = "The launch configuration is not usable: {reason}";
+			break;
 		case DAP::ErrorType::UNKNOWN:
 		default:
 			error = "unknown";
@@ -176,6 +180,14 @@ Dictionary DebugAdapterParser::req_launch(const Dictionary &p_params) const {
 		return prepare_error_response(p_params, DAP::ErrorType::WRONG_PATH, variables);
 	}
 
+	LaunchRequest launch_request;
+	String launch_error;
+	if (!parse_launch_request(args, launch_request, launch_error)) {
+		Dictionary variables;
+		variables["reason"] = launch_error;
+		return prepare_error_response(p_params, DAP::ErrorType::INVALID_LAUNCH, variables);
+	}
+
 	if (args.has("godot/custom_data")) {
 		DebugAdapterProtocol::get_singleton()->get_current_peer()->supportsCustomData = args["godot/custom_data"];
 	}
@@ -183,6 +195,112 @@ Dictionary DebugAdapterParser::req_launch(const Dictionary &p_params) const {
 	DebugAdapterProtocol::get_singleton()->get_current_peer()->pending_launch = p_params;
 
 	return Dictionary();
+}
+
+// Reads a required string field without letting Variant's implicit conversions turn
+// a JSON number, boolean, or object into a plausible-looking path.
+static bool read_launch_string(const Dictionary &p_source, const String &p_key, String &r_value) {
+	if (!p_source.has(p_key)) {
+		return false;
+	}
+	const Variant value = p_source[p_key];
+	if (value.get_type() != Variant::STRING && value.get_type() != Variant::STRING_NAME) {
+		return false;
+	}
+	r_value = value;
+	return !r_value.is_empty();
+}
+
+bool DebugAdapterParser::parse_launch_request(const Dictionary &p_arguments, LaunchRequest &r_request, String &r_error) {
+	r_request = LaunchRequest();
+
+	if (!p_arguments.has("foundry/launch")) {
+		return true;
+	}
+
+	const Variant launch_value = p_arguments["foundry/launch"];
+	if (launch_value.get_type() != Variant::DICTIONARY) {
+		r_error = "\"foundry/launch\" must be an object.";
+		return false;
+	}
+
+	const Dictionary launch = launch_value;
+	String kind;
+	if (!read_launch_string(launch, "kind", kind) || kind != "project_test") {
+		r_error = vformat("unsupported launch kind \"%s\"; expected \"project_test\".", kind);
+		return false;
+	}
+	r_request.kind = LaunchRequest::KIND_PROJECT_TEST;
+
+	String runner;
+	if (!read_launch_string(launch, "runner", runner)) {
+		r_error = "a \"project_test\" launch requires a \"runner\" script path.";
+		return false;
+	}
+	r_request.test_launch.runner = runner;
+
+	const Variant adapter_value = launch.get("adapter", Variant());
+	if (adapter_value.get_type() != Variant::DICTIONARY) {
+		r_error = "a \"project_test\" launch requires an \"adapter\" object.";
+		return false;
+	}
+
+	const Dictionary adapter = adapter_value;
+	const Variant version_value = adapter.get("protocolVersion", Variant());
+	// JSON has a single number type, so a whole float is accepted, but a fractional
+	// one must not be silently truncated into a version the client never asked for.
+	bool version_is_whole_number = version_value.get_type() == Variant::INT;
+	if (version_value.get_type() == Variant::FLOAT) {
+		const double version_number = version_value;
+		version_is_whole_number = version_number == Math::floor(version_number);
+	}
+	if (!version_is_whole_number) {
+		r_error = "the launch adapter requires an integer \"protocolVersion\".";
+		return false;
+	}
+	const int protocol_version = version_value;
+	if (protocol_version != EditorRun::TEST_ADAPTER_PROTOCOL_VERSION) {
+		r_error = vformat(
+				"unsupported runner adapter protocol version %d; this editor speaks version %d.",
+				protocol_version,
+				EditorRun::TEST_ADAPTER_PROTOCOL_VERSION);
+		return false;
+	}
+	r_request.test_launch.adapter_protocol_version = protocol_version;
+
+	// The TAP report is the authoritative result of a run, and the runner rejects an
+	// invocation without one, so an absent report is refused before anything starts.
+	String report_path;
+	if (!read_launch_string(adapter, "report", report_path)) {
+		r_error = "the launch adapter requires a \"report\" path.";
+		return false;
+	}
+	r_request.test_launch.report_path = report_path;
+
+	const Variant ids_value = adapter.get("testIds", Variant());
+	if (ids_value.get_type() != Variant::NIL) {
+		if (ids_value.get_type() != Variant::ARRAY) {
+			r_error = "the launch adapter's \"testIds\" must be an array of strings.";
+			return false;
+		}
+		const Array ids = ids_value;
+		for (const Variant &id : ids) {
+			if (id.get_type() != Variant::STRING && id.get_type() != Variant::STRING_NAME) {
+				r_error = "the launch adapter's \"testIds\" must be an array of strings.";
+				return false;
+			}
+			const String test_id = id;
+			if (test_id.is_empty()) {
+				r_error = "the launch adapter's \"testIds\" must not contain empty ids.";
+				return false;
+			}
+			// Repeated ids are preserved verbatim: the selection the client sent is the
+			// selection the runner receives.
+			r_request.test_launch.test_ids.push_back(test_id);
+		}
+	}
+
+	return true;
 }
 
 Vector<String> DebugAdapterParser::_extract_play_arguments(const Dictionary &p_args) const {
@@ -206,8 +324,27 @@ Dictionary DebugAdapterParser::_launch_process(const Dictionary &p_params) const
 		dbg->debug_skip_breakpoints();
 	}
 
+	LaunchRequest launch_request;
+	String launch_error;
+	if (!parse_launch_request(args, launch_request, launch_error)) {
+		Dictionary variables;
+		variables["reason"] = launch_error;
+		return prepare_error_response(p_params, DAP::ErrorType::INVALID_LAUNCH, variables);
+	}
+
 	String platform_string = args.get("platform", "host");
-	if (platform_string == "host") {
+	if (launch_request.kind == LaunchRequest::KIND_PROJECT_TEST) {
+		if (platform_string != "host") {
+			Dictionary variables;
+			variables["reason"] = "a \"project_test\" launch only runs on the host platform.";
+			return prepare_error_response(p_params, DAP::ErrorType::INVALID_LAUNCH, variables);
+		}
+
+		const Error err = EditorRunBar::get_singleton()->play_project_test(launch_request.test_launch);
+		if (err != OK) {
+			return prepare_error_response(p_params, DAP::ErrorType::UNKNOWN);
+		}
+	} else if (platform_string == "host") {
 		Vector<String> play_args = _extract_play_arguments(args);
 		const String scene = args.get("scene", "main");
 		if (scene == "main") {
@@ -289,17 +426,41 @@ Dictionary DebugAdapterParser::req_configurationDone(const Dictionary &p_params)
 }
 
 Dictionary DebugAdapterParser::req_pause(const Dictionary &p_params) const {
-	EditorRunBar::get_singleton()->get_pause_button()->set_pressed(true);
-	EditorDebuggerNode::get_singleton()->_paused();
+	EditorDebuggerNode *debugger_node = EditorDebuggerNode::get_singleton();
+	ScriptEditorDebugger *dbg = debugger_node->get_default_debugger();
+	if (!dbg->is_session_active()) {
+		return prepare_error_response(p_params, DAP::ErrorType::NOT_RUNNING);
+	}
 
-	DebugAdapterProtocol::get_singleton()->notify_stopped_paused();
+	// Driving the debugger directly instead of toggling the run bar's pause widget
+	// keeps this path working in a headless tooling host, where no one ever presses
+	// that button. The widget is only kept in sync for an editor that has a GUI.
+	EditorRunBar::get_singleton()->get_pause_button()->set_pressed_no_signal(true);
+
+	DebugAdapterProtocol *protocol = DebugAdapterProtocol::get_singleton();
+	if (dbg->is_breaked()) {
+		// Already stopped, so no further stack dump is coming.
+		protocol->notify_stopped_paused();
+	} else {
+		protocol->request_pause();
+		debugger_node->debug_break();
+	}
 
 	return prepare_success_response(p_params);
 }
 
 Dictionary DebugAdapterParser::req_continue(const Dictionary &p_params) const {
-	EditorRunBar::get_singleton()->get_pause_button()->set_pressed(false);
-	EditorDebuggerNode::get_singleton()->_paused();
+	EditorDebuggerNode *debugger_node = EditorDebuggerNode::get_singleton();
+	ScriptEditorDebugger *dbg = debugger_node->get_default_debugger();
+	if (!dbg->is_session_active()) {
+		return prepare_error_response(p_params, DAP::ErrorType::NOT_RUNNING);
+	}
+
+	EditorRunBar::get_singleton()->get_pause_button()->set_pressed_no_signal(false);
+
+	if (dbg->is_breaked()) {
+		debugger_node->debug_continue();
+	}
 
 	DebugAdapterProtocol::get_singleton()->notify_continued();
 

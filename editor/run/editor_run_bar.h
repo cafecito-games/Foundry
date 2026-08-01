@@ -141,6 +141,7 @@ public:
 	void open_run_targets_configuration();
 	void play_current_scene(bool p_reload = false, const Vector<String> &p_play_args = Vector<String>());
 	void play_custom_scene(const String &p_custom, const Vector<String> &p_play_args = Vector<String>());
+	Error play_project_test(const EditorRun::TestLaunch &p_launch);
 
 	void stop_playing();
 	bool is_playing() const;

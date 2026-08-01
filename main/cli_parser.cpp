@@ -222,7 +222,10 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 		r_state.index++;
 		return true;
 	}
-	if (p_arg == "--trusted") {
+	// `--foundry-build-trusted` is the forwarded spelling the engine uses internally
+	// and is what an editor hands to the processes it launches, so it has to be
+	// understood ahead of a command exactly like the user-facing `--trusted`.
+	if (p_arg == "--trusted" || p_arg == "--foundry-build-trusted") {
 		r_state.result.trusted = true;
 		r_state.result.used_new_cli = true;
 		r_state.index++;
@@ -255,6 +258,39 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 		}
 	}
 
+	return false;
+}
+
+// `--remote-debug` and `--editor-pid` are engine-owned debug transport options that
+// a debug host attaches to a launch. They are forwarded verbatim so the runtime
+// argument parser sees them exactly as it does for a plain `project run`.
+static bool consume_debug_transport_option(CLIParseState &r_state, const String &p_arg, PackedStringArray &r_passthrough) {
+	if (p_arg == "--remote-debug") {
+		String uri;
+		if (!require_value(r_state, p_arg, uri)) {
+			return true;
+		}
+		if (!uri.contains("://")) {
+			fail(r_state.result, "Invalid value for --remote-debug: " + uri + ". Expected <protocol>://<host>:<port>.");
+			return true;
+		}
+		append(r_passthrough, p_arg);
+		append(r_passthrough, uri);
+		return true;
+	}
+	if (p_arg == "--editor-pid") {
+		String pid;
+		if (!require_value(r_state, p_arg, pid)) {
+			return true;
+		}
+		if (!pid.is_valid_int() || pid.to_int() <= 0) {
+			fail(r_state.result, "Invalid value for --editor-pid: " + pid + ". Expected a positive process id.");
+			return true;
+		}
+		append(r_passthrough, p_arg);
+		append(r_passthrough, pid);
+		return true;
+	}
 	return false;
 }
 
@@ -375,10 +411,17 @@ static void parse_project_test(CLIParseState &r_state) {
 	set_command_path(r_state.result, "project", "test");
 	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::PROJECT_TEST;
 	String runner;
+	PackedStringArray passthrough;
 
 	while (r_state.index < r_state.args.size()) {
 		const String arg = r_state.args[r_state.index];
 		if (consume_common_global_option(r_state, arg)) {
+			if (!r_state.result.ok) {
+				return;
+			}
+			continue;
+		}
+		if (consume_debug_transport_option(r_state, arg, passthrough)) {
 			if (!r_state.result.ok) {
 				return;
 			}
@@ -403,6 +446,7 @@ static void parse_project_test(CLIParseState &r_state) {
 
 	r_state.result.invocation.project_path = r_state.project_path;
 	r_state.result.invocation.runner = runner;
+	r_state.result.invocation.passthrough_args = passthrough;
 	finalize_global_args(r_state);
 }
 

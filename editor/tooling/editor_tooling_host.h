@@ -67,6 +67,16 @@ public:
 	static void report_bound(Service p_service, int p_bound_port);
 	static void report_bind_failure(Service p_service, int p_requested_port, Error p_error, const String &p_message);
 
+	// Orderly shutdown on `SIGINT`/`SIGTERM`. The installed handler only latches the
+	// request, because terminating child processes and quitting the scene tree are
+	// not async-signal-safe; `process_pending_shutdown()` performs the actual work
+	// from the main loop. Debuggees that were merely attached to are left running,
+	// since only processes this host launched are tracked.
+	static void install_shutdown_handlers();
+	static void request_shutdown();
+	static bool is_shutdown_requested();
+	static void process_pending_shutdown();
+
 	// Builds the readiness payload without emitting it, so tests can assert on the
 	// record shape without starting a real editor process.
 	static String build_readiness_record(const String &p_project, int p_process_id, int p_lsp_port, int p_dap_port);

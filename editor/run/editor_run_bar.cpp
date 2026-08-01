@@ -418,6 +418,38 @@ void EditorRunBar::_run_scene(const String &p_scene_path, const Vector<String> &
 	emit_signal(SNAME("play_pressed"));
 }
 
+Error EditorRunBar::play_project_test(const EditorRun::TestLaunch &p_launch) {
+	// A restart replaces the running launch, exactly as starting a scene does.
+	stop_playing();
+
+	_reset_play_buttons();
+
+	// A test launch deliberately skips the main-scene requirement: the runner script
+	// is the entry point, and a project without a main scene is a supported target.
+	EditorNode::get_singleton()->try_autosave();
+	if (!EditorNode::get_singleton()->call_build()) {
+		return ERR_CANT_CREATE;
+	}
+
+	String uri = EditorDebuggerNode::get_singleton()->get_server_uri();
+	if (uri.is_empty()) {
+		uri = "tcp://";
+	}
+	EditorDebuggerNode::get_singleton()->start(uri);
+
+	const Error error = editor_run.run_project_test(p_launch);
+	if (error != OK) {
+		EditorDebuggerNode::get_singleton()->stop();
+		return error;
+	}
+
+	current_mode = RunMode::RUN_CUSTOM;
+	_update_play_buttons();
+	stop_button->set_disabled(false);
+	emit_signal(SNAME("play_pressed"));
+	return OK;
+}
+
 void EditorRunBar::_run_native(const Ref<EditorExportPreset> &p_preset) {
 	EditorNode::get_singleton()->try_autosave();
 
