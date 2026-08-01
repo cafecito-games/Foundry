@@ -46,8 +46,10 @@ vars:
       fi
   JOBS:
     sh: 'printf "%s\n" "${JOBS:-{{.HOST_JOBS}}}"'
+  # Shared SCons object cache, matching scripts/agent_build.py. Set CACHE_PATH
+  # to the empty string to build without a cache.
   CACHE_PATH:
-    sh: 'printf "%s\n" "${CACHE_PATH-}"'
+    sh: 'printf "%s\n" "${CACHE_PATH-$HOME/.scons_cache}"'
   SCONS_FLAGS:
     sh: 'printf "%s\n" "${SCONS_FLAGS:-}"'
   # Ad-hoc signature by default so the bundle launches from Finder without a
