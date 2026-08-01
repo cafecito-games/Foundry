@@ -51,16 +51,6 @@ namespace TestOSProcess {
 constexpr uint64_t PROCESS_TIMEOUT_MSEC = 120000;
 constexpr uint64_t PROCESS_POLL_USEC = 20000;
 
-static String process_scratch_root() {
-	if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
-		const String configured = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
-		if (!configured.is_empty()) {
-			return configured.simplify_path();
-		}
-	}
-	return TestUtils::get_temp_path("os_process");
-}
-
 static void remove_recursive(const String &p_path) {
 	Ref<DirAccess> dir = DirAccess::open(p_path);
 	if (dir.is_null()) {
@@ -80,17 +70,6 @@ static void remove_recursive(const String &p_path) {
 	}
 	dir->list_dir_end();
 	DirAccess::remove_absolute(p_path);
-}
-
-// The lowest descriptor the process can currently hand out. It rises whenever a
-// descriptor is leaked, which makes it an observable proxy for tracker cleanup.
-static int lowest_free_descriptor() {
-	const int descriptor = open("/dev/null", O_RDONLY);
-	if (descriptor == -1) {
-		return -1;
-	}
-	close(descriptor);
-	return descriptor;
 }
 
 // A POSIX child created outside `OS::create_process()`, so nothing registers it in the
@@ -226,6 +205,27 @@ TEST_CASE("[OS] Untracked Unix process liveness answers quietly") {
 }
 
 #ifdef MACOS_ENABLED
+
+static String process_scratch_root() {
+	if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+		const String configured = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+		if (!configured.is_empty()) {
+			return configured.simplify_path();
+		}
+	}
+	return TestUtils::get_temp_path("os_process");
+}
+
+// The lowest descriptor the process can currently hand out. It rises whenever a
+// descriptor is leaked, which makes it an observable proxy for tracker cleanup.
+static int lowest_free_descriptor() {
+	const int descriptor = open("/dev/null", O_RDONLY);
+	if (descriptor == -1) {
+		return -1;
+	}
+	close(descriptor);
+	return descriptor;
+}
 
 // A real application bundle generated beneath the shared scratch space. Launch Services
 // only reports a process identifier for an application that checks in, so the payload has
