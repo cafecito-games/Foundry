@@ -1184,6 +1184,7 @@ if env["ninja"]:
     env["NINJA_FILE_NAME"] = env["ninja_file"]
     env["NINJA_DIR"] = env["ninja_dir"]
     env["NINJA_DISABLE_AUTO_RUN"] = not env["ninja_auto_run"]
+    env["NINJA_GENERATED_SOURCE_SUFFIXES"] = [".h", ".hpp", ".inc"]
     env.Tool("ninja", env["ninja_file"])
 
 # Threads
