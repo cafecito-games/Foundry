@@ -234,6 +234,7 @@ opts.Add(BoolVariable("fast_unsafe", "Enable unsafe options for faster increment
 opts.Add(BoolVariable("ninja", "Use the ninja backend for faster rebuilds", False))
 opts.Add(BoolVariable("ninja_auto_run", "Run ninja automatically after generating the ninja file", True))
 opts.Add("ninja_file", "Path to the generated ninja file", "build.ninja")
+opts.Add("ninja_dir", "Directory for Ninja state and SCons daemon files", ".ninja")
 opts.Add(BoolVariable("compiledb", "Generate compilation DB (`compile_commands.json`) for external tools", False))
 opts.Add(
     "num_jobs",
@@ -556,7 +557,6 @@ else:
 # the default is that SCons won't mark files that were changed in the last second
 # as different. This is unlikely to be a problem in any real situation as just booting
 # up scons takes more than that time.
-# Renamed to `content-timestamp` in SCons >= 4.2, keeping MD5 for compat.
 env.Decider("MD5-timestamp")
 
 # SCons speed optimization controlled by the `fast_unsafe` option, which provide
@@ -1182,7 +1182,43 @@ if env["ninja"]:
 
     SetOption("experimental", "ninja")
     env["NINJA_FILE_NAME"] = env["ninja_file"]
+    env["NINJA_DIR"] = env["ninja_dir"]
     env["NINJA_DISABLE_AUTO_RUN"] = not env["ninja_auto_run"]
+    env["NINJA_GENERATED_SOURCE_SUFFIXES"] = [".h", ".hpp", ".inc"]
+
+    import SCons.Tool.ninja_tool as scons_ninja_tool
+
+    ninja_regeneration_dependencies = set()
+    excluded_build_description_directories = {
+        ".git",
+        ".foundry",
+        ".ninja",
+        ".test_scratch",
+        ".worktrees",
+        "__pycache__",
+        "bin",
+        "build",
+        "out",
+    }
+    for root, directory_names, file_names in os.walk("."):
+        directory_names[:] = sorted(
+            name for name in directory_names if name not in excluded_build_description_directories
+        )
+        for file_name in file_names:
+            if file_name == "SConstruct" or file_name == "SCsub" or file_name.endswith(".py"):
+                ninja_regeneration_dependencies.add(os.path.normpath(os.path.join(root, file_name)))
+    for custom in customs:
+        if os.path.isfile(custom):
+            ninja_regeneration_dependencies.add(os.path.normpath(custom))
+    if env["build_profile"] and os.path.isfile(env["build_profile"]):
+        ninja_regeneration_dependencies.add(os.path.normpath(env["build_profile"]))
+    ninja_tool_directory = os.path.dirname(scons_ninja_tool.__file__)
+    ninja_regeneration_dependencies.update(
+        os.path.normpath(path)
+        for path in glob.glob(os.path.join(ninja_tool_directory, "**", "*.py"), recursive=True)
+        if os.path.isfile(path)
+    )
+    env["NINJA_REGENERATE_DEPS"] = sorted(ninja_regeneration_dependencies)
     env.Tool("ninja", env["ninja_file"])
 
 # Threads
@@ -1200,9 +1236,24 @@ for key in (emitters := env.SharedObject.builder.emitter):
 # Prepend compiler launchers
 if "c_compiler_launcher" in env:
     env["CC"] = " ".join([env["c_compiler_launcher"], env["CC"]])
+    if env["ninja"]:
+        ninja_cc_provider = env.NinjaGenResponseFileProvider("CC", "$c_compiler_launcher")
+        env.NinjaRuleMapping("${CCCOM}", ninja_cc_provider)
+        if isinstance(env.get("CCCOM"), str):
+            env.NinjaRuleMapping(env["CCCOM"], ninja_cc_provider)
 
 if "cpp_compiler_launcher" in env:
     env["CXX"] = " ".join([env["cpp_compiler_launcher"], env["CXX"]])
+    if env["ninja"]:
+        ninja_cxx_provider = env.NinjaGenResponseFileProvider("CXX", "$cpp_compiler_launcher")
+        env.NinjaRuleMapping("${CXXCOM}", ninja_cxx_provider)
+        if isinstance(env.get("CXXCOM"), str):
+            env.NinjaRuleMapping(env["CXXCOM"], ninja_cxx_provider)
+        ninja_link_provider = env.NinjaGenResponseFileProvider("LINK", "$cpp_compiler_launcher")
+        for ninja_link_command in ("LINKCOM", "SHLINKCOM"):
+            env.NinjaRuleMapping("${" + ninja_link_command + "}", ninja_link_provider)
+            if isinstance(env.get(ninja_link_command), str):
+                env.NinjaRuleMapping(env[ninja_link_command], ninja_link_provider)
 
 # Build subdirs, the build order is dependent on link order.
 Export("env")
