@@ -65,6 +65,10 @@ ROOT_INCLUDE_ORDER = (
 # with a lookbehind derived from the tokenizer keyword table.
 VALUE_ENDING_GUARD = "{{value_ending_guard}}"
 
+# Replaced with a lookahead derived from the same table, rejecting the reserved words a
+# dictionary entry can never start with.
+ENTRY_BOUNDARY_GUARD = "{{entry_boundary_guard}}"
+
 # Characters that end a value on their own, before which a `%` is the modulo operator.
 VALUE_ENDING_CHARACTERS = r"[\p{L}\p{N}_)\]\"']"
 
@@ -169,15 +173,35 @@ def build_value_ending_guard(reserved: tuple[str, ...], value_ending: list[str])
     )
 
 
-def substitute(value: Any, guard: str) -> Any:
-    """Replace the guard token in every string reachable from a pattern input."""
+def build_entry_boundary_guard(reserved: tuple[str, ...], expression_leading: list[str]) -> str:
+    """Return the lookahead that keeps a statement from opening a dictionary entry.
+
+    A dictionary key is an arbitrary expression, so the entry region has to open on any
+    shape of token. Inside a lambda used as a dictionary value, though, an ordinary
+    statement starts its own physical line and would satisfy that boundary; a typed local
+    such as `var result: Player` would then read as a key and swallow its own type. Only
+    the reserved words that can begin an expression may open an entry.
+    """
+
+    unknown = sorted(set(expression_leading) - set(reserved))
+    if unknown:
+        raise GrammarBuildError(f"keyword_scopes.json marks non-reserved words as expression-leading: {unknown}")
+
+    ordered = sorted(set(reserved) - set(expression_leading), key=lambda word: (-len(word), word))
+    return r"(?!(?:" + "|".join(ordered) + r")\b)"
+
+
+def substitute(value: Any, guards: dict[str, str]) -> Any:
+    """Replace every guard token in every string reachable from a pattern input."""
 
     if isinstance(value, str):
-        return value.replace(VALUE_ENDING_GUARD, guard)
+        for token, guard in guards.items():
+            value = value.replace(token, guard)
+        return value
     if isinstance(value, dict):
-        return {key: substitute(child, guard) for key, child in value.items()}
+        return {key: substitute(child, guards) for key, child in value.items()}
     if isinstance(value, list):
-        return [substitute(child, guard) for child in value]
+        return [substitute(child, guards) for child in value]
     return value
 
 
@@ -210,14 +234,21 @@ def build_grammar(tokenizer_source: str, pattern_inputs: dict[str, Any]) -> dict
         },
     }
 
-    guard = build_value_ending_guard(keywords.reserved, keyword_scopes["value_ending_reserved_words"]["words"])
+    guards = {
+        VALUE_ENDING_GUARD: build_value_ending_guard(
+            keywords.reserved, keyword_scopes["value_ending_reserved_words"]["words"]
+        ),
+        ENTRY_BOUNDARY_GUARD: build_entry_boundary_guard(
+            keywords.reserved, keyword_scopes["expression_leading_reserved_words"]["words"]
+        ),
+    }
     for name in PATTERN_INPUT_FILES:
         for entry_name, entry in pattern_inputs[name].items():
             if entry_name.startswith("$"):
                 continue
             if entry_name in repository:
                 raise GrammarBuildError(f"pattern input {name} redefines repository entry {entry_name!r}")
-            repository[entry_name] = substitute(entry, guard)
+            repository[entry_name] = substitute(entry, guards)
 
     missing_roots = [name for name in ROOT_INCLUDE_ORDER if name not in repository]
     if missing_roots:
