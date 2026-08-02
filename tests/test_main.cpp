@@ -118,6 +118,7 @@
 #include "tests/core/io/test_ip.h"
 #include "tests/core/io/test_ip_address.h"
 #include "tests/core/io/test_json.h"
+#include "tests/core/io/test_json_container_type.h"
 #include "tests/core/io/test_json_marshaller.h"
 #include "tests/core/io/test_json_native.h"
 #include "tests/core/io/test_logger.h"
