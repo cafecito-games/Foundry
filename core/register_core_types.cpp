@@ -72,6 +72,7 @@
 #include "core/math/random_number_generator.h"
 #include "core/math/triangle_mesh.h"
 #include "core/object/class_db.h"
+#include "core/object/class_handle.h"
 #include "core/object/script_backtrace.h"
 #include "core/object/script_diagnostic_capture.h"
 #include "core/object/script_diagnostic_capture_scope.h"
@@ -139,6 +140,7 @@ void register_core_types() {
 	FOUNDRY_REGISTER_CLASS(Object);
 	FOUNDRY_REGISTER_CLASS(RefCounted);
 	FOUNDRY_REGISTER_CLASS(WeakRef);
+	FOUNDRY_REGISTER_ABSTRACT_CLASS(ClassHandle);
 	FOUNDRY_REGISTER_CLASS(Resource);
 
 	FOUNDRY_REGISTER_CLASS(Time);
