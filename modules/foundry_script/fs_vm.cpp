@@ -2385,7 +2385,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						const FSDataType expected_handle_type = FSDataType::from_type_handle_container_type(expected_type);
 						if (!expected_handle_type.is_type(value)) {
 #ifdef DEBUG_ENABLED
-							err_text = vformat(R"(Trying to assign a value of type "%s" to a member of type "%s".)",
+							// `expected_type` is the reified argument's own (non-handle) descriptor; the slot's
+							// handle-ness lives only in `expected_is_type_handle`, so the wrapper is added here
+							// rather than expected from `expected_type.get_type_name()` itself.
+							err_text = vformat(R"(Trying to assign a value of type "%s" to a member of type "Type[%s]".)",
 									_get_var_type(src), expected_type.get_type_name());
 #endif // DEBUG_ENABLED
 							OPCODE_BREAK;
