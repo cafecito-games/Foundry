@@ -4718,9 +4718,21 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				const FSParser::DataType member_datatype = _substitute_self_type_parameter_for_class(variable->get_datatype(), p_class);
 				minfo.data_type = _gdtype_from_datatype(member_datatype, p_script);
 
+				// A member flattened in from an applied trait is typed by the TRAIT's parameters, whose
+				// ordinals do not index this class's reified arguments. Binding it here would validate
+				// writes against whichever of this class's own arguments happens to share the ordinal, so
+				// such a member keeps no binding and stays an untyped slot.
+				const bool member_names_own_type_parameter =
+						member_datatype.type_parameter_index >= 0 &&
+						member_datatype.type_parameter_index < p_class->type_parameters.size() &&
+						p_class->type_parameters[member_datatype.type_parameter_index] != nullptr &&
+						p_class->type_parameters[member_datatype.type_parameter_index]->identifier != nullptr &&
+						p_class->type_parameters[member_datatype.type_parameter_index]->identifier->name ==
+								member_datatype.type_parameter_name;
 				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
 						member_datatype.kind == FSParser::DataType::TYPE_PARAMETER &&
-						member_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
+						member_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS &&
+						member_names_own_type_parameter) {
 					// The slot stays an erased Variant (see `_gdtype_from_datatype`), but record that it stands
 					// for one of this class's own type parameters so writes can validate against the
 					// instance's reified argument at runtime (e.g. rejecting `box.value = "x"` on a `Box[int]`).
