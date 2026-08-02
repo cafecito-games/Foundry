@@ -226,6 +226,20 @@ bool Variant::can_convert(Variant::Type p_type_from, Variant::Type p_type_to) {
 				BOOL,
 				FLOAT,
 				STRING,
+				UINT,
+				NIL,
+			};
+
+			valid_types = valid;
+
+		} break;
+		case UINT: {
+			// Conversion between the integer carriers exists in both directions but is checked:
+			// a negative signed value has no unsigned representation, and an unsigned value above
+			// `INT64_MAX` has no signed one. Neither direction is a strict conversion, so
+			// `can_convert_strict()` deliberately keeps rejecting both.
+			static const Type valid[] = {
+				INT,
 				NIL,
 			};
 
@@ -875,7 +889,9 @@ bool Variant::operator==(const Variant &p_variant) const {
 }
 
 bool Variant::operator<(const Variant &p_variant) const {
-	if (type != p_variant.type) { //if types differ, then order by type first
+	// The signed and unsigned integer carriers order by mathematical value, not by carrier identity.
+	// Every other type pairing still orders by type first.
+	if (type != p_variant.type && !is_integer_carrier_pair(type, p_variant.type)) {
 		return type < p_variant.type;
 	}
 	bool v;
@@ -3257,6 +3273,15 @@ uint32_t Variant::recursive_hash(int recursion_count) const {
 
 bool Variant::hash_compare(const Variant &p_variant, int recursion_count, bool semantic_comparison) const {
 	if (type != p_variant.type) {
+		// The integer carriers share one number line, so a value representable in both compares
+		// equal across them. `recursive_hash()` hashes both carriers from the same 64 bits, which
+		// keeps the equality/hash contract that Dictionary lookup relies on.
+		if (type == INT && p_variant.type == UINT) {
+			return _data._int >= 0 && uint64_t(_data._int) == p_variant._data._uint;
+		}
+		if (type == UINT && p_variant.type == INT) {
+			return p_variant._data._int >= 0 && _data._uint == uint64_t(p_variant._data._int);
+		}
 		return false;
 	}
 

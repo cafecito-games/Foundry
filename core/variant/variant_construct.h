@@ -766,6 +766,91 @@ public:
 	}
 };
 
+// Converting between the integer carriers is checked in both directions: the mathematical value, not
+// just the source carrier, has to be representable in the destination. `construct()` reports an
+// out-of-range value as `CALL_ERROR_INVALID_ARGUMENT`. `validated_construct()` and `ptr_construct()`
+// are the unchecked fast paths every builtin constructor exposes; a caller must have established the
+// value's range before selecting them.
+class VariantConstructorUIntFromInt {
+public:
+	static void construct(Variant &r_ret, const Variant **p_args, Callable::CallError &r_error) {
+		if (p_args[0]->get_type() != Variant::INT || *VariantInternal::get_int(p_args[0]) < 0) {
+			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+			r_error.argument = 0;
+			r_error.expected = Variant::UINT;
+			return;
+		}
+
+		r_error.error = Callable::CallError::CALL_OK;
+		validated_construct(&r_ret, p_args);
+	}
+
+	static inline void validated_construct(Variant *r_ret, const Variant **p_args) {
+		// The destination can alias the source, so read the payload before re-tagging it.
+		const int64_t value = *VariantInternal::get_int(p_args[0]);
+		DEV_ASSERT(value >= 0);
+		VariantInternal::initialize(r_ret, Variant::UINT);
+		*VariantInternal::get_uint(r_ret) = uint64_t(value);
+	}
+	static void ptr_construct(void *base, const void **p_args) {
+		const int64_t value = PtrToArg<int64_t>::convert(p_args[0]);
+		DEV_ASSERT(value >= 0);
+		PtrConstruct<uint64_t>::construct(uint64_t(value), base);
+	}
+
+	static int get_argument_count() {
+		return 1;
+	}
+
+	static Variant::Type get_argument_type(int p_arg) {
+		return Variant::INT;
+	}
+
+	static Variant::Type get_base_type() {
+		return Variant::UINT;
+	}
+};
+
+class VariantConstructorIntFromUInt {
+public:
+	static void construct(Variant &r_ret, const Variant **p_args, Callable::CallError &r_error) {
+		if (p_args[0]->get_type() != Variant::UINT || *VariantInternal::get_uint(p_args[0]) > uint64_t(INT64_MAX)) {
+			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+			r_error.argument = 0;
+			r_error.expected = Variant::INT;
+			return;
+		}
+
+		r_error.error = Callable::CallError::CALL_OK;
+		validated_construct(&r_ret, p_args);
+	}
+
+	static inline void validated_construct(Variant *r_ret, const Variant **p_args) {
+		// The destination can alias the source, so read the payload before re-tagging it.
+		const uint64_t value = *VariantInternal::get_uint(p_args[0]);
+		DEV_ASSERT(value <= uint64_t(INT64_MAX));
+		VariantInternal::initialize(r_ret, Variant::INT);
+		*VariantInternal::get_int(r_ret) = int64_t(value);
+	}
+	static void ptr_construct(void *base, const void **p_args) {
+		const uint64_t value = PtrToArg<uint64_t>::convert(p_args[0]);
+		DEV_ASSERT(value <= uint64_t(INT64_MAX));
+		PtrConstruct<int64_t>::construct(int64_t(value), base);
+	}
+
+	static int get_argument_count() {
+		return 1;
+	}
+
+	static Variant::Type get_argument_type(int p_arg) {
+		return Variant::UINT;
+	}
+
+	static Variant::Type get_base_type() {
+		return Variant::INT;
+	}
+};
+
 class VariantConstructorNil {
 public:
 	static void construct(Variant &r_ret, const Variant **p_args, Callable::CallError &r_error) {

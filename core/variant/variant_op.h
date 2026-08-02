@@ -469,6 +469,73 @@ public:
 	using ReturnType = bool;
 };
 
+// The signed and unsigned integer carriers describe a single mathematical number line. Neither
+// operand is ever cast into the other's carrier, so unsigned values above `INT64_MAX` keep their
+// magnitude and negative signed values stay below every unsigned value.
+struct VariantIntegerCompare {
+	static _ALWAYS_INLINE_ bool equal(uint64_t p_left, uint64_t p_right) { return p_left == p_right; }
+	static _ALWAYS_INLINE_ bool equal(int64_t p_left, uint64_t p_right) { return p_left >= 0 && uint64_t(p_left) == p_right; }
+	static _ALWAYS_INLINE_ bool equal(uint64_t p_left, int64_t p_right) { return p_right >= 0 && p_left == uint64_t(p_right); }
+
+	static _ALWAYS_INLINE_ bool less(uint64_t p_left, uint64_t p_right) { return p_left < p_right; }
+	static _ALWAYS_INLINE_ bool less(int64_t p_left, uint64_t p_right) { return p_left < 0 || uint64_t(p_left) < p_right; }
+	static _ALWAYS_INLINE_ bool less(uint64_t p_left, int64_t p_right) { return p_right >= 0 && p_left < uint64_t(p_right); }
+};
+
+struct VariantIntegerEqualOperation {
+	template <typename Left, typename Right>
+	static _ALWAYS_INLINE_ bool compare(Left p_left, Right p_right) { return VariantIntegerCompare::equal(p_left, p_right); }
+};
+
+struct VariantIntegerNotEqualOperation {
+	template <typename Left, typename Right>
+	static _ALWAYS_INLINE_ bool compare(Left p_left, Right p_right) { return !VariantIntegerCompare::equal(p_left, p_right); }
+};
+
+struct VariantIntegerLessOperation {
+	template <typename Left, typename Right>
+	static _ALWAYS_INLINE_ bool compare(Left p_left, Right p_right) { return VariantIntegerCompare::less(p_left, p_right); }
+};
+
+struct VariantIntegerLessEqualOperation {
+	template <typename Left, typename Right>
+	static _ALWAYS_INLINE_ bool compare(Left p_left, Right p_right) { return !VariantIntegerCompare::less(p_right, p_left); }
+};
+
+struct VariantIntegerGreaterOperation {
+	template <typename Left, typename Right>
+	static _ALWAYS_INLINE_ bool compare(Left p_left, Right p_right) { return VariantIntegerCompare::less(p_right, p_left); }
+};
+
+struct VariantIntegerGreaterEqualOperation {
+	template <typename Left, typename Right>
+	static _ALWAYS_INLINE_ bool compare(Left p_left, Right p_right) { return !VariantIntegerCompare::less(p_left, p_right); }
+};
+
+// The unsigned carrier has no C++ nominal type of its own, so the integer comparison evaluators read
+// each operand through an explicit carrier accessor instead of `VariantInternalAccessor`.
+struct VariantIntCarrier {
+	static _ALWAYS_INLINE_ int64_t get(const Variant *p_variant) { return *VariantInternal::get_int(p_variant); }
+	static _ALWAYS_INLINE_ int64_t get_ptr(const void *p_ptr) { return PtrToArg<int64_t>::convert(p_ptr); }
+};
+
+struct VariantUIntCarrier {
+	static _ALWAYS_INLINE_ uint64_t get(const Variant *p_variant) { return *VariantInternal::get_uint(p_variant); }
+	static _ALWAYS_INLINE_ uint64_t get_ptr(const void *p_ptr) { return PtrToArg<uint64_t>::convert(p_ptr); }
+};
+
+template <typename Left, typename Right, typename Operation>
+class OperatorEvaluatorIntegerCompare : public CommonEvaluate<OperatorEvaluatorIntegerCompare<Left, Right, Operation>> {
+public:
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VariantInternalAccessor<bool>::get(r_ret) = Operation::compare(Left::get(left), Right::get(right));
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<bool>::encode(Operation::compare(Left::get_ptr(left), Right::get_ptr(right)), r_ret);
+	}
+	using ReturnType = bool;
+};
+
 class OperatorEvaluatorEqualObject : public CommonEvaluate<OperatorEvaluatorEqualObject> {
 public:
 	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {

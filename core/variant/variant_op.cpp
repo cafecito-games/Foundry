@@ -487,6 +487,9 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_EQUAL, Variant::NIL, Variant::NIL);
 	register_op<OperatorEvaluatorEqual<bool, bool>>(Variant::OP_EQUAL, Variant::BOOL, Variant::BOOL);
 	register_op<OperatorEvaluatorEqual<int64_t, int64_t>>(Variant::OP_EQUAL, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantUIntCarrier, VariantIntegerEqualOperation>>(Variant::OP_EQUAL, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantIntCarrier, VariantUIntCarrier, VariantIntegerEqualOperation>>(Variant::OP_EQUAL, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantIntCarrier, VariantIntegerEqualOperation>>(Variant::OP_EQUAL, Variant::UINT, Variant::INT);
 	register_op<OperatorEvaluatorEqual<int64_t, double>>(Variant::OP_EQUAL, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorEqual<double, int64_t>>(Variant::OP_EQUAL, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorEqual<double, double>>(Variant::OP_EQUAL, Variant::FLOAT, Variant::FLOAT);
@@ -532,6 +535,7 @@ void Variant::_register_variant_operators() {
 
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::BOOL, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::INT, Variant::NIL);
+	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::UINT, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::FLOAT, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::STRING, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::VECTOR2, Variant::NIL);
@@ -609,6 +613,9 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::NIL);
 	register_op<OperatorEvaluatorNotEqual<bool, bool>>(Variant::OP_NOT_EQUAL, Variant::BOOL, Variant::BOOL);
 	register_op<OperatorEvaluatorNotEqual<int64_t, int64_t>>(Variant::OP_NOT_EQUAL, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantUIntCarrier, VariantIntegerNotEqualOperation>>(Variant::OP_NOT_EQUAL, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantIntCarrier, VariantUIntCarrier, VariantIntegerNotEqualOperation>>(Variant::OP_NOT_EQUAL, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantIntCarrier, VariantIntegerNotEqualOperation>>(Variant::OP_NOT_EQUAL, Variant::UINT, Variant::INT);
 	register_op<OperatorEvaluatorNotEqual<int64_t, double>>(Variant::OP_NOT_EQUAL, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorNotEqual<double, int64_t>>(Variant::OP_NOT_EQUAL, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorNotEqual<double, double>>(Variant::OP_NOT_EQUAL, Variant::FLOAT, Variant::FLOAT);
@@ -654,6 +661,7 @@ void Variant::_register_variant_operators() {
 
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::BOOL, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::INT, Variant::NIL);
+	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::UINT, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::FLOAT, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::STRING, Variant::NIL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::VECTOR2, Variant::NIL);
@@ -730,6 +738,9 @@ void Variant::_register_variant_operators() {
 
 	register_op<OperatorEvaluatorLess<bool, bool>>(Variant::OP_LESS, Variant::BOOL, Variant::BOOL);
 	register_op<OperatorEvaluatorLess<int64_t, int64_t>>(Variant::OP_LESS, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantUIntCarrier, VariantIntegerLessOperation>>(Variant::OP_LESS, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantIntCarrier, VariantUIntCarrier, VariantIntegerLessOperation>>(Variant::OP_LESS, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantIntCarrier, VariantIntegerLessOperation>>(Variant::OP_LESS, Variant::UINT, Variant::INT);
 	register_op<OperatorEvaluatorLess<int64_t, double>>(Variant::OP_LESS, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorLess<double, int64_t>>(Variant::OP_LESS, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorLess<double, double>>(Variant::OP_LESS, Variant::FLOAT, Variant::FLOAT);
@@ -745,6 +756,9 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorLess<Array, Array>>(Variant::OP_LESS, Variant::ARRAY, Variant::ARRAY);
 
 	register_op<OperatorEvaluatorLessEqual<int64_t, int64_t>>(Variant::OP_LESS_EQUAL, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantUIntCarrier, VariantIntegerLessEqualOperation>>(Variant::OP_LESS_EQUAL, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantIntCarrier, VariantUIntCarrier, VariantIntegerLessEqualOperation>>(Variant::OP_LESS_EQUAL, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantIntCarrier, VariantIntegerLessEqualOperation>>(Variant::OP_LESS_EQUAL, Variant::UINT, Variant::INT);
 	register_op<OperatorEvaluatorLessEqual<int64_t, double>>(Variant::OP_LESS_EQUAL, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorLessEqual<double, int64_t>>(Variant::OP_LESS_EQUAL, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorLessEqual<double, double>>(Variant::OP_LESS_EQUAL, Variant::FLOAT, Variant::FLOAT);
@@ -761,6 +775,9 @@ void Variant::_register_variant_operators() {
 
 	register_op<OperatorEvaluatorGreater<bool, bool>>(Variant::OP_GREATER, Variant::BOOL, Variant::BOOL);
 	register_op<OperatorEvaluatorGreater<int64_t, int64_t>>(Variant::OP_GREATER, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantUIntCarrier, VariantIntegerGreaterOperation>>(Variant::OP_GREATER, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantIntCarrier, VariantUIntCarrier, VariantIntegerGreaterOperation>>(Variant::OP_GREATER, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantIntCarrier, VariantIntegerGreaterOperation>>(Variant::OP_GREATER, Variant::UINT, Variant::INT);
 	register_op<OperatorEvaluatorGreater<int64_t, double>>(Variant::OP_GREATER, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorGreater<double, int64_t>>(Variant::OP_GREATER, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorGreater<double, double>>(Variant::OP_GREATER, Variant::FLOAT, Variant::FLOAT);
@@ -776,6 +793,9 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorGreater<Array, Array>>(Variant::OP_GREATER, Variant::ARRAY, Variant::ARRAY);
 
 	register_op<OperatorEvaluatorGreaterEqual<int64_t, int64_t>>(Variant::OP_GREATER_EQUAL, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantUIntCarrier, VariantIntegerGreaterEqualOperation>>(Variant::OP_GREATER_EQUAL, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantIntCarrier, VariantUIntCarrier, VariantIntegerGreaterEqualOperation>>(Variant::OP_GREATER_EQUAL, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorIntegerCompare<VariantUIntCarrier, VariantIntCarrier, VariantIntegerGreaterEqualOperation>>(Variant::OP_GREATER_EQUAL, Variant::UINT, Variant::INT);
 	register_op<OperatorEvaluatorGreaterEqual<int64_t, double>>(Variant::OP_GREATER_EQUAL, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorGreaterEqual<double, int64_t>>(Variant::OP_GREATER_EQUAL, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorGreaterEqual<double, double>>(Variant::OP_GREATER_EQUAL, Variant::FLOAT, Variant::FLOAT);
