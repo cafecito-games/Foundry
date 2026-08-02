@@ -585,6 +585,8 @@ static FoundryExtensionVariantFromTypeConstructorFunc foundry_extension_get_vari
 			return VariantTypeConstructor<PackedVector4Array>::variant_from_type;
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_COLOR_ARRAY:
 			return VariantTypeConstructor<PackedColorArray>::variant_from_type;
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_UINT:
+			return VariantTypeConstructor<uint64_t>::variant_from_type;
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_NIL:
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_VARIANT_MAX:
 			ERR_FAIL_V_MSG(nullptr, "Getting Variant conversion function with invalid type");
@@ -670,6 +672,8 @@ static FoundryExtensionTypeFromVariantConstructorFunc foundry_extension_get_vari
 			return VariantTypeConstructor<PackedVector4Array>::type_from_variant;
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_COLOR_ARRAY:
 			return VariantTypeConstructor<PackedColorArray>::type_from_variant;
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_UINT:
+			return VariantTypeConstructor<uint64_t>::type_from_variant;
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_NIL:
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_VARIANT_MAX:
 			ERR_FAIL_V_MSG(nullptr, "Getting Variant conversion function with invalid type");
@@ -755,6 +759,8 @@ static FoundryExtensionVariantGetInternalPtrFunc foundry_extension_variant_get_p
 			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedColorArray *(*)(Variant *)>(VariantInternal::get_color_array));
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_PACKED_VECTOR4_ARRAY:
 			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<PackedVector4Array *(*)(Variant *)>(VariantInternal::get_vector4_array));
+		case FOUNDRY_EXTENSION_VARIANT_TYPE_UINT:
+			return reinterpret_cast<FoundryExtensionVariantGetInternalPtrFunc>(static_cast<uint64_t *(*)(Variant *)>(VariantInternal::get_uint));
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_NIL:
 		case FOUNDRY_EXTENSION_VARIANT_TYPE_VARIANT_MAX:
 			ERR_FAIL_V_MSG(nullptr, "Getting Variant get internal pointer function with invalid type.");

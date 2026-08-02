@@ -251,10 +251,6 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 			Array sizes;
 			for (int j = 0; j <= Variant::VARIANT_MAX; j++) {
 				Variant::Type t = type_size_array[j].type;
-				if (t == Variant::UINT) {
-					// The extension ABI does not describe the unsigned carrier yet.
-					continue;
-				}
 				String name = t == Variant::VARIANT_MAX ? String("Variant") : Variant::get_type_name(t);
 				Dictionary d2;
 				d2["name"] = name;
@@ -629,8 +625,9 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 		Array builtins;
 
 		for (int i = 0; i < Variant::VARIANT_MAX; i++) {
-			// The extension ABI does not describe the unsigned carrier yet, and `Object` is exposed
-			// through the class list instead.
+			// `Object` is exposed through the class list instead. `UINT` has no built-in-type doc
+			// page yet, so a full introspection entry (members/constants/enums/operators sourced
+			// from doc data) is deferred; the enum value and wire/ABI type identity are still public.
 			if (i == Variant::OBJECT || i == Variant::UINT) {
 				continue;
 			}
@@ -753,9 +750,6 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 				Array operators;
 
 				for (int j = 0; j < Variant::VARIANT_MAX; j++) {
-					if (j == Variant::UINT) {
-						continue;
-					}
 					for (int k = 0; k < Variant::OP_MAX; k++) {
 						Variant::Type rt = Variant::get_operator_return_type(Variant::Operator(k), type, Variant::Type(j));
 						if (rt != Variant::NIL) {

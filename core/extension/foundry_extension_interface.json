@@ -192,8 +192,12 @@
                     "value": 38
                 },
                 {
-                    "name": "FOUNDRY_EXTENSION_VARIANT_TYPE_VARIANT_MAX",
+                    "name": "FOUNDRY_EXTENSION_VARIANT_TYPE_UINT",
                     "value": 39
+                },
+                {
+                    "name": "FOUNDRY_EXTENSION_VARIANT_TYPE_VARIANT_MAX",
+                    "value": 40
                 }
             ]
         },

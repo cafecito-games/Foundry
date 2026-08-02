@@ -31,11 +31,24 @@
 #pragma once
 
 #include "core/io/marshalls.h"
+#include "core/object/ref_counted.h"
 #include "core/variant/container_type_validate.h"
+#include "core/variant/variant_internal.h"
 
 #include "tests/test_macros.h"
 
+#include <climits>
+
 namespace TestMarshalls {
+
+// No ordinary C++ constructor yields `Variant::UINT` yet (unsigned integer literals still select
+// the signed carrier), so tests build one explicitly through `VariantInternal`.
+static Variant make_uint_variant(uint64_t p_value) {
+	Variant v;
+	VariantInternal::set_type(v, Variant::UINT);
+	*VariantInternal::get_uint(&v) = p_value;
+	return v;
+}
 
 TEST_CASE("[Marshalls] Unsigned 16 bit integer encoding") {
 	uint8_t arr[2];
@@ -346,6 +359,113 @@ TEST_CASE("[Marshalls] FLOAT double precision Variant decoding") {
 	CHECK(decode_variant(variant, buffer, 12, &r_len) == OK);
 	CHECK(r_len == 12);
 	CHECK(variant == Variant(0.33333333333333333));
+}
+
+TEST_CASE("[Marshalls][UInt] UINT zero Variant encoding") {
+	int r_len;
+	Variant variant = make_uint_variant(0);
+	uint8_t buffer[12];
+
+	CHECK(encode_variant(variant, buffer, r_len) == OK);
+	CHECK_MESSAGE(r_len == 12, "Length == 4 bytes for header + 8 bytes for `uint64_t`.");
+	CHECK_MESSAGE(buffer[0] == 0x27, "Variant::UINT");
+	CHECK(buffer[1] == 0x00);
+	CHECK(buffer[2] == 0x00);
+	CHECK(buffer[3] == 0x00);
+	for (int i = 4; i < 12; i++) {
+		CHECK(buffer[i] == 0x00);
+	}
+}
+
+TEST_CASE("[Marshalls][UInt] UINT64_MAX Variant encoding") {
+	int r_len;
+	Variant variant = make_uint_variant(UINT64_MAX);
+	uint8_t buffer[12];
+
+	CHECK(encode_variant(variant, buffer, r_len) == OK);
+	CHECK_MESSAGE(r_len == 12, "Length == 4 bytes for header + 8 bytes for `uint64_t`.");
+	CHECK_MESSAGE(buffer[0] == 0x27, "Variant::UINT");
+	CHECK(buffer[1] == 0x00);
+	CHECK(buffer[2] == 0x00);
+	CHECK(buffer[3] == 0x00);
+	for (int i = 4; i < 12; i++) {
+		CHECK(buffer[i] == 0xff);
+	}
+}
+
+TEST_CASE("[Marshalls][UInt] UINT Variant decoding") {
+	Variant variant;
+	int r_len;
+	uint8_t buffer[] = {
+		0x27, 0x00, 0x00, 0x00, // Variant::UINT
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff // value (UINT64_MAX)
+	};
+
+	CHECK(decode_variant(variant, buffer, 12, &r_len) == OK);
+	CHECK(r_len == 12);
+	CHECK(variant.get_type() == Variant::UINT);
+	CHECK(variant.operator uint64_t() == UINT64_MAX);
+}
+
+TEST_CASE("[Marshalls][UInt] UINT Variant decoding rejects truncated payload") {
+	Variant variant;
+	int r_len = -1;
+	// Header declares Variant::UINT, but only 4 of the required 8 payload bytes are present.
+	uint8_t buffer[] = {
+		0x27, 0x00, 0x00, 0x00, // Variant::UINT
+		0xff, 0xff, 0xff, 0xff // truncated value
+	};
+
+	ERR_PRINT_OFF;
+	CHECK(decode_variant(variant, buffer, sizeof(buffer), &r_len) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	// Only the 4-byte header was consumed; the malformed payload must not be read out of bounds,
+	// and the destination Variant must remain untouched rather than holding a partial UINT value.
+	CHECK(r_len == 4);
+	CHECK(variant.get_type() == Variant::NIL);
+}
+
+TEST_CASE("[Marshalls][UInt] UINT decoding releases the destination's previous payload") {
+	Ref<RefCounted> ref = memnew(RefCounted);
+	ObjectID id = ref->get_instance_id();
+
+	Variant variant = ref;
+	ref.unref();
+	// Only the Variant holds a reference now.
+	CHECK(ObjectDB::get_instance(id) != nullptr);
+
+	int r_len;
+	uint8_t buffer[] = {
+		0x27, 0x00, 0x00, 0x00, // Variant::UINT
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff // value (UINT64_MAX)
+	};
+
+	CHECK(decode_variant(variant, buffer, 12, &r_len) == OK);
+	CHECK(variant.get_type() == Variant::UINT);
+	CHECK(variant.operator uint64_t() == UINT64_MAX);
+	// Decoding into a Variant that already owns a reference must release it, not overwrite the
+	// type while leaking the previous payload.
+	CHECK(ObjectDB::get_instance(id) == nullptr);
+}
+
+TEST_CASE("[Marshalls][UInt] Binary round trip preserves boundary values") {
+	const uint64_t values[] = { 0, uint64_t(INT64_MAX), uint64_t(INT64_MAX) + 1, UINT64_MAX };
+
+	for (uint64_t value : values) {
+		const Variant source = make_uint_variant(value);
+		int size = 0;
+		REQUIRE(encode_variant(source, nullptr, size) == OK);
+		Vector<uint8_t> bytes;
+		bytes.resize(size);
+		REQUIRE(encode_variant(source, bytes.ptrw(), size) == OK);
+
+		Variant decoded;
+		int used = 0;
+		REQUIRE(decode_variant(decoded, bytes.ptr(), bytes.size(), &used) == OK);
+		CHECK(used == bytes.size());
+		CHECK(decoded.get_type() == Variant::UINT);
+		CHECK(decoded.operator uint64_t() == value);
+	}
 }
 
 TEST_CASE("[Marshalls] Typed array encoding") {

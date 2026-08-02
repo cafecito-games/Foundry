@@ -34,6 +34,7 @@
 #include "core/object/ref_counted.h"
 #include "core/object/script_language.h"
 #include "core/variant/container_type_validate.h"
+#include "core/variant/variant_internal.h"
 
 #include <climits>
 #include <cstdio>
@@ -374,6 +375,20 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 				if (r_len) {
 					(*r_len) += sizeof(float);
 				}
+			}
+
+		} break;
+		case Variant::UINT: {
+			// The unsigned carrier always uses an explicit 8-byte payload; it never reuses INT's
+			// compact 32-bit encoding, so the wire tag alone preserves carrier identity. Assigning
+			// a bare `uint64_t` to `r_variant` would go through the `Variant(uint64_t)` constructor,
+			// which still selects `INT`, so the carrier is set explicitly instead.
+			ERR_FAIL_COND_V((size_t)len < sizeof(uint64_t), ERR_INVALID_DATA);
+			uint64_t val = decode_uint64(buf);
+			VariantInternal::initialize(&r_variant, Variant::UINT);
+			*VariantInternal::get_uint(&r_variant) = val;
+			if (r_len) {
+				(*r_len) += sizeof(uint64_t);
 			}
 
 		} break;
@@ -1595,6 +1610,9 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 				header |= HEADER_DATA_FLAG_64;
 			}
 		} break;
+		case Variant::UINT: {
+			// Always an explicit 8-byte payload; no `HEADER_DATA_FLAG_64` compaction like `INT`.
+		} break;
 		case Variant::OBJECT: {
 			// Test for potential wrong values sent by the debugger when it breaks.
 			Object *obj = p_variant.get_validated_object();
@@ -1704,6 +1722,13 @@ Error encode_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bo
 				r_len += 4;
 			}
 
+		} break;
+		case Variant::UINT: {
+			if (buf) {
+				encode_uint64(p_variant.operator uint64_t(), buf);
+			}
+
+			r_len += 8;
 		} break;
 		case Variant::NODE_PATH: {
 			NodePath np = p_variant;
