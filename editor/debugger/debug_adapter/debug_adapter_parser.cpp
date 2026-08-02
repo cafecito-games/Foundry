@@ -657,7 +657,7 @@ Dictionary DebugAdapterParser::req_variables(const Dictionary &p_params) const {
 	// still completes.
 	const int frame_id = protocol->search_scope_frame_id(variable_id);
 	if (frame_id >= 0) {
-		if (protocol->_awaited_frame_vars == frame_id || protocol->request_stack_frame_vars(frame_id)) {
+		if (protocol->_pending_frame_vars.has(frame_id) || protocol->request_stack_frame_vars(frame_id)) {
 			return Dictionary();
 		}
 	}

@@ -199,7 +199,7 @@ void DebugAdapterProtocol::reset_stack_info() {
 	// counters set would make every later `variables` request wait for an answer that can
 	// never arrive.
 	_remaining_vars = 0;
-	_awaited_frame_vars = -1;
+	_pending_frame_vars.clear();
 	_frame_vars_frame = -1;
 
 	stackframe_list.clear();
@@ -833,7 +833,7 @@ bool DebugAdapterProtocol::request_stack_frame_vars(DAPStackFrameID p_frame_id) 
 
 	// The frame later evaluations default to.
 	_current_frame = p_frame_id;
-	_awaited_frame_vars = p_frame_id;
+	_pending_frame_vars.insert(p_frame_id);
 	return true;
 }
 
@@ -1260,7 +1260,7 @@ void DebugAdapterProtocol::on_debug_stack_dump(const Array &p_stack_dump) {
 	// The new stop retires every scope reference of the previous one, so an answer that
 	// is still outstanding for those references will never complete.
 	_remaining_vars = 0;
-	_awaited_frame_vars = -1;
+	_pending_frame_vars.clear();
 	_frame_vars_frame = -1;
 
 	// Fill in stacktrace information
@@ -1294,9 +1294,7 @@ void DebugAdapterProtocol::on_debug_stack_frame_vars(const int &p_size) {
 	// frame the client asked about most recently: a client is free to have several
 	// frames in flight at once.
 	_frame_vars_frame = EditorDebuggerNode::get_singleton()->get_default_debugger()->get_stack_frame_vars_frame();
-	if (_frame_vars_frame == _awaited_frame_vars) {
-		_awaited_frame_vars = -1;
-	}
+	_pending_frame_vars.erase(_frame_vars_frame);
 
 	// The values are still counted down even when they cannot be attributed, so a
 	// deferred `variables` request is never left waiting on a stale counter.

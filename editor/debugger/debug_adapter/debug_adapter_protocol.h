@@ -136,10 +136,11 @@ private:
 	bool _debug_session_live = false;
 	uint64_t _active_launch_id = 0;
 	int _remaining_vars = 0;
-	// The frame this adapter is waiting on values for, or `-1` when nothing is
-	// outstanding. The scope references `scopes` already handed out are unresolvable for
-	// that whole window, so requests naming them wait instead of failing.
-	int _awaited_frame_vars = -1;
+	// Every frame this adapter has an unanswered value request for. The scope references
+	// `scopes` already handed out are unresolvable for that whole window, so requests
+	// naming them wait instead of failing, and several clients can wait on different
+	// frames without either of them re-asking the debuggee.
+	HashSet<int> _pending_frame_vars;
 	// The frame the values currently arriving belong to, or `-1` when they answer a
 	// request this adapter cannot attribute.
 	int _frame_vars_frame = -1;
