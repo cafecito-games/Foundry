@@ -25,8 +25,8 @@ SCons/Ninja agent build wrapper.
 - Use `python3 scripts/agent_build.py`; do not invoke raw `scons` for agent-driven builds.
 - Do not alter static method or conformance witness selection. This change carries exact receiver identity after the
   existing dispatch decision.
-- An explicit base-class call starts a new context at the explicit base handle. An inherited call through a derived or
-  specialized handle retains that exact handle.
+- An explicit named-base call such as `Base.make()` starts a context at that base handle. Inherited calls and
+  `super.method()` delegation retain the original derived or specialized handle.
 - `Self` remains declaration-relative in editor reflection and diagnostics where no call is active. Only executable
   type checks, construction, defaults, arguments, returns, casts, type tests, and reified metadata use call context.
 - Missing context for a function whose executable signature or body contains symbolic `Self` is an engine invariant
@@ -83,12 +83,12 @@ func test() -> void:
 	print(Child.make() is Child)
 	print(Grandchild.make() is Grandchild)
 	print_receiver("dynamic", Grandchild)
-	print(Base.make() is Base)
 ```
 
-Use the repository's accepted explicit-base static-call syntax; do not add syntax for this fix. Expected output must
-distinguish concrete receiver class names, not merely print non-null values. Add a `Self`-typed default or constructor
-path if the language already accepts one; otherwise leave defaults to the focused compiler/VM unit coverage below.
+`Base.make()` is the existing explicit named-base spelling; do not add syntax for this fix. Expected output must
+distinguish concrete receiver classes, not merely print non-null values. Exercise implicit initialization of a
+`Self`-typed local so `_get_default_variant_for_data_type()` is also covered without adding unsupported default-argument
+syntax.
 
 - [ ] **Step 2: Cover extracted callables, static lambdas, and suspension**
 
@@ -147,7 +147,7 @@ git commit -m "test(foundry_script): Reproduce inherited static Self erasure"
 - Modify: `modules/foundry_script/fs_bytecode_export.cpp:438`
 - Modify: `modules/foundry_script/fs_bytecode_loader.cpp:737`
 - Modify if the encoded shape changes: `modules/foundry_script/fs_bytecode_format.h:61`
-- Test: `modules/foundry_script/tests/test_fs_bytecode.h`
+- Test: `modules/foundry_script/tests/test_bytecode_script.h`
 
 - [ ] **Step 1: Add recursive symbolic-type detection**
 
@@ -217,9 +217,9 @@ Add `_requires_static_self` to `FSFunction`. Set it during `write_start()` or af
 argument type, return type, default expressions, or emitted symbolic type descriptors contain `Self`. Treat a static
 lambda inside such a context as requiring the captured context when its body contains `Self`.
 
-Store the flag in function record flag bit 1 in `FSBytecodeExporter::encode_function()` and restore it in
-`FSBytecodeLoader::decode_function()`. The bytecode record size does not change, so do not bump format version for this
-flag alone.
+Store the flag in function record flag bit 1 in `FSBytecodeExporter::serialize_function()` and restore it in
+`FSBytecodeLoader::_read_function_body()`. The bytecode record size does not change, so do not bump format version for
+this flag alone.
 
 - [ ] **Step 5: Preserve `is_self_type` in runtime descriptors**
 
@@ -230,7 +230,7 @@ whenever `contains_self_type()` is true.
 
 - [ ] **Step 6: Add bytecode metadata round-trip tests**
 
-In `test_fs_bytecode.h`, construct or compile a function whose return and argument types include
+In `test_bytecode_script.h`, compile a function whose return and argument types include
 `Dictionary[String, Array[Type[Self]]]`. Export and restore it, then assert the decoded tree retains `is_self_type` at
 the leaf, the container structure, and `_requires_static_self`. Assert on decoded data structures, not source text.
 
@@ -249,7 +249,7 @@ consumers use the new context.
 git add modules/foundry_script/fs_function.h modules/foundry_script/fs_function.cpp \
   modules/foundry_script/fs_compiler.cpp modules/foundry_script/fs_byte_codegen.cpp \
   modules/foundry_script/fs_bytecode_export.cpp modules/foundry_script/fs_bytecode_loader.cpp \
-  modules/foundry_script/fs_bytecode_format.h modules/foundry_script/tests/test_fs_bytecode.h
+  modules/foundry_script/fs_bytecode_format.h modules/foundry_script/tests/test_bytecode_script.h
 git commit -m "refactor(foundry_script): Preserve symbolic static Self types"
 ```
 
@@ -294,8 +294,9 @@ context.
 delegate to the unspecialized public entry. `new` and equality/hash behavior stay unchanged.
 
 Audit `OPCODE_CALL_SELF_BASE` separately. For a static `super.method()` call, select the same immediate-base
-implementation as today but start a context from that explicit base handle. Do not dereference a null `p_instance` in
-the static path. Instance `super` calls keep their existing receiver behavior.
+implementation as today and pass the incoming exact context unchanged. Do not dereference a null `p_instance` in the
+static path. Only an explicit named handle such as `Base.make()` starts a base context. Instance `super` calls keep
+their existing receiver behavior.
 
 - [ ] **Step 3: Bind native and builtin static witnesses**
 
@@ -366,7 +367,8 @@ Add any other audited static witness caller files to this commit.
 - Modify: `modules/foundry_script/fs_disassembler.cpp`
 - Modify: `modules/foundry_script/fs_bytecode_verifier.cpp`
 - Modify: `modules/foundry_script/fs_bytecode_format.h`
-- Test: `modules/foundry_script/tests/test_fs_bytecode.h`
+- Test: `modules/foundry_script/tests/test_bytecode_hardening.h`
+- Test: `modules/foundry_script/tests/test_bytecode_script.h`
 - Test: new fixtures from Tasks 1 and 5
 
 - [ ] **Step 1: Centralize runtime validation and default construction**
@@ -448,7 +450,8 @@ git add modules/foundry_script/fs_byte_codegen.h modules/foundry_script/fs_byte_
   modules/foundry_script/fs_function.h modules/foundry_script/fs_function.cpp \
   modules/foundry_script/fs_vm.cpp modules/foundry_script/fs_compiler.cpp \
   modules/foundry_script/fs_disassembler.cpp modules/foundry_script/fs_bytecode_verifier.cpp \
-  modules/foundry_script/fs_bytecode_format.h modules/foundry_script/tests/test_fs_bytecode.h \
+  modules/foundry_script/fs_bytecode_format.h modules/foundry_script/tests/test_bytecode_hardening.h \
+  modules/foundry_script/tests/test_bytecode_script.h \
   modules/foundry_script/tests/scripts/runtime/errors/type_self_static_exact_receiver_argument.out
 git commit -m "fix(foundry_script): Resolve runtime Self from call context"
 ```
@@ -536,7 +539,8 @@ Exclude the existing fixture from the commit command if it was not modified.
 In the semantic prose near traits, conformances, and receiver-relative type parameters, specify:
 
 - In a static method, executable `Self` denotes the exact class/type handle at the call boundary.
-- Inherited bodies retain the derived or specialized receiver; explicit base calls use the explicit base.
+- Inherited bodies and `super` delegation retain the original derived or specialized receiver; an explicit named-base
+  call such as `Base.make()` uses that base.
 - The rule applies recursively inside containers, tuples, `Type`, generic arguments, parameters, returns, defaults,
   casts, type tests, construction, callables, and async continuation state.
 - Static conformance witnesses use the exact target handle selected at dispatch, across script, native,
