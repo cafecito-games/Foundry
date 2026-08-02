@@ -481,6 +481,29 @@ String FSCache::get_bytecode_artifact_path(const String &p_path) {
 	return artifact_path.is_empty() ? p_path : artifact_path;
 }
 
+bool FSCache::should_load_builtin_from_bytecode(const String &p_remapped_path) {
+	if (!FSBuiltinSources::is_builtin_path(p_remapped_path)) {
+		return false;
+	}
+#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
+	// A stripped template has no parser to run the embedded builtin source through, so builtins
+	// load from the private companion artifact the compiled-bytecode exporter packed. The script
+	// keeps its virtual `foundry://builtin/*.fs` identity; only the bytes come from elsewhere.
+	return true;
+#elif defined(TESTS_ENABLED)
+	return singleton->forced_builtin_bytecode_paths.has(p_remapped_path);
+#else
+	return false;
+#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+}
+
+#ifdef TESTS_ENABLED
+void FSCache::set_forced_builtin_bytecode_paths(const HashSet<String> &p_paths) {
+	MutexLock lock(singleton->mutex);
+	singleton->forced_builtin_bytecode_paths = p_paths;
+}
+#endif // TESTS_ENABLED
+
 Vector<uint8_t> FSCache::get_binary_tokens(const String &p_path) {
 	const String artifact_path = get_bytecode_artifact_path(p_path);
 	Vector<uint8_t> buffer;
@@ -515,13 +538,8 @@ Ref<FoundryScript> FSCache::get_shallow_script(const String &p_path, Error &r_er
 	script.instantiate();
 
 	script->set_path_cache(p_path);
-	bool load_from_bytecode = remapped_path.has_extension("fsb");
-#ifdef FOUNDRY_SCRIPT_NO_FRONTEND
-	// A stripped template has no parser to run the embedded builtin source through, so builtins
-	// load from the private companion artifact the compiled-bytecode exporter packed. The script
-	// keeps its virtual `foundry://builtin/*.fs` identity; only the bytes come from elsewhere.
-	load_from_bytecode = load_from_bytecode || FSBuiltinSources::is_builtin_path(remapped_path);
-#endif // FOUNDRY_SCRIPT_NO_FRONTEND
+	const bool load_from_bytecode =
+			remapped_path.has_extension("fsb") || should_load_builtin_from_bytecode(remapped_path);
 	if (load_from_bytecode) {
 		// Compiled binaries never touch the parser pipeline: the skeleton section provides
 		// everything a shallow script carries (names, fully qualified names, flags, class tree).

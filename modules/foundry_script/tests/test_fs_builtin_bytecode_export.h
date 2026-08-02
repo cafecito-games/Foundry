@@ -36,28 +36,13 @@
 #include "modules/foundry_script/fs_bytecode_loader.h"
 #include "modules/foundry_script/fs_cache.h"
 
+// FSTests::ScopedBuiltinSource, shared with the stripped-runtime dispatch coverage.
+#include "fs_builtin_test_utils.h"
 #include "test_name_mangler_export.h"
 
 #include "tests/test_macros.h"
 
 namespace FSTests {
-
-// Registers an extra builtin source for one case and takes it back out again, including the cache
-// entries the export compile leaves behind, so the registered builtin set other cases see is
-// unchanged.
-struct ScopedBuiltinSource {
-	String path;
-
-	ScopedBuiltinSource(const String &p_path, const String &p_source) :
-			path(p_path) {
-		FSBuiltinSources::register_source(path, p_source);
-	}
-
-	~ScopedBuiltinSource() {
-		FSBuiltinSources::unregister_source(path);
-		FSCache::remove_script(path);
-	}
-};
 
 static Vector<String> builtin_export_registered_paths() {
 	List<String> paths;

@@ -107,6 +107,11 @@ class FSCache {
 	// resolves cross-file references against edited-but-unsaved buffers with no disk writes.
 	HashMap<String, String> source_overrides;
 
+#ifdef TESTS_ENABLED
+	// See set_forced_builtin_bytecode_paths().
+	HashSet<String> forced_builtin_bytecode_paths;
+#endif // TESTS_ENABLED
+
 	friend class FoundryScript;
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 	friend class FSParserRef;
@@ -140,6 +145,11 @@ private:
 	static void clear_parser_dependency_edges(const String &p_path);
 	static void update_parser_dependencies(const String &p_path, const FSParser *p_parser);
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
+
+	// Whether a builtin identity is served from its private compiled-bytecode companion instead of
+	// its embedded source. True for every builtin in a stripped runtime, which has no front-end to
+	// run the source through. Callers must hold the cache mutex.
+	static bool should_load_builtin_from_bytecode(const String &p_remapped_path);
 
 public:
 	static void move_script(const String &p_from, const String &p_to);
@@ -182,6 +192,14 @@ public:
 	// Every other script reads its own (already remapped) path.
 	static String get_bytecode_artifact_path(const String &p_path);
 	static Vector<uint8_t> get_binary_tokens(const String &p_path);
+#ifdef TESTS_ENABLED
+	// Makes the named builtin identities take the stripped-runtime (`FOUNDRY_SCRIPT_NO_FRONTEND`)
+	// bytecode dispatch in a build that has the front-end, so the exported-builtin load contract
+	// stays covered by ordinary tests. An explicit allow-list rather than a blanket switch: forcing
+	// every builtin would let a shipped one acquire a compiled-binary cache entry that the rest of
+	// the process would then see instead of the source-parsed one. Pass an empty set to clear.
+	static void set_forced_builtin_bytecode_paths(const HashSet<String> &p_paths);
+#endif // TESTS_ENABLED
 	static Ref<FoundryScript> get_shallow_script(const String &p_path, Error &r_error, const String &p_owner = String());
 	/**
 	 * Returns a fully loaded FoundryScript using an already cached script if one exists.
