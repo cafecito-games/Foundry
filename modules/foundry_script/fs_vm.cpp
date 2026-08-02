@@ -3161,6 +3161,19 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					OPCODE_BREAK;
 				}
 
+				// Enum dispatch supplies no `FSStaticSelfContext`: an enum has no ancestors and no
+				// subtypes, so `Self` inside an enum function's signature is resolved eagerly to the
+				// exact enum type at analysis time rather than left for late runtime binding (see
+				// `FSAnalyzer::enum_self_type` and the `FSParser::DataType::ENUM` case in
+				// `_gdtype_from_datatype`, which always compiles to a plain `FSDataType::BUILTIN` and
+				// never sets `is_self_type`). This check turns a future regression of that invariant
+				// into a loud, diagnosable error instead of silently calling with a missing receiver.
+				if (is_static && enum_function->has_self_referencing_signature()) {
+					err_text = "Cannot resolve " + call_identity +
+							": its signature references \"Self\", but enum dispatch has no static receiver to resolve it against.";
+					OPCODE_BREAK;
+				}
+
 				const Variant **argptrs = (const Variant **)instruction_args;
 				Callable::CallError err;
 				Variant result = is_static

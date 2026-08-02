@@ -47,7 +47,8 @@ class FoundryScript;
 #ifdef TESTS_ENABLED
 namespace FSTests {
 class TestFSBytecodeScriptAccessor;
-}
+class TestEnumStaticReceiverAccessor;
+} //namespace FSTests
 #endif // TESTS_ENABLED
 #ifdef TOOLS_ENABLED
 class FSNameManglerApplication;
@@ -268,6 +269,27 @@ public:
 			}
 		}
 		return true;
+	}
+
+	// True when this type, or any type nested within it (a specialized handle's type arguments, a
+	// typed container's element types), denotes `Self`. Used to prove that a call site with no static
+	// receiver descriptor to offer -- such as enum dispatch, which has no inheritance chain and
+	// therefore no late-bound receiver -- can never observe a type that needed one.
+	bool references_self_type() const {
+		if (is_self_type) {
+			return true;
+		}
+		for (const FSDataType &type_argument : type_arguments) {
+			if (type_argument.references_self_type()) {
+				return true;
+			}
+		}
+		for (const FSDataType &element_type : container_element_types) {
+			if (element_type.references_self_type()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	void set_container_element_type(int p_index, const FSDataType &p_element_type) {
@@ -693,6 +715,7 @@ private:
 #endif
 #ifdef TESTS_ENABLED
 	friend class FSTests::TestFSBytecodeScriptAccessor;
+	friend class FSTests::TestEnumStaticReceiverAccessor;
 #endif // TESTS_ENABLED
 
 	StringName name;
@@ -951,6 +974,22 @@ public:
 	// descriptor must outlive the call; the frame only borrows it, and copies it into `CallState` if
 	// the call suspends.
 	Variant call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr, const Variant *p_self_override = nullptr, const FSStaticSelfContext *p_static_self = nullptr);
+
+	// True if the compiled return type or any argument type -- transitively through generic type
+	// arguments and typed container element types -- denotes `Self`. A caller that cannot supply a
+	// `FSStaticSelfContext` must refuse to invoke a function for which this is true rather than call it
+	// with a missing or approximate receiver.
+	bool has_self_referencing_signature() const {
+		if (return_type.references_self_type()) {
+			return true;
+		}
+		for (const FSDataType &argument_type : argument_types) {
+			if (argument_type.references_self_type()) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	// The static receiver descriptor of the innermost script frame executing on this thread, or
 	// `nullptr` when the innermost frame is not a static call (or no frame is running). Each frame
