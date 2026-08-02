@@ -280,6 +280,29 @@ TEST_CASE("[ContainerType] Variant writer and parser round-trip multiple type ar
 	CHECK_EQ(parsed_array.get_element_type(), element_type);
 }
 
+TEST_CASE("[ContainerType] Variant writer and parser round-trip a specialized Resource type") {
+	// `Resource` also introduces a resource-reference constructor in this text format, so a
+	// specialization of the class itself must not be mistaken for one.
+	const ContainerType element_type = make_specialized_class(SNAME("Resource"), { make_builtin(Variant::INT) });
+
+	Array array;
+	array.set_typed(element_type);
+
+	String array_str;
+	VariantWriter::write_to_string(array, array_str);
+	CHECK_EQ(array_str, "Array[Resource[int]]([])");
+
+	VariantParser::StreamString stream;
+	stream.s = array_str;
+	String error_string;
+	int line = 0;
+	Variant parsed;
+	REQUIRE_EQ(VariantParser::parse(&stream, parsed, error_string, line), OK);
+
+	const Array parsed_array = parsed;
+	CHECK_EQ(parsed_array.get_element_type(), element_type);
+}
+
 TEST_CASE("[ContainerType] Binary Variant encoding round-trips type arguments") {
 	const ContainerType element_type = make_specialized_class(SNAME("RefCounted"), { make_builtin(Variant::INT) });
 

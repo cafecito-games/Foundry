@@ -693,7 +693,9 @@ static Error _parse_container_type(VariantParser::Token &token, VariantParser::S
 		Variant resource;
 		Error err = VariantParser::parse_value(token, resource, p_stream, line, r_err_str, p_res_parser);
 		if (err) {
-			if (type_name == "Resource" && err == ERR_PARSE_ERROR && r_err_str == "Expected '('" && (token.type == VariantParser::TK_COMMA || token.type == VariantParser::TK_BRACKET_CLOSE)) {
+			// A bare `Resource` names the engine class rather than opening a resource reference. It is
+			// followed by a separator, the end of the enclosing type list, or its own type arguments.
+			if (type_name == "Resource" && err == ERR_PARSE_ERROR && r_err_str == "Expected '('" && (token.type == VariantParser::TK_COMMA || token.type == VariantParser::TK_BRACKET_CLOSE || token.type == VariantParser::TK_BRACKET_OPEN)) {
 				err = OK;
 				r_err_str = String();
 				r_type.builtin_type = Variant::OBJECT;
