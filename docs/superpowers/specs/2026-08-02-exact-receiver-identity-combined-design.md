@@ -138,11 +138,12 @@ the conformance registry.
 
 Source and loaded-bytecode behavior must match for both fixes. Runtime conformance registrations loaded from bytecode
 will obey the same authoritative identity queries as live registrations. Existing serialized `FSDataType::is_self_type`
-flags will be reused where they preserve the required nested provenance; the bytecode format will change only if current
-encoding cannot represent a required symbolic marker or captured callable receiver.
+flags will preserve recursive provenance, and a reserved function flag bit will mark functions that require a context.
 
-A bytecode format bump is permitted when necessary but is not a goal. Any bump must update loader/exporter round-trip
-tests and reject incompatible data using the existing version checks.
+The implementation plan adds descriptor-driven assignment, type-test, cast, and return opcodes for symbolic `Self`.
+The opcode contract therefore requires bumping `FSBytecodeFormat::FORMAT_VERSION` from 6 to 7 and updating the VM,
+disassembler, verifier, malformed-bytecode tests, and exporter/loader round trips together. Version 7 adds no separate
+serialized receiver object: exact receiver identity remains invocation state, not shared bytecode state.
 
 ## Tests
 
