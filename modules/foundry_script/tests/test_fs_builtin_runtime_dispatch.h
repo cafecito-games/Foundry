@@ -30,6 +30,10 @@
 
 #pragma once
 
+// Editor-only: the cases produce their artifact bytes with `FSBytecodeExporter`, which ships with
+// the compiled-bytecode exporter and so exists only in `TOOLS_ENABLED` builds.
+#ifdef TOOLS_ENABLED
+
 // A stripped export template (`foundry_script_frontend=no`) has no parser, so a builtin type is
 // loaded from the private `.fsb` companion the compiled-bytecode exporter packs instead of from its
 // embedded source. That dispatch cannot be compiled into a test build — `SCsub` rejects
@@ -304,3 +308,5 @@ TEST_CASE("[FoundryScript][BuiltinRuntimeDispatch] Without forcing, a builtin lo
 }
 
 } // namespace FSTests
+
+#endif // TOOLS_ENABLED
