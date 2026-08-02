@@ -87,6 +87,10 @@ enum {
 	VARIANT_VECTOR4I = 51,
 	VARIANT_PROJECTION = 52,
 	VARIANT_PACKED_VECTOR4_ARRAY = 53,
+	// A typed container is spelled as its own kind rather than as a flag on the untyped one, so an
+	// untyped `Array`/`Dictionary` payload keeps exactly the bytes it has always had.
+	VARIANT_TYPED_ARRAY = 54,
+	VARIANT_TYPED_DICTIONARY = 55,
 	OBJECT_EMPTY = 0,
 	OBJECT_EXTERNAL_RESOURCE = 1,
 	OBJECT_INTERNAL_RESOURCE = 2,
@@ -96,10 +100,70 @@ enum {
 	// Version 4: New string ID for ext/subresources, breaks forward compat.
 	// Version 5: Ability to store script class in the header.
 	// Version 6: Added PackedVector4Array Variant type.
-	FORMAT_VERSION = 6,
+	// Version 7: Added typed Array and Dictionary element metadata.
+	FORMAT_VERSION = 7,
 	FORMAT_VERSION_CAN_RENAME_DEPS = 1,
 	FORMAT_VERSION_NO_NODEPATH_PROPERTY = 3,
 };
+
+// How the element metadata of a typed container names the type it constrains. A class handle
+// (`Type[Node]`) is spelled as a kind of its own rather than as a flag, so the payload of every
+// other kind is unchanged and a kind carrying no handle keeps its bytes.
+enum ContainerTypeKind {
+	CONTAINER_TYPE_KIND_NONE = 0,
+	CONTAINER_TYPE_KIND_BUILTIN = 1,
+	CONTAINER_TYPE_KIND_CLASS_NAME = 2,
+	CONTAINER_TYPE_KIND_SCRIPT = 3,
+	CONTAINER_TYPE_KIND_TYPE_HANDLE_BUILTIN = 4,
+	CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME = 5,
+	CONTAINER_TYPE_KIND_TYPE_HANDLE_SCRIPT = 6,
+};
+
+// Splits an encoded kind into the kind whose payload it shares and whether it denotes a class
+// handle. Returns false for a kind this build does not know.
+static bool _split_container_type_kind(uint32_t p_encoded_kind, ContainerTypeKind &r_kind, bool &r_is_type_handle) {
+	switch (p_encoded_kind) {
+		case CONTAINER_TYPE_KIND_NONE:
+		case CONTAINER_TYPE_KIND_BUILTIN:
+		case CONTAINER_TYPE_KIND_CLASS_NAME:
+		case CONTAINER_TYPE_KIND_SCRIPT: {
+			r_kind = (ContainerTypeKind)p_encoded_kind;
+			r_is_type_handle = false;
+			return true;
+		}
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_BUILTIN: {
+			r_kind = CONTAINER_TYPE_KIND_BUILTIN;
+			r_is_type_handle = true;
+			return true;
+		}
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME: {
+			r_kind = CONTAINER_TYPE_KIND_CLASS_NAME;
+			r_is_type_handle = true;
+			return true;
+		}
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_SCRIPT: {
+			r_kind = CONTAINER_TYPE_KIND_SCRIPT;
+			r_is_type_handle = true;
+			return true;
+		}
+		default: {
+			return false;
+		}
+	}
+}
+
+static ContainerTypeKind _get_container_type_kind(const ContainerType &p_type) {
+	if (p_type.builtin_type == Variant::NIL) {
+		return CONTAINER_TYPE_KIND_NONE;
+	}
+	if (p_type.script.is_valid()) {
+		return p_type.is_type_handle ? CONTAINER_TYPE_KIND_TYPE_HANDLE_SCRIPT : CONTAINER_TYPE_KIND_SCRIPT;
+	}
+	if (p_type.class_name != StringName()) {
+		return p_type.is_type_handle ? CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME : CONTAINER_TYPE_KIND_CLASS_NAME;
+	}
+	return p_type.is_type_handle ? CONTAINER_TYPE_KIND_TYPE_HANDLE_BUILTIN : CONTAINER_TYPE_KIND_BUILTIN;
+}
 
 void ResourceLoaderBinary::_advance_padding(uint32_t p_len) {
 	uint32_t extra = 4 - (p_len % 4);
@@ -169,6 +233,95 @@ StringName ResourceLoaderBinary::_get_string() {
 	}
 
 	return string_map[id];
+}
+
+Error ResourceLoaderBinary::parse_container_type(ContainerType &r_type) {
+	const uint32_t encoded_kind = f->get_32();
+
+	ContainerTypeKind kind = CONTAINER_TYPE_KIND_NONE;
+	bool is_type_handle = false;
+	ERR_FAIL_COND_V_MSG(!_split_container_type_kind(encoded_kind, kind, is_type_handle), ERR_FILE_CORRUPT, "Invalid container type kind.");
+
+	if (kind == CONTAINER_TYPE_KIND_NONE) {
+		return OK;
+	}
+
+	// A container type whose script could not be resolved describes nothing enforceable, so the slot
+	// degrades to untyped the way the text format does. The rest of the payload is still consumed so
+	// the stream stays aligned.
+	bool type_is_resolved = true;
+
+	switch (kind) {
+		case CONTAINER_TYPE_KIND_BUILTIN: {
+			const uint32_t builtin_type = f->get_32();
+			ERR_FAIL_COND_V_MSG(builtin_type >= Variant::VARIANT_MAX, ERR_FILE_CORRUPT, "Invalid container element type.");
+			r_type.builtin_type = (Variant::Type)builtin_type;
+		} break;
+		case CONTAINER_TYPE_KIND_CLASS_NAME: {
+			r_type.builtin_type = Variant::OBJECT;
+			r_type.class_name = get_unicode_string();
+		} break;
+		case CONTAINER_TYPE_KIND_SCRIPT: {
+			Variant script_variant;
+			const Error err = parse_variant(script_variant);
+			ERR_FAIL_COND_V_MSG(err, err, "Error when trying to parse a container element script.");
+
+			const Ref<Script> script = script_variant;
+			if (script.is_valid()) {
+				r_type.builtin_type = Variant::OBJECT;
+				r_type.class_name = script->get_instance_base_type();
+				r_type.script = script;
+			} else {
+				type_is_resolved = false;
+			}
+		} break;
+		default: {
+			// `_split_container_type_kind()` only ever reports the kinds handled above.
+			ERR_FAIL_V_MSG(ERR_FILE_CORRUPT, "Unexpected container type kind.");
+		}
+	}
+
+	if (is_type_handle && type_is_resolved) {
+		ERR_FAIL_COND_V_MSG(r_type.builtin_type != Variant::OBJECT, ERR_FILE_CORRUPT, "Container types can only be class handles for Object types.");
+		r_type.is_type_handle = true;
+	}
+
+	// The smallest encoded nested type is a lone kind word, so a count past that many words left in
+	// the file cannot be honest and must not drive an allocation loop.
+	const uint64_t remaining_words = (f->get_length() - MIN(f->get_length(), f->get_position())) / 4;
+
+	const uint32_t element_type_count = f->get_32();
+	ERR_FAIL_COND_V_MSG(element_type_count > remaining_words, ERR_FILE_CORRUPT, "Invalid container element type count.");
+	if (type_is_resolved) {
+		if (r_type.builtin_type == Variant::ARRAY) {
+			ERR_FAIL_COND_V_MSG(element_type_count > 1, ERR_FILE_CORRUPT, "Invalid array element type count.");
+		} else if (r_type.builtin_type == Variant::DICTIONARY) {
+			ERR_FAIL_COND_V_MSG(element_type_count != 0 && element_type_count != 2, ERR_FILE_CORRUPT, "Invalid dictionary element type count.");
+		} else {
+			ERR_FAIL_COND_V_MSG(element_type_count != 0, ERR_FILE_CORRUPT, "Only containers can carry element types.");
+		}
+	}
+	for (uint32_t i = 0; i < element_type_count; i++) {
+		ContainerType element_type;
+		const Error err = parse_container_type(element_type);
+		ERR_FAIL_COND_V_MSG(err, err, "Error when trying to parse a nested container element type.");
+		r_type.element_types.push_back(element_type);
+	}
+
+	const uint32_t type_argument_count = f->get_32();
+	ERR_FAIL_COND_V_MSG(type_argument_count > remaining_words, ERR_FILE_CORRUPT, "Invalid container type argument count.");
+	for (uint32_t i = 0; i < type_argument_count; i++) {
+		ContainerType argument_type;
+		const Error err = parse_container_type(argument_type);
+		ERR_FAIL_COND_V_MSG(err, err, "Error when trying to parse a container type argument.");
+		r_type.type_arguments.push_back(argument_type);
+	}
+
+	if (!type_is_resolved) {
+		r_type = ContainerType();
+	}
+
+	return OK;
 }
 
 Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
@@ -478,10 +631,27 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 			r_v = Signal();
 		} break;
 
-		case VARIANT_DICTIONARY: {
+		case VARIANT_DICTIONARY:
+		case VARIANT_TYPED_DICTIONARY: {
+			Dictionary d;
+			ContainerTypeValidate key_validator;
+			ContainerTypeValidate value_validator;
+			if (prop_type == VARIANT_TYPED_DICTIONARY) {
+				ContainerType key_type;
+				ContainerType value_type;
+				Error err = parse_container_type(key_type);
+				ERR_FAIL_COND_V_MSG(err, err, "Error when trying to parse a dictionary key type.");
+				err = parse_container_type(value_type);
+				ERR_FAIL_COND_V_MSG(err, err, "Error when trying to parse a dictionary value type.");
+				if (key_type.builtin_type != Variant::NIL || value_type.builtin_type != Variant::NIL) {
+					d.set_typed(key_type, value_type);
+					key_validator = ContainerTypeValidate(key_type);
+					value_validator = ContainerTypeValidate(value_type);
+				}
+			}
+
 			uint32_t len = f->get_32();
-			Dictionary d; //last bit means shared
-			len &= 0x7FFFFFFF;
+			len &= 0x7FFFFFFF; //last bit means shared
 			for (uint32_t i = 0; i < len; i++) {
 				Variant key;
 				Error err = parse_variant(key);
@@ -489,19 +659,40 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 				Variant value;
 				err = parse_variant(value);
 				ERR_FAIL_COND_V_MSG(err, ERR_FILE_CORRUPT, "Error when trying to parse Variant.");
+				// Assigning through the dictionary would drop a mismatched key and accept a mismatched
+				// value, leaving a container that lies about what it holds. A payload that contradicts
+				// the type it declared is not loadable as either.
+				ERR_FAIL_COND_V_MSG(!key_validator.validate(key, "load"), ERR_FILE_CORRUPT, "Dictionary key does not match the key type the payload declared.");
+				ERR_FAIL_COND_V_MSG(!value_validator.validate(value, "load"), ERR_FILE_CORRUPT, "Dictionary value does not match the value type the payload declared.");
 				d[key] = value;
 			}
 			r_v = d;
 		} break;
-		case VARIANT_ARRAY: {
+		case VARIANT_ARRAY:
+		case VARIANT_TYPED_ARRAY: {
+			Array a;
+			ContainerTypeValidate element_validator;
+			if (prop_type == VARIANT_TYPED_ARRAY) {
+				ContainerType element_type;
+				const Error err = parse_container_type(element_type);
+				ERR_FAIL_COND_V_MSG(err, err, "Error when trying to parse an array element type.");
+				if (element_type.builtin_type != Variant::NIL) {
+					a.set_typed(element_type);
+					element_validator = ContainerTypeValidate(element_type);
+				}
+			}
+
 			uint32_t len = f->get_32();
-			Array a; //last bit means shared
-			len &= 0x7FFFFFFF;
+			len &= 0x7FFFFFFF; //last bit means shared
 			a.resize(len);
 			for (uint32_t i = 0; i < len; i++) {
 				Variant val;
 				Error err = parse_variant(val);
 				ERR_FAIL_COND_V_MSG(err, ERR_FILE_CORRUPT, "Error when trying to parse Variant.");
+				// Writing through the array would bypass its element type, leaving a container that
+				// lies about what it holds. A payload that contradicts the type it declared is not
+				// loadable as either.
+				ERR_FAIL_COND_V_MSG(!element_validator.validate(val, "load"), ERR_FILE_CORRUPT, "Array element does not match the element type the payload declared.");
 				a[i] = val;
 			}
 			r_v = a;
@@ -1621,6 +1812,45 @@ void ResourceFormatSaverBinaryInstance::_pad_buffer(Ref<FileAccess> f, int p_byt
 	}
 }
 
+void ResourceFormatSaverBinaryInstance::write_container_type(Ref<FileAccess> f, const ContainerType &p_type, HashMap<Ref<Resource>, int> &resource_map, HashMap<Ref<Resource>, int> &external_resources, HashMap<StringName, int> &string_map) {
+	const ContainerTypeKind kind = _get_container_type_kind(p_type);
+	f->store_32(kind);
+
+	if (kind == CONTAINER_TYPE_KIND_NONE) {
+		return;
+	}
+
+	switch (kind) {
+		case CONTAINER_TYPE_KIND_BUILTIN:
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_BUILTIN: {
+			f->store_32(p_type.builtin_type);
+		} break;
+		case CONTAINER_TYPE_KIND_CLASS_NAME:
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME: {
+			save_unicode_string(f, p_type.class_name);
+		} break;
+		case CONTAINER_TYPE_KIND_SCRIPT:
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_SCRIPT: {
+			// The script rides the ordinary resource reference path, so it resolves through the same
+			// external/internal resource tables `_find_resources_in_container_type()` populated.
+			write_variant(f, p_type.script, resource_map, external_resources, string_map);
+		} break;
+		case CONTAINER_TYPE_KIND_NONE: {
+			// Handled above.
+		} break;
+	}
+
+	f->store_32(uint32_t(p_type.element_types.size()));
+	for (const ContainerType &element_type : p_type.element_types) {
+		write_container_type(f, element_type, resource_map, external_resources, string_map);
+	}
+
+	f->store_32(uint32_t(p_type.type_arguments.size()));
+	for (const ContainerType &argument_type : p_type.type_arguments) {
+		write_container_type(f, argument_type, resource_map, external_resources, string_map);
+	}
+}
+
 void ResourceFormatSaverBinaryInstance::write_variant(Ref<FileAccess> f, const Variant &p_property, HashMap<Ref<Resource>, int> &resource_map, HashMap<Ref<Resource>, int> &external_resources, HashMap<StringName, int> &string_map, const PropertyInfo &p_hint) {
 	switch (p_property.get_type()) {
 		case Variant::NIL: {
@@ -1901,8 +2131,14 @@ void ResourceFormatSaverBinaryInstance::write_variant(Ref<FileAccess> f, const V
 		} break;
 
 		case Variant::DICTIONARY: {
-			f->store_32(VARIANT_DICTIONARY);
 			Dictionary d = p_property;
+			if (d.is_typed()) {
+				f->store_32(VARIANT_TYPED_DICTIONARY);
+				write_container_type(f, d.get_key_type(), resource_map, external_resources, string_map);
+				write_container_type(f, d.get_value_type(), resource_map, external_resources, string_map);
+			} else {
+				f->store_32(VARIANT_DICTIONARY);
+			}
 			f->store_32(uint32_t(d.size()));
 
 			for (const KeyValue<Variant, Variant> &kv : d) {
@@ -1912,8 +2148,13 @@ void ResourceFormatSaverBinaryInstance::write_variant(Ref<FileAccess> f, const V
 
 		} break;
 		case Variant::ARRAY: {
-			f->store_32(VARIANT_ARRAY);
 			Array a = p_property;
+			if (a.is_typed()) {
+				f->store_32(VARIANT_TYPED_ARRAY);
+				write_container_type(f, a.get_element_type(), resource_map, external_resources, string_map);
+			} else {
+				f->store_32(VARIANT_ARRAY);
+			}
 			f->store_32(uint32_t(a.size()));
 			for (const Variant &var : a) {
 				write_variant(f, var, resource_map, external_resources, string_map);

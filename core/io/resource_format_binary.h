@@ -92,6 +92,7 @@ class ResourceLoaderBinary {
 	friend class ResourceFormatLoaderBinary;
 
 	Error parse_variant(Variant &r_v);
+	Error parse_container_type(ContainerType &r_type);
 
 	HashMap<String, Ref<Resource>> dependency_cache;
 
@@ -165,6 +166,7 @@ class ResourceFormatSaverBinaryInstance {
 	void _find_resources(const Variant &p_variant, bool p_main = false);
 	void _find_resources_in_container_type(const ContainerType &p_type);
 	static void save_unicode_string(Ref<FileAccess> f, const String &p_string, bool p_bit_on_len = false);
+	static void write_container_type(Ref<FileAccess> f, const ContainerType &p_type, HashMap<Ref<Resource>, int> &resource_map, HashMap<Ref<Resource>, int> &external_resources, HashMap<StringName, int> &string_map);
 	int get_string_index(const String &p_string);
 
 public:

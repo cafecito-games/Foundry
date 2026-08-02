@@ -42,6 +42,7 @@
 #include "editor/file_system/editor_paths.h"
 #include "editor/inspector/editor_property_name_processor.h"
 #include "editor/settings/editor_settings.h"
+#include "tests/core/io/test_resource_format_binary_container_types.h"
 #include "tests/core/io/test_resource_format_text_nested_dependencies.h"
 #include "tests/editor/file_system/test_editor_file_system.h"
 #include "tests/editor/project_manager/test_ios_project_template.h"
