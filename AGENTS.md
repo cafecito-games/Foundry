@@ -12,6 +12,23 @@ This repository is a CafecitoGames fork of Godot Engine with active work around 
 - `./bin/foundry.* --headless test run --force-colors`: run the compiled C++ and Foundry Script test suites with the supported command-first CLI.
 - `pre-commit run --all-files`: run formatting, linting, spelling, XML/doc checks, and generated-doc dry runs configured in `.pre-commit-config.yaml`.
 
+### Agent-driven and concurrent builds
+
+The raw `scons` lines above describe a single interactive build in one checkout. Any agent-driven build, and every build that may run while another agent is building, should go through `python3 scripts/agent_build.py` instead. That includes the commands configured for orchestrators in `.claude/run-epics.json`. The wrapper is what makes several agents building in several worktrees at once affordable:
+
+- **Shared compiled objects.** The default native SCons build shares objects through `$HOME/.scons_cache`, and `--compiler-cache ccache` additionally shares them through `$HOME/.cache/foundry-ccache`. A raw `scons` invocation with no `cache_path` opts out of both, so every worktree cold-builds from scratch. This is the most common reason a multi-agent run is slow.
+- **Per-worktree artifact isolation.** Log and JSONL progress filenames carry a stable hash of the resolved worktree path, and ccache telemetry uses a per-invocation `CCACHE_STATSLOG`, so concurrent agents never overwrite each other's build artifacts or race on cache statistics. Use the paths the wrapper prints at startup rather than assuming fixed names.
+- **Correct strictness by default.** `python3 scripts/agent_build.py` with no flags is `dev_mode=yes dev_build=yes tests=yes`, the required pre-PR validation build. `dev_build=yes` alone is a fast-iteration shortcut; rerun the default before handoff.
+- **Job count is not coordinated between agents.** `--jobs` defaults to the host CPU count, and the wrapper deliberately has no global job coordinator. When N agents build concurrently, give each roughly `CPU count / N` jobs; otherwise N times the CPU count of parallel jobs oversubscribes the machine and every build gets slower.
+- **Budget 8-10 GiB of disk per built worktree**, plus roughly 20 GiB for `$HOME/.scons_cache` and up to 5 GiB for the shared ccache. Check free space before raising an orchestrator's slot count; disk, not CPU, is usually what caps concurrency.
+- **Removing a worktree.** Worktrees created by Supacode are `git worktree lock`ed. Delete them with `supacode worktree delete -w <id>` using an ID from `supacode worktree list`, not `git worktree remove -f -f`, which leaves a dangling registration behind.
+
+One command covers build plus the full suite, so an orchestrator needs a single test command:
+
+```sh
+python3 scripts/agent_build.py --compiler-cache ccache --jobs 4 --test
+```
+
 ## Foundry CLI Usage
 
 Use the supported command-first CLI: `foundry <command> <subcommand> [options]`. Do not use deprecated legacy invocations in agent instructions, scripts, or verification commands: `--test`, `--path`, `--editor`, `--project-manager`, `--import`, `--foundry_script-generate-tests`, or `--foundry_script-generate-format-tests`. Prefer `--case <pattern>` on `test run` instead of raw doctest `--test-case=...` filters. Use `--project <dir>` for project paths.
