@@ -147,10 +147,13 @@ TEST_CASE("[ContainerType] Class handle descriptors render Type[T] at every nest
 	CHECK(dictionary_type.get_type_name() == "Dictionary[String, Type[RefCounted]]");
 	CHECK(make_array_of(dictionary_type).get_type_name() == "Array[Dictionary[String, Type[RefCounted]]]");
 
-	// A specialized handle renders the arguments inside the handle wrapper, not beside it.
+	// A specialized handle renders the arguments inside the handle wrapper, not beside it, at the top
+	// level and nested inside a container.
 	ContainerType specialized = make_handle_type(SNAME("RefCounted"));
 	specialized.type_arguments.push_back(make_builtin_type(Variant::INT));
 	CHECK(specialized.get_type_name() == "Type[RefCounted[int]]");
+	CHECK(make_array_of(specialized).get_type_name() == "Array[Type[RefCounted[int]]]");
+	CHECK(ContainerTypeValidate(specialized).get_type_name() == "Type[RefCounted[int]]");
 }
 
 TEST_CASE("[ContainerType] Class handle flag round-trips through ContainerTypeValidate") {

@@ -218,11 +218,21 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle slot is in
 
 	const char *source =
 			"class Box[T]:\n"
+			"\tpass\n"
+			"\n"
+			"class PairBox[A, B] extends Box[A]:\n"
+			"\tpass\n"
+			"\n"
+			"class IntBox extends Box[int]:\n"
 			"\tpass\n";
 
 	Ref<FoundryScript> script = compile_class_handle_container_source(source);
 	Ref<FoundryScript> box = class_handle_container_subclass(script, "Box");
+	Ref<FoundryScript> pair_box = class_handle_container_subclass(script, "PairBox");
+	Ref<FoundryScript> int_box_subclass = class_handle_container_subclass(script, "IntBox");
 	REQUIRE(box.is_valid());
+	REQUIRE(pair_box.is_valid());
+	REQUIRE(int_box_subclass.is_valid());
 
 	ContainerType int_argument;
 	int_argument.builtin_type = Variant::INT;
@@ -262,6 +272,34 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle slot is in
 	values.push_back(string_box);
 	values.push_back(box);
 	CHECK(typed_array_accepted_count(expected, values) == 1);
+
+	// Referencing a whole container skips per-element validation, so it must be no more permissive than
+	// the per-value rule. A source typed with an unspecialized generic subclass handle can hold a
+	// `PairBox[String, int]` handle, which the destination rejects one by one.
+	const ContainerTypeValidate expected_validate(expected);
+	CHECK_FALSE(expected_validate.can_reference(ContainerTypeValidate(class_handle_type_for(pair_box))));
+	CHECK_FALSE(expected_validate.can_reference(ContainerTypeValidate(class_handle_type_for(box))));
+
+	// A subclass that fixes the argument (`IntBox extends Box[int]`) carries the evidence, so both the
+	// per-value rule and referencing accept it.
+	CHECK(check_class_handle_agreement(expected, int_box_subclass));
+	CHECK(expected_validate.can_reference(ContainerTypeValidate(class_handle_type_for(int_box_subclass))));
+
+	// The same asymmetry through the nested-container path: assigning a source array typed with the
+	// unspecialized handle into a `Array[Type[Box[int]]]` slot must not pass unchecked.
+	Array unspecialized_source;
+	unspecialized_source.set_typed(class_handle_type_for(pair_box));
+	unspecialized_source.push_back(FSSpecializedClassHandle::create(pair_box, string_arguments));
+	CHECK(unspecialized_source.size() == 1);
+
+	ContainerType array_of_expected;
+	array_of_expected.builtin_type = Variant::ARRAY;
+	array_of_expected.element_types.push_back(expected);
+	CHECK(array_of_expected.get_type_name() == "Array[Type[RefCounted[int]]]");
+
+	ERR_PRINT_OFF;
+	CHECK_FALSE(ContainerTypeValidate(array_of_expected).test_validate(unspecialized_source));
+	ERR_PRINT_ON;
 }
 
 TEST_CASE("[Modules][FoundryScript][ClassHandle] Null and non-handle values agree with the runtime predicate") {

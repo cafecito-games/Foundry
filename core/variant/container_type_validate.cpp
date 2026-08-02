@@ -114,8 +114,23 @@ ContainerType ContainerTypeValidate::get_container_type() const {
 }
 
 String ContainerTypeValidate::get_type_name() const {
-	const String value_name = _get_value_type_name();
-	return is_type_handle ? "Type[" + value_name + "]" : value_name;
+	String name = _get_value_type_name();
+	if (!is_type_handle) {
+		return name;
+	}
+	// A handle names the specialization it represents, so a nested `Type[Box[int]]` element does not
+	// degrade to `Type[Box]`.
+	if (!type_arguments.is_empty()) {
+		String arguments;
+		for (int i = 0; i < type_arguments.size(); i++) {
+			if (i > 0) {
+				arguments += ", ";
+			}
+			arguments += type_arguments[i].get_type_name();
+		}
+		name += "[" + arguments + "]";
+	}
+	return "Type[" + name + "]";
 }
 
 String ContainerTypeValidate::_get_value_type_name() const {
@@ -348,10 +363,6 @@ static bool _class_handle_type_arguments_match(const Vector<ContainerType> &p_ex
 // not be an instance of it. Values that denote a class are `ClassHandle` implementations contributed by
 // a scripting language, and bare `Script` resources, which denote the class they define.
 bool ContainerTypeValidate::_internal_validate_class_handle(const Variant &p_variant, const char *p_operation, bool p_output_errors) const {
-	// `ContainerType::get_type_name()` renders the expected specialization too, so a `Type[Box[int]]`
-	// slot is not reported as `Type[Box]`. Only reached on the (cold) rejection paths.
-	const auto expected_type_name = [this]() { return get_container_type().get_type_name(); };
-
 	// Null is permissive here for the same reason it is on the instance path: rejecting null in a
 	// non-nullable slot is a static concern, not a runtime one.
 	if (p_variant.get_type() == Variant::NIL) {
@@ -359,7 +370,7 @@ bool ContainerTypeValidate::_internal_validate_class_handle(const Variant &p_var
 	}
 	if (p_variant.get_type() != Variant::OBJECT) {
 		if (p_output_errors) {
-			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a value of type '%s' into a %s of type '%s', which requires a class handle.", String(p_operation), Variant::get_type_name(p_variant.get_type()), where, expected_type_name()));
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a value of type '%s' into a %s of type '%s', which requires a class handle.", String(p_operation), Variant::get_type_name(p_variant.get_type()), where, get_type_name()));
 		}
 		return false;
 	}
@@ -369,7 +380,7 @@ bool ContainerTypeValidate::_internal_validate_class_handle(const Variant &p_var
 	if (object == nullptr) {
 		if (was_freed) {
 			if (p_output_errors) {
-				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an invalid (previously freed?) class handle into a %s of type '%s'.", String(p_operation), where, expected_type_name()));
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an invalid (previously freed?) class handle into a %s of type '%s'.", String(p_operation), where, get_type_name()));
 			}
 			return false;
 		}
@@ -393,7 +404,7 @@ bool ContainerTypeValidate::_internal_validate_class_handle(const Variant &p_var
 
 	if (handle_native_class == StringName() && handle_script.is_null()) {
 		if (p_output_errors) {
-			ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object of type '%s' into a %s of type '%s', which requires a class handle.", String(p_operation), object->get_class(), where, expected_type_name()));
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object of type '%s' into a %s of type '%s', which requires a class handle.", String(p_operation), object->get_class(), where, get_type_name()));
 		}
 		return false;
 	}
@@ -411,7 +422,7 @@ bool ContainerTypeValidate::_internal_validate_class_handle(const Variant &p_var
 		if (represented_native_class == StringName() ||
 				(class_name != StringName() && !ClassDB::is_parent_class(represented_native_class, class_name))) {
 			if (p_output_errors) {
-				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for '%s' into a %s of type '%s', whose represented type is not compatible.", String(p_operation), represented.get_type_name(), where, expected_type_name()));
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for '%s' into a %s of type '%s', whose represented type is not compatible.", String(p_operation), represented.get_type_name(), where, get_type_name()));
 			}
 			return false;
 		}
@@ -438,14 +449,14 @@ bool ContainerTypeValidate::_internal_validate_class_handle(const Variant &p_var
 	}
 	if (!represents_expected_type) {
 		if (p_output_errors) {
-			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for '%s' into a %s of type '%s', whose represented type is not compatible.", String(p_operation), represented.get_type_name(), where, expected_type_name()));
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for '%s' into a %s of type '%s', whose represented type is not compatible.", String(p_operation), represented.get_type_name(), where, get_type_name()));
 		}
 		return false;
 	}
 
 	if (!_class_handle_type_arguments_match(type_arguments, script, handle_script, handle_type_arguments, handle_carries_arguments)) {
 		if (p_output_errors) {
-			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle specialized as '%s' into a %s of type '%s'.", String(p_operation), represented.get_type_name(), where, expected_type_name()));
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle specialized as '%s' into a %s of type '%s'.", String(p_operation), represented.get_type_name(), where, get_type_name()));
 		}
 		return false;
 	}
@@ -576,6 +587,12 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 	// Type arguments are invariant: a `Box[int]` container can only reference another `Box[int]`
 	// container without conversion.
 	if (!type_arguments.is_empty()) {
+		if (is_type_handle) {
+			// Referencing skips per-element validation, so it must not be more permissive than the
+			// per-value rule. A source element type that leaves an expected argument unbound describes
+			// handles the destination would reject one by one, so it cannot be referenced.
+			return _class_handle_type_arguments_match(type_arguments, script, p_type.script, p_type.type_arguments, !p_type.type_arguments.is_empty());
+		}
 		if (script == p_type.script) {
 			// Same script: arguments are compared directly (a raw, unspecialized source is conservatively
 			// rejected here, since an `Array[Box]` may hold a differently specialized element).
