@@ -1,6 +1,7 @@
 # FoundryScript Generic Tagged Unions Design
 
-Status: approved design; implementation epic pending.
+Status: approved design; tracked by GitHub epic
+[#1595](https://github.com/cafecito-games/Foundry/issues/1595).
 
 ## 1. Summary
 
@@ -769,6 +770,8 @@ normative design.
 
 ### G1. Grammar, AST, parser, formatter, and declaration diagnostics
 
+GitHub: [#1596](https://github.com/cafecito-games/Foundry/issues/1596).
+
 Deliver type-parameter syntax on `enum` and `enum_name`, `EnumNode` storage, formatter support, the
 normative `GRAMMAR.md` update, and declaration-shape diagnostics.
 
@@ -784,6 +787,8 @@ Mechanical acceptance:
 Dependencies: none.
 
 ### G2. Enum parameter scope, bounds, and recursive open identity
+
+GitHub: [#1597](https://github.com/cafecito-games/Foundry/issues/1597).
 
 Deliver `TYPE_PARAMETER_ENUM`, lookup/shadowing, enum-bound resolution, open self-specialization, and
 finite recursive identity shells.
@@ -803,6 +808,8 @@ Dependencies: G1.
 
 ### G3. Type/value application, shared bound validation, and invariance
 
+GitHub: [#1598](https://github.com/cafecito-games/Foundry/issues/1598).
+
 Extract declaration-neutral argument binding, add generic enum application in type and expression
 positions, and enforce invariant specialization identity.
 
@@ -820,6 +827,8 @@ Mechanical acceptance:
 Dependencies: G2.
 
 ### G4. Specialized construction, patterns, binds, and flow narrowing
+
+GitHub: [#1599](https://github.com/cafecito-games/Foundry/issues/1599).
 
 Substitute payload maps at specialization, type case values/constructors, and preserve specialization
 through match and `is` flow paths.
@@ -839,6 +848,8 @@ Dependencies: G3.
 
 ### G5. Specialized enum functions and signature surfaces
 
+GitHub: [#1600](https://github.com/cafecito-games/Foundry/issues/1600).
+
 Specialize static/instance/async/generic enum functions and callable references against the receiver.
 
 Mechanical acceptance:
@@ -854,6 +865,8 @@ Mechanical acceptance:
 Dependencies: G3 and G4.
 
 ### G6. Compiler, bytecode, and erased Variant boundaries
+
+GitHub: [#1601](https://github.com/cafecito-games/Foundry/issues/1601).
 
 Preserve static type arguments through lowering/metadata while retaining the existing Array value and
 runtime predicates.
@@ -872,6 +885,8 @@ Dependencies: G4 and G5.
 
 ### G7. Global `enum_name`, namespaces, dependencies, and serialization integration
 
+GitHub: [#1602](https://github.com/cafecito-games/Foundry/issues/1602).
+
 Complete cross-file declaration resolution and every supported persistence/dependency path.
 
 Mechanical acceptance:
@@ -889,6 +904,8 @@ Dependencies: G3 through G6.
 
 ### G8. LSP, editor, formatter completion, and doc generation
 
+GitHub: [#1603](https://github.com/cafecito-games/Foundry/issues/1603).
+
 Deliver all authoring surfaces against analyzer-owned specialization.
 
 Mechanical acceptance:
@@ -905,6 +922,8 @@ Mechanical acceptance:
 Dependencies: G3 through G7.
 
 ### G9. Builtin `Result[T, E]`, user docs, and integrated acceptance
+
+GitHub: [#1604](https://github.com/cafecito-games/Foundry/issues/1604).
 
 Ship the builtin, document the complete feature and erasure boundary, and close the epic only after
 integrated validation.
@@ -929,6 +948,8 @@ These issues are related from the epic but are not native children and do not bl
 
 ### F1. Runtime-reified generic tagged unions
 
+GitHub: [#1605](https://github.com/cafecito-games/Foundry/issues/1605).
+
 Produce a dedicated design and implementation epic for values that preserve union declaration
 identity and type arguments at runtime. The design must decide representation, compatibility with
 existing `[tag, payload...]` values, `is`/`as`, dynamic assignment validation, equality/hash,
@@ -936,6 +957,8 @@ serialization, JSON, reflection, GDExtension, bytecode versioning, and migration
 change is made under the v1 epic.
 
 ### F2. Expected-type-driven contextual case syntax
+
+GitHub: [#1606](https://github.com/cafecito-games/Foundry/issues/1606).
 
 Add `.Case(...)` and payload-less `.Case` when an unambiguous expected tagged-union type is available:
 
@@ -949,6 +972,8 @@ and reports ambiguity when no unique union/case can be inferred. It does not add
 `Result.Ok(1)` constructor inference.
 
 ### F3. Evaluate `JsonResult[T]` migration
+
+GitHub: [#1607](https://github.com/cafecito-games/Foundry/issues/1607).
 
 Determine whether JSON decode APIs should return `Result[T, JsonDecodeError]`. Preserve or deliberately
 relocate `fail(message, path)`, `nested(error, key)`, nullable-success behavior, source compatibility,

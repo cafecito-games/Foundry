@@ -16,6 +16,8 @@ SCons/Ninja through `scripts/agent_build.py`, and the normative `modules/foundry
 
 **Design:** `docs/superpowers/specs/2026-08-02-foundry-script-generic-tagged-unions-design.md`
 
+**GitHub epic:** [#1595](https://github.com/cafecito-games/Foundry/issues/1595)
+
 ---
 
 ## Execution rules
@@ -50,6 +52,8 @@ SCons/Ninja through `scripts/agent_build.py`, and the normative `modules/foundry
 - Script tests: parser, analyzer, runtime, completion, LSP, and format fixtures own observable language behavior.
 
 ## Task 1: Parse and format generic tagged-union declarations
+
+**GitHub issue:** [#1596](https://github.com/cafecito-games/Foundry/issues/1596)
 
 **Issue boundary:** Grammar, AST, parser, formatter, and declaration-shape diagnostics only. Do not implement use-site
 specialization in this task.
@@ -202,6 +206,8 @@ git commit -m "feat(foundry_script): Parse generic tagged unions"
 
 ## Task 2: Resolve enum parameter scope and recursive open specialization
 
+**GitHub issue:** [#1597](https://github.com/cafecito-games/Foundry/issues/1597)
+
 **Issue boundary:** Declaration-site parameter identity, bounds, shadowing, bare self, and finite recursive identity. Do
 not accept external `Result[int, E]` applications until Task 3.
 
@@ -347,6 +353,8 @@ Expected: focused doctests and new analyzer fixtures pass; existing recursive ta
 
 ## Task 3: Apply generic union arguments and enforce invariance
 
+**GitHub issue:** [#1598](https://github.com/cafecito-games/Foundry/issues/1598)
+
 **Issue boundary:** Shared argument binding, type/expression applications, arity/bounds, display, and static
 compatibility. Case payload use remains Task 4.
 
@@ -466,6 +474,8 @@ git commit -m "feat(foundry_script): Apply generic union arguments"
 
 ## Task 4: Specialize cases, patterns, binds, and narrowing
 
+**GitHub issue:** [#1599](https://github.com/cafecito-games/Foundry/issues/1599)
+
 **Issue boundary:** One-level payload-map substitution and every case-oriented analyzer path.
 
 **Files:**
@@ -574,6 +584,8 @@ git commit -m "feat(foundry_script): Specialize generic union cases"
 
 ## Task 5: Specialize enum functions and callable signatures
 
+**GitHub issue:** [#1600](https://github.com/cafecito-games/Foundry/issues/1600)
+
 **Issue boundary:** Static, instance, async, and generic enum functions plus method references and call validation.
 
 **Files:**
@@ -659,6 +671,8 @@ remain unchanged.
 
 ## Task 6: Preserve erased generic unions through compiler and bytecode metadata
 
+**GitHub issue:** [#1601](https://github.com/cafecito-games/Foundry/issues/1601)
+
 **Issue boundary:** Code generation, datatype conversion, bytecode export/load, and explicit Variant-boundary
 acceptance. No value reification.
 
@@ -717,6 +731,8 @@ git commit -m "feat(foundry_script): Preserve generic unions in bytecode"
 ```
 
 ## Task 7: Complete global `enum_name` and dependency integration
+
+**GitHub issue:** [#1602](https://github.com/cafecito-games/Foundry/issues/1602)
 
 **Issue boundary:** Cross-file names, namespaces/imports/preloads, cache isolation, and persistence integration.
 
@@ -787,6 +803,8 @@ git commit -m "feat(foundry_script): Resolve global generic unions"
 
 ## Task 8: Add LSP, editor, refactoring, and docgen support
 
+**GitHub issue:** [#1603](https://github.com/cafecito-games/Foundry/issues/1603)
+
 **Issue boundary:** All authoring surfaces consume analyzer-owned specialization; no duplicate type system.
 
 **Files:**
@@ -852,6 +870,8 @@ git commit -m "feat(foundry_script): Present generic unions in tooling"
 ```
 
 ## Task 9: Ship builtin `Result[T, E]` and close integrated acceptance
+
+**GitHub issue:** [#1604](https://github.com/cafecito-games/Foundry/issues/1604)
 
 **Issue boundary:** Builtin source, registration, docs, stable tags, export/runtime acceptance, and full strict gate.
 
@@ -1004,17 +1024,20 @@ git commit -m "feat(foundry_script): Add builtin Result union"
 
 These are linked from the epic but are not native children and never block Task 9:
 
-1. **Design runtime-reified generic tagged unions.** Produce a representation design and a new implementation epic
+1. [**Design runtime-reified generic tagged unions (#1605).**](https://github.com/cafecito-games/Foundry/issues/1605)
+   Produce a representation design and a new implementation epic
    covering runtime identity, `is`/`as`, assignment validation, equality/hash, serialization, JSON, reflection,
    GDExtension, and bytecode migration.
-2. **Add expected-type-driven contextual tagged-union cases.** Support `.Ok(1)` and `.None` only where one complete
+2. [**Contextual tagged-union case syntax (#1606).**](https://github.com/cafecito-games/Foundry/issues/1606)
+   Support `.Ok(1)` and `.None` only where one complete
    expected union specialization is available; cover ambiguity and every expected-type context.
-3. **Evaluate migrating `JsonResult[T]`.** Compare the current wrapper with `Result[T, JsonDecodeError]`, preserve its
+3. [**Evaluate migrating `JsonResult[T]` (#1607).**](https://github.com/cafecito-games/Foundry/issues/1607)
+   Compare the current wrapper with `Result[T, JsonDecodeError]`, preserve its
    helpers and nullable-success semantics, and record an explicit migrate/retain decision.
 
-## Plan completion check
+## Publication and implementation handoff check
 
-Before filing issues from this plan, verify:
+Before implementation begins, verify:
 
 - every design section maps to an epic task or named external follow-up;
 - G1-G9 dependencies match Tasks 1-9;
