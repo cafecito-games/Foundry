@@ -659,14 +659,38 @@ Dictionary DebugAdapterParser::req_variables(const Dictionary &p_params) const {
 }
 
 Dictionary DebugAdapterParser::req_next(const Dictionary &p_params) const {
-	EditorDebuggerNode::get_singleton()->get_default_debugger()->debug_next();
+	ScriptEditorDebugger *dbg = EditorDebuggerNode::get_singleton()->get_default_debugger();
+	if (!dbg->is_session_active()) {
+		return prepare_error_response(p_params, DAP::ErrorType::NOT_RUNNING);
+	}
+	// `debug_next()` asserts on a running debuggee, and marking the session as stepping
+	// before that check would misreport the next unrelated stop as a step.
+	if (!dbg->is_breaked()) {
+		Dictionary variables;
+		variables["command"] = p_params["command"];
+		return prepare_error_response(p_params, DAP::ErrorType::NOT_STOPPED, variables);
+	}
+
+	dbg->debug_next();
 	DebugAdapterProtocol::get_singleton()->_stepping = true;
 
 	return prepare_success_response(p_params);
 }
 
 Dictionary DebugAdapterParser::req_stepIn(const Dictionary &p_params) const {
-	EditorDebuggerNode::get_singleton()->get_default_debugger()->debug_step();
+	ScriptEditorDebugger *dbg = EditorDebuggerNode::get_singleton()->get_default_debugger();
+	if (!dbg->is_session_active()) {
+		return prepare_error_response(p_params, DAP::ErrorType::NOT_RUNNING);
+	}
+	// `debug_step()` asserts on a running debuggee, and marking the session as stepping
+	// before that check would misreport the next unrelated stop as a step.
+	if (!dbg->is_breaked()) {
+		Dictionary variables;
+		variables["command"] = p_params["command"];
+		return prepare_error_response(p_params, DAP::ErrorType::NOT_STOPPED, variables);
+	}
+
+	dbg->debug_step();
 	DebugAdapterProtocol::get_singleton()->_stepping = true;
 
 	return prepare_success_response(p_params);
