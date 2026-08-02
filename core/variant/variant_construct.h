@@ -713,7 +713,7 @@ public:
 		*VariantInternal::get_uint(r_ret) = 0;
 	}
 	static void ptr_construct(void *base, const void **p_args) {
-		PtrConstruct<uint64_t>::construct(0, base);
+		PtrConstruct<uint64_t>::construct(uint64_t(0), base);
 	}
 
 	static int get_argument_count() {
