@@ -1002,6 +1002,187 @@ TEST_CASE("[Editor][ToolingHost] A breakpoint exposes frame locals members and a
 	}
 }
 
+TEST_CASE("[Editor][ToolingHost] Stepping out of a nested call resumes in its caller") {
+	BreakpointHitSession session;
+	if (session.project_path.is_empty()) {
+		FAIL(("Failed to stage the breakpoint-hit project.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (!session.ready) {
+		FAIL(("The tooling host never accepted an initialized debug adapter session.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (session.client.await_event("initialized", 30000).is_empty()) {
+		FAIL(("The host never emitted `initialized`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	// The first statement of the innermost fixture function, which is reached through
+	// `_ready` -> `outer_step_target` -> `inner_step_target`.
+	const int inner_breakpoint_line = 17;
+	// The statement `outer_step_target` runs once the inner call returns.
+	const int outer_resume_line = 14;
+	const String script_path = session.project_path.path_join("breakpoint_hit.fs").simplify_path();
+	Dictionary source;
+	source["path"] = script_path;
+	Dictionary breakpoint;
+	breakpoint["line"] = inner_breakpoint_line;
+	Array requested_breakpoints;
+	requested_breakpoints.push_back(breakpoint);
+	Dictionary set_breakpoints_arguments;
+	set_breakpoints_arguments["source"] = source;
+	set_breakpoints_arguments["breakpoints"] = requested_breakpoints;
+	const Dictionary set_breakpoints_response = session.client.await_response(
+			session.client.send_request("setBreakpoints", set_breakpoints_arguments), 30000);
+	if (!bool(set_breakpoints_response.get("success", false))) {
+		FAIL(("setBreakpoints did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	Dictionary launch_arguments;
+	launch_arguments["noDebug"] = false;
+	launch_arguments["scene"] = "main";
+	const int launch_seq = session.client.send_request("launch", launch_arguments);
+	session.launch_started = true;
+	const int configuration_done_seq = session.client.send_request("configurationDone", Dictionary());
+	const Dictionary launch_response = session.client.await_response(launch_seq, 60000);
+	session.client.await_response(configuration_done_seq, 30000);
+	if (!bool(launch_response.get("success", false))) {
+		FAIL(("launch did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary process_event = session.client.await_event("process", 120000);
+	if (process_event.is_empty()) {
+		FAIL(("The debuggee never started.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	session.track_debuggee(process_event);
+	const Dictionary stopped_event = session.client.await_event("stopped", 120000);
+	if (stopped_event.is_empty()) {
+		FAIL(("The debuggee never stopped at the breakpoint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary stopped_body = stopped_event.get("body", Dictionary());
+	if (String(stopped_body.get("reason", "")) != "breakpoint") {
+		FAIL(("The debuggee stopped for a reason other than `breakpoint`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int thread_id = stopped_body.get("threadId", -1);
+
+	auto request_stack_frames = [&session, thread_id]() {
+		Dictionary stack_arguments;
+		stack_arguments["threadId"] = thread_id;
+		const Dictionary response = session.client.await_response(
+				session.client.send_request("stackTrace", stack_arguments), 30000);
+		Array frames;
+		if (bool(response.get("success", false))) {
+			frames = Dictionary(response.get("body", Dictionary())).get("stackFrames", Array());
+		}
+		return frames;
+	};
+
+	const Array frames_at_breakpoint = request_stack_frames();
+	if (frames_at_breakpoint.size() < 2) {
+		FAIL(("stackTrace did not expose the inner frame and its caller.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary inner_frame = frames_at_breakpoint[0];
+	const Dictionary caller_frame = frames_at_breakpoint[1];
+	if (String(inner_frame.get("name", "")) != "inner_step_target" ||
+			int(inner_frame.get("line", -1)) != inner_breakpoint_line) {
+		FAIL(("The top frame was not `inner_step_target` at the breakpoint line.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (String(caller_frame.get("name", "")) != "outer_step_target") {
+		FAIL(("The inner frame's caller was not `outer_step_target`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	session.client.clear_events();
+	Dictionary step_out_arguments;
+	step_out_arguments["threadId"] = thread_id;
+	const int step_out_seq = session.client.send_request("stepOut", step_out_arguments);
+	const Dictionary step_out_response = session.client.await_response(step_out_seq, 30000);
+	if (step_out_response.is_empty()) {
+		FAIL(("The host never answered `stepOut`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	CHECK_EQ(String(step_out_response.get("type", "")), "response");
+	CHECK_EQ(int(step_out_response.get("request_seq", -1)), step_out_seq);
+	CHECK_EQ(String(step_out_response.get("command", "")), "stepOut");
+	if (!bool(step_out_response.get("success", false))) {
+		FAIL(("stepOut did not succeed against a stopped debuggee.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	// The response has to precede the stop it produced, and the stop is reported once.
+	if (session.client.event_index("stopped") >= 0) {
+		FAIL(("A stop was reported before the `stepOut` response.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary step_stopped_event = session.client.await_event("stopped", 60000);
+	if (step_stopped_event.is_empty()) {
+		FAIL(("The debuggee never stopped after `stepOut`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary step_stopped_body = step_stopped_event.get("body", Dictionary());
+	CHECK_EQ(String(step_stopped_body.get("reason", "")), "step");
+	CHECK_EQ(int(step_stopped_body.get("threadId", -1)), thread_id);
+	int stopped_event_count = 0;
+	for (const Dictionary &event : session.client.events) {
+		if (String(event.get("event", "")) == "stopped") {
+			stopped_event_count++;
+		}
+	}
+	CHECK_MESSAGE(stopped_event_count == 1, "`stepOut` reported more than one stop.");
+
+	const Array frames_after_step = request_stack_frames();
+	if (frames_after_step.is_empty()) {
+		FAIL(("stackTrace returned no frames after `stepOut`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary resumed_frame = frames_after_step[0];
+	CHECK_EQ(String(resumed_frame.get("name", "")), "outer_step_target");
+	CHECK_EQ(int(resumed_frame.get("line", -1)), outer_resume_line);
+
+	session.client.clear_events();
+	Dictionary continue_arguments;
+	continue_arguments["threadId"] = thread_id;
+	const Dictionary continue_response = session.client.await_response(
+			session.client.send_request("continue", continue_arguments), 30000);
+	if (!bool(continue_response.get("success", false))) {
+		FAIL(("continue did not succeed after `stepOut`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (session.client.await_event("terminated", 120000).is_empty()) {
+		FAIL(("The debuggee never terminated.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	session.debuggee_terminated = true;
+	PackedStringArray expected_lifecycle;
+	expected_lifecycle.push_back("exited");
+	expected_lifecycle.push_back("terminated");
+	CHECK_EQ(session.client.lifecycle_events(), expected_lifecycle);
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 0);
+}
+
 TEST_CASE("[Editor][ToolingHost] A headless session answers pause and continue without a debuggee") {
 	const String project_path = EditorWorkflowTestFixtures::prepare_basic_scene_project();
 	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a disposable tooling-host project.");
@@ -1456,6 +1637,56 @@ TEST_CASE("[Editor][ToolingHost] A forcibly terminated launch reports no exit co
 	expected.push_back("process");
 	expected.push_back("terminated");
 	CHECK_EQ(session.client.lifecycle_events(), expected);
+}
+
+TEST_CASE("[Editor][ToolingHost] Stepping out of a running debuggee is refused as not stopped") {
+	ExitStatusSession session;
+	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
+	INFO("Tooling host output:\n", session.host.output);
+	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+
+	Dictionary arguments;
+	arguments["noDebug"] = false;
+	arguments["scene"] = "res://idle.tscn";
+
+	session.client.clear_events();
+	const int launch_seq = session.client.send_request("launch", arguments);
+	session.client.await_response(session.client.send_request("configurationDone", Dictionary()), 30000);
+	session.client.await_response(launch_seq, 60000);
+	REQUIRE_MESSAGE(!session.client.await_event("process", 120000).is_empty(), "The debuggee never started.");
+	// `process` only reports that the child was spawned. Debuggee output travels over
+	// the debugger connection, so its arrival is what proves the session is live.
+	REQUIRE_MESSAGE(!session.client.await_event("output", 120000).is_empty(),
+			"The debuggee never attached to the debugger session.");
+
+	// The debuggee is alive but never suspended, so there is no frame to step out of.
+	Dictionary step_out_arguments;
+	step_out_arguments["threadId"] = 1;
+	const int step_out_seq = session.client.send_request("stepOut", step_out_arguments);
+	const Dictionary step_out_response = session.client.await_response(step_out_seq, 30000);
+	if (step_out_response.is_empty()) {
+		FAIL_CHECK(("The host never answered `stepOut`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+	} else {
+		CHECK_EQ(String(step_out_response.get("type", "")), "response");
+		CHECK_EQ(int(step_out_response.get("request_seq", -1)), step_out_seq);
+		CHECK_EQ(String(step_out_response.get("command", "")), "stepOut");
+		CHECK_FALSE(bool(step_out_response.get("success", true)));
+		CHECK_EQ(String(step_out_response.get("message", "")), "notStopped");
+		const Dictionary error = Dictionary(step_out_response.get("body", Dictionary())).get("error", Dictionary());
+		CHECK_FALSE(String(error.get("format", "")).is_empty());
+		CHECK_EQ(String(Dictionary(error.get("variables", Dictionary())).get("command", "")), "stepOut");
+	}
+	// The refusal is not a stop, so the debuggee keeps running.
+	CHECK_EQ(session.client.event_index("stopped"), -1);
+
+	const Dictionary threads_response = session.client.await_response(
+			session.client.send_request("threads", Dictionary()), 30000);
+	REQUIRE_MESSAGE(!threads_response.is_empty(), "The host stopped answering after the refused `stepOut`.");
+	CHECK(bool(threads_response.get("success", false)));
+
+	session.client.await_response(session.client.send_request("terminate", Dictionary()), 60000);
+	session.client.await_event("terminated", 60000);
 }
 
 #ifdef UNIX_ENABLED
