@@ -2447,6 +2447,257 @@ TEST_CASE("[Variant][UInt] Same-carrier values compare and hash by value") {
 	CHECK_EQ(dictionary[make_uint(UINT64_MAX)], "answer");
 }
 
+// Asserts that `p_left` relates to `p_right` exactly as `p_order` says (`-1` less, `0` equal,
+// `1` greater) across every comparison surface a Variant exposes.
+static void check_integer_relation(const Variant &p_left, const Variant &p_right, int p_order) {
+	struct RelationalOperator {
+		Variant::Operator op;
+		bool expected_for_less;
+		bool expected_for_equal;
+		bool expected_for_greater;
+	};
+	const RelationalOperator operators[] = {
+		{ Variant::OP_EQUAL, false, true, false },
+		{ Variant::OP_NOT_EQUAL, true, false, true },
+		{ Variant::OP_LESS, true, false, false },
+		{ Variant::OP_LESS_EQUAL, true, true, false },
+		{ Variant::OP_GREATER, false, false, true },
+		{ Variant::OP_GREATER_EQUAL, false, true, true },
+	};
+
+	for (const RelationalOperator &relational : operators) {
+		const bool expected = p_order < 0 ? relational.expected_for_less
+										  : (p_order == 0 ? relational.expected_for_equal : relational.expected_for_greater);
+		bool valid = false;
+		Variant result;
+		Variant::evaluate(relational.op, p_left, p_right, result, valid);
+		INFO(vformat("Operator '%s' on '%s' and '%s'.", Variant::get_operator_name(relational.op), p_left.stringify(), p_right.stringify()));
+		REQUIRE(valid);
+		REQUIRE_EQ(result.get_type(), Variant::BOOL);
+		CHECK_EQ(result.operator bool(), expected);
+	}
+
+	CHECK_EQ(p_left == p_right, p_order == 0);
+	CHECK_EQ(p_left < p_right, p_order < 0);
+	if (p_order == 0) {
+		CHECK_EQ(p_left.hash(), p_right.hash());
+	}
+}
+
+TEST_CASE("[Variant][UInt] Signed and unsigned values compare as one number line") {
+	const int64_t signed_values[] = { -1, 0, 1, INT64_MAX };
+	const uint64_t unsigned_values[] = { 0, 1, uint64_t(INT64_MAX), uint64_t(INT64_MAX) + 1, UINT64_MAX };
+
+	for (int64_t signed_value : signed_values) {
+		for (uint64_t unsigned_value : unsigned_values) {
+			// A negative signed value is below every unsigned value; otherwise both sides are
+			// exact non-negative magnitudes.
+			int order = 0;
+			if (signed_value < 0) {
+				order = -1;
+			} else if (uint64_t(signed_value) < unsigned_value) {
+				order = -1;
+			} else if (uint64_t(signed_value) > unsigned_value) {
+				order = 1;
+			}
+
+			check_integer_relation(Variant(signed_value), make_uint(unsigned_value), order);
+			check_integer_relation(make_uint(unsigned_value), Variant(signed_value), -order);
+		}
+	}
+
+	for (uint64_t left : unsigned_values) {
+		for (uint64_t right : unsigned_values) {
+			const int order = left < right ? -1 : (left == right ? 0 : 1);
+			check_integer_relation(make_uint(left), make_uint(right), order);
+		}
+	}
+}
+
+TEST_CASE("[Variant][UInt] Equal integer values across carriers hash and key identically") {
+	const int64_t shared_values[] = { 0, 1, 4096, INT64_MAX };
+	for (int64_t value : shared_values) {
+		CHECK_EQ(Variant(value).hash(), make_uint(uint64_t(value)).hash());
+	}
+
+	// The upper half of the unsigned range must not be truncated or folded into the signed range.
+	CHECK_NE(make_uint(uint64_t(INT64_MAX) + 1).hash(), make_uint(0).hash());
+	CHECK_NE(make_uint(UINT64_MAX).hash(), make_uint(uint64_t(UINT32_MAX)).hash());
+	CHECK_NE(make_uint(uint64_t(1) << 63).hash(), make_uint(1).hash());
+
+	Dictionary keyed_by_signed;
+	keyed_by_signed[Variant(int64_t(42))] = "answer";
+	CHECK_EQ(keyed_by_signed[make_uint(42)], "answer");
+	CHECK_EQ(keyed_by_signed.size(), 1);
+	keyed_by_signed[make_uint(42)] = "replaced";
+	CHECK_EQ(keyed_by_signed.size(), 1);
+	CHECK_EQ(keyed_by_signed[Variant(int64_t(42))], "replaced");
+
+	Dictionary keyed_by_unsigned;
+	keyed_by_unsigned[make_uint(42)] = "answer";
+	CHECK_EQ(keyed_by_unsigned[Variant(int64_t(42))], "answer");
+
+	// A negative signed value never matches an unsigned key, even when the bit patterns agree.
+	Dictionary negative_keys;
+	negative_keys[Variant(int64_t(-1))] = "negative";
+	CHECK_FALSE(negative_keys.has(make_uint(UINT64_MAX)));
+}
+
+TEST_CASE("[Variant][UInt] Comparing the unsigned carrier against null works in both operand orders") {
+	const Variant null_value;
+	const Variant unsigned_value = make_uint(UINT64_MAX);
+
+	for (int order = 0; order < 2; order++) {
+		const Variant &left = order == 0 ? null_value : unsigned_value;
+		const Variant &right = order == 0 ? unsigned_value : null_value;
+
+		bool valid = false;
+		Variant result;
+		Variant::evaluate(Variant::OP_EQUAL, left, right, result, valid);
+		REQUIRE(valid);
+		CHECK_FALSE(result.operator bool());
+
+		valid = false;
+		Variant::evaluate(Variant::OP_NOT_EQUAL, left, right, result, valid);
+		REQUIRE(valid);
+		CHECK(result.operator bool());
+	}
+
+	CHECK_FALSE(null_value == unsigned_value);
+	CHECK_FALSE(unsigned_value == null_value);
+}
+
+TEST_CASE("[Variant][UInt] Ordering stays a strict weak ordering once carriers are mixed") {
+	// `Variant::operator<` backs `Comparator<Variant>`, so introducing value-based ordering between
+	// the integer carriers must not make the relation cyclic against any third type.
+	const Variant values[] = {
+		Variant(),
+		Variant(false),
+		Variant(int64_t(INT64_MIN)),
+		Variant(int64_t(-1)),
+		Variant(int64_t(0)),
+		Variant(int64_t(5)),
+		Variant(int64_t(INT64_MAX)),
+		make_uint(0),
+		make_uint(5),
+		make_uint(uint64_t(INT64_MAX)),
+		make_uint(uint64_t(INT64_MAX) + 1),
+		make_uint(UINT64_MAX),
+		Variant(2.5),
+		Variant(String("text")),
+		Variant(Vector2(1, 2)),
+	};
+	constexpr int value_count = int(sizeof(values) / sizeof(values[0]));
+
+	for (int a = 0; a < value_count; a++) {
+		CHECK_FALSE(values[a] < values[a]);
+		for (int b = 0; b < value_count; b++) {
+			const bool a_before_b = values[a] < values[b];
+			// Antisymmetric.
+			const bool both_directions = a_before_b && values[b] < values[a];
+			CHECK_FALSE(both_directions);
+			for (int c = 0; c < value_count; c++) {
+				if (a_before_b && values[b] < values[c]) {
+					INFO(vformat("'%s' < '%s' < '%s'.", values[a].stringify(), values[b].stringify(), values[c].stringify()));
+					CHECK(values[a] < values[c]);
+				}
+			}
+		}
+	}
+
+	// Sorting a mixed sequence still groups the integer carriers together and by value.
+	Vector<Variant> mixed;
+	mixed.push_back(Variant(2.5));
+	mixed.push_back(make_uint(UINT64_MAX));
+	mixed.push_back(Variant(int64_t(-1)));
+	mixed.push_back(make_uint(0));
+	mixed.push_back(Variant(int64_t(7)));
+	mixed.sort();
+
+	REQUIRE_EQ(mixed.size(), 5);
+	CHECK_EQ(mixed[0].operator int64_t(), -1);
+	CHECK_EQ(mixed[1].get_type(), Variant::UINT);
+	CHECK_EQ(mixed[1].operator uint64_t(), 0u);
+	CHECK_EQ(mixed[2].operator int64_t(), 7);
+	CHECK_EQ(mixed[3].operator uint64_t(), UINT64_MAX);
+	CHECK_EQ(mixed[4].get_type(), Variant::FLOAT);
+}
+
+TEST_CASE("[Variant][UInt] Checked conversion between the integer carriers reports range failure") {
+	// Both directions exist as conversions, but neither is a strict conversion because either can
+	// fail on a value outside the destination range.
+	CHECK(Variant::can_convert(Variant::INT, Variant::UINT));
+	CHECK(Variant::can_convert(Variant::UINT, Variant::INT));
+	CHECK_FALSE(Variant::can_convert_strict(Variant::INT, Variant::UINT));
+	CHECK_FALSE(Variant::can_convert_strict(Variant::UINT, Variant::INT));
+
+	Callable::CallError error;
+	Variant converted;
+
+	const int64_t accepted_signed[] = { 0, 1, INT64_MAX };
+	for (int64_t value : accepted_signed) {
+		const Variant source = value;
+		const Variant *arguments[] = { &source };
+		Variant::construct(Variant::UINT, converted, arguments, 1, error);
+		REQUIRE_EQ(error.error, Callable::CallError::CALL_OK);
+		CHECK_EQ(converted.get_type(), Variant::UINT);
+		CHECK_EQ(converted.operator uint64_t(), uint64_t(value));
+	}
+
+	const int64_t rejected_signed[] = { -1, INT64_MIN };
+	for (int64_t value : rejected_signed) {
+		const Variant source = value;
+		const Variant *arguments[] = { &source };
+		Variant::construct(Variant::UINT, converted, arguments, 1, error);
+		CHECK_EQ(error.error, Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+	}
+
+	const uint64_t accepted_unsigned[] = { 0, 1, uint64_t(INT64_MAX) };
+	for (uint64_t value : accepted_unsigned) {
+		const Variant source = make_uint(value);
+		const Variant *arguments[] = { &source };
+		Variant::construct(Variant::INT, converted, arguments, 1, error);
+		REQUIRE_EQ(error.error, Callable::CallError::CALL_OK);
+		CHECK_EQ(converted.get_type(), Variant::INT);
+		CHECK_EQ(converted.operator int64_t(), int64_t(value));
+	}
+
+	const uint64_t rejected_unsigned[] = { uint64_t(INT64_MAX) + 1, UINT64_MAX };
+	for (uint64_t value : rejected_unsigned) {
+		const Variant source = make_uint(value);
+		const Variant *arguments[] = { &source };
+		Variant::construct(Variant::INT, converted, arguments, 1, error);
+		CHECK_EQ(error.error, Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+	}
+}
+
+TEST_CASE("[Variant][UInt] Mixed and same-carrier unsigned arithmetic stays unregistered") {
+	const Variant signed_one = int64_t(1);
+	const Variant unsigned_one = make_uint(1);
+	const Variant::Operator arithmetic[] = {
+		Variant::OP_ADD,
+		Variant::OP_SUBTRACT,
+		Variant::OP_MULTIPLY,
+		Variant::OP_DIVIDE,
+		Variant::OP_MODULE,
+	};
+
+	for (Variant::Operator op : arithmetic) {
+		bool valid = true;
+		Variant result;
+		Variant::evaluate(op, signed_one, unsigned_one, result, valid);
+		CHECK_FALSE(valid);
+
+		valid = true;
+		Variant::evaluate(op, unsigned_one, signed_one, result, valid);
+		CHECK_FALSE(valid);
+
+		valid = true;
+		Variant::evaluate(op, unsigned_one, unsigned_one, result, valid);
+		CHECK_FALSE(valid);
+	}
+}
+
 TEST_CASE("[Variant][UInt] The carrier name round-trips") {
 	CHECK_EQ(Variant::get_type_name(Variant::UINT), "uint");
 	CHECK_EQ(Variant::get_type_by_name("uint"), Variant::UINT);
