@@ -108,6 +108,7 @@
 #include "tests/core/config/test_project_build_pipeline_status.h"
 #include "tests/core/config/test_project_build_state.h"
 #include "tests/core/config/test_project_settings.h"
+#include "tests/core/extension/test_foundry_extension_interface.h"
 #include "tests/core/input/test_input_event.h"
 #include "tests/core/input/test_input_event_key.h"
 #include "tests/core/input/test_input_event_mouse.h"

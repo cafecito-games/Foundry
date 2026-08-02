@@ -1010,3 +1010,22 @@ struct VariantTypeConstructor {
 		memnew_placement(r_value, T(*reinterpret_cast<Variant *>(p_variant)));
 	}
 };
+
+// The unsigned carrier has no C++ nominal type that selects it through an ordinary `Variant`
+// constructor (unsigned integer literals still select the signed carrier), so the extension ABI's
+// UINT constructor/extractor functions build and read it explicitly instead of going through the
+// generic path above.
+template <>
+struct VariantTypeConstructor<uint64_t> {
+	_FORCE_INLINE_ static void variant_from_type(void *r_variant, void *p_value) {
+		// r_variant is provided by caller as uninitialized memory
+		Variant *variant = memnew_placement(r_variant, Variant());
+		VariantInternal::set_type(*variant, Variant::UINT);
+		*VariantInternal::get_uint(variant) = *reinterpret_cast<uint64_t *>(p_value);
+	}
+
+	_FORCE_INLINE_ static void type_from_variant(void *r_value, void *p_variant) {
+		// r_value is provided by caller as uninitialized memory
+		memnew_placement(r_value, uint64_t(reinterpret_cast<Variant *>(p_variant)->operator uint64_t()));
+	}
+};
