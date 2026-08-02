@@ -889,10 +889,12 @@ bool Variant::operator==(const Variant &p_variant) const {
 }
 
 bool Variant::operator<(const Variant &p_variant) const {
-	// The signed and unsigned integer carriers order by mathematical value, not by carrier identity.
-	// Every other type pairing still orders by type first.
-	if (type != p_variant.type && !is_integer_carrier_pair(type, p_variant.type)) {
-		return type < p_variant.type;
+	// The signed and unsigned integer carriers order by mathematical value rather than by carrier
+	// identity, and share one rank so that ordering against any third type stays transitive.
+	const Type left_rank = get_ordering_rank(type);
+	const Type right_rank = get_ordering_rank(p_variant.type);
+	if (left_rank != right_rank) { //if types differ, then order by type first
+		return left_rank < right_rank;
 	}
 	bool v;
 	Variant r;

@@ -2543,6 +2543,86 @@ TEST_CASE("[Variant][UInt] Equal integer values across carriers hash and key ide
 	CHECK_FALSE(negative_keys.has(make_uint(UINT64_MAX)));
 }
 
+TEST_CASE("[Variant][UInt] Comparing the unsigned carrier against null works in both operand orders") {
+	const Variant null_value;
+	const Variant unsigned_value = make_uint(UINT64_MAX);
+
+	for (int order = 0; order < 2; order++) {
+		const Variant &left = order == 0 ? null_value : unsigned_value;
+		const Variant &right = order == 0 ? unsigned_value : null_value;
+
+		bool valid = false;
+		Variant result;
+		Variant::evaluate(Variant::OP_EQUAL, left, right, result, valid);
+		REQUIRE(valid);
+		CHECK_FALSE(result.operator bool());
+
+		valid = false;
+		Variant::evaluate(Variant::OP_NOT_EQUAL, left, right, result, valid);
+		REQUIRE(valid);
+		CHECK(result.operator bool());
+	}
+
+	CHECK_FALSE(null_value == unsigned_value);
+	CHECK_FALSE(unsigned_value == null_value);
+}
+
+TEST_CASE("[Variant][UInt] Ordering stays a strict weak ordering once carriers are mixed") {
+	// `Variant::operator<` backs `Comparator<Variant>`, so introducing value-based ordering between
+	// the integer carriers must not make the relation cyclic against any third type.
+	const Variant values[] = {
+		Variant(),
+		Variant(false),
+		Variant(int64_t(INT64_MIN)),
+		Variant(int64_t(-1)),
+		Variant(int64_t(0)),
+		Variant(int64_t(5)),
+		Variant(int64_t(INT64_MAX)),
+		make_uint(0),
+		make_uint(5),
+		make_uint(uint64_t(INT64_MAX)),
+		make_uint(uint64_t(INT64_MAX) + 1),
+		make_uint(UINT64_MAX),
+		Variant(2.5),
+		Variant(String("text")),
+		Variant(Vector2(1, 2)),
+	};
+	constexpr int value_count = int(sizeof(values) / sizeof(values[0]));
+
+	for (int a = 0; a < value_count; a++) {
+		CHECK_FALSE(values[a] < values[a]);
+		for (int b = 0; b < value_count; b++) {
+			const bool a_before_b = values[a] < values[b];
+			// Antisymmetric.
+			const bool both_directions = a_before_b && values[b] < values[a];
+			CHECK_FALSE(both_directions);
+			for (int c = 0; c < value_count; c++) {
+				if (a_before_b && values[b] < values[c]) {
+					INFO(vformat("'%s' < '%s' < '%s'.", values[a].stringify(), values[b].stringify(), values[c].stringify()));
+					CHECK(values[a] < values[c]);
+				}
+			}
+		}
+	}
+
+	// Sorting a mixed sequence still groups the integer carriers together and by value.
+	Vector<Variant> mixed;
+	mixed.push_back(Variant(2.5));
+	mixed.push_back(make_uint(UINT64_MAX));
+	mixed.push_back(Variant(int64_t(-1)));
+	mixed.push_back(make_uint(0));
+	mixed.push_back(Variant(int64_t(7)));
+	mixed.sort();
+
+	REQUIRE_EQ(mixed.size(), 5);
+	CHECK_EQ(mixed[0].operator int64_t(), -1);
+	CHECK_EQ(mixed[1].get_type(), Variant::UINT);
+	CHECK_EQ(mixed[1].operator uint64_t(), 0u);
+	CHECK_EQ(mixed[2].operator int64_t(), 7);
+	CHECK_EQ(mixed[3].operator uint64_t(), UINT64_MAX);
+	CHECK_EQ(mixed[4].get_type(), Variant::FLOAT);
+}
+
 TEST_CASE("[Variant][UInt] Checked conversion between the integer carriers reports range failure") {
 	// Both directions exist as conversions, but neither is a strict conversion because either can
 	// fail on a value outside the destination range.

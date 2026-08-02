@@ -575,6 +575,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::BOOL);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::INT);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::FLOAT);
+	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::UINT);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::STRING);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::VECTOR2);
 	register_op<OperatorEvaluatorAlwaysFalse>(Variant::OP_EQUAL, Variant::NIL, Variant::VECTOR2I);
@@ -701,6 +702,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::BOOL);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::INT);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::FLOAT);
+	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::UINT);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::STRING);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::VECTOR2);
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_NOT_EQUAL, Variant::NIL, Variant::VECTOR2I);

@@ -424,10 +424,11 @@ public:
 	static bool can_convert_strict(Type p_type_from, Type p_type_to);
 	static bool is_type_shared(Variant::Type p_type);
 
-	// True for the `INT`/`UINT` and `UINT`/`INT` pairings, which compare, order, and hash as one
-	// mathematical number line instead of as two unrelated carriers.
-	_FORCE_INLINE_ static bool is_integer_carrier_pair(Type p_left, Type p_right) {
-		return (p_left == INT && p_right == UINT) || (p_left == UINT && p_right == INT);
+	// `operator<` orders values of unrelated types by type. The signed and unsigned integer carriers
+	// compare as one mathematical number line, so they must also occupy one slot in that type
+	// ordering; otherwise the relation stops being transitive once a third type is involved.
+	_FORCE_INLINE_ static Type get_ordering_rank(Type p_type) {
+		return p_type == UINT ? INT : p_type;
 	}
 
 	bool is_ref_counted() const;
