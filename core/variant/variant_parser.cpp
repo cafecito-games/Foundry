@@ -686,6 +686,54 @@ static Error _parse_container_type(VariantParser::Token &token, VariantParser::S
 	}
 
 	const StringName type_name = token.value;
+	if (type_name == "Type") {
+		// A class handle is spelled the way the language spells it, `Type[Node]`, and denotes the class
+		// rather than its instances. The wrapped type is an ordinary type, so a specialization such as
+		// `Type[Box[int]]` recovers its arguments through the same recursion.
+		Error err = VariantParser::get_token(p_stream, token, line, r_err_str);
+		if (err) {
+			return err;
+		}
+		if (token.type != VariantParser::TK_BRACKET_OPEN) {
+			r_err_str = "Expected '[' after 'Type'";
+			return ERR_PARSE_ERROR;
+		}
+
+		VariantParser::Token represented_token;
+		err = VariantParser::get_token(p_stream, represented_token, line, r_err_str);
+		if (err) {
+			return err;
+		}
+
+		VariantParser::TokenType next_token_type;
+		err = _parse_container_type(represented_token, p_stream, line, r_err_str, p_res_parser, r_type, next_token_type);
+		if (err) {
+			return err;
+		}
+		if (next_token_type != VariantParser::TK_BRACKET_CLOSE) {
+			r_err_str = "Expected ']' after class handle type";
+			return ERR_PARSE_ERROR;
+		}
+		if (r_type.builtin_type != Variant::OBJECT) {
+			r_err_str = "Class handle types are only valid for Object types";
+			return ERR_PARSE_ERROR;
+		}
+		// A class handle denotes a class, and a class handle is not one. The representation carries a
+		// single flag, so nesting would silently collapse to the type it wraps.
+		if (r_type.is_type_handle) {
+			r_err_str = "Class handle types cannot be nested";
+			return ERR_PARSE_ERROR;
+		}
+		r_type.is_type_handle = true;
+
+		err = VariantParser::get_token(p_stream, token, line, r_err_str);
+		if (err) {
+			return err;
+		}
+		r_next_token_type = token.type;
+		return OK;
+	}
+
 	bool got_next_token = false;
 	if (builtin_types.has(type_name)) {
 		r_type.builtin_type = builtin_types.get(type_name);
@@ -2065,6 +2113,12 @@ static String encode_resource_reference(const String &path) {
 }
 
 static void _write_container_type(const ContainerType &p_type, VariantWriter::StoreStringFunc p_store_string_func, void *p_store_string_ud, VariantWriter::EncodeResourceFunc p_encode_res_func, void *p_encode_res_ud, const char *p_error_context) {
+	// A class handle wraps the type it denotes, so `Array[Type[Node]]` stays distinguishable from
+	// `Array[Node]` and keeps any specialization inside the wrapper.
+	if (p_type.is_type_handle) {
+		p_store_string_func(p_store_string_ud, "Type[");
+	}
+
 	if (p_type.script.is_valid()) {
 		String resource_text;
 		if (p_encode_res_func) {
@@ -2108,6 +2162,10 @@ static void _write_container_type(const ContainerType &p_type, VariantWriter::St
 			}
 			_write_container_type(p_type.type_arguments[i], p_store_string_func, p_store_string_ud, p_encode_res_func, p_encode_res_ud, p_error_context);
 		}
+		p_store_string_func(p_store_string_ud, "]");
+	}
+
+	if (p_type.is_type_handle) {
 		p_store_string_func(p_store_string_ud, "]");
 	}
 }
