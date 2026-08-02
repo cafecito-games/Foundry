@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 15: Cannot assign class handle "Unrelated" to target of type "Type[Factory]"; handle represents "Unrelated", which is not compatible with "Factory".

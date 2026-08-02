@@ -531,8 +531,11 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 	}
 
 	// Preserve specialized type arguments (e.g. the `int` in `Box[int]`) so runtime metadata is not lost.
+	// A `Type[T]` argument keeps its class-handle layer, so `Slot[Type[Factory]]` stays distinct from
+	// `Slot[Factory]` in the reified descriptor the runtime validates member writes against.
 	for (int i = 0; i < p_datatype.type_arguments.size(); i++) {
-		result.type_arguments.push_back(_gdtype_from_datatype(p_datatype.type_arguments[i], p_owner, false));
+		const FSParser::DataType &argument_datatype = p_datatype.type_arguments[i];
+		result.type_arguments.push_back(_gdtype_from_datatype(argument_datatype, p_owner, argument_datatype.is_type_handle_annotation));
 	}
 
 	return result;
@@ -4302,12 +4305,17 @@ void FSCompiler::_specialize_type_argument_binding(FoundryScript::TypeArgumentBi
 		return; // Base not specialized at this ordinal (e.g. raw `extends Base`); leave open.
 	}
 	const FSParser::DataType &argument = p_base_specialization[base_ordinal];
-	if (argument.kind == FSParser::DataType::TYPE_PARAMETER &&
+	// A handle-wrapped parameter (`extends Slot[Type[U]]`) is not a plain forward of `U`: the leaf
+	// reifies `U` as an instance type, so reusing its ordinal would validate the inherited member
+	// against instances of `U` instead of class handles for it.
+	if (argument.kind == FSParser::DataType::TYPE_PARAMETER && !argument.is_type_handle_annotation &&
 			argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
 		r_binding.leaf_ordinal = argument.type_parameter_index; // Forwarded to this class's parameter.
 	} else {
 		r_binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
-		r_binding.fixed = _gdtype_from_datatype(argument, p_owner, false);
+		// A `Type[T]` fixing argument (`extends Slot[Type[Factory]]`) keeps its class-handle layer so
+		// the baked binding validates handles, not instances.
+		r_binding.fixed = _gdtype_from_datatype(argument, p_owner, argument.is_type_handle_annotation);
 		// A composite argument that still mentions an open parameter (`extends Box[Array[T]]`) is erased
 		// by `_gdtype_from_datatype`, so the baked type no longer reflects the dependent reification. Flag
 		// it so the leaf-to-base projection refrains from validating that slot rather than rejecting it.
@@ -4646,7 +4654,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				binding.leaf_ordinal = argument->type_parameter_index;
 			} else {
 				binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
-				binding.fixed = _gdtype_from_datatype(*argument, p_script, false);
+				binding.fixed = _gdtype_from_datatype(*argument, p_script, argument->is_type_handle_annotation);
 				binding.fixed_is_dependent = _datatype_contains_erased_type_parameter(*argument);
 				binding.leaf_ordinal = -1;
 			}
@@ -4710,9 +4718,21 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				const FSParser::DataType member_datatype = _substitute_self_type_parameter_for_class(variable->get_datatype(), p_class);
 				minfo.data_type = _gdtype_from_datatype(member_datatype, p_script);
 
+				// A member flattened in from an applied trait is typed by the TRAIT's parameters, whose
+				// ordinals do not index this class's reified arguments. Binding it here would validate
+				// writes against whichever of this class's own arguments happens to share the ordinal, so
+				// such a member keeps no binding and stays an untyped slot.
+				const bool member_names_own_type_parameter =
+						member_datatype.type_parameter_index >= 0 &&
+						member_datatype.type_parameter_index < p_class->type_parameters.size() &&
+						p_class->type_parameters[member_datatype.type_parameter_index] != nullptr &&
+						p_class->type_parameters[member_datatype.type_parameter_index]->identifier != nullptr &&
+						p_class->type_parameters[member_datatype.type_parameter_index]->identifier->name ==
+								member_datatype.type_parameter_name;
 				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
 						member_datatype.kind == FSParser::DataType::TYPE_PARAMETER &&
-						member_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
+						member_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS &&
+						member_names_own_type_parameter) {
 					// The slot stays an erased Variant (see `_gdtype_from_datatype`), but record that it stands
 					// for one of this class's own type parameters so writes can validate against the
 					// instance's reified argument at runtime (e.g. rejecting `box.value = "x"` on a `Box[int]`).

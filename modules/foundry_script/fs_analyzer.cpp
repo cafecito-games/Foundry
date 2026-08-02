@@ -2146,27 +2146,13 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			return bad_type;
 		}
 
-		FSParser::DataType represented_type = type_from_metatype(
+		const FSParser::DataType represented_type = type_from_metatype(
 				resolve_datatype(p_type->get_container_type_or_null(0)));
-		if (represented_type.is_variant()) {
-			push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_type);
+		FSParser::DataType handle_type;
+		if (!make_type_handle_meta_type(represented_type, p_type, handle_type)) {
 			return bad_type;
 		}
-		if (represented_type.kind == FSParser::DataType::BUILTIN) {
-			push_error(vformat(R"(Builtin metatypes such as "Type[%s]" are not supported yet.)",
-							   represented_type.to_string()),
-					p_type);
-			return bad_type;
-		}
-		if (represented_type.kind == FSParser::DataType::ENUM || represented_type.is_type_handle_annotation) {
-			push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_type);
-			return bad_type;
-		}
-
-		represented_type.is_constant = true;
-		represented_type.is_meta_type = true;
-		represented_type.is_type_handle_annotation = true;
-		return finalize_datatype(represented_type);
+		return finalize_datatype(handle_type);
 	}
 
 	if (!result.is_set()) {
@@ -7695,7 +7681,10 @@ bool FSAnalyzer::type_argument_satisfies_bound(const FSParser::DataType &p_argum
 	// A bound that is itself an (unsubstituted) type parameter — e.g. an outer-scope parameter the
 	// caller could not bind — constrains the argument only by its own upper bound; an unbounded one
 	// imposes nothing. Never fall through to the permissive general compatibility check below.
-	if (p_bound.kind == FSParser::DataType::TYPE_PARAMETER) {
+	// A handle-wrapped parameter bound (`T: Type[U]`) is skipped here: unwrapping it to `U`'s own upper
+	// bound would drop the handle layer, leaving a handle argument compared against an instance type.
+	// The handle comparison below strips both layers and recurses on the represented types instead.
+	if (p_bound.kind == FSParser::DataType::TYPE_PARAMETER && !p_bound.is_type_handle_annotation) {
 		if (p_bound.type_parameter_bound.is_empty()) {
 			return true;
 		}
@@ -7704,6 +7693,23 @@ bool FSAnalyzer::type_argument_satisfies_bound(const FSParser::DataType &p_argum
 		FSParser::DataType bound = p_bound.type_parameter_bound[0];
 		bound.is_nullable = bound.is_nullable || p_bound.is_nullable;
 		return type_argument_satisfies_bound(p_argument, bound);
+	}
+	// A class handle denotes a class, not values of it, so it never satisfies an instance-typed bound:
+	// generic code constrained by `T: Node` would otherwise be free to call Node instance methods on a
+	// value that is an `FSNativeClass`. A handle bound is satisfied only by a handle whose represented
+	// type satisfies the bound's represented type. This runs before the argument's type-parameter
+	// unwrapping, which drops the wrapper: `Type[U]` has to be compared as a handle, not as `U`'s bound.
+	if (p_argument.is_type_handle_annotation != p_bound.is_type_handle_annotation) {
+		return false;
+	}
+	if (p_argument.is_type_handle_annotation) {
+		FSParser::DataType represented_argument = p_argument;
+		represented_argument.is_type_handle_annotation = false;
+		represented_argument.is_meta_type = false;
+		FSParser::DataType represented_bound = p_bound;
+		represented_bound.is_type_handle_annotation = false;
+		represented_bound.is_meta_type = false;
+		return type_argument_satisfies_bound(represented_argument, represented_bound);
 	}
 	if (p_argument.kind == FSParser::DataType::TYPE_PARAMETER) {
 		// A bare type parameter is erased to `Variant` at runtime, so it satisfies a concrete bound
@@ -12744,6 +12750,35 @@ void FSAnalyzer::apply_use_site_nullable_type_argument_marker(FSParser::DataType
 	r_type_argument.is_nullable = true;
 }
 
+bool FSAnalyzer::make_type_handle_meta_type(const FSParser::DataType &p_represented_type, const FSParser::Node *p_source, FSParser::DataType &r_type) {
+	// The single rule for what `Type[T]` may represent, shared by annotation position and by
+	// value position (`Slot[Type[Factory]].new()`), so the two never drift apart.
+	if (p_represented_type.is_variant()) {
+		push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_source);
+		return false;
+	}
+	if (p_represented_type.kind == FSParser::DataType::BUILTIN) {
+		push_error(vformat(R"(Builtin metatypes such as "Type[%s]" are not supported yet.)",
+						   p_represented_type.to_string()),
+				p_source);
+		return false;
+	}
+	// A tuple is a value shape erased to an Array, so a class handle for one cannot be represented:
+	// the reified descriptor would be an Array descriptor carrying a handle flag core only honors for
+	// objects, which would let any Array through the slot.
+	if (p_represented_type.kind == FSParser::DataType::ENUM || p_represented_type.kind == FSParser::DataType::TUPLE ||
+			p_represented_type.is_type_handle_annotation) {
+		push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_source);
+		return false;
+	}
+
+	r_type = p_represented_type;
+	r_type.is_constant = true;
+	r_type.is_meta_type = true;
+	r_type.is_type_handle_annotation = true;
+	return true;
+}
+
 bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument) {
 	if (p_expression == nullptr) {
 		return false;
@@ -12794,19 +12829,23 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 	}
 
 	if (p_expression->type == FSParser::Node::SUBSCRIPT) {
-		// A nested type argument parsed as a subscript, such as `Array[Element]` (single element) or
-		// `Dictionary[Key, Value]` (a two-argument container). A generic class handle (`Box[int]`)
-		// as a nested argument is not representable here yet, so reject it rather than silently
-		// building a wrong type.
+		// A nested type argument parsed as a subscript: a typed container (`Array[Element]`,
+		// `Dictionary[Key, Value]`), a class handle (`Type[Factory]`), or a generic class
+		// specialization (`Box[int]`).
 		FSParser::SubscriptNode *subscript = static_cast<FSParser::SubscriptNode *>(p_expression);
-		if (subscript->is_attribute || subscript->base == nullptr || subscript->index == nullptr) {
+		if (subscript->base == nullptr || subscript->index == nullptr) {
 			return false;
 		}
-		FSParser::DataType base_argument;
-		if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
-			return false;
-		}
-		if (base_argument.kind != FSParser::DataType::BUILTIN) {
+		if (subscript->is_attribute) {
+			// A qualified type name (`Outer.Factory`) is an attribute access, not a type-argument list.
+			// Reduce it and accept it when it names a type, so annotation position and value position
+			// spell the same argument the same way.
+			reduce_expression(subscript);
+			const FSParser::DataType attribute_type = subscript->get_datatype();
+			if (attribute_type.is_set() && attribute_type.is_meta_type) {
+				r_type_argument = type_from_metatype(attribute_type);
+				return true;
+			}
 			return false;
 		}
 
@@ -12815,6 +12854,78 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			element_expressions.push_back(subscript->index);
 		} else {
 			element_expressions = subscript->type_arguments;
+		}
+
+		// A use-site `?` on a nested argument (`Box[Node?]`, `Type[Factory?]`) is recorded on the
+		// subscript rather than on the argument expression, so it has to be reapplied here; otherwise
+		// the same spelling would yield different specializations in annotation and value position.
+		auto apply_nested_nullable_marker = [&](int p_argument_index, FSParser::DataType &r_argument) {
+			if (p_argument_index < subscript->type_argument_is_nullable.size()) {
+				apply_use_site_nullable_type_argument_marker(r_argument, subscript->type_argument_is_nullable[p_argument_index]);
+			}
+		};
+
+		// `Type` names the class-handle layer rather than a declared class, matching how the parser
+		// recognizes the same spelling structurally in annotation position. Resolving it as an
+		// ordinary identifier would report it as undeclared instead.
+		if (subscript->base->type == FSParser::Node::IDENTIFIER &&
+				static_cast<const FSParser::IdentifierNode *>(subscript->base)->name == SNAME("Type")) {
+			if (element_expressions.size() != 1) {
+				push_error("Type[T] expects exactly one type argument.", p_expression);
+				return false;
+			}
+			FSParser::DataType represented_type;
+			if (!resolve_explicit_type_argument(element_expressions[0], represented_type)) {
+				return false;
+			}
+			apply_nested_nullable_marker(0, represented_type);
+			FSParser::DataType handle_type;
+			if (!make_type_handle_meta_type(represented_type, p_expression, handle_type)) {
+				return false;
+			}
+			r_type_argument = type_from_metatype(handle_type);
+			return true;
+		}
+
+		FSParser::DataType base_argument;
+		if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
+			return false;
+		}
+
+		if (base_argument.kind == FSParser::DataType::CLASS && base_argument.class_type != nullptr &&
+				!base_argument.class_type->type_parameters.is_empty()) {
+			// A generic class specialization nested inside another type argument, such as the
+			// `Box[int]` in `Slot[Type[Box[int]]]`. Type arguments are invariant, so the nested
+			// specialization has to be carried rather than degraded to the raw class.
+			const int expected_argument_count = base_argument.class_type->type_parameters.size();
+			if (element_expressions.size() != expected_argument_count) {
+				push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)",
+								   base_argument.to_string(), expected_argument_count, element_expressions.size()),
+						p_expression);
+				return false;
+			}
+			Vector<FSParser::DataType> resolved_arguments;
+			Vector<bool> argument_failed;
+			Vector<const FSParser::Node *> argument_sources;
+			for (int i = 0; i < element_expressions.size(); i++) {
+				FSParser::DataType argument;
+				if (!resolve_explicit_type_argument(element_expressions[i], argument)) {
+					return false;
+				}
+				apply_nested_nullable_marker(i, argument);
+				resolved_arguments.push_back(argument);
+				argument_failed.push_back(false);
+				argument_sources.push_back(element_expressions[i]);
+			}
+			if (!bind_class_type_arguments(base_argument, resolved_arguments, argument_failed, argument_sources, p_expression)) {
+				return false;
+			}
+			r_type_argument = base_argument;
+			return true;
+		}
+
+		if (base_argument.kind != FSParser::DataType::BUILTIN) {
+			return false;
 		}
 
 		if (base_argument.builtin_type == Variant::ARRAY) {
@@ -12834,6 +12945,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			if (!resolve_explicit_type_argument(element_expressions[i], element_argument)) {
 				return false;
 			}
+			apply_nested_nullable_marker(i, element_argument);
 			base_argument.set_container_element_type(i, element_argument);
 		}
 		r_type_argument = base_argument;

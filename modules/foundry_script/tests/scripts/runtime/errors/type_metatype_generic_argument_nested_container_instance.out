@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to push_back an object of type 'RefCounted' into a TypedArray of type 'Type[RefCounted]', which requires a class handle.
+>> ERROR: Condition "!_p->typed.validate(value, "push_back")" is true.
+1

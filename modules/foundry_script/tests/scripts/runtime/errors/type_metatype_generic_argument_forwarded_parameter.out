@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+true
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign an object of type 'RefCounted' into a member of type 'Type[Object]', which requires a class handle.
+>> SCRIPT ERROR at runtime/errors/type_metatype_generic_argument_forwarded_parameter.fs:19 on test(): Invalid assignment of property or key 'value' with value of type 'RefCounted' on a base object of type 'RefCounted (Forwarded)'.

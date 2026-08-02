@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Type argument "Button" does not satisfy the bound "Type[Button]" of type parameter "T".

@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Builtin metatypes such as "Type[int]" are not supported yet.
+>> ERROR at line 6: Could not resolve the type argument for generic class "Slot".

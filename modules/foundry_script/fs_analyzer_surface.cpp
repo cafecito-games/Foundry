@@ -1105,21 +1105,14 @@ bool FSAnalyzer::apply_class_type_arguments(FSParser::DataType &r_type, const Ve
 	Vector<FSParser::DataType> resolved_arguments;
 	Vector<bool> argument_failed;
 	Vector<const FSParser::Node *> argument_sources;
-	bool nested_type_handle_argument = false;
 	for (int i = 0; i < p_argument_nodes.size(); i++) {
 		const int errors_before = parser->get_errors().size();
+		// A `Type[T]` argument stays a class handle: `Slot[Type[Factory]]` and `Slot[Factory]` are
+		// distinct specializations, and the handle layer is what the runtime validates writes against.
 		FSParser::DataType argument = type_from_metatype(resolve_datatype(p_argument_nodes[i]));
-		if (argument.is_type_handle_annotation) {
-			push_error("Type[T] cannot be used as a nested type argument yet.", p_argument_nodes[i]);
-			nested_type_handle_argument = true;
-		}
 		resolved_arguments.push_back(argument);
-		argument_failed.push_back(parser->get_errors().size() > errors_before || argument.is_type_handle_annotation);
+		argument_failed.push_back(parser->get_errors().size() > errors_before);
 		argument_sources.push_back(p_argument_nodes[i]);
-	}
-
-	if (nested_type_handle_argument) {
-		return false;
 	}
 
 	if (r_argument_failed != nullptr) {

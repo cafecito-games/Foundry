@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a class handle specialized as 'RefCounted[String]' into a member of type 'Type[RefCounted[int]]'.
+>> SCRIPT ERROR at runtime/errors/type_metatype_generic_argument_specialized_handle_mismatch.fs:15 on test(): Invalid assignment of property or key 'value' with value of type 'RefCounted[String]' on a base object of type 'RefCounted (Slot)'.
