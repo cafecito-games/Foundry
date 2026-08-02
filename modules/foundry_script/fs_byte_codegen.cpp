@@ -240,6 +240,12 @@ int FSByteCodeGenerator::get_container_type_pos(const FSDataType &p_type) {
 	if (!p_type.type_arguments.is_empty()) {
 		return get_constant_pos(make_container_type_descriptor(p_type));
 	}
+	// A `Type[T]` element tests class handles rather than instances. A bare `script_type` constant
+	// cannot express that, and a native handle has no script at all, so the full descriptor is the
+	// only encoding that keeps `Array[Type[Node]]` distinct from `Array[Node]` at runtime.
+	if (p_type.is_type_handle) {
+		return get_constant_pos(make_container_type_descriptor(p_type));
+	}
 	return get_constant_pos(p_type.script_type);
 }
 
