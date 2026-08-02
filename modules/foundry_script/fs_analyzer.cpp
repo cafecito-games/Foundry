@@ -12809,7 +12809,19 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 		// `Dictionary[Key, Value]`), a class handle (`Type[Factory]`), or a generic class
 		// specialization (`Box[int]`).
 		FSParser::SubscriptNode *subscript = static_cast<FSParser::SubscriptNode *>(p_expression);
-		if (subscript->is_attribute || subscript->base == nullptr || subscript->index == nullptr) {
+		if (subscript->base == nullptr || subscript->index == nullptr) {
+			return false;
+		}
+		if (subscript->is_attribute) {
+			// A qualified type name (`Outer.Factory`) is an attribute access, not a type-argument list.
+			// Reduce it and accept it when it names a type, so annotation position and value position
+			// spell the same argument the same way.
+			reduce_expression(subscript);
+			const FSParser::DataType attribute_type = subscript->get_datatype();
+			if (attribute_type.is_set() && attribute_type.is_meta_type) {
+				r_type_argument = type_from_metatype(attribute_type);
+				return true;
+			}
 			return false;
 		}
 
@@ -12819,6 +12831,15 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 		} else {
 			element_expressions = subscript->type_arguments;
 		}
+
+		// A use-site `?` on a nested argument (`Box[Node?]`, `Type[Factory?]`) is recorded on the
+		// subscript rather than on the argument expression, so it has to be reapplied here; otherwise
+		// the same spelling would yield different specializations in annotation and value position.
+		auto apply_nested_nullable_marker = [&](int p_argument_index, FSParser::DataType &r_argument) {
+			if (p_argument_index < subscript->type_argument_is_nullable.size()) {
+				apply_use_site_nullable_type_argument_marker(r_argument, subscript->type_argument_is_nullable[p_argument_index]);
+			}
+		};
 
 		// `Type` names the class-handle layer rather than a declared class, matching how the parser
 		// recognizes the same spelling structurally in annotation position. Resolving it as an
@@ -12833,6 +12854,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			if (!resolve_explicit_type_argument(element_expressions[0], represented_type)) {
 				return false;
 			}
+			apply_nested_nullable_marker(0, represented_type);
 			FSParser::DataType handle_type;
 			if (!make_type_handle_meta_type(represented_type, p_expression, handle_type)) {
 				return false;
@@ -12866,6 +12888,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 				if (!resolve_explicit_type_argument(element_expressions[i], argument)) {
 					return false;
 				}
+				apply_nested_nullable_marker(i, argument);
 				resolved_arguments.push_back(argument);
 				argument_failed.push_back(false);
 				argument_sources.push_back(element_expressions[i]);
@@ -12898,6 +12921,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			if (!resolve_explicit_type_argument(element_expressions[i], element_argument)) {
 				return false;
 			}
+			apply_nested_nullable_marker(i, element_argument);
 			base_argument.set_container_element_type(i, element_argument);
 		}
 		r_type_argument = base_argument;
