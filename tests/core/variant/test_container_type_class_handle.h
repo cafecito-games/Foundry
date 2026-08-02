@@ -304,6 +304,14 @@ TEST_CASE("[ContainerType] Class handle rejections name the actual reason") {
 	CHECK_FALSE(validate.validate(freed_handle, "use"));
 	CHECK(recorder.last_message.contains("previously freed"));
 
+	// A specialized slot names its arguments, so the reported expected type is not an unspecialized
+	// approximation of the slot.
+	ContainerType specialized = make_handle_type(SNAME("Resource"));
+	specialized.type_arguments.push_back(make_builtin_type(Variant::INT));
+	Variant unrelated_handle = make_handle(SNAME("Object"));
+	CHECK_FALSE(ContainerTypeValidate(specialized).validate(unrelated_handle, "use"));
+	CHECK(recorder.last_message.contains("Type[Resource[int]]"));
+
 	ERR_PRINT_ON;
 }
 
