@@ -3530,6 +3530,48 @@ static HashMap<StringName, FSParser::DataType> _trait_type_argument_substitution
 	return bindings;
 }
 
+// The generic trait a flattened member was declared in, together with the type arguments the
+// implementer supplied for that trait, indexed by the trait's own type-parameter ordinals.
+struct FlattenedTraitArguments {
+	FSParser::ClassNode *trait = nullptr;
+	Vector<FSParser::DataType> arguments;
+};
+
+// Maps each member a class flattens in from a generic trait to that trait's applied type arguments.
+// Such a member is typed by the TRAIT's parameters, so its ordinals index this table rather than the
+// implementer's own reified arguments.
+static HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> _flattened_trait_arguments(const FSParser::ClassNode *p_class) {
+	HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> members;
+	for (FSParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr || trait->type_parameters.is_empty()) {
+			continue;
+		}
+		const HashMap<StringName, FSParser::DataType> substitutions = _trait_type_argument_substitution(p_class, trait);
+		if (substitutions.is_empty()) {
+			continue;
+		}
+
+		FlattenedTraitArguments applied;
+		applied.trait = trait;
+		applied.arguments.resize(trait->type_parameters.size());
+		for (int i = 0; i < trait->type_parameters.size(); i++) {
+			const FSParser::TypeParameterNode *type_parameter = trait->type_parameters[i];
+			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+				continue;
+			}
+			const FSParser::DataType *argument = substitutions.getptr(type_parameter->identifier->name);
+			if (argument != nullptr) {
+				applied.arguments.write[i] = *argument;
+			}
+		}
+
+		for (const FSParser::ClassNode::Member &member : trait->members) {
+			members[&member] = applied;
+		}
+	}
+	return members;
+}
+
 // Whether a class has static data of its own or flattens static data in from an
 // applied trait. Trait static data is recompiled into the implementer, so it must be
 // accounted for wherever the class's own static data is.
@@ -4670,6 +4712,8 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 		members_to_compile.push_back(&p_class->members[i]);
 	}
 	_collect_flattened_trait_members(p_class, members_to_compile);
+	const HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> flattened_trait_arguments =
+			_flattened_trait_arguments(p_class);
 
 	if (p_class->is_enum_file && p_class->enum_file_decl != nullptr && p_class->enum_file_decl->identifier != nullptr) {
 		const FSParser::EnumNode *enum_n = p_class->enum_file_decl;
@@ -4718,29 +4762,42 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				const FSParser::DataType member_datatype = _substitute_self_type_parameter_for_class(variable->get_datatype(), p_class);
 				minfo.data_type = _gdtype_from_datatype(member_datatype, p_script);
 
-				// A member flattened in from an applied trait is typed by the TRAIT's parameters, whose
-				// ordinals do not index this class's reified arguments. Binding it here would validate
-				// writes against whichever of this class's own arguments happens to share the ordinal, so
-				// such a member keeps no binding and stays an untyped slot.
-				const bool member_names_own_type_parameter =
-						member_datatype.type_parameter_index >= 0 &&
-						member_datatype.type_parameter_index < p_class->type_parameters.size() &&
-						p_class->type_parameters[member_datatype.type_parameter_index] != nullptr &&
-						p_class->type_parameters[member_datatype.type_parameter_index]->identifier != nullptr &&
-						p_class->type_parameters[member_datatype.type_parameter_index]->identifier->name ==
-								member_datatype.type_parameter_name;
 				if (member_datatype.is_set() && member_datatype.is_hard_type() &&
 						member_datatype.kind == FSParser::DataType::TYPE_PARAMETER &&
-						member_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS &&
-						member_names_own_type_parameter) {
-					// The slot stays an erased Variant (see `_gdtype_from_datatype`), but record that it stands
-					// for one of this class's own type parameters so writes can validate against the
-					// instance's reified argument at runtime (e.g. rejecting `box.value = "x"` on a `Box[int]`).
-					// Open at this declaring level; a subclass that fixes it via `extends` re-resolves the
-					// binding when it inherits the member.
-					minfo.type_argument_binding.kind = FoundryScript::TypeArgumentBinding::OPEN;
-					minfo.type_argument_binding.is_type_handle = member_datatype.is_type_handle_annotation;
-					minfo.type_argument_binding.leaf_ordinal = member_datatype.type_parameter_index;
+						member_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
+					// The slot stays an erased Variant (see `_gdtype_from_datatype`), but record which type
+					// argument it stands for so writes can validate against it at runtime (e.g. rejecting
+					// `box.value = "x"` on a `Box[int]`).
+					const FlattenedTraitArguments *applied_trait = flattened_trait_arguments.getptr(members_to_compile[i]);
+					const int ordinal = member_datatype.type_parameter_index;
+					if (applied_trait != nullptr) {
+						// A member flattened in from a generic trait is typed by the TRAIT's parameters, whose
+						// ordinals index the arguments this class supplied in `uses Slotted[int]` rather than
+						// its own. Project through those arguments so the member is bound to the reified
+						// argument (FIXED), or forwarded to this class's own parameter when the trait was
+						// applied with it (`class Holder[U]: uses Slotted[U]`).
+						const FSParser::TypeParameterNode *trait_parameter =
+								ordinal >= 0 && ordinal < applied_trait->trait->type_parameters.size()
+								? applied_trait->trait->type_parameters[ordinal]
+								: nullptr;
+						if (trait_parameter != nullptr && trait_parameter->identifier != nullptr &&
+								trait_parameter->identifier->name == member_datatype.type_parameter_name &&
+								applied_trait->arguments[ordinal].is_set()) {
+							minfo.type_argument_binding.kind = FoundryScript::TypeArgumentBinding::OPEN;
+							minfo.type_argument_binding.is_type_handle = member_datatype.is_type_handle_annotation;
+							minfo.type_argument_binding.leaf_ordinal = ordinal;
+							_specialize_type_argument_binding(minfo.type_argument_binding, applied_trait->arguments, p_script);
+						}
+					} else if (ordinal >= 0 && ordinal < p_class->type_parameters.size() &&
+							p_class->type_parameters[ordinal] != nullptr &&
+							p_class->type_parameters[ordinal]->identifier != nullptr &&
+							p_class->type_parameters[ordinal]->identifier->name == member_datatype.type_parameter_name) {
+						// Open at this declaring level; a subclass that fixes it via `extends` re-resolves the
+						// binding when it inherits the member.
+						minfo.type_argument_binding.kind = FoundryScript::TypeArgumentBinding::OPEN;
+						minfo.type_argument_binding.is_type_handle = member_datatype.is_type_handle_annotation;
+						minfo.type_argument_binding.leaf_ordinal = ordinal;
+					}
 				}
 
 				PropertyInfo prop_info = member_datatype.to_property_info(name);
