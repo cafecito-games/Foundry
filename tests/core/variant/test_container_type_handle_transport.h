@@ -327,6 +327,18 @@ TEST_CASE("[ContainerType] Variant parser rejects a class handle on a non-object
 	CHECK(error_string.contains("Object"));
 }
 
+TEST_CASE("[ContainerType] Variant parser rejects a nested class handle") {
+	// The representation carries one flag per type, so accepting this would load different type
+	// metadata than the text names instead of reporting the text as malformed.
+	VariantParser::StreamString stream;
+	stream.s = "Array[Type[Type[Node]]]([])";
+	String error_string;
+	int line = 0;
+	Variant parsed;
+	CHECK_NE(VariantParser::parse(&stream, parsed, error_string, line), OK);
+	CHECK(error_string.contains("nested"));
+}
+
 TEST_CASE("[ContainerType] Binary Variant encoding round-trips the class handle flag") {
 	Array source;
 	source.set_typed(make_array_of(make_handle_type(SNAME("Node"))));

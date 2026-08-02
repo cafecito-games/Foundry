@@ -718,6 +718,12 @@ static Error _parse_container_type(VariantParser::Token &token, VariantParser::S
 			r_err_str = "Class handle types are only valid for Object types";
 			return ERR_PARSE_ERROR;
 		}
+		// A class handle denotes a class, and a class handle is not one. The representation carries a
+		// single flag, so nesting would silently collapse to the type it wraps.
+		if (r_type.is_type_handle) {
+			r_err_str = "Class handle types cannot be nested";
+			return ERR_PARSE_ERROR;
+		}
 		r_type.is_type_handle = true;
 
 		err = VariantParser::get_token(p_stream, token, line, r_err_str);
