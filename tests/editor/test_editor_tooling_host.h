@@ -231,6 +231,32 @@ TEST_CASE("[Editor][ToolingHost] Breakpoints on unknown scripts are not reported
 	CHECK_FALSE(DebugAdapterProtocol::can_verify_breakpoint("res://does_not_exist_9f3c.fs", 0));
 }
 
+TEST_CASE("[Editor][ToolingHost] A stack variable's scope type resolves against the frame's own scope count") {
+	// The `scopes` response for a frame always hands out exactly one reference per
+	// scope (Locals, Members, Globals), so a stack variable's type must index within
+	// that same count instead of a separately maintained bound.
+	Vector<int> scope_ids;
+	scope_ids.push_back(101);
+	scope_ids.push_back(102);
+	scope_ids.push_back(103);
+
+	int var_id = -1;
+	CHECK(DebugAdapterProtocol::resolve_stack_frame_var_scope_id(scope_ids, 0, var_id));
+	CHECK_EQ(var_id, 101);
+	CHECK(DebugAdapterProtocol::resolve_stack_frame_var_scope_id(scope_ids, 1, var_id));
+	CHECK_EQ(var_id, 102);
+	CHECK(DebugAdapterProtocol::resolve_stack_frame_var_scope_id(scope_ids, 2, var_id));
+	CHECK_EQ(var_id, 103);
+
+	// A type one past the last scope must be rejected, not read one past the end of
+	// `scope_ids`.
+	var_id = -1;
+	CHECK_FALSE(DebugAdapterProtocol::resolve_stack_frame_var_scope_id(scope_ids, 3, var_id));
+	CHECK_EQ(var_id, -1);
+	CHECK_FALSE(DebugAdapterProtocol::resolve_stack_frame_var_scope_id(scope_ids, 4, var_id));
+	CHECK_FALSE(DebugAdapterProtocol::resolve_stack_frame_var_scope_id(scope_ids, -1, var_id));
+}
+
 TEST_CASE("[Editor][ToolingHost] Ephemeral ports are bound and reported") {
 	const String project_path = EditorWorkflowTestFixtures::prepare_basic_scene_project();
 	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a disposable tooling-host project.");
