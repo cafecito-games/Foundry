@@ -5487,13 +5487,19 @@ void TileData::notify_tile_data_properties_should_change() {
 	custom_data.resize(tile_set->get_custom_data_layers_count());
 	for (int i = 0; i < custom_data.size(); i++) {
 		if (custom_data[i].get_type() != tile_set->get_custom_data_layer_type(i)) {
+			const Variant::Type layer_type = tile_set->get_custom_data_layer_type(i);
 			Variant new_val;
 			Callable::CallError error;
-			if (Variant::can_convert(custom_data[i].get_type(), tile_set->get_custom_data_layer_type(i))) {
+			bool converted = false;
+			if (Variant::can_convert(custom_data[i].get_type(), layer_type)) {
 				const Variant *args[] = { &custom_data[i] };
-				Variant::construct(tile_set->get_custom_data_layer_type(i), new_val, args, 1, error);
-			} else {
-				Variant::construct(tile_set->get_custom_data_layer_type(i), new_val, nullptr, 0, error);
+				Variant::construct(layer_type, new_val, args, 1, error);
+				// Some conversions are checked and reject the value itself rather than its type, so
+				// a convertible type does not guarantee a convertible value.
+				converted = error.error == Callable::CallError::CALL_OK;
+			}
+			if (!converted) {
+				Variant::construct(layer_type, new_val, nullptr, 0, error);
 			}
 			custom_data.write[i] = new_val;
 		}
