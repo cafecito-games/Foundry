@@ -7681,7 +7681,10 @@ bool FSAnalyzer::type_argument_satisfies_bound(const FSParser::DataType &p_argum
 	// A bound that is itself an (unsubstituted) type parameter — e.g. an outer-scope parameter the
 	// caller could not bind — constrains the argument only by its own upper bound; an unbounded one
 	// imposes nothing. Never fall through to the permissive general compatibility check below.
-	if (p_bound.kind == FSParser::DataType::TYPE_PARAMETER) {
+	// A handle-wrapped parameter bound (`T: Type[U]`) is skipped here: unwrapping it to `U`'s own upper
+	// bound would drop the handle layer, leaving a handle argument compared against an instance type.
+	// The handle comparison below strips both layers and recurses on the represented types instead.
+	if (p_bound.kind == FSParser::DataType::TYPE_PARAMETER && !p_bound.is_type_handle_annotation) {
 		if (p_bound.type_parameter_bound.is_empty()) {
 			return true;
 		}
