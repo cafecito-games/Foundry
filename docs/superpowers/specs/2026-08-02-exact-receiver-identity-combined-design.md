@@ -101,7 +101,8 @@ begins a call through another class handle.
 ### 4. Invocation-time `Self` resolution
 
 Extend `FSFunction::call` with the static receiver descriptor and use one recursive resolver for runtime metadata marked
-as originating from `Self`. The resolver handles:
+as originating from static `Self`. Instance functions retain their existing `Self` lowering and `p_instance` receiver;
+they do not require this descriptor. The static resolver handles:
 
 - bare argument and return types;
 - type handles and specialized generic handles;

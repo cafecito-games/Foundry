@@ -7,10 +7,10 @@
 witness resolve to the exact class handle used at the call boundary, including nested types, extracted callables,
 coroutines, specialized generics, and compiled bytecode.
 
-**Architecture:** Preserve `Self` as symbolic recursive type metadata in executable `FSDataType` values. Introduce one
-immutable static-call receiver descriptor, pass it from all class-handle and witness dispatch boundaries into
-`FSFunction`, retain it in callables and suspended call state, and resolve symbolic types only when the VM needs a
-runtime type. Keep method lookup and declaration/reflection types unchanged.
+**Architecture:** Preserve static `Self` as symbolic recursive type metadata in executable `FSDataType` values.
+Introduce one immutable static-call receiver descriptor, pass it from all class-handle and witness dispatch boundaries
+into `FSFunction`, retain it in callables and suspended call state, and resolve symbolic static types only when the VM
+needs a runtime type. Keep instance `Self`, method lookup, and declaration/reflection types unchanged.
 
 **Tech Stack:** C++17, Foundry Script compiler and VM, runtime fixture corpus, doctest, compiled `.fsb` round trips,
 SCons/Ninja agent build wrapper.
@@ -29,8 +29,10 @@ SCons/Ninja agent build wrapper.
   `super.method()` delegation retain the original derived or specialized handle.
 - `Self` remains declaration-relative in editor reflection and diagnostics where no call is active. Only executable
   type checks, construction, defaults, arguments, returns, casts, type tests, and reified metadata use call context.
+- Late symbolic resolution in this plan is restricted to static methods and static witnesses. Instance methods keep
+  their current `Self` lowering and use `p_instance`; they never require an `FSStaticSelfContext`.
 - Missing context for a function whose executable signature or body contains symbolic `Self` is an engine invariant
-  violation, never a silent fallback to the declaring script.
+  violation only when that static function is marked `_requires_static_self`, never a silent declaration fallback.
 - `FSBytecodeFormat::FORMAT_VERSION` is currently 6. Reuse reserved flag bits and existing recursively encoded data
   types where compatible. Task 4 adds opcodes, so it must bump the format version and update verifier/disassembler
   coverage as required by the opcode contract in `fs_function.h`.
@@ -204,9 +206,10 @@ Keep the descriptor immutable after construction. Do not retain raw pointers to 
 - [ ] **Step 3: Split executable types from declaration/reflection types**
 
 In `FSCompiler::_parse_function()`, stop permanently substituting `Self` before generating executable argument and
-return types. Convert the original parser data type with `_gdtype_from_datatype()` for `FSFunction::argument_types`,
-`FSFunction::return_type`, and bytecode generation. Continue using
-`_substitute_self_type_parameter_for_class()` for `MethodInfo`, editor reflection, and declaration-site validation.
+return types for static functions and static witnesses. For those functions, convert the original parser data type
+with `_gdtype_from_datatype()` for `FSFunction::argument_types`, `FSFunction::return_type`, and bytecode generation.
+Continue using `_substitute_self_type_parameter_for_class()` for `MethodInfo`, editor reflection, and declaration-site
+validation. For instance functions, keep the existing substituted executable types unchanged.
 
 Ensure `_gdtype_from_datatype()` marks every receiver-relative `@Self` leaf with `is_self_type`, including native
 conformance targets and leaves nested in `Array`, `Dictionary`, tuple, `Type`, and specialized generic arguments.
@@ -215,7 +218,8 @@ conformance targets and leaves nested in `Array`, `Dictionary`, tuple, `Type`, a
 
 Add `_requires_static_self` to `FSFunction`. Set it during `write_start()` or after parsing when a static function's
 argument type, return type, default expressions, or emitted symbolic type descriptors contain `Self`. Treat a static
-lambda inside such a context as requiring the captured context when its body contains `Self`.
+lambda inside such a context as requiring the captured context when its body contains `Self`. Assert during compilation
+and loading that an instance function cannot carry this flag.
 
 Store the flag in function record flag bit 1 in `FSBytecodeExporter::serialize_function()` and restore it in
 `FSBytecodeLoader::_read_function_body()`. The bytecode record size does not change, so do not bump format version for
@@ -325,8 +329,8 @@ real-method-before-witness precedence.
 - [ ] **Step 5: Retain context across static lambdas**
 
 When `OPCODE_CREATE_LAMBDA` runs under a valid static context, capture that value in the lambda callable. On lambda
-invocation, pass it to `FSFunction::call()`. Instance/self lambdas keep their existing receiver capture and may also
-carry the static context when their compiled body contains symbolic `Self`.
+invocation, pass it to `FSFunction::call()`. Lambdas created by instance methods keep their existing instance receiver
+capture and do not require static context.
 
 - [ ] **Step 6: Retain context across await/resume**
 
@@ -377,13 +381,14 @@ Add helpers that accept an already resolved `FSDataType` for argument validation
 casts, type tests, typed-container construction, and default values. Reuse the existing conversions and diagnostic
 paths rather than duplicating them in new opcodes.
 
-At `FSFunction::call()` entry, resolve symbolic argument and return types once against the active context. Validate
-arguments with the resolved types and use the resolved return type for empty-code/default and error returns.
+At `FSFunction::call()` entry, resolve symbolic argument and return types once against the active context only when
+`_static && _requires_static_self`. Validate static arguments with the resolved types and use the resolved static return
+type for empty-code/default and error returns. Instance calls continue using their existing executable types.
 
 - [ ] **Step 2: Emit a symbolic descriptor whenever the static type contains `Self`**
 
-For assignment, cast, type-test, and return generation, branch on `contains_self_type()` before selecting a baked
-`BUILTIN`, `NATIVE`, or `SCRIPT` opcode. Emit one descriptor-driven opcode per operation:
+For assignment, cast, type-test, and return generation inside a static function, branch on `contains_self_type()`
+before selecting a baked `BUILTIN`, `NATIVE`, or `SCRIPT` opcode. Emit one descriptor-driven opcode per operation:
 
 ```cpp
 OPCODE_ASSIGN_TYPED_SELF
@@ -395,6 +400,10 @@ OPCODE_RETURN_TYPED_SELF
 Each opcode receives the recursive descriptor, resolves it against the current static context, then calls the shared
 operation helper. This is required for bare `Self`: the exact receiver may be native, script, native-backed script, or
 specialized even when the declaring target was another kind.
+
+Do not emit these opcodes for instance functions. Their existing `Self` opcodes and `p_instance`-based semantics remain
+unchanged; add a focused existing-instance-`Self` fixture to the non-regression run if the current corpus does not
+exercise assignment, return, cast, and construction there.
 
 Append the new opcodes together immediately before `OPCODE_END`, update the computed-goto table in `fs_vm.cpp`, and
 add their exact operand layouts to `FSFunction::disassemble()` and `FSBytecodeVerifier::verify_function()`. Bump
@@ -413,6 +422,7 @@ the exact specialized class handle in `Type[Self]` and generic arguments.
 Compile receiver-relative `Self` in an active static function to `Address::CLASS` rather than a declaring-script
 constant. `Self.new()`, nested unqualified static calls, passing `Self` as a `Type[...]` value, equality, and dynamic
 method access must therefore operate on the exact context handle. Explicit named/base class constants remain baked.
+Instance-function `Self` expressions keep their current lowering.
 
 - [ ] **Step 5: Account for all typed opcode families**
 
@@ -425,9 +435,9 @@ rg -n "to_container_type\(|from_container_type\(|_get_default_variant_for_data_t
   modules/foundry_script
 ```
 
-For every result, either route symbolic `Self` through the context-aware path or document why the operand cannot
-contain symbolic `Self`. Include tuple elements, nullable types, trait-qualified types, and nested specialized generic
-arguments.
+For every static-function result, either route symbolic `Self` through the context-aware path or document why the
+operand cannot contain symbolic static `Self`. Confirm that corresponding instance-function results stay on the
+existing path. Include tuple elements, nullable types, trait-qualified types, and nested specialized generic arguments.
 
 - [ ] **Step 6: Rebuild and regenerate the canonical negative output**
 
@@ -546,6 +556,7 @@ In the semantic prose near traits, conformances, and receiver-relative type para
 - Static conformance witnesses use the exact target handle selected at dispatch, across script, native,
   native-backed-script, specialized, and supported builtin targets.
 - Method and witness selection remains declaration/base-chain based; receiver specialization does not redispatch.
+- Instance-method `Self` semantics and lowering are unchanged and do not require static context.
 
 - [ ] **Step 2: Run focused conformance and runtime suites**
 
