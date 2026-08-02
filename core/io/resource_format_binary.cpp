@@ -2049,6 +2049,11 @@ void ResourceFormatSaverBinaryInstance::_find_resources_in_container_type(const 
 	for (const ContainerType &child_type : p_type.element_types) {
 		_find_resources_in_container_type(child_type);
 	}
+	// A script reachable only through a reified generic argument (the `Box` in `Array[Wrapper[Box]]`)
+	// is still a dependency of the saved resource.
+	for (const ContainerType &argument_type : p_type.type_arguments) {
+		_find_resources_in_container_type(argument_type);
+	}
 }
 
 void ResourceFormatSaverBinaryInstance::_find_resources(const Variant &p_variant, bool p_main) {

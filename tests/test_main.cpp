@@ -195,6 +195,7 @@
 #include "tests/core/threads/test_worker_thread_pool.h"
 #include "tests/core/variant/test_array.h"
 #include "tests/core/variant/test_callable.h"
+#include "tests/core/variant/test_container_type_arguments.h"
 #include "tests/core/variant/test_container_type_class_handle.h"
 #include "tests/core/variant/test_dictionary.h"
 #include "tests/core/variant/test_variant.h"

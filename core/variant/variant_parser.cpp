@@ -779,8 +779,31 @@ static Error _parse_container_type(VariantParser::Token &token, VariantParser::S
 			r_type.element_types.push_back(key_type);
 			r_type.element_types.push_back(value_type);
 		} else {
-			r_err_str = "Nested type arguments are only supported for Array and Dictionary";
-			return ERR_PARSE_ERROR;
+			// Any other type spells its reified generic arguments with the same bracket syntax, so
+			// `Box[int]` recovers the specialization that distinguishes it from `Box[String]`.
+			while (true) {
+				VariantParser::Token argument_token;
+				Error err = VariantParser::get_token(p_stream, argument_token, line, r_err_str);
+				if (err) {
+					return err;
+				}
+
+				ContainerType argument_type;
+				VariantParser::TokenType next_token_type;
+				err = _parse_container_type(argument_token, p_stream, line, r_err_str, p_res_parser, argument_type, next_token_type);
+				if (err) {
+					return err;
+				}
+				r_type.type_arguments.push_back(argument_type);
+
+				if (next_token_type == VariantParser::TK_BRACKET_CLOSE) {
+					break;
+				}
+				if (next_token_type != VariantParser::TK_COMMA) {
+					r_err_str = "Expected ',' or ']' after type argument";
+					return ERR_PARSE_ERROR;
+				}
+			}
 		}
 
 		const Error err = VariantParser::get_token(p_stream, token, line, r_err_str);
@@ -2072,6 +2095,17 @@ static void _write_container_type(const ContainerType &p_type, VariantWriter::St
 		_write_container_type(p_type.element_types[0], p_store_string_func, p_store_string_ud, p_encode_res_func, p_encode_res_ud, p_error_context);
 		p_store_string_func(p_store_string_ud, ", ");
 		_write_container_type(p_type.element_types[1], p_store_string_func, p_store_string_ud, p_encode_res_func, p_encode_res_ud, p_error_context);
+		p_store_string_func(p_store_string_ud, "]");
+	} else if (!p_type.type_arguments.is_empty()) {
+		// Reified generic arguments share the bracket syntax with Array/Dictionary element types, which
+		// is exactly how the language spells a specialized type.
+		p_store_string_func(p_store_string_ud, "[");
+		for (int i = 0; i < p_type.type_arguments.size(); i++) {
+			if (i > 0) {
+				p_store_string_func(p_store_string_ud, ", ");
+			}
+			_write_container_type(p_type.type_arguments[i], p_store_string_func, p_store_string_ud, p_encode_res_func, p_encode_res_ud, p_error_context);
+		}
 		p_store_string_func(p_store_string_ud, "]");
 	}
 }

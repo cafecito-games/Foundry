@@ -741,49 +741,76 @@ void JSON::_bind_methods() {
 #define KEY_TYPE "key_type"
 #define VALUE_TYPE "value_type"
 #define ARGS "args"
+#define TYPE_ARGS "type_args"
 #define PROPS "props"
 
-static bool _encode_container_type_value(const ContainerType &p_type, Variant &r_value, bool p_full_objects) {
+// The name a container type is spelled with, independent of any nested element types or reified
+// generic arguments it carries.
+static bool _encode_container_type_name(const ContainerType &p_type, String &r_name, bool p_full_objects) {
 	if (p_type.builtin_type == Variant::NIL) {
-		r_value = "Variant";
+		r_name = "Variant";
 		return true;
 	}
 
-	if (p_type.builtin_type != Variant::NIL) {
-		if (!p_type.element_types.is_empty()) {
-			Dictionary type_dict;
-			type_dict[TYPE] = Variant::get_type_name(p_type.builtin_type);
-			if (p_type.builtin_type == Variant::ARRAY) {
-				ERR_FAIL_COND_V_MSG(p_type.element_types.size() != 1, false, "Array container types must have exactly one element type.");
-				if (!_encode_container_type_value(p_type.element_types[0], type_dict[ELEM_TYPE], p_full_objects)) {
-					return false;
-				}
-			} else if (p_type.builtin_type == Variant::DICTIONARY) {
-				ERR_FAIL_COND_V_MSG(p_type.element_types.size() != 2, false, "Dictionary container types must have exactly two element types.");
-				if (!_encode_container_type_value(p_type.element_types[0], type_dict[KEY_TYPE], p_full_objects)) {
-					return false;
-				}
-				if (!_encode_container_type_value(p_type.element_types[1], type_dict[VALUE_TYPE], p_full_objects)) {
-					return false;
-				}
-			}
-			r_value = type_dict;
-			return true;
-		}
+	if (p_type.script.is_valid()) {
+		ERR_FAIL_COND_V(!p_full_objects, false);
+		const String path = p_type.script->get_path();
+		ERR_FAIL_COND_V_MSG(path.is_empty() || !path.begins_with("res://"), false, "Failed to encode a path to a custom script for a container type.");
+		r_name = path;
+	} else if (p_type.class_name != StringName()) {
+		ERR_FAIL_COND_V(!p_full_objects, false);
+		r_name = String(p_type.class_name);
+	} else {
+		// No need to check `p_full_objects` since `class_name` should be non-empty for `builtin_type == Variant::OBJECT`.
+		r_name = Variant::get_type_name(p_type.builtin_type);
+	}
+	return true;
+}
 
-		if (p_type.script.is_valid()) {
-			ERR_FAIL_COND_V(!p_full_objects, false);
-			const String path = p_type.script->get_path();
-			ERR_FAIL_COND_V_MSG(path.is_empty() || !path.begins_with("res://"), false, "Failed to encode a path to a custom script for a container type.");
-			r_value = path;
-		} else if (p_type.class_name != StringName()) {
-			ERR_FAIL_COND_V(!p_full_objects, false);
-			r_value = String(p_type.class_name);
-		} else {
-			// No need to check `p_full_objects` since `class_name` should be non-empty for `builtin_type == Variant::OBJECT`.
-			r_value = Variant::get_type_name(p_type.builtin_type);
+static bool _encode_container_type_value(const ContainerType &p_type, Variant &r_value, bool p_full_objects) {
+	String type_name;
+	if (!_encode_container_type_name(p_type, type_name, p_full_objects)) {
+		return false;
+	}
+
+	if (p_type.element_types.is_empty() && p_type.type_arguments.is_empty()) {
+		r_value = type_name;
+		return true;
+	}
+
+	Dictionary type_dict;
+	type_dict[TYPE] = type_name;
+
+	if (!p_type.element_types.is_empty()) {
+		if (p_type.builtin_type == Variant::ARRAY) {
+			ERR_FAIL_COND_V_MSG(p_type.element_types.size() != 1, false, "Array container types must have exactly one element type.");
+			if (!_encode_container_type_value(p_type.element_types[0], type_dict[ELEM_TYPE], p_full_objects)) {
+				return false;
+			}
+		} else if (p_type.builtin_type == Variant::DICTIONARY) {
+			ERR_FAIL_COND_V_MSG(p_type.element_types.size() != 2, false, "Dictionary container types must have exactly two element types.");
+			if (!_encode_container_type_value(p_type.element_types[0], type_dict[KEY_TYPE], p_full_objects)) {
+				return false;
+			}
+			if (!_encode_container_type_value(p_type.element_types[1], type_dict[VALUE_TYPE], p_full_objects)) {
+				return false;
+			}
 		}
 	}
+
+	if (!p_type.type_arguments.is_empty()) {
+		Array type_arguments;
+		for (const ContainerType &argument_type : p_type.type_arguments) {
+			Variant argument_value;
+			if (!_encode_container_type_value(argument_type, argument_value, p_full_objects)) {
+				return false;
+			}
+			type_arguments.push_back(argument_value);
+		}
+		type_dict[TYPE_ARGS] = type_arguments;
+	}
+
+	r_value = type_dict;
 	return true;
 }
 
@@ -1224,6 +1251,20 @@ static bool _decode_container_type_value(const Variant &p_value, ContainerType &
 			if (key_type.builtin_type != Variant::NIL || value_type.builtin_type != Variant::NIL) {
 				r_type.element_types.push_back(key_type);
 				r_type.element_types.push_back(value_type);
+			}
+		}
+
+		if (type_dict.has(TYPE_ARGS)) {
+			const Variant type_arguments_value = type_dict[TYPE_ARGS];
+			ERR_FAIL_COND_V_MSG(type_arguments_value.get_type() != Variant::ARRAY, false, vformat(R"(Invalid "%s" for nested container type.)", TYPE_ARGS));
+
+			const Array type_arguments = type_arguments_value;
+			for (int i = 0; i < type_arguments.size(); i++) {
+				ContainerType argument_type;
+				if (!_decode_container_type_value(type_arguments[i], argument_type, p_allow_objects)) {
+					return false;
+				}
+				r_type.type_arguments.push_back(argument_type);
 			}
 		}
 		return true;
