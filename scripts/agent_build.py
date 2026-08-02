@@ -46,6 +46,35 @@ TELEMETRY_TIMEOUT_SECONDS = 5.0
 BUILD_DESCRIPTION_EXCLUDED_DIRECTORIES = frozenset(
     {".foundry", ".git", ".ninja", ".test_scratch", ".worktrees", "__pycache__", "bin", "build", "out"}
 )
+BUILD_GRAPH_UNTRACKED_SUFFIXES = frozenset(
+    {
+        ".c",
+        ".cc",
+        ".cpp",
+        ".cxx",
+        ".glsl",
+        ".h",
+        ".hh",
+        ".hpp",
+        ".inc",
+        ".inl",
+        ".json",
+        ".m",
+        ".mm",
+        ".otf",
+        ".po",
+        ".py",
+        ".s",
+        ".svg",
+        ".toml",
+        ".ttf",
+        ".woff",
+        ".woff2",
+        ".xml",
+        ".yaml",
+        ".yml",
+    }
+)
 
 
 def resolve_compiler_cache(args: argparse.Namespace) -> str:
@@ -470,19 +499,51 @@ def _resolve_build_input(value: str, repo_root: Path) -> Path:
     return path if path.is_absolute() else repo_root / path
 
 
-def _repository_build_descriptions(repo_root: Path) -> list[Path]:
+def _repository_files(repo_root: Path) -> list[Path]:
     if not repo_root.is_dir():
         return []
-    descriptions: list[Path] = []
+
+    def _git_files(*arguments: str) -> list[Path] | None:
+        try:
+            completed = subprocess.run(
+                ["git", "ls-files", "-z", *arguments],
+                cwd=repo_root,
+                check=False,
+                capture_output=True,
+                timeout=TELEMETRY_TIMEOUT_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if completed.returncode != 0:
+            return None
+        return [Path(os.fsdecode(item)) for item in completed.stdout.split(b"\0") if item]
+
+    def _is_excluded(path: Path) -> bool:
+        return any(part in BUILD_DESCRIPTION_EXCLUDED_DIRECTORIES for part in path.parts[:-1])
+
+    tracked_files = _git_files("--cached")
+    untracked_files = _git_files("--others", "--exclude-standard")
+    if tracked_files is not None and untracked_files is not None:
+        inventory = {path for path in tracked_files if not _is_excluded(path)}
+        inventory.update(
+            path
+            for path in untracked_files
+            if not _is_excluded(path)
+            and (path.name in ("SConstruct", "SCsub") or path.suffix.lower() in BUILD_GRAPH_UNTRACKED_SUFFIXES)
+        )
+        return [repo_root / path for path in sorted(inventory)]
+
+    repository_files: list[Path] = []
     for root, directory_names, file_names in os.walk(repo_root):
         directory_names[:] = sorted(
             name for name in directory_names if name not in BUILD_DESCRIPTION_EXCLUDED_DIRECTORIES
         )
         root_path = Path(root)
         for file_name in sorted(file_names):
-            if file_name == "SConstruct" or file_name == "SCsub" or file_name.endswith(".py"):
-                descriptions.append(root_path / file_name)
-    return descriptions
+            if ".gen." in file_name or file_name.startswith(".scons") or file_name.endswith(".uid"):
+                continue
+            repository_files.append(root_path / file_name)
+    return repository_files
 
 
 def _selected_build_description_inputs(args: argparse.Namespace, repo_root: Path) -> list[tuple[str, Path]]:
@@ -515,9 +576,13 @@ def build_description_fingerprint(args: argparse.Namespace, repo_root: Path = RE
     hasher = hashlib.sha256()
     if not repo_root.is_dir():
         hasher.update(b"missing-repository-root\0")
-    for path in _repository_build_descriptions(repo_root):
+    for path in _repository_files(repo_root):
         relative_path = path.relative_to(repo_root).as_posix()
-        _hash_build_description(hasher, f"repository:{relative_path}", path)
+        hasher.update(f"repository-file:{relative_path}".encode("utf-8", errors="surrogateescape"))
+        hasher.update(b"\0")
+        hasher.update(b"present\0" if os.path.lexists(path) else b"missing\0")
+        if path.name in ("SConstruct", "SCsub") or path.suffix == ".py":
+            _hash_build_description(hasher, f"repository:{relative_path}", path)
     for source, path in _selected_build_description_inputs(args, repo_root):
         _hash_build_description(hasher, f"selected:{source}:{path.resolve(strict=False)}", path)
     return hasher.hexdigest()
