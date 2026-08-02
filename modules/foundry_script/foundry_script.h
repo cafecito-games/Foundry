@@ -37,6 +37,7 @@
 #include "core/doc_data.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
+#include "core/object/class_handle.h"
 #include "core/object/script_language.h"
 #include "core/templates/rb_set.h"
 
@@ -49,8 +50,8 @@ class FSNameManglerAnalysis;
 class FSNameManglerKeepRules;
 #endif
 
-class FSNativeClass : public RefCounted {
-	FOUNDRY_CLASS(FSNativeClass, RefCounted);
+class FSNativeClass : public ClassHandle {
+	FOUNDRY_CLASS(FSNativeClass, ClassHandle);
 
 	StringName name;
 
@@ -60,6 +61,7 @@ protected:
 
 public:
 	_FORCE_INLINE_ const StringName &get_name() const { return name; }
+	virtual StringName get_represented_native_class() const override { return name; }
 	Variant _new();
 	Object *instantiate();
 	virtual Variant callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) override;
@@ -90,8 +92,8 @@ public:
 	Dictionary get_bound() const { return bound; }
 };
 
-class FSSpecializedClassHandle : public RefCounted {
-	FOUNDRY_CLASS(FSSpecializedClassHandle, RefCounted);
+class FSSpecializedClassHandle : public ClassHandle {
+	FOUNDRY_CLASS(FSSpecializedClassHandle, ClassHandle);
 
 	Ref<FoundryScript> script;
 	Vector<ContainerType> type_arguments;
@@ -103,6 +105,8 @@ protected:
 public:
 	const Ref<FoundryScript> &get_specialized_script() const { return script; }
 	const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
+	virtual Ref<Script> get_represented_script() const override;
+	virtual void get_represented_type_arguments(Vector<ContainerType> &r_arguments) const override { r_arguments = type_arguments; }
 	String get_type_name() const;
 	bool is_assignable_to_native_type(const StringName &p_native_type) const;
 	bool _equals(const Variant &p_other) const;

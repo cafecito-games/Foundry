@@ -31,6 +31,7 @@
 #include "container_type_validate.h"
 
 #include "core/object/class_db.h"
+#include "core/object/class_handle.h"
 #include "core/object/object.h"
 #include "core/variant/array.h"
 #include "core/variant/dictionary.h"
@@ -58,7 +59,8 @@ bool ContainerType::operator==(const ContainerType &p_type) const {
 			class_name == p_type.class_name &&
 			script == p_type.script &&
 			element_types == p_type.element_types &&
-			type_arguments == p_type.type_arguments;
+			type_arguments == p_type.type_arguments &&
+			is_type_handle == p_type.is_type_handle;
 }
 
 bool ContainerType::operator!=(const ContainerType &p_type) const {
@@ -66,8 +68,11 @@ bool ContainerType::operator!=(const ContainerType &p_type) const {
 }
 
 String ContainerType::get_type_name() const {
-	ContainerTypeValidate validate(*this);
-	String name = validate.get_type_name();
+	// The handle wrapper is applied last so a specialized handle renders as `Type[Box[int]]` rather
+	// than `Type[Box][int]`.
+	ContainerType value_type = *this;
+	value_type.is_type_handle = false;
+	String name = ContainerTypeValidate(value_type).get_type_name();
 	if (!type_arguments.is_empty()) {
 		String arguments;
 		for (int i = 0; i < type_arguments.size(); i++) {
@@ -77,6 +82,9 @@ String ContainerType::get_type_name() const {
 			arguments += type_arguments[i].get_type_name();
 		}
 		name += "[" + arguments + "]";
+	}
+	if (is_type_handle) {
+		name = "Type[" + name + "]";
 	}
 	return name;
 }
@@ -89,6 +97,7 @@ ContainerTypeValidate::ContainerTypeValidate(const ContainerType &p_type) {
 		element_types.push_back(ContainerTypeValidate(element_type));
 	}
 	type_arguments = p_type.type_arguments;
+	is_type_handle = p_type.is_type_handle;
 }
 
 ContainerType ContainerTypeValidate::get_container_type() const {
@@ -100,10 +109,16 @@ ContainerType ContainerTypeValidate::get_container_type() const {
 		result.element_types.push_back(element_type.get_container_type());
 	}
 	result.type_arguments = type_arguments;
+	result.is_type_handle = is_type_handle;
 	return result;
 }
 
 String ContainerTypeValidate::get_type_name() const {
+	const String value_name = _get_value_type_name();
+	return is_type_handle ? "Type[" + value_name + "]" : value_name;
+}
+
+String ContainerTypeValidate::_get_value_type_name() const {
 	if (type == Variant::NIL) {
 		return "Variant";
 	}
@@ -181,6 +196,9 @@ bool ContainerTypeValidate::_internal_validate(Variant &inout_variant, const cha
 	}
 
 	if (type == Variant::OBJECT) {
+		if (is_type_handle) {
+			return _internal_validate_class_handle(inout_variant, p_operation, p_output_errors);
+		}
 		return _internal_validate_object(inout_variant, p_operation, p_output_errors);
 	}
 	if (type == Variant::ARRAY) {
@@ -279,6 +297,158 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 	return true;
 }
 
+// Compares the reified arguments a class handle carries against an expected specialization, after
+// projecting them onto the expected base's parameters. `p_handle_carries_arguments` is false for a
+// handle that cannot express a specialization at all (a bare script resource): such a handle offers no
+// evidence for any argument, and an expected specialization is therefore unsatisfied rather than
+// gradually accepted, which is the same answer a specialized handle with an explicitly unbound slot
+// would give.
+static bool _class_handle_type_arguments_match(const Vector<ContainerType> &p_expected_arguments,
+		const Ref<Script> &p_expected_script, const Ref<Script> &p_handle_script,
+		const Vector<ContainerType> &p_handle_arguments, bool p_handle_carries_arguments) {
+	if (p_expected_arguments.is_empty()) {
+		return true;
+	}
+	if (p_handle_script.is_null() || p_expected_script.is_null()) {
+		return false;
+	}
+
+	Vector<ContainerType> projected_type_arguments;
+	Vector<bool> projected_argument_bound;
+	if (!p_handle_script->project_type_arguments_onto_base(p_expected_script, p_handle_arguments,
+				projected_type_arguments, projected_argument_bound)) {
+		if (p_handle_script != p_expected_script) {
+			return false;
+		}
+		projected_type_arguments = p_handle_arguments;
+		projected_argument_bound.resize(projected_type_arguments.size());
+		for (int i = 0; i < projected_argument_bound.size(); i++) {
+			projected_argument_bound.write[i] = true;
+		}
+	}
+
+	if (projected_type_arguments.size() != p_expected_arguments.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_expected_arguments.size(); i++) {
+		if (i >= projected_argument_bound.size() || !projected_argument_bound[i]) {
+			if (!p_handle_carries_arguments) {
+				return false;
+			}
+			continue;
+		}
+		if (projected_type_arguments[i] != p_expected_arguments[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// Validates a value against a `Type[T]` slot: the value must denote the class T (or a subtype of it),
+// not be an instance of it. Values that denote a class are `ClassHandle` implementations contributed by
+// a scripting language, and bare `Script` resources, which denote the class they define.
+bool ContainerTypeValidate::_internal_validate_class_handle(const Variant &p_variant, const char *p_operation, bool p_output_errors) const {
+	// Null is permissive here for the same reason it is on the instance path: rejecting null in a
+	// non-nullable slot is a static concern, not a runtime one.
+	if (p_variant.get_type() == Variant::NIL) {
+		return true;
+	}
+	if (p_variant.get_type() != Variant::OBJECT) {
+		if (p_output_errors) {
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a value of type '%s' into a %s of type '%s', which requires a class handle.", String(p_operation), Variant::get_type_name(p_variant.get_type()), where, get_type_name()));
+		}
+		return false;
+	}
+
+	bool was_freed = false;
+	Object *object = p_variant.get_validated_object_with_check(was_freed);
+	if (object == nullptr) {
+		if (was_freed) {
+			if (p_output_errors) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an invalid (previously freed?) class handle into a %s of type '%s'.", String(p_operation), where, get_type_name()));
+			}
+			return false;
+		}
+		return true;
+	}
+
+	StringName handle_native_class;
+	Ref<Script> handle_script;
+	Vector<ContainerType> handle_type_arguments;
+	bool handle_carries_arguments = false;
+
+	if (ClassHandle *class_handle = Object::cast_to<ClassHandle>(object)) {
+		handle_native_class = class_handle->get_represented_native_class();
+		handle_script = class_handle->get_represented_script();
+		class_handle->get_represented_type_arguments(handle_type_arguments);
+		handle_carries_arguments = true;
+	} else if (Script *script_value = Object::cast_to<Script>(object)) {
+		// A script resource denotes the class it defines, always unspecialized.
+		handle_script = Ref<Script>(script_value);
+	}
+
+	if (handle_native_class == StringName() && handle_script.is_null()) {
+		if (p_output_errors) {
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object of type '%s' into a %s of type '%s', which requires a class handle.", String(p_operation), object->get_class(), where, get_type_name()));
+		}
+		return false;
+	}
+
+	ContainerType represented;
+	represented.builtin_type = Variant::OBJECT;
+	represented.class_name = handle_native_class != StringName() ? handle_native_class : handle_script->get_instance_base_type();
+	represented.script = handle_script;
+	represented.type_arguments = handle_type_arguments;
+
+	if (script.is_null()) {
+		// The slot expects a native engine class, so any handle whose represented instances inherit it
+		// satisfies it, scripted or not.
+		const StringName &represented_native_class = represented.class_name;
+		if (represented_native_class == StringName() ||
+				(class_name != StringName() && !ClassDB::is_parent_class(represented_native_class, class_name))) {
+			if (p_output_errors) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for '%s' into a %s of type '%s', whose represented type is not compatible.", String(p_operation), represented.get_type_name(), where, get_type_name()));
+			}
+			return false;
+		}
+		return true;
+	}
+
+	// The slot expects a script type. A handle for a native engine class denotes no script, so it can
+	// never satisfy one — including a trait-typed slot, where retroactive conformance is a property of
+	// scripts and reaches here through `Script::has_script_trait()`.
+	bool represents_expected_type = false;
+	if (handle_script.is_valid()) {
+		if (script->is_trait_type()) {
+			represents_expected_type = handle_script->has_script_trait(script->get_trait_type_name());
+		} else {
+			Script *walker = handle_script.ptr();
+			while (walker != nullptr) {
+				if (walker == script.ptr()) {
+					represents_expected_type = true;
+					break;
+				}
+				walker = walker->get_base_script().ptr();
+			}
+		}
+	}
+	if (!represents_expected_type) {
+		if (p_output_errors) {
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for '%s' into a %s of type '%s', whose represented type is not compatible.", String(p_operation), represented.get_type_name(), where, get_type_name()));
+		}
+		return false;
+	}
+
+	if (!_class_handle_type_arguments_match(type_arguments, script, handle_script, handle_type_arguments, handle_carries_arguments)) {
+		if (p_output_errors) {
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle specialized as '%s' into a %s of type '%s'.", String(p_operation), represented.get_type_name(), where, get_type_name()));
+		}
+		return false;
+	}
+
+	return true;
+}
+
 bool ContainerTypeValidate::_internal_validate_array(Variant &inout_variant, const char *p_operation, bool p_output_errors) const {
 	if (element_types.is_empty()) {
 		return true;
@@ -344,6 +514,12 @@ bool ContainerTypeValidate::_internal_validate_dictionary(Variant &inout_variant
 
 bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) const {
 	if (type != p_type.type) {
+		return false;
+	}
+
+	// A container of class handles and a container of instances hold disjoint value sets, so neither can
+	// be referenced as the other.
+	if (is_type_handle != p_type.is_type_handle) {
 		return false;
 	}
 
@@ -423,7 +599,8 @@ bool ContainerTypeValidate::operator==(const ContainerTypeValidate &p_type) cons
 			class_name == p_type.class_name &&
 			script == p_type.script &&
 			element_types == p_type.element_types &&
-			type_arguments == p_type.type_arguments;
+			type_arguments == p_type.type_arguments &&
+			is_type_handle == p_type.is_type_handle;
 }
 
 bool ContainerTypeValidate::operator!=(const ContainerTypeValidate &p_type) const {
@@ -461,6 +638,17 @@ bool from_variant(const Variant &p_descriptor, ContainerType &r_type, String *r_
 
 	ContainerType type;
 	type.builtin_type = Variant::Type(type_id);
+
+	if (descriptor.has("is_type_handle")) {
+		const Variant is_type_handle_value = descriptor["is_type_handle"];
+		if (is_type_handle_value.get_type() != Variant::BOOL) {
+			return _fail(r_error, R"(Container type descriptor "is_type_handle" must be a bool.)");
+		}
+		type.is_type_handle = is_type_handle_value;
+		if (type.is_type_handle && type.builtin_type != Variant::OBJECT) {
+			return _fail(r_error, R"(Container type descriptor "is_type_handle" is only valid for Object types.)");
+		}
+	}
 
 	if (descriptor.has("class_name")) {
 		const Variant class_name_value = descriptor["class_name"];

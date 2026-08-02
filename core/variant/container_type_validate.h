@@ -43,6 +43,9 @@ struct ContainerType {
 	// unspecialized types. Unlike `element_types` (which describes typed Array/Dictionary contents),
 	// these carry the bound generic arguments of a script handle.
 	Vector<ContainerType> type_arguments;
+	// True when the described slot holds a class handle for the type above (`Type[Node]`) rather than an
+	// instance of it. Legal only when `builtin_type == Variant::OBJECT`.
+	bool is_type_handle = false;
 
 	bool operator==(const ContainerType &p_type) const;
 	bool operator!=(const ContainerType &p_type) const;
@@ -58,13 +61,19 @@ struct ContainerTypeValidate {
 	// `Array[Box[int]]` element. Carried through so `Box[int]` and `Box[String]` element typings stay
 	// distinct at runtime. Empty for non-generic or unspecialized types (all native/engine uses).
 	Vector<ContainerType> type_arguments;
+	// Mirrors `ContainerType::is_type_handle`: the slot holds a class handle for the type above, not an
+	// instance of it.
+	bool is_type_handle = false;
 	const char *where = "container";
 
 private:
 	bool _internal_validate(Variant &inout_variant, const char *p_operation, bool p_output_errors) const;
 	bool _internal_validate_object(const Variant &p_variant, const char *p_operation, bool p_output_errors) const;
+	bool _internal_validate_class_handle(const Variant &p_variant, const char *p_operation, bool p_output_errors) const;
 	bool _internal_validate_array(Variant &inout_variant, const char *p_operation, bool p_output_errors) const;
 	bool _internal_validate_dictionary(Variant &inout_variant, const char *p_operation, bool p_output_errors) const;
+	// The described type without the `Type[...]` handle wrapper.
+	String _get_value_type_name() const;
 
 public:
 	ContainerTypeValidate() = default;
@@ -75,6 +84,9 @@ public:
 	}
 
 	_FORCE_INLINE_ bool validate_object(const Variant &p_variant, const char *p_operation = "use") const {
+		if (is_type_handle) {
+			return _internal_validate_class_handle(p_variant, p_operation, true);
+		}
 		return _internal_validate_object(p_variant, p_operation, true);
 	}
 

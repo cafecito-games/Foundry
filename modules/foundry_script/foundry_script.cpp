@@ -124,6 +124,10 @@ void FSSpecializedClassHandle::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("_hash_code"), &FSSpecializedClassHandle::_hash_code);
 }
 
+Ref<Script> FSSpecializedClassHandle::get_represented_script() const {
+	return script;
+}
+
 String FSSpecializedClassHandle::get_type_name() const {
 	if (script.is_null()) {
 		return "FoundryScript";
