@@ -427,12 +427,110 @@ TEST_CASE("[ContainerType] Binary Variant encoding is unchanged for nested insta
 	CHECK_EQ(memcmp(buffer.ptr(), nested_builtin_array, sizeof(nested_builtin_array)), 0);
 }
 
+TEST_CASE("[ContainerType] Binary Variant encoding round-trips an unqualified class handle") {
+	// `Type[Object]` admits a handle for any class, which is not the same container as an Object slot
+	// that admits any instance.
+	ContainerType unqualified;
+	unqualified.builtin_type = Variant::OBJECT;
+	unqualified.is_type_handle = true;
+
+	Array source;
+	source.set_typed(make_array_of(unqualified));
+
+	const Array decoded = encode_and_decode_binary(source);
+	CHECK_EQ(decoded.get_element_type(), make_array_of(unqualified));
+
+	Array leaf;
+	leaf.set_typed(decoded.get_element_type().element_types[0]);
+	leaf.push_back(make_handle(SNAME("Object")));
+	CHECK_EQ(leaf.size(), 1);
+
+	ERR_PRINT_OFF;
+	Ref<RefCounted> instance;
+	instance.instantiate();
+	leaf.push_back(instance);
+	ERR_PRINT_ON;
+	CHECK_EQ(leaf.size(), 1);
+}
+
+TEST_CASE("[ContainerType] Object-as-id binary encoding downgrades a class handle to its stand-in type") {
+	// Object values become `EncodedObjectAsID` stand-ins in this mode, and a stand-in denotes no class,
+	// so the container must accept the values it is decoded with instead of dropping them.
+	Array source;
+	source.set_typed(make_handle_type(SNAME("RefCounted")));
+	source.push_back(make_handle(SNAME("Resource")));
+	REQUIRE_EQ(source.size(), 1);
+
+	int encoded_len = 0;
+	REQUIRE_EQ(encode_variant(source, nullptr, encoded_len, false), OK);
+	PackedByteArray buffer;
+	buffer.resize(encoded_len);
+	REQUIRE_EQ(encode_variant(source, buffer.ptrw(), encoded_len, false), OK);
+
+	Variant decoded_variant;
+	int decoded_len = 0;
+	REQUIRE_EQ(decode_variant(decoded_variant, buffer.ptr(), buffer.size(), &decoded_len, false), OK);
+	const Array decoded = decoded_variant;
+	CHECK_FALSE(decoded.get_element_type().is_type_handle);
+	CHECK_EQ(decoded.size(), 1);
+
+	// A payload that does spell a class handle degrades the same way when it is read without objects.
+	// Word layout: header, element kind, class name length, class name, element child count, element
+	// type argument count, array length.
+	PackedByteArray handle_payload;
+	handle_payload.resize(7 * 4);
+	uint8_t *write = handle_payload.ptrw();
+	encode_uint32(Variant::ARRAY | (1 << 8), write + 0); // Extended container type flag.
+	encode_uint32(0b100, write + 4); // Class handle for a named class.
+	encode_uint32(4, write + 8);
+	memcpy(write + 12, "Node", 4);
+	encode_uint32(0, write + 16);
+	encode_uint32(0, write + 20);
+	encode_uint32(0, write + 24);
+
+	REQUIRE_EQ(decode_variant(decoded_variant, handle_payload.ptr(), handle_payload.size(), &decoded_len, false), OK);
+	const Array degraded = decoded_variant;
+	CHECK_FALSE(degraded.get_element_type().is_type_handle);
+	CHECK_EQ(degraded.get_element_type().class_name, EncodedObjectAsID::get_class_static());
+
+	// The same payload read with objects keeps the class handle.
+	REQUIRE_EQ(decode_variant(decoded_variant, handle_payload.ptr(), handle_payload.size(), &decoded_len, true), OK);
+	const Array full = decoded_variant;
+	CHECK_EQ(full.get_element_type(), make_handle_type(SNAME("Node")));
+}
+
+TEST_CASE("[ContainerType] Binary Variant decoding rejects a class handle on a non-object type") {
+	// Word layout: header, element kind, element builtin type, element child count, element type
+	// argument count, array length.
+	PackedByteArray buffer;
+	buffer.resize(6 * 4);
+	uint8_t *write = buffer.ptrw();
+	encode_uint32(Variant::ARRAY | (1 << 8), write + 0); // Extended container type flag.
+	encode_uint32(0b110, write + 4); // Class handle for a builtin type.
+	encode_uint32(Variant::INT, write + 8);
+	encode_uint32(0, write + 12);
+	encode_uint32(0, write + 16);
+	encode_uint32(0, write + 20);
+
+	Variant decoded;
+	int decoded_len = 0;
+	ERR_PRINT_OFF;
+	CHECK_NE(decode_variant(decoded, buffer.ptr(), buffer.size(), &decoded_len, true), OK);
+	ERR_PRINT_ON;
+
+	// The same kind over an Object type is accepted, so the rejection is the builtin type alone.
+	encode_uint32(Variant::OBJECT, write + 8);
+	REQUIRE_EQ(decode_variant(decoded, buffer.ptr(), buffer.size(), &decoded_len, true), OK);
+	const Array decoded_array = decoded;
+	CHECK(decoded_array.get_element_type().is_type_handle);
+}
+
 TEST_CASE("[ContainerType] Binary Variant decoding rejects an unknown container type kind") {
 	PackedByteArray buffer;
 	buffer.resize(6 * 4);
 	uint8_t *write = buffer.ptrw();
 	encode_uint32(Variant::ARRAY | (1 << 8), write + 0); // Extended container type flag.
-	encode_uint32(6, write + 4); // A kind no build defines.
+	encode_uint32(0b111, write + 4); // A kind no build defines.
 	encode_uint32(Variant::INT, write + 8);
 	encode_uint32(0, write + 12);
 	encode_uint32(0, write + 16);
