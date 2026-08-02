@@ -625,6 +625,23 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
         self.assertScoped(": int", "entity.name.type.foundryscript", offset=2, source=source)
 
+    def test_an_identifier_led_statement_in_a_lambda_body_does_not_reach_the_next_line(self) -> None:
+        # `result = compute()` has no ':' or ',' of its own, so an entry region opened on
+        # that line must close there instead of consuming the next line's declared type.
+        source = (
+            "var factories = {\n"
+            '\t"build": func() -> Node:\n'
+            "\t\tresult = compute()\n"
+            "\t\tvar typed: Player = Player.new()\n"
+            "\t\treturn result,\n"
+            "}\n"
+        )
+        self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
+
+    def test_a_key_continued_across_a_line_break_still_hides_its_type_shaped_value(self) -> None:
+        source = "var values = {\n\t(a\n\t+ b): Node,\n}\n"
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+
     def test_a_lambda_key_still_opens_a_dictionary_entry(self) -> None:
         # `func` can begin an expression, so it must remain a legal way to start a key.
         source = "var values = {\n\tfunc(): Node,\n}\n"
