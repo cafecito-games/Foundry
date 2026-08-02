@@ -343,6 +343,7 @@ struct DebugAdapterClient {
 	// sequence a launch produced.
 	Vector<Dictionary> events;
 	List<Dictionary> responses;
+	Vector<Dictionary> received_messages;
 
 	bool connect_to_port(int p_port) {
 		peer.instantiate();
@@ -435,6 +436,7 @@ struct DebugAdapterClient {
 			return false;
 		}
 		for (Dictionary message = take_message(); !message.is_empty(); message = take_message()) {
+			received_messages.push_back(message);
 			if (String(message.get("type", "")) == "event") {
 				events.push_back(message);
 			} else {
@@ -483,6 +485,15 @@ struct DebugAdapterClient {
 		return Dictionary();
 	}
 
+	int event_index(const String &p_event) const {
+		for (int i = 0; i < events.size(); i++) {
+			if (String(events[i].get("event", "")) == p_event) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	// The ordered lifecycle events of the current window, which is what the DAP
 	// contract is expressed in.
 	PackedStringArray lifecycle_events() const {
@@ -512,6 +523,484 @@ struct DebugAdapterClient {
 		}
 	}
 };
+
+static String dap_messages_diagnostic(const DebugAdapterClient &p_client) {
+	String diagnostic;
+	for (const Dictionary &message : p_client.received_messages) {
+		diagnostic += JSON::stringify(message) + "\n";
+	}
+	return diagnostic;
+}
+
+static String tooling_host_and_dap_diagnostic(HostProcess &r_host, const DebugAdapterClient &p_client) {
+	drain_pipe(r_host.stdout_pipe, r_host.output);
+	drain_pipe(r_host.stderr_pipe, r_host.output);
+	return "Tooling host output:\n" + r_host.output + "Received DAP messages:\n" + dap_messages_diagnostic(p_client);
+}
+
+// Stages the checked-in debuggee that exposes locals and members at a stable
+// executable breakpoint. The test only observes the real DAP protocol.
+static String prepare_breakpoint_hit_project() {
+	EditorWorkflowTestFixtures::DisposableProjectSpec spec;
+	spec.fixture_name = "dap_breakpoint_hit";
+	PackedStringArray paths;
+	paths.push_back("project.foundry");
+	paths.push_back("main.tscn");
+	paths.push_back("breakpoint_hit.fs");
+	spec.relative_paths = paths;
+	return EditorWorkflowTestFixtures::prepare_disposable_project(spec);
+}
+
+struct BreakpointHitSession {
+	HostProcess host;
+	DebugAdapterClient client;
+	String project_path;
+	bool ready = false;
+	OS::ProcessID debuggee_pid = 0;
+	bool launch_started = false;
+	bool debuggee_terminated = false;
+
+	BreakpointHitSession() {
+		project_path = prepare_breakpoint_hit_project();
+		if (project_path.is_empty()) {
+			return;
+		}
+
+		List<String> arguments;
+		arguments.push_back("tooling");
+		arguments.push_back("serve");
+		arguments.push_back("--project");
+		arguments.push_back(project_path);
+		arguments.push_back("--lsp-port");
+		arguments.push_back("0");
+		arguments.push_back("--dap-port");
+		arguments.push_back("0");
+		host = launch_tooling_host(arguments);
+		if (!host.is_valid() || !wait_for_marker(host, "FOUNDRY_TOOLING {", 180000)) {
+			return;
+		}
+
+		const Dictionary payload = parse_marker_record(host.output, "FOUNDRY_TOOLING ");
+		if (!client.connect_to_port(payload.get("dap_port", 0))) {
+			return;
+		}
+		Dictionary initialize_arguments;
+		initialize_arguments["adapterID"] = "foundry";
+		initialize_arguments["linesStartAt1"] = true;
+		initialize_arguments["columnsStartAt1"] = true;
+		initialize_arguments["supportsVariableType"] = true;
+		const Dictionary response = client.await_response(client.send_request("initialize", initialize_arguments), 30000);
+		ready = bool(response.get("success", false));
+	}
+
+	~BreakpointHitSession() {
+		if (launch_started && !debuggee_terminated && client.peer.is_valid()) {
+			client.await_response(client.send_request("terminate", Dictionary()), 10000);
+			client.await_event("terminated", 10000);
+		}
+		client.disconnect_from_host();
+		shutdown_host(host);
+		if (debuggee_pid != 0 && OS::get_singleton()->is_process_running(debuggee_pid)) {
+			OS::get_singleton()->kill(debuggee_pid);
+		}
+	}
+
+	void track_debuggee(const Dictionary &p_process_event) {
+		debuggee_pid = Dictionary(p_process_event.get("body", Dictionary())).get("systemProcessId", 0);
+	}
+};
+
+TEST_CASE("[Editor][ToolingHost] A breakpoint exposes frame locals members and a clean exit") {
+	BreakpointHitSession session;
+	if (session.project_path.is_empty()) {
+		FAIL(("Failed to stage the breakpoint-hit project.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (!session.ready) {
+		FAIL(("The tooling host never accepted an initialized debug adapter session.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary initialized_event = session.client.await_event("initialized", 30000);
+	if (initialized_event.is_empty()) {
+		FAIL(("The host never emitted `initialized`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	const int breakpoint_line = 8;
+	const String script_path = session.project_path.path_join("breakpoint_hit.fs").simplify_path();
+	Dictionary source;
+	source["path"] = script_path;
+	Dictionary breakpoint;
+	breakpoint["line"] = breakpoint_line;
+	Array requested_breakpoints;
+	requested_breakpoints.push_back(breakpoint);
+	Dictionary set_breakpoints_arguments;
+	set_breakpoints_arguments["source"] = source;
+	set_breakpoints_arguments["breakpoints"] = requested_breakpoints;
+	const Dictionary set_breakpoints_response = session.client.await_response(
+			session.client.send_request("setBreakpoints", set_breakpoints_arguments), 30000);
+	if (!bool(set_breakpoints_response.get("success", false))) {
+		FAIL(("setBreakpoints did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary set_breakpoints_body = set_breakpoints_response.get("body", Dictionary());
+	const Array registered_breakpoints = set_breakpoints_body.get("breakpoints", Array());
+	if (registered_breakpoints.size() != 1) {
+		FAIL(("setBreakpoints did not return exactly one breakpoint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary registered_breakpoint = registered_breakpoints[0];
+	if (!bool(registered_breakpoint.get("verified", false))) {
+		FAIL(("setBreakpoints returned an unverified breakpoint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (int(registered_breakpoint.get("line", -1)) != breakpoint_line) {
+		FAIL(("setBreakpoints returned the wrong breakpoint line.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (!registered_breakpoint.has("id")) {
+		FAIL(("setBreakpoints did not return a breakpoint ID.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int breakpoint_id = registered_breakpoint["id"];
+
+	Dictionary launch_arguments;
+	launch_arguments["noDebug"] = false;
+	launch_arguments["scene"] = "main";
+	const int launch_seq = session.client.send_request("launch", launch_arguments);
+	session.launch_started = true;
+	const int configuration_done_seq = session.client.send_request("configurationDone", Dictionary());
+	const Dictionary launch_response = session.client.await_response(launch_seq, 60000);
+	const Dictionary configuration_done_response = session.client.await_response(configuration_done_seq, 30000);
+	if (!bool(launch_response.get("success", false))) {
+		FAIL(("launch did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (!bool(configuration_done_response.get("success", false))) {
+		FAIL(("configurationDone did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary process_event = session.client.await_event("process", 120000);
+	if (process_event.is_empty()) {
+		FAIL(("The debuggee never started.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	session.track_debuggee(process_event);
+	const Dictionary stopped_event = session.client.await_event("stopped", 120000);
+	if (stopped_event.is_empty()) {
+		FAIL(("The debuggee never stopped at the breakpoint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int process_event_index = session.client.event_index("process");
+	const int stopped_event_index = session.client.event_index("stopped");
+	if (process_event_index < 0 || stopped_event_index <= process_event_index) {
+		FAIL(("The stopped event did not follow the process event.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary stopped_body = stopped_event.get("body", Dictionary());
+	if (String(stopped_body.get("reason", "")) != "breakpoint") {
+		FAIL(("The debuggee stopped for a reason other than `breakpoint`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int stopped_thread_id = stopped_body.get("threadId", -1);
+	if (stopped_thread_id != 1) {
+		FAIL(("The stopped event did not identify the main thread.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Array hit_ids = stopped_body.get("hitBreakpointIds", Array());
+	bool hit_registered_breakpoint = false;
+	for (const Variant &hit_id : hit_ids) {
+		if (int(hit_id) == breakpoint_id) {
+			hit_registered_breakpoint = true;
+			break;
+		}
+	}
+	if (!hit_registered_breakpoint) {
+		FAIL(("The stopped event did not identify the registered breakpoint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	const Dictionary threads_response = session.client.await_response(
+			session.client.send_request("threads", Dictionary()), 30000);
+	if (!bool(threads_response.get("success", false))) {
+		FAIL(("threads did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Array threads = Dictionary(threads_response.get("body", Dictionary())).get("threads", Array());
+	if (threads.is_empty()) {
+		FAIL(("threads returned no main thread.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int thread_id = Dictionary(threads[0]).get("id", 0);
+	if (thread_id == 0 || thread_id != stopped_thread_id) {
+		FAIL(("threads returned an invalid thread ID or one different from `stopped`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	Dictionary stack_arguments;
+	stack_arguments["threadId"] = thread_id;
+	const Dictionary stack_response = session.client.await_response(
+			session.client.send_request("stackTrace", stack_arguments), 30000);
+	if (!bool(stack_response.get("success", false))) {
+		FAIL(("stackTrace did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Array frames = Dictionary(stack_response.get("body", Dictionary())).get("stackFrames", Array());
+	if (frames.is_empty()) {
+		FAIL(("stackTrace returned no frames.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary frame = frames[0];
+	if (String(frame.get("name", "")) != "_ready") {
+		FAIL(("The top stack frame was not `_ready`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary frame_source = frame.get("source", Dictionary());
+	if (String(frame_source.get("path", "")).simplify_path() != script_path) {
+		FAIL(("The top stack frame did not identify the staged fixture script.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (int(frame.get("line", -1)) != breakpoint_line) {
+		FAIL(("The top stack frame did not identify the requested breakpoint line.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (!frame.has("id")) {
+		FAIL(("The top stack frame did not return a frame ID.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int frame_id = frame["id"];
+
+	Dictionary scopes_arguments;
+	scopes_arguments["frameId"] = frame_id;
+	const Dictionary scopes_response = session.client.await_response(
+			session.client.send_request("scopes", scopes_arguments), 30000);
+	if (!bool(scopes_response.get("success", false))) {
+		FAIL(("scopes did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Array scopes = Dictionary(scopes_response.get("body", Dictionary())).get("scopes", Array());
+	Dictionary scopes_by_name;
+	Dictionary expected_scope_hints;
+	expected_scope_hints["Locals"] = "locals";
+	expected_scope_hints["Members"] = "members";
+	expected_scope_hints["Globals"] = "globals";
+	for (Dictionary scope : scopes) {
+		const String scope_name = scope.get("name", "");
+		if (expected_scope_hints.has(scope_name)) {
+			scopes_by_name[scope_name] = scope;
+		}
+	}
+	if (!scopes_by_name.has("Locals") || !scopes_by_name.has("Members") || !scopes_by_name.has("Globals")) {
+		FAIL(("scopes did not expose Locals, Members, and Globals.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary locals_scope = scopes_by_name["Locals"];
+	const Dictionary members_scope = scopes_by_name["Members"];
+	const Dictionary globals_scope = scopes_by_name["Globals"];
+	if (String(locals_scope.get("presentationHint", "")) != "locals" ||
+			String(members_scope.get("presentationHint", "")) != "members" ||
+			String(globals_scope.get("presentationHint", "")) != "globals") {
+		FAIL(("One or more scopes returned the wrong presentation hint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int locals_reference = locals_scope.get("variablesReference", 0);
+	const int members_reference = members_scope.get("variablesReference", 0);
+	const int globals_reference = globals_scope.get("variablesReference", 0);
+	if (locals_reference == 0 || members_reference == 0 || globals_reference == 0) {
+		FAIL(("One or more scopes returned a zero variables reference.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (locals_reference == members_reference || locals_reference == globals_reference ||
+			members_reference == globals_reference) {
+		FAIL(("Locals, Members, and Globals did not return distinct variables references.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	auto request_variables = [&session](int p_reference) {
+		Dictionary arguments;
+		arguments["variablesReference"] = p_reference;
+		return session.client.await_response(session.client.send_request("variables", arguments), 30000);
+	};
+	auto find_variable = [](const Array &p_variables, const String &p_name) {
+		for (Dictionary variable : p_variables) {
+			if (String(variable.get("name", "")) == p_name) {
+				return variable;
+			}
+		}
+		return Dictionary();
+	};
+	const Dictionary locals_response = request_variables(locals_reference);
+	if (!bool(locals_response.get("success", false))) {
+		FAIL(("variables did not succeed for Locals.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Array local_variables = Dictionary(locals_response.get("body", Dictionary())).get("variables", Array());
+	const Dictionary local_value = find_variable(local_variables, "local_value");
+	if (local_value.is_empty()) {
+		FAIL(("Locals did not contain `local_value`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (String(local_value.get("value", "")) != "7" || String(local_value.get("type", "")) != "int" ||
+			int(local_value.get("variablesReference", -1)) != 0) {
+		FAIL(("`local_value` did not have value 7, type int, and variablesReference 0.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	const Dictionary members_response = request_variables(members_reference);
+	if (!bool(members_response.get("success", false))) {
+		FAIL(("variables did not succeed for Members.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Array member_variables = Dictionary(members_response.get("body", Dictionary())).get("variables", Array());
+	const Dictionary member_value = find_variable(member_variables, "member_value");
+	if (member_value.is_empty()) {
+		FAIL(("Members did not contain `member_value`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (String(member_value.get("value", "")) != "35" || String(member_value.get("type", "")) != "int" ||
+			int(member_value.get("variablesReference", -1)) != 0) {
+		FAIL(("`member_value` did not have value 35, type int, and variablesReference 0.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	Dictionary evaluate_arguments;
+	evaluate_arguments["expression"] = "local_value + member_value";
+	evaluate_arguments["frameId"] = frame_id;
+	const Dictionary evaluate_response = session.client.await_response(
+			session.client.send_request("evaluate", evaluate_arguments), 30000);
+	if (!bool(evaluate_response.get("success", false))) {
+		FAIL(("evaluate did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary evaluate_body = evaluate_response.get("body", Dictionary());
+	if (String(evaluate_body.get("result", "")) != "42" ||
+			int(evaluate_body.get("variablesReference", -1)) != 0) {
+		FAIL(("evaluate did not return result 42 with variablesReference 0.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	// Restarting synchronously ends the current editor run before the replacement
+	// starts. The adapter must retain the DAP breakpoint identity across that gap.
+	session.client.clear_events();
+	Dictionary restart_arguments;
+	restart_arguments["arguments"] = launch_arguments;
+	const Dictionary restart_response = session.client.await_response(
+			session.client.send_request("restart", restart_arguments), 60000);
+	if (!bool(restart_response.get("success", false))) {
+		FAIL(("restart did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary restarted_process_event = session.client.await_event("process", 120000);
+	if (restarted_process_event.is_empty()) {
+		FAIL(("The restarted debuggee never started.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	session.track_debuggee(restarted_process_event);
+	const Dictionary restarted_stopped_event = session.client.await_event("stopped", 30000);
+	if (restarted_stopped_event.is_empty()) {
+		FAIL(("The restarted debuggee never stopped at the breakpoint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary restarted_stopped_body = restarted_stopped_event.get("body", Dictionary());
+	if (String(restarted_stopped_body.get("reason", "")) != "breakpoint" ||
+			int(restarted_stopped_body.get("threadId", -1)) != thread_id) {
+		FAIL(("The restarted debuggee did not stop on the expected thread and breakpoint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Array restarted_hit_ids = restarted_stopped_body.get("hitBreakpointIds", Array());
+	bool restart_hit_registered_breakpoint = false;
+	for (const Variant &hit_id : restarted_hit_ids) {
+		if (int(hit_id) == breakpoint_id) {
+			restart_hit_registered_breakpoint = true;
+			break;
+		}
+	}
+	if (!restart_hit_registered_breakpoint) {
+		FAIL(("The restarted debuggee did not retain the registered breakpoint ID.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	PackedStringArray running_restart_lifecycle;
+	running_restart_lifecycle.push_back("process");
+	if (session.client.lifecycle_events() != running_restart_lifecycle) {
+		FAIL(("Restart exposed the replaced debuggee's exited or terminated event.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	Dictionary continue_arguments;
+	continue_arguments["threadId"] = thread_id;
+	const Dictionary continue_response = session.client.await_response(
+			session.client.send_request("continue", continue_arguments), 30000);
+	if (!bool(continue_response.get("success", false))) {
+		FAIL(("continue did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary terminated_event = session.client.await_event("terminated", 120000);
+	if (terminated_event.is_empty()) {
+		FAIL(("The debuggee never terminated.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	session.debuggee_terminated = true;
+	PackedStringArray expected_lifecycle;
+	expected_lifecycle.push_back("process");
+	expected_lifecycle.push_back("exited");
+	expected_lifecycle.push_back("terminated");
+	if (session.client.lifecycle_events() != expected_lifecycle) {
+		FAIL(("The debuggee lifecycle was not process, exited, terminated.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (session.client.exit_code_of_first_exited() != 0) {
+		FAIL(("The debuggee did not exit with code 0.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+}
 
 TEST_CASE("[Editor][ToolingHost] A headless session answers pause and continue without a debuggee") {
 	const String project_path = EditorWorkflowTestFixtures::prepare_basic_scene_project();

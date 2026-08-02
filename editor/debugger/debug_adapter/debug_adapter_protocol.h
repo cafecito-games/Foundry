@@ -101,6 +101,7 @@ private:
 
 	void reset_current_info();
 	void reset_ids();
+	void reset_session_state();
 	void reset_stack_info();
 
 	int parse_variant(const Variant &p_var);
@@ -131,6 +132,7 @@ private:
 	int _current_frame = 0;
 	uint64_t _request_timeout = 5000;
 	bool _sync_breakpoints = false;
+	bool _reregistering_breakpoints = false;
 
 	String _current_request;
 	Ref<DAPeer> _current_peer;
@@ -182,6 +184,7 @@ public:
 	void notify_breakpoint(const DAP::Breakpoint &p_breakpoint, const bool &p_enabled);
 
 	Array update_breakpoints(const String &p_path, const Array &p_lines);
+	void reregister_breakpoints_after_launch();
 	static bool can_verify_breakpoint(const String &p_path, int p_line);
 	static String breakpoint_script_path(const String &p_client_path, const String &p_resource_path);
 
