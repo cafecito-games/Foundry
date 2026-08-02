@@ -30,8 +30,11 @@
 
 #pragma once
 
-#include "../fs_format.h"
 #include "../fs_parser.h"
+
+#ifdef TOOLS_ENABLED
+#include "../fs_format.h"
+#endif // TOOLS_ENABLED
 
 #include "tests/test_macros.h"
 
@@ -63,6 +66,8 @@ static bool has_error_containing(const FSParser &p_parser, const String &p_fragm
 	return false;
 }
 
+#ifdef TOOLS_ENABLED
+// The formatter is an editor-only tool, so its coverage compiles only where it exists.
 static String format_source(const String &p_source) {
 	FSFormatter formatter;
 	FSFormatter::Result result;
@@ -70,6 +75,7 @@ static String format_source(const String &p_source) {
 	CHECK_MESSAGE(err == OK, "Source must format without parse errors.");
 	return result.formatted;
 }
+#endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnion] Parser stores enum type parameters") {
 	FSParser parser;
@@ -154,6 +160,7 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnion] Duplicate enum type para
 	CHECK(has_error_containing(parser, R"(Type parameter with name "T" was already declared.)"));
 }
 
+#ifdef TOOLS_ENABLED
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnion] Formatter canonicalizes generic enum headers") {
 	// A trailing comma in the parameter list is accepted and dropped, matching how the same
 	// helper canonicalizes class and function parameter lists.
@@ -169,6 +176,7 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnion] Formatter canonicalizes 
 			"\tErr(error:E)\n");
 	CHECK(global_formatted.contains("enum_name GlobalResult[T, E]:"));
 }
+#endif // TOOLS_ENABLED
 
 } // namespace GenericTaggedUnion
 } // namespace FSTests
