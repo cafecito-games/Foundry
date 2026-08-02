@@ -608,9 +608,10 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 
 	registry->clear_file(source_file);
 
-	// Track `(target, trait)` pairs declared in this file to reject duplicate conformances locally; a
-	// pair already registered by a *different* file is a cross-file duplicate.
-	HashSet<String> seen_pairs;
+	// Track the declaration that first emitted each `(target, trait)` membership. Two paths through
+	// the same declaration may share an implied supertrait (a diamond), but an explicit duplicate or
+	// overlap with another declaration is incoherent.
+	HashMap<String, int> seen_membership_conformances;
 	// Track witness method names per target key within this file to reject same-target witness
 	// collisions across different trait conformances.
 	HashMap<String, HashMap<StringName, StringName>> seen_witnesses_by_target;
@@ -688,6 +689,10 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			}
 
 			const StringName trait_identity = fs_trait_identity_name(trait);
+			const Vector<StringName> trait_identities = fs_trait_identity_closure(trait);
+			if (trait_identities.is_empty()) {
+				continue;
+			}
 
 			// Coherence: a conformance redundant with the target's own `uses` is rejected.
 			bool redundant = false;
@@ -704,22 +709,35 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 				continue;
 			}
 
-			// Coherence: the same `(target, trait)` pair cannot be declared twice, in this file or another.
-			const String pair_key = target->fqcn + "\n" + String(trait_identity);
-			if (seen_pairs.has(pair_key)) {
-				push_error(vformat(R"(Class "%s" already has a conformance to trait "%s" in this file.)",
-								   _class_or_trait_name(target), _class_or_trait_name(trait)),
-						conformance);
+			// Coherence applies to the whole implied identity closure. A repeated implied identity within
+			// this declaration is the ordinary diamond case; a repeated direct identity or an overlap with
+			// another declaration remains an error.
+			bool membership_conflict = false;
+			for (int identity_index = 0; identity_index < trait_identities.size(); identity_index++) {
+				const StringName identity = trait_identities[identity_index];
+				const String pair_key = target->fqcn + "\n" + String(identity);
+				const int *existing_conformance = seen_membership_conformances.getptr(pair_key);
+				if (existing_conformance != nullptr &&
+						(*existing_conformance != conformance_index || identity_index == 0)) {
+					push_error(vformat(R"(Class "%s" already has a conformance to trait "%s" in this file.)",
+									   _class_or_trait_name(target), String(identity)),
+							conformance);
+					membership_conflict = true;
+					break;
+				}
+
+				const String other_source = registry->get_conformance_source(target->fqcn, identity);
+				if (!other_source.is_empty() && other_source != source_file) {
+					push_error(vformat(R"(Class "%s" already conforms to trait "%s" via a conformance in "%s".)",
+									   _class_or_trait_name(target), String(identity), _localize_script_path(other_source)),
+							conformance);
+					membership_conflict = true;
+					break;
+				}
+			}
+			if (membership_conflict) {
 				continue;
 			}
-			const String other_source = registry->get_conformance_source(target->fqcn, trait_identity);
-			if (!other_source.is_empty() && other_source != source_file) {
-				push_error(vformat(R"(Class "%s" already conforms to trait "%s" via a conformance in "%s".)",
-								   _class_or_trait_name(target), _class_or_trait_name(trait), _localize_script_path(other_source)),
-						conformance);
-				continue;
-			}
-			seen_pairs.insert(pair_key);
 
 			if (!conformance_witness_checked) {
 				conformance_witness_checked = true;
@@ -765,7 +783,6 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			FSConformanceRegistry::Conformance entry;
 			entry.target_keys = target_keys;
 			entry.target_fqcn = target->fqcn;
-			entry.trait_name = trait_identity;
 			entry.source_file = source_file;
 			entry.conformance_index = conformance_index;
 			for (FSParser::FunctionNode *witness : conformance->witnesses) {
@@ -773,7 +790,16 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 					entry.witnesses.insert(witness->identifier->name, witness);
 				}
 			}
-			valid_entries.push_back(entry);
+			for (const StringName &identity : trait_identities) {
+				const String pair_key = target->fqcn + "\n" + String(identity);
+				const int *existing_conformance = seen_membership_conformances.getptr(pair_key);
+				if (existing_conformance != nullptr && *existing_conformance == conformance_index) {
+					continue;
+				}
+				entry.trait_name = identity;
+				valid_entries.push_back(entry);
+				seen_membership_conformances.insert(pair_key, conformance_index);
+			}
 			if (witness_trait_label == StringName()) {
 				witness_trait_label = trait_identity;
 			}

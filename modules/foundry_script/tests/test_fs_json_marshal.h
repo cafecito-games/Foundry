@@ -324,7 +324,7 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A conforming object is marshale
 	CHECK_EQ(JSON::stringify(keyed), "{\"hero\":\"from script\"}");
 }
 
-TEST_CASE("[Modules][FoundryScript][JsonMarshal] A retroactive conformance on a native class is honored") {
+TEST_CASE("[Modules][FoundryScript][JsonMarshal] A native subtrait conformance supplies a root witness") {
 	JsonMarshalProjectFixture project;
 	JsonMarshallerScope marshaller_scope;
 
@@ -334,19 +334,41 @@ TEST_CASE("[Modules][FoundryScript][JsonMarshal] A retroactive conformance on a 
 			ResourceLoader::load("res://json_marshal_host/native_image_ext.notest.fs");
 	REQUIRE(conformance_script.is_valid());
 	REQUIRE(conformance_script->is_valid());
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	const bool has_root_conformance = registry->native_class_conforms(
+			SNAME("Image"), FSJsonObjectMarshaller::serializable_trait_name(), true);
+	FSFunction *root_witness = registry->find_native_trait_witness_function(
+			SNAME("Image"), FSJsonObjectMarshaller::serializable_trait_name(),
+			FSJsonMarshal::to_json_method_name());
+	REQUIRE(has_root_conformance);
+	REQUIRE(root_witness != nullptr);
+	if (!has_root_conformance || root_witness == nullptr) {
+		return;
+	}
 
-	// The conformance target has no script, so nothing installs the hook on the instance.
+	// The conformance target has no script, so nothing installs the hook on the instance. Both
+	// membership and trait-scoped dispatch come from ResourceJson's implied JsonSerializable entry.
 	Ref<Image> image(memnew(Image));
 	CHECK(FSJsonObjectMarshaller::conforms_to_serializable(image.ptr()));
 	CHECK(FSJsonMarshal::has_to_json(image.ptr()));
 
 	Variant node;
-	REQUIRE(FSJsonMarshal::call_to_json(image.ptr(), node));
+	const bool called_to_json = FSJsonMarshal::call_to_json(image.ptr(), node);
+	REQUIRE(called_to_json);
+	if (!called_to_json) {
+		return;
+	}
 
 	// `JsonNode.Str(...)` lowers to `[tag, payload]`, where `Str` is case 4 in the wire contract.
 	REQUIRE_EQ(node.get_type(), Variant::ARRAY);
+	if (node.get_type() != Variant::ARRAY) {
+		return;
+	}
 	const Array encoded_node = node;
 	REQUIRE_EQ(encoded_node.size(), 2);
+	if (encoded_node.size() != 2) {
+		return;
+	}
 	CHECK_EQ(int(encoded_node[0]), 4);
 	CHECK_EQ(String(encoded_node[1]), "image:Image");
 

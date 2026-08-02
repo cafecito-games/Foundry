@@ -31,6 +31,7 @@
 #include "fs_utility_functions.h"
 
 #include "foundry_script.h"
+#include "fs_conformance_registry.h"
 #include "fs_proxy.h"
 
 #include "core/io/resource_loader.h"
@@ -345,6 +346,32 @@ struct FSUtilityFunctionsDefinitions {
 		VALIDATE_ARG_CUSTOM(1, Variant::NIL, was_type_freed, RTR("Type argument is a previously freed instance."));
 		VALIDATE_ARG_CUSTOM(1, Variant::NIL, !type_object,
 				RTR("Invalid type argument for is_instance_of(), should be a TYPE_* constant, a class or a script."));
+		Script *script_type = Object::cast_to<Script>(type_object);
+		FoundryScript *foundry_type = Object::cast_to<FoundryScript>(script_type);
+		if (foundry_type != nullptr && foundry_type->is_trait_type()) {
+			const StringName trait_name = foundry_type->get_trait_type_name();
+			bool was_value_freed = false;
+			Object *value_object = p_args[0]->get_validated_object_with_check(was_value_freed);
+			VALIDATE_ARG_CUSTOM(0, Variant::NIL, was_value_freed, RTR("Value argument is a previously freed instance."));
+
+			bool result = false;
+			if (value_object != nullptr) {
+				ScriptInstance *script_instance = value_object->get_script_instance();
+				if (script_instance != nullptr) {
+					Ref<Script> script_ref = script_instance->get_script();
+					result = script_ref.is_valid() && script_ref->has_script_trait(trait_name);
+				}
+				if (!result) {
+					result = FSConformanceRegistry::get_singleton()->native_class_conforms(
+							value_object->get_class_name(), trait_name, true);
+				}
+			} else if (p_args[0]->get_type() != Variant::NIL && p_args[0]->get_type() != Variant::OBJECT) {
+				result = FSConformanceRegistry::get_singleton()->builtin_type_conforms(
+						p_args[0]->get_type(), trait_name, true);
+			}
+			*r_ret = result;
+			return;
+		}
 
 		bool was_value_freed = false;
 		Object *value_object = p_args[0]->get_validated_object_with_check(was_value_freed);
@@ -360,23 +387,17 @@ struct FSUtilityFunctionsDefinitions {
 			return;
 		}
 
-		Script *script_type = Object::cast_to<Script>(type_object);
 		if (script_type) {
 			bool result = false;
 			if (value_object->get_script_instance()) {
 				Ref<Script> script_ref = value_object->get_script_instance()->get_script();
-				FoundryScript *fs_type = Object::cast_to<FoundryScript>(script_type);
-				if (fs_type != nullptr && fs_type->is_trait_type()) {
-					result = script_ref.is_valid() && script_ref->has_script_trait(fs_type->get_trait_type_name());
-				} else {
-					Script *script_ptr = script_ref.ptr();
-					while (script_ptr) {
-						if (script_ptr == script_type) {
-							result = true;
-							break;
-						}
-						script_ptr = script_ptr->get_base_script().ptr();
+				Script *script_ptr = script_ref.ptr();
+				while (script_ptr) {
+					if (script_ptr == script_type) {
+						result = true;
+						break;
 					}
+					script_ptr = script_ptr->get_base_script().ptr();
 				}
 			}
 			*r_ret = result;

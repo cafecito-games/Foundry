@@ -54,6 +54,7 @@ namespace FSTests {
 struct ConformanceVisibilityFixture {
 	String dir;
 	String widget_path;
+	String root_trait_path;
 	String trait_path;
 	String conformance_path;
 
@@ -62,20 +63,26 @@ struct ConformanceVisibilityFixture {
 		widget_path = write("fsv_widget.fs", R"(class_name FsvWidget
 extends RefCounted
 )");
-		trait_path = write("fsv_markable.fs", R"(trait_name FsvMarkable
+		root_trait_path = write("fsv_root.fs", R"(trait_name FsvRoot
 
 abstract static func fsv_mark() -> int
+)");
+		trait_path = write("fsv_markable.fs", R"(trait_name FsvMarkable
+
+uses FsvRoot
 )");
 		conformance_path = write("fsv_conformance.fs", R"(extend FsvWidget uses FsvMarkable:
 	static func fsv_mark() -> int:
 		return 5
 )");
 		register_global_class("FsvWidget", widget_path, "RefCounted", false);
+		register_global_class("FsvRoot", root_trait_path, "RefCounted", true);
 		register_global_class("FsvMarkable", trait_path, "RefCounted", true);
 	}
 
 	~ConformanceVisibilityFixture() {
 		ScriptServer::remove_global_class("FsvWidget");
+		ScriptServer::remove_global_class("FsvRoot");
 		ScriptServer::remove_global_class("FsvMarkable");
 		FSConformanceRegistry::get_singleton()->clear();
 	}
@@ -117,6 +124,35 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a conformance reaches only the 
 	// that registration in place — which is exactly the situation a real project is in once any file
 	// has pulled the conformance in.
 	REQUIRE(ConformanceVisibilityFixture::analyze_is_clean(fixture.conformance_path));
+	const Vector<FSConformanceRegistry::Conformance> entries =
+			FSConformanceRegistry::get_singleton()->get_file_conformances(fixture.conformance_path);
+	REQUIRE_EQ(entries.size(), 2);
+	if (entries.size() != 2) {
+		return;
+	}
+	const FSConformanceRegistry::Conformance *markable_entry = nullptr;
+	const FSConformanceRegistry::Conformance *root_entry = nullptr;
+	for (const FSConformanceRegistry::Conformance &entry : entries) {
+		if (entry.trait_name == SNAME("FsvMarkable")) {
+			markable_entry = &entry;
+		} else if (entry.trait_name == SNAME("FsvRoot")) {
+			root_entry = &entry;
+		}
+	}
+	REQUIRE(markable_entry != nullptr);
+	REQUIRE(root_entry != nullptr);
+	if (markable_entry == nullptr || root_entry == nullptr) {
+		return;
+	}
+	CHECK_EQ(root_entry->source_file, markable_entry->source_file);
+	CHECK_EQ(root_entry->target_fqcn, markable_entry->target_fqcn);
+	CHECK_EQ(root_entry->conformance_index, markable_entry->conformance_index);
+	REQUIRE(root_entry->witnesses.has(SNAME("fsv_mark")));
+	REQUIRE(markable_entry->witnesses.has(SNAME("fsv_mark")));
+	CHECK_EQ(root_entry->witnesses[SNAME("fsv_mark")], markable_entry->witnesses[SNAME("fsv_mark")]);
+	CHECK_EQ(FSConformanceRegistry::get_singleton()->get_conformance_source("FsvWidget", SNAME("FsvRoot")),
+			fixture.conformance_path);
+	CHECK(FSConformanceRegistry::get_singleton()->get_witnesses("FsvWidget", SNAME("FsvRoot")).has(SNAME("fsv_mark")));
 
 	SUBCASE("a file that loads the declaring file sees it") {
 		const String consumer_path = fixture.write("fsv_consumer_loading.fs", R"(extends RefCounted
@@ -126,8 +162,8 @@ const _Conformance = preload("fsv_conformance.fs")
 
 func probe() -> int:
 	var widget := FsvWidget.new()
-	var markable: FsvMarkable = widget
-	return FsvWidget.fsv_mark() + int(markable != null)
+	var root: FsvRoot = widget
+	return FsvWidget.fsv_mark() + int(root != null)
 )");
 		CHECK(ConformanceVisibilityFixture::analyze_is_clean(consumer_path));
 	}
@@ -137,11 +173,29 @@ func probe() -> int:
 
 func probe() -> int:
 	var widget := FsvWidget.new()
-	var markable: FsvMarkable = widget
-	return FsvWidget.fsv_mark() + int(markable != null)
+	var root: FsvRoot = widget
+	return FsvWidget.fsv_mark() + int(root != null)
 )");
 		CHECK_FALSE(ConformanceVisibilityFixture::analyze_is_clean(consumer_path));
 	}
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] implied memberships keep coherence and clear with their source") {
+	ConformanceVisibilityFixture fixture;
+	REQUIRE(ConformanceVisibilityFixture::analyze_is_clean(fixture.conformance_path));
+
+	const String duplicate_path = fixture.write("fsv_root_duplicate.fs", R"(extend FsvWidget uses FsvRoot:
+	static func fsv_mark() -> int:
+		return 9
+)");
+	CHECK_FALSE(ConformanceVisibilityFixture::analyze_is_clean(duplicate_path));
+
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	CHECK(registry->has_conformance("FsvWidget", SNAME("FsvMarkable")));
+	CHECK(registry->has_conformance("FsvWidget", SNAME("FsvRoot")));
+	registry->clear_file(fixture.conformance_path);
+	CHECK_FALSE(registry->has_conformance("FsvWidget", SNAME("FsvMarkable")));
+	CHECK_FALSE(registry->has_conformance("FsvWidget", SNAME("FsvRoot")));
 }
 
 // A conformance-only file exports no global class, so no consumer can name it and name resolution

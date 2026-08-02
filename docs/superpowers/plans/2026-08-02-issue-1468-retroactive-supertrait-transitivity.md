@@ -24,6 +24,10 @@ compiled-bytecode exporter/loader, command-first Foundry CLI.
   parse entries for the closure.
 - Modify `modules/foundry_script/fs_compiler.cpp`: register one runtime entry per de-duplicated closure identity while
   compiling witnesses once.
+- Modify `modules/foundry_script/fs_function.{h,cpp}`: let runtime trait-typed argument validation accept conforming
+  builtin values through the registry.
+- Modify `modules/foundry_script/fs_utility_functions.cpp`: make `is_instance_of` use registry membership for
+  retroactively conformed builtin and native values.
 - Modify `modules/foundry_script/fs_conformance_registry.h`: document that stored entries may represent implied
   memberships but retain original provenance and witnesses.
 - Create `modules/foundry_script/tests/scripts/runtime/features/retroactive_conformance_supertrait_transitive.{fs,out}`:
@@ -222,9 +226,9 @@ Declare only `extend Gadget uses Trackable`. Assert compile-time runtime entries
 identities and every entry shares the same compiled `ping` pointer. After export, clear parse/runtime registrations,
 load bytecode, and assert all four identities, the `Pingable` witness, runtime `is`/`as`, and dispatch are restored.
 Retain the existing marker-conformance round-trip as the empty-witness-map case. The native trait-scoped lookup is
-covered separately by the JSON marshalling test below.
+covered separately by the JSON marshaling test below.
 
-- [ ] **Step 4: Route JSON marshalling through a subtrait**
+- [ ] **Step 4: Route JSON marshaling through a subtrait**
 
 Change `native_image_ext.notest.fs` to:
 
@@ -354,6 +358,8 @@ pass; bytecode/runtime membership still fails until compiler registration expand
 
 **Files:**
 - Modify: `modules/foundry_script/fs_compiler.cpp`
+- Modify: `modules/foundry_script/fs_function.{h,cpp}`
+- Modify: `modules/foundry_script/fs_utility_functions.cpp`
 
 - [ ] **Step 1: Replace direct-only runtime emission**
 
@@ -366,21 +372,27 @@ rather than treated as a compiler error; a repeated direct trait remains an anal
 
 Use the bytecode test's pre-export runtime entries to verify every closure identity references the same `FSFunction *`
 compiled once for the source conformance. Do not add consumer fallbacks in `fs_type.cpp`, `fs_vm.cpp`, or JSON
-marshalling.
+marshaling.
 
-- [ ] **Step 3: Rebuild and regenerate intentional fixture output**
+- [ ] **Step 3: Complete builtin runtime membership consumers**
+
+Route trait-typed `FSDataType` validation for non-object builtin values and `is_instance_of(value, Trait)` through the
+expanded registry. These paths already honor direct runtime conformance for object-backed targets but otherwise reject
+builtin values before consulting registry membership.
+
+- [ ] **Step 4: Rebuild and regenerate intentional fixture output**
 
 Run:
 
 ```bash
 python3 scripts/agent_build.py --backend ninja
 ./bin/foundry.macos.editor.dev.arm64 --headless test generate-fixtures \
-  modules/foundry_script/tests/scripts/runtime/features/retroactive_conformance_supertrait_transitive.fs
+  modules/foundry_script/tests/scripts/runtime/features
 ```
 
 Inspect the generated `.out`; retain only expected observable output and intentional warnings.
 
-- [ ] **Step 4: Run all focused behavior suites**
+- [ ] **Step 5: Run all focused behavior suites**
 
 Run:
 

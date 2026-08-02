@@ -1,9 +1,11 @@
-# Conforms an engine class to `JsonSerializable` from outside its definition. The objects this
-# applies to carry no script, so the witness is reachable only through the conformance registry;
-# loading this file is what brings it into effect. `Image` is deliberately narrow: a conformance is
-# keyed by (target, trait), so declaring one on a broad base class here would collide with the
-# `extend Resource uses JsonSerializable` the runtime fixtures declare.
-extend Image uses JsonSerializable:
+# Conforms an engine class to a subtrait of `JsonSerializable` from outside its definition. The
+# objects this applies to carry no script, so trait-scoped lookup must find the original witness
+# through the implied supertrait membership. Loading this file is what brings it into effect.
+trait ResourceJson uses JsonSerializable:
+	pass
+
+
+extend Image uses ResourceJson:
 	func to_json() -> JsonNode:
 		return JsonNode.Str("image:" + get_class())
 

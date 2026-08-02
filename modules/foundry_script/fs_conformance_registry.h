@@ -68,6 +68,8 @@ public:
 		// root class without `class_name` has that path as its FQCN — so a lookup that must not cross
 		// class boundaries matches on this instead.
 		String target_fqcn;
+		// A direct trait from the declaration or one of its implied supertraits. Implied entries retain
+		// the declaring conformance's source, index, and witness map.
 		StringName trait_name;
 		String source_file;
 		// Position of the declaring `ConformanceNode` in the source file's root-class conformance list.
@@ -114,6 +116,8 @@ public:
 		// the target identity for marker conformances, whose function map is intentionally empty.
 		FoundryScript *target_script = nullptr;
 		Vector<String> target_keys;
+		// A direct trait from the declaration or one of its implied supertraits. Every identity emitted
+		// from one declaration borrows the same compiled witness functions.
 		StringName trait_name;
 		WitnessFunctionMap functions;
 	};

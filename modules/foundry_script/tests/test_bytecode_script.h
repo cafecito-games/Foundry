@@ -750,13 +750,19 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 			"trait Pingable:\n"
 			"\tabstract func ping() -> int\n"
 			"\n"
-			"trait Trackable:\n"
-			"\tabstract func ping() -> int\n"
+			"trait LeftPing uses Pingable:\n"
+			"\tpass\n"
+			"\n"
+			"trait RightPing uses Pingable:\n"
+			"\tpass\n"
+			"\n"
+			"trait Trackable uses LeftPing, RightPing:\n"
+			"\tpass\n"
 			"\n"
 			"class Gadget:\n"
 			"\tvar power: int = 21\n"
 			"\n"
-			"extend Gadget uses Pingable, Trackable:\n"
+			"extend Gadget uses Trackable:\n"
 			"\tfunc ping() -> int:\n"
 			"\t\treturn power * 2\n"
 			"\n"
@@ -768,32 +774,62 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 			"\tvar gadget := Gadget.new()\n"
 			"\tvar pingable: Pingable = gadget\n"
 			"\tvar widened: Object = gadget\n"
-			"\tif not widened is Pingable or not widened is Trackable:\n"
+			"\tif not widened is Pingable or not widened is LeftPing or "
+			"not widened is RightPing or not widened is Trackable:\n"
 			"\t\treturn -1\n"
-			"\tvar trackable := widened as Trackable\n"
-			"\treturn pingable.ping() + trackable.ping() + "
+			"\tvar root := widened as Pingable\n"
+			"\treturn pingable.ping() + root.ping() + "
 			"Speaker.new().ping()\n");
+	REQUIRE(original->is_valid());
+	if (!original->is_valid()) {
+		return;
+	}
 	const String script_path = original->get_script_path();
 	const Ref<FoundryScript> original_gadget = original->get_subclasses().find(SNAME("Gadget"))->value;
 	const String gadget_key = original_gadget->get_fully_qualified_name();
 	const Ref<FoundryScript> original_pingable =
 			original->get_subclasses().find(SNAME("Pingable"))->value;
+	const Ref<FoundryScript> original_left_ping =
+			original->get_subclasses().find(SNAME("LeftPing"))->value;
+	const Ref<FoundryScript> original_right_ping =
+			original->get_subclasses().find(SNAME("RightPing"))->value;
 	const Ref<FoundryScript> original_trackable =
 			original->get_subclasses().find(SNAME("Trackable"))->value;
 	const StringName pingable_trait =
 			original_pingable->get_trait_type_name();
+	const StringName left_ping_trait =
+			original_left_ping->get_trait_type_name();
+	const StringName right_ping_trait =
+			original_right_ping->get_trait_type_name();
 	const StringName trackable_trait =
 			original_trackable->get_trait_type_name();
+	const Vector<StringName> closure_traits = {
+		trackable_trait,
+		left_ping_trait,
+		pingable_trait,
+		right_ping_trait,
+	};
 	BytecodeConformanceRegistryRestore registry_restore(script_path);
 	const Vector<FSConformanceRegistry::RuntimeConformance>
 			compiled_conformances =
 					FSConformanceRegistry::get_singleton()
 							->get_runtime_witnesses(script_path);
-	REQUIRE_EQ(compiled_conformances.size(), 2);
-	CHECK_EQ(compiled_conformances[0].trait_name, pingable_trait);
-	CHECK_EQ(compiled_conformances[1].trait_name, trackable_trait);
-	CHECK_EQ(compiled_conformances[0].target_script, original_gadget.ptr());
-	CHECK_EQ(compiled_conformances[1].target_script, original_gadget.ptr());
+	REQUIRE_EQ(compiled_conformances.size(), closure_traits.size());
+	HashSet<StringName> compiled_traits;
+	FSFunction *shared_compiled_witness = nullptr;
+	for (const FSConformanceRegistry::RuntimeConformance &conformance : compiled_conformances) {
+		compiled_traits.insert(conformance.trait_name);
+		CHECK_EQ(conformance.target_script, original_gadget.ptr());
+		REQUIRE(conformance.functions.has(SNAME("ping")));
+		if (shared_compiled_witness == nullptr) {
+			shared_compiled_witness = conformance.functions[SNAME("ping")];
+		} else {
+			CHECK_EQ(conformance.functions[SNAME("ping")], shared_compiled_witness);
+		}
+	}
+	for (const StringName &trait_name : closure_traits) {
+		CHECK(compiled_traits.has(trait_name));
+	}
 
 	// Sanity: the compiled fixture dispatches through the registry.
 	{
@@ -806,15 +842,15 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	Vector<uint8_t> buffer;
 	REQUIRE(exporter.serialize(original, buffer) == OK);
 
-	// Drop both compile-time registrations so membership and dispatch below can only come from the
+	// Drop all compile-time registrations so membership and dispatch below can only come from the
 	// ordinary, non-Transaction bytecode buffer and the loader's own re-registration.
 	FSConformanceRegistry::get_singleton()->clear_file(script_path);
 	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
 	CHECK(FSConformanceRegistry::get_singleton()->find_witness_function(gadget_key, SNAME("ping")) == nullptr);
-	CHECK_FALSE(FSConformanceRegistry::get_singleton()->has_conformance(
-			gadget_key, pingable_trait, true));
-	CHECK_FALSE(FSConformanceRegistry::get_singleton()->has_conformance(
-			gadget_key, trackable_trait, true));
+	for (const StringName &trait_name : closure_traits) {
+		CHECK_FALSE(FSConformanceRegistry::get_singleton()->has_conformance(
+				gadget_key, trait_name, true));
+	}
 
 	Ref<FoundryScript> restored;
 	restored.instantiate();
@@ -836,6 +872,10 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 	// come solely from the loaded witness section.
 	REQUIRE(restored->get_subclasses().has(SNAME("Pingable")));
 	CHECK(restored->get_subclasses().find(SNAME("Pingable"))->value->is_trait_type());
+	REQUIRE(restored->get_subclasses().has(SNAME("LeftPing")));
+	CHECK(restored->get_subclasses().find(SNAME("LeftPing"))->value->is_trait_type());
+	REQUIRE(restored->get_subclasses().has(SNAME("RightPing")));
+	CHECK(restored->get_subclasses().find(SNAME("RightPing"))->value->is_trait_type());
 	REQUIRE(restored->get_subclasses().has(SNAME("Trackable")));
 	CHECK(restored->get_subclasses().find(SNAME("Trackable"))->value->is_trait_type());
 	REQUIRE(restored->get_subclasses().has(SNAME("Gadget")));
@@ -845,13 +885,17 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 			loaded_conformances =
 					FSConformanceRegistry::get_singleton()
 							->get_runtime_witnesses(script_path);
-	REQUIRE_EQ(loaded_conformances.size(), 2);
-	CHECK_EQ(loaded_conformances[0].target_script, restored_gadget.ptr());
-	CHECK_EQ(loaded_conformances[1].target_script, restored_gadget.ptr());
-	CHECK_FALSE(restored_gadget->has_script_trait_parse(pingable_trait));
-	CHECK_FALSE(restored_gadget->has_script_trait_parse(trackable_trait));
-	CHECK(restored_gadget->has_script_trait(pingable_trait));
-	CHECK(restored_gadget->has_script_trait(trackable_trait));
+	REQUIRE_EQ(loaded_conformances.size(), closure_traits.size());
+	HashSet<StringName> loaded_traits;
+	for (const FSConformanceRegistry::RuntimeConformance &conformance : loaded_conformances) {
+		loaded_traits.insert(conformance.trait_name);
+		CHECK_EQ(conformance.target_script, restored_gadget.ptr());
+	}
+	for (const StringName &trait_name : closure_traits) {
+		CHECK(loaded_traits.has(trait_name));
+		CHECK_FALSE(restored_gadget->has_script_trait_parse(trait_name));
+		CHECK(restored_gadget->has_script_trait(trait_name));
+	}
 	REQUIRE(restored->get_subclasses().has(SNAME("Speaker")));
 	const Ref<FoundryScript> original_speaker = original->get_subclasses().find(SNAME("Speaker"))->value;
 	const Ref<FoundryScript> restored_speaker = restored->get_subclasses().find(SNAME("Speaker"))->value;
