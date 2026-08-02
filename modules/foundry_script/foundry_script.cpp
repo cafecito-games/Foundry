@@ -208,8 +208,10 @@ static FSSpecializedClassHandle *_specialized_class_handle_from_variant(const Va
 }
 
 static bool _erase_specialized_class_handle_for_native_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+	// A class-handle slot (`Type[Node]`) expects the handle itself, and core's class-handle rule reads a
+	// specialized handle's own reified arguments. Erasing it to the bare script would throw that away.
 	if (p_expected_type.builtin_type != Variant::OBJECT || p_expected_type.script.is_valid() ||
-			!p_expected_type.type_arguments.is_empty()) {
+			p_expected_type.is_type_handle || !p_expected_type.type_arguments.is_empty()) {
 		return false;
 	}
 

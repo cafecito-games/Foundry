@@ -2146,27 +2146,13 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			return bad_type;
 		}
 
-		FSParser::DataType represented_type = type_from_metatype(
+		const FSParser::DataType represented_type = type_from_metatype(
 				resolve_datatype(p_type->get_container_type_or_null(0)));
-		if (represented_type.is_variant()) {
-			push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_type);
+		FSParser::DataType handle_type;
+		if (!make_type_handle_meta_type(represented_type, p_type, handle_type)) {
 			return bad_type;
 		}
-		if (represented_type.kind == FSParser::DataType::BUILTIN) {
-			push_error(vformat(R"(Builtin metatypes such as "Type[%s]" are not supported yet.)",
-							   represented_type.to_string()),
-					p_type);
-			return bad_type;
-		}
-		if (represented_type.kind == FSParser::DataType::ENUM || represented_type.is_type_handle_annotation) {
-			push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_type);
-			return bad_type;
-		}
-
-		represented_type.is_constant = true;
-		represented_type.is_meta_type = true;
-		represented_type.is_type_handle_annotation = true;
-		return finalize_datatype(represented_type);
+		return finalize_datatype(handle_type);
 	}
 
 	if (!result.is_set()) {
@@ -12744,6 +12730,31 @@ void FSAnalyzer::apply_use_site_nullable_type_argument_marker(FSParser::DataType
 	r_type_argument.is_nullable = true;
 }
 
+bool FSAnalyzer::make_type_handle_meta_type(const FSParser::DataType &p_represented_type, const FSParser::Node *p_source, FSParser::DataType &r_type) {
+	// The single rule for what `Type[T]` may represent, shared by annotation position and by
+	// value position (`Slot[Type[Factory]].new()`), so the two never drift apart.
+	if (p_represented_type.is_variant()) {
+		push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_source);
+		return false;
+	}
+	if (p_represented_type.kind == FSParser::DataType::BUILTIN) {
+		push_error(vformat(R"(Builtin metatypes such as "Type[%s]" are not supported yet.)",
+						   p_represented_type.to_string()),
+				p_source);
+		return false;
+	}
+	if (p_represented_type.kind == FSParser::DataType::ENUM || p_represented_type.is_type_handle_annotation) {
+		push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_source);
+		return false;
+	}
+
+	r_type = p_represented_type;
+	r_type.is_constant = true;
+	r_type.is_meta_type = true;
+	r_type.is_type_handle_annotation = true;
+	return true;
+}
+
 bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument) {
 	if (p_expression == nullptr) {
 		return false;
@@ -12794,19 +12805,11 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 	}
 
 	if (p_expression->type == FSParser::Node::SUBSCRIPT) {
-		// A nested type argument parsed as a subscript, such as `Array[Element]` (single element) or
-		// `Dictionary[Key, Value]` (a two-argument container). A generic class handle (`Box[int]`)
-		// as a nested argument is not representable here yet, so reject it rather than silently
-		// building a wrong type.
+		// A nested type argument parsed as a subscript: a typed container (`Array[Element]`,
+		// `Dictionary[Key, Value]`), a class handle (`Type[Factory]`), or a generic class
+		// specialization (`Box[int]`).
 		FSParser::SubscriptNode *subscript = static_cast<FSParser::SubscriptNode *>(p_expression);
 		if (subscript->is_attribute || subscript->base == nullptr || subscript->index == nullptr) {
-			return false;
-		}
-		FSParser::DataType base_argument;
-		if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
-			return false;
-		}
-		if (base_argument.kind != FSParser::DataType::BUILTIN) {
 			return false;
 		}
 
@@ -12815,6 +12818,67 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			element_expressions.push_back(subscript->index);
 		} else {
 			element_expressions = subscript->type_arguments;
+		}
+
+		// `Type` names the class-handle layer rather than a declared class, matching how the parser
+		// recognizes the same spelling structurally in annotation position. Resolving it as an
+		// ordinary identifier would report it as undeclared instead.
+		if (subscript->base->type == FSParser::Node::IDENTIFIER &&
+				static_cast<const FSParser::IdentifierNode *>(subscript->base)->name == SNAME("Type")) {
+			if (element_expressions.size() != 1) {
+				push_error("Type[T] expects exactly one type argument.", p_expression);
+				return false;
+			}
+			FSParser::DataType represented_type;
+			if (!resolve_explicit_type_argument(element_expressions[0], represented_type)) {
+				return false;
+			}
+			FSParser::DataType handle_type;
+			if (!make_type_handle_meta_type(represented_type, p_expression, handle_type)) {
+				return false;
+			}
+			r_type_argument = type_from_metatype(handle_type);
+			return true;
+		}
+
+		FSParser::DataType base_argument;
+		if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
+			return false;
+		}
+
+		if (base_argument.kind == FSParser::DataType::CLASS && base_argument.class_type != nullptr &&
+				!base_argument.class_type->type_parameters.is_empty()) {
+			// A generic class specialization nested inside another type argument, such as the
+			// `Box[int]` in `Slot[Type[Box[int]]]`. Type arguments are invariant, so the nested
+			// specialization has to be carried rather than degraded to the raw class.
+			const int expected_argument_count = base_argument.class_type->type_parameters.size();
+			if (element_expressions.size() != expected_argument_count) {
+				push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)",
+								   base_argument.to_string(), expected_argument_count, element_expressions.size()),
+						p_expression);
+				return false;
+			}
+			Vector<FSParser::DataType> resolved_arguments;
+			Vector<bool> argument_failed;
+			Vector<const FSParser::Node *> argument_sources;
+			for (int i = 0; i < element_expressions.size(); i++) {
+				FSParser::DataType argument;
+				if (!resolve_explicit_type_argument(element_expressions[i], argument)) {
+					return false;
+				}
+				resolved_arguments.push_back(argument);
+				argument_failed.push_back(false);
+				argument_sources.push_back(element_expressions[i]);
+			}
+			if (!bind_class_type_arguments(base_argument, resolved_arguments, argument_failed, argument_sources, p_expression)) {
+				return false;
+			}
+			r_type_argument = base_argument;
+			return true;
+		}
+
+		if (base_argument.kind != FSParser::DataType::BUILTIN) {
+			return false;
 		}
 
 		if (base_argument.builtin_type == Variant::ARRAY) {

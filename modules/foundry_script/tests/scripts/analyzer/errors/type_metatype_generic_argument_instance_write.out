@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 11: Cannot assign instance value of type "Factory" to target of type "Type[Factory]"; expected a class handle whose represented instance type is "Factory".

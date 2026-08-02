@@ -89,6 +89,13 @@ public:
 		return member_info != nullptr ? (int)member_info->type_argument_binding.kind : -1;
 	}
 
+	// The descriptor a FIXED member binding validates writes against, materialized the same way the
+	// runtime member-write check materializes it.
+	static ContainerType get_member_binding_container_type(const Ref<FoundryScript> &p_script, const StringName &p_member) {
+		const FoundryScript::MemberInfo *member_info = p_script->member_indices.getptr(p_member);
+		return member_info != nullptr ? member_info->type_argument_binding.fixed.to_container_type() : ContainerType();
+	}
+
 	static Vector<FSFunction *> get_witness_functions(const Ref<FoundryScript> &p_script) {
 		return p_script->witness_functions;
 	}
@@ -676,6 +683,44 @@ TEST_CASE("[FoundryScript][BytecodeScript] Generic type parameter bindings re-ke
 	// The `value: T` member slot binding follows the same specialization.
 	CHECK(TestFSBytecodeScriptAccessor::get_member_binding_kind(restored_box, SNAME("value")) == 2);
 	CHECK(TestFSBytecodeScriptAccessor::get_member_binding_kind(restored_int_box, SNAME("value")) == 1);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript] A class-handle type argument survives the bytecode round trip") {
+	// `extends Slot[Type[Node]]` bakes a FIXED member binding whose descriptor is a class handle.
+	// Losing the handle layer on the way through `.fsb` would silently turn the restored binding into
+	// the instance-typed `Slot[Node]` one, which accepts exactly the values the source rejects.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Slot[T]:\n"
+			"\tvar value: T\n"
+			"\n"
+			"class HandleSlot extends Slot[Type[Node]]:\n"
+			"\tpass\n"
+			"\n"
+			"class InstanceSlot extends Slot[Node]:\n"
+			"\tpass\n");
+
+	const ContainerType original_handle_binding =
+			TestFSBytecodeScriptAccessor::get_member_binding_container_type(
+					original->get_subclasses().find(SNAME("HandleSlot"))->value, SNAME("value"));
+	REQUIRE(original_handle_binding.is_type_handle);
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	REQUIRE(restored->get_subclasses().has(SNAME("HandleSlot")));
+	REQUIRE(restored->get_subclasses().has(SNAME("InstanceSlot")));
+	const ContainerType restored_handle_binding =
+			TestFSBytecodeScriptAccessor::get_member_binding_container_type(
+					restored->get_subclasses().find(SNAME("HandleSlot"))->value, SNAME("value"));
+	const ContainerType restored_instance_binding =
+			TestFSBytecodeScriptAccessor::get_member_binding_container_type(
+					restored->get_subclasses().find(SNAME("InstanceSlot"))->value, SNAME("value"));
+
+	CHECK(restored_handle_binding == original_handle_binding);
+	CHECK(restored_handle_binding.is_type_handle);
+	CHECK(restored_handle_binding.get_type_name() == "Type[Node]");
+	CHECK_FALSE(restored_instance_binding.is_type_handle);
+	CHECK(restored_handle_binding != restored_instance_binding);
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges survive serialization") {

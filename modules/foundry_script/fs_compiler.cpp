@@ -531,8 +531,11 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 	}
 
 	// Preserve specialized type arguments (e.g. the `int` in `Box[int]`) so runtime metadata is not lost.
+	// A `Type[T]` argument keeps its class-handle layer, so `Slot[Type[Factory]]` stays distinct from
+	// `Slot[Factory]` in the reified descriptor the runtime validates member writes against.
 	for (int i = 0; i < p_datatype.type_arguments.size(); i++) {
-		result.type_arguments.push_back(_gdtype_from_datatype(p_datatype.type_arguments[i], p_owner, false));
+		const FSParser::DataType &argument_datatype = p_datatype.type_arguments[i];
+		result.type_arguments.push_back(_gdtype_from_datatype(argument_datatype, p_owner, argument_datatype.is_type_handle_annotation));
 	}
 
 	return result;
@@ -4307,7 +4310,9 @@ void FSCompiler::_specialize_type_argument_binding(FoundryScript::TypeArgumentBi
 		r_binding.leaf_ordinal = argument.type_parameter_index; // Forwarded to this class's parameter.
 	} else {
 		r_binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
-		r_binding.fixed = _gdtype_from_datatype(argument, p_owner, false);
+		// A `Type[T]` fixing argument (`extends Slot[Type[Factory]]`) keeps its class-handle layer so
+		// the baked binding validates handles, not instances.
+		r_binding.fixed = _gdtype_from_datatype(argument, p_owner, argument.is_type_handle_annotation);
 		// A composite argument that still mentions an open parameter (`extends Box[Array[T]]`) is erased
 		// by `_gdtype_from_datatype`, so the baked type no longer reflects the dependent reification. Flag
 		// it so the leaf-to-base projection refrains from validating that slot rather than rejecting it.
@@ -4646,7 +4651,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				binding.leaf_ordinal = argument->type_parameter_index;
 			} else {
 				binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
-				binding.fixed = _gdtype_from_datatype(*argument, p_script, false);
+				binding.fixed = _gdtype_from_datatype(*argument, p_script, argument->is_type_handle_annotation);
 				binding.fixed_is_dependent = _datatype_contains_erased_type_parameter(*argument);
 				binding.leaf_ordinal = -1;
 			}
