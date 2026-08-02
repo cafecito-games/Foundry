@@ -843,6 +843,15 @@ struct VariantInternalAccessor<ObjectID> : _VariantInternalAccessorConvert<Objec
 template <>
 struct VariantInternalAccessor<float> : _VariantInternalAccessorConvert<float, double> {};
 
+// The unsigned carrier has no C++ nominal type, so it cannot be reached through
+// `VariantInitializer<T>`, which resolves the destination type from `GetTypeInfo<T>`.
+struct VariantUIntInitializer {
+	static _FORCE_INLINE_ void init(Variant *v) {
+		VariantInternal::set_type(*v, Variant::UINT);
+		*VariantInternal::get_uint(v) = 0;
+	}
+};
+
 template <typename T, typename = void>
 struct VariantInitializer {
 	static _FORCE_INLINE_ void init(Variant *v) { VariantInternal::init_generic<T>(v); }

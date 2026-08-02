@@ -713,6 +713,7 @@ void (*type_init_function_table[])(Variant *) = {
 	&VariantInitializer<PackedVector3Array>::init, // PACKED_VECTOR3_ARRAY.
 	&VariantInitializer<PackedColorArray>::init, // PACKED_COLOR_ARRAY.
 	&VariantInitializer<PackedVector4Array>::init, // PACKED_VECTOR4_ARRAY.
+	&VariantUIntInitializer::init, // UINT.
 };
 
 #if defined(__GNUC__) || defined(__clang__)
