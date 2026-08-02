@@ -1304,7 +1304,7 @@ TEST_CASE("[Editor][ToolingHost] Unsupported requests are refused instead of bei
 
 	// Asserts one correlated, unsuccessful response with an actionable error body.
 	auto check_failed_response = [&](const String &p_command, const Dictionary &p_arguments,
-									 const String &p_expected_message) {
+										 const String &p_expected_message) {
 		const int request_seq = client.send_request(p_command, p_arguments);
 		const Dictionary response = client.await_response(request_seq, 30000);
 		if (response.is_empty()) {
