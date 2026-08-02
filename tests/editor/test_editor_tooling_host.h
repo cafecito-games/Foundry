@@ -1068,6 +1068,127 @@ TEST_CASE("[Editor][ToolingHost] A headless session answers pause and continue w
 	shutdown_host(host);
 }
 
+TEST_CASE("[Editor][ToolingHost] Unsupported requests are refused instead of being dropped") {
+	const String project_path = EditorWorkflowTestFixtures::prepare_basic_scene_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a disposable tooling-host project.");
+
+	List<String> arguments;
+	arguments.push_back("tooling");
+	arguments.push_back("serve");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--lsp-port");
+	arguments.push_back("0");
+	arguments.push_back("--dap-port");
+	arguments.push_back("0");
+
+	HostProcess host = launch_tooling_host(arguments);
+	REQUIRE_MESSAGE(host.is_valid(), "Failed to launch the tooling host.");
+
+	const bool ready = wait_for_marker(host, "FOUNDRY_TOOLING {", 180000);
+	if (!ready) {
+		INFO("Tooling host output:\n", host.output);
+		shutdown_host(host);
+		FAIL("The tooling host never emitted a readiness record.");
+		return;
+	}
+
+	const Dictionary payload = parse_marker_record(host.output, "FOUNDRY_TOOLING ");
+	const int dap_port = payload["dap_port"];
+
+	DebugAdapterClient client;
+	if (!client.connect_to_port(dap_port)) {
+		INFO("Tooling host output:\n", host.output);
+		shutdown_host(host);
+		FAIL("Failed to connect a debug adapter client.");
+		return;
+	}
+
+	Dictionary initialize_arguments;
+	initialize_arguments["adapterID"] = "foundry";
+	initialize_arguments["linesStartAt1"] = true;
+	initialize_arguments["columnsStartAt1"] = true;
+	const int initialize_seq = client.send_request("initialize", initialize_arguments);
+	const Dictionary initialize_response = client.await_response(initialize_seq, 30000);
+	if (!bool(initialize_response.get("success", false))) {
+		FAIL(("The host did not answer `initialize`.\n" + tooling_host_and_dap_diagnostic(host, client)));
+		client.disconnect_from_host();
+		shutdown_host(host);
+		return;
+	}
+	// The adapter has no runtime variable-mutation path, so it must not claim one.
+	const Dictionary capabilities = initialize_response.get("body", Dictionary());
+	CHECK_FALSE_MESSAGE(bool(capabilities.get("supportsSetVariable", false)),
+			"`initialize` advertised set-variable support the adapter cannot honor.");
+
+	// Asserts one correlated, unsuccessful response with an actionable error body.
+	auto check_failed_response = [&](const String &p_command, const Dictionary &p_arguments,
+									 const String &p_expected_message) {
+		const int request_seq = client.send_request(p_command, p_arguments);
+		const Dictionary response = client.await_response(request_seq, 30000);
+		if (response.is_empty()) {
+			FAIL_CHECK(("The host never answered `" + p_command + "`.\n" +
+					tooling_host_and_dap_diagnostic(host, client)));
+			return Dictionary();
+		}
+		CHECK_EQ(String(response.get("type", "")), "response");
+		CHECK_EQ(int(response.get("request_seq", -1)), request_seq);
+		CHECK_EQ(String(response.get("command", "")), p_command);
+		CHECK_FALSE(bool(response.get("success", true)));
+		CHECK_EQ(String(response.get("message", "")), p_expected_message);
+		const Dictionary body = response.get("body", Dictionary());
+		const Dictionary error = body.get("error", Dictionary());
+		CHECK_FALSE_MESSAGE(error.is_empty(), "The failed response carried no `body.error`.");
+		CHECK_FALSE(String(error.get("format", "")).is_empty());
+		return response;
+	};
+
+	// Step-out before a launch has no debuggee to step out of.
+	Dictionary step_out_arguments;
+	step_out_arguments["threadId"] = 1;
+	check_failed_response("stepOut", step_out_arguments, "not_running");
+
+	// `setVariable` is unimplemented, so it falls through to the generic refusal.
+	Dictionary set_variable_arguments;
+	set_variable_arguments["variablesReference"] = 1;
+	set_variable_arguments["name"] = "member_value";
+	set_variable_arguments["value"] = "12";
+	const Dictionary set_variable_response =
+			check_failed_response("setVariable", set_variable_arguments, "unsupported_request");
+	const Dictionary set_variable_error =
+			Dictionary(set_variable_response.get("body", Dictionary())).get("error", Dictionary());
+	CHECK_EQ(String(Dictionary(set_variable_error.get("variables", Dictionary())).get("command", "")), "setVariable");
+
+	// The refusal is generic, not special-cased to a known command name.
+	Dictionary synthetic_arguments;
+	synthetic_arguments["payload"] = "unused";
+	const Dictionary synthetic_response =
+			check_failed_response("foundryNoSuchCommand", synthetic_arguments, "unsupported_request");
+	const Dictionary synthetic_error =
+			Dictionary(synthetic_response.get("body", Dictionary())).get("error", Dictionary());
+	CHECK_EQ(String(Dictionary(synthetic_error.get("variables", Dictionary())).get("command", "")),
+			"foundryNoSuchCommand");
+
+	// A refusal is not a session event and must not end the session.
+	for (const Dictionary &event : client.events) {
+		const String name = event.get("event", "");
+		const bool is_session_event =
+				name == "stopped" || name == "continued" || name == "terminated" || name == "exited";
+		CHECK_MESSAGE(!is_session_event, "An unsupported request emitted a session lifecycle event.");
+	}
+
+	const Dictionary threads_response = client.await_response(client.send_request("threads", Dictionary()), 30000);
+	if (threads_response.is_empty()) {
+		FAIL(("The host stopped answering after the refused requests.\n" +
+				tooling_host_and_dap_diagnostic(host, client)));
+	} else {
+		CHECK(bool(threads_response.get("success", false)));
+	}
+
+	client.disconnect_from_host();
+	shutdown_host(host);
+}
+
 TEST_CASE("[Editor][ToolingHost] A malformed project_test launch is refused over the wire") {
 	const String project_path = EditorWorkflowTestFixtures::prepare_basic_scene_project();
 	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a disposable tooling-host project.");
