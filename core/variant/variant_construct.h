@@ -767,10 +767,16 @@ public:
 };
 
 // Converting between the integer carriers is checked in both directions: the mathematical value, not
-// just the source carrier, has to be representable in the destination. `construct()` reports an
-// out-of-range value as `CALL_ERROR_INVALID_ARGUMENT`. `validated_construct()` and `ptr_construct()`
-// are the unchecked fast paths every builtin constructor exposes; a caller must have established the
-// value's range before selecting them.
+// just the source carrier, has to be representable in the destination. `construct()` is the checked
+// entry point and reports an out-of-range value as `CALL_ERROR_INVALID_ARGUMENT`.
+//
+// `validated_construct()` and `ptr_construct()` are the unchecked fast paths that every builtin
+// constructor has to expose. Their signatures cannot report failure, so they convert with defined
+// two's-complement semantics and only assert the range in development builds. A caller must
+// establish the value's range before selecting them. Nothing selects them today: no expression can
+// carry a static unsigned type, because the unsigned carrier has neither a source spelling nor
+// binding metadata that names it, so the compiler cannot match a constructor with an unsigned
+// parameter or an unsigned destination.
 class VariantConstructorUIntFromInt {
 public:
 	static void construct(Variant &r_ret, const Variant **p_args, Callable::CallError &r_error) {
