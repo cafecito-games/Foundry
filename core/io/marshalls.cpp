@@ -87,7 +87,40 @@ enum ContainerTypeKind {
 	CONTAINER_TYPE_KIND_BUILTIN = 0b01,
 	CONTAINER_TYPE_KIND_CLASS_NAME = 0b10,
 	CONTAINER_TYPE_KIND_SCRIPT = 0b11,
+	// A class handle is always an Object type, so a handle is spelled as the object kind it wraps. The
+	// distinction lives in the kind rather than in a field of its own, which keeps the payload of every
+	// other kind exactly as it is and makes a handle for a non-Object type unrepresentable. These kinds
+	// do not fit the two-bit compact header fields, which is why a handle always takes the extended
+	// encoding.
+	CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME = 0b100,
+	CONTAINER_TYPE_KIND_TYPE_HANDLE_SCRIPT = 0b101,
 };
+
+// Splits an encoded kind into the kind that describes its payload and whether it denotes a class
+// handle. Returns false for a kind this build does not know.
+static bool _split_container_type_kind(ContainerTypeKind p_encoded_kind, ContainerTypeKind &r_kind, bool &r_is_type_handle) {
+	switch (p_encoded_kind) {
+		case CONTAINER_TYPE_KIND_NONE:
+		case CONTAINER_TYPE_KIND_BUILTIN:
+		case CONTAINER_TYPE_KIND_CLASS_NAME:
+		case CONTAINER_TYPE_KIND_SCRIPT: {
+			r_kind = p_encoded_kind;
+			r_is_type_handle = false;
+			return true;
+		} break;
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME: {
+			r_kind = CONTAINER_TYPE_KIND_CLASS_NAME;
+			r_is_type_handle = true;
+			return true;
+		} break;
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_SCRIPT: {
+			r_kind = CONTAINER_TYPE_KIND_SCRIPT;
+			r_is_type_handle = true;
+			return true;
+		} break;
+	}
+	return false;
+}
 
 #define GET_CONTAINER_TYPE_KIND(m_header, m_field) \
 	((ContainerTypeKind)(((m_header) & HEADER_DATA_FIELD_##m_field##_MASK) >> HEADER_DATA_FIELD_##m_field##_SHIFT))
@@ -182,6 +215,12 @@ static Error _decode_container_type(const uint8_t *&buf, int &len, int *r_len, b
 			}
 			return OK;
 		} break;
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME:
+		case CONTAINER_TYPE_KIND_TYPE_HANDLE_SCRIPT: {
+			// Callers split the class-handle spelling off before this point, so only the kind that
+			// describes the payload reaches here.
+			ERR_FAIL_V_MSG(ERR_INVALID_DATA, "Unexpected class handle container type kind.");
+		} break;
 	}
 	ERR_FAIL_V_MSG(ERR_INVALID_DATA, "Invalid container type kind."); // Future proofing.
 }
@@ -189,12 +228,16 @@ static Error _decode_container_type(const uint8_t *&buf, int &len, int *r_len, b
 static Error _decode_container_type_extended(const uint8_t *&buf, int &len, int *r_len, bool p_allow_objects, ContainerType &r_type) {
 	ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
 
-	ContainerTypeKind type_kind = (ContainerTypeKind)decode_uint32(buf);
+	const ContainerTypeKind encoded_kind = (ContainerTypeKind)decode_uint32(buf);
 	buf += 4;
 	len -= 4;
 	if (r_len) {
 		(*r_len) += 4;
 	}
+
+	ContainerTypeKind type_kind = CONTAINER_TYPE_KIND_NONE;
+	bool is_type_handle = false;
+	ERR_FAIL_COND_V_MSG(!_split_container_type_kind(encoded_kind, type_kind, is_type_handle), ERR_INVALID_DATA, "Invalid container type kind.");
 
 	Error err = _decode_container_type(buf, len, r_len, p_allow_objects, type_kind, r_type);
 	if (err != OK) {
@@ -204,17 +247,9 @@ static Error _decode_container_type_extended(const uint8_t *&buf, int &len, int 
 		return OK;
 	}
 
-	ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
-	const uint32_t type_handle_flag = decode_uint32(buf);
-	buf += 4;
-	len -= 4;
-	if (r_len) {
-		(*r_len) += 4;
-	}
-
-	ERR_FAIL_COND_V(type_handle_flag > 1, ERR_INVALID_DATA);
-	r_type.is_type_handle = type_handle_flag != 0;
-	ERR_FAIL_COND_V_MSG(r_type.is_type_handle && r_type.builtin_type != Variant::OBJECT, ERR_INVALID_DATA, "Container types can only be class handles for Object types.");
+	// The payload kinds a handle can wrap always describe an Object type, so this cannot contradict the
+	// rule that a class handle is only valid for Object types.
+	r_type.is_type_handle = is_type_handle;
 
 	ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
 	const int32_t child_count = decode_uint32(buf);
@@ -1435,10 +1470,13 @@ static ContainerTypeKind _get_container_type_kind(const ContainerType &p_type, b
 		return CONTAINER_TYPE_KIND_NONE;
 	}
 	if (p_type.script.is_valid()) {
-		return p_full_objects ? CONTAINER_TYPE_KIND_SCRIPT : CONTAINER_TYPE_KIND_CLASS_NAME;
+		if (p_full_objects) {
+			return p_type.is_type_handle ? CONTAINER_TYPE_KIND_TYPE_HANDLE_SCRIPT : CONTAINER_TYPE_KIND_SCRIPT;
+		}
+		return p_type.is_type_handle ? CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME : CONTAINER_TYPE_KIND_CLASS_NAME;
 	}
 	if (p_type.class_name != StringName()) {
-		return CONTAINER_TYPE_KIND_CLASS_NAME;
+		return p_type.is_type_handle ? CONTAINER_TYPE_KIND_TYPE_HANDLE_CLASS_NAME : CONTAINER_TYPE_KIND_CLASS_NAME;
 	}
 	return CONTAINER_TYPE_KIND_BUILTIN;
 }
@@ -1473,6 +1511,10 @@ static Error _encode_container_type(const ContainerType &p_type, uint8_t *&buf, 
 }
 
 static Error _encode_container_type_extended(const ContainerType &p_type, uint8_t *&buf, int &r_len, bool p_full_objects) {
+	// Only the object kinds have a class-handle spelling, so an ill-formed descriptor would otherwise
+	// lose the flag on the way out instead of at the boundary that rejects it.
+	ERR_FAIL_COND_V_MSG(p_type.is_type_handle && p_type.builtin_type != Variant::OBJECT, ERR_INVALID_PARAMETER, "Container types can only be class handles for Object types.");
+
 	const ContainerTypeKind type_kind = _get_container_type_kind(p_type, p_full_objects);
 	if (buf) {
 		encode_uint32(type_kind, buf);
@@ -1488,12 +1530,6 @@ static Error _encode_container_type_extended(const ContainerType &p_type, uint8_
 	if (err != OK) {
 		return err;
 	}
-
-	if (buf) {
-		encode_uint32(p_type.is_type_handle ? 1 : 0, buf);
-		buf += 4;
-	}
-	r_len += 4;
 
 	if (buf) {
 		encode_uint32(p_type.element_types.size(), buf);

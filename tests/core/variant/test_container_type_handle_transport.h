@@ -390,20 +390,53 @@ TEST_CASE("[ContainerType] Binary Variant encoding is unchanged for instance-typ
 	CHECK_EQ(memcmp(buffer.ptr(), typed_object_array, sizeof(typed_object_array)), 0);
 }
 
-TEST_CASE("[ContainerType] Binary Variant decoding rejects a class handle on a non-object type") {
-	// An extended container type payload whose element node claims to be a handle for `int`.
-	// Word layout: header, element kind, element builtin type, element handle flag, element child
-	// count, element type argument count, array length.
+TEST_CASE("[ContainerType] Binary Variant encoding is unchanged for nested instance-typed containers") {
+	// An extended container type payload written before class handles existed. A class handle is
+	// spelled as a distinct type kind rather than as an extra field, so a payload with no handle in it
+	// keeps exactly the bytes it had. Word layout: header, element kind, element builtin type, element
+	// child count, [child kind, child builtin type, child child count, child type argument count],
+	// element type argument count, array length.
+	static const uint8_t nested_builtin_array[] = {
+		0x1c, 0x01, 0x00, 0x00, // Header: ARRAY with an extended container type.
+		0x01, 0x00, 0x00, 0x00, // Builtin element kind.
+		0x1c, 0x00, 0x00, 0x00, // `Variant::ARRAY`.
+		0x01, 0x00, 0x00, 0x00, // One child descriptor.
+		0x01, 0x00, 0x00, 0x00, // Builtin child kind.
+		0x02, 0x00, 0x00, 0x00, // `Variant::INT`.
+		0x00, 0x00, 0x00, 0x00, // Child descriptor count.
+		0x00, 0x00, 0x00, 0x00, // Child type argument count.
+		0x00, 0x00, 0x00, 0x00, // Element type argument count.
+		0x00, 0x00, 0x00, 0x00 // Array length.
+	};
+
+	Variant decoded;
+	int decoded_len = 0;
+	REQUIRE_EQ(decode_variant(decoded, nested_builtin_array, sizeof(nested_builtin_array), &decoded_len, true), OK);
+	CHECK_EQ(decoded_len, (int)sizeof(nested_builtin_array));
+	const Array decoded_array = decoded;
+	CHECK_EQ(decoded_array.get_element_type(), make_array_of(make_builtin(Variant::INT)));
+
+	Array source;
+	source.set_typed(make_array_of(make_builtin(Variant::INT)));
+	int encoded_len = 0;
+	REQUIRE_EQ(encode_variant(source, nullptr, encoded_len, true), OK);
 	PackedByteArray buffer;
-	buffer.resize(7 * 4);
+	buffer.resize(encoded_len);
+	REQUIRE_EQ(encode_variant(source, buffer.ptrw(), encoded_len, true), OK);
+	REQUIRE_EQ(buffer.size(), (int)sizeof(nested_builtin_array));
+	CHECK_EQ(memcmp(buffer.ptr(), nested_builtin_array, sizeof(nested_builtin_array)), 0);
+}
+
+TEST_CASE("[ContainerType] Binary Variant decoding rejects an unknown container type kind") {
+	PackedByteArray buffer;
+	buffer.resize(6 * 4);
 	uint8_t *write = buffer.ptrw();
 	encode_uint32(Variant::ARRAY | (1 << 8), write + 0); // Extended container type flag.
-	encode_uint32(1, write + 4); // Builtin element type kind.
+	encode_uint32(6, write + 4); // A kind no build defines.
 	encode_uint32(Variant::INT, write + 8);
-	encode_uint32(1, write + 12); // `is_type_handle`.
+	encode_uint32(0, write + 12);
 	encode_uint32(0, write + 16);
 	encode_uint32(0, write + 20);
-	encode_uint32(0, write + 24);
 
 	Variant decoded;
 	int decoded_len = 0;
@@ -411,11 +444,12 @@ TEST_CASE("[ContainerType] Binary Variant decoding rejects a class handle on a n
 	CHECK_NE(decode_variant(decoded, buffer.ptr(), buffer.size(), &decoded_len, true), OK);
 	ERR_PRINT_ON;
 
-	// The same payload without the flag decodes normally, so the rejection is the flag alone.
-	encode_uint32(0, write + 12);
+	// The builtin kind at the same position decodes normally, so the rejection is the kind alone.
+	encode_uint32(1, write + 4);
 	REQUIRE_EQ(decode_variant(decoded, buffer.ptr(), buffer.size(), &decoded_len, true), OK);
 	const Array decoded_array = decoded;
 	CHECK_EQ(decoded_array.get_element_type(), make_builtin(Variant::INT));
+	CHECK_FALSE(decoded_array.get_element_type().is_type_handle);
 }
 
 TEST_CASE("[ContainerType] Native JSON conversion round-trips the class handle flag") {
