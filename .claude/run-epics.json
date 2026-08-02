@@ -1,0 +1,13 @@
+{
+  "baseBranch": "develop",
+  "worktreeRoot": ".worktrees",
+  "setupCommands": [],
+  "testCommands": [
+    "python3 scripts/agent_build.py --compiler-cache ccache --jobs 4 --test"
+  ],
+  "lintCommands": [
+    "pre-commit run --all-files"
+  ],
+  "mergeMethod": "squash",
+  "codexReview": true
+}
