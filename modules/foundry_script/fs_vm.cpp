@@ -976,7 +976,7 @@ Variant FSFunction::call_witness(const Variant &p_self, const Variant **p_args, 
 	return call(nullptr, p_args, p_argcount, r_err, nullptr, &p_self);
 }
 
-Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state, const Variant *p_self_override) {
+Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state, const Variant *p_self_override, const FSStaticSelfContext *p_static_self) {
 	FoundryProfileZoneScript(this, source, name, name, _initial_line);
 
 	OPCODES_TABLE;
@@ -1034,6 +1034,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		defarg = p_state->defarg;
 		if (p_state->has_self_override) {
 			p_self_override = &p_state->self_override;
+		}
+		if (p_state->static_self.is_valid()) {
+			// The suspended frame kept its receiver, so resumption cannot come back with an absent or
+			// different specialization.
+			p_static_self = &p_state->static_self;
 		}
 
 		// Responsibility for the stack is moved from `FSFunctionState` to this method. Reset
@@ -1158,6 +1163,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	}
 	memnew_placement(&stack[ADDR_STACK_CLASS], Variant(script));
 	memnew_placement(&stack[ADDR_STACK_NIL], Variant);
+
+	// The receiver descriptor belongs to this frame alone. The guard restores the caller's descriptor
+	// on every exit path, including the one that suspends this frame into an `FSFunctionState`.
+	StaticSelfContextGuard static_self_guard(p_static_self);
 
 	String err_text;
 
@@ -2950,7 +2959,19 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					GET_INSTRUCTION_ARG(ret, argc + 1);
 					call_ret_dst = ret;
 				}
-				base->callp(*methodname, argptrs, argc, temp_ret, err);
+				// An unqualified call inside a static frame targets the class slot, which holds the class
+				// that declares the running function. Dispatching through the script directly lets the
+				// nested frame keep the receiver the outer call began on, instead of resetting it to the
+				// declaring class. Every other base names its own receiver and goes through `callp`.
+				FoundryScript *inherited_delegation_target = nullptr;
+				if (unlikely(p_static_self != nullptr && base == &stack[ADDR_STACK_CLASS])) {
+					inherited_delegation_target = Object::cast_to<FoundryScript>(base->get_validated_object());
+				}
+				if (unlikely(inherited_delegation_target != nullptr)) {
+					temp_ret = inherited_delegation_target->call_static_with_context(*methodname, argptrs, argc, err, *p_static_self);
+				} else {
+					base->callp(*methodname, argptrs, argc, temp_ret, err);
+				}
 
 				// Retroactive-conformance witness fallback. A trait method called on a receiver that does not
 				// implement the method natively misses `Variant::callp`; consult the conformance registry
@@ -3289,7 +3310,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					FSFunction *witness = FSConformanceRegistry::get_singleton()->find_builtin_witness_function(builtin_type, *methodname);
 					if (witness != nullptr && witness->is_static()) {
 						err.error = Callable::CallError::CALL_OK;
-						*ret = witness->call(nullptr, argptrs, argc, err);
+						const FSStaticSelfContext witness_static_self = FSStaticSelfContext::for_builtin_type(builtin_type);
+						*ret = witness->call(nullptr, argptrs, argc, err, nullptr, nullptr, &witness_static_self);
 					}
 				}
 
@@ -3689,7 +3711,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				Callable::CallError err;
 
 				if (E) {
-					*dst = E->value->call(p_instance, (const Variant **)argptrs, argc, err);
+					// A `super` delegation continues the call the outer receiver began; it must not reset
+					// the receiver to the base class that declares the delegated implementation.
+					*dst = E->value->call(p_instance, (const Variant **)argptrs, argc, err, nullptr, nullptr, p_static_self);
 				} else if (gds->native.ptr()) {
 					if (*methodname != FSLanguage::get_singleton()->strings._init) {
 						MethodBind *mb = ClassDB::get_method(gds->native->get_name(), *methodname);
@@ -3774,6 +3798,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					gdfs->state.has_self_override = p_self_override != nullptr;
 					if (p_self_override != nullptr) {
 						gdfs->state.self_override = *p_self_override;
+					}
+					// The borrowed descriptor dies with the caller's frame, so the suspended state owns
+					// a copy of it until this call resumes.
+					if (p_static_self != nullptr) {
+						gdfs->state.static_self = *p_static_self;
 					}
 					gdfs->state.ip = ip + 2;
 					gdfs->state.line = line;

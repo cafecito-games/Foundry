@@ -466,6 +466,13 @@ protected:
 	static void _bind_methods();
 
 public:
+	// Static dispatch with an explicit receiver descriptor, for callers that know the exact class
+	// handle a call was made through and must not let it be inferred from the class the selected
+	// implementation was declared on: a specialized generic handle, or an unqualified call made from a
+	// frame that already carries a receiver. `callp` is the same lookup with `this` as the receiver.
+	Variant call_static_with_context(const StringName &p_method, const Variant **p_args, int p_argcount,
+			Callable::CallError &r_error, const FSStaticSelfContext &p_static_self);
+
 	static String debug_get_script_name(const Ref<Script> &p_script);
 
 	static String canonicalize_path(const String &p_path);
