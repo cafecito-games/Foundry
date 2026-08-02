@@ -230,6 +230,24 @@ static Error _decode_container_type_extended(const uint8_t *&buf, int &len, int 
 		r_type.element_types.push_back(child_type);
 	}
 
+	ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
+	const int32_t type_argument_count = decode_uint32(buf);
+	buf += 4;
+	len -= 4;
+	if (r_len) {
+		(*r_len) += 4;
+	}
+
+	ERR_FAIL_COND_V(type_argument_count < 0, ERR_INVALID_DATA);
+	for (int32_t i = 0; i < type_argument_count; i++) {
+		ContainerType argument_type;
+		err = _decode_container_type_extended(buf, len, r_len, p_allow_objects, argument_type);
+		if (err != OK) {
+			return err;
+		}
+		r_type.type_arguments.push_back(argument_type);
+	}
+
 	return OK;
 }
 
@@ -1414,7 +1432,7 @@ static ContainerTypeKind _get_container_type_kind(const ContainerType &p_type, b
 }
 
 static bool _container_type_needs_extended_encoding(const ContainerType &p_type) {
-	return !p_type.element_types.is_empty();
+	return !p_type.element_types.is_empty() || !p_type.type_arguments.is_empty();
 }
 
 static Error _encode_container_type(const ContainerType &p_type, uint8_t *&buf, int &r_len, bool p_full_objects) {
@@ -1466,6 +1484,19 @@ static Error _encode_container_type_extended(const ContainerType &p_type, uint8_
 
 	for (const ContainerType &child_type : p_type.element_types) {
 		err = _encode_container_type_extended(child_type, buf, r_len, p_full_objects);
+		if (err != OK) {
+			return err;
+		}
+	}
+
+	if (buf) {
+		encode_uint32(p_type.type_arguments.size(), buf);
+		buf += 4;
+	}
+	r_len += 4;
+
+	for (const ContainerType &argument_type : p_type.type_arguments) {
+		err = _encode_container_type_extended(argument_type, buf, r_len, p_full_objects);
 		if (err != OK) {
 			return err;
 		}
