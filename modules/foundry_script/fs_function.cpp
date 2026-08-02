@@ -76,9 +76,9 @@ bool FSDataType::_builtin_type_conforms_to_trait(Variant::Type p_builtin_type, c
 	return FSConformanceRegistry::get_singleton()->builtin_type_conforms(p_builtin_type, p_trait, true);
 }
 
-static FSDataType _gdtype_from_container_type(const ContainerType &p_container_type, bool p_is_type_handle) {
+static FSDataType _gdtype_from_container_type(const ContainerType &p_container_type) {
 	FSDataType type;
-	type.is_type_handle = p_is_type_handle;
+	type.is_type_handle = p_container_type.is_type_handle;
 
 	if (p_container_type.script.is_valid()) {
 		type.kind = Object::cast_to<FoundryScript>(p_container_type.script.ptr()) != nullptr ? FSDataType::FOUNDRY_SCRIPT : FSDataType::SCRIPT;
@@ -100,10 +100,10 @@ static FSDataType _gdtype_from_container_type(const ContainerType &p_container_t
 	}
 
 	for (const ContainerType &element_type : p_container_type.element_types) {
-		type.container_element_types.push_back(_gdtype_from_container_type(element_type, false));
+		type.container_element_types.push_back(_gdtype_from_container_type(element_type));
 	}
 	for (const ContainerType &argument_type : p_container_type.type_arguments) {
-		type.type_arguments.push_back(_gdtype_from_container_type(argument_type, false));
+		type.type_arguments.push_back(_gdtype_from_container_type(argument_type));
 	}
 
 	return type;
@@ -137,11 +137,13 @@ bool FSDataType::is_type_handle_type(const Variant &p_variant) const {
 }
 
 FSDataType FSDataType::from_type_handle_container_type(const ContainerType &p_container_type) {
-	return _gdtype_from_container_type(p_container_type, true);
+	ContainerType root = p_container_type;
+	root.is_type_handle = true;
+	return _gdtype_from_container_type(root);
 }
 
 FSDataType FSDataType::from_container_type(const ContainerType &p_container_type) {
-	return _gdtype_from_container_type(p_container_type, false);
+	return _gdtype_from_container_type(p_container_type);
 }
 
 Variant FSFunction::get_constant(int p_idx) const {

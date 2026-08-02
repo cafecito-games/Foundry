@@ -313,6 +313,7 @@ public:
 			} else if (script_type != nullptr) {
 				type.script.reference_ptr(script_type);
 			}
+			type.is_type_handle = is_type_handle;
 		}
 		for (const FSDataType &element_type : container_element_types) {
 			type.element_types.push_back(element_type.to_container_type());
