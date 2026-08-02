@@ -880,6 +880,10 @@ public:
 		};
 
 		IdentifierNode *identifier = nullptr;
+		// Type parameters of a generic tagged union, e.g. `T` and `E` in `enum Result[T, E]`.
+		// Only a named enum whose completed body declares at least one payload-bearing case may
+		// carry them; every other shape is rejected while parsing the declaration.
+		Vector<TypeParameterNode *> type_parameters;
 		Vector<Value> values;
 		Vector<FunctionNode *> functions;
 		HashMap<StringName, int> functions_indices;

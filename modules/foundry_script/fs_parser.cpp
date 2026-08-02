@@ -2892,6 +2892,16 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 		named = true;
 	}
 
+	if (named) {
+		parse_type_parameters(enum_node->type_parameters);
+	} else if (check(FSTokenizer::Token::BRACKET_OPEN)) {
+		// Consume the list anyway so the rest of the declaration still parses and the failure
+		// reports the one real problem instead of cascading into the enum body.
+		push_error(R"(Type parameters require a named tagged union.)");
+		Vector<TypeParameterNode *> discarded_parameters;
+		parse_type_parameters(discarded_parameters);
+	}
+
 	consume(FSTokenizer::Token::COLON, vformat(R"(Expected ":" after %s.)", named ? "enum name" : R"("enum")"));
 	if (!match(FSTokenizer::Token::NEWLINE)) {
 		push_error(vformat(R"(Expected an indented block after %s declaration.)", named ? "enum" : R"("enum")"));
@@ -3107,6 +3117,15 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 		} else if (value.custom_value == nullptr) {
 			push_error(R"(Expected "=" and an integer value after enum key.)", value.identifier);
 		}
+	}
+
+	// Only tagged unions can be generic: an integer-backed enum has no payload for a type
+	// parameter to appear in. Like the explicit-value check above, this can only be decided once
+	// the whole body is known, because a later case may still introduce a payload.
+	if (!enum_node->type_parameters.is_empty() && !enum_node->is_tagged_union) {
+		push_error(vformat(R"(Generic enum "%s" must contain at least one payload-bearing case.)",
+						   String(enum_node->identifier->name)),
+				enum_node->identifier);
 	}
 
 #ifdef TOOLS_ENABLED
@@ -8192,6 +8211,7 @@ void FSParser::TreePrinter::print_enum(EnumNode *p_enum) {
 	} else {
 		push_text("<unnamed>");
 	}
+	print_type_parameters(p_enum->type_parameters);
 
 	push_line(" {");
 	increase_indent();

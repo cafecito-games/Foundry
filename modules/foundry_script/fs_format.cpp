@@ -1745,6 +1745,7 @@ void FSPrinter::print_enum(const FSParser::EnumNode *p_enum, const String &p_key
 	if (p_enum->identifier != nullptr) {
 		write(" ");
 		write(p_enum->identifier->name);
+		print_type_parameters(p_enum->type_parameters);
 	}
 	// Keep an enum the author wrote across several lines multi-line, so comments
 	// and value doc comments between its values keep a place to live. (When it has
