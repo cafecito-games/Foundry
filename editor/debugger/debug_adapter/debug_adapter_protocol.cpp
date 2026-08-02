@@ -175,6 +175,16 @@ void DebugAdapterProtocol::reset_ids() {
 	breakpoint_id = 0;
 	breakpoint_list.clear();
 	breakpoint_source_list.clear();
+	reset_session_state();
+}
+
+void DebugAdapterProtocol::reset_session_state() {
+	_processing_breakpoint = false;
+	_stepping = false;
+	_processing_stackdump = false;
+	_pending_pause = false;
+	_remaining_vars = 0;
+	_current_frame = 0;
 
 	eval_list.clear();
 	eval_pending_list.clear();
@@ -1064,6 +1074,19 @@ Array DebugAdapterProtocol::update_breakpoints(const String &p_path, const Array
 	return updated_breakpoints;
 }
 
+void DebugAdapterProtocol::reregister_breakpoints_after_launch() {
+	_reregistering_breakpoints = true;
+	for (const DAP::Breakpoint &breakpoint : breakpoint_list) {
+		if (breakpoint.source == nullptr) {
+			continue;
+		}
+		const String script_path = breakpoint_script_path(
+				breakpoint.source->path, ProjectSettings::get_singleton()->get_resource_path());
+		EditorDebuggerNode::get_singleton()->set_breakpoint(script_path, breakpoint.line, true);
+	}
+	_reregistering_breakpoints = false;
+}
+
 void DebugAdapterProtocol::on_debug_paused() {
 	if (EditorRunBar::get_singleton()->get_pause_button()->is_pressed()) {
 		// The debuggee has not broken yet; `stopped` follows its stack dump.
@@ -1083,7 +1106,6 @@ void DebugAdapterProtocol::on_debug_session_ended(int64_t p_launch_id, bool p_ha
 
 	_debug_session_live = false;
 	_active_launch_id = 0;
-	_pending_pause = false;
 
 	// DAP allows `exited` to be omitted when no trustworthy result exists; a fabricated
 	// zero would be indistinguishable from a successful run.
@@ -1091,7 +1113,14 @@ void DebugAdapterProtocol::on_debug_session_ended(int64_t p_launch_id, bool p_ha
 		notify_exited(p_exit_code);
 	}
 	notify_terminated();
-	reset_ids();
+	if (_current_request == "restart") {
+		// play_main_scene() synchronously ends the replaced run while handling restart.
+		// Keep the DAP breakpoint IDs and sources for the replacement launch, but discard
+		// every stack frame, variable, object, and pending evaluation from the old run.
+		reset_session_state();
+	} else {
+		reset_ids();
+	}
 }
 
 void DebugAdapterProtocol::on_debug_output(const String &p_message, int p_type) {
@@ -1150,6 +1179,10 @@ bool DebugAdapterProtocol::can_verify_breakpoint(const String &p_path, int p_lin
 }
 
 void DebugAdapterProtocol::on_debug_breakpoint_toggled(const String &p_path, const int &p_line, const bool &p_enabled) {
+	if (_reregistering_breakpoints) {
+		return;
+	}
+
 	DAP::Breakpoint breakpoint(fetch_source(p_path));
 	breakpoint.verified = can_verify_breakpoint(p_path, p_line);
 	breakpoint.line = p_line;

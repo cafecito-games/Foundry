@@ -376,8 +376,12 @@ Dictionary DebugAdapterParser::_launch_process(const Dictionary &p_params) const
 		}
 	}
 
-	DebugAdapterProtocol::get_singleton()->get_current_peer()->attached = false;
-	DebugAdapterProtocol::get_singleton()->notify_process();
+	DebugAdapterProtocol *protocol = DebugAdapterProtocol::get_singleton();
+	// Starting a launch resets EditorDebuggerNode's debugger server and its breakpoint map.
+	// Restore the DAP-owned breakpoint registrations without changing their protocol IDs.
+	protocol->reregister_breakpoints_after_launch();
+	protocol->get_current_peer()->attached = false;
+	protocol->notify_process();
 
 	return prepare_success_response(p_params);
 }
