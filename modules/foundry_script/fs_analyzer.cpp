@@ -11299,6 +11299,10 @@ ContainerType FSAnalyzer::make_container_type_from_datatype(const FSParser::Data
 		}
 		type.class_name = p_datatype.native_type;
 		type.script = script_type;
+		// A `Type[T]` slot describes class handles, not instances. Dropping the flag here would make an
+		// analyzer-built container (a typed default value, a folded literal) disagree with the descriptor
+		// the compiler emits for the same annotation.
+		type.is_type_handle = p_datatype.is_type_handle_annotation;
 	}
 
 	for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
@@ -11364,6 +11368,14 @@ static FSParser::DataType _type_from_container_type(const ContainerType &p_type)
 	} else {
 		result.kind = FSParser::DataType::BUILTIN;
 		result.builtin_type = p_type.builtin_type;
+	}
+	if (p_type.is_type_handle) {
+		// The descriptor denotes a class rather than instances of it, so the reconstructed type has to
+		// stay a class handle; otherwise a constant container read back from the runtime would be typed
+		// as holding instances.
+		result.is_meta_type = true;
+		result.is_pseudo_type = false;
+		result.is_type_handle_annotation = true;
 	}
 	result.is_constant = true;
 	result.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;

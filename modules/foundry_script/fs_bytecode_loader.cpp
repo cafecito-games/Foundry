@@ -491,6 +491,7 @@ Error FSBytecodeLoader::_decode_container_type(StreamPeerBuffer *p_stream, Conta
 		return error;
 	}
 	r_container_type.class_name = StringName(class_name);
+	r_container_type.is_type_handle = p_stream->get_u8() != 0;
 	if (p_stream->get_u8() != 0) {
 		const uint8_t script_tag = p_stream->get_u8();
 		Variant script_variant;

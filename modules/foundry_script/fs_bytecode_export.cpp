@@ -266,6 +266,9 @@ Error FSBytecodeExporter::_encode_container_type(StreamPeerBuffer *r_stream, con
 			"Container type is too deeply nested to serialize to compiled bytecode.");
 	r_stream->put_u32((uint32_t)p_container_type.builtin_type);
 	r_stream->put_u32(string_table.insert(p_container_type.class_name));
+	// A `Type[T]` node tests class handles rather than instances, so the distinction has to travel
+	// with every node of a constant container's descriptor.
+	r_stream->put_u8(p_container_type.is_type_handle ? 1 : 0);
 	if (p_container_type.script.is_valid()) {
 		r_stream->put_u8(1);
 		Error error = _encode_object(r_stream, p_container_type.script.ptr(), p_depth + 1);
