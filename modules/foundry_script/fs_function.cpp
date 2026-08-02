@@ -162,7 +162,7 @@ FSStaticSelfContext FSStaticSelfContext::for_script(const Ref<Script> &p_script)
 		return context;
 	}
 	context.kind = SCRIPT;
-	context.script = p_script;
+	context.script_id = p_script->get_instance_id();
 	return context;
 }
 
@@ -184,10 +184,14 @@ FSStaticSelfContext FSStaticSelfContext::for_builtin_type(Variant::Type p_builti
 	return context;
 }
 
+Ref<Script> FSStaticSelfContext::get_script() const {
+	return Ref<Script>(Object::cast_to<Script>(ObjectDB::get_instance(script_id)));
+}
+
 void FSStaticSelfContext::clear() {
 	kind = NONE;
 	native_class = StringName();
-	script = Ref<Script>();
+	script_id = ObjectID();
 	type_arguments.clear();
 	builtin_type = Variant::NIL;
 }
@@ -204,7 +208,7 @@ bool FSStaticSelfContext::operator==(const FSStaticSelfContext &p_other) const {
 		case BUILTIN_TYPE:
 			return builtin_type == p_other.builtin_type;
 		case SCRIPT: {
-			if (script != p_other.script || type_arguments.size() != p_other.type_arguments.size()) {
+			if (script_id != p_other.script_id || type_arguments.size() != p_other.type_arguments.size()) {
 				return false;
 			}
 			for (int i = 0; i < type_arguments.size(); i++) {
@@ -227,9 +231,13 @@ String FSStaticSelfContext::get_type_name() const {
 		case BUILTIN_TYPE:
 			return Variant::get_type_name(builtin_type);
 		case SCRIPT: {
+			const Ref<Script> script = get_script();
+			if (script.is_null()) {
+				return "<freed static receiver>";
+			}
 			ContainerType type;
 			type.builtin_type = Variant::OBJECT;
-			type.class_name = script.is_valid() ? script->get_instance_base_type() : StringName();
+			type.class_name = script->get_instance_base_type();
 			type.script = script;
 			type.type_arguments = type_arguments;
 			return type.get_type_name();

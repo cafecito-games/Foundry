@@ -399,7 +399,12 @@ public:
 private:
 	Kind kind = NONE;
 	StringName native_class;
-	Ref<Script> script;
+	// Non-owning, like `CallState`'s script and instance. A live call borrows the descriptor from a
+	// caller that already holds the receiver, and a suspended call must not pin it: a script can hold
+	// its own suspended state in a static variable, and an owning reference would close a cycle that
+	// nothing tears down. A receiver freed while a call is suspended resolves to null, which the
+	// runtime must treat as a missing receiver rather than silently substituting another class.
+	ObjectID script_id;
 	// Concrete arguments of a specialized generic receiver, e.g. the `ImageTexture` of
 	// `Crate[ImageTexture]`. Empty for an unspecialized script receiver.
 	Vector<ContainerType> type_arguments;
@@ -414,13 +419,13 @@ public:
 	_FORCE_INLINE_ Kind get_kind() const { return kind; }
 	_FORCE_INLINE_ bool is_valid() const { return kind != NONE; }
 	_FORCE_INLINE_ const StringName &get_native_class() const { return native_class; }
-	_FORCE_INLINE_ const Ref<Script> &get_script() const { return script; }
+	// Null when the receiver script was freed while a call was suspended.
+	Ref<Script> get_script() const;
 	_FORCE_INLINE_ const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
 	_FORCE_INLINE_ Variant::Type get_builtin_type() const { return builtin_type; }
 
-	// Drops the retained receiver. A finished or abandoned call must release it: a script can hold a
-	// completed `FSFunctionState` in a static variable, and a retained receiver would close that into
-	// a reference cycle that outlives cache removal.
+	// Drops the described receiver, including the references its generic arguments hold. A finished or
+	// abandoned call must release them instead of keeping them reachable through a retained state.
 	void clear();
 
 	bool operator==(const FSStaticSelfContext &p_other) const;

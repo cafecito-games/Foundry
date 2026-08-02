@@ -396,11 +396,11 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] A suspended call resumes with th
 	memdelete(signal_source);
 }
 
-TEST_CASE("[Modules][FoundryScript][StaticSelf] Suspended calls do not accumulate receiver references") {
+TEST_CASE("[Modules][FoundryScript][StaticSelf] A suspended call does not keep its receiver alive") {
 	StaticSelfLanguageScope language;
 
 	// Awaiting twice builds a state chain: the finished state keeps the earlier one alive through
-	// `first_state`, so a receiver retained by any link in the chain stays reachable.
+	// `first_state`, so a receiver held by any link in the chain would stay reachable.
 	const Ref<FoundryScript> script = compile_static_self_source(
 			"class Base:\n"
 			"\tstatic func probe(cb: Callable, source: Object) -> void:\n"
@@ -415,36 +415,50 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] Suspended calls do not accumulat
 	REQUIRE(derived.is_valid());
 
 	Object *signal_source = memnew(Object);
+	LocalVector<Ref<FSFunctionState>> retained_states;
 
-	// A suspended state owns a copy of its receiver until the call finishes, and must give it back on
-	// completion. Holding the finished states is what makes that observable, and it is the shape that
-	// matters: a script can keep a finished state in a static variable, and a retained receiver would
-	// close a cycle that outlives cache removal.
-	LocalVector<Ref<FSFunctionState>> finished_states;
-	const auto run_and_retain_finished_call = [&]() {
-		// Recorded descriptors hold the receiver too, so drop them before measuring.
-		static_self_probe_records().clear();
+	// One warm-up call first, so one-time runtime bookkeeping on a first static call is not mistaken
+	// for a retained receiver.
+	{
 		Callable::CallError error;
 		Variant pending = call_through_handle(derived, SNAME("probe"),
 				{ probe_callable_value(), Variant(signal_source) }, error);
 		REQUIRE(error.error == Callable::CallError::CALL_OK);
-		Ref<FSFunctionState> function_state = pending;
-		REQUIRE(function_state.is_valid());
-		pending = function_state->resume();
-		Ref<FSFunctionState> resumed_state = pending;
-		REQUIRE(resumed_state.is_valid());
-		resumed_state->resume();
-		REQUIRE_EQ(static_self_probe_records().size(), 1);
-		finished_states.push_back(resumed_state);
-	};
-
-	// One warm-up cycle first, so one-time runtime bookkeeping on a first static call is not mistaken
-	// for accumulation.
-	run_and_retain_finished_call();
+		Ref<FSFunctionState> first = pending;
+		REQUIRE(first.is_valid());
+		pending = first->resume();
+		Ref<FSFunctionState> second = pending;
+		REQUIRE(second.is_valid());
+		second->resume();
+	}
+	// Recorded descriptors are the test's own copies; drop them before measuring.
+	static_self_probe_records().clear();
 	const int settled_reference_count = derived->get_reference_count();
 
+	// A suspended or finished state describes its receiver without owning it. Owning it would let a
+	// script that keeps its own state in a static variable close a cycle nothing tears down, since
+	// removing the script from the cache does not cancel its pending calls.
 	for (int i = 0; i < 4; i++) {
-		run_and_retain_finished_call();
+		Callable::CallError error;
+		Variant pending = call_through_handle(derived, SNAME("probe"),
+				{ probe_callable_value(), Variant(signal_source) }, error);
+		REQUIRE(error.error == Callable::CallError::CALL_OK);
+		Ref<FSFunctionState> suspended_state = pending;
+		REQUIRE(suspended_state.is_valid());
+		CHECK_EQ(derived->get_reference_count(), settled_reference_count);
+
+		pending = suspended_state->resume();
+		Ref<FSFunctionState> resumed_state = pending;
+		REQUIRE(resumed_state.is_valid());
+		CHECK_EQ(derived->get_reference_count(), settled_reference_count);
+
+		resumed_state->resume();
+		REQUIRE_EQ(static_self_probe_records().size(), 1);
+		CHECK(static_self_probe_records()[0] == FSStaticSelfContext::for_script(derived));
+		static_self_probe_records().clear();
+
+		retained_states.push_back(suspended_state);
+		retained_states.push_back(resumed_state);
 		CHECK_EQ(derived->get_reference_count(), settled_reference_count);
 	}
 
