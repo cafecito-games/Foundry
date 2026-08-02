@@ -638,6 +638,16 @@ class TokenizationTests(unittest.TestCase):
         )
         self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
 
+    def test_an_annotated_typed_local_in_a_dictionary_lambda_keeps_its_type_scope(self) -> None:
+        source = (
+            "var factories = {\n"
+            '\t"build": func() -> Node:\n'
+            '\t\t@warning_ignore("unused") var result: Player = Player.new()\n'
+            "\t\treturn result,\n"
+            "}\n"
+        )
+        self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
+
     def test_a_key_continued_across_a_line_break_still_hides_its_type_shaped_value(self) -> None:
         source = "var values = {\n\t(a\n\t+ b): Node,\n}\n"
         self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
