@@ -100,7 +100,8 @@ enum {
 	// Version 4: New string ID for ext/subresources, breaks forward compat.
 	// Version 5: Ability to store script class in the header.
 	// Version 6: Added PackedVector4Array Variant type.
-	FORMAT_VERSION = 6,
+	// Version 7: Added typed Array and Dictionary element metadata.
+	FORMAT_VERSION = 7,
 	FORMAT_VERSION_CAN_RENAME_DEPS = 1,
 	FORMAT_VERSION_NO_NODEPATH_PROPERTY = 3,
 };
@@ -633,6 +634,8 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 		case VARIANT_DICTIONARY:
 		case VARIANT_TYPED_DICTIONARY: {
 			Dictionary d;
+			ContainerTypeValidate key_validator;
+			ContainerTypeValidate value_validator;
 			if (prop_type == VARIANT_TYPED_DICTIONARY) {
 				ContainerType key_type;
 				ContainerType value_type;
@@ -642,6 +645,8 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 				ERR_FAIL_COND_V_MSG(err, err, "Error when trying to parse a dictionary value type.");
 				if (key_type.builtin_type != Variant::NIL || value_type.builtin_type != Variant::NIL) {
 					d.set_typed(key_type, value_type);
+					key_validator = ContainerTypeValidate(key_type);
+					value_validator = ContainerTypeValidate(value_type);
 				}
 			}
 
@@ -654,6 +659,11 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 				Variant value;
 				err = parse_variant(value);
 				ERR_FAIL_COND_V_MSG(err, ERR_FILE_CORRUPT, "Error when trying to parse Variant.");
+				// Assigning through the dictionary would drop a mismatched key and accept a mismatched
+				// value, leaving a container that lies about what it holds. A payload that contradicts
+				// the type it declared is not loadable as either.
+				ERR_FAIL_COND_V_MSG(!key_validator.validate(key, "load"), ERR_FILE_CORRUPT, "Dictionary key does not match the key type the payload declared.");
+				ERR_FAIL_COND_V_MSG(!value_validator.validate(value, "load"), ERR_FILE_CORRUPT, "Dictionary value does not match the value type the payload declared.");
 				d[key] = value;
 			}
 			r_v = d;
@@ -661,12 +671,14 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 		case VARIANT_ARRAY:
 		case VARIANT_TYPED_ARRAY: {
 			Array a;
+			ContainerTypeValidate element_validator;
 			if (prop_type == VARIANT_TYPED_ARRAY) {
 				ContainerType element_type;
 				const Error err = parse_container_type(element_type);
 				ERR_FAIL_COND_V_MSG(err, err, "Error when trying to parse an array element type.");
 				if (element_type.builtin_type != Variant::NIL) {
 					a.set_typed(element_type);
+					element_validator = ContainerTypeValidate(element_type);
 				}
 			}
 
@@ -677,6 +689,10 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 				Variant val;
 				Error err = parse_variant(val);
 				ERR_FAIL_COND_V_MSG(err, ERR_FILE_CORRUPT, "Error when trying to parse Variant.");
+				// Writing through the array would bypass its element type, leaving a container that
+				// lies about what it holds. A payload that contradicts the type it declared is not
+				// loadable as either.
+				ERR_FAIL_COND_V_MSG(!element_validator.validate(val, "load"), ERR_FILE_CORRUPT, "Array element does not match the element type the payload declared.");
 				a[i] = val;
 			}
 			r_v = a;

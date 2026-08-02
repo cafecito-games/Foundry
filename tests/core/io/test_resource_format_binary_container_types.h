@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "core/io/file_access.h"
+#include "core/io/marshalls.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/object/ref_counted.h"
@@ -191,6 +193,58 @@ TEST_CASE("[ResourceFormatBinary] Text and binary formats agree on the reconstru
 		CHECK_EQ(from_binary.get_element_type(), from_text.get_element_type());
 		CHECK_EQ(from_binary.get_element_type(), element_type);
 	}
+}
+
+TEST_CASE("[ResourceFormatBinary] A payload whose elements contradict its declared element type fails to load") {
+	// A distinctive element value so the encoded element type can be located unambiguously below.
+	constexpr int32_t element_marker = 0x5A5A5A5A;
+
+	Array values;
+	values.set_typed(make_builtin(Variant::INT));
+	values.push_back(element_marker);
+
+	Ref<Resource> resource = memnew(Resource);
+	resource->set_meta("values", values);
+
+	const String path = TestUtils::get_temp_path("binary_container_contradicting_element.res");
+	REQUIRE_EQ(ResourceSaver::save(resource, path), OK);
+
+	Vector<uint8_t> payload = FileAccess::get_file_as_bytes(path);
+	REQUIRE_FALSE(payload.is_empty());
+
+	// The encoded element type of the array holding `element_marker`: a builtin-kind word, the
+	// builtin type, no nested element types, no type arguments, then a length of one and the single
+	// element. Strings in this format are not padded, so the scan runs over byte offsets. Only the
+	// builtin type word is patched, which leaves the payload exactly as long as it was.
+	const uint8_t *read_payload = payload.ptr();
+	int64_t builtin_type_offset = -1;
+	int match_count = 0;
+	for (int64_t offset = 0; offset + 28 <= payload.size(); offset++) {
+		if (decode_uint32(read_payload + offset) == 1 && decode_uint32(read_payload + offset + 4) == uint32_t(Variant::INT) &&
+				decode_uint32(read_payload + offset + 8) == 0 && decode_uint32(read_payload + offset + 12) == 0 &&
+				decode_uint32(read_payload + offset + 16) == 1 && decode_uint32(read_payload + offset + 24) == uint32_t(element_marker)) {
+			builtin_type_offset = offset + 4;
+			match_count++;
+		}
+	}
+	REQUIRE_EQ(match_count, 1);
+
+	encode_uint32(uint32_t(Variant::VECTOR2), payload.ptrw() + builtin_type_offset);
+
+	const String corrupted_path = TestUtils::get_temp_path("binary_container_contradicting_element_patched.res");
+	{
+		Ref<FileAccess> file = FileAccess::open(corrupted_path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_buffer(payload.ptr(), payload.size());
+	}
+
+	ERR_PRINT_OFF;
+	Error error = OK;
+	const Ref<Resource> loaded = ResourceLoader::load(corrupted_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	ERR_PRINT_ON;
+
+	CHECK(loaded.is_null());
+	CHECK_EQ(error, ERR_FILE_CORRUPT);
 }
 
 TEST_CASE("[ResourceFormatBinary] A payload written before container types were encoded loads as untyped") {
