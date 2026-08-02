@@ -36,6 +36,9 @@
 #include "core/object/class_db.h"
 #include "core/variant/container_type_validate.h"
 
+#include <limits>
+#include <type_traits>
+
 template <typename Evaluator>
 class CommonEvaluate {
 public:
@@ -522,6 +525,166 @@ struct VariantIntCarrier {
 struct VariantUIntCarrier {
 	static _ALWAYS_INLINE_ uint64_t get(const Variant *p_variant) { return *VariantInternal::get_uint(p_variant); }
 	static _ALWAYS_INLINE_ uint64_t get_ptr(const void *p_ptr) { return PtrToArg<uint64_t>::convert(p_ptr); }
+
+	// `VariantTypeChanger` resolves its destination through `GetTypeInfo<T>`, which maps every C++
+	// unsigned integer to the signed carrier, so unsigned results retag the destination here instead.
+	static _ALWAYS_INLINE_ void change(Variant *r_ret) {
+		if (r_ret->get_type() != Variant::UINT) {
+			VariantInternal::clear(r_ret);
+			VariantUIntInitializer::init(r_ret);
+		}
+	}
+	static _ALWAYS_INLINE_ void set(Variant *r_ret, uint64_t p_value) { *VariantInternal::get_uint(r_ret) = p_value; }
+	static _ALWAYS_INLINE_ Variant box(uint64_t p_value) {
+		Variant value;
+		VariantUIntInitializer::init(&value);
+		*VariantInternal::get_uint(&value) = p_value;
+		return value;
+	}
+};
+
+// Unsigned arithmetic is defined modulo 2^64 by the C++ standard, so these operations wrap instead of
+// invoking the signed overflow the equivalent `int64_t` evaluators would.
+struct VariantUIntAddOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left + p_right; }
+};
+
+struct VariantUIntSubtractOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left - p_right; }
+};
+
+struct VariantUIntMultiplyOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left * p_right; }
+};
+
+struct VariantUIntBitOrOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left | p_right; }
+};
+
+struct VariantUIntBitAndOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left & p_right; }
+};
+
+struct VariantUIntBitXorOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left ^ p_right; }
+};
+
+// Exponentiation by squaring keeps every result below 2^64 exact. Routing the unsigned carrier through
+// `Math::pow()` like the signed evaluator does would round results above the 53-bit double mantissa
+// and would convert out-of-range doubles back to an integer, which is undefined.
+struct VariantUIntPowerOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_base, uint64_t p_exponent) {
+		uint64_t result = 1;
+		uint64_t base = p_base;
+		uint64_t exponent = p_exponent;
+		while (exponent > 0) {
+			if (exponent & 1) {
+				result *= base;
+			}
+			exponent >>= 1;
+			if (exponent > 0) {
+				base *= base;
+			}
+		}
+		return result;
+	}
+};
+
+struct VariantUIntDivideOperation {
+	static _ALWAYS_INLINE_ bool accepts(uint64_t p_right) { return p_right != 0; }
+	static _ALWAYS_INLINE_ const char *error_message() { return "Division by zero error"; }
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left / p_right; }
+};
+
+struct VariantUIntModuloOperation {
+	static _ALWAYS_INLINE_ bool accepts(uint64_t p_right) { return p_right != 0; }
+	static _ALWAYS_INLINE_ const char *error_message() { return "Modulo by zero error"; }
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left % p_right; }
+};
+
+struct VariantUIntShiftLeftOperation {
+	static _ALWAYS_INLINE_ bool accepts(uint64_t p_right) { return p_right < 64; }
+	static _ALWAYS_INLINE_ const char *error_message() { return "Invalid operands for bit shifting. The shift count must be smaller than 64."; }
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left << p_right; }
+};
+
+struct VariantUIntShiftRightOperation {
+	static _ALWAYS_INLINE_ bool accepts(uint64_t p_right) { return p_right < 64; }
+	static _ALWAYS_INLINE_ const char *error_message() { return "Invalid operands for bit shifting. The shift count must be smaller than 64."; }
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_left, uint64_t p_right) { return p_left >> p_right; }
+};
+
+struct VariantUIntBitNegateOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_value) { return ~p_value; }
+};
+
+struct VariantUIntPositiveOperation {
+	static _ALWAYS_INLINE_ uint64_t compute(uint64_t p_value) { return p_value; }
+};
+
+template <typename Operation>
+class OperatorEvaluatorUIntBinary {
+public:
+	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+		// The result is computed before the destination is retagged so an aliased destination is safe.
+		const uint64_t result = Operation::compute(VariantUIntCarrier::get(&p_left), VariantUIntCarrier::get(&p_right));
+		VariantUIntCarrier::change(r_ret);
+		VariantUIntCarrier::set(r_ret, result);
+		r_valid = true;
+	}
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VariantUIntCarrier::set(r_ret, Operation::compute(VariantUIntCarrier::get(left), VariantUIntCarrier::get(right)));
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<uint64_t>::encode(Operation::compute(VariantUIntCarrier::get_ptr(left), VariantUIntCarrier::get_ptr(right)), r_ret);
+	}
+	static Variant::Type get_return_type() { return Variant::UINT; }
+};
+
+// Like the signed division and shift evaluators, only the reporting `evaluate()` entry point rejects a
+// right operand the operation cannot accept. The validated and pointer entry points stay branch-free
+// because their callers are responsible for having checked the operands first.
+template <typename Operation>
+class OperatorEvaluatorUIntCheckedBinary {
+public:
+	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+		const uint64_t left = VariantUIntCarrier::get(&p_left);
+		const uint64_t right = VariantUIntCarrier::get(&p_right);
+		if (unlikely(!Operation::accepts(right))) {
+			*r_ret = Operation::error_message();
+			r_valid = false;
+			return;
+		}
+		const uint64_t result = Operation::compute(left, right);
+		VariantUIntCarrier::change(r_ret);
+		VariantUIntCarrier::set(r_ret, result);
+		r_valid = true;
+	}
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VariantUIntCarrier::set(r_ret, Operation::compute(VariantUIntCarrier::get(left), VariantUIntCarrier::get(right)));
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<uint64_t>::encode(Operation::compute(VariantUIntCarrier::get_ptr(left), VariantUIntCarrier::get_ptr(right)), r_ret);
+	}
+	static Variant::Type get_return_type() { return Variant::UINT; }
+};
+
+template <typename Operation>
+class OperatorEvaluatorUIntUnary {
+public:
+	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+		const uint64_t result = Operation::compute(VariantUIntCarrier::get(&p_left));
+		VariantUIntCarrier::change(r_ret);
+		VariantUIntCarrier::set(r_ret, result);
+		r_valid = true;
+	}
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VariantUIntCarrier::set(r_ret, Operation::compute(VariantUIntCarrier::get(left)));
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<uint64_t>::encode(Operation::compute(VariantUIntCarrier::get_ptr(left)), r_ret);
+	}
+	static Variant::Type get_return_type() { return Variant::UINT; }
 };
 
 template <typename Left, typename Right, typename Operation>
@@ -904,6 +1067,38 @@ public:
 	static Variant::Type get_return_type() { return Variant::STRING; }
 };
 
+// String formatting for the unsigned carrier. The value is re-boxed as `UINT` explicitly because
+// `Variant(uint64_t)` selects the signed carrier and would format the upper half of the range as a
+// negative number.
+template <typename S>
+class OperatorEvaluatorStringFormatUInt {
+public:
+	_FORCE_INLINE_ static String do_mod(const String &s, uint64_t p_value, bool *r_valid) {
+		Array values = { VariantUIntCarrier::box(p_value) };
+		String a = s.sprintf(values, r_valid);
+		if (r_valid) {
+			*r_valid = !*r_valid;
+		}
+		return a;
+	}
+	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+		*r_ret = do_mod(VariantInternalAccessor<S>::get(&p_left), VariantUIntCarrier::get(&p_right), &r_valid);
+	}
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		bool valid = true;
+		String result = do_mod(VariantInternalAccessor<S>::get(left), VariantUIntCarrier::get(right), &valid);
+		if (unlikely(!valid)) {
+			VariantInternalAccessor<String>::get(r_ret) = VariantInternalAccessor<S>::get(left);
+			ERR_FAIL_MSG(vformat("String formatting error: %s.", result));
+		}
+		VariantInternalAccessor<String>::get(r_ret) = result;
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<String>::encode(do_mod(PtrToArg<S>::convert(left), VariantUIntCarrier::get_ptr(right), nullptr), r_ret);
+	}
+	static Variant::Type get_return_type() { return Variant::STRING; }
+};
+
 class OperatorEvaluatorAlwaysTrue : public CommonEvaluate<OperatorEvaluatorAlwaysTrue> {
 public:
 	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
@@ -952,6 +1147,10 @@ _FORCE_INLINE_ static bool _operate_get_int(const Variant *p_ptr) {
 	return VariantInternalAccessor<int64_t>::get(p_ptr) != 0;
 }
 
+_FORCE_INLINE_ static bool _operate_get_uint(const Variant *p_ptr) {
+	return VariantUIntCarrier::get(p_ptr) != 0;
+}
+
 _FORCE_INLINE_ static bool _operate_get_float(const Variant *p_ptr) {
 	return VariantInternalAccessor<double>::get(p_ptr) != 0.0;
 }
@@ -970,6 +1169,10 @@ _FORCE_INLINE_ static bool _operate_get_ptr_bool(const void *p_ptr) {
 
 _FORCE_INLINE_ static bool _operate_get_ptr_int(const void *p_ptr) {
 	return PtrToArg<int64_t>::convert(p_ptr) != 0;
+}
+
+_FORCE_INLINE_ static bool _operate_get_ptr_uint(const void *p_ptr) {
+	return VariantUIntCarrier::get_ptr(p_ptr) != 0;
 }
 
 _FORCE_INLINE_ static bool _operate_get_ptr_float(const void *p_ptr) {
@@ -1030,6 +1233,24 @@ OP_EVALUATOR(OperatorEvaluatorFloatXIntOr, float, int, _operate_or)
 OP_EVALUATOR(OperatorEvaluatorIntXObjectOr, int, object, _operate_or)
 OP_EVALUATOR(OperatorEvaluatorObjectXIntOr, object, int, _operate_or)
 
+// uint
+OP_EVALUATOR(OperatorEvaluatorUIntXUIntOr, uint, uint, _operate_or)
+
+OP_EVALUATOR(OperatorEvaluatorNilXUIntOr, nil, uint, _operate_or)
+OP_EVALUATOR(OperatorEvaluatorUIntXNilOr, uint, nil, _operate_or)
+
+OP_EVALUATOR(OperatorEvaluatorBoolXUIntOr, bool, uint, _operate_or)
+OP_EVALUATOR(OperatorEvaluatorUIntXBoolOr, uint, bool, _operate_or)
+
+OP_EVALUATOR(OperatorEvaluatorIntXUIntOr, int, uint, _operate_or)
+OP_EVALUATOR(OperatorEvaluatorUIntXIntOr, uint, int, _operate_or)
+
+OP_EVALUATOR(OperatorEvaluatorUIntXFloatOr, uint, float, _operate_or)
+OP_EVALUATOR(OperatorEvaluatorFloatXUIntOr, float, uint, _operate_or)
+
+OP_EVALUATOR(OperatorEvaluatorUIntXObjectOr, uint, object, _operate_or)
+OP_EVALUATOR(OperatorEvaluatorObjectXUIntOr, object, uint, _operate_or)
+
 // float
 OP_EVALUATOR(OperatorEvaluatorFloatXFloatOr, float, float, _operate_or)
 
@@ -1075,6 +1296,24 @@ OP_EVALUATOR(OperatorEvaluatorFloatXIntAnd, float, int, _operate_and)
 OP_EVALUATOR(OperatorEvaluatorIntXObjectAnd, int, object, _operate_and)
 OP_EVALUATOR(OperatorEvaluatorObjectXIntAnd, object, int, _operate_and)
 
+// uint
+OP_EVALUATOR(OperatorEvaluatorUIntXUIntAnd, uint, uint, _operate_and)
+
+OP_EVALUATOR(OperatorEvaluatorNilXUIntAnd, nil, uint, _operate_and)
+OP_EVALUATOR(OperatorEvaluatorUIntXNilAnd, uint, nil, _operate_and)
+
+OP_EVALUATOR(OperatorEvaluatorBoolXUIntAnd, bool, uint, _operate_and)
+OP_EVALUATOR(OperatorEvaluatorUIntXBoolAnd, uint, bool, _operate_and)
+
+OP_EVALUATOR(OperatorEvaluatorIntXUIntAnd, int, uint, _operate_and)
+OP_EVALUATOR(OperatorEvaluatorUIntXIntAnd, uint, int, _operate_and)
+
+OP_EVALUATOR(OperatorEvaluatorUIntXFloatAnd, uint, float, _operate_and)
+OP_EVALUATOR(OperatorEvaluatorFloatXUIntAnd, float, uint, _operate_and)
+
+OP_EVALUATOR(OperatorEvaluatorUIntXObjectAnd, uint, object, _operate_and)
+OP_EVALUATOR(OperatorEvaluatorObjectXUIntAnd, object, uint, _operate_and)
+
 // float
 OP_EVALUATOR(OperatorEvaluatorFloatXFloatAnd, float, float, _operate_and)
 
@@ -1119,6 +1358,24 @@ OP_EVALUATOR(OperatorEvaluatorFloatXIntXor, float, int, _operate_xor)
 
 OP_EVALUATOR(OperatorEvaluatorIntXObjectXor, int, object, _operate_xor)
 OP_EVALUATOR(OperatorEvaluatorObjectXIntXor, object, int, _operate_xor)
+
+// uint
+OP_EVALUATOR(OperatorEvaluatorUIntXUIntXor, uint, uint, _operate_xor)
+
+OP_EVALUATOR(OperatorEvaluatorNilXUIntXor, nil, uint, _operate_xor)
+OP_EVALUATOR(OperatorEvaluatorUIntXNilXor, uint, nil, _operate_xor)
+
+OP_EVALUATOR(OperatorEvaluatorBoolXUIntXor, bool, uint, _operate_xor)
+OP_EVALUATOR(OperatorEvaluatorUIntXBoolXor, uint, bool, _operate_xor)
+
+OP_EVALUATOR(OperatorEvaluatorIntXUIntXor, int, uint, _operate_xor)
+OP_EVALUATOR(OperatorEvaluatorUIntXIntXor, uint, int, _operate_xor)
+
+OP_EVALUATOR(OperatorEvaluatorUIntXFloatXor, uint, float, _operate_xor)
+OP_EVALUATOR(OperatorEvaluatorFloatXUIntXor, float, uint, _operate_xor)
+
+OP_EVALUATOR(OperatorEvaluatorUIntXObjectXor, uint, object, _operate_xor)
+OP_EVALUATOR(OperatorEvaluatorObjectXUIntXor, object, uint, _operate_xor)
 
 // float
 OP_EVALUATOR(OperatorEvaluatorFloatXFloatXor, float, float, _operate_xor)
@@ -1231,6 +1488,42 @@ public:
 	using ReturnType = bool;
 };
 
+// Untyped containers compare through `Variant`, which already relates the two integer carriers
+// exactly, so unsigned containment forwards the whole operand instead of a narrowed C++ value.
+class OperatorEvaluatorInArrayFindUInt : public CommonEvaluate<OperatorEvaluatorInArrayFindUInt> {
+public:
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VariantInternalAccessor<bool>::get(r_ret) = VariantInternalAccessor<Array>::get(right).find(*left) != -1;
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<bool>::encode(PtrToArg<Array>::convert(right).find(VariantUIntCarrier::box(VariantUIntCarrier::get_ptr(left))) != -1, r_ret);
+	}
+	using ReturnType = bool;
+};
+
+// Packed arrays store a narrower signed or floating element, so an unsigned value outside the element
+// range can never be contained. Narrowing it instead would alias onto an unrelated element, letting
+// `UINT64_MAX` match a stored `-1`.
+template <typename Element, typename B>
+class OperatorEvaluatorInPackedArrayFindUInt : public CommonEvaluate<OperatorEvaluatorInPackedArrayFindUInt<Element, B>> {
+public:
+	_FORCE_INLINE_ static bool contains(uint64_t p_value, const B &p_array) {
+		if constexpr (std::is_integral_v<Element>) {
+			if (p_value > uint64_t(std::numeric_limits<Element>::max())) {
+				return false;
+			}
+		}
+		return p_array.find(Element(p_value)) != -1;
+	}
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VariantInternalAccessor<bool>::get(r_ret) = contains(VariantUIntCarrier::get(left), VariantInternalAccessor<B>::get(right));
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<bool>::encode(contains(VariantUIntCarrier::get_ptr(left), PtrToArg<B>::convert(right)), r_ret);
+	}
+	using ReturnType = bool;
+};
+
 class OperatorEvaluatorInArrayFindNil : public CommonEvaluate<OperatorEvaluatorInArrayFindNil> {
 public:
 	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
@@ -1265,6 +1558,17 @@ public:
 	}
 	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
 		PtrToArg<bool>::encode(PtrToArg<Dictionary>::convert(right).has(PtrToArg<A>::convert(left)), r_ret);
+	}
+	using ReturnType = bool;
+};
+
+class OperatorEvaluatorInDictionaryHasUInt : public CommonEvaluate<OperatorEvaluatorInDictionaryHasUInt> {
+public:
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VariantInternalAccessor<bool>::get(r_ret) = VariantInternalAccessor<Dictionary>::get(right).has(*left);
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<bool>::encode(PtrToArg<Dictionary>::convert(right).has(VariantUIntCarrier::box(VariantUIntCarrier::get_ptr(left))), r_ret);
 	}
 	using ReturnType = bool;
 };
