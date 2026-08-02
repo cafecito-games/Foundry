@@ -742,6 +742,7 @@ void JSON::_bind_methods() {
 #define VALUE_TYPE "value_type"
 #define ARGS "args"
 #define TYPE_ARGS "type_args"
+#define TYPE_HANDLE "type_handle"
 #define PROPS "props"
 
 // The name a container type is spelled with, independent of any nested element types or reified
@@ -773,13 +774,18 @@ static bool _encode_container_type_value(const ContainerType &p_type, Variant &r
 		return false;
 	}
 
-	if (p_type.element_types.is_empty() && p_type.type_arguments.is_empty()) {
+	// A type that carries nothing beyond its name keeps the plain string spelling it has always had.
+	if (p_type.element_types.is_empty() && p_type.type_arguments.is_empty() && !p_type.is_type_handle) {
 		r_value = type_name;
 		return true;
 	}
 
 	Dictionary type_dict;
 	type_dict[TYPE] = type_name;
+
+	if (p_type.is_type_handle) {
+		type_dict[TYPE_HANDLE] = true;
+	}
 
 	if (!p_type.element_types.is_empty()) {
 		if (p_type.builtin_type == Variant::ARRAY) {
@@ -1223,6 +1229,13 @@ static bool _decode_container_type_value(const Variant &p_value, ContainerType &
 		const String type_name = type_dict[TYPE];
 		if (!_decode_container_type_name(type_name, r_type, p_allow_objects)) {
 			return false;
+		}
+
+		if (type_dict.has(TYPE_HANDLE)) {
+			const Variant type_handle_value = type_dict[TYPE_HANDLE];
+			ERR_FAIL_COND_V_MSG(type_handle_value.get_type() != Variant::BOOL, false, vformat(R"(Invalid "%s" for nested container type.)", TYPE_HANDLE));
+			r_type.is_type_handle = type_handle_value;
+			ERR_FAIL_COND_V_MSG(r_type.is_type_handle && r_type.builtin_type != Variant::OBJECT, false, vformat(R"("%s" is only valid for Object container types.)", TYPE_HANDLE));
 		}
 
 		if (r_type.builtin_type == Variant::ARRAY) {

@@ -205,6 +205,18 @@ static Error _decode_container_type_extended(const uint8_t *&buf, int &len, int 
 	}
 
 	ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
+	const uint32_t type_handle_flag = decode_uint32(buf);
+	buf += 4;
+	len -= 4;
+	if (r_len) {
+		(*r_len) += 4;
+	}
+
+	ERR_FAIL_COND_V(type_handle_flag > 1, ERR_INVALID_DATA);
+	r_type.is_type_handle = type_handle_flag != 0;
+	ERR_FAIL_COND_V_MSG(r_type.is_type_handle && r_type.builtin_type != Variant::OBJECT, ERR_INVALID_DATA, "Container types can only be class handles for Object types.");
+
+	ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
 	const int32_t child_count = decode_uint32(buf);
 	buf += 4;
 	len -= 4;
@@ -1432,7 +1444,8 @@ static ContainerTypeKind _get_container_type_kind(const ContainerType &p_type, b
 }
 
 static bool _container_type_needs_extended_encoding(const ContainerType &p_type) {
-	return !p_type.element_types.is_empty() || !p_type.type_arguments.is_empty();
+	// The compact header has room for a type kind only, so a class handle also needs the extended form.
+	return !p_type.element_types.is_empty() || !p_type.type_arguments.is_empty() || p_type.is_type_handle;
 }
 
 static Error _encode_container_type(const ContainerType &p_type, uint8_t *&buf, int &r_len, bool p_full_objects) {
@@ -1475,6 +1488,12 @@ static Error _encode_container_type_extended(const ContainerType &p_type, uint8_
 	if (err != OK) {
 		return err;
 	}
+
+	if (buf) {
+		encode_uint32(p_type.is_type_handle ? 1 : 0, buf);
+		buf += 4;
+	}
+	r_len += 4;
 
 	if (buf) {
 		encode_uint32(p_type.element_types.size(), buf);

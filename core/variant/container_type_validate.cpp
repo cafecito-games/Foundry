@@ -752,6 +752,11 @@ bool from_variant(const Variant &p_descriptor, ContainerType &r_type, String *r_
 Variant to_variant(const ContainerType &p_type) {
 	Dictionary descriptor;
 	descriptor["type"] = p_type.builtin_type;
+	// Only emitted when set, so an instance-typed descriptor is spelled exactly as it was before class
+	// handles existed and an absent key decodes back to an instance type.
+	if (p_type.is_type_handle) {
+		descriptor["is_type_handle"] = true;
+	}
 	if (p_type.class_name != StringName()) {
 		descriptor["class_name"] = p_type.class_name;
 	}
