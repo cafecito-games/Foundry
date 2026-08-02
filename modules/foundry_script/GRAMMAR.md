@@ -345,7 +345,7 @@ class_name_decl = "class_name", identifier, [ type_parameters ],
                   [ extends_decl [ uses_decl ] | uses_decl ], NEWLINE ;
 trait_name_decl = "trait_name", identifier, [ type_parameters ],
                   [ extends_decl [ uses_decl ] | uses_decl ], NEWLINE ;
-enum_name_decl = "enum_name", identifier, ":", enum_body ;   (* whole-file enum *)
+enum_name_decl = "enum_name", identifier, [ type_parameters ], ":", enum_body ;   (* whole-file enum *)
 tuple_name_decl = "tuple_name", identifier,
                   "(", tuple_field, { ",", tuple_field }, [ "," ], ")", NEWLINE ;
 ```
@@ -439,7 +439,8 @@ type_parameter  = identifier, [ ":", type ] ;   (* optional upper bound *)
 ```
 
 Generics appear on classes (`class Box[T]`, `class_name Pair[K, V]`), traits
-(`trait Container[T]`), and functions (`func swap[T](...)`). A bound constrains the
+(`trait Container[T]`), functions (`func swap[T](...)`), and named tagged unions
+(`enum Result[T, E]`, `enum_name Tree[T]`; see §4.4). A bound constrains the
 parameter (`[T: Resource]`). A trailing comma is allowed.
 
 ### 4.4 Variables, constants, signals, enums
@@ -457,7 +458,7 @@ signal_decl     = "signal", identifier,
                   [ "(", [ parameter, { ",", parameter }, [ "," ] ], ")" ],
                   NEWLINE ;
 
-enum_decl       = "enum", [ identifier ], ":", enum_body ;
+enum_decl       = "enum", [ identifier, [ type_parameters ] ], ":", enum_body ;
 enum_body       = NEWLINE, INDENT,
                   ( "pass", NEWLINE
                   | enum_value_line, { enum_value_line }, { enum_function_decl }
@@ -512,6 +513,13 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
   at runtime because a value is finite: a payload slot holds another `[tag, payload...]`
   read-only array. Int-backed enums are unaffected — their `= expression` values still
   cannot reference the enum being declared.
+- A named enum may declare **type parameters** (§4.3) between its name and the `:`
+  (`enum Result[T, E: Resource]:`, `enum_name Tree[T]:`), making it a generic tagged
+  union whose payload field types may reference those parameters. Two declaration
+  shapes are rejected: type parameters on an unnamed enum (`enum[T]:`), and type
+  parameters on an enum whose completed body declares no payload-bearing case (an
+  integer-backed enum). Like the tagged-union rules above, the second is validated
+  after the whole body has been parsed.
 - Enum values must appear before enum functions. A functions-only named enum is valid.
   Enum functions reuse ordinary function signatures and bodies, allow `static` and
   `async`, and reject `abstract` and `final`. Variables, constants, signals, nested
@@ -520,7 +528,7 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
 - An empty enum uses `pass` as its only body statement (`enum Empty:` followed by
   an indented `pass`).
 - `enum_name` (§3.2) declares a file-level named enum using the same indented body,
-  including payload cases.
+  including payload cases and type parameters.
 
 #### Property accessors
 
