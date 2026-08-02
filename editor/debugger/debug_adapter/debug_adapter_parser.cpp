@@ -615,28 +615,31 @@ Dictionary DebugAdapterParser::req_scopes(const Dictionary &p_params) const {
 		}
 	}
 
-	EditorDebuggerNode::get_singleton()->get_default_debugger()->request_stack_dump(frame_id);
-	DebugAdapterProtocol::get_singleton()->_current_frame = frame_id;
+	// The references above are usable straight away, but the values behind them only
+	// exist once the debuggee answers this request.
+	DebugAdapterProtocol::get_singleton()->request_stack_frame_vars(frame_id);
 
 	body["scopes"] = scope_list;
 	return response;
 }
 
 Dictionary DebugAdapterParser::req_variables(const Dictionary &p_params) const {
+	DebugAdapterProtocol *protocol = DebugAdapterProtocol::get_singleton();
+
 	// If _remaining_vars > 0, the debuggee is still sending a stack dump to the editor.
-	if (DebugAdapterProtocol::get_singleton()->_remaining_vars > 0) {
+	if (protocol->_remaining_vars > 0) {
 		return Dictionary();
 	}
 
 	Dictionary args = p_params["arguments"];
 	int variable_id = args["variablesReference"];
 
-	if (HashMap<int, Array>::Iterator E = DebugAdapterProtocol::get_singleton()->variable_list.find(variable_id); E) {
+	if (HashMap<int, Array>::Iterator E = protocol->variable_list.find(variable_id); E) {
 		Dictionary response = prepare_success_response(p_params);
 		Dictionary body;
 		response["body"] = body;
 
-		if (!DebugAdapterProtocol::get_singleton()->get_current_peer()->supportsVariableType) {
+		if (!protocol->get_current_peer()->supportsVariableType) {
 			for (int i = 0; i < E->value.size(); i++) {
 				Dictionary variable = E->value[i];
 				variable.erase("type");
@@ -645,16 +648,28 @@ Dictionary DebugAdapterParser::req_variables(const Dictionary &p_params) const {
 
 		body["variables"] = E ? E->value : Array();
 		return response;
-	} else {
-		// If the requested variable is an object, it needs to be requested from the debuggee.
-		ObjectID object_id = DebugAdapterProtocol::get_singleton()->search_object_id(variable_id);
-
-		if (object_id.is_null()) {
-			return prepare_error_response(p_params, DAP::ErrorType::UNKNOWN);
-		}
-
-		DebugAdapterProtocol::get_singleton()->request_remote_object(object_id);
 	}
+
+	// `scopes` hands a client usable references before the debuggee has delivered that
+	// frame's values, so a `variables` request naming one of them is legal even though
+	// nothing backs it yet. The response is deferred until the values land; if nothing is
+	// in flight for that frame, ask for them here so a client that never repeats `scopes`
+	// still completes.
+	const int frame_id = protocol->search_scope_frame_id(variable_id);
+	if (frame_id >= 0) {
+		if (protocol->_awaited_frame_vars == frame_id || protocol->request_stack_frame_vars(frame_id)) {
+			return Dictionary();
+		}
+	}
+
+	// If the requested variable is an object, it needs to be requested from the debuggee.
+	ObjectID object_id = protocol->search_object_id(variable_id);
+
+	if (object_id.is_null()) {
+		return prepare_error_response(p_params, DAP::ErrorType::UNKNOWN);
+	}
+
+	protocol->request_remote_object(object_id);
 	return Dictionary();
 }
 

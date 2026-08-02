@@ -183,7 +183,6 @@ void DebugAdapterProtocol::reset_session_state() {
 	_stepping = false;
 	_processing_stackdump = false;
 	_pending_pause = false;
-	_remaining_vars = 0;
 	_current_frame = 0;
 
 	eval_list.clear();
@@ -195,6 +194,13 @@ void DebugAdapterProtocol::reset_session_state() {
 void DebugAdapterProtocol::reset_stack_info() {
 	stackframe_id = 0;
 	variable_id = 1;
+
+	// Any values still streaming in belong to a stack that no longer exists; leaving the
+	// counters set would make every later `variables` request wait for an answer that can
+	// never arrive.
+	_remaining_vars = 0;
+	_awaited_frame_vars = -1;
+	_frame_vars_frame = -1;
 
 	stackframe_list.clear();
 	scope_list.clear();
@@ -811,6 +817,26 @@ ObjectID DebugAdapterProtocol::search_object_id(DAPVarID p_var_id) {
 	return ObjectID();
 }
 
+DebugAdapterProtocol::DAPStackFrameID DebugAdapterProtocol::search_scope_frame_id(DAPVarID p_var_id) const {
+	for (const KeyValue<DAPStackFrameID, Vector<int>> &E : scope_list) {
+		if (E.value.has(p_var_id)) {
+			return E.key;
+		}
+	}
+	return -1;
+}
+
+bool DebugAdapterProtocol::request_stack_frame_vars(DAPStackFrameID p_frame_id) {
+	if (!EditorDebuggerNode::get_singleton()->get_default_debugger()->request_stack_dump(p_frame_id)) {
+		return false;
+	}
+
+	// The frame later evaluations default to.
+	_current_frame = p_frame_id;
+	_awaited_frame_vars = p_frame_id;
+	return true;
+}
+
 bool DebugAdapterProtocol::request_remote_object(const ObjectID &p_object_id) {
 	// If the object is already on the pending list, we don't need to request it again.
 	if (object_pending_set.has(p_object_id)) {
@@ -1231,6 +1257,12 @@ void DebugAdapterProtocol::on_debug_stack_dump(const Array &p_stack_dump) {
 	stackframe_list.clear();
 	scope_list.clear();
 
+	// The new stop retires every scope reference of the previous one, so an answer that
+	// is still outstanding for those references will never complete.
+	_remaining_vars = 0;
+	_awaited_frame_vars = -1;
+	_frame_vars_frame = -1;
+
 	// Fill in stacktrace information
 	for (int i = 0; i < p_stack_dump.size(); i++) {
 		Dictionary stack_info = p_stack_dump[i];
@@ -1258,9 +1290,23 @@ void DebugAdapterProtocol::on_debug_stack_dump(const Array &p_stack_dump) {
 }
 
 void DebugAdapterProtocol::on_debug_stack_frame_vars(const int &p_size) {
+	// The values belong to the frame the debugger asked for, which is not always the
+	// frame the client asked about most recently: a client is free to have several
+	// frames in flight at once.
+	_frame_vars_frame = EditorDebuggerNode::get_singleton()->get_default_debugger()->get_stack_frame_vars_frame();
+	if (_frame_vars_frame == _awaited_frame_vars) {
+		_awaited_frame_vars = -1;
+	}
+
+	// The values are still counted down even when they cannot be attributed, so a
+	// deferred `variables` request is never left waiting on a stale counter.
 	_remaining_vars = p_size;
-	ERR_FAIL_COND(!scope_list.has(_current_frame));
-	Vector<int> scope_ids = scope_list.find(_current_frame)->value;
+
+	if (!scope_list.has(_frame_vars_frame)) {
+		_frame_vars_frame = -1;
+		return;
+	}
+	Vector<int> scope_ids = scope_list.find(_frame_vars_frame)->value;
 	for (const int &var_id : scope_ids) {
 		if (variable_list.has(var_id)) {
 			variable_list.find(var_id)->value.clear();
@@ -1271,11 +1317,17 @@ void DebugAdapterProtocol::on_debug_stack_frame_vars(const int &p_size) {
 }
 
 void DebugAdapterProtocol::on_debug_stack_frame_var(const Array &p_data) {
+	if (_remaining_vars > 0) {
+		_remaining_vars--;
+	}
+	if (!scope_list.has(_frame_vars_frame)) {
+		return;
+	}
+
 	DebuggerMarshalls::ScriptStackVariable stack_var;
 	stack_var.deserialize(p_data);
 
-	ERR_FAIL_COND(!scope_list.has(_current_frame));
-	Vector<int> scope_ids = scope_list.find(_current_frame)->value;
+	Vector<int> scope_ids = scope_list.find(_frame_vars_frame)->value;
 
 	ERR_FAIL_COND(scope_ids.size() != 3);
 	ERR_FAIL_INDEX(stack_var.type, 4);
@@ -1289,7 +1341,6 @@ void DebugAdapterProtocol::on_debug_stack_frame_var(const Array &p_data) {
 	variable.variablesReference = parse_variant(stack_var.value);
 
 	variable_list.find(var_id)->value.push_back(variable.to_json());
-	_remaining_vars--;
 }
 
 void DebugAdapterProtocol::on_debug_data(const String &p_msg, const Array &p_data) {

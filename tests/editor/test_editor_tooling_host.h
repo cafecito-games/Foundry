@@ -1002,6 +1002,225 @@ TEST_CASE("[Editor][ToolingHost] A breakpoint exposes frame locals members and a
 	}
 }
 
+TEST_CASE("[Editor][ToolingHost] Scope references resolve while the frame's values are still pending") {
+	BreakpointHitSession session;
+	if (session.project_path.is_empty()) {
+		FAIL(("Failed to stage the breakpoint-hit project.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (!session.ready) {
+		FAIL(("The tooling host never accepted an initialized debug adapter session.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (session.client.await_event("initialized", 30000).is_empty()) {
+		FAIL(("The host never emitted `initialized`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	// Stopping inside the innermost fixture function keeps `_ready` on the stack as a
+	// frame whose values the debuggee has never been asked for.
+	const int inner_breakpoint_line = 17;
+	const String script_path = session.project_path.path_join("breakpoint_hit.fs").simplify_path();
+	Dictionary source;
+	source["path"] = script_path;
+	Dictionary breakpoint;
+	breakpoint["line"] = inner_breakpoint_line;
+	Array requested_breakpoints;
+	requested_breakpoints.push_back(breakpoint);
+	Dictionary set_breakpoints_arguments;
+	set_breakpoints_arguments["source"] = source;
+	set_breakpoints_arguments["breakpoints"] = requested_breakpoints;
+	if (!bool(session.client.await_response(
+					  session.client.send_request("setBreakpoints", set_breakpoints_arguments), 30000)
+					 .get("success", false))) {
+		FAIL(("setBreakpoints did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	Dictionary launch_arguments;
+	launch_arguments["noDebug"] = false;
+	launch_arguments["scene"] = "main";
+	const int launch_seq = session.client.send_request("launch", launch_arguments);
+	session.launch_started = true;
+	const int configuration_done_seq = session.client.send_request("configurationDone", Dictionary());
+	const Dictionary launch_response = session.client.await_response(launch_seq, 60000);
+	session.client.await_response(configuration_done_seq, 30000);
+	if (!bool(launch_response.get("success", false))) {
+		FAIL(("launch did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary process_event = session.client.await_event("process", 120000);
+	if (process_event.is_empty()) {
+		FAIL(("The debuggee never started.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	session.track_debuggee(process_event);
+	const Dictionary stopped_event = session.client.await_event("stopped", 120000);
+	if (stopped_event.is_empty()) {
+		FAIL(("The debuggee never stopped at the breakpoint.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int thread_id = Dictionary(stopped_event.get("body", Dictionary())).get("threadId", -1);
+
+	Dictionary stack_arguments;
+	stack_arguments["threadId"] = thread_id;
+	const Dictionary stack_response = session.client.await_response(
+			session.client.send_request("stackTrace", stack_arguments), 30000);
+	const Array frames = Dictionary(stack_response.get("body", Dictionary())).get("stackFrames", Array());
+	if (frames.size() < 3) {
+		FAIL(("stackTrace did not expose the nested frames down to `_ready`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary ready_frame = frames[2];
+	if (String(ready_frame.get("name", "")) != "_ready") {
+		FAIL(("The outermost stack frame was not `_ready`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const int inner_frame_id = Dictionary(frames[0]).get("id", -1);
+	const int outer_frame_id = Dictionary(frames[1]).get("id", -1);
+	const int ready_frame_id = ready_frame.get("id", -1);
+
+	// The three scope references of a frame, keyed by scope name.
+	auto request_scopes = [&session](int p_frame_id) {
+		Dictionary scopes_arguments;
+		scopes_arguments["frameId"] = p_frame_id;
+		return session.client.send_request("scopes", scopes_arguments);
+	};
+	auto collect_scope_references = [&session](int p_seq) {
+		Dictionary references;
+		const Dictionary response = session.client.await_response(p_seq, 30000);
+		if (!bool(response.get("success", false))) {
+			return references;
+		}
+		const Array scopes = Dictionary(response.get("body", Dictionary())).get("scopes", Array());
+		for (Dictionary scope : scopes) {
+			references[scope.get("name", "")] = int(scope.get("variablesReference", 0));
+		}
+		return references;
+	};
+	auto request_variables = [&session](int p_reference) {
+		Dictionary arguments;
+		arguments["variablesReference"] = p_reference;
+		return session.client.await_response(session.client.send_request("variables", arguments), 30000);
+	};
+	auto find_variable = [](const Array &p_variables, const String &p_name) {
+		for (Dictionary variable : p_variables) {
+			if (String(variable.get("name", "")) == p_name) {
+				return variable;
+			}
+		}
+		return Dictionary();
+	};
+
+	// The supported sequence: the references a successful `scopes` returned are used
+	// straight away, while the debuggee is still answering for that frame.
+	const Dictionary inner_references = collect_scope_references(request_scopes(inner_frame_id));
+	if (!inner_references.has("Locals") || !inner_references.has("Members") || !inner_references.has("Globals")) {
+		FAIL(("scopes did not expose Locals, Members, and Globals for the innermost frame.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	for (const Variant &scope_name : inner_references.keys()) {
+		const Dictionary response = request_variables(inner_references[scope_name]);
+		if (!bool(response.get("success", false))) {
+			FAIL(("An immediate `variables` request for the innermost frame's " + String(scope_name) +
+					" scope did not succeed.\n" + tooling_host_and_dap_diagnostic(session.host, session.client)));
+			return;
+		}
+	}
+
+	// Force the pending window rather than race for it: the three `scopes` requests are
+	// written back to back without waiting for any of them, so the debuggee cannot have
+	// answered for `_ready` before the adapter has moved on to the frames requested after
+	// it. `_ready`'s references are therefore unbacked when they are used below.
+	const int ready_scopes_seq = request_scopes(ready_frame_id);
+	const int outer_scopes_seq = request_scopes(outer_frame_id);
+	const int inner_scopes_seq = request_scopes(inner_frame_id);
+	const Dictionary ready_references = collect_scope_references(ready_scopes_seq);
+	collect_scope_references(outer_scopes_seq);
+	collect_scope_references(inner_scopes_seq);
+	if (!ready_references.has("Locals") || !ready_references.has("Members") || !ready_references.has("Globals")) {
+		FAIL(("scopes did not expose Locals, Members, and Globals for `_ready`.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	const int ready_locals_reference = ready_references["Locals"];
+	const int ready_members_reference = ready_references["Members"];
+	const int ready_globals_reference = ready_references["Globals"];
+	const Dictionary ready_locals_response = request_variables(ready_locals_reference);
+	if (!bool(ready_locals_response.get("success", false))) {
+		FAIL(("variables did not succeed for `_ready`'s Locals while its values were pending.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary local_value = find_variable(
+			Dictionary(ready_locals_response.get("body", Dictionary())).get("variables", Array()), "local_value");
+	if (String(local_value.get("value", "")) != "7") {
+		FAIL(("`_ready`'s Locals did not expose `local_value` with value 7.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	const Dictionary ready_members_response = request_variables(ready_members_reference);
+	if (!bool(ready_members_response.get("success", false))) {
+		FAIL(("variables did not succeed for `_ready`'s Members while its values were pending.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	const Dictionary member_value = find_variable(
+			Dictionary(ready_members_response.get("body", Dictionary())).get("variables", Array()), "member_value");
+	if (String(member_value.get("value", "")) != "35") {
+		FAIL(("`_ready`'s Members did not expose `member_value` with value 35.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	if (!bool(request_variables(ready_globals_reference).get("success", false))) {
+		FAIL(("variables did not succeed for `_ready`'s Globals while its values were pending.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	// The rest of the supported sequence still works against the same frame.
+	Dictionary evaluate_arguments;
+	evaluate_arguments["expression"] = "local_value + member_value";
+	evaluate_arguments["frameId"] = ready_frame_id;
+	const Dictionary evaluate_response = session.client.await_response(
+			session.client.send_request("evaluate", evaluate_arguments), 30000);
+	if (String(Dictionary(evaluate_response.get("body", Dictionary())).get("result", "")) != "42") {
+		FAIL(("evaluate against `_ready` did not return 42.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+
+	session.client.clear_events();
+	Dictionary continue_arguments;
+	continue_arguments["threadId"] = thread_id;
+	if (!bool(session.client.await_response(session.client.send_request("continue", continue_arguments), 30000)
+					 .get("success", false))) {
+		FAIL(("continue did not succeed.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	if (session.client.await_event("terminated", 120000).is_empty()) {
+		FAIL(("The debuggee never terminated.\n" +
+				tooling_host_and_dap_diagnostic(session.host, session.client)));
+		return;
+	}
+	session.debuggee_terminated = true;
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 0);
+}
+
 TEST_CASE("[Editor][ToolingHost] Stepping out of a nested call resumes in its caller") {
 	BreakpointHitSession session;
 	if (session.project_path.is_empty()) {
