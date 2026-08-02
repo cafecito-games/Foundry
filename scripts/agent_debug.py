@@ -47,8 +47,8 @@ def foundry_args(args: argparse.Namespace) -> list[str]:
     if not args.no_headless:
         command.append("--headless")
     command.extend(["test", "run"])
-    if args.test_case:
-        command.extend(["--case", args.test_case])
+    for case_filter in args.test_case or []:
+        command.extend(["--case", case_filter])
     command.append("--force-colors")
     command.extend(extra_args)
     return command
@@ -88,7 +88,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Launch GDB for the Linux Foundry binary with the usual test-runner arguments."
     )
-    parser.add_argument("--case", dest="test_case", help="Run a focused doctest case under GDB.")
+    parser.add_argument(
+        "--case",
+        dest="test_case",
+        action="append",
+        help=(
+            "Run a focused doctest case filter under GDB. Repeatable: every occurrence is "
+            "retained and forwarded, and the selected tests are the union of all supplied "
+            "patterns (matches any)."
+        ),
+    )
     parser.add_argument("--build-first", action="store_true", help="Build Foundry before launching GDB.")
     parser.add_argument(
         "--dev-build",
