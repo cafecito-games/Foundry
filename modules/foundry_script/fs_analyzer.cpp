@@ -7716,6 +7716,22 @@ bool FSAnalyzer::type_argument_satisfies_bound(const FSParser::DataType &p_argum
 	if (strict_null_checks && p_argument.is_nullable && !p_bound.is_nullable) {
 		return false;
 	}
+	// A class handle denotes a class, not values of it, so it never satisfies an instance-typed bound:
+	// generic code constrained by `T: Node` would otherwise be free to call Node instance methods on a
+	// value that is an `FSNativeClass`. A handle bound is satisfied only by a handle whose represented
+	// type satisfies the bound's represented type.
+	if (p_argument.is_type_handle_annotation != p_bound.is_type_handle_annotation) {
+		return false;
+	}
+	if (p_argument.is_type_handle_annotation) {
+		FSParser::DataType represented_argument = p_argument;
+		represented_argument.is_type_handle_annotation = false;
+		represented_argument.is_meta_type = false;
+		FSParser::DataType represented_bound = p_bound;
+		represented_bound.is_type_handle_annotation = false;
+		represented_bound.is_meta_type = false;
+		return type_argument_satisfies_bound(represented_argument, represented_bound);
+	}
 	// A trait bound is satisfied nominally: the argument must `use` the trait (directly, transitively,
 	// or through an ancestor), never reach it by inheritance. Route to the dedicated trait check rather
 	// than the derivation walk below, which would always reject a conforming `uses` class.
@@ -12743,7 +12759,11 @@ bool FSAnalyzer::make_type_handle_meta_type(const FSParser::DataType &p_represen
 				p_source);
 		return false;
 	}
-	if (p_represented_type.kind == FSParser::DataType::ENUM || p_represented_type.is_type_handle_annotation) {
+	// A tuple is a value shape erased to an Array, so a class handle for one cannot be represented:
+	// the reified descriptor would be an Array descriptor carrying a handle flag core only honors for
+	// objects, which would let any Array through the slot.
+	if (p_represented_type.kind == FSParser::DataType::ENUM || p_represented_type.kind == FSParser::DataType::TUPLE ||
+			p_represented_type.is_type_handle_annotation) {
 		push_error("Type[T] requires an object, script, class, trait, or type-parameter argument.", p_source);
 		return false;
 	}

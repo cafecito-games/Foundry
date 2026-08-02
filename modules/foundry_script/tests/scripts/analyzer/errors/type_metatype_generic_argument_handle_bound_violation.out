@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Type argument "Node" does not satisfy the bound "Type[Node]" of type parameter "T".
