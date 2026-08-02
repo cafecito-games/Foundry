@@ -1648,6 +1648,18 @@ String ResourceFormatSaverTextInstance::_write_resource(const Ref<Resource> &res
 	}
 }
 
+void ResourceFormatSaverTextInstance::_find_resources_in_container_type(const ContainerType &p_type) {
+	_find_resources(p_type.script);
+	for (const ContainerType &child_type : p_type.element_types) {
+		_find_resources_in_container_type(child_type);
+	}
+	// A script reachable only through a reified generic argument (the `Box` in `Array[Wrapper[Box]]`)
+	// is still a dependency of the saved resource.
+	for (const ContainerType &argument_type : p_type.type_arguments) {
+		_find_resources_in_container_type(argument_type);
+	}
+}
+
 void ResourceFormatSaverTextInstance::_find_resources(const Variant &p_variant, bool p_main) {
 	switch (p_variant.get_type()) {
 		case Variant::OBJECT: {
@@ -1715,7 +1727,7 @@ void ResourceFormatSaverTextInstance::_find_resources(const Variant &p_variant, 
 		} break;
 		case Variant::ARRAY: {
 			Array varray = p_variant;
-			_find_resources(varray.get_typed_script());
+			_find_resources_in_container_type(varray.get_element_type());
 			for (const Variant &var : varray) {
 				_find_resources(var);
 			}
@@ -1723,8 +1735,8 @@ void ResourceFormatSaverTextInstance::_find_resources(const Variant &p_variant, 
 		} break;
 		case Variant::DICTIONARY: {
 			Dictionary d = p_variant;
-			_find_resources(d.get_typed_key_script());
-			_find_resources(d.get_typed_value_script());
+			_find_resources_in_container_type(d.get_key_type());
+			_find_resources_in_container_type(d.get_value_type());
 			for (const KeyValue<Variant, Variant> &kv : d) {
 				// Of course keys should also be cached, after all we can't prevent users from using resources as keys, right?
 				// See also ResourceFormatSaverBinaryInstance::_find_resources (when p_variant is of type Variant::DICTIONARY)

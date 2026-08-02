@@ -34,6 +34,7 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/templates/rb_map.h"
+#include "core/variant/container_type_validate.h"
 #include "core/variant/variant_parser.h"
 #include "scene/resources/packed_scene.h"
 
@@ -199,6 +200,7 @@ class ResourceFormatSaverTextInstance {
 	};
 
 	void _find_resources(const Variant &p_variant, bool p_main = false);
+	void _find_resources_in_container_type(const ContainerType &p_type);
 
 	static String _write_resources(void *ud, const Ref<Resource> &p_resource);
 	String _write_resource(const Ref<Resource> &res);
