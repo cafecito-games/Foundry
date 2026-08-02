@@ -34,6 +34,7 @@
 #include "core/object/ref_counted.h"
 #include "core/object/script_language.h"
 #include "core/variant/container_type_validate.h"
+#include "core/variant/variant_internal.h"
 
 #include <climits>
 #include <cstdio>
@@ -379,10 +380,13 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 		} break;
 		case Variant::UINT: {
 			// The unsigned carrier always uses an explicit 8-byte payload; it never reuses INT's
-			// compact 32-bit encoding, so the wire tag alone preserves carrier identity.
+			// compact 32-bit encoding, so the wire tag alone preserves carrier identity. Assigning
+			// a bare `uint64_t` to `r_variant` would go through the `Variant(uint64_t)` constructor,
+			// which still selects `INT`, so the carrier is set explicitly instead.
 			ERR_FAIL_COND_V((size_t)len < sizeof(uint64_t), ERR_INVALID_DATA);
 			uint64_t val = decode_uint64(buf);
-			r_variant = val;
+			VariantInternal::set_type(r_variant, Variant::UINT);
+			*VariantInternal::get_uint(&r_variant) = val;
 			if (r_len) {
 				(*r_len) += sizeof(uint64_t);
 			}
