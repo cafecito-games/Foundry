@@ -53,6 +53,17 @@
       "super"
     ]
   },
+  "expression_leading_reserved_words": {
+    "$comment": "Reserved words that can begin an expression, and therefore a dictionary key. Every other reserved word introduces a statement or a declaration, so a physical line inside a dictionary that starts with one is a statement in a nested lambda body rather than a fresh dictionary entry. Used to build the `{{entry_boundary_guard}}` lookahead.",
+    "words": [
+      "await",
+      "func",
+      "not",
+      "preload",
+      "self",
+      "super"
+    ]
+  },
   "numeric_constants_scope": "constant.language.numeric.foundryscript",
   "literal_constants": {
     "$comment": "true/false/null are ordinary identifiers resolved during analysis, so they are deliberately absent from the tokenizer keyword table and are listed here instead. The drift check fails if any of them ever becomes a reserved word.",

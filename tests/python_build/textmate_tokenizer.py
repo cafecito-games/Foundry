@@ -163,9 +163,10 @@ class TextMateGrammar:
                 assign(position, end_match.start(), frame.scopes)
                 apply(end_match, frame.outer_scopes, frame.end_captures, None)
                 stack.pop()
-                # A zero-width `end` still makes progress: it pops a frame, and every
-                # `begin` consumes at least one character, so the frame cannot come back
-                # at the same offset.
+                # A zero-width `end` still makes progress: it pops a frame, and a block
+                # that could immediately re-open at the same offset would have to match
+                # its own `begin` where its `end` just matched, which `MAX_STEPS_PER_LINE`
+                # reports rather than looping on.
                 position = end_match.end()
                 continue
 
@@ -178,6 +179,8 @@ class TextMateGrammar:
             name = rule.get("name")
             if "match" in rule:
                 apply(match, frame.scopes, rule.get("captures"), name)
+                # A zero-width `match` would re-fire at the same offset forever.
+                position = match.end() if match.end() > match.start() else match.start() + 1
             else:
                 apply(match, frame.scopes, rule.get("beginCaptures"), name)
                 block = frame.scopes + ((name,) if name else ())
@@ -191,7 +194,9 @@ class TextMateGrammar:
                         patterns=self._expand(rule.get("patterns") or [], frozenset()),
                     )
                 )
-            position = match.end() if match.end() > match.start() else match.start() + 1
+                # A zero-width `begin` is a legal TextMate anchor: it opens its block
+                # without consuming input, and the block's own rules resume from here.
+                position = match.end()
         else:
             raise GrammarError(f"line {index} did not terminate: {line!r}")
 

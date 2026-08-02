@@ -100,6 +100,48 @@ class GenerationTests(unittest.TestCase):
         with self.assertRaises(builder.GrammarBuildError):
             builder.build_grammar((REPO_ROOT / "modules/foundry_script/fs_tokenizer.cpp").read_text(), inputs)
 
+    def test_an_expression_leading_word_the_tokenizer_does_not_reserve_is_a_generation_error(self) -> None:
+        inputs = builder.load_pattern_inputs(GRAMMAR_DIRECTORY / "patterns")
+        inputs["keyword_scopes.json"]["expression_leading_reserved_words"]["words"].append("definitely_not_reserved")
+        with self.assertRaises(builder.GrammarBuildError):
+            builder.build_grammar((REPO_ROOT / "modules/foundry_script/fs_tokenizer.cpp").read_text(), inputs)
+
+
+@unittest.skipUnless(ONIGURUMA_AVAILABLE, "onigurumacffi is required to evaluate TextMate patterns")
+class InterpreterTests(unittest.TestCase):
+    """The interpreter has to model the TextMate rule subset this grammar relies on."""
+
+    def test_a_zero_width_begin_anchor_keeps_the_character_it_anchors_to(self) -> None:
+        """`"begin": "(?=...)"` opens a block without consuming the text it looks ahead at."""
+
+        grammar = TextMateGrammar(
+            {
+                "scopeName": "source.test",
+                "patterns": [{"include": "#entry"}],
+                "repository": {
+                    "entry": {
+                        "name": "meta.entry.test",
+                        "begin": "(?=[^\\s;])",
+                        "end": ";",
+                        "patterns": [{"name": "keyword.test", "match": "\\bkeep\\b"}],
+                    }
+                },
+            }
+        )
+        scopes = grammar.scope_map("keep;")
+        self.assertIn("meta.entry.test", scopes[0])
+        self.assertIn("keyword.test", scopes[0])
+
+    def test_a_zero_width_match_rule_still_terminates_the_line(self) -> None:
+        grammar = TextMateGrammar(
+            {
+                "scopeName": "source.test",
+                "patterns": [{"name": "meta.anchor.test", "match": "(?=x)"}],
+                "repository": {},
+            }
+        )
+        self.assertEqual(len("xxx"), len(grammar.scope_map("xxx")))
+
 
 @unittest.skipUnless(ONIGURUMA_AVAILABLE, "onigurumacffi is required to evaluate TextMate patterns")
 class TokenizationTests(unittest.TestCase):
@@ -539,6 +581,86 @@ class TokenizationTests(unittest.TestCase):
         source = "var by_owner = {\n\towner.key: Node,\n\towner.key: int,\n}\n"
         self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
         self.assertNotScoped("int,", "entity.name.type.foundryscript", source=source)
+
+    def test_a_grouped_expression_dictionary_key_still_hides_a_type_shaped_value(self) -> None:
+        source = "var values = {\n\t(a + b): Node,\n\t(a + b): int,\n}\n"
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("int,", "entity.name.type.foundryscript", source=source)
+
+    def test_a_subscript_expression_dictionary_key_still_hides_a_type_shaped_value(self) -> None:
+        source = "var values = {\n\tentries[0]: Player,\n\tentries[index]: int,\n}\n"
+        self.assertNotScoped("Player,", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("int,", "entity.name.type.foundryscript", source=source)
+
+    def test_an_operator_expression_dictionary_key_still_hides_a_type_shaped_value(self) -> None:
+        source = "var values = {\n\tprefix + suffix: Node,\n\tcount * 2: float,\n}\n"
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("float,", "entity.name.type.foundryscript", source=source)
+
+    def test_general_expression_keys_hide_type_shaped_values_on_a_single_line(self) -> None:
+        source = "var values = {(a + b): Node, entries[0]: Player}\n"
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("Player}", "entity.name.type.foundryscript", source=source)
+
+    def test_punctuation_nested_inside_a_dictionary_key_does_not_end_the_key_early(self) -> None:
+        # The ',' inside the call and the ':' inside the lambda signature are both nested
+        # below the entry's own separator, so neither may terminate the key region.
+        source = (
+            "var values = {\n\tlookup[make(first, second)]: Node,\n\t(func(value: int) -> int: value): Player,\n}\n"
+        )
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("Player,", "entity.name.type.foundryscript", source=source)
+
+    def test_typed_statements_inside_a_lambda_body_in_a_dictionary_value_keep_type_scopes(self) -> None:
+        # Every statement in the lambda body starts its own physical line inside the
+        # dictionary; a statement is not an entry, so its own types must still scope.
+        source = (
+            "var factories = {\n"
+            '\t"build": func() -> Node:\n'
+            "\t\tvar result: Player = Player.new()\n"
+            "\t\tconst limit: int = 1\n"
+            "\t\treturn result,\n"
+            "}\n"
+        )
+        self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped(": int", "entity.name.type.foundryscript", offset=2, source=source)
+
+    def test_an_identifier_led_statement_in_a_lambda_body_does_not_reach_the_next_line(self) -> None:
+        # `result = compute()` has no ':' or ',' of its own, so an entry region opened on
+        # that line must close there instead of consuming the next line's declared type.
+        source = (
+            "var factories = {\n"
+            '\t"build": func() -> Node:\n'
+            "\t\tresult = compute()\n"
+            "\t\tvar typed: Player = Player.new()\n"
+            "\t\treturn result,\n"
+            "}\n"
+        )
+        self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
+
+    def test_an_annotated_typed_local_in_a_dictionary_lambda_keeps_its_type_scope(self) -> None:
+        source = (
+            "var factories = {\n"
+            '\t"build": func() -> Node:\n'
+            '\t\t@warning_ignore("unused") var result: Player = Player.new()\n'
+            "\t\treturn result,\n"
+            "}\n"
+        )
+        self.assertScoped(": Player", "entity.name.type.foundryscript", offset=2, source=source)
+
+    def test_a_key_continued_across_a_line_break_still_hides_its_type_shaped_value(self) -> None:
+        source = "var values = {\n\t(a\n\t+ b): Node,\n}\n"
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+
+    def test_a_lambda_key_still_opens_a_dictionary_entry(self) -> None:
+        # `func` can begin an expression, so it must remain a legal way to start a key.
+        source = "var values = {\n\tfunc(): Node,\n}\n"
+        self.assertNotScoped("Node,", "entity.name.type.foundryscript", source=source)
+
+    def test_a_constructor_call_after_a_general_expression_key_keeps_call_scope(self) -> None:
+        source = "var values = {(a + b): Vector2()}\n"
+        self.assertScoped("Vector2()", "entity.name.function.call.foundryscript", source=source)
+        self.assertNotScoped("Vector2()", "entity.name.type.foundryscript", source=source)
 
     def test_a_reassignment_inside_a_lambda_body_nested_in_a_dictionary_value_is_unaffected(self) -> None:
         # `result = Node.new()` on its own line has the exact same shape as a Lua-style
