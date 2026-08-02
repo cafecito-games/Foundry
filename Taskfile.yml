@@ -112,6 +112,11 @@ tasks:
         vars:
           BUILD_PROFILE: dev_mode
 
+  install:
+    desc: Build and install the current checkout as a local macOS Foundry.app.
+    cmds:
+      - scripts/install_local_editor.sh
+
   test:
     desc: Run the compiled C++ and Foundry Script test suite.
     cmds:

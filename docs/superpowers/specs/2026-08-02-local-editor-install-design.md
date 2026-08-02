@@ -13,20 +13,22 @@ for an ad-hoc local signature.
 
 ## Build flow
 
-The task invokes `python3 scripts/agent_build.py --backend ninja` and passes the existing SCons settings for macOS
-bundle generation and signing. This keeps the build on the repository's shared Ninja and ccache path without adding a
-second implementation of that configuration. The task uses the host CPU count unless `JOBS` is supplied.
+The task invokes `python3 scripts/agent_build.py --backend ninja`. This keeps compilation on the repository's shared
+Ninja and ccache path. The task uses the host CPU count unless `JOBS` is supplied.
 
 The wrapper remains responsible for prerequisite diagnostics, per-worktree Ninja state, ccache configuration, build
-logs, progress events, and the compiled editor result. SCons' existing macOS bundle builder remains responsible for
-assembling and signing `bin/Foundry.app`.
+logs, progress events, and the compiled editor result. The install script then reproduces the existing macOS bundle
+builder's packaging steps directly: copy the standard app template, render its version values, install the editor
+binary, and codesign it with the debug entitlements. This avoids SCons' delegated bundle action retraversing the
+entire engine graph from inside Ninja.
 
 ## Installation flow
 
-After a successful build, the task verifies that `bin/Foundry.app` exists. It copies the bundle to a temporary sibling
-inside the destination directory before replacing any installed `Foundry.app`, preventing a failed copy from damaging
-the current installation. Replacement removes stale files from older bundles. The task removes a quarantine attribute
-from the locally built copy when present and prints the final installed path.
+After a successful build, the task assembles and signs `Foundry.app` in a temporary directory under `bin/`. It copies
+the completed bundle to a temporary sibling inside the destination directory before replacing any installed
+`Foundry.app`, preventing a failed copy from damaging the current installation. Replacement removes stale files from
+older bundles. The task removes a quarantine attribute from the locally built copy when present and prints the final
+installed path.
 
 ## Failure handling
 
