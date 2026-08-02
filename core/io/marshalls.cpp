@@ -385,7 +385,7 @@ Error decode_variant(Variant &r_variant, const uint8_t *p_buffer, int p_len, int
 			// which still selects `INT`, so the carrier is set explicitly instead.
 			ERR_FAIL_COND_V((size_t)len < sizeof(uint64_t), ERR_INVALID_DATA);
 			uint64_t val = decode_uint64(buf);
-			VariantInternal::set_type(r_variant, Variant::UINT);
+			VariantInternal::initialize(&r_variant, Variant::UINT);
 			*VariantInternal::get_uint(&r_variant) = val;
 			if (r_len) {
 				(*r_len) += sizeof(uint64_t);

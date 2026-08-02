@@ -31,6 +31,7 @@
 #pragma once
 
 #include "core/io/marshalls.h"
+#include "core/object/ref_counted.h"
 #include "core/variant/container_type_validate.h"
 #include "core/variant/variant_internal.h"
 
@@ -422,6 +423,29 @@ TEST_CASE("[Marshalls][UInt] UINT Variant decoding rejects truncated payload") {
 	// and the destination Variant must remain untouched rather than holding a partial UINT value.
 	CHECK(r_len == 4);
 	CHECK(variant.get_type() == Variant::NIL);
+}
+
+TEST_CASE("[Marshalls][UInt] UINT decoding releases the destination's previous payload") {
+	Ref<RefCounted> ref = memnew(RefCounted);
+	ObjectID id = ref->get_instance_id();
+
+	Variant variant = ref;
+	ref.unref();
+	// Only the Variant holds a reference now.
+	CHECK(ObjectDB::get_instance(id) != nullptr);
+
+	int r_len;
+	uint8_t buffer[] = {
+		0x27, 0x00, 0x00, 0x00, // Variant::UINT
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff // value (UINT64_MAX)
+	};
+
+	CHECK(decode_variant(variant, buffer, 12, &r_len) == OK);
+	CHECK(variant.get_type() == Variant::UINT);
+	CHECK(variant.operator uint64_t() == UINT64_MAX);
+	// Decoding into a Variant that already owns a reference must release it, not overwrite the
+	// type while leaking the previous payload.
+	CHECK(ObjectDB::get_instance(id) == nullptr);
 }
 
 TEST_CASE("[Marshalls][UInt] Binary round trip preserves boundary values") {
