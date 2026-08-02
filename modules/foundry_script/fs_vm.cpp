@@ -231,11 +231,14 @@ static ContainerType _container_type_from_type_info(const Variant &p_type_info, 
 	return type;
 }
 
+// Returns the fully wrapped `Type[...]` display name for a class-handle-typed slot, ready to use
+// in a diagnostic without any further wrapping by the caller: `ContainerType::get_type_name()`
+// already renders the `Type[...]` wrapper once `is_type_handle` is threaded through the conversion.
 [[maybe_unused]] static String _get_type_handle_type_name(const FSDataType &p_expected_type, Script *p_base_type) {
 	if (!p_expected_type.type_arguments.is_empty()) {
 		return p_expected_type.to_container_type().get_type_name();
 	}
-	return FoundryScript::debug_get_script_name(Ref<Script>(p_base_type));
+	return "Type[" + FoundryScript::debug_get_script_name(Ref<Script>(p_base_type)) + "]";
 }
 
 static Script *_script_type_from_type_info(const Variant &p_type_info, FSDataType *r_type_handle = nullptr) {
@@ -2281,7 +2284,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (is_type_handle) {
 					if (!expected_handle_type.is_type(*src)) {
 						err_text = "Trying to assign value of type '" + _get_var_type(src) +
-								"' to a variable of type 'Type[" + _get_type_handle_type_name(expected_handle_type, base_type) + "]'.";
+								"' to a variable of type '" + _get_type_handle_type_name(expected_handle_type, base_type) + "'.";
 						OPCODE_BREAK;
 					}
 				} else if (is_trait_type && src->get_type() != Variant::OBJECT && src->get_type() != Variant::NIL) {
@@ -2382,6 +2385,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						const FSDataType expected_handle_type = FSDataType::from_type_handle_container_type(expected_type);
 						if (!expected_handle_type.is_type(value)) {
 #ifdef DEBUG_ENABLED
+							// `expected_type` is the reified argument's own (non-handle) descriptor; the slot's
+							// handle-ness lives only in `expected_is_type_handle`, so the wrapper is added here
+							// rather than expected from `expected_type.get_type_name()` itself.
 							err_text = vformat(R"(Trying to assign a value of type "%s" to a member of type "Type[%s]".)",
 									_get_var_type(src), expected_type.get_type_name());
 #endif // DEBUG_ENABLED
@@ -4147,7 +4153,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (is_type_handle) {
 					if (!expected_handle_type.is_type(*r)) {
 #ifdef DEBUG_ENABLED
-						err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "Type[%s]".)",
+						err_text = vformat(R"(Trying to return value of type "%s" from a function whose return type is "%s".)",
 								_get_var_type(r), _get_type_handle_type_name(expected_handle_type, base_type));
 #endif // DEBUG_ENABLED
 						OPCODE_BREAK;

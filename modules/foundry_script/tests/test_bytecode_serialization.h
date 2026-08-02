@@ -679,6 +679,54 @@ TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType round-trip") {
 	}
 }
 
+TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restores is_type_handle on nested element types and type arguments") {
+	FSDataType handle_element;
+	handle_element.kind = FSDataType::NATIVE;
+	handle_element.builtin_type = Variant::OBJECT;
+	handle_element.native_type = "Node";
+	handle_element.is_type_handle = true;
+
+	FSDataType instance_element;
+	instance_element.kind = FSDataType::NATIVE;
+	instance_element.builtin_type = Variant::OBJECT;
+	instance_element.native_type = "Node";
+
+	// Dictionary[Type[Node], Node]: two nested elements at the same depth with different flags.
+	FSDataType mixed_dictionary;
+	mixed_dictionary.kind = FSDataType::BUILTIN;
+	mixed_dictionary.builtin_type = Variant::DICTIONARY;
+	mixed_dictionary.set_container_element_type(0, handle_element);
+	mixed_dictionary.set_container_element_type(1, instance_element);
+
+	BytecodeTestResolver resolver;
+	const FSDataType decoded_dictionary = bytecode_round_trip_data_type(mixed_dictionary, &resolver);
+	CHECK(decoded_dictionary == mixed_dictionary);
+	REQUIRE(decoded_dictionary.container_element_types.size() == 2);
+	CHECK(decoded_dictionary.container_element_types[0].is_type_handle);
+	CHECK_FALSE(decoded_dictionary.container_element_types[1].is_type_handle);
+
+	// A type argument carrying the handle flag, nested inside another handle-typed node
+	// (`Type[Slot[Type[Factory]]]`), must also survive the round trip.
+	FSDataType handle_argument;
+	handle_argument.kind = FSDataType::NATIVE;
+	handle_argument.builtin_type = Variant::OBJECT;
+	handle_argument.native_type = "Factory";
+	handle_argument.is_type_handle = true;
+
+	FSDataType specialized_slot;
+	specialized_slot.kind = FSDataType::NATIVE;
+	specialized_slot.builtin_type = Variant::OBJECT;
+	specialized_slot.native_type = "Slot";
+	specialized_slot.is_type_handle = true;
+	specialized_slot.type_arguments.push_back(handle_argument);
+
+	const FSDataType decoded_slot = bytecode_round_trip_data_type(specialized_slot, &resolver);
+	CHECK(decoded_slot == specialized_slot);
+	CHECK(decoded_slot.is_type_handle);
+	REQUIRE(decoded_slot.type_arguments.size() == 1);
+	CHECK(decoded_slot.type_arguments[0].is_type_handle);
+}
+
 TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType script references serialize as path and fully qualified name") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"class Inner:\n"
