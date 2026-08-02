@@ -893,6 +893,15 @@ bool DebugAdapterProtocol::process_message(const String &p_text) {
 				completed = false;
 			}
 		}
+	} else {
+		// A request the adapter cannot service still owes the client a correlated
+		// response; dropping it silently leaves the client blocked until its own
+		// timeout. Only requests with no handler at all reach this branch, so the
+		// deferred completion of existing handlers is untouched.
+		Dictionary variables;
+		variables["command"] = params["command"];
+		Dictionary response = parser->prepare_error_response(params, DAP::ErrorType::UNSUPPORTED_REQUEST, variables);
+		_current_peer->res_queue.push_front(response);
 	}
 
 	reset_current_info();

@@ -57,6 +57,7 @@ void DebugAdapterParser::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("req_variables", "params"), &DebugAdapterParser::req_variables);
 	ClassDB::bind_method(D_METHOD("req_next", "params"), &DebugAdapterParser::req_next);
 	ClassDB::bind_method(D_METHOD("req_stepIn", "params"), &DebugAdapterParser::req_stepIn);
+	ClassDB::bind_method(D_METHOD("req_stepOut", "params"), &DebugAdapterParser::req_stepOut);
 	ClassDB::bind_method(D_METHOD("req_evaluate", "params"), &DebugAdapterParser::req_evaluate);
 	ClassDB::bind_method(D_METHOD("req_godot/put_msg", "params"), &DebugAdapterParser::req_godot_put_msg);
 }
@@ -112,6 +113,16 @@ Dictionary DebugAdapterParser::prepare_error_response(const Dictionary &p_params
 		case DAP::ErrorType::INVALID_LAUNCH:
 			error = "invalid_launch";
 			error_desc = "The launch configuration is not usable: {reason}";
+			break;
+		case DAP::ErrorType::UNSUPPORTED_REQUEST:
+			error = "unsupported_request";
+			error_desc = "Request '{command}' is not supported by this debug adapter.";
+			break;
+		case DAP::ErrorType::NOT_STOPPED:
+			// "notStopped" is the Debug Adapter Protocol's predefined short message for
+			// a request that requires a suspended debuggee.
+			error = "notStopped";
+			error_desc = "The debuggee is running, so it cannot service the '{command}' request.";
 			break;
 		case DAP::ErrorType::UNKNOWN:
 		default:
@@ -656,6 +667,25 @@ Dictionary DebugAdapterParser::req_next(const Dictionary &p_params) const {
 
 Dictionary DebugAdapterParser::req_stepIn(const Dictionary &p_params) const {
 	EditorDebuggerNode::get_singleton()->get_default_debugger()->debug_step();
+	DebugAdapterProtocol::get_singleton()->_stepping = true;
+
+	return prepare_success_response(p_params);
+}
+
+Dictionary DebugAdapterParser::req_stepOut(const Dictionary &p_params) const {
+	ScriptEditorDebugger *dbg = EditorDebuggerNode::get_singleton()->get_default_debugger();
+	if (!dbg->is_session_active()) {
+		return prepare_error_response(p_params, DAP::ErrorType::NOT_RUNNING);
+	}
+	// `debug_out()` asserts on a running debuggee, and marking the session as stepping
+	// before that check would misreport the next unrelated stop as a step.
+	if (!dbg->is_breaked()) {
+		Dictionary variables;
+		variables["command"] = p_params["command"];
+		return prepare_error_response(p_params, DAP::ErrorType::NOT_STOPPED, variables);
+	}
+
+	dbg->debug_out();
 	DebugAdapterProtocol::get_singleton()->_stepping = true;
 
 	return prepare_success_response(p_params);

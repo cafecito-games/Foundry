@@ -41,7 +41,9 @@ enum ErrorType {
 	TIMEOUT,
 	UNKNOWN_PLATFORM,
 	MISSING_DEVICE,
-	INVALID_LAUNCH
+	INVALID_LAUNCH,
+	UNSUPPORTED_REQUEST,
+	NOT_STOPPED
 };
 
 struct Checksum {
@@ -151,7 +153,9 @@ struct BreakpointLocation {
 struct Capabilities {
 	bool supportsConfigurationDoneRequest = true;
 	bool supportsEvaluateForHovers = true;
-	bool supportsSetVariable = true;
+	// The adapter has no runtime variable-mutation path, so set-variable stays
+	// unsupported until one exists; advertising it would strand clients.
+	bool supportsSetVariable = false;
 	String supportedChecksumAlgorithms[2] = { "MD5", "SHA256" };
 	bool supportsRestartRequest = true;
 	bool supportsValueFormattingOptions = true;
