@@ -1238,30 +1238,34 @@ static bool _decode_container_type_value(const Variant &p_value, ContainerType &
 			ERR_FAIL_COND_V_MSG(r_type.is_type_handle && r_type.builtin_type != Variant::OBJECT, false, vformat(R"("%s" is only valid for Object container types.)", TYPE_HANDLE));
 		}
 
+		// A written-out element type is what makes the container specialized, even when it spells
+		// `Variant`: `Array[Variant]` and a bare `Array` are different typings, and the encoder
+		// distinguishes them by writing the key or leaving it out. Gating on the decoded builtin type
+		// instead would collapse the two.
 		if (r_type.builtin_type == Variant::ARRAY) {
-			ContainerType element_type;
 			if (type_dict.has(ELEM_TYPE)) {
+				ContainerType element_type;
 				if (!_decode_container_type_value(type_dict[ELEM_TYPE], element_type, p_allow_objects)) {
 					return false;
 				}
-			}
-			if (element_type.builtin_type != Variant::NIL) {
 				r_type.element_types.push_back(element_type);
 			}
 		} else if (r_type.builtin_type == Variant::DICTIONARY) {
-			ContainerType key_type;
-			if (type_dict.has(KEY_TYPE)) {
-				if (!_decode_container_type_value(type_dict[KEY_TYPE], key_type, p_allow_objects)) {
-					return false;
+			if (type_dict.has(KEY_TYPE) || type_dict.has(VALUE_TYPE)) {
+				// A dictionary always carries both halves, so a descriptor naming only one leaves the
+				// other explicitly `Variant`.
+				ContainerType key_type;
+				if (type_dict.has(KEY_TYPE)) {
+					if (!_decode_container_type_value(type_dict[KEY_TYPE], key_type, p_allow_objects)) {
+						return false;
+					}
 				}
-			}
-			ContainerType value_type;
-			if (type_dict.has(VALUE_TYPE)) {
-				if (!_decode_container_type_value(type_dict[VALUE_TYPE], value_type, p_allow_objects)) {
-					return false;
+				ContainerType value_type;
+				if (type_dict.has(VALUE_TYPE)) {
+					if (!_decode_container_type_value(type_dict[VALUE_TYPE], value_type, p_allow_objects)) {
+						return false;
+					}
 				}
-			}
-			if (key_type.builtin_type != Variant::NIL || value_type.builtin_type != Variant::NIL) {
 				r_type.element_types.push_back(key_type);
 				r_type.element_types.push_back(value_type);
 			}
