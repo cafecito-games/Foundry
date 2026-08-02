@@ -168,6 +168,11 @@ String Variant::get_type_name(Variant::Type p_type) {
 		case PACKED_VECTOR4_ARRAY: {
 			return "PackedVector4Array";
 		}
+
+		// Unsigned carrier.
+		case UINT: {
+			return "uint";
+		}
 		default: {
 		}
 	}
@@ -892,6 +897,9 @@ bool Variant::is_zero() const {
 		case INT: {
 			return _data._int == 0;
 		}
+		case UINT: {
+			return _data._uint == 0;
+		}
 		case FLOAT: {
 			return _data._float == 0;
 		}
@@ -1025,6 +1033,9 @@ bool Variant::is_one() const {
 		case INT: {
 			return _data._int == 1;
 		}
+		case UINT: {
+			return _data._uint == 1;
+		}
 		case FLOAT: {
 			return _data._float == 1;
 		}
@@ -1151,6 +1162,9 @@ void Variant::reference(const Variant &p_variant) {
 		} break;
 		case INT: {
 			_data._int = p_variant._data._int;
+		} break;
+		case UINT: {
+			_data._uint = p_variant._data._uint;
 		} break;
 		case FLOAT: {
 			_data._float = p_variant._data._float;
@@ -1316,6 +1330,9 @@ void Variant::zero() {
 			break;
 		case INT:
 			_data._int = 0;
+			break;
+		case UINT:
+			_data._uint = 0;
 			break;
 		case FLOAT:
 			_data._float = 0;
@@ -1606,6 +1623,8 @@ String Variant::stringify(int recursion_count) const {
 			return _data._bool ? "true" : "false";
 		case INT:
 			return itos(_data._int);
+		case UINT:
+			return uitos(_data._uint);
 		case FLOAT:
 			return String::num_real(_data._float, true);
 		case STRING:
@@ -2336,6 +2355,10 @@ Variant::Variant(Math::int_alt_t p_int_alt) :
 	_data._int = p_int_alt;
 }
 
+// Unsigned C++ integers still select the signed carrier. Routing them to UINT requires the
+// conversion, operator, and persistence surfaces that later fixed-width-integer work adds; without
+// those, unsigned-typed native properties would reach binary/text serialization and mixed
+// signed/unsigned script operators with no defined behavior.
 Variant::Variant(uint64_t p_uint64) :
 		type(INT) {
 	_data._int = int64_t(p_uint64);
@@ -2676,6 +2699,9 @@ void Variant::operator=(const Variant &p_variant) {
 		case INT: {
 			_data._int = p_variant._data._int;
 		} break;
+		case UINT: {
+			_data._uint = p_variant._data._uint;
+		} break;
 		case FLOAT: {
 			_data._float = p_variant._data._float;
 		} break;
@@ -2865,6 +2891,9 @@ uint32_t Variant::recursive_hash(int recursion_count) const {
 		} break;
 		case INT: {
 			return hash_one_uint64((uint64_t)_data._int);
+		} break;
+		case UINT: {
+			return hash_one_uint64(_data._uint);
 		} break;
 		case FLOAT: {
 			return hash_murmur3_one_double(_data._float);
@@ -3234,6 +3263,10 @@ bool Variant::hash_compare(const Variant &p_variant, int recursion_count, bool s
 	switch (type) {
 		case INT: {
 			return _data._int == p_variant._data._int;
+		} break;
+
+		case UINT: {
+			return _data._uint == p_variant._data._uint;
 		} break;
 
 		case FLOAT: {

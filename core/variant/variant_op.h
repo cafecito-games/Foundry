@@ -1084,6 +1084,17 @@ public:
 	using ReturnType = bool;
 };
 
+class OperatorEvaluatorNotUInt : public CommonEvaluate<OperatorEvaluatorNotUInt> {
+public:
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VariantInternalAccessor<bool>::get(r_ret) = !*VariantInternal::get_uint(left);
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		PtrToArg<bool>::encode(!PtrToArg<uint64_t>::convert(left), r_ret);
+	}
+	using ReturnType = bool;
+};
+
 class OperatorEvaluatorNotFloat : public CommonEvaluate<OperatorEvaluatorNotFloat> {
 public:
 	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {

@@ -1174,6 +1174,9 @@ Variant JSON::_from_native(const Variant &p_variant, bool p_full_objects, int p_
 			RETURN_ARGS;
 		} break;
 
+		// The unsigned carrier has no JSON representation yet, so it falls through to the
+		// unhandled-type error below rather than silently degrading to a signed integer.
+		case Variant::UINT:
 		case Variant::VARIANT_MAX: {
 			// Nothing to do.
 		} break;
@@ -1700,6 +1703,7 @@ Variant JSON::_to_native(const Variant &p_json, bool p_allow_objects, int p_dept
 					return arr;
 				} break;
 
+				case Variant::UINT:
 				case Variant::VARIANT_MAX: {
 					// Nothing to do.
 				} break;

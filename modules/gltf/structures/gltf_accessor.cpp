@@ -466,6 +466,7 @@ int64_t GLTFAccessor::_get_numbers_per_variant_for_gltf(Variant::Type p_variant_
 			return 0; // Not supported.
 		case Variant::BOOL:
 		case Variant::INT:
+		case Variant::UINT:
 		case Variant::FLOAT:
 			return 1;
 		case Variant::VECTOR2:

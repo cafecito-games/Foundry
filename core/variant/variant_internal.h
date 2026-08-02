@@ -145,6 +145,8 @@ public:
 	_FORCE_INLINE_ static const bool *get_bool(const Variant *v) { return &v->_data._bool; }
 	_FORCE_INLINE_ static int64_t *get_int(Variant *v) { return &v->_data._int; }
 	_FORCE_INLINE_ static const int64_t *get_int(const Variant *v) { return &v->_data._int; }
+	_FORCE_INLINE_ static uint64_t *get_uint(Variant *v) { return &v->_data._uint; }
+	_FORCE_INLINE_ static const uint64_t *get_uint(const Variant *v) { return &v->_data._uint; }
 	_FORCE_INLINE_ static double *get_float(Variant *v) { return &v->_data._float; }
 	_FORCE_INLINE_ static const double *get_float(const Variant *v) { return &v->_data._float; }
 	_FORCE_INLINE_ static String *get_string(Variant *v) { return reinterpret_cast<String *>(v->_data._mem); }
@@ -382,6 +384,8 @@ public:
 				return get_bool(v);
 			case Variant::INT:
 				return get_int(v);
+			case Variant::UINT:
+				return get_uint(v);
 			case Variant::FLOAT:
 				return get_float(v);
 			case Variant::STRING:
@@ -468,6 +472,8 @@ public:
 				return get_bool(v);
 			case Variant::INT:
 				return get_int(v);
+			case Variant::UINT:
+				return get_uint(v);
 			case Variant::FLOAT:
 				return get_float(v);
 			case Variant::STRING:

@@ -41,6 +41,7 @@
 #include "core/templates/rid.h"
 #include "core/templates/rid_owner.h"
 #include "core/variant/binder_common.h"
+#include "core/variant/variant_internal.h"
 #include "core/variant/variant_parser.h"
 
 // Math
@@ -858,6 +859,12 @@ Variant VariantUtilityFunctions::type_convert(const Variant &p_variant, const Va
 			return p_variant.operator bool();
 		case Variant::Type::INT:
 			return p_variant.operator int64_t();
+		case Variant::Type::UINT: {
+			Variant converted;
+			VariantInternal::initialize(&converted, Variant::UINT);
+			*VariantInternal::get_uint(&converted) = p_variant.operator uint64_t();
+			return converted;
+		}
 		case Variant::Type::FLOAT:
 			return p_variant.operator double();
 		case Variant::Type::STRING:

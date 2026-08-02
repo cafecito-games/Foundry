@@ -325,6 +325,7 @@ uint32_t FSByteCodeGenerator::add_temporary(const FSDataType &p_type) {
 			case Variant::PACKED_VECTOR3_ARRAY:
 			case Variant::PACKED_COLOR_ARRAY:
 			case Variant::PACKED_VECTOR4_ARRAY:
+			case Variant::UINT:
 			case Variant::VARIANT_MAX:
 				// Arrays, dictionaries, and objects are reference counted, so we don't use the pool for them.
 				temp_type = Variant::NIL;
@@ -666,6 +667,7 @@ void FSByteCodeGenerator::write_type_adjust(const Address &p_target, Variant::Ty
 			append_opcode(FSFunction::OPCODE_TYPE_ADJUST_PACKED_VECTOR4_ARRAY);
 			break;
 		case Variant::NIL:
+		case Variant::UINT:
 		case Variant::VARIANT_MAX:
 			return;
 	}
