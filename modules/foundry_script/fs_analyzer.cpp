@@ -7691,6 +7691,23 @@ bool FSAnalyzer::type_argument_satisfies_bound(const FSParser::DataType &p_argum
 		bound.is_nullable = bound.is_nullable || p_bound.is_nullable;
 		return type_argument_satisfies_bound(p_argument, bound);
 	}
+	// A class handle denotes a class, not values of it, so it never satisfies an instance-typed bound:
+	// generic code constrained by `T: Node` would otherwise be free to call Node instance methods on a
+	// value that is an `FSNativeClass`. A handle bound is satisfied only by a handle whose represented
+	// type satisfies the bound's represented type. This runs before the argument's type-parameter
+	// unwrapping, which drops the wrapper: `Type[U]` has to be compared as a handle, not as `U`'s bound.
+	if (p_argument.is_type_handle_annotation != p_bound.is_type_handle_annotation) {
+		return false;
+	}
+	if (p_argument.is_type_handle_annotation) {
+		FSParser::DataType represented_argument = p_argument;
+		represented_argument.is_type_handle_annotation = false;
+		represented_argument.is_meta_type = false;
+		FSParser::DataType represented_bound = p_bound;
+		represented_bound.is_type_handle_annotation = false;
+		represented_bound.is_meta_type = false;
+		return type_argument_satisfies_bound(represented_argument, represented_bound);
+	}
 	if (p_argument.kind == FSParser::DataType::TYPE_PARAMETER) {
 		// A bare type parameter is erased to `Variant` at runtime, so it satisfies a concrete bound
 		// only when its own declared upper bound provably does. The same strict rules apply to that
@@ -7715,22 +7732,6 @@ bool FSAnalyzer::type_argument_satisfies_bound(const FSParser::DataType &p_argum
 	// the trait/generic/derivation walks, which ignore `is_nullable`.
 	if (strict_null_checks && p_argument.is_nullable && !p_bound.is_nullable) {
 		return false;
-	}
-	// A class handle denotes a class, not values of it, so it never satisfies an instance-typed bound:
-	// generic code constrained by `T: Node` would otherwise be free to call Node instance methods on a
-	// value that is an `FSNativeClass`. A handle bound is satisfied only by a handle whose represented
-	// type satisfies the bound's represented type.
-	if (p_argument.is_type_handle_annotation != p_bound.is_type_handle_annotation) {
-		return false;
-	}
-	if (p_argument.is_type_handle_annotation) {
-		FSParser::DataType represented_argument = p_argument;
-		represented_argument.is_type_handle_annotation = false;
-		represented_argument.is_meta_type = false;
-		FSParser::DataType represented_bound = p_bound;
-		represented_bound.is_type_handle_annotation = false;
-		represented_bound.is_meta_type = false;
-		return type_argument_satisfies_bound(represented_argument, represented_bound);
 	}
 	// A trait bound is satisfied nominally: the argument must `use` the trait (directly, transitively,
 	// or through an ancestor), never reach it by inheritance. Route to the dedicated trait check rather

@@ -4305,7 +4305,10 @@ void FSCompiler::_specialize_type_argument_binding(FoundryScript::TypeArgumentBi
 		return; // Base not specialized at this ordinal (e.g. raw `extends Base`); leave open.
 	}
 	const FSParser::DataType &argument = p_base_specialization[base_ordinal];
-	if (argument.kind == FSParser::DataType::TYPE_PARAMETER &&
+	// A handle-wrapped parameter (`extends Slot[Type[U]]`) is not a plain forward of `U`: the leaf
+	// reifies `U` as an instance type, so reusing its ordinal would validate the inherited member
+	// against instances of `U` instead of class handles for it.
+	if (argument.kind == FSParser::DataType::TYPE_PARAMETER && !argument.is_type_handle_annotation &&
 			argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
 		r_binding.leaf_ordinal = argument.type_parameter_index; // Forwarded to this class's parameter.
 	} else {
