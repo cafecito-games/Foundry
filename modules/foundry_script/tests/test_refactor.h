@@ -5362,6 +5362,24 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			CHECK_FALSE(out.contains("Type[User]"));
 			CHECK_FALSE(out.contains(": User"));
 		}
+		SUBCASE("class referenced inside nested Type[T] annotations") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/nested_type_metatype_rename.fs", 0, 6, "Client", out); // caret on `User` class
+			REQUIRE(r.ok);
+			CHECK(out.contains("class Client:"));
+			CHECK(out.contains("signal registered(name: String, factory: Type[Client])"));
+			CHECK(out.contains("var handles: Array[Type[Client]] = []"));
+			CHECK(out.contains("var registry: Dictionary[String, Type[Client]] = {}"));
+			CHECK(out.contains("var grouped: Array[Dictionary[String, Type[Client]]] = []"));
+			CHECK(out.contains("var slot: Slot[Type[Client]] = Slot[Type[Client]].new()"));
+			CHECK(out.contains("var construct: Callable[[Type[Client]], Client]"));
+			CHECK(out.contains("func lookup(name: String) -> Type[Client]:"));
+			CHECK_FALSE(out.contains("Type[User]"));
+
+			// An enum constant that merely shares the spelling is a different symbol.
+			CHECK(out.contains("\tUser = 0"));
+			CHECK(out.contains("var kind: Kind = Kind.User"));
+		}
 		SUBCASE("strings and comments untouched") {
 			String out;
 			RefactorResult r = run_rename("res://refactor/rename_strings_comments.fs", 3, 5, "sum", out); // caret on `total`
