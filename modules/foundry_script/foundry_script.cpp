@@ -174,7 +174,10 @@ Variant FSSpecializedClassHandle::callp(const StringName &p_method, const Varian
 		return RefCounted::callp(p_method, p_args, p_argcount, r_error);
 	}
 	if (script.is_valid()) {
-		Variant ret = script->callp(p_method, p_args, p_argcount, r_error);
+		// The receiver is the specialization, not the bare script, so the concrete type arguments stay
+		// with the call.
+		Variant ret = script->call_static_with_context(p_method, p_args, p_argcount, r_error,
+				FSStaticSelfContext::for_specialized_script(script, type_arguments));
 		if (r_error.error != Callable::CallError::CALL_ERROR_INVALID_METHOD) {
 			return ret;
 		}
@@ -404,7 +407,10 @@ Variant FSNativeClass::callp(const StringName &p_method, const Variant **p_args,
 	// declared on a base class answers for a subclass as well.
 	FSFunction *witness = FSConformanceRegistry::get_singleton()->find_native_witness_function(name, p_method);
 	if (witness != nullptr && witness->is_static()) {
-		return witness->call(nullptr, p_args, p_argcount, r_error);
+		// The witness may be declared on a native ancestor; the frame is still told the exact class
+		// handle the call was made through.
+		const FSStaticSelfContext static_self = FSStaticSelfContext::for_native_class(name);
+		return witness->call(nullptr, p_args, p_argcount, r_error, nullptr, nullptr, &static_self);
 	}
 
 	r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
@@ -1019,7 +1025,8 @@ String FoundryScript::_get_debug_path() const {
 Error FoundryScript::_static_init() {
 	if (likely(valid) && static_initializer) {
 		Callable::CallError call_err;
-		static_initializer->call(nullptr, nullptr, 0, call_err);
+		const FSStaticSelfContext static_self = FSStaticSelfContext::for_script(Ref<Script>(this));
+		static_initializer->call(nullptr, nullptr, 0, call_err, nullptr, nullptr, &static_self);
 		if (call_err.error != Callable::CallError::CALL_OK) {
 			return ERR_CANT_CREATE;
 		}
@@ -1460,6 +1467,14 @@ void FoundryScript::unload_static() const {
 }
 
 Variant FoundryScript::callp(const StringName &p_method, const Variant **p_args, int p_argcount, Callable::CallError &r_error) {
+	// The call began on this script handle, even when lookup below walks a base script to find the
+	// implementation.
+	return call_static_with_context(p_method, p_args, p_argcount, r_error,
+			FSStaticSelfContext::for_script(Ref<Script>(this)));
+}
+
+Variant FoundryScript::call_static_with_context(const StringName &p_method, const Variant **p_args, int p_argcount,
+		Callable::CallError &r_error, const FSStaticSelfContext &p_static_self) {
 	FoundryScript *top = this;
 	while (top) {
 		if (likely(top->valid)) {
@@ -1467,7 +1482,7 @@ Variant FoundryScript::callp(const StringName &p_method, const Variant **p_args,
 			if (E) {
 				ERR_FAIL_COND_V_MSG(!E->value->is_static(), Variant(), "Can't call non-static function '" + String(p_method) + "' in script.");
 
-				return E->value->call(nullptr, p_args, p_argcount, r_error);
+				return E->value->call(nullptr, p_args, p_argcount, r_error, nullptr, nullptr, &p_static_self);
 			}
 		}
 		top = top->base.ptr();
@@ -1497,7 +1512,7 @@ Variant FoundryScript::callp(const StringName &p_method, const Variant **p_args,
 		FSFunction *witness = registry->find_witness_function_for_target(cursor, p_method);
 		if (witness != nullptr && witness->is_static()) {
 			r_error.error = Callable::CallError::CALL_OK;
-			return witness->call(nullptr, p_args, p_argcount, r_error);
+			return witness->call(nullptr, p_args, p_argcount, r_error, nullptr, nullptr, &p_static_self);
 		}
 	}
 

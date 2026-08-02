@@ -376,6 +376,56 @@ public:
 	~FSDataType() {}
 };
 
+// The exact class handle a static call was made through, delivered to the frame it starts.
+//
+// Static dispatch may select an implementation declared on an ancestor, on a retroactive-conformance
+// target, or in an unrelated file. This descriptor records the receiver the call actually began on, so
+// a frame can tell `Derived.make()` from `Base.make()` even though both execute the same compiled
+// function. It is distinct from instance `self` (absent in a static call) and from the conformance
+// target used to validate a witness declaration.
+//
+// Every field is a value owned by one invocation. Nothing here aliases mutable `FSFunction`, AST,
+// constant-pool, or bytecode state, so the same inherited function can execute concurrently through
+// different receivers without any shared write.
+class FSStaticSelfContext {
+public:
+	enum Kind {
+		NONE,
+		NATIVE_CLASS,
+		SCRIPT,
+		BUILTIN_TYPE,
+	};
+
+private:
+	Kind kind = NONE;
+	StringName native_class;
+	Ref<Script> script;
+	// Concrete arguments of a specialized generic receiver, e.g. the `ImageTexture` of
+	// `Crate[ImageTexture]`. Empty for an unspecialized script receiver.
+	Vector<ContainerType> type_arguments;
+	Variant::Type builtin_type = Variant::NIL;
+
+public:
+	static FSStaticSelfContext for_native_class(const StringName &p_class_name);
+	static FSStaticSelfContext for_script(const Ref<Script> &p_script);
+	static FSStaticSelfContext for_specialized_script(const Ref<Script> &p_script, const Vector<ContainerType> &p_type_arguments);
+	static FSStaticSelfContext for_builtin_type(Variant::Type p_builtin_type);
+
+	_FORCE_INLINE_ Kind get_kind() const { return kind; }
+	_FORCE_INLINE_ bool is_valid() const { return kind != NONE; }
+	_FORCE_INLINE_ const StringName &get_native_class() const { return native_class; }
+	_FORCE_INLINE_ const Ref<Script> &get_script() const { return script; }
+	_FORCE_INLINE_ const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
+	_FORCE_INLINE_ Variant::Type get_builtin_type() const { return builtin_type; }
+
+	bool operator==(const FSStaticSelfContext &p_other) const;
+	_FORCE_INLINE_ bool operator!=(const FSStaticSelfContext &p_other) const { return !(*this == p_other); }
+
+	// Human-readable receiver name, used by runtime diagnostics that must name the exact
+	// specialization a call was made through.
+	String get_type_name() const;
+};
+
 class FSFunction {
 public:
 	// Set on the builtin-type operand of OPCODE_ASSIGN_TYPED_BUILTIN / OPCODE_RETURN_TYPED_BUILTIN to mark
@@ -798,6 +848,24 @@ private:
 	uint8_t unresolved_reflection_kinds = REFLECTION_NONE;
 #endif // TOOLS_ENABLED
 
+	static thread_local const FSStaticSelfContext *_current_static_self_context;
+
+	// Scoped installation of the running frame's static receiver descriptor. Restores the caller's
+	// descriptor on every exit path, including the one that suspends the frame into an
+	// `FSFunctionState`.
+	struct StaticSelfContextGuard {
+		const FSStaticSelfContext *previous = nullptr;
+
+		explicit StaticSelfContextGuard(const FSStaticSelfContext *p_context) :
+				previous(_current_static_self_context) {
+			_current_static_self_context = p_context;
+		}
+		~StaticSelfContextGuard() { _current_static_self_context = previous; }
+
+		StaticSelfContextGuard(const StaticSelfContextGuard &) = delete;
+		StaticSelfContextGuard &operator=(const StaticSelfContextGuard &) = delete;
+	};
+
 	String _get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const;
 	String _get_callable_call_error(const String &p_where, const Callable &p_callable, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const;
 	Variant _get_default_variant_for_data_type(const FSDataType &p_data_type);
@@ -819,6 +887,9 @@ public:
 		// await. Keep its explicit receiver alongside the copied non-reserved stack until resume.
 		Variant self_override;
 		bool has_self_override = false;
+		// The receiver the suspended static call began on. Retained so a resumed frame cannot come
+		// back with an absent or different specialization.
+		FSStaticSelfContext static_self;
 		int ip = 0;
 		int line = 0;
 		int defarg = 0;
@@ -866,7 +937,16 @@ public:
 	_FORCE_INLINE_ int get_instruction_args_size() const { return _instruction_args_size; }
 #endif // TOOLS_ENABLED
 
-	Variant call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr, const Variant *p_self_override = nullptr);
+	// `p_static_self` describes the exact class handle a static call was made through. The pointed-to
+	// descriptor must outlive the call; the frame only borrows it, and copies it into `CallState` if
+	// the call suspends.
+	Variant call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state = nullptr, const Variant *p_self_override = nullptr, const FSStaticSelfContext *p_static_self = nullptr);
+
+	// The static receiver descriptor of the innermost script frame executing on this thread, or
+	// `nullptr` when the innermost frame is not a static call (or no frame is running). Each frame
+	// owns its own descriptor, so nested and concurrent calls never observe each other's.
+	static const FSStaticSelfContext *get_current_static_self_context();
+
 	// Dispatches a retroactive-conformance witness on a receiver that has no FSInstance (a native engine
 	// object or, later, a builtin value). The witness was compiled against the target's surface, so
 	// `self` is bound to `p_self` and member access rides the native/builtin access opcodes; no FS member

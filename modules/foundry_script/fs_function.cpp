@@ -146,6 +146,96 @@ FSDataType FSDataType::from_container_type(const ContainerType &p_container_type
 	return _gdtype_from_container_type(p_container_type);
 }
 
+FSStaticSelfContext FSStaticSelfContext::for_native_class(const StringName &p_class_name) {
+	FSStaticSelfContext context;
+	if (p_class_name == StringName()) {
+		return context;
+	}
+	context.kind = NATIVE_CLASS;
+	context.native_class = p_class_name;
+	return context;
+}
+
+FSStaticSelfContext FSStaticSelfContext::for_script(const Ref<Script> &p_script) {
+	FSStaticSelfContext context;
+	if (p_script.is_null()) {
+		return context;
+	}
+	context.kind = SCRIPT;
+	context.script = p_script;
+	return context;
+}
+
+FSStaticSelfContext FSStaticSelfContext::for_specialized_script(const Ref<Script> &p_script, const Vector<ContainerType> &p_type_arguments) {
+	FSStaticSelfContext context = for_script(p_script);
+	if (context.kind == SCRIPT) {
+		context.type_arguments = p_type_arguments;
+	}
+	return context;
+}
+
+FSStaticSelfContext FSStaticSelfContext::for_builtin_type(Variant::Type p_builtin_type) {
+	FSStaticSelfContext context;
+	if (p_builtin_type == Variant::NIL || p_builtin_type >= Variant::VARIANT_MAX) {
+		return context;
+	}
+	context.kind = BUILTIN_TYPE;
+	context.builtin_type = p_builtin_type;
+	return context;
+}
+
+bool FSStaticSelfContext::operator==(const FSStaticSelfContext &p_other) const {
+	if (kind != p_other.kind) {
+		return false;
+	}
+	switch (kind) {
+		case NONE:
+			return true;
+		case NATIVE_CLASS:
+			return native_class == p_other.native_class;
+		case BUILTIN_TYPE:
+			return builtin_type == p_other.builtin_type;
+		case SCRIPT: {
+			if (script != p_other.script || type_arguments.size() != p_other.type_arguments.size()) {
+				return false;
+			}
+			for (int i = 0; i < type_arguments.size(); i++) {
+				if (type_arguments[i] != p_other.type_arguments[i]) {
+					return false;
+				}
+			}
+			return true;
+		}
+	}
+	return false;
+}
+
+String FSStaticSelfContext::get_type_name() const {
+	switch (kind) {
+		case NONE:
+			return "<no static receiver>";
+		case NATIVE_CLASS:
+			return String(native_class);
+		case BUILTIN_TYPE:
+			return Variant::get_type_name(builtin_type);
+		case SCRIPT: {
+			ContainerType type;
+			type.builtin_type = Variant::OBJECT;
+			type.class_name = script.is_valid() ? script->get_instance_base_type() : StringName();
+			type.script = script;
+			type.type_arguments = type_arguments;
+			return type.get_type_name();
+		}
+	}
+	return "<no static receiver>";
+}
+
+thread_local const FSStaticSelfContext *FSFunction::_current_static_self_context = nullptr;
+
+const FSStaticSelfContext *FSFunction::get_current_static_self_context() {
+	return _current_static_self_context;
+}
+
 Variant FSFunction::get_constant(int p_idx) const {
 	ERR_FAIL_INDEX_V(p_idx, constants.size(), "<errconst>");
 	return constants[p_idx];
