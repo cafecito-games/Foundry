@@ -516,7 +516,11 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 	}
 	if (!erases_container_element) {
 		for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
-			FSDataType element_type = _gdtype_from_datatype(p_datatype.get_container_element_type_or_variant(i), p_owner, false);
+			const FSParser::DataType element_datatype = p_datatype.get_container_element_type_or_variant(i);
+			// A nested `Type[T]` element keeps its class-handle descriptor so the runtime enforces the
+			// same rule top-level `Type[T]` uses. A nested plain metatype still erases to its class
+			// object, matching how metatypes are treated outside a container slot.
+			FSDataType element_type = _gdtype_from_datatype(element_datatype, p_owner, element_datatype.is_type_handle_annotation);
 			if (element_type.is_nullable) {
 				// Core typed containers cannot hold null elements, so a nullable element type becomes an
 				// untyped element. The analyzer still enforces element types statically.

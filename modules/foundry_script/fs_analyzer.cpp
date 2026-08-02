@@ -1505,6 +1505,31 @@ static String _make_type_handle_assignment_error(
 			expected_represented_type);
 }
 
+// Describes why a collection literal element does not satisfy a nested `Type[T]` slot, naming both the
+// container and the nested target so the reader can tell which of the two expectations failed.
+static String _make_type_handle_container_element_error(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_actual_type,
+		const FSParser::Node *p_actual_node,
+		const String &p_slot_description,
+		const String &p_container_type_name) {
+	const String expected_represented_type = type_handle_represented_type(p_expected_type).to_string();
+	if (_type_handle_source_is_handle(p_actual_type)) {
+		const String actual_represented_type = _type_handle_represented_type_name(p_actual_type, p_actual_node);
+		return vformat(R"(Cannot use class handle "%s" as %s of "%s"; handle represents "%s", which is not compatible with "%s".)",
+				actual_represented_type,
+				p_slot_description,
+				p_container_type_name,
+				actual_represented_type,
+				expected_represented_type);
+	}
+	return vformat(R"(Cannot use instance value of type "%s" as %s of "%s"; expected a class handle whose represented instance type is "%s".)",
+			p_actual_type.to_string(),
+			p_slot_description,
+			p_container_type_name,
+			expected_represented_type);
+}
+
 static String _make_type_handle_argument_error(
 		const StringName &p_function,
 		int p_argument_number,
@@ -1901,9 +1926,6 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			}
 			if (builtin_type == Variant::ARRAY) {
 				FSParser::DataType container_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
-				if (reject_nested_type_handle(container_type, p_type->get_container_type_or_null(0))) {
-					return bad_type;
-				}
 				if (container_type.kind != FSParser::DataType::VARIANT) {
 					container_type.is_constant = false;
 					result.set_container_element_type(0, container_type);
@@ -1911,17 +1933,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			}
 			if (builtin_type == Variant::DICTIONARY) {
 				FSParser::DataType key_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
-				if (reject_nested_type_handle(key_type, p_type->get_container_type_or_null(0))) {
-					return bad_type;
-				}
 				if (key_type.kind != FSParser::DataType::VARIANT) {
 					key_type.is_constant = false;
 					result.set_container_element_type(0, key_type);
 				}
 				FSParser::DataType value_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(1)));
-				if (reject_nested_type_handle(value_type, p_type->get_container_type_or_null(1))) {
-					return bad_type;
-				}
 				if (value_type.kind != FSParser::DataType::VARIANT) {
 					value_type.is_constant = false;
 					result.set_container_element_type(1, value_type);
@@ -5251,6 +5267,14 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 			continue;
 		}
 		if (!is_type_compatible(expected_type, actual_type, true, p_array)) {
+			if (expected_type.is_type_handle_annotation) {
+				// Every class handle erases to the same handle object at runtime, so the reverse check
+				// below would report an unrelated handle as merely unsafe instead of rejecting it.
+				push_error(_make_type_handle_container_element_error(expected_type, actual_type, element_node,
+								   "an element", vformat("Array[%s]", expected_type.to_string())),
+						element_node);
+				return;
+			}
 			if (is_type_compatible(actual_type, expected_type)) {
 				mark_node_unsafe(element_node);
 				continue;
@@ -5325,6 +5349,12 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				return;
 			}
 		} else if (!is_type_compatible(expected_key_type, actual_key_type, true, p_dictionary)) {
+			if (expected_key_type.is_type_handle_annotation) {
+				push_error(_make_type_handle_container_element_error(expected_key_type, actual_key_type, key_element_node,
+								   "a key", vformat("Dictionary[%s, %s]", expected_key_type.to_string(), expected_value_type.to_string())),
+						key_element_node);
+				return;
+			}
 			if (is_type_compatible(actual_key_type, expected_key_type)) {
 				mark_node_unsafe(key_element_node);
 			} else {
@@ -5380,6 +5410,12 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				return;
 			}
 		} else if (!is_type_compatible(expected_value_type, actual_value_type, true, p_dictionary)) {
+			if (expected_value_type.is_type_handle_annotation) {
+				push_error(_make_type_handle_container_element_error(expected_value_type, actual_value_type, value_element_node,
+								   "a value", vformat("Dictionary[%s, %s]", expected_key_type.to_string(), expected_value_type.to_string())),
+						value_element_node);
+				return;
+			}
 			if (is_type_compatible(actual_value_type, expected_value_type)) {
 				mark_node_unsafe(value_element_node);
 			} else {
@@ -10693,6 +10729,13 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 									// concretely-keyed dictionary (`Dictionary[int, String]`) indexed by an unrelated
 									// type parameter is still checked below.
 									if (_signature_type_involves_type_parameter(key_type)) {
+										break;
+									}
+									if (key_type.is_type_handle_annotation) {
+										// A `Type[T]` key expects a class handle, so the index is compared with the
+										// class-handle rule. `can_reference()` below rejects every metatype index
+										// outright, which would leave a handle-keyed dictionary unindexable.
+										error = !is_type_compatible(key_type, index_type, false, p_subscript->index);
 										break;
 									}
 									switch (index_type.builtin_type) {

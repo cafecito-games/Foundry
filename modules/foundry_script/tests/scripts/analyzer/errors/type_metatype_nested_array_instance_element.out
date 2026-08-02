@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 1: Cannot use instance value of type "Node" as an element of "Array[Type[Node]]"; expected a class handle whose represented instance type is "Node".

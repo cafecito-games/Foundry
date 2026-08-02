@@ -61,6 +61,13 @@ static String _get_element_type(const ContainerType &p_type) {
 		const String value = p_type.element_types.size() > 1 ? _get_element_type(p_type.element_types[1]) : String("Variant");
 		return vformat("Dictionary[%s, %s]", key, value);
 	}
+	if (p_type.is_type_handle) {
+		// A class-handle slot must not be reported as its represented instance type: `Array[Node]`
+		// for an `Array[Type[Node]]` describes the wrong expectation to the reader.
+		ContainerType represented_type = p_type;
+		represented_type.is_type_handle = false;
+		return vformat("Type[%s]", _get_element_type(represented_type));
+	}
 	if (p_type.script.is_valid() && p_type.script->is_valid()) {
 		return FoundryScript::debug_get_script_name(p_type.script);
 	}
@@ -182,6 +189,9 @@ static ContainerType _container_type_from_descriptor(const Variant &p_descriptor
 	type.class_name = descriptor.get("native_type", StringName());
 	Ref<Script> script = descriptor.get("script_type", Variant());
 	type.script = script;
+	// A `Type[T]` node tests class handles rather than instances at every nesting depth, so the flag
+	// is read back per node instead of only at the descriptor root.
+	type.is_type_handle = descriptor.get("is_type_handle", false);
 
 	Array element_types = descriptor.get("element_types", Array());
 	for (int i = 0; i < element_types.size(); i++) {

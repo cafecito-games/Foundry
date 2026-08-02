@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 1: Cannot use class handle "Resource" as an element of "Array[Type[Node]]"; handle represents "Resource", which is not compatible with "Node".
