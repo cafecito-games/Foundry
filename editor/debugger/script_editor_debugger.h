@@ -172,6 +172,12 @@ private:
 
 	uint64_t debugging_thread_id = Thread::UNASSIGNED_ID;
 
+	// The debuggee answers `get_stack_frame_vars` in the order it was asked, and its
+	// answer does not name a frame, so the frames still waiting for one are queued here
+	// to keep arriving values attributable to the frame they were requested for.
+	List<int> requested_stack_frames;
+	int stack_frame_vars_frame = -1;
+
 	struct ThreadDebugged {
 		String name;
 		String error;
@@ -349,6 +355,9 @@ public:
 	int get_stack_script_frame() const;
 
 	bool request_stack_dump(const int &p_frame);
+	// The stack frame the values reported by the current `stack_frame_vars` and
+	// `stack_frame_var` signals belong to, or `-1` when they answer no known request.
+	int get_stack_frame_vars_frame() const { return stack_frame_vars_frame; }
 
 	void update_tabs();
 	void clear_style();

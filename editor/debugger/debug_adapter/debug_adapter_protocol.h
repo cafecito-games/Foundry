@@ -110,6 +110,13 @@ private:
 	void parse_evaluation(DebuggerMarshalls::ScriptStackVariable &p_var);
 
 	ObjectID search_object_id(DAPVarID p_var_id);
+	// The stack frame owning `p_var_id` as one of its scope references, or `-1` when the
+	// reference does not name a scope.
+	DAPStackFrameID search_scope_frame_id(DAPVarID p_var_id) const;
+	// Asks the debuggee for the values of `p_frame_id` and marks them as pending, so a
+	// `variables` request naming one of that frame's scope references can be deferred
+	// until the values arrive. Returns false when the debuggee cannot service it.
+	bool request_stack_frame_vars(DAPStackFrameID p_frame_id);
 	bool request_remote_object(const ObjectID &p_object_id);
 	bool request_remote_evaluate(const String &p_eval, int p_stack_frame);
 
@@ -129,6 +136,14 @@ private:
 	bool _debug_session_live = false;
 	uint64_t _active_launch_id = 0;
 	int _remaining_vars = 0;
+	// Every frame this adapter has an unanswered value request for. The scope references
+	// `scopes` already handed out are unresolvable for that whole window, so requests
+	// naming them wait instead of failing, and several clients can wait on different
+	// frames without either of them re-asking the debuggee.
+	HashSet<int> _pending_frame_vars;
+	// The frame the values currently arriving belong to, or `-1` when they answer a
+	// request this adapter cannot attribute.
+	int _frame_vars_frame = -1;
 	int _current_frame = 0;
 	uint64_t _request_timeout = 5000;
 	bool _sync_breakpoints = false;

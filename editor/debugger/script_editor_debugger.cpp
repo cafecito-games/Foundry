@@ -504,6 +504,11 @@ void ScriptEditorDebugger::_msg_stack_dump(uint64_t p_thread_id, const Array &p_
 	DebuggerMarshalls::ScriptStackDump stack;
 	stack.deserialize(p_data);
 
+	// The new stop retires every frame of the previous one, so requests still waiting for
+	// an answer can no longer be matched to anything.
+	requested_stack_frames.clear();
+	stack_frame_vars_frame = -1;
+
 	stack_dump->clear();
 	inspector->clear_stack_variables();
 	TreeItem *r = stack_dump->create_item();
@@ -534,6 +539,14 @@ void ScriptEditorDebugger::_msg_stack_dump(uint64_t p_thread_id, const Array &p_
 void ScriptEditorDebugger::_msg_stack_frame_vars(uint64_t p_thread_id, const Array &p_data) {
 	inspector->clear_stack_variables();
 	ERR_FAIL_COND(p_data.size() != 1);
+
+	if (requested_stack_frames.is_empty()) {
+		stack_frame_vars_frame = -1;
+	} else {
+		stack_frame_vars_frame = requested_stack_frames.front()->get();
+		requested_stack_frames.pop_front();
+	}
+
 	emit_signal(SNAME("stack_frame_vars"), p_data[0]);
 }
 
@@ -1568,6 +1581,7 @@ bool ScriptEditorDebugger::request_stack_dump(const int &p_frame) {
 
 	Array msg = { p_frame };
 	_put_msg("get_stack_frame_vars", msg, debugging_thread_id);
+	requested_stack_frames.push_back(p_frame);
 	return true;
 }
 
