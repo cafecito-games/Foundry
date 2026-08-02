@@ -32,6 +32,7 @@
 
 #include "core/variant/container_type_validate.h"
 #include "core/variant/variant.h"
+#include "core/variant/variant_internal.h"
 #include "core/variant/variant_parser.h"
 
 #include "tests/test_macros.h"
@@ -2283,6 +2284,179 @@ TEST_CASE("[Variant] Operator NOT") {
 
 		REQUIRE_EQ(result.get_type(), Variant::BOOL);
 		CHECK_EQ(!value.booleanize(), result.operator bool());
+	}
+}
+
+TEST_CASE("[Variant][UInt] The unsigned carrier is appended without renumbering") {
+	// Stored type IDs and generated extension interfaces depend on these numbers, so the unsigned
+	// carrier must occupy the slot after the last previously defined type.
+	CHECK_EQ(int(Variant::NIL), 0);
+	CHECK_EQ(int(Variant::BOOL), 1);
+	CHECK_EQ(int(Variant::INT), 2);
+	CHECK_EQ(int(Variant::FLOAT), 3);
+	CHECK_EQ(int(Variant::STRING), 4);
+	CHECK_EQ(int(Variant::VECTOR2), 5);
+	CHECK_EQ(int(Variant::VECTOR2I), 6);
+	CHECK_EQ(int(Variant::RECT2), 7);
+	CHECK_EQ(int(Variant::RECT2I), 8);
+	CHECK_EQ(int(Variant::VECTOR3), 9);
+	CHECK_EQ(int(Variant::VECTOR3I), 10);
+	CHECK_EQ(int(Variant::TRANSFORM2D), 11);
+	CHECK_EQ(int(Variant::VECTOR4), 12);
+	CHECK_EQ(int(Variant::VECTOR4I), 13);
+	CHECK_EQ(int(Variant::PLANE), 14);
+	CHECK_EQ(int(Variant::QUATERNION), 15);
+	CHECK_EQ(int(Variant::AABB), 16);
+	CHECK_EQ(int(Variant::BASIS), 17);
+	CHECK_EQ(int(Variant::TRANSFORM3D), 18);
+	CHECK_EQ(int(Variant::PROJECTION), 19);
+	CHECK_EQ(int(Variant::COLOR), 20);
+	CHECK_EQ(int(Variant::STRING_NAME), 21);
+	CHECK_EQ(int(Variant::NODE_PATH), 22);
+	CHECK_EQ(int(Variant::RID), 23);
+	CHECK_EQ(int(Variant::OBJECT), 24);
+	CHECK_EQ(int(Variant::CALLABLE), 25);
+	CHECK_EQ(int(Variant::SIGNAL), 26);
+	CHECK_EQ(int(Variant::DICTIONARY), 27);
+	CHECK_EQ(int(Variant::ARRAY), 28);
+	CHECK_EQ(int(Variant::PACKED_BYTE_ARRAY), 29);
+	CHECK_EQ(int(Variant::PACKED_INT32_ARRAY), 30);
+	CHECK_EQ(int(Variant::PACKED_INT64_ARRAY), 31);
+	CHECK_EQ(int(Variant::PACKED_FLOAT32_ARRAY), 32);
+	CHECK_EQ(int(Variant::PACKED_FLOAT64_ARRAY), 33);
+	CHECK_EQ(int(Variant::PACKED_STRING_ARRAY), 34);
+	CHECK_EQ(int(Variant::PACKED_VECTOR2_ARRAY), 35);
+	CHECK_EQ(int(Variant::PACKED_VECTOR3_ARRAY), 36);
+	CHECK_EQ(int(Variant::PACKED_COLOR_ARRAY), 37);
+	CHECK_EQ(int(Variant::PACKED_VECTOR4_ARRAY), 38);
+	CHECK_EQ(int(Variant::UINT), 39);
+	CHECK_EQ(int(Variant::VARIANT_MAX), 40);
+}
+
+TEST_CASE("[Variant][UInt] The carrier does not grow Variant storage") {
+	// The unsigned payload shares the existing inline data union, so neither footprint changes.
+	constexpr size_t expected_size = sizeof(real_t) == 4 ? 24 : 40;
+	CHECK_EQ(sizeof(Variant), expected_size);
+	CHECK_EQ(alignof(Variant), 8u);
+}
+
+// The unsigned carrier has no C++ nominal type and no source spelling, so tests build it through
+// the same Variant storage entry point the engine uses.
+static Variant make_uint(uint64_t p_value) {
+	Variant value;
+	VariantInternal::initialize(&value, Variant::UINT);
+	*VariantInternal::get_uint(&value) = p_value;
+	return value;
+}
+
+TEST_CASE("[Variant][UInt] Construction preserves the full unsigned range") {
+	const uint64_t values[] = { 0, 1, uint64_t(INT64_MAX), uint64_t(INT64_MAX) + 1, UINT64_MAX };
+	for (uint64_t value : values) {
+		const Variant variant = make_uint(value);
+		CHECK_EQ(variant.get_type(), Variant::UINT);
+		CHECK_EQ(variant.operator uint64_t(), value);
+	}
+}
+
+TEST_CASE("[Variant][UInt] Unsigned C++ constructors keep the signed carrier") {
+	// Routing unsigned C++ integers to UINT needs the conversion, operator, and persistence surfaces
+	// that later work adds, so every C++ integer constructor still produces INT today.
+	CHECK_EQ(Variant(uint8_t(200)).get_type(), Variant::INT);
+	CHECK_EQ(Variant(uint16_t(60000)).get_type(), Variant::INT);
+	CHECK_EQ(Variant(uint32_t(4000000000u)).get_type(), Variant::INT);
+	CHECK_EQ(Variant(uint64_t(1)).get_type(), Variant::INT);
+	CHECK_EQ(Variant(Math::uint_alt_t(7)).get_type(), Variant::INT);
+	CHECK_EQ(Variant(int64_t(-1)).get_type(), Variant::INT);
+
+	// Nominal wrappers keep their existing carrier contract regardless.
+	CHECK_EQ(Variant(ObjectID(uint64_t(12345))).get_type(), Variant::INT);
+	CHECK_EQ(Variant(ObjectID(uint64_t(12345))).operator ObjectID(), ObjectID(uint64_t(12345)));
+}
+
+TEST_CASE("[Variant][UInt] The registered constructor default-initializes to zero") {
+	CHECK_GT(Variant::get_constructor_count(Variant::UINT), 0);
+
+	Callable::CallError error;
+	Variant constructed = "not an integer";
+	Variant::construct(Variant::UINT, constructed, nullptr, 0, error);
+	REQUIRE_EQ(error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(constructed.get_type(), Variant::UINT);
+	CHECK_EQ(constructed.operator uint64_t(), 0u);
+
+	const Variant source = make_uint(UINT64_MAX);
+	const Variant *arguments[] = { &source };
+	Variant copied;
+	Variant::construct(Variant::UINT, copied, arguments, 1, error);
+	REQUIRE_EQ(error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(copied.get_type(), Variant::UINT);
+	CHECK_EQ(copied.operator uint64_t(), UINT64_MAX);
+
+	// The registered constructor also has to tolerate an aliased destination.
+	Variant aliased = make_uint(uint64_t(INT64_MAX) + 1);
+	const Variant *self_arguments[] = { &aliased };
+	Variant::construct(Variant::UINT, aliased, self_arguments, 1, error);
+	REQUIRE_EQ(error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(aliased.get_type(), Variant::UINT);
+	CHECK_EQ(aliased.operator uint64_t(), uint64_t(INT64_MAX) + 1);
+}
+
+TEST_CASE("[Variant][UInt] Copy, move, assignment, and clear preserve the carrier") {
+	const Variant original = make_uint(UINT64_MAX);
+
+	const Variant copied = original;
+	CHECK_EQ(copied.get_type(), Variant::UINT);
+	CHECK_EQ(copied.operator uint64_t(), UINT64_MAX);
+
+	Variant movable = make_uint(uint64_t(INT64_MAX) + 1);
+	const Variant moved = std::move(movable);
+	CHECK_EQ(moved.get_type(), Variant::UINT);
+	CHECK_EQ(moved.operator uint64_t(), uint64_t(INT64_MAX) + 1);
+
+	Variant assigned;
+	assigned = original;
+	CHECK_EQ(assigned.get_type(), Variant::UINT);
+	CHECK_EQ(assigned.operator uint64_t(), UINT64_MAX);
+
+	// Assigning across an allocating type and back must release and re-tag cleanly.
+	assigned = String("a string that owns memory");
+	CHECK_EQ(assigned.get_type(), Variant::STRING);
+	assigned = make_uint(7);
+	CHECK_EQ(assigned.get_type(), Variant::UINT);
+	CHECK_EQ(assigned.operator uint64_t(), 7u);
+
+	assigned.zero();
+	CHECK_EQ(assigned.get_type(), Variant::UINT);
+	CHECK_EQ(assigned.operator uint64_t(), 0u);
+
+	CHECK_FALSE(Variant::has_destructor(Variant::UINT));
+	CHECK_FALSE(Variant::is_type_shared(Variant::UINT));
+	CHECK_FALSE(make_uint(1).is_array());
+	CHECK(make_uint(1).is_num());
+	CHECK(make_uint(0).is_zero());
+	CHECK(make_uint(1).is_one());
+	CHECK_EQ(make_uint(UINT64_MAX).stringify(), "18446744073709551615");
+}
+
+TEST_CASE("[Variant][UInt] Same-carrier values compare and hash by value") {
+	CHECK(make_uint(UINT64_MAX) == make_uint(UINT64_MAX));
+	CHECK_FALSE(make_uint(UINT64_MAX) == make_uint(0));
+	CHECK_EQ(make_uint(UINT64_MAX).hash(), make_uint(UINT64_MAX).hash());
+
+	Dictionary dictionary;
+	dictionary[make_uint(UINT64_MAX)] = "answer";
+	CHECK_EQ(dictionary[make_uint(UINT64_MAX)], "answer");
+}
+
+TEST_CASE("[Variant][UInt] The carrier name round-trips") {
+	CHECK_EQ(Variant::get_type_name(Variant::UINT), "uint");
+	CHECK_EQ(Variant::get_type_by_name("uint"), Variant::UINT);
+
+	// Every type-indexed name table entry stays populated and reversible.
+	for (int i = 0; i < Variant::VARIANT_MAX; i++) {
+		const Variant::Type type = Variant::Type(i);
+		const String name = Variant::get_type_name(type);
+		CHECK_FALSE(name.is_empty());
+		CHECK_EQ(Variant::get_type_by_name(name), type);
 	}
 }
 

@@ -53,6 +53,7 @@ struct PtrConstruct {};
 
 MAKE_PTRCONSTRUCT(bool);
 MAKE_PTRCONSTRUCT(int64_t);
+MAKE_PTRCONSTRUCT(uint64_t);
 MAKE_PTRCONSTRUCT(double);
 MAKE_PTRCONSTRUCT(String);
 MAKE_PTRCONSTRUCT(Vector2);
@@ -694,6 +695,74 @@ public:
 
 	static Variant::Type get_base_type() {
 		return GetTypeInfo<T>::VARIANT_TYPE;
+	}
+};
+
+// The unsigned carrier deliberately has no dedicated C++ nominal type, and `GetTypeInfo<uint64_t>`
+// still describes the signed carrier for native bindings, so its constructors are written directly
+// against Variant storage instead of the `GetTypeInfo`-driven templates.
+class VariantConstructNoArgsUInt {
+public:
+	static void construct(Variant &r_ret, const Variant **p_args, Callable::CallError &r_error) {
+		validated_construct(&r_ret, p_args);
+		r_error.error = Callable::CallError::CALL_OK;
+	}
+
+	static inline void validated_construct(Variant *r_ret, const Variant **p_args) {
+		VariantInternal::initialize(r_ret, Variant::UINT);
+		*VariantInternal::get_uint(r_ret) = 0;
+	}
+	static void ptr_construct(void *base, const void **p_args) {
+		PtrConstruct<uint64_t>::construct(uint64_t(0), base);
+	}
+
+	static int get_argument_count() {
+		return 0;
+	}
+
+	static Variant::Type get_argument_type(int p_arg) {
+		return Variant::NIL;
+	}
+
+	static Variant::Type get_base_type() {
+		return Variant::UINT;
+	}
+};
+
+class VariantConstructorUInt {
+public:
+	static void construct(Variant &r_ret, const Variant **p_args, Callable::CallError &r_error) {
+		if (p_args[0]->get_type() != Variant::UINT) {
+			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+			r_error.argument = 0;
+			r_error.expected = Variant::UINT;
+			return;
+		}
+
+		r_error.error = Callable::CallError::CALL_OK;
+		validated_construct(&r_ret, p_args);
+	}
+
+	static inline void validated_construct(Variant *r_ret, const Variant **p_args) {
+		// The destination can alias the source, so read the payload before re-tagging it.
+		const uint64_t value = *VariantInternal::get_uint(p_args[0]);
+		VariantInternal::initialize(r_ret, Variant::UINT);
+		*VariantInternal::get_uint(r_ret) = value;
+	}
+	static void ptr_construct(void *base, const void **p_args) {
+		PtrConstruct<uint64_t>::construct(PtrToArg<uint64_t>::convert(p_args[0]), base);
+	}
+
+	static int get_argument_count() {
+		return 1;
+	}
+
+	static Variant::Type get_argument_type(int p_arg) {
+		return Variant::UINT;
+	}
+
+	static Variant::Type get_base_type() {
+		return Variant::UINT;
 	}
 };
 

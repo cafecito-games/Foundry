@@ -36,6 +36,7 @@
 #include "core/config/project_settings.h"
 #include "core/object/script_diagnostic_capture.h"
 #include "core/os/os.h"
+#include "core/variant/variant_internal.h"
 
 #include "tests/test_macros.h"
 
@@ -213,6 +214,32 @@ TEST_CASE("[VariantUtility] push_fatal decision logic") {
 		os->clear_exit_request();
 		os->set_exit_code(saved_exit_code);
 	}
+}
+
+TEST_CASE("[Variant][UInt] type_convert reads the unsigned carrier and refuses to produce it") {
+	Variant unsigned_source;
+	VariantInternal::initialize(&unsigned_source, Variant::UINT);
+	*VariantInternal::get_uint(&unsigned_source) = 7;
+
+	Variant converted = VariantUtilityFunctions::type_convert(unsigned_source, Variant::Type::INT);
+	CHECK_EQ(converted.get_type(), Variant::Type::INT);
+	CHECK_EQ(converted.operator int64_t(), 7);
+
+	converted = VariantUtilityFunctions::type_convert(unsigned_source, Variant::Type::STRING);
+	CHECK_EQ(converted.get_type(), Variant::Type::STRING);
+	CHECK_EQ(converted.operator String(), "7");
+
+	converted = VariantUtilityFunctions::type_convert(unsigned_source, Variant::Type::FLOAT);
+	CHECK_EQ(converted.get_type(), Variant::Type::FLOAT);
+	CHECK_EQ(converted.operator double(), 7.0);
+
+	// Producing the carrier would hand callers a value no operator or serialization path can
+	// process yet, so the source is returned unchanged instead.
+	ERR_PRINT_OFF;
+	converted = VariantUtilityFunctions::type_convert(Variant(int64_t(42)), Variant::Type::UINT);
+	ERR_PRINT_ON;
+	CHECK_EQ(converted.get_type(), Variant::Type::INT);
+	CHECK_EQ(converted.operator int64_t(), 42);
 }
 
 } // namespace TestVariantUtility

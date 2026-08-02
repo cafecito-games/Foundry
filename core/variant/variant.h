@@ -145,6 +145,9 @@ public:
 		PACKED_COLOR_ARRAY,
 		PACKED_VECTOR4_ARRAY,
 
+		// Appended so existing numeric type IDs stay stable for stored data and generated interfaces.
+		UINT,
+
 		VARIANT_MAX
 	};
 
@@ -277,6 +280,7 @@ private:
 	union {
 		bool _bool;
 		int64_t _int;
+		uint64_t _uint;
 		double _float;
 		Transform2D *_transform2d;
 		::AABB *_aabb;
@@ -336,6 +340,8 @@ private:
 		true, //PACKED_VECTOR3_ARRAY,
 		true, //PACKED_COLOR_ARRAY,
 		true, //PACKED_VECTOR4_ARRAY,
+
+		false, //UINT,
 	};
 
 	_FORCE_INLINE_ void clear() {
@@ -369,6 +375,8 @@ private:
 				return _data._bool ? 1 : 0;
 			case INT:
 				return T(_data._int);
+			case UINT:
+				return T(_data._uint);
 			case FLOAT:
 				return T(_data._float);
 			case STRING:
@@ -388,6 +396,8 @@ private:
 				return _data._bool ? 1 : 0;
 			case INT:
 				return T(_data._int);
+			case UINT:
+				return T(_data._uint);
 			case FLOAT:
 				return T(_data._float);
 			case STRING:
@@ -416,13 +426,14 @@ public:
 
 	bool is_ref_counted() const;
 	_FORCE_INLINE_ bool is_num() const {
-		return type == INT || type == FLOAT;
+		return type == INT || type == UINT || type == FLOAT;
 	}
 	_FORCE_INLINE_ bool is_string() const {
 		return type == STRING || type == STRING_NAME;
 	}
 	_FORCE_INLINE_ bool is_array() const {
-		return type >= ARRAY;
+		// UINT sits past the packed array block in the enum, so the range needs an upper bound.
+		return type >= ARRAY && type <= PACKED_VECTOR4_ARRAY;
 	}
 	bool is_shared() const;
 	bool is_zero() const;

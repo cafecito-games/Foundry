@@ -198,6 +198,7 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 			{ Variant::PACKED_VECTOR3_ARRAY, ptrsize_32 * 2, ptrsize_64 * 2, ptrsize_32 * 2, ptrsize_64 * 2 },
 			{ Variant::PACKED_COLOR_ARRAY, ptrsize_32 * 2, ptrsize_64 * 2, ptrsize_32 * 2, ptrsize_64 * 2 },
 			{ Variant::PACKED_VECTOR4_ARRAY, ptrsize_32 * 2, ptrsize_64 * 2, ptrsize_32 * 2, ptrsize_64 * 2 },
+			{ Variant::UINT, sizeof(uint64_t), sizeof(uint64_t), sizeof(uint64_t), sizeof(uint64_t) },
 			{ Variant::VARIANT_MAX, sizeof(uint64_t) + sizeof(float) * 4, sizeof(uint64_t) + sizeof(float) * 4, sizeof(uint64_t) + sizeof(double) * 4, sizeof(uint64_t) + sizeof(double) * 4 },
 		};
 
@@ -250,6 +251,10 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 			Array sizes;
 			for (int j = 0; j <= Variant::VARIANT_MAX; j++) {
 				Variant::Type t = type_size_array[j].type;
+				if (t == Variant::UINT) {
+					// The extension ABI does not describe the unsigned carrier yet.
+					continue;
+				}
 				String name = t == Variant::VARIANT_MAX ? String("Variant") : Variant::get_type_name(t);
 				Dictionary d2;
 				d2["name"] = name;
@@ -624,7 +629,9 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 		Array builtins;
 
 		for (int i = 0; i < Variant::VARIANT_MAX; i++) {
-			if (i == Variant::OBJECT) {
+			// The extension ABI does not describe the unsigned carrier yet, and `Object` is exposed
+			// through the class list instead.
+			if (i == Variant::OBJECT || i == Variant::UINT) {
 				continue;
 			}
 
@@ -746,6 +753,9 @@ Dictionary FoundryExtensionAPIDump::generate_extension_api(bool p_include_docs) 
 				Array operators;
 
 				for (int j = 0; j < Variant::VARIANT_MAX; j++) {
+					if (j == Variant::UINT) {
+						continue;
+					}
 					for (int k = 0; k < Variant::OP_MAX; k++) {
 						Variant::Type rt = Variant::get_operator_return_type(Variant::Operator(k), type, Variant::Type(j));
 						if (rt != Variant::NIL) {

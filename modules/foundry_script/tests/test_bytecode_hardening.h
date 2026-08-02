@@ -35,6 +35,9 @@
 #include "modules/foundry_script/fs_bytecode_verifier.h"
 #include "modules/foundry_script/tests/test_bytecode_script.h"
 
+// Defined in fs_vm.cpp and indexed by the VM with a loader-validated Variant type.
+extern void (*type_init_function_table[])(Variant *);
+
 namespace FSTests {
 
 // Overwrites a deserialized function's opcode stream with a hand-built instruction and re-runs the
@@ -849,6 +852,28 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Duplicate member names in corrupt 
 	CHECK(!target->is_valid());
 
 	original->clear();
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Every accepted temporary slot type has a VM initializer") {
+	// The loader accepts any temporary-slot type below VARIANT_MAX and the VM indexes this table
+	// with it directly, so a type without an entry would be an out-of-bounds indirect call.
+	for (int i = 0; i < Variant::VARIANT_MAX; i++) {
+		const Variant::Type type = Variant::Type(i);
+		if (type == Variant::NIL) {
+			// A NIL temporary needs no initialization, so the table intentionally holds no entry.
+			CHECK_EQ(type_init_function_table[i], nullptr);
+			continue;
+		}
+		REQUIRE_NE(type_init_function_table[i], nullptr);
+		Variant slot;
+		type_init_function_table[i](&slot);
+		CHECK_EQ(slot.get_type(), type);
+	}
+
+	Variant unsigned_slot;
+	type_init_function_table[Variant::UINT](&unsigned_slot);
+	CHECK_EQ(unsigned_slot.get_type(), Variant::UINT);
+	CHECK_EQ(unsigned_slot.operator uint64_t(), 0u);
 }
 
 } // namespace FSTests

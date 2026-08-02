@@ -10719,6 +10719,7 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 							case Variant::CALLABLE:
 							case Variant::FLOAT:
 							case Variant::INT:
+							case Variant::UINT:
 							case Variant::NIL:
 							case Variant::NODE_PATH:
 							case Variant::SIGNAL:
@@ -10803,6 +10804,7 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 					case Variant::CALLABLE:
 					case Variant::FLOAT:
 					case Variant::INT:
+					case Variant::UINT:
 					case Variant::NIL:
 					case Variant::NODE_PATH:
 					case Variant::SIGNAL:
