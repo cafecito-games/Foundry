@@ -310,7 +310,7 @@ private:
 				bool p_strict_dynamic_mismatch,
 				bool p_strict_nullable_mismatch,
 				const FSParser::Node *p_actual_node = nullptr) const;
-		void validate_signal_connect_arg(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_callable_arg_index = 0, bool p_require_explicit_signal = true);
+		void validate_signal_connect_arg(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_callable_arg_index = 0);
 		void validate_signal_emit_args(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_first_emit_arg_index);
 		void validate_local_object_signal_callable_arg(const FSParser::CallNode *p_call, bool p_is_self);
 		void validate_local_object_emit_signal_args(const FSParser::CallNode *p_call, bool p_is_self);

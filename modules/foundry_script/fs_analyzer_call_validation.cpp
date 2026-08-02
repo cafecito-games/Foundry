@@ -68,6 +68,19 @@ static String callable_type_string_with_signature(
 	return callable_type.to_string();
 }
 
+// A locally declared signal carries its per-parameter signature without the explicit-annotation flag,
+// so `to_string()` would render it as a bare "Signal". Rendering it from the parameters it does carry
+// keeps the diagnostics for `mysignal.connect(handler)` identical to `connect("mysignal", handler)`.
+static String signal_type_string_with_signature(const FSParser::DataType &p_signal_type) {
+	if (p_signal_type.has_explicit_method_signature || p_signal_type.method_parameter_types.is_empty()) {
+		return p_signal_type.to_string();
+	}
+
+	FSParser::DataType signal_type = p_signal_type;
+	signal_type.has_explicit_method_signature = true;
+	return signal_type.to_string();
+}
+
 static FSParser::DataType make_callable_type(const MethodInfo &p_info) {
 	FSParser::DataType type;
 	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
@@ -1181,14 +1194,17 @@ void FSAnalyzer::CallSiteValidationContext::validate_strict_signal_name_fallback
 	}
 }
 
-void FSAnalyzer::CallSiteValidationContext::validate_signal_connect_arg(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_callable_arg_index, bool p_require_explicit_signal) {
+void FSAnalyzer::CallSiteValidationContext::validate_signal_connect_arg(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_callable_arg_index) {
 	if ((p_call->function_name != SNAME("connect") && p_call->function_name != SNAME("disconnect") && p_call->function_name != SNAME("is_connected")) || p_callable_arg_index < 0 || p_callable_arg_index >= p_call->arguments.size()) {
 		return;
 	}
 	if (p_signal_type.kind != FSParser::DataType::BUILTIN || p_signal_type.builtin_type != Variant::SIGNAL || !p_signal_type.has_method_signature) {
 		return;
 	}
-	if (p_require_explicit_signal && !p_signal_type.has_explicit_method_signature) {
+	if (p_signal_type.method_parameter_types.size() != p_signal_type.method_info.arguments.size()) {
+		// The rich per-parameter signature was dropped in favor of the MethodInfo form because its slots
+		// could not be compared reliably across the script-API boundary. Its (empty) parameter list would
+		// make every handler look like an arity mismatch, so leave such a signal unvalidated.
 		return;
 	}
 
@@ -1205,10 +1221,11 @@ void FSAnalyzer::CallSiteValidationContext::validate_signal_connect_arg(const FS
 	const int callable_min_argument_count = callable_argument_count - callable_default_arg_count;
 	const StringName action_name = p_call->function_name == SNAME("disconnect") ? SNAME("disconnect") : (p_call->function_name == SNAME("is_connected") ? StringName("check connection for") : SNAME("connect"));
 	const String callable_type_string = callable_type_string_with_signature(callable_type, callable_parameter_types);
+	const String signal_type_string = signal_type_string_with_signature(p_signal_type);
 	if (!_method_signature_accepts_argument_count(signal_argument_count, callable_argument_count, callable_default_arg_count, callable_is_vararg, callable_type.method_extra_allowed_argument_counts)) {
 		analyzer->push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal emits %d arguments but callable expects %s%d.)*",
 									 action_name,
-									 p_signal_type.to_string(),
+									 signal_type_string,
 									 callable_type_string,
 									 signal_argument_count,
 									 callable_default_arg_count > 0 ? "at least " : "",
@@ -1232,7 +1249,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_signal_connect_arg(const FS
 				analyzer->push_error(vformat("Cannot %s signal \"%s\" to callable \"%s\": signal argument %d is nullable "
 											 "type \"%s\", but callable parameter expects non-nullable \"%s\".",
 											 action_name,
-											 p_signal_type.to_string(),
+											 signal_type_string,
 											 callable_type_string,
 											 i + 1,
 											 signal_parameter_type.to_string(),
@@ -1241,7 +1258,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_signal_connect_arg(const FS
 			} else {
 				analyzer->push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal argument %d of type "%s" cannot be passed to callable parameter of type "%s".)*",
 											 action_name,
-											 p_signal_type.to_string(),
+											 signal_type_string,
 											 callable_type_string,
 											 i + 1,
 											 signal_parameter_type.to_string(),
@@ -1342,7 +1359,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_local_object_signal_callabl
 		return;
 	}
 
-	validate_signal_connect_arg(signal_type, p_call, 1, false);
+	validate_signal_connect_arg(signal_type, p_call, 1);
 }
 
 void FSAnalyzer::CallSiteValidationContext::validate_local_object_emit_signal_args(const FSParser::CallNode *p_call, bool p_is_self) {
@@ -1381,6 +1398,6 @@ void FSAnalyzer::CallSiteValidationContext::validate_typed_object_signal_api_arg
 	if (p_call->function_name == SNAME("emit_signal")) {
 		validate_signal_emit_args(signal_type, p_call, 1);
 	} else {
-		validate_signal_connect_arg(signal_type, p_call, 1, false);
+		validate_signal_connect_arg(signal_type, p_call, 1);
 	}
 }

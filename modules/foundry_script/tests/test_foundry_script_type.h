@@ -1830,6 +1830,8 @@ TEST_CASE("[Modules][FoundryScript] Analyzer preserves legacy callable and signa
 
 TEST_CASE("[Modules][FoundryScript] Analyzer checks typed Signal.connect callables") {
 	const String source_prefix = "signal event(value: String)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc accept_int(value: int) -> void:\n\tpass\nfunc accept_any(value: Variant) -> void:\n\tpass\nfunc accept_none() -> void:\n\tpass\nfunc test() -> void:\n\tvar typed_event: Signal[[String]] = event\n";
+	// A signal whose type was inferred from the declaration (`var typed_event := event`) carries the
+	// same per-parameter signature as an annotated one, so its handlers are validated identically.
 	const String inferred_source_prefix = "signal event(value: String)\nfunc accept_int(value: int) -> void:\n\tpass\nfunc test() -> void:\n\tvar typed_event := event\n";
 
 	CHECK(analyze_source(source_prefix + "\tvar callback: Callable[[String], void] = accept_string\n\ttyped_event.connect(callback)\n") == OK);
@@ -1838,13 +1840,13 @@ TEST_CASE("[Modules][FoundryScript] Analyzer checks typed Signal.connect callabl
 	CHECK(analyze_source(source_prefix + "\ttyped_event.connect(accept_int)\n") != OK);
 	CHECK(analyze_source(source_prefix + "\tvar callback: Callable[[], void] = accept_none\n\ttyped_event.connect(callback)\n") != OK);
 	CHECK(analyze_source(source_prefix + "\tvar callback: Callable[[Variant], void] = accept_any\n\ttyped_event.connect(callback)\n") == OK);
-	CHECK(analyze_source(inferred_source_prefix + "\ttyped_event.connect(accept_int)\n") == OK);
+	CHECK(analyze_source(inferred_source_prefix + "\ttyped_event.connect(accept_int)\n") != OK);
 	CHECK(analyze_source("signal event(value: Variant)\nfunc accept_string(value: String) -> void:\n\tpass\nfunc test() -> void:\n\tvar typed_event: Signal[[Variant]] = event\n\ttyped_event.connect(accept_string)\n") != OK);
 	CHECK(analyze_source(source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_string)\n") == OK);
 	CHECK(analyze_source(source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_int)\n") != OK);
 	CHECK(analyze_source(source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_none)\n") != OK);
 	CHECK(analyze_source(source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_any)\n") == OK);
-	CHECK(analyze_source(inferred_source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_int)\n") == OK);
+	CHECK(analyze_source(inferred_source_prefix + "\tvar connected: bool = typed_event.is_connected(accept_int)\n") != OK);
 }
 
 TEST_CASE("[Modules][FoundryScript] Analyzer can reject nullable typed Signal.connect callables") {
