@@ -317,6 +317,62 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
 
         self.assertEqual(first, second)
 
+    def test_ninja_state_changes_when_repository_file_inventory_changes(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        args = agent_build.parse_args(["--backend", "ninja"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory) / "Foundry"
+            source_directory = repo_root / "core" / "object"
+            source_directory.mkdir(parents=True)
+            (repo_root / "SConstruct").write_text("# root\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-q"], cwd=repo_root, check=True)
+            subprocess.run(["git", "add", "SConstruct"], cwd=repo_root, check=True)
+            before = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+            source = source_directory / "class_handle.cpp"
+            source.write_text("// implementation\n", encoding="utf-8")
+            after_addition = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+            source.unlink()
+            after_removal = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertNotEqual(before, after_addition)
+        self.assertEqual(before, after_removal)
+
+    def test_ninja_state_ignores_repository_source_content_changes(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        args = agent_build.parse_args(["--backend", "ninja"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory) / "Foundry"
+            source_directory = repo_root / "core" / "object"
+            source_directory.mkdir(parents=True)
+            source = source_directory / "class_handle.cpp"
+            source.write_text("// first implementation\n", encoding="utf-8")
+            before = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+            source.write_text("// changed implementation\n", encoding="utf-8")
+            after = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertEqual(before, after)
+
+    def test_ninja_state_ignores_gitignored_generated_files(self) -> None:
+        target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
+        args = agent_build.parse_args(["--backend", "ninja"])
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            repo_root = Path(temporary_directory) / "Foundry"
+            repo_root.mkdir()
+            (repo_root / ".gitignore").write_text("*.gen.*\n", encoding="utf-8")
+            (repo_root / "SConstruct").write_text("# root\n", encoding="utf-8")
+            subprocess.run(["git", "init", "-q"], cwd=repo_root, check=True)
+            subprocess.run(["git", "add", ".gitignore", "SConstruct"], cwd=repo_root, check=True)
+            before = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+            generated = repo_root / "core" / "version.gen.cpp"
+            generated.parent.mkdir(parents=True)
+            generated.write_text("// generated\n", encoding="utf-8")
+            after = agent_build.resolve_ninja_state(args, target, repo_root=repo_root)
+
+        self.assertEqual(before, after)
+
     def test_ninja_state_changes_when_repository_python_changes(self) -> None:
         target = agent_build.BuildTarget("macos", Path("bin/foundry.macos.editor.dev.arm64"), None)
         args = agent_build.parse_args(["--backend", "ninja"])
