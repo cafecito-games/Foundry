@@ -2757,6 +2757,71 @@ func value() -> int:
 	CHECK(!TestFSCacheAccessor::has_full(binary_path));
 }
 
+TEST_CASE("[FoundryScript][Bytecode] Signature class handles survive the reflection boundary and a .fsb round trip") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(R"(
+signal registered(name: String, factory: Type[Node])
+
+var construct: Callable[[Type[Node]], Node]
+var instances: Callable[[Node], Node]
+
+func identity(factory: Type[Node]) -> Type[Node]:
+	return factory
+)");
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	// A signal parameter reports the handle layer and the class it represents, rather than collapsing
+	// to the handle's own engine class, which would make Type[Node] indistinguishable from Type[Resource].
+	const auto check_signal = [](const Ref<FoundryScript> &p_script) {
+		REQUIRE(p_script->get_signals().has(SNAME("registered")));
+		const MethodInfo &signal_info = p_script->get_signals()[SNAME("registered")];
+		REQUIRE(signal_info.arguments.size() == 2);
+		CHECK(signal_info.arguments[0].type == Variant::STRING);
+		CHECK(signal_info.arguments[1].type == Variant::OBJECT);
+		CHECK(signal_info.arguments[1].class_name == StringName("Type[Node]"));
+	};
+	check_signal(original);
+	check_signal(restored);
+
+	// A method's own parameter and return slots carry the same marker.
+	const auto check_identity_method = [](const Ref<FoundryScript> &p_script) {
+		const MethodInfo method_info = p_script->get_method_info(SNAME("identity"));
+		REQUIRE(method_info.name == SNAME("identity"));
+		REQUIRE(method_info.arguments.size() == 1);
+		CHECK(method_info.arguments[0].class_name == StringName("Type[Node]"));
+		CHECK(method_info.return_val.class_name == StringName("Type[Node]"));
+	};
+	check_identity_method(original);
+	check_identity_method(restored);
+
+	// A Callable signature encodes its slots through the Foundry Script signature grammar, which spells
+	// the handle layer out so a handle slot cannot decode back as an instance slot.
+	const auto find_member_property = [](const Ref<FoundryScript> &p_script, const StringName &p_name) {
+		List<PropertyInfo> properties;
+		p_script->get_script_property_list(&properties);
+		for (const PropertyInfo &property : properties) {
+			if (property.name == p_name) {
+				return property;
+			}
+		}
+		return PropertyInfo();
+	};
+	const auto check_callable_members = [&](const Ref<FoundryScript> &p_script) {
+		const PropertyInfo construct = find_member_property(p_script, SNAME("construct"));
+		CHECK(construct.type == Variant::CALLABLE);
+		CHECK(construct.hint == PROPERTY_HINT_CALLABLE_TYPE);
+		CHECK(construct.hint_string == "[[Type[Node]], Node]");
+
+		const PropertyInfo instances = find_member_property(p_script, SNAME("instances"));
+		CHECK(instances.type == Variant::CALLABLE);
+		CHECK(instances.hint == PROPERTY_HINT_CALLABLE_TYPE);
+		CHECK(instances.hint_string == "[[Node], Node]");
+	};
+	check_callable_members(original);
+	check_callable_members(restored);
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED

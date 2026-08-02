@@ -347,7 +347,25 @@ static String _encode_method_signature_suffix(const FSParser::DataType &p_type, 
 	return vformat("[[%s]]", joined);
 }
 
+// Strips the class-handle layer off a `Type[T]` slot, leaving the represented instance type. The
+// nullable marker belongs to the handle itself, so it is cleared here and re-applied by the caller.
+static FSParser::DataType _signature_type_handle_represented_type(const FSParser::DataType &p_type) {
+	FSParser::DataType represented = p_type;
+	represented.is_type_handle_annotation = false;
+	represented.is_meta_type = false;
+	represented.is_pseudo_type = false;
+	represented.is_constant = false;
+	represented.is_nullable = false;
+	return represented;
+}
+
 static String _encode_signature_type_base(const FSParser::DataType &p_type) {
+	// `Type[T]` denotes a class rather than instances of it. The layer is spelled out explicitly so a
+	// handle slot cannot decode back as an instance slot, which would silently accept an instance where
+	// a class handle is required.
+	if (p_type.is_type_handle_annotation) {
+		return vformat("Type[%s]", _encode_signature_type(_signature_type_handle_represented_type(p_type)));
+	}
 	// Coroutine[T] is a NATIVE skin over FSFunctionState; intercept it before the leaf fallthrough
 	// so the bare native name never leaks and the result type T survives the boundary.
 	if (p_type.is_coroutine) {
@@ -526,6 +544,28 @@ static String _encode_coroutine_container_element(const FSParser::DataType &p_co
 	return "Coroutine[]";
 }
 
+// Spells the class-handle layer of a `Type[T]` slot into the property class name. `PropertyInfo` has no
+// way to say "a value denoting this class" rather than "an instance of this class", and collapsing the
+// handle to its engine class (`FSNativeClass`/`FoundryScript`) would lose which class it represents, so
+// a signature crossing the reflection boundary could no longer tell `Type[Node]` from `Type[Resource]`
+// or from `Node`. `FSAnalyzer::type_from_property` decodes the marker back into a class handle. The
+// convention mirrors the existing nullable `?` class-name suffix.
+String fs_encode_type_handle_property_class_name(const StringName &p_represented_class) {
+	return vformat("Type[%s]", p_represented_class);
+}
+
+bool fs_decode_type_handle_property_class_name(const String &p_class_name, String &r_represented_class) {
+	if (!p_class_name.begins_with("Type[") || !p_class_name.ends_with("]")) {
+		return false;
+	}
+	r_represented_class = p_class_name.substr(5, p_class_name.length() - 6);
+	return !r_represented_class.is_empty();
+}
+
+static String _encode_type_handle_class_name(const StringName &p_represented_class) {
+	return fs_encode_type_handle_property_class_name(p_represented_class == StringName() ? StringName("Object") : p_represented_class);
+}
+
 PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 	PropertyInfo result;
 	result.name = p_name;
@@ -681,7 +721,9 @@ PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 			break;
 		case NATIVE:
 			result.type = Variant::OBJECT;
-			if (is_meta_type) {
+			if (is_type_handle_annotation) {
+				result.class_name = _encode_type_handle_class_name(native_type);
+			} else if (is_meta_type) {
 				result.class_name = FSNativeClass::get_class_static();
 			} else if (is_coroutine) {
 				// Coroutine[T] is a source-level skin over FSFunctionState. Preserve both the
@@ -707,7 +749,12 @@ PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 			break;
 		case SCRIPT:
 			result.type = Variant::OBJECT;
-			if (is_meta_type) {
+			if (is_type_handle_annotation) {
+				const StringName represented = script_type.is_valid() && script_type->get_global_name() != StringName()
+						? script_type->get_global_name()
+						: native_type;
+				result.class_name = _encode_type_handle_class_name(represented);
+			} else if (is_meta_type) {
 				result.class_name = script_type.is_valid() ? script_type->get_class_name() : Script::get_class_static();
 			} else if (script_type.is_valid() && script_type->get_global_name() != StringName()) {
 				result.class_name = script_type->get_global_name();
@@ -717,7 +764,12 @@ PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 			break;
 		case CLASS:
 			result.type = Variant::OBJECT;
-			if (is_meta_type) {
+			if (is_type_handle_annotation) {
+				const StringName represented = class_type != nullptr && class_type->get_global_name() != StringName()
+						? class_type->get_global_name()
+						: native_type;
+				result.class_name = _encode_type_handle_class_name(represented);
+			} else if (is_meta_type) {
 				result.class_name = FoundryScript::get_class_static();
 			} else if (class_type != nullptr && class_type->get_global_name() != StringName()) {
 				result.class_name = class_type->get_global_name();

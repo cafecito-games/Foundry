@@ -53,6 +53,12 @@
 #include "core/string/string_builder.h"
 #endif
 
+// `PropertyInfo` can only name an instance type, so a `Type[T]` slot spells its class-handle layer into
+// the property class name. These two functions are the only place that marker grammar is written or
+// read; see `FSParser::DataType::to_property_info` and `FSAnalyzer::type_from_property`.
+String fs_encode_type_handle_property_class_name(const StringName &p_represented_class);
+bool fs_decode_type_handle_property_class_name(const String &p_class_name, String &r_represented_class);
+
 class FSParser {
 	struct AnnotationInfo;
 

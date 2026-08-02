@@ -592,6 +592,11 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				result.compatible = ClassDB::is_parent_class(src_native, FoundryScript::get_class_static());
 				return result;
 			}
+			if (p_source.is_meta_type) {
+				// A class handle denotes the class; it is not an instance of it. The inheritance walk
+				// below compares `class_type` identity, which a handle for the same class would satisfy.
+				return result;
+			}
 			{
 				// Walk the source's inheritance chain, carrying its type arguments down each level so a
 				// specialized handle is compared invariantly against the target at the matching class:

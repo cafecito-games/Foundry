@@ -1269,6 +1269,23 @@ static FSParser::DataType _decode_signature_type_base(const String &p_encoded) {
 		}
 		return result;
 	}
+	// Only the bracketed form is the class-handle marker. `Type` is not a reserved word, so a bare "Type"
+	// leaf is an ordinary class literally named Type and must fall through to the leaf resolver; the
+	// encoder only ever emits the bracketed form for a genuine handle (see _encode_signature_type_base).
+	if (text.begins_with("Type[") && text.ends_with("]")) {
+		const String represented = text.substr(5, text.length() - 6); // between "Type[" and trailing "]"
+		FSParser::DataType represented_type = _decode_signature_type(represented);
+		if (represented_type.kind == FSParser::DataType::VARIANT) {
+			// An unresolvable represented type cannot describe a class, so the slot degrades to Variant
+			// rather than to a handle for an unknown class.
+			return represented_type;
+		}
+		represented_type.is_meta_type = true;
+		represented_type.is_pseudo_type = false;
+		represented_type.is_type_handle_annotation = true;
+		represented_type.is_constant = false;
+		return represented_type;
+	}
 	if (text.begins_with("Array[") && text.ends_with("]")) {
 		result.kind = FSParser::DataType::BUILTIN;
 		result.builtin_type = Variant::ARRAY;
@@ -1747,13 +1764,6 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		p_type->set_datatype(p_result);
 		return p_result;
 	};
-	auto reject_nested_type_handle = [&](const FSParser::DataType &p_nested_type, FSParser::TypeNode *p_nested_node) -> bool {
-		if (p_nested_type.is_type_handle_annotation) {
-			push_error("Type[T] cannot be used as a nested type argument yet.", p_nested_node);
-			return true;
-		}
-		return false;
-	};
 
 	if (p_type->is_tuple) {
 		// An unnamed tuple type (`(int, String)`) is structural: its identity is exactly the
@@ -1907,17 +1917,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 					MethodInfo method_info;
 					for (int i = 0; i < p_type->signature_parameter_types.size(); i++) {
 						FSParser::DataType parameter_type = type_from_metatype(resolve_datatype(p_type->signature_parameter_types[i]));
-						if (reject_nested_type_handle(parameter_type, p_type->signature_parameter_types[i])) {
-							return bad_type;
-						}
 						result.method_parameter_types.push_back(parameter_type);
 						method_info.arguments.push_back(parameter_type.to_property_info(""));
 					}
 					if (builtin_type == Variant::CALLABLE) {
 						FSParser::DataType return_type = type_from_metatype(resolve_datatype(p_type->signature_return_type));
-						if (reject_nested_type_handle(return_type, p_type->signature_return_type)) {
-							return bad_type;
-						}
 						result.method_return_type.push_back(return_type);
 						method_info.return_val = return_type.to_property_info("");
 					}
@@ -2134,9 +2138,6 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			return bad_type;
 		}
 		FSParser::DataType result_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
-		if (reject_nested_type_handle(result_type, p_type->get_container_type_or_null(0))) {
-			return bad_type;
-		}
 		return finalize_datatype(make_coroutine_type(result_type));
 	}
 
@@ -11527,6 +11528,14 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 			class_name = nullable_class_name;
 			result.is_nullable = true;
 		}
+		// A `Type[T]` slot spells its class-handle layer into the class name (see
+		// DataType::to_property_info); recover it so a handle does not decode back as an instance type.
+		bool is_class_handle = false;
+		String represented_class_name;
+		if (fs_decode_type_handle_property_class_name(class_name, represented_class_name)) {
+			is_class_handle = true;
+			class_name = represented_class_name;
+		}
 		if (ScriptServer::is_global_class(class_name)) {
 			result.kind = FSParser::DataType::SCRIPT;
 			result.script_path = ScriptServer::get_global_class_path(class_name);
@@ -11539,6 +11548,11 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 		} else {
 			result.kind = FSParser::DataType::NATIVE;
 			result.native_type = class_name == StringName() ? "Object" : class_name;
+		}
+		if (is_class_handle) {
+			result.is_meta_type = true;
+			result.is_pseudo_type = false;
+			result.is_type_handle_annotation = true;
 		}
 	} else {
 		result.kind = FSParser::DataType::BUILTIN;
