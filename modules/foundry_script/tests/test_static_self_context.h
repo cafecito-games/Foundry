@@ -396,6 +396,61 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] A suspended call resumes with th
 	memdelete(signal_source);
 }
 
+TEST_CASE("[Modules][FoundryScript][StaticSelf] Suspended calls do not accumulate receiver references") {
+	StaticSelfLanguageScope language;
+
+	// Awaiting twice builds a state chain: the finished state keeps the earlier one alive through
+	// `first_state`, so a receiver retained by any link in the chain stays reachable.
+	const Ref<FoundryScript> script = compile_static_self_source(
+			"class Base:\n"
+			"\tstatic func probe(cb: Callable, source: Object) -> void:\n"
+			"\t\tawait source.script_changed\n"
+			"\t\tawait source.script_changed\n"
+			"\t\tcb.call()\n"
+			"\n"
+			"class Derived extends Base:\n"
+			"\tpass\n");
+
+	const Ref<FoundryScript> derived = static_self_subclass(script, SNAME("Derived"));
+	REQUIRE(derived.is_valid());
+
+	Object *signal_source = memnew(Object);
+
+	// A suspended state owns a copy of its receiver until the call finishes, and must give it back on
+	// completion. Holding the finished states is what makes that observable, and it is the shape that
+	// matters: a script can keep a finished state in a static variable, and a retained receiver would
+	// close a cycle that outlives cache removal.
+	LocalVector<Ref<FSFunctionState>> finished_states;
+	const auto run_and_retain_finished_call = [&]() {
+		// Recorded descriptors hold the receiver too, so drop them before measuring.
+		static_self_probe_records().clear();
+		Callable::CallError error;
+		Variant pending = call_through_handle(derived, SNAME("probe"),
+				{ probe_callable_value(), Variant(signal_source) }, error);
+		REQUIRE(error.error == Callable::CallError::CALL_OK);
+		Ref<FSFunctionState> function_state = pending;
+		REQUIRE(function_state.is_valid());
+		pending = function_state->resume();
+		Ref<FSFunctionState> resumed_state = pending;
+		REQUIRE(resumed_state.is_valid());
+		resumed_state->resume();
+		REQUIRE_EQ(static_self_probe_records().size(), 1);
+		finished_states.push_back(resumed_state);
+	};
+
+	// One warm-up cycle first, so one-time runtime bookkeeping on a first static call is not mistaken
+	// for accumulation.
+	run_and_retain_finished_call();
+	const int settled_reference_count = derived->get_reference_count();
+
+	for (int i = 0; i < 4; i++) {
+		run_and_retain_finished_call();
+		CHECK_EQ(derived->get_reference_count(), settled_reference_count);
+	}
+
+	memdelete(signal_source);
+}
+
 struct StaticSelfConcurrentCall {
 	Ref<FoundryScript> receiver;
 	int iteration_count = 0;

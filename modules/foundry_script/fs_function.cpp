@@ -184,6 +184,14 @@ FSStaticSelfContext FSStaticSelfContext::for_builtin_type(Variant::Type p_builti
 	return context;
 }
 
+void FSStaticSelfContext::clear() {
+	kind = NONE;
+	native_class = StringName();
+	script = Ref<Script>();
+	type_arguments.clear();
+	builtin_type = Variant::NIL;
+}
+
 bool FSStaticSelfContext::operator==(const FSStaticSelfContext &p_other) const {
 	if (kind != p_other.kind) {
 		return false;
@@ -501,11 +509,12 @@ Variant FSFunctionState::resume(const Variant &p_arg) {
 	state.result = p_arg;
 	Callable::CallError err;
 	Variant ret = function->call(nullptr, nullptr, 0, err, &state);
-	// A resumed function either completed or copied the override into its next suspended state.
-	// Release this state's copy promptly instead of retaining a builtin/object receiver through
-	// the first-state chain.
+	// A resumed function either completed or copied the override and the static receiver into its next
+	// suspended state. Release this state's copies promptly instead of retaining a builtin/object
+	// receiver or a receiver script through the first-state chain.
 	state.self_override = Variant();
 	state.has_self_override = false;
+	state.static_self.clear();
 
 	bool completed = true;
 
@@ -542,6 +551,7 @@ void FSFunctionState::_clear_stack() {
 	}
 	state.self_override = Variant();
 	state.has_self_override = false;
+	state.static_self.clear();
 }
 
 void FSFunctionState::_clear_connections() {

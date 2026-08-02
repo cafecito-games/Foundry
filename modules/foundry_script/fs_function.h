@@ -418,6 +418,11 @@ public:
 	_FORCE_INLINE_ const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
 	_FORCE_INLINE_ Variant::Type get_builtin_type() const { return builtin_type; }
 
+	// Drops the retained receiver. A finished or abandoned call must release it: a script can hold a
+	// completed `FSFunctionState` in a static variable, and a retained receiver would close that into
+	// a reference cycle that outlives cache removal.
+	void clear();
+
 	bool operator==(const FSStaticSelfContext &p_other) const;
 	_FORCE_INLINE_ bool operator!=(const FSStaticSelfContext &p_other) const { return !(*this == p_other); }
 
