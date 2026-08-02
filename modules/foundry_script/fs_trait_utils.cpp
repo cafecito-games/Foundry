@@ -30,6 +30,32 @@
 
 #include "fs_trait_utils.h"
 
+#include "core/templates/hash_set.h"
+
+Vector<StringName> fs_trait_identity_closure(const FSParser::ClassNode *p_trait) {
+	Vector<StringName> identities;
+	if (p_trait == nullptr) {
+		return identities;
+	}
+
+	HashSet<StringName> seen;
+	auto append_identity = [&](const FSParser::ClassNode *p_member) {
+		const StringName identity = fs_trait_identity_name(p_member);
+		if (identity != StringName() && !seen.has(identity)) {
+			seen.insert(identity);
+			identities.push_back(identity);
+		}
+	};
+
+	append_identity(p_trait);
+	for (const FSParser::ClassNode *supertrait : p_trait->resolved_traits) {
+		if (supertrait != nullptr) {
+			append_identity(supertrait);
+		}
+	}
+	return identities;
+}
+
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 
 #include "fs_cache.h"

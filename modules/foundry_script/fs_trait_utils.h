@@ -42,4 +42,5 @@ static _FORCE_INLINE_ StringName fs_trait_identity_name(const FSParser::ClassNod
 	return StringName(p_trait->fqcn);
 }
 
+Vector<StringName> fs_trait_identity_closure(const FSParser::ClassNode *p_trait);
 bool fs_class_has_named_trait(const FSParser::ClassNode *p_class, const StringName &p_trait_name);

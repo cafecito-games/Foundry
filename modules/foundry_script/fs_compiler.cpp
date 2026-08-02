@@ -5506,27 +5506,25 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 							"Cannot compile retroactive conformance in '%s': "
 							"a declared trait was not resolved.",
 							source_file));
-			const StringName trait_name =
-					fs_trait_identity_name(trait_use.resolved_trait);
-			ERR_FAIL_COND_V_MSG(trait_name == StringName(),
+			const Vector<StringName> trait_identities =
+					fs_trait_identity_closure(trait_use.resolved_trait);
+			ERR_FAIL_COND_V_MSG(trait_identities.is_empty(),
 					ERR_COMPILATION_FAILED,
 					vformat(
 							"Cannot compile retroactive conformance in "
 							"'%s': a declared trait has no runtime "
 							"identity.",
 							source_file));
-			ERR_FAIL_COND_V_MSG(emitted_traits.has(trait_name),
-					ERR_COMPILATION_FAILED,
-					vformat(
-							"Cannot compile retroactive conformance in "
-							"'%s': trait '%s' was declared more than "
-							"once.",
-							source_file, String(trait_name)));
-			emitted_traits.insert(trait_name);
-			FSConformanceRegistry::RuntimeConformance trait_entry =
-					runtime_entry;
-			trait_entry.trait_name = trait_name;
-			runtime_entries.push_back(trait_entry);
+			for (const StringName &trait_name : trait_identities) {
+				if (emitted_traits.has(trait_name)) {
+					continue;
+				}
+				emitted_traits.insert(trait_name);
+				FSConformanceRegistry::RuntimeConformance trait_entry =
+						runtime_entry;
+				trait_entry.trait_name = trait_name;
+				runtime_entries.push_back(trait_entry);
+			}
 		}
 		ERR_FAIL_COND_V_MSG(emitted_traits.is_empty(),
 				ERR_COMPILATION_FAILED,

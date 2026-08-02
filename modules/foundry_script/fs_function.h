@@ -122,6 +122,7 @@ public:
 	// trait `p_trait` via an external `extend <native class> uses` declaration. Lets a scriptless native
 	// object satisfy a trait-typed slot at runtime.
 	static bool _native_class_conforms_to_trait(const StringName &p_native_class, const StringName &p_trait);
+	static bool _builtin_type_conforms_to_trait(Variant::Type p_builtin_type, const StringName &p_trait);
 
 	bool is_type(const Variant &p_variant, bool p_allow_implicit_conversion = false) const {
 		if (is_nullable && p_variant.get_type() == Variant::NIL) {
@@ -177,6 +178,9 @@ public:
 			case FOUNDRY_SCRIPT: {
 				if (p_variant.get_type() == Variant::NIL) {
 					return true;
+				}
+				if (is_script_trait && p_variant.get_type() != Variant::OBJECT) {
+					return _builtin_type_conforms_to_trait(p_variant.get_type(), script_trait);
 				}
 				if (p_variant.get_type() != Variant::OBJECT) {
 					return false;

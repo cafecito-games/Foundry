@@ -69,6 +69,13 @@ bool FSDataType::_native_class_conforms_to_trait(const StringName &p_native_clas
 	return FSConformanceRegistry::get_singleton()->native_class_conforms(p_native_class, p_trait, true);
 }
 
+bool FSDataType::_builtin_type_conforms_to_trait(Variant::Type p_builtin_type, const StringName &p_trait) {
+	if (p_builtin_type == Variant::NIL || p_builtin_type == Variant::OBJECT || p_trait == StringName()) {
+		return false;
+	}
+	return FSConformanceRegistry::get_singleton()->builtin_type_conforms(p_builtin_type, p_trait, true);
+}
+
 static FSDataType _gdtype_from_container_type(const ContainerType &p_container_type, bool p_is_type_handle) {
 	FSDataType type;
 	type.is_type_handle = p_is_type_handle;
