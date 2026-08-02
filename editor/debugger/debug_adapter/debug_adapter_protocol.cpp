@@ -1213,6 +1213,14 @@ bool DebugAdapterProtocol::can_verify_breakpoint(const String &p_path, int p_lin
 	return p_line >= 1 && ResourceLoader::exists(p_path);
 }
 
+bool DebugAdapterProtocol::resolve_stack_frame_var_scope_id(const Vector<int> &p_scope_ids, int p_stack_var_type, int &r_var_id) {
+	if (p_stack_var_type < 0 || p_stack_var_type >= p_scope_ids.size()) {
+		return false;
+	}
+	r_var_id = p_scope_ids.get(p_stack_var_type);
+	return true;
+}
+
 void DebugAdapterProtocol::on_debug_breakpoint_toggled(const String &p_path, const int &p_line, const bool &p_enabled) {
 	if (_reregistering_breakpoints) {
 		return;
@@ -1328,8 +1336,8 @@ void DebugAdapterProtocol::on_debug_stack_frame_var(const Array &p_data) {
 	Vector<int> scope_ids = scope_list.find(_frame_vars_frame)->value;
 
 	ERR_FAIL_COND(scope_ids.size() != 3);
-	ERR_FAIL_INDEX(stack_var.type, 4);
-	int var_id = scope_ids.get(stack_var.type);
+	int var_id;
+	ERR_FAIL_COND(!resolve_stack_frame_var_scope_id(scope_ids, stack_var.type, var_id));
 
 	DAP::Variable variable;
 

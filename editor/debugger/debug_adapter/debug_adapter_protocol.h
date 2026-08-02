@@ -202,6 +202,12 @@ public:
 	void reregister_breakpoints_after_launch();
 	static bool can_verify_breakpoint(const String &p_path, int p_line);
 	static String breakpoint_script_path(const String &p_client_path, const String &p_resource_path);
+	// Resolves the scope reference a stack variable belongs to. The valid range for
+	// `p_stack_var_type` is derived from `p_scope_ids` itself (one reference per scope,
+	// in the order the `scopes` response hands them out) rather than a separately
+	// maintained bound, so the two can never disagree about how many scopes exist.
+	// Returns false, leaving `r_var_id` untouched, when `p_stack_var_type` names no scope.
+	static bool resolve_stack_frame_var_scope_id(const Vector<int> &p_scope_ids, int p_stack_var_type, int &r_var_id);
 
 	void poll();
 	Error start(int p_port, const IPAddress &p_bind_ip);
