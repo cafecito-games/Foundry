@@ -1207,14 +1207,17 @@ bool FSAnalyzer::check_class_type_argument_bounds(FSParser::DataType &r_type, co
 		}
 		// Resolve the bound in the generic class's own scope so relative bound names bind to the
 		// declaring class rather than the (possibly unrelated) use site, where an enclosing
-		// class or method type parameter could otherwise shadow them.
+		// class, enum, or method type parameter could otherwise shadow them.
 		FSParser::ClassNode *previous_class = parser->current_class;
 		FSParser::FunctionNode *previous_function = parser->current_function;
+		const FSParser::EnumNode *previous_enum = current_enum;
 		parser->current_class = r_type.class_type;
 		parser->current_function = nullptr;
+		current_enum = nullptr;
 		const FSParser::DataType bound = type_from_metatype(resolve_datatype(parameter->bound));
 		parser->current_class = previous_class;
 		parser->current_function = previous_function;
+		current_enum = previous_enum;
 
 		// An unresolved or unconstrained (`Variant`) bound imposes no requirement.
 		if (!bound.is_set() || bound.is_variant()) {

@@ -2305,7 +2305,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	// A generic tagged union is decided before the collection/class argument handling below, because a
 	// union metatype is Dictionary-backed and would otherwise consume exactly two arguments as key and
 	// value types. Only the declaration's own open form is accepted here; general application follows.
-	if (result.kind == FSParser::DataType::ENUM && result.is_tagged_union && result.enum_case_name == StringName() &&
+	if (result.kind == FSParser::DataType::ENUM && result.is_tagged_union &&
 			(!p_type->container_types.is_empty() || result.has_type_arguments())) {
 		FSParser::EnumNode *declaration = resolve_enum_declaration(result, p_type);
 		if (declaration != nullptr && !declaration->type_parameters.is_empty()) {
@@ -2329,10 +2329,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			bool is_own_open_vector = is_current_declaration && result.type_arguments.size() == expected;
 			for (int i = 0; is_own_open_vector && i < expected; i++) {
 				const FSParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
+				// Full equality, so a decorated spelling of the same parameter — `T?`, `Type[T]` — is an
+				// application rather than the open self type.
 				is_own_open_vector = argument.kind == FSParser::DataType::TYPE_PARAMETER &&
 						argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_ENUM &&
-						argument.type_parameter_index == i &&
-						argument.type_parameter_name == result.type_arguments[i].type_parameter_name;
+						argument.type_parameter_index == i && argument == result.type_arguments[i];
 			}
 			if (is_own_open_vector) {
 				// `Tree[T]` spelled inside `Tree[T]` canonicalizes to the same open handle as bare `Tree`.

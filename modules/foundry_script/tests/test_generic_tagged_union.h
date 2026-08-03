@@ -509,6 +509,61 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Generic union misus
 		CHECK_EQ(first_error_message(parser),
 				String(R"(Generic tagged union "Outcome" type application is not available yet.)"));
 	}
+
+	SUBCASE("external case reference") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "func check(value: Variant) -> bool:\n"
+						   "\treturn value is Holder.Value\n",
+						   "user://generic_tagged_union_case.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+	}
+
+	SUBCASE("decorated self argument") {
+		// `T?` names the same parameter but is a different type, so it is an application, not the
+		// declaration's own open vector.
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Slot[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\tNested(inner: Slot[T?])\n",
+						   "user://generic_tagged_union_nullable_self.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Slot" type application is not available yet.)"));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] An enum parameter cannot shadow a class bound") {
+	// `Box`'s bound resolves in `Box`'s own scope, so the enum parameter active at the use site must
+	// not stand in for the outer class's same-named parameter: the enum's `Bounded` is a different
+	// parameter and does not satisfy the class-scoped bound.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Outer[Bounded: Resource]:\n"
+					   "\tclass Box[X: Bounded]:\n"
+					   "\t\tvar held: X\n"
+					   "\n"
+					   "\tenum Holder[Bounded]:\n"
+					   "\t\tValue(box: Box[Bounded])\n",
+					   "user://generic_tagged_union_class_bound.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_NE(analyzer.analyze(), OK);
+	REQUIRE_EQ(parser.get_errors().size(), 1);
+	CHECK_EQ(first_error_message(parser),
+			String(R"(Type argument "Bounded" does not satisfy the bound "Bounded" of type parameter "X".)"));
 }
 
 } // namespace GenericTaggedUnion
