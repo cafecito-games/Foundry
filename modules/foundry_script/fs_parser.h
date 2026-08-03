@@ -167,6 +167,11 @@ public:
 		bool signature_is_async = false; // Whether the callable type was written as AsyncCallable rather than Callable.
 		Vector<DataType> method_parameter_types; // Rich FoundryScript signature preserving metadata MethodInfo cannot store.
 		Vector<DataType> method_return_type; // Empty for signals, one element for callables.
+		// Rest ("...") tail of a variadic FoundryScript signature: empty, or exactly one resolved Array
+		// DataType. `METHOD_FLAG_VARARG` stays the arity bit. The slot is filled only when the rest
+		// array narrows its element below Variant, so an external/native vararg and a gradual
+		// `...args: Array` / `Array[Variant]` tail alike leave it empty and keep their current behavior.
+		Vector<DataType> method_rest_parameter_type;
 		bool method_return_is_erased_container = false; // Callable return needs typed-container conversion after call/callv.
 		Vector<int> method_extra_allowed_argument_counts; // Extra exact arities not expressible by default arguments, for transformed Callables.
 		int method_unbound_argument_count = 0; // Trailing arguments ignored by transformed Callables.
@@ -212,6 +217,20 @@ public:
 		// Index of the tuple field declared with p_name, or -1 when there is no such named field.
 		int get_tuple_field_index(const StringName &p_name) const;
 		_FORCE_INLINE_ bool has_type_arguments() const { return !type_arguments.is_empty(); }
+
+		_FORCE_INLINE_ bool has_method_rest_parameter_type() const {
+			return method_rest_parameter_type.size() == 1;
+		}
+
+		_FORCE_INLINE_ const DataType &get_method_rest_parameter_type() const {
+			DEV_ASSERT(has_method_rest_parameter_type());
+			return method_rest_parameter_type[0];
+		}
+
+		_FORCE_INLINE_ void set_method_rest_parameter_type(const DataType &p_type) {
+			method_rest_parameter_type.clear();
+			method_rest_parameter_type.push_back(p_type);
+		}
 
 		// Returns a copy of p_type with every TYPE_PARAMETER replaced by its bound argument from p_bindings,
 		// recursing through container elements, type arguments, and method signatures. Unbound parameters are left intact.
@@ -375,6 +394,7 @@ public:
 			signature_is_async = p_other.signature_is_async;
 			method_parameter_types = p_other.method_parameter_types;
 			method_return_type = p_other.method_return_type;
+			method_rest_parameter_type = p_other.method_rest_parameter_type;
 			method_return_is_erased_container = p_other.method_return_is_erased_container;
 			method_extra_allowed_argument_counts = p_other.method_extra_allowed_argument_counts;
 			method_unbound_argument_count = p_other.method_unbound_argument_count;

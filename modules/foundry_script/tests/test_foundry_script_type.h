@@ -2948,4 +2948,161 @@ TEST_CASE("[Modules][FoundryScript] Callable/Signal enum signature leaves encode
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Analyzer accepts concrete typed rest arrays") {
+	CHECK_EQ(analyze_source(
+					 "func collect(prefix: String, ...values: Array[int]) -> int:\n"
+					 "\tprint(prefix)\n"
+					 "\treturn values.size()\n"
+					 "func test() -> int:\n"
+					 "\treturn collect(\"n\", 1, 2, 3)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Analyzer rejects a wrong concrete rest element") {
+	CHECK_NE(analyze_source(
+					 "func collect(...values: Array[int]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tcollect(1, \"bad\", 3)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Callable DataType copies and substitutes its rest slot") {
+	FSParser::DataType element;
+	element.kind = FSParser::DataType::TYPE_PARAMETER;
+	element.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	element.type_parameter_name = SNAME("T");
+	element.type_parameter_scope = FSParser::DataType::TYPE_PARAMETER_METHOD;
+	element.type_parameter_index = 0;
+
+	FSParser::DataType rest_array = make_builtin_type(Variant::ARRAY);
+	rest_array.set_container_element_type(0, element);
+
+	FSParser::DataType callable = make_builtin_type(Variant::CALLABLE);
+	callable.has_method_signature = true;
+	callable.method_return_type.push_back(make_builtin_type(Variant::NIL));
+	callable.set_method_rest_parameter_type(rest_array);
+
+	const FSParser::DataType copied = callable;
+	REQUIRE(copied.has_method_rest_parameter_type());
+	CHECK(copied.get_method_rest_parameter_type().builtin_type == Variant::ARRAY);
+	CHECK(copied.get_method_rest_parameter_type().get_container_element_type(0).type_parameter_name == SNAME("T"));
+
+	HashMap<StringName, FSParser::DataType> bindings;
+	bindings[SNAME("T")] = make_builtin_type(Variant::INT);
+	const FSParser::DataType substituted = FSParser::DataType::substitute(callable, bindings);
+	REQUIRE(substituted.has_method_rest_parameter_type());
+	const FSParser::DataType &substituted_rest = substituted.get_method_rest_parameter_type();
+	REQUIRE(substituted_rest.has_container_element_type(0));
+	CHECK(substituted_rest.get_container_element_type(0).kind == FSParser::DataType::BUILTIN);
+	CHECK(substituted_rest.get_container_element_type(0).builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A gradual rest tail stays untyped") {
+	CHECK_EQ(analyze_source(
+					 "func collect(...values: Array) -> int:\n"
+					 "\treturn values.size()\n"
+					 "func collect_variant(...values: Array[Variant]) -> int:\n"
+					 "\treturn values.size()\n"
+					 "func test() -> int:\n"
+					 "\treturn collect(1, \"two\", null) + collect_variant(1, \"two\", null)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A non-Array rest annotation is still rejected") {
+	CHECK_NE(analyze_source(
+					 "func collect(...values: int) -> void:\n"
+					 "\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tcollect(1)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rest argument diagnostic names the element type") {
+	const PackedStringArray errors = analyze_source_errors(
+			"func collect(prefix: String, ...values: Array[int]) -> void:\n"
+			"\tprints(prefix, values)\n"
+			"func test() -> void:\n"
+			"\tcollect(\"ok\", 1, \"bad\", 3)\n");
+	CHECK(errors.has(R"*(Invalid argument for "collect()" function: argument 3 should be "int" but is "String".)*"));
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An exact typed rest override is accepted") {
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not change the rest element type") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[String]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not drop a typed rest tail") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not add a typed rest tail to a gradual parent") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not change a nested rest element signature") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[Callable[[int], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[Callable[[String], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An identical nested rest element signature is accepted") {
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[Callable[[int], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[Callable[[int], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
 } // namespace FSTests

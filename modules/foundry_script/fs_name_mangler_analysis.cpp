@@ -862,6 +862,9 @@ void FSNameManglerAnalysis::_collect_function(const FSFunction *p_function, Buil
 				argument_type, source + " function argument type", r_state);
 	}
 	_collect_data_type(
+			p_function->rest_parameter_type,
+			source + " function rest parameter type", r_state);
+	_collect_data_type(
 			p_function->return_type, source + " function return type",
 			r_state);
 	for (const Variant &default_argument : p_function->method_info.default_arguments) {

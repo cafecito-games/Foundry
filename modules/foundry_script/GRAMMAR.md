@@ -592,6 +592,19 @@ return_type     = type | "void" ;
 Rules (`parse_function_signature`):
 
 - At most one **rest** parameter (`...name`), which must be last and cannot have a default.
+- A rest parameter describes the **collected array**, so its annotation must resolve to `Array`
+  or `Array[T]`; any other type is rejected with *"The rest parameter type must be `Array`, but
+  `X` is specified."* The element-oriented spelling `...name: T` is not accepted for functions
+  and lambdas.
+- With `Array[T]`, `T` is the expected type of every **surplus** call argument: arguments past
+  the fixed parameter list are checked against `T` under the same conversion, nullability,
+  strict-dynamic and diagnostic rules as a fixed parameter, and the diagnostic names `T` rather
+  than `Array[T]`. Inside the body the parameter has exactly the declared `Array[T]` type, and a
+  call that supplies no surplus arguments still receives a typed empty array whenever `T` is
+  representable as a typed container (nullable and other erased element forms follow the same
+  typed-container erasure as an ordinary `Array[T]` value).
+- `...name`, `...name: Array`, and `...name: Array[Variant]` are gradual: surplus arguments are
+  unconstrained.
 - Parameters with defaults must follow parameters without defaults (except the rest
   parameter).
 - `void` is allowed only as a return type.

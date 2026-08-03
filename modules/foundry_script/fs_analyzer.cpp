@@ -930,6 +930,12 @@ static FSParser::DataType make_callable_type(const MethodInfo &p_info, const FSP
 	for (FSParser::ParameterNode *parameter : p_function->parameters) {
 		type.method_parameter_types.push_back(parameter->get_datatype());
 	}
+	if (p_function->is_vararg()) {
+		const FSParser::DataType rest_type = p_function->rest_parameter->get_datatype();
+		if (FSAnalyzer::rest_parameter_type_is_narrowing(rest_type)) {
+			type.set_method_rest_parameter_type(rest_type);
+		}
+	}
 	type.method_return_type.push_back(p_function->get_datatype());
 	// A lambda/function that awaits is a coroutine, so the callable it forms is async.
 	type.signature_is_async = type.signature_is_async || p_function->is_coroutine;
@@ -3437,8 +3443,6 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 			FSParser::DataType specified_type = p_function->rest_parameter->get_datatype();
 			if (specified_type.kind != FSParser::DataType::BUILTIN || specified_type.builtin_type != Variant::ARRAY) {
 				push_error(vformat(R"(The rest parameter type must be "Array", but "%s" is specified.)", specified_type.to_string()), p_function->rest_parameter->datatype_specifier);
-			} else if ((specified_type.has_container_element_type(0) && !specified_type.get_container_element_type(0).is_variant())) {
-				push_error(R"(Typed arrays are currently not supported for the rest parameter.)", p_function->rest_parameter->datatype_specifier);
 			}
 		} else {
 			FSParser::DataType inferred_type;
@@ -3507,7 +3511,8 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 		FSParser::FunctionNode *parent_function = nullptr;
 		FSParser::ClassNode *parent_function_class = nullptr;
 		const FSParser::DataType override_self_type = _self_type_for_class(parser->current_class);
-		const bool has_parent_signature = !p_is_lambda && !is_enum_function && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base, nullptr, &parent_function, &parent_function_class, &override_self_type);
+		FSParser::DataType parent_rest_type;
+		const bool has_parent_signature = !p_is_lambda && !is_enum_function && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base, nullptr, &parent_function, &parent_function_class, &override_self_type, &parent_rest_type);
 
 		// get_function_signature reports an async parent's return as Coroutine[T], but a function's own
 		// declared return type is the raw T. Async-ness is checked separately via METHOD_FLAG_ASYNC, so
@@ -3584,6 +3589,21 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 						valid = valid && is_type_compatible(current_par_type, parent_par_type);
 					}
 				}
+			}
+
+			// A typed rest tail is an exact contract between a base and its override: every surplus
+			// argument a polymorphic call may pass is checked against the base's element type, so an
+			// override that narrows it, widens it, or pairs it with a gradual tail would accept a
+			// different set of trailing arguments than the call site was checked against.
+			const FSParser::DataType current_rest_type =
+					p_function->is_vararg() ? p_function->rest_parameter->get_datatype() : FSParser::DataType();
+			const bool parent_rest_is_typed = rest_parameter_type_is_narrowing(parent_rest_type);
+			const bool current_rest_is_typed = rest_parameter_type_is_narrowing(current_rest_type);
+			if (parent_rest_is_typed || current_rest_is_typed) {
+				valid = valid && parent_rest_is_typed && current_rest_is_typed &&
+						FSTypeCompatibility::is_invariant_equal(
+								parent_rest_type.get_container_element_type(0),
+								current_rest_type.get_container_element_type(0));
 			}
 
 			if (!valid_coroutine_override) {
@@ -6447,8 +6467,10 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 	}
 
 	FSParser::FunctionNode *found_function = nullptr;
+	FSParser::DataType rest_parameter_type;
 	if (get_function_signature(p_call, is_constructor, base_type, p_call->function_name, return_type, par_types,
-				default_arg_count, method_flags, nullptr, &is_noreturn, &found_function)) {
+				default_arg_count, method_flags, nullptr, &is_noreturn, &found_function, nullptr, nullptr,
+				&rest_parameter_type)) {
 		p_call->is_static = method_flags.has_flag(METHOD_FLAG_STATIC);
 		p_call->is_noreturn = is_noreturn;
 
@@ -6520,11 +6542,19 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			}
 		}
 
+		// A surplus argument fills a rest-array element slot, so it is typed from the rest element type
+		// exactly as a fixed argument is typed from its parameter.
+		const FSParser::DataType *surplus_type = nullptr;
+		if (rest_parameter_type.is_set() && FSAnalyzer::rest_parameter_type_is_narrowing(rest_parameter_type)) {
+			surplus_type = &rest_parameter_type.container_element_types[0];
+		}
+
 		// If the function requires typed arrays we must make literals be typed.
 		for (const KeyValue<int, FSParser::ArrayNode *> &E : arrays) {
 			int index = E.key;
-			if (index < par_types.size() && par_types.get(index).is_hard_type() && par_types.get(index).has_container_element_type(0)) {
-				const FSParser::DataType par_type = par_types.get(index);
+			const FSParser::DataType *expected_type = index < par_types.size() ? &par_types.get(index) : surplus_type;
+			if (expected_type != nullptr && expected_type->is_hard_type() && expected_type->has_container_element_type(0)) {
+				const FSParser::DataType par_type = *expected_type;
 				update_array_literal_element_type(E.value,
 						par_type.get_container_element_type(0),
 						_datatype_contains_self_type_parameter(par_type));
@@ -6532,8 +6562,9 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		}
 		for (const KeyValue<int, FSParser::DictionaryNode *> &E : dictionaries) {
 			int index = E.key;
-			if (index < par_types.size() && par_types.get(index).is_hard_type() && par_types.get(index).has_container_element_types()) {
-				const FSParser::DataType par_type = par_types.get(index);
+			const FSParser::DataType *expected_dictionary_type = index < par_types.size() ? &par_types.get(index) : surplus_type;
+			if (expected_dictionary_type != nullptr && expected_dictionary_type->is_hard_type() && expected_dictionary_type->has_container_element_types()) {
+				const FSParser::DataType par_type = *expected_dictionary_type;
 				FSParser::DataType key = par_type.get_container_element_type_or_variant(0);
 				FSParser::DataType value = par_type.get_container_element_type_or_variant(1);
 				update_dictionary_literal_element_type(E.value, key, value, _datatype_contains_self_type_parameter(par_type));
@@ -6546,7 +6577,8 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		}
 
 		if (named_arguments_valid) {
-			call_site_validation.validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count);
+			const FSParser::DataType *rest_type = rest_parameter_type.is_set() ? &rest_parameter_type : nullptr;
+			call_site_validation.validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count, rest_type);
 		}
 		call_site_validation.validate_signal_connect_arg(base_type, p_call);
 		call_site_validation.validate_local_object_signal_callable_arg(p_call, is_self);
@@ -11709,6 +11741,13 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 	return result;
 }
 
+bool FSAnalyzer::rest_parameter_type_is_narrowing(const FSParser::DataType &p_rest_parameter_type) {
+	return p_rest_parameter_type.kind == FSParser::DataType::BUILTIN &&
+			p_rest_parameter_type.builtin_type == Variant::ARRAY &&
+			p_rest_parameter_type.has_container_element_type(0) &&
+			!p_rest_parameter_type.get_container_element_type(0).is_variant();
+}
+
 bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_constructor,
 		FSParser::DataType p_base_type, const StringName &p_function,
 		FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types,
@@ -11716,9 +11755,13 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		StringName *r_native_class, bool *r_is_noreturn,
 		FSParser::FunctionNode **r_found_function,
 		FSParser::ClassNode **r_found_in_class,
-		const FSParser::DataType *p_self_type_override) {
+		const FSParser::DataType *p_self_type_override,
+		FSParser::DataType *r_rest_parameter_type) {
 	r_method_flags = METHOD_FLAGS_DEFAULT;
 	r_default_arg_count = 0;
+	if (r_rest_parameter_type) {
+		*r_rest_parameter_type = FSParser::DataType();
+	}
 	if (r_native_class) {
 		*r_native_class = StringName();
 	}
@@ -11771,6 +11814,10 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		}
 		if (witness->is_vararg()) {
 			r_method_flags.set_flag(METHOD_FLAG_VARARG);
+			if (r_rest_parameter_type != nullptr) {
+				*r_rest_parameter_type = substitute_member_type(
+						witness->rest_parameter->get_datatype(), p_base_type, witness, &self_type);
+			}
 		}
 		for (FSParser::ParameterNode *parameter : witness->parameters) {
 			r_par_types.push_back(substitute_member_type(parameter->get_datatype(), p_base_type, witness, &self_type));
@@ -11811,11 +11858,15 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				if (found_function->is_coroutine) {
 					r_method_flags.set_flag(METHOD_FLAG_ASYNC);
 				}
+				const FSParser::DataType enum_value_type = type_handle_represented_type(p_base_type);
 				if (found_function->is_vararg()) {
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
+					if (r_rest_parameter_type != nullptr) {
+						*r_rest_parameter_type = substitute_member_type(
+								found_function->rest_parameter->get_datatype(), enum_value_type, found_function, &enum_value_type);
+					}
 				}
 
-				const FSParser::DataType enum_value_type = type_handle_represented_type(p_base_type);
 				for (FSParser::ParameterNode *parameter : found_function->parameters) {
 					r_par_types.push_back(substitute_member_type(
 							parameter->get_datatype(), enum_value_type, found_function, &enum_value_type));
@@ -12385,6 +12436,10 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		}
 		if (found_function->is_vararg()) {
 			r_method_flags.set_flag(METHOD_FLAG_VARARG);
+			if (r_rest_parameter_type != nullptr) {
+				*r_rest_parameter_type = substitute_member_type(
+						found_function->rest_parameter->get_datatype(), specialized_base, found_function, &parameter_self_type);
+			}
 		}
 		if (p_source != nullptr && p_source->type == FSParser::Node::CALL &&
 				original_base_class != nullptr && found_in_class != nullptr && found_in_class != original_base_class &&

@@ -62,4 +62,10 @@ public:
 	// read-only Array, so no runtime evidence distinguishes a named tuple from its unnamed erasure and
 	// the "check" would silently accept unnamed -> named or named A -> named B.
 	static bool allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide);
+
+	// Structural identity used for invariant positions such as a typed container element: two types
+	// match only when every nested slot -- container elements, generic arguments, and callable/signal
+	// parameter, return and rest signatures -- matches as well. `DataType::operator==` stops at the
+	// principal type, so it accepts two callables with different signatures.
+	static bool is_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
 };

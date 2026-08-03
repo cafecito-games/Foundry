@@ -278,6 +278,9 @@ FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const 
 	for (int i = 0; i < result.method_return_type.size(); i++) {
 		result.method_return_type.write[i] = substitute(result.method_return_type[i], p_bindings);
 	}
+	for (int i = 0; i < result.method_rest_parameter_type.size(); i++) {
+		result.method_rest_parameter_type.write[i] = substitute(result.method_rest_parameter_type[i], p_bindings);
+	}
 	return result;
 }
 

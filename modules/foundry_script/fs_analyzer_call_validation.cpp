@@ -880,7 +880,69 @@ String FSAnalyzer::CallSiteValidationContext::make_invalid_argument_error(
 			p_actual_type.to_string());
 }
 
-void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count) {
+const FSParser::DataType *FSAnalyzer::CallSiteValidationContext::rest_element_type(const FSParser::DataType *p_rest_parameter_type) {
+	if (p_rest_parameter_type == nullptr || !FSAnalyzer::rest_parameter_type_is_narrowing(*p_rest_parameter_type)) {
+		return nullptr;
+	}
+	return &p_rest_parameter_type->container_element_types[0];
+}
+
+void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const FSParser::DataType &p_expected_type, FSParser::ExpressionNode *p_argument, int p_argument_number, const StringName &p_function, const FSParser::CallNode *p_call) {
+	FSParser::DataType par_type = p_expected_type;
+
+	analyzer->mark_coroutine_handle_capture(p_argument, par_type);
+
+	if (par_type.is_hard_type() && p_argument->is_constant) {
+		analyzer->update_const_expression_builtin_type(p_argument, par_type, "pass");
+	}
+	FSParser::DataType arg_type = p_argument->get_datatype();
+
+	if (analyzer->datatype_contains_self_type_parameter(par_type)) {
+		if (!analyzer->datatype_matches_self_parameter_contract(par_type, arg_type) &&
+				!(p_call != nullptr && analyzer->is_bare_self_value_parameter(par_type) &&
+						analyzer->call_argument_is_same_receiver(p_call, p_argument))) {
+			analyzer->push_error(make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, false, false, p_argument), p_argument);
+		}
+		return;
+	}
+
+	if (arg_type.is_variant() || !arg_type.is_hard_type()) {
+		if (arg_type.is_variant() && analyzer->strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
+			analyzer->push_error(make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, true, false, p_argument), p_argument);
+		} else {
+#ifdef DEBUG_ENABLED
+			// Argument can be anything, so this is unsafe (unless the parameter is a hard variant).
+			if (!(par_type.is_hard_type() && par_type.is_variant())) {
+				analyzer->mark_node_unsafe(p_argument);
+				analyzer->parser->push_warning(p_argument, FSWarning::UNSAFE_CALL_ARGUMENT, itos(p_argument_number), "function", p_function, par_type.to_string(), arg_type.to_string_strict());
+			}
+#endif // DEBUG_ENABLED
+		}
+	} else if (par_type.is_hard_type() && !analyzer->is_type_compatible(par_type, arg_type, true)) {
+		const bool nullable_mismatch = analyzer->strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
+		String type_handle_error;
+		if (!nullable_mismatch) {
+			type_handle_error = analyzer->make_type_handle_argument_error(p_function, p_argument_number, par_type, arg_type, p_argument);
+		}
+		if (!type_handle_error.is_empty()) {
+			analyzer->push_error(type_handle_error, p_argument);
+		} else if (nullable_mismatch || !FSTypeCompatibility::allows_runtime_narrowing(par_type, arg_type)) {
+			analyzer->push_error(make_invalid_argument_error(p_function, p_argument_number, par_type, arg_type, false, nullable_mismatch, p_argument), p_argument);
+#ifdef DEBUG_ENABLED
+		} else {
+			// Supertypes are acceptable for dynamic compliance, but it's unsafe.
+			analyzer->mark_node_unsafe(p_call != nullptr ? static_cast<const FSParser::Node *>(p_call) : static_cast<const FSParser::Node *>(p_argument));
+			analyzer->parser->push_warning(p_argument, FSWarning::UNSAFE_CALL_ARGUMENT, itos(p_argument_number), "function", p_function, par_type.to_string(), arg_type.to_string_strict());
+#endif // DEBUG_ENABLED
+		}
+#ifdef DEBUG_ENABLED
+	} else if (par_type.kind == FSParser::DataType::BUILTIN && par_type.builtin_type == Variant::INT && arg_type.kind == FSParser::DataType::BUILTIN && arg_type.builtin_type == Variant::FLOAT) {
+		analyzer->parser->push_warning(p_argument, FSWarning::NARROWING_CONVERSION, p_function);
+#endif // DEBUG_ENABLED
+	}
+}
+
+void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count, const FSParser::DataType *p_rest_parameter_type) {
 	if (p_call->arguments.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
 		analyzer->push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least %d but received %d.)*", p_call->function_name, p_par_types.size() - p_default_args_count, p_call->arguments.size()), p_call);
 	}
@@ -888,100 +950,29 @@ void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParse
 		analyzer->push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most %d but received %d.)*", p_call->function_name, p_par_types.size(), p_call->arguments.size()), p_call->arguments[p_par_types.size()]);
 	}
 
+	const FSParser::DataType *element_type = rest_element_type(p_rest_parameter_type);
 	List<FSParser::DataType>::ConstIterator par_itr = p_par_types.begin();
 	const int checked_argument_count = MAX(p_call->arguments.size() - p_trailing_unbound_argument_count, 0);
-	for (int i = 0; i < checked_argument_count; ++par_itr, ++i) {
-		if (i >= p_par_types.size()) {
-			// Already on vararg place.
-			break;
+	for (int i = 0; i < checked_argument_count; ++i) {
+		const FSParser::DataType *expected_type = nullptr;
+		if (i < p_par_types.size()) {
+			// A default the analyzer synthesized for a skipped middle parameter is not validated against
+			// the (possibly type-parameter-substituted) parameter type, mirroring a trailing omitted
+			// default the callee fills in itself. Its value was already coerced to the declared type when
+			// the parameter was resolved, so the baked constant matches the callee's runtime default.
+			if (!p_call->synthesized_argument_indices.has(i)) {
+				expected_type = &*par_itr;
+			}
+			++par_itr;
+		} else {
+			// Surplus arguments occupy repeated rest-element slots, so they are checked against the
+			// rest array's element type under the same policy as a fixed parameter.
+			expected_type = element_type;
 		}
-		// A default the analyzer synthesized for a skipped middle parameter is not validated against
-		// the (possibly type-parameter-substituted) parameter type, mirroring a trailing omitted
-		// default the callee fills in itself. Its value was already coerced to the declared type when
-		// the parameter was resolved, so the baked constant matches the callee's runtime default.
-		if (p_call->synthesized_argument_indices.has(i)) {
+		if (expected_type == nullptr) {
 			continue;
 		}
-		FSParser::DataType par_type = *par_itr;
-
-		analyzer->mark_coroutine_handle_capture(p_call->arguments[i], par_type);
-
-		if (par_type.is_hard_type() && p_call->arguments[i]->is_constant) {
-			analyzer->update_const_expression_builtin_type(p_call->arguments[i], par_type, "pass");
-		}
-		FSParser::DataType arg_type = p_call->arguments[i]->get_datatype();
-
-		if (analyzer->datatype_contains_self_type_parameter(par_type)) {
-			if (!analyzer->datatype_matches_self_parameter_contract(par_type, arg_type) &&
-					!(analyzer->is_bare_self_value_parameter(par_type) && analyzer->call_argument_is_same_receiver(p_call, p_call->arguments[i]))) {
-				analyzer->push_error(make_invalid_argument_error(
-											 p_call->function_name,
-											 i + 1,
-											 par_type,
-											 arg_type,
-											 false,
-											 false,
-											 p_call->arguments[i]),
-						p_call->arguments[i]);
-			}
-			continue;
-		}
-
-		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
-			if (arg_type.is_variant() && analyzer->strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
-				analyzer->push_error(make_invalid_argument_error(
-											 p_call->function_name,
-											 i + 1,
-											 par_type,
-											 arg_type,
-											 true,
-											 false,
-											 p_call->arguments[i]),
-						p_call->arguments[i]);
-			} else {
-#ifdef DEBUG_ENABLED
-				// Argument can be anything, so this is unsafe (unless the parameter is a hard variant).
-				if (!(par_type.is_hard_type() && par_type.is_variant())) {
-					analyzer->mark_node_unsafe(p_call->arguments[i]);
-					analyzer->parser->push_warning(p_call->arguments[i], FSWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_call->function_name, par_type.to_string(), arg_type.to_string_strict());
-				}
-#endif // DEBUG_ENABLED
-			}
-		} else if (par_type.is_hard_type() && !analyzer->is_type_compatible(par_type, arg_type, true)) {
-			const bool nullable_mismatch = analyzer->strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
-			String type_handle_error;
-			if (!nullable_mismatch) {
-				type_handle_error = analyzer->make_type_handle_argument_error(
-						p_call->function_name,
-						i + 1,
-						par_type,
-						arg_type,
-						p_call->arguments[i]);
-			}
-			if (!type_handle_error.is_empty()) {
-				analyzer->push_error(type_handle_error, p_call->arguments[i]);
-			} else if (nullable_mismatch || !FSTypeCompatibility::allows_runtime_narrowing(par_type, arg_type)) {
-				analyzer->push_error(make_invalid_argument_error(
-											 p_call->function_name,
-											 i + 1,
-											 par_type,
-											 arg_type,
-											 false,
-											 nullable_mismatch,
-											 p_call->arguments[i]),
-						p_call->arguments[i]);
-#ifdef DEBUG_ENABLED
-			} else {
-				// Supertypes are acceptable for dynamic compliance, but it's unsafe.
-				analyzer->mark_node_unsafe(p_call);
-				analyzer->parser->push_warning(p_call->arguments[i], FSWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_call->function_name, par_type.to_string(), arg_type.to_string_strict());
-#endif // DEBUG_ENABLED
-			}
-#ifdef DEBUG_ENABLED
-		} else if (par_type.kind == FSParser::DataType::BUILTIN && par_type.builtin_type == Variant::INT && arg_type.kind == FSParser::DataType::BUILTIN && arg_type.builtin_type == Variant::FLOAT) {
-			analyzer->parser->push_warning(p_call->arguments[i], FSWarning::NARROWING_CONVERSION, p_call->function_name);
-#endif // DEBUG_ENABLED
-		}
+		validate_argument_against_type(*expected_type, p_call->arguments[i], i + 1, p_call->function_name, p_call);
 	}
 }
 
@@ -1002,69 +993,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_callable_array_literal_args
 		if (i >= p_par_types.size()) {
 			break;
 		}
-
-		FSParser::ExpressionNode *argument = p_array->elements[i];
-		FSParser::DataType par_type = p_par_types[i];
-
-		analyzer->mark_coroutine_handle_capture(argument, par_type);
-
-		if (par_type.is_hard_type() && argument->is_constant) {
-			analyzer->update_const_expression_builtin_type(argument, par_type, "pass");
-		}
-		FSParser::DataType arg_type = argument->get_datatype();
-
-		if (analyzer->datatype_contains_self_type_parameter(par_type)) {
-			if (!analyzer->datatype_matches_self_parameter_contract(par_type, arg_type)) {
-				analyzer->push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, false, false, argument), argument);
-			}
-			continue;
-		}
-
-		if (arg_type.is_variant() || !arg_type.is_hard_type()) {
-			if (arg_type.is_variant() && analyzer->strict_dynamic_checks && !(par_type.is_hard_type() && par_type.is_variant())) {
-				analyzer->push_error(make_invalid_argument_error(p_function, i + 1, par_type, arg_type, true, false, argument), argument);
-			} else {
-#ifdef DEBUG_ENABLED
-				if (!(par_type.is_hard_type() && par_type.is_variant())) {
-					analyzer->mark_node_unsafe(argument);
-					analyzer->parser->push_warning(argument, FSWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_function, par_type.to_string(), arg_type.to_string_strict());
-				}
-#endif // DEBUG_ENABLED
-			}
-		} else if (par_type.is_hard_type() && !analyzer->is_type_compatible(par_type, arg_type, true)) {
-			const bool nullable_mismatch = analyzer->strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
-			String type_handle_error;
-			if (!nullable_mismatch) {
-				type_handle_error = analyzer->make_type_handle_argument_error(
-						p_function,
-						i + 1,
-						par_type,
-						arg_type,
-						argument);
-			}
-			if (!type_handle_error.is_empty()) {
-				analyzer->push_error(type_handle_error, argument);
-			} else if (nullable_mismatch || !FSTypeCompatibility::allows_runtime_narrowing(par_type, arg_type)) {
-				analyzer->push_error(make_invalid_argument_error(
-											 p_function,
-											 i + 1,
-											 par_type,
-											 arg_type,
-											 false,
-											 nullable_mismatch,
-											 argument),
-						argument);
-#ifdef DEBUG_ENABLED
-			} else {
-				analyzer->mark_node_unsafe(argument);
-				analyzer->parser->push_warning(argument, FSWarning::UNSAFE_CALL_ARGUMENT, itos(i + 1), "function", p_function, par_type.to_string(), arg_type.to_string_strict());
-#endif // DEBUG_ENABLED
-			}
-#ifdef DEBUG_ENABLED
-		} else if (par_type.kind == FSParser::DataType::BUILTIN && par_type.builtin_type == Variant::INT && arg_type.kind == FSParser::DataType::BUILTIN && arg_type.builtin_type == Variant::FLOAT) {
-			analyzer->parser->push_warning(argument, FSWarning::NARROWING_CONVERSION, p_function);
-#endif // DEBUG_ENABLED
-		}
+		validate_argument_against_type(p_par_types[i], p_array->elements[i], i + 1, p_function, nullptr);
 	}
 }
 

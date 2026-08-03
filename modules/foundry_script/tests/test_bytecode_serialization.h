@@ -1112,6 +1112,7 @@ static void bytecode_check_function_matches(const FSFunction *p_original, const 
 	CHECK(p_restored->is_vararg() == p_original->is_vararg());
 	CHECK(p_restored->get_max_stack_size() == p_original->get_max_stack_size());
 	CHECK(p_restored->get_instruction_args_size() == p_original->get_instruction_args_size());
+	CHECK(p_restored->get_rest_parameter_type() == p_original->get_rest_parameter_type());
 	CHECK(p_restored->get_return_type() == p_original->get_return_type());
 	CHECK(p_restored->get_method_info().name == p_original->get_method_info().name);
 	CHECK(p_restored->get_method_info().flags == p_original->get_method_info().flags);
@@ -1869,6 +1870,70 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Call-stack tracking gates OPCODE_LINE 
 
 	memdelete(tracked_function);
 	memdelete(untracked_function);
+}
+
+TEST_CASE("[FoundryScript][Bytecode][TypedRestParameter] A typed rest array survives loading without a front end") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"func collect(...values: Array[int]) -> Array:\n"
+			"\treturn [values.is_typed(), values.get_typed_builtin(), values.size()]\n");
+
+	FSFunction *const *original_entry = original->get_member_functions().getptr(SNAME("collect"));
+	REQUIRE(original_entry != nullptr);
+	REQUIRE((*original_entry)->is_vararg());
+	const FSDataType &original_rest_type = (*original_entry)->get_rest_parameter_type();
+	CHECK(original_rest_type.kind == FSDataType::BUILTIN);
+	CHECK(original_rest_type.builtin_type == Variant::ARRAY);
+	REQUIRE(original_rest_type.has_container_element_type(0));
+	CHECK(original_rest_type.get_container_element_type(0).builtin_type == Variant::INT);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	// A shipped game runs from bytecode alone, so remove the source before rebuilding the script.
+	const String script_path = original->get_script_path();
+	REQUIRE(DirAccess::remove_absolute(script_path) == OK);
+
+	BytecodeTestResolver resolver;
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_skeleton(buffer, restored) == OK);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+	REQUIRE(restored->is_valid());
+
+	Callable::CallError call_error;
+	Variant owner = restored->_new(nullptr, -1, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	Object *instance = owner;
+	REQUIRE(instance != nullptr);
+
+	const Array empty_result = instance->callp(SNAME("collect"), nullptr, 0, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(empty_result.size() == 3);
+	CHECK(bool(empty_result[0]));
+	CHECK(int(empty_result[1]) == int(Variant::INT));
+	CHECK(int(empty_result[2]) == 0);
+
+	const Variant first = 1;
+	const Variant second = 2;
+	const Variant third = 3;
+	const Variant *arguments[3] = { &first, &second, &third };
+	const Array filled_result = instance->callp(SNAME("collect"), arguments, 3, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(filled_result.size() == 3);
+	CHECK(bool(filled_result[0]));
+	CHECK(int(filled_result[1]) == int(Variant::INT));
+	CHECK(int(filled_result[2]) == 3);
+
+	const Variant wrong = "bad";
+	const Variant *wrong_arguments[1] = { &wrong };
+	instance->callp(SNAME("collect"), wrong_arguments, 1, call_error);
+	CHECK(call_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+	CHECK(call_error.argument == 0);
+	CHECK(call_error.expected == int(Variant::INT));
 }
 
 } // namespace FSTests

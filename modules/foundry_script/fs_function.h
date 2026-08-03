@@ -722,6 +722,10 @@ private:
 	StringName source;
 	bool _static = false;
 	Vector<FSDataType> argument_types;
+	// Compiled type of the rest ("...") parameter, unset for a non-variadic function. `_vararg_index`
+	// stays the arity/stack-slot marker; this only carries the collected Array's element contract so
+	// the call prologue can reify and validate it. `MethodInfo` is deliberately unchanged.
+	FSDataType rest_parameter_type;
 	FSDataType return_type;
 	MethodInfo method_info;
 	Variant rpc_config;
@@ -902,6 +906,13 @@ private:
 	String _get_call_error(const String &p_where, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const;
 	String _get_callable_call_error(const String &p_where, const Callable &p_callable, const Variant **p_argptrs, int p_argcount, const Variant &p_ret, const Callable::CallError &p_err) const;
 	Variant _get_default_variant_for_data_type(const FSDataType &p_data_type);
+	// Validates one incoming call argument against a compiled parameter/element type and writes the
+	// converted value to `r_value`. Returns false and fills `r_err` with
+	// `CALL_ERROR_INVALID_ARGUMENT` for `p_argument_index` when the value cannot be accepted; `r_value`
+	// is left untouched in that case. Shared by fixed parameters and rest-array elements so both apply
+	// the same conversion policy.
+	bool _convert_call_argument(const Variant &p_value, const FSDataType &p_type, Variant &r_value,
+			Callable::CallError &r_err, int p_argument_index) const;
 
 public:
 	static constexpr int MAX_CALL_DEPTH = 2048; // Limit to try to avoid crash because of a stack overflow.
@@ -936,6 +947,7 @@ public:
 	_FORCE_INLINE_ bool is_vararg() const { return _vararg_index >= 0; }
 	_FORCE_INLINE_ MethodInfo get_method_info() const { return method_info; }
 	_FORCE_INLINE_ const FSDataType &get_return_type() const { return return_type; }
+	_FORCE_INLINE_ const FSDataType &get_rest_parameter_type() const { return rest_parameter_type; }
 	_FORCE_INLINE_ int get_argument_count() const { return _argument_count; }
 	_FORCE_INLINE_ Variant get_rpc_config() const { return rpc_config; }
 	_FORCE_INLINE_ int get_max_stack_size() const { return _stack_size; }
