@@ -302,6 +302,13 @@ int FSByteCodeGenerator::get_container_type_pos(const FSDataType &p_type) {
 	if (p_type.is_type_handle) {
 		return get_constant_pos(make_container_type_descriptor(p_type));
 	}
+	// The bare `script_type` fallback below transports only the operand-encoded carrier, which cannot
+	// tell a 32-bit constraint from a 64-bit one. A slot that declared a width therefore needs the full
+	// descriptor, or `Array[ulong]` would reach the runtime as the carrier-named, unconstrained
+	// `Array[uint]` and disagree with the analyzer-built container for the same annotation.
+	if (p_type.numeric_type != NumericType::NONE) {
+		return get_constant_pos(make_container_type_descriptor(p_type));
+	}
 	return get_constant_pos(p_type.script_type);
 }
 
