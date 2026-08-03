@@ -2671,7 +2671,7 @@ TEST_CASE("[Variant][UInt] Checked conversion between the integer carriers repor
 	}
 }
 
-TEST_CASE("[Variant][UInt] Mixed and same-carrier unsigned arithmetic stays unregistered") {
+TEST_CASE("[Variant][UInt] Mixed signed and unsigned arithmetic stays unregistered") {
 	const Variant signed_one = int64_t(1);
 	const Variant unsigned_one = make_uint(1);
 	const Variant::Operator arithmetic[] = {
@@ -2680,6 +2680,12 @@ TEST_CASE("[Variant][UInt] Mixed and same-carrier unsigned arithmetic stays unre
 		Variant::OP_MULTIPLY,
 		Variant::OP_DIVIDE,
 		Variant::OP_MODULE,
+		Variant::OP_POWER,
+		Variant::OP_SHIFT_LEFT,
+		Variant::OP_SHIFT_RIGHT,
+		Variant::OP_BIT_AND,
+		Variant::OP_BIT_OR,
+		Variant::OP_BIT_XOR,
 	};
 
 	for (Variant::Operator op : arithmetic) {
@@ -2687,15 +2693,351 @@ TEST_CASE("[Variant][UInt] Mixed and same-carrier unsigned arithmetic stays unre
 		Variant result;
 		Variant::evaluate(op, signed_one, unsigned_one, result, valid);
 		CHECK_FALSE(valid);
+		CHECK_EQ(Variant::get_operator_return_type(op, Variant::INT, Variant::UINT), Variant::NIL);
 
 		valid = true;
 		Variant::evaluate(op, unsigned_one, signed_one, result, valid);
 		CHECK_FALSE(valid);
-
-		valid = true;
-		Variant::evaluate(op, unsigned_one, unsigned_one, result, valid);
-		CHECK_FALSE(valid);
+		CHECK_EQ(Variant::get_operator_return_type(op, Variant::UINT, Variant::INT), Variant::NIL);
 	}
+
+	// Unary negation has no meaning for a carrier that cannot hold a negative value.
+	bool valid = true;
+	Variant result;
+	Variant::evaluate(Variant::OP_NEGATE, unsigned_one, Variant(), result, valid);
+	CHECK_FALSE(valid);
+}
+
+// Evaluates `p_op` on the unsigned carrier through the plain, validated, and pointer operator
+// tables, checks the three agree, and returns the plain-path result.
+static uint64_t evaluate_uint_binary(Variant::Operator p_op, uint64_t p_left, uint64_t p_right) {
+	const Variant left = make_uint(p_left);
+	const Variant right = make_uint(p_right);
+
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(p_op, left, right, result, valid);
+	REQUIRE(valid);
+	REQUIRE_EQ(result.get_type(), Variant::UINT);
+	REQUIRE_EQ(Variant::get_operator_return_type(p_op, Variant::UINT, Variant::UINT), Variant::UINT);
+
+	const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(p_op, Variant::UINT, Variant::UINT);
+	REQUIRE(validated != nullptr);
+	if (validated != nullptr) {
+		Variant validated_result;
+		VariantInternal::initialize(&validated_result, Variant::UINT);
+		validated(&left, &right, &validated_result);
+		CHECK_EQ(validated_result.get_type(), Variant::UINT);
+		CHECK_EQ(validated_result.operator uint64_t(), result.operator uint64_t());
+	}
+
+	const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(p_op, Variant::UINT, Variant::UINT);
+	REQUIRE(pointer != nullptr);
+	if (pointer != nullptr) {
+		uint64_t pointer_result = 0;
+		pointer(&p_left, &p_right, &pointer_result);
+		CHECK_EQ(pointer_result, result.operator uint64_t());
+	}
+
+	return result.operator uint64_t();
+}
+
+TEST_CASE("[Variant][UInt] Same-carrier arithmetic wraps modulo 2^64") {
+	// The signed carrier cannot express these results, so a UINT return type is itself evidence that
+	// the evaluators use unsigned arithmetic rather than overflowing `int64_t`.
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_ADD, UINT64_MAX, 1), 0u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_ADD, UINT64_MAX, UINT64_MAX), UINT64_MAX - 1);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_ADD, uint64_t(INT64_MAX), 1), uint64_t(INT64_MAX) + 1);
+
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SUBTRACT, 0, 1), UINT64_MAX);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SUBTRACT, 0, UINT64_MAX), 1u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SUBTRACT, UINT64_MAX, UINT64_MAX), 0u);
+
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_MULTIPLY, UINT64_MAX, 2), UINT64_MAX - 1);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_MULTIPLY, uint64_t(1) << 32, uint64_t(1) << 32), 0u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_MULTIPLY, UINT64_MAX, 0), 0u);
+}
+
+TEST_CASE("[Variant][UInt] Division and remainder use the full unsigned range") {
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_DIVIDE, UINT64_MAX, 2), uint64_t(INT64_MAX));
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_DIVIDE, UINT64_MAX, UINT64_MAX), 1u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_DIVIDE, 0, UINT64_MAX), 0u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_MODULE, UINT64_MAX, 10), 5u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_MODULE, uint64_t(INT64_MAX) + 1, 3), 2u);
+
+	bool valid = true;
+	Variant result;
+	Variant::evaluate(Variant::OP_DIVIDE, make_uint(UINT64_MAX), make_uint(0), result, valid);
+	CHECK_FALSE(valid);
+	REQUIRE_EQ(result.get_type(), Variant::STRING);
+	CHECK_EQ(result.operator String(), String("Division by zero error"));
+
+	valid = true;
+	Variant::evaluate(Variant::OP_MODULE, make_uint(UINT64_MAX), make_uint(0), result, valid);
+	CHECK_FALSE(valid);
+	REQUIRE_EQ(result.get_type(), Variant::STRING);
+	CHECK_EQ(result.operator String(), String("Modulo by zero error"));
+}
+
+TEST_CASE("[Variant][UInt] Power is exact unsigned exponentiation that wraps") {
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_POWER, 2, 63), uint64_t(1) << 63);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_POWER, 2, 64), 0u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_POWER, UINT64_MAX, 1), UINT64_MAX);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_POWER, UINT64_MAX, 0), 1u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_POWER, 0, 0), 1u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_POWER, 0, 5), 0u);
+
+	// 3^40 needs 64 bits of mantissa, so a floating-point implementation would round it.
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_POWER, 3, 40), uint64_t(12157665459056928801ULL));
+}
+
+TEST_CASE("[Variant][UInt] Shifts are logical across the full width") {
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SHIFT_LEFT, 1, 63), uint64_t(1) << 63);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SHIFT_LEFT, uint64_t(1) << 63, 1), 0u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SHIFT_LEFT, UINT64_MAX, 63), uint64_t(1) << 63);
+
+	// A signed right shift of the same bit pattern would replicate the sign bit instead.
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SHIFT_RIGHT, uint64_t(1) << 63, 63), 1u);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SHIFT_RIGHT, UINT64_MAX, 1), uint64_t(INT64_MAX));
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_SHIFT_RIGHT, UINT64_MAX, 63), 1u);
+
+	const Variant::Operator shifts[] = { Variant::OP_SHIFT_LEFT, Variant::OP_SHIFT_RIGHT };
+	for (Variant::Operator op : shifts) {
+		for (uint64_t count : { uint64_t(64), UINT64_MAX }) {
+			bool valid = true;
+			Variant result;
+			Variant::evaluate(op, make_uint(1), make_uint(count), result, valid);
+			CHECK_FALSE(valid);
+			CHECK_EQ(result.get_type(), Variant::STRING);
+		}
+	}
+}
+
+TEST_CASE("[Variant][UInt] Validated and pointer paths refuse operands they cannot compute") {
+	// Neither entry point can report failure through its signature, so instead of running the
+	// undefined C++ operation they must fall back to a defined result.
+	struct RejectedCase {
+		Variant::Operator op;
+		uint64_t right;
+	};
+	const RejectedCase cases[] = {
+		{ Variant::OP_DIVIDE, 0 },
+		{ Variant::OP_MODULE, 0 },
+		{ Variant::OP_SHIFT_LEFT, 64 },
+		{ Variant::OP_SHIFT_RIGHT, 64 },
+		{ Variant::OP_SHIFT_LEFT, UINT64_MAX },
+		{ Variant::OP_SHIFT_RIGHT, UINT64_MAX },
+	};
+
+	ERR_PRINT_OFF;
+	for (const RejectedCase &rejected : cases) {
+		const Variant left = make_uint(UINT64_MAX);
+		const Variant right = make_uint(rejected.right);
+
+		const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(rejected.op, Variant::UINT, Variant::UINT);
+		REQUIRE(validated != nullptr);
+		if (validated != nullptr) {
+			Variant validated_result;
+			VariantInternal::initialize(&validated_result, Variant::UINT);
+			VariantInternal::get_uint(&validated_result)[0] = 7;
+			validated(&left, &right, &validated_result);
+			CHECK_EQ(validated_result.get_type(), Variant::UINT);
+			CHECK_EQ(validated_result.operator uint64_t(), 0u);
+		}
+
+		const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(rejected.op, Variant::UINT, Variant::UINT);
+		REQUIRE(pointer != nullptr);
+		if (pointer != nullptr) {
+			const uint64_t left_value = UINT64_MAX;
+			const uint64_t right_value = rejected.right;
+			uint64_t pointer_result = 7;
+			pointer(&left_value, &right_value, &pointer_result);
+			CHECK_EQ(pointer_result, 0u);
+		}
+	}
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[Variant][UInt] Bitwise operators cover the sign bit") {
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_BIT_OR, uint64_t(1) << 63, uint64_t(INT64_MAX)), UINT64_MAX);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_BIT_AND, UINT64_MAX, uint64_t(1) << 63), uint64_t(1) << 63);
+	CHECK_EQ(evaluate_uint_binary(Variant::OP_BIT_XOR, UINT64_MAX, uint64_t(1) << 63), uint64_t(INT64_MAX));
+
+	const uint64_t negated_inputs[] = { 0, UINT64_MAX, uint64_t(1) << 63, uint64_t(INT64_MAX) };
+	for (uint64_t value : negated_inputs) {
+		bool valid = false;
+		Variant result;
+		Variant::evaluate(Variant::OP_BIT_NEGATE, make_uint(value), Variant(), result, valid);
+		REQUIRE(valid);
+		CHECK_EQ(result.get_type(), Variant::UINT);
+		CHECK_EQ(result.operator uint64_t(), ~value);
+	}
+
+	// Unary `+` is an identity that must preserve the carrier.
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(Variant::OP_POSITIVE, make_uint(UINT64_MAX), Variant(), result, valid);
+	REQUIRE(valid);
+	CHECK_EQ(result.get_type(), Variant::UINT);
+	CHECK_EQ(result.operator uint64_t(), UINT64_MAX);
+}
+
+TEST_CASE("[Variant][UInt] Same-carrier ordering spans the upper half of the range") {
+	const Variant::Operator comparisons[] = {
+		Variant::OP_EQUAL,
+		Variant::OP_NOT_EQUAL,
+		Variant::OP_LESS,
+		Variant::OP_LESS_EQUAL,
+		Variant::OP_GREATER,
+		Variant::OP_GREATER_EQUAL,
+	};
+	const bool expected[][6] = {
+		{ false, true, true, true, false, false },
+		{ true, false, false, true, false, true },
+	};
+	const uint64_t left_values[] = { uint64_t(INT64_MAX), UINT64_MAX };
+	const uint64_t right_values[] = { UINT64_MAX, UINT64_MAX };
+
+	for (int pair = 0; pair < 2; pair++) {
+		for (int index = 0; index < 6; index++) {
+			bool valid = false;
+			Variant result;
+			Variant::evaluate(comparisons[index], make_uint(left_values[pair]), make_uint(right_values[pair]), result, valid);
+			REQUIRE(valid);
+			REQUIRE_EQ(result.get_type(), Variant::BOOL);
+			CHECK_EQ(result.operator bool(), expected[pair][index]);
+		}
+	}
+}
+
+TEST_CASE("[Variant][UInt] Truthiness participates in the logical operators") {
+	Object *object = memnew(Object);
+	const Variant truthy = make_uint(uint64_t(1) << 63);
+	const Variant falsy = make_uint(0);
+	const Variant others[] = { Variant(), Variant(true), Variant(false), Variant(int64_t(0)), Variant(int64_t(1)), Variant(0.0), Variant(1.0), Variant(object) };
+
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(Variant::OP_NOT, truthy, Variant(), result, valid);
+	REQUIRE(valid);
+	CHECK_EQ(result.operator bool(), false);
+	Variant::evaluate(Variant::OP_NOT, falsy, Variant(), result, valid);
+	REQUIRE(valid);
+	CHECK_EQ(result.operator bool(), true);
+
+	for (const Variant &other : others) {
+		const bool other_truth = other.booleanize();
+		for (const Variant &unsigned_value : { truthy, falsy }) {
+			const bool unsigned_truth = unsigned_value.booleanize();
+
+			valid = false;
+			Variant::evaluate(Variant::OP_AND, unsigned_value, other, result, valid);
+			REQUIRE(valid);
+			CHECK_EQ(result.operator bool(), unsigned_truth && other_truth);
+
+			valid = false;
+			Variant::evaluate(Variant::OP_AND, other, unsigned_value, result, valid);
+			REQUIRE(valid);
+			CHECK_EQ(result.operator bool(), other_truth && unsigned_truth);
+
+			valid = false;
+			Variant::evaluate(Variant::OP_OR, unsigned_value, other, result, valid);
+			REQUIRE(valid);
+			CHECK_EQ(result.operator bool(), unsigned_truth || other_truth);
+
+			valid = false;
+			Variant::evaluate(Variant::OP_OR, other, unsigned_value, result, valid);
+			REQUIRE(valid);
+			CHECK_EQ(result.operator bool(), other_truth || unsigned_truth);
+
+			valid = false;
+			Variant::evaluate(Variant::OP_XOR, unsigned_value, other, result, valid);
+			REQUIRE(valid);
+			CHECK_EQ(result.operator bool(), unsigned_truth != other_truth);
+
+			valid = false;
+			Variant::evaluate(Variant::OP_XOR, other, unsigned_value, result, valid);
+			REQUIRE(valid);
+			CHECK_EQ(result.operator bool(), other_truth != unsigned_truth);
+		}
+	}
+
+	// Both unsigned operands must resolve too.
+	valid = false;
+	Variant::evaluate(Variant::OP_XOR, truthy, falsy, result, valid);
+	REQUIRE(valid);
+	CHECK_EQ(result.operator bool(), true);
+
+	memdelete(object);
+}
+
+TEST_CASE("[Variant][UInt] String modulo formats the unsigned magnitude") {
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(Variant::OP_MODULE, Variant("value: %s"), make_uint(UINT64_MAX), result, valid);
+	REQUIRE(valid);
+	CHECK_EQ(result.operator String(), String("value: 18446744073709551615"));
+
+	valid = false;
+	Variant::evaluate(Variant::OP_MODULE, Variant(StringName("value: %s")), make_uint(uint64_t(INT64_MAX) + 1), result, valid);
+	REQUIRE(valid);
+	CHECK_EQ(result.operator String(), String("value: 9223372036854775808"));
+}
+
+// Evaluates `p_value in p_container` and requires the containment operator to be registered.
+static bool evaluate_uint_containment(uint64_t p_value, const Variant &p_container) {
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(Variant::OP_IN, make_uint(p_value), p_container, result, valid);
+	REQUIRE(valid);
+	REQUIRE_EQ(result.get_type(), Variant::BOOL);
+	return result.operator bool();
+}
+
+TEST_CASE("[Variant][UInt] Containment finds unsigned values in every supported container") {
+	Dictionary dictionary;
+	dictionary[make_uint(UINT64_MAX)] = "top";
+	dictionary[int64_t(7)] = "seven";
+	CHECK(evaluate_uint_containment(UINT64_MAX, dictionary));
+	CHECK(evaluate_uint_containment(7, dictionary));
+	CHECK_FALSE(evaluate_uint_containment(0, dictionary));
+
+	Array array;
+	array.push_back(make_uint(UINT64_MAX));
+	array.push_back(int64_t(7));
+	CHECK(evaluate_uint_containment(UINT64_MAX, array));
+	CHECK(evaluate_uint_containment(7, array));
+	CHECK_FALSE(evaluate_uint_containment(8, array));
+
+	PackedByteArray bytes;
+	bytes.push_back(2);
+	CHECK(evaluate_uint_containment(2, bytes));
+	CHECK_FALSE(evaluate_uint_containment(300, bytes));
+	CHECK_FALSE(evaluate_uint_containment(UINT64_MAX, bytes));
+
+	PackedInt32Array int32_values;
+	int32_values.push_back(-1);
+	int32_values.push_back(5);
+	CHECK(evaluate_uint_containment(5, int32_values));
+	// A value outside the element range must never alias onto a negative element.
+	CHECK_FALSE(evaluate_uint_containment(UINT64_MAX, int32_values));
+	CHECK_FALSE(evaluate_uint_containment(uint64_t(UINT32_MAX), int32_values));
+
+	PackedInt64Array int64_values;
+	int64_values.push_back(-1);
+	int64_values.push_back(9);
+	CHECK(evaluate_uint_containment(9, int64_values));
+	CHECK_FALSE(evaluate_uint_containment(UINT64_MAX, int64_values));
+
+	PackedFloat32Array float32_values;
+	float32_values.push_back(1.0f);
+	CHECK(evaluate_uint_containment(1, float32_values));
+	CHECK_FALSE(evaluate_uint_containment(2, float32_values));
+
+	PackedFloat64Array float64_values;
+	float64_values.push_back(2.0);
+	CHECK(evaluate_uint_containment(2, float64_values));
+	CHECK_FALSE(evaluate_uint_containment(3, float64_values));
 }
 
 TEST_CASE("[Variant][UInt] The carrier name round-trips") {

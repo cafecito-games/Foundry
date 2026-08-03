@@ -209,6 +209,14 @@ public:
 	} else                                                                                                                 \
 		((void)0)
 
+// The unsigned carrier has no C++ nominal type to hand to `register_string_modulo_op`.
+#define register_string_modulo_uint_op()                                                                                     \
+	if constexpr (true) {                                                                                                    \
+		register_op<OperatorEvaluatorStringFormatUInt<String>>(Variant::OP_MODULE, Variant::STRING, Variant::UINT);          \
+		register_op<OperatorEvaluatorStringFormatUInt<StringName>>(Variant::OP_MODULE, Variant::STRING_NAME, Variant::UINT); \
+	} else                                                                                                                   \
+		((void)0)
+
 void Variant::_register_variant_operators() {
 	memset(operator_return_type_table, 0, sizeof(operator_return_type_table));
 	memset(operator_evaluator_table, 0, sizeof(operator_evaluator_table));
@@ -216,6 +224,7 @@ void Variant::_register_variant_operators() {
 	memset(ptr_operator_evaluator_table, 0, sizeof(ptr_operator_evaluator_table));
 
 	register_op<OperatorEvaluatorAdd<int64_t, int64_t, int64_t>>(Variant::OP_ADD, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorUIntBinary<VariantUIntAddOperation>>(Variant::OP_ADD, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorAdd<double, int64_t, double>>(Variant::OP_ADD, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorAdd<double, double, int64_t>>(Variant::OP_ADD, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorAdd<double, double, double>>(Variant::OP_ADD, Variant::FLOAT, Variant::FLOAT);
@@ -241,6 +250,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorAppendArray<Vector4>>(Variant::OP_ADD, Variant::PACKED_VECTOR4_ARRAY, Variant::PACKED_VECTOR4_ARRAY);
 
 	register_op<OperatorEvaluatorSub<int64_t, int64_t, int64_t>>(Variant::OP_SUBTRACT, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorUIntBinary<VariantUIntSubtractOperation>>(Variant::OP_SUBTRACT, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorSub<double, int64_t, double>>(Variant::OP_SUBTRACT, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorSub<double, double, int64_t>>(Variant::OP_SUBTRACT, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorSub<double, double, double>>(Variant::OP_SUBTRACT, Variant::FLOAT, Variant::FLOAT);
@@ -254,6 +264,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorSub<Color, Color, Color>>(Variant::OP_SUBTRACT, Variant::COLOR, Variant::COLOR);
 
 	register_op<OperatorEvaluatorMul<int64_t, int64_t, int64_t>>(Variant::OP_MULTIPLY, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorUIntBinary<VariantUIntMultiplyOperation>>(Variant::OP_MULTIPLY, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorMul<double, int64_t, double>>(Variant::OP_MULTIPLY, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorMul<Vector2, int64_t, Vector2>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR2);
 	register_op<OperatorEvaluatorMul<Vector2i, int64_t, Vector2i>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR2I);
@@ -351,6 +362,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorMul<Color, double, Color>>(Variant::OP_MULTIPLY, Variant::FLOAT, Variant::COLOR);
 
 	register_op<OperatorEvaluatorDivNZ<int64_t, int64_t, int64_t>>(Variant::OP_DIVIDE, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorUIntCheckedBinary<VariantUIntDivideOperation>>(Variant::OP_DIVIDE, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorDiv<double, double, int64_t>>(Variant::OP_DIVIDE, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorDiv<double, int64_t, double>>(Variant::OP_DIVIDE, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorDiv<double, double, double>>(Variant::OP_DIVIDE, Variant::FLOAT, Variant::FLOAT);
@@ -396,6 +408,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorDiv<Color, Color, int64_t>>(Variant::OP_DIVIDE, Variant::COLOR, Variant::INT);
 
 	register_op<OperatorEvaluatorModNZ<int64_t, int64_t, int64_t>>(Variant::OP_MODULE, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorUIntCheckedBinary<VariantUIntModuloOperation>>(Variant::OP_MODULE, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorModNZ<Vector2i, Vector2i, Vector2i>>(Variant::OP_MODULE, Variant::VECTOR2I, Variant::VECTOR2I);
 	register_op<OperatorEvaluatorModNZ<Vector2i, Vector2i, int64_t>>(Variant::OP_MODULE, Variant::VECTOR2I, Variant::INT);
 
@@ -409,6 +422,7 @@ void Variant::_register_variant_operators() {
 
 	register_string_modulo_op(bool, Variant::BOOL);
 	register_string_modulo_op(int64_t, Variant::INT);
+	register_string_modulo_uint_op();
 	register_string_modulo_op(double, Variant::FLOAT);
 	register_string_modulo_op(String, Variant::STRING);
 	register_string_modulo_op(Vector2, Variant::VECTOR2);
@@ -449,6 +463,7 @@ void Variant::_register_variant_operators() {
 	register_string_modulo_op(PackedVector4Array, Variant::PACKED_VECTOR4_ARRAY);
 
 	register_op<OperatorEvaluatorPow<int64_t, int64_t, int64_t>>(Variant::OP_POWER, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorUIntBinary<VariantUIntPowerOperation>>(Variant::OP_POWER, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorPow<double, int64_t, double>>(Variant::OP_POWER, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorPow<double, double, double>>(Variant::OP_POWER, Variant::FLOAT, Variant::FLOAT);
 	register_op<OperatorEvaluatorPow<double, double, int64_t>>(Variant::OP_POWER, Variant::FLOAT, Variant::INT);
@@ -466,6 +481,8 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorNeg<Color, Color>>(Variant::OP_NEGATE, Variant::COLOR, Variant::NIL);
 
 	register_op<OperatorEvaluatorPos<int64_t, int64_t>>(Variant::OP_POSITIVE, Variant::INT, Variant::NIL);
+	// `OP_NEGATE` is deliberately absent for `UINT`: the unsigned carrier cannot hold a negative value.
+	register_op<OperatorEvaluatorUIntUnary<VariantUIntPositiveOperation>>(Variant::OP_POSITIVE, Variant::UINT, Variant::NIL);
 	register_op<OperatorEvaluatorPos<double, double>>(Variant::OP_POSITIVE, Variant::FLOAT, Variant::NIL);
 	register_op<OperatorEvaluatorPos<Vector2, Vector2>>(Variant::OP_POSITIVE, Variant::VECTOR2, Variant::NIL);
 	register_op<OperatorEvaluatorPos<Vector2i, Vector2i>>(Variant::OP_POSITIVE, Variant::VECTOR2I, Variant::NIL);
@@ -483,6 +500,12 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorBitAnd<int64_t, int64_t, int64_t>>(Variant::OP_BIT_AND, Variant::INT, Variant::INT);
 	register_op<OperatorEvaluatorBitXor<int64_t, int64_t, int64_t>>(Variant::OP_BIT_XOR, Variant::INT, Variant::INT);
 	register_op<OperatorEvaluatorBitNeg<int64_t, int64_t>>(Variant::OP_BIT_NEGATE, Variant::INT, Variant::NIL);
+	register_op<OperatorEvaluatorUIntCheckedBinary<VariantUIntShiftLeftOperation>>(Variant::OP_SHIFT_LEFT, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntCheckedBinary<VariantUIntShiftRightOperation>>(Variant::OP_SHIFT_RIGHT, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntBinary<VariantUIntBitOrOperation>>(Variant::OP_BIT_OR, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntBinary<VariantUIntBitAndOperation>>(Variant::OP_BIT_AND, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntBinary<VariantUIntBitXorOperation>>(Variant::OP_BIT_XOR, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntUnary<VariantUIntBitNegateOperation>>(Variant::OP_BIT_NEGATE, Variant::UINT, Variant::NIL);
 
 	register_op<OperatorEvaluatorAlwaysTrue>(Variant::OP_EQUAL, Variant::NIL, Variant::NIL);
 	register_op<OperatorEvaluatorEqual<bool, bool>>(Variant::OP_EQUAL, Variant::BOOL, Variant::BOOL);
@@ -838,6 +861,18 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorIntXObjectOr>(Variant::OP_OR, Variant::INT, Variant::OBJECT);
 	register_op<OperatorEvaluatorObjectXIntOr>(Variant::OP_OR, Variant::OBJECT, Variant::INT);
 
+	register_op<OperatorEvaluatorUIntXUIntOr>(Variant::OP_OR, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorNilXUIntOr>(Variant::OP_OR, Variant::NIL, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXNilOr>(Variant::OP_OR, Variant::UINT, Variant::NIL);
+	register_op<OperatorEvaluatorBoolXUIntOr>(Variant::OP_OR, Variant::BOOL, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXBoolOr>(Variant::OP_OR, Variant::UINT, Variant::BOOL);
+	register_op<OperatorEvaluatorIntXUIntOr>(Variant::OP_OR, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXIntOr>(Variant::OP_OR, Variant::UINT, Variant::INT);
+	register_op<OperatorEvaluatorUIntXFloatOr>(Variant::OP_OR, Variant::UINT, Variant::FLOAT);
+	register_op<OperatorEvaluatorFloatXUIntOr>(Variant::OP_OR, Variant::FLOAT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXObjectOr>(Variant::OP_OR, Variant::UINT, Variant::OBJECT);
+	register_op<OperatorEvaluatorObjectXUIntOr>(Variant::OP_OR, Variant::OBJECT, Variant::UINT);
+
 	register_op<OperatorEvaluatorFloatXFloatOr>(Variant::OP_OR, Variant::FLOAT, Variant::FLOAT);
 	register_op<OperatorEvaluatorFloatXObjectOr>(Variant::OP_OR, Variant::FLOAT, Variant::OBJECT);
 	register_op<OperatorEvaluatorObjectXFloatOr>(Variant::OP_OR, Variant::OBJECT, Variant::FLOAT);
@@ -867,6 +902,18 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorIntXObjectAnd>(Variant::OP_AND, Variant::INT, Variant::OBJECT);
 	register_op<OperatorEvaluatorObjectXIntAnd>(Variant::OP_AND, Variant::OBJECT, Variant::INT);
 
+	register_op<OperatorEvaluatorUIntXUIntAnd>(Variant::OP_AND, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorNilXUIntAnd>(Variant::OP_AND, Variant::NIL, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXNilAnd>(Variant::OP_AND, Variant::UINT, Variant::NIL);
+	register_op<OperatorEvaluatorBoolXUIntAnd>(Variant::OP_AND, Variant::BOOL, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXBoolAnd>(Variant::OP_AND, Variant::UINT, Variant::BOOL);
+	register_op<OperatorEvaluatorIntXUIntAnd>(Variant::OP_AND, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXIntAnd>(Variant::OP_AND, Variant::UINT, Variant::INT);
+	register_op<OperatorEvaluatorUIntXFloatAnd>(Variant::OP_AND, Variant::UINT, Variant::FLOAT);
+	register_op<OperatorEvaluatorFloatXUIntAnd>(Variant::OP_AND, Variant::FLOAT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXObjectAnd>(Variant::OP_AND, Variant::UINT, Variant::OBJECT);
+	register_op<OperatorEvaluatorObjectXUIntAnd>(Variant::OP_AND, Variant::OBJECT, Variant::UINT);
+
 	register_op<OperatorEvaluatorFloatXFloatAnd>(Variant::OP_AND, Variant::FLOAT, Variant::FLOAT);
 	register_op<OperatorEvaluatorFloatXObjectAnd>(Variant::OP_AND, Variant::FLOAT, Variant::OBJECT);
 	register_op<OperatorEvaluatorObjectXFloatAnd>(Variant::OP_AND, Variant::OBJECT, Variant::FLOAT);
@@ -895,6 +942,18 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorFloatXIntXor>(Variant::OP_XOR, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorIntXObjectXor>(Variant::OP_XOR, Variant::INT, Variant::OBJECT);
 	register_op<OperatorEvaluatorObjectXIntXor>(Variant::OP_XOR, Variant::OBJECT, Variant::INT);
+
+	register_op<OperatorEvaluatorUIntXUIntXor>(Variant::OP_XOR, Variant::UINT, Variant::UINT);
+	register_op<OperatorEvaluatorNilXUIntXor>(Variant::OP_XOR, Variant::NIL, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXNilXor>(Variant::OP_XOR, Variant::UINT, Variant::NIL);
+	register_op<OperatorEvaluatorBoolXUIntXor>(Variant::OP_XOR, Variant::BOOL, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXBoolXor>(Variant::OP_XOR, Variant::UINT, Variant::BOOL);
+	register_op<OperatorEvaluatorIntXUIntXor>(Variant::OP_XOR, Variant::INT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXIntXor>(Variant::OP_XOR, Variant::UINT, Variant::INT);
+	register_op<OperatorEvaluatorUIntXFloatXor>(Variant::OP_XOR, Variant::UINT, Variant::FLOAT);
+	register_op<OperatorEvaluatorFloatXUIntXor>(Variant::OP_XOR, Variant::FLOAT, Variant::UINT);
+	register_op<OperatorEvaluatorUIntXObjectXor>(Variant::OP_XOR, Variant::UINT, Variant::OBJECT);
+	register_op<OperatorEvaluatorObjectXUIntXor>(Variant::OP_XOR, Variant::OBJECT, Variant::UINT);
 
 	register_op<OperatorEvaluatorFloatXFloatXor>(Variant::OP_XOR, Variant::FLOAT, Variant::FLOAT);
 	register_op<OperatorEvaluatorFloatXObjectXor>(Variant::OP_XOR, Variant::FLOAT, Variant::OBJECT);
@@ -947,6 +1006,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorInDictionaryHasNil>(Variant::OP_IN, Variant::NIL, Variant::DICTIONARY);
 	register_op<OperatorEvaluatorInDictionaryHas<bool>>(Variant::OP_IN, Variant::BOOL, Variant::DICTIONARY);
 	register_op<OperatorEvaluatorInDictionaryHas<int64_t>>(Variant::OP_IN, Variant::INT, Variant::DICTIONARY);
+	register_op<OperatorEvaluatorInDictionaryHasUInt>(Variant::OP_IN, Variant::UINT, Variant::DICTIONARY);
 	register_op<OperatorEvaluatorInDictionaryHas<double>>(Variant::OP_IN, Variant::FLOAT, Variant::DICTIONARY);
 	register_op<OperatorEvaluatorInDictionaryHas<String>>(Variant::OP_IN, Variant::STRING, Variant::DICTIONARY);
 	register_op<OperatorEvaluatorInDictionaryHas<Vector2>>(Variant::OP_IN, Variant::VECTOR2, Variant::DICTIONARY);
@@ -989,6 +1049,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorInArrayFindNil>(Variant::OP_IN, Variant::NIL, Variant::ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<bool, Array>>(Variant::OP_IN, Variant::BOOL, Variant::ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<int64_t, Array>>(Variant::OP_IN, Variant::INT, Variant::ARRAY);
+	register_op<OperatorEvaluatorInArrayFindUInt>(Variant::OP_IN, Variant::UINT, Variant::ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<double, Array>>(Variant::OP_IN, Variant::FLOAT, Variant::ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<String, Array>>(Variant::OP_IN, Variant::STRING, Variant::ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<Vector2, Array>>(Variant::OP_IN, Variant::VECTOR2, Variant::ARRAY);
@@ -1029,18 +1090,23 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorInArrayFind<PackedVector4Array, Array>>(Variant::OP_IN, Variant::PACKED_VECTOR4_ARRAY, Variant::ARRAY);
 
 	register_op<OperatorEvaluatorInArrayFind<int64_t, PackedByteArray>>(Variant::OP_IN, Variant::INT, Variant::PACKED_BYTE_ARRAY);
+	register_op<OperatorEvaluatorInPackedArrayFindUInt<uint8_t, PackedByteArray>>(Variant::OP_IN, Variant::UINT, Variant::PACKED_BYTE_ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<double, PackedByteArray>>(Variant::OP_IN, Variant::FLOAT, Variant::PACKED_BYTE_ARRAY);
 
 	register_op<OperatorEvaluatorInArrayFind<int64_t, PackedInt32Array>>(Variant::OP_IN, Variant::INT, Variant::PACKED_INT32_ARRAY);
+	register_op<OperatorEvaluatorInPackedArrayFindUInt<int32_t, PackedInt32Array>>(Variant::OP_IN, Variant::UINT, Variant::PACKED_INT32_ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<double, PackedInt32Array>>(Variant::OP_IN, Variant::FLOAT, Variant::PACKED_INT32_ARRAY);
 
 	register_op<OperatorEvaluatorInArrayFind<int64_t, PackedInt64Array>>(Variant::OP_IN, Variant::INT, Variant::PACKED_INT64_ARRAY);
+	register_op<OperatorEvaluatorInPackedArrayFindUInt<int64_t, PackedInt64Array>>(Variant::OP_IN, Variant::UINT, Variant::PACKED_INT64_ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<double, PackedInt64Array>>(Variant::OP_IN, Variant::FLOAT, Variant::PACKED_INT64_ARRAY);
 
 	register_op<OperatorEvaluatorInArrayFind<int64_t, PackedFloat32Array>>(Variant::OP_IN, Variant::INT, Variant::PACKED_FLOAT32_ARRAY);
+	register_op<OperatorEvaluatorInPackedArrayFindUInt<float, PackedFloat32Array>>(Variant::OP_IN, Variant::UINT, Variant::PACKED_FLOAT32_ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<double, PackedFloat32Array>>(Variant::OP_IN, Variant::FLOAT, Variant::PACKED_FLOAT32_ARRAY);
 
 	register_op<OperatorEvaluatorInArrayFind<int64_t, PackedFloat64Array>>(Variant::OP_IN, Variant::INT, Variant::PACKED_FLOAT64_ARRAY);
+	register_op<OperatorEvaluatorInPackedArrayFindUInt<double, PackedFloat64Array>>(Variant::OP_IN, Variant::UINT, Variant::PACKED_FLOAT64_ARRAY);
 	register_op<OperatorEvaluatorInArrayFind<double, PackedFloat64Array>>(Variant::OP_IN, Variant::FLOAT, Variant::PACKED_FLOAT64_ARRAY);
 
 	register_op<OperatorEvaluatorInArrayFind<String, PackedStringArray>>(Variant::OP_IN, Variant::STRING, Variant::PACKED_STRING_ARRAY);
@@ -1057,6 +1123,7 @@ void Variant::_register_variant_operators() {
 
 #undef register_string_op
 #undef register_string_modulo_op
+#undef register_string_modulo_uint_op
 
 void Variant::_unregister_variant_operators() {
 }
