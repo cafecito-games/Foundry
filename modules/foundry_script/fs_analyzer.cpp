@@ -464,6 +464,17 @@ int FSAnalyzer::test_get_external_parser_cache_size(const FSAnalyzer *p_analyzer
 }
 #endif // TESTS_ENABLED
 
+// The width a resolved built-in type name constrains its slot to today.
+//
+// `int` keeps an unconstrained width for now: every native integer boundary still decodes wide (see
+// `type_from_property()`), so pinning the 32-bit constraint before the promotion classifier and the
+// native metadata mapping exist would reject correct code rather than narrow it. The three new
+// spellings have no such history and carry their exact width immediately. The registry itself keeps
+// the accurate descriptor, so this is the only place the distinction is made.
+static NumericType _applied_numeric_type(NumericType p_registry_numeric_type) {
+	return p_registry_numeric_type == NumericType::INT32 ? NumericType::NONE : p_registry_numeric_type;
+}
+
 static String _normalize_bootstrap_path(const String &p_path) {
 	return ResourceUID::ensure_path(p_path).replace_char('\\', '/').simplify_path();
 }
@@ -1932,14 +1943,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 
 			result.kind = FSParser::DataType::BUILTIN;
 			result.builtin_type = builtin_type;
-			// `int` keeps an unconstrained width for now: every native integer boundary still decodes
-			// wide, so pinning the 32-bit constraint here before the promotion classifier (#1566) and the
-			// native metadata mapping (#1570) exist would reject correct code rather than narrow it. The
-			// three new spellings have no such history, so they carry their exact width immediately.
-			const bool width_constraint_deferred = builtin_data_type.numeric_type == NumericType::INT32;
-			if (!width_constraint_deferred) {
-				result.numeric_type = builtin_data_type.numeric_type;
-			}
+			result.numeric_type = _applied_numeric_type(builtin_data_type.numeric_type);
 
 			if (builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) {
 				result.signature_is_async = is_async_callable;
@@ -13273,9 +13277,13 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 
 	if (p_expression->type == FSParser::Node::IDENTIFIER) {
 		FSParser::IdentifierNode *identifier = static_cast<FSParser::IdentifierNode *>(p_expression);
-		const Variant::Type builtin_type = FSParser::get_builtin_type(identifier->name);
-		if (builtin_type < Variant::VARIANT_MAX) {
-			r_type_argument = type_from_metatype(make_builtin_meta_type(builtin_type));
+		// An explicit type argument is a type position, so it resolves the four integer spellings
+		// through the same registry an annotation does.
+		const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(identifier->name);
+		if (builtin_data_type.is_valid()) {
+			FSParser::DataType builtin_argument = make_builtin_meta_type(builtin_data_type.builtin_type);
+			builtin_argument.numeric_type = _applied_numeric_type(builtin_data_type.numeric_type);
+			r_type_argument = type_from_metatype(builtin_argument);
 			return true;
 		}
 
