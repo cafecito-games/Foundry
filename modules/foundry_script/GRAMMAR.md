@@ -443,6 +443,14 @@ Generics appear on classes (`class Box[T]`, `class_name Pair[K, V]`), traits
 (`enum Result[T, E]`, `enum_name Tree[T]`; see §4.4). A bound constrains the
 parameter (`[T: Resource]`). A trailing comma is allowed.
 
+A class's `static var` may not be typed by a class type parameter, directly or nested
+(`static var value: T`, `static var items: Array[T]`). Static storage is one slot per
+declaring class and specializing a class does not create a distinct one, so such a slot
+would be seen as a different static type through every specialization while holding a
+single value. A generic trait may declare one (`trait Slotted[T]: static var slot: T`) —
+each implementer flattens it into a slot of its own — but the implementer must fix the
+argument concretely (`uses Slotted[int]`) rather than forward its own parameter.
+
 ### 4.4 Variables, constants, signals, enums
 
 ```ebnf

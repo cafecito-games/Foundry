@@ -387,6 +387,7 @@ Error FSAnalyzer::run_phase_body_expression_callable_signal() {
 // Must not: resolve conformance witness bodies.
 void FSAnalyzer::run_phase_flow_finality_invariants(FSParser::ClassNode *p_class) {
 	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::FLOW_FINALITY_INVARIANTS);
+	validate_static_variable_type_parameters(p_class);
 	validate_trait_conflicts(p_class);
 	validate_trait_requirements(p_class);
 	flow_finality.check_final_member_assignments(p_class);
@@ -8535,6 +8536,86 @@ static bool _trait_state_type_is_compatible(const FSParser::DataType &p_trait_ty
 							p_trait_type.class_type->fqcn == p_class_type.class_type->fqcn);
 		default:
 			return true;
+	}
+}
+
+// Returns the first class-scoped type parameter `p_type` still depends on — directly, or nested in a
+// container element type or a type argument — or an empty name when the type is independent of them.
+static StringName _remaining_class_type_parameter(const FSParser::DataType &p_type) {
+	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER &&
+			p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
+		return p_type.type_parameter_name;
+	}
+	for (int i = 0; i < p_type.get_container_element_type_count(); i++) {
+		const StringName found = _remaining_class_type_parameter(p_type.get_container_element_type(i));
+		if (found != StringName()) {
+			return found;
+		}
+	}
+	for (const FSParser::DataType &argument : p_type.type_arguments) {
+		const StringName found = _remaining_class_type_parameter(argument);
+		if (found != StringName()) {
+			return found;
+		}
+	}
+	return StringName();
+}
+
+void FSAnalyzer::validate_static_variable_type_parameters(FSParser::ClassNode *p_class) {
+	// A static variable has exactly one storage slot, owned by the class that declares it. Specializing
+	// a generic class does not produce a distinct runtime class, and code compiled inside the declaring
+	// class addresses that slot through a compile-time class constant with no receiver to reify a type
+	// parameter against. A slot typed by a class type parameter would therefore be seen as a different
+	// static type through every specialization while holding a single value, so `IntBox.value` (an
+	// `int`) could observably hold what `StringBox.value` (a `String`) last wrote. Reject the
+	// declaration instead: the shape has no sound storage model, so there is nothing to validate later.
+	//
+	// A trait declares a template rather than storage — each implementer flattens the member into its
+	// own slot — so a trait's own declaration is fine and the check runs on the implementer, where the
+	// trait's parameters have been substituted with the arguments that implementer supplied.
+	if (p_class == nullptr || p_class->is_trait) {
+		return;
+	}
+
+	for (const FSParser::ClassNode::Member &member : p_class->members) {
+		if (member.type != FSParser::ClassNode::Member::VARIABLE || member.variable == nullptr ||
+				!member.variable->is_static) {
+			continue;
+		}
+		const StringName parameter = _remaining_class_type_parameter(member.variable->get_datatype());
+		if (parameter != StringName()) {
+			push_error(vformat(R"(Static variable "%s" cannot be typed by class type parameter "%s": every specialization of "%s" shares one static storage slot.)",
+							   member.variable->identifier->name, parameter, _class_or_trait_name(p_class)),
+					member.variable);
+		}
+	}
+
+	for (FSParser::ClassNode *trait : p_class->resolved_traits) {
+		if (trait == nullptr) {
+			continue;
+		}
+		resolve_class_interface(trait, p_class);
+
+		const HashMap<StringName, FSParser::DataType> substitutions = trait_type_argument_substitution(p_class, trait);
+		for (const FSParser::ClassNode::Member &member : trait->members) {
+			if (member.type != FSParser::ClassNode::Member::VARIABLE || member.variable == nullptr ||
+					!member.variable->is_static) {
+				continue;
+			}
+			// A member the implementer redeclares is its own; it was already checked above.
+			if (p_class->has_member(member.variable->identifier->name)) {
+				continue;
+			}
+			const FSParser::DataType flattened = _substitute_type_parameters_and_self(
+					member.variable->get_datatype(), substitutions, _self_type_for_class(p_class));
+			const StringName parameter = _remaining_class_type_parameter(flattened);
+			if (parameter != StringName()) {
+				push_error(vformat(R"(Static variable "%s" flattened from trait "%s" cannot be typed by class type parameter "%s": every specialization of "%s" shares one static storage slot.)",
+								   member.variable->identifier->name, _class_or_trait_name(trait), parameter,
+								   _class_or_trait_name(p_class)),
+						_trait_requirement_source(p_class, trait));
+			}
+		}
 	}
 }
 

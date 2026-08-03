@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 15: Static variable "slot" flattened from trait "Slotted" cannot be typed by class type parameter "U": every specialization of "Forwarding" shares one static storage slot.
+>> ERROR at line 19: Static variable "slot" flattened from trait "Slotted" cannot be typed by class type parameter "V": every specialization of "DependentForwarding" shares one static storage slot.

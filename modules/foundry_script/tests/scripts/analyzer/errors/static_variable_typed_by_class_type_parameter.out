@@ -1,0 +1,5 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Static variable "value" cannot be typed by class type parameter "T": every specialization of "Box" shares one static storage slot.
+>> ERROR at line 12: Static variable "items" cannot be typed by class type parameter "T": every specialization of "Bag" shares one static storage slot.
+>> ERROR at line 16: Static variable "handle" cannot be typed by class type parameter "T": every specialization of "Handles" shares one static storage slot.
+>> ERROR at line 20: Static variable "boxes" cannot be typed by class type parameter "T": every specialization of "Nested" shares one static storage slot.

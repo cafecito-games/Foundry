@@ -591,6 +591,7 @@ private:
 	bool datatype_derives_from_datatype(FSParser::DataType p_type, const FSParser::DataType &p_base);
 	bool type_argument_satisfies_bound(const FSParser::DataType &p_argument, const FSParser::DataType &p_bound);
 	bool type_satisfies_trait(const FSParser::DataType &p_argument, const FSParser::DataType &p_trait_bound);
+	void validate_static_variable_type_parameters(FSParser::ClassNode *p_class);
 	void validate_trait_conflicts(FSParser::ClassNode *p_class);
 	void validate_trait_requirements(FSParser::ClassNode *p_class);
 	void raise_declared_conformance_dependencies();

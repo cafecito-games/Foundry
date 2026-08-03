@@ -183,6 +183,9 @@ class FoundryScript : public Script {
 		// A static member is never copied into subclasses, so its binding stays relative to whichever
 		// class actually declares it; a write reached through a more-derived class must project the
 		// binding through that receiver's specialization chain (see `_validate_static_member_write`).
+		// A static member's binding is therefore only ever FIXED for analyzed source: a slot whose
+		// type stays open in its declaring class's own parameters has no sound per-specialization
+		// storage and is rejected by `FSAnalyzer::validate_static_variable_type_parameters`.
 		TypeArgumentBinding type_argument_binding;
 	};
 
@@ -200,7 +203,9 @@ class FoundryScript : public Script {
 	// or the declaring script is the receiver itself, it is already self-sufficient or already relative
 	// to the receiver, so this delegates to `_validate_type_argument_binding_write`. Otherwise an OPEN
 	// binding's ordinal indexes the declaring ancestor's own type parameters, so it is projected through
-	// `p_receiver`'s per-ancestor specialization table before validating.
+	// `p_receiver`'s per-ancestor specialization table before validating. Analyzed source never produces
+	// that OPEN case (the declaration itself is rejected); the projection remains as a backstop for
+	// bytecode that reaches the loader without having gone through the analyzer.
 	static bool _validate_static_member_write(FoundryScript *p_receiver, FoundryScript *p_declaring_script, const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value);
 
 public:
