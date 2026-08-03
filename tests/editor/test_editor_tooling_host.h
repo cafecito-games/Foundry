@@ -30,15 +30,20 @@
 
 #pragma once
 
+#include "core/debugger/engine_debugger.h"
+#include "core/debugger/remote_debugger_peer.h"
+#include "core/io/config_file.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/io/stream_peer_tcp.h"
 #include "core/io/tcp_server.h"
+#include "core/object/script_language_extension.h"
 #include "core/os/os.h"
 #include "editor/debugger/debug_adapter/debug_adapter_protocol.h"
 #include "editor/debugger/debug_adapter/debug_adapter_types.h"
 #include "editor/run/editor_run.h"
 #include "editor/tooling/editor_tooling_host.h"
+#include "main/main.h"
 
 #include "tests/editor/editor_workflow_test_fixtures.h"
 #include "tests/test_macros.h"
@@ -50,6 +55,112 @@
 #endif
 
 namespace TestEditorToolingHost {
+
+class RetainingDebuggerPeer : public RemoteDebuggerPeer {
+	FOUNDRY_SOFTCLASS(RetainingDebuggerPeer, RemoteDebuggerPeer);
+
+	List<Array> queued_messages;
+
+public:
+	bool is_peer_connected() override { return true; }
+	int get_max_message_size() const override { return 1 << 20; }
+	bool has_message() override { return false; }
+	Error put_message(const Array &p_arr) override {
+		queued_messages.push_back(p_arr);
+		return OK;
+	}
+	Array get_message() override { return Array(); }
+	void close() override {}
+	void poll() override {}
+	int get_queued_message_count() const { return queued_messages.size(); }
+};
+
+class RetainingTestDebugger : public EngineDebugger {
+	Ref<RemoteDebuggerPeer> peer;
+
+	explicit RetainingTestDebugger(const Ref<RemoteDebuggerPeer> &p_peer) :
+			peer(p_peer) {}
+
+public:
+	static void install(const Ref<RemoteDebuggerPeer> &p_peer) {
+		DEV_ASSERT(singleton == nullptr);
+		singleton = memnew(RetainingTestDebugger(p_peer));
+	}
+
+	void send_message(const String &p_msg, const Array &p_data) override {
+		peer->put_message(Array{ p_msg, p_data });
+	}
+	void send_error(const String &p_func, const String &p_file, int p_line, const String &p_err,
+			const String &p_descr, bool p_editor_notify, ErrorHandlerType p_type) override {}
+	void debug(bool p_can_continue = true, bool p_is_error_breakpoint = false) override {}
+};
+
+class DebuggerPayloadSentinelLanguage : public ScriptLanguageExtension {
+	FOUNDRY_SOFTCLASS(DebuggerPayloadSentinelLanguage, ScriptLanguageExtension);
+
+	bool finished = false;
+
+public:
+	void finish() override { finished = true; }
+	bool is_finished() const { return finished; }
+};
+
+class ScriptOwnedDebuggerPayload : public RefCounted {
+	FOUNDRY_SOFTCLASS(ScriptOwnedDebuggerPayload, RefCounted);
+
+	DebuggerPayloadSentinelLanguage *language = nullptr;
+	bool *released_before_language_finish = nullptr;
+	int *release_count = nullptr;
+
+public:
+	ScriptOwnedDebuggerPayload(DebuggerPayloadSentinelLanguage *p_language, bool *p_released_before_language_finish,
+			int *p_release_count) :
+			language(p_language),
+			released_before_language_finish(p_released_before_language_finish),
+			release_count(p_release_count) {}
+
+	~ScriptOwnedDebuggerPayload() {
+		*released_before_language_finish = !language->is_finished();
+		(*release_count)++;
+	}
+};
+
+static void finish_debugger_payload_sentinel_language(void *p_userdata) {
+	static_cast<DebuggerPayloadSentinelLanguage *>(p_userdata)->finish();
+}
+
+TEST_CASE("[Main][Cleanup] Debugger transport releases queued script-owned values before language finish") {
+	REQUIRE_MESSAGE(EngineDebugger::get_singleton() == nullptr, "The lifecycle test requires an inactive debugger.");
+
+	DebuggerPayloadSentinelLanguage *language = memnew(DebuggerPayloadSentinelLanguage);
+	bool released_before_language_finish = false;
+	int release_count = 0;
+	Ref<RetainingDebuggerPeer> peer;
+	// The projectless test runner does not register the TCP peer's queue-limit setting.
+	ERR_PRINT_OFF;
+	peer.instantiate();
+	ERR_PRINT_ON;
+	RetainingTestDebugger::install(peer);
+
+	{
+		Ref<ScriptOwnedDebuggerPayload> payload = memnew(
+				ScriptOwnedDebuggerPayload(language, &released_before_language_finish, &release_count));
+		Array message_data;
+		message_data.push_back(payload);
+		EngineDebugger::get_singleton()->send_message("script_owned_payload", message_data);
+	}
+	CHECK_EQ(peer->get_queued_message_count(), 1);
+	CHECK_EQ(release_count, 0);
+	peer.unref();
+	CHECK_EQ(release_count, 0);
+	CHECK_FALSE(released_before_language_finish);
+
+	Main::test_cleanup_script_languages(finish_debugger_payload_sentinel_language, language);
+	CHECK_EQ(release_count, 1);
+	CHECK(released_before_language_finish);
+	CHECK(language->is_finished());
+	memdelete(language);
+}
 
 static Dictionary parse_marker_record(const String &p_output, const String &p_marker) {
 	const int marker_index = p_output.find(p_marker);
@@ -1684,7 +1795,7 @@ TEST_CASE("[Editor][ToolingHost] A malformed project_test launch is refused over
 // Stages the checked-in exit-status fixture project beneath the shared scratch space.
 // Its runner and scenes decide the child's real result, so the lifecycle assertions
 // below are about what the adapter reports, never about a script pinned in C++.
-static String prepare_exit_status_project() {
+static String prepare_exit_status_project(bool p_without_main_scene = false) {
 	EditorWorkflowTestFixtures::DisposableProjectSpec spec;
 	spec.fixture_name = "dap_exit_status";
 	PackedStringArray paths;
@@ -1695,7 +1806,22 @@ static String prepare_exit_status_project() {
 	paths.push_back("idle.tscn");
 	paths.push_back("stay_running.fs");
 	spec.relative_paths = paths;
-	return EditorWorkflowTestFixtures::prepare_disposable_project(spec);
+	const String project_path = EditorWorkflowTestFixtures::prepare_disposable_project(spec);
+	if (project_path.is_empty() || !p_without_main_scene) {
+		return project_path;
+	}
+
+	const String config_path = project_path.path_join("project.foundry");
+	Ref<ConfigFile> config;
+	config.instantiate();
+	if (config->load(config_path) != OK) {
+		return String();
+	}
+	config->erase_section_key("application", "run/main_scene");
+	if (config->save(config_path) != OK) {
+		return String();
+	}
+	return project_path;
 }
 
 // Owns a tooling host serving the exit-status project, with a connected and
@@ -1706,8 +1832,8 @@ struct ExitStatusSession {
 	String project_path;
 	bool ready = false;
 
-	ExitStatusSession() {
-		project_path = prepare_exit_status_project();
+	ExitStatusSession(bool p_without_main_scene = false) {
+		project_path = prepare_exit_status_project(p_without_main_scene);
 		if (project_path.is_empty()) {
 			return;
 		}
@@ -1739,6 +1865,7 @@ struct ExitStatusSession {
 		initialize_arguments["adapterID"] = "foundry";
 		initialize_arguments["linesStartAt1"] = true;
 		initialize_arguments["columnsStartAt1"] = true;
+		initialize_arguments["supportsVariableType"] = true;
 		const Dictionary response = client.await_response(client.send_request("initialize", initialize_arguments), 30000);
 		ready = bool(response.get("success", false));
 	}
@@ -1829,10 +1956,14 @@ TEST_CASE("[Editor][ToolingHost] A structured test launch reports the runner's r
 }
 
 TEST_CASE("[Editor][ToolingHost] A structured project_test restart preserves the replacement's natural result") {
-	ExitStatusSession session;
+	ExitStatusSession session(true);
 	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
 	INFO("Tooling host output:\n", session.host.output);
 	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+	Ref<ConfigFile> project_config;
+	project_config.instantiate();
+	REQUIRE(project_config->load(session.artifact("project.foundry")) == OK);
+	CHECK_FALSE(project_config->has_section_key("application", "run/main_scene"));
 
 	const int breakpoint_line = 41;
 	Dictionary source;
@@ -1854,7 +1985,49 @@ TEST_CASE("[Editor][ToolingHost] A structured project_test restart preserves the
 	REQUIRE_MESSAGE(bool(session.client.await_response(launch_seq, 60000).get("success", false)),
 			"launch did not succeed.");
 	REQUIRE_MESSAGE(!session.client.await_event("process", 120000).is_empty(), "The first runner never started.");
-	REQUIRE_MESSAGE(!session.client.await_event("stopped", 120000).is_empty(), "The first runner never stopped.");
+	const Dictionary stopped_event = session.client.await_event("stopped", 120000);
+	REQUIRE_MESSAGE(!stopped_event.is_empty(), "The first runner never stopped.");
+
+	const Dictionary stopped_body = stopped_event.get("body", Dictionary());
+	Dictionary stack_arguments;
+	stack_arguments["threadId"] = stopped_body.get("threadId", -1);
+	const Dictionary stack_response = session.client.await_response(
+			session.client.send_request("stackTrace", stack_arguments), 30000);
+	REQUIRE_MESSAGE(bool(stack_response.get("success", false)), "stackTrace did not succeed.");
+	const Array stack_frames = Dictionary(stack_response.get("body", Dictionary())).get("stackFrames", Array());
+	REQUIRE_MESSAGE(!stack_frames.is_empty(), "stackTrace did not expose the stopped runner frame.");
+
+	Dictionary scopes_arguments;
+	scopes_arguments["frameId"] = Dictionary(stack_frames[0]).get("id", -1);
+	const Dictionary scopes_response = session.client.await_response(
+			session.client.send_request("scopes", scopes_arguments), 30000);
+	REQUIRE_MESSAGE(bool(scopes_response.get("success", false)), "scopes did not succeed.");
+	const Array scopes = Dictionary(scopes_response.get("body", Dictionary())).get("scopes", Array());
+	int locals_reference = 0;
+	for (Dictionary scope : scopes) {
+		if (String(scope.get("name", "")) == "Locals") {
+			locals_reference = scope.get("variablesReference", 0);
+			break;
+		}
+	}
+	REQUIRE_MESSAGE(locals_reference > 0, "scopes did not expose the stopped runner's Locals.");
+
+	Dictionary variables_arguments;
+	variables_arguments["variablesReference"] = locals_reference;
+	const Dictionary variables_response = session.client.await_response(
+			session.client.send_request("variables", variables_arguments), 30000);
+	REQUIRE_MESSAGE(bool(variables_response.get("success", false)), "variables did not succeed.");
+	const Array variables = Dictionary(variables_response.get("body", Dictionary())).get("variables", Array());
+	Dictionary file_variable;
+	for (Dictionary variable : variables) {
+		if (String(variable.get("name", "")) == "file") {
+			file_variable = variable;
+			break;
+		}
+	}
+	REQUIRE_MESSAGE(!file_variable.is_empty(), "Locals did not expose the FileAccess object variable.");
+	CHECK_EQ(String(file_variable.get("type", "")), "Object");
+	CHECK(int(file_variable.get("variablesReference", 0)) > 0);
 
 	session.client.clear_events();
 	Dictionary restart_arguments;
