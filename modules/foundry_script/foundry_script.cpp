@@ -339,6 +339,13 @@ static ProjectedContainerType _project_binding_data_type(const FSDataType &p_typ
 		return projected;
 	}
 
+	if (p_type.is_nullable) {
+		// Core container types cannot express "this type or null", which is why `to_container_type()`
+		// erases a nullable type outright. There is no descriptor that would accept the nulls the slot
+		// admits, so the subtree carries no runtime evidence; the analyzer still enforces it statically.
+		return projected;
+	}
+
 	if (p_type.kind == FSDataType::TYPE_PARAMETER) {
 		if (p_type.type_parameter_scope != FSDataType::TYPE_PARAMETER_CLASS ||
 				p_type.type_parameter_index < 0 || p_type.type_parameter_index >= p_leaf_type_arguments.size()) {

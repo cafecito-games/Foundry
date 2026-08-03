@@ -759,6 +759,36 @@ bool ProjectedContainerType::conflicts_with(const ProjectedContainerType &p_othe
 	return false;
 }
 
+bool ProjectedContainerType::is_witnessed_by(const ProjectedContainerType &p_other) const {
+	if (state == UNKNOWN) {
+		return true;
+	}
+	if (p_other.state == UNKNOWN || !_shallow_container_identity_equals(outer, p_other.outer)) {
+		return false;
+	}
+	if (!element_types.is_empty()) {
+		if (element_types.size() != p_other.element_types.size()) {
+			return false;
+		}
+		for (int i = 0; i < element_types.size(); i++) {
+			if (!element_types[i].is_witnessed_by(p_other.element_types[i])) {
+				return false;
+			}
+		}
+	}
+	if (!type_arguments.is_empty()) {
+		if (type_arguments.size() != p_other.type_arguments.size()) {
+			return false;
+		}
+		for (int i = 0; i < type_arguments.size(); i++) {
+			if (!type_arguments[i].is_witnessed_by(p_other.type_arguments[i])) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
 bool ProjectedContainerType::validate_value(Variant &r_value, const char *p_where, const char *p_operation) const {
 	if (state == UNKNOWN) {
 		return true;
@@ -859,10 +889,17 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 	if (outer.builtin_type == Variant::ARRAY && !element_types.is_empty() && p_value.get_type() == Variant::ARRAY) {
 		const Array array = p_value;
 		if (array.is_typed()) {
-			if (element_types[0].conflicts_with(ProjectedContainerType::exact(array.get_element_type()))) {
+			const ProjectedContainerType source_element = ProjectedContainerType::exact(array.get_element_type());
+			if (element_types[0].conflicts_with(source_element)) {
 				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an array of '%s' into a %s of '%s'.", String(p_operation), array.get_element_type().get_type_name(), String(p_where), get_type_name()));
 			}
-			return true;
+			if (element_types[0].is_witnessed_by(source_element)) {
+				return true;
+			}
+			// The metadata left part of the known evidence unstated (a raw `Array[Pair]` source against an
+			// expected `Pair[int, ?]` element), so it proved nothing about that part. Fall through to the
+			// per-value check, which is what the fully-known validator does with a source it cannot
+			// reference wholesale.
 		}
 		if (!element_types[0].is_known()) {
 			return true;
@@ -879,11 +916,12 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 			converted = converted || !element.identity_compare(original);
 			validated[i] = element;
 		}
-		if (converted) {
+		if (converted && !array.is_typed()) {
 			// A descendant validator converted an element (a nested untyped array becoming typed, a
 			// specialized handle erasing to its script). The outer container cannot be rebuilt with the
 			// declared shape — an unknown slot has no type to bake in — but its elements must still be
-			// stored in the form validation accepted them in.
+			// stored in the form validation accepted them in. A typed source keeps its own element type,
+			// which replacing it with this untyped copy would throw away.
 			p_value = validated;
 		}
 		return true;
@@ -892,13 +930,17 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 		const Dictionary dictionary = p_value;
 		const ProjectedContainerType expected_value_type = element_types.size() > 1 ? element_types[1] : ProjectedContainerType();
 		if (dictionary.is_typed()) {
-			if (element_types[0].conflicts_with(ProjectedContainerType::exact(dictionary.get_key_type()))) {
+			const ProjectedContainerType source_key = ProjectedContainerType::exact(dictionary.get_key_type());
+			const ProjectedContainerType source_value = ProjectedContainerType::exact(dictionary.get_value_type());
+			if (element_types[0].conflicts_with(source_key)) {
 				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a dictionary keyed by '%s' into a %s of '%s'.", String(p_operation), dictionary.get_key_type().get_type_name(), String(p_where), get_type_name()));
 			}
-			if (expected_value_type.conflicts_with(ProjectedContainerType::exact(dictionary.get_value_type()))) {
+			if (expected_value_type.conflicts_with(source_value)) {
 				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a dictionary of '%s' into a %s of '%s'.", String(p_operation), dictionary.get_value_type().get_type_name(), String(p_where), get_type_name()));
 			}
-			return true;
+			if (element_types[0].is_witnessed_by(source_key) && expected_value_type.is_witnessed_by(source_value)) {
+				return true;
+			}
 		}
 		if (!element_types[0].is_known() && !expected_value_type.is_known()) {
 			return true;
@@ -919,7 +961,7 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 			converted = converted || !value.identity_compare(entry.value);
 			validated[key] = value;
 		}
-		if (converted) {
+		if (converted && !dictionary.is_typed()) {
 			p_value = validated;
 		}
 		return true;

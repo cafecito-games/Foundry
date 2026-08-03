@@ -189,6 +189,30 @@ TEST_CASE("[ProjectedContainerType] Untyped containers are enforced value by val
 	CHECK(unknown_element_array.validate_value(rejected_value, "member", "assign"));
 }
 
+TEST_CASE("[ProjectedContainerType] Unspecialized source metadata does not witness known arguments") {
+	// Expected `Array[RefCounted[int, ?]]` against a source typed as a raw `Array[RefCounted]`: the
+	// source metadata never mentions the arguments, so comparing against it proves nothing about them.
+	ProjectedContainerType partial_element;
+	partial_element.state = ProjectedContainerType::PARTIAL;
+	partial_element.outer = make_object(SNAME("RefCounted"));
+	partial_element.type_arguments.push_back(ProjectedContainerType::exact(make_builtin(Variant::INT)));
+	partial_element.type_arguments.push_back(ProjectedContainerType());
+
+	const ProjectedContainerType raw_source = ProjectedContainerType::exact(make_object(SNAME("RefCounted")));
+	CHECK_FALSE(partial_element.conflicts_with(raw_source));
+	CHECK_FALSE(partial_element.is_witnessed_by(raw_source));
+
+	const ProjectedContainerType specialized_source = ProjectedContainerType::exact(
+			make_object(SNAME("RefCounted"), { make_builtin(Variant::INT), make_builtin(Variant::STRING) }));
+	CHECK_FALSE(partial_element.conflicts_with(specialized_source));
+	CHECK(partial_element.is_witnessed_by(specialized_source));
+
+	// An entirely unknown expectation is witnessed by anything, including nothing at all.
+	CHECK(ProjectedContainerType().is_witnessed_by(raw_source));
+	CHECK(ProjectedContainerType().is_witnessed_by(ProjectedContainerType()));
+	CHECK_FALSE(specialized_source.is_witnessed_by(ProjectedContainerType()));
+}
+
 TEST_CASE("[ProjectedContainerType] Nesting deeper than the recursion cap degrades only that subtree") {
 	ContainerType deep = make_builtin(Variant::INT);
 	for (int i = 0; i < Variant::MAX_RECURSION_DEPTH + 4; i++) {

@@ -153,6 +153,10 @@ struct ProjectedContainerType {
 	// Symmetric form used when both sides may carry unknown subtrees: only two known, differing nodes
 	// are a conflict.
 	bool conflicts_with(const ProjectedContainerType &p_other) const;
+	// True when `p_other` states everything this evidence knows, so a conflict-free comparison against it
+	// really did check every known part. False when a dimension was skipped because `p_other` left it
+	// unspecialized, which means the comparison proved nothing about it.
+	bool is_witnessed_by(const ProjectedContainerType &p_other) const;
 
 	// Validates a write of `r_value` into a slot described by this evidence, converting the value where
 	// a fully known container type would. Unknown subtrees are skipped; every known one is enforced.
