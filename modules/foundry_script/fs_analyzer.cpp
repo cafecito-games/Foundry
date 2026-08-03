@@ -11876,7 +11876,11 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 				// result type T instead of resolving "Coroutine[...]" as a bogus class name.
 				elem_type = _decode_signature_type(p_property.hint_string);
 			} else {
-				Variant::Type elem_builtin_type = FSParser::get_builtin_type(elem_type_name);
+				// A container element hint is spelled with the carrier's name, so both unsigned spellings
+				// arrive as `uint`, which the carrier-only registry excludes. Resolve it through the source
+				// registry to recover the carrier, and leave the width unconstrained: the hint never
+				// carried one.
+				Variant::Type elem_builtin_type = FSParser::get_builtin_data_type(elem_type_name).builtin_type;
 				if (elem_builtin_type < Variant::VARIANT_MAX) {
 					// Builtin type.
 					elem_type.kind = FSParser::DataType::BUILTIN;
@@ -11906,7 +11910,7 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 			FSParser::DataType key_elem_type;
 			key_elem_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 
-			Variant::Type key_elem_builtin_type = FSParser::get_builtin_type(key_elem_type_name);
+			Variant::Type key_elem_builtin_type = FSParser::get_builtin_data_type(key_elem_type_name).builtin_type;
 			if (_container_element_hint_is_coroutine(key_elem_type_name)) {
 				// A Coroutine[T] dictionary key is encoded via the signature grammar (see to_property_info),
 				// so decode it through the shared coroutine grammar to recover the coroutine identity and
@@ -11938,7 +11942,7 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 			FSParser::DataType value_elem_type;
 			value_elem_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 
-			Variant::Type value_elem_builtin_type = FSParser::get_builtin_type(value_elem_type_name);
+			Variant::Type value_elem_builtin_type = FSParser::get_builtin_data_type(value_elem_type_name).builtin_type;
 			if (_container_element_hint_is_coroutine(value_elem_type_name)) {
 				// A Coroutine[T] dictionary value is encoded via the signature grammar (see to_property_info),
 				// so decode it through the shared coroutine grammar to recover the coroutine identity and
