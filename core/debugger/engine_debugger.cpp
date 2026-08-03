@@ -168,7 +168,7 @@ void EngineDebugger::initialize(const String &p_uri, uint64_t p_launch_id, bool 
 	allow_focus_steal_fn = p_allow_focus_steal_fn;
 }
 
-void EngineDebugger::deinitialize() {
+void EngineDebugger::shutdown_transport() {
 	if (singleton) {
 		// Stop all profilers
 		for (const KeyValue<StringName, Profiler> &E : profilers) {
@@ -183,6 +183,10 @@ void EngineDebugger::deinitialize() {
 		memdelete(singleton);
 		singleton = nullptr;
 	}
+}
+
+void EngineDebugger::deinitialize() {
+	shutdown_transport();
 
 	// Clear profilers/captures/protocol handlers.
 	profilers.clear();

@@ -107,6 +107,7 @@ public:
 	_FORCE_INLINE_ static ScriptDebugger *get_script_debugger() { return script_debugger; }
 
 	static void initialize(const String &p_uri, uint64_t p_launch_id, bool p_skip_breakpoints, bool p_ignore_error_breaks, const Vector<String> &p_breakpoints, void (*p_allow_focus_steal_fn)());
+	static void shutdown_transport();
 	static void deinitialize();
 	static void register_profiler(const StringName &p_name, const Profiler &p_profiler);
 	static void unregister_profiler(const StringName &p_name);

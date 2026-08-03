@@ -5690,6 +5690,10 @@ void Main::cleanup(bool p_force) {
 
 	WorkerThreadPool::get_singleton()->exit_languages_threads();
 
+	// Debugger queues can retain script-backed Variant values. Stop the transport
+	// and release those values before their script languages are finished or deleted.
+	EngineDebugger::shutdown_transport();
+
 	ScriptServer::finish_languages();
 
 	// Sync pending commands that may have been queued from a different thread during ScriptServer finalization
