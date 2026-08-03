@@ -73,6 +73,33 @@ static Error _read_numeric_type(StreamPeerBuffer *p_stream, Variant::Type p_carr
 	return OK;
 }
 
+// Reads a one-byte fixed-width field, rejecting a stream with nothing left instead of letting
+// `StreamPeerBuffer` synthesize a zero for a read past the end.
+static Error _read_bounded_u8(StreamPeerBuffer *p_stream, uint8_t &r_value, const char *p_field) {
+	ERR_FAIL_COND_V_MSG(p_stream->get_available_bytes() < 1, ERR_INVALID_DATA,
+			vformat("Truncated %s in compiled script data.", p_field));
+	r_value = p_stream->get_u8();
+	return OK;
+}
+
+// Reads a four-byte fixed-width field, rejecting a stream that cannot hold all four bytes instead of
+// letting `StreamPeerBuffer` synthesize zeros for the missing bytes.
+static Error _read_bounded_u32(StreamPeerBuffer *p_stream, uint32_t &r_value, const char *p_field) {
+	ERR_FAIL_COND_V_MSG(p_stream->get_available_bytes() < 4, ERR_INVALID_DATA,
+			vformat("Truncated %s in compiled script data.", p_field));
+	r_value = p_stream->get_u32();
+	return OK;
+}
+
+// Reads a four-byte signed fixed-width field, rejecting a stream that cannot hold all four bytes
+// instead of letting `StreamPeerBuffer` synthesize zeros for the missing bytes.
+static Error _read_bounded_i32(StreamPeerBuffer *p_stream, int32_t &r_value, const char *p_field) {
+	ERR_FAIL_COND_V_MSG(p_stream->get_available_bytes() < 4, ERR_INVALID_DATA,
+			vformat("Truncated %s in compiled script data.", p_field));
+	r_value = p_stream->get_32();
+	return OK;
+}
+
 Ref<Resource> FSBytecodeCacheResolver::resolve_resource(const String &p_path) {
 	return ResourceLoader::load(p_path);
 }
@@ -500,23 +527,46 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 Error FSBytecodeLoader::_decode_container_type(StreamPeerBuffer *p_stream, ContainerType &r_container_type, int p_depth) {
 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_DATA,
 			"Container type is too deeply nested in compiled script data.");
-	const uint32_t builtin_type = p_stream->get_u32();
+	uint32_t builtin_type = 0;
+	Error error = _read_bounded_u32(p_stream, builtin_type, "builtin type in compiled script container type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG(builtin_type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
 			"Invalid builtin type in compiled script container type.");
 	r_container_type.builtin_type = (Variant::Type)builtin_type;
-	Error error = _read_numeric_type(p_stream, r_container_type.builtin_type, r_container_type.numeric_type);
+	error = _read_numeric_type(p_stream, r_container_type.builtin_type, r_container_type.numeric_type);
+	if (error != OK) {
+		return error;
+	}
+	uint32_t class_name_index = 0;
+	error = _read_bounded_u32(p_stream, class_name_index, "class name index in compiled script container type");
 	if (error != OK) {
 		return error;
 	}
 	String class_name;
-	error = _get_string(p_stream->get_u32(), class_name);
+	error = _get_string(class_name_index, class_name);
 	if (error != OK) {
 		return error;
 	}
 	r_container_type.class_name = StringName(class_name);
-	r_container_type.is_type_handle = p_stream->get_u8() != 0;
-	if (p_stream->get_u8() != 0) {
-		const uint8_t script_tag = p_stream->get_u8();
+	uint8_t is_type_handle = 0;
+	error = _read_bounded_u8(p_stream, is_type_handle, "type handle flag in compiled script container type");
+	if (error != OK) {
+		return error;
+	}
+	r_container_type.is_type_handle = is_type_handle != 0;
+	uint8_t has_script = 0;
+	error = _read_bounded_u8(p_stream, has_script, "script presence flag in compiled script container type");
+	if (error != OK) {
+		return error;
+	}
+	if (has_script != 0) {
+		uint8_t script_tag = 0;
+		error = _read_bounded_u8(p_stream, script_tag, "script tag in compiled script container type");
+		if (error != OK) {
+			return error;
+		}
 		Variant script_variant;
 		error = _decode_object(p_stream, script_tag, script_variant, p_depth + 1);
 		if (error != OK) {
@@ -527,7 +577,11 @@ Error FSBytecodeLoader::_decode_container_type(StreamPeerBuffer *p_stream, Conta
 				"Container type in compiled script data does not reference a script.");
 		r_container_type.script = script;
 	}
-	const uint32_t element_type_count = p_stream->get_u32();
+	uint32_t element_type_count = 0;
+	error = _read_bounded_u32(p_stream, element_type_count, "element type count in compiled script container type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)element_type_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated container type in compiled script data.");
 	for (uint32_t i = 0; i < element_type_count; i++) {
@@ -538,7 +592,11 @@ Error FSBytecodeLoader::_decode_container_type(StreamPeerBuffer *p_stream, Conta
 		}
 		r_container_type.element_types.push_back(element_type);
 	}
-	const uint32_t type_argument_count = p_stream->get_u32();
+	uint32_t type_argument_count = 0;
+	error = _read_bounded_u32(p_stream, type_argument_count, "type argument count in compiled script container type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)type_argument_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated container type in compiled script data.");
 	for (uint32_t i = 0; i < type_argument_count; i++) {
@@ -555,47 +613,88 @@ Error FSBytecodeLoader::_decode_container_type(StreamPeerBuffer *p_stream, Conta
 Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType &r_data_type, int p_depth) {
 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_DATA,
 			"Data type is too deeply nested in compiled script data.");
-	const uint8_t kind = p_stream->get_u8();
+	uint8_t kind = 0;
+	Error error = _read_bounded_u8(p_stream, kind, "kind in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG(kind > (uint8_t)FSDataType::TYPE_PARAMETER, ERR_INVALID_DATA,
 			"Invalid data type kind in compiled script data.");
 	r_data_type.kind = (FSDataType::Kind)kind;
-	const uint32_t builtin_type = p_stream->get_u32();
+	uint32_t builtin_type = 0;
+	error = _read_bounded_u32(p_stream, builtin_type, "builtin type in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG(builtin_type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
 			"Invalid builtin type in compiled script data type.");
 	r_data_type.builtin_type = (Variant::Type)builtin_type;
-	Error error = _read_numeric_type(p_stream, r_data_type.builtin_type, r_data_type.numeric_type);
+	error = _read_numeric_type(p_stream, r_data_type.builtin_type, r_data_type.numeric_type);
+	if (error != OK) {
+		return error;
+	}
+	uint32_t native_type_index = 0;
+	error = _read_bounded_u32(p_stream, native_type_index, "native type index in compiled script data type");
 	if (error != OK) {
 		return error;
 	}
 	String native_type;
-	error = _get_string(p_stream->get_u32(), native_type);
+	error = _get_string(native_type_index, native_type);
 	if (error != OK) {
 		return error;
 	}
 	r_data_type.native_type = StringName(native_type);
-	const uint8_t flags = p_stream->get_u8();
+	uint8_t flags = 0;
+	error = _read_bounded_u8(p_stream, flags, "flags in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
 	r_data_type.is_nullable = (flags & (1 << 0)) != 0;
 	r_data_type.is_type_handle = (flags & (1 << 1)) != 0;
 	r_data_type.is_self_type = (flags & (1 << 2)) != 0;
 	r_data_type.is_script_trait = (flags & (1 << 3)) != 0;
+	uint32_t script_trait_index = 0;
+	error = _read_bounded_u32(p_stream, script_trait_index, "script trait index in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
 	String script_trait;
-	error = _get_string(p_stream->get_u32(), script_trait);
+	error = _get_string(script_trait_index, script_trait);
 	if (error != OK) {
 		return error;
 	}
 	r_data_type.script_trait = StringName(script_trait);
+	uint32_t type_parameter_name_index = 0;
+	error = _read_bounded_u32(p_stream, type_parameter_name_index, "type parameter name index in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
 	String type_parameter_name;
-	error = _get_string(p_stream->get_u32(), type_parameter_name);
+	error = _get_string(type_parameter_name_index, type_parameter_name);
 	if (error != OK) {
 		return error;
 	}
 	r_data_type.type_parameter_name = StringName(type_parameter_name);
-	r_data_type.type_parameter_index = p_stream->get_32();
-	const uint8_t type_parameter_scope = p_stream->get_u8();
+	int32_t type_parameter_index = 0;
+	error = _read_bounded_i32(p_stream, type_parameter_index, "type parameter index in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
+	r_data_type.type_parameter_index = type_parameter_index;
+	uint8_t type_parameter_scope = 0;
+	error = _read_bounded_u8(p_stream, type_parameter_scope, "type parameter scope in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG(type_parameter_scope > (uint8_t)FSDataType::TYPE_PARAMETER_METHOD, ERR_INVALID_DATA,
 			"Invalid type parameter scope in compiled script data type.");
 	r_data_type.type_parameter_scope = (FSDataType::TypeParameterScope)type_parameter_scope;
-	if (p_stream->get_u8() != 0) {
+	uint8_t has_script = 0;
+	error = _read_bounded_u8(p_stream, has_script, "script presence flag in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
+	if (has_script != 0) {
 		Ref<Script> script;
 		bool is_local_class = false;
 		error = _read_script_reference(p_stream, script, is_local_class, "data type");
@@ -614,7 +713,11 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 			r_data_type.script_type = script.ptr();
 		}
 	}
-	const uint32_t element_type_count = p_stream->get_u32();
+	uint32_t element_type_count = 0;
+	error = _read_bounded_u32(p_stream, element_type_count, "element type count in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)element_type_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated data type in compiled script data.");
 	for (uint32_t i = 0; i < element_type_count; i++) {
@@ -625,7 +728,11 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 		}
 		r_data_type.container_element_types.push_back(element_type);
 	}
-	const uint32_t type_argument_count = p_stream->get_u32();
+	uint32_t type_argument_count = 0;
+	error = _read_bounded_u32(p_stream, type_argument_count, "type argument count in compiled script data type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)type_argument_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated data type in compiled script data.");
 	for (uint32_t i = 0; i < type_argument_count; i++) {

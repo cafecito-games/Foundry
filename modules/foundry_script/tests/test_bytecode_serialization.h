@@ -988,6 +988,76 @@ TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Loader rejects a record t
 	ERR_PRINT_ON;
 }
 
+TEST_CASE("[FoundryScript][BytecodeCodec] Loader rejects a data-type record truncated at any fixed-width field") {
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	// A minimal record with no script reference and no nested element/type-argument entries: every
+	// remaining byte belongs to one of `decode_data_type`'s own fixed-width fields (native type index,
+	// flags, script trait index, type parameter name index, type parameter index, type parameter scope,
+	// script presence flag, element type count, type argument count). The numeric-type descriptor right
+	// after the carrier is already covered by the truncated-descriptor test above.
+	FSDataType data_type;
+	data_type.kind = FSDataType::BUILTIN;
+	data_type.builtin_type = Variant::INT;
+	const Vector<uint8_t> payload = bytecode_encode_data_type(exporter, data_type);
+	REQUIRE(payload.size() > BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET);
+
+	FSDataType sanity_decoded;
+	REQUIRE(bytecode_decode_data_type(exporter, payload, &resolver, sanity_decoded) == OK);
+
+	ERR_PRINT_OFF;
+	for (int length = BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET + 1; length < payload.size(); length++) {
+		CAPTURE(length);
+		Vector<uint8_t> truncated = payload;
+		truncated.resize(length);
+		FSDataType decoded;
+		CHECK(bytecode_decode_data_type(exporter, truncated, &resolver, decoded) == ERR_INVALID_DATA);
+	}
+	ERR_PRINT_ON;
+
+	// The untouched, well-formed record still decodes exactly as it did before.
+	FSDataType decoded;
+	CHECK(bytecode_decode_data_type(exporter, payload, &resolver, decoded) == OK);
+	CHECK(decoded.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Loader rejects a container-type record truncated at any fixed-width field") {
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	// Same shape as the data-type case above, exercised through a typed empty array so the encoded
+	// container-type record can be produced without a private exporter entry point. With zero array
+	// elements the trailing 4 bytes of the payload are the array's own element-count field (outside
+	// `_decode_container_type`), so the truncation sweep stops just before it to stay scoped to the
+	// container-type record's own fixed-width fields.
+	ContainerType container_type;
+	container_type.builtin_type = Variant::INT;
+	Array typed_array;
+	REQUIRE(typed_array.set_typed(container_type));
+	Vector<uint8_t> payload;
+	REQUIRE(bytecode_encode_variant(exporter, typed_array, payload) == OK);
+	REQUIRE(payload.size() > BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET + 4);
+	const int container_type_record_end = payload.size() - 4;
+
+	Variant sanity_decoded;
+	REQUIRE(bytecode_decode_variant(exporter, payload, &resolver, sanity_decoded) == OK);
+
+	ERR_PRINT_OFF;
+	for (int length = BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET + 1; length < container_type_record_end; length++) {
+		CAPTURE(length);
+		Vector<uint8_t> truncated = payload;
+		truncated.resize(length);
+		Variant decoded_variant;
+		CHECK(bytecode_decode_variant(exporter, truncated, &resolver, decoded_variant) == ERR_INVALID_DATA);
+	}
+	ERR_PRINT_ON;
+
+	Variant decoded_variant;
+	CHECK(bytecode_decode_variant(exporter, payload, &resolver, decoded_variant) == OK);
+	CHECK(Array(decoded_variant).get_element_type().builtin_type == Variant::INT);
+}
+
 TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Loader rejects excessively nested type records") {
 	FSBytecodeExporter exporter;
 	BytecodeTestResolver resolver;
