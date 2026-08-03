@@ -3484,6 +3484,7 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Signal arguments must fi
 					 "func test() -> void:\n"
 					 "\tpets_seen.connect(handler)\n"),
 			OK);
+}
 
 // Parses and analyzes `p_source`, returning the resolved type of top-level variable `p_name`.
 // `r_analyzed` reports whether the parse and analysis both succeeded.
