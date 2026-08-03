@@ -140,7 +140,11 @@ Ref<Script> FSBytecodeCacheResolver::resolve_script(const String &p_path, const 
 // Reads a length-prefixed UTF-8 string, rejecting lengths the stream cannot hold so a corrupted
 // prefix cannot trigger a huge allocation.
 static Error read_bounded_utf8_string(StreamPeerBuffer *p_stream, String &r_string) {
-	const uint32_t length = p_stream->get_u32();
+	uint32_t length = 0;
+	Error error = _read_bounded_u32(p_stream, length, "string length");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)length > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated string in compiled script data.");
 	r_string = p_stream->get_utf8_string(length);
@@ -195,7 +199,11 @@ Error FSBytecodeLoader::check_header(const Vector<uint8_t> &p_buffer, int *r_hea
 
 Error FSBytecodeLoader::read_string_table(StreamPeerBuffer *p_stream) {
 	string_table.clear();
-	const uint32_t count = p_stream->get_u32();
+	uint32_t count = 0;
+	Error count_error = _read_bounded_u32(p_stream, count, "string table count");
+	if (count_error != OK) {
+		return count_error;
+	}
 	// Every entry occupies at least its 4-byte length prefix; reject counts the stream cannot hold.
 	ERR_FAIL_COND_V_MSG((int64_t)count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated string table in compiled script data.");
@@ -223,6 +231,15 @@ Error FSBytecodeLoader::_get_string(uint32_t p_index, String &r_string) const {
 	return OK;
 }
 
+Error FSBytecodeLoader::_read_bounded_string(StreamPeerBuffer *p_stream, String &r_string, const char *p_field) const {
+	uint32_t index = 0;
+	const Error error = _read_bounded_u32(p_stream, index, p_field);
+	if (error != OK) {
+		return error;
+	}
+	return _get_string(index, r_string);
+}
+
 // Mirrors `FSBytecodeExporter::_encode_script_reference`: an intra-file class index resolves
 // against the skeleton scripts of the `.fsb` being loaded; an external identity goes through the
 // resolver as (path, fully qualified class name).
@@ -230,9 +247,17 @@ Error FSBytecodeLoader::_read_script_reference(StreamPeerBuffer *p_stream, Ref<S
 		const String &p_context) {
 	r_script = Ref<Script>();
 	r_is_local_class = false;
-	const uint8_t locality = p_stream->get_u8();
+	uint8_t locality = 0;
+	Error locality_error = _read_bounded_u8(p_stream, locality, "script reference locality");
+	if (locality_error != OK) {
+		return locality_error;
+	}
 	if (locality == 1) {
-		const uint32_t class_index = p_stream->get_u32();
+		uint32_t class_index = 0;
+		Error class_index_error = _read_bounded_u32(p_stream, class_index, "intra-file class index");
+		if (class_index_error != OK) {
+			return class_index_error;
+		}
 		ERR_FAIL_COND_V_MSG(class_index >= (uint32_t)local_classes.size(), ERR_INVALID_DATA,
 				vformat("Intra-file class index out of range in compiled script data (%s).", p_context));
 		r_script = Ref<Script>(local_classes[class_index]);
@@ -242,12 +267,12 @@ Error FSBytecodeLoader::_read_script_reference(StreamPeerBuffer *p_stream, Ref<S
 	ERR_FAIL_COND_V_MSG(locality != 0, ERR_INVALID_DATA,
 			vformat("Malformed script reference in compiled script data (%s).", p_context));
 	String path;
-	Error error = _get_string(p_stream->get_u32(), path);
+	Error error = _read_bounded_string(p_stream, path, "path");
 	if (error != OK) {
 		return error;
 	}
 	String fully_qualified_name;
-	error = _get_string(p_stream->get_u32(), fully_qualified_name);
+	error = _read_bounded_string(p_stream, fully_qualified_name, "fully qualified name");
 	if (error != OK) {
 		return error;
 	}
@@ -263,13 +288,21 @@ Error FSBytecodeLoader::_read_script_reference(StreamPeerBuffer *p_stream, Ref<S
 Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Variant &r_variant, int p_depth) {
 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_DATA,
 			"Variant is too deeply nested in compiled script data.");
-	const uint8_t tag = p_stream->get_u8();
+	uint8_t tag = 0;
+	Error tag_error = _read_bounded_u8(p_stream, tag, "Variant tag");
+	if (tag_error != OK) {
+		return tag_error;
+	}
 	switch (tag) {
 		case FSBytecodeFormat::TAG_INLINE_VARIANT: {
 			// `StreamPeer::get_var` allocates the encoded length before validating it and swallows
 			// decode failures into a nil Variant, so a corrupted length prefix could trigger a huge
 			// allocation and corruption would silently decode as nil. Bound and decode manually.
-			const uint32_t length = p_stream->get_u32();
+			uint32_t length = 0;
+			Error length_error = _read_bounded_u32(p_stream, length, "inline Variant length");
+			if (length_error != OK) {
+				return length_error;
+			}
 			ERR_FAIL_COND_V_MSG((int64_t)length > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 					"Truncated inline Variant in compiled script data.");
 			Vector<uint8_t> encoded;
@@ -285,7 +318,12 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_ARRAY: {
-			const bool read_only = p_stream->get_u8() != 0;
+			uint8_t read_only_flag = 0;
+			Error read_only_error = _read_bounded_u8(p_stream, read_only_flag, "array read-only flag");
+			if (read_only_error != OK) {
+				return read_only_error;
+			}
+			const bool read_only = read_only_flag != 0;
 			ContainerType element_type;
 			Error error = _decode_container_type(p_stream, element_type, p_depth + 1);
 			if (error != OK) {
@@ -296,7 +334,11 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 			if (array_is_typed) {
 				array.set_typed(element_type);
 			}
-			const uint32_t count = p_stream->get_u32();
+			uint32_t count = 0;
+			error = _read_bounded_u32(p_stream, count, "array element count");
+			if (error != OK) {
+				return error;
+			}
 			// Every element occupies at least its 1-byte tag.
 			ERR_FAIL_COND_V_MSG((int64_t)count > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 					"Truncated array in compiled script data.");
@@ -320,7 +362,12 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_DICTIONARY: {
-			const bool read_only = p_stream->get_u8() != 0;
+			uint8_t read_only_flag = 0;
+			Error read_only_error = _read_bounded_u8(p_stream, read_only_flag, "dictionary read-only flag");
+			if (read_only_error != OK) {
+				return read_only_error;
+			}
+			const bool read_only = read_only_flag != 0;
 			ContainerType key_type;
 			Error error = _decode_container_type(p_stream, key_type, p_depth + 1);
 			if (error != OK) {
@@ -338,7 +385,11 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 			if (dictionary_is_typed) {
 				dictionary.set_typed(key_type, value_type);
 			}
-			const uint32_t count = p_stream->get_u32();
+			uint32_t count = 0;
+			error = _read_bounded_u32(p_stream, count, "dictionary entry count");
+			if (error != OK) {
+				return error;
+			}
 			// Every entry occupies at least the key and value tags.
 			ERR_FAIL_COND_V_MSG((int64_t)count * 2 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 					"Truncated dictionary in compiled script data.");
@@ -368,7 +419,11 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_DEFAULT_VALUE: {
-			const uint32_t variant_type = p_stream->get_u32();
+			uint32_t variant_type = 0;
+			Error variant_type_error = _read_bounded_u32(p_stream, variant_type, "default-value type");
+			if (variant_type_error != OK) {
+				return variant_type_error;
+			}
 			// The encoder only emits this tag for the process-bound types whose empty value is
 			// portable; anything else is corrupt input, keeping the contract symmetric.
 			ERR_FAIL_COND_V_MSG(
@@ -382,7 +437,7 @@ Error FSBytecodeLoader::decode_variant_tagged(StreamPeerBuffer *p_stream, Varian
 		} break;
 		case FSBytecodeFormat::TAG_UTILITY_CALLABLE: {
 			String function_name;
-			const Error error = _get_string(p_stream->get_u32(), function_name);
+			const Error error = _read_bounded_string(p_stream, function_name, "function name");
 			if (error != OK) {
 				return error;
 			}
@@ -424,7 +479,7 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 		} break;
 		case FSBytecodeFormat::TAG_EXTERNAL_RESOURCE: {
 			String path;
-			const Error error = _get_string(p_stream->get_u32(), path);
+			const Error error = _read_bounded_string(p_stream, path, "path");
 			if (error != OK) {
 				return error;
 			}
@@ -437,7 +492,7 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 		} break;
 		case FSBytecodeFormat::TAG_NATIVE_CLASS: {
 			String class_name;
-			const Error error = _get_string(p_stream->get_u32(), class_name);
+			const Error error = _read_bounded_string(p_stream, class_name, "class name");
 			if (error != OK) {
 				return error;
 			}
@@ -459,7 +514,7 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 		} break;
 		case FSBytecodeFormat::TAG_ENGINE_SINGLETON: {
 			String singleton_name;
-			const Error error = _get_string(p_stream->get_u32(), singleton_name);
+			const Error error = _read_bounded_string(p_stream, singleton_name, "singleton name");
 			if (error != OK) {
 				return error;
 			}
@@ -494,7 +549,11 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 			return OK;
 		} break;
 		case FSBytecodeFormat::TAG_SPECIALIZED_HANDLE: {
-			const uint8_t script_tag = p_stream->get_u8();
+			uint8_t script_tag = 0;
+			Error script_tag_error = _read_bounded_u8(p_stream, script_tag, "specialized class handle script tag");
+			if (script_tag_error != OK) {
+				return script_tag_error;
+			}
 			Variant script_variant;
 			Error error = _decode_object(p_stream, script_tag, script_variant, p_depth + 1);
 			if (error != OK) {
@@ -503,7 +562,11 @@ Error FSBytecodeLoader::_decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag
 			const Ref<FoundryScript> specialized_script = script_variant;
 			ERR_FAIL_COND_V_MSG(specialized_script.is_null(), ERR_INVALID_DATA,
 					"Specialized class handle in compiled script data does not reference a Foundry Script.");
-			const uint32_t argument_count = p_stream->get_u32();
+			uint32_t argument_count = 0;
+			error = _read_bounded_u32(p_stream, argument_count, "specialized class handle type argument count");
+			if (error != OK) {
+				return error;
+			}
 			ERR_FAIL_COND_V_MSG((int64_t)argument_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 					"Truncated specialized class handle in compiled script data.");
 			Vector<ContainerType> type_arguments;
@@ -747,39 +810,52 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 }
 
 Error FSBytecodeLoader::_read_property_info(StreamPeerBuffer *p_stream, PropertyInfo &r_property_info) {
-	const uint32_t type = p_stream->get_u32();
+	uint32_t type = 0;
+	Error error = _read_bounded_u32(p_stream, type, "property type");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG(type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
 			"Invalid property type in compiled script data.");
 	r_property_info.type = (Variant::Type)type;
 	String name;
-	Error error = _get_string(p_stream->get_u32(), name);
+	error = _read_bounded_string(p_stream, name, "name");
 	if (error != OK) {
 		return error;
 	}
 	r_property_info.name = name;
 	String class_name;
-	error = _get_string(p_stream->get_u32(), class_name);
+	error = _read_bounded_string(p_stream, class_name, "class name");
 	if (error != OK) {
 		return error;
 	}
 	r_property_info.class_name = StringName(class_name);
-	const uint32_t hint = p_stream->get_u32();
+	uint32_t hint = 0;
+	error = _read_bounded_u32(p_stream, hint, "property hint");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG(hint >= PROPERTY_HINT_MAX, ERR_INVALID_DATA,
 			"Invalid property hint in compiled script data.");
 	r_property_info.hint = (PropertyHint)hint;
 	String hint_string;
-	error = _get_string(p_stream->get_u32(), hint_string);
+	error = _read_bounded_string(p_stream, hint_string, "hint string");
 	if (error != OK) {
 		return error;
 	}
 	r_property_info.hint_string = hint_string;
-	r_property_info.usage = p_stream->get_u32();
+	uint32_t usage = 0;
+	error = _read_bounded_u32(p_stream, usage, "property usage");
+	if (error != OK) {
+		return error;
+	}
+	r_property_info.usage = usage;
 	return OK;
 }
 
 Error FSBytecodeLoader::_read_method_info(StreamPeerBuffer *p_stream, MethodInfo &r_method_info, int p_depth) {
 	String name;
-	Error error = _get_string(p_stream->get_u32(), name);
+	Error error = _read_bounded_string(p_stream, name, "name");
 	if (error != OK) {
 		return error;
 	}
@@ -788,9 +864,23 @@ Error FSBytecodeLoader::_read_method_info(StreamPeerBuffer *p_stream, MethodInfo
 	if (error != OK) {
 		return error;
 	}
-	r_method_info.flags = p_stream->get_u32();
-	r_method_info.id = p_stream->get_32();
-	const uint32_t argument_count = p_stream->get_u32();
+	uint32_t flags = 0;
+	error = _read_bounded_u32(p_stream, flags, "method flags");
+	if (error != OK) {
+		return error;
+	}
+	r_method_info.flags = flags;
+	int32_t id = 0;
+	error = _read_bounded_i32(p_stream, id, "method id");
+	if (error != OK) {
+		return error;
+	}
+	r_method_info.id = id;
+	uint32_t argument_count = 0;
+	error = _read_bounded_u32(p_stream, argument_count, "method argument count");
+	if (error != OK) {
+		return error;
+	}
 	// Every serialized PropertyInfo occupies six 4-byte fields.
 	ERR_FAIL_COND_V_MSG((int64_t)argument_count * 24 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated method info in compiled script data.");
@@ -802,7 +892,11 @@ Error FSBytecodeLoader::_read_method_info(StreamPeerBuffer *p_stream, MethodInfo
 		}
 		r_method_info.arguments.push_back(argument);
 	}
-	const uint32_t default_argument_count = p_stream->get_u32();
+	uint32_t default_argument_count = 0;
+	error = _read_bounded_u32(p_stream, default_argument_count, "method default argument count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)default_argument_count > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated method info in compiled script data.");
 	for (uint32_t i = 0; i < default_argument_count; i++) {
@@ -813,12 +907,26 @@ Error FSBytecodeLoader::_read_method_info(StreamPeerBuffer *p_stream, MethodInfo
 		}
 		r_method_info.default_arguments.push_back(default_argument);
 	}
-	r_method_info.return_val_metadata = p_stream->get_32();
-	const uint32_t arguments_metadata_count = p_stream->get_u32();
+	int32_t return_val_metadata = 0;
+	error = _read_bounded_i32(p_stream, return_val_metadata, "method return value metadata");
+	if (error != OK) {
+		return error;
+	}
+	r_method_info.return_val_metadata = return_val_metadata;
+	uint32_t arguments_metadata_count = 0;
+	error = _read_bounded_u32(p_stream, arguments_metadata_count, "method argument metadata count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)arguments_metadata_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated method info in compiled script data.");
 	for (uint32_t i = 0; i < arguments_metadata_count; i++) {
-		r_method_info.arguments_metadata.push_back(p_stream->get_32());
+		int32_t argument_metadata = 0;
+		error = _read_bounded_i32(p_stream, argument_metadata, "method argument metadata");
+		if (error != OK) {
+			return error;
+		}
+		r_method_info.arguments_metadata.push_back(argument_metadata);
 	}
 	return OK;
 }
@@ -863,19 +971,38 @@ Error FSBytecodeLoader::read_function(StreamPeerBuffer *p_stream, FoundryScript 
 Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *p_function,
 		Vector<LoadedLambdaInfo> *r_lambda_info, int p_depth) {
 	String function_name;
-	Error error = _get_string(p_stream->get_u32(), function_name);
+	Error error = _read_bounded_string(p_stream, function_name, "function name");
 	if (error != OK) {
 		return error;
 	}
 	const String script_path = p_function->source;
 
-	const uint8_t function_flags = p_stream->get_u8();
+	uint8_t function_flags = 0;
+	error = _read_bounded_u8(p_stream, function_flags, "function flags");
+	if (error != OK) {
+		return error;
+	}
 	p_function->_static = (function_flags & (1 << 0)) != 0;
-	p_function->_initial_line = p_stream->get_32();
-	p_function->_argument_count = p_stream->get_32();
-	p_function->_vararg_index = p_stream->get_32();
-	p_function->_stack_size = p_stream->get_32();
-	p_function->_instruction_args_size = p_stream->get_32();
+	error = _read_bounded_i32(p_stream, p_function->_initial_line, "function initial line");
+	if (error != OK) {
+		return error;
+	}
+	error = _read_bounded_i32(p_stream, p_function->_argument_count, "function argument count");
+	if (error != OK) {
+		return error;
+	}
+	error = _read_bounded_i32(p_stream, p_function->_vararg_index, "function vararg index");
+	if (error != OK) {
+		return error;
+	}
+	error = _read_bounded_i32(p_stream, p_function->_stack_size, "function stack size");
+	if (error != OK) {
+		return error;
+	}
+	error = _read_bounded_i32(p_stream, p_function->_instruction_args_size, "function instruction args size");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG(
 			p_function->_argument_count < 0 || p_function->_vararg_index < -1 || p_function->_stack_size < 0 ||
 					p_function->_instruction_args_size < 0,
@@ -901,7 +1028,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 			vformat("Malformed compiled function '%s' in script '%s': vararg slot is outside the stack.",
 					function_name, script_path));
 
-	const uint32_t argument_type_count = p_stream->get_u32();
+	uint32_t argument_type_count = 0;
+	error = _read_bounded_u32(p_stream, argument_type_count, "function argument type count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)argument_type_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	// The VM indexes `argument_types` for every declared argument, so an argument count larger than
@@ -950,7 +1081,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		return error;
 	}
 
-	const uint32_t temporary_slot_count = p_stream->get_u32();
+	uint32_t temporary_slot_count = 0;
+	error = _read_bounded_u32(p_stream, temporary_slot_count, "temporary slot count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)temporary_slot_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < temporary_slot_count; i++) {
@@ -964,7 +1099,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		p_function->temporary_slots[slot] = (Variant::Type)slot_type;
 	}
 
-	const uint32_t code_size = p_stream->get_u32();
+	uint32_t code_size = 0;
+	error = _read_bounded_u32(p_stream, code_size, "code size");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)code_size * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	error = p_function->code.resize(code_size);
@@ -973,7 +1112,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		p_function->code.write[i] = p_stream->get_32();
 	}
 
-	const uint32_t default_argument_count = p_stream->get_u32();
+	uint32_t default_argument_count = 0;
+	error = _read_bounded_u32(p_stream, default_argument_count, "default argument count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)default_argument_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < default_argument_count; i++) {
@@ -984,7 +1127,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		p_function->default_arguments.push_back(default_argument_offset);
 	}
 
-	const uint32_t constant_count = p_stream->get_u32();
+	uint32_t constant_count = 0;
+	error = _read_bounded_u32(p_stream, constant_count, "constant count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)constant_count > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < constant_count; i++) {
@@ -996,24 +1143,32 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		p_function->constants.push_back(constant);
 	}
 
-	const uint32_t global_name_count = p_stream->get_u32();
+	uint32_t global_name_count = 0;
+	error = _read_bounded_u32(p_stream, global_name_count, "global name count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)global_name_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < global_name_count; i++) {
 		String global_name;
-		error = _get_string(p_stream->get_u32(), global_name);
+		error = _read_bounded_string(p_stream, global_name, "global name");
 		if (error != OK) {
 			return error;
 		}
 		p_function->global_names.push_back(StringName(global_name));
 	}
 
-	const uint32_t builtin_method_name_count = p_stream->get_u32();
+	uint32_t builtin_method_name_count = 0;
+	error = _read_bounded_u32(p_stream, builtin_method_name_count, "builtin method name count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)builtin_method_name_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < builtin_method_name_count; i++) {
 		String builtin_method_name;
-		error = _get_string(p_stream->get_u32(), builtin_method_name);
+		error = _read_bounded_string(p_stream, builtin_method_name, "builtin method name");
 		if (error != OK) {
 			return error;
 		}
@@ -1025,7 +1180,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 	FSFunction::ExportFixups &restored_fixups = p_function->export_fixups;
 #endif
 
-	const uint32_t operator_count = p_stream->get_u32();
+	uint32_t operator_count = 0;
+	error = _read_bounded_u32(p_stream, operator_count, "operator count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)operator_count * 13 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < operator_count; i++) {
@@ -1056,13 +1215,17 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t setter_count = p_stream->get_u32();
+	uint32_t setter_count = 0;
+	error = _read_bounded_u32(p_stream, setter_count, "setter count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)setter_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < setter_count; i++) {
 		const uint32_t type = p_stream->get_u32();
 		String member_name;
-		error = _get_string(p_stream->get_u32(), member_name);
+		error = _read_bounded_string(p_stream, member_name, "member name");
 		if (error != OK) {
 			return error;
 		}
@@ -1080,13 +1243,17 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t getter_count = p_stream->get_u32();
+	uint32_t getter_count = 0;
+	error = _read_bounded_u32(p_stream, getter_count, "getter count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)getter_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < getter_count; i++) {
 		const uint32_t type = p_stream->get_u32();
 		String member_name;
-		error = _get_string(p_stream->get_u32(), member_name);
+		error = _read_bounded_string(p_stream, member_name, "member name");
 		if (error != OK) {
 			return error;
 		}
@@ -1104,7 +1271,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t keyed_setter_count = p_stream->get_u32();
+	uint32_t keyed_setter_count = 0;
+	error = _read_bounded_u32(p_stream, keyed_setter_count, "keyed setter count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)keyed_setter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < keyed_setter_count; i++) {
@@ -1119,7 +1290,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t keyed_getter_count = p_stream->get_u32();
+	uint32_t keyed_getter_count = 0;
+	error = _read_bounded_u32(p_stream, keyed_getter_count, "keyed getter count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)keyed_getter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < keyed_getter_count; i++) {
@@ -1134,7 +1309,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t indexed_setter_count = p_stream->get_u32();
+	uint32_t indexed_setter_count = 0;
+	error = _read_bounded_u32(p_stream, indexed_setter_count, "indexed setter count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)indexed_setter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < indexed_setter_count; i++) {
@@ -1149,7 +1328,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t indexed_getter_count = p_stream->get_u32();
+	uint32_t indexed_getter_count = 0;
+	error = _read_bounded_u32(p_stream, indexed_getter_count, "indexed getter count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)indexed_getter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < indexed_getter_count; i++) {
@@ -1164,13 +1347,17 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t builtin_method_count = p_stream->get_u32();
+	uint32_t builtin_method_count = 0;
+	error = _read_bounded_u32(p_stream, builtin_method_count, "builtin method count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)builtin_method_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < builtin_method_count; i++) {
 		const uint32_t type = p_stream->get_u32();
 		String method_name;
-		error = _get_string(p_stream->get_u32(), method_name);
+		error = _read_bounded_string(p_stream, method_name, "method name");
 		if (error != OK) {
 			return error;
 		}
@@ -1191,7 +1378,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t constructor_count = p_stream->get_u32();
+	uint32_t constructor_count = 0;
+	error = _read_bounded_u32(p_stream, constructor_count, "constructor count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)constructor_count * 12 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < constructor_count; i++) {
@@ -1219,12 +1410,16 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t utility_count = p_stream->get_u32();
+	uint32_t utility_count = 0;
+	error = _read_bounded_u32(p_stream, utility_count, "utility count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)utility_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < utility_count; i++) {
 		String utility_name;
-		error = _get_string(p_stream->get_u32(), utility_name);
+		error = _read_bounded_string(p_stream, utility_name, "utility name");
 		if (error != OK) {
 			return error;
 		}
@@ -1240,12 +1435,16 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t gds_utility_count = p_stream->get_u32();
+	uint32_t gds_utility_count = 0;
+	error = _read_bounded_u32(p_stream, gds_utility_count, "gds utility count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)gds_utility_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < gds_utility_count; i++) {
 		String utility_name;
-		error = _get_string(p_stream->get_u32(), utility_name);
+		error = _read_bounded_string(p_stream, utility_name, "utility name");
 		if (error != OK) {
 			return error;
 		}
@@ -1261,17 +1460,21 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t method_bind_count = p_stream->get_u32();
+	uint32_t method_bind_count = 0;
+	error = _read_bounded_u32(p_stream, method_bind_count, "method bind count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)method_bind_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < method_bind_count; i++) {
 		String class_name;
-		error = _get_string(p_stream->get_u32(), class_name);
+		error = _read_bounded_string(p_stream, class_name, "class name");
 		if (error != OK) {
 			return error;
 		}
 		String method_name;
-		error = _get_string(p_stream->get_u32(), method_name);
+		error = _read_bounded_string(p_stream, method_name, "method name");
 		if (error != OK) {
 			return error;
 		}
@@ -1283,14 +1486,18 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t global_store_count = p_stream->get_u32();
+	uint32_t global_store_count = 0;
+	error = _read_bounded_u32(p_stream, global_store_count, "global store count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)global_store_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
 	for (uint32_t i = 0; i < global_store_count; i++) {
 		const int32_t code_offset = p_stream->get_32();
 		String global_name;
-		error = _get_string(p_stream->get_u32(), global_name);
+		error = _read_bounded_string(p_stream, global_name, "global name");
 		if (error != OK) {
 			return error;
 		}
@@ -1305,7 +1512,11 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 #endif
 	}
 
-	const uint32_t lambda_count = p_stream->get_u32();
+	uint32_t lambda_count = 0;
+	error = _read_bounded_u32(p_stream, lambda_count, "lambda count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)lambda_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated compiled function '%s' in script '%s'.", function_name, script_path));
 	for (uint32_t i = 0; i < lambda_count; i++) {
@@ -1372,7 +1583,11 @@ Error FSBytecodeLoader::_open_script_stream(const Vector<uint8_t> &p_buffer, Ref
 	r_stream.instantiate();
 	r_stream->set_data_array(p_buffer);
 	r_stream->seek(header_size);
-	const uint32_t script_flags = r_stream->get_u32();
+	uint32_t script_flags = 0;
+	const Error flags_error = _read_bounded_u32(r_stream.ptr(), script_flags, "script flags");
+	if (flags_error != OK) {
+		return flags_error;
+	}
 	// Bit 0 (tool) is also carried per class in the skeleton; only the static-data bits matter here.
 	has_static_data = (script_flags & (1 << 1)) != 0;
 	annotated_static_unload = (script_flags & (1 << 2)) != 0;
@@ -1384,7 +1599,11 @@ Error FSBytecodeLoader::_open_script_stream(const Vector<uint8_t> &p_buffer, Ref
 }
 
 Error FSBytecodeLoader::_expect_section(StreamPeerBuffer *p_stream, FSBytecodeFormat::SectionId p_section) {
-	const uint32_t section = p_stream->get_u32();
+	uint32_t section = 0;
+	const Error section_id_error = _read_bounded_u32(p_stream, section, "section id");
+	if (section_id_error != OK) {
+		return section_id_error;
+	}
 	ERR_FAIL_COND_V_MSG(section != (uint32_t)p_section, ERR_INVALID_DATA,
 			vformat("Compiled script data is corrupted: expected section %d, found %d.", (int)p_section, (int64_t)section));
 	return OK;
@@ -1395,12 +1614,16 @@ Error FSBytecodeLoader::_read_dependency_section(StreamPeerBuffer *p_stream, Vec
 	if (error != OK) {
 		return error;
 	}
-	const uint32_t dependency_count = p_stream->get_u32();
+	uint32_t dependency_count = 0;
+	error = _read_bounded_u32(p_stream, dependency_count, "dependency count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)dependency_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated dependency list in compiled script data.");
 	for (uint32_t i = 0; i < dependency_count; i++) {
 		String dependency_path;
-		error = _get_string(p_stream->get_u32(), dependency_path);
+		error = _read_bounded_string(p_stream, dependency_path, "dependency path");
 		if (error != OK) {
 			return error;
 		}
@@ -1419,12 +1642,16 @@ Error FSBytecodeLoader::_read_namespace_conformance_section(StreamPeerBuffer *p_
 	if (error != OK) {
 		return error;
 	}
-	const uint32_t conformance_count = p_stream->get_u32();
+	uint32_t conformance_count = 0;
+	error = _read_bounded_u32(p_stream, conformance_count, "namespace conformance count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)conformance_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			"Truncated namespace conformance list in compiled script data.");
 	for (uint32_t i = 0; i < conformance_count; i++) {
 		String conformance_path;
-		error = _get_string(p_stream->get_u32(), conformance_path);
+		error = _read_bounded_string(p_stream, conformance_path, "conformance path");
 		if (error != OK) {
 			return error;
 		}
@@ -1442,33 +1669,37 @@ Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const R
 	local_classes.push_back(p_class.ptr());
 
 	String fully_qualified_name;
-	Error error = _get_string(p_stream->get_u32(), fully_qualified_name);
+	Error error = _read_bounded_string(p_stream, fully_qualified_name, "fully qualified name");
 	if (error != OK) {
 		return error;
 	}
 	String local_name;
-	error = _get_string(p_stream->get_u32(), local_name);
+	error = _read_bounded_string(p_stream, local_name, "local name");
 	if (error != OK) {
 		return error;
 	}
 	String global_name;
-	error = _get_string(p_stream->get_u32(), global_name);
+	error = _read_bounded_string(p_stream, global_name, "global name");
 	if (error != OK) {
 		return error;
 	}
 	String simplified_icon_path;
-	error = _get_string(p_stream->get_u32(), simplified_icon_path);
+	error = _read_bounded_string(p_stream, simplified_icon_path, "simplified icon path");
 	if (error != OK) {
 		return error;
 	}
 	String native_class_name;
-	error = _get_string(p_stream->get_u32(), native_class_name);
+	error = _read_bounded_string(p_stream, native_class_name, "native class name");
 	if (error != OK) {
 		return error;
 	}
-	const uint8_t class_flags = p_stream->get_u8();
+	uint8_t class_flags = 0;
+	error = _read_bounded_u8(p_stream, class_flags, "class flags");
+	if (error != OK) {
+		return error;
+	}
 	String trait_type_name;
-	error = _get_string(p_stream->get_u32(), trait_type_name);
+	error = _read_bounded_string(p_stream, trait_type_name, "trait type name");
 	if (error != OK) {
 		return error;
 	}
@@ -1502,18 +1733,32 @@ Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const R
 	// `_read_script_reference` decodes; it is inlined here because resolution must be deferred, so
 	// any wire-format change must update all three sites.
 	SkeletonBaseReference base_reference;
-	if (p_stream->get_u8() != 0) {
-		const uint8_t locality = p_stream->get_u8();
+	uint8_t has_base = 0;
+	error = _read_bounded_u8(p_stream, has_base, "base reference presence flag");
+	if (error != OK) {
+		return error;
+	}
+	if (has_base != 0) {
+		uint8_t locality = 0;
+		error = _read_bounded_u8(p_stream, locality, "base reference locality");
+		if (error != OK) {
+			return error;
+		}
 		if (locality == 1) {
 			base_reference.kind = 1;
-			base_reference.local_index = p_stream->get_u32();
-		} else if (locality == 0) {
-			base_reference.kind = 2;
-			error = _get_string(p_stream->get_u32(), base_reference.path);
+			uint32_t local_index = 0;
+			error = _read_bounded_u32(p_stream, local_index, "base reference local index");
 			if (error != OK) {
 				return error;
 			}
-			error = _get_string(p_stream->get_u32(), base_reference.fully_qualified_name);
+			base_reference.local_index = local_index;
+		} else if (locality == 0) {
+			base_reference.kind = 2;
+			error = _read_bounded_string(p_stream, base_reference.path, "path");
+			if (error != OK) {
+				return error;
+			}
+			error = _read_bounded_string(p_stream, base_reference.fully_qualified_name, "fully qualified name");
 			if (error != OK) {
 				return error;
 			}
@@ -1523,7 +1768,11 @@ Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const R
 	}
 	r_base_references.push_back(base_reference);
 
-	const uint32_t subclass_count = p_stream->get_u32();
+	uint32_t subclass_count = 0;
+	error = _read_bounded_u32(p_stream, subclass_count, "subclass count");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)subclass_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated inner class list in compiled script '%s'.", p_root_path));
 	// Rebuild the subclass map in serialized order, reusing the scripts a previous `load_skeleton`
@@ -1532,7 +1781,7 @@ Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const R
 	p_class->subclasses.clear();
 	for (uint32_t i = 0; i < subclass_count; i++) {
 		String subclass_name;
-		error = _get_string(p_stream->get_u32(), subclass_name);
+		error = _read_bounded_string(p_stream, subclass_name, "subclass name");
 		if (error != OK) {
 			return error;
 		}
@@ -1599,20 +1848,25 @@ Error FSBytecodeLoader::read_dependencies(const Vector<uint8_t> &p_buffer, Vecto
 Error FSBytecodeLoader::_read_member_info(StreamPeerBuffer *p_stream, const String &p_script_path, StringName &r_name,
 		FoundryScript::MemberInfo &r_member_info) {
 	String member_name;
-	Error error = _get_string(p_stream->get_u32(), member_name);
+	Error error = _read_bounded_string(p_stream, member_name, "member name");
 	if (error != OK) {
 		return error;
 	}
 	r_name = StringName(member_name);
-	r_member_info.index = p_stream->get_32();
+	int32_t index = 0;
+	error = _read_bounded_i32(p_stream, index, "member index");
+	if (error != OK) {
+		return error;
+	}
+	r_member_info.index = index;
 	String setter;
-	error = _get_string(p_stream->get_u32(), setter);
+	error = _read_bounded_string(p_stream, setter, "setter");
 	if (error != OK) {
 		return error;
 	}
 	r_member_info.setter = StringName(setter);
 	String getter;
-	error = _get_string(p_stream->get_u32(), getter);
+	error = _read_bounded_string(p_stream, getter, "getter");
 	if (error != OK) {
 		return error;
 	}
@@ -1629,37 +1883,59 @@ Error FSBytecodeLoader::_read_member_info(StreamPeerBuffer *p_stream, const Stri
 }
 
 Error FSBytecodeLoader::_read_type_argument_binding(StreamPeerBuffer *p_stream, FoundryScript::TypeArgumentBinding &r_binding) {
-	const uint8_t kind = p_stream->get_u8();
+	uint8_t kind = 0;
+	Error error = _read_bounded_u8(p_stream, kind, "type argument binding kind");
+	if (error != OK) {
+		return error;
+	}
 	ERR_FAIL_COND_V_MSG(kind > (uint8_t)FoundryScript::TypeArgumentBinding::OPEN, ERR_INVALID_DATA,
 			"Invalid type argument binding in compiled script data.");
 	r_binding.kind = (FoundryScript::TypeArgumentBinding::Kind)kind;
-	const uint8_t binding_flags = p_stream->get_u8();
+	uint8_t binding_flags = 0;
+	error = _read_bounded_u8(p_stream, binding_flags, "type argument binding flags");
+	if (error != OK) {
+		return error;
+	}
 	// Bit 0 is reserved and ignored; see `FSBytecodeExporter::_write_type_argument_binding`.
 	r_binding.is_type_handle = (binding_flags & (1 << 1)) != 0;
-	r_binding.leaf_ordinal = p_stream->get_32();
+	int32_t leaf_ordinal = 0;
+	error = _read_bounded_i32(p_stream, leaf_ordinal, "type argument binding leaf ordinal");
+	if (error != OK) {
+		return error;
+	}
+	r_binding.leaf_ordinal = leaf_ordinal;
 	return decode_data_type(p_stream, r_binding.fixed);
 }
 
 Error FSBytecodeLoader::_read_annotation_usages(StreamPeerBuffer *p_stream, const String &p_script_path,
 		Vector<FoundryScript::AnnotationUsage> &r_usages) {
-	const uint32_t usage_count = p_stream->get_u32();
+	uint32_t usage_count = 0;
+	Error count_error = _read_bounded_u32(p_stream, usage_count, "annotation usage count");
+	if (count_error != OK) {
+		return count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)usage_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated annotation metadata in compiled script '%s'.", p_script_path));
 	for (uint32_t i = 0; i < usage_count; i++) {
 		FoundryScript::AnnotationUsage usage;
 		String annotation_name;
-		Error error = _get_string(p_stream->get_u32(), annotation_name);
+		Error error = _read_bounded_string(p_stream, annotation_name, "annotation name");
 		if (error != OK) {
 			return error;
 		}
 		usage.name = StringName(annotation_name);
 		String qualified_name;
-		error = _get_string(p_stream->get_u32(), qualified_name);
+		error = _read_bounded_string(p_stream, qualified_name, "qualified name");
 		if (error != OK) {
 			return error;
 		}
 		usage.qualified_name = StringName(qualified_name);
-		usage.is_builtin = p_stream->get_u8() != 0;
+		uint8_t is_builtin = 0;
+		error = _read_bounded_u8(p_stream, is_builtin, "annotation usage builtin flag");
+		if (error != OK) {
+			return error;
+		}
+		usage.is_builtin = is_builtin != 0;
 		Variant args;
 		error = decode_variant_tagged(p_stream, args);
 		if (error != OK) {
@@ -1683,12 +1959,16 @@ Error FSBytecodeLoader::_read_annotation_usages(StreamPeerBuffer *p_stream, cons
 
 Error FSBytecodeLoader::_read_annotation_usage_map(StreamPeerBuffer *p_stream, const String &p_script_path,
 		HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> &r_annotation_map) {
-	const uint32_t entry_count = p_stream->get_u32();
+	uint32_t entry_count = 0;
+	Error count_error = _read_bounded_u32(p_stream, entry_count, "annotation usage map entry count");
+	if (count_error != OK) {
+		return count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)entry_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated annotation metadata in compiled script '%s'.", p_script_path));
 	for (uint32_t i = 0; i < entry_count; i++) {
 		String owner_name;
-		Error error = _get_string(p_stream->get_u32(), owner_name);
+		Error error = _read_bounded_string(p_stream, owner_name, "owner name");
 		if (error != OK) {
 			return error;
 		}
@@ -1704,12 +1984,16 @@ Error FSBytecodeLoader::_read_annotation_usage_map(StreamPeerBuffer *p_stream, c
 
 Error FSBytecodeLoader::_read_parameter_annotation_map(StreamPeerBuffer *p_stream, const String &p_script_path,
 		HashMap<StringName, HashMap<StringName, Vector<FoundryScript::AnnotationUsage>>> &r_parameter_map) {
-	const uint32_t entry_count = p_stream->get_u32();
+	uint32_t entry_count = 0;
+	Error count_error = _read_bounded_u32(p_stream, entry_count, "parameter annotation map entry count");
+	if (count_error != OK) {
+		return count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)entry_count * 8 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated annotation metadata in compiled script '%s'.", p_script_path));
 	for (uint32_t i = 0; i < entry_count; i++) {
 		String owner_name;
-		Error error = _get_string(p_stream->get_u32(), owner_name);
+		Error error = _read_bounded_string(p_stream, owner_name, "owner name");
 		if (error != OK) {
 			return error;
 		}
@@ -1726,7 +2010,12 @@ Error FSBytecodeLoader::_read_parameter_annotation_map(StreamPeerBuffer *p_strea
 Error FSBytecodeLoader::_read_optional_function(StreamPeerBuffer *p_stream, FoundryScript *p_script, FSFunction *&r_function,
 		Vector<LoadedLambdaInfo> *r_lambda_info) {
 	r_function = nullptr;
-	if (p_stream->get_u8() == 0) {
+	uint8_t has_function = 0;
+	const Error error = _read_bounded_u8(p_stream, has_function, "optional function presence flag");
+	if (error != OK) {
+		return error;
+	}
+	if (has_function == 0) {
 		return OK;
 	}
 	return read_function(p_stream, p_script, r_function, r_lambda_info);
@@ -1737,7 +2026,11 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 
 	// Members were serialized post-compile with the base members already flattened in, so no
 	// inheritance recomputation happens here.
-	const uint32_t member_count = p_stream->get_u32();
+	uint32_t member_count = 0;
+	Error member_count_error = _read_bounded_u32(p_stream, member_count, "member count");
+	if (member_count_error != OK) {
+		return member_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)member_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated member table in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < member_count; i++) {
@@ -1770,19 +2063,27 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 				vformat("Member index out of range for '%s' in compiled script '%s'.", E.key, script_path));
 	}
 
-	const uint32_t own_member_count = p_stream->get_u32();
+	uint32_t own_member_count = 0;
+	Error own_member_count_error = _read_bounded_u32(p_stream, own_member_count, "own member count");
+	if (own_member_count_error != OK) {
+		return own_member_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)own_member_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated member list in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < own_member_count; i++) {
 		String member_name;
-		const Error error = _get_string(p_stream->get_u32(), member_name);
+		const Error error = _read_bounded_string(p_stream, member_name, "member name");
 		if (error != OK) {
 			return error;
 		}
 		p_script->members.insert(StringName(member_name));
 	}
 
-	const uint32_t static_variable_count = p_stream->get_u32();
+	uint32_t static_variable_count = 0;
+	Error static_variable_count_error = _read_bounded_u32(p_stream, static_variable_count, "static variable count");
+	if (static_variable_count_error != OK) {
+		return static_variable_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)static_variable_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated static variable table in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < static_variable_count; i++) {
@@ -1814,12 +2115,16 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 				vformat("Static variable index out of range for '%s' in compiled script '%s'.", E.key, script_path));
 	}
 
-	const uint32_t constant_count = p_stream->get_u32();
+	uint32_t constant_count = 0;
+	Error constant_count_error = _read_bounded_u32(p_stream, constant_count, "constant count");
+	if (constant_count_error != OK) {
+		return constant_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)constant_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated constant table in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < constant_count; i++) {
 		String constant_name;
-		Error error = _get_string(p_stream->get_u32(), constant_name);
+		Error error = _read_bounded_string(p_stream, constant_name, "constant name");
 		if (error != OK) {
 			return error;
 		}
@@ -1831,12 +2136,16 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		p_script->constants.insert(StringName(constant_name), constant_value);
 	}
 
-	const uint32_t signal_count = p_stream->get_u32();
+	uint32_t signal_count = 0;
+	Error signal_count_error = _read_bounded_u32(p_stream, signal_count, "signal count");
+	if (signal_count_error != OK) {
+		return signal_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)signal_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated signal table in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < signal_count; i++) {
 		String signal_name;
-		Error error = _get_string(p_stream->get_u32(), signal_name);
+		Error error = _read_bounded_string(p_stream, signal_name, "signal name");
 		if (error != OK) {
 			return error;
 		}
@@ -1848,24 +2157,32 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		p_script->_signals.insert(StringName(signal_name), signal_info);
 	}
 
-	const uint32_t trait_count = p_stream->get_u32();
+	uint32_t trait_count = 0;
+	Error trait_count_error = _read_bounded_u32(p_stream, trait_count, "trait count");
+	if (trait_count_error != OK) {
+		return trait_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)trait_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated trait list in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < trait_count; i++) {
 		String trait_name;
-		const Error error = _get_string(p_stream->get_u32(), trait_name);
+		const Error error = _read_bounded_string(p_stream, trait_name, "trait name");
 		if (error != OK) {
 			return error;
 		}
 		p_script->script_trait_list.push_back(StringName(trait_name));
 	}
 
-	const uint32_t abstract_requirement_count = p_stream->get_u32();
+	uint32_t abstract_requirement_count = 0;
+	Error abstract_requirement_count_error = _read_bounded_u32(p_stream, abstract_requirement_count, "abstract requirement count");
+	if (abstract_requirement_count_error != OK) {
+		return abstract_requirement_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)abstract_requirement_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated abstract trait requirements in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < abstract_requirement_count; i++) {
 		String requirement_name;
-		Error error = _get_string(p_stream->get_u32(), requirement_name);
+		Error error = _read_bounded_string(p_stream, requirement_name, "requirement name");
 		if (error != OK) {
 			return error;
 		}
@@ -1881,19 +2198,33 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		p_script->abstract_trait_requirements.insert(StringName(requirement_name), requirement);
 	}
 
-	const uint32_t type_parameter_count = p_stream->get_u32();
+	uint32_t type_parameter_count = 0;
+	Error type_parameter_count_error = _read_bounded_u32(p_stream, type_parameter_count, "type parameter count");
+	if (type_parameter_count_error != OK) {
+		return type_parameter_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)type_parameter_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated type parameter list in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < type_parameter_count; i++) {
 		FoundryScript::TypeParameter type_parameter;
 		String type_parameter_name;
-		Error error = _get_string(p_stream->get_u32(), type_parameter_name);
+		Error error = _read_bounded_string(p_stream, type_parameter_name, "type parameter name");
 		if (error != OK) {
 			return error;
 		}
 		type_parameter.name = StringName(type_parameter_name);
-		type_parameter.index = p_stream->get_32();
-		type_parameter.has_bound = p_stream->get_u8() != 0;
+		int32_t type_parameter_index = 0;
+		error = _read_bounded_i32(p_stream, type_parameter_index, "type parameter index");
+		if (error != OK) {
+			return error;
+		}
+		type_parameter.index = type_parameter_index;
+		uint8_t type_parameter_has_bound = 0;
+		error = _read_bounded_u8(p_stream, type_parameter_has_bound, "type parameter has-bound flag");
+		if (error != OK) {
+			return error;
+		}
+		type_parameter.has_bound = type_parameter_has_bound != 0;
 		error = _read_property_info(p_stream, type_parameter.bound);
 		if (error != OK) {
 			return error;
@@ -1905,7 +2236,11 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 	// scripts: intra-file ancestors to skeleton scripts, external ones through the resolver. The
 	// raw keys follow the compile-time lifetime rules (ancestors stay alive via the `base` chain,
 	// external trait scripts via the loading cache).
-	const uint32_t ancestor_binding_count = p_stream->get_u32();
+	uint32_t ancestor_binding_count = 0;
+	Error ancestor_binding_count_error = _read_bounded_u32(p_stream, ancestor_binding_count, "ancestor binding count");
+	if (ancestor_binding_count_error != OK) {
+		return ancestor_binding_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)ancestor_binding_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated type parameter bindings in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < ancestor_binding_count; i++) {
@@ -1918,7 +2253,11 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		FoundryScript *ancestor_script = Object::cast_to<FoundryScript>(ancestor_reference.ptr());
 		ERR_FAIL_NULL_V_MSG(ancestor_script, ERR_INVALID_DATA,
 				vformat("Malformed type parameter ancestor in compiled script '%s'.", script_path));
-		const uint32_t binding_count = p_stream->get_u32();
+		uint32_t binding_count = 0;
+		Error binding_count_error = _read_bounded_u32(p_stream, binding_count, "binding count");
+		if (binding_count_error != OK) {
+			return binding_count_error;
+		}
 		ERR_FAIL_COND_V_MSG((int64_t)binding_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 				vformat("Truncated type parameter bindings in compiled script '%s'.", script_path));
 		Vector<FoundryScript::TypeArgumentBinding> bindings;
@@ -1975,7 +2314,11 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 	// Functions become the real registered member functions of the loaded script; any function
 	// registered before a later failure is owned by the script and freed by its destructor.
 	Vector<LoadedLambdaInfo> lambda_entries;
-	const uint32_t function_count = p_stream->get_u32();
+	uint32_t function_count = 0;
+	Error function_count_error = _read_bounded_u32(p_stream, function_count, "function count");
+	if (function_count_error != OK) {
+		return function_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)function_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated function table in compiled script '%s'.", script_path));
 	for (uint32_t i = 0; i < function_count; i++) {
@@ -2000,13 +2343,17 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		}
 	}
 
-	const uint32_t enum_count = p_stream->get_u32();
+	uint32_t enum_count = 0;
+	Error enum_count_error = _read_bounded_u32(p_stream, enum_count, "enum count");
+	if (enum_count_error != OK) {
+		return enum_count_error;
+	}
 	// Each enum entry has at least its string index and the two function-count fields.
 	ERR_FAIL_COND_V_MSG((int64_t)enum_count * 12 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated enum function table in compiled script '%s'.", script_path));
 	for (uint32_t enum_index = 0; enum_index < enum_count; enum_index++) {
 		String enum_type_name;
-		error = _get_string(p_stream->get_u32(), enum_type_name);
+		error = _read_bounded_string(p_stream, enum_type_name, "enum type name");
 		if (error != OK) {
 			return error;
 		}
@@ -2025,7 +2372,11 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 		const auto read_function_map = [&](HashMap<StringName, FSFunction *> &r_functions,
 											   const HashMap<StringName, FSFunction *> &p_other_functions,
 											   bool p_static) -> Error {
-			const uint32_t enum_function_count = p_stream->get_u32();
+			uint32_t enum_function_count = 0;
+			Error enum_function_count_error = _read_bounded_u32(p_stream, enum_function_count, "enum function count");
+			if (enum_function_count_error != OK) {
+				return enum_function_count_error;
+			}
 			ERR_FAIL_COND_V_MSG((int64_t)enum_function_count * 5 > (int64_t)p_stream->get_available_bytes(),
 					ERR_INVALID_DATA,
 					vformat("Truncated enum '%s' function table in compiled script '%s'.", enum_type, script_path));
@@ -2105,7 +2456,11 @@ Error FSBytecodeLoader::_read_class_body(StreamPeerBuffer *p_stream, FoundryScri
 // registration key so reload/unload can drop the borrowed pointers first.
 Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, FoundryScript *p_script) {
 	const String script_path = p_script->get_script_path();
-	const uint32_t conformance_count = p_stream->get_u32();
+	uint32_t conformance_count = 0;
+	Error conformance_count_error = _read_bounded_u32(p_stream, conformance_count, "conformance count");
+	if (conformance_count_error != OK) {
+		return conformance_count_error;
+	}
 	ERR_FAIL_COND_V_MSG((int64_t)conformance_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 			vformat("Truncated conformance section in compiled script '%s'.", script_path));
 	if (conformance_count == 0) {
@@ -2126,19 +2481,23 @@ Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, Foundr
 
 		FSConformanceRegistry::RuntimeConformance conformance;
 		conformance.target_script = target_script;
-		const uint32_t target_key_count = p_stream->get_u32();
+		uint32_t target_key_count = 0;
+		Error target_key_count_error = _read_bounded_u32(p_stream, target_key_count, "target key count");
+		if (target_key_count_error != OK) {
+			return target_key_count_error;
+		}
 		ERR_FAIL_COND_V_MSG((int64_t)target_key_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 				vformat("Truncated conformance section in compiled script '%s'.", script_path));
 		for (uint32_t key_index = 0; key_index < target_key_count; key_index++) {
 			String target_key;
-			error = _get_string(p_stream->get_u32(), target_key);
+			error = _read_bounded_string(p_stream, target_key, "target key");
 			if (error != OK) {
 				return error;
 			}
 			conformance.target_keys.push_back(target_key);
 		}
 		String trait_name;
-		error = _get_string(p_stream->get_u32(), trait_name);
+		error = _read_bounded_string(p_stream, trait_name, "trait name");
 		if (error != OK) {
 			return error;
 		}
@@ -2147,12 +2506,16 @@ Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, Foundr
 		// witnesses still dispatch; the runtime membership index deliberately cannot index an identity
 		// that is absent from the file.
 
-		const uint32_t witness_count = p_stream->get_u32();
+		uint32_t witness_count = 0;
+		Error witness_count_error = _read_bounded_u32(p_stream, witness_count, "witness count");
+		if (witness_count_error != OK) {
+			return witness_count_error;
+		}
 		ERR_FAIL_COND_V_MSG((int64_t)witness_count * 5 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
 				vformat("Truncated conformance section in compiled script '%s'.", script_path));
 		for (uint32_t witness_index = 0; witness_index < witness_count; witness_index++) {
 			String method_name;
-			error = _get_string(p_stream->get_u32(), method_name);
+			error = _read_bounded_string(p_stream, method_name, "method name");
 			if (error != OK) {
 				return error;
 			}

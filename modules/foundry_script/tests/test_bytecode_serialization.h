@@ -1058,6 +1058,137 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Loader rejects a container-type record
 	CHECK(Array(decoded_variant).get_element_type().builtin_type == Variant::INT);
 }
 
+TEST_CASE("[FoundryScript][BytecodeCodec] Loader rejects a data-type record truncated inside an external script reference") {
+	// `decode_data_type`'s has-script branch reads the script reference through
+	// `_read_script_reference` directly (locality byte, then either an intra-file class index or a
+	// path/fully-qualified-name string pair). That reader's own fixed-width fields are not exercised
+	// by the general data-type field sweep above, since that fixture carries no script at all.
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	Ref<FoundryScript> referenced_script;
+	referenced_script.instantiate();
+	referenced_script->set_path_cache("res://script_reference_truncation.fs");
+	resolver.scripts.insert("res://script_reference_truncation.fs::", referenced_script);
+
+	FSDataType data_type;
+	data_type.kind = FSDataType::FOUNDRY_SCRIPT;
+	data_type.builtin_type = Variant::OBJECT;
+	data_type.native_type = "RefCounted";
+
+	// Encoding the same record without a script first gives the exact byte length of everything but
+	// the script reference itself (the trailing element/type-argument counts are the same 8 zero bytes
+	// in both encodings), which locates the reference without hardcoding any field-size arithmetic.
+	const Vector<uint8_t> without_script_payload = bytecode_encode_data_type(exporter, data_type);
+	REQUIRE(without_script_payload.size() > 9);
+	const int script_reference_start = without_script_payload.size() - 8;
+
+	data_type.script_type_ref = referenced_script;
+	data_type.script_type = referenced_script.ptr();
+	const Vector<uint8_t> with_script_payload = bytecode_encode_data_type(exporter, data_type);
+	REQUIRE(with_script_payload.size() > without_script_payload.size());
+
+	FSDataType sanity_decoded;
+	REQUIRE(bytecode_decode_data_type(exporter, with_script_payload, &resolver, sanity_decoded) == OK);
+	CHECK(sanity_decoded.script_type_ref == Ref<Script>(referenced_script));
+
+	ERR_PRINT_OFF;
+	for (int length = script_reference_start; length < with_script_payload.size(); length++) {
+		CAPTURE(length);
+		Vector<uint8_t> truncated = with_script_payload;
+		truncated.resize(length);
+		FSDataType decoded;
+		CHECK(bytecode_decode_data_type(exporter, truncated, &resolver, decoded) == ERR_INVALID_DATA);
+	}
+	ERR_PRINT_ON;
+
+	// The untouched, well-formed record still decodes exactly as it did before.
+	FSDataType decoded;
+	CHECK(bytecode_decode_data_type(exporter, with_script_payload, &resolver, decoded) == OK);
+	CHECK(decoded.script_type_ref == Ref<Script>(referenced_script));
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Loader rejects an array truncated at the element count") {
+	// `TAG_ARRAY`'s element count is read directly (not through a helper that already bounds it), so a
+	// `.fsb` truncated exactly inside that field must be rejected instead of silently decoding a count
+	// of zero and returning an empty (but otherwise well-formed-looking) array.
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	Array plain_array;
+	plain_array.push_back((int64_t)1);
+	plain_array.push_back((int64_t)2);
+	Vector<uint8_t> payload;
+	REQUIRE(bytecode_encode_variant(exporter, plain_array, payload) == OK);
+	// The element count is the last 4 bytes preceding the element payloads; two 1-byte-tagged inline
+	// integers do not confuse the search since the count field itself is computed from the encoder's
+	// own layout, not searched for.
+	REQUIRE(payload.size() > 4);
+
+	Variant sanity_decoded;
+	REQUIRE(bytecode_decode_variant(exporter, payload, &resolver, sanity_decoded) == OK);
+	REQUIRE(Array(sanity_decoded).size() == 2);
+
+	// The element count field sits right after the read-only flag and the (nil) element container
+	// type; find it by re-encoding an otherwise identical empty array and diffing lengths, exactly as
+	// the data-type script-reference test above locates its target field.
+	Array empty_array;
+	Vector<uint8_t> empty_payload;
+	REQUIRE(bytecode_encode_variant(exporter, empty_array, empty_payload) == OK);
+	const int count_field_start = empty_payload.size() - 4;
+	REQUIRE(count_field_start >= 0);
+
+	ERR_PRINT_OFF;
+	for (int length = count_field_start; length < count_field_start + 4; length++) {
+		CAPTURE(length);
+		Vector<uint8_t> truncated = payload;
+		truncated.resize(length);
+		Variant decoded;
+		CHECK(bytecode_decode_variant(exporter, truncated, &resolver, decoded) == ERR_INVALID_DATA);
+	}
+	ERR_PRINT_ON;
+
+	Variant decoded;
+	CHECK(bytecode_decode_variant(exporter, payload, &resolver, decoded) == OK);
+	CHECK(Array(decoded).size() == 2);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] Loader rejects a dictionary truncated at the entry count") {
+	// Same defect shape as the array case above, for `TAG_DICTIONARY`'s entry count.
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	Dictionary plain_dictionary;
+	plain_dictionary[String("key")] = (int64_t)7;
+	Vector<uint8_t> payload;
+	REQUIRE(bytecode_encode_variant(exporter, plain_dictionary, payload) == OK);
+	REQUIRE(payload.size() > 4);
+
+	Variant sanity_decoded;
+	REQUIRE(bytecode_decode_variant(exporter, payload, &resolver, sanity_decoded) == OK);
+	REQUIRE(Dictionary(sanity_decoded).size() == 1);
+
+	Dictionary empty_dictionary;
+	Vector<uint8_t> empty_payload;
+	REQUIRE(bytecode_encode_variant(exporter, empty_dictionary, empty_payload) == OK);
+	const int count_field_start = empty_payload.size() - 4;
+	REQUIRE(count_field_start >= 0);
+
+	ERR_PRINT_OFF;
+	for (int length = count_field_start; length < count_field_start + 4; length++) {
+		CAPTURE(length);
+		Vector<uint8_t> truncated = payload;
+		truncated.resize(length);
+		Variant decoded;
+		CHECK(bytecode_decode_variant(exporter, truncated, &resolver, decoded) == ERR_INVALID_DATA);
+	}
+	ERR_PRINT_ON;
+
+	Variant decoded;
+	CHECK(bytecode_decode_variant(exporter, payload, &resolver, decoded) == OK);
+	CHECK(Dictionary(decoded).size() == 1);
+}
+
 TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Loader rejects excessively nested type records") {
 	FSBytecodeExporter exporter;
 	BytecodeTestResolver resolver;

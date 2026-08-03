@@ -605,6 +605,124 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Corrupt and truncated buffers neve
 	CHECK(restored->is_valid());
 }
 
+TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects every truncation length of a full script buffer") {
+	// The crash-safety sweep above only proves the loader never crashes and never reports success on
+	// a structurally invalid script; it does not prove truncation is actually rejected. A `.fsb`
+	// truncated inside `_read_skeleton_class`, `_read_member_info`, `_read_type_argument_binding`, the
+	// annotation-usage readers, `_read_class_body`, or `_read_witness_section` used to decode into a
+	// well-formed-looking zeroed record and return OK; every fixed-width field in those readers is now
+	// bounds-checked, so this asserts the stronger property directly: no truncation length below the
+	// full buffer size ever loads successfully.
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"class Inner:\n"
+			"\tvar value: int = 3\n"
+			"\tfunc doubled() -> int:\n"
+			"\t\treturn value * 2\n"
+			"\n"
+			"@export var speed: float = 1.5\n"
+			"var counter: int = 0\n"
+			"\n"
+			"signal changed(amount: int)\n"
+			"\n"
+			"func step(amount: int) -> int:\n"
+			"\tcounter += amount\n"
+			"\tchanged.emit(amount)\n"
+			"\tfor i in range(amount):\n"
+			"\t\tcounter += i\n"
+			"\treturn Inner.new().doubled() + counter\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+	REQUIRE(buffer.size() > 16);
+	const String path = original->get_script_path();
+
+	// The pristine buffer loads cleanly, so the sweep below is not exercising an already-broken
+	// fixture.
+	{
+		BytecodeTestResolver sanity_resolver;
+		Ref<FoundryScript> sanity_target;
+		sanity_target.instantiate();
+		sanity_target->set_path_cache(path);
+		FSBytecodeLoader sanity_loader;
+		sanity_loader.set_resolver(&sanity_resolver);
+		REQUIRE(sanity_loader.load_skeleton(buffer, sanity_target) == OK);
+		REQUIRE(sanity_loader.load_full(buffer, sanity_target) == OK);
+		CHECK(sanity_target->is_valid());
+		sanity_target->clear();
+	}
+
+	ERR_PRINT_OFF;
+	for (int length = 0; length < buffer.size(); length++) {
+		CAPTURE(length);
+		Vector<uint8_t> truncated = buffer;
+		truncated.resize(length);
+
+		BytecodeTestResolver resolver;
+		Ref<FoundryScript> target;
+		target.instantiate();
+		target->set_path_cache(path);
+		FSBytecodeLoader loader;
+		loader.set_resolver(&resolver);
+		const Error skeleton_error = loader.load_skeleton(truncated, target);
+		if (skeleton_error == OK) {
+			const Error full_error = loader.load_full(truncated, target);
+			CHECK(full_error != OK);
+		}
+		target->clear();
+	}
+	ERR_PRINT_ON;
+
+	// The pristine buffer still loads cleanly after the sweep.
+	BytecodeTestResolver resolver;
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(path);
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_skeleton(buffer, restored) == OK);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+	CHECK(restored->is_valid());
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects a function payload truncated at any fixed-width field") {
+	// `read_function`/`_read_function_body` decode dozens of fixed-width fields (flags, counts, ids)
+	// with no crash-safety check on their own; only the count-prefixed loops that follow them bound
+	// the stream. A fixture that populates arguments, a default argument, a vararg rest slot, an
+	// operator use, and a builtin-method fixup exercises `_read_method_info` and `_read_property_info`
+	// (nested inside the return value and every argument) along with the function body's own header
+	// and fixup-table fields, so truncating at every length sweeps through nearly all of them in one
+	// pass.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func demo(text: String = \"hi\", ...rest: Array[int]) -> int:\n"
+			"\tvar total := text.length()\n"
+			"\tfor value in rest:\n"
+			"\t\ttotal += value\n"
+			"\treturn total\n");
+	const HashMap<StringName, FSFunction *>::ConstIterator element = script->get_member_functions().find(SNAME("demo"));
+	REQUIRE(element);
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, element->value);
+	REQUIRE(payload.size() > 1);
+
+	// The untouched payload loads cleanly, so the sweep below is not exercising an already-broken
+	// fixture.
+	CHECK(bytecode_read_function_payload(exporter, script, payload) == OK);
+
+	ERR_PRINT_OFF;
+	for (int length = 0; length < payload.size(); length++) {
+		CAPTURE(length);
+		Vector<uint8_t> truncated = payload;
+		truncated.resize(length);
+		CHECK(bytecode_read_function_payload(exporter, script, truncated) == ERR_INVALID_DATA);
+	}
+	ERR_PRINT_ON;
+
+	// The pristine payload still loads cleanly after the sweep.
+	CHECK(bytecode_read_function_payload(exporter, script, payload) == OK);
+}
+
 TEST_CASE("[FoundryScript][BytecodeHardening] Serialized bytecode leaks no source-only identifiers") {
 	// The source deliberately carries several distinctive tokens: a local variable, a comment, and a
 	// distinctive string in a local's initializer. None of those may survive into the serialized
