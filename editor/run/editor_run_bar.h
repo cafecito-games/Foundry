@@ -143,7 +143,8 @@ public:
 	};
 
 	static Vector<RunOptionsMenuEntry> build_run_options_menu_model();
-	static bool is_debug_session_exit_current(OS::ProcessID p_represented_process, OS::ProcessID p_stopped_process);
+	static bool is_debug_session_exit_current(OS::ProcessID p_represented_process, OS::ProcessID p_stopped_process,
+			bool p_stopped_process_is_owned_child);
 
 	static EditorRunBar *get_singleton() { return singleton; }
 
