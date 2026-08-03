@@ -361,7 +361,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorMul<Color, Color, double>>(Variant::OP_MULTIPLY, Variant::COLOR, Variant::FLOAT);
 	register_op<OperatorEvaluatorMul<Color, double, Color>>(Variant::OP_MULTIPLY, Variant::FLOAT, Variant::COLOR);
 
-	register_op<OperatorEvaluatorDivNZ<int64_t, int64_t, int64_t>>(Variant::OP_DIVIDE, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntCheckedBinary<VariantIntDivideOperation>>(Variant::OP_DIVIDE, Variant::INT, Variant::INT);
 	register_op<OperatorEvaluatorUIntCheckedBinary<VariantUIntDivideOperation>>(Variant::OP_DIVIDE, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorDiv<double, double, int64_t>>(Variant::OP_DIVIDE, Variant::FLOAT, Variant::INT);
 	register_op<OperatorEvaluatorDiv<double, int64_t, double>>(Variant::OP_DIVIDE, Variant::INT, Variant::FLOAT);
@@ -407,7 +407,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorDiv<Color, Color, double>>(Variant::OP_DIVIDE, Variant::COLOR, Variant::FLOAT);
 	register_op<OperatorEvaluatorDiv<Color, Color, int64_t>>(Variant::OP_DIVIDE, Variant::COLOR, Variant::INT);
 
-	register_op<OperatorEvaluatorModNZ<int64_t, int64_t, int64_t>>(Variant::OP_MODULE, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntCheckedBinary<VariantIntModuloOperation>>(Variant::OP_MODULE, Variant::INT, Variant::INT);
 	register_op<OperatorEvaluatorUIntCheckedBinary<VariantUIntModuloOperation>>(Variant::OP_MODULE, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorModNZ<Vector2i, Vector2i, Vector2i>>(Variant::OP_MODULE, Variant::VECTOR2I, Variant::VECTOR2I);
 	register_op<OperatorEvaluatorModNZ<Vector2i, Vector2i, int64_t>>(Variant::OP_MODULE, Variant::VECTOR2I, Variant::INT);
@@ -494,8 +494,8 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorPos<Plane, Plane>>(Variant::OP_POSITIVE, Variant::PLANE, Variant::NIL);
 	register_op<OperatorEvaluatorPos<Color, Color>>(Variant::OP_POSITIVE, Variant::COLOR, Variant::NIL);
 
-	register_op<OperatorEvaluatorShiftLeft<int64_t, int64_t, int64_t>>(Variant::OP_SHIFT_LEFT, Variant::INT, Variant::INT);
-	register_op<OperatorEvaluatorShiftRight<int64_t, int64_t, int64_t>>(Variant::OP_SHIFT_RIGHT, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntCheckedBinary<VariantIntShiftLeftOperation>>(Variant::OP_SHIFT_LEFT, Variant::INT, Variant::INT);
+	register_op<OperatorEvaluatorIntCheckedBinary<VariantIntShiftRightOperation>>(Variant::OP_SHIFT_RIGHT, Variant::INT, Variant::INT);
 	register_op<OperatorEvaluatorBitOr<int64_t, int64_t, int64_t>>(Variant::OP_BIT_OR, Variant::INT, Variant::INT);
 	register_op<OperatorEvaluatorBitAnd<int64_t, int64_t, int64_t>>(Variant::OP_BIT_AND, Variant::INT, Variant::INT);
 	register_op<OperatorEvaluatorBitXor<int64_t, int64_t, int64_t>>(Variant::OP_BIT_XOR, Variant::INT, Variant::INT);
