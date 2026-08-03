@@ -12163,28 +12163,6 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 
 				return is_type_compatible(p_parameter_type, argument_type, true);
 			};
-			auto fixed_vararg_accepts_argument_count = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments, int p_argument_count) -> bool {
-				const int fixed_argument_count = p_base_type.method_parameter_types.size();
-				const int original_default_arg_count = MIN(p_base_type.method_info.default_arguments.size(), fixed_argument_count);
-				const int omitted_argument_count = fixed_argument_count - p_argument_count;
-				if (omitted_argument_count <= 0) {
-					return true;
-				}
-
-				const int bound_filled_count = MIN(omitted_argument_count, p_bound_arguments.size());
-				const int default_filled_count = omitted_argument_count - bound_filled_count;
-				if (default_filled_count > original_default_arg_count) {
-					return false;
-				}
-
-				for (int i = 0; i < bound_filled_count; i++) {
-					if (!can_bound_argument_fill_parameter(p_bound_arguments[i], p_base_type.method_parameter_types[p_argument_count + i])) {
-						return false;
-					}
-				}
-
-				return true;
-			};
 			// A bound value only rules out a slot when its type proves the mismatch. An unknown or
 			// untyped value stays gradual, and a supertype that a runtime check could narrow is
 			// accepted at the call site, so neither may narrow what the bound callable accepts.
@@ -12206,6 +12184,34 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					return false;
 				}
 				return bound_argument_conflicts_with(p_argument, p_base_type.get_method_rest_parameter_type().get_container_element_type(0));
+			};
+			auto fixed_vararg_accepts_argument_count = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments, int p_argument_count) -> bool {
+				const int fixed_argument_count = p_base_type.method_parameter_types.size();
+				const int original_default_arg_count = MIN(p_base_type.method_info.default_arguments.size(), fixed_argument_count);
+				const int omitted_argument_count = fixed_argument_count - p_argument_count;
+				if (omitted_argument_count <= 0) {
+					return true;
+				}
+
+				const int bound_filled_count = MIN(omitted_argument_count, p_bound_arguments.size());
+				const int default_filled_count = omitted_argument_count - bound_filled_count;
+				if (default_filled_count > original_default_arg_count) {
+					return false;
+				}
+
+				for (int i = 0; i < bound_filled_count; i++) {
+					if (!can_bound_argument_fill_parameter(p_bound_arguments[i], p_base_type.method_parameter_types[p_argument_count + i])) {
+						return false;
+					}
+				}
+				// Bound values the fixed parameters do not absorb spill into the rest tail at this arity.
+				for (int i = bound_filled_count; i < p_bound_arguments.size(); i++) {
+					if (bound_argument_conflicts_with_rest_tail(p_bound_arguments[i])) {
+						return false;
+					}
+				}
+
+				return true;
 			};
 			auto fixed_vararg_rules_out_argument_count = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments, int p_argument_count) -> bool {
 				const int fixed_argument_count = p_base_type.method_parameter_types.size();

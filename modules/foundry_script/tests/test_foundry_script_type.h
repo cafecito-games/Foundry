@@ -3887,6 +3887,23 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A runtime-narrowable bou
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A later bound value spilling into the rest tail drops its arity") {
+	// At arity 0 both bound values fill the `int` parameters, but arity 1 pushes the second one into
+	// the `String` rest tail even though the first still fits a fixed slot.
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, int, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.bind(1, 7)\n"
+					 "\tbound.call()\n"),
+			OK);
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, int, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bind(1, 7)\n"
+			"\tbound.call(5)\n",
+			R"*(Too many arguments for "call()" call. Expected at most 0 but received 1.)*");
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An untyped bound value keeps only the arities left open") {
 	// Arity 1 would pass `7` as the `String` parameter and larger arities pass it through the `String`
 	// rest tail, so only arity 0 survives; the untyped second value must not close that off too.
