@@ -1,15 +1,20 @@
-# A generic class's own type parameter is reified onto an instance's `type_arguments`, and a
-# static member typed by that parameter resolves against the same reification when written through
-# an instance (`Box[int].new()`), so a dynamic write of a `String` is rejected at runtime.
-class Box[T]:
-	static var value: T
+# A static member flattened in from a generic trait keeps the argument the implementer fixed it with,
+# and that expectation holds on every path that reaches the slot — including a dynamic write routed
+# through an *instance* of the implementer rather than through the class — so a `String` written into
+# an `int`-fixed slot is rejected at runtime.
+trait Slotted[T]:
+	static var slot: T
+
+
+class Holder:
+	uses Slotted[int]
 
 
 func test() -> void:
-	var box := Box[int].new()
-	box.value = 5
-	print(box.value)
+	var holder := Holder.new()
+	var dynamic: Variant = holder
+	dynamic.slot = 5
+	print(Holder.slot)
 
-	var dynamic: Variant = box
-	dynamic.value = "not an int"
-	print(box.value)
+	dynamic.slot = "not an int"
+	print(Holder.slot)
