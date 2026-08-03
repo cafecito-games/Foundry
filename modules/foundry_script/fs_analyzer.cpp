@@ -2312,7 +2312,10 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			const StringName declaration_name = declaration->identifier != nullptr ? declaration->identifier->name : StringName();
 			const int expected = declaration->type_parameters.size();
 			const int given = p_type->container_types.size();
-			const bool is_current_declaration = declaration == current_enum;
+			// Self reference is a property of the lexical position, not of whichever union the analyzer
+			// still has active: a class pulled in during payload resolution is outside the declaration.
+			const bool is_current_declaration = declaration == current_enum &&
+					enum_declared_by(parser->current_class, current_enum);
 
 			if (given != expected) {
 				// Bare use outside the declaration lands here too: it gives zero of the required arguments.

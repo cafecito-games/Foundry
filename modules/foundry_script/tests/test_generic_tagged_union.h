@@ -633,6 +633,24 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] A union parameter i
 	CHECK_EQ(first_error_message(parser), String(R"(Could not find type "T" in the current scope.)"));
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Bare self is rejected in a class pulled in by the union") {
+	// `Helper` is resolved because the union's payload names it, but it is still outside the
+	// declaration, so the bare union type is rejected there like any other external reference.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T]:\n"
+					   "\tValue(box: Helper)\n"
+					   "\n"
+					   "class Helper:\n"
+					   "\tvar held: Holder\n",
+					   "user://generic_tagged_union_pulled_in.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_NE(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser),
+			String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum arguments do not bind enclosing class parameters") {
 	// A union's open arguments belong to the union, not to the class that owns it, so calling an enum
 	// function must not substitute the enum's parameters for the enclosing class's.
