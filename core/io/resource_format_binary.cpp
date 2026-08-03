@@ -104,7 +104,8 @@ enum {
 	// Version 5: Ability to store script class in the header.
 	// Version 6: Added PackedVector4Array Variant type.
 	// Version 7: Added typed Array and Dictionary element metadata.
-	FORMAT_VERSION = 7,
+	// Version 8: Added the unsigned integer Variant kind.
+	FORMAT_VERSION = 8,
 	FORMAT_VERSION_CAN_RENAME_DEPS = 1,
 	FORMAT_VERSION_NO_NODEPATH_PROPERTY = 3,
 };

@@ -142,4 +142,20 @@ TEST_CASE("[Time] System time methods") {
 	CHECK_MESSAGE(time->get_ticks_usec() > ticks_usec, "Time get_ticks_usec: The value has increased.");
 }
 
+TEST_CASE("[Time] Datetime dictionary integers compose with int operands") {
+	const Time *time = Time::get_singleton();
+
+	// The month and weekday fields are `uint8_t` in C++ but documented as `int`, so they stay on
+	// the signed carrier and remain usable in ordinary integer expressions.
+	const Dictionary datetime = time->get_datetime_dict_from_unix_time(1391983830);
+	CHECK_EQ(datetime[MONTH_KEY].get_type(), Variant::INT);
+	CHECK_EQ(datetime[WEEKDAY_KEY].get_type(), Variant::INT);
+
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(Variant::OP_ADD, datetime[MONTH_KEY], Variant(int64_t(1)), result, valid);
+	CHECK(valid);
+	CHECK_EQ(result.operator int64_t(), 3);
+}
+
 } // namespace TestTime
