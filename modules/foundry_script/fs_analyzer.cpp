@@ -1947,7 +1947,10 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 					// from a native untyped vararg.
 					if (builtin_type == Variant::CALLABLE && p_type->signature_rest_parameter_type != nullptr) {
 						FSParser::DataType rest_type = type_from_metatype(resolve_datatype(p_type->signature_rest_parameter_type));
-						if (rest_type.is_set() && !rest_type.is_variant()) {
+						// A failed resolution already reported its own error and leaves an undetected type, so
+						// only a successfully annotated type is judged here. An explicit `Variant` is a hard type
+						// and is rejected like any other non-Array spelling.
+						if (rest_type.is_set() && rest_type.is_hard_type()) {
 							if (rest_type.kind != FSParser::DataType::BUILTIN || rest_type.builtin_type != Variant::ARRAY) {
 								push_error(vformat(R"(The Callable rest parameter type must be "Array", but "%s" is specified.)", rest_type.to_string()), p_type->signature_rest_parameter_type);
 							} else {

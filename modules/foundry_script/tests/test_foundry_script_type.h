@@ -3546,6 +3546,12 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A non-Array Callable res
 			R"(The Callable rest parameter type must be "Array", but "int" is specified.)");
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A Variant Callable rest type is rejected") {
+	check_source_error(
+			"var sink: Callable[[...Variant], void]\n",
+			R"(The Callable rest parameter type must be "Array", but "Variant" is specified.)");
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A middle-position Callable rest type is rejected") {
 	check_source_has_error(
 			"var sink: Callable[[...Array[int], String], void]\n",
@@ -3641,6 +3647,33 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] unbind() keeps the typed
 	REQUIRE(analyzed);
 	REQUIRE(type.has_method_rest_parameter_type());
 	CHECK_EQ(type.get_method_rest_parameter_type().to_string(), "Array[String]");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] unbind() slots do not shadow the rest element") {
+	// `unbind(1)` appends one Variant slot for the argument it drops. The second supplied argument
+	// still reaches the rest array, so it must be checked against the rest element, not that slot.
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar unbound := callback.unbind(1)\n"
+			"\tunbound.call(2, 7, \"dropped\")\n",
+			R"*(Invalid argument for "call()" function: argument 2 should be "String" but is "int".)*");
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar unbound := callback.unbind(1)\n"
+			"\tunbound.callv([2, 7, \"dropped\"])\n",
+			R"*(Invalid argument for "callv()" function: argument 2 should be "String" but is "int".)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] unbind() still accepts a matching rest argument") {
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+					 "\tvar unbound := callback.unbind(1)\n"
+					 "\tunbound.call(2, \"a\", 7)\n"
+					 "\tunbound.callv([2, \"a\", 7])\n"),
+			OK);
 }
 
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rich rest tail round-trips through the property hint") {
