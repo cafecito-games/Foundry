@@ -2838,7 +2838,8 @@ TypedArray<Dictionary> TextServerAdvanced::_font_get_size_cache_info(const RID &
 		for (const ShelfPackTexture &tx : E.value->textures) {
 			sz += tx.image->get_data_size() * 2;
 		}
-		size_info["textures_size"] = sz;
+		// The size info dictionary is script facing and documents its counts as `int`.
+		size_info["textures_size"] = int64_t(sz);
 		ret.push_back(size_info);
 	}
 

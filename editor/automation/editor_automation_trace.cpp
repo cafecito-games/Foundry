@@ -82,8 +82,9 @@ void EditorAutomationTrace::record_action(
 
 Dictionary EditorAutomationTrace::entry_to_dictionary(const EditorAutomationTraceEntry &p_entry) {
 	Dictionary dict;
-	dict["timestamp_usec"] = p_entry.timestamp_usec;
-	dict["frame"] = p_entry.frame;
+	// The automation contract declares these as integers.
+	dict["timestamp_usec"] = int64_t(p_entry.timestamp_usec);
+	dict["frame"] = int64_t(p_entry.frame);
 	if (!p_entry.action.is_empty()) {
 		dict["action"] = p_entry.action;
 	}
