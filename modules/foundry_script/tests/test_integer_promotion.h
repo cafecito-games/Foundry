@@ -393,3 +393,30 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] Ordering compares across carri
 	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
 	check_initializer_type(snippet, "ordered", Variant::BOOL, NumericType::NONE);
 }
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A folded constant only keeps a width its value fits") {
+	using namespace TestIntegerPromotion;
+
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar in_range = 2000000000U + 100U\n"
+			"\tvar out_of_range = 4000000000U + 4000000000U\n"
+			"\tprint(in_range, out_of_range)\n");
+	REQUIRE(snippet.parse_error == OK);
+	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
+
+	check_initializer_type(snippet, "in_range", Variant::UINT, NumericType::UINT32);
+	// The sum leaves uint's range, so it reports what it actually is: a wide unsigned constant.
+	check_initializer_type(snippet, "out_of_range", Variant::UINT, NumericType::UINT64);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A width-less constant is still range-checked") {
+	using namespace TestIntegerPromotion;
+
+	const FSParser::DataType uint32_type = make_integer_type(NumericType::UINT32);
+	const FSParser::DataType unconstrained_unsigned = make_numeric_type(Variant::UINT, NumericType::NONE);
+
+	CHECK(classify(uint32_type, unconstrained_unsigned) == Conversion::IDENTITY);
+	CHECK(classify_constant(uint32_type, unconstrained_unsigned, uint64_t(7)) == Conversion::CONSTANT_CHECKED);
+	CHECK(classify_constant(uint32_type, unconstrained_unsigned, uint64_t(8000000000)) == Conversion::EXPLICIT_REQUIRED);
+}

@@ -425,6 +425,15 @@ FSNumericConversion::Conversion FSNumericConversion::classify(const FSParser::Da
 
 	const NumericType target_numeric_type = _promotion_descriptor(p_target.numeric_type);
 	const NumericType source_numeric_type = _promotion_descriptor(p_source.numeric_type);
+	if (target_numeric_type != NumericType::NONE && source_numeric_type == NumericType::NONE &&
+			p_constant_source_value != nullptr) {
+		// The source states no width, but the value is known exactly, so the destination's range is
+		// still checkable rather than simply unconstrained. Without this, an unsuffixed constant too
+		// large for the destination would enter it on the strength of declaring nothing.
+		return numeric_type_contains(target_numeric_type, *p_constant_source_value)
+				? Conversion::CONSTANT_CHECKED
+				: Conversion::EXPLICIT_REQUIRED;
+	}
 	if (target_numeric_type == NumericType::NONE || source_numeric_type == NumericType::NONE) {
 		// One side constrains no width, so there is no width to preserve or violate.
 		return Conversion::IDENTITY;

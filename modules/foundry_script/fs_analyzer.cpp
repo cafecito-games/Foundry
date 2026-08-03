@@ -5978,9 +5978,17 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 		}
 		FSParser::DataType folded_type = type_from_variant(p_binary_op->reduced_value, p_binary_op);
 		// A folded constant keeps the width its operands promoted to, so it enters exactly the slots
-		// the same expression would have entered unfolded.
-		folded_type.numeric_type = _integer_operation_numeric_type(
+		// the same expression would have entered unfolded -- but only when the computed value really
+		// fits it. Folding happens on the wide carrier, so an operation that leaves the promoted range
+		// would otherwise hand the result a width it does not satisfy. Such a value is exactly what a
+		// wide constant is, so it says so and every destination checks it as one.
+		const NumericType folded_numeric_type = _integer_operation_numeric_type(
 				left_type, right_type, left_type.builtin_type, right_type.builtin_type, folded_type.builtin_type);
+		if (folded_numeric_type != NumericType::NONE) {
+			folded_type.numeric_type = numeric_type_contains(folded_numeric_type, p_binary_op->reduced_value)
+					? folded_numeric_type
+					: numeric_type_wide_for_carrier(folded_type.builtin_type);
+		}
 		p_binary_op->set_datatype(folded_type);
 
 		return;
@@ -6208,7 +6216,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 					for (int64_t i = 0; i < p_call->arguments.size(); ++i) {
 						FSParser::DataType par_type = type_from_property(info.arguments[i], true);
 						FSParser::DataType arg_type = p_call->arguments[i]->get_datatype();
-						if (!is_type_compatible(par_type, arg_type, true)) {
+						if (!is_type_compatible(par_type, arg_type, true, nullptr, p_call->arguments[i])) {
 							types_match = false;
 							break;
 #ifdef DEBUG_ENABLED
