@@ -785,7 +785,7 @@ bool ProjectedContainerType::validate_value(Variant &r_value, const char *p_wher
 	return _validate_known_descendants(r_value, p_where, p_operation);
 }
 
-bool ProjectedContainerType::_validate_known_descendants(const Variant &p_value, const char *p_where, const char *p_operation) const {
+bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const char *p_where, const char *p_operation) const {
 	bool has_known_argument = false;
 	for (const ProjectedContainerType &type_argument : type_arguments) {
 		if (type_argument.is_known()) {
@@ -867,11 +867,24 @@ bool ProjectedContainerType::_validate_known_descendants(const Variant &p_value,
 		if (!element_types[0].is_known()) {
 			return true;
 		}
+		Array validated;
+		validated.resize(array.size());
+		bool converted = false;
 		for (int i = 0; i < array.size(); i++) {
 			Variant element = array[i];
+			const Variant original = element;
 			if (!element_types[0].validate_value(element, p_where, p_operation)) {
 				return false;
 			}
+			converted = converted || !element.identity_compare(original);
+			validated[i] = element;
+		}
+		if (converted) {
+			// A descendant validator converted an element (a nested untyped array becoming typed, a
+			// specialized handle erasing to its script). The outer container cannot be rebuilt with the
+			// declared shape — an unknown slot has no type to bake in — but its elements must still be
+			// stored in the form validation accepted them in.
+			p_value = validated;
 		}
 		return true;
 	}
@@ -890,15 +903,24 @@ bool ProjectedContainerType::_validate_known_descendants(const Variant &p_value,
 		if (!element_types[0].is_known() && !expected_value_type.is_known()) {
 			return true;
 		}
+		Dictionary validated;
+		validated.reserve(dictionary.size());
+		bool converted = false;
 		for (const KeyValue<Variant, Variant> &entry : dictionary) {
 			Variant key = entry.key;
 			if (!element_types[0].validate_value(key, p_where, p_operation)) {
 				return false;
 			}
+			converted = converted || !key.identity_compare(entry.key);
 			Variant value = entry.value;
 			if (!expected_value_type.validate_value(value, p_where, p_operation)) {
 				return false;
 			}
+			converted = converted || !value.identity_compare(entry.value);
+			validated[key] = value;
+		}
+		if (converted) {
+			p_value = validated;
 		}
 		return true;
 	}

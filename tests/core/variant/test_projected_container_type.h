@@ -162,6 +162,25 @@ TEST_CASE("[ProjectedContainerType] Untyped containers are enforced value by val
 	CHECK_FALSE(partial_array.validate_value(rejected_value, "member", "assign"));
 	ERR_PRINT_ON;
 
+	// A descendant validator that converts an element writes the converted form back, so the stored
+	// value matches what validation accepted.
+	ProjectedContainerType partial_array_of_typed_arrays;
+	partial_array_of_typed_arrays.state = ProjectedContainerType::PARTIAL;
+	partial_array_of_typed_arrays.outer = make_builtin(Variant::ARRAY);
+	partial_array_of_typed_arrays.element_types.push_back(ProjectedContainerType::exact(make_array_of(make_builtin(Variant::INT))));
+
+	Array untyped_inner;
+	untyped_inner.push_back(1);
+	Array outer;
+	outer.push_back(untyped_inner);
+	Variant convertible_value = outer;
+	REQUIRE(partial_array_of_typed_arrays.validate_value(convertible_value, "member", "assign"));
+	const Array stored = convertible_value;
+	REQUIRE_EQ(stored.size(), 1);
+	const Array stored_inner = stored[0];
+	CHECK(stored_inner.is_typed());
+	CHECK_EQ(stored_inner.get_element_type(), make_builtin(Variant::INT));
+
 	// An entirely unknown element slot still accepts anything.
 	ProjectedContainerType unknown_element_array;
 	unknown_element_array.state = ProjectedContainerType::PARTIAL;

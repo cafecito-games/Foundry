@@ -160,7 +160,7 @@ struct ProjectedContainerType {
 
 private:
 	static ProjectedContainerType _exact(const ContainerType &p_type, int p_depth);
-	bool _validate_known_descendants(const Variant &p_value, const char *p_where, const char *p_operation) const;
+	bool _validate_known_descendants(Variant &p_value, const char *p_where, const char *p_operation) const;
 };
 
 namespace ContainerTypeDescriptor {
