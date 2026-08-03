@@ -37,21 +37,28 @@
 #include "core/variant/dictionary.h"
 #include "core/variant/variant_internal.h"
 
-// Compares a value's projected type arguments against an expected specialization. A bound projected
-// argument that differs from the expected one is a definite invariance violation; an unbound argument
-// (an unspecialized-leaf open parameter, or a dependent/erased fixed argument) carries no evidence and
-// is left to gradual acceptance. `p_argument_bound` is parallel to `p_projected`; `p_expected` is the
-// expected element specialization (always fully bound here).
-static bool _projected_type_arguments_conflict(const Vector<ContainerType> &p_expected, const Vector<ContainerType> &p_projected, const Vector<bool> &p_argument_bound) {
+// Compares a value's projected type arguments against an expected specialization. A projected argument
+// that is known and differs from the expected one is a definite invariance violation; an unknown
+// argument (an unspecialized-leaf open parameter, or a step of the chain that could not be resolved)
+// carries no evidence and is left to gradual acceptance. Evidence is recursive, so a partially known
+// argument still enforces the parts of itself that are known. `p_expected` is the expected element
+// specialization (always fully known here).
+static bool _projected_type_arguments_conflict(const Vector<ContainerType> &p_expected, const Vector<ProjectedContainerType> &p_projected) {
 	for (int i = 0; i < p_projected.size() && i < p_expected.size(); i++) {
-		if (!p_argument_bound[i]) {
-			continue;
-		}
-		if (p_projected[i] != p_expected[i]) {
+		if (p_projected[i].conflicts_with_expected(p_expected[i])) {
 			return true;
 		}
 	}
 	return false;
+}
+
+// Node identity without descendants: everything a projection knows about a single level of a type.
+static bool _shallow_container_identity_equals(const ContainerType &p_left, const ContainerType &p_right) {
+	return p_left.builtin_type == p_right.builtin_type &&
+			p_left.numeric_type == p_right.numeric_type &&
+			p_left.class_name == p_right.class_name &&
+			p_left.script == p_right.script &&
+			p_left.is_type_handle == p_right.is_type_handle;
 }
 
 bool ContainerType::operator==(const ContainerType &p_type) const {
@@ -309,10 +316,9 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 		if (instance != nullptr) {
 			instance->get_reified_type_arguments(reified_type_arguments);
 		}
-		Vector<ContainerType> projected_type_arguments;
-		Vector<bool> projected_argument_bound;
-		if (other_script->project_type_arguments_onto_base(script, reified_type_arguments, projected_type_arguments, projected_argument_bound) &&
-				_projected_type_arguments_conflict(type_arguments, projected_type_arguments, projected_argument_bound)) {
+		Vector<ProjectedContainerType> projected_type_arguments;
+		if (other_script->project_type_arguments_onto_base(script, reified_type_arguments, projected_type_arguments) &&
+				_projected_type_arguments_conflict(type_arguments, projected_type_arguments)) {
 			if (p_output_errors) {
 				ContainerType expected;
 				expected.builtin_type = type;
@@ -320,7 +326,10 @@ bool ContainerTypeValidate::_internal_validate_object(const Variant &p_variant, 
 				expected.script = script;
 				expected.type_arguments = type_arguments;
 				ContainerType actual = expected;
-				actual.type_arguments = projected_type_arguments;
+				actual.type_arguments.clear();
+				for (const ProjectedContainerType &projected : projected_type_arguments) {
+					actual.type_arguments.push_back(projected.to_container_type());
+				}
 				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an object specialized as '%s' into a %s of '%s'.", String(p_operation), actual.get_type_name(), String(where), expected.get_type_name()));
 			}
 			return false;
@@ -346,17 +355,14 @@ static bool _class_handle_type_arguments_match(const Vector<ContainerType> &p_ex
 		return false;
 	}
 
-	Vector<ContainerType> projected_type_arguments;
-	Vector<bool> projected_argument_bound;
+	Vector<ProjectedContainerType> projected_type_arguments;
 	if (!p_handle_script->project_type_arguments_onto_base(p_expected_script, p_handle_arguments,
-				projected_type_arguments, projected_argument_bound)) {
+				projected_type_arguments)) {
 		if (p_handle_script != p_expected_script) {
 			return false;
 		}
-		projected_type_arguments = p_handle_arguments;
-		projected_argument_bound.resize(projected_type_arguments.size());
-		for (int i = 0; i < projected_argument_bound.size(); i++) {
-			projected_argument_bound.write[i] = true;
+		for (const ContainerType &handle_argument : p_handle_arguments) {
+			projected_type_arguments.push_back(ProjectedContainerType::exact(handle_argument));
 		}
 	}
 
@@ -364,13 +370,10 @@ static bool _class_handle_type_arguments_match(const Vector<ContainerType> &p_ex
 		return false;
 	}
 	for (int i = 0; i < p_expected_arguments.size(); i++) {
-		if (i >= projected_argument_bound.size() || !projected_argument_bound[i]) {
-			if (!p_handle_carries_arguments) {
-				return false;
-			}
-			continue;
+		if (!projected_type_arguments[i].is_known() && !p_handle_carries_arguments) {
+			return false;
 		}
-		if (projected_type_arguments[i] != p_expected_arguments[i]) {
+		if (projected_type_arguments[i].conflicts_with_expected(p_expected_arguments[i])) {
 			return false;
 		}
 	}
@@ -629,10 +632,9 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 			// Subclass source (`StringBox extends Box[String]`, or generic `PairBox[A, B] extends Box[A]`):
 			// project its specialization onto this expected base's parameters before comparing. An unbound
 			// slot (unspecialized source) carries no evidence and is accepted by reference under gradual typing.
-			Vector<ContainerType> projected_type_arguments;
-			Vector<bool> projected_argument_bound;
-			if (p_type.script->project_type_arguments_onto_base(script, p_type.type_arguments, projected_type_arguments, projected_argument_bound) &&
-					_projected_type_arguments_conflict(type_arguments, projected_type_arguments, projected_argument_bound)) {
+			Vector<ProjectedContainerType> projected_type_arguments;
+			if (p_type.script->project_type_arguments_onto_base(script, p_type.type_arguments, projected_type_arguments) &&
+					_projected_type_arguments_conflict(type_arguments, projected_type_arguments)) {
 				return false;
 			}
 		}
@@ -653,6 +655,326 @@ bool ContainerTypeValidate::operator==(const ContainerTypeValidate &p_type) cons
 
 bool ContainerTypeValidate::operator!=(const ContainerTypeValidate &p_type) const {
 	return !(*this == p_type);
+}
+
+ProjectedContainerType ProjectedContainerType::_exact(const ContainerType &p_type, int p_depth) {
+	ProjectedContainerType projected;
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		// Only this subtree loses its evidence; every shallower node keeps validating.
+		return projected;
+	}
+
+	projected.state = EXACT;
+	projected.outer = p_type;
+	projected.outer.element_types.clear();
+	projected.outer.type_arguments.clear();
+	for (const ContainerType &element_type : p_type.element_types) {
+		projected.element_types.push_back(_exact(element_type, p_depth + 1));
+	}
+	for (const ContainerType &type_argument : p_type.type_arguments) {
+		projected.type_arguments.push_back(_exact(type_argument, p_depth + 1));
+	}
+	return projected;
+}
+
+ProjectedContainerType ProjectedContainerType::exact(const ContainerType &p_type) {
+	return _exact(p_type, 0);
+}
+
+ContainerType ProjectedContainerType::to_container_type() const {
+	ContainerType type = outer;
+	type.element_types.clear();
+	type.type_arguments.clear();
+	if (state == UNKNOWN) {
+		return ContainerType();
+	}
+	for (const ProjectedContainerType &element_type : element_types) {
+		type.element_types.push_back(element_type.to_container_type());
+	}
+	for (const ProjectedContainerType &type_argument : type_arguments) {
+		type.type_arguments.push_back(type_argument.to_container_type());
+	}
+	return type;
+}
+
+String ProjectedContainerType::get_type_name() const {
+	return to_container_type().get_type_name();
+}
+
+bool ProjectedContainerType::conflicts_with_expected(const ContainerType &p_expected) const {
+	if (state == UNKNOWN) {
+		return false;
+	}
+	if (!_shallow_container_identity_equals(outer, p_expected)) {
+		return true;
+	}
+	// A known node knows its own arity, so a differing one is a real conflict; this makes a fully
+	// `EXACT` comparison identical to comparing the materialized types with `!=`.
+	if (element_types.size() != p_expected.element_types.size() ||
+			type_arguments.size() != p_expected.type_arguments.size()) {
+		return true;
+	}
+	for (int i = 0; i < element_types.size(); i++) {
+		if (element_types[i].conflicts_with_expected(p_expected.element_types[i])) {
+			return true;
+		}
+	}
+	for (int i = 0; i < type_arguments.size(); i++) {
+		if (type_arguments[i].conflicts_with_expected(p_expected.type_arguments[i])) {
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ProjectedContainerType::conflicts_with(const ProjectedContainerType &p_other) const {
+	if (state == UNKNOWN || p_other.state == UNKNOWN) {
+		return false;
+	}
+	if (!_shallow_container_identity_equals(outer, p_other.outer)) {
+		return true;
+	}
+	// An empty child vector on either side is an unspecialized node rather than an arity claim, so it
+	// contributes no evidence; two non-empty vectors of different length describe different shapes.
+	if (!element_types.is_empty() && !p_other.element_types.is_empty()) {
+		if (element_types.size() != p_other.element_types.size()) {
+			return true;
+		}
+		for (int i = 0; i < element_types.size(); i++) {
+			if (element_types[i].conflicts_with(p_other.element_types[i])) {
+				return true;
+			}
+		}
+	}
+	if (!type_arguments.is_empty() && !p_other.type_arguments.is_empty()) {
+		if (type_arguments.size() != p_other.type_arguments.size()) {
+			return true;
+		}
+		for (int i = 0; i < type_arguments.size(); i++) {
+			if (type_arguments[i].conflicts_with(p_other.type_arguments[i])) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool ProjectedContainerType::is_witnessed_by(const ProjectedContainerType &p_other) const {
+	if (state == UNKNOWN) {
+		return true;
+	}
+	if (p_other.state == UNKNOWN || !_shallow_container_identity_equals(outer, p_other.outer)) {
+		return false;
+	}
+	if (!element_types.is_empty()) {
+		if (element_types.size() != p_other.element_types.size()) {
+			return false;
+		}
+		for (int i = 0; i < element_types.size(); i++) {
+			if (!element_types[i].is_witnessed_by(p_other.element_types[i])) {
+				return false;
+			}
+		}
+	}
+	if (!type_arguments.is_empty()) {
+		if (type_arguments.size() != p_other.type_arguments.size()) {
+			return false;
+		}
+		for (int i = 0; i < type_arguments.size(); i++) {
+			if (!type_arguments[i].is_witnessed_by(p_other.type_arguments[i])) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool ProjectedContainerType::validate_value(Variant &r_value, const char *p_where, const char *p_operation) const {
+	if (state == UNKNOWN) {
+		return true;
+	}
+	if (state == EXACT) {
+		ContainerTypeValidate validator(to_container_type());
+		validator.where = p_where;
+		return validator.validate(r_value, p_operation);
+	}
+
+	// The node itself is known but at least one descendant is not, so the fully-known validators cannot
+	// be handed the whole shape: they compare arguments and element types invariantly and would reject a
+	// value whose unknown slot simply cannot be recovered here. Validate the known node on its own —
+	// wrong class, script, trait, carrier, width, nullability, or instance-versus-handle shape still
+	// reject — and then enforce every descendant that IS known separately.
+	ContainerType shallow = outer;
+	shallow.element_types.clear();
+	shallow.type_arguments.clear();
+	ContainerTypeValidate validator(shallow);
+	validator.where = p_where;
+	if (!validator.validate(r_value, p_operation)) {
+		return false;
+	}
+	return _validate_known_descendants(r_value, p_where, p_operation);
+}
+
+bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const char *p_where, const char *p_operation) const {
+	bool has_known_argument = false;
+	for (const ProjectedContainerType &type_argument : type_arguments) {
+		if (type_argument.is_known()) {
+			has_known_argument = true;
+			break;
+		}
+	}
+
+	if (outer.builtin_type == Variant::OBJECT) {
+		if (!has_known_argument) {
+			return true;
+		}
+
+		bool was_freed = false;
+		Object *object = p_value.get_validated_object_with_check(was_freed);
+		if (object == nullptr) {
+			// A null or already-rejected value is the shallow validator's concern, not this one's.
+			return true;
+		}
+
+		Ref<Script> value_script;
+		Vector<ContainerType> value_type_arguments;
+		bool value_carries_arguments = false;
+		if (outer.is_type_handle) {
+			if (ClassHandle *class_handle = Object::cast_to<ClassHandle>(object)) {
+				value_script = class_handle->get_represented_script();
+				class_handle->get_represented_type_arguments(value_type_arguments);
+				value_carries_arguments = true;
+			} else if (Script *script_value = Object::cast_to<Script>(object)) {
+				// A bare script resource denotes its class unspecialized, so it offers no argument
+				// evidence for a slot that demands one.
+				value_script = Ref<Script>(script_value);
+			}
+		} else {
+			ScriptInstance *instance = object->get_script_instance();
+			if (instance != nullptr) {
+				value_script = instance->get_script();
+				instance->get_reified_type_arguments(value_type_arguments);
+				value_carries_arguments = true;
+			}
+		}
+
+		Vector<ProjectedContainerType> value_projection;
+		if (value_script.is_null() ||
+				!value_script->project_type_arguments_onto_base(outer.script, value_type_arguments, value_projection)) {
+			if (outer.is_type_handle && !value_carries_arguments) {
+				// Matches the fully-known class-handle rule: a handle that cannot express a specialization
+				// at all does not satisfy a slot that requires one.
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for an unspecialized '%s' into a %s of type '%s'.", String(p_operation), String(outer.script.is_valid() ? outer.script->get_class_name() : outer.class_name), String(p_where), get_type_name()));
+			}
+			return true;
+		}
+
+		for (int i = 0; i < type_arguments.size() && i < value_projection.size(); i++) {
+			if (outer.is_type_handle && type_arguments[i].is_known() && !value_projection[i].is_known() &&
+					!value_carries_arguments) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a class handle for an unspecialized '%s' into a %s of type '%s'.", String(p_operation), String(outer.script.is_valid() ? outer.script->get_class_name() : outer.class_name), String(p_where), get_type_name()));
+			}
+			if (type_arguments[i].conflicts_with(value_projection[i])) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a value specialized as '%s' into a %s of '%s'.", String(p_operation), value_projection[i].get_type_name(), String(p_where), get_type_name()));
+			}
+		}
+		return true;
+	}
+
+	// A typed Array/Dictionary declares its element types, so the known ones are compared against that
+	// metadata. An untyped one has none, so the known evidence is enforced value by value instead, the
+	// same way the fully-known validator walks an untyped container it cannot reference wholesale. The
+	// converted container the fully-known path would build cannot be produced here: an unknown element
+	// slot has no type to bake into it.
+	if (outer.builtin_type == Variant::ARRAY && !element_types.is_empty() && p_value.get_type() == Variant::ARRAY) {
+		const Array array = p_value;
+		if (array.is_typed()) {
+			const ProjectedContainerType source_element = ProjectedContainerType::exact(array.get_element_type());
+			if (element_types[0].conflicts_with(source_element)) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an array of '%s' into a %s of '%s'.", String(p_operation), array.get_element_type().get_type_name(), String(p_where), get_type_name()));
+			}
+			if (element_types[0].is_witnessed_by(source_element)) {
+				return true;
+			}
+			// The metadata left part of the known evidence unstated (a raw `Array[Pair]` source against an
+			// expected `Pair[int, ?]` element), so it proved nothing about that part. Fall through to the
+			// per-value check, which is what the fully-known validator does with a source it cannot
+			// reference wholesale.
+		}
+		if (!element_types[0].is_known()) {
+			return true;
+		}
+		Array validated;
+		if (array.is_typed()) {
+			// Keep the source's own element type so a conversion discovered below can be stored without
+			// throwing the array's declared shape away.
+			validated.set_typed(array.get_element_type());
+		}
+		validated.resize(array.size());
+		bool converted = false;
+		for (int i = 0; i < array.size(); i++) {
+			Variant element = array[i];
+			const Variant original = element;
+			if (!element_types[0].validate_value(element, p_where, p_operation)) {
+				return false;
+			}
+			converted = converted || !element.identity_compare(original);
+			validated[i] = element;
+		}
+		if (converted) {
+			// A descendant validator converted an element (a nested untyped array becoming typed, a
+			// specialized handle erasing to its script). The outer container cannot be rebuilt with the
+			// projected shape — an unknown slot has no type to bake in — but its elements must still be
+			// stored in the form validation accepted them in.
+			p_value = validated;
+		}
+		return true;
+	}
+	if (outer.builtin_type == Variant::DICTIONARY && !element_types.is_empty() && p_value.get_type() == Variant::DICTIONARY) {
+		const Dictionary dictionary = p_value;
+		const ProjectedContainerType expected_value_type = element_types.size() > 1 ? element_types[1] : ProjectedContainerType();
+		if (dictionary.is_typed()) {
+			const ProjectedContainerType source_key = ProjectedContainerType::exact(dictionary.get_key_type());
+			const ProjectedContainerType source_value = ProjectedContainerType::exact(dictionary.get_value_type());
+			if (element_types[0].conflicts_with(source_key)) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a dictionary keyed by '%s' into a %s of '%s'.", String(p_operation), dictionary.get_key_type().get_type_name(), String(p_where), get_type_name()));
+			}
+			if (expected_value_type.conflicts_with(source_value)) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a dictionary of '%s' into a %s of '%s'.", String(p_operation), dictionary.get_value_type().get_type_name(), String(p_where), get_type_name()));
+			}
+			if (element_types[0].is_witnessed_by(source_key) && expected_value_type.is_witnessed_by(source_value)) {
+				return true;
+			}
+		}
+		if (!element_types[0].is_known() && !expected_value_type.is_known()) {
+			return true;
+		}
+		Dictionary validated;
+		if (dictionary.is_typed()) {
+			validated.set_typed(dictionary.get_key_type(), dictionary.get_value_type());
+		}
+		validated.reserve(dictionary.size());
+		bool converted = false;
+		for (const KeyValue<Variant, Variant> &entry : dictionary) {
+			Variant key = entry.key;
+			if (!element_types[0].validate_value(key, p_where, p_operation)) {
+				return false;
+			}
+			converted = converted || !key.identity_compare(entry.key);
+			Variant value = entry.value;
+			if (!expected_value_type.validate_value(value, p_where, p_operation)) {
+				return false;
+			}
+			converted = converted || !value.identity_compare(entry.value);
+			validated[key] = value;
+		}
+		if (converted) {
+			p_value = validated;
+		}
+		return true;
+	}
+
+	return true;
 }
 
 namespace ContainerTypeDescriptor {

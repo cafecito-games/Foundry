@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign an object specialized as 'RefCounted[int, Node]' into a member of 'RefCounted[int, String]'.
+>> SCRIPT ERROR at runtime/errors/generic_dependent_argument_reified_slot_wrong_type.fs:27 on test(): Invalid assignment of property or key 'value' with value of type 'RefCounted (Pair)' on a base object of type 'RefCounted (Leaf)'.

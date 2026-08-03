@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+1
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a value specialized as 'float' into a member of 'RefCounted[int, Variant]'.
+>> SCRIPT ERROR at runtime/errors/generic_dependent_argument_untyped_array_element_wrong_type.fs:29 on test(): Invalid assignment of property or key 'value' with value of type 'Array' on a base object of type 'RefCounted (Mid)'.

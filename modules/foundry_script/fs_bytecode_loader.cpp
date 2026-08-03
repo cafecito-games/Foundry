@@ -1634,7 +1634,7 @@ Error FSBytecodeLoader::_read_type_argument_binding(StreamPeerBuffer *p_stream, 
 			"Invalid type argument binding in compiled script data.");
 	r_binding.kind = (FoundryScript::TypeArgumentBinding::Kind)kind;
 	const uint8_t binding_flags = p_stream->get_u8();
-	r_binding.fixed_is_dependent = (binding_flags & (1 << 0)) != 0;
+	// Bit 0 is reserved and ignored; see `FSBytecodeExporter::_write_type_argument_binding`.
 	r_binding.is_type_handle = (binding_flags & (1 << 1)) != 0;
 	r_binding.leaf_ordinal = p_stream->get_32();
 	return decode_data_type(p_stream, r_binding.fixed);

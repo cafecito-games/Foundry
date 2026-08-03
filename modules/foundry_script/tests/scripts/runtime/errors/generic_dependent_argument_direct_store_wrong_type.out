@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a value specialized as 'float' into a member of 'RefCounted[int, Variant]'.
+>> SCRIPT ERROR at runtime/errors/generic_dependent_argument_direct_store_wrong_type.fs:16 on Mid.store(): Trying to assign a value of type "RefCounted (Pair)" to a member of type "RefCounted[int, Variant]".
+store rejected

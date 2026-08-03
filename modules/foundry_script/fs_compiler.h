@@ -176,7 +176,15 @@ class FSCompiler {
 
 	void _set_error(const String &p_error, const FSParser::Node *p_node);
 
-	FSDataType _gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype = true);
+	// `p_preserve_type_parameters` keeps `TYPE_PARAMETER` nodes (and the container element types that
+	// mention them) instead of erasing them to Variant. Only reified type-argument bindings use it: they
+	// are metadata a later `extends` step substitutes into, never a runtime slot descriptor, which must
+	// stay erased so the VM's exact typed-container comparisons keep working.
+	FSDataType _gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype = true, bool p_preserve_type_parameters = false);
+	// Substitutes the `TYPE_PARAMETER` nodes surviving in a binding type through one `extends Base[args]`
+	// step: a forwarded parameter is rewritten to the deriving class's ordinal, a concrete argument
+	// replaces the node outright, and a step that supplies nothing marks the node permanently unresolved.
+	void _substitute_binding_type_parameters(FSDataType &r_type, const Vector<FSParser::DataType> &p_base_specialization, FoundryScript *p_owner, int p_depth = 0);
 	FSDataType _gdtype_tuple_test_type_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner);
 	// A `const` aliasing a class in this compilation unit (`const Alias = Box`) folds to the analyzer's
 	// shallow, uncompiled class object; constructing through it (`Alias.new()`) fails. Re-point such a

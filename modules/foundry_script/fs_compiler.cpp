@@ -312,7 +312,7 @@ FSDataType FSCompiler::_gdtype_tuple_test_type_from_datatype(const FSParser::Dat
 	return result;
 }
 
-FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype) {
+FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype, bool p_preserve_type_parameters) {
 	if (!p_datatype.is_set() || !p_datatype.is_hard_type() || p_datatype.is_coroutine) {
 		return FSDataType();
 	}
@@ -460,7 +460,7 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			// target it is the file declaring the `extend`: reifying against it would hand a runtime type
 			// argument the declaring script's own base instead of the target.
 			if (p_datatype.type_parameter_name == SNAME("@Self") && witness_self_type.is_set()) {
-				result = _gdtype_from_datatype(witness_self_type, p_owner, p_handle_metatype);
+				result = _gdtype_from_datatype(witness_self_type, p_owner, p_handle_metatype, p_preserve_type_parameters);
 				if (result.kind == FSDataType::FOUNDRY_SCRIPT) {
 					// A native target already carries this from the shim conversion; a script target has to
 					// stay recognizable as `Self` for inherited-member rebinding, as it is outside a witness.
@@ -474,6 +474,17 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 				result.script_type = p_owner;
 				result.native_type = p_owner->get_instance_base_type();
 				result.is_self_type = true;
+				break;
+			}
+			if (p_preserve_type_parameters) {
+				// A reified type-argument binding keeps the node so a later `extends` step can substitute
+				// it; everything else erases below.
+				result.kind = FSDataType::TYPE_PARAMETER;
+				result.type_parameter_name = p_datatype.type_parameter_name;
+				result.type_parameter_index = p_datatype.type_parameter_index;
+				result.type_parameter_scope = p_datatype.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS
+						? FSDataType::TYPE_PARAMETER_CLASS
+						: FSDataType::TYPE_PARAMETER_METHOD;
 				break;
 			}
 			// Plain `T` is erased to Variant. `Type[T]` cannot preserve the represented method parameter
@@ -506,7 +517,7 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 	// `@Self` is reified against the owner script, so it can preserve runtime metadata. The analyzer
 	// still enforces element types statically.
 	bool erases_container_element = false;
-	for (int i = 0; i < p_datatype.container_element_types.size(); i++) {
+	for (int i = 0; i < p_datatype.container_element_types.size() && !p_preserve_type_parameters; i++) {
 		const FSParser::DataType element = p_datatype.get_container_element_type_or_variant(i);
 		// Coroutine[T] is a phantom type whose runtime value is a FSFunctionState, so a
 		// container of coroutines (`Array[Coroutine[String]]`) erases its element type to stay an
@@ -523,7 +534,7 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			// A nested `Type[T]` element keeps its class-handle descriptor so the runtime enforces the
 			// same rule top-level `Type[T]` uses. A nested plain metatype still erases to its class
 			// object, matching how metatypes are treated outside a container slot.
-			FSDataType element_type = _gdtype_from_datatype(element_datatype, p_owner, element_datatype.is_type_handle_annotation);
+			FSDataType element_type = _gdtype_from_datatype(element_datatype, p_owner, element_datatype.is_type_handle_annotation, p_preserve_type_parameters);
 			if (element_type.is_nullable) {
 				// Core typed containers cannot hold null elements, so a nullable element type becomes an
 				// untyped element. The analyzer still enforces element types statically.
@@ -538,7 +549,7 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 	// `Slot[Factory]` in the reified descriptor the runtime validates member writes against.
 	for (int i = 0; i < p_datatype.type_arguments.size(); i++) {
 		const FSParser::DataType &argument_datatype = p_datatype.type_arguments[i];
-		result.type_arguments.push_back(_gdtype_from_datatype(argument_datatype, p_owner, argument_datatype.is_type_handle_annotation));
+		result.type_arguments.push_back(_gdtype_from_datatype(argument_datatype, p_owner, argument_datatype.is_type_handle_annotation, p_preserve_type_parameters));
 	}
 
 	return result;
@@ -4347,9 +4358,68 @@ Error FSCompiler::_parse_setter_getter(FoundryScript *p_script, const FSParser::
 // initializes method RPC info for its base classes first, then for itself, then for inner classes.
 // WARNING: This function cannot initiate compilation of other classes, or it will result in
 // cyclic dependency issues.
+void FSCompiler::_substitute_binding_type_parameters(FSDataType &r_type, const Vector<FSParser::DataType> &p_base_specialization, FoundryScript *p_owner, int p_depth) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return;
+	}
+
+	if (r_type.kind == FSDataType::TYPE_PARAMETER) {
+		if (r_type.type_parameter_scope != FSDataType::TYPE_PARAMETER_CLASS || r_type.type_parameter_index < 0) {
+			return; // Already permanently unresolved, or a method parameter no `extends` step can supply.
+		}
+		if (r_type.type_parameter_index >= p_base_specialization.size()) {
+			// This step supplied nothing for the parameter (a raw `extends Base`), and no later step can
+			// either. Invalidate the ordinal instead of leaving the base's index in place, which a deriving
+			// class's own same-numbered parameter would otherwise collide with.
+			r_type.type_parameter_index = -1;
+			return;
+		}
+
+		const FSParser::DataType &argument = p_base_specialization[r_type.type_parameter_index];
+		if (argument.kind == FSParser::DataType::TYPE_PARAMETER && !argument.is_type_handle_annotation &&
+				argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
+			// Forwarded to a parameter of the deriving class, so the node keeps standing for a parameter
+			// and only its ordinal changes.
+			r_type.type_parameter_name = argument.type_parameter_name;
+			r_type.type_parameter_index = argument.type_parameter_index;
+			return;
+		}
+
+		const bool was_type_handle = r_type.is_type_handle;
+		FSDataType substituted = _gdtype_from_datatype(argument, p_owner, argument.is_type_handle_annotation, true);
+		if (was_type_handle) {
+			// The node stood for `Type[T]`, so the concrete argument still describes a class handle. Only an
+			// object-shaped argument has a handle form; anything else keeps no evidence at all.
+			if (substituted.builtin_type != Variant::OBJECT) {
+				r_type = FSDataType();
+				r_type.kind = FSDataType::TYPE_PARAMETER;
+				r_type.type_parameter_scope = FSDataType::TYPE_PARAMETER_CLASS;
+				r_type.type_parameter_index = -1;
+				return;
+			}
+			substituted.is_type_handle = true;
+		}
+		r_type = substituted;
+		return;
+	}
+
+	for (int i = 0; i < r_type.container_element_types.size(); i++) {
+		_substitute_binding_type_parameters(r_type.container_element_types.write[i], p_base_specialization, p_owner, p_depth + 1);
+	}
+	for (int i = 0; i < r_type.type_arguments.size(); i++) {
+		_substitute_binding_type_parameters(r_type.type_arguments.write[i], p_base_specialization, p_owner, p_depth + 1);
+	}
+}
+
 void FSCompiler::_specialize_type_argument_binding(FoundryScript::TypeArgumentBinding &r_binding, const Vector<FSParser::DataType> &p_base_specialization, FoundryScript *p_owner) {
+	if (r_binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
+		// The outer shape is settled, but a composite fixing argument (`extends Base[Pair[int, U]]`) can
+		// still mention parameters this step resolves.
+		_substitute_binding_type_parameters(r_binding.fixed, p_base_specialization, p_owner);
+		return;
+	}
 	if (r_binding.kind != FoundryScript::TypeArgumentBinding::OPEN) {
-		return; // FIXED stays fixed; NONE is not a type-parameter binding.
+		return; // NONE is not a type-parameter binding.
 	}
 	const int base_ordinal = r_binding.leaf_ordinal; // Open relative to the base's parameters.
 	if (base_ordinal < 0 || base_ordinal >= p_base_specialization.size()) {
@@ -4374,12 +4444,10 @@ void FSCompiler::_specialize_type_argument_binding(FoundryScript::TypeArgumentBi
 	} else {
 		r_binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
 		// A `Type[T]` fixing argument (`extends Slot[Type[Factory]]`) keeps its class-handle layer so
-		// the baked binding validates handles, not instances.
-		r_binding.fixed = _gdtype_from_datatype(argument, p_owner, argument.is_type_handle_annotation);
-		// A composite argument that still mentions an open parameter (`extends Box[Array[T]]`) is erased
-		// by `_gdtype_from_datatype`, so the baked type no longer reflects the dependent reification. Flag
-		// it so the leaf-to-base projection refrains from validating that slot rather than rejecting it.
-		r_binding.fixed_is_dependent = _datatype_contains_erased_type_parameter(argument);
+		// the baked binding validates handles, not instances. A composite argument that still mentions an
+		// open parameter (`extends Box[Array[T]]`) keeps that parameter as a node, so the known parts of
+		// the type stay enforceable and a later `extends` step can still resolve the rest.
+		r_binding.fixed = _gdtype_from_datatype(argument, p_owner, argument.is_type_handle_annotation, true);
 		r_binding.leaf_ordinal = -1;
 	}
 }
@@ -4809,8 +4877,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 				binding.leaf_ordinal = argument->type_parameter_index;
 			} else {
 				binding.kind = FoundryScript::TypeArgumentBinding::FIXED;
-				binding.fixed = _gdtype_from_datatype(*argument, p_script, argument->is_type_handle_annotation);
-				binding.fixed_is_dependent = _datatype_contains_erased_type_parameter(*argument);
+				binding.fixed = _gdtype_from_datatype(*argument, p_script, argument->is_type_handle_annotation, true);
 				binding.leaf_ordinal = -1;
 			}
 		}

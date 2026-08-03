@@ -207,11 +207,36 @@ static FSSpecializedClassHandle *_specialized_class_handle_from_variant(const Va
 	return Object::cast_to<FSSpecializedClassHandle>(object);
 }
 
-static bool _erase_specialized_class_handle_for_native_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+static bool _native_container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type) {
 	// A class-handle slot (`Type[Node]`) expects the handle itself, and core's class-handle rule reads a
 	// specialized handle's own reified arguments. Erasing it to the bare script would throw that away.
-	if (p_expected_type.builtin_type != Variant::OBJECT || p_expected_type.script.is_valid() ||
-			p_expected_type.is_type_handle || !p_expected_type.type_arguments.is_empty()) {
+	return p_expected_type.builtin_type == Variant::OBJECT && p_expected_type.script.is_null() &&
+			!p_expected_type.is_type_handle && p_expected_type.type_arguments.is_empty();
+}
+
+bool FoundryScript::container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type) {
+	if (_native_container_type_accepts_specialized_handle_erasure(p_expected_type)) {
+		return true;
+	}
+
+	if (p_expected_type.builtin_type == Variant::ARRAY) {
+		return !p_expected_type.element_types.is_empty() &&
+				container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[0]);
+	}
+
+	if (p_expected_type.builtin_type == Variant::DICTIONARY && !p_expected_type.element_types.is_empty()) {
+		if (container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[0])) {
+			return true;
+		}
+		return p_expected_type.element_types.size() > 1 &&
+				container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[1]);
+	}
+
+	return false;
+}
+
+static bool _erase_specialized_class_handle_for_native_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (!_native_container_type_accepts_specialized_handle_erasure(p_expected_type)) {
 		return false;
 	}
 
@@ -222,6 +247,116 @@ static bool _erase_specialized_class_handle_for_native_container_type(const Cont
 
 	r_value = specialized_handle->get_specialized_script();
 	return true;
+}
+
+static bool _erase_specialized_class_handles_for_array_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (p_expected_type.builtin_type != Variant::ARRAY || p_expected_type.element_types.is_empty() ||
+			r_value.get_type() != Variant::ARRAY) {
+		return false;
+	}
+
+	const ContainerType &element_type = p_expected_type.element_types[0];
+	const Array source = r_value;
+
+	Vector<Variant> values;
+	values.resize(source.size());
+	bool changed = false;
+	for (int i = 0; i < source.size(); i++) {
+		Variant value = source[i];
+		changed = FoundryScript::erase_specialized_class_handles_for_container_type(element_type, value) || changed;
+		values.write[i] = value;
+	}
+
+	if (!changed) {
+		return false;
+	}
+
+	Array erased;
+	// Erasing a handle replaces it with the bare script it specializes, which the source's own element
+	// type may no longer accept. Keep the source's typing whenever it still holds, so a write does not
+	// silently downgrade a typed container to an untyped one.
+	if (source.is_typed()) {
+		const ContainerTypeValidate element_validator(source.get_element_type());
+		bool keeps_element_type = true;
+		for (const Variant &value : values) {
+			if (!element_validator.test_validate(value)) {
+				keeps_element_type = false;
+				break;
+			}
+		}
+		if (keeps_element_type) {
+			erased.set_typed(source.get_element_type());
+		}
+	}
+	erased.resize(values.size());
+	for (int i = 0; i < values.size(); i++) {
+		erased[i] = values[i];
+	}
+
+	r_value = erased;
+	return true;
+}
+
+static bool _erase_specialized_class_handles_for_dictionary_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (p_expected_type.builtin_type != Variant::DICTIONARY || p_expected_type.element_types.is_empty() ||
+			r_value.get_type() != Variant::DICTIONARY) {
+		return false;
+	}
+
+	const ContainerType &key_type = p_expected_type.element_types[0];
+	const ContainerType value_type = p_expected_type.element_types.size() > 1 ? p_expected_type.element_types[1] : ContainerType();
+	const Dictionary source = r_value;
+
+	Vector<Pair<Variant, Variant>> entries;
+	entries.resize(source.size());
+	int entry_index = 0;
+	bool changed = false;
+	for (const KeyValue<Variant, Variant> &E : source) {
+		Variant key = E.key;
+		Variant value = E.value;
+		changed = FoundryScript::erase_specialized_class_handles_for_container_type(key_type, key) || changed;
+		changed = FoundryScript::erase_specialized_class_handles_for_container_type(value_type, value) || changed;
+		entries.write[entry_index++] = Pair<Variant, Variant>(key, value);
+	}
+
+	if (!changed) {
+		return false;
+	}
+
+	Dictionary erased;
+	// Same reasoning as the array case: keep the source's key and value types when erasure did not
+	// invalidate them.
+	if (source.is_typed()) {
+		const ContainerTypeValidate key_validator(source.get_key_type());
+		const ContainerTypeValidate value_validator(source.get_value_type());
+		bool keeps_entry_types = true;
+		for (const Pair<Variant, Variant> &entry : entries) {
+			if (!key_validator.test_validate(entry.first) || !value_validator.test_validate(entry.second)) {
+				keeps_entry_types = false;
+				break;
+			}
+		}
+		if (keeps_entry_types) {
+			erased.set_typed(source.get_key_type(), source.get_value_type());
+		}
+	}
+	erased.reserve(entries.size());
+	for (const Pair<Variant, Variant> &entry : entries) {
+		erased[entry.first] = entry.second;
+	}
+
+	r_value = erased;
+	return true;
+}
+
+bool FoundryScript::erase_specialized_class_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+	if (_erase_specialized_class_handle_for_native_container_type(p_expected_type, r_value)) {
+		return true;
+	}
+	if (_erase_specialized_class_handles_for_array_type(p_expected_type, r_value)) {
+		return true;
+	}
+	return _erase_specialized_class_handles_for_dictionary_type(p_expected_type, r_value);
 }
 
 static bool _erase_specialized_class_handle_for_native_data_type(const FSDataType &p_expected_type, Variant &r_value) {
@@ -238,65 +373,127 @@ static bool _erase_specialized_class_handle_for_native_data_type(const FSDataTyp
 	return true;
 }
 
-static bool _validate_variant_against_expected_container_type(const ContainerType &p_expected_type, bool p_is_type_handle, Variant &r_value) {
-	if (p_is_type_handle) {
-		const FSDataType expected_handle_type = FSDataType::from_type_handle_container_type(p_expected_type);
-		return expected_handle_type.is_type(r_value);
+// Resolves the surviving `TYPE_PARAMETER` nodes of a baked binding type against the reified arguments
+// of the receiver, producing recursive evidence. A node that names a class parameter the receiver
+// supplied becomes that argument; one that names a parameter nothing supplied, or that was permanently
+// unresolved by a raw `extends` step (`type_parameter_index == -1`), becomes `UNKNOWN` and leaves only
+// that subtree gradual.
+static ProjectedContainerType _project_binding_data_type(const FSDataType &p_type, const Vector<ContainerType> &p_leaf_type_arguments, int p_depth) {
+	ProjectedContainerType projected;
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return projected;
 	}
 
-	_erase_specialized_class_handle_for_native_container_type(p_expected_type, r_value);
-	ContainerTypeValidate validator(p_expected_type);
-	validator.where = "member";
-	return validator.validate(r_value, "assign");
+	if (p_type.is_nullable) {
+		// Core container types cannot express "this type or null", which is why `to_container_type()`
+		// erases a nullable type outright. There is no descriptor that would accept the nulls the slot
+		// admits, so the subtree carries no runtime evidence; the analyzer still enforces it statically.
+		return projected;
+	}
+
+	if (p_type.kind == FSDataType::TYPE_PARAMETER) {
+		if (p_type.type_parameter_scope != FSDataType::TYPE_PARAMETER_CLASS ||
+				p_type.type_parameter_index < 0 || p_type.type_parameter_index >= p_leaf_type_arguments.size()) {
+			return projected;
+		}
+		ProjectedContainerType resolved = ProjectedContainerType::exact(p_leaf_type_arguments[p_type.type_parameter_index]);
+		if (p_type.is_type_handle) {
+			// `Type[T]` reifies as a class handle for the argument, not an instance of it. A non-object
+			// argument has no handle form to describe, so that subtree keeps no evidence.
+			if (resolved.outer.builtin_type != Variant::OBJECT) {
+				return projected;
+			}
+			resolved.outer.is_type_handle = true;
+		}
+		return resolved;
+	}
+
+	projected.state = ProjectedContainerType::EXACT;
+	projected.outer = p_type.to_container_type();
+	projected.outer.element_types.clear();
+	projected.outer.type_arguments.clear();
+	for (const FSDataType &element_type : p_type.container_element_types) {
+		projected.element_types.push_back(_project_binding_data_type(element_type, p_leaf_type_arguments, p_depth + 1));
+	}
+	for (const FSDataType &type_argument : p_type.type_arguments) {
+		projected.type_arguments.push_back(_project_binding_data_type(type_argument, p_leaf_type_arguments, p_depth + 1));
+	}
+
+	for (const ProjectedContainerType &child : projected.element_types) {
+		if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {
+			projected.state = ProjectedContainerType::PARTIAL;
+			break;
+		}
+	}
+	if (projected.state == ProjectedContainerType::EXACT) {
+		for (const ProjectedContainerType &child : projected.type_arguments) {
+			if (!child.is_known() || child.state == ProjectedContainerType::PARTIAL) {
+				projected.state = ProjectedContainerType::PARTIAL;
+				break;
+			}
+		}
+	}
+	return projected;
 }
 
-bool FoundryScript::_validate_type_argument_binding_write(const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value) {
-	if (p_binding.kind == FoundryScript::TypeArgumentBinding::NONE) {
-		return true;
-	}
-
-	bool has_expected_type = false;
-	ContainerType expected_type;
-	if (p_binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
-		expected_type = p_binding.fixed.to_container_type();
-		has_expected_type = true;
-		if (p_binding.fixed_is_dependent) {
-			// The fixing argument still mentions an open parameter (`extends Box[Array[T]]`,
-			// `extends Slot[Type[Box[U]]]`), so the erased `fixed` type no longer reflects the concrete
-			// reification of that nested argument (e.g. `Box`'s own `Variant` standing in for the true
-			// `int` in a `Box[int]` value). The outer shape is still known and sound to check — an
-			// instance really must be a `Box` (or a handle for one), a wrong class is still rejected — but
-			// `ContainerTypeValidate` checks `type_arguments`/`element_types` invariantly, which would
-			// reject an otherwise well-typed value whose nested argument just happens to be unrecoverable
-			// here. Both the object and class-handle validators, and the array/dictionary validators,
-			// already treat an empty `type_arguments`/`element_types` as "unbound, accept any
-			// specialization" (see `ContainerTypeValidate::_internal_validate_object`,
-			// `_internal_validate_class_handle` via `_class_handle_type_arguments_match`, and
-			// `_internal_validate_array`/`_internal_validate_dictionary`), so clearing them here reduces
-			// the check to exactly that sound outer-shape validation.
-			//
-			// This intentionally also drops any argument in that same list that happened to be fully
-			// concrete rather than open (e.g. `Box[int, U]` on a two-parameter `Box`, where only `U` is
-			// unresolved): there is currently no per-argument tracking of which individual nested slot is
-			// the dependent one, only a single dependent flag for the whole fixed type, so a value with an
-			// incompatible *concrete* nested argument in that position is not caught either. Narrowing that
-			// requires per-argument dependency tracking on `TypeArgumentBinding`/`FSDataType`, a larger
-			// follow-up; a plain, non-dependent FIXED binding (the common case) is unaffected and still
-			// validates its arguments invariantly.
-			expected_type.type_arguments.clear();
-			expected_type.element_types.clear();
+ProjectedContainerType FoundryScript::project_type_argument_binding(const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments) {
+	switch (p_binding.kind) {
+		case FoundryScript::TypeArgumentBinding::NONE:
+			return ProjectedContainerType();
+		case FoundryScript::TypeArgumentBinding::FIXED:
+			return _project_binding_data_type(p_binding.fixed, p_leaf_type_arguments, 0);
+		case FoundryScript::TypeArgumentBinding::OPEN: {
+			if (p_binding.leaf_ordinal < 0 || p_binding.leaf_ordinal >= p_leaf_type_arguments.size()) {
+				// An OPEN binding with no reified argument (e.g. an unspecialized generic class) leaves the
+				// slot effectively untyped.
+				return ProjectedContainerType();
+			}
+			// The leaf was specialized at this ordinal, so the argument (even an explicit `Variant`) is
+			// definite evidence.
+			return ProjectedContainerType::exact(p_leaf_type_arguments[p_binding.leaf_ordinal]);
 		}
-	} else if (p_binding.leaf_ordinal >= 0 && p_binding.leaf_ordinal < p_leaf_type_arguments.size()) {
-		expected_type = p_leaf_type_arguments[p_binding.leaf_ordinal];
-		has_expected_type = true;
 	}
-	if (!has_expected_type) {
-		// An OPEN binding with no reified argument (e.g. an unspecialized generic class) leaves the
-		// slot effectively untyped.
+	return ProjectedContainerType();
+}
+
+// Applies a member slot's optional `Type[...]` wrapper to already-resolved evidence and validates the
+// write. Every member-write path funnels through here so the dynamic `set()` path, the direct VM
+// member-store opcode, and the inherited-static backstop cannot disagree.
+static bool _validate_write_against_projected_type(ProjectedContainerType p_expected, bool p_is_type_handle, Variant &r_value, String *r_expected_type_name) {
+	ProjectedContainerType expected = p_expected;
+	if (!expected.is_known()) {
 		return true;
 	}
 
-	return _validate_variant_against_expected_container_type(expected_type, p_binding.is_type_handle, r_value);
+	if (p_is_type_handle) {
+		// The binding resolves the represented value type; a `Type[T]` member wraps a handle layer around
+		// it. A value type that is not object-shaped denotes no class at all, so only null satisfies the
+		// slot, matching the descriptor-level class-handle rule.
+		if (expected.outer.builtin_type != Variant::OBJECT) {
+			if (r_value.get_type() == Variant::NIL) {
+				return true;
+			}
+			if (r_expected_type_name != nullptr) {
+				*r_expected_type_name = vformat("Type[%s]", expected.get_type_name());
+			}
+			return false;
+		}
+		expected.outer.is_type_handle = true;
+	}
+
+	FoundryScript::erase_specialized_class_handles_for_container_type(expected.to_container_type(), r_value);
+	if (!expected.validate_value(r_value, "member", "assign")) {
+		if (r_expected_type_name != nullptr) {
+			*r_expected_type_name = expected.get_type_name();
+		}
+		return false;
+	}
+	return true;
+}
+
+bool FoundryScript::validate_type_argument_binding_write(const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value, String *r_expected_type_name) {
+	return _validate_write_against_projected_type(project_type_argument_binding(p_binding, p_leaf_type_arguments),
+			p_binding.is_type_handle, r_value, r_expected_type_name);
 }
 
 bool FoundryScript::_validate_static_member_write(FoundryScript *p_receiver, FoundryScript *p_declaring_script, const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value) {
@@ -306,7 +503,7 @@ bool FoundryScript::_validate_static_member_write(FoundryScript *p_receiver, Fou
 	if (p_binding.kind == FoundryScript::TypeArgumentBinding::FIXED || p_declaring_script == p_receiver) {
 		// A FIXED binding is self-sufficient (already a concrete argument), and an OPEN binding declared
 		// directly on the receiver already indexes the receiver's own parameter list.
-		return _validate_type_argument_binding_write(p_binding, p_leaf_type_arguments, r_value);
+		return validate_type_argument_binding_write(p_binding, p_leaf_type_arguments, r_value);
 	}
 
 	// The static member is inherited from a generic ancestor that was never copied into the receiver
@@ -321,28 +518,18 @@ bool FoundryScript::_validate_static_member_write(FoundryScript *p_receiver, Fou
 	// already-compiled static path (which has the identical cross-subclass sharing hazard with zero
 	// runtime validation at all), not a stronger guarantee that the slot's current value matches every
 	// subclass's declared type at every moment.
-	Vector<ContainerType> projected;
-	Vector<bool> bound;
-	if (!p_receiver->project_type_arguments_onto_base(p_declaring_script, p_leaf_type_arguments, projected, bound)) {
+	Vector<ProjectedContainerType> projected;
+	if (!p_receiver->project_type_arguments_onto_base(p_declaring_script, p_leaf_type_arguments, projected)) {
 		return true;
 	}
-	if (p_binding.leaf_ordinal < 0 || p_binding.leaf_ordinal >= projected.size() || !bound[p_binding.leaf_ordinal]) {
-		// `project_type_arguments_onto_base` also marks a slot unbound when the ancestor chain's own
-		// specialization at this ordinal was a dependent FIXED argument (a composite type still
-		// mentioning an open parameter partway up a multi-level `extends` chain), the same case
-		// `_validate_type_argument_binding_write` above recovers a sound outer-shape check for by
-		// stripping the erased nested arguments. `project_type_arguments_onto_base` does not expose that
-		// distinction here (it collapses to "unbound", matching its other, pre-existing caller,
-		// `_class_handle_type_arguments_match` in container_type_validate.cpp, which relies on `bound`
-		// meaning "no evidence at all" rather than "a known but partially-erased outer shape") — recovering
-		// it soundly for both callers needs the per-ancestor table to carry the erased-but-outer-known
-		// container through, not just a bool. Left as a known gap: an inherited static member specialized
-		// with such a dependent composite argument is treated as fully untyped here, rather than at least
-		// rejecting a value of a completely unrelated outer class.
+	if (p_binding.leaf_ordinal < 0 || p_binding.leaf_ordinal >= projected.size()) {
 		return true;
 	}
 
-	return _validate_variant_against_expected_container_type(projected[p_binding.leaf_ordinal], p_binding.is_type_handle, r_value);
+	// The projected slot carries the same recursive evidence a resolved instance binding does, so a
+	// composite argument fixed partway up the chain (`extends Box[Pair[int, U]]`) still enforces its
+	// known parts here instead of degrading the whole slot to untyped.
+	return _validate_write_against_projected_type(projected[p_binding.leaf_ordinal], p_binding.is_type_handle, r_value, nullptr);
 }
 
 Ref<FSAnnotation> FSAnnotation::from_usage(const FoundryScript::AnnotationUsage &p_usage) {
@@ -1914,9 +2101,8 @@ bool FoundryScript::inherits_script(const Ref<Script> &p_script) const {
 	return false;
 }
 
-bool FoundryScript::project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments, Vector<bool> &r_argument_bound) const {
+bool FoundryScript::project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ProjectedContainerType> &r_type_arguments) const {
 	r_type_arguments.clear();
-	r_argument_bound.clear();
 
 	const FoundryScript *base_script = Object::cast_to<FoundryScript>(p_base.ptr());
 	if (base_script == nullptr) {
@@ -1934,34 +2120,18 @@ bool FoundryScript::project_type_arguments_onto_base(const Ref<Script> &p_base, 
 		return false;
 	}
 
-	Vector<ContainerType> projected;
-	Vector<bool> bound;
+	Vector<ProjectedContainerType> projected;
 	projected.resize(bindings->size());
-	bound.resize(bindings->size());
 	for (int i = 0; i < bindings->size(); i++) {
-		const TypeArgumentBinding &binding = (*bindings)[i];
-		bound.write[i] = false;
-		if (binding.kind == TypeArgumentBinding::FIXED) {
-			if (!binding.fixed_is_dependent) {
-				// A temporary ContainerType is materialized here at validation time rather than persisted, so
-				// a local-class argument is not held by a strong Ref in member metadata (avoiding reference cycles).
-				projected.write[i] = binding.fixed.to_container_type();
-				bound.write[i] = true;
-			}
-			// A dependent (`extends Box[Array[T]]`) fixed argument was erased on baking, so it carries no
-			// sound invariance evidence: leave the slot unbound for gradual acceptance.
-		} else if (binding.kind == TypeArgumentBinding::OPEN &&
-				binding.leaf_ordinal >= 0 && binding.leaf_ordinal < p_leaf_type_arguments.size()) {
-			// The leaf was specialized at this ordinal, so the argument (even an explicit `Variant`) is
-			// definite evidence.
-			projected.write[i] = p_leaf_type_arguments[binding.leaf_ordinal];
-			bound.write[i] = true;
-		}
-		// Otherwise the parameter is still open at an unspecialized leaf: leave the slot unbound.
+		// A temporary ContainerType is materialized here at validation time rather than persisted, so a
+		// local-class argument is not held by a strong Ref in member metadata (avoiding reference cycles).
+		// A `Type[...]` layer inside the binding travels with the evidence; a slot with no evidence at all
+		// (an unspecialized leaf's open parameter, or a step of the chain that stayed unresolved) comes
+		// back UNKNOWN and is skipped under gradual typing.
+		projected.write[i] = project_type_argument_binding((*bindings)[i], p_leaf_type_arguments);
 	}
 
 	r_type_arguments = projected;
-	r_argument_bound = bound;
 	return true;
 }
 
@@ -2493,7 +2663,7 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 				// `extends Base[int]` specialization in the chain (FIXED), or the argument reified onto this
 				// instance (OPEN). An OPEN member on an instance created without explicit arguments carries
 				// no binding, leaving the slot effectively untyped.
-				if (!FoundryScript::_validate_type_argument_binding_write(member->type_argument_binding, type_arguments, value)) {
+				if (!FoundryScript::validate_type_argument_binding_write(member->type_argument_binding, type_arguments, value)) {
 					return false;
 				}
 			} else {

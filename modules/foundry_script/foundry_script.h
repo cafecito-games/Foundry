@@ -156,13 +156,14 @@ class FoundryScript : public Script {
 		// the same local-class handling as member `data_type` — a local class is held by raw pointer, not a
 		// strong Ref — avoiding reference cycles (e.g. CRTP `class Node extends Box[Node]`). A temporary
 		// ContainerType is materialized only at validation time.
+		//
+		// Unlike an ordinary compiled `FSDataType`, this one keeps `TYPE_PARAMETER` nodes at any depth
+		// instead of erasing them: `extends Base[Pair[int, U]]` bakes a known `Pair` whose first argument
+		// is a concrete `int` and whose second is still the open `U`. Each further `extends` step
+		// substitutes those nodes recursively, so a leaf that supplies `U` resolves the whole type while a
+		// raw base keeps enforcing the `int`. A node left unresolved carries `type_parameter_index == -1`,
+		// which no leaf ordinal can collide with.
 		FSDataType fixed;
-		// Valid when kind == FIXED: the fixing argument still references an open type parameter
-		// (`extends Box[Array[T]]`), so `fixed` is the analyzer-erased container and does not carry the
-		// argument's concrete reification. The leaf-to-base projection treats such a slot as carrying no
-		// invariance evidence (it cannot validate the dependent argument soundly), keeping the existing
-		// gradual acceptance instead of a spurious rejection.
-		bool fixed_is_dependent = false;
 		// The member is `Type[T]`, so resolved writes must validate class handles for the reified `T`
 		// instead of instances of `T`.
 		bool is_type_handle = false;
@@ -189,19 +190,11 @@ class FoundryScript : public Script {
 		TypeArgumentBinding type_argument_binding;
 	};
 
-	// Validates a write to a member whose declared type is a class generic parameter, erased to a
-	// Variant slot, where `p_binding` is already expressed relative to the receiving class: an instance
-	// member's binding (always re-specialized per subclass at compile time), or a static member's
-	// binding when the receiver is the very class that declares it. `p_leaf_type_arguments` is the
-	// reified argument vector to resolve an OPEN binding against (an instance's `type_arguments`, or
-	// empty when there is no instance, e.g. a static write through the bare class).
-	static bool _validate_type_argument_binding_write(const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value);
-
 	// Validates a write to a static member reached through `p_receiver` (the class or instance's leaf
 	// script the write was addressed to) but declared by `p_declaring_script`, which may be a proper
 	// ancestor of `p_receiver` (the member is never copied into subclasses). When the binding is FIXED,
 	// or the declaring script is the receiver itself, it is already self-sufficient or already relative
-	// to the receiver, so this delegates to `_validate_type_argument_binding_write`. Otherwise an OPEN
+	// to the receiver, so this delegates to `validate_type_argument_binding_write`. Otherwise an OPEN
 	// binding's ordinal indexes the declaring ancestor's own type parameters, so it is projected through
 	// `p_receiver`'s per-ancestor specialization table before validating. Analyzed source never produces
 	// that OPEN case (the declaration itself is rejected); the projection remains as a backstop for
@@ -209,6 +202,28 @@ class FoundryScript : public Script {
 	static bool _validate_static_member_write(FoundryScript *p_receiver, FoundryScript *p_declaring_script, const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value);
 
 public:
+	// Resolves the recursive type evidence a binding carries for a receiver whose reified arguments are
+	// `p_leaf_type_arguments`. FIXED bindings substitute their surviving `TYPE_PARAMETER` nodes against
+	// those arguments; an OPEN binding resolves to the argument at its ordinal. A slot with no evidence
+	// comes back `UNKNOWN` and stays gradual.
+	static ProjectedContainerType project_type_argument_binding(const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments);
+
+	// The single binding validator every member-write path goes through: the dynamic `set()` path, the
+	// direct VM member-store opcode, and the static-member backstop. `p_binding` must already be
+	// expressed relative to the receiving class — an instance member's binding (re-specialized per
+	// subclass at compile time), or a static member's binding when the receiver declares it.
+	// `p_leaf_type_arguments` is the reified argument vector to resolve an OPEN binding against (an
+	// instance's `type_arguments`, or empty when there is no instance). When the write is rejected and
+	// `r_expected_type_name` is non-null, it receives the name of the type that was expected.
+	static bool validate_type_argument_binding_write(const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value, String *r_expected_type_name = nullptr);
+
+	// True when `p_expected_type` (or, recursively, one of its element types) is an unspecialized native
+	// object slot that a specialized class handle can be erased into.
+	static bool container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type);
+	// Erases every `FSSpecializedClassHandle` in `r_value` that a slot of `p_expected_type` would rather
+	// see as the bare script it specializes, recursing through array elements and dictionary entries.
+	static bool erase_specialized_class_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value);
+
 	// A generic type parameter declared on this class, e.g. `T` in `class Box[T]` or
 	// `K`/`V` in `class_name Pair[K, V: RefCounted]`. Surfaced through runtime reflection.
 	struct TypeParameter {
@@ -576,7 +591,7 @@ public:
 	bool is_final() const { return _is_final; }
 	bool is_trait_type() const override { return _is_trait_type; }
 	StringName get_trait_type_name() const override { return trait_type_name; }
-	bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments, Vector<bool> &r_argument_bound) const override;
+	bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ProjectedContainerType> &r_type_arguments) const override;
 	Ref<FoundryScript> get_base() const;
 
 	const HashMap<StringName, MemberInfo> &debug_get_member_indices() const { return member_indices; }

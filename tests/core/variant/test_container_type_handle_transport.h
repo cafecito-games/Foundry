@@ -101,14 +101,13 @@ public:
 	void get_script_method_list(List<MethodInfo> *p_list) const override {}
 	void get_script_property_list(List<PropertyInfo> *p_list) const override {}
 	const Variant get_rpc_config() const override { return Variant(); }
-	bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments, Vector<bool> &r_argument_bound) const override {
+	bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ProjectedContainerType> &r_type_arguments) const override {
 		if (p_base != Ref<Script>(this)) {
 			return false;
 		}
-		r_type_arguments = p_leaf_type_arguments;
-		r_argument_bound.resize(r_type_arguments.size());
-		for (int i = 0; i < r_argument_bound.size(); i++) {
-			r_argument_bound.write[i] = true;
+		r_type_arguments.clear();
+		for (const ContainerType &type_argument : p_leaf_type_arguments) {
+			r_type_arguments.push_back(ProjectedContainerType::exact(type_argument));
 		}
 		return true;
 	}
