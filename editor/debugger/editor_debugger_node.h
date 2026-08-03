@@ -72,8 +72,9 @@ public:
 	void begin_unowned_session();
 
 	Outcome observe_process_completed(uint64_t p_launch_id, int p_exit_code);
-	Outcome observe_debugger_stopped();
+	Outcome observe_debugger_stopped(uint64_t p_launch_id);
 	Outcome observe_forced_termination();
+	static bool is_last_debugger_for_launch(uint64_t p_launch_id, const Vector<uint64_t> &p_active_launches);
 
 	bool is_active() const { return active; }
 	uint64_t get_launch_id() const { return launch_id; }

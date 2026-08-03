@@ -428,6 +428,7 @@ void ScriptEditorDebugger::_msg_debug_exit(uint64_t p_thread_id, const Array &p_
 void ScriptEditorDebugger::_msg_set_pid(uint64_t p_thread_id, const Array &p_data) {
 	ERR_FAIL_COND(p_data.is_empty());
 	remote_pid = p_data[0];
+	launch_id = p_data.size() >= 2 ? (uint64_t)(int64_t)p_data[1] : 0;
 	// We emit the started signal after we've set the PID.
 	emit_signal(SNAME("started"));
 }
@@ -1255,10 +1256,9 @@ String ScriptEditorDebugger::_format_frame_text(const ScriptLanguage::StackInfo 
 	return text;
 }
 
-void ScriptEditorDebugger::start(Ref<RemoteDebuggerPeer> p_peer, uint64_t p_launch_id) {
+void ScriptEditorDebugger::start(Ref<RemoteDebuggerPeer> p_peer) {
 	_clear_errors_list();
 	stop();
-	launch_id = p_launch_id;
 
 	profiler->set_enabled(true, true);
 	visual_profiler->set_enabled(true);

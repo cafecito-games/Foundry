@@ -60,6 +60,7 @@ static EditorRun::LaunchContext make_context() {
 	context.resource_path = "/projects/demo";
 	context.debug_uri = "tcp://127.0.0.1:6007";
 	context.editor_pid = 4242;
+	context.launch_id = 73;
 	return context;
 }
 
@@ -88,18 +89,22 @@ TEST_CASE("[Editor][EditorRun] A project_test launch builds a project test comma
 	const int runner_index = index_of(arguments, "--runner");
 	const int remote_debug_index = index_of(arguments, "--remote-debug");
 	const int editor_pid_index = index_of(arguments, "--editor-pid");
+	const int editor_launch_id_index = index_of(arguments, "--editor-launch-id");
 	REQUIRE(project_index > 0);
 	REQUIRE(runner_index > 0);
 	REQUIRE(remote_debug_index > 0);
 	REQUIRE(editor_pid_index > 0);
+	REQUIRE(editor_launch_id_index > 0);
 	CHECK(project_index < separator);
 	CHECK(runner_index < separator);
 	CHECK(remote_debug_index < separator);
 	CHECK(editor_pid_index < separator);
+	CHECK(editor_launch_id_index < separator);
 	CHECK_EQ(arguments[project_index + 1], "/projects/demo");
 	CHECK_EQ(arguments[runner_index + 1], "res://addons/example/run.fs");
 	CHECK_EQ(arguments[remote_debug_index + 1], "tcp://127.0.0.1:6007");
 	CHECK_EQ(arguments[editor_pid_index + 1], "4242");
+	CHECK_EQ(arguments[editor_launch_id_index + 1], "73");
 
 	// Adapter-owned options only appear behind it.
 	PackedStringArray adapter_arguments;
@@ -147,6 +152,7 @@ TEST_CASE("[Editor][EditorRun] A project_test launch without a debug host omits 
 	const PackedStringArray arguments = to_array(EditorRun::build_project_test_arguments(context, make_launch()));
 	CHECK_EQ(index_of(arguments, "--remote-debug"), -1);
 	CHECK_EQ(index_of(arguments, "--editor-pid"), -1);
+	CHECK_EQ(index_of(arguments, "--editor-launch-id"), -1);
 }
 
 TEST_CASE("[Editor][EditorRun] A headless editor's project_test launch never lets its child pick its own display") {
@@ -186,6 +192,8 @@ TEST_CASE("[Editor][EditorRun] The built project_test command parses back into a
 	expected_passthrough.push_back("tcp://127.0.0.1:6007");
 	expected_passthrough.push_back("--editor-pid");
 	expected_passthrough.push_back("4242");
+	expected_passthrough.push_back("--editor-launch-id");
+	expected_passthrough.push_back("73");
 	CHECK_EQ(result.invocation.passthrough_args, expected_passthrough);
 
 	PackedStringArray expected_user_args;

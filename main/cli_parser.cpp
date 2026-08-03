@@ -261,7 +261,7 @@ static bool consume_common_global_option(CLIParseState &r_state, const String &p
 	return false;
 }
 
-// `--remote-debug` and `--editor-pid` are engine-owned debug transport options that
+// `--remote-debug`, `--editor-pid`, and `--editor-launch-id` are engine-owned debug transport options that
 // a debug host attaches to a launch. They are forwarded verbatim so the runtime
 // argument parser sees them exactly as it does for a plain `project run`.
 static bool consume_debug_transport_option(CLIParseState &r_state, const String &p_arg, PackedStringArray &r_passthrough) {
@@ -289,6 +289,19 @@ static bool consume_debug_transport_option(CLIParseState &r_state, const String 
 		}
 		append(r_passthrough, p_arg);
 		append(r_passthrough, pid);
+		return true;
+	}
+	if (p_arg == "--editor-launch-id") {
+		String launch_id;
+		if (!require_value(r_state, p_arg, launch_id)) {
+			return true;
+		}
+		if (!launch_id.is_valid_int() || launch_id.to_int() <= 0) {
+			fail(r_state.result, "Invalid value for --editor-launch-id: " + launch_id + ". Expected a positive launch id.");
+			return true;
+		}
+		append(r_passthrough, p_arg);
+		append(r_passthrough, launch_id);
 		return true;
 	}
 	return false;

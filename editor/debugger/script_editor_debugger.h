@@ -329,7 +329,7 @@ public:
 
 	void request_remote_evaluate(const String &p_expression, int p_stack_frame);
 
-	void start(Ref<RemoteDebuggerPeer> p_peer, uint64_t p_launch_id);
+	void start(Ref<RemoteDebuggerPeer> p_peer);
 	void stop();
 
 	void debug_skip_breakpoints();
@@ -345,6 +345,7 @@ public:
 	bool is_debuggable() const { return threads_debugged.size() > 0 && threads_debugged[debugging_thread_id].can_debug; }
 	bool is_session_active() { return peer.is_valid() && peer->is_peer_connected(); }
 	int get_remote_pid() const { return remote_pid; }
+	uint64_t get_launch_id() const { return launch_id; }
 
 	bool is_move_to_foreground() const;
 	void set_move_to_foreground(const bool &p_move_to_foreground);

@@ -5,8 +5,9 @@
 
 **Goal:** Preserve the natural exit code and `exited` event of a restarted structured `project_test` DAP launch.
 
-**Architecture:** Capture the current editor-run launch ID when `ScriptEditorDebugger` accepts a connection, propagate
-that ID to `EditorRunBar` when the debugger stops, and ignore notifications that do not identify the current launch.
+**Architecture:** Pass the editor-run launch ID to each owned child, return it in the child's initial debugger handshake,
+propagate that ID to `EditorRunBar` when the last debugger for that launch stops, and ignore notifications that do not
+identify the current launch.
 Use the same launch identity already authoritative for process-result acceptance, and cover the complete
 breakpoint/restart/continue lifecycle over the real tooling-host DAP socket.
 
@@ -20,8 +21,10 @@ wrapper.
 - `tests/editor/test_editor_tooling_host.h`: add the native structured `project_test` restart regression.
 - `editor/debugger/script_editor_debugger.h`: retain the launch ID associated with a debugger connection.
 - `editor/debugger/script_editor_debugger.cpp`: include the launch ID in the internal `stopped` signal.
+- `core/debugger/engine_debugger.{h,cpp}` and `main/main.cpp`: return the editor-supplied launch ID in the initial handshake.
+- `main/cli_parser.cpp` and `editor/run/editor_run.{h,cpp}`: carry the internal launch ID to editor-owned children.
 - `editor/debugger/editor_debugger_node.h`: accept the stopped launch ID in the debugger callback.
-- `editor/debugger/editor_debugger_node.cpp`: assign and forward the stopped launch ID after result coordination.
+- `editor/debugger/editor_debugger_node.cpp`: aggregate sessions by launch and forward the stopped launch ID after result coordination.
 - `editor/editor_node.h`: add the launch ID to the run-bar forwarding method.
 - `editor/editor_node.cpp`: forward the launch ID to `EditorRunBar`.
 - `editor/run/editor_run_bar.h`: make debug-session closure launch-specific.
@@ -154,13 +157,18 @@ void EditorDebuggerNode::_debugger_stopped(int64_t p_launch_id, int p_id) {
 	ERR_FAIL_NULL(dbg);
 
 	bool found = false;
+	Vector<uint64_t> active_launches;
 	_for_all(tabs, [&](ScriptEditorDebugger *p_debugger) {
 		if (p_debugger->is_session_active()) {
 			found = true;
+			active_launches.push_back(p_debugger->get_launch_id());
 		}
 	});
+	if (DebugSessionResultCoordinator::is_last_debugger_for_launch((uint64_t)p_launch_id, active_launches)) {
+		_finalize_debug_session(session_coordinator.observe_debugger_stopped((uint64_t)p_launch_id));
+		EditorNode::get_singleton()->notify_all_debug_sessions_exited((uint64_t)p_launch_id);
+	}
 	if (!found) {
-		_finalize_debug_session(session_coordinator.observe_debugger_stopped());
 		EditorRunBar::get_singleton()->get_pause_button()->set_pressed(false);
 		EditorRunBar::get_singleton()->get_pause_button()->set_disabled(true);
 		SceneTreeDock *dock = EditorNode::get_singleton()->get_focused_scene_tree_dock();
@@ -168,7 +176,6 @@ void EditorDebuggerNode::_debugger_stopped(int64_t p_launch_id, int p_id) {
 			dock->hide_remote_tree();
 			dock->hide_tab_buttons();
 		}
-		EditorNode::get_singleton()->notify_all_debug_sessions_exited((uint64_t)p_launch_id);
 	}
 }
 

@@ -95,6 +95,10 @@ List<String> EditorRun::build_project_test_arguments(const LaunchContext &p_cont
 		args.push_back("--editor-pid");
 		args.push_back(itos(p_context.editor_pid));
 	}
+	if (!p_context.debug_uri.is_empty() && p_context.launch_id != 0) {
+		args.push_back("--editor-launch-id");
+		args.push_back(itos(p_context.launch_id));
+	}
 
 	// Everything past this point belongs to the runner script, not the engine.
 	args.push_back("--");
@@ -117,7 +121,10 @@ List<String> EditorRun::build_project_test_arguments(const LaunchContext &p_cont
 Error EditorRun::run_project_test(const TestLaunch &p_launch) {
 	ERR_FAIL_COND_V_MSG(p_launch.runner.is_empty(), ERR_INVALID_PARAMETER, "A project_test launch requires a runner script path.");
 
-	List<String> args = build_project_test_arguments(build_launch_context(), p_launch);
+	begin_launch();
+	LaunchContext context = build_launch_context();
+	context.launch_id = launch_id;
+	List<String> args = build_project_test_arguments(context, p_launch);
 
 	if (OS::get_singleton()->is_stdout_verbose()) {
 		PackedStringArray output;
@@ -128,8 +135,6 @@ Error EditorRun::run_project_test(const TestLaunch &p_launch) {
 		}
 		print_line(String(" ").join(output));
 	}
-
-	begin_launch();
 
 	OS::ProcessID pid = 0;
 	const Error err = OS::get_singleton()->create_instance(args, &pid);
@@ -143,6 +148,7 @@ Error EditorRun::run_project_test(const TestLaunch &p_launch) {
 }
 
 Error EditorRun::run(const String &p_scene, const String &p_write_movie, const Vector<String> &p_run_args) {
+	begin_launch();
 	List<String> args;
 
 	for (const String &a : Main::get_forwardable_cli_arguments(Main::CLI_SCOPE_PROJECT)) {
@@ -168,6 +174,8 @@ Error EditorRun::run(const String &p_scene, const String &p_write_movie, const V
 
 	args.push_back("--editor-pid");
 	args.push_back(itos(OS::get_singleton()->get_process_id()));
+	args.push_back("--editor-launch-id");
+	args.push_back(itos(launch_id));
 
 	bool debug_collisions = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_collisions", false);
 	bool debug_paths = EditorSettings::get_singleton()->get_project_metadata("debug_options", "run_debug_paths", false);
@@ -256,8 +264,6 @@ Error EditorRun::run(const String &p_scene, const String &p_write_movie, const V
 			args.push_back(run_arg);
 		}
 	}
-
-	begin_launch();
 
 	String exec = OS::get_singleton()->get_executable_path();
 	int instance_count = RunInstancesDialog::get_singleton()->get_instance_count();

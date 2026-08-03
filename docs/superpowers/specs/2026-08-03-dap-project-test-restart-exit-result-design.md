@@ -21,9 +21,13 @@ debugger can therefore be applied to the replacement process.
 
 Make debugger shutdown notifications launch-specific.
 
-`ScriptEditorDebugger` will capture the editor run's monotonic launch ID when the
-debugger connection is accepted and include that ID in its internal `stopped`
-signal. `EditorDebuggerNode` will forward the launch ID through `EditorNode` to
+The editor will pass its monotonic launch ID to each owned child as an internal
+runtime option. The child will return that ID with the debugger's initial PID
+handshake, and `ScriptEditorDebugger` will include it in its internal `stopped`
+signal. This makes the identity intrinsic to the connecting child instead of
+inferring it from whichever launch is current when a queued socket is accepted.
+`EditorDebuggerNode` will aggregate active debugger sessions by launch and forward
+the launch ID through `EditorNode` to
 `EditorRunBar::debug_sessions_exited()`. The run bar will act on the notification
 only when it identifies the current launch. A delayed notification from the
 replaced launch will therefore be ignored instead of starting forced-cleanup
@@ -32,8 +36,9 @@ handling for the replacement.
 The same launch identity remains authoritative for accepting process-completion
 results in `DebugSessionResultCoordinator` and `DebugAdapterProtocol`. Using it for
 debugger-socket lifecycle events also covers multi-instance runs and connections
-that close before reporting a remote PID; it does not turn unknown results into
-successful ones.
+whose PID handshake was already queued before disconnect; an unidentified socket
+remains unowned rather than borrowing the current launch. It does not turn unknown
+results into successful ones.
 
 ## Lifecycle Behavior
 
@@ -43,8 +48,10 @@ successful ones.
   run is ignored.
 - Every debugger belonging to a multi-instance launch shares the launch ID, so the
   last session to close can still start the current run's bounded cleanup.
-- A connection that closes before reporting its remote PID still carries its launch
-  ID and starts cleanup for the correct run.
+- A child sends its launch ID in the first debugger handshake alongside its PID, so
+  a queued connection from a replaced launch remains attributable to that launch.
+- A connection that never supplies the initial handshake remains unowned and cannot
+  start cleanup for an unrelated current launch.
 - A replacement `project_test` child that exits naturally emits exactly one
   `exited` event with its real exit code, followed by exactly one `terminated`.
 - Explicit termination still kills the current child and emits `terminated`

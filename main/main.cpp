@@ -231,6 +231,7 @@ static String log_file;
 static bool show_help = false;
 static uint64_t quit_after = 0;
 static OS::ProcessID editor_pid = 0;
+static uint64_t editor_launch_id = 0;
 // Set when an explicit CLI `--project` path could not be applied (e.g. the directory does
 // not exist). Lets `script eval` refuse to run against a fallback/ambient project instead
 // of silently evaluating outside the project the caller requested.
@@ -2021,6 +2022,14 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing editor PID argument, aborting.\n");
 				goto error;
 			}
+		} else if (arg == "--editor-launch-id") { // not exposed to user
+			if (N && N->get().is_valid_int() && N->get().to_int() > 0) {
+				editor_launch_id = (uint64_t)N->get().to_int();
+				N = N->next();
+			} else {
+				OS::get_singleton()->print("Missing or invalid editor launch ID argument, aborting.\n");
+				goto error;
+			}
 		} else if (arg == "--disable-render-loop") {
 			disable_render_loop = true;
 		} else if (arg == "--fixed-fps") {
@@ -2435,7 +2444,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "network/limits/debugger/max_errors_per_second", PROPERTY_HINT_RANGE, "1,200,1,or_greater"), 400);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "network/limits/debugger/max_warnings_per_second", PROPERTY_HINT_RANGE, "1,200,1,or_greater"), 400);
 
-	EngineDebugger::initialize(debug_uri, skip_breakpoints, ignore_error_breaks, breakpoints, []() {
+	EngineDebugger::initialize(debug_uri, editor_launch_id, skip_breakpoints, ignore_error_breaks, breakpoints, []() {
 		if (editor_pid) {
 			DisplayServer::get_singleton()->enable_for_stealing_focus(editor_pid);
 		}

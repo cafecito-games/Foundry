@@ -241,9 +241,9 @@ DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_pr
 	return outcome;
 }
 
-DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_debugger_stopped() {
+DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_debugger_stopped(uint64_t p_launch_id) {
 	Outcome outcome;
-	if (!active) {
+	if (!active || p_launch_id != launch_id) {
 		return outcome;
 	}
 	if (owned) {
@@ -268,6 +268,10 @@ DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_fo
 	outcome.launch_id = launch_id;
 	active = false;
 	return outcome;
+}
+
+bool DebugSessionResultCoordinator::is_last_debugger_for_launch(uint64_t p_launch_id, const Vector<uint64_t> &p_active_launches) {
+	return !p_active_launches.has(p_launch_id);
 }
 
 void EditorDebuggerNode::_bind_methods() {
@@ -506,7 +510,7 @@ void EditorDebuggerNode::_notification(int p_what) {
 				// Good to go.
 				EditorNode::get_singleton()->get_focused_scene_tree_dock()->show_tab_buttons();
 				debugger->set_editor_remote_tree(remote_scene_tree);
-				debugger->start(server->take_connection(), EditorRunBar::get_singleton()->get_current_launch_id());
+				debugger->start(server->take_connection());
 				// Send breakpoints.
 				for (const KeyValue<Breakpoint, bool> &E : breakpoints) {
 					const Breakpoint &bp = E.key;
@@ -571,13 +575,18 @@ void EditorDebuggerNode::_debugger_stopped(int64_t p_launch_id, int p_id) {
 	ERR_FAIL_NULL(dbg);
 
 	bool found = false;
+	Vector<uint64_t> active_launches;
 	_for_all(tabs, [&](ScriptEditorDebugger *p_debugger) {
 		if (p_debugger->is_session_active()) {
 			found = true;
+			active_launches.push_back(p_debugger->get_launch_id());
 		}
 	});
+	if (DebugSessionResultCoordinator::is_last_debugger_for_launch((uint64_t)p_launch_id, active_launches)) {
+		_finalize_debug_session(session_coordinator.observe_debugger_stopped((uint64_t)p_launch_id));
+		EditorNode::get_singleton()->notify_all_debug_sessions_exited((uint64_t)p_launch_id);
+	}
 	if (!found) {
-		_finalize_debug_session(session_coordinator.observe_debugger_stopped());
 		EditorRunBar::get_singleton()->get_pause_button()->set_pressed(false);
 		EditorRunBar::get_singleton()->get_pause_button()->set_disabled(true);
 		SceneTreeDock *dock = EditorNode::get_singleton()->get_focused_scene_tree_dock();
@@ -585,7 +594,6 @@ void EditorDebuggerNode::_debugger_stopped(int64_t p_launch_id, int p_id) {
 			dock->hide_remote_tree();
 			dock->hide_tab_buttons();
 		}
-		EditorNode::get_singleton()->notify_all_debug_sessions_exited((uint64_t)p_launch_id);
 	}
 }
 
