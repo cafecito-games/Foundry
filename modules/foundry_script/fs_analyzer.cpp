@@ -10032,9 +10032,13 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 			return;
 		}
 		parser->current_function->uses_receiver_relative_self = true;
-		// A lambda that spells `Self` must keep the enclosing receiver, exactly like one that reads a
-		// member: without it the lambda frame runs with nothing to resolve `Self` against.
-		mark_lambda_use_self();
+		// A lambda in an instance method must keep the enclosing receiver, exactly like one that reads a
+		// member: without it the lambda frame runs with nothing to resolve `Self` against. A static
+		// function has no instance to capture, and a self-capturing lambda cannot be created without
+		// one, so it is left alone and the frame reports the missing receiver if it ever runs.
+		if (!parser->current_function->is_static) {
+			mark_lambda_use_self();
+		}
 		FSParser::DataType self_handle = _self_type_parameter_for_class(parser->current_class);
 		self_handle.is_meta_type = true;
 		self_handle.is_type_handle_annotation = true;

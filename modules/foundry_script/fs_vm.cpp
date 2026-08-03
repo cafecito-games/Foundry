@@ -335,7 +335,7 @@ static bool _static_self_class_handle(const FSStaticSelfContext &p_context, Vari
 // `Self` in an expression position: the class handle of a static frame's exact receiver, or of the
 // instance an instance frame is running on. A static frame with no receiver has nothing to produce.
 static bool _frame_self_class_handle(const FrameSelfBinding &p_frame_self, const FSInstance *p_instance,
-		Variant &r_handle) {
+		const Variant *p_self_override, Variant &r_handle) {
 	if (p_frame_self.receiver != nullptr) {
 		return _static_self_class_handle(*p_frame_self.receiver, r_handle);
 	}
@@ -344,6 +344,21 @@ static bool _frame_self_class_handle(const FrameSelfBinding &p_frame_self, const
 		// arguments of a specialized generic instance.
 		return _static_self_class_handle(
 				FSStaticSelfContext::for_specialized_script(p_instance->get_script(), p_instance->get_type_arguments()),
+				r_handle);
+	}
+	if (p_self_override != nullptr) {
+		// An instance witness dispatched on a receiver with no `FSInstance`: a native engine object,
+		// which still names a class, or a builtin value, which does not.
+		Object *receiver = p_self_override->get_validated_object();
+		if (receiver == nullptr) {
+			return false;
+		}
+		const Ref<Script> receiver_script = receiver->get_script_instance() != nullptr
+				? receiver->get_script_instance()->get_script()
+				: Ref<Script>();
+		return _static_self_class_handle(receiver_script.is_valid()
+						? FSStaticSelfContext::for_script(receiver_script)
+						: FSStaticSelfContext::for_native_class(receiver->get_class_name()),
 				r_handle);
 	}
 	return false;
@@ -5284,7 +5299,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(dst, 0);
 
 				Variant handle;
-				if (unlikely(!_frame_self_class_handle(frame_self, p_instance, handle))) {
+				if (unlikely(!_frame_self_class_handle(frame_self, p_instance, p_self_override, handle))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}

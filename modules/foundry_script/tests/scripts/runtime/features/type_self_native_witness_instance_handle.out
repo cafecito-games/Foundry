@@ -1,0 +1,3 @@
+FS_TEST_OK
+~~ WARNING at line 12: (UNSAFE_METHOD_ACCESS) The method "clone_kind()" is not present on the inferred type "ImageTexture" (but may be present on a subtype).
+ImageTexture
