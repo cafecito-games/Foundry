@@ -1060,8 +1060,8 @@ TEST_CASE("[Editor][ToolingHost] Scope references resolve while the frame's valu
 	set_breakpoints_arguments["source"] = source;
 	set_breakpoints_arguments["breakpoints"] = requested_breakpoints;
 	if (!bool(session.client.await_response(
-					  session.client.send_request("setBreakpoints", set_breakpoints_arguments), 30000)
-					 .get("success", false))) {
+									session.client.send_request("setBreakpoints", set_breakpoints_arguments), 30000)
+						.get("success", false))) {
 		FAIL(("setBreakpoints did not succeed.\n" +
 				tooling_host_and_dap_diagnostic(session.host, session.client)));
 		return;
@@ -1233,7 +1233,7 @@ TEST_CASE("[Editor][ToolingHost] Scope references resolve while the frame's valu
 	Dictionary continue_arguments;
 	continue_arguments["threadId"] = thread_id;
 	if (!bool(session.client.await_response(session.client.send_request("continue", continue_arguments), 30000)
-					 .get("success", false))) {
+						.get("success", false))) {
 		FAIL(("continue did not succeed.\n" +
 				tooling_host_and_dap_diagnostic(session.host, session.client)));
 		return;
@@ -1826,6 +1826,113 @@ TEST_CASE("[Editor][ToolingHost] A structured test launch reports the runner's r
 	const String failing_tap = FileAccess::get_file_as_string(failing_report);
 	CHECK(failing_tap.begins_with("TAP version 13"));
 	CHECK(failing_tap.contains("not ok 1 - exit_status.point_1"));
+}
+
+TEST_CASE("[Editor][ToolingHost] A structured project_test restart preserves the replacement's natural result") {
+	ExitStatusSession session;
+	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
+	INFO("Tooling host output:\n", session.host.output);
+	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+
+	const int breakpoint_line = 41;
+	Dictionary source;
+	source["path"] = session.artifact("exit_status_runner.fs");
+	Dictionary breakpoint;
+	breakpoint["line"] = breakpoint_line;
+	Array requested_breakpoints;
+	requested_breakpoints.push_back(breakpoint);
+	Dictionary set_breakpoints_arguments;
+	set_breakpoints_arguments["source"] = source;
+	set_breakpoints_arguments["breakpoints"] = requested_breakpoints;
+	const Dictionary set_breakpoints_response = session.client.await_response(
+			session.client.send_request("setBreakpoints", set_breakpoints_arguments), 30000);
+	REQUIRE_MESSAGE(bool(set_breakpoints_response.get("success", false)), "setBreakpoints did not succeed.");
+
+	const Dictionary launch_arguments = make_project_test_launch(session.artifact("restart.tap"), "exit::0");
+	const int launch_seq = session.client.send_request("launch", launch_arguments);
+	session.client.await_response(session.client.send_request("configurationDone", Dictionary()), 30000);
+	REQUIRE_MESSAGE(bool(session.client.await_response(launch_seq, 60000).get("success", false)),
+			"launch did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("process", 120000).is_empty(), "The first runner never started.");
+	REQUIRE_MESSAGE(!session.client.await_event("stopped", 120000).is_empty(), "The first runner never stopped.");
+
+	session.client.clear_events();
+	Dictionary restart_arguments;
+	restart_arguments["arguments"] = launch_arguments;
+	const Dictionary restart_response = session.client.await_response(
+			session.client.send_request("restart", restart_arguments), 60000);
+	REQUIRE_MESSAGE(bool(restart_response.get("success", false)), "restart did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("process", 120000).is_empty(),
+			"The replacement runner never started.");
+	REQUIRE_MESSAGE(!session.client.await_event("stopped", 120000).is_empty(),
+			"The replacement runner never stopped.");
+
+	// The replaced debugger's delayed stop must not start the replacement's five-second
+	// process-result grace window while the replacement is intentionally paused.
+	CHECK(session.client.await_event("terminated", 7000).is_empty());
+
+	Dictionary continue_arguments;
+	continue_arguments["threadId"] = 1;
+	const Dictionary continue_response = session.client.await_response(
+			session.client.send_request("continue", continue_arguments), 30000);
+	REQUIRE_MESSAGE(bool(continue_response.get("success", false)), "continue did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("terminated", 120000).is_empty(),
+			"The replacement runner never terminated.");
+
+	CHECK_EQ(session.client.lifecycle_events(), expected_known_result_lifecycle());
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 0);
+	drain_pipe(session.host.stdout_pipe, session.host.output);
+	drain_pipe(session.host.stderr_pipe, session.host.output);
+	CHECK_FALSE(session.host.output.contains("Error calling from signal 'stopped'"));
+}
+
+TEST_CASE("[Editor][ToolingHost] Attaching to an editor launch ends without fabricating a result") {
+	ExitStatusSession session;
+	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
+	INFO("Tooling host output:\n", session.host.output);
+	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+
+	Dictionary source;
+	source["path"] = session.artifact("exit_status_runner.fs");
+	Dictionary breakpoint;
+	breakpoint["line"] = 41;
+	Array requested_breakpoints;
+	requested_breakpoints.push_back(breakpoint);
+	Dictionary set_breakpoints_arguments;
+	set_breakpoints_arguments["source"] = source;
+	set_breakpoints_arguments["breakpoints"] = requested_breakpoints;
+	REQUIRE_MESSAGE(bool(session.client.await_response(
+											   session.client.send_request("setBreakpoints", set_breakpoints_arguments), 30000)
+									.get("success", false)),
+			"setBreakpoints did not succeed.");
+
+	const Dictionary launch_arguments = make_project_test_launch(session.artifact("attach.tap"), "exit::0");
+	const int launch_seq = session.client.send_request("launch", launch_arguments);
+	session.client.await_response(session.client.send_request("configurationDone", Dictionary()), 30000);
+	REQUIRE_MESSAGE(bool(session.client.await_response(launch_seq, 60000).get("success", false)),
+			"launch did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("stopped", 120000).is_empty(), "The runner never stopped.");
+
+	session.client.clear_events();
+	const Dictionary attach_response = session.client.await_response(
+			session.client.send_request("attach", Dictionary()), 30000);
+	REQUIRE_MESSAGE(bool(attach_response.get("success", false)), "attach did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("process", 30000).is_empty(),
+			"The attached session did not report its process.");
+
+	Dictionary continue_arguments;
+	continue_arguments["threadId"] = 1;
+	REQUIRE_MESSAGE(bool(session.client.await_response(
+											   session.client.send_request("continue", continue_arguments), 30000)
+									.get("success", false)),
+			"continue did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("terminated", 120000).is_empty(),
+			"The attached session never terminated.");
+
+	PackedStringArray expected;
+	expected.push_back("process");
+	expected.push_back("terminated");
+	CHECK_EQ(session.client.lifecycle_events(), expected);
 }
 
 TEST_CASE("[Editor][ToolingHost] A replaced launch cannot leak its result into the next one") {

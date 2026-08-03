@@ -284,7 +284,7 @@ TEST_CASE("[Editor][DebugSession] A known result ends the session exactly once")
 
 	// Neither a duplicate completion nor the socket closing afterwards may end it again.
 	CHECK_FALSE(coordinator.observe_process_completed(7, 2).ended);
-	CHECK_FALSE(coordinator.observe_debugger_stopped().ended);
+	CHECK_FALSE(coordinator.observe_debugger_stopped(7).ended);
 	CHECK_FALSE(coordinator.observe_forced_termination().ended);
 }
 
@@ -292,12 +292,12 @@ TEST_CASE("[Editor][DebugSession] Either race order produces the same known resu
 	DebugSessionResultCoordinator process_first;
 	process_first.begin_owned_launch(11);
 	const DebugSessionResultCoordinator::Outcome from_process = process_first.observe_process_completed(11, 1);
-	CHECK_FALSE(process_first.observe_debugger_stopped().ended);
+	CHECK_FALSE(process_first.observe_debugger_stopped(11).ended);
 
 	DebugSessionResultCoordinator debugger_first;
 	debugger_first.begin_owned_launch(11);
 	// The socket closing first is not proof of a result, so the session stays open.
-	CHECK_FALSE(debugger_first.observe_debugger_stopped().ended);
+	CHECK_FALSE(debugger_first.observe_debugger_stopped(11).ended);
 	CHECK(debugger_first.is_active());
 	const DebugSessionResultCoordinator::Outcome from_debugger = debugger_first.observe_process_completed(11, 1);
 
@@ -315,6 +315,7 @@ TEST_CASE("[Editor][DebugSession] A stale launch cannot end the launch that repl
 	coordinator.begin_owned_launch(2);
 
 	CHECK_FALSE(coordinator.observe_process_completed(1, 0).ended);
+	CHECK_FALSE(coordinator.observe_debugger_stopped(1).ended);
 	CHECK(coordinator.is_active());
 
 	const DebugSessionResultCoordinator::Outcome outcome = coordinator.observe_process_completed(2, 0);
@@ -322,6 +323,20 @@ TEST_CASE("[Editor][DebugSession] A stale launch cannot end the launch that repl
 	CHECK_EQ(outcome.launch_id, (uint64_t)2);
 	CHECK(outcome.has_result);
 	CHECK_EQ(outcome.exit_code, 0);
+}
+
+TEST_CASE("[Editor][DebugSession] Debugger sessions are aggregated within one launch") {
+	Vector<uint64_t> active_launches;
+	active_launches.push_back(22);
+	active_launches.push_back(0);
+
+	CHECK_FALSE(DebugSessionResultCoordinator::is_last_debugger_for_launch(22, active_launches));
+	CHECK_FALSE(DebugSessionResultCoordinator::is_last_debugger_for_launch(0, active_launches));
+	CHECK(DebugSessionResultCoordinator::is_last_debugger_for_launch(11, active_launches));
+	CHECK_FALSE(DebugSessionResultCoordinator::is_last_debugger_for_launch(11, active_launches, true));
+
+	active_launches.remove_at(0);
+	CHECK(DebugSessionResultCoordinator::is_last_debugger_for_launch(22, active_launches));
 }
 
 TEST_CASE("[Editor][DebugSession] An unavailable status ends the session without a result") {
@@ -336,22 +351,23 @@ TEST_CASE("[Editor][DebugSession] An unavailable status ends the session without
 
 TEST_CASE("[Editor][DebugSession] An unowned session ends without a result") {
 	DebugSessionResultCoordinator coordinator;
-	coordinator.begin_unowned_session();
+	coordinator.begin_unowned_session(19);
 
-	const DebugSessionResultCoordinator::Outcome outcome = coordinator.observe_debugger_stopped();
+	CHECK_FALSE(coordinator.observe_debugger_stopped(18).ended);
+	const DebugSessionResultCoordinator::Outcome outcome = coordinator.observe_debugger_stopped(19);
 	CHECK(outcome.ended);
 	CHECK_FALSE(outcome.has_result);
 	CHECK_EQ(outcome.launch_id, (uint64_t)0);
 	// An attached debuggee never supplies a process result, so a completion claiming
 	// one is not accepted either.
 	CHECK_FALSE(coordinator.observe_process_completed(0, 0).ended);
-	CHECK_FALSE(coordinator.observe_debugger_stopped().ended);
+	CHECK_FALSE(coordinator.observe_debugger_stopped(0).ended);
 }
 
 TEST_CASE("[Editor][DebugSession] A forced termination supersedes a pending natural result") {
 	DebugSessionResultCoordinator coordinator;
 	coordinator.begin_owned_launch(5);
-	CHECK_FALSE(coordinator.observe_debugger_stopped().ended);
+	CHECK_FALSE(coordinator.observe_debugger_stopped(5).ended);
 
 	const DebugSessionResultCoordinator::Outcome outcome = coordinator.observe_forced_termination();
 	CHECK(outcome.ended);
@@ -364,7 +380,7 @@ TEST_CASE("[Editor][DebugSession] A forced termination supersedes a pending natu
 
 TEST_CASE("[Editor][DebugSession] Nothing ends a session that never started") {
 	DebugSessionResultCoordinator coordinator;
-	CHECK_FALSE(coordinator.observe_debugger_stopped().ended);
+	CHECK_FALSE(coordinator.observe_debugger_stopped(1).ended);
 	CHECK_FALSE(coordinator.observe_process_completed(1, 0).ended);
 	CHECK_FALSE(coordinator.observe_forced_termination().ended);
 }

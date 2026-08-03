@@ -143,6 +143,7 @@ public:
 	};
 
 	static Vector<RunOptionsMenuEntry> build_run_options_menu_model();
+	static bool is_debug_session_exit_current(uint64_t p_current_launch_id, uint64_t p_stopped_launch_id);
 
 	static EditorRunBar *get_singleton() { return singleton; }
 
@@ -159,7 +160,7 @@ public:
 	// Every debug session of this run ended. That is not proof the debuggee finished,
 	// so a launch that still owns its process waits for the process result instead of
 	// being torn down as a forced stop.
-	void debug_sessions_exited();
+	void debug_sessions_exited(uint64_t p_launch_id);
 	bool is_playing() const;
 	String get_playing_scene() const;
 

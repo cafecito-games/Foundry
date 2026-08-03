@@ -155,8 +155,17 @@ void EditorRunBar::_poll_child_processes() {
 	}
 }
 
-void EditorRunBar::debug_sessions_exited() {
+bool EditorRunBar::is_debug_session_exit_current(uint64_t p_current_launch_id, uint64_t p_stopped_launch_id) {
+	return p_current_launch_id == p_stopped_launch_id;
+}
+
+void EditorRunBar::debug_sessions_exited(uint64_t p_launch_id) {
 	if (editor_run.get_status() == EditorRun::STATUS_STOP) {
+		return;
+	}
+	if (!is_debug_session_exit_current(editor_run.get_launch_id(), p_launch_id)) {
+		// A replaced debugger can finish closing after its replacement starts. Its
+		// launch lifecycle must not start or finish cleanup for the new run.
 		return;
 	}
 

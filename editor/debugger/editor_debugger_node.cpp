@@ -111,6 +111,7 @@ ScriptEditorDebugger *EditorDebuggerNode::_add_debugger() {
 	ScriptEditorDebugger *node = memnew(ScriptEditorDebugger);
 
 	int id = tabs->get_tab_count();
+	node->connect("started", callable_mp(this, &EditorDebuggerNode::_debugger_started).bind(id));
 	node->connect("stop_requested", callable_mp(this, &EditorDebuggerNode::_debugger_wants_stop).bind(id));
 	node->connect("stopped", callable_mp(this, &EditorDebuggerNode::_debugger_stopped).bind(id));
 	node->connect("stack_frame_selected", callable_mp(this, &EditorDebuggerNode::_stack_frame_selected).bind(id));
@@ -217,12 +218,14 @@ void DebugSessionResultCoordinator::begin_owned_launch(uint64_t p_launch_id) {
 	active = true;
 	owned = true;
 	launch_id = p_launch_id;
+	debugger_launch_id = p_launch_id;
 }
 
-void DebugSessionResultCoordinator::begin_unowned_session() {
+void DebugSessionResultCoordinator::begin_unowned_session(uint64_t p_debugger_launch_id) {
 	active = true;
 	owned = false;
 	launch_id = 0;
+	debugger_launch_id = p_debugger_launch_id;
 }
 
 DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_process_completed(uint64_t p_launch_id, int p_exit_code) {
@@ -241,9 +244,9 @@ DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_pr
 	return outcome;
 }
 
-DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_debugger_stopped() {
+DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_debugger_stopped(uint64_t p_launch_id) {
 	Outcome outcome;
-	if (!active) {
+	if (!active || p_launch_id != debugger_launch_id) {
 		return outcome;
 	}
 	if (owned) {
@@ -268,6 +271,10 @@ DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_fo
 	outcome.launch_id = launch_id;
 	active = false;
 	return outcome;
+}
+
+bool DebugSessionResultCoordinator::is_last_debugger_for_launch(uint64_t p_launch_id, const Vector<uint64_t> &p_active_launches, bool p_has_unidentified) {
+	return !p_has_unidentified && !p_active_launches.has(p_launch_id);
 }
 
 void EditorDebuggerNode::_bind_methods() {
@@ -302,8 +309,8 @@ void EditorDebuggerNode::begin_owned_debug_session(uint64_t p_launch_id) {
 	session_coordinator.begin_owned_launch(p_launch_id);
 }
 
-void EditorDebuggerNode::begin_unowned_debug_session() {
-	session_coordinator.begin_unowned_session();
+void EditorDebuggerNode::begin_unowned_debug_session(uint64_t p_debugger_launch_id) {
+	session_coordinator.begin_unowned_session(p_debugger_launch_id);
 }
 
 void EditorDebuggerNode::notify_owned_process_completed(uint64_t p_launch_id, int p_exit_code) {
@@ -566,7 +573,50 @@ void EditorDebuggerNode::_update_margins() {
 	add_theme_constant_override("margin_bottom", -bottom_panel_margins->get_margin(SIDE_BOTTOM));
 }
 
-void EditorDebuggerNode::_debugger_stopped(int p_id) {
+void EditorDebuggerNode::_evaluate_launch_stop(uint64_t p_launch_id) {
+	Vector<uint64_t> active_launches;
+	bool has_unidentified = false;
+	_for_all(tabs, [&](ScriptEditorDebugger *p_debugger) {
+		if (!p_debugger->is_session_active()) {
+			return;
+		}
+		if (p_debugger->is_launch_identified()) {
+			active_launches.push_back(p_debugger->get_launch_id());
+		} else {
+			has_unidentified = true;
+		}
+	});
+
+	if (active_launches.has(p_launch_id)) {
+		pending_launch_stops.erase(p_launch_id);
+		return;
+	}
+	if (!DebugSessionResultCoordinator::is_last_debugger_for_launch(p_launch_id, active_launches, has_unidentified)) {
+		pending_launch_stops.insert(p_launch_id);
+		return;
+	}
+
+	pending_launch_stops.erase(p_launch_id);
+	_finalize_debug_session(session_coordinator.observe_debugger_stopped(p_launch_id));
+	EditorNode::get_singleton()->notify_all_debug_sessions_exited(p_launch_id);
+}
+
+void EditorDebuggerNode::_reevaluate_pending_launch_stops() {
+	Vector<uint64_t> launches;
+	for (const uint64_t &launch_id : pending_launch_stops) {
+		launches.push_back(launch_id);
+	}
+	for (uint64_t launch_id : launches) {
+		_evaluate_launch_stop(launch_id);
+	}
+}
+
+void EditorDebuggerNode::_debugger_started(int p_id) {
+	ERR_FAIL_NULL(get_debugger(p_id));
+	_reevaluate_pending_launch_stops();
+}
+
+void EditorDebuggerNode::_debugger_stopped(int64_t p_launch_id, int p_id) {
 	ScriptEditorDebugger *dbg = get_debugger(p_id);
 	ERR_FAIL_NULL(dbg);
 
@@ -576,8 +626,9 @@ void EditorDebuggerNode::_debugger_stopped(int p_id) {
 			found = true;
 		}
 	});
+	_evaluate_launch_stop((uint64_t)p_launch_id);
+	_reevaluate_pending_launch_stops();
 	if (!found) {
-		_finalize_debug_session(session_coordinator.observe_debugger_stopped());
 		EditorRunBar::get_singleton()->get_pause_button()->set_pressed(false);
 		EditorRunBar::get_singleton()->get_pause_button()->set_disabled(true);
 		SceneTreeDock *dock = EditorNode::get_singleton()->get_focused_scene_tree_dock();
@@ -585,7 +636,6 @@ void EditorDebuggerNode::_debugger_stopped(int p_id) {
 			dock->hide_remote_tree();
 			dock->hide_tab_buttons();
 		}
-		EditorNode::get_singleton()->notify_all_debug_sessions_exited();
 	}
 }
 

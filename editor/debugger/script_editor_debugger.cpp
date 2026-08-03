@@ -428,6 +428,8 @@ void ScriptEditorDebugger::_msg_debug_exit(uint64_t p_thread_id, const Array &p_
 void ScriptEditorDebugger::_msg_set_pid(uint64_t p_thread_id, const Array &p_data) {
 	ERR_FAIL_COND(p_data.is_empty());
 	remote_pid = p_data[0];
+	launch_id = p_data.size() >= 2 ? (uint64_t)(int64_t)p_data[1] : 0;
+	launch_identified = true;
 	// We emit the started signal after we've set the PID.
 	emit_signal(SNAME("started"));
 }
@@ -1323,8 +1325,9 @@ void ScriptEditorDebugger::_update_buttons_state() {
 }
 
 void ScriptEditorDebugger::_stop_and_notify() {
+	const uint64_t stopped_launch_id = launch_id;
 	stop();
-	emit_signal(SNAME("stopped"));
+	emit_signal(SNAME("stopped"), (int64_t)stopped_launch_id);
 	_set_reason_text(TTRC("Debug session closed."), MESSAGE_WARNING);
 }
 
@@ -1333,6 +1336,8 @@ void ScriptEditorDebugger::stop() {
 	threads_debugged.clear();
 	debugging_thread_id = Thread::UNASSIGNED_ID;
 	remote_pid = 0;
+	launch_id = 0;
+	launch_identified = false;
 	_clear_execution();
 
 	inspector->clear_cache();
@@ -2049,7 +2054,7 @@ void ScriptEditorDebugger::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("update_remote_object", "id", "property", "value", "field"), &ScriptEditorDebugger::update_remote_object);
 
 	ADD_SIGNAL(MethodInfo("started"));
-	ADD_SIGNAL(MethodInfo("stopped"));
+	ADD_SIGNAL(MethodInfo("stopped", PropertyInfo(Variant::INT, "launch_id")));
 	ADD_SIGNAL(MethodInfo("stop_requested"));
 	ADD_SIGNAL(MethodInfo("stack_frame_selected", PropertyInfo(Variant::INT, "frame")));
 	ADD_SIGNAL(MethodInfo("error_selected", PropertyInfo(Variant::INT, "error")));
