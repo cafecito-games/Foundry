@@ -475,9 +475,22 @@ private:
 			const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner);
 	void resolve_enum_bodies(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner);
 	FSParser::DataType enum_self_type(const FSParser::FunctionNode *p_function) const;
+	// The open handle for a generic tagged union's own type parameter, mirroring the class-parameter
+	// handle: enum scope, declaration ordinal, spelling, and the eagerly resolved bound.
+	static FSParser::DataType enum_type_parameter_handle(const FSParser::TypeParameterNode *p_parameter, int p_index);
+	// Whether `p_class` lexically declares `p_enum`, which is what makes the union's type parameters
+	// visible: an unrelated class resolved while a union is being analyzed must not see them.
+	static bool enum_declared_by(const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum);
 	static FSParser::DataType complete_self_referential_enum_type(const FSParser::DataType &p_type);
 	FSParser::EnumNode *resolve_enum_declaration(const FSParser::DataType &p_enum_type,
 			const FSParser::Node *p_source);
+	// A generic tagged union has no bare form outside its own declaration, in an expression any more
+	// than in a type. This is the single gate for the metatype: every expression surface that can name
+	// a union goes through it, so a bare reference cannot leak out one surface at a time.
+	bool reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source);
+	// Publishes an enum metatype onto an identifier, or rejects a bare generic union and leaves the
+	// identifier on the Variant fallback. Returns whether the metatype was published.
+	bool publish_enum_meta_identifier(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
@@ -726,6 +739,11 @@ public:
 	bool test_would_violate_phase_order(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const;
 	AnalyzerPhase test_get_highest_completed_phase() const { return highest_completed_phase; }
 	void test_mark_analyzer_phase_completed(AnalyzerPhase p_phase) { mark_analyzer_phase_completed(p_phase); }
+	// Exposes the recursive tagged-union identity completion so its finiteness — complete tags with
+	// payload edges left as shells — can be asserted directly instead of inferred from a fixture.
+	static FSParser::DataType test_complete_self_referential_enum_type(const FSParser::DataType &p_type) {
+		return complete_self_referential_enum_type(p_type);
+	}
 	static FSParserRef::Status test_get_depended_parser_status(const FSAnalyzer *p_analyzer, const String &p_path);
 	static Ref<FSParserRef> test_get_depended_parser_ref(const FSAnalyzer *p_analyzer, const String &p_path);
 	static int test_get_external_parser_cache_size(const FSAnalyzer *p_analyzer);

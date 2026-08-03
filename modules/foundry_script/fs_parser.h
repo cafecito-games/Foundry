@@ -136,6 +136,7 @@ public:
 		enum TypeParameterScope {
 			TYPE_PARAMETER_NONE,
 			TYPE_PARAMETER_CLASS,
+			TYPE_PARAMETER_ENUM,
 			TYPE_PARAMETER_METHOD,
 		};
 

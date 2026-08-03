@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 4: Generic tagged union "Pair" expects 2 type argument(s), but 1 were given.

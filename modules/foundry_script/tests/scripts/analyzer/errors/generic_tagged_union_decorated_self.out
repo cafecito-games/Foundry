@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 4: Generic tagged union "Slot" type application is not available yet.

@@ -211,6 +211,31 @@ FSParser::EnumNode *FSAnalyzer::resolve_enum_declaration(const FSParser::DataTyp
 	return member.type == FSParser::ClassNode::Member::ENUM ? member.m_enum : nullptr;
 }
 
+bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source) {
+	if (!p_enum_meta_type.is_tagged_union_type() || !p_enum_meta_type.is_meta_type) {
+		return false;
+	}
+
+	const FSParser::EnumNode *declaration = resolve_enum_declaration(p_enum_meta_type, p_source);
+	if (declaration == nullptr || declaration->type_parameters.is_empty()) {
+		return false;
+	}
+
+	// Inside its own declaration the bare spelling is the open self type, whose arguments are already
+	// published. Anywhere else it would hand the user the declaration's unbound parameters, so a
+	// declared bound would not hold for whatever is passed through it. Self reference is a property of
+	// the lexical position, not of whichever union the analyzer still has active.
+	if (declaration == current_enum && enum_declared_by(parser->current_class, current_enum)) {
+		return false;
+	}
+
+	push_error(vformat(R"(Generic tagged union "%s" expects %d type argument(s), but 0 were given.)",
+					   declaration->identifier != nullptr ? declaration->identifier->name : StringName(),
+					   declaration->type_parameters.size()),
+			p_source);
+	return true;
+}
+
 FSAnalyzer::DependencyParserAccess::DependencyParserAccess(FSAnalyzer *p_analyzer) {
 	analyzer = p_analyzer;
 }
@@ -1784,12 +1809,19 @@ static Dictionary make_enum_dictionary_from_type(const FSParser::DataType &p_typ
 	return dictionary;
 }
 
-static void set_enum_meta_identifier_constant(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type) {
+bool FSAnalyzer::publish_enum_meta_identifier(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type) {
+	if (reject_bare_generic_union_reference(p_type, p_identifier)) {
+		FSParser::DataType rejected;
+		rejected.kind = FSParser::DataType::VARIANT;
+		p_identifier->set_datatype(rejected);
+		return false;
+	}
 	p_identifier->set_datatype(p_type);
 	if (p_type.kind == FSParser::DataType::ENUM && p_type.is_meta_type) {
 		p_identifier->is_constant = true;
 		p_identifier->reduced_value = make_enum_dictionary_from_type(p_type);
 	}
+	return true;
 }
 
 static FSParser::DataType make_builtin_meta_type(Variant::Type p_type) {
@@ -2302,6 +2334,57 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		}
 	}
 
+	// A generic tagged union is decided before the collection/class argument handling below, because a
+	// union metatype is Dictionary-backed and would otherwise consume exactly two arguments as key and
+	// value types. Only the declaration's own open form is accepted here; general application follows.
+	if (result.kind == FSParser::DataType::ENUM && result.is_tagged_union &&
+			(!p_type->container_types.is_empty() || result.has_type_arguments())) {
+		FSParser::EnumNode *declaration = resolve_enum_declaration(result, p_type);
+		if (declaration != nullptr && !declaration->type_parameters.is_empty()) {
+			const StringName declaration_name = declaration->identifier != nullptr ? declaration->identifier->name : StringName();
+			const int expected = declaration->type_parameters.size();
+			const int given = p_type->container_types.size();
+			// Self reference is a property of the lexical position, not of whichever union the analyzer
+			// still has active: a class pulled in during payload resolution is outside the declaration.
+			const bool is_current_declaration = declaration == current_enum &&
+					enum_declared_by(parser->current_class, current_enum);
+
+			if (given != expected) {
+				// Bare use outside the declaration lands here too: it gives zero of the required arguments.
+				if (given == 0 && is_current_declaration) {
+					// Bare self inside the declaration is the open type, whose arguments are already published.
+					return finalize_datatype(result);
+				}
+				push_error(vformat(R"(Generic tagged union "%s" expects %d type argument(s), but %d were given.)",
+								   declaration_name, expected, given),
+						p_type);
+				return bad_type;
+			}
+
+			bool is_own_open_vector = is_current_declaration && result.type_arguments.size() == expected;
+			for (int i = 0; is_own_open_vector && i < expected; i++) {
+				FSParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
+				// Everything but the bound has to match, so a decorated spelling of the same parameter —
+				// `T?`, `Type[T]` — is an application rather than the open self type. The bound is redundant
+				// for identity, and a use-site handle spells an explicit `Variant` bound that the published
+				// handle drops.
+				FSParser::DataType open_argument = result.type_arguments[i];
+				argument.type_parameter_bound.clear();
+				open_argument.type_parameter_bound.clear();
+				is_own_open_vector = argument.kind == FSParser::DataType::TYPE_PARAMETER &&
+						argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_ENUM &&
+						argument.type_parameter_index == i && argument == open_argument;
+			}
+			if (is_own_open_vector) {
+				// `Tree[T]` spelled inside `Tree[T]` canonicalizes to the same open handle as bare `Tree`.
+				return finalize_datatype(result);
+			}
+
+			push_error(vformat(R"(Generic tagged union "%s" type application is not available yet.)", declaration_name), p_type);
+			return bad_type;
+		}
+	}
+
 	if (!p_type->container_types.is_empty()) {
 		if (result.builtin_type == Variant::ARRAY) {
 			if (p_type->container_types.size() != 1) {
@@ -2338,7 +2421,10 @@ FSParser::DataType FSAnalyzer::substitute_member_type(
 	}
 
 	HashMap<StringName, FSParser::DataType> bindings;
-	if (p_base.has_type_arguments() && p_base.class_type != nullptr) {
+	// An enum carries its owner in `class_type` but its type arguments belong to the enum declaration,
+	// so they must not be read as arguments for the owning class's parameters. Binding a generic union's
+	// own arguments is part of union application, not member substitution.
+	if (p_base.has_type_arguments() && p_base.class_type != nullptr && p_base.kind != FSParser::DataType::ENUM) {
 		const Vector<FSParser::TypeParameterNode *> &type_parameters = p_base.class_type->type_parameters;
 		const int binding_count = MIN(type_parameters.size(), p_base.type_arguments.size());
 		for (int i = 0; i < binding_count; i++) {
@@ -9229,7 +9315,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 				enum_file_declaration->identifier->name == name) {
 			const FSParser::DataType enum_type = enum_file_declaration->get_datatype();
 			if (enum_type.is_set() && enum_type.kind == FSParser::DataType::ENUM && enum_type.is_meta_type) {
-				set_enum_meta_identifier_constant(p_identifier, enum_type);
+				publish_enum_meta_identifier(p_identifier, enum_type);
 				return;
 			}
 		}
@@ -9506,7 +9592,9 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 				}
 
 				case FSParser::ClassNode::Member::ENUM: {
-					p_identifier->set_datatype(member.get_datatype());
+					if (!publish_enum_meta_identifier(p_identifier, member.get_datatype())) {
+						return;
+					}
 					p_identifier->is_constant = true;
 					p_identifier->reduced_value = member.m_enum->dictionary;
 					p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
@@ -9771,7 +9859,10 @@ bool FSAnalyzer::reduce_identifier_from_witness_declaration_scope(FSParser::Iden
 				return true;
 			}
 			case FSParser::ClassNode::Member::ENUM: {
-				p_identifier->set_datatype(member.get_datatype());
+				if (!publish_enum_meta_identifier(p_identifier, member.get_datatype())) {
+					p_identifier->resolved_from_conformance_declaration_scope = true;
+					return true;
+				}
 				p_identifier->is_constant = true;
 				p_identifier->reduced_value = member.m_enum->dictionary;
 				p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
@@ -10056,7 +10147,7 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		}
 		if (ScriptServer::is_global_class_enum(namespace_global_class)) {
 			const String path = ScriptServer::get_global_class_path(namespace_global_class);
-			set_enum_meta_identifier_constant(p_identifier, make_global_enum_type_from_path(namespace_global_class, path, p_identifier));
+			publish_enum_meta_identifier(p_identifier, make_global_enum_type_from_path(namespace_global_class, path, p_identifier));
 		} else {
 			p_identifier->set_datatype(make_global_class_meta_type(namespace_global_class, p_identifier));
 			p_identifier->resolved_global_class = namespace_global_class;
@@ -10073,7 +10164,7 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		}
 		if (ScriptServer::is_global_class_enum(name)) {
 			const String path = ScriptServer::get_global_class_path(name);
-			set_enum_meta_identifier_constant(p_identifier, make_global_enum_type_from_path(name, path, p_identifier));
+			publish_enum_meta_identifier(p_identifier, make_global_enum_type_from_path(name, path, p_identifier));
 		} else {
 			p_identifier->set_datatype(make_global_class_meta_type(name, p_identifier));
 		}
@@ -10750,6 +10841,14 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 						FSParser::DataType dummy;
 						dummy.kind = FSParser::DataType::VARIANT;
 						p_subscript->set_datatype(dummy);
+						return;
+					}
+					// A qualified chain names the union just as directly as a bare identifier does, so
+					// the bare-form gate applies before the chain publishes the metatype.
+					if (reject_bare_generic_union_reference(namespace_class_type, p_subscript)) {
+						FSParser::DataType rejected;
+						rejected.kind = FSParser::DataType::VARIANT;
+						p_subscript->set_datatype(rejected);
 						return;
 					}
 					const FSParser::DataType resolved_namespace_class_type = namespace_class_type;
@@ -12522,8 +12621,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			// succeed past a gap survive as extra allowed argument counts, matching how
 			// non-contiguous arities are represented elsewhere.
 			auto default_survival_for_bind = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments,
-										  int p_checked_bind_start, int p_remaining_argument_count,
-										  int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
+													 int p_checked_bind_start, int p_remaining_argument_count,
+													 int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
 				r_result_default_arg_count = 0;
 				const int max_shift = MIN(int(p_base_type.method_info.default_arguments.size()), p_checked_bind_start);
 				const int reaching_bound_argument_count = bound_arguments_reaching_target(p_bound_arguments);
