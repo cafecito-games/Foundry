@@ -3935,6 +3935,7 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 
 	int optional_parameters = 0;
 	FSCodeGenerator::Address vararg_addr;
+	FSDataType compiled_rest_type;
 
 	if (p_func) {
 		for (int i = 0; i < p_func->parameters.size(); i++) {
@@ -3952,7 +3953,8 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 		}
 
 		if (p_func->is_vararg()) {
-			vararg_addr = codegen.add_local(p_func->rest_parameter->identifier->name, _gdtype_from_datatype(p_func->rest_parameter->get_datatype(), codegen.script));
+			compiled_rest_type = _gdtype_from_datatype(p_func->rest_parameter->get_datatype(), codegen.script);
+			vararg_addr = codegen.add_local(p_func->rest_parameter->identifier->name, compiled_rest_type);
 			method_info.flags |= METHOD_FLAG_VARARG;
 		}
 
@@ -4154,6 +4156,7 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 
 		if (p_func->is_vararg()) {
 			gd_function->_vararg_index = vararg_addr.address;
+			gd_function->rest_parameter_type = compiled_rest_type;
 		}
 	}
 

@@ -138,7 +138,8 @@ static bool _has_rich_method_signature(const FSParser::DataType &p_type) {
 	}
 	return p_type.has_explicit_method_signature ||
 			!p_type.method_parameter_types.is_empty() ||
-			!p_type.method_return_type.is_empty();
+			!p_type.method_return_type.is_empty() ||
+			!p_type.method_rest_parameter_type.is_empty();
 }
 
 static bool _method_signature_slots_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right,
@@ -148,6 +149,14 @@ static bool _method_signature_slots_equal(const FSParser::DataType &p_left, cons
 	}
 	for (int i = 0; i < p_left.method_parameter_types.size(); i++) {
 		if (!p_slot_equal(p_left.method_parameter_types[i], p_right.method_parameter_types[i])) {
+			return false;
+		}
+	}
+	if (p_left.method_rest_parameter_type.size() != p_right.method_rest_parameter_type.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_left.method_rest_parameter_type.size(); i++) {
+		if (!p_slot_equal(p_left.method_rest_parameter_type[i], p_right.method_rest_parameter_type[i])) {
 			return false;
 		}
 	}
@@ -682,6 +691,7 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 			p_a.type_arguments.size() != p_b.type_arguments.size() ||
 			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
 			p_a.method_return_type.size() != p_b.method_return_type.size() ||
+			p_a.method_rest_parameter_type.size() != p_b.method_rest_parameter_type.size() ||
 			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
 		return false;
 	}
@@ -744,6 +754,11 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 	}
 	for (int i = 0; i < p_a.method_return_type.size(); i++) {
 		if (!_datatype_invariant_equal(p_a.method_return_type[i], p_b.method_return_type[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
+		if (!_datatype_invariant_equal(p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
 			return false;
 		}
 	}

@@ -977,6 +977,60 @@ Variant FSFunction::call_witness(const Variant &p_self, const Variant **p_args, 
 	return call(nullptr, p_args, p_argcount, r_err, nullptr, &p_self);
 }
 
+bool FSFunction::_convert_call_argument(const Variant &p_value, const FSDataType &p_type, Variant &r_value,
+		Callable::CallError &r_err, int p_argument_index) const {
+	if (!p_type.has_type()) {
+		r_value = p_value;
+		return true;
+	}
+	if (!p_type.is_type_handle && p_type.kind == FSDataType::NATIVE) {
+		FSSpecializedClassHandle *specialized_handle =
+				_specialized_handle_assignable_to_native_script(&p_value, p_type.native_type);
+		if (specialized_handle != nullptr) {
+			r_value = specialized_handle->get_specialized_script();
+			return true;
+		}
+	}
+	// If types already match, don't call Variant::construct(). Constructors of some types
+	// (e.g. packed arrays) do copies, whereas they pass by reference when inside a Variant.
+	if (p_type.is_type(p_value, false)) {
+		r_value = p_value;
+		return true;
+	}
+	if (!p_type.is_type(p_value, true)) {
+		r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+		r_err.argument = p_argument_index;
+		r_err.expected = p_type.builtin_type;
+		return false;
+	}
+	if (p_type.kind != FSDataType::BUILTIN) {
+		r_value = p_value;
+		return true;
+	}
+	if (p_type.builtin_type == Variant::DICTIONARY && p_type.has_container_element_types()) {
+		const FSDataType &key_type = p_type.get_container_element_type_or_variant(0);
+		const FSDataType &value_type = p_type.get_container_element_type_or_variant(1);
+		r_value = Dictionary(p_value.operator Dictionary(), key_type.to_container_type(), value_type.to_container_type());
+		return true;
+	}
+	if (p_type.builtin_type == Variant::ARRAY && p_type.has_container_element_type(0)) {
+		const FSDataType &element_type = p_type.container_element_types[0];
+		r_value = Array(p_value.operator Array(), element_type.to_container_type());
+		return true;
+	}
+	const Variant *argument = &p_value;
+	Variant constructed;
+	Variant::construct(p_type.builtin_type, constructed, &argument, 1, r_err);
+	if (unlikely(r_err.error)) {
+		r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+		r_err.argument = p_argument_index;
+		r_err.expected = p_type.builtin_type;
+		return false;
+	}
+	r_value = constructed;
+	return true;
+}
+
 Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_argcount, Callable::CallError &r_err, CallState *p_state, const Variant *p_self_override, const FSStaticSelfContext *p_static_self) {
 	FoundryProfileZoneScript(this, source, name, name, _initial_line);
 
@@ -1073,55 +1127,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 		const int non_vararg_arg_count = MIN(p_argcount, _argument_count);
 		for (int i = 0; i < non_vararg_arg_count; i++) {
-			if (!argument_types[i].has_type()) {
-				memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(*p_args[i]));
-				continue;
-			}
-			if (!argument_types[i].is_type_handle && argument_types[i].kind == FSDataType::NATIVE) {
-				FSSpecializedClassHandle *specialized_handle =
-						_specialized_handle_assignable_to_native_script(p_args[i], argument_types[i].native_type);
-				if (specialized_handle != nullptr) {
-					memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(specialized_handle->get_specialized_script()));
-					continue;
-				}
-			}
-			// If types already match, don't call Variant::construct(). Constructors of some types
-			// (e.g. packed arrays) do copies, whereas they pass by reference when inside a Variant.
-			if (argument_types[i].is_type(*p_args[i], false)) {
-				memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(*p_args[i]));
-				continue;
-			}
-			if (!argument_types[i].is_type(*p_args[i], true)) {
-				r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
-				r_err.argument = i;
-				r_err.expected = argument_types[i].builtin_type;
+			// A failed conversion leaves the slot NIL, so nothing constructed here needs unwinding.
+			memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant);
+			if (!_convert_call_argument(*p_args[i], argument_types[i], stack[i + FIXED_ADDRESSES_MAX], r_err, i)) {
 				call_depth--;
 				return _get_default_variant_for_data_type(return_type);
-			}
-			if (argument_types[i].kind == FSDataType::BUILTIN) {
-				if (argument_types[i].builtin_type == Variant::DICTIONARY && argument_types[i].has_container_element_types()) {
-					const FSDataType &arg_key_type = argument_types[i].get_container_element_type_or_variant(0);
-					const FSDataType &arg_value_type = argument_types[i].get_container_element_type_or_variant(1);
-					Dictionary dict(p_args[i]->operator Dictionary(), arg_key_type.to_container_type(), arg_value_type.to_container_type());
-					memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(dict));
-				} else if (argument_types[i].builtin_type == Variant::ARRAY && argument_types[i].has_container_element_type(0)) {
-					const FSDataType &arg_type = argument_types[i].container_element_types[0];
-					Array array(p_args[i]->operator Array(), arg_type.to_container_type());
-					memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(array));
-				} else {
-					Variant variant;
-					Variant::construct(argument_types[i].builtin_type, variant, &p_args[i], 1, r_err);
-					if (unlikely(r_err.error)) {
-						r_err.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
-						r_err.argument = i;
-						r_err.expected = argument_types[i].builtin_type;
-						call_depth--;
-						return _get_default_variant_for_data_type(return_type);
-					}
-					memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(variant));
-				}
-			} else {
-				memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant(*p_args[i]));
 			}
 		}
 		for (int i = non_vararg_arg_count + FIXED_ADDRESSES_MAX; i < _stack_size; i++) {
@@ -1129,14 +1139,34 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		}
 
 		if (is_vararg()) {
+			// The collected array is reified whenever its element type is representable as a
+			// ContainerType. Nullable and other erased element forms stay untyped packed arrays, but
+			// every incoming element is still validated against the compiled element type, so a
+			// reflection or Callable boundary cannot inject a value the body was never typed for.
 			Array vararg;
-			stack[_vararg_index] = vararg;
-			if (p_argcount > _argument_count) {
-				vararg.resize(p_argcount - _argument_count);
-				for (int i = 0; i < p_argcount - _argument_count; i++) {
-					vararg[i] = *p_args[i + _argument_count];
+			FSDataType element_data;
+			if (rest_parameter_type.has_container_element_type(0)) {
+				element_data = rest_parameter_type.container_element_types[0];
+				const ContainerType element_type = element_data.to_container_type();
+				if (element_type.builtin_type != Variant::NIL) {
+					vararg.set_typed(element_type);
 				}
 			}
+			const int rest_count = MAX(p_argcount - _argument_count, 0);
+			if (rest_count > 0) {
+				vararg.resize(rest_count);
+				for (int i = 0; i < rest_count; i++) {
+					Variant value;
+					if (!_convert_call_argument(*p_args[_argument_count + i], element_data, value, r_err, _argument_count + i)) {
+						call_depth--;
+						return _get_default_variant_for_data_type(return_type);
+					}
+					vararg.set(i, value);
+				}
+			}
+			// Publish only after every element validated, so a rejected call never leaves a partially
+			// filled array reachable from the frame.
+			stack[_vararg_index] = vararg;
 		}
 
 		if (_instruction_args_size) {

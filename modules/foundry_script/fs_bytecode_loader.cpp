@@ -783,6 +783,26 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 		}
 		p_function->argument_types.push_back(argument_type);
 	}
+	error = decode_data_type(p_stream, p_function->rest_parameter_type, p_depth + 1);
+	if (error != OK) {
+		return error;
+	}
+	// `_vararg_index` is the arity marker, so the rest type must agree with it: a variadic function
+	// either packs its trailing values into an Array or stays gradual with no compiled rest type
+	// (an unannotated `...values`), and a non-variadic one has no rest slot to type at all.
+	if (p_function->is_vararg()) {
+		ERR_FAIL_COND_V_MSG(
+				p_function->rest_parameter_type.has_type() &&
+						(p_function->rest_parameter_type.kind != FSDataType::BUILTIN ||
+								p_function->rest_parameter_type.builtin_type != Variant::ARRAY),
+				ERR_INVALID_DATA,
+				vformat("Malformed compiled function '%s' in script '%s': variadic rest type is not Array.",
+						function_name, script_path));
+	} else {
+		ERR_FAIL_COND_V_MSG(p_function->rest_parameter_type.has_type(), ERR_INVALID_DATA,
+				vformat("Malformed compiled function '%s' in script '%s': non-variadic function carries a rest type.",
+						function_name, script_path));
+	}
 	error = decode_data_type(p_stream, p_function->return_type, p_depth + 1);
 	if (error != OK) {
 		return error;

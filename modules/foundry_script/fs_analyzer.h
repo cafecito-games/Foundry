@@ -296,7 +296,14 @@ private:
 		bool signal_type_from_native_constant_arg(const StringName &p_native_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 		bool local_signal_type_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 		void validate_strict_signal_name_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_signal_arg_index);
-		void validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
+		void validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0, const FSParser::DataType *p_rest_parameter_type = nullptr);
+		// Applies the fixed-parameter argument policy (constant coercion, `Self` contracts, nullable and
+		// strict-dynamic rejection, implicit conversion, unsafe/narrowing warnings) to one argument.
+		// `p_call` is null for an argument written as an array literal element rather than a call argument.
+		void validate_argument_against_type(const FSParser::DataType &p_expected_type, FSParser::ExpressionNode *p_argument, int p_argument_number, const StringName &p_function, const FSParser::CallNode *p_call);
+		// Element type each surplus argument of a variadic call is checked against, or null when the rest
+		// tail is gradual.
+		static const FSParser::DataType *rest_element_type(const FSParser::DataType *p_rest_parameter_type);
 		void validate_call_arg(const MethodInfo &p_method, const FSParser::CallNode *p_call);
 		static bool call_has_named_arguments(const FSParser::CallNode *p_call);
 		void reject_named_call_arguments(const FSParser::CallNode *p_call);
@@ -634,7 +641,8 @@ private:
 			StringName *r_native_class = nullptr, bool *r_is_noreturn = nullptr,
 			FSParser::FunctionNode **r_found_function = nullptr,
 			FSParser::ClassNode **r_found_in_class = nullptr,
-			const FSParser::DataType *p_self_type_override = nullptr);
+			const FSParser::DataType *p_self_type_override = nullptr,
+			FSParser::DataType *r_rest_parameter_type = nullptr);
 	bool apply_builtin_native_return_type_hint(const StringName &p_native_method_owner, const StringName &p_method,
 			const FSParser::Node *p_source, FSParser::DataType &r_return_type);
 	bool resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument);
@@ -686,6 +694,11 @@ public:
 	const FSAutoloadIndex &get_autoload_index() const { return autoload_index; }
 
 	Variant make_variable_default_value(FSParser::VariableNode *p_variable);
+
+	// Whether a resolved rest ("...") parameter Array narrows its element below Variant. Only such a
+	// tail carries a rich rest type; `Array` and `Array[Variant]` stay gradual, exactly like a
+	// MethodInfo-only native vararg.
+	static bool rest_parameter_type_is_narrowing(const FSParser::DataType &p_rest_parameter_type);
 
 	static bool check_type_compatibility(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false, const FSParser::Node *p_source_node = nullptr);
 	static FSParser::DataType type_from_metatype(const FSParser::DataType &p_meta_type);

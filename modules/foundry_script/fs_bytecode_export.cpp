@@ -456,7 +456,13 @@ Error FSBytecodeExporter::serialize_function(StreamPeerBuffer *r_stream, const F
 			return error;
 		}
 	}
-	Error error = encode_data_type(r_stream, p_function->return_type, p_depth + 1);
+	// The rest type sits between the fixed argument types and the return type so a variadic
+	// signature round-trips without touching MethodInfo.
+	Error error = encode_data_type(r_stream, p_function->rest_parameter_type, p_depth + 1);
+	if (error != OK) {
+		return error;
+	}
+	error = encode_data_type(r_stream, p_function->return_type, p_depth + 1);
 	if (error != OK) {
 		return error;
 	}

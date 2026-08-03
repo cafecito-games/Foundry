@@ -57,7 +57,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Format version is pinned") {
 	// The reader rejects any other version outright, so the on-disk layout and this constant move
 	// together. Bump FORMAT_VERSION in the same change as ANY layout change to the `.fsb` format
 	// (sections, field order/width, opcode operand layout, tag/fixup sets) and update this pin.
-	CHECK(FSBytecodeFormat::FORMAT_VERSION == 7);
+	CHECK(FSBytecodeFormat::FORMAT_VERSION == 8);
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects a stale format version") {
@@ -497,6 +497,28 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Loader bounds argument and vararg 
 	Vector<uint8_t> vararg_in_range = payload;
 	bytecode_patch_function_int32(vararg_in_range, FUNCTION_PAYLOAD_VARARG_INDEX, stack_size - 1);
 	CHECK(bytecode_read_function_payload(exporter, script, vararg_in_range) == OK);
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects a rest type without a vararg slot") {
+	// The compiled rest type and `_vararg_index` describe the same slot from two directions. If they
+	// disagree, the VM would either carry an element contract it never packs or pack into a slot it
+	// has no contract for, so a payload that separates them must be rejected at load time.
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"static func collect(...values: Array[int]) -> int:\n"
+			"\treturn values.size()\n");
+	const HashMap<StringName, FSFunction *>::ConstIterator element = script->get_member_functions().find(SNAME("collect"));
+	REQUIRE(element);
+	REQUIRE(element->value->is_vararg());
+
+	FSBytecodeExporter exporter;
+	const Vector<uint8_t> payload = bytecode_serialize_function_payload(exporter, element->value);
+	CHECK(bytecode_read_function_payload(exporter, script, payload) == OK);
+
+	Vector<uint8_t> no_vararg_slot = payload;
+	bytecode_patch_function_int32(no_vararg_slot, FUNCTION_PAYLOAD_VARARG_INDEX, -1);
+	ERR_PRINT_OFF;
+	CHECK(bytecode_read_function_payload(exporter, script, no_vararg_slot) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
 }
 
 // Attempts to load a buffer that is expected to be malformed, on a throwaway script, asserting only

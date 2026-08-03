@@ -166,6 +166,7 @@ static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser:
 			p_a.type_arguments.size() != p_b.type_arguments.size() ||
 			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
 			p_a.method_return_type.size() != p_b.method_return_type.size() ||
+			p_a.method_rest_parameter_type.size() != p_b.method_rest_parameter_type.size() ||
 			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
 		return false;
 	}
@@ -191,6 +192,11 @@ static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser:
 	}
 	for (int i = 0; i < p_a.method_return_type.size(); i++) {
 		if (!_datatype_alpha_equal(p_a.method_return_type[i], p_b.method_return_type[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
+		if (!_datatype_alpha_equal(p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
 			return false;
 		}
 	}
@@ -861,6 +867,7 @@ FSParser::DataType FSAnalyzer::complete_self_referential_enum_type(const FSParse
 	complete_each(completed.container_element_types);
 	complete_each(completed.method_parameter_types);
 	complete_each(completed.method_return_type);
+	complete_each(completed.method_rest_parameter_type);
 	complete_each(completed.type_parameter_bound);
 	complete_each(completed.type_arguments);
 
