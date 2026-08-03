@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Invalid argument for "take_uint()" function: argument 1 should be "uint" but is "ulong".

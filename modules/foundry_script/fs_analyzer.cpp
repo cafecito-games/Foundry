@@ -475,6 +475,41 @@ static NumericType _applied_numeric_type(NumericType p_registry_numeric_type) {
 	return p_registry_numeric_type == NumericType::INT32 ? NumericType::NONE : p_registry_numeric_type;
 }
 
+// The declared width an operand contributes to a promotion. Only a built-in slot carries one: an
+// enum value is an integer at runtime but declares no width, so it constrains nothing.
+static NumericType _operand_numeric_type(const FSParser::DataType &p_type) {
+	return p_type.kind == FSParser::DataType::BUILTIN ? p_type.numeric_type : NumericType::NONE;
+}
+
+// The width an operator's integer result carries, from the promotion matrix. A result that is not an
+// integer, or a pair with no common integer type, pins no width; the operator's own validity is
+// decided by the runtime evaluator, which has no entry for a mixed-carrier arithmetic pair.
+static NumericType _integer_operation_numeric_type(
+		const FSParser::DataType &p_a,
+		const FSParser::DataType &p_b,
+		Variant::Type p_a_type,
+		Variant::Type p_b_type,
+		Variant::Type p_result_type) {
+	if (p_result_type != Variant::INT && p_result_type != Variant::UINT) {
+		return NumericType::NONE;
+	}
+	if (p_a_type != Variant::INT && p_a_type != Variant::UINT) {
+		return NumericType::NONE;
+	}
+
+	NumericType promoted = NumericType::NONE;
+	if (p_b_type == Variant::NIL) {
+		// Unary: the operand's own width survives, since no second range joins it.
+		promoted = _operand_numeric_type(p_a);
+	} else if (p_b_type != Variant::INT && p_b_type != Variant::UINT) {
+		return NumericType::NONE;
+	} else if (!FSNumericConversion::promote_integer_pair(_operand_numeric_type(p_a), _operand_numeric_type(p_b), promoted)) {
+		return NumericType::NONE;
+	}
+
+	return numeric_type_is_carrier_consistent(promoted, p_result_type) ? promoted : NumericType::NONE;
+}
+
 static String _normalize_bootstrap_path(const String &p_path) {
 	return ResourceUID::ensure_path(p_path).replace_char('\\', '/').simplify_path();
 }
@@ -4161,10 +4196,10 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 					mark_node_unsafe(p_assignable->initializer);
 					p_assignable->use_conversion_assign = true;
 				}
-				if (!initializer_type.is_variant() && !is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer)) {
+				if (!initializer_type.is_variant() && !is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer, p_assignable->initializer)) {
 					downgrade_node_type_source(p_assignable->initializer);
 				}
-			} else if (!is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer)) {
+			} else if (!is_type_compatible(specified_type, initializer_type, true, p_assignable->initializer, p_assignable->initializer)) {
 				const bool nullable_mismatch = strict_null_checks && initializer_type.is_nullable && !specified_type.is_nullable && !specified_type.is_variant();
 				String type_handle_error;
 				if (!nullable_mismatch) {
@@ -5052,14 +5087,14 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 			} else {
 				mark_node_unsafe(p_return);
 			}
-			if (!result.is_variant() && !is_type_compatible(compatibility_expected_type, result, true, p_return)) {
+			if (!result.is_variant() && !is_type_compatible(compatibility_expected_type, result, true, p_return, p_return->return_value)) {
 				downgrade_node_type_source(p_return);
 			}
-		} else if (!is_type_compatible(compatibility_expected_type, result, true, p_return)) {
+		} else if (!is_type_compatible(compatibility_expected_type, result, true, p_return, p_return->return_value)) {
 			const bool nullable_mismatch = strict_null_checks && result.is_nullable &&
 					!compatibility_expected_type.is_nullable && !compatibility_expected_type.is_variant();
 			mark_node_unsafe(p_return);
-			if (nullable_mismatch || !is_type_compatible(result, compatibility_expected_type)) {
+			if (nullable_mismatch || !FSTypeCompatibility::allows_runtime_narrowing(compatibility_expected_type, result)) {
 				if (nullable_mismatch) {
 					push_error(vformat(R"(Cannot return nullable value of type "%s"; expected non-nullable "%s".)",
 									   result.to_string(),
@@ -5255,7 +5290,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	// An int constant may be cast into an int-backed enum, but never into a tagged union.
 	bool is_enum_cast = p_is_cast && p_type.kind == FSParser::DataType::ENUM && !p_type.is_meta_type &&
 			!p_type.is_tagged_union && expression_type.builtin_type == Variant::INT;
-	if (!is_enum_cast && !is_type_compatible(p_type, expression_type, true, p_expression)) {
+	if (!is_enum_cast && !is_type_compatible(p_type, expression_type, true, p_expression, p_expression)) {
 		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, expression_type.to_string(), p_type.to_string()), p_expression);
 		return;
 	}
@@ -5273,7 +5308,7 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	}
 
 	FSParser::DataType value_type = type_from_variant(p_expression->reduced_value, p_expression);
-	if (expression_type.is_variant() && !is_enum_cast && !is_type_compatible(p_type, value_type, true, p_expression)) {
+	if (expression_type.is_variant() && !is_enum_cast && !is_type_compatible(p_type, value_type, true, p_expression, p_expression)) {
 		push_error(vformat(R"(Cannot %s a value of type "%s" as "%s".)", p_usage, value_type.to_string(), p_type.to_string()), p_expression);
 		return;
 	}
@@ -5370,7 +5405,7 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 			}
 			continue;
 		}
-		if (!is_type_compatible(expected_type, actual_type, true, p_array)) {
+		if (!is_type_compatible(expected_type, actual_type, true, p_array, element_node)) {
 			if (expected_type.is_type_handle_annotation) {
 				// Every class handle erases to the same handle object at runtime, so the reverse check
 				// below would report an unrelated handle as merely unsafe instead of rejecting it.
@@ -5379,7 +5414,7 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 						element_node);
 				return;
 			}
-			if (is_type_compatible(actual_type, expected_type)) {
+			if (FSTypeCompatibility::allows_runtime_narrowing(expected_type, actual_type)) {
 				mark_node_unsafe(element_node);
 				continue;
 			}
@@ -5452,14 +5487,14 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
 				return;
 			}
-		} else if (!is_type_compatible(expected_key_type, actual_key_type, true, p_dictionary)) {
+		} else if (!is_type_compatible(expected_key_type, actual_key_type, true, p_dictionary, key_element_node)) {
 			if (expected_key_type.is_type_handle_annotation) {
 				push_error(_make_type_handle_container_element_error(expected_key_type, actual_key_type, key_element_node,
 								   "a key", vformat("Dictionary[%s, %s]", expected_key_type.to_string(), expected_value_type.to_string())),
 						key_element_node);
 				return;
 			}
-			if (is_type_compatible(actual_key_type, expected_key_type)) {
+			if (FSTypeCompatibility::allows_runtime_narrowing(expected_key_type, actual_key_type)) {
 				mark_node_unsafe(key_element_node);
 			} else {
 				push_error(vformat(R"(Cannot have a key of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_key_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), key_element_node);
@@ -5513,14 +5548,14 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
 				return;
 			}
-		} else if (!is_type_compatible(expected_value_type, actual_value_type, true, p_dictionary)) {
+		} else if (!is_type_compatible(expected_value_type, actual_value_type, true, p_dictionary, value_element_node)) {
 			if (expected_value_type.is_type_handle_annotation) {
 				push_error(_make_type_handle_container_element_error(expected_value_type, actual_value_type, value_element_node,
 								   "a value", vformat("Dictionary[%s, %s]", expected_key_type.to_string(), expected_value_type.to_string())),
 						value_element_node);
 				return;
 			}
-			if (is_type_compatible(actual_value_type, expected_value_type)) {
+			if (FSTypeCompatibility::allows_runtime_narrowing(expected_value_type, actual_value_type)) {
 				mark_node_unsafe(value_element_node);
 			} else {
 				push_error(vformat(R"(Cannot have a value of type "%s" in a dictionary of type "Dictionary[%s, %s]".)", actual_value_type.to_string(), expected_key_type.to_string(), expected_value_type.to_string()), value_element_node);
@@ -5738,7 +5773,7 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 			// hard non-variant assignee and weak assigned
 			mark_node_unsafe(p_assignment);
 			p_assignment->use_conversion_assign = true;
-			downgrades_assigned = downgrades_assigned || (!assigned_is_variant && !is_type_compatible(assignee_type, op_type, true, p_assignment->assigned_value));
+			downgrades_assigned = downgrades_assigned || (!assigned_is_variant && !is_type_compatible(assignee_type, op_type, true, p_assignment->assigned_value, p_assignment->assigned_value));
 		} else if (compatible) {
 			if (op_type.is_variant()) {
 				// non-variant assignee and variant result
@@ -5761,7 +5796,7 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 					// weak non-variant assignee and variant result
 					downgrades_assignee = true;
 				}
-			} else if (!is_type_compatible(assignee_type, op_type, assignee_is_hard, p_assignment->assigned_value)) {
+			} else if (!is_type_compatible(assignee_type, op_type, assignee_is_hard, p_assignment->assigned_value, p_assignment->assigned_value)) {
 				// non-variant assignee and incompatible result
 				mark_node_unsafe(p_assignment);
 				if (assignee_is_hard) {
@@ -5925,8 +5960,11 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 			bool valid = false;
 			Variant::evaluate(p_binary_op->variant_op, p_binary_op->left_operand->reduced_value, p_binary_op->right_operand->reduced_value, p_binary_op->reduced_value, valid);
 			if (!valid) {
+				const String promotion_error = make_integer_promotion_error(left_type, right_type, p_binary_op->variant_op);
 				if (p_binary_op->reduced_value.get_type() == Variant::STRING) {
 					push_error(vformat(R"(%s in operator %s.)", p_binary_op->reduced_value, Variant::get_operator_name(p_binary_op->variant_op)), p_binary_op);
+				} else if (!promotion_error.is_empty()) {
+					push_error(promotion_error, p_binary_op);
 				} else {
 					push_error(vformat(R"(Invalid operands to operator %s, %s and %s.)",
 									   Variant::get_operator_name(p_binary_op->variant_op),
@@ -5938,7 +5976,12 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 		} else {
 			ERR_PRINT("Parser bug: unknown binary operation.");
 		}
-		p_binary_op->set_datatype(type_from_variant(p_binary_op->reduced_value, p_binary_op));
+		FSParser::DataType folded_type = type_from_variant(p_binary_op->reduced_value, p_binary_op);
+		// A folded constant keeps the width its operands promoted to, so it enters exactly the slots
+		// the same expression would have entered unfolded.
+		folded_type.numeric_type = _integer_operation_numeric_type(
+				left_type, right_type, left_type.builtin_type, right_type.builtin_type, folded_type.builtin_type);
+		p_binary_op->set_datatype(folded_type);
 
 		return;
 	}
@@ -5969,10 +6012,13 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 		result = get_operation_type(p_binary_op->variant_op, left_type, right_type, valid, p_binary_op);
 		if (!valid) {
 			const FSParser::DataType &union_type = left_type.is_tagged_union_type() && !left_type.is_meta_type ? left_type : right_type;
+			const String promotion_error = make_integer_promotion_error(left_type, right_type, p_binary_op->variant_op);
 			if (union_type.is_tagged_union_type() && !union_type.is_meta_type) {
 				push_error(vformat(R"*(Operator "%s" is not available on tagged union "%s"; its cases carry payloads, so its values are not integers. Match on the case first.)*",
 								   Variant::get_operator_name(p_binary_op->variant_op), union_type.enum_type),
 						p_binary_op);
+			} else if (!promotion_error.is_empty()) {
+				push_error(promotion_error, p_binary_op);
 			} else {
 				push_error(vformat(R"(Invalid operands "%s" and "%s" for "%s" operator.)", left_type.to_string(), right_type.to_string(), Variant::get_operator_name(p_binary_op->variant_op)), p_binary_op);
 			}
@@ -14043,6 +14089,7 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 		result.type_source = hard_operation ? FSParser::DataType::ANNOTATED_INFERRED : FSParser::DataType::INFERRED;
 		result.kind = FSParser::DataType::BUILTIN;
 		result.builtin_type = Variant::get_operator_return_type(p_operation, a_type, b_type);
+		result.numeric_type = _integer_operation_numeric_type(p_a, p_b, a_type, b_type, result.builtin_type);
 	} else {
 		r_valid = !hard_operation;
 		result.kind = FSParser::DataType::VARIANT;
@@ -14051,7 +14098,7 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 	return result;
 }
 
-bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion, const FSParser::Node *p_source_node) {
+bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion, const FSParser::Node *p_source_node, const FSParser::ExpressionNode *p_constant_source) {
 #ifdef DEBUG_ENABLED
 	if (p_source_node) {
 		// A tagged union rejects ints outright, so the "cast it" advice would be wrong there.
@@ -14074,7 +14121,36 @@ bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FS
 	options.allow_implicit_conversion = p_allow_implicit_conversion;
 	options.strict_dynamic = strict_dynamic_checks;
 	options.strict_null = strict_null_checks;
+	if (p_constant_source != nullptr && p_constant_source->is_constant) {
+		options.constant_source_value = &p_constant_source->reduced_value;
+	}
 	return FSTypeCompatibility::check(p_target, p_source, options).compatible;
+}
+
+String FSAnalyzer::make_integer_promotion_error(const FSParser::DataType &p_left, const FSParser::DataType &p_right, Variant::Operator p_operation) const {
+	if (!FSNumericConversion::is_numeric_builtin(p_left) || !FSNumericConversion::is_numeric_builtin(p_right)) {
+		return String();
+	}
+	if (p_left.builtin_type == Variant::FLOAT || p_right.builtin_type == Variant::FLOAT) {
+		return String();
+	}
+	if (p_left.numeric_type == NumericType::NONE || p_right.numeric_type == NumericType::NONE) {
+		return String();
+	}
+
+	NumericType promoted = NumericType::NONE;
+	if (!FSNumericConversion::promote_integer_pair(p_left.numeric_type, p_right.numeric_type, promoted)) {
+		return vformat(R"(No integer type holds every value of both "%s" and "%s", so the "%s" operator has no common type here. Convert one operand explicitly.)",
+				p_left.to_string(), p_right.to_string(), Variant::get_operator_name(p_operation));
+	}
+	if (p_left.builtin_type != p_right.builtin_type) {
+		// The promoted type exists, but the two carriers cannot meet without a conversion the operand
+		// has to spell out.
+		return vformat(R"(The "%s" operator cannot mix "%s" and "%s" operands. Convert both to "%s" explicitly.)",
+				Variant::get_operator_name(p_operation), p_left.to_string(), p_right.to_string(),
+				numeric_type_public_name(promoted));
+	}
+	return String();
 }
 
 bool FSAnalyzer::check_type_compatibility(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion, const FSParser::Node *p_source_node) {

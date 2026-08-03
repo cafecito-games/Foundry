@@ -939,7 +939,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 			}
 #endif // DEBUG_ENABLED
 		}
-	} else if (par_type.is_hard_type() && !analyzer->is_type_compatible(par_type, arg_type, true)) {
+	} else if (par_type.is_hard_type() && !analyzer->is_type_compatible(par_type, arg_type, true, nullptr, p_argument)) {
 		const bool nullable_mismatch = analyzer->strict_null_checks && arg_type.is_nullable && !par_type.is_nullable && !par_type.is_variant();
 		String type_handle_error;
 		if (!nullable_mismatch) {
@@ -1322,7 +1322,11 @@ void FSAnalyzer::CallSiteValidationContext::validate_signal_emit_args(const FSPa
 		}
 
 		const bool nullable_mismatch = analyzer->strict_null_checks && emit_argument_type.is_nullable && !signal_parameter_type.is_nullable && !signal_parameter_type.is_variant();
-		if (nullable_mismatch || !FSTypeCompatibility::check(signal_parameter_type, emit_argument_type, options).compatible) {
+		FSTypeCompatibility::Options emit_options = options;
+		if (p_call->arguments[emit_argument_index]->is_constant) {
+			emit_options.constant_source_value = &p_call->arguments[emit_argument_index]->reduced_value;
+		}
+		if (nullable_mismatch || !FSTypeCompatibility::check(signal_parameter_type, emit_argument_type, emit_options).compatible) {
 			analyzer->push_error(make_invalid_argument_error(
 										 p_call->function_name,
 										 emit_argument_index + 1,

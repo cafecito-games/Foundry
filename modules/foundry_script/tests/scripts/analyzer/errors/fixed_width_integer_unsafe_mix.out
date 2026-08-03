@@ -1,0 +1,10 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: No integer type holds every value of both "long" and "ulong", so the "+" operator has no common type here. Convert one operand explicitly.
+>> ERROR at line 9: No integer type holds every value of both "ulong" and "long", so the "+" operator has no common type here. Convert one operand explicitly.
+>> ERROR at line 10: Invalid operands "int" and "ulong" for "+" operator.
+>> ERROR at line 11: Invalid operands "ulong" and "int" for "+" operator.
+>> ERROR at line 14: Cannot assign a value of type ulong to variable "narrowed" with specified type uint.
+>> ERROR at line 15: Cannot assign a value of type long to variable "crossed" with specified type uint.
+>> ERROR at line 16: Cannot assign a value of type long to variable "lossy_float" with specified type float.
+>> ERROR at line 19: Cannot assign a value of type "ulong" as "uint".
+>> ERROR at line 19: Cannot assign a value of type ulong to variable "too_large" with specified type uint.

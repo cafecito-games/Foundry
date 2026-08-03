@@ -293,6 +293,154 @@ static FSParser::DataType _type_handle_represented_type(const FSParser::DataType
 	return result;
 }
 
+// The descriptor a native-only 8- or 16-bit width promotes as. Neither has a source spelling, so
+// neither can name a result type; their whole range fits the 32-bit descriptor of the same carrier.
+static NumericType _promotion_descriptor(NumericType p_numeric_type) {
+	switch (p_numeric_type) {
+		case NumericType::INT8:
+		case NumericType::INT16:
+			return NumericType::INT32;
+		case NumericType::UINT8:
+		case NumericType::UINT16:
+			return NumericType::UINT32;
+		default:
+			return p_numeric_type;
+	}
+}
+
+bool FSNumericConversion::promote_integer_pair(NumericType p_left, NumericType p_right, NumericType &r_result) {
+	if (!numeric_type_is_valid(p_left) || !numeric_type_is_valid(p_right)) {
+		return false;
+	}
+
+	// An unconstrained side cannot contribute a width, and pinning the other side's width onto the
+	// result would claim a constraint the pair never had.
+	if (p_left == NumericType::NONE || p_right == NumericType::NONE) {
+		r_result = NumericType::NONE;
+		return true;
+	}
+
+	const NumericType left = _promotion_descriptor(p_left);
+	const NumericType right = _promotion_descriptor(p_right);
+
+	if (left == right) {
+		r_result = left;
+		return true;
+	}
+
+	// The matrix is symmetric, so each mixed row is listed once and both orders reach it.
+	const NumericType low = MIN(left, right);
+	const NumericType high = MAX(left, right);
+
+	if (low == NumericType::INT32 && high == NumericType::INT64) {
+		r_result = NumericType::INT64; // int, long -> long
+		return true;
+	}
+	if (low == NumericType::INT32 && high == NumericType::UINT32) {
+		r_result = NumericType::INT64; // int, uint -> long
+		return true;
+	}
+	if (low == NumericType::UINT32 && high == NumericType::INT64) {
+		r_result = NumericType::INT64; // uint, long -> long
+		return true;
+	}
+	if (low == NumericType::UINT32 && high == NumericType::UINT64) {
+		r_result = NumericType::UINT64; // uint, ulong -> ulong
+		return true;
+	}
+
+	// Everything else -- `int`/`ulong`, `long`/`ulong` -- would have to drop either the signed
+	// minimum or the unsigned maximum.
+	return false;
+}
+
+bool FSNumericConversion::is_numeric_builtin(const FSParser::DataType &p_type) {
+	if (p_type.kind != FSParser::DataType::BUILTIN) {
+		return false;
+	}
+	return p_type.builtin_type == Variant::INT || p_type.builtin_type == Variant::UINT ||
+			p_type.builtin_type == Variant::FLOAT;
+}
+
+// Whether the destination's range covers every value the source can hold. Both descriptors are real
+// widths; a carrier crossing is decided by the caller, since the two carriers partition the range.
+static bool _numeric_range_covers(NumericType p_target, NumericType p_source) {
+	if (numeric_type_carrier(p_target) != numeric_type_carrier(p_source)) {
+		return false;
+	}
+	return numeric_type_minimum(p_source) >= numeric_type_minimum(p_target) &&
+			numeric_type_maximum(p_source) <= numeric_type_maximum(p_target);
+}
+
+// Whether the double-backed `float` holds this integer without rounding. Above 2^53 the doubles
+// thin out, so the round trip is the proof rather than the width.
+static bool _integer_is_exact_as_double(const Variant &p_value) {
+	if (p_value.get_type() == Variant::UINT) {
+		const uint64_t value = p_value.operator uint64_t();
+		const double as_double = double(value);
+		return as_double < 18446744073709551616.0 && uint64_t(as_double) == value;
+	}
+	if (p_value.get_type() == Variant::INT) {
+		const int64_t value = p_value.operator int64_t();
+		const double as_double = double(value);
+		return as_double >= -9223372036854775808.0 && as_double < 9223372036854775808.0 && int64_t(as_double) == value;
+	}
+	return false;
+}
+
+FSNumericConversion::Conversion FSNumericConversion::classify(const FSParser::DataType &p_target, const FSParser::DataType &p_source, const Variant *p_constant_source_value) {
+	if (!is_numeric_builtin(p_target) || !is_numeric_builtin(p_source)) {
+		return Conversion::INVALID;
+	}
+
+	const bool target_is_float = p_target.builtin_type == Variant::FLOAT;
+	const bool source_is_float = p_source.builtin_type == Variant::FLOAT;
+
+	if (target_is_float && source_is_float) {
+		return Conversion::IDENTITY;
+	}
+
+	if (target_is_float) {
+		// `int` and `uint` fit the double's exact integer range whole. The 64-bit widths do not, so
+		// only a constant whose value survives the round trip may cross without an explicit cast. A
+		// source that declared no width states no range, so it keeps its pre-descriptor behavior.
+		const NumericType source_numeric_type = _promotion_descriptor(p_source.numeric_type);
+		if (source_numeric_type == NumericType::NONE) {
+			return Conversion::IDENTITY;
+		}
+		if (numeric_type_bit_width(source_numeric_type) <= 32) {
+			return Conversion::IMPLICIT_WIDEN;
+		}
+		if (p_constant_source_value != nullptr && _integer_is_exact_as_double(*p_constant_source_value)) {
+			return Conversion::CONSTANT_CHECKED;
+		}
+		return Conversion::EXPLICIT_REQUIRED;
+	}
+
+	if (source_is_float) {
+		// Truncating a float into an integer slot is governed by the existing conversion rules, which
+		// no width descriptor refines.
+		return Conversion::IDENTITY;
+	}
+
+	const NumericType target_numeric_type = _promotion_descriptor(p_target.numeric_type);
+	const NumericType source_numeric_type = _promotion_descriptor(p_source.numeric_type);
+	if (target_numeric_type == NumericType::NONE || source_numeric_type == NumericType::NONE) {
+		// One side constrains no width, so there is no width to preserve or violate.
+		return Conversion::IDENTITY;
+	}
+	if (target_numeric_type == source_numeric_type) {
+		return Conversion::IDENTITY;
+	}
+	if (_numeric_range_covers(target_numeric_type, source_numeric_type)) {
+		return Conversion::IMPLICIT_WIDEN;
+	}
+	if (p_constant_source_value != nullptr && numeric_type_contains(target_numeric_type, *p_constant_source_value)) {
+		return Conversion::CONSTANT_CHECKED;
+	}
+	return Conversion::EXPLICIT_REQUIRED;
+}
+
 FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType &p_target, const FSParser::DataType &p_source) {
 	return check(p_target, p_source, Options());
 }
@@ -395,6 +543,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		}
 		Options element_options = p_options;
 		element_options.allow_implicit_conversion = false;
+		element_options.constant_source_value = nullptr;
 		for (int i = 0; i < p_target.container_element_types.size(); i++) {
 			// Elements are invariant in v1, so both directions must hold. Going through `check` (rather
 			// than plain equality) keeps a dynamic element flowing with a runtime check instead of
@@ -420,13 +569,25 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			result.uses_implicit_conversion = result.compatible;
 		}
 		if (result.compatible && p_source.kind == FSParser::DataType::BUILTIN &&
-				!numeric_types_agree(p_target.numeric_type, p_source.numeric_type)) {
-			// Width is part of the target's contract. Crossing between two declared widths needs an
-			// explicit conversion, so neither a plain assignment nor an implicit builtin conversion may
-			// silently reinterpret one as the other. An undeclared width on either side constrains
-			// nothing and leaves the existing behavior untouched.
-			result.compatible = false;
-			result.uses_implicit_conversion = false;
+				FSNumericConversion::is_numeric_builtin(p_target) && FSNumericConversion::is_numeric_builtin(p_source)) {
+			// Width is part of the target's contract, so every numeric boundary -- assignment,
+			// argument, return, signal emission, typed collection element -- asks the same classifier
+			// whether the value may cross. A conversion that needs proof is rejected unless the source
+			// is a constant whose exact value the destination is known to hold.
+			const FSNumericConversion::Conversion conversion =
+					FSNumericConversion::classify(p_target, p_source, p_options.constant_source_value);
+			// A widening or a proven constant is still a conversion, so it is only available where a
+			// conversion is. An invariant position -- a typed container element, a generic argument, an
+			// override's signature -- asks with conversions disabled and therefore requires the exact
+			// width, which is what keeps `Array[int]` and `Array[long]` distinct.
+			const bool conversion_allowed = conversion == FSNumericConversion::Conversion::IDENTITY ||
+					(p_options.allow_implicit_conversion &&
+							(conversion == FSNumericConversion::Conversion::IMPLICIT_WIDEN ||
+									conversion == FSNumericConversion::Conversion::CONSTANT_CHECKED));
+			if (!conversion_allowed) {
+				result.compatible = false;
+				result.uses_implicit_conversion = false;
+			}
 		}
 		if (!result.compatible && p_target.builtin_type == Variant::INT && p_source.kind == FSParser::DataType::ENUM &&
 				!p_source.is_meta_type && !p_source.is_tagged_union) {
@@ -458,6 +619,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			if (p_target.has_container_element_type(0) && p_source.has_container_element_type(0)) {
 				Options element_options = p_options;
 				element_options.allow_implicit_conversion = false;
+				element_options.constant_source_value = nullptr;
 				const Result element_result = check(p_target.get_container_element_type(0), p_source.get_container_element_type(0), element_options);
 				result.compatible = element_result.compatible;
 				result.requires_runtime_check = result.requires_runtime_check || element_result.requires_runtime_check;
@@ -467,6 +629,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		if (result.compatible && p_target.builtin_type == Variant::DICTIONARY && p_source.builtin_type == Variant::DICTIONARY) {
 			Options element_options = p_options;
 			element_options.allow_implicit_conversion = false;
+			element_options.constant_source_value = nullptr;
 			if (p_target.has_container_element_type(0) && p_source.has_container_element_type(0)) {
 				const Result key_result = check(p_target.get_container_element_type(0), p_source.get_container_element_type(0), element_options);
 				result.compatible = key_result.compatible;
@@ -516,6 +679,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		if (p_target.has_container_element_type(0) && p_source.has_container_element_type(0)) {
 			Options element_options = p_options;
 			element_options.allow_implicit_conversion = false;
+			element_options.constant_source_value = nullptr;
 			const Result element_result = check(p_target.get_container_element_type(0), p_source.get_container_element_type(0), element_options);
 			result.compatible = element_result.compatible;
 			result.requires_runtime_check = element_result.requires_runtime_check;
@@ -809,6 +973,13 @@ bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_n
 		// there. Every other signature slot is compared symmetrically, so this only ever mattered once
 		// rest tails became contravariant: the unsafe direction must stay a static error rather than
 		// become a "runtime check" the runtime cannot perform.
+		return false;
+	}
+	if (FSNumericConversion::is_numeric_builtin(p_narrow) && FSNumericConversion::is_numeric_builtin(p_wide)) {
+		// A Variant carries the integer carrier, not the declared width, so nothing at the destination
+		// can verify at run time that the value really fits the narrower type. Same reasoning as the
+		// erased Callable signature above: a conversion the runtime cannot check must stay a static
+		// error rather than become an unsafe-but-allowed assignment.
 		return false;
 	}
 	return is_compatible(p_wide, p_narrow);
