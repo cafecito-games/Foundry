@@ -114,6 +114,9 @@ private:
 	};
 
 	Error _get_string(uint32_t p_index, String &r_string) const;
+	// Reads a four-byte string-table index, rejecting a stream that cannot hold it before resolving
+	// the index, so a truncated index does not silently resolve to string table entry 0.
+	Error _read_bounded_string(StreamPeerBuffer *p_stream, String &r_string, const char *p_field) const;
 	Error _decode_object(StreamPeerBuffer *p_stream, uint8_t p_tag, Variant &r_variant, int p_depth);
 	Error _decode_container_type(StreamPeerBuffer *p_stream, ContainerType &r_container_type, int p_depth);
 	Error _read_property_info(StreamPeerBuffer *p_stream, PropertyInfo &r_property_info);
