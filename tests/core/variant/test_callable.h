@@ -282,6 +282,22 @@ TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 		memdelete(emitter);
 	}
 
+	SUBCASE("value beyond the signed range") {
+		ErrorDetector detector;
+
+		// The whole point of the unsigned carrier is that this value survives; it has no signed
+		// 64-bit representation, so it would be corrupted if the argument were routed through `INT`.
+		const uint64_t unrepresentable_as_signed = UINT64_MAX;
+		Callable callable = callable_mp(receiver, &TestUnsignedArgumentReceiver::receive).bind(7, unrepresentable_as_signed);
+		Callable::CallError error;
+		Variant result;
+		callable.callp(nullptr, 0, result, error);
+
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK_FALSE(detector.has_error);
+		CHECK(receiver->received_generation == unrepresentable_as_signed);
+	}
+
 	memdelete(receiver);
 }
 

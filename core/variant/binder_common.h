@@ -178,6 +178,11 @@ struct VariantObjectClassChecker<const Ref<T> &> {
 // `Variant` built from an unsigned C++ value carries `Variant::UINT` and `VariantCaster` already
 // reads either carrier, so argument validation has to normalize the carrier before consulting the
 // script-facing conversion table. `Variant::can_convert_strict()` itself stays strict.
+//
+// Like the rest of this layer the check is about carriers, not value ranges: an argument that does
+// not fit the parameter's width is narrowed by `VariantCaster`, exactly as an oversized `INT` has
+// always been narrowed into a smaller signed parameter. `GetTypeInfo` reports `INT` for signed and
+// unsigned parameters alike, so a range check here could not tell the two apart anyway.
 _FORCE_INLINE_ bool is_valid_native_argument_type(Variant::Type p_type_from, Variant::Type p_type_to) {
 	const Variant::Type source_type = p_type_from == Variant::UINT ? Variant::INT : p_type_from;
 	return Variant::can_convert_strict(source_type, p_type_to);
