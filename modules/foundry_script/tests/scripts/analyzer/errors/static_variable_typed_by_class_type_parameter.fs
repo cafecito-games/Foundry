@@ -20,5 +20,11 @@ class Nested[T]:
 	static var boxes: Array[Box[T]]
 
 
+class Callbacks[T]:
+	static var handler: Callable[[T], void]
+	static var maker: Callable[[], T]
+	static var variadic: Callable[[int, ...Array[T]], void]
+
+
 func test() -> void:
-	print(Box, Bag, Handles, Nested)
+	print(Box, Bag, Handles, Nested, Callbacks)

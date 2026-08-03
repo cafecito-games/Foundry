@@ -8540,7 +8540,8 @@ static bool _trait_state_type_is_compatible(const FSParser::DataType &p_trait_ty
 }
 
 // Returns the first class-scoped type parameter `p_type` still depends on — directly, or nested in a
-// container element type or a type argument — or an empty name when the type is independent of them.
+// container element type (which also carries tuple elements), a type argument, or a callable/signal
+// signature — or an empty name when the type is independent of them.
 static StringName _remaining_class_type_parameter(const FSParser::DataType &p_type) {
 	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER &&
 			p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_CLASS) {
@@ -8552,10 +8553,18 @@ static StringName _remaining_class_type_parameter(const FSParser::DataType &p_ty
 			return found;
 		}
 	}
-	for (const FSParser::DataType &argument : p_type.type_arguments) {
-		const StringName found = _remaining_class_type_parameter(argument);
-		if (found != StringName()) {
-			return found;
+	const Vector<FSParser::DataType> *nested_type_lists[] = {
+		&p_type.type_arguments,
+		&p_type.method_parameter_types,
+		&p_type.method_return_type,
+		&p_type.method_rest_parameter_type,
+	};
+	for (const Vector<FSParser::DataType> *nested_types : nested_type_lists) {
+		for (const FSParser::DataType &nested : *nested_types) {
+			const StringName found = _remaining_class_type_parameter(nested);
+			if (found != StringName()) {
+				return found;
+			}
 		}
 	}
 	return StringName();
