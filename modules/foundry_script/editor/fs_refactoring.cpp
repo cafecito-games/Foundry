@@ -5937,7 +5937,8 @@ void collect_method_type_parameters_referenced_by_type(
 
 bool generic_method_type_parameters_are_inferable_from_parameter_types(
 		const FSParser::FunctionNode *p_function,
-		const Vector<FSParser::DataType> &p_parameter_types) {
+		const Vector<FSParser::DataType> &p_parameter_types,
+		const FSParser::DataType *p_rest_parameter_type = nullptr) {
 	HashSet<StringName> method_type_parameters;
 	collect_method_type_parameter_names(p_function, method_type_parameters);
 	if (method_type_parameters.is_empty()) {
@@ -5948,6 +5949,14 @@ bool generic_method_type_parameters_are_inferable_from_parameter_types(
 	for (const FSParser::DataType &parameter_type : p_parameter_types) {
 		collect_method_type_parameters_referenced_by_type(
 				parameter_type,
+				method_type_parameters,
+				referenced_type_parameters);
+	}
+	// A rich rest tail is an inference source too: every surplus argument unifies against its
+	// element type, so `func collect[T](...values: Array[T])` solves `T` without a fixed parameter.
+	if (p_rest_parameter_type != nullptr && FSAnalyzer::rest_parameter_type_is_narrowing(*p_rest_parameter_type)) {
+		collect_method_type_parameters_referenced_by_type(
+				p_rest_parameter_type->get_container_element_type(0),
 				method_type_parameters,
 				referenced_type_parameters);
 	}
@@ -6401,9 +6410,6 @@ void add_abstract_override_candidate(
 		}
 		parameter_types.push_back(parameter_type);
 	}
-	if (!generic_method_type_parameters_are_inferable_from_parameter_types(p_owed.function, parameter_types)) {
-		return;
-	}
 	FSParser::DataType rest_parameter_type;
 	const FSParser::DataType *rest_parameter_type_ptr = nullptr;
 	if (p_owed.function->rest_parameter != nullptr) {
@@ -6413,6 +6419,9 @@ void add_abstract_override_candidate(
 				p_owed.declaring_class,
 				p_owed.function);
 		rest_parameter_type_ptr = &rest_parameter_type;
+	}
+	if (!generic_method_type_parameters_are_inferable_from_parameter_types(p_owed.function, parameter_types, rest_parameter_type_ptr)) {
+		return;
 	}
 	const FSParser::DataType return_type =
 			substitute_override_member_type(p_owed.function->get_datatype(), p_owed.specialized_base, p_owed.declaring_class, p_owed.function);
