@@ -12758,8 +12758,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			// succeed past a gap survive as extra allowed argument counts, matching how
 			// non-contiguous arities are represented elsewhere.
 			auto default_survival_for_bind = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments,
-													 int p_checked_bind_start, int p_remaining_argument_count,
-													 int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
+										  int p_checked_bind_start, int p_remaining_argument_count,
+										  int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
 				r_result_default_arg_count = 0;
 				const int max_shift = MIN(int(p_base_type.method_info.default_arguments.size()), p_checked_bind_start);
 				const int reaching_bound_argument_count = bound_arguments_reaching_target(p_bound_arguments);
