@@ -224,7 +224,7 @@ void FSAnalyzer::CallSiteValidationContext::collect_type_parameter_bindings(cons
 }
 
 void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::CallNode *p_call, FSParser::FunctionNode *p_function,
-		List<FSParser::DataType> &r_par_types, FSParser::DataType &r_return_type) {
+		List<FSParser::DataType> &r_par_types, FSParser::DataType &r_rest_parameter_type, FSParser::DataType &r_return_type) {
 	const Vector<FSParser::TypeParameterNode *> &type_parameters = p_function->type_parameters;
 	if (type_parameters.is_empty()) {
 		return;
@@ -319,6 +319,20 @@ void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::
 			parameter_index++;
 		}
 
+		// Every surplus argument fills a rest-array element slot, so each one constrains the
+		// element type the same way a fixed argument constrains its parameter. Stopping at the
+		// first binding would let a later disagreeing argument through unchecked. The arguments
+		// are already canonicalized, so positions past the fixed parameters are the rest tail.
+		if (FSAnalyzer::rest_parameter_type_is_narrowing(r_rest_parameter_type)) {
+			const FSParser::DataType &rest_element_type = r_rest_parameter_type.get_container_element_type(0);
+			for (int argument_index = r_par_types.size(); argument_index < p_call->arguments.size(); argument_index++) {
+				const FSParser::ExpressionNode *argument = p_call->arguments[argument_index];
+				if (argument != nullptr) {
+					collect_type_parameter_bindings(rest_element_type, argument->get_datatype(), bindings, conflicts);
+				}
+			}
+		}
+
 		for (const StringName &conflicted : conflicts) {
 			analyzer->push_error(vformat(R"*(Could not infer type parameter "%s" of generic method "%s()" because its arguments have conflicting types. Apply the type arguments explicitly, e.g. "%s[...](...)".)*", conflicted, p_function->identifier->name, p_function->identifier->name), p_call);
 			// Keep the call type-checkable: an unresolved parameter falls back to Variant.
@@ -355,6 +369,7 @@ void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::
 	for (const FSParser::DataType &parameter_type : r_par_types) {
 		collect_method_type_parameter_bounds(parameter_type, parameter_bounds);
 	}
+	collect_method_type_parameter_bounds(r_rest_parameter_type, parameter_bounds);
 	collect_method_type_parameter_bounds(r_return_type, parameter_bounds);
 	for (const FSParser::TypeParameterNode *parameter : type_parameters) {
 		if (parameter == nullptr || parameter->identifier == nullptr || parameter->bound == nullptr) {
@@ -395,6 +410,12 @@ void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::
 
 	for (FSParser::DataType &parameter_type : r_par_types) {
 		parameter_type = FSParser::DataType::substitute(parameter_type, bindings);
+	}
+
+	// Surplus arguments are validated against the rest element after this point, so the element
+	// must already be the solved concrete type (`Array[T]` -> `Array[int]`).
+	if (r_rest_parameter_type.is_set()) {
+		r_rest_parameter_type = FSParser::DataType::substitute(r_rest_parameter_type, bindings);
 	}
 
 	// A typed-container return whose element involves a method type parameter (`-> Array[T]`) is erased

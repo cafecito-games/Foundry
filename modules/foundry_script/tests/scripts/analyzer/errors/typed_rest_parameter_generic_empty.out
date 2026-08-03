@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Could not infer type parameter "T" of generic method "collect()" from its arguments. Apply the type arguments explicitly, e.g. "collect[...](...)".

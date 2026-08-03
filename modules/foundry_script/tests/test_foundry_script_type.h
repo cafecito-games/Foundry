@@ -3105,4 +3105,88 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An identical nested rest
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] Rest-only inference solves the element parameter") {
+	CHECK_EQ(analyze_source(
+					 "func collect[T](...values: Array[T]) -> Array[T]:\n"
+					 "\treturn values\n"
+					 "func test() -> void:\n"
+					 "\tvar ints: Array[int] = collect(1, 2, 3)\n"
+					 "\tprint(ints)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] Fixed and rest occurrences solve one parameter") {
+	CHECK_EQ(analyze_source(
+					 "func prepend[T](first: T, ...values: Array[T]) -> Array[T]:\n"
+					 "\treturn [first] + values\n"
+					 "func test() -> void:\n"
+					 "\tvar ints: Array[int] = prepend(0, 1, 2)\n"
+					 "\tprint(ints)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] A later rest argument still constrains the parameter") {
+	// The first argument alone would solve `T := int`; rejecting this proves inference keeps
+	// consuming every surplus argument instead of stopping at the first binding.
+	CHECK_NE(analyze_source(
+					 "func collect[T](...values: Array[T]) -> Array[T]:\n"
+					 "\treturn values\n"
+					 "func test() -> void:\n"
+					 "\tvar bad := collect(1, 2, \"three\")\n"
+					 "\tprint(bad)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] A fixed argument conflicts with a rest argument") {
+	CHECK_NE(analyze_source(
+					 "func prepend[T](first: T, ...values: Array[T]) -> Array[T]:\n"
+					 "\treturn [first] + values\n"
+					 "func test() -> void:\n"
+					 "\tvar bad := prepend(0, \"one\")\n"
+					 "\tprint(bad)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] Explicit application accepts an empty rest call") {
+	CHECK_EQ(analyze_source(
+					 "func collect[T](...values: Array[T]) -> Array[T]:\n"
+					 "\treturn values\n"
+					 "func test() -> void:\n"
+					 "\tvar ints: Array[int] = collect[int]()\n"
+					 "\tprint(ints)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] An empty inferred rest call cannot solve the parameter") {
+	CHECK_NE(analyze_source(
+					 "func collect[T](...values: Array[T]) -> Array[T]:\n"
+					 "\treturn values\n"
+					 "func test() -> void:\n"
+					 "\tvar unconstrained := collect()\n"
+					 "\tprint(unconstrained)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] A rest-solved type argument must satisfy its bound") {
+	CHECK_NE(analyze_source(
+					 "func collect[T: Resource](...values: Array[T]) -> Array[T]:\n"
+					 "\treturn values\n"
+					 "func test() -> void:\n"
+					 "\tvar bad := collect(Node.new())\n"
+					 "\tprint(bad)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] A solved rest element still checks later arguments") {
+	// `T` is solved by the explicit application, so the rest element type must be substituted
+	// before surplus arguments are validated against it.
+	CHECK_NE(analyze_source(
+					 "func collect[T](...values: Array[T]) -> Array[T]:\n"
+					 "\treturn values\n"
+					 "func test() -> void:\n"
+					 "\tvar bad := collect[int](\"one\")\n"
+					 "\tprint(bad)\n"),
+			OK);
+}
+
 } // namespace FSTests

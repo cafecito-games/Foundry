@@ -6530,7 +6530,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		// Generic methods solve their type parameters here, substituting the call's parameter
 		// and return types before the arguments are validated against them.
 		if (!is_constructor && found_function != nullptr && !found_function->type_parameters.is_empty()) {
-			call_site_validation.apply_generic_method_call(p_call, found_function, par_types, return_type);
+			call_site_validation.apply_generic_method_call(p_call, found_function, par_types, rest_parameter_type, return_type);
 		}
 		// If the method is implemented in the class hierarchy, the virtual/abstract flag will not be set for that `MethodInfo` and the search stops there.
 		// Virtual/abstract check only possible for super calls because class hierarchy is known. Objects may have scripts attached we don't know of at compile-time.
