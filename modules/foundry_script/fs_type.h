@@ -88,6 +88,13 @@ public:
 			const FSParser::DataType *p_implementation_rest_array,
 			const FSParser::DataType *p_required_rest_array);
 
+	// Whether a rest tail can absorb one fixed argument the requirement declares but the implementation
+	// does not, which the caller delivers into the tail instead. Same contravariant element rule: a
+	// gradual tail absorbs anything, a typed tail must accept the declared type.
+	static bool rest_parameter_accepts_required_argument(
+			const FSParser::DataType *p_implementation_rest_array,
+			const FSParser::DataType &p_required_argument_type);
+
 	// Resolves the rest tail a Callable/Signal type promises. Returns false when the signature is not
 	// variadic. `METHOD_FLAG_VARARG` is the arity bit, while the rich rest slot is filled only when the
 	// element narrows below Variant, so a variadic signature without that slot yields a gradual `Array`.

@@ -733,6 +733,22 @@ bool FSTypeCompatibility::rest_parameter_accepts_required_arguments(
 			p_required_rest_array->get_container_element_type(0));
 }
 
+bool FSTypeCompatibility::rest_parameter_accepts_required_argument(
+		const FSParser::DataType *p_implementation_rest_array,
+		const FSParser::DataType &p_required_argument_type) {
+	if (p_implementation_rest_array == nullptr) {
+		return false;
+	}
+	if (!rest_parameter_type_is_narrowing(*p_implementation_rest_array)) {
+		return true;
+	}
+	if (!p_required_argument_type.is_set()) {
+		// Still resolving; an unset type is treated as compatible everywhere else too.
+		return true;
+	}
+	return is_compatible(p_implementation_rest_array->get_container_element_type(0), p_required_argument_type);
+}
+
 bool FSTypeCompatibility::callable_signature_rest_parameter_type(const FSParser::DataType &p_signature, FSParser::DataType &r_rest_array) {
 	if (!(p_signature.method_info.flags & METHOD_FLAG_VARARG)) {
 		return false;

@@ -3274,6 +3274,53 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A missing rest tail is g
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rest tail must accept the required parameters it absorbs") {
+	// The override declares no fixed parameter, so a polymorphic call's argument lands in its rest
+	// tail. A tail that rejects the parent's parameter type would fail at dispatch time.
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(value: String) -> void:\n"
+					 "\t\tprint(value)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(value: String) -> void:\n"
+					 "\t\tprint(value)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array[String]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit(value: String) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit(value: String) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit(...values: Array[String]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A narrowing override names both rest types") {
 	check_source_has_error(
 			"class Base:\n"
