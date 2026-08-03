@@ -12367,7 +12367,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			// at arity `r` passes `r + <values bound here>` arguments on to the base, so every extra
 			// allowed count survives shifted down by that many. Dropping them would reject valid calls.
 			// The values bound here fill different parameters at each of those arities than they do at
-			// the highest one, so each extra arity is kept only while they still fit.
+			// the highest one, so each extra arity is kept only while they still fit. As with the
+			// default-shift path, a proven mismatch is what drops an arity; an unknown or untyped bound
+			// value stays gradual and keeps it alive.
 			auto preserve_extra_allowed_argument_counts = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments) {
 				for (int extra_allowed_argument_count : p_base_type.method_extra_allowed_argument_counts) {
 					const int remaining_argument_count = extra_allowed_argument_count - p_bound_arguments.size();
@@ -12377,7 +12379,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 
 					bool bound_arguments_fit_extra_arity = true;
 					for (int i = 0; i < p_bound_arguments.size() && bound_arguments_fit_extra_arity; i++) {
-						bound_arguments_fit_extra_arity = can_bound_argument_fill_parameter(
+						bound_arguments_fit_extra_arity = !bound_argument_conflicts_with(
 								p_bound_arguments[i], p_base_type.method_parameter_types[remaining_argument_count + i]);
 					}
 					if (bound_arguments_fit_extra_arity) {
