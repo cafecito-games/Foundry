@@ -3925,6 +3925,63 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An untyped bound value k
 			R"*(Too many arguments for "call()" call. Expected at most 0 but received 1.)*");
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A bind() can leave a gapped arity set") {
+	// `bind(1, "a", "b")` survives at arity 3 (1 fills the Variant parameter, "a" and "b" reach the
+	// String rest tail) and at arity 1 (1 fills "int", "a" fills "String", "b" fills the Variant), but
+	// not at arity 2, where 1 would fill a String parameter. Arity 0 needs a default that is not there.
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var callback: Callable[[String, int, String, Variant, ...Array[String]], bool]\n"
+			"var bound := callback.bind(1, \"a\", \"b\")\n",
+			SNAME("bound"), analyzed);
+	REQUIRE(analyzed);
+	CHECK((type.method_info.flags & METHOD_FLAG_VARARG) == 0);
+	CHECK_EQ(type.method_parameter_types.size(), 3);
+	REQUIRE_EQ(type.method_extra_allowed_argument_counts.size(), 1);
+	CHECK_EQ(type.method_extra_allowed_argument_counts[0], 1);
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[String, int, String, Variant, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.bind(1, \"a\", \"b\")\n"
+					 "\tbound.call(\"z\")\n"),
+			OK);
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[String, int, String, Variant, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bind(1, \"a\", \"b\")\n"
+			"\tbound.call(\"z\", 2)\n",
+			R"*(Too few arguments for "call()" call. Expected at least 3 but received 2.)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A second bind() keeps a gapped arity its value still fits") {
+	// `rebound.call()` dispatches callback("z", 1, "a", "b"), which every parameter accepts, so the
+	// arity the first bind left open must survive the second one.
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[String, int, String, Variant, ...Array[String]], bool]\n"
+					 "\tvar rebound := callback.bind(1, \"a\", \"b\").bind(\"z\")\n"
+					 "\trebound.call()\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[String, int, String, Variant, ...Array[String]], bool]\n"
+					 "\tvar rebound := callback.bind(1, \"a\", \"b\").bindv([\"z\"])\n"
+					 "\trebound.call()\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A second bind() drops a gapped arity its value cannot fill") {
+	// The same shape with an "int" first parameter. "z" fits the parameter it fills at the highest
+	// arity but not the one it would fill at the gapped arity, where it would reach "int", so that
+	// arity must not survive: `rebound.call()` would dispatch callback("z", 1, "a", "b").
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, int, String, Variant, ...Array[String]], bool]\n"
+			"\tvar rebound := callback.bind(1, \"a\", \"b\").bind(\"z\")\n"
+			"\trebound.call()\n",
+			R"*(Too few arguments for "call()" call. Expected at least 2 but received 0.)*");
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A value bound after unbind() never reaches the rest tail") {
 	// `unbind(1)` drops the last argument it receives and bound values are passed last, so the bound
 	// `7` is discarded before the target sees it and must not restrict the surviving arities.

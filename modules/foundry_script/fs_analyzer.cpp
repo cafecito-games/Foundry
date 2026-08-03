@@ -12337,6 +12337,28 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				}
 				return true;
 			};
+			// A base that accepts a non-contiguous set of arities keeps them after another bind: a call
+			// at arity `r` passes `r + <values bound here>` arguments on to the base, so every extra
+			// allowed count survives shifted down by that many. Dropping them would reject valid calls.
+			// The values bound here fill different parameters at each of those arities than they do at
+			// the highest one, so each extra arity is kept only while they still fit.
+			auto preserve_extra_allowed_argument_counts = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments) {
+				for (int extra_allowed_argument_count : p_base_type.method_extra_allowed_argument_counts) {
+					const int remaining_argument_count = extra_allowed_argument_count - p_bound_arguments.size();
+					if (remaining_argument_count < 0 || extra_allowed_argument_count > p_base_type.method_parameter_types.size()) {
+						continue;
+					}
+
+					bool bound_arguments_fit_extra_arity = true;
+					for (int i = 0; i < p_bound_arguments.size() && bound_arguments_fit_extra_arity; i++) {
+						bound_arguments_fit_extra_arity = can_bound_argument_fill_parameter(
+								p_bound_arguments[i], p_base_type.method_parameter_types[remaining_argument_count + i]);
+					}
+					if (bound_arguments_fit_extra_arity) {
+						r_return_type.method_extra_allowed_argument_counts.push_back(remaining_argument_count);
+					}
+				}
+			};
 
 			if (is_callable_call || is_callable_call_deferred || is_callable_rpc || is_callable_rpc_id) {
 				r_default_arg_count = p_base_type.method_info.default_arguments.size();
@@ -12418,6 +12440,11 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 
 						const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
 						r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+						Vector<const FSParser::ExpressionNode *> bound_arguments;
+						for (FSParser::ExpressionNode *argument : call->arguments) {
+							bound_arguments.push_back(argument);
+						}
+						preserve_extra_allowed_argument_counts(bound_arguments);
 					}
 				} else {
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
@@ -12467,6 +12494,11 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 
 						const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
 						r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+						Vector<const FSParser::ExpressionNode *> bound_arguments;
+						for (FSParser::ExpressionNode *argument : bind_array->elements) {
+							bound_arguments.push_back(argument);
+						}
+						preserve_extra_allowed_argument_counts(bound_arguments);
 					}
 				} else if (is_callable_vararg && bind_array != nullptr) {
 					Vector<const FSParser::ExpressionNode *> bound_arguments;
