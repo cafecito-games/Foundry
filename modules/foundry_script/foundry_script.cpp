@@ -37,6 +37,7 @@
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_bytecode_loader.h"
 #include "fs_cache.h"
+#include "fs_class_handle_callable.h"
 #include "fs_conformance_registry.h"
 #include "fs_no_frontend.h"
 #include "fs_parser.h"
@@ -158,7 +159,17 @@ int64_t FSSpecializedClassHandle::_hash_code() const {
 }
 
 bool FSSpecializedClassHandle::_get(const StringName &p_name, Variant &r_ret) const {
-	return script.is_valid() && script->_get(p_name, r_ret);
+	if (script.is_null()) {
+		return false;
+	}
+	if (script->resolves_to_static_function(p_name)) {
+		// The receiver of an extracted static callable is this specialization, not the unspecialized
+		// script: invoking it later has to construct `Crate[int]` exactly as calling through this handle
+		// directly would. The callable owns the handle because nothing else does.
+		r_ret = Callable(memnew(FSClassHandleCallable(Ref<ClassHandle>(const_cast<FSSpecializedClassHandle *>(this)), p_name)));
+		return true;
+	}
+	return script->_get(p_name, r_ret);
 }
 
 Variant FSSpecializedClassHandle::callp(const StringName &p_method, const Variant **p_args, int p_argcount,
@@ -1815,6 +1826,24 @@ Variant FoundryScript::call_static_with_context(const StringName &p_method, cons
 	return result;
 }
 
+bool FoundryScript::resolves_to_static_function(const StringName &p_name) const {
+	for (const FoundryScript *top = this; top != nullptr; top = top->base.ptr()) {
+		if (top->constants.has(p_name) || top->static_variables_indices.has(p_name)) {
+			return false;
+		}
+		if (likely(top->valid)) {
+			HashMap<StringName, FSFunction *>::ConstIterator function_element = top->member_functions.find(p_name);
+			if (function_element && function_element->value->is_static()) {
+				return true;
+			}
+		}
+		if (top->subclasses.has(p_name)) {
+			return false;
+		}
+	}
+	return false;
+}
+
 bool FoundryScript::_get(const StringName &p_name, Variant &r_ret) const {
 	if (p_name == FSLanguage::get_singleton()->strings._script_source) {
 		r_ret = get_source_code();
@@ -1848,10 +1877,15 @@ bool FoundryScript::_get(const StringName &p_name, Variant &r_ret) const {
 		if (likely(top->valid)) {
 			HashMap<StringName, FSFunction *>::ConstIterator E = top->member_functions.find(p_name);
 			if (E && E->value->is_static()) {
+				// An extracted static callable is the pair of the selected function and the exact receiver
+				// it was extracted from, so it binds the class the read began on rather than the ancestor
+				// the implementation happens to be declared on. Dispatching it later then resolves `Self`
+				// to the same class a direct call through this handle would have.
+				FoundryScript *receiver = const_cast<FoundryScript *>(this);
 				if (top->rpc_config.has(p_name)) {
-					r_ret = Callable(memnew(FSRPCCallable(const_cast<FoundryScript *>(top), E->key)));
+					r_ret = Callable(memnew(FSRPCCallable(receiver, E->key)));
 				} else {
-					r_ret = Callable(const_cast<FoundryScript *>(top), E->key);
+					r_ret = Callable(receiver, E->key);
 				}
 				return true;
 			}

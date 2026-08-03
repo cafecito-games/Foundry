@@ -364,6 +364,45 @@ static bool _frame_self_class_handle(const FrameSelfBinding &p_frame_self, const
 	return false;
 }
 
+// An unqualified static member reference inside a static frame reads the class slot, which holds the
+// class that declares the running function. When the call began on a script receiver that inherits
+// that class -- or on a specialization of it -- reading the member through the receiver selects the
+// same function while keeping the receiver the call was made through, so an extracted callable
+// carries what a direct call through the same reference already carries.
+//
+// A native or builtin receiver names no member of the declaring script, so the class slot stays
+// authoritative there rather than turning a working reference into a failed read.
+static bool _class_slot_receiver_handle(const FSStaticSelfContext *p_static_self, const Variant &p_class_slot,
+		const StringName &p_name, Variant &r_receiver) {
+	if (p_static_self == nullptr || p_static_self->get_kind() != FSStaticSelfContext::SCRIPT) {
+		return false;
+	}
+	FoundryScript *declaring_script = Object::cast_to<FoundryScript>(p_class_slot.get_validated_object());
+	if (declaring_script == nullptr || !declaring_script->resolves_to_static_function(p_name)) {
+		return false;
+	}
+	const Ref<Script> receiver_script = p_static_self->get_script();
+	const FoundryScript *receiver = Object::cast_to<FoundryScript>(receiver_script.ptr());
+	if (receiver == nullptr) {
+		return false;
+	}
+	if (receiver == declaring_script && p_static_self->get_type_arguments().is_empty()) {
+		// The class slot already names the receiver exactly.
+		return false;
+	}
+	bool receiver_inherits_declaring_script = false;
+	for (Ref<Script> cursor = receiver_script; cursor.is_valid(); cursor = cursor->get_base_script()) {
+		if (cursor.ptr() == declaring_script) {
+			receiver_inherits_declaring_script = true;
+			break;
+		}
+	}
+	if (!receiver_inherits_declaring_script) {
+		return false;
+	}
+	return _static_self_class_handle(*p_static_self, r_receiver);
+}
+
 // One diagnostic for every instruction that needed the frame's receiver and could not get it. Naming
 // the function keeps a broken dispatch path identifiable instead of surfacing as a type mismatch
 // against whichever class the declaration happened to be lowered against.
@@ -2128,6 +2167,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
 				const StringName *index = &_global_names_ptr[indexname];
+
+				Variant class_slot_receiver;
+				if (unlikely(src == &stack[ADDR_STACK_CLASS] &&
+							_class_slot_receiver_handle(p_static_self, *src, *index, class_slot_receiver))) {
+					src = &class_slot_receiver;
+				}
 
 				bool valid;
 #ifdef DEBUG_ENABLED
