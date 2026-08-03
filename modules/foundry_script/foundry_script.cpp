@@ -257,18 +257,40 @@ static bool _erase_specialized_class_handles_for_array_type(const ContainerType 
 
 	const ContainerType &element_type = p_expected_type.element_types[0];
 	const Array source = r_value;
-	Array erased;
-	erased.resize(source.size());
 
+	Vector<Variant> values;
+	values.resize(source.size());
 	bool changed = false;
 	for (int i = 0; i < source.size(); i++) {
 		Variant value = source[i];
 		changed = FoundryScript::erase_specialized_class_handles_for_container_type(element_type, value) || changed;
-		erased[i] = value;
+		values.write[i] = value;
 	}
 
 	if (!changed) {
 		return false;
+	}
+
+	Array erased;
+	// Erasing a handle replaces it with the bare script it specializes, which the source's own element
+	// type may no longer accept. Keep the source's typing whenever it still holds, so a write does not
+	// silently downgrade a typed container to an untyped one.
+	if (source.is_typed()) {
+		const ContainerTypeValidate element_validator(source.get_element_type());
+		bool keeps_element_type = true;
+		for (const Variant &value : values) {
+			if (!element_validator.test_validate(value)) {
+				keeps_element_type = false;
+				break;
+			}
+		}
+		if (keeps_element_type) {
+			erased.set_typed(source.get_element_type());
+		}
+	}
+	erased.resize(values.size());
+	for (int i = 0; i < values.size(); i++) {
+		erased[i] = values[i];
 	}
 
 	r_value = erased;
@@ -284,20 +306,43 @@ static bool _erase_specialized_class_handles_for_dictionary_type(const Container
 	const ContainerType &key_type = p_expected_type.element_types[0];
 	const ContainerType value_type = p_expected_type.element_types.size() > 1 ? p_expected_type.element_types[1] : ContainerType();
 	const Dictionary source = r_value;
-	Dictionary erased;
-	erased.reserve(source.size());
 
+	Vector<Pair<Variant, Variant>> entries;
+	entries.resize(source.size());
+	int entry_index = 0;
 	bool changed = false;
 	for (const KeyValue<Variant, Variant> &E : source) {
 		Variant key = E.key;
 		Variant value = E.value;
 		changed = FoundryScript::erase_specialized_class_handles_for_container_type(key_type, key) || changed;
 		changed = FoundryScript::erase_specialized_class_handles_for_container_type(value_type, value) || changed;
-		erased[key] = value;
+		entries.write[entry_index++] = Pair<Variant, Variant>(key, value);
 	}
 
 	if (!changed) {
 		return false;
+	}
+
+	Dictionary erased;
+	// Same reasoning as the array case: keep the source's key and value types when erasure did not
+	// invalidate them.
+	if (source.is_typed()) {
+		const ContainerTypeValidate key_validator(source.get_key_type());
+		const ContainerTypeValidate value_validator(source.get_value_type());
+		bool keeps_entry_types = true;
+		for (const Pair<Variant, Variant> &entry : entries) {
+			if (!key_validator.test_validate(entry.first) || !value_validator.test_validate(entry.second)) {
+				keeps_entry_types = false;
+				break;
+			}
+		}
+		if (keeps_entry_types) {
+			erased.set_typed(source.get_key_type(), source.get_value_type());
+		}
+	}
+	erased.reserve(entries.size());
+	for (const Pair<Variant, Variant> &entry : entries) {
+		erased[entry.first] = entry.second;
 	}
 
 	r_value = erased;

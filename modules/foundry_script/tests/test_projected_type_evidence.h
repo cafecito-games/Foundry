@@ -230,4 +230,39 @@ TEST_CASE("[Modules][FoundryScript][Generics] A raw extends step cannot collide 
 	CHECK_FALSE(heir.type_arguments[1].is_known());
 }
 
+TEST_CASE("[Modules][FoundryScript][Generics] Class-handle erasure keeps a typed container typed") {
+	ScopedProjectedEvidenceLanguage language;
+	const Ref<FoundryScript> script = compile_projected_evidence_source(projected_evidence_source);
+	const Ref<FoundryScript> pair = projected_evidence_subclass(script, "Pair");
+	REQUIRE(pair.is_valid());
+
+	// `Array[RefCounted]` holding a `Pair[int]` handle: erasing the handle to the bare script it
+	// specializes must not cost the array its declared element type, which a partially known destination
+	// could not restore afterwards.
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	const Ref<FSSpecializedClassHandle> handle = FSSpecializedClassHandle::create(pair, { int_argument });
+	REQUIRE(handle.is_valid());
+
+	ContainerType element_type;
+	element_type.builtin_type = Variant::OBJECT;
+	element_type.class_name = SNAME("RefCounted");
+
+	Array typed_source;
+	typed_source.set_typed(element_type);
+	typed_source.push_back(handle);
+
+	ContainerType expected;
+	expected.builtin_type = Variant::ARRAY;
+	expected.element_types.push_back(element_type);
+
+	Variant value = typed_source;
+	REQUIRE(FoundryScript::erase_specialized_class_handles_for_container_type(expected, value));
+	const Array erased = value;
+	CHECK(erased.is_typed());
+	CHECK_EQ(erased.get_element_type(), element_type);
+	REQUIRE_EQ(erased.size(), 1);
+	CHECK_EQ(Ref<Script>(erased[0]), Ref<Script>(pair));
+}
+
 } // namespace FSTests
