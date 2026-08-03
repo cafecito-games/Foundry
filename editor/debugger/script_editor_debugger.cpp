@@ -1323,8 +1323,9 @@ void ScriptEditorDebugger::_update_buttons_state() {
 }
 
 void ScriptEditorDebugger::_stop_and_notify() {
+	const OS::ProcessID stopped_process = remote_pid;
 	stop();
-	emit_signal(SNAME("stopped"));
+	emit_signal(SNAME("stopped"), (int64_t)stopped_process);
 	_set_reason_text(TTRC("Debug session closed."), MESSAGE_WARNING);
 }
 
@@ -2049,7 +2050,7 @@ void ScriptEditorDebugger::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("update_remote_object", "id", "property", "value", "field"), &ScriptEditorDebugger::update_remote_object);
 
 	ADD_SIGNAL(MethodInfo("started"));
-	ADD_SIGNAL(MethodInfo("stopped"));
+	ADD_SIGNAL(MethodInfo("stopped", PropertyInfo(Variant::INT, "process_id")));
 	ADD_SIGNAL(MethodInfo("stop_requested"));
 	ADD_SIGNAL(MethodInfo("stack_frame_selected", PropertyInfo(Variant::INT, "frame")));
 	ADD_SIGNAL(MethodInfo("error_selected", PropertyInfo(Variant::INT, "error")));

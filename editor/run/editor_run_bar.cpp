@@ -155,8 +155,17 @@ void EditorRunBar::_poll_child_processes() {
 	}
 }
 
-void EditorRunBar::debug_sessions_exited() {
+bool EditorRunBar::is_debug_session_exit_current(OS::ProcessID p_represented_process, OS::ProcessID p_stopped_process) {
+	return p_represented_process == 0 || p_represented_process == p_stopped_process;
+}
+
+void EditorRunBar::debug_sessions_exited(OS::ProcessID p_process_id) {
 	if (editor_run.get_status() == EditorRun::STATUS_STOP) {
+		return;
+	}
+	if (!is_debug_session_exit_current(represented_process, p_process_id)) {
+		// A replaced debugger can finish closing after its replacement starts. Its
+		// socket lifecycle must not start or finish cleanup for the new process.
 		return;
 	}
 
