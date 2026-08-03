@@ -134,6 +134,15 @@ public:
 		return analyzer.type_from_variant(p_value, nullptr);
 	}
 
+	// The container-type description the analyzer derives for a parser type record, which is the
+	// width-aware naming surface: unlike `DataType::to_string()`, its names are read by diagnostics
+	// rather than written back into source.
+	static ContainerType container_type_of(const FSParser::DataType &p_type) {
+		FSParser parser;
+		FSAnalyzer analyzer(&parser);
+		return analyzer.make_container_type_from_datatype(p_type, nullptr);
+	}
+
 	// Resolves the call-result return type the analyzer derives for a method exposed through MethodInfo
 	// (the cross-script boundary), including the METHOD_FLAG_ASYNC coroutine wrap.
 	static FSParser::DataType method_return_type(const PropertyInfo &p_return_val, bool p_async) {
@@ -4151,15 +4160,16 @@ TEST_CASE("[Modules][FoundryScript][NumericType] Two widths on one carrier are o
 	CHECK(narrow == copied);
 	CHECK(narrow != wide);
 
-	// No width has a source spelling until the built-in registry gains one, so a narrower-than-carrier
-	// width renders diagnostically while the carrier-wide width keeps the carrier's own spelling --
-	// which is exactly what that spelling still means.
-	CHECK(narrow.to_string() == "int32");
+	// `to_string()` is the source spelling and stays carrier-only: no width has a name the built-in
+	// registry can resolve yet, and a refactoring writes this result straight back into a script.
+	CHECK(narrow.to_string() == "int");
 	CHECK(wide.to_string() == "int");
-	CHECK(make_numeric_type(Variant::UINT, NumericType::UINT32).to_string() == "uint32");
-	CHECK(make_numeric_type(Variant::UINT, NumericType::UINT64).to_string() == "uint");
-	CHECK(make_numeric_type(Variant::INT, NumericType::INT16).to_string() == "int16");
-	CHECK(make_builtin_type(Variant::INT).to_string() == "int");
+	CHECK(make_numeric_type(Variant::UINT, NumericType::UINT32).to_string() == "uint");
+
+	// Width-aware naming lives on the container-type description, which diagnostics read.
+	CHECK(TestFSAnalyzerAccessor::container_type_of(narrow).get_type_name() == "int");
+	CHECK(TestFSAnalyzerAccessor::container_type_of(wide).get_type_name() == "long");
+	CHECK(TestFSAnalyzerAccessor::container_type_of(make_numeric_type(Variant::UINT, NumericType::UINT64)).get_type_name() == "ulong");
 
 	CHECK_FALSE(FSTypeCompatibility::check(narrow, wide).compatible);
 	CHECK_FALSE(FSTypeCompatibility::check(wide, narrow).compatible);
@@ -4228,8 +4238,6 @@ TEST_CASE("[Modules][FoundryScript][NumericType] PropertyInfo erases width and d
 	CHECK(decoded_narrow.kind == FSParser::DataType::BUILTIN);
 	CHECK(decoded_narrow.builtin_type == Variant::INT);
 	CHECK(decoded_narrow.numeric_type == NumericType::INT64);
-	// The widened decode must keep rendering as the legacy spelling: a rendered type reaches refactor
-	// output and hovers, and this slice adds no new source-visible name for a width.
 	CHECK(decoded_narrow.to_string() == "int");
 
 	const PropertyInfo unsigned_info = make_numeric_type(Variant::UINT, NumericType::UINT32).to_property_info("value");
@@ -4237,7 +4245,6 @@ TEST_CASE("[Modules][FoundryScript][NumericType] PropertyInfo erases width and d
 	const FSParser::DataType decoded_unsigned = TestFSAnalyzerAccessor::decode_property(unsigned_info);
 	CHECK(decoded_unsigned.builtin_type == Variant::UINT);
 	CHECK(decoded_unsigned.numeric_type == NumericType::UINT64);
-	CHECK(decoded_unsigned.to_string() == "uint");
 
 	// Non-integer carriers pin no width, so nothing is invented for them.
 	const PropertyInfo string_info = make_builtin_type(Variant::STRING).to_property_info("text");

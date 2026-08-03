@@ -150,19 +150,13 @@ String FSParser::DataType::to_string() const {
 				result = vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
 				break;
 			}
-			if (numeric_type != NumericType::NONE && numeric_type_is_carrier_consistent(numeric_type, builtin_type) &&
-					numeric_type != numeric_type_wide_for_carrier(builtin_type)) {
-				// A width narrower than its carrier names itself, since `Variant::get_type_name()` knows
-				// only the carrier. The diagnostic name is used rather than the source spelling because no
-				// width has a source spelling yet: the built-in registry still resolves `int` and `uint` to
-				// the full 64-bit carrier, and the narrow spellings arrive with that registry change. A
-				// rendered type flows into refactor output and hovers, so a name that cannot be parsed back
-				// must not appear here.
-				result = numeric_type_name(numeric_type);
-				break;
-			}
-			// The carrier-wide descriptor is exactly what the carrier already means, including for a type
-			// reconstructed at a width-erased boundary, so it keeps the carrier's spelling.
+			// Deliberately carrier-only, so a width never reaches this name. `to_string()` is the source
+			// spelling of a type: refactorings write its result straight back into a script, so every name
+			// it produces has to be one the built-in registry can resolve. That registry still maps `int`
+			// and `uint` to the full 64-bit carrier and has no spelling for any other width, so a width
+			// gets a name here only once the registry gains one. Width-aware naming meanwhile lives on the
+			// container-type description (`ContainerType::get_type_name()`), which is read by diagnostics
+			// rather than written into source.
 			result = Variant::get_type_name(builtin_type);
 			break;
 		case NATIVE:
