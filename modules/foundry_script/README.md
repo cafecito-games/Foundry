@@ -169,6 +169,57 @@ errors. Successful keep decisions are emitted as deterministic informational mes
 names can be audited.
 
 
+## Typed rest parameters
+
+A function or lambda may end its parameter list with one rest parameter that collects every surplus
+call argument. Its annotation describes the **collected array**, so it must resolve to `Array` or
+`Array[T]`:
+
+```foundry
+func tally(prefix: String, scale: int = 2, ...values: Array[int]) -> int:
+	var total := prefix.length()
+	for value in values:
+		total += value * scale
+	return total
+```
+
+Each surplus argument is checked against the element type under the same conversion, nullability,
+strict-dynamic, and diagnostic rules as a fixed parameter, and inside the body the parameter has
+exactly the declared `Array[int]` type. Whenever the element type is representable as a typed
+container the collected array is genuinely typed at runtime, including for a call that supplies no
+surplus arguments at all. Named call arguments target only the fixed parameters; the rest parameter
+is never nameable.
+
+A rest tail spelled `...values`, `...values: Array`, or `...values: Array[Variant]` stays gradual and
+accepts anything.
+
+Explicit variadic Callable types spell the tail as a final `...Array[T]` entry:
+
+```foundry
+var callback: Callable[[String, int, ...Array[int]], int] = tally
+```
+
+The rest element type is contravariant: an override, an abstract implementation, a trait witness, a
+callable assignment, or a signal connection may widen the element type or fall back to a gradual
+tail, but never narrow it. Signals themselves remain fixed-arity.
+
+A generic method infers its type parameters from every rest argument:
+
+```foundry
+func collect[T](...values: Array[T]) -> Array[T]:
+	return values
+
+var ints: Array[int] = collect(1, 2, 3)
+var empty: Array[int] = collect[int]()
+```
+
+Two deliberate boundaries apply. Method type arguments are not reified in the call frame, so a rest
+Array whose element type depends on a **method** type parameter is runtime-erased: it is statically
+`Array[T]` but carries no element metadata at runtime (a concrete element type stays reified even
+inside a generic method). And native `MethodInfo`-only varargs remain untyped and gradual, because
+the engine-wide `MethodInfo`, `ClassDB`, and GDExtension ABI are unchanged.
+
+
 ## Other
 
 There are many other classes in the FoundryScript module. Here is a brief overview of some of them:

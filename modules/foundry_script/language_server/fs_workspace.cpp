@@ -1085,6 +1085,7 @@ Error FSWorkspace::resolve_signature(const LSP::TextDocumentPositionParams &p_do
 					signature_info.label = symbol->detail;
 					signature_info.documentation = symbol->render();
 
+					int rest_parameter_index = -1;
 					for (int i = 0; i < symbol->children.size(); i++) {
 						const LSP::DocumentSymbol &arg = symbol->children[i];
 						LSP::ParameterInformation arg_info;
@@ -1095,7 +1096,18 @@ Error FSWorkspace::resolve_signature(const LSP::TextDocumentPositionParams &p_do
 						if (arg_info.label.is_empty()) {
 							arg_info.label = arg.name;
 						}
+						if (arg.rest_parameter) {
+							// The rest parameter is spelled with its ellipsis in the signature label,
+							// so the highlighted slot matches the declaration the user reads.
+							arg_info.label = "..." + arg_info.label;
+							rest_parameter_index = signature_info.parameters.size();
+						}
 						signature_info.parameters.push_back(arg_info);
+					}
+					// Every surplus argument is collected by the rest parameter, so clamp the active
+					// slot instead of running past the end of the parameter list.
+					if (rest_parameter_index >= 0 && r_signature.activeParameter > rest_parameter_index) {
+						r_signature.activeParameter = rest_parameter_index;
 					}
 					r_signature.signatures.push_back(signature_info);
 					break;

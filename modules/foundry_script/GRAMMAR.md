@@ -604,7 +604,20 @@ Rules (`parse_function_signature`):
   representable as a typed container (nullable and other erased element forms follow the same
   typed-container erasure as an ordinary `Array[T]` value).
 - `...name`, `...name: Array`, and `...name: Array[Variant]` are gradual: surplus arguments are
-  unconstrained.
+  unconstrained, and such a tail is indistinguishable from a native untyped vararg.
+- The rest parameter can never be passed **by name**: named call arguments target only the fixed
+  parameters that precede it (*"The rest parameter `name` cannot be passed by name."*). Surplus
+  arguments are always positional, and no positional argument may follow a named one.
+- The rest element type is **contravariant** across an override, an abstract requirement, a trait
+  witness, a callable assignment, and a signal connection: the implementing side may accept the same
+  element type, a broader one, or a gradual tail, but never a narrower one.
+- A **generic** method infers its type parameters from every rest argument, so
+  `func collect[T](...values: Array[T])` solves `T` with no fixed parameter, and an explicit type
+  application (`collect[int]()`) supports an empty call. Because method type arguments are not
+  reified in the call frame, a rest Array whose element depends on a method type parameter is
+  **runtime-erased** — statically it is `Array[T]`, but the packed value carries no element
+  metadata. A rest element that does not depend on a method type parameter stays reified even
+  inside a generic method.
 - Parameters with defaults must follow parameters without defaults (except the rest
   parameter).
 - `void` is allowed only as a return type.
@@ -947,6 +960,9 @@ generic_application = ( identifier | attribute_access ), "[", type_arg_list, "]"
   always a named argument.
 - `name[TypeArgs](...)` / `receiver.method[TypeArgs](...)` is explicit generic-method
   application; the bracket list is a use-site type-argument list (see subscript below).
+- A named argument may target only a **fixed** parameter. A rest parameter is never nameable, and
+  every argument past the fixed parameter list is positional and checked against the rest element
+  type (see the function-declaration rules above).
 
 #### Attribute access
 

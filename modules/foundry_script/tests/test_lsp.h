@@ -1350,6 +1350,61 @@ func f():
 			REQUIRE(cls.documentation.contains("t3"));
 		}
 
+		SUBCASE("Typed rest parameters are preserved in symbols, hover, and signature help") {
+			String path = "res://lsp/typed_rest_parameter.fs";
+			assert_no_errors_in(path);
+			String uri = workspace->get_file_uri(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			Ref<FSTextDocument> text_document = proto->get_text_document();
+
+			const LSP::DocumentSymbol *collect = parser->get_member_symbol("collect");
+			REQUIRE(collect);
+			CHECK_EQ(collect->detail, "func collect(prefix: String, ...values: Array[int]) -> int");
+			REQUIRE(collect->children.size() == 2);
+			CHECK_EQ(collect->children[0].detail, "var prefix: String");
+			CHECK_FALSE(collect->children[0].rest_parameter);
+			CHECK_EQ(collect->children[1].detail, "var values: Array[int]");
+			CHECK(collect->children[1].rest_parameter);
+
+			// A rest tail without a narrowing element type stays gradual and renders as `Array`.
+			const LSP::DocumentSymbol *gather = parser->get_member_symbol("gather");
+			REQUIRE(gather);
+			CHECK_EQ(gather->detail, "func gather(...args: Array) -> int");
+
+			Variant hover_variant = text_document->hover(pos_in(uri, collect->selectionRange.start).to_json());
+			REQUIRE(hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary hover = hover_variant;
+			Dictionary hover_contents = hover["contents"];
+			CHECK(String(hover_contents["value"]).contains("func collect(prefix: String, ...values: Array[int]) -> int"));
+
+			// `collect("n", 1, 2, 3)` on line 7: the fixed argument selects slot 0, and every
+			// surplus argument clamps onto the rest slot instead of running past the parameter list.
+			struct RestSignatureProbe {
+				int character;
+				int expected_active_parameter;
+			};
+			const RestSignatureProbe probes[] = { { 11, 0 }, { 15, 1 }, { 18, 1 }, { 21, 1 } };
+			for (const RestSignatureProbe &probe : probes) {
+				LSP::SignatureHelp signature_help;
+				CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(7, probe.character)), signature_help), OK);
+				REQUIRE(signature_help.signatures.size() == 1);
+				const LSP::SignatureInformation &signature = signature_help.signatures[0];
+				CHECK_EQ(signature.label, "func collect(prefix: String, ...values: Array[int]) -> int");
+				REQUIRE(signature.parameters.size() == 2);
+				CHECK_EQ(signature.parameters[0].label, "prefix: String");
+				CHECK_EQ(signature.parameters[1].label, "...values: Array[int]");
+				CHECK_EQ(signature_help.activeParameter, probe.expected_active_parameter);
+			}
+
+			LSP::SignatureHelp gradual_signature_help;
+			CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(8, 16)), gradual_signature_help), OK);
+			REQUIRE(gradual_signature_help.signatures.size() == 1);
+			REQUIRE(gradual_signature_help.signatures[0].parameters.size() == 1);
+			CHECK_EQ(gradual_signature_help.signatures[0].parameters[0].label, "...args: Array");
+			CHECK_EQ(gradual_signature_help.activeParameter, 0);
+		}
+
 		SUBCASE("Strict type syntax is preserved in symbols and generated API") {
 			String path = "res://lsp/strict_type_presentation.fs";
 			assert_no_errors_in(path);
@@ -3448,6 +3503,17 @@ func f():
 			// The two tokens on line 2 must be encoded relative to each other.
 			CHECK_EQ(data[25], 0);
 			CHECK_EQ(data[26], 3);
+		}
+
+		SUBCASE("a typed rest parameter classifies its name, outer Array, and nested element") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_typed_rest.fs");
+			text_document->didOpen(make_did_open_params(uri, "func collect(...values: Array[Array[int]]) -> void:\n\tpass\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 0, 16, 6, LSP::SemanticTokenType::PARAMETER, declaration_modifier); // values
+			check_semantic_token_at(tokens, 0, 24, 5, LSP::SemanticTokenType::TYPE, default_library_modifier); // Array
+			check_semantic_token_at(tokens, 0, 30, 5, LSP::SemanticTokenType::TYPE, default_library_modifier); // Array
+			check_semantic_token_at(tokens, 0, 36, 3, LSP::SemanticTokenType::TYPE, default_library_modifier); // int
 		}
 
 		SUBCASE("a keyword usable as an identifier is classified by its role, not its spelling") {

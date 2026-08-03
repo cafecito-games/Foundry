@@ -1347,6 +1347,12 @@ struct DocumentSymbol {
 	bool local = false;
 
 	/**
+	 * If `true`: Symbol is the rest (variadic) parameter of its enclosing function, so it collects
+	 * every surplus call argument instead of matching a single one.
+	 */
+	bool rest_parameter = false;
+
+	/**
 	 * The range enclosing this symbol not including leading/trailing whitespace but everything else
 	 * like comments. This information is typically used to determine if the clients cursor is
 	 * inside the symbol to reveal in the symbol in the UI.
