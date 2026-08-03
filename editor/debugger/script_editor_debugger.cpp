@@ -74,7 +74,8 @@ using CameraOverride = EditorDebuggerNode::CameraOverride;
 void ScriptEditorDebugger::_put_msg(const String &p_message, const Array &p_data, uint64_t p_thread_id) {
 	ERR_FAIL_COND(p_thread_id == Thread::UNASSIGNED_ID);
 	if (is_session_active()) {
-		Array msg = { p_message, p_thread_id, p_data };
+		// The debugger wire protocol declares the thread id as a signed integer field.
+		Array msg = { p_message, int64_t(p_thread_id), p_data };
 		Error err = peer->put_message(msg);
 		ERR_FAIL_COND_MSG(err != OK, vformat("Failed to send message %d", err));
 	}

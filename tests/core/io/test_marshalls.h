@@ -222,7 +222,7 @@ TEST_CASE("[Marshalls] INT 32 bit Variant encoding") {
 
 TEST_CASE("[Marshalls] INT 64 bit Variant encoding") {
 	int r_len;
-	Variant variant(uint64_t(0x0f123456789abcdef));
+	Variant variant(int64_t(0xf123456789abcdefULL));
 	uint8_t buffer[12];
 
 	CHECK(encode_variant(variant, buffer, r_len) == OK);
@@ -332,7 +332,7 @@ TEST_CASE("[Marshalls] INT 64 bit Variant decoding") {
 
 	CHECK(decode_variant(variant, buffer, 12, &r_len) == OK);
 	CHECK(r_len == 12);
-	CHECK(variant == Variant(uint64_t(0x0f123456789abcdef)));
+	CHECK(variant == Variant(int64_t(0xf123456789abcdefULL)));
 }
 
 TEST_CASE("[Marshalls] FLOAT single precision Variant decoding") {
@@ -472,7 +472,7 @@ TEST_CASE("[Marshalls] Typed array encoding") {
 	int r_len;
 	Array array;
 	array.set_typed(Variant::INT, StringName(), Ref<Script>());
-	array.push_back(Variant(uint64_t(0x0f123456789abcdef)));
+	array.push_back(Variant(int64_t(0xf123456789abcdefULL)));
 	uint8_t buffer[24];
 
 	CHECK(encode_variant(array, buffer, r_len) == OK);
@@ -524,14 +524,14 @@ TEST_CASE("[Marshalls] Typed array decoding") {
 	Array array = variant;
 	CHECK(array.get_typed_builtin() == Variant::INT);
 	CHECK(array.size() == 1);
-	CHECK(array[0] == Variant(uint64_t(0x0f123456789abcdef)));
+	CHECK(array[0] == Variant(int64_t(0xf123456789abcdefULL)));
 }
 
 TEST_CASE("[Marshalls] Typed dicttionary encoding") {
 	int r_len;
 	Dictionary dictionary;
 	dictionary.set_typed(Variant::INT, StringName(), Ref<Script>(), Variant::INT, StringName(), Ref<Script>());
-	dictionary[Variant(uint64_t(0x0f123456789abcdef))] = Variant(uint64_t(0x0f123456789abcdef));
+	dictionary[Variant(int64_t(0xf123456789abcdefULL))] = Variant(int64_t(0xf123456789abcdefULL));
 	uint8_t buffer[40];
 
 	CHECK(encode_variant(dictionary, buffer, r_len) == OK);
@@ -606,8 +606,8 @@ TEST_CASE("[Marshalls] Typed dictionary decoding") {
 	CHECK(dictionary.get_typed_key_builtin() == Variant::INT);
 	CHECK(dictionary.get_typed_value_builtin() == Variant::INT);
 	CHECK(dictionary.size() == 1);
-	CHECK(dictionary.has(Variant(uint64_t(0x0f123456789abcdef))));
-	CHECK(dictionary[Variant(uint64_t(0x0f123456789abcdef))] == Variant(uint64_t(0x0f123456789abcdef)));
+	CHECK(dictionary.has(Variant(int64_t(0xf123456789abcdefULL))));
+	CHECK(dictionary[Variant(int64_t(0xf123456789abcdefULL))] == Variant(int64_t(0xf123456789abcdefULL)));
 }
 
 TEST_CASE("[Marshalls] Nested typed container Variant encoding and decoding") {

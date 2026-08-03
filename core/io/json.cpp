@@ -1065,7 +1065,8 @@ Variant JSON::_from_native(const Variant &p_variant, bool p_full_objects, int p_
 
 			Array args;
 			for (int i = 0; i < arr.size(); i++) {
-				args.push_back(arr[i]);
+				// Byte elements are `uint8_t` in C++ but plain JSON integers in this format.
+				args.push_back(int64_t(arr[i]));
 			}
 
 			RETURN_ARGS;

@@ -552,11 +552,21 @@ public:
 		ERR_FAIL_V(nullptr);
 	}
 
-	// Used internally in FoundryExtension and Godot's binding system when converting to Variant
+	// Used internally in FoundryExtension and the binding system when converting to Variant
 	// from values that may include RequiredParam<T> or RequiredResult<T>.
+	//
+	// Every C++ unsigned integer declares `Variant::INT` plus width metadata through
+	// `GetTypeInfo<T>`, so a bound result must carry the signed carrier its own declaration names.
+	// Producing `Variant::UINT` here would make bound method results, property values, and the
+	// FoundryExtension ABI disagree with their declared type, which is what native integer metadata
+	// mapping resolves later; until then this boundary stays nominally signed.
 	template <typename T>
 	_FORCE_INLINE_ static Variant make(const T &v) {
-		return Variant(v);
+		if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T> && !std::is_same_v<std::remove_cv_t<T>, bool>) {
+			return Variant(static_cast<int64_t>(v));
+		} else {
+			return Variant(v);
+		}
 	}
 	template <typename T>
 	_FORCE_INLINE_ static Variant make(const FoundryExtensionConstPtr<T> &v) {

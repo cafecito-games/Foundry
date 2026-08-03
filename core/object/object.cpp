@@ -111,7 +111,9 @@ PropertyInfo::operator Dictionary() const {
 	d["type"] = type;
 	d["hint"] = hint;
 	d["hint_string"] = hint_string;
-	d["usage"] = usage;
+	// `usage` and `flags` are unsigned masks over signed flag enums, so their unsignedness is
+	// incidental; script-facing reflection declares them as `int`.
+	d["usage"] = int64_t(usage);
 	return d;
 }
 
@@ -172,7 +174,7 @@ MethodInfo::operator Dictionary() const {
 		da.push_back(default_arguments[i]);
 	}
 	d["default_args"] = da;
-	d["flags"] = flags;
+	d["flags"] = int64_t(flags);
 	d["id"] = id;
 	Dictionary r = return_val;
 	d["return"] = r;
@@ -248,7 +250,7 @@ Object::Connection::operator Variant() const {
 	Dictionary d;
 	d["signal"] = signal;
 	d["callable"] = callable;
-	d["flags"] = flags;
+	d["flags"] = int64_t(flags);
 	return d;
 }
 

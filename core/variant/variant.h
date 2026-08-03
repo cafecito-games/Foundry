@@ -595,9 +595,12 @@ public:
 	template <typename T, std::enable_if_t<std::is_enum_v<T>, int> = 0>
 	_FORCE_INLINE_ Variant(T p_enum) :
 			Variant(static_cast<int64_t>(p_enum)) {}
+	// A bit field is an unsigned container for a signed enum's flags, so its unsignedness is
+	// incidental. `GetTypeInfo<BitField<T>>` declares `INT`, and the signed carrier keeps the
+	// stored value consistent with that declaration.
 	template <typename T>
 	_FORCE_INLINE_ Variant(BitField<T> p_bitfield) :
-			Variant(static_cast<uint64_t>(p_bitfield)) {}
+			Variant(static_cast<int64_t>(p_bitfield)) {}
 	template <typename T>
 	_FORCE_INLINE_ Variant(const TypedArray<T> &p_typed_array) :
 			Variant(static_cast<const Array &>(p_typed_array)) {}

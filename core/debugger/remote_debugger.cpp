@@ -100,7 +100,9 @@ public:
 };
 
 Error RemoteDebugger::_put_msg(const String &p_message, const Array &p_data) {
-	Array msg = { p_message, Thread::get_caller_id(), p_data };
+	// The debugger wire protocol declares the thread id as a signed integer field, so the unsigned
+	// C++ `Thread::ID` is carried nominally.
+	Array msg = { p_message, int64_t(Thread::get_caller_id()), p_data };
 	Error err = peer->put_message(msg);
 	if (err != OK) {
 		n_messages_dropped++;

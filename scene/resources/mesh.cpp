@@ -1351,10 +1351,12 @@ Array ArrayMesh::_get_surfaces() const {
 	for (int i = 0; i < surfaces.size(); i++) {
 		RenderingServer::SurfaceData surface = RS::get_singleton()->mesh_get_surface(mesh, i);
 		Dictionary data;
-		data["format"] = surface.format;
+		// The `_surfaces` schema is a persisted contract read back into signed script integers, so
+		// the unsigned C++ widths of the format mask and the element counts stay nominally signed.
+		data["format"] = int64_t(surface.format);
 		data["primitive"] = surface.primitive;
 		data["vertex_data"] = surface.vertex_data;
-		data["vertex_count"] = surface.vertex_count;
+		data["vertex_count"] = int64_t(surface.vertex_count);
 		if (surface.skin_data.size()) {
 			data["skin_data"] = surface.skin_data;
 		}
@@ -1365,7 +1367,7 @@ Array ArrayMesh::_get_surfaces() const {
 		data["uv_scale"] = surface.uv_scale;
 		if (surface.index_count) {
 			data["index_data"] = surface.index_data;
-			data["index_count"] = surface.index_count;
+			data["index_count"] = int64_t(surface.index_count);
 		};
 
 		Array lods;

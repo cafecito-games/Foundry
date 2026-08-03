@@ -2373,33 +2373,33 @@ Variant::Variant(Math::int_alt_t p_int_alt) :
 	_data._int = p_int_alt;
 }
 
-// Unsigned C++ integers still select the signed carrier. Routing them to UINT requires the
-// conversion, operator, and persistence surfaces that later fixed-width-integer work adds; without
-// those, unsigned-typed native properties would reach binary/text serialization and mixed
-// signed/unsigned script operators with no defined behavior.
+// Unsigned C++ integers select the unsigned carrier. Boundaries that declare their Variant type
+// through `GetTypeInfo<T>` — bound method results, property values, and the FoundryExtension ABI —
+// still declare `INT` plus width metadata, so those results are retagged in `VariantInternal::make()`
+// instead of inheriting the carrier chosen here.
 Variant::Variant(uint64_t p_uint64) :
-		type(INT) {
-	_data._int = int64_t(p_uint64);
+		type(UINT) {
+	_data._uint = p_uint64;
 }
 
 Variant::Variant(uint32_t p_uint32) :
-		type(INT) {
-	_data._int = int64_t(p_uint32);
+		type(UINT) {
+	_data._uint = p_uint32;
 }
 
 Variant::Variant(uint16_t p_uint16) :
-		type(INT) {
-	_data._int = int64_t(p_uint16);
+		type(UINT) {
+	_data._uint = p_uint16;
 }
 
 Variant::Variant(uint8_t p_uint8) :
-		type(INT) {
-	_data._int = int64_t(p_uint8);
+		type(UINT) {
+	_data._uint = p_uint8;
 }
 
 Variant::Variant(Math::uint_alt_t p_uint_alt) :
-		type(INT) {
-	_data._int = p_uint_alt;
+		type(UINT) {
+	_data._uint = p_uint_alt;
 }
 
 Variant::Variant(float p_float) :
