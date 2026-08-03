@@ -1590,6 +1590,8 @@ void FSParser::parse_extends() {
 		if (match(FSTokenizer::Token::BRACKET_OPEN)) {
 			if (check(FSTokenizer::Token::BRACKET_CLOSE)) {
 				push_error(R"(Expected at least one type argument after "[".)");
+				// Still enter parse_type so `extends Base[<caret>]` records COMPLETION_TYPE_NAME.
+				parse_type();
 			} else {
 				do {
 					TypeNode *type_argument = parse_type();
@@ -1670,6 +1672,8 @@ bool FSParser::parse_trait_use(ClassNode::TraitUse &r_trait_use) {
 	if (match(FSTokenizer::Token::BRACKET_OPEN)) {
 		if (check(FSTokenizer::Token::BRACKET_CLOSE)) {
 			push_error(R"(Expected at least one type argument after "[".)");
+			// Still enter parse_type so `uses Trait[<caret>]` records COMPLETION_TYPE_NAME.
+			parse_type();
 		} else {
 			do {
 				TypeNode *type_argument = parse_type();
@@ -6175,10 +6179,14 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 			}
 			consume(FSTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after signature parameter types.)");
 			if (is_callable_type) {
-				consume(FSTokenizer::Token::COMMA, R"(Expected "," after Callable signature parameter types.)");
-				type->signature_return_type = parse_type(true);
-				if (type->signature_return_type == nullptr) {
-					push_error("Expected return type for Callable signature.");
+				// Gate return-type parsing on the required separator. Speculatively parsing a return
+				// type after a malformed/unclosed parameter list would overwrite the parameter's
+				// COMPLETION_TYPE_NAME with COMPLETION_TYPE_NAME_OR_VOID at the same cursor.
+				if (consume(FSTokenizer::Token::COMMA, R"(Expected "," after Callable signature parameter types.)")) {
+					type->signature_return_type = parse_type(true);
+					if (type->signature_return_type == nullptr) {
+						push_error("Expected return type for Callable signature.");
+					}
 				}
 			} else if (match(FSTokenizer::Token::COMMA)) {
 				push_error("Signal signatures cannot specify a return type.");
@@ -6197,6 +6205,8 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 			type->is_coroutine = true;
 			if (check(FSTokenizer::Token::BRACKET_CLOSE)) {
 				push_error(R"(Coroutine[T] expects a single result type parameter.)");
+				// Still enter parse_type so Coroutine[<caret>] records COMPLETION_TYPE_NAME_OR_VOID.
+				parse_type(true);
 			} else {
 				TypeNode *result_type = parse_type(true); // Allow void so void-returning async work is nameable as Coroutine[void].
 				if (result_type == nullptr) {
@@ -6223,6 +6233,8 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 		if (is_type_handle) {
 			if (check(FSTokenizer::Token::BRACKET_CLOSE)) {
 				push_error(R"(Type[T] expects exactly one type argument.)");
+				// Still enter parse_type so Type[<caret>] records COMPLETION_TYPE_HANDLE_ARGUMENT.
+				parse_type(false, COMPLETION_TYPE_HANDLE_ARGUMENT);
 			} else {
 				TypeNode *represented_type = parse_type(false, COMPLETION_TYPE_HANDLE_ARGUMENT);
 				if (represented_type == nullptr) {
