@@ -11627,6 +11627,11 @@ static FSParser::DataType _type_from_container_type(const ContainerType &p_type)
 	} else {
 		result.kind = FSParser::DataType::BUILTIN;
 		result.builtin_type = p_type.builtin_type;
+		// Reverse of `make_container_type_from_datatype()`, and built field by field for the same
+		// reason, so the width has to be carried back across explicitly. Dropping it would make a typed
+		// container constant read back from the runtime unconstrained, and the analyzer would then treat
+		// a declared width as carrier-only for every later stage.
+		result.numeric_type = p_type.numeric_type;
 	}
 	if (p_type.is_type_handle) {
 		// The descriptor denotes a class rather than instances of it, so the reconstructed type has to

@@ -38,6 +38,7 @@
 #include "modules/foundry_script/fs_type.h"
 
 #include "core/config/project_settings.h"
+#include "core/variant/container_type_validate.h"
 
 #include "tests/test_macros.h"
 
@@ -123,6 +124,14 @@ public:
 		FSParser parser;
 		FSAnalyzer analyzer(&parser);
 		return analyzer.type_from_property(p_property);
+	}
+
+	// Resolves the static type the analyzer gives a constant value, which is where a typed container
+	// built at runtime is converted back into a rich type record.
+	static FSParser::DataType type_of_constant(const Variant &p_value) {
+		FSParser parser;
+		FSAnalyzer analyzer(&parser);
+		return analyzer.type_from_variant(p_value, nullptr);
 	}
 
 	// Resolves the call-result return type the analyzer derives for a method exposed through MethodInfo
@@ -4249,6 +4258,30 @@ TEST_CASE("[Modules][FoundryScript][NumericType] PropertyInfo erases width and d
 	const FSParser::DataType decoded_array = TestFSAnalyzerAccessor::decode_property(array_info);
 	REQUIRE(decoded_array.has_container_element_type(0));
 	CHECK(decoded_array.get_container_element_type(0).numeric_type == NumericType::NONE);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] A typed container constant converts back with its width") {
+	// Typed containers are the channel that does keep the width, so reading one back must not degrade
+	// it to a carrier-only element the way a plain PropertyInfo does.
+	ContainerType element_type;
+	element_type.builtin_type = Variant::INT;
+	element_type.numeric_type = NumericType::INT32;
+
+	Array typed_array;
+	REQUIRE(typed_array.set_typed(element_type));
+	const FSParser::DataType array_type = TestFSAnalyzerAccessor::type_of_constant(typed_array);
+	REQUIRE(array_type.has_container_element_type(0));
+	CHECK(array_type.get_container_element_type(0).numeric_type == NumericType::INT32);
+
+	ContainerType value_type;
+	value_type.builtin_type = Variant::UINT;
+	value_type.numeric_type = NumericType::UINT32;
+	Dictionary typed_dictionary;
+	REQUIRE(typed_dictionary.set_typed(element_type, value_type));
+	const FSParser::DataType dictionary_type = TestFSAnalyzerAccessor::type_of_constant(typed_dictionary);
+	REQUIRE(dictionary_type.has_container_element_type(1));
+	CHECK(dictionary_type.get_container_element_type(0).numeric_type == NumericType::INT32);
+	CHECK(dictionary_type.get_container_element_type(1).numeric_type == NumericType::UINT32);
 }
 
 } // namespace FSTests
