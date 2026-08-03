@@ -3376,4 +3376,179 @@ TEST_CASE("[Variant][Int] Each rejected operand pair reports its own diagnostic"
 	CHECK(diagnostic(Variant::OP_SHIFT_RIGHT, -1, 1).contains("positive"));
 }
 
+// Builds an integer vector whose every component holds `p_value`.
+template <typename VectorType>
+static VectorType vector_int_filled(int32_t p_value) {
+	VectorType filled;
+	for (int axis = 0; axis < VectorType::AXIS_COUNT; axis++) {
+		filled[axis] = p_value;
+	}
+	return filled;
+}
+
+// Evaluates `p_op` on an integer vector and a divisor through the plain, validated, and pointer
+// operator tables, checks the three agree, and returns the plain-path result.
+template <typename VectorType, typename DivisorType>
+static VectorType evaluate_vector_int_binary(Variant::Operator p_op, const VectorType &p_left, const DivisorType &p_right) {
+	const Variant left = p_left;
+	const Variant right = p_right;
+	const Variant::Type left_type = left.get_type();
+	const Variant::Type right_type = right.get_type();
+
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(p_op, left, right, result, valid);
+	REQUIRE(valid);
+	REQUIRE_EQ(result.get_type(), left_type);
+	REQUIRE_EQ(Variant::get_operator_return_type(p_op, left_type, right_type), left_type);
+	const VectorType expected = result;
+
+	const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(p_op, left_type, right_type);
+	REQUIRE(validated != nullptr);
+	if (validated != nullptr) {
+		Variant validated_result = vector_int_filled<VectorType>(7);
+		validated(&left, &right, &validated_result);
+		CHECK_EQ(validated_result.get_type(), left_type);
+		const VectorType validated_value = validated_result;
+		CHECK_EQ(validated_value, expected);
+	}
+
+	const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(p_op, left_type, right_type);
+	REQUIRE(pointer != nullptr);
+	if (pointer != nullptr) {
+		VectorType pointer_result = vector_int_filled<VectorType>(7);
+		pointer(&p_left, &p_right, &pointer_result);
+		CHECK_EQ(pointer_result, expected);
+	}
+
+	return expected;
+}
+
+// Checks that no entry point runs an operation the operands cannot support: the reporting path
+// answers through its validity flag, and the two `void` paths write a zero vector over their
+// destination and raise an engine error.
+template <typename VectorType, typename DivisorType>
+static void check_vector_int_rejected(Variant::Operator p_op, const VectorType &p_left, const DivisorType &p_right) {
+	const Variant left = p_left;
+	const Variant right = p_right;
+	const Variant::Type left_type = left.get_type();
+	const Variant::Type right_type = right.get_type();
+
+	bool valid = true;
+	Variant result;
+	Variant::evaluate(p_op, left, right, result, valid);
+	CHECK_FALSE(valid);
+	REQUIRE_EQ(result.get_type(), Variant::STRING);
+	CHECK_FALSE(result.operator String().is_empty());
+
+	ErrorDetector detector;
+	ERR_PRINT_OFF;
+
+	const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(p_op, left_type, right_type);
+	REQUIRE(validated != nullptr);
+	if (validated != nullptr) {
+		Variant validated_result = vector_int_filled<VectorType>(7);
+		detector.clear();
+		validated(&left, &right, &validated_result);
+		CHECK_EQ(validated_result.get_type(), left_type);
+		const VectorType validated_value = validated_result;
+		CHECK_EQ(validated_value, VectorType());
+		CHECK(detector.has_error);
+	}
+
+	const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(p_op, left_type, right_type);
+	REQUIRE(pointer != nullptr);
+	if (pointer != nullptr) {
+		VectorType pointer_result = vector_int_filled<VectorType>(7);
+		detector.clear();
+		pointer(&p_left, &p_right, &pointer_result);
+		CHECK_EQ(pointer_result, VectorType());
+		CHECK(detector.has_error);
+	}
+
+	ERR_PRINT_ON;
+}
+
+// Runs the rejected-operand contract for one integer vector type: a zero divisor component in every
+// position, the minimum dividend against -1 in every position, a zero scalar divisor, and nonzero
+// scalar divisors that do not fit in the 32-bit componentwise operation.
+template <typename VectorType>
+static void check_vector_int_rejected_operands(Variant::Operator p_op) {
+	for (int axis = 0; axis < VectorType::AXIS_COUNT; axis++) {
+		VectorType zero_divisor = vector_int_filled<VectorType>(3);
+		zero_divisor[axis] = 0;
+		check_vector_int_rejected(p_op, vector_int_filled<VectorType>(7), zero_divisor);
+
+		VectorType overflow_dividend = vector_int_filled<VectorType>(7);
+		overflow_dividend[axis] = INT32_MIN;
+		VectorType overflow_divisor = vector_int_filled<VectorType>(3);
+		overflow_divisor[axis] = -1;
+		check_vector_int_rejected(p_op, overflow_dividend, overflow_divisor);
+	}
+
+	check_vector_int_rejected(p_op, vector_int_filled<VectorType>(7), int64_t(0));
+	check_vector_int_rejected(p_op, vector_int_filled<VectorType>(INT32_MIN), int64_t(-1));
+
+	// A nonzero 64-bit divisor that narrows to zero would silently become a division by zero, and one
+	// that narrows to a different nonzero value would silently answer a different question.
+	check_vector_int_rejected(p_op, vector_int_filled<VectorType>(7), int64_t(1) << 32);
+	check_vector_int_rejected(p_op, vector_int_filled<VectorType>(7), -(int64_t(1) << 32));
+	check_vector_int_rejected(p_op, vector_int_filled<VectorType>(7), int64_t(INT32_MAX) + 1);
+}
+
+TEST_CASE("[Variant][VectorInt] Componentwise division and remainder agree across every evaluator path") {
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_DIVIDE, Vector2i(-7, 7), Vector2i(3, -3)), Vector2i(-2, -2));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_MODULE, Vector2i(-7, 7), Vector2i(3, -3)), Vector2i(-1, 1));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_DIVIDE, Vector2i(INT32_MIN, INT32_MAX), Vector2i(-2, 2)), Vector2i(INT32_MAX / 2 + 1, INT32_MAX / 2));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_DIVIDE, Vector2i(-7, 7), int64_t(2)), Vector2i(-3, 3));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_MODULE, Vector2i(-7, 7), int64_t(2)), Vector2i(-1, 1));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_DIVIDE, Vector2i(INT32_MIN, 6), int64_t(-2)), Vector2i(INT32_MAX / 2 + 1, -3));
+
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_DIVIDE, Vector3i(-7, 7, 9), Vector3i(3, -3, 2)), Vector3i(-2, -2, 4));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_MODULE, Vector3i(-7, 7, 9), Vector3i(3, -3, 2)), Vector3i(-1, 1, 1));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_DIVIDE, Vector3i(-7, 7, 9), int64_t(2)), Vector3i(-3, 3, 4));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_MODULE, Vector3i(-7, 7, 9), int64_t(2)), Vector3i(-1, 1, 1));
+
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_DIVIDE, Vector4i(-7, 7, 9, INT32_MIN), Vector4i(3, -3, 2, -2)), Vector4i(-2, -2, 4, INT32_MAX / 2 + 1));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_MODULE, Vector4i(-7, 7, 9, INT32_MIN), Vector4i(3, -3, 2, -2)), Vector4i(-1, 1, 1, 0));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_DIVIDE, Vector4i(-7, 7, 9, 11), int64_t(2)), Vector4i(-3, 3, 4, 5));
+	CHECK_EQ(evaluate_vector_int_binary(Variant::OP_MODULE, Vector4i(-7, 7, 9, 11), int64_t(2)), Vector4i(-1, 1, 1, 1));
+}
+
+TEST_CASE("[Variant][VectorInt] Component pairs the operation cannot evaluate are rejected on every path") {
+	check_vector_int_rejected_operands<Vector2i>(Variant::OP_DIVIDE);
+	check_vector_int_rejected_operands<Vector2i>(Variant::OP_MODULE);
+	check_vector_int_rejected_operands<Vector3i>(Variant::OP_DIVIDE);
+	check_vector_int_rejected_operands<Vector3i>(Variant::OP_MODULE);
+	check_vector_int_rejected_operands<Vector4i>(Variant::OP_DIVIDE);
+	check_vector_int_rejected_operands<Vector4i>(Variant::OP_MODULE);
+}
+
+TEST_CASE("[Variant][VectorInt] Each rejected component pair reports its own diagnostic") {
+	auto diagnostic = [](Variant::Operator p_op, const Variant &p_left, const Variant &p_right) {
+		bool valid = true;
+		Variant result;
+		Variant::evaluate(p_op, p_left, p_right, result, valid);
+		CHECK_FALSE(valid);
+		return result.operator String();
+	};
+
+	CHECK_EQ(diagnostic(Variant::OP_DIVIDE, Vector2i(7, 7), Vector2i(0, 3)), "Division by zero error");
+	CHECK_EQ(diagnostic(Variant::OP_MODULE, Vector3i(7, 7, 7), Vector3i(3, 0, 3)), "Modulo by zero error");
+	CHECK_EQ(diagnostic(Variant::OP_DIVIDE, Vector4i(7, 7, 7, 7), int64_t(0)), "Division by zero error");
+	CHECK_EQ(diagnostic(Variant::OP_MODULE, Vector2i(7, 7), int64_t(0)), "Modulo by zero error");
+
+	// The quotient of the minimum component and -1 is not representable; reporting it as a zero
+	// divisor would describe the wrong operand.
+	CHECK(diagnostic(Variant::OP_DIVIDE, Vector4i(7, 7, 7, INT32_MIN), Vector4i(3, 3, 3, -1)).contains("overflow"));
+	CHECK(diagnostic(Variant::OP_MODULE, Vector2i(INT32_MIN, 7), Vector2i(-1, 3)).contains("overflow"));
+	CHECK(diagnostic(Variant::OP_DIVIDE, Vector3i(INT32_MIN, 7, 7), int64_t(-1)).contains("overflow"));
+
+	// A nonzero scalar divisor that does not fit the componentwise operation is its own failure, not a
+	// zero divisor.
+	CHECK(diagnostic(Variant::OP_DIVIDE, Vector2i(7, 7), int64_t(1) << 32).contains("32-bit"));
+	CHECK(diagnostic(Variant::OP_MODULE, Vector3i(7, 7, 7), int64_t(1) << 32).contains("32-bit"));
+	CHECK(diagnostic(Variant::OP_DIVIDE, Vector4i(7, 7, 7, 7), int64_t(INT32_MAX) + 1).contains("32-bit"));
+}
+
 } // namespace TestVariant
