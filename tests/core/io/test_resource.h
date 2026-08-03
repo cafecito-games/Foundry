@@ -33,7 +33,6 @@
 #include "core/io/resource.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
-#include "core/variant/variant_internal.h"
 #include "scene/main/node.h"
 
 #include "thirdparty/doctest/doctest.h"
@@ -47,10 +46,7 @@ namespace TestResource {
 // The unsigned carrier has no C++ nominal type and no source spelling, so tests build it through
 // the same Variant storage entry point the engine uses.
 static Variant make_unsigned_variant(uint64_t p_value) {
-	Variant value;
-	VariantInternal::initialize(&value, Variant::UINT);
-	*VariantInternal::get_uint(&value) = p_value;
-	return value;
+	return Variant(p_value);
 }
 
 enum TestDuplicateMode {
