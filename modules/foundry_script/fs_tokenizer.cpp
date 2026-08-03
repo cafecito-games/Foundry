@@ -459,9 +459,10 @@ FSTokenizer::Token FSTokenizerText::make_literal(const Variant &p_literal) {
 	return token;
 }
 
-FSTokenizer::Token FSTokenizerText::make_numeric_literal(const Variant &p_literal, NumericType p_numeric_type) {
+FSTokenizer::Token FSTokenizerText::make_numeric_literal(const Variant &p_literal, NumericType p_numeric_type, bool p_numeric_type_is_explicit) {
 	Token token = make_literal(p_literal);
 	token.numeric_type = p_numeric_type;
+	token.numeric_type_is_explicit = p_numeric_type_is_explicit;
 	return token;
 }
 
@@ -1061,13 +1062,14 @@ FSTokenizer::Token FSTokenizerText::number() {
 		numeric_type = _magnitude_fits_numeric_type(NumericType::INT32, is_negative, magnitude) ? NumericType::INT32 : NumericType::INT64;
 	}
 
+	const bool numeric_type_is_explicit = !canonical_suffix.is_empty();
 	if (numeric_type_is_unsigned(numeric_type)) {
-		return make_numeric_literal(magnitude, numeric_type);
+		return make_numeric_literal(magnitude, numeric_type, numeric_type_is_explicit);
 	}
 	// Negating through the unsigned magnitude keeps `INT64_MIN` representable, which negating the
 	// signed value would not.
 	const int64_t signed_value = is_negative ? int64_t(uint64_t(0) - magnitude) : int64_t(magnitude);
-	return make_numeric_literal(signed_value, numeric_type);
+	return make_numeric_literal(signed_value, numeric_type, numeric_type_is_explicit);
 }
 
 FSTokenizer::Token FSTokenizerText::string() {

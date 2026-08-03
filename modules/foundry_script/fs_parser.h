@@ -1506,6 +1506,9 @@ public:
 		// Width and signedness the integer literal declared through its suffix, or that its magnitude
 		// selected when unsuffixed. `NONE` for every non-integer literal.
 		NumericType numeric_type = NumericType::NONE;
+		// Whether the width was written as a suffix. Only a declared width becomes part of the literal's
+		// type; an inferred one records which type the value would take on its own.
+		bool numeric_type_is_explicit = false;
 
 		LiteralNode() {
 			type = LITERAL;

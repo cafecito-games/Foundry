@@ -46,6 +46,10 @@ public:
 	static constexpr uint32_t TOKEN_BYTE_MASK = 0x80;
 	static constexpr uint32_t TOKEN_BITS = 8;
 	static constexpr uint32_t TOKEN_MASK = (1 << (TOKEN_BITS - 1)) - 1;
+	// A literal's trailing descriptor byte holds a `NumericType` plus one flag marking a width that was
+	// written as a suffix rather than inferred. `NumericType` values stay far below the flag bit, so the
+	// two share the byte without ambiguity.
+	static constexpr uint8_t NUMERIC_TYPE_EXPLICIT_FLAG = 0x80;
 
 	Vector<StringName> identifiers;
 	Vector<Variant> constants;

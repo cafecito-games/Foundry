@@ -90,6 +90,23 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] Canonical suffixes select the 
 	check_integer_literal("42UL", NumericType::UINT64, uint64_t(42));
 }
 
+TEST_CASE("[Modules][FoundryScript][NumericTypes] Only a suffix declares a literal's width") {
+	using namespace TestIntegerLiteralSuffixes;
+
+	CHECK(scan_first_number("42U").numeric_type_is_explicit);
+	CHECK(scan_first_number("42L").numeric_type_is_explicit);
+	CHECK(scan_first_number("42UL").numeric_type_is_explicit);
+	CHECK(scan_first_number("0xFFU").numeric_type_is_explicit);
+
+	// An inferred width records which type the value would take on its own; it is not a constraint the
+	// literal declared, so the destination still decides which integer slot it may enter.
+	CHECK_FALSE(scan_first_number("42").numeric_type_is_explicit);
+	CHECK_FALSE(scan_first_number("2147483648").numeric_type_is_explicit);
+	CHECK_FALSE(scan_first_number("0xFF").numeric_type_is_explicit);
+	CHECK_FALSE(scan_first_number("1.5").numeric_type_is_explicit);
+	CHECK(scan_first_number("1.5").numeric_type == NumericType::NONE);
+}
+
 TEST_CASE("[Modules][FoundryScript][NumericTypes] Suffixes apply to every integer notation") {
 	using namespace TestIntegerLiteralSuffixes;
 
@@ -186,10 +203,14 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] The token buffer round-trips l
 	REQUIRE(buffer.set_code_buffer(code) == OK);
 
 	Vector<NumericType> literal_widths;
+	Vector<bool> explicit_widths;
+	Vector<Variant::Type> carriers;
 	FSTokenizer::Token token = buffer.scan();
 	while (token.type != FSTokenizer::Token::TK_EOF) {
 		if (token.type == FSTokenizer::Token::LITERAL) {
 			literal_widths.push_back(token.numeric_type);
+			explicit_widths.push_back(token.numeric_type_is_explicit);
+			carriers.push_back(token.literal.get_type());
 		}
 		token = buffer.scan();
 	}
@@ -199,6 +220,18 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] The token buffer round-trips l
 	CHECK(literal_widths[1] == NumericType::UINT32);
 	CHECK(literal_widths[2] == NumericType::INT64);
 	CHECK(literal_widths[3] == NumericType::UINT64);
+
+	CHECK_FALSE(explicit_widths[0]);
+	CHECK(explicit_widths[1]);
+	CHECK(explicit_widths[2]);
+	CHECK(explicit_widths[3]);
+
+	// The constant pool compares an INT and a UINT of equal value as one key, so the carrier survives
+	// only if the pool distinguishes them.
+	CHECK(carriers[0] == Variant::INT);
+	CHECK(carriers[1] == Variant::UINT);
+	CHECK(carriers[2] == Variant::INT);
+	CHECK(carriers[3] == Variant::UINT);
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] The token buffer rejects malformed literal widths") {
@@ -218,6 +251,24 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] The token buffer rejects malfo
 	SUBCASE("Undefined descriptor value") {
 		Vector<uint8_t> corrupted = code;
 		corrupted.write[descriptor_position] = uint8_t(NumericType::MAX);
+		FSTokenizerBuffer buffer;
+		REQUIRE(buffer.set_code_buffer(corrupted) == OK);
+
+		bool found_error = false;
+		FSTokenizer::Token token = buffer.scan();
+		while (token.type != FSTokenizer::Token::TK_EOF) {
+			if (token.type == FSTokenizer::Token::ERROR) {
+				found_error = true;
+				break;
+			}
+			token = buffer.scan();
+		}
+		CHECK(found_error);
+	}
+
+	SUBCASE("Declared-width flag without a width") {
+		Vector<uint8_t> corrupted = code;
+		corrupted.write[descriptor_position] = FSTokenizerBuffer::NUMERIC_TYPE_EXPLICIT_FLAG | uint8_t(NumericType::NONE);
 		FSTokenizerBuffer buffer;
 		REQUIRE(buffer.set_code_buffer(corrupted) == OK);
 

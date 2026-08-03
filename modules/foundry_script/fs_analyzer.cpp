@@ -10079,7 +10079,14 @@ void FSAnalyzer::reduce_literal(FSParser::LiteralNode *p_literal) {
 	p_literal->reduced_value = p_literal->value;
 	p_literal->is_constant = true;
 
-	p_literal->set_datatype(type_from_variant(p_literal->reduced_value, p_literal));
+	FSParser::DataType literal_type = type_from_variant(p_literal->reduced_value, p_literal);
+	// A suffix declares the literal's width, so it is part of its type and a slot of any other width
+	// rejects it. An unsuffixed literal keeps an unconstrained width: which integer type it may enter
+	// is decided by the destination, not by the narrowest type that happens to represent it.
+	if (p_literal->numeric_type_is_explicit) {
+		literal_type.numeric_type = p_literal->numeric_type;
+	}
+	p_literal->set_datatype(literal_type);
 }
 
 void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {

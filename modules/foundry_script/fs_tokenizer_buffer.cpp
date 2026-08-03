@@ -88,7 +88,7 @@ int FSTokenizerBuffer::_token_to_binary(const Token &p_token, Vector<uint8_t> &r
 	encode_uint32(p_token.start_line, &r_buffer.write[pos]);
 	if (has_numeric_descriptor) {
 		pos += 4;
-		r_buffer.write[pos] = uint8_t(p_token.numeric_type);
+		r_buffer.write[pos] = uint8_t(p_token.numeric_type) | (p_token.numeric_type_is_explicit ? NUMERIC_TYPE_EXPLICIT_FLAG : 0);
 		token_len += 1;
 	}
 	return token_len;
@@ -109,13 +109,18 @@ FSTokenizer::Token FSTokenizerBuffer::_binary_to_token(const uint8_t *p_buffer) 
 	token.end_line = token.start_line;
 	if (token.type == Token::LITERAL) {
 		const uint8_t descriptor = b[4];
-		if (unlikely(!numeric_type_is_valid(NumericType(descriptor)))) {
+		const NumericType numeric_type = NumericType(descriptor & ~NUMERIC_TYPE_EXPLICIT_FLAG);
+		const bool numeric_type_is_explicit = (descriptor & NUMERIC_TYPE_EXPLICIT_FLAG) != 0;
+		// An unconstrained slot cannot have declared a width, so the flag without a descriptor is as
+		// malformed as a descriptor value no `NumericType` defines.
+		if (unlikely(!numeric_type_is_valid(numeric_type) || (numeric_type_is_explicit && numeric_type == NumericType::NONE))) {
 			Token error;
 			error.type = Token::ERROR;
 			error.literal = "Invalid numeric type descriptor on a literal token.";
 			return error;
 		}
-		token.numeric_type = NumericType(descriptor);
+		token.numeric_type = numeric_type;
+		token.numeric_type_is_explicit = numeric_type_is_explicit;
 	}
 
 	token.literal = token.get_name();

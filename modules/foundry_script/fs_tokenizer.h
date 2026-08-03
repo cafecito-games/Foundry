@@ -179,6 +179,11 @@ public:
 		// on non-integer literals, because they constrain no width. The Variant carrier alone cannot tell
 		// an `int` literal from a `long` one, so this is the only place the choice survives.
 		NumericType numeric_type = NumericType::NONE;
+		// Whether the width above was written in the source as a suffix rather than inferred from the
+		// magnitude. A declared width is part of the literal's type; an inferred one only records which
+		// type the value would take, and leaves the literal free to satisfy any integer slot that
+		// represents it.
+		bool numeric_type_is_explicit = false;
 		int start_line = 0, end_line = 0, start_column = 0, end_column = 0;
 		int cursor_position = -1;
 		CursorPlace cursor_place = CURSOR_NONE;
@@ -303,7 +308,7 @@ class FSTokenizerText : public FSTokenizer {
 	Token make_paren_error(char32_t p_paren);
 	Token make_token(Token::Type p_type);
 	Token make_literal(const Variant &p_literal);
-	Token make_numeric_literal(const Variant &p_literal, NumericType p_numeric_type);
+	Token make_numeric_literal(const Variant &p_literal, NumericType p_numeric_type, bool p_numeric_type_is_explicit);
 	Token make_identifier(const StringName &p_identifier);
 	Token check_vcs_marker(char32_t p_test, Token::Type p_double_type);
 	void push_paren(char32_t p_char);
