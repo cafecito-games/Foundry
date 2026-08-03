@@ -2255,9 +2255,11 @@ TypedArray<Dictionary> TextServer::_shaped_text_get_glyphs_wrapper(const RID &p_
 
 		glyph["start"] = glyphs[i].start;
 		glyph["end"] = glyphs[i].end;
-		glyph["repeat"] = glyphs[i].repeat;
-		glyph["count"] = glyphs[i].count;
-		glyph["flags"] = glyphs[i].flags;
+		// The glyph dictionary is script facing and its grapheme flags are signed constants, so the
+		// unsigned C++ widths are carried nominally.
+		glyph["repeat"] = int64_t(glyphs[i].repeat);
+		glyph["count"] = int64_t(glyphs[i].count);
+		glyph["flags"] = int64_t(glyphs[i].flags);
 		glyph["offset"] = Vector2(glyphs[i].x_off, glyphs[i].y_off);
 		glyph["advance"] = glyphs[i].advance;
 		glyph["font_rid"] = glyphs[i].font_rid;
@@ -2281,9 +2283,11 @@ TypedArray<Dictionary> TextServer::_shaped_text_sort_logical_wrapper(const RID &
 
 		glyph["start"] = glyphs[i].start;
 		glyph["end"] = glyphs[i].end;
-		glyph["repeat"] = glyphs[i].repeat;
-		glyph["count"] = glyphs[i].count;
-		glyph["flags"] = glyphs[i].flags;
+		// The glyph dictionary is script facing and its grapheme flags are signed constants, so the
+		// unsigned C++ widths are carried nominally.
+		glyph["repeat"] = int64_t(glyphs[i].repeat);
+		glyph["count"] = int64_t(glyphs[i].count);
+		glyph["flags"] = int64_t(glyphs[i].flags);
 		glyph["offset"] = Vector2(glyphs[i].x_off, glyphs[i].y_off);
 		glyph["advance"] = glyphs[i].advance;
 		glyph["font_rid"] = glyphs[i].font_rid;
@@ -2307,9 +2311,11 @@ TypedArray<Dictionary> TextServer::_shaped_text_get_ellipsis_glyphs_wrapper(cons
 
 		glyph["start"] = glyphs[i].start;
 		glyph["end"] = glyphs[i].end;
-		glyph["repeat"] = glyphs[i].repeat;
-		glyph["count"] = glyphs[i].count;
-		glyph["flags"] = glyphs[i].flags;
+		// The glyph dictionary is script facing and its grapheme flags are signed constants, so the
+		// unsigned C++ widths are carried nominally.
+		glyph["repeat"] = int64_t(glyphs[i].repeat);
+		glyph["count"] = int64_t(glyphs[i].count);
+		glyph["flags"] = int64_t(glyphs[i].flags);
 		glyph["offset"] = Vector2(glyphs[i].x_off, glyphs[i].y_off);
 		glyph["advance"] = glyphs[i].advance;
 		glyph["font_rid"] = glyphs[i].font_rid;
