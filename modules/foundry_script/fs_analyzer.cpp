@@ -12392,10 +12392,14 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			// call omit one more, sliding the bound values one parameter earlier each time. The
 			// minimum result arity is therefore `n - D - bind_argument_count`, not `n - D`, but each
 			// slide is only valid while the bound values still fit the parameter they land on, so
-			// every shift is re-checked with the same helper the extra-arity path uses. The
-			// contiguous run of successful shifts starting at the base arity becomes the result's own
-			// default count; any further shifts that succeed past a gap survive as extra allowed
-			// argument counts, matching how non-contiguous arities are represented elsewhere.
+			// every shift is re-checked. As with the extra-arity path, a shift is only dropped on a
+			// proven mismatch: an unknown or untyped bound value stays gradual and keeps the shift
+			// alive, so it is checked with `bound_argument_conflicts_with` rather than the stricter
+			// `can_bound_argument_fill_parameter`, which would otherwise narrow what a dynamically
+			// typed bound value accepts. The contiguous run of successful shifts starting at the base
+			// arity becomes the result's own default count; any further shifts that succeed past a gap
+			// survive as extra allowed argument counts, matching how non-contiguous arities are
+			// represented elsewhere.
 			auto default_survival_for_bind = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments,
 										  int p_checked_bind_start, int p_remaining_argument_count,
 										  int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
@@ -12405,7 +12409,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					const int shifted_start = p_checked_bind_start - shift;
 					bool bound_arguments_fit_shift = true;
 					for (int i = 0; i < p_bound_arguments.size() && bound_arguments_fit_shift; i++) {
-						bound_arguments_fit_shift = can_bound_argument_fill_parameter(
+						bound_arguments_fit_shift = !bound_argument_conflicts_with(
 								p_bound_arguments[i], p_base_type.method_parameter_types[shifted_start + i]);
 					}
 					if (!bound_arguments_fit_shift) {
