@@ -36,6 +36,7 @@
 #include "core/variant/variant_parser.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestVariant {
 TEST_CASE("[Variant] Writer and parser integer") {
@@ -3224,6 +3225,155 @@ TEST_CASE("[Variant][UInt] Nested containers round-trip the unsigned carrier") {
 	const Variant loaded_signed_element = loaded_array[1];
 	CHECK_EQ(loaded_signed_element.get_type(), Variant::INT);
 	CHECK_EQ(loaded_signed_element.operator int64_t(), -1);
+}
+
+// Evaluates `p_op` on the signed carrier through the plain, validated, and pointer operator tables,
+// checks the three agree, and returns the plain-path result.
+static int64_t evaluate_int_binary(Variant::Operator p_op, int64_t p_left, int64_t p_right) {
+	const Variant left = p_left;
+	const Variant right = p_right;
+
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(p_op, left, right, result, valid);
+	REQUIRE(valid);
+	REQUIRE_EQ(result.get_type(), Variant::INT);
+	REQUIRE_EQ(Variant::get_operator_return_type(p_op, Variant::INT, Variant::INT), Variant::INT);
+
+	const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(p_op, Variant::INT, Variant::INT);
+	REQUIRE(validated != nullptr);
+	if (validated != nullptr) {
+		Variant validated_result;
+		VariantInternal::initialize(&validated_result, Variant::INT);
+		validated(&left, &right, &validated_result);
+		CHECK_EQ(validated_result.get_type(), Variant::INT);
+		CHECK_EQ(validated_result.operator int64_t(), result.operator int64_t());
+	}
+
+	const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(p_op, Variant::INT, Variant::INT);
+	REQUIRE(pointer != nullptr);
+	if (pointer != nullptr) {
+		int64_t pointer_result = 0;
+		pointer(&p_left, &p_right, &pointer_result);
+		CHECK_EQ(pointer_result, result.operator int64_t());
+	}
+
+	return result.operator int64_t();
+}
+
+TEST_CASE("[Variant][Int] Division, remainder, and shifts agree across every evaluator path") {
+	CHECK_EQ(evaluate_int_binary(Variant::OP_DIVIDE, -7, 3), -2);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_MODULE, -7, 3), -1);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_DIVIDE, 7, -3), -2);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_MODULE, 7, -3), 1);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_DIVIDE, INT64_MIN, 1), INT64_MIN);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_MODULE, INT64_MIN, 1), 0);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_DIVIDE, INT64_MIN, -2), INT64_MAX / 2 + 1);
+
+	// The maximum left shift produces the sign bit; its bit pattern must not come from overflowing a
+	// raw signed shift.
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_LEFT, 1, 63), INT64_MIN);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_LEFT, 3, 62), INT64_MIN + (INT64_MAX / 2 + 1));
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_LEFT, 3, 2), 12);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_LEFT, 1, 0), 1);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_LEFT, 0, 63), 0);
+
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_RIGHT, 12, 2), 3);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_RIGHT, INT64_MAX, 63), 0);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_RIGHT, INT64_MAX, 62), 1);
+	CHECK_EQ(evaluate_int_binary(Variant::OP_SHIFT_RIGHT, 12, 0), 12);
+}
+
+TEST_CASE("[Variant][Int] Operands the operation cannot evaluate are rejected on every path") {
+	// None of these operand pairs has a defined signed C++ result, so no entry point may run the raw
+	// operation. The reporting path answers through its validity flag; the two `void` entry points
+	// cannot, so they fall back to zero and raise an engine error.
+	struct RejectedCase {
+		Variant::Operator op;
+		int64_t left;
+		int64_t right;
+	};
+	const RejectedCase cases[] = {
+		{ Variant::OP_DIVIDE, 7, 0 },
+		{ Variant::OP_MODULE, 7, 0 },
+		{ Variant::OP_DIVIDE, INT64_MIN, -1 },
+		{ Variant::OP_MODULE, INT64_MIN, -1 },
+		{ Variant::OP_SHIFT_LEFT, 1, -1 },
+		{ Variant::OP_SHIFT_RIGHT, 1, -1 },
+		{ Variant::OP_SHIFT_LEFT, 1, 64 },
+		{ Variant::OP_SHIFT_RIGHT, 1, 64 },
+		{ Variant::OP_SHIFT_LEFT, 1, 65 },
+		{ Variant::OP_SHIFT_RIGHT, 1, 65 },
+		{ Variant::OP_SHIFT_LEFT, -1, 1 },
+		{ Variant::OP_SHIFT_RIGHT, -1, 1 },
+	};
+
+	for (const RejectedCase &rejected : cases) {
+		const Variant left = rejected.left;
+		const Variant right = rejected.right;
+
+		bool valid = true;
+		Variant result;
+		Variant::evaluate(rejected.op, left, right, result, valid);
+		CHECK_FALSE(valid);
+		REQUIRE_EQ(result.get_type(), Variant::STRING);
+		CHECK_FALSE(result.operator String().is_empty());
+
+		ErrorDetector detector;
+		ERR_PRINT_OFF;
+
+		const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(rejected.op, Variant::INT, Variant::INT);
+		REQUIRE(validated != nullptr);
+		if (validated != nullptr) {
+			Variant validated_result;
+			VariantInternal::initialize(&validated_result, Variant::INT);
+			*VariantInternal::get_int(&validated_result) = 7;
+			detector.clear();
+			validated(&left, &right, &validated_result);
+			CHECK_EQ(validated_result.get_type(), Variant::INT);
+			CHECK_EQ(validated_result.operator int64_t(), int64_t(0));
+			CHECK(detector.has_error);
+		}
+
+		const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(rejected.op, Variant::INT, Variant::INT);
+		REQUIRE(pointer != nullptr);
+		if (pointer != nullptr) {
+			const int64_t left_value = rejected.left;
+			const int64_t right_value = rejected.right;
+			int64_t pointer_result = 7;
+			detector.clear();
+			pointer(&left_value, &right_value, &pointer_result);
+			CHECK_EQ(pointer_result, int64_t(0));
+			CHECK(detector.has_error);
+		}
+
+		ERR_PRINT_ON;
+	}
+}
+
+TEST_CASE("[Variant][Int] Each rejected operand pair reports its own diagnostic") {
+	auto diagnostic = [](Variant::Operator p_op, int64_t p_left, int64_t p_right) {
+		bool valid = true;
+		Variant result;
+		Variant::evaluate(p_op, Variant(p_left), Variant(p_right), result, valid);
+		CHECK_FALSE(valid);
+		return result.operator String();
+	};
+
+	CHECK_EQ(diagnostic(Variant::OP_DIVIDE, 7, 0), "Division by zero error");
+	CHECK_EQ(diagnostic(Variant::OP_MODULE, 7, 0), "Modulo by zero error");
+
+	// The quotient of the minimum integer and -1 is not representable; reporting it as a zero divisor
+	// would describe the wrong operand.
+	CHECK_NE(diagnostic(Variant::OP_DIVIDE, INT64_MIN, -1), "Division by zero error");
+	CHECK_NE(diagnostic(Variant::OP_MODULE, INT64_MIN, -1), "Modulo by zero error");
+	CHECK(diagnostic(Variant::OP_DIVIDE, INT64_MIN, -1).contains("overflow"));
+	CHECK(diagnostic(Variant::OP_MODULE, INT64_MIN, -1).contains("overflow"));
+
+	CHECK(diagnostic(Variant::OP_SHIFT_LEFT, 1, 64).contains("0...63"));
+	CHECK(diagnostic(Variant::OP_SHIFT_RIGHT, 1, -1).contains("0...63"));
+	CHECK(diagnostic(Variant::OP_SHIFT_LEFT, -1, 1).contains("positive"));
+	CHECK(diagnostic(Variant::OP_SHIFT_RIGHT, -1, 1).contains("positive"));
 }
 
 } // namespace TestVariant

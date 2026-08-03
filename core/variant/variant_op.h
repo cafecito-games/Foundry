@@ -361,58 +361,6 @@ public:
 };
 
 template <typename R, typename A, typename B>
-class OperatorEvaluatorShiftLeft {
-public:
-	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const A &a = VariantInternalAccessor<A>::get(&p_left);
-		const B &b = VariantInternalAccessor<B>::get(&p_right);
-
-#if defined(DEBUG_ENABLED)
-		if (b < 0 || a < 0) {
-			*r_ret = "Invalid operands for bit shifting. Only positive operands are supported.";
-			r_valid = false;
-			return;
-		}
-#endif
-		*r_ret = a << b;
-		r_valid = true;
-	}
-	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantInternalAccessor<R>::get(r_ret) = VariantInternalAccessor<A>::get(left) << VariantInternalAccessor<B>::get(right);
-	}
-	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<R>::encode(PtrToArg<A>::convert(left) << PtrToArg<B>::convert(right), r_ret);
-	}
-	static Variant::Type get_return_type() { return GetTypeInfo<R>::VARIANT_TYPE; }
-};
-
-template <typename R, typename A, typename B>
-class OperatorEvaluatorShiftRight {
-public:
-	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const A &a = VariantInternalAccessor<A>::get(&p_left);
-		const B &b = VariantInternalAccessor<B>::get(&p_right);
-
-#if defined(DEBUG_ENABLED)
-		if (b < 0 || a < 0) {
-			*r_ret = "Invalid operands for bit shifting. Only positive operands are supported.";
-			r_valid = false;
-			return;
-		}
-#endif
-		*r_ret = a >> b;
-		r_valid = true;
-	}
-	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantInternalAccessor<R>::get(r_ret) = VariantInternalAccessor<A>::get(left) >> VariantInternalAccessor<B>::get(right);
-	}
-	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<R>::encode(PtrToArg<A>::convert(left) >> PtrToArg<B>::convert(right), r_ret);
-	}
-	static Variant::Type get_return_type() { return GetTypeInfo<R>::VARIANT_TYPE; }
-};
-
-template <typename R, typename A, typename B>
 class OperatorEvaluatorBitOr : public CommonEvaluate<OperatorEvaluatorBitOr<R, A, B>> {
 public:
 	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
@@ -699,6 +647,116 @@ public:
 		PtrToArg<uint64_t>::encode(Operation::compute(VariantUIntCarrier::get_ptr(left)), r_ret);
 	}
 	static Variant::Type get_return_type() { return Variant::UINT; }
+};
+
+// Reinterprets an unsigned bit pattern as the signed value with the same representation. A plain
+// conversion is only guaranteed to do that from C++20 onward, so the mapping is spelled out.
+static _ALWAYS_INLINE_ int64_t variant_int_from_bits(uint64_t p_bits) {
+	if (p_bits <= uint64_t(INT64_MAX)) {
+		return int64_t(p_bits);
+	}
+	return int64_t(p_bits - uint64_t(INT64_MAX) - 1) + INT64_MIN;
+}
+
+// Signed division, remainder, and shifts have operand pairs the C++ operation cannot evaluate at all:
+// a zero divisor, a quotient that is not representable, a negative shift operand or count, and a
+// count that is not smaller than the operand width. Acceptance depends on both operands, because the
+// minimum dividend is only a problem against a divisor of -1.
+struct VariantIntDivideOperation {
+	static _ALWAYS_INLINE_ bool accepts(int64_t p_left, int64_t p_right) {
+		return p_right != 0 && !(p_left == INT64_MIN && p_right == -1);
+	}
+	static _ALWAYS_INLINE_ const char *error_message(int64_t p_left, int64_t p_right) {
+		if (p_right == 0) {
+			return "Division by zero error";
+		}
+		return "Division overflow error. The quotient of the minimum integer and -1 is not representable.";
+	}
+	static _ALWAYS_INLINE_ int64_t compute(int64_t p_left, int64_t p_right) { return p_left / p_right; }
+};
+
+struct VariantIntModuloOperation {
+	static _ALWAYS_INLINE_ bool accepts(int64_t p_left, int64_t p_right) {
+		return p_right != 0 && !(p_left == INT64_MIN && p_right == -1);
+	}
+	static _ALWAYS_INLINE_ const char *error_message(int64_t p_left, int64_t p_right) {
+		if (p_right == 0) {
+			return "Modulo by zero error";
+		}
+		return "Modulo overflow error. The quotient of the minimum integer and -1 is not representable.";
+	}
+	static _ALWAYS_INLINE_ int64_t compute(int64_t p_left, int64_t p_right) { return p_left % p_right; }
+};
+
+struct VariantIntShiftLeftOperation {
+	static _ALWAYS_INLINE_ bool accepts(int64_t p_left, int64_t p_right) {
+		return p_left >= 0 && p_right >= 0 && p_right < 64;
+	}
+	static _ALWAYS_INLINE_ const char *error_message(int64_t p_left, int64_t p_right) {
+		if (p_left < 0) {
+			return "Invalid operands for bit shifting. Only positive operands are supported.";
+		}
+		return "Invalid operands for bit shifting. The shift count must be in the range 0...63.";
+	}
+	// Shifting a positive value into or past the sign bit overflows a signed shift, so the accepted
+	// result is produced in the unsigned domain and reinterpreted. `1 << 63` stays the minimum integer.
+	static _ALWAYS_INLINE_ int64_t compute(int64_t p_left, int64_t p_right) {
+		return variant_int_from_bits(uint64_t(p_left) << uint64_t(p_right));
+	}
+};
+
+struct VariantIntShiftRightOperation {
+	static _ALWAYS_INLINE_ bool accepts(int64_t p_left, int64_t p_right) {
+		return p_left >= 0 && p_right >= 0 && p_right < 64;
+	}
+	static _ALWAYS_INLINE_ const char *error_message(int64_t p_left, int64_t p_right) {
+		if (p_left < 0) {
+			return "Invalid operands for bit shifting. Only positive operands are supported.";
+		}
+		return "Invalid operands for bit shifting. The shift count must be in the range 0...63.";
+	}
+	static _ALWAYS_INLINE_ int64_t compute(int64_t p_left, int64_t p_right) { return p_left >> p_right; }
+};
+
+// Every entry point rejects operands the operation cannot evaluate instead of running the undefined
+// C++ operation, in every build. `evaluate()` reports the failure through its validity flag; the
+// validated and pointer entry points cannot, so they fall back to zero and raise an engine error, the
+// same shape the unsigned checked evaluator uses for an unreportable failure.
+template <typename Operation>
+class OperatorEvaluatorIntCheckedBinary {
+public:
+	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+		const int64_t left_value = VariantIntCarrier::get(&p_left);
+		const int64_t right_value = VariantIntCarrier::get(&p_right);
+		if (unlikely(!Operation::accepts(left_value, right_value))) {
+			*r_ret = Operation::error_message(left_value, right_value);
+			r_valid = false;
+			return;
+		}
+		// The result is computed before the destination is retagged so an aliased destination is safe.
+		const int64_t result = Operation::compute(left_value, right_value);
+		*r_ret = result;
+		r_valid = true;
+	}
+	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		const int64_t left_value = VariantIntCarrier::get(left);
+		const int64_t right_value = VariantIntCarrier::get(right);
+		if (unlikely(!Operation::accepts(left_value, right_value))) {
+			VariantInternalAccessor<int64_t>::get(r_ret) = 0;
+			ERR_FAIL_MSG(Operation::error_message(left_value, right_value));
+		}
+		VariantInternalAccessor<int64_t>::get(r_ret) = Operation::compute(left_value, right_value);
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		const int64_t left_value = VariantIntCarrier::get_ptr(left);
+		const int64_t right_value = VariantIntCarrier::get_ptr(right);
+		if (unlikely(!Operation::accepts(left_value, right_value))) {
+			PtrToArg<int64_t>::encode(0, r_ret);
+			ERR_FAIL_MSG(Operation::error_message(left_value, right_value));
+		}
+		PtrToArg<int64_t>::encode(Operation::compute(left_value, right_value), r_ret);
+	}
+	static Variant::Type get_return_type() { return Variant::INT; }
 };
 
 template <typename Left, typename Right, typename Operation>
