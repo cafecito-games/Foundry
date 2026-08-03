@@ -2386,7 +2386,10 @@ FSParser::DataType FSAnalyzer::substitute_member_type(
 	}
 
 	HashMap<StringName, FSParser::DataType> bindings;
-	if (p_base.has_type_arguments() && p_base.class_type != nullptr) {
+	// An enum carries its owner in `class_type` but its type arguments belong to the enum declaration,
+	// so they must not be read as arguments for the owning class's parameters. Binding a generic union's
+	// own arguments is part of union application, not member substitution.
+	if (p_base.has_type_arguments() && p_base.class_type != nullptr && p_base.kind != FSParser::DataType::ENUM) {
 		const Vector<FSParser::TypeParameterNode *> &type_parameters = p_base.class_type->type_parameters;
 		const int binding_count = MIN(type_parameters.size(), p_base.type_arguments.size());
 		for (int i = 0; i < binding_count; i++) {

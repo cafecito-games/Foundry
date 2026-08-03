@@ -591,6 +591,27 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Bounded parameters 
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum arguments do not bind enclosing class parameters") {
+	// A union's open arguments belong to the union, not to the class that owns it, so calling an enum
+	// function must not substitute the enum's parameters for the enclosing class's.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Outer[ClassT]:\n"
+					   "\tenum Choice[EnumT]:\n"
+					   "\t\tValue(value: EnumT)\n"
+					   "\n"
+					   "\t\tstatic func identity(value: ClassT) -> ClassT:\n"
+					   "\t\t\treturn value\n"
+					   "\n"
+					   "\tfunc call_it(value: ClassT) -> ClassT:\n"
+					   "\t\treturn Choice.identity(value)\n",
+					   "user://generic_tagged_union_enum_arguments.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] An enum parameter cannot shadow a class bound") {
 	// `Box`'s bound resolves in `Box`'s own scope, so the enum parameter active at the use site must
 	// not stand in for the outer class's same-named parameter: the enum's `Bounded` is a different

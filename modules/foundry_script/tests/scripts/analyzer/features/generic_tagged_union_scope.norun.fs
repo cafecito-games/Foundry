@@ -31,3 +31,15 @@ enum Slot[T: Variant]:
 
 enum Recursive[T: Recursive]:
 	Value(value: T)
+
+# A union's open arguments belong to the union, so calling an enum function inside a generic class
+# still sees the class's own parameters.
+class Host[ClassT]:
+	enum Choice[EnumT]:
+		Value(value: EnumT)
+
+		static func identity(value: ClassT) -> ClassT:
+			return value
+
+	func call_it(value: ClassT) -> ClassT:
+		return Choice.identity(value)
