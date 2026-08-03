@@ -32,8 +32,8 @@
 
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
-#include "../fs_compiler.h"
 #include "../fs_cache.h"
+#include "../fs_compiler.h"
 #include "../fs_conformance_registry.h"
 #include "../fs_function.h"
 #include "../fs_parser.h"
