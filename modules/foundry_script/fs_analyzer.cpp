@@ -12185,16 +12185,48 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 
 				return true;
 			};
-			auto fixed_vararg_default_arg_count = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments) -> int {
-				const int fixed_argument_count = p_base_type.method_parameter_types.size();
+			// A bound value only rules out a slot when its type proves the mismatch. An unknown or
+			// untyped value stays gradual and must never narrow what the bound callable accepts.
+			auto bound_argument_conflicts_with = [&](const FSParser::ExpressionNode *p_argument, const FSParser::DataType &p_expected_type) -> bool {
+				if (p_argument == nullptr || !p_expected_type.is_hard_type() || p_expected_type.is_variant()) {
+					return false;
+				}
 
-				for (int omitted_argument_count = 1; omitted_argument_count <= fixed_argument_count; omitted_argument_count++) {
-					if (!fixed_vararg_accepts_argument_count(p_bound_arguments, fixed_argument_count - omitted_argument_count)) {
-						return omitted_argument_count - 1;
+				const FSParser::DataType argument_type = p_argument->get_datatype();
+				if (argument_type.is_variant() || !argument_type.is_hard_type()) {
+					return false;
+				}
+
+				return !is_type_compatible(p_expected_type, argument_type, true);
+			};
+			auto bound_argument_conflicts_with_rest_tail = [&](const FSParser::ExpressionNode *p_argument) -> bool {
+				if (!p_base_type.has_method_rest_parameter_type()) {
+					return false;
+				}
+				return bound_argument_conflicts_with(p_argument, p_base_type.get_method_rest_parameter_type().get_container_element_type(0));
+			};
+			auto fixed_vararg_rules_out_argument_count = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments, int p_argument_count) -> bool {
+				const int fixed_argument_count = p_base_type.method_parameter_types.size();
+				const int original_default_arg_count = MIN(p_base_type.method_info.default_arguments.size(), fixed_argument_count);
+				const int omitted_argument_count = fixed_argument_count - p_argument_count;
+				const int bound_filled_count = omitted_argument_count > 0 ? MIN(omitted_argument_count, p_bound_arguments.size()) : 0;
+				if (omitted_argument_count - bound_filled_count > original_default_arg_count) {
+					return true;
+				}
+
+				for (int i = 0; i < bound_filled_count; i++) {
+					if (bound_argument_conflicts_with(p_bound_arguments[i], p_base_type.method_parameter_types[p_argument_count + i])) {
+						return true;
+					}
+				}
+				// Every bound value the fixed parameters do not absorb reaches the rest tail.
+				for (int i = bound_filled_count; i < p_bound_arguments.size(); i++) {
+					if (bound_argument_conflicts_with_rest_tail(p_bound_arguments[i])) {
+						return true;
 					}
 				}
 
-				return fixed_argument_count;
+				return false;
 			};
 			auto preserve_fixed_vararg_callable = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments) -> bool {
 				if (!is_callable_vararg) {
@@ -12202,22 +12234,81 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				}
 
 				const int fixed_argument_count = p_base_type.method_parameter_types.size();
-				// Bound values occupy the trailing argument positions. A bound value past the fixed arity can
-				// only ever land in the rest tail, whatever the eventual call arity, so it is checked against
-				// the rest element type. Earlier bound values may still fill a fixed slot and are left to the
-				// arity analysis below.
+				// Bound values occupy the trailing argument positions: bound value `i` is passed at target
+				// position `call arity + i`. A bound value past the fixed arity lands in the rest tail whatever
+				// the call arity, so it is reported straight away. An earlier bound value only reaches the rest
+				// tail once the call supplies enough arguments of its own, so a conflict there bounds the
+				// arities at which the result can still be invoked instead of failing the bind outright.
+				bool rest_tail_conflicts = false;
 				if (p_base_type.has_method_rest_parameter_type()) {
 					const FSParser::DataType rest_element_type = p_base_type.get_method_rest_parameter_type().get_container_element_type(0);
 					for (int i = fixed_argument_count; i < p_bound_arguments.size(); i++) {
 						call_site_validation.validate_argument_against_type(rest_element_type, const_cast<FSParser::ExpressionNode *>(p_bound_arguments[i]), i + 1, p_function, nullptr);
 					}
+					for (int i = 0; i < MIN(fixed_argument_count, p_bound_arguments.size()); i++) {
+						if (bound_argument_conflicts_with_rest_tail(p_bound_arguments[i])) {
+							rest_tail_conflicts = true;
+							break;
+						}
+					}
 				}
-				const int default_arg_count = fixed_vararg_default_arg_count(p_bound_arguments);
-				const int continuous_min_argument_count = fixed_argument_count - default_arg_count;
-				r_return_type = call_site_validation.transformed_callable_type(p_base_type, p_base_type.method_parameter_types, default_arg_count, true);
-				for (int argument_count = 0; argument_count < continuous_min_argument_count; argument_count++) {
+
+				// Every arity at or above the fixed arity passes each bound value through the rest tail, so a
+				// conflicting bound value caps the result below the fixed arity and drops its variadic tail.
+				const bool stays_variadic = !rest_tail_conflicts;
+				const int highest_candidate_argument_count = stays_variadic ? fixed_argument_count : fixed_argument_count - 1;
+
+				Vector<int> allowed_argument_counts;
+				for (int argument_count = 0; argument_count <= highest_candidate_argument_count; argument_count++) {
 					if (fixed_vararg_accepts_argument_count(p_bound_arguments, argument_count)) {
-						r_return_type.method_extra_allowed_argument_counts.push_back(argument_count);
+						allowed_argument_counts.push_back(argument_count);
+					}
+				}
+
+				if (allowed_argument_counts.is_empty()) {
+					bool any_argument_count_possible = false;
+					for (int argument_count = 0; argument_count <= highest_candidate_argument_count && !any_argument_count_possible; argument_count++) {
+						any_argument_count_possible = !fixed_vararg_rules_out_argument_count(p_bound_arguments, argument_count);
+					}
+					if (!any_argument_count_possible && p_base_type.has_method_rest_parameter_type()) {
+						// No call arity can place the bound values, so the mismatch is reported at the bind.
+						const FSParser::DataType rest_element_type = p_base_type.get_method_rest_parameter_type().get_container_element_type(0);
+						for (int i = 0; i < MIN(fixed_argument_count, p_bound_arguments.size()); i++) {
+							if (bound_argument_conflicts_with_rest_tail(p_bound_arguments[i])) {
+								call_site_validation.validate_argument_against_type(rest_element_type, const_cast<FSParser::ExpressionNode *>(p_bound_arguments[i]), i + 1, p_function, nullptr);
+							}
+						}
+					}
+					// No signature describes what survives, so fall back to a signatureless callable rather
+					// than asserting a shape no invocation matches.
+					r_return_type = call_site_validation.plain_callable_type();
+					r_return_type.signature_is_async = p_base_type.signature_is_async;
+					return true;
+				}
+
+				const int highest_allowed_argument_count = allowed_argument_counts[allowed_argument_counts.size() - 1];
+				int lowest_continuous_argument_count = highest_allowed_argument_count;
+				for (int index = allowed_argument_counts.size() - 2; index >= 0; index--) {
+					if (allowed_argument_counts[index] != lowest_continuous_argument_count - 1) {
+						break;
+					}
+					lowest_continuous_argument_count = allowed_argument_counts[index];
+				}
+
+				Vector<FSParser::DataType> remaining_parameter_types;
+				for (int i = 0; i < highest_allowed_argument_count; i++) {
+					remaining_parameter_types.push_back(p_base_type.method_parameter_types[i]);
+				}
+
+				r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types,
+						highest_allowed_argument_count - lowest_continuous_argument_count, stays_variadic);
+				if (!stays_variadic) {
+					// No call argument can reach the tail any more, so the result no longer has one.
+					r_return_type.clear_method_rest_parameter_type();
+				}
+				for (int index = 0; index < allowed_argument_counts.size(); index++) {
+					if (allowed_argument_counts[index] < lowest_continuous_argument_count) {
+						r_return_type.method_extra_allowed_argument_counts.push_back(allowed_argument_counts[index]);
 					}
 				}
 				return true;

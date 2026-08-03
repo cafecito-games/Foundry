@@ -232,6 +232,10 @@ public:
 			method_rest_parameter_type.push_back(p_type);
 		}
 
+		_FORCE_INLINE_ void clear_method_rest_parameter_type() {
+			method_rest_parameter_type.clear();
+		}
+
 		// Returns a copy of p_type with every TYPE_PARAMETER replaced by its bound argument from p_bindings,
 		// recursing through container elements, type arguments, and method signatures. Unbound parameters are left intact.
 		//

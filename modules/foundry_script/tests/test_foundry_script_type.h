@@ -3801,6 +3801,103 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() rejects a value t
 			R"*(Invalid argument for "bind()" function: argument 2 should be "String" but is "int".)*");
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() keeps arities that place its value in a fixed slot") {
+	// Bound values trail the call arguments, so `bind(7)` only reaches the `int` parameter when the
+	// call itself supplies nothing. That arity must keep working.
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.bind(7)\n"
+					 "\tbound.call()\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() drops arities that push its value into the rest tail") {
+	// `bound.call(1, "a")` dispatches `target(1, "a", 7)`, landing the bound `7` in a `String` rest slot.
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bind(7)\n"
+			"\tbound.call(1, \"a\")\n",
+			R"*(Too many arguments for "call()" call. Expected at most 0 but received 2.)*");
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bind(7)\n"
+			"\tbound.callv([1, \"a\"])\n",
+			R"*(Too many arguments for "callv()" call. Expected at most 0 but received 2.)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bindv() drops arities that push its value into the rest tail") {
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.bindv([7])\n"
+					 "\tbound.call()\n"),
+			OK);
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bindv([7])\n"
+			"\tbound.call(1, \"a\")\n",
+			R"*(Too many arguments for "call()" call. Expected at most 0 but received 2.)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rest-compatible bound value keeps the callable variadic") {
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.bind(\"tail\")\n"
+					 "\tbound.call(1, \"a\", \"b\")\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A gradual rest tail accepts any bound value at any arity") {
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array], bool]\n"
+					 "\tvar bound := callback.bind(7)\n"
+					 "\tbound.call()\n"
+					 "\tbound.call(1, \"a\")\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An untyped bound value does not restrict the call arity") {
+	// Only a proven conflict with the rest element may narrow the arity set; an unknown type must
+	// stay gradual.
+	CHECK_EQ(analyze_source(
+					 "func anything() -> Variant:\n"
+					 "\treturn 7\n"
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.bind(anything())\n"
+					 "\tbound.call(1, \"a\")\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() rejects a value no call arity can place") {
+	// Arity 1 would put `7` in the `String` parameter and every larger arity puts it in the `String`
+	// rest tail, while arity 0 cannot omit the required `String`. Nothing accepts the bound value.
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, String, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bind(7)\n"
+			"\tprint(bound)\n",
+			R"*(Invalid argument for "bind()" function: argument 1 should be "String" but is "int".)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rest-bounded callable drops its unreachable rest tail") {
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var callback: Callable[[int, ...Array[String]], bool]\n"
+			"var bound := callback.bind(7)\n",
+			SNAME("bound"), analyzed);
+	REQUIRE(analyzed);
+	CHECK((type.method_info.flags & METHOD_FLAG_VARARG) == 0);
+	CHECK_FALSE(type.has_method_rest_parameter_type());
+	CHECK(type.method_parameter_types.is_empty());
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] unbind() keeps the typed rest tail") {
 	bool analyzed = false;
 	const FSParser::DataType type = variable_type_of(
