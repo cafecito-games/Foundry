@@ -4002,6 +4002,24 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A value bound after unbi
 	CHECK_EQ(type.get_method_rest_parameter_type().to_string(), "Array[String]");
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A value surviving unbind() still reaches the rest tail") {
+	// `unbind(1)` discards only the last bound value, so `7` still reaches the target. At arity 0 it
+	// fills "int", but any call argument pushes it into the "String" rest tail. The Variant slot
+	// unbind() appends must not be mistaken for the parameter it lands in.
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.unbind(1).bind(7, \"x\")\n"
+					 "\tbound.call()\n"),
+			OK);
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar bound := callback.unbind(1).bind(7, \"x\")\n"
+			"\tbound.call(1)\n",
+			R"*(Too many arguments for "call()" call. Expected at most 0 but received 1.)*");
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Strict dynamic checks reject an untyped bound value") {
 	// Strict mode treats every dynamic boundary as an error, so an untyped bound value no longer keeps
 	// the arities it would land in alive; the mismatch is reported at the bind instead.
