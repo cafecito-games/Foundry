@@ -288,6 +288,13 @@ bool FoundryScript::_validate_static_member_write(FoundryScript *p_receiver, Fou
 	// ordinal indexes `p_declaring_script`'s own type parameters, not the receiver's. Project it through
 	// the receiver's per-ancestor specialization table (`extends Base[int]` in the chain, or the
 	// receiver's own reified arguments) before validating.
+	//
+	// The declaring script's storage slot is shared by every subclass, so two subclasses that fix the
+	// ancestor's parameter differently (`IntBox extends Box[int]`, `StringBox extends Box[String]`) are
+	// still writing the same physical slot: this only makes a dynamic write at least as strict as the
+	// already-compiled static path (which has the identical cross-subclass sharing hazard with zero
+	// runtime validation at all), not a stronger guarantee that the slot's current value matches every
+	// subclass's declared type at every moment.
 	Vector<ContainerType> projected;
 	Vector<bool> bound;
 	if (!p_receiver->project_type_arguments_onto_base(p_declaring_script, p_leaf_type_arguments, projected, bound)) {
