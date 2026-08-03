@@ -112,7 +112,10 @@ static FSParser::DataType _substitute_self_type_parameter_for_class(
 	}
 	HashMap<StringName, FSParser::DataType> bindings;
 	bindings.insert(SNAME("@Self"), self_type);
-	return FSParser::DataType::substitute(p_type, bindings);
+	// This is declaration lowering, so every replacement is recorded as having come from `Self`. The
+	// class bound here is what declaration-time validation needs; it is not necessarily the class a
+	// call frame will run with, and once the origin is dropped no later stage can recover it.
+	return FSParser::DataType::substitute(p_type, bindings, true);
 }
 
 void FSCompiler::_set_error(const String &p_error, const FSParser::Node *p_node) {
@@ -506,6 +509,13 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 
 	result.is_type_handle = p_handle_metatype && p_datatype.is_type_handle_annotation;
 
+	// Declaration lowering resolves `Self` to the class the declaration is compiled against, which for
+	// a conformance witness is the conformance target rather than the class a call was made through.
+	// Carrying the origin forward is what lets a call frame re-bind the position to its exact receiver;
+	// a position the author wrote as that class is deliberately left unmarked. Applied after the whole
+	// switch so every erasure -- native, script, builtin, and the class-handle forms -- keeps it.
+	result.is_self_type = result.is_self_type || p_datatype.is_substituted_self;
+
 	// A nullable value type must accept null at runtime. Metatypes are never nullable.
 	result.is_nullable = p_datatype.is_nullable && !(p_handle_metatype && p_datatype.is_meta_type);
 
@@ -559,7 +569,11 @@ static void _rebind_self_data_type(FSDataType &p_type, FoundryScript *p_owner) {
 	if (p_owner == nullptr) {
 		return;
 	}
-	if (p_type.is_self_type) {
+	// A class-handle position holds the handle itself rather than an instance of it, and a `Self` bound
+	// to a builtin target describes a value of that builtin type. Rewriting either into an instance
+	// type of the owning script would demand a value neither position can ever hold, so only instance
+	// positions are rebound.
+	if (p_type.is_self_type && !p_type.is_type_handle && p_type.builtin_type == Variant::OBJECT) {
 		p_type.kind = FSDataType::FOUNDRY_SCRIPT;
 		p_type.builtin_type = Variant::OBJECT;
 		p_type.script_type = p_owner;

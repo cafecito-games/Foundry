@@ -166,6 +166,13 @@ public:
 		// describes the range a value may occupy, not a constraint anybody wrote, so it must not be
 		// copied into a constraint slot. Provenance only: it takes no part in type identity.
 		bool numeric_type_is_carrier_erased = false;
+		// True when this type replaced a `Self` type parameter while a declaration was lowered for
+		// execution. A static call frame is handed the exact class handle it was invoked through, and
+		// only positions carrying this flag may be re-bound to it. Without it, a `Self` position is
+		// indistinguishable from a position the author spelled out as the declaring class or the
+		// conformance target, and the receiver information is unrecoverable. Provenance only: it takes
+		// no part in type identity.
+		bool is_substituted_self = false;
 		StringName native_type;
 		StringName enum_type; // Enum name or the value name in an enum.
 		Ref<Script> script_type;
@@ -253,7 +260,13 @@ public:
 		// p_bindings is keyed by type-parameter name and must hold the parameters of a single declaration scope, since a
 		// name uniquely identifies a parameter within its own scope. For nested generics (e.g. a generic method on a
 		// generic class), substitute outermost scope first so an inner parameter that shadows an outer name wins.
-		static DataType substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings);
+		//
+		// p_mark_substituted_self records on every replacement of the `@Self` parameter that it came from
+		// `Self`, at every nesting depth. Only declaration lowering asks for it: a call site that
+		// substitutes `Self` against the receiver it can see has already produced the final type, and
+		// marking it would invite a second, unrelated substitution at execution time.
+		static DataType substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings,
+				bool p_mark_substituted_self = false);
 
 		_FORCE_INLINE_ bool is_set() const { return kind != RESOLVING && kind != UNRESOLVED; }
 		_FORCE_INLINE_ bool is_resolving() const { return kind == RESOLVING; }
@@ -419,6 +432,7 @@ public:
 			builtin_type = p_other.builtin_type;
 			numeric_type = p_other.numeric_type;
 			numeric_type_is_carrier_erased = p_other.numeric_type_is_carrier_erased;
+			is_substituted_self = p_other.is_substituted_self;
 			native_type = p_other.native_type;
 			enum_type = p_other.enum_type;
 			script_type = p_other.script_type;
