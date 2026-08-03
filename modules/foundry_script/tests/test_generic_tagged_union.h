@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "../fs_analyzer.h"
 #include "../fs_parser.h"
 
 #ifdef TOOLS_ENABLED
@@ -38,9 +39,9 @@
 
 #include "tests/test_macros.h"
 
-// Declaration-shape coverage for generic tagged unions. Only named tagged unions may carry type
-// parameters, so these tests assert on the parsed AST and on the canonical formatter output rather
-// than on analysis or runtime behavior, which land in later work.
+// Declaration-shape coverage for generic tagged unions, plus analyzer coverage for parameter scope,
+// bounds, and the open self identity used by recursive declarations. The analyzer tests inspect
+// resolved `DataType` structures so scope selection is proven, not merely implied by compilation.
 
 namespace FSTests {
 namespace GenericTaggedUnion {
@@ -177,6 +178,338 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnion] Formatter canonicalizes 
 	CHECK(global_formatted.contains("enum_name GlobalResult[T, E]:"));
 }
 #endif // TOOLS_ENABLED
+
+// Analyzer-driven coverage. Every assertion reads an analyzed `DataType` or an emitted diagnostic.
+
+static const FSParser::ClassNode *find_inner_class(const FSParser::ClassNode *p_class, const StringName &p_name) {
+	if (p_class == nullptr || !p_class->has_member(p_name)) {
+		return nullptr;
+	}
+	const FSParser::ClassNode::Member &member = p_class->get_member(p_name);
+	return member.type == FSParser::ClassNode::Member::CLASS ? member.m_class : nullptr;
+}
+
+static const FSParser::EnumNode *find_enum_in(const FSParser::ClassNode *p_class, const StringName &p_name) {
+	if (p_class == nullptr || !p_class->has_member(p_name)) {
+		return nullptr;
+	}
+	const FSParser::ClassNode::Member &member = p_class->get_member(p_name);
+	return member.type == FSParser::ClassNode::Member::ENUM ? member.m_enum : nullptr;
+}
+
+static const FSParser::FunctionNode *find_enum_function(const FSParser::EnumNode *p_enum, const StringName &p_name) {
+	if (p_enum == nullptr) {
+		return nullptr;
+	}
+	for (const FSParser::FunctionNode *function : p_enum->functions) {
+		if (function != nullptr && function->identifier != nullptr && function->identifier->name == p_name) {
+			return function;
+		}
+	}
+	return nullptr;
+}
+
+// The payload field type recorded on the enum's analyzed datatype, or an unset type when the case
+// or field does not exist.
+static FSParser::DataType payload_field_type(const FSParser::EnumNode *p_enum, const StringName &p_case, int p_field) {
+	if (p_enum == nullptr) {
+		return FSParser::DataType();
+	}
+	const FSParser::DataType enum_type = p_enum->get_datatype();
+	const FSParser::DataType::EnumCasePayload *payload = enum_type.enum_case_payloads.getptr(p_case);
+	if (payload == nullptr || p_field < 0 || p_field >= payload->field_types.size()) {
+		return FSParser::DataType();
+	}
+	return payload->field_types[p_field];
+}
+
+// Doctest runs without exceptions here, so a failed REQUIRE does not abort the case; index through
+// this accessor rather than crashing a red run on an out-of-range read.
+static FSParser::DataType type_at(const Vector<FSParser::DataType> &p_types, int p_index) {
+	return p_index >= 0 && p_index < p_types.size() ? p_types[p_index] : FSParser::DataType();
+}
+
+static String first_error_message(const FSParser &p_parser) {
+	return p_parser.get_errors().is_empty() ? String() : p_parser.get_errors().front()->get().message;
+}
+
+static bool is_type_parameter(const FSParser::DataType &p_type, const StringName &p_name,
+		FSParser::DataType::TypeParameterScope p_scope, int p_index) {
+	return p_type.kind == FSParser::DataType::TYPE_PARAMETER && p_type.type_parameter_name == p_name &&
+			p_type.type_parameter_scope == p_scope && p_type.type_parameter_index == p_index;
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum parameters resolve between method and class scopes") {
+	FSParser parser;
+	const Error parse_error = parser.parse(
+			"class Outer[ClassT]:\n"
+			"\tenum Choice[EnumT: ClassT]:\n"
+			"\t\tValue(value: EnumT)\n"
+			"\t\tFallback(outer: ClassT)\n"
+			"\n"
+			"\t\tstatic func identity[MethodT](value: MethodT) -> MethodT:\n"
+			"\t\t\tvar through_lambda := func(inner: MethodT) -> MethodT:\n"
+			"\t\t\t\treturn inner\n"
+			"\t\t\treturn value\n",
+			"user://generic_tagged_union_scope.fs", false);
+	REQUIRE_EQ(parse_error, OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+
+	const FSParser::ClassNode *outer = find_inner_class(parser.get_tree(), SNAME("Outer"));
+	REQUIRE(outer != nullptr);
+	const FSParser::EnumNode *choice = find_enum_in(outer, SNAME("Choice"));
+	REQUIRE(choice != nullptr);
+
+	// An enum parameter wins over the enclosing class, and an unmatched name still falls back to it.
+	CHECK(is_type_parameter(payload_field_type(choice, SNAME("Value"), 0), SNAME("EnumT"),
+			FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+	CHECK(is_type_parameter(payload_field_type(choice, SNAME("Fallback"), 0), SNAME("ClassT"),
+			FSParser::DataType::TYPE_PARAMETER_CLASS, 0));
+
+	// The enum parameter's bound resolves in the declaration scope, so it sees the class parameter.
+	REQUIRE_EQ(choice->type_parameters.size(), 1);
+	const FSParser::DataType enum_bound = choice->type_parameters[0]->resolved_bound;
+	CHECK(is_type_parameter(enum_bound, SNAME("ClassT"), FSParser::DataType::TYPE_PARAMETER_CLASS, 0));
+
+	// A method parameter still shadows both, inside the signature and inside a nested lambda.
+	const FSParser::FunctionNode *identity = find_enum_function(choice, SNAME("identity"));
+	REQUIRE(identity != nullptr);
+	REQUIRE_EQ(identity->parameters.size(), 1);
+	CHECK(is_type_parameter(identity->parameters[0]->get_datatype(), SNAME("MethodT"),
+			FSParser::DataType::TYPE_PARAMETER_METHOD, 0));
+
+	REQUIRE(identity->body != nullptr);
+	const FSParser::LambdaNode *lambda = nullptr;
+	for (FSParser::Node *statement : identity->body->statements) {
+		if (statement->type != FSParser::Node::VARIABLE) {
+			continue;
+		}
+		const FSParser::VariableNode *variable = static_cast<const FSParser::VariableNode *>(statement);
+		if (variable->initializer != nullptr && variable->initializer->type == FSParser::Node::LAMBDA) {
+			lambda = static_cast<const FSParser::LambdaNode *>(variable->initializer);
+		}
+	}
+	REQUIRE(lambda != nullptr);
+	REQUIRE(lambda->function != nullptr);
+	REQUIRE_EQ(lambda->function->parameters.size(), 1);
+	CHECK(is_type_parameter(lambda->function->parameters[0]->get_datatype(), SNAME("MethodT"),
+			FSParser::DataType::TYPE_PARAMETER_METHOD, 0));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Same-spelled parameters keep distinct scopes") {
+	FSParser parser;
+	const Error parse_error = parser.parse(
+			"class Shadow[T]:\n"
+			"\tvar held: T\n"
+			"\n"
+			"\tenum Choice[T]:\n"
+			"\t\tValue(value: T)\n"
+			"\n"
+			"\t\tstatic func identity[T](value: T) -> T:\n"
+			"\t\t\treturn value\n",
+			"user://generic_tagged_union_shadow.fs", false);
+	REQUIRE_EQ(parse_error, OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+
+	const FSParser::ClassNode *shadow = find_inner_class(parser.get_tree(), SNAME("Shadow"));
+	REQUIRE(shadow != nullptr);
+	const FSParser::EnumNode *choice = find_enum_in(shadow, SNAME("Choice"));
+	REQUIRE(choice != nullptr);
+
+	const FSParser::DataType class_member_type = shadow->get_member(SNAME("held")).variable->get_datatype();
+	const FSParser::DataType payload_type = payload_field_type(choice, SNAME("Value"), 0);
+	const FSParser::FunctionNode *identity = find_enum_function(choice, SNAME("identity"));
+	REQUIRE(identity != nullptr);
+	REQUIRE_EQ(identity->parameters.size(), 1);
+	const FSParser::DataType method_type = identity->parameters[0]->get_datatype();
+
+	CHECK(is_type_parameter(class_member_type, SNAME("T"), FSParser::DataType::TYPE_PARAMETER_CLASS, 0));
+	CHECK(is_type_parameter(payload_type, SNAME("T"), FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+	CHECK(is_type_parameter(method_type, SNAME("T"), FSParser::DataType::TYPE_PARAMETER_METHOD, 0));
+
+	// Identical spelling and ordinal, so only the scope separates the three handles.
+	CHECK(class_member_type != payload_type);
+	CHECK(payload_type != method_type);
+	CHECK(class_member_type != method_type);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum parameter bounds resolve eagerly") {
+	FSParser parser;
+	const Error parse_error = parser.parse(
+			"enum Bounded[T: Resource, U: T]:\n"
+			"\tPair(first: T, second: U)\n",
+			"user://generic_tagged_union_bounds.fs", false);
+	REQUIRE_EQ(parse_error, OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+
+	const FSParser::EnumNode *bounded = find_enum(parser, SNAME("Bounded"));
+	REQUIRE(bounded != nullptr);
+	REQUIRE_EQ(bounded->type_parameters.size(), 2);
+
+	const FSParser::DataType first_bound = bounded->type_parameters[0]->resolved_bound;
+	CHECK(first_bound.kind == FSParser::DataType::NATIVE);
+	CHECK(first_bound.native_type == SNAME("Resource"));
+
+	const FSParser::DataType second_bound = bounded->type_parameters[1]->resolved_bound;
+	CHECK(is_type_parameter(second_bound, SNAME("T"), FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+
+	// The bound travels with the handle used in payload positions.
+	const FSParser::DataType second_field = payload_field_type(bounded, SNAME("Pair"), 1);
+	REQUIRE(is_type_parameter(second_field, SNAME("U"), FSParser::DataType::TYPE_PARAMETER_ENUM, 1));
+	REQUIRE_EQ(second_field.type_parameter_bound.size(), 1);
+	CHECK(is_type_parameter(type_at(second_field.type_parameter_bound, 0), SNAME("T"),
+			FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Bare and explicit open self canonicalize alike") {
+	FSParser parser;
+	const Error parse_error = parser.parse(
+			"enum TokenTree[T]:\n"
+			"\tLeaf(value: T)\n"
+			"\tLink(next: TokenTree)\n"
+			"\tBranch(children: Array[TokenTree])\n"
+			"\tExplicit(children: Array[TokenTree[T]])\n"
+			"\n"
+			"\tstatic func singleton(value: T) -> TokenTree:\n"
+			"\t\treturn TokenTree.Leaf(value)\n",
+			"user://generic_tagged_union_recursive.fs", false);
+	REQUIRE_EQ(parse_error, OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+	CHECK(parser.get_errors().is_empty());
+
+	const FSParser::EnumNode *tree = find_enum(parser, SNAME("TokenTree"));
+	REQUIRE(tree != nullptr);
+
+	// The declaration publishes its own parameter vector as the open identity.
+	const FSParser::DataType tree_type = tree->get_datatype();
+	REQUIRE_EQ(tree_type.type_arguments.size(), 1);
+	CHECK(is_type_parameter(type_at(tree_type.type_arguments, 0), SNAME("T"),
+			FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+
+	const FSParser::DataType direct = payload_field_type(tree, SNAME("Link"), 0);
+	REQUIRE(direct.kind == FSParser::DataType::ENUM);
+	CHECK(direct.is_tagged_union);
+	REQUIRE_EQ(direct.type_arguments.size(), 1);
+	CHECK(is_type_parameter(type_at(direct.type_arguments, 0), SNAME("T"), FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+
+	const FSParser::DataType bare_container = payload_field_type(tree, SNAME("Branch"), 0);
+	REQUIRE_EQ(bare_container.container_element_types.size(), 1);
+	const FSParser::DataType explicit_container = payload_field_type(tree, SNAME("Explicit"), 0);
+	REQUIRE_EQ(explicit_container.container_element_types.size(), 1);
+
+	// Bare `TokenTree` and the exact open spelling `TokenTree[T]` are the same open self type.
+	CHECK(type_at(bare_container.container_element_types, 0) == direct);
+	CHECK(type_at(explicit_container.container_element_types, 0) == direct);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Recursive completion is finite and stable") {
+	FSParser parser;
+	const Error parse_error = parser.parse(
+			"enum TokenTree[T]:\n"
+			"\tLeaf(value: T)\n"
+			"\tLink(next: TokenTree)\n"
+			"\tBranch(children: Array[TokenTree])\n",
+			"user://generic_tagged_union_completion.fs", false);
+	REQUIRE_EQ(parse_error, OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+
+	const FSParser::EnumNode *tree = find_enum(parser, SNAME("TokenTree"));
+	REQUIRE(tree != nullptr);
+
+	const FSParser::DataType shell = payload_field_type(tree, SNAME("Link"), 0);
+	REQUIRE(shell.kind == FSParser::DataType::ENUM);
+	// The captured recursive edge starts as an identity shell carrying the enum-scoped parameter.
+	CHECK(shell.enum_values.is_empty());
+	REQUIRE_EQ(shell.type_arguments.size(), 1);
+	CHECK(is_type_parameter(type_at(shell.type_arguments, 0), SNAME("T"), FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+
+	const FSParser::DataType completed = FSAnalyzer::test_complete_self_referential_enum_type(shell);
+	CHECK_EQ(completed.enum_values.size(), 3);
+	CHECK(completed.type_arguments == shell.type_arguments);
+	// Recursive edges inside the copied payload map stay shells, which is what keeps this finite.
+	const FSParser::DataType::EnumCasePayload *link_payload = completed.enum_case_payloads.getptr(SNAME("Link"));
+	REQUIRE(link_payload != nullptr);
+	REQUIRE_EQ(link_payload->field_types.size(), 1);
+	CHECK(type_at(link_payload->field_types, 0).enum_values.is_empty());
+
+	const FSParser::DataType completed_twice = FSAnalyzer::test_complete_self_referential_enum_type(completed);
+	CHECK_EQ(completed_twice.enum_values.size(), completed.enum_values.size());
+	CHECK(completed_twice.type_arguments == completed.type_arguments);
+	const FSParser::DataType::EnumCasePayload *twice_payload = completed_twice.enum_case_payloads.getptr(SNAME("Link"));
+	REQUIRE(twice_payload != nullptr);
+	REQUIRE_EQ(twice_payload->field_types.size(), 1);
+	CHECK(type_at(twice_payload->field_types, 0).enum_values.is_empty());
+
+	// A container-mediated edge completes through its element without growing either.
+	const FSParser::DataType array_shell = payload_field_type(tree, SNAME("Branch"), 0);
+	REQUIRE_EQ(array_shell.container_element_types.size(), 1);
+	const FSParser::DataType completed_array = FSAnalyzer::test_complete_self_referential_enum_type(array_shell);
+	REQUIRE_EQ(completed_array.container_element_types.size(), 1);
+	CHECK_EQ(type_at(completed_array.container_element_types, 0).enum_values.size(), 3);
+	CHECK(type_at(completed_array.container_element_types, 0).type_arguments == shell.type_arguments);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Generic union misuse reports one pinned diagnostic") {
+	SUBCASE("bare external use") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "func take(held: Holder) -> void:\n"
+						   "\tprint(held)\n",
+						   "user://generic_tagged_union_bare.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+	}
+
+	SUBCASE("wrong recursive arity") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Pair[T, U]:\n"
+						   "\tBoth(first: T, second: U)\n"
+						   "\tNested(inner: Pair[T])\n",
+						   "user://generic_tagged_union_arity.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Pair" expects 2 type argument(s), but 1 were given.)"));
+	}
+
+	SUBCASE("exact-arity external application") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Outcome[T, E]:\n"
+						   "\tOk(value: T)\n"
+						   "\tErr(error: E)\n"
+						   "\n"
+						   "func take(outcome: Outcome[int, String]) -> void:\n"
+						   "\tprint(outcome)\n",
+						   "user://generic_tagged_union_application.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Outcome" type application is not available yet.)"));
+	}
+}
 
 } // namespace GenericTaggedUnion
 } // namespace FSTests

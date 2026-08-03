@@ -2302,6 +2302,48 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		}
 	}
 
+	// A generic tagged union is decided before the collection/class argument handling below, because a
+	// union metatype is Dictionary-backed and would otherwise consume exactly two arguments as key and
+	// value types. Only the declaration's own open form is accepted here; general application follows.
+	if (result.kind == FSParser::DataType::ENUM && result.is_tagged_union && result.enum_case_name == StringName() &&
+			(!p_type->container_types.is_empty() || result.has_type_arguments())) {
+		FSParser::EnumNode *declaration = resolve_enum_declaration(result, p_type);
+		if (declaration != nullptr && !declaration->type_parameters.is_empty()) {
+			const StringName declaration_name = declaration->identifier != nullptr ? declaration->identifier->name : StringName();
+			const int expected = declaration->type_parameters.size();
+			const int given = p_type->container_types.size();
+			const bool is_current_declaration = declaration == current_enum;
+
+			if (given != expected) {
+				// Bare use outside the declaration lands here too: it gives zero of the required arguments.
+				if (given == 0 && is_current_declaration) {
+					// Bare self inside the declaration is the open type, whose arguments are already published.
+					return finalize_datatype(result);
+				}
+				push_error(vformat(R"(Generic tagged union "%s" expects %d type argument(s), but %d were given.)",
+								   declaration_name, expected, given),
+						p_type);
+				return bad_type;
+			}
+
+			bool is_own_open_vector = is_current_declaration && result.type_arguments.size() == expected;
+			for (int i = 0; is_own_open_vector && i < expected; i++) {
+				const FSParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
+				is_own_open_vector = argument.kind == FSParser::DataType::TYPE_PARAMETER &&
+						argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_ENUM &&
+						argument.type_parameter_index == i &&
+						argument.type_parameter_name == result.type_arguments[i].type_parameter_name;
+			}
+			if (is_own_open_vector) {
+				// `Tree[T]` spelled inside `Tree[T]` canonicalizes to the same open handle as bare `Tree`.
+				return finalize_datatype(result);
+			}
+
+			push_error(vformat(R"(Generic tagged union "%s" type application is not available yet.)", declaration_name), p_type);
+			return bad_type;
+		}
+	}
+
 	if (!p_type->container_types.is_empty()) {
 		if (result.builtin_type == Variant::ARRAY) {
 			if (p_type->container_types.size() != 1) {

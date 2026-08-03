@@ -556,6 +556,11 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
   parameters on an enum whose completed body declares no payload-bearing case (an
   integer-backed enum). Like the tagged-union rules above, the second is validated
   after the whole body has been parsed.
+- Inside a generic tagged union's own declaration, the union names itself either bare
+  (`Link(next: Tree)`) or with its exact parameter vector in declaration order
+  (`Explicit(children: Array[Tree[T]])`); both spell the same open self type. A generic
+  tagged union has no bare form anywhere else, and its type parameters shadow same-named
+  class parameters while being shadowed in turn by an enum function's own parameters.
 - Enum values must appear before enum functions. A functions-only named enum is valid.
   Enum functions reuse ordinary function signatures and bodies, allow `static` and
   `async`, and reject `abstract` and `final`. Variables, constants, signals, nested

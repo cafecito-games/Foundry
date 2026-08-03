@@ -874,6 +874,21 @@ FSParser::DataType FSAnalyzer::complete_self_referential_enum_type(const FSParse
 	return completed;
 }
 
+FSParser::DataType FSAnalyzer::enum_type_parameter_handle(const FSParser::TypeParameterNode *p_parameter, int p_index) {
+	FSParser::DataType type;
+	type.kind = FSParser::DataType::TYPE_PARAMETER;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	type.type_parameter_scope = FSParser::DataType::TYPE_PARAMETER_ENUM;
+	type.type_parameter_index = p_index;
+	if (p_parameter != nullptr && p_parameter->identifier != nullptr) {
+		type.type_parameter_name = p_parameter->identifier->name;
+	}
+	if (p_parameter != nullptr && p_parameter->resolved_bound.is_set() && !p_parameter->resolved_bound.is_variant()) {
+		type.type_parameter_bound.push_back(p_parameter->resolved_bound);
+	}
+	return type;
+}
+
 FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 		const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner) {
 	ERR_FAIL_NULL_V(p_enum, p_enum_type);
@@ -897,6 +912,24 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 	// Int-backed enums keep the stricter guard: their `= expression` values can form a cycle
 	// that genuinely has no resolution.
 	if (enum_type.is_tagged_union) {
+		// A generic union's identity includes its own parameter vector, so the open handle has to
+		// carry it before any payload is resolved: a payload naming the union bare or as its exact
+		// open spelling reads that published identity instead of re-entering resolution.
+		if (!p_enum->type_parameters.is_empty()) {
+			FSParser::FunctionNode *previous_function = parser->current_function;
+			parser->current_function = nullptr;
+			for (FSParser::TypeParameterNode *parameter : p_enum->type_parameters) {
+				if (parameter != nullptr && parameter->bound != nullptr) {
+					parameter->resolved_bound = type_from_metatype(resolve_datatype(parameter->bound));
+				}
+			}
+			parser->current_function = previous_function;
+
+			enum_type.type_arguments.clear();
+			for (int i = 0; i < p_enum->type_parameters.size(); i++) {
+				enum_type.type_arguments.push_back(enum_type_parameter_handle(p_enum->type_parameters[i], i));
+			}
+		}
 		p_enum->set_datatype(enum_type);
 	}
 
@@ -1021,8 +1054,12 @@ bool FSAnalyzer::resolve_type_parameter(const StringName &p_name, FSParser::Data
 		}
 		enclosing = enclosing->source_lambda != nullptr ? enclosing->source_lambda->parent_function : nullptr;
 	}
+	const FSParser::EnumNode *declaring_enum = nullptr;
 	if (found_method_parameter) {
 		// Found a method type parameter.
+	} else if (current_enum != nullptr && match_in(current_enum->type_parameters, FSParser::DataType::TYPE_PARAMETER_ENUM)) {
+		// A generic tagged union's own parameters sit between its methods and its declaring class.
+		declaring_enum = current_enum;
 	} else {
 		for (FSParser::ClassNode *script_class = parser->current_class; script_class != nullptr; script_class = script_class->outer) {
 			if (match_in(script_class->type_parameters, FSParser::DataType::TYPE_PARAMETER_CLASS)) {
@@ -1043,18 +1080,24 @@ bool FSAnalyzer::resolve_type_parameter(const StringName &p_name, FSParser::Data
 	type.type_parameter_scope = scope;
 	type.type_parameter_index = index;
 	if (parameter->bound != nullptr) {
-		// A class type parameter's bound belongs to its declaring class, not wherever the parameter is
-		// used. Resolve (and thus cache) it in that scope so an enclosing method type parameter cannot
-		// shadow the bound name and poison the cached datatype for later uses.
+		// A type parameter's bound belongs to its declaring scope, not wherever the parameter is used.
+		// Resolve (and thus cache) it there so an enclosing method or enum parameter cannot shadow the
+		// bound name and poison the cached datatype for later uses.
 		FSParser::ClassNode *previous_class = parser->current_class;
 		FSParser::FunctionNode *previous_function = parser->current_function;
-		if (scope == FSParser::DataType::TYPE_PARAMETER_CLASS && declaring_class != nullptr) {
+		const FSParser::EnumNode *previous_enum = current_enum;
+		if (scope == FSParser::DataType::TYPE_PARAMETER_ENUM && declaring_enum != nullptr) {
+			current_enum = declaring_enum;
+			parser->current_function = nullptr;
+		} else if (scope == FSParser::DataType::TYPE_PARAMETER_CLASS && declaring_class != nullptr) {
 			parser->current_class = declaring_class;
 			parser->current_function = nullptr;
+			current_enum = nullptr;
 		}
 		type.type_parameter_bound.push_back(type_from_metatype(resolve_datatype(parameter->bound)));
 		parser->current_class = previous_class;
 		parser->current_function = previous_function;
+		current_enum = previous_enum;
 	}
 
 	r_type = type;
@@ -1631,8 +1674,10 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 		if (!p_class->type_parameters.is_empty()) {
 			FSParser::ClassNode *previous_class = parser->current_class;
 			FSParser::FunctionNode *previous_function = parser->current_function;
+			const FSParser::EnumNode *previous_enum = current_enum;
 			parser->current_class = p_class;
 			parser->current_function = nullptr;
+			current_enum = nullptr;
 			for (FSParser::TypeParameterNode *parameter : p_class->type_parameters) {
 				if (parameter != nullptr && parameter->bound != nullptr) {
 					parameter->resolved_bound = type_from_metatype(resolve_datatype(parameter->bound));
@@ -1640,6 +1685,7 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 			}
 			parser->current_class = previous_class;
 			parser->current_function = previous_function;
+			current_enum = previous_enum;
 		}
 
 		FSParser::DataType base_type = p_class->base_type;

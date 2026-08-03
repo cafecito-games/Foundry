@@ -475,6 +475,9 @@ private:
 			const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner);
 	void resolve_enum_bodies(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner);
 	FSParser::DataType enum_self_type(const FSParser::FunctionNode *p_function) const;
+	// The open handle for a generic tagged union's own type parameter, mirroring the class-parameter
+	// handle: enum scope, declaration ordinal, spelling, and the eagerly resolved bound.
+	static FSParser::DataType enum_type_parameter_handle(const FSParser::TypeParameterNode *p_parameter, int p_index);
 	static FSParser::DataType complete_self_referential_enum_type(const FSParser::DataType &p_type);
 	FSParser::EnumNode *resolve_enum_declaration(const FSParser::DataType &p_enum_type,
 			const FSParser::Node *p_source);
@@ -726,6 +729,11 @@ public:
 	bool test_would_violate_phase_order(AnalyzerPhase p_requested_phase, AnalyzerPhase p_required_predecessor) const;
 	AnalyzerPhase test_get_highest_completed_phase() const { return highest_completed_phase; }
 	void test_mark_analyzer_phase_completed(AnalyzerPhase p_phase) { mark_analyzer_phase_completed(p_phase); }
+	// Exposes the recursive tagged-union identity completion so its finiteness — complete tags with
+	// payload edges left as shells — can be asserted directly instead of inferred from a fixture.
+	static FSParser::DataType test_complete_self_referential_enum_type(const FSParser::DataType &p_type) {
+		return complete_self_referential_enum_type(p_type);
+	}
 	static FSParserRef::Status test_get_depended_parser_status(const FSAnalyzer *p_analyzer, const String &p_path);
 	static Ref<FSParserRef> test_get_depended_parser_ref(const FSAnalyzer *p_analyzer, const String &p_path);
 	static int test_get_external_parser_cache_size(const FSAnalyzer *p_analyzer);
