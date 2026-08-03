@@ -265,6 +265,9 @@ Error FSBytecodeExporter::_encode_container_type(StreamPeerBuffer *r_stream, con
 	ERR_FAIL_COND_V_MSG(p_depth > Variant::MAX_RECURSION_DEPTH, ERR_INVALID_PARAMETER,
 			"Container type is too deeply nested to serialize to compiled bytecode.");
 	r_stream->put_u32((uint32_t)p_container_type.builtin_type);
+	// The declared integer width belongs to the carrier it constrains, so it travels immediately after
+	// it at every nesting level rather than only at the descriptor root.
+	r_stream->put_u8((uint8_t)p_container_type.numeric_type);
 	r_stream->put_u32(string_table.insert(p_container_type.class_name));
 	// A `Type[T]` node tests class handles rather than instances, so the distinction has to travel
 	// with every node of a constant container's descriptor.
@@ -330,6 +333,10 @@ Error FSBytecodeExporter::encode_data_type(StreamPeerBuffer *r_stream, const FSD
 			"Data type is too deeply nested to serialize to compiled bytecode.");
 	r_stream->put_u8((uint8_t)p_data_type.kind);
 	r_stream->put_u32((uint32_t)p_data_type.builtin_type);
+	// The declared integer width belongs to the carrier it constrains, so it travels immediately after
+	// it. Element types and type arguments recurse through this same function, so a width nested at any
+	// depth is written the same way as one at the root.
+	r_stream->put_u8((uint8_t)p_data_type.numeric_type);
 	r_stream->put_u32(string_table.insert(p_data_type.native_type));
 	uint8_t flags = 0;
 	if (p_data_type.is_nullable) {

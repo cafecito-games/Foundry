@@ -54,6 +54,25 @@ struct FSBytecodeLoadScope {
 	~FSBytecodeLoadScope() { *load_flag = false; }
 };
 
+// Reads the one-byte integer-width descriptor that follows every encoded carrier.
+//
+// A descriptor is only ever written alongside the carrier it constrains, so a byte outside the
+// descriptor range or one naming a carrier other than the one just read describes a constraint the
+// encoder cannot produce, and is corrupt input rather than a slot to leave unconstrained. `NONE`
+// stays exactly that -- the absence of a width constraint -- so a record written before any width was
+// declared decodes to the same type it always did.
+static Error _read_numeric_type(StreamPeerBuffer *p_stream, Variant::Type p_carrier, NumericType &r_numeric_type) {
+	ERR_FAIL_COND_V_MSG(p_stream->get_available_bytes() < 1, ERR_INVALID_DATA,
+			"Truncated numeric type in compiled script data.");
+	const NumericType numeric_type = (NumericType)p_stream->get_u8();
+	ERR_FAIL_COND_V_MSG(!numeric_type_is_valid(numeric_type), ERR_INVALID_DATA,
+			"Invalid numeric type in compiled script data.");
+	ERR_FAIL_COND_V_MSG(!numeric_type_is_carrier_consistent(numeric_type, p_carrier), ERR_INVALID_DATA,
+			"Numeric type disagrees with its carrier in compiled script data.");
+	r_numeric_type = numeric_type;
+	return OK;
+}
+
 Ref<Resource> FSBytecodeCacheResolver::resolve_resource(const String &p_path) {
 	return ResourceLoader::load(p_path);
 }
@@ -485,8 +504,12 @@ Error FSBytecodeLoader::_decode_container_type(StreamPeerBuffer *p_stream, Conta
 	ERR_FAIL_COND_V_MSG(builtin_type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
 			"Invalid builtin type in compiled script container type.");
 	r_container_type.builtin_type = (Variant::Type)builtin_type;
+	Error error = _read_numeric_type(p_stream, r_container_type.builtin_type, r_container_type.numeric_type);
+	if (error != OK) {
+		return error;
+	}
 	String class_name;
-	Error error = _get_string(p_stream->get_u32(), class_name);
+	error = _get_string(p_stream->get_u32(), class_name);
 	if (error != OK) {
 		return error;
 	}
@@ -540,8 +563,12 @@ Error FSBytecodeLoader::decode_data_type(StreamPeerBuffer *p_stream, FSDataType 
 	ERR_FAIL_COND_V_MSG(builtin_type >= Variant::VARIANT_MAX, ERR_INVALID_DATA,
 			"Invalid builtin type in compiled script data type.");
 	r_data_type.builtin_type = (Variant::Type)builtin_type;
+	Error error = _read_numeric_type(p_stream, r_data_type.builtin_type, r_data_type.numeric_type);
+	if (error != OK) {
+		return error;
+	}
 	String native_type;
-	Error error = _get_string(p_stream->get_u32(), native_type);
+	error = _get_string(p_stream->get_u32(), native_type);
 	if (error != OK) {
 		return error;
 	}
