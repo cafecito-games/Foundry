@@ -1789,7 +1789,9 @@ TEST_CASE("[Modules][FoundryScript] Analyzer checks typed Signal.emit invocation
 	CHECK(analyze_source(source_prefix + "\ttyped_event.emit(\"bad\")\n") != OK);
 	CHECK(analyze_source(source_prefix + "\ttyped_event.emit()\n") != OK);
 	CHECK(analyze_source(source_prefix + "\ttyped_event.emit(1, 2)\n") != OK);
-	CHECK(analyze_source(inferred_source_prefix + "\ttyped_event.emit(\"legacy dynamic\")\n") == OK);
+	// A `:=`-inferred local carries the same explicit signal signature as an annotated one (the
+	// declared signal's parameter types are always statically known), so it is checked identically.
+	CHECK(analyze_source(inferred_source_prefix + "\ttyped_event.emit(\"bad\")\n") != OK);
 }
 
 TEST_CASE("[Modules][FoundryScript] Analyzer preserves signal connect and emit validation diagnostics") {

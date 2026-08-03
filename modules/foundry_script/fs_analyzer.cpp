@@ -9614,7 +9614,11 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 
 				case FSParser::ClassNode::Member::SIGNAL: {
 					if (can_access_instance_member && !base.is_meta_type) {
-						p_identifier->set_datatype(p_base == nullptr ? member.get_datatype() : call_site_validation.explicit_signal_type_from_node(member.signal));
+						// A self-declared signal's per-parameter types are always fully known from its
+						// declaration, regardless of whether it is reached through an explicit `self.`
+						// base or bare identifier, so both access forms get the same explicit signature
+						// used to validate `emit()`/`connect()` call-site arguments.
+						p_identifier->set_datatype(call_site_validation.explicit_signal_type_from_node(member.signal));
 						p_identifier->source = FSParser::IdentifierNode::MEMBER_SIGNAL;
 						p_identifier->signal_source = member.signal;
 						member.signal->usages += 1;

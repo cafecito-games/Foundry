@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 10: Cannot assign a value of type Signal to variable "typed_event" with specified type Signal[[Callable[[int], void]]].
+>> ERROR at line 9: Cannot assign a value of type Signal[[Callable[[String], void]]] to variable "typed_event" with specified type Signal[[Callable[[int], void]]].
