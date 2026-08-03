@@ -111,6 +111,58 @@ public:
 	bool operator!=(const ContainerTypeValidate &p_type) const;
 };
 
+// Recursive evidence about a type projected through a generic inheritance chain.
+//
+// A projection cannot always resolve every part of a type: `class Mid[U] extends Base[Pair[int, U]]`
+// fixes the outer `Pair` and its first argument for every subclass, while `U` only becomes concrete
+// once a leaf supplies it. A single "known / not known" bit for the whole type would have to discard
+// the `int` alongside the unresolved `U`, so evidence is tracked per node instead: the known parts
+// keep validating invariantly and only the genuinely unresolved subtrees stay gradual.
+struct ProjectedContainerType {
+	enum State : uint8_t {
+		// No evidence at all. The slot stays gradual and never rejects a value.
+		UNKNOWN,
+		// The node itself is known, and so is each descendant not marked `UNKNOWN`.
+		PARTIAL,
+		// The complete subtree is known and validates invariantly.
+		EXACT,
+	};
+
+	State state = UNKNOWN;
+	// Shallow node identity only: builtin carrier, numeric width, native class, script, and the
+	// class-handle bit. The child vectors below carry the descendants, so `outer.element_types` and
+	// `outer.type_arguments` are always empty.
+	ContainerType outer;
+	Vector<ProjectedContainerType> element_types;
+	Vector<ProjectedContainerType> type_arguments;
+
+	// Builds complete evidence from a fully resolved type. Subtrees deeper than
+	// `Variant::MAX_RECURSION_DEPTH` degrade to `UNKNOWN` rather than failing the whole conversion.
+	static ProjectedContainerType exact(const ContainerType &p_type);
+
+	_FORCE_INLINE_ bool is_known() const { return state != UNKNOWN; }
+
+	// Materializes the described type. Unknown subtrees become unconstrained slots, so the result is
+	// only equivalent to the evidence when `state == EXACT`.
+	ContainerType to_container_type() const;
+	String get_type_name() const;
+
+	// True when this evidence contradicts the fully known type `p_expected`. Unknown subtrees never
+	// contradict anything; known ones must match exactly, arguments included.
+	bool conflicts_with_expected(const ContainerType &p_expected) const;
+	// Symmetric form used when both sides may carry unknown subtrees: only two known, differing nodes
+	// are a conflict.
+	bool conflicts_with(const ProjectedContainerType &p_other) const;
+
+	// Validates a write of `r_value` into a slot described by this evidence, converting the value where
+	// a fully known container type would. Unknown subtrees are skipped; every known one is enforced.
+	bool validate_value(Variant &r_value, const char *p_where, const char *p_operation) const;
+
+private:
+	static ProjectedContainerType _exact(const ContainerType &p_type, int p_depth);
+	bool _validate_known_descendants(const Variant &p_value, const char *p_where, const char *p_operation) const;
+};
+
 namespace ContainerTypeDescriptor {
 bool from_variant(const Variant &p_descriptor, ContainerType &r_type, String *r_error = nullptr);
 Variant to_variant(const ContainerType &p_type);

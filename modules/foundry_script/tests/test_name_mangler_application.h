@@ -498,8 +498,6 @@ public:
 						const FoundryScript::TypeArgumentBinding &p_right) {
 					return p_left.kind == p_right.kind &&
 							p_left.fixed == p_right.fixed &&
-							p_left.fixed_is_dependent ==
-							p_right.fixed_is_dependent &&
 							p_left.is_type_handle == p_right.is_type_handle &&
 							p_left.leaf_ordinal == p_right.leaf_ordinal;
 				};

@@ -918,10 +918,9 @@ Error FSBytecodeExporter::_write_member_info(StreamPeerBuffer *r_stream, const S
 
 Error FSBytecodeExporter::_write_type_argument_binding(StreamPeerBuffer *r_stream, const FoundryScript::TypeArgumentBinding &p_binding) {
 	r_stream->put_u8((uint8_t)p_binding.kind);
+	// Bit 0 is reserved: it used to carry a whole-type "the fixing argument depends on an open
+	// parameter" flag, which recursive `TYPE_PARAMETER` nodes inside `fixed` now express per node.
 	uint8_t binding_flags = 0;
-	if (p_binding.fixed_is_dependent) {
-		binding_flags |= 1 << 0;
-	}
 	if (p_binding.is_type_handle) {
 		binding_flags |= 1 << 1;
 	}

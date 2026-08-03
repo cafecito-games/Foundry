@@ -39,6 +39,7 @@
 #include "core/variant/typed_array.h"
 
 class ScriptLanguage;
+struct ProjectedContainerType;
 template <typename T>
 class TypedArray;
 
@@ -222,12 +223,11 @@ public:
 	// base element type (e.g. a `PairBox[A, B] extends Box[A]` value checked against `Array[Box[int]]`).
 	// `p_leaf_type_arguments` are the reified arguments of THIS (leaf) script. Returns false when no
 	// projection is available (not a generics-aware script, or `p_base` is not a recorded ancestor); the
-	// caller then falls back to gradual acceptance. On success `r_type_arguments` and the parallel
-	// `r_argument_bound` each hold one entry per `p_base` type parameter: `r_argument_bound[i]` is true
-	// only when the slot carries definite invariance evidence; a false entry (an unspecialized leaf's
-	// open parameter, or a dependent/erased fixed argument) means the slot must be skipped under gradual
-	// typing. `r_type_arguments[i]` is only meaningful when `r_argument_bound[i]` is true.
-	virtual bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ContainerType> &r_type_arguments, Vector<bool> &r_argument_bound) const { return false; }
+	// caller then falls back to gradual acceptance. On success `r_type_arguments` holds one entry per
+	// `p_base` type parameter, each carrying recursive evidence: a slot may be fully known, known only
+	// down to some depth (`Pair[int, ?]`, where the `int` still validates invariantly), or carry no
+	// evidence at all and stay gradual.
+	virtual bool project_type_arguments_onto_base(const Ref<Script> &p_base, const Vector<ContainerType> &p_leaf_type_arguments, Vector<ProjectedContainerType> &r_type_arguments) const { return false; }
 
 	virtual bool get_property_default_value(const StringName &p_property, Variant &r_value) const = 0;
 

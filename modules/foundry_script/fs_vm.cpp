@@ -296,111 +296,14 @@ static FSSpecializedClassHandle *_specialized_handle_assignable_to_native_script
 	return specialized_handle;
 }
 
-static bool _native_container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type) {
-	return p_expected_type.builtin_type == Variant::OBJECT && p_expected_type.script.is_null() &&
-			p_expected_type.type_arguments.is_empty();
+// Specialized-class-handle erasure lives on FoundryScript so the direct member-store opcode and the
+// dynamic property-write path share one implementation.
+static _FORCE_INLINE_ bool _container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type) {
+	return FoundryScript::container_type_accepts_specialized_handle_erasure(p_expected_type);
 }
 
-static bool _container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type) {
-	if (_native_container_type_accepts_specialized_handle_erasure(p_expected_type)) {
-		return true;
-	}
-
-	if (p_expected_type.builtin_type == Variant::ARRAY) {
-		return !p_expected_type.element_types.is_empty() &&
-				_container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[0]);
-	}
-
-	if (p_expected_type.builtin_type == Variant::DICTIONARY && !p_expected_type.element_types.is_empty()) {
-		if (_container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[0])) {
-			return true;
-		}
-		return p_expected_type.element_types.size() > 1 &&
-				_container_type_accepts_specialized_handle_erasure(p_expected_type.element_types[1]);
-	}
-
-	return false;
-}
-
-static bool _erase_specialized_handle_for_native_container_type(const ContainerType &p_expected_type, Variant &r_value) {
-	if (!_native_container_type_accepts_specialized_handle_erasure(p_expected_type)) {
-		return false;
-	}
-
-	FSSpecializedClassHandle *specialized_handle = _specialized_handle_from_variant(&r_value);
-	if (specialized_handle == nullptr || !specialized_handle->is_assignable_to_native_type(p_expected_type.class_name)) {
-		return false;
-	}
-
-	r_value = specialized_handle->get_specialized_script();
-	return true;
-}
-
-static bool _erase_specialized_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value);
-
-static bool _erase_specialized_handles_for_container_array_type(const ContainerType &p_expected_type, Variant &r_value) {
-	if (p_expected_type.builtin_type != Variant::ARRAY || p_expected_type.element_types.is_empty() ||
-			r_value.get_type() != Variant::ARRAY) {
-		return false;
-	}
-
-	const ContainerType &element_type = p_expected_type.element_types[0];
-	const Array source = r_value;
-	Array erased;
-	erased.resize(source.size());
-
-	bool changed = false;
-	for (int i = 0; i < source.size(); i++) {
-		Variant value = source[i];
-		changed = _erase_specialized_handles_for_container_type(element_type, value) || changed;
-		erased[i] = value;
-	}
-
-	if (!changed) {
-		return false;
-	}
-
-	r_value = erased;
-	return true;
-}
-
-static bool _erase_specialized_handles_for_container_dictionary_type(const ContainerType &p_expected_type, Variant &r_value) {
-	if (p_expected_type.builtin_type != Variant::DICTIONARY || p_expected_type.element_types.is_empty() ||
-			r_value.get_type() != Variant::DICTIONARY) {
-		return false;
-	}
-
-	const ContainerType &key_type = p_expected_type.element_types[0];
-	const ContainerType value_type = p_expected_type.element_types.size() > 1 ? p_expected_type.element_types[1] : ContainerType();
-	const Dictionary source = r_value;
-	Dictionary erased;
-	erased.reserve(source.size());
-
-	bool changed = false;
-	for (const KeyValue<Variant, Variant> &E : source) {
-		Variant key = E.key;
-		Variant value = E.value;
-		changed = _erase_specialized_handles_for_container_type(key_type, key) || changed;
-		changed = _erase_specialized_handles_for_container_type(value_type, value) || changed;
-		erased[key] = value;
-	}
-
-	if (!changed) {
-		return false;
-	}
-
-	r_value = erased;
-	return true;
-}
-
-static bool _erase_specialized_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value) {
-	if (_erase_specialized_handle_for_native_container_type(p_expected_type, r_value)) {
-		return true;
-	}
-	if (_erase_specialized_handles_for_container_array_type(p_expected_type, r_value)) {
-		return true;
-	}
-	return _erase_specialized_handles_for_container_dictionary_type(p_expected_type, r_value);
+static _FORCE_INLINE_ bool _erase_specialized_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+	return FoundryScript::erase_specialized_class_handles_for_container_type(p_expected_type, r_value);
 }
 
 static bool _erase_specialized_handles_for_native_array_elements(const ContainerType &p_element_type, Variant &r_value) {
@@ -2421,55 +2324,26 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				// A `T`-typed member is erased to a plain Variant slot at compile time, so a direct member
 				// store (e.g. `value = v` inside `class Box[T]`) bypasses the `set()` validation used for
-				// external writes. Resolve the binding the leaf script precomputed for this member slot:
-				// FIXED to a concrete argument by an `extends Base[int]` specialization, or OPEN against the
-				// argument reified onto this instance. An OPEN member on an instance without explicit
-				// arguments carries no binding, leaving the slot effectively untyped.
-				bool has_expected_type = false;
-				bool expected_is_type_handle = false;
-				ContainerType expected_type;
+				// external writes. Both paths go through the same binding validator so they cannot
+				// disagree: the leaf script's precomputed binding is resolved against the arguments reified
+				// onto this instance, and a slot with no evidence stays effectively untyped.
+				const FoundryScript::TypeArgumentBinding *binding = nullptr;
 				if (p_instance != nullptr && p_instance->script.is_valid()) {
 					const Vector<FoundryScript::TypeArgumentBinding> &bindings = p_instance->script->member_type_argument_bindings;
 					if (member_index >= 0 && member_index < bindings.size()) {
-						const FoundryScript::TypeArgumentBinding &binding = bindings[member_index];
-						if (binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
-							expected_type = binding.fixed.to_container_type();
-							has_expected_type = true;
-							expected_is_type_handle = binding.is_type_handle;
-						} else if (binding.kind == FoundryScript::TypeArgumentBinding::OPEN &&
-								binding.leaf_ordinal >= 0 && binding.leaf_ordinal < p_instance->type_arguments.size()) {
-							expected_type = p_instance->type_arguments[binding.leaf_ordinal];
-							has_expected_type = true;
-							expected_is_type_handle = binding.is_type_handle;
-						}
+						binding = &bindings[member_index];
 					}
 				}
 
-				if (has_expected_type) {
+				if (binding != nullptr) {
 					Variant value = *src;
-					if (expected_is_type_handle) {
-						const FSDataType expected_handle_type = FSDataType::from_type_handle_container_type(expected_type);
-						if (!expected_handle_type.is_type(value)) {
+					String expected_type_name;
+					if (!FoundryScript::validate_type_argument_binding_write(*binding, p_instance->type_arguments, value, &expected_type_name)) {
 #ifdef DEBUG_ENABLED
-							// `expected_type` is the reified argument's own (non-handle) descriptor; the slot's
-							// handle-ness lives only in `expected_is_type_handle`, so the wrapper is added here
-							// rather than expected from `expected_type.get_type_name()` itself.
-							err_text = vformat(R"(Trying to assign a value of type "%s" to a member of type "Type[%s]".)",
-									_get_var_type(src), expected_type.get_type_name());
+						err_text = vformat(R"(Trying to assign a value of type "%s" to a member of type "%s".)",
+								_get_var_type(src), expected_type_name);
 #endif // DEBUG_ENABLED
-							OPCODE_BREAK;
-						}
-					} else {
-						_erase_specialized_handles_for_container_type(expected_type, value);
-						ContainerTypeValidate validator(expected_type);
-						validator.where = "member";
-						if (!validator.validate(value, "assign")) {
-#ifdef DEBUG_ENABLED
-							err_text = vformat(R"(Trying to assign a value of type "%s" to a member of type "%s".)",
-									_get_var_type(src), _get_element_type(expected_type));
-#endif // DEBUG_ENABLED
-							OPCODE_BREAK;
-						}
+						OPCODE_BREAK;
 					}
 					*dst = value;
 				} else {
