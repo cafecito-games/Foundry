@@ -1828,6 +1828,61 @@ TEST_CASE("[Editor][ToolingHost] A structured test launch reports the runner's r
 	CHECK(failing_tap.contains("not ok 1 - exit_status.point_1"));
 }
 
+TEST_CASE("[Editor][ToolingHost] A structured project_test restart preserves the replacement's natural result") {
+	ExitStatusSession session;
+	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
+	INFO("Tooling host output:\n", session.host.output);
+	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+
+	const int breakpoint_line = 41;
+	Dictionary source;
+	source["path"] = session.artifact("exit_status_runner.fs");
+	Dictionary breakpoint;
+	breakpoint["line"] = breakpoint_line;
+	Array requested_breakpoints;
+	requested_breakpoints.push_back(breakpoint);
+	Dictionary set_breakpoints_arguments;
+	set_breakpoints_arguments["source"] = source;
+	set_breakpoints_arguments["breakpoints"] = requested_breakpoints;
+	const Dictionary set_breakpoints_response = session.client.await_response(
+			session.client.send_request("setBreakpoints", set_breakpoints_arguments), 30000);
+	REQUIRE_MESSAGE(bool(set_breakpoints_response.get("success", false)), "setBreakpoints did not succeed.");
+
+	const Dictionary launch_arguments = make_project_test_launch(session.artifact("restart.tap"), "exit::0");
+	const int launch_seq = session.client.send_request("launch", launch_arguments);
+	session.client.await_response(session.client.send_request("configurationDone", Dictionary()), 30000);
+	REQUIRE_MESSAGE(bool(session.client.await_response(launch_seq, 60000).get("success", false)),
+			"launch did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("process", 120000).is_empty(), "The first runner never started.");
+	REQUIRE_MESSAGE(!session.client.await_event("stopped", 120000).is_empty(), "The first runner never stopped.");
+
+	session.client.clear_events();
+	Dictionary restart_arguments;
+	restart_arguments["arguments"] = launch_arguments;
+	const Dictionary restart_response = session.client.await_response(
+			session.client.send_request("restart", restart_arguments), 60000);
+	REQUIRE_MESSAGE(bool(restart_response.get("success", false)), "restart did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("process", 120000).is_empty(),
+			"The replacement runner never started.");
+	REQUIRE_MESSAGE(!session.client.await_event("stopped", 120000).is_empty(),
+			"The replacement runner never stopped.");
+
+	// The replaced debugger's delayed stop must not start the replacement's five-second
+	// process-result grace window while the replacement is intentionally paused.
+	CHECK(session.client.await_event("terminated", 7000).is_empty());
+
+	Dictionary continue_arguments;
+	continue_arguments["threadId"] = 1;
+	const Dictionary continue_response = session.client.await_response(
+			session.client.send_request("continue", continue_arguments), 30000);
+	REQUIRE_MESSAGE(bool(continue_response.get("success", false)), "continue did not succeed.");
+	REQUIRE_MESSAGE(!session.client.await_event("terminated", 120000).is_empty(),
+			"The replacement runner never terminated.");
+
+	CHECK_EQ(session.client.lifecycle_events(), expected_known_result_lifecycle());
+	CHECK_EQ(session.client.exit_code_of_first_exited(), 0);
+}
+
 TEST_CASE("[Editor][ToolingHost] A replaced launch cannot leak its result into the next one") {
 	ExitStatusSession session;
 	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
