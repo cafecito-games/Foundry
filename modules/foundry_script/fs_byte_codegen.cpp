@@ -261,6 +261,13 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 		// the round trip through the descriptor.
 		descriptor["is_type_handle"] = true;
 	}
+	if (p_type.is_self_type) {
+		// The class recorded above is what the declaration was lowered against, which for a conformance
+		// witness is the conformance target rather than the class the call was made through. The marker
+		// is what lets the running frame re-bind this node to its exact receiver; without it the runtime
+		// would build metadata for an ancestor specialization.
+		descriptor["is_self_type"] = true;
+	}
 	if (p_type.numeric_type != NumericType::NONE) {
 		// Emitted only when a width was declared, so a slot constrained by its carrier alone keeps the
 		// exact descriptor shape it had before widths existed. The analyzer builds the container type
@@ -287,6 +294,12 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 }
 
 int FSByteCodeGenerator::get_container_type_pos(const FSDataType &p_type) {
+	// A position that came from `Self` has to reach the runtime as a full descriptor: the bare
+	// `script_type` fallback below carries no marker, so the frame could not tell the position apart
+	// from one the author spelled out as the class the declaration was lowered against.
+	if (p_type.references_self_type()) {
+		return get_constant_pos(make_container_type_descriptor(p_type));
+	}
 	if ((p_type.builtin_type == Variant::ARRAY || p_type.builtin_type == Variant::DICTIONARY) && p_type.has_container_element_types()) {
 		return get_constant_pos(make_container_type_descriptor(p_type));
 	}
@@ -1972,6 +1985,11 @@ void FSByteCodeGenerator::write_construct_specialized(const Address &p_target, c
 	append(p_arguments.size());
 	append(p_type_arguments.size());
 	ct.cleanup();
+}
+
+void FSByteCodeGenerator::write_load_static_self_class(const Address &p_target) {
+	append_opcode(FSFunction::OPCODE_LOAD_STATIC_SELF_CLASS);
+	append(p_target);
 }
 
 void FSByteCodeGenerator::write_construct_dictionary(const Address &p_target, const Vector<Address> &p_arguments) {

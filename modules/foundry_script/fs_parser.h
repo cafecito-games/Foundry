@@ -1466,6 +1466,9 @@ public:
 			INHERITED_VARIABLE,
 			STATIC_VARIABLE,
 			NATIVE_CLASS,
+			// `Self` in an expression position: the class handle of the frame's exact static receiver,
+			// which is only known when the frame runs.
+			STATIC_SELF_CLASS,
 		};
 		Source source = UNDEFINED_SOURCE;
 

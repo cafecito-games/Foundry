@@ -10016,6 +10016,21 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		}
 	}
 
+	// `Self` in an expression position denotes the class handle of the receiver the running static call
+	// was made through, so it is typed exactly like the `Self` annotation is -- receiver-relative -- and
+	// wrapped as a class handle. It deliberately does not fold to the enclosing class: one compiled
+	// function runs for every receiver that inherits it, and the receiver is only known at execution.
+	if (p_identifier->name == SNAME("Self") && parser->current_class != nullptr && parser->current_function != nullptr &&
+			!enum_self_type(parser->current_function).is_set()) {
+		parser->current_function->uses_receiver_relative_self = true;
+		FSParser::DataType self_handle = _self_type_parameter_for_class(parser->current_class);
+		self_handle.is_meta_type = true;
+		self_handle.is_type_handle_annotation = true;
+		p_identifier->source = FSParser::IdentifierNode::STATIC_SELF_CLASS;
+		p_identifier->set_datatype(self_handle);
+		return;
+	}
+
 	bool found_source = false;
 	// Check if identifier is local.
 	// If that's the case, the declaration already was solved before.

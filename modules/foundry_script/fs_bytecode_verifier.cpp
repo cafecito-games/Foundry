@@ -528,6 +528,11 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_ADDR(ip + 1);
 				ip += 2;
 			} break;
+			case FSFunction::OPCODE_LOAD_STATIC_SELF_CLASS: {
+				VERIFY_FAIL_COND(ip + 2 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				ip += 2;
+			} break;
 			case FSFunction::OPCODE_ASSERT: {
 				VERIFY_FAIL_COND(ip + 3 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);

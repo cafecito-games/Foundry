@@ -1569,6 +1569,12 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				DISASSEMBLE_TYPE_ADJUST(PACKED_COLOR_ARRAY);
 				DISASSEMBLE_TYPE_ADJUST(PACKED_VECTOR4_ARRAY);
 
+			case OPCODE_LOAD_STATIC_SELF_CLASS: {
+				text += DADDR(1);
+				text += " = static Self class handle";
+
+				incr += 2;
+			} break;
 			case OPCODE_ASSERT: {
 				text += "assert (";
 				text += DADDR(1);

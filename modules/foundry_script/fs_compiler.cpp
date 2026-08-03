@@ -988,6 +988,15 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					}
 				} break;
 
+				case FSParser::IdentifierNode::STATIC_SELF_CLASS: {
+					// `Self` in an expression position is the exact class handle the running static call
+					// was made through, which no constant can stand in for: the same compiled function
+					// executes for every receiver that inherits it.
+					FSCodeGenerator::Address handle = codegen.add_temporary(_gdtype_from_datatype(in->get_datatype(), codegen.script));
+					gen->write_load_static_self_class(handle);
+					return handle;
+				} break;
+
 				// GLOBALS.
 				case FSParser::IdentifierNode::NATIVE_CLASS:
 				case FSParser::IdentifierNode::UNDEFINED_SOURCE: {
