@@ -327,6 +327,18 @@ bool FoundryScript::_validate_static_member_write(FoundryScript *p_receiver, Fou
 		return true;
 	}
 	if (p_binding.leaf_ordinal < 0 || p_binding.leaf_ordinal >= projected.size() || !bound[p_binding.leaf_ordinal]) {
+		// `project_type_arguments_onto_base` also marks a slot unbound when the ancestor chain's own
+		// specialization at this ordinal was a dependent FIXED argument (a composite type still
+		// mentioning an open parameter partway up a multi-level `extends` chain), the same case
+		// `_validate_type_argument_binding_write` above recovers a sound outer-shape check for by
+		// stripping the erased nested arguments. `project_type_arguments_onto_base` does not expose that
+		// distinction here (it collapses to "unbound", matching its other, pre-existing caller,
+		// `_class_handle_type_arguments_match` in container_type_validate.cpp, which relies on `bound`
+		// meaning "no evidence at all" rather than "a known but partially-erased outer shape") — recovering
+		// it soundly for both callers needs the per-ancestor table to carry the erased-but-outer-known
+		// container through, not just a bool. Left as a known gap: an inherited static member specialized
+		// with such a dependent composite argument is treated as fully untyped here, rather than at least
+		// rejecting a value of a completely unrelated outer class.
 		return true;
 	}
 
