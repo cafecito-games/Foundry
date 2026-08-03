@@ -242,4 +242,43 @@ TEST_CASE("[Variant][UInt] type_convert reads the unsigned carrier and refuses t
 	CHECK_EQ(converted.operator int64_t(), 42);
 }
 
+// The unsigned carrier has no C++ nominal type and no source spelling, so tests build it through
+// the same Variant storage entry point the engine uses.
+static Variant make_unsigned_variant(uint64_t p_value) {
+	Variant value;
+	VariantInternal::initialize(&value, Variant::UINT);
+	*VariantInternal::get_uint(&value) = p_value;
+	return value;
+}
+
+TEST_CASE("[VariantUtility][UInt] Display conversion stays suffix-free") {
+	const Variant unsigned_value = make_unsigned_variant(UINT64_MAX);
+	const Variant *arguments[] = { &unsigned_value };
+	Callable::CallError error;
+	CHECK_EQ(VariantUtilityFunctions::str(arguments, 1, error), "18446744073709551615");
+	CHECK_EQ(error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(unsigned_value.stringify(), "18446744073709551615");
+	CHECK_EQ(unsigned_value.operator String(), "18446744073709551615");
+}
+
+TEST_CASE("[VariantUtility][UInt] Persistence conversion round-trips the carrier") {
+	const uint64_t values[] = { 0, uint64_t(INT64_MAX) + 1, UINT64_MAX };
+	for (uint64_t value : values) {
+		const String text = VariantUtilityFunctions::var_to_str(make_unsigned_variant(value));
+		CHECK(text.ends_with("UL"));
+
+		const Variant restored = VariantUtilityFunctions::str_to_var(text);
+		CHECK_EQ(restored.get_type(), Variant::UINT);
+		CHECK_EQ(restored.operator uint64_t(), value);
+	}
+
+	CHECK_EQ(VariantUtilityFunctions::var_to_str(make_unsigned_variant(UINT64_MAX)), "18446744073709551615UL");
+
+	// Signed values keep their existing suffix-free spelling.
+	CHECK_EQ(VariantUtilityFunctions::var_to_str(Variant(int64_t(INT64_MAX))), "9223372036854775807");
+	const Variant restored_signed = VariantUtilityFunctions::str_to_var("9223372036854775807");
+	CHECK_EQ(restored_signed.get_type(), Variant::INT);
+	CHECK_EQ(restored_signed.operator int64_t(), INT64_MAX);
+}
+
 } // namespace TestVariantUtility
