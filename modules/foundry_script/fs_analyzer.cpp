@@ -8037,6 +8037,12 @@ static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser:
 	if (p_a.signature_is_async != p_b.signature_is_async) {
 		return false;
 	}
+	// A gradual variadic Callable records its tail only in the method flags (`method_rest_parameter_type`
+	// stays empty), so variadicity has to be compared separately or `Callable[[T], void]` would match
+	// `Callable[[T, ...Array], void]`.
+	if ((p_a.method_info.flags & METHOD_FLAG_VARARG) != (p_b.method_info.flags & METHOD_FLAG_VARARG)) {
+		return false;
+	}
 	if (p_a.container_element_types.size() != p_b.container_element_types.size() ||
 			p_a.type_arguments.size() != p_b.type_arguments.size() ||
 			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||

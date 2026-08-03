@@ -3814,6 +3814,42 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An absorbed dependent Ca
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A dependent Callable's variadicity is part of its signature") {
+	// A gradual variadic Callable records its tail only in the method flags, so it must not match an
+	// otherwise identical fixed Callable: the implementation could invoke the callback with extra
+	// arguments the trait's callers never promised to accept.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[T], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](handler: Callable[[U, ...Array], void]) -> void:\n"
+					 "\t\tprint(handler)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[T], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Callable[[U, ...Array], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[T, ...Array], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Callable[[U, ...Array], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A class-scoped parameter forwards into an absorbing tail") {
 	CHECK_EQ(analyze_source(
 					 "trait Sink[T]:\n"
