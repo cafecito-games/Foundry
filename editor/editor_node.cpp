@@ -6334,8 +6334,8 @@ void EditorNode::_project_run_stopped() {
 	}
 }
 
-void EditorNode::notify_all_debug_sessions_exited(OS::ProcessID p_process_id) {
-	project_run_bar->debug_sessions_exited(p_process_id);
+void EditorNode::notify_all_debug_sessions_exited(uint64_t p_launch_id) {
+	project_run_bar->debug_sessions_exited(p_launch_id);
 }
 
 void EditorNode::add_io_error(const String &p_error) {

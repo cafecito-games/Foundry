@@ -165,6 +165,7 @@ private:
 	EditorExpressionEvaluator *expression_evaluator = nullptr;
 
 	OS::ProcessID remote_pid = 0;
+	uint64_t launch_id = 0;
 	bool move_to_foreground = true;
 	bool can_request_idle_draw = false;
 
@@ -328,7 +329,7 @@ public:
 
 	void request_remote_evaluate(const String &p_expression, int p_stack_frame);
 
-	void start(Ref<RemoteDebuggerPeer> p_peer);
+	void start(Ref<RemoteDebuggerPeer> p_peer, uint64_t p_launch_id);
 	void stop();
 
 	void debug_skip_breakpoints();

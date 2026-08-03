@@ -180,7 +180,7 @@ private:
 	EditorDebuggerNode();
 
 protected:
-	void _debugger_stopped(int64_t p_process_id, int p_id);
+	void _debugger_stopped(int64_t p_launch_id, int p_id);
 	void _debugger_wants_stop(int p_id);
 	void _debugger_changed(int p_tab);
 	void _debug_data(const String &p_msg, const Array &p_data, int p_debugger);

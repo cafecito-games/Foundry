@@ -46,11 +46,10 @@ TEST_CASE("[EditorRunBar] Run options menu exposes run targets configuration") {
 	CHECK_EQ(entries[0].label, String("Run Targets Configuration..."));
 }
 
-TEST_CASE("[EditorRunBar] A debugger stop only applies to its represented process") {
-	CHECK(EditorRunBar::is_debug_session_exit_current(200, 200, true));
-	CHECK(EditorRunBar::is_debug_session_exit_current(200, 100, true));
-	CHECK_FALSE(EditorRunBar::is_debug_session_exit_current(200, 100, false));
-	CHECK(EditorRunBar::is_debug_session_exit_current(0, 100, false));
+TEST_CASE("[EditorRunBar] A debugger stop only applies to its launch") {
+	CHECK(EditorRunBar::is_debug_session_exit_current(200, 200));
+	CHECK_FALSE(EditorRunBar::is_debug_session_exit_current(200, 100));
+	CHECK(EditorRunBar::is_debug_session_exit_current(0, 0));
 }
 
 } // namespace TestEditorRunBar

@@ -19,27 +19,32 @@ debugger can therefore be applied to the replacement process.
 
 ## Design
 
-Make debugger shutdown notifications process-specific.
+Make debugger shutdown notifications launch-specific.
 
-`ScriptEditorDebugger` will capture its `remote_pid` before clearing session state
-and include that PID in its internal `stopped` signal. `EditorDebuggerNode` will
-forward the PID through `EditorNode` to `EditorRunBar::debug_sessions_exited()`.
-The run bar will act on the notification only when it identifies the process the
-current launch represents. A delayed notification from the replaced process will
-therefore be ignored instead of starting forced-cleanup handling for the replacement.
+`ScriptEditorDebugger` will capture the editor run's monotonic launch ID when the
+debugger connection is accepted and include that ID in its internal `stopped`
+signal. `EditorDebuggerNode` will forward the launch ID through `EditorNode` to
+`EditorRunBar::debug_sessions_exited()`. The run bar will act on the notification
+only when it identifies the current launch. A delayed notification from the
+replaced launch will therefore be ignored instead of starting forced-cleanup
+handling for the replacement.
 
-The existing launch identity remains authoritative for accepting process-completion
-results in `DebugSessionResultCoordinator` and `DebugAdapterProtocol`. PID matching
-only prevents stale debugger-socket lifecycle events from being applied to the
-wrong current launch; it does not replace launch IDs or turn unknown results into
+The same launch identity remains authoritative for accepting process-completion
+results in `DebugSessionResultCoordinator` and `DebugAdapterProtocol`. Using it for
+debugger-socket lifecycle events also covers multi-instance runs and connections
+that close before reporting a remote PID; it does not turn unknown results into
 successful ones.
 
 ## Lifecycle Behavior
 
 - A current editor-owned child whose debugger disconnects naturally retains the
   existing bounded grace period for its OS exit result.
-- A delayed debugger-stop notification whose PID differs from the represented
-  child is ignored.
+- A delayed debugger-stop notification whose launch ID differs from the current
+  run is ignored.
+- Every debugger belonging to a multi-instance launch shares the launch ID, so the
+  last session to close can still start the current run's bounded cleanup.
+- A connection that closes before reporting its remote PID still carries its launch
+  ID and starts cleanup for the correct run.
 - A replacement `project_test` child that exits naturally emits exactly one
   `exited` event with its real exit code, followed by exactly one `terminated`.
 - Explicit termination still kills the current child and emits `terminated`

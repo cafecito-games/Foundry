@@ -45,7 +45,7 @@ private:
 
 	void _breaked(bool p_really_did, bool p_can_debug, const String &p_message, bool p_has_stackdump);
 	void _started();
-	void _stopped(int64_t p_process_id);
+	void _stopped(int64_t p_launch_id);
 	void _debugger_gone_away();
 
 protected:

@@ -5,10 +5,10 @@
 
 **Goal:** Preserve the natural exit code and `exited` event of a restarted structured `project_test` DAP launch.
 
-**Architecture:** Propagate the stopped debuggee's PID from `ScriptEditorDebugger` to `EditorRunBar`, then ignore
-debugger-stop notifications that do not identify the current launch's represented process. Keep launch IDs
-authoritative for process-result acceptance and cover the complete breakpoint/restart/continue lifecycle over the real
-tooling-host DAP socket.
+**Architecture:** Capture the current editor-run launch ID when `ScriptEditorDebugger` accepts a connection, propagate
+that ID to `EditorRunBar` when the debugger stops, and ignore notifications that do not identify the current launch.
+Use the same launch identity already authoritative for process-result acceptance, and cover the complete
+breakpoint/restart/continue lifecycle over the real tooling-host DAP socket.
 
 **Tech Stack:** C++17, Godot/Foundry signals, doctest, Foundry tooling-host DAP integration fixtures, SCons agent build
 wrapper.
@@ -18,14 +18,14 @@ wrapper.
 ## File Map
 
 - `tests/editor/test_editor_tooling_host.h`: add the native structured `project_test` restart regression.
-- `editor/debugger/script_editor_debugger.cpp`: retain the PID while stopping and include it in the internal `stopped`
-  signal.
-- `editor/debugger/editor_debugger_node.h`: accept the stopped PID in the debugger callback.
-- `editor/debugger/editor_debugger_node.cpp`: forward the stopped PID after result coordination.
-- `editor/editor_node.h`: add the PID to the run-bar forwarding method.
-- `editor/editor_node.cpp`: forward the PID to `EditorRunBar`.
-- `editor/run/editor_run_bar.h`: make debug-session closure process-specific.
-- `editor/run/editor_run_bar.cpp`: ignore stale closures from replaced processes.
+- `editor/debugger/script_editor_debugger.h`: retain the launch ID associated with a debugger connection.
+- `editor/debugger/script_editor_debugger.cpp`: include the launch ID in the internal `stopped` signal.
+- `editor/debugger/editor_debugger_node.h`: accept the stopped launch ID in the debugger callback.
+- `editor/debugger/editor_debugger_node.cpp`: assign and forward the stopped launch ID after result coordination.
+- `editor/editor_node.h`: add the launch ID to the run-bar forwarding method.
+- `editor/editor_node.cpp`: forward the launch ID to `EditorRunBar`.
+- `editor/run/editor_run_bar.h`: make debug-session closure launch-specific.
+- `editor/run/editor_run_bar.cpp`: ignore stale closures from replaced launches.
 
 ### Task 1: Add the structured project-test restart regression
 
@@ -113,9 +113,10 @@ git add tests/editor/test_editor_tooling_host.h
 git commit -m "test(dap): Reproduce lost project test restart result"
 ```
 
-### Task 2: Scope debugger-stop notifications to their process
+### Task 2: Scope debugger-stop notifications to their launch
 
 **Files:**
+- Modify: `editor/debugger/script_editor_debugger.h`
 - Modify: `editor/debugger/script_editor_debugger.cpp`
 - Modify: `editor/debugger/editor_debugger_node.h`
 - Modify: `editor/debugger/editor_debugger_node.cpp`
@@ -124,31 +125,31 @@ git commit -m "test(dap): Reproduce lost project test restart result"
 - Modify: `editor/run/editor_run_bar.h`
 - Modify: `editor/run/editor_run_bar.cpp`
 
-- [ ] **Step 1: Preserve the stopped PID in the signal**
+- [ ] **Step 1: Preserve the stopped launch ID in the signal**
 
 Change `ScriptEditorDebugger::_stop_and_notify()` and the signal declaration:
 
 ```cpp
 void ScriptEditorDebugger::_stop_and_notify() {
-	const OS::ProcessID stopped_process = remote_pid;
+	const uint64_t stopped_launch_id = launch_id;
 	stop();
-	emit_signal(SNAME("stopped"), (int64_t)stopped_process);
+	emit_signal(SNAME("stopped"), (int64_t)stopped_launch_id);
 	_set_reason_text(TTRC("Debug session closed."), MESSAGE_WARNING);
 }
 
-ADD_SIGNAL(MethodInfo("stopped", PropertyInfo(Variant::INT, "process_id")));
+ADD_SIGNAL(MethodInfo("stopped", PropertyInfo(Variant::INT, "launch_id")));
 ```
 
-- [ ] **Step 2: Forward the PID through debugger and editor ownership layers**
+- [ ] **Step 2: Forward the launch ID through debugger and editor ownership layers**
 
 Update the callback and forwarding signatures:
 
 ```cpp
 // editor/debugger/editor_debugger_node.h
-void _debugger_stopped(int64_t p_process_id, int p_id);
+void _debugger_stopped(int64_t p_launch_id, int p_id);
 
 // editor/debugger/editor_debugger_node.cpp
-void EditorDebuggerNode::_debugger_stopped(int64_t p_process_id, int p_id) {
+void EditorDebuggerNode::_debugger_stopped(int64_t p_launch_id, int p_id) {
 	ScriptEditorDebugger *dbg = get_debugger(p_id);
 	ERR_FAIL_NULL(dbg);
 
@@ -167,36 +168,36 @@ void EditorDebuggerNode::_debugger_stopped(int64_t p_process_id, int p_id) {
 			dock->hide_remote_tree();
 			dock->hide_tab_buttons();
 		}
-		EditorNode::get_singleton()->notify_all_debug_sessions_exited((OS::ProcessID)p_process_id);
+		EditorNode::get_singleton()->notify_all_debug_sessions_exited((uint64_t)p_launch_id);
 	}
 }
 
 // editor/editor_node.h
-void notify_all_debug_sessions_exited(OS::ProcessID p_process_id);
+void notify_all_debug_sessions_exited(uint64_t p_launch_id);
 
 // editor/editor_node.cpp
-void EditorNode::notify_all_debug_sessions_exited(OS::ProcessID p_process_id) {
-	project_run_bar->debug_sessions_exited(p_process_id);
+void EditorNode::notify_all_debug_sessions_exited(uint64_t p_launch_id) {
+	project_run_bar->debug_sessions_exited(p_launch_id);
 }
 ```
 
-- [ ] **Step 3: Reject stale process notifications in the run bar**
+- [ ] **Step 3: Reject stale launch notifications in the run bar**
 
 Update the public signature and add the identity guard before the existing grace handling:
 
 ```cpp
 // editor/run/editor_run_bar.h
-void debug_sessions_exited(OS::ProcessID p_process_id);
+void debug_sessions_exited(uint64_t p_launch_id);
 
 // editor/run/editor_run_bar.cpp
-void EditorRunBar::debug_sessions_exited(OS::ProcessID p_process_id) {
+void EditorRunBar::debug_sessions_exited(uint64_t p_launch_id) {
 	if (editor_run.get_status() == EditorRun::STATUS_STOP) {
 		return;
 	}
 
-	if (represented_process != 0 && p_process_id != represented_process) {
+	if (p_launch_id != editor_run.get_launch_id()) {
 		// A replaced debugger can finish closing after its replacement launch starts.
-		// Its socket lifecycle must not start or finish cleanup for the new process.
+		// Its launch lifecycle must not start or finish cleanup for the new run.
 		return;
 	}
 
@@ -225,7 +226,7 @@ Expected: PASS with lifecycle `process`, `exited`, `terminated` and exit code `0
 - [ ] **Step 5: Commit the minimal fix**
 
 ```sh
-git add editor/debugger/script_editor_debugger.cpp \
+git add editor/debugger/script_editor_debugger.h editor/debugger/script_editor_debugger.cpp \
   editor/debugger/editor_debugger_node.h editor/debugger/editor_debugger_node.cpp \
   editor/editor_node.h editor/editor_node.cpp \
   editor/run/editor_run_bar.h editor/run/editor_run_bar.cpp

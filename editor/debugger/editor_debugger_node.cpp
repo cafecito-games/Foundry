@@ -506,7 +506,7 @@ void EditorDebuggerNode::_notification(int p_what) {
 				// Good to go.
 				EditorNode::get_singleton()->get_focused_scene_tree_dock()->show_tab_buttons();
 				debugger->set_editor_remote_tree(remote_scene_tree);
-				debugger->start(server->take_connection());
+				debugger->start(server->take_connection(), EditorRunBar::get_singleton()->get_current_launch_id());
 				// Send breakpoints.
 				for (const KeyValue<Breakpoint, bool> &E : breakpoints) {
 					const Breakpoint &bp = E.key;
@@ -566,7 +566,7 @@ void EditorDebuggerNode::_update_margins() {
 	add_theme_constant_override("margin_bottom", -bottom_panel_margins->get_margin(SIDE_BOTTOM));
 }
 
-void EditorDebuggerNode::_debugger_stopped(int64_t p_process_id, int p_id) {
+void EditorDebuggerNode::_debugger_stopped(int64_t p_launch_id, int p_id) {
 	ScriptEditorDebugger *dbg = get_debugger(p_id);
 	ERR_FAIL_NULL(dbg);
 
@@ -585,7 +585,7 @@ void EditorDebuggerNode::_debugger_stopped(int64_t p_process_id, int p_id) {
 			dock->hide_remote_tree();
 			dock->hide_tab_buttons();
 		}
-		EditorNode::get_singleton()->notify_all_debug_sessions_exited((OS::ProcessID)p_process_id);
+		EditorNode::get_singleton()->notify_all_debug_sessions_exited((uint64_t)p_launch_id);
 	}
 }
 

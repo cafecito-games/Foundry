@@ -1255,9 +1255,10 @@ String ScriptEditorDebugger::_format_frame_text(const ScriptLanguage::StackInfo 
 	return text;
 }
 
-void ScriptEditorDebugger::start(Ref<RemoteDebuggerPeer> p_peer) {
+void ScriptEditorDebugger::start(Ref<RemoteDebuggerPeer> p_peer, uint64_t p_launch_id) {
 	_clear_errors_list();
 	stop();
+	launch_id = p_launch_id;
 
 	profiler->set_enabled(true, true);
 	visual_profiler->set_enabled(true);
@@ -1323,9 +1324,9 @@ void ScriptEditorDebugger::_update_buttons_state() {
 }
 
 void ScriptEditorDebugger::_stop_and_notify() {
-	const OS::ProcessID stopped_process = remote_pid;
+	const uint64_t stopped_launch_id = launch_id;
 	stop();
-	emit_signal(SNAME("stopped"), (int64_t)stopped_process);
+	emit_signal(SNAME("stopped"), (int64_t)stopped_launch_id);
 	_set_reason_text(TTRC("Debug session closed."), MESSAGE_WARNING);
 }
 
@@ -1334,6 +1335,7 @@ void ScriptEditorDebugger::stop() {
 	threads_debugged.clear();
 	debugging_thread_id = Thread::UNASSIGNED_ID;
 	remote_pid = 0;
+	launch_id = 0;
 	_clear_execution();
 
 	inspector->clear_cache();
@@ -2050,7 +2052,7 @@ void ScriptEditorDebugger::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("update_remote_object", "id", "property", "value", "field"), &ScriptEditorDebugger::update_remote_object);
 
 	ADD_SIGNAL(MethodInfo("started"));
-	ADD_SIGNAL(MethodInfo("stopped", PropertyInfo(Variant::INT, "process_id")));
+	ADD_SIGNAL(MethodInfo("stopped", PropertyInfo(Variant::INT, "launch_id")));
 	ADD_SIGNAL(MethodInfo("stop_requested"));
 	ADD_SIGNAL(MethodInfo("stack_frame_selected", PropertyInfo(Variant::INT, "frame")));
 	ADD_SIGNAL(MethodInfo("error_selected", PropertyInfo(Variant::INT, "error")));

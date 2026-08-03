@@ -1128,7 +1128,7 @@ public:
 
 	void set_convert_old_scene(bool p_old) { convert_old = p_old; }
 
-	void notify_all_debug_sessions_exited(OS::ProcessID p_process_id);
+	void notify_all_debug_sessions_exited(uint64_t p_launch_id);
 
 	OS::ProcessID has_child_process(OS::ProcessID p_pid) const;
 	void stop_child_process(OS::ProcessID p_pid);
