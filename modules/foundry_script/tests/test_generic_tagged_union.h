@@ -591,6 +591,24 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Bounded parameters 
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] External case construction is rejected") {
+	// Constructing through the bare union outside its declaration would hand the value the
+	// declaration's own open parameter, so it is rejected like a bare external type reference.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T: Resource]:\n"
+					   "\tValue(value: T)\n"
+					   "\n"
+					   "func leak() -> Variant:\n"
+					   "\treturn Holder.Value(123)\n",
+					   "user://generic_tagged_union_external_construction.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_NE(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser),
+			String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum scope does not reach a forward-resolved class") {
 	// Resolving the payload pulls `Sibling` in while the union is the active enum. `Sibling`'s own `T`
 	// is a class parameter and must stay one, so parameter visibility follows lexical ownership rather

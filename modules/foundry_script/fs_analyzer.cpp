@@ -10689,6 +10689,23 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 	const FSParser::DataType::EnumCasePayload *payload = p_enum_meta_type.get_enum_case_payload(case_name);
 	ERR_FAIL_NULL(payload);
 
+	// A generic union has no bare form outside its declaration, in an expression any more than in a
+	// type: constructing a case through it would give the value the declaration's own open parameters.
+	// Construction against supplied arguments arrives with the rest of union application.
+	if (p_enum_meta_type.has_type_arguments()) {
+		const FSParser::EnumNode *declaration = resolve_enum_declaration(p_enum_meta_type, p_call);
+		const bool inside_declaration = declaration != nullptr && declaration == current_enum &&
+				enum_declared_by(parser->current_class, current_enum);
+		if (declaration != nullptr && !declaration->type_parameters.is_empty() && !inside_declaration) {
+			push_error(vformat(R"(Generic tagged union "%s" expects %d type argument(s), but 0 were given.)",
+							   declaration->identifier != nullptr ? declaration->identifier->name : StringName(),
+							   declaration->type_parameters.size()),
+					p_call);
+			p_call->set_datatype(type_from_metatype(p_enum_meta_type));
+			return;
+		}
+	}
+
 	const FSParser::DataType case_value_type = type_from_metatype(p_enum_meta_type);
 	const int64_t *tag = p_enum_meta_type.enum_values.getptr(case_name);
 	p_call->is_enum_case_construction = true;
