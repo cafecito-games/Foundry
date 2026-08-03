@@ -325,6 +325,18 @@ int FSByteCodeGenerator::get_container_type_pos(const FSDataType &p_type) {
 	return get_constant_pos(p_type.script_type);
 }
 
+int FSByteCodeGenerator::get_native_type_pos(const FSDataType &p_type) {
+	// A position that came from `Self` has to reach the runtime as a full descriptor. The
+	// `FSNativeClass` constant below names only the engine class the declaration was lowered against,
+	// which for a native conformance witness is the conformance target rather than the class the call
+	// was made through, so the frame could not re-bind it to its exact receiver.
+	if (p_type.references_self_type()) {
+		return get_constant_pos(make_container_type_descriptor(p_type));
+	}
+	const int class_index = FSLanguage::get_singleton()->get_global_map()[p_type.native_type];
+	return get_constant_pos(FSLanguage::get_singleton()->get_global_array()[class_index]);
+}
+
 uint32_t FSByteCodeGenerator::add_parameter(const StringName &p_name, bool p_is_optional, const FSDataType &p_type) {
 	function->_argument_count++;
 	function->argument_types.push_back(p_type);
@@ -896,7 +908,7 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 			append_opcode(FSFunction::OPCODE_TYPE_TEST_NATIVE);
 			append(p_target);
 			append(p_source);
-			append(p_type.native_type);
+			append(get_native_type_pos(p_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 			append(p_type.is_type_handle);
 		} break;
 		case FSDataType::SCRIPT:
@@ -905,7 +917,11 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 			append_opcode(FSFunction::OPCODE_TYPE_TEST_SCRIPT);
 			append(p_target);
 			append(p_source);
-			const int type_idx = p_type.is_type_handle && !p_type.type_arguments.is_empty() ? get_container_type_pos(p_type) : get_constant_pos(script);
+			// A `Self` position is tested against the frame's exact receiver, so it travels as a
+			// descriptor; the bare script constant would test against the class the declaration was
+			// lowered against and answer for an ancestor specialization.
+			const bool needs_descriptor = p_type.references_self_type() || (p_type.is_type_handle && !p_type.type_arguments.is_empty());
+			const int type_idx = needs_descriptor ? get_container_type_pos(p_type) : get_constant_pos(script);
 			append(type_idx | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 			append(p_type.is_type_handle);
 		} break;
@@ -1407,15 +1423,15 @@ void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_s
 			index = p_type.builtin_type | (p_type.is_nullable ? FSFunction::NULLABLE_TYPE_OPERAND_FLAG : 0);
 		} break;
 		case FSDataType::NATIVE: {
-			int class_idx = FSLanguage::get_singleton()->get_global_map()[p_type.native_type];
-			Variant nc = FSLanguage::get_singleton()->get_global_array()[class_idx];
 			append_opcode(FSFunction::OPCODE_CAST_TO_NATIVE);
-			index = get_constant_pos(nc) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
+			index = get_native_type_pos(p_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 		} break;
 		case FSDataType::SCRIPT:
 		case FSDataType::FOUNDRY_SCRIPT: {
 			Variant script = p_type.script_type;
-			int idx = p_type.is_type_handle && !p_type.type_arguments.is_empty() ? get_container_type_pos(p_type) : get_constant_pos(script);
+			// See `write_type_test`: a `Self` target is cast against the frame's exact receiver.
+			const bool needs_descriptor = p_type.references_self_type() || (p_type.is_type_handle && !p_type.type_arguments.is_empty());
+			int idx = needs_descriptor ? get_container_type_pos(p_type) : get_constant_pos(script);
 			idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 			append_opcode(FSFunction::OPCODE_CAST_TO_SCRIPT);
 			index = idx;

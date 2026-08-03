@@ -354,7 +354,7 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				text += " = ";
 				text += DADDR(2);
 				text += _code_ptr[ip + 4] ? " is Type[" : " is ";
-				text += get_global_name(_code_ptr[ip + 3]);
+				text += _disassemble_type_info_address(_script, *this, _code_ptr[ip + 3]);
 				if (_code_ptr[ip + 4]) {
 					text += "]";
 				}

@@ -268,6 +268,7 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 
 	Variant make_container_type_descriptor(const FSDataType &p_type) const;
 	int get_container_type_pos(const FSDataType &p_type);
+	int get_native_type_pos(const FSDataType &p_type);
 
 	int get_operation_pos(const Variant::ValidatedOperatorEvaluator p_operation) {
 		if (operator_func_map.has(p_operation)) {

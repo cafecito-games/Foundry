@@ -405,6 +405,51 @@ static bool _script_type_from_type_info(const Variant &p_type_info, const FrameS
 	return true;
 }
 
+// The type operand of a native-lowered type test or cast. A plain operand is the `FSNativeClass`
+// constant naming the engine class the declaration was lowered against. A `Self` operand travels as a
+// descriptor instead, so the running frame can re-bind it to its exact receiver -- which may itself be
+// a script class, because a script subclass of the conformance target can invoke a native witness.
+// Returns false only when a static frame needed a receiver and had none; an operand that names no
+// class at all leaves `r_resolved` unset for the caller's own bug check.
+static bool _native_type_from_type_info(const Variant &p_type_info, const FrameSelfBinding &p_frame_self,
+		bool p_is_type_handle, FSDataType &r_resolved) {
+	if (_is_container_type_descriptor(p_type_info)) {
+		ContainerType container_type;
+		if (!_container_type_from_descriptor(p_type_info, p_frame_self, container_type)) {
+			return false;
+		}
+		r_resolved = p_is_type_handle
+				? FSDataType::from_type_handle_container_type(container_type)
+				: FSDataType::from_container_type(container_type);
+		return true;
+	}
+	FSNativeClass *native_class = Object::cast_to<FSNativeClass>(p_type_info.operator Object *());
+	if (native_class != nullptr) {
+		r_resolved.kind = FSDataType::NATIVE;
+		r_resolved.builtin_type = Variant::OBJECT;
+		r_resolved.native_type = native_class->get_name();
+		r_resolved.is_type_handle = p_is_type_handle;
+	}
+	return true;
+}
+
+// Nominal script membership: true when the object's script chain reaches `p_script_type`. A native
+// witness's `Self` can re-bind to a script receiver, so the native type test and cast both need this
+// rule instead of an engine class-hierarchy walk.
+static bool _object_has_script_type(Object *p_object, Script *p_script_type) {
+	if (p_object == nullptr || p_object->get_script_instance() == nullptr) {
+		return false;
+	}
+	Script *script_ptr = p_object->get_script_instance()->get_script().ptr();
+	while (script_ptr != nullptr) {
+		if (script_ptr == p_script_type) {
+			return true;
+		}
+		script_ptr = script_ptr->get_base_script().ptr();
+	}
+	return false;
+}
+
 static FSSpecializedClassHandle *_specialized_handle_from_variant(const Variant *p_value) {
 	if (p_value->get_type() != Variant::OBJECT) {
 		return nullptr;
@@ -1666,18 +1711,17 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(value, 1);
+				GET_VARIANT_PTR(type, 2);
 
-				int native_type_idx = _code_ptr[ip + 3];
-				GD_ERR_BREAK(native_type_idx < 0 || native_type_idx >= _global_names_count);
-				const StringName native_type = _global_names_ptr[native_type_idx];
 				const bool is_type_handle = _code_ptr[ip + 4];
+				FSDataType expected_type;
+				if (unlikely(!_native_type_from_type_info(*type, frame_self, is_type_handle, expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+				GD_ERR_BREAK(!expected_type.has_type());
 
 				if (is_type_handle) {
-					FSDataType expected_type;
-					expected_type.kind = FSDataType::NATIVE;
-					expected_type.builtin_type = Variant::OBJECT;
-					expected_type.native_type = native_type;
-					expected_type.is_type_handle = true;
 					bool was_freed = false;
 					*dst = _type_handle_test_matches(expected_type, *value, was_freed);
 					if (was_freed) {
@@ -1692,8 +1736,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						OPCODE_BREAK;
 					}
 
-					*dst = _specialized_handle_assignable_to_native_script(value, native_type) != nullptr ||
-							(object && ClassDB::is_parent_class(object->get_class_name(), native_type));
+					if (expected_type.script_type != nullptr) {
+						// A `Self` operand re-bound to a script receiver asks a nominal script question.
+						*dst = _object_has_script_type(object, expected_type.script_type);
+					} else if (expected_type.kind == FSDataType::NATIVE) {
+						*dst = _specialized_handle_assignable_to_native_script(value, expected_type.native_type) != nullptr ||
+								(object && ClassDB::is_parent_class(object->get_class_name(), expected_type.native_type));
+					} else {
+						*dst = expected_type.is_type(*value);
+					}
 				}
 				ip += 5;
 			}
@@ -2693,9 +2744,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(dst, 1);
 				GET_VARIANT_PTR(to_type, 2);
 
-				FSNativeClass *nc = Object::cast_to<FSNativeClass>(to_type->operator Object *());
-				GD_ERR_BREAK(!nc);
 				const bool is_type_handle = _code_ptr[ip + 4];
+				FSDataType expected_type;
+				if (unlikely(!_native_type_from_type_info(*to_type, frame_self, is_type_handle, expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+				GD_ERR_BREAK(!expected_type.has_type());
 
 #ifdef DEBUG_ENABLED
 				if (src->operator Object *() && !src->get_validated_object()) {
@@ -2708,17 +2763,18 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 #endif
 				Object *src_obj = src->operator Object *();
-				FSSpecializedClassHandle *specialized_handle = !is_type_handle ? _specialized_handle_assignable_to_native_script(src, nc->get_name()) : nullptr;
+				FSSpecializedClassHandle *specialized_handle = !is_type_handle ? _specialized_handle_assignable_to_native_script(src, expected_type.native_type) : nullptr;
 
 				if (is_type_handle) {
-					if (_make_native_type_handle_type(nc).is_type(*src)) {
-						*dst = *src;
-					} else {
-						*dst = Variant();
-					}
+					*dst = expected_type.is_type(*src) ? *src : Variant();
+				} else if (expected_type.script_type != nullptr) {
+					// A `Self` target re-bound to a script receiver: membership is the script chain.
+					*dst = _object_has_script_type(src_obj, expected_type.script_type) ? *src : Variant();
 				} else if (specialized_handle != nullptr) {
 					*dst = specialized_handle->get_specialized_script();
-				} else if (src_obj && !ClassDB::is_parent_class(src_obj->get_class_name(), nc->get_name())) {
+				} else if (expected_type.kind != FSDataType::NATIVE) {
+					*dst = expected_type.is_type(*src) ? *src : Variant();
+				} else if (src_obj && !ClassDB::is_parent_class(src_obj->get_class_name(), expected_type.native_type)) {
 					*dst = Variant(); // invalid cast, assign NULL
 				} else {
 					*dst = *src;

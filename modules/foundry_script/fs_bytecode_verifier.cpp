@@ -221,13 +221,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_ADDR(ip + 3);
 				ip += 5;
 			} break;
-			case FSFunction::OPCODE_TYPE_TEST_NATIVE: {
-				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
-				CHECK_ADDR(ip + 1);
-				CHECK_ADDR(ip + 2);
-				CHECK_TABLE(ip + 3, global_names_count, "global name");
-				ip += 5;
-			} break;
+			case FSFunction::OPCODE_TYPE_TEST_NATIVE:
 			case FSFunction::OPCODE_TYPE_TEST_SCRIPT:
 			case FSFunction::OPCODE_ASSIGN_TYPED_NATIVE:
 			case FSFunction::OPCODE_ASSIGN_TYPED_SCRIPT:
