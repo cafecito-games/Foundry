@@ -181,9 +181,13 @@ class FSCompiler {
 	// A `const` aliasing a class in this compilation unit (`const Alias = Box`) folds to the analyzer's
 	// shallow, uncompiled class object; constructing through it (`Alias.new()`) fails. Re-point such a
 	// folded value at the live subclass compiled in this unit so the alias matches the inner-class name.
+	// Container constants can nest the same shallow identity in elements, keys, values, typed-container
+	// descriptors, and specialized-handle type arguments, so normalization walks those recursively.
 	Variant _resolve_aliased_class_constant(const Variant &p_value);
 	Variant _resolve_aliased_class_constant(const Variant &p_value, const FSParser::DataType &p_datatype,
 			FoundryScript *p_owner);
+	Variant _normalize_compiled_constant(const Variant &p_value, int p_depth);
+	ContainerType _normalize_compiled_container_type(const ContainerType &p_type, int p_depth);
 	// Re-resolve a still-open type-argument binding one level through a subclass's `extends Base[args]`
 	// specialization: a forwarded class parameter stays OPEN (remapped ordinal), a concrete argument
 	// becomes FIXED. Used when a subclass inherits a base's member and per-ancestor parameter bindings.

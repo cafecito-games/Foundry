@@ -757,7 +757,10 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 	if (p_expression->is_constant && !constant_foundry_script_handle &&
 			!(p_expression->get_datatype().is_meta_type &&
 					p_expression->get_datatype().kind == FSParser::DataType::CLASS)) {
-		return codegen.add_constant(p_expression->reduced_value);
+		// Analyzer-folded container constants can nest shallow same-unit class identities in
+		// elements, keys, values, and typed descriptors. Canonicalize those before they enter the
+		// function constant pool so bytecode export indexes the live compiled subclasses.
+		return codegen.add_constant(_resolve_aliased_class_constant(p_expression->reduced_value));
 	}
 
 	FSCodeGenerator *gen = codegen.generator;
@@ -4366,27 +4369,122 @@ void FSCompiler::_specialize_type_argument_binding(FoundryScript::TypeArgumentBi
 	}
 }
 
+ContainerType FSCompiler::_normalize_compiled_container_type(const ContainerType &p_type, int p_depth) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH)) {
+		return p_type;
+	}
+
+	ContainerType normalized = p_type;
+	if (normalized.script.is_valid()) {
+		const Variant normalized_script = _normalize_compiled_constant(normalized.script, p_depth + 1);
+		if (normalized_script.get_type() == Variant::OBJECT) {
+			normalized.script = normalized_script;
+		}
+	}
+
+	for (int i = 0; i < normalized.element_types.size(); i++) {
+		normalized.element_types.write[i] = _normalize_compiled_container_type(normalized.element_types[i], p_depth + 1);
+	}
+	for (int i = 0; i < normalized.type_arguments.size(); i++) {
+		normalized.type_arguments.write[i] = _normalize_compiled_container_type(normalized.type_arguments[i], p_depth + 1);
+	}
+	return normalized;
+}
+
+Variant FSCompiler::_normalize_compiled_constant(const Variant &p_value, int p_depth) {
+	if (unlikely(p_depth > Variant::MAX_RECURSION_DEPTH) || main_script == nullptr) {
+		return p_value;
+	}
+
+	switch (p_value.get_type()) {
+		case Variant::OBJECT: {
+			FoundryScript *folded_class = Object::cast_to<FoundryScript>(p_value);
+			if (folded_class != nullptr) {
+				if (folded_class->is_valid()) {
+					// Already-compiled class (e.g. an external preload). Leave it as-is.
+					return p_value;
+				}
+				FoundryScript *live_class = main_script->find_class(folded_class->get_fully_qualified_name());
+				// Only re-point a class that genuinely belongs to this compilation unit. `find_class`
+				// resolves a fully-qualified name against `main_script`'s subclass tree by matching its
+				// leading path prefix, so an unrelated external script whose path happened to
+				// prefix-collide could otherwise resolve to a same-named local class. Confirming the
+				// resolved class's fully-qualified name matches the folded one rejects such a
+				// collision: a true same-unit alias matches exactly, an external one does not.
+				if (live_class != nullptr &&
+						live_class->get_fully_qualified_name() == folded_class->get_fully_qualified_name()) {
+					// Re-point at the live class compiled in this unit — the same object the
+					// inner-class name itself resolves to. Mirrors the specialized-handle
+					// re-resolution from #242.
+					return Ref<FoundryScript>(live_class);
+				}
+				return p_value;
+			}
+
+			FSSpecializedClassHandle *specialized_handle = Object::cast_to<FSSpecializedClassHandle>(p_value);
+			if (specialized_handle != nullptr) {
+				const Ref<FoundryScript> specialized_script = specialized_handle->get_specialized_script();
+				const Variant normalized_script_value = _normalize_compiled_constant(specialized_script, p_depth + 1);
+				FoundryScript *normalized_script = Object::cast_to<FoundryScript>(normalized_script_value);
+				if (normalized_script == nullptr) {
+					return p_value;
+				}
+
+				Vector<ContainerType> type_arguments;
+				const Vector<ContainerType> &original_arguments = specialized_handle->get_type_arguments();
+				type_arguments.resize(original_arguments.size());
+				for (int i = 0; i < original_arguments.size(); i++) {
+					type_arguments.write[i] = _normalize_compiled_container_type(original_arguments[i], p_depth + 1);
+				}
+				return FSSpecializedClassHandle::create(Ref<FoundryScript>(normalized_script), type_arguments);
+			}
+
+			return p_value;
+		}
+		case Variant::ARRAY: {
+			const Array source = p_value;
+			Array normalized;
+			if (source.is_typed()) {
+				// Establish the canonical descriptor before inserting values so typed-container
+				// validation accepts the rewritten element identities.
+				normalized.set_typed(_normalize_compiled_container_type(source.get_element_type(), p_depth + 1));
+			}
+			normalized.resize(source.size());
+			for (int i = 0; i < source.size(); i++) {
+				normalized[i] = _normalize_compiled_constant(source[i], p_depth + 1);
+			}
+			if (source.is_read_only()) {
+				normalized.make_read_only();
+			}
+			return normalized;
+		}
+		case Variant::DICTIONARY: {
+			const Dictionary source = p_value;
+			Dictionary normalized;
+			if (source.is_typed()) {
+				normalized.set_typed(
+						_normalize_compiled_container_type(source.get_key_type(), p_depth + 1),
+						_normalize_compiled_container_type(source.get_value_type(), p_depth + 1));
+			}
+			const Array keys = source.keys();
+			for (int i = 0; i < keys.size(); i++) {
+				// Canonicalize keys before insertion so object-key hashes match the replacement
+				// identity and later lookups succeed.
+				const Variant normalized_key = _normalize_compiled_constant(keys[i], p_depth + 1);
+				normalized[normalized_key] = _normalize_compiled_constant(source[keys[i]], p_depth + 1);
+			}
+			if (source.is_read_only()) {
+				normalized.make_read_only();
+			}
+			return normalized;
+		}
+		default:
+			return p_value;
+	}
+}
+
 Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value) {
-	if (p_value.get_type() != Variant::OBJECT || main_script == nullptr) {
-		return p_value;
-	}
-	FoundryScript *folded_class = Object::cast_to<FoundryScript>(p_value);
-	if (folded_class == nullptr || folded_class->is_valid()) {
-		// Not a class, or an already-compiled class (e.g. an external preload). Leave it as-is.
-		return p_value;
-	}
-	FoundryScript *live_class = main_script->find_class(folded_class->get_fully_qualified_name());
-	// Only re-point a class that genuinely belongs to this compilation unit. `find_class` resolves a
-	// fully-qualified name against `main_script`'s subclass tree by matching its leading path prefix,
-	// so an unrelated external script whose path happened to prefix-collide could otherwise resolve to
-	// a same-named local class. Confirming the resolved class's fully-qualified name matches the folded
-	// one rejects such a collision: a true same-unit alias matches exactly, an external one does not.
-	if (live_class != nullptr && live_class->get_fully_qualified_name() == folded_class->get_fully_qualified_name()) {
-		// Re-point at the live class compiled in this unit — the same object the inner-class name
-		// itself resolves to. Mirrors the specialized-handle re-resolution from #242.
-		return Ref<FoundryScript>(live_class);
-	}
-	return p_value;
+	return _normalize_compiled_constant(p_value, 0);
 }
 
 Variant FSCompiler::_resolve_aliased_class_constant(const Variant &p_value,

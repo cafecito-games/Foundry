@@ -559,10 +559,187 @@ TEST_CASE("[FoundryScript][Bytecode][NestedClassHandle] Callable and Signal sign
 	ERR_PRINT_ON;
 }
 
+TEST_CASE("[FoundryScript][Bytecode] File-local class container constants keep local identity through .fsb") {
+	// Same-file classes folded into Array/Dictionary constants (and into typed-container descriptors)
+	// must canonicalize to the compiled subclass tree before export. Otherwise the exporter emits an
+	// external (path, FQCN) reference and a bytecode-only load fails when that path is unavailable.
+	BytecodeTestResolver resolver;
+	Ref<FoundryScript> original;
+	const Ref<FoundryScript> restored = load_nested_handle_bytecode(
+			"extends RefCounted\n"
+			"\n"
+			"class User:\n"
+			"\tpass\n"
+			"\n"
+			"class Outer:\n"
+			"\tclass Deep:\n"
+			"\t\tpass\n"
+			"\n"
+			"class Box[T]:\n"
+			"\tpass\n"
+			"\n"
+			"const DIRECT: Type[User] = User\n"
+			"const UNTYPED_ARRAY = [User]\n"
+			"const UNTYPED_DICTIONARY = { \"user\": User, User: \"key\" }\n"
+			"const NESTED = [{ \"deep\": [Outer.Deep] }]\n"
+			"const TYPED: Dictionary[String, Type[User]] = { \"user\": User }\n"
+			"const EMPTY_TYPED: Dictionary[String, Type[User]] = {}\n"
+			"const EMPTY_TYPED_GENERIC: Array[Type[Box[int]]] = []\n"
+			"const SPECIALIZED_HANDLE = Box[int]\n"
+			"\n"
+			"func local_constant() -> Array:\n"
+			"\tconst LOCAL = [User]\n"
+			"\treturn LOCAL\n"
+			"\n"
+			"func read_untyped_array() -> Array:\n"
+			"\treturn UNTYPED_ARRAY\n"
+			"\n"
+			"func read_untyped_dictionary() -> Dictionary:\n"
+			"\treturn UNTYPED_DICTIONARY\n"
+			"\n"
+			"func read_nested() -> Array:\n"
+			"\treturn NESTED\n"
+			"\n"
+			"func read_typed() -> Dictionary:\n"
+			"\treturn TYPED\n"
+			"\n"
+			"func read_empty_typed() -> Dictionary:\n"
+			"\treturn EMPTY_TYPED\n"
+			"\n"
+			"func read_empty_typed_generic() -> Array:\n"
+			"\treturn EMPTY_TYPED_GENERIC\n"
+			"\n"
+			"func read_direct() -> Type[User]:\n"
+			"\treturn DIRECT\n"
+			"\n"
+			"func read_specialized() -> Type[Box[int]]:\n"
+			"\treturn SPECIALIZED_HANDLE\n",
+			&resolver, &original);
+
+	REQUIRE(original.is_valid());
+	REQUIRE(original->get_subclasses().has(SNAME("User")));
+	REQUIRE(original->get_subclasses().has(SNAME("Outer")));
+	REQUIRE(original->get_subclasses().has(SNAME("Box")));
+	const Ref<FoundryScript> original_user = original->get_subclasses().find(SNAME("User"))->value;
+	const Ref<FoundryScript> original_outer = original->get_subclasses().find(SNAME("Outer"))->value;
+	REQUIRE(original_outer->get_subclasses().has(SNAME("Deep")));
+	const Ref<FoundryScript> original_deep = original_outer->get_subclasses().find(SNAME("Deep"))->value;
+	const Ref<FoundryScript> original_box = original->get_subclasses().find(SNAME("Box"))->value;
+	REQUIRE(original_user.is_valid());
+	REQUIRE(original_deep.is_valid());
+	REQUIRE(original_box.is_valid());
+
+	const HashMap<StringName, Variant> &original_constants = original->get_constants();
+	CHECK(original_constants[SNAME("DIRECT")] == original_user);
+
+	const Array original_untyped_array = original_constants[SNAME("UNTYPED_ARRAY")];
+	REQUIRE(original_untyped_array.size() == 1);
+	CHECK(original_untyped_array[0] == original_user);
+	CHECK(original_untyped_array.is_read_only());
+
+	const Dictionary original_untyped_dictionary = original_constants[SNAME("UNTYPED_DICTIONARY")];
+	CHECK(original_untyped_dictionary["user"] == original_user);
+	CHECK(original_untyped_dictionary[original_user] == "key");
+	CHECK(original_untyped_dictionary.is_read_only());
+
+	const Array original_nested = original_constants[SNAME("NESTED")];
+	REQUIRE(original_nested.size() == 1);
+	const Dictionary original_nested_dict = original_nested[0];
+	const Array original_nested_deep = original_nested_dict["deep"];
+	REQUIRE(original_nested_deep.size() == 1);
+	CHECK(original_nested_deep[0] == original_deep);
+
+	const Dictionary original_typed = original_constants[SNAME("TYPED")];
+	CHECK(original_typed.get_value_type().is_type_handle);
+	CHECK(original_typed.get_value_type().script == original_user);
+	CHECK(original_typed["user"] == original_user);
+	CHECK(original_typed.is_read_only());
+
+	const Dictionary original_empty_typed = original_constants[SNAME("EMPTY_TYPED")];
+	CHECK(original_empty_typed.is_empty());
+	CHECK(original_empty_typed.get_value_type().is_type_handle);
+	CHECK(original_empty_typed.get_value_type().script == original_user);
+
+	const Array original_empty_typed_generic = original_constants[SNAME("EMPTY_TYPED_GENERIC")];
+	CHECK(original_empty_typed_generic.is_empty());
+	CHECK(original_empty_typed_generic.get_element_type().is_type_handle);
+	CHECK(original_empty_typed_generic.get_element_type().script == original_box);
+	REQUIRE(original_empty_typed_generic.get_element_type().type_arguments.size() == 1);
+	CHECK(original_empty_typed_generic.get_element_type().type_arguments[0].builtin_type == Variant::INT);
+
+	const Ref<FSSpecializedClassHandle> original_specialized = original_constants[SNAME("SPECIALIZED_HANDLE")];
+	REQUIRE(original_specialized.is_valid());
+	CHECK(original_specialized->get_specialized_script() == original_box);
+
+	// Bytecode-only load with an empty resolver: same-file classes must not request external resolution.
+	CHECK(resolver.script_requests.is_empty());
+
+	REQUIRE(restored->get_subclasses().has(SNAME("User")));
+	REQUIRE(restored->get_subclasses().has(SNAME("Outer")));
+	REQUIRE(restored->get_subclasses().has(SNAME("Box")));
+	const Ref<FoundryScript> restored_user = restored->get_subclasses().find(SNAME("User"))->value;
+	const Ref<FoundryScript> restored_outer = restored->get_subclasses().find(SNAME("Outer"))->value;
+	REQUIRE(restored_outer->get_subclasses().has(SNAME("Deep")));
+	const Ref<FoundryScript> restored_deep = restored_outer->get_subclasses().find(SNAME("Deep"))->value;
+	const Ref<FoundryScript> restored_box = restored->get_subclasses().find(SNAME("Box"))->value;
+
+	Variant owner;
+	Object *instance = instantiate_nested_handle_script(restored, owner);
+
+	CHECK(instance->call(SNAME("read_direct")) == restored_user);
+
+	const Array restored_untyped_array = instance->call(SNAME("read_untyped_array"));
+	REQUIRE(restored_untyped_array.size() == 1);
+	CHECK(restored_untyped_array[0] == restored_user);
+	CHECK(restored_untyped_array.is_read_only());
+
+	const Dictionary restored_untyped_dictionary = instance->call(SNAME("read_untyped_dictionary"));
+	CHECK(restored_untyped_dictionary["user"] == restored_user);
+	CHECK(restored_untyped_dictionary[restored_user] == "key");
+	CHECK(restored_untyped_dictionary.is_read_only());
+
+	const Array restored_nested = instance->call(SNAME("read_nested"));
+	REQUIRE(restored_nested.size() == 1);
+	const Dictionary restored_nested_dict = restored_nested[0];
+	const Array restored_nested_deep = restored_nested_dict["deep"];
+	REQUIRE(restored_nested_deep.size() == 1);
+	CHECK(restored_nested_deep[0] == restored_deep);
+	CHECK(restored_nested.is_read_only());
+
+	const Dictionary restored_typed = instance->call(SNAME("read_typed"));
+	CHECK(restored_typed.get_value_type().is_type_handle);
+	CHECK(restored_typed.get_value_type().script == restored_user);
+	CHECK(restored_typed["user"] == restored_user);
+	CHECK(restored_typed.is_read_only());
+
+	const Dictionary restored_empty_typed = instance->call(SNAME("read_empty_typed"));
+	CHECK(restored_empty_typed.is_empty());
+	CHECK(restored_empty_typed.get_value_type().is_type_handle);
+	CHECK(restored_empty_typed.get_value_type().script == restored_user);
+
+	const Array restored_empty_typed_generic = instance->call(SNAME("read_empty_typed_generic"));
+	CHECK(restored_empty_typed_generic.is_empty());
+	CHECK(restored_empty_typed_generic.get_element_type().is_type_handle);
+	CHECK(restored_empty_typed_generic.get_element_type().script == restored_box);
+	REQUIRE(restored_empty_typed_generic.get_element_type().type_arguments.size() == 1);
+	CHECK(restored_empty_typed_generic.get_element_type().type_arguments[0].builtin_type == Variant::INT);
+
+	const Ref<FSSpecializedClassHandle> restored_specialized = instance->call(SNAME("read_specialized"));
+	REQUIRE(restored_specialized.is_valid());
+	CHECK(restored_specialized->get_specialized_script() == restored_box);
+
+	const Array local_constant = instance->call(SNAME("local_constant"));
+	REQUIRE(local_constant.size() == 1);
+	CHECK(local_constant[0] == restored_user);
+	CHECK(local_constant.is_read_only());
+
+	CHECK(resolver.script_requests.is_empty());
+}
+
 TEST_CASE("[FoundryScript][Bytecode][NestedClassHandle] A constant carrying a nested handle validates after loading") {
 	// The represented class lives in its own file so the constant's class reference travels as an
-	// external identity; a class local to the same file cannot appear inside a container constant
-	// today for reasons unrelated to class handles.
+	// external identity. File-local classes inside container constants are covered by the dedicated
+	// local-identity round-trip above; this case keeps the external/preload control green.
 	const String user_path = TestUtils::get_temp_path("nested_class_handle_user.fs");
 	{
 		Ref<FileAccess> user_file = FileAccess::open(user_path, FileAccess::WRITE);
