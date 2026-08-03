@@ -30,6 +30,8 @@
 
 #pragma once
 
+#ifdef DEBUG_ENABLED
+
 #include "scene/debugger/scene_debugger.h"
 #include "scene/main/node.h"
 
@@ -67,3 +69,5 @@ TEST_CASE("[SceneDebugger] Remote object serialization round-trips the id and us
 }
 
 } // namespace TestSceneDebugger
+
+#endif // DEBUG_ENABLED
