@@ -956,6 +956,7 @@ public:
 	_FORCE_INLINE_ const FSDataType &get_return_type() const { return return_type; }
 	_FORCE_INLINE_ const FSDataType &get_rest_parameter_type() const { return rest_parameter_type; }
 	_FORCE_INLINE_ int get_argument_count() const { return _argument_count; }
+	_FORCE_INLINE_ const FSDataType &get_argument_type(int p_index) const { return argument_types[p_index]; }
 	_FORCE_INLINE_ Variant get_rpc_config() const { return rpc_config; }
 	_FORCE_INLINE_ int get_max_stack_size() const { return _stack_size; }
 
@@ -1000,6 +1001,9 @@ public:
 	// with a missing or approximate receiver.
 	bool has_self_referencing_signature() const {
 		if (return_type.references_self_type()) {
+			return true;
+		}
+		if (rest_parameter_type.references_self_type()) {
 			return true;
 		}
 		for (const FSDataType &argument_type : argument_types) {

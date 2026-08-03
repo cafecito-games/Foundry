@@ -278,7 +278,8 @@ String FSParser::DataType::to_string() const {
 	return result;
 }
 
-FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings) {
+FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings,
+		bool p_mark_substituted_self) {
 	if (p_type.kind == TYPE_PARAMETER) {
 		const DataType *binding = p_bindings.getptr(p_type.type_parameter_name);
 		if (binding != nullptr) {
@@ -292,6 +293,9 @@ FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const 
 			} else {
 				result.is_nullable = result.is_nullable || p_type.is_nullable;
 			}
+			if (p_mark_substituted_self && p_type.type_parameter_name == SNAME("@Self")) {
+				result.is_substituted_self = true;
+			}
 			return result;
 		}
 		// Unbound parameter: leave it intact so an outer scope can substitute it later, but specialize
@@ -299,7 +303,7 @@ FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const 
 		// reflects the binding.
 		DataType result = p_type;
 		for (int i = 0; i < result.type_parameter_bound.size(); i++) {
-			result.type_parameter_bound.write[i] = substitute(result.type_parameter_bound[i], p_bindings);
+			result.type_parameter_bound.write[i] = substitute(result.type_parameter_bound[i], p_bindings, p_mark_substituted_self);
 		}
 		return result;
 	}
@@ -309,19 +313,19 @@ FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const 
 	// width-erased value type enters them unconstrained rather than carrying the wide descriptor the
 	// carrier-only decode had to invent (see `as_container_slot_type`).
 	for (int i = 0; i < result.container_element_types.size(); i++) {
-		result.set_container_element_type(i, substitute(result.container_element_types[i], p_bindings));
+		result.set_container_element_type(i, substitute(result.container_element_types[i], p_bindings, p_mark_substituted_self));
 	}
 	for (int i = 0; i < result.type_arguments.size(); i++) {
-		result.type_arguments.write[i] = as_container_slot_type(substitute(result.type_arguments[i], p_bindings));
+		result.type_arguments.write[i] = as_container_slot_type(substitute(result.type_arguments[i], p_bindings, p_mark_substituted_self));
 	}
 	for (int i = 0; i < result.method_parameter_types.size(); i++) {
-		result.method_parameter_types.write[i] = substitute(result.method_parameter_types[i], p_bindings);
+		result.method_parameter_types.write[i] = substitute(result.method_parameter_types[i], p_bindings, p_mark_substituted_self);
 	}
 	for (int i = 0; i < result.method_return_type.size(); i++) {
-		result.method_return_type.write[i] = substitute(result.method_return_type[i], p_bindings);
+		result.method_return_type.write[i] = substitute(result.method_return_type[i], p_bindings, p_mark_substituted_self);
 	}
 	for (int i = 0; i < result.method_rest_parameter_type.size(); i++) {
-		result.method_rest_parameter_type.write[i] = substitute(result.method_rest_parameter_type[i], p_bindings);
+		result.method_rest_parameter_type.write[i] = substitute(result.method_rest_parameter_type[i], p_bindings, p_mark_substituted_self);
 	}
 	return result;
 }
