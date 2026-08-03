@@ -28,11 +28,12 @@ root cause. A structured `project_test` launches its runner through
 
 ## Approaches Considered
 
-### 1. Deinitialize the debugger before script languages
+### 1. Shut down the debugger transport before script languages
 
 Stop the debugger transport, join its peer thread, and release its inbound and
-outbound payloads before `ScriptServer::finish_languages()` and server-module
-uninitialization.
+outbound payloads before `ScriptServer::finish_languages()`, while preserving
+debugger registration maps until scene, server, and module owners unregister from
+them during their normal teardown.
 
 This restores the lifetime invariant directly: debugger values cannot outlive the
 script runtime that owns them. It also covers all debugger payload types and all
@@ -54,17 +55,27 @@ natural `exited(0)` result and is rejected.
 
 ## Design
 
-`Main::cleanup()` will deinitialize `EngineDebugger` immediately after the main
-loop is deleted and language worker threads have stopped, but before
-`ScriptServer::finish_languages()`. The existing later deinitialization call will
-be removed so the debugger still tears down exactly once.
+`EngineDebugger` will separate active transport shutdown from final registry
+cleanup. An idempotent transport-shutdown method will stop active profilers, poll
+remaining messages, delete the active debugger singleton/peer, and leave profiler,
+capture, and protocol registrations intact. `EngineDebugger::deinitialize()` will
+call that method and then clear registrations, preserving its complete-cleanup
+contract for setup failures and test cleanup.
+
+`Main::cleanup()` will call the transport-shutdown method immediately after the
+main loop is deleted and language worker threads have stopped, but before
+`ScriptServer::finish_languages()`. The existing final
+`EngineDebugger::deinitialize()` remains after server-module teardown. At that
+point the active peer is already gone, while module-owned debugger registrations
+have been unregistered in their established order and the remaining maps can be
+cleared safely.
 
 At that point no game frame can enqueue new debugger work, the remote peer can
 safely join its transport thread, and every queued Variant still has access to its
 language runtime during destruction. Renderer, scene, and server teardown remain
 after language finish as before. Error-path cleanup and the test-only cleanup path
-already deinitialize the debugger before module teardown and remain unchanged
-unless verification identifies an equivalent ordering gap.
+continue using full `deinitialize()` and remain unchanged unless verification
+identifies an equivalent ordering gap.
 
 No DAP messages, result-coordinator rules, launch identities, or timeout values
 change. A natural owned child still reports its OS exit code. Explicit termination

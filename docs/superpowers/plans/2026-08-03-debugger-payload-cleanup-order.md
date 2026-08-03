@@ -13,7 +13,9 @@
 ## File Map
 
 - `tests/editor/test_editor_tooling_host.h`: stage the no-main-scene configuration and exercise breakpoint, inspection, restart, continue, and natural exit.
-- `main/main.cpp`: deinitialize the engine debugger before finishing/unregistering script languages.
+- `core/debugger/engine_debugger.h`: expose an idempotent active-transport shutdown phase.
+- `core/debugger/engine_debugger.cpp`: separate active peer destruction from final registration cleanup.
+- `main/main.cpp`: shut down the active debugger transport before finishing script languages while retaining final registry cleanup after module teardown.
 
 ### Task 1: Add a reliable no-main-scene RED regression
 
@@ -61,37 +63,63 @@ git add tests/editor/test_editor_tooling_host.h
 git commit -m "test(dap): Reproduce queued payload teardown crash"
 ```
 
-### Task 2: Restore debugger-before-language teardown ordering
+### Task 2: Restore debugger-transport-before-language teardown ordering
 
 **Files:**
+- Modify: `core/debugger/engine_debugger.h`
+- Modify: `core/debugger/engine_debugger.cpp`
 - Modify: `main/main.cpp`
 
-- [ ] **Step 1: Move the debugger teardown point**
+- [ ] **Step 1: Split active transport shutdown from final cleanup**
+
+Extract the singleton/profiler/poll/delete block at the start of
+`EngineDebugger::deinitialize()` into an idempotent static method named consistently
+with nearby engine lifecycle APIs. The method must leave `profilers`, `captures`,
+and `protocols` intact so later module owners can unregister normally.
+
+Keep `EngineDebugger::deinitialize()` as the complete cleanup operation:
+
+```cpp
+void EngineDebugger::deinitialize() {
+	shutdown_transport();
+	profilers.clear();
+	captures.clear();
+	protocols.clear();
+}
+```
+
+Name the extracted method `shutdown_transport()`; do not duplicate the shutdown
+body.
+
+- [ ] **Step 2: Add the early transport shutdown point**
 
 In `Main::cleanup()`, after `WorkerThreadPool::get_singleton()->exit_languages_threads()` and before `ScriptServer::finish_languages()`, add the existing teardown call with an invariant comment:
 
 ```cpp
 	// Debugger queues can retain script-backed Variant values. Stop the transport
 	// and release those values before their script languages are finished or deleted.
-	EngineDebugger::deinitialize();
+	EngineDebugger::shutdown_transport();
 
 	ScriptServer::finish_languages();
 ```
 
-Remove the later `EngineDebugger::deinitialize()` after server-module uninitialization. Do not add a second call or alter error/test cleanup paths without evidence that they share the defect.
+Retain the later `EngineDebugger::deinitialize()` after server-module
+uninitialization so it clears
+registrations only after their owners have unregistered. Do not alter error/test
+cleanup paths; their full deinitialization behavior remains correct.
 
-- [ ] **Step 2: Run GREEN**
+- [ ] **Step 3: Run GREEN**
 
 Run the same focused command from Task 1. Expected: PASS with `process`, one `exited(0)`, and `terminated`, with no child crash backtrace.
 
-- [ ] **Step 3: Prove the regression detects the production change**
+- [ ] **Step 4: Prove the regression detects the production change**
 
 Temporarily restore the old ordering, rerun the focused test, and confirm it fails for the same cleanup-lifetime reason. Restore the fix and rerun to PASS. Do not commit the temporary reversion.
 
-- [ ] **Step 4: Commit the minimal fix**
+- [ ] **Step 5: Commit the minimal fix**
 
 ```sh
-git add main/main.cpp
+git add core/debugger/engine_debugger.h core/debugger/engine_debugger.cpp main/main.cpp
 git commit -m "fix(debugger): Release payloads before script teardown"
 ```
 
