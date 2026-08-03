@@ -851,27 +851,54 @@ bool ProjectedContainerType::_validate_known_descendants(const Variant &p_value,
 		return true;
 	}
 
-	// A typed Array/Dictionary declares its element types, so the known ones can still be compared. An
-	// untyped one carries no per-slot metadata to compare against and stays gradual, the same answer the
-	// fully-known validators give for an element they cannot resolve.
+	// A typed Array/Dictionary declares its element types, so the known ones are compared against that
+	// metadata. An untyped one has none, so the known evidence is enforced value by value instead, the
+	// same way the fully-known validator walks an untyped container it cannot reference wholesale. The
+	// converted container the fully-known path would build cannot be produced here: an unknown element
+	// slot has no type to bake into it.
 	if (outer.builtin_type == Variant::ARRAY && !element_types.is_empty() && p_value.get_type() == Variant::ARRAY) {
 		const Array array = p_value;
-		if (array.is_typed() && element_types[0].conflicts_with(ProjectedContainerType::exact(array.get_element_type()))) {
-			ERR_FAIL_V_MSG(false, vformat("Attempted to %s an array of '%s' into a %s of '%s'.", String(p_operation), array.get_element_type().get_type_name(), String(p_where), get_type_name()));
+		if (array.is_typed()) {
+			if (element_types[0].conflicts_with(ProjectedContainerType::exact(array.get_element_type()))) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s an array of '%s' into a %s of '%s'.", String(p_operation), array.get_element_type().get_type_name(), String(p_where), get_type_name()));
+			}
+			return true;
+		}
+		if (!element_types[0].is_known()) {
+			return true;
+		}
+		for (int i = 0; i < array.size(); i++) {
+			Variant element = array[i];
+			if (!element_types[0].validate_value(element, p_where, p_operation)) {
+				return false;
+			}
 		}
 		return true;
 	}
 	if (outer.builtin_type == Variant::DICTIONARY && !element_types.is_empty() && p_value.get_type() == Variant::DICTIONARY) {
 		const Dictionary dictionary = p_value;
-		if (!dictionary.is_typed()) {
+		const ProjectedContainerType expected_value_type = element_types.size() > 1 ? element_types[1] : ProjectedContainerType();
+		if (dictionary.is_typed()) {
+			if (element_types[0].conflicts_with(ProjectedContainerType::exact(dictionary.get_key_type()))) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a dictionary keyed by '%s' into a %s of '%s'.", String(p_operation), dictionary.get_key_type().get_type_name(), String(p_where), get_type_name()));
+			}
+			if (expected_value_type.conflicts_with(ProjectedContainerType::exact(dictionary.get_value_type()))) {
+				ERR_FAIL_V_MSG(false, vformat("Attempted to %s a dictionary of '%s' into a %s of '%s'.", String(p_operation), dictionary.get_value_type().get_type_name(), String(p_where), get_type_name()));
+			}
 			return true;
 		}
-		if (element_types[0].conflicts_with(ProjectedContainerType::exact(dictionary.get_key_type()))) {
-			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a dictionary keyed by '%s' into a %s of '%s'.", String(p_operation), dictionary.get_key_type().get_type_name(), String(p_where), get_type_name()));
+		if (!element_types[0].is_known() && !expected_value_type.is_known()) {
+			return true;
 		}
-		if (element_types.size() > 1 &&
-				element_types[1].conflicts_with(ProjectedContainerType::exact(dictionary.get_value_type()))) {
-			ERR_FAIL_V_MSG(false, vformat("Attempted to %s a dictionary of '%s' into a %s of '%s'.", String(p_operation), dictionary.get_value_type().get_type_name(), String(p_where), get_type_name()));
+		for (const KeyValue<Variant, Variant> &entry : dictionary) {
+			Variant key = entry.key;
+			if (!element_types[0].validate_value(key, p_where, p_operation)) {
+				return false;
+			}
+			Variant value = entry.value;
+			if (!expected_value_type.validate_value(value, p_where, p_operation)) {
+				return false;
+			}
 		}
 		return true;
 	}

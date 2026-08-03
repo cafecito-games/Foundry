@@ -132,6 +132,44 @@ TEST_CASE("[ProjectedContainerType] Numeric width and handle shape reject with u
 	CHECK_FALSE(projected.conflicts_with_expected(make_object(SNAME("RefCounted"), { make_builtin(Variant::INT), ContainerType() }, true)));
 }
 
+TEST_CASE("[ProjectedContainerType] Untyped containers are enforced value by value") {
+	// `Array[Dictionary[int, ?]]`: neither container can be compared through element metadata when the
+	// assigned value carries none, so the known key type has to be checked per entry.
+	ProjectedContainerType partial_dictionary;
+	partial_dictionary.state = ProjectedContainerType::PARTIAL;
+	partial_dictionary.outer = make_builtin(Variant::DICTIONARY);
+	partial_dictionary.element_types.push_back(ProjectedContainerType::exact(make_builtin(Variant::INT)));
+	partial_dictionary.element_types.push_back(ProjectedContainerType());
+
+	ProjectedContainerType partial_array;
+	partial_array.state = ProjectedContainerType::PARTIAL;
+	partial_array.outer = make_builtin(Variant::ARRAY);
+	partial_array.element_types.push_back(partial_dictionary);
+
+	Dictionary accepted_entry;
+	accepted_entry[1] = "one";
+	Array accepted;
+	accepted.push_back(accepted_entry);
+	Variant accepted_value = accepted;
+	CHECK(partial_array.validate_value(accepted_value, "member", "assign"));
+
+	Dictionary rejected_entry;
+	rejected_entry["one"] = "one";
+	Array rejected;
+	rejected.push_back(rejected_entry);
+	Variant rejected_value = rejected;
+	ERR_PRINT_OFF;
+	CHECK_FALSE(partial_array.validate_value(rejected_value, "member", "assign"));
+	ERR_PRINT_ON;
+
+	// An entirely unknown element slot still accepts anything.
+	ProjectedContainerType unknown_element_array;
+	unknown_element_array.state = ProjectedContainerType::PARTIAL;
+	unknown_element_array.outer = make_builtin(Variant::ARRAY);
+	unknown_element_array.element_types.push_back(ProjectedContainerType());
+	CHECK(unknown_element_array.validate_value(rejected_value, "member", "assign"));
+}
+
 TEST_CASE("[ProjectedContainerType] Nesting deeper than the recursion cap degrades only that subtree") {
 	ContainerType deep = make_builtin(Variant::INT);
 	for (int i = 0; i < Variant::MAX_RECURSION_DEPTH + 4; i++) {
