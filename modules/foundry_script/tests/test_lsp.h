@@ -1593,6 +1593,76 @@ func f():
 			CHECK_EQ(concrete_create->selectionRange.start.line, 6);
 		}
 
+		SUBCASE("Nested Type[T] is presented with its handle layer intact") {
+			// A nested handle that rendered as its erased instance form would present
+			// `Dictionary[String, Factory]`, which is a different type accepting different values.
+			String path = "res://lsp/nested_type_metatype_presentation.fs";
+			assert_no_errors_in(path);
+			String uri = workspace->get_file_uri(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+			Ref<FSTextDocument> text_document = proto->get_text_document();
+
+			const LSP::DocumentSymbol *types = parser->get_member_symbol("types");
+			REQUIRE(types);
+			CHECK_EQ(types->detail, "var types: Dictionary[String, Type[Factory]]");
+
+			const LSP::DocumentSymbol *handles = parser->get_member_symbol("handles");
+			REQUIRE(handles);
+			CHECK_EQ(handles->detail, "var handles: Array[Type[Factory]]");
+
+			// Nesting deeper than one level keeps the handle at the leaf.
+			const LSP::DocumentSymbol *grouped = parser->get_member_symbol("grouped");
+			REQUIRE(grouped);
+			CHECK_EQ(grouped->detail, "var grouped: Array[Dictionary[String, Type[Factory]]]");
+
+			const LSP::DocumentSymbol *slot = parser->get_member_symbol("slot");
+			REQUIRE(slot);
+			CHECK_EQ(slot->detail, "var slot: Slot[Type[Factory]]");
+
+			const LSP::DocumentSymbol *construct = parser->get_member_symbol("construct");
+			REQUIRE(construct);
+			CHECK_EQ(construct->detail, "var construct: Callable[[Type[Factory]], Factory]");
+
+			const LSP::DocumentSymbol *register_symbol = parser->get_member_symbol("register");
+			REQUIRE(register_symbol);
+			CHECK_EQ(register_symbol->detail, "func register(name: String, factory: Type[Factory]) -> Type[Factory]");
+
+			// Hover on the declaration, on the local read back out of the container, and on the
+			// loop variable bound from its elements.
+			Variant declaration_hover_variant = text_document->hover(pos_in(uri, types->selectionRange.start).to_json());
+			REQUIRE(declaration_hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary declaration_hover = declaration_hover_variant;
+			Dictionary declaration_hover_contents = declaration_hover["contents"];
+			CHECK(String(declaration_hover_contents["value"]).contains("var types: Dictionary[String, Type[Factory]]"));
+
+			Variant subscript_hover_variant = text_document->hover(pos_in(uri, pos(25, 6)).to_json());
+			REQUIRE(subscript_hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary subscript_hover = subscript_hover_variant;
+			Dictionary subscript_hover_contents = subscript_hover["contents"];
+			CHECK(String(subscript_hover_contents["value"]).contains("Type[Factory]"));
+
+			Variant loop_hover_variant = text_document->hover(pos_in(uri, pos(29, 7)).to_json());
+			REQUIRE(loop_hover_variant.get_type() == Variant::DICTIONARY);
+			Dictionary loop_hover = loop_hover_variant;
+			Dictionary loop_hover_contents = loop_hover["contents"];
+			CHECK(String(loop_hover_contents["value"]).contains("Type[Factory]"));
+
+			LSP::SignatureHelp signature_help;
+			CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(33, 11)), signature_help), OK);
+			REQUIRE(signature_help.signatures.size() == 1);
+			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			CHECK_EQ(signature.label, "func register(name: String, factory: Type[Factory]) -> Type[Factory]");
+			REQUIRE(signature.parameters.size() == 2);
+			CHECK_EQ(signature.parameters[1].label, "factory: Type[Factory]");
+
+			Dictionary api = parser->generate_api();
+			Array signals = api["signals"];
+			REQUIRE(signals.size() == 1);
+			Dictionary signal_api = signals[0];
+			CHECK_EQ(String(signal_api["signature"]), "signal registered(name: String, factory: Type[Factory])");
+		}
+
 		SUBCASE("Enum default values are shown as constant names") {
 			String path = "res://lsp/enum_default_values.fs";
 			assert_no_errors_in(path);
@@ -3488,6 +3558,34 @@ func f():
 			// The reference sits after the astral literal on the previous line, so only the
 			// column of the reference itself is affected; UTF-16 columns are per line.
 			check_semantic_token_at(tokens, 1, 11, 5, LSP::SemanticTokenType::PROPERTY); // label
+		}
+
+		SUBCASE("a nested Type[T] classifies exactly like the top-level form") {
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_nested_type_handle.fs");
+			text_document->didOpen(make_did_open_params(uri,
+					"var top: Type[Node] = Node\n"
+					"var nested: Array[Type[Node]] = []\n"
+					"var deep: Dictionary[String, Type[Node]] = {}\n"));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+
+			// The top-level occurrence is the reference classification; nesting must not change it,
+			// at either the `Type` keyword or the represented type inside it.
+			const DecodedSemanticToken *top_handle = find_semantic_token(tokens, 0, 9);
+			REQUIRE(top_handle != nullptr);
+			const DecodedSemanticToken *top_represented = find_semantic_token(tokens, 0, 14);
+			REQUIRE(top_represented != nullptr);
+
+			const int nested_handle_columns[] = { 18, 29 };
+			const int nested_represented_columns[] = { 23, 34 };
+			for (int i = 0; i < 2; i++) {
+				const int line = i + 1;
+				CAPTURE(line);
+				check_semantic_token_at(tokens, line, nested_handle_columns[i], top_handle->length,
+						LSP::SemanticTokenType(top_handle->type), top_handle->modifiers);
+				check_semantic_token_at(tokens, line, nested_represented_columns[i], top_represented->length,
+						LSP::SemanticTokenType(top_represented->type), top_represented->modifiers);
+			}
 		}
 
 		SUBCASE("an empty document produces no records") {
