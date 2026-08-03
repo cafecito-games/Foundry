@@ -5801,11 +5801,17 @@ String render_super_call_body(const FSParser::FunctionNode *p_function, const St
 	call += ")";
 	const String expression = p_function->is_coroutine ? "await " + call : call;
 
-	// A `@noreturn` override can never contain a `return` statement, regardless of its declared
-	// return type, so the call is emitted bare: the base's own `@noreturn` contract guarantees
-	// `super.<name>(...)` never completes, which is what lets this stub satisfy its own
-	// reproduced annotation without a "not all paths return a value" error.
 	if (p_function->is_noreturn) {
+		if (p_function->is_coroutine) {
+			// The analyzer's `@noreturn` finality check only recognizes a bare call statement as
+			// terminating, not one wrapped in `await`, so an awaited super call here would leave the
+			// generated stub unable to prove its own reproduced annotation. Terminate explicitly instead.
+			return render_noreturn_stub_terminator(name, p_class_indent);
+		}
+		// A `@noreturn` override can never contain a `return` statement, regardless of its declared
+		// return type, so the call is emitted bare: the base's own `@noreturn` contract guarantees
+		// `super.<name>(...)` never completes, which is what lets this stub satisfy its own
+		// reproduced annotation without a "not all paths return a value" error.
 		return body_indent + expression + "\n";
 	}
 

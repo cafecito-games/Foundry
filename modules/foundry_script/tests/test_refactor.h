@@ -684,6 +684,32 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
 	}
 
+	TEST_CASE("Override method keeps an async concrete override from completing normally under @noreturn") {
+		const String source =
+				"class Base:\n"
+				"\t@noreturn\n"
+				"\tasync func fail() -> void:\n"
+				"\t\tpush_fatal(\"base failure\")\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "fail");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 5, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		// The analyzer's `@noreturn` finality check only recognizes a bare call statement as
+		// terminating, not one wrapped in `await`, so an awaited `super.fail()` here could not prove
+		// its own reproduced annotation. The stub terminates explicitly instead.
+		CHECK(out.contains("\t@noreturn\n\tasync func fail() -> void:\n"));
+		CHECK(out.contains("\t\tpush_fatal(\"Not implemented: fail\")\n"));
+		CHECK_FALSE(out.contains("await super.fail()"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
 #ifndef FOUNDRY_SCRIPT_NO_LSP
 	TEST_CASE("Override method resolves a concrete base defined in another file") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
