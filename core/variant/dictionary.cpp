@@ -528,21 +528,22 @@ Dictionary Dictionary::recursive_duplicate(bool p_deep, ResourceDeepDuplicateMod
 	return n;
 }
 
-void Dictionary::set_typed(const ContainerType &p_key_type, const ContainerType &p_value_type) {
-	ERR_FAIL_COND_MSG(_p->read_only, "Dictionary is in read-only state.");
-	ERR_FAIL_COND_MSG(_p->variant_map.size() > 0, "Type can only be set when dictionary is empty.");
-	ERR_FAIL_COND_MSG(_p->refcount.get() > 1, "Type can only be set when dictionary has no more than one user.");
-	ERR_FAIL_COND_MSG(_p->typed_key.type != Variant::NIL || _p->typed_value.type != Variant::NIL, "Type can only be set once.");
-	ERR_FAIL_COND_MSG((p_key_type.class_name != StringName() && p_key_type.builtin_type != Variant::OBJECT) || (p_value_type.class_name != StringName() && p_value_type.builtin_type != Variant::OBJECT), "Class names can only be set for type OBJECT.");
-	ERR_FAIL_COND_MSG(p_key_type.script.is_valid() && p_key_type.class_name == StringName(), "Script class can only be set together with base class name.");
-	ERR_FAIL_COND_MSG(p_value_type.script.is_valid() && p_value_type.class_name == StringName(), "Script class can only be set together with base class name.");
-	ERR_FAIL_COND_MSG(!numeric_type_is_carrier_consistent(p_key_type.numeric_type, p_key_type.builtin_type) || !numeric_type_is_carrier_consistent(p_value_type.numeric_type, p_value_type.builtin_type), "Numeric type can only be set together with its own integer carrier.");
+bool Dictionary::set_typed(const ContainerType &p_key_type, const ContainerType &p_value_type) {
+	ERR_FAIL_COND_V_MSG(_p->read_only, false, "Dictionary is in read-only state.");
+	ERR_FAIL_COND_V_MSG(_p->variant_map.size() > 0, false, "Type can only be set when dictionary is empty.");
+	ERR_FAIL_COND_V_MSG(_p->refcount.get() > 1, false, "Type can only be set when dictionary has no more than one user.");
+	ERR_FAIL_COND_V_MSG(_p->typed_key.type != Variant::NIL || _p->typed_value.type != Variant::NIL, false, "Type can only be set once.");
+	ERR_FAIL_COND_V_MSG((p_key_type.class_name != StringName() && p_key_type.builtin_type != Variant::OBJECT) || (p_value_type.class_name != StringName() && p_value_type.builtin_type != Variant::OBJECT), false, "Class names can only be set for type OBJECT.");
+	ERR_FAIL_COND_V_MSG(p_key_type.script.is_valid() && p_key_type.class_name == StringName(), false, "Script class can only be set together with base class name.");
+	ERR_FAIL_COND_V_MSG(p_value_type.script.is_valid() && p_value_type.class_name == StringName(), false, "Script class can only be set together with base class name.");
+	ERR_FAIL_COND_V_MSG(!numeric_type_is_carrier_consistent(p_key_type.numeric_type, p_key_type.builtin_type) || !numeric_type_is_carrier_consistent(p_value_type.numeric_type, p_value_type.builtin_type), false, "Numeric type can only be set together with its own integer carrier.");
 
 	_p->typed_key = ContainerTypeValidate(p_key_type);
 	_p->typed_key.where = "TypedDictionary.Key";
 
 	_p->typed_value = ContainerTypeValidate(p_value_type);
 	_p->typed_value.where = "TypedDictionary.Value";
+	return true;
 }
 
 void Dictionary::set_typed(uint32_t p_key_type, const StringName &p_key_class_name, const Variant &p_key_script, uint32_t p_value_type, const StringName &p_value_class_name, const Variant &p_value_script) {

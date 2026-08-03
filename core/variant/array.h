@@ -174,7 +174,10 @@ public:
 
 	const void *id() const;
 
-	void set_typed(const ContainerType &p_element_type);
+	// Returns `true` when the type was applied. Returns `false` and leaves the array untyped when a
+	// guard rejects it (already typed, non-empty, shared by more than one reference, or read-only);
+	// callers that need to know whether typing actually took effect must check the return value.
+	bool set_typed(const ContainerType &p_element_type);
 	void set_typed(uint32_t p_type, const StringName &p_class_name, const Variant &p_script);
 
 	bool is_typed() const;
