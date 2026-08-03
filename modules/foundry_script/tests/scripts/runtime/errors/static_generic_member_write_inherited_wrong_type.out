@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+5
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a variable of type 'String' into a member of type 'int'.
+>> SCRIPT ERROR at runtime/errors/static_generic_member_write_inherited_wrong_type.fs:19 on test(): Invalid assignment of property or key 'value' with value of type 'String' on a base object of type 'FoundryScript'.

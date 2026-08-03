@@ -238,6 +238,113 @@ static bool _erase_specialized_class_handle_for_native_data_type(const FSDataTyp
 	return true;
 }
 
+static bool _validate_variant_against_expected_container_type(const ContainerType &p_expected_type, bool p_is_type_handle, Variant &r_value) {
+	if (p_is_type_handle) {
+		const FSDataType expected_handle_type = FSDataType::from_type_handle_container_type(p_expected_type);
+		return expected_handle_type.is_type(r_value);
+	}
+
+	_erase_specialized_class_handle_for_native_container_type(p_expected_type, r_value);
+	ContainerTypeValidate validator(p_expected_type);
+	validator.where = "member";
+	return validator.validate(r_value, "assign");
+}
+
+bool FoundryScript::_validate_type_argument_binding_write(const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value) {
+	if (p_binding.kind == FoundryScript::TypeArgumentBinding::NONE) {
+		return true;
+	}
+
+	bool has_expected_type = false;
+	ContainerType expected_type;
+	if (p_binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
+		expected_type = p_binding.fixed.to_container_type();
+		has_expected_type = true;
+		if (p_binding.fixed_is_dependent) {
+			// The fixing argument still mentions an open parameter (`extends Box[Array[T]]`,
+			// `extends Slot[Type[Box[U]]]`), so the erased `fixed` type no longer reflects the concrete
+			// reification of that nested argument (e.g. `Box`'s own `Variant` standing in for the true
+			// `int` in a `Box[int]` value). The outer shape is still known and sound to check — an
+			// instance really must be a `Box` (or a handle for one), a wrong class is still rejected — but
+			// `ContainerTypeValidate` checks `type_arguments`/`element_types` invariantly, which would
+			// reject an otherwise well-typed value whose nested argument just happens to be unrecoverable
+			// here. Both the object and class-handle validators, and the array/dictionary validators,
+			// already treat an empty `type_arguments`/`element_types` as "unbound, accept any
+			// specialization" (see `ContainerTypeValidate::_internal_validate_object`,
+			// `_internal_validate_class_handle` via `_class_handle_type_arguments_match`, and
+			// `_internal_validate_array`/`_internal_validate_dictionary`), so clearing them here reduces
+			// the check to exactly that sound outer-shape validation.
+			//
+			// This intentionally also drops any argument in that same list that happened to be fully
+			// concrete rather than open (e.g. `Box[int, U]` on a two-parameter `Box`, where only `U` is
+			// unresolved): there is currently no per-argument tracking of which individual nested slot is
+			// the dependent one, only a single dependent flag for the whole fixed type, so a value with an
+			// incompatible *concrete* nested argument in that position is not caught either. Narrowing that
+			// requires per-argument dependency tracking on `TypeArgumentBinding`/`FSDataType`, a larger
+			// follow-up; a plain, non-dependent FIXED binding (the common case) is unaffected and still
+			// validates its arguments invariantly.
+			expected_type.type_arguments.clear();
+			expected_type.element_types.clear();
+		}
+	} else if (p_binding.leaf_ordinal >= 0 && p_binding.leaf_ordinal < p_leaf_type_arguments.size()) {
+		expected_type = p_leaf_type_arguments[p_binding.leaf_ordinal];
+		has_expected_type = true;
+	}
+	if (!has_expected_type) {
+		// An OPEN binding with no reified argument (e.g. an unspecialized generic class) leaves the
+		// slot effectively untyped.
+		return true;
+	}
+
+	return _validate_variant_against_expected_container_type(expected_type, p_binding.is_type_handle, r_value);
+}
+
+bool FoundryScript::_validate_static_member_write(FoundryScript *p_receiver, FoundryScript *p_declaring_script, const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value) {
+	if (p_binding.kind == FoundryScript::TypeArgumentBinding::NONE) {
+		return true;
+	}
+	if (p_binding.kind == FoundryScript::TypeArgumentBinding::FIXED || p_declaring_script == p_receiver) {
+		// A FIXED binding is self-sufficient (already a concrete argument), and an OPEN binding declared
+		// directly on the receiver already indexes the receiver's own parameter list.
+		return _validate_type_argument_binding_write(p_binding, p_leaf_type_arguments, r_value);
+	}
+
+	// The static member is inherited from a generic ancestor that was never copied into the receiver
+	// (unlike instance members, static members stay on the class that declares them), so the binding's
+	// ordinal indexes `p_declaring_script`'s own type parameters, not the receiver's. Project it through
+	// the receiver's per-ancestor specialization table (`extends Base[int]` in the chain, or the
+	// receiver's own reified arguments) before validating.
+	//
+	// The declaring script's storage slot is shared by every subclass, so two subclasses that fix the
+	// ancestor's parameter differently (`IntBox extends Box[int]`, `StringBox extends Box[String]`) are
+	// still writing the same physical slot: this only makes a dynamic write at least as strict as the
+	// already-compiled static path (which has the identical cross-subclass sharing hazard with zero
+	// runtime validation at all), not a stronger guarantee that the slot's current value matches every
+	// subclass's declared type at every moment.
+	Vector<ContainerType> projected;
+	Vector<bool> bound;
+	if (!p_receiver->project_type_arguments_onto_base(p_declaring_script, p_leaf_type_arguments, projected, bound)) {
+		return true;
+	}
+	if (p_binding.leaf_ordinal < 0 || p_binding.leaf_ordinal >= projected.size() || !bound[p_binding.leaf_ordinal]) {
+		// `project_type_arguments_onto_base` also marks a slot unbound when the ancestor chain's own
+		// specialization at this ordinal was a dependent FIXED argument (a composite type still
+		// mentioning an open parameter partway up a multi-level `extends` chain), the same case
+		// `_validate_type_argument_binding_write` above recovers a sound outer-shape check for by
+		// stripping the erased nested arguments. `project_type_arguments_onto_base` does not expose that
+		// distinction here (it collapses to "unbound", matching its other, pre-existing caller,
+		// `_class_handle_type_arguments_match` in container_type_validate.cpp, which relies on `bound`
+		// meaning "no evidence at all" rather than "a known but partially-erased outer shape") — recovering
+		// it soundly for both callers needs the per-ancestor table to carry the erased-but-outer-known
+		// container through, not just a bool. Left as a known gap: an inherited static member specialized
+		// with such a dependent composite argument is treated as fully untyped here, rather than at least
+		// rejecting a value of a completely unrelated outer class.
+		return true;
+	}
+
+	return _validate_variant_against_expected_container_type(projected[p_binding.leaf_ordinal], p_binding.is_type_handle, r_value);
+}
+
 Ref<FSAnnotation> FSAnnotation::from_usage(const FoundryScript::AnnotationUsage &p_usage) {
 	Ref<FSAnnotation> descriptor;
 	descriptor.instantiate();
@@ -1590,6 +1697,13 @@ bool FoundryScript::_set(const StringName &p_name, const Variant &p_value) {
 		if (E) {
 			const MemberInfo *member = &E->value;
 			Variant value = p_value;
+			// A static write through the bare class has no instance whose reified `type_arguments` an
+			// OPEN binding declared directly on `this` could resolve against. When the member is
+			// inherited from a generic ancestor (`top != this`), project its binding through `this`'s
+			// specialization chain instead of treating it as unresolvable.
+			if (!_validate_static_member_write(this, top, member->type_argument_binding, Vector<ContainerType>(), value)) {
+				return false;
+			}
 			_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
 			if (!member->data_type.is_type(value)) {
 				const Variant *args = &p_value;
@@ -2375,30 +2489,8 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 				// `extends Base[int]` specialization in the chain (FIXED), or the argument reified onto this
 				// instance (OPEN). An OPEN member on an instance created without explicit arguments carries
 				// no binding, leaving the slot effectively untyped.
-				bool has_expected_type = false;
-				ContainerType expected_type;
-				if (member->type_argument_binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
-					expected_type = member->type_argument_binding.fixed.to_container_type();
-					has_expected_type = true;
-				} else if (member->type_argument_binding.leaf_ordinal >= 0 &&
-						member->type_argument_binding.leaf_ordinal < type_arguments.size()) {
-					expected_type = type_arguments[member->type_argument_binding.leaf_ordinal];
-					has_expected_type = true;
-				}
-				if (has_expected_type) {
-					if (member->type_argument_binding.is_type_handle) {
-						const FSDataType expected_handle_type = FSDataType::from_type_handle_container_type(expected_type);
-						if (!expected_handle_type.is_type(value)) {
-							return false;
-						}
-					} else {
-						_erase_specialized_class_handle_for_native_container_type(expected_type, value);
-						ContainerTypeValidate validator(expected_type);
-						validator.where = "member";
-						if (!validator.validate(value, "assign")) {
-							return false;
-						}
-					}
+				if (!FoundryScript::_validate_type_argument_binding_write(member->type_argument_binding, type_arguments, value)) {
+					return false;
 				}
 			} else {
 				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
@@ -2430,6 +2522,14 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 			if (E) {
 				const FoundryScript::MemberInfo *member = &E->value;
 				Variant value = p_value;
+				// A static member has no per-instance reification of its own. When the leaf script
+				// declares the member directly (`sptr == script`), an OPEN binding resolves against the
+				// instance's own `type_arguments` (e.g. a `Box[int].new()` instance's reified argument
+				// applies to `Box`'s static members too). When it is inherited from a generic ancestor
+				// (`sptr != script`), project the binding through the leaf's specialization chain instead.
+				if (!FoundryScript::_validate_static_member_write(script.ptr(), sptr, member->type_argument_binding, type_arguments, value)) {
+					return false;
+				}
 				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
 				if (!member->data_type.is_type(value)) {
 					const Variant *args = &p_value;
