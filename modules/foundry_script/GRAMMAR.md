@@ -561,6 +561,15 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
   (`Explicit(children: Array[Tree[T]])`); both spell the same open self type. A generic
   tagged union has no bare form anywhere else, and its type parameters shadow same-named
   class parameters while being shadowed in turn by an enum function's own parameters.
+- Everywhere else a generic tagged union is named by **applying a full type-argument
+  vector**, using the same bracketed syntax as a generic class, in a type position
+  (`func take(value: Result[int, String])`) and in an expression position
+  (`var handle = Result[int, String]`). The argument count must equal the declared
+  parameter count, each argument must satisfy its parameter's bound, and a union that
+  declares no parameters accepts no arguments at all. Type arguments are invariant, so
+  two applications of one union that differ in any argument are unrelated types. A
+  decorated spelling of the declaration's own parameter (`Slot[T?]`) is an ordinary
+  application rather than the open self type.
 - Enum values must appear before enum functions. A functions-only named enum is valid.
   Enum functions reuse ordinary function signatures and bodies, allow `static` and
   `async`, and reject `abstract` and `final`. Variables, constants, signals, nested

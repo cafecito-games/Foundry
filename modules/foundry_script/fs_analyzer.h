@@ -407,6 +407,11 @@ private:
 	void run_phase_apply_pending_warnings();
 
 	const FSParser::EnumNode *current_enum = nullptr;
+	// The one expression a bare generic union metatype may be published on: the base of a subscript that
+	// is about to apply type arguments to it. `Outcome[int, String]` reduces its base before it can know
+	// the brackets carry arguments, so without this the bare-form gate would reject the application's
+	// own base. It names a single node rather than setting a mode, so nothing else can slip through.
+	const FSParser::Node *generic_union_application_base = nullptr;
 	FSParser::LambdaNode *current_lambda = nullptr;
 	List<FSParser::LambdaNode *> pending_body_resolution_lambdas;
 	bool static_context = false;
@@ -449,8 +454,29 @@ private:
 			const FSParser::DataType &p_base,
 			const FSParser::FunctionNode *p_shadowing_method = nullptr,
 			const FSParser::DataType *p_self_type = nullptr);
+	// Identifies the declaration whose type parameters an application is binding. A generic class and a
+	// generic tagged union differ only in where their parameters live, how they are named in a
+	// diagnostic, and which scope a declared bound must be resolved in, so argument binding is written
+	// once against this description instead of once per declaration kind.
+	struct GenericDeclaration {
+		Vector<FSParser::TypeParameterNode *> parameters;
+		// "Class" or "Enum": how the declaration is named when it takes no parameters at all.
+		String kind;
+		// "Generic class" or "Generic tagged union": how it is named in the arity diagnostic.
+		String generic_kind;
+		String name;
+		// The scope a declared bound resolves in, so a bound name binds at the declaration site rather
+		// than wherever the arguments were written.
+		FSParser::ClassNode *declaring_class = nullptr;
+		FSParser::EnumNode *declaring_enum = nullptr;
+	};
+	static GenericDeclaration class_generic_declaration(const FSParser::DataType &p_type);
+	static GenericDeclaration enum_generic_declaration(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner);
+	bool apply_type_arguments(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<FSParser::TypeNode *> &p_argument_nodes, const FSParser::Node *p_source, bool p_check_bounds = true, Vector<bool> *r_argument_failed = nullptr);
+	bool bind_type_arguments(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, bool p_check_bounds = true);
+	bool check_type_argument_bounds(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources);
 	bool apply_class_type_arguments(FSParser::DataType &r_type, const Vector<FSParser::TypeNode *> &p_argument_nodes, const FSParser::Node *p_source, bool p_check_bounds = true, Vector<bool> *r_argument_failed = nullptr);
-	bool bind_class_type_arguments(FSParser::DataType &r_type, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, const FSParser::Node *p_source, bool p_check_bounds = true);
+	bool bind_class_type_arguments(FSParser::DataType &r_type, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, bool p_check_bounds = true);
 	bool check_class_type_argument_bounds(FSParser::DataType &r_type, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources);
 	FSParser::DataType specialize_ancestor_type(const FSParser::DataType &p_base, const FSParser::ClassNode *p_target);
 

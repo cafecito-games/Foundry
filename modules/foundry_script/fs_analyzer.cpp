@@ -221,6 +221,13 @@ bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p
 		return false;
 	}
 
+	// The base of an application is the one place the bare metatype is allowed to appear: the brackets
+	// that bind it are read by the subscript that owns this base, and that subscript reports the arity
+	// itself. Nothing else may publish the bare form.
+	if (p_source != nullptr && p_source == generic_union_application_base) {
+		return false;
+	}
+
 	// Inside its own declaration the bare spelling is the open self type, whose arguments are already
 	// published. Anywhere else it would hand the user the declaration's unbound parameters, so a
 	// declared bound would not hold for whatever is passed through it. Self reference is a property of
@@ -2334,34 +2341,33 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		}
 	}
 
-	// A generic tagged union is decided before the collection/class argument handling below, because a
-	// union metatype is Dictionary-backed and would otherwise consume exactly two arguments as key and
-	// value types. Only the declaration's own open form is accepted here; general application follows.
-	if (result.kind == FSParser::DataType::ENUM && result.is_tagged_union &&
-			(!p_type->container_types.is_empty() || result.has_type_arguments())) {
+	// An enum is decided before the collection/class argument handling below, because an enum metatype
+	// is Dictionary-backed and would otherwise consume exactly two arguments as key and value types.
+	if (result.kind == FSParser::DataType::ENUM &&
+			(!p_type->container_types.is_empty() || (result.is_tagged_union && result.has_type_arguments()))) {
 		FSParser::EnumNode *declaration = resolve_enum_declaration(result, p_type);
-		if (declaration != nullptr && !declaration->type_parameters.is_empty()) {
-			const StringName declaration_name = declaration->identifier != nullptr ? declaration->identifier->name : StringName();
+		const int given = p_type->container_types.size();
+		if (declaration == nullptr || declaration->type_parameters.is_empty()) {
+			if (given > 0) {
+				push_error(vformat(R"(Enum "%s" is not generic and cannot take type arguments.)", result.to_string()), p_type);
+				return bad_type;
+			}
+		} else {
 			const int expected = declaration->type_parameters.size();
-			const int given = p_type->container_types.size();
 			// Self reference is a property of the lexical position, not of whichever union the analyzer
 			// still has active: a class pulled in during payload resolution is outside the declaration.
 			const bool is_current_declaration = declaration == current_enum &&
 					enum_declared_by(parser->current_class, current_enum);
 
-			if (given != expected) {
-				// Bare use outside the declaration lands here too: it gives zero of the required arguments.
-				if (given == 0 && is_current_declaration) {
-					// Bare self inside the declaration is the open type, whose arguments are already published.
-					return finalize_datatype(result);
-				}
-				push_error(vformat(R"(Generic tagged union "%s" expects %d type argument(s), but %d were given.)",
-								   declaration_name, expected, given),
-						p_type);
-				return bad_type;
+			// Bare self inside the declaration is the open type, whose arguments are already published.
+			// Bare use outside the declaration is not: it gives zero of the required arguments, which the
+			// shared arity check below reports.
+			if (given == 0 && is_current_declaration) {
+				return finalize_datatype(result);
 			}
 
-			bool is_own_open_vector = is_current_declaration && result.type_arguments.size() == expected;
+			bool is_own_open_vector = is_current_declaration && given == expected &&
+					result.type_arguments.size() == expected;
 			for (int i = 0; is_own_open_vector && i < expected; i++) {
 				FSParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
 				// Everything but the bound has to match, so a decorated spelling of the same parameter —
@@ -2380,8 +2386,13 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				return finalize_datatype(result);
 			}
 
-			push_error(vformat(R"(Generic tagged union "%s" type application is not available yet.)", declaration_name), p_type);
-			return bad_type;
+			// A successful application keeps the identity the declaration already published and only
+			// exchanges its open arguments for the supplied ones.
+			if (!apply_type_arguments(result, enum_generic_declaration(declaration, result.class_type),
+						p_type->container_types, p_type)) {
+				return bad_type;
+			}
+			return finalize_datatype(result);
 		}
 	}
 
@@ -10885,12 +10896,22 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 			}
 		}
 	}
-	if (p_subscript->base->type == FSParser::Node::IDENTIFIER) {
-		reduce_identifier(static_cast<FSParser::IdentifierNode *>(p_subscript->base), true);
-	} else if (p_subscript->base->type == FSParser::Node::SUBSCRIPT) {
-		reduce_subscript(static_cast<FSParser::SubscriptNode *>(p_subscript->base), true);
-	} else {
-		reduce_expression(p_subscript->base);
+	{
+		// An index subscript may turn out to be a generic application, which is only knowable once the
+		// base has a type. Exempt exactly this base from the bare-generic-union gate while it reduces, so
+		// the application can be diagnosed by arity here rather than as a bare reference there.
+		const FSParser::Node *previous_application_base = generic_union_application_base;
+		if (!p_subscript->is_attribute) {
+			generic_union_application_base = p_subscript->base;
+		}
+		if (p_subscript->base->type == FSParser::Node::IDENTIFIER) {
+			reduce_identifier(static_cast<FSParser::IdentifierNode *>(p_subscript->base), true);
+		} else if (p_subscript->base->type == FSParser::Node::SUBSCRIPT) {
+			reduce_subscript(static_cast<FSParser::SubscriptNode *>(p_subscript->base), true);
+		} else {
+			reduce_expression(p_subscript->base);
+		}
+		generic_union_application_base = previous_application_base;
 	}
 
 	FSParser::DataType result_type;
@@ -11018,11 +11039,25 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 		}
 
 		FSParser::DataType base_meta_type = p_subscript->base->get_datatype();
-		if (base_meta_type.is_set() && base_meta_type.is_meta_type && base_meta_type.kind == FSParser::DataType::CLASS &&
-				base_meta_type.class_type != nullptr && !base_meta_type.class_type->type_parameters.is_empty()) {
-			// Generic class specialization in value position, e.g. `Box[int]` or `Pair[int, String]`.
-			// The brackets carry a type-argument list rather than an index. A multi-argument list is
-			// captured in `type_arguments`; a single argument keeps using `index`.
+		const bool base_is_meta = base_meta_type.is_set() && base_meta_type.is_meta_type;
+		FSParser::EnumNode *union_declaration = nullptr;
+		if (base_is_meta && base_meta_type.kind == FSParser::DataType::ENUM && base_meta_type.is_tagged_union) {
+			// A non-generic union keeps the ordinary constant-dictionary indexing below; only a generic
+			// one reads its brackets as a type-argument list.
+			FSParser::EnumNode *declaration = resolve_enum_declaration(base_meta_type, p_subscript);
+			if (declaration != nullptr && !declaration->type_parameters.is_empty()) {
+				union_declaration = declaration;
+			}
+		}
+		const bool base_is_generic_class = base_is_meta && base_meta_type.kind == FSParser::DataType::CLASS &&
+				base_meta_type.class_type != nullptr && !base_meta_type.class_type->type_parameters.is_empty();
+		if (base_is_generic_class || union_declaration != nullptr) {
+			// Generic specialization in value position, e.g. `Box[int]`, `Pair[int, String]`, or
+			// `Outcome[int, String]`. The brackets carry a type-argument list rather than an index. A
+			// multi-argument list is captured in `type_arguments`; a single argument keeps using `index`.
+			const GenericDeclaration declaration = union_declaration != nullptr
+					? enum_generic_declaration(union_declaration, base_meta_type.class_type)
+					: class_generic_declaration(base_meta_type);
 			FSParser::DataType specialized = base_meta_type;
 			Vector<FSParser::DataType> resolved_arguments;
 			Vector<bool> argument_failed;
@@ -11046,7 +11081,7 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 					resolved_arguments.push_back(type_argument);
 					argument_failed.push_back(false);
 				} else {
-					push_error(vformat(R"(Could not resolve the type argument for generic class "%s".)", specialized.to_string()), argument_expression);
+					push_error(vformat(R"(Could not resolve the type argument for %s "%s".)", declaration.generic_kind.to_lower(), declaration.name), argument_expression);
 					FSParser::DataType fallback;
 					fallback.kind = FSParser::DataType::VARIANT;
 					fallback.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
@@ -11056,16 +11091,17 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 				argument_sources.push_back(argument_expression);
 			}
 
-			const int expected_argument_count = specialized.class_type->type_parameters.size();
+			const int expected_argument_count = declaration.parameters.size();
 			if (resolved_arguments.size() != expected_argument_count) {
-				push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)", specialized.to_string(), expected_argument_count, resolved_arguments.size()), p_subscript);
+				push_error(vformat(R"(%s "%s" expects %d type argument(s), but %d were given.)", declaration.generic_kind, declaration.name, expected_argument_count, resolved_arguments.size()), p_subscript);
 				result_type.kind = FSParser::DataType::VARIANT;
 			} else {
-				bind_class_type_arguments(specialized, resolved_arguments, argument_failed, argument_sources, p_subscript);
+				bind_type_arguments(specialized, declaration, resolved_arguments, argument_failed, argument_sources);
 				specialized.is_meta_type = true;
 				result_type = specialized;
-				// The specialized handle still refers to the same class object at runtime; carry the
-				// base's constant value so `Box[int].new()` can recover the script to instantiate.
+				// The specialized handle still denotes the same declaration at runtime; carry the base's
+				// constant value so `Box[int].new()` can recover the script to instantiate and a union
+				// handle keeps the declaration dictionary its cases are read from.
 				p_subscript->is_constant = p_subscript->base->is_constant;
 				p_subscript->reduced_value = p_subscript->base->reduced_value;
 			}

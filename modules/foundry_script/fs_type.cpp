@@ -668,6 +668,18 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			return result;
 		}
 		if (p_source.kind == FSParser::DataType::ENUM && p_source.native_type == p_target.native_type) {
+			// Nominal identity is not enough for a generic tagged union: its type arguments are invariant,
+			// so `Result[int, String]` and `Result[float, String]` are unrelated types even though `int`
+			// converts to `float`. Matching argument-by-argument here is what keeps a payload read through
+			// one application from seeing another application's payload types.
+			if (p_source.type_arguments.size() != p_target.type_arguments.size()) {
+				return result;
+			}
+			for (int i = 0; i < p_target.type_arguments.size(); i++) {
+				if (!_datatype_invariant_equal(p_target.type_arguments[i], p_source.type_arguments[i])) {
+					return result;
+				}
+			}
 			result.compatible = true;
 			return result;
 		}
