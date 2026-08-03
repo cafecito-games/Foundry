@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign an object into a member, that does not inherit from 'FoundryScript'.
+>> SCRIPT ERROR at runtime/errors/static_generic_member_write_dependent_wrong_class.fs:25 on test(): Invalid assignment of property or key 'slot' with value of type 'RefCounted (NotBox)' on a base object of type 'RefCounted (Holder)'.
