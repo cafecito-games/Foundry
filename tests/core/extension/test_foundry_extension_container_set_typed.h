@@ -67,7 +67,7 @@ TEST_CASE("[FoundryExtensionInterface][ContainerSetTyped] Array descriptor rejec
 	Array array;
 	// STRING carrying an INT32 width constraint is a carrier/width mismatch. The descriptor codec
 	// itself already refuses to decode this shape, so this exercises the same "invalid descriptor"
-	// path the interface function already reports correctly; it is here to pin that behaviour.
+	// path the interface function already reports correctly; it is here to pin that behavior.
 	Variant descriptor = ContainerTypeDescriptor::to_variant(make_numeric_type(Variant::STRING, NumericType::INT32));
 
 	ERR_PRINT_OFF;
@@ -137,7 +137,7 @@ TEST_CASE("[FoundryExtensionInterface][ContainerSetTyped] Dictionary descriptor 
 
 	Dictionary dictionary;
 	// Same shape as the Array case above: the descriptor codec already refuses to decode this, so
-	// this pins the existing "invalid descriptor" behaviour rather than the swallowed-guard bug.
+	// this pins the existing "invalid descriptor" behavior rather than the swallowed-guard bug.
 	Variant key_descriptor = ContainerTypeDescriptor::to_variant(make_numeric_type(Variant::STRING, NumericType::UINT32));
 	Variant value_descriptor = ContainerTypeDescriptor::to_variant(ContainerType());
 
