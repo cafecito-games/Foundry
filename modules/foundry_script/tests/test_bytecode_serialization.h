@@ -139,6 +139,22 @@ static FSDataType bytecode_round_trip_data_type(const FSDataType &p_data_type, F
 	return decoded;
 }
 
+static Vector<uint8_t> bytecode_encode_data_type(FSBytecodeExporter &r_exporter, const FSDataType &p_data_type) {
+	Ref<StreamPeerBuffer> stream;
+	stream.instantiate();
+	REQUIRE(r_exporter.encode_data_type(stream.ptr(), p_data_type) == OK);
+	return stream->get_data_array();
+}
+
+static Error bytecode_decode_data_type(FSBytecodeExporter &r_exporter, const Vector<uint8_t> &p_payload,
+		FSBytecodeExternalResolver *p_resolver, FSDataType &r_data_type) {
+	FSBytecodeLoader loader = bytecode_loader_for(r_exporter, p_resolver);
+	Ref<StreamPeerBuffer> payload_stream;
+	payload_stream.instantiate();
+	payload_stream->set_data_array(p_payload);
+	return loader.decode_data_type(payload_stream.ptr(), r_data_type);
+}
+
 static bool bytecode_buffer_contains(const Vector<uint8_t> &p_buffer, const String &p_marker) {
 	const CharString marker = p_marker.utf8();
 	const int marker_length = marker.length();
@@ -725,6 +741,320 @@ TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType bytecode round-trip restore
 	CHECK(decoded_slot.is_type_handle);
 	REQUIRE(decoded_slot.type_arguments.size() == 1);
 	CHECK(decoded_slot.type_arguments[0].is_type_handle);
+}
+
+// Offsets of the width descriptor inside an encoded record, used by the negative tests below to
+// corrupt exactly that byte. A data-type record starts with its kind byte and carrier word; a
+// container-type record inside a tagged Array starts with the tag byte and the read-only flag.
+static constexpr int BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET = 1 + 4;
+static constexpr int BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET = 1 + 1 + 4;
+
+static FSDataType bytecode_numeric_data_type(Variant::Type p_carrier, NumericType p_numeric_type) {
+	FSDataType type;
+	type.kind = FSDataType::BUILTIN;
+	type.builtin_type = p_carrier;
+	type.numeric_type = p_numeric_type;
+	return type;
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Declared widths survive the data-type round trip") {
+	BytecodeTestResolver resolver;
+
+	// A width on a leaf carrier, on both carriers and at both source-nameable widths.
+	struct LeafCase {
+		Variant::Type carrier;
+		NumericType numeric_type;
+	};
+	const LeafCase leaf_cases[] = {
+		{ Variant::INT, NumericType::INT32 },
+		{ Variant::INT, NumericType::INT64 },
+		{ Variant::UINT, NumericType::UINT32 },
+		{ Variant::UINT, NumericType::UINT64 },
+	};
+	for (const LeafCase &leaf_case : leaf_cases) {
+		CAPTURE(uint8_t(leaf_case.numeric_type));
+		const FSDataType leaf = bytecode_numeric_data_type(leaf_case.carrier, leaf_case.numeric_type);
+		const FSDataType decoded_leaf = bytecode_round_trip_data_type(leaf, &resolver);
+		CHECK(decoded_leaf.builtin_type == leaf_case.carrier);
+		CHECK(decoded_leaf.numeric_type == leaf_case.numeric_type);
+	}
+
+	// An unannotated integer is not a distinguishable state on the wire: it decodes back to the
+	// absence of a constraint, exactly as it read before descriptors existed.
+	const FSDataType unannotated = bytecode_numeric_data_type(Variant::INT, NumericType::NONE);
+	CHECK(bytecode_round_trip_data_type(unannotated, &resolver).numeric_type == NumericType::NONE);
+
+	// Typed containers: `Dictionary[int32, Array[uint64]]` puts one width one level down and another
+	// two levels down, so a codec that only carried the root descriptor would drop the deeper one.
+	FSDataType wide_unsigned_array;
+	wide_unsigned_array.kind = FSDataType::BUILTIN;
+	wide_unsigned_array.builtin_type = Variant::ARRAY;
+	wide_unsigned_array.set_container_element_type(0, bytecode_numeric_data_type(Variant::UINT, NumericType::UINT64));
+
+	FSDataType nested_dictionary;
+	nested_dictionary.kind = FSDataType::BUILTIN;
+	nested_dictionary.builtin_type = Variant::DICTIONARY;
+	nested_dictionary.set_container_element_type(0, bytecode_numeric_data_type(Variant::INT, NumericType::INT32));
+	nested_dictionary.set_container_element_type(1, wide_unsigned_array);
+
+	const FSDataType decoded_dictionary = bytecode_round_trip_data_type(nested_dictionary, &resolver);
+	REQUIRE(decoded_dictionary.container_element_types.size() == 2);
+	CHECK(decoded_dictionary.numeric_type == NumericType::NONE);
+	CHECK(decoded_dictionary.container_element_types[0].numeric_type == NumericType::INT32);
+	REQUIRE(decoded_dictionary.container_element_types[1].container_element_types.size() == 1);
+	CHECK(decoded_dictionary.container_element_types[1].container_element_types[0].numeric_type == NumericType::UINT64);
+
+	// Generics and nested type arguments: `Box[Pair[int32, uint32]]`, two levels of type arguments.
+	Ref<FoundryScript> generic_script;
+	generic_script.instantiate();
+	generic_script->set_path_cache("res://numeric_generic.fs");
+	resolver.scripts.insert("res://numeric_generic.fs::", generic_script);
+
+	FSDataType inner_generic;
+	inner_generic.kind = FSDataType::FOUNDRY_SCRIPT;
+	inner_generic.builtin_type = Variant::OBJECT;
+	inner_generic.native_type = "RefCounted";
+	inner_generic.script_type_ref = generic_script;
+	inner_generic.script_type = generic_script.ptr();
+	inner_generic.type_arguments.push_back(bytecode_numeric_data_type(Variant::INT, NumericType::INT32));
+	inner_generic.type_arguments.push_back(bytecode_numeric_data_type(Variant::UINT, NumericType::UINT32));
+
+	FSDataType outer_generic = inner_generic;
+	outer_generic.type_arguments.clear();
+	outer_generic.type_arguments.push_back(inner_generic);
+
+	const FSDataType decoded_generic = bytecode_round_trip_data_type(outer_generic, &resolver);
+	REQUIRE(decoded_generic.type_arguments.size() == 1);
+	REQUIRE(decoded_generic.type_arguments[0].type_arguments.size() == 2);
+	CHECK(decoded_generic.type_arguments[0].type_arguments[0].numeric_type == NumericType::INT32);
+	CHECK(decoded_generic.type_arguments[0].type_arguments[1].numeric_type == NumericType::UINT32);
+
+	// A callable slot's own carrier pins no width, but the signature types nested under it do.
+	FSDataType callable_type;
+	callable_type.kind = FSDataType::BUILTIN;
+	callable_type.builtin_type = Variant::CALLABLE;
+	callable_type.type_arguments.push_back(bytecode_numeric_data_type(Variant::INT, NumericType::INT32));
+	callable_type.type_arguments.push_back(wide_unsigned_array);
+
+	const FSDataType decoded_callable = bytecode_round_trip_data_type(callable_type, &resolver);
+	CHECK(decoded_callable.numeric_type == NumericType::NONE);
+	REQUIRE(decoded_callable.type_arguments.size() == 2);
+	CHECK(decoded_callable.type_arguments[0].numeric_type == NumericType::INT32);
+	REQUIRE(decoded_callable.type_arguments[1].container_element_types.size() == 1);
+	CHECK(decoded_callable.type_arguments[1].container_element_types[0].numeric_type == NumericType::UINT64);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Declared widths survive typed-container constants") {
+	ContainerType wide_unsigned;
+	wide_unsigned.builtin_type = Variant::UINT;
+	wide_unsigned.numeric_type = NumericType::UINT64;
+
+	Array unsigned_array;
+	REQUIRE(unsigned_array.set_typed(wide_unsigned));
+	const Array decoded_unsigned_array = bytecode_round_trip_variant(unsigned_array);
+	CHECK(decoded_unsigned_array.get_element_type() == wide_unsigned);
+	CHECK(decoded_unsigned_array.get_element_type().numeric_type == NumericType::UINT64);
+
+	// Two levels deep: `Array[Array[int32]]` keeps the width on the inner element type.
+	ContainerType narrow_signed;
+	narrow_signed.builtin_type = Variant::INT;
+	narrow_signed.numeric_type = NumericType::INT32;
+	ContainerType narrow_signed_array;
+	narrow_signed_array.builtin_type = Variant::ARRAY;
+	narrow_signed_array.element_types.push_back(narrow_signed);
+
+	Array nested_array;
+	REQUIRE(nested_array.set_typed(narrow_signed_array));
+	const Array decoded_nested_array = bytecode_round_trip_variant(nested_array);
+	REQUIRE(decoded_nested_array.get_element_type().element_types.size() == 1);
+	CHECK(decoded_nested_array.get_element_type().element_types[0].numeric_type == NumericType::INT32);
+
+	// Both slots of a typed Dictionary carry their own descriptor.
+	Dictionary typed_dictionary;
+	REQUIRE(typed_dictionary.set_typed(narrow_signed, wide_unsigned));
+	const Dictionary decoded_dictionary = bytecode_round_trip_variant(typed_dictionary);
+	CHECK(decoded_dictionary.get_key_type().numeric_type == NumericType::INT32);
+	CHECK(decoded_dictionary.get_value_type().numeric_type == NumericType::UINT64);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Loader rejects out-of-range descriptors") {
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	const Vector<uint8_t> data_type_payload =
+			bytecode_encode_data_type(exporter, bytecode_numeric_data_type(Variant::INT, NumericType::INT32));
+	REQUIRE(data_type_payload.size() > BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET);
+	REQUIRE(data_type_payload[BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET] == uint8_t(NumericType::INT32));
+
+	const uint8_t out_of_range_values[] = { uint8_t(NumericType::MAX), uint8_t(uint8_t(NumericType::MAX) + 1), 0xFF };
+	for (const uint8_t out_of_range : out_of_range_values) {
+		CAPTURE(out_of_range);
+		Vector<uint8_t> corrupted = data_type_payload;
+		corrupted.write[BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET] = out_of_range;
+		FSDataType decoded;
+		ERR_PRINT_OFF;
+		CHECK(bytecode_decode_data_type(exporter, corrupted, &resolver, decoded) == ERR_INVALID_DATA);
+		ERR_PRINT_ON;
+	}
+
+	// The same rejection applies to the container-type records a typed constant is built from.
+	ContainerType narrow_signed;
+	narrow_signed.builtin_type = Variant::INT;
+	narrow_signed.numeric_type = NumericType::INT32;
+	Array typed_array;
+	REQUIRE(typed_array.set_typed(narrow_signed));
+	Vector<uint8_t> array_payload;
+	REQUIRE(bytecode_encode_variant(exporter, typed_array, array_payload) == OK);
+	REQUIRE(array_payload.size() > BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET);
+	REQUIRE(array_payload[BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET] == uint8_t(NumericType::INT32));
+	array_payload.write[BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET] = uint8_t(NumericType::MAX);
+	Variant decoded_variant;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_variant(exporter, array_payload, &resolver, decoded_variant) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Loader rejects carrier-inconsistent descriptors") {
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	// An unsigned width on a signed carrier, and the reverse: both name a slot the encoder cannot
+	// produce, so they are corrupt input rather than a width to accept.
+	const Vector<uint8_t> signed_payload =
+			bytecode_encode_data_type(exporter, bytecode_numeric_data_type(Variant::INT, NumericType::INT32));
+	Vector<uint8_t> unsigned_on_signed = signed_payload;
+	unsigned_on_signed.write[BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET] = uint8_t(NumericType::UINT32);
+	FSDataType decoded;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_data_type(exporter, unsigned_on_signed, &resolver, decoded) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+
+	const Vector<uint8_t> unsigned_payload =
+			bytecode_encode_data_type(exporter, bytecode_numeric_data_type(Variant::UINT, NumericType::UINT64));
+	Vector<uint8_t> signed_on_unsigned = unsigned_payload;
+	signed_on_unsigned.write[BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET] = uint8_t(NumericType::INT64);
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_data_type(exporter, signed_on_unsigned, &resolver, decoded) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+
+	// A width on a carrier that holds no integer at all is equally impossible.
+	FSDataType string_type;
+	string_type.kind = FSDataType::BUILTIN;
+	string_type.builtin_type = Variant::STRING;
+	Vector<uint8_t> width_on_string = bytecode_encode_data_type(exporter, string_type);
+	width_on_string.write[BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET] = uint8_t(NumericType::INT32);
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_data_type(exporter, width_on_string, &resolver, decoded) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+
+	// Container-type records validate the same pairing.
+	ContainerType wide_unsigned;
+	wide_unsigned.builtin_type = Variant::UINT;
+	wide_unsigned.numeric_type = NumericType::UINT64;
+	Array typed_array;
+	REQUIRE(typed_array.set_typed(wide_unsigned));
+	Vector<uint8_t> array_payload;
+	REQUIRE(bytecode_encode_variant(exporter, typed_array, array_payload) == OK);
+	array_payload.write[BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET] = uint8_t(NumericType::INT64);
+	Variant decoded_variant;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_variant(exporter, array_payload, &resolver, decoded_variant) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Loader rejects a record truncated at the descriptor") {
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+
+	Vector<uint8_t> truncated =
+			bytecode_encode_data_type(exporter, bytecode_numeric_data_type(Variant::INT, NumericType::INT32));
+	truncated.resize(BYTECODE_DATA_TYPE_NUMERIC_TYPE_OFFSET);
+	FSDataType decoded;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_data_type(exporter, truncated, &resolver, decoded) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+
+	ContainerType narrow_signed;
+	narrow_signed.builtin_type = Variant::INT;
+	narrow_signed.numeric_type = NumericType::INT32;
+	Array typed_array;
+	REQUIRE(typed_array.set_typed(narrow_signed));
+	Vector<uint8_t> array_payload;
+	REQUIRE(bytecode_encode_variant(exporter, typed_array, array_payload) == OK);
+	array_payload.resize(BYTECODE_ARRAY_ELEMENT_NUMERIC_TYPE_OFFSET);
+	Variant decoded_variant;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_variant(exporter, array_payload, &resolver, decoded_variant) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Loader rejects excessively nested type records") {
+	FSBytecodeExporter exporter;
+	BytecodeTestResolver resolver;
+	const uint32_t empty_string = exporter.get_string_table().insert(String());
+
+	// One level deeper than the encoder will ever produce. Every level is a well-formed data-type
+	// record whose only element is the next level, so nothing but the depth guard can reject it.
+	Ref<StreamPeerBuffer> stream;
+	stream.instantiate();
+	const int level_count = Variant::MAX_RECURSION_DEPTH + 2;
+	for (int level = 0; level < level_count; level++) {
+		stream->put_u8((uint8_t)FSDataType::BUILTIN);
+		stream->put_u32((uint32_t)Variant::ARRAY);
+		stream->put_u8((uint8_t)NumericType::NONE);
+		stream->put_u32(empty_string); // native_type
+		stream->put_u8(0); // flags
+		stream->put_u32(empty_string); // script_trait
+		stream->put_u32(empty_string); // type_parameter_name
+		stream->put_32(0); // type_parameter_index
+		stream->put_u8((uint8_t)FSDataType::TYPE_PARAMETER_CLASS);
+		stream->put_u8(0); // no script reference
+		const bool is_innermost = level == level_count - 1;
+		stream->put_u32(is_innermost ? 0 : 1); // container element count
+		if (is_innermost) {
+			stream->put_u32(0); // type argument count
+		}
+	}
+
+	FSDataType decoded;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_decode_data_type(exporter, stream->get_data_array(), &resolver, decoded) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec][NumericType] Prior-format bytecode is rejected by version, not misread") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"var health: int = 3\n"
+			"func heal(amount: int) -> int:\n"
+			"\thealth += amount\n"
+			"\treturn health\n");
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(script, buffer) == OK);
+	REQUIRE(FSBytecodeLoader::check_header(buffer) == OK);
+
+	// The descriptor byte changed the record layout, so bytes written by the previous format would
+	// decode into a different type at every rich-type record. The exact-version guard is what keeps
+	// that from happening: stamping the prior version on an otherwise well-formed buffer must be
+	// refused before any record is read.
+	Vector<uint8_t> prior_format = buffer;
+	REQUIRE(prior_format.size() >= 8);
+	const uint32_t prior_version = FSBytecodeFormat::FORMAT_VERSION - 1;
+	memcpy(prior_format.ptrw() + 4, &prior_version, sizeof(uint32_t));
+
+	ERR_PRINT_OFF;
+	CHECK(FSBytecodeLoader::check_header(prior_format) == ERR_INVALID_DATA);
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script->get_script_path());
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	CHECK(loader.load_skeleton(prior_format, restored) == ERR_INVALID_DATA);
+	CHECK(loader.load_full(prior_format, restored) == ERR_INVALID_DATA);
+	ERR_PRINT_ON;
+	CHECK_FALSE(restored->is_valid());
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] FSDataType script references serialize as path and fully qualified name") {

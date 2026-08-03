@@ -120,6 +120,43 @@ public:
 		return p_script->initializer;
 	}
 
+	// Rich compiled type records are the authoritative carrier of an integer width, but no source
+	// syntax declares one yet, so tests that exercise the compiled-metadata wire layout stamp the
+	// descriptor onto the records the compiler produced.
+	static void set_member_numeric_type(const Ref<FoundryScript> &p_script, const StringName &p_member, NumericType p_numeric_type) {
+		FoundryScript::MemberInfo *member_info = p_script->member_indices.getptr(p_member);
+		REQUIRE(member_info != nullptr);
+		member_info->data_type.numeric_type = p_numeric_type;
+	}
+
+	static NumericType get_member_numeric_type(const Ref<FoundryScript> &p_script, const StringName &p_member) {
+		const FoundryScript::MemberInfo *member_info = p_script->member_indices.getptr(p_member);
+		return member_info != nullptr ? member_info->data_type.numeric_type : NumericType::MAX;
+	}
+
+	static void set_argument_numeric_type(FSFunction *p_function, int p_index, NumericType p_numeric_type) {
+		REQUIRE(p_function != nullptr);
+		REQUIRE(p_index >= 0);
+		REQUIRE(p_index < p_function->argument_types.size());
+		p_function->argument_types.write[p_index].numeric_type = p_numeric_type;
+	}
+
+	static NumericType get_argument_numeric_type(const FSFunction *p_function, int p_index) {
+		if (p_function == nullptr || p_index < 0 || p_index >= p_function->argument_types.size()) {
+			return NumericType::MAX;
+		}
+		return p_function->argument_types[p_index].numeric_type;
+	}
+
+	static void set_return_numeric_type(FSFunction *p_function, NumericType p_numeric_type) {
+		REQUIRE(p_function != nullptr);
+		p_function->return_type.numeric_type = p_numeric_type;
+	}
+
+	static NumericType get_return_numeric_type(const FSFunction *p_function) {
+		return p_function != nullptr ? p_function->return_type.numeric_type : NumericType::MAX;
+	}
+
 	// Compares the full MemberInfo tables of two scripts (index, accessors, data type, property
 	// info). Lives on the accessor because MemberInfo is private to FoundryScript.
 	static void check_member_tables_match(const Ref<FoundryScript> &p_expected, const Ref<FoundryScript> &p_actual) {
@@ -374,6 +411,37 @@ TEST_CASE("[FoundryScript][BytecodeScript] Members, signals, constants, annotati
 	CHECK(String(bytecode_instance_call(instance, SNAME("describe"), {})) == "hello:2.5");
 	instance->set(SNAME("health"), 55);
 	CHECK((int64_t)instance->get(SNAME("health")) == 55);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript][NumericType] Declared widths survive on members, parameters, and returns") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"var narrow: int = 0\n"
+			"var wide: int = 0\n"
+			"\n"
+			"func combine(first: int, second: int) -> int:\n"
+			"\treturn first + second\n");
+
+	FSFunction *original_combine = original->get_member_functions()[SNAME("combine")];
+	REQUIRE(original_combine != nullptr);
+	REQUIRE(original_combine->get_argument_count() == 2);
+
+	TestFSBytecodeScriptAccessor::set_member_numeric_type(original, SNAME("narrow"), NumericType::INT32);
+	TestFSBytecodeScriptAccessor::set_member_numeric_type(original, SNAME("wide"), NumericType::INT64);
+	TestFSBytecodeScriptAccessor::set_argument_numeric_type(original_combine, 0, NumericType::INT32);
+	TestFSBytecodeScriptAccessor::set_argument_numeric_type(original_combine, 1, NumericType::INT64);
+	TestFSBytecodeScriptAccessor::set_return_numeric_type(original_combine, NumericType::INT64);
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	CHECK(TestFSBytecodeScriptAccessor::get_member_numeric_type(restored, SNAME("narrow")) == NumericType::INT32);
+	CHECK(TestFSBytecodeScriptAccessor::get_member_numeric_type(restored, SNAME("wide")) == NumericType::INT64);
+
+	FSFunction *restored_combine = restored->get_member_functions()[SNAME("combine")];
+	REQUIRE(restored_combine != nullptr);
+	CHECK(TestFSBytecodeScriptAccessor::get_argument_numeric_type(restored_combine, 0) == NumericType::INT32);
+	CHECK(TestFSBytecodeScriptAccessor::get_argument_numeric_type(restored_combine, 1) == NumericType::INT64);
+	CHECK(TestFSBytecodeScriptAccessor::get_return_numeric_type(restored_combine) == NumericType::INT64);
 }
 
 TEST_CASE("[FoundryScript][BytecodeScript] Inner classes round-trip as intra-file class references") {
