@@ -828,6 +828,23 @@ static const FSParser::FunctionNode *find_function_in(const FSParser::ClassNode 
 
 // The declared type of a root-level function's first parameter, which is where the application
 // fixtures place the type they exercise.
+// The initializer of the first local variable in a root-level function, or null when the function or
+// that statement is absent. Doctest runs without exceptions here, so a failed lookup has to yield
+// null rather than be dereferenced by the assertions that follow.
+static const FSParser::ExpressionNode *first_local_initializer(const FSParser &p_parser, const StringName &p_function) {
+	const FSParser::FunctionNode *function = find_function_in(p_parser.get_tree(), p_function);
+	if (function == nullptr || function->body == nullptr || function->body->statements.is_empty() ||
+			function->body->statements[0]->type != FSParser::Node::VARIABLE) {
+		return nullptr;
+	}
+	return static_cast<const FSParser::VariableNode *>(function->body->statements[0])->initializer;
+}
+
+static FSParser::DataType first_local_initializer_type(const FSParser &p_parser, const StringName &p_function) {
+	const FSParser::ExpressionNode *initializer = first_local_initializer(p_parser, p_function);
+	return initializer != nullptr ? initializer->get_datatype() : FSParser::DataType();
+}
+
 static FSParser::DataType first_parameter_type(const FSParser &p_parser, const StringName &p_function) {
 	const FSParser::FunctionNode *function = find_function_in(p_parser.get_tree(), p_function);
 	if (function == nullptr || function->parameters.is_empty()) {
@@ -898,23 +915,90 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Value-positio
 	CHECK_EQ(analyzer.analyze(), OK);
 	CHECK_EQ(first_error_message(parser), String());
 
-	const FSParser::FunctionNode *take = find_function_in(parser.get_tree(), SNAME("take"));
-	REQUIRE(take != nullptr);
-	REQUIRE(take->body != nullptr);
-	REQUIRE_FALSE(take->body->statements.is_empty());
-	REQUIRE_EQ(take->body->statements[0]->type, FSParser::Node::VARIABLE);
-	const FSParser::VariableNode *variable = static_cast<const FSParser::VariableNode *>(take->body->statements[0]);
-	REQUIRE(variable->initializer != nullptr);
+	const FSParser::ExpressionNode *initializer = first_local_initializer(parser, SNAME("take"));
+	REQUIRE(initializer != nullptr);
 
-	const FSParser::DataType handle = variable->initializer->get_datatype();
+	const FSParser::DataType handle = initializer->get_datatype();
 	CHECK(handle.kind == FSParser::DataType::ENUM);
 	CHECK(handle.is_meta_type);
 	REQUIRE_EQ(handle.type_arguments.size(), 2);
 	CHECK_EQ(type_at(handle.type_arguments, 0).builtin_type, Variant::INT);
 	CHECK_EQ(type_at(handle.type_arguments, 1).builtin_type, Variant::STRING);
 	// The specialized handle still denotes the same declaration, so its constant value survives.
-	CHECK(variable->initializer->is_constant);
-	CHECK_EQ(variable->initializer->reduced_value.get_type(), Variant::DICTIONARY);
+	CHECK(initializer->is_constant);
+	CHECK_EQ(initializer->reduced_value.get_type(), Variant::DICTIONARY);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] A qualified union applies its arguments") {
+	// A union reached through member access publishes its metatype onto the trailing identifier rather
+	// than onto the whole expression, so the application has to recognize that head too.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Outer:\n"
+					   "\tenum Outcome[T, E]:\n"
+					   "\t\tOk(value: T)\n"
+					   "\t\tErr(error: E)\n"
+					   "\n"
+					   "func valued() -> void:\n"
+					   "\tvar handle = Outer.Outcome[int, String]\n"
+					   "\tprint(handle)\n",
+					   "user://generic_tagged_union_qualified.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	// Reaching an inner class in value position loads the declaring script, which this in-memory
+	// `user://` path has no file for. What this case pins is the application itself: the union is not
+	// reported as a bare reference, and the resulting handle carries the supplied arguments.
+	CHECK_FALSE(has_error_containing(parser, "expects 2 type argument(s)"));
+
+	const FSParser::DataType handle = first_local_initializer_type(parser, SNAME("valued"));
+	CHECK(handle.kind == FSParser::DataType::ENUM);
+	CHECK(handle.is_meta_type);
+	REQUIRE_EQ(handle.type_arguments.size(), 2);
+	CHECK_EQ(type_at(handle.type_arguments, 0).builtin_type, Variant::INT);
+	CHECK_EQ(type_at(handle.type_arguments, 1).builtin_type, Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] An application nests inside another argument") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Box[T]:\n"
+					   "\tvar held: T\n"
+					   "\n"
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "enum Slot[T]:\n"
+					   "\tValue(value: T)\n"
+					   "\n"
+					   "func annotated(box: Box[Outcome[int, String]]) -> void:\n"
+					   "\tprint(box)\n"
+					   "\n"
+					   "func valued() -> void:\n"
+					   "\tvar handle = Outcome[Slot[int], String]\n"
+					   "\tprint(handle)\n",
+					   "user://generic_tagged_union_nested_argument.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	// Type arguments are invariant, so a nested application has to be carried whole in both positions.
+	const FSParser::DataType annotated = first_parameter_type(parser, SNAME("annotated"));
+	REQUIRE_EQ(annotated.type_arguments.size(), 1);
+	const FSParser::DataType annotated_argument = type_at(annotated.type_arguments, 0);
+	CHECK(annotated_argument.kind == FSParser::DataType::ENUM);
+	REQUIRE_EQ(annotated_argument.type_arguments.size(), 2);
+	CHECK_EQ(type_at(annotated_argument.type_arguments, 1).builtin_type, Variant::STRING);
+
+	const FSParser::DataType handle = first_local_initializer_type(parser, SNAME("valued"));
+	REQUIRE_EQ(handle.type_arguments.size(), 2);
+	const FSParser::DataType valued_argument = type_at(handle.type_arguments, 0);
+	CHECK(valued_argument.kind == FSParser::DataType::ENUM);
+	REQUIRE_EQ(valued_argument.type_arguments.size(), 1);
+	CHECK_EQ(type_at(valued_argument.type_arguments, 0).builtin_type, Variant::INT);
+	CHECK_EQ(type_at(handle.type_arguments, 1).builtin_type, Variant::STRING);
 }
 
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Applications are invariant in every argument") {

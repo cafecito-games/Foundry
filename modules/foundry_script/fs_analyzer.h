@@ -407,11 +407,24 @@ private:
 	void run_phase_apply_pending_warnings();
 
 	const FSParser::EnumNode *current_enum = nullptr;
-	// The one expression a bare generic union metatype may be published on: the base of a subscript that
-	// is about to apply type arguments to it. `Outcome[int, String]` reduces its base before it can know
-	// the brackets carry arguments, so without this the bare-form gate would reject the application's
-	// own base. It names a single node rather than setting a mode, so nothing else can slip through.
-	const FSParser::Node *generic_union_application_base = nullptr;
+	// The one place a bare generic union metatype may be published: the head of a form that is about to
+	// apply type arguments to it. An application resolves its head before it can know the brackets carry
+	// arguments, so without this the bare-form gate would reject the application's own head. A qualified
+	// head publishes onto its trailing identifier rather than onto the expression, so both are named;
+	// naming nodes rather than setting a mode is what keeps every other surface gated.
+	struct GenericUnionApplicationHead {
+		const FSParser::Node *expression = nullptr;
+		const FSParser::Node *identifier = nullptr;
+	};
+	GenericUnionApplicationHead generic_union_application_head;
+	// Exempts one application head for the duration of a scope, restoring the previous head so a nested
+	// application does not widen the exemption of the one that contains it.
+	struct GenericUnionApplicationHeadScope {
+		FSAnalyzer *analyzer = nullptr;
+		GenericUnionApplicationHead previous;
+		GenericUnionApplicationHeadScope(FSAnalyzer *p_analyzer, const FSParser::Node *p_expression, const FSParser::Node *p_identifier);
+		~GenericUnionApplicationHeadScope();
+	};
 	FSParser::LambdaNode *current_lambda = nullptr;
 	List<FSParser::LambdaNode *> pending_body_resolution_lambdas;
 	bool static_context = false;

@@ -221,10 +221,12 @@ bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p
 		return false;
 	}
 
-	// The base of an application is the one place the bare metatype is allowed to appear: the brackets
-	// that bind it are read by the subscript that owns this base, and that subscript reports the arity
-	// itself. Nothing else may publish the bare form.
-	if (p_source != nullptr && p_source == generic_union_application_base) {
+	// The head of an application is the one place the bare metatype is allowed to appear: the brackets
+	// that bind it are read by the form that owns this head, and that form reports the arity itself.
+	// Nothing else may publish the bare form.
+	if (p_source != nullptr &&
+			(p_source == generic_union_application_head.expression ||
+					p_source == generic_union_application_head.identifier)) {
 		return false;
 	}
 
@@ -241,6 +243,23 @@ bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p
 					   declaration->type_parameters.size()),
 			p_source);
 	return true;
+}
+
+FSAnalyzer::GenericUnionApplicationHeadScope::GenericUnionApplicationHeadScope(FSAnalyzer *p_analyzer,
+		const FSParser::Node *p_expression, const FSParser::Node *p_identifier) {
+	analyzer = p_analyzer;
+	if (analyzer == nullptr) {
+		return;
+	}
+	previous = analyzer->generic_union_application_head;
+	analyzer->generic_union_application_head.expression = p_expression;
+	analyzer->generic_union_application_head.identifier = p_identifier;
+}
+
+FSAnalyzer::GenericUnionApplicationHeadScope::~GenericUnionApplicationHeadScope() {
+	if (analyzer != nullptr) {
+		analyzer->generic_union_application_head = previous;
+	}
 }
 
 FSAnalyzer::DependencyParserAccess::DependencyParserAccess(FSAnalyzer *p_analyzer) {
@@ -2292,6 +2311,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	}
 
 	if (p_type->type_chain.size() > resolved_type_chain_size) {
+		// A qualified name that carries brackets is an application, so its trailing identifier is the
+		// head the bare-generic-union gate must let through; the arity is then reported by the argument
+		// binding below.
+		GenericUnionApplicationHeadScope head_scope(this, nullptr,
+				p_type->container_types.is_empty() ? nullptr : p_type->type_chain[p_type->type_chain.size() - 1]);
 		if (result.kind == FSParser::DataType::CLASS) {
 			for (int i = resolved_type_chain_size; i < p_type->type_chain.size(); i++) {
 				FSParser::DataType base = result;
@@ -10899,11 +10923,18 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 	{
 		// An index subscript may turn out to be a generic application, which is only knowable once the
 		// base has a type. Exempt exactly this base from the bare-generic-union gate while it reduces, so
-		// the application can be diagnosed by arity here rather than as a bare reference there.
-		const FSParser::Node *previous_application_base = generic_union_application_base;
+		// the application can be diagnosed by arity here rather than as a bare reference there. A
+		// qualified base (`Outer.Outcome[int, String]`) publishes onto its trailing identifier, so that
+		// identifier is exempted alongside the base expression.
+		const FSParser::Node *head_expression = nullptr;
+		const FSParser::Node *head_identifier = nullptr;
 		if (!p_subscript->is_attribute) {
-			generic_union_application_base = p_subscript->base;
+			head_expression = p_subscript->base;
+			if (p_subscript->base->type == FSParser::Node::SUBSCRIPT) {
+				head_identifier = static_cast<const FSParser::SubscriptNode *>(p_subscript->base)->attribute;
+			}
 		}
+		GenericUnionApplicationHeadScope head_scope(this, head_expression, head_identifier);
 		if (p_subscript->base->type == FSParser::Node::IDENTIFIER) {
 			reduce_identifier(static_cast<FSParser::IdentifierNode *>(p_subscript->base), true);
 		} else if (p_subscript->base->type == FSParser::Node::SUBSCRIPT) {
@@ -10911,7 +10942,6 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 		} else {
 			reduce_expression(p_subscript->base);
 		}
-		generic_union_application_base = previous_application_base;
 	}
 
 	FSParser::DataType result_type;
@@ -13476,7 +13506,7 @@ bool FSAnalyzer::apply_builtin_native_return_type_hint(
 	}
 
 	if (argument_failed.has(true) ||
-			!bind_class_type_arguments(hinted_return, type_arguments, argument_failed, argument_sources, p_source)) {
+			!bind_class_type_arguments(hinted_return, type_arguments, argument_failed, argument_sources)) {
 		return false;
 	}
 
@@ -13673,19 +13703,39 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 		}
 
 		FSParser::DataType base_argument;
-		if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
-			return false;
+		{
+			// This subscript's brackets are the argument list, so its base is an application head and
+			// may name a generic tagged union bare.
+			GenericUnionApplicationHeadScope head_scope(this, subscript->base,
+					subscript->base->type == FSParser::Node::SUBSCRIPT
+							? static_cast<const FSParser::SubscriptNode *>(subscript->base)->attribute
+							: nullptr);
+			if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
+				return false;
+			}
 		}
 
-		if (base_argument.kind == FSParser::DataType::CLASS && base_argument.class_type != nullptr &&
-				!base_argument.class_type->type_parameters.is_empty()) {
-			// A generic class specialization nested inside another type argument, such as the
-			// `Box[int]` in `Slot[Type[Box[int]]]`. Type arguments are invariant, so the nested
-			// specialization has to be carried rather than degraded to the raw class.
-			const int expected_argument_count = base_argument.class_type->type_parameters.size();
+		FSParser::EnumNode *union_declaration = nullptr;
+		if (base_argument.kind == FSParser::DataType::ENUM && base_argument.is_tagged_union) {
+			FSParser::EnumNode *declaration = resolve_enum_declaration(base_argument, p_expression);
+			if (declaration != nullptr && !declaration->type_parameters.is_empty()) {
+				union_declaration = declaration;
+			}
+		}
+		const bool base_is_generic_class = base_argument.kind == FSParser::DataType::CLASS &&
+				base_argument.class_type != nullptr && !base_argument.class_type->type_parameters.is_empty();
+		if (base_is_generic_class || union_declaration != nullptr) {
+			// A generic specialization nested inside another type argument, such as the `Box[int]` in
+			// `Slot[Type[Box[int]]]` or the `Outcome[int, String]` in `Box[Outcome[int, String]]`. Type
+			// arguments are invariant, so the nested specialization has to be carried rather than
+			// degraded to the raw declaration.
+			const GenericDeclaration declaration = union_declaration != nullptr
+					? enum_generic_declaration(union_declaration, base_argument.class_type)
+					: class_generic_declaration(base_argument);
+			const int expected_argument_count = declaration.parameters.size();
 			if (element_expressions.size() != expected_argument_count) {
-				push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)",
-								   base_argument.to_string(), expected_argument_count, element_expressions.size()),
+				push_error(vformat(R"(%s "%s" expects %d type argument(s), but %d were given.)",
+								   declaration.generic_kind, declaration.name, expected_argument_count, element_expressions.size()),
 						p_expression);
 				return false;
 			}
@@ -13702,7 +13752,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 				argument_failed.push_back(false);
 				argument_sources.push_back(element_expressions[i]);
 			}
-			if (!bind_class_type_arguments(base_argument, resolved_arguments, argument_failed, argument_sources, p_expression)) {
+			if (!bind_type_arguments(base_argument, declaration, resolved_arguments, argument_failed, argument_sources)) {
 				return false;
 			}
 			r_type_argument = base_argument;
