@@ -19,6 +19,8 @@ func run_tests():
 
 	__exec_test(test_callable)
 
+	__exec_test(test_method_list_id_type)
+
 	print("JavaClassWrapper tests finished.")
 	print("Tests started: " + str(_test_started))
 	print("Tests completed: " + str(_test_completed))
@@ -154,6 +156,17 @@ func test_big_integers() -> bool:
 	assert_equal(TestClass.testArgLong(4242424242), "4242424242")
 	assert_equal(TestClass.testArgLong(-4242424242), "-4242424242")
 	assert_equal(TestClass.testDictionary({a = 4242424242, b = -4242424242}), "{a=4242424242, b=-4242424242}")
+	return true
+
+func test_method_list_id_type() -> bool:
+	var TestClass: JavaClass = JavaClassWrapper.wrap('games.cafecito.foundry.game.test.javaclasswrapper.TestClass')
+
+	var method_list: Array = TestClass.get_java_method_list()
+	assert_true(method_list.size() > 0)
+
+	for method in method_list:
+		assert_true(typeof(method["id"]) == TYPE_INT)
+
 	return true
 
 func test_callable() -> bool:
