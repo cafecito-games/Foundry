@@ -30,10 +30,17 @@
 
 #pragma once
 
+#include "core/io/resource_loader.h"
+#include "core/io/resource_saver.h"
 #include "core/object/script_language.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_utils.h"
+
+#ifndef _3D_DISABLED
+#include "scene/3d/mesh_instance_3d.h"
+#endif // _3D_DISABLED
 
 namespace TestPackedScene {
 
@@ -419,5 +426,41 @@ TEST_CASE("[PackedScene] Recreate State") {
 
 	memdelete(scene);
 }
+
+#ifndef _3D_DISABLED
+TEST_CASE("[SceneTree][PackedScene] Unsigned native property round-trips through a binary scene") {
+	// `VisualInstance3D::get_layer_mask()` returns `uint32_t`, so this is the shortest path from an
+	// unsigned C++ result to binary resource persistence and back through `PackedScene::instantiate()`.
+	constexpr uint32_t layer_mask = 0xF0F0F0F0;
+
+	MeshInstance3D *source = memnew(MeshInstance3D);
+	source->set_name("UnsignedCarrier");
+	source->set_layer_mask(layer_mask);
+	CHECK(source->get("layers").get_type() == Variant::INT);
+
+	Ref<PackedScene> packed;
+	packed.instantiate();
+	REQUIRE(packed->pack(source) == OK);
+
+	const String scene_path = TestUtils::get_temp_path("packed_scene_unsigned_carrier.scn");
+	REQUIRE(ResourceSaver::save(packed, scene_path) == OK);
+
+	Error error = FAILED;
+	Ref<PackedScene> loaded = ResourceLoader::load(scene_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	REQUIRE(error == OK);
+	REQUIRE(loaded.is_valid());
+
+	Node *instance = loaded->instantiate();
+	REQUIRE(instance != nullptr);
+	MeshInstance3D *restored = Object::cast_to<MeshInstance3D>(instance);
+	REQUIRE(restored != nullptr);
+	CHECK(restored->get_layer_mask() == layer_mask);
+	CHECK(restored->get("layers").get_type() == Variant::INT);
+	CHECK(restored->get("layers").operator int64_t() == int64_t(layer_mask));
+
+	memdelete(instance);
+	memdelete(source);
+}
+#endif // _3D_DISABLED
 
 } // namespace TestPackedScene

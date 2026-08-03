@@ -91,6 +91,9 @@ enum {
 	// untyped `Array`/`Dictionary` payload keeps exactly the bytes it has always had.
 	VARIANT_TYPED_ARRAY = 54,
 	VARIANT_TYPED_DICTIONARY = 55,
+	// The unsigned integer carrier is spelled as its own kind so a value above `INT64_MAX` keeps
+	// its exact bits and its carrier across a save/load round trip.
+	VARIANT_UINT64 = 56,
 	OBJECT_EMPTY = 0,
 	OBJECT_EXTERNAL_RESOURCE = 1,
 	OBJECT_INTERNAL_RESOURCE = 2,
@@ -101,7 +104,8 @@ enum {
 	// Version 5: Ability to store script class in the header.
 	// Version 6: Added PackedVector4Array Variant type.
 	// Version 7: Added typed Array and Dictionary element metadata.
-	FORMAT_VERSION = 7,
+	// Version 8: Added the unsigned integer Variant kind.
+	FORMAT_VERSION = 8,
 	FORMAT_VERSION_CAN_RENAME_DEPS = 1,
 	FORMAT_VERSION_NO_NODEPATH_PROPERTY = 3,
 };
@@ -340,6 +344,9 @@ Error ResourceLoaderBinary::parse_variant(Variant &r_v) {
 		} break;
 		case VARIANT_INT64: {
 			r_v = int64_t(f->get_64());
+		} break;
+		case VARIANT_UINT64: {
+			r_v = uint64_t(f->get_64());
 		} break;
 		case VARIANT_FLOAT: {
 			r_v = f->get_real();
@@ -1873,6 +1880,10 @@ void ResourceFormatSaverBinaryInstance::write_variant(Ref<FileAccess> f, const V
 				f->store_32(uint32_t(p_property));
 			}
 
+		} break;
+		case Variant::UINT: {
+			f->store_32(VARIANT_UINT64);
+			f->store_64(p_property.operator uint64_t());
 		} break;
 		case Variant::FLOAT: {
 			double d = p_property;

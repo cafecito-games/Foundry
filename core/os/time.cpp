@@ -211,7 +211,7 @@ Dictionary Time::get_datetime_dict_from_unix_time(int64_t p_unix_time_val) const
 	UNIX_TIME_TO_YMD
 	Dictionary datetime;
 	datetime[YEAR_KEY] = year;
-	datetime[MONTH_KEY] = (uint8_t)month;
+	datetime[MONTH_KEY] = (int64_t)month;
 	datetime[DAY_KEY] = day;
 	// Unix epoch was a Thursday (day 0 aka 1970-01-01).
 	datetime[WEEKDAY_KEY] = Math::posmod(day_number + WEEKDAY_THURSDAY, 7);
@@ -226,7 +226,7 @@ Dictionary Time::get_date_dict_from_unix_time(int64_t p_unix_time_val) const {
 	UNIX_TIME_TO_YMD
 	Dictionary datetime;
 	datetime[YEAR_KEY] = year;
-	datetime[MONTH_KEY] = (uint8_t)month;
+	datetime[MONTH_KEY] = (int64_t)month;
 	datetime[DAY_KEY] = day;
 	// Unix epoch was a Thursday (day 0 aka 1970-01-01).
 	datetime[WEEKDAY_KEY] = Math::posmod(day_number + WEEKDAY_THURSDAY, 7);
@@ -248,13 +248,13 @@ String Time::get_datetime_string_from_unix_time(int64_t p_unix_time_val, bool p_
 	UNIX_TIME_TO_HMS
 	UNIX_TIME_TO_YMD
 	const String format_string = p_use_space ? "%04d-%02d-%02d %02d:%02d:%02d" : "%04d-%02d-%02dT%02d:%02d:%02d";
-	return vformat(format_string, year, (uint8_t)month, day, hour, minute, second);
+	return vformat(format_string, year, (int64_t)month, day, hour, minute, second);
 }
 
 String Time::get_date_string_from_unix_time(int64_t p_unix_time_val) const {
 	UNIX_TIME_TO_YMD
 	// Android is picky about the types passed to make Variant, so we need a cast.
-	return vformat("%04d-%02d-%02d", year, (uint8_t)month, day);
+	return vformat("%04d-%02d-%02d", year, (int64_t)month, day);
 }
 
 String Time::get_time_string_from_unix_time(int64_t p_unix_time_val) const {
@@ -266,7 +266,7 @@ Dictionary Time::get_datetime_dict_from_datetime_string(const String &p_datetime
 	PARSE_ISO8601_STRING(Dictionary())
 	Dictionary dict;
 	dict[YEAR_KEY] = year;
-	dict[MONTH_KEY] = (uint8_t)month;
+	dict[MONTH_KEY] = (int64_t)month;
 	dict[DAY_KEY] = day;
 	if (p_weekday) {
 		YMD_TO_DAY_NUMBER
@@ -285,7 +285,7 @@ String Time::get_datetime_string_from_datetime_dict(const Dictionary &p_datetime
 	EXTRACT_FROM_DICTIONARY
 	VALIDATE_YMDHMS("")
 	const String format_string = p_use_space ? "%04d-%02d-%02d %02d:%02d:%02d" : "%04d-%02d-%02dT%02d:%02d:%02d";
-	return vformat(format_string, year, (uint8_t)month, day, hour, minute, second);
+	return vformat(format_string, year, (int64_t)month, day, hour, minute, second);
 }
 
 int64_t Time::get_unix_time_from_datetime_dict(const Dictionary &p_datetime) const {
@@ -322,9 +322,9 @@ Dictionary Time::get_datetime_dict_from_system(bool p_utc) const {
 	OS::DateTime dt = OS::get_singleton()->get_datetime(p_utc);
 	Dictionary datetime;
 	datetime[YEAR_KEY] = dt.year;
-	datetime[MONTH_KEY] = (uint8_t)dt.month;
+	datetime[MONTH_KEY] = (int64_t)dt.month;
 	datetime[DAY_KEY] = dt.day;
-	datetime[WEEKDAY_KEY] = (uint8_t)dt.weekday;
+	datetime[WEEKDAY_KEY] = (int64_t)dt.weekday;
 	datetime[HOUR_KEY] = dt.hour;
 	datetime[MINUTE_KEY] = dt.minute;
 	datetime[SECOND_KEY] = dt.second;
@@ -336,9 +336,9 @@ Dictionary Time::get_date_dict_from_system(bool p_utc) const {
 	OS::DateTime dt = OS::get_singleton()->get_datetime(p_utc);
 	Dictionary date_dictionary;
 	date_dictionary[YEAR_KEY] = dt.year;
-	date_dictionary[MONTH_KEY] = (uint8_t)dt.month;
+	date_dictionary[MONTH_KEY] = (int64_t)dt.month;
 	date_dictionary[DAY_KEY] = dt.day;
-	date_dictionary[WEEKDAY_KEY] = (uint8_t)dt.weekday;
+	date_dictionary[WEEKDAY_KEY] = (int64_t)dt.weekday;
 	return date_dictionary;
 }
 
@@ -354,13 +354,13 @@ Dictionary Time::get_time_dict_from_system(bool p_utc) const {
 String Time::get_datetime_string_from_system(bool p_utc, bool p_use_space) const {
 	OS::DateTime dt = OS::get_singleton()->get_datetime(p_utc);
 	const String format_string = p_use_space ? "%04d-%02d-%02d %02d:%02d:%02d" : "%04d-%02d-%02dT%02d:%02d:%02d";
-	return vformat(format_string, dt.year, (uint8_t)dt.month, dt.day, dt.hour, dt.minute, dt.second);
+	return vformat(format_string, dt.year, (int64_t)dt.month, dt.day, dt.hour, dt.minute, dt.second);
 }
 
 String Time::get_date_string_from_system(bool p_utc) const {
 	OS::DateTime dt = OS::get_singleton()->get_datetime(p_utc);
 	// Android is picky about the types passed to make Variant, so we need a cast.
-	return vformat("%04d-%02d-%02d", dt.year, (uint8_t)dt.month, dt.day);
+	return vformat("%04d-%02d-%02d", dt.year, (int64_t)dt.month, dt.day);
 }
 
 String Time::get_time_string_from_system(bool p_utc) const {

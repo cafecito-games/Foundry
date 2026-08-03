@@ -89,6 +89,11 @@ void JSON::_stringify(String &r_result, const Variant &p_var, const String &p_in
 		case Variant::INT:
 			r_result += itos(p_var);
 			return;
+		case Variant::UINT:
+			// JSON has a single numeric type, so the unsigned carrier prints as a number the same
+			// way the signed one does, using the exact 64-bit decimal value.
+			r_result += uitos(p_var.operator uint64_t());
+			return;
 		case Variant::FLOAT: {
 			const double num = p_var;
 
@@ -1065,7 +1070,8 @@ Variant JSON::_from_native(const Variant &p_variant, bool p_full_objects, int p_
 
 			Array args;
 			for (int i = 0; i < arr.size(); i++) {
-				args.push_back(arr[i]);
+				// Byte elements are `uint8_t` in C++ but plain JSON integers in this format.
+				args.push_back(int64_t(arr[i]));
 			}
 
 			RETURN_ARGS;

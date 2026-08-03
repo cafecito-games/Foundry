@@ -98,7 +98,8 @@ void EditorDebuggerTree::_scene_tree_selected() {
 		item->select(0);
 	}
 
-	uint64_t id = uint64_t(item->get_metadata(0));
+	// `TypedArray<uint64_t>` declares `Variant::INT` elements, so ids are carried nominally.
+	const int64_t id = item->get_metadata(0);
 	inspected_object_ids.append(id);
 
 	if (!notify_selection_queued) {
@@ -112,7 +113,7 @@ void EditorDebuggerTree::_scene_tree_selection_changed(TreeItem *p_item, int p_c
 		return;
 	}
 
-	uint64_t id = uint64_t(p_item->get_metadata(0));
+	const int64_t id = p_item->get_metadata(0);
 	if (p_selected) {
 		if (inspected_object_ids.size() == (int)EDITOR_GET("debugger/max_node_selection")) {
 			selection_surpassed_limit = true;
@@ -277,7 +278,7 @@ void EditorDebuggerTree::update_scene_tree(const SceneDebuggerTree *p_tree, int 
 
 		// Select previously selected nodes.
 		if (debugger_id == p_debugger) { // Can use remote id.
-			if (inspected_object_ids.has(uint64_t(node.id))) {
+			if (inspected_object_ids.has(node.id)) {
 				ids_present.append(node.id);
 
 				if (selection_uncollapse_all) {

@@ -393,6 +393,12 @@ TEST_CASE("[JSON] Serialization") {
 		{ INT64_MIN, "-9223372036854775808" },
 	};
 
+	static UIntTestCase uint_tests[] = {
+		{ 0, "0" },
+		{ uint64_t(INT64_MAX) + 1, "9223372036854775808" },
+		{ UINT64_MAX, "18446744073709551615" },
+	};
+
 	SUBCASE("Floating point default precision") {
 		for (FpTestCase &test : fp_tests_default_precision) {
 			String json_value = json.stringify(test.number, "", true, false);
@@ -421,6 +427,23 @@ TEST_CASE("[JSON] Serialization") {
 					json_value == test.json,
 					vformat("Serializing `%d` to JSON should return the expected value.", test.number));
 		}
+	}
+
+	SUBCASE("Unsigned integer") {
+		// JSON has one numeric type, so the unsigned carrier serializes as a number rather than
+		// falling through to the quoted-value fallback.
+		for (UIntTestCase &test : uint_tests) {
+			const Variant value = test.number;
+			REQUIRE_EQ(value.get_type(), Variant::UINT);
+
+			CHECK_MESSAGE(
+					json.stringify(value, "", true, true) == test.json,
+					vformat("Serializing `%s` to JSON should return the expected value.", test.json));
+		}
+
+		Dictionary dictionary;
+		dictionary["mask"] = uint32_t(4000000000u);
+		CHECK_EQ(json.stringify(dictionary, "", true, true), "{\"mask\":4000000000}");
 	}
 }
 } // namespace TestJSON

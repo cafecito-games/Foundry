@@ -893,11 +893,15 @@ void SceneDebuggerObject::serialize(Array &r_arr, int p_max_size) {
 		}
 		prop.push_back(hint);
 		prop.push_back(hint_string);
-		prop.push_back(pi.usage);
+		// `deserialize()` requires a signed integer here, matching the `int` the script-facing
+		// property dictionaries advertise for a usage mask.
+		prop.push_back(int64_t(pi.usage));
 		prop.push_back(var);
 		send_props.push_back(prop);
 	}
-	r_arr.push_back(uint64_t(id));
+	// The scene debugger wire protocol declares the object id as a signed integer field, which
+	// `deserialize()` checks, so the id is carried nominally.
+	r_arr.push_back(id);
 	r_arr.push_back(class_name);
 	r_arr.push_back(send_props);
 }

@@ -41,7 +41,9 @@ struct FoundryExtensionConstPtr {
 	FoundryExtensionConstPtr(const T *p_assign) { data = p_assign; }
 	static const char *get_name() { return "const void"; }
 	operator const T *() const { return data; }
-	operator Variant() const { return uint64_t(data); }
+	// The pointer wrapper declares `Variant::INT` and its accessors read the signed slot, so the
+	// address is carried on the signed carrier.
+	operator Variant() const { return int64_t(uint64_t(data)); }
 };
 
 template <typename T>
@@ -50,7 +52,9 @@ struct FoundryExtensionPtr {
 	FoundryExtensionPtr(T *p_assign) { data = p_assign; }
 	static const char *get_name() { return "void"; }
 	operator T *() const { return data; }
-	operator Variant() const { return uint64_t(data); }
+	// The pointer wrapper declares `Variant::INT` and its accessors read the signed slot, so the
+	// address is carried on the signed carrier.
+	operator Variant() const { return int64_t(uint64_t(data)); }
 };
 
 #define FOUNDRY_VIRTUAL_NATIVE_PTR(m_type)                                                                         \
@@ -68,7 +72,7 @@ struct FoundryExtensionPtr {
 			return data;                                                                                           \
 		}                                                                                                          \
 		operator Variant() const {                                                                                 \
-			return uint64_t(data);                                                                                 \
+			return int64_t(uint64_t(data));                                                                        \
 		}                                                                                                          \
 	};                                                                                                             \
 	template <>                                                                                                    \
@@ -100,7 +104,7 @@ struct FoundryExtensionPtr {
 			return data;                                                                                           \
 		}                                                                                                          \
 		operator Variant() const {                                                                                 \
-			return uint64_t(data);                                                                                 \
+			return int64_t(uint64_t(data));                                                                        \
 		}                                                                                                          \
 	};                                                                                                             \
 	template <>                                                                                                    \

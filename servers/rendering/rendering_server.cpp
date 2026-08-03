@@ -59,9 +59,11 @@ Array RenderingServer::_texture_debug_usage_bind() {
 	for (const TextureInfo &E : list) {
 		Dictionary dict;
 		dict["texture"] = E.texture;
-		dict["width"] = E.width;
-		dict["height"] = E.height;
-		dict["depth"] = E.depth;
+		// The script-facing dictionaries in this file declare integer fields, so unsigned C++
+		// widths are carried nominally rather than in the unsigned Variant carrier.
+		dict["width"] = int64_t(E.width);
+		dict["height"] = int64_t(E.height);
+		dict["depth"] = int64_t(E.depth);
 		dict["format"] = E.format;
 		dict["bytes"] = E.bytes;
 		dict["path"] = E.path;
@@ -2068,7 +2070,7 @@ Dictionary RenderingServer::_mesh_get_surface(RID p_mesh, int p_idx) {
 
 	Dictionary d;
 	d["primitive"] = sd.primitive;
-	d["format"] = sd.format;
+	d["format"] = int64_t(sd.format);
 	d["vertex_data"] = sd.vertex_data;
 	if (sd.attribute_data.size()) {
 		d["attribute_data"] = sd.attribute_data;
@@ -2076,10 +2078,10 @@ Dictionary RenderingServer::_mesh_get_surface(RID p_mesh, int p_idx) {
 	if (sd.skin_data.size()) {
 		d["skin_data"] = sd.skin_data;
 	}
-	d["vertex_count"] = sd.vertex_count;
+	d["vertex_count"] = int64_t(sd.vertex_count);
 	if (sd.index_count) {
 		d["index_data"] = sd.index_data;
-		d["index_count"] = sd.index_count;
+		d["index_count"] = int64_t(sd.index_count);
 	}
 	d["aabb"] = sd.aabb;
 	d["uv_scale"] = sd.uv_scale;

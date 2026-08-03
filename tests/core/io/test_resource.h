@@ -33,7 +33,6 @@
 #include "core/io/resource.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
-#include "core/variant/variant_internal.h"
 #include "scene/main/node.h"
 
 #include "thirdparty/doctest/doctest.h"
@@ -47,10 +46,7 @@ namespace TestResource {
 // The unsigned carrier has no C++ nominal type and no source spelling, so tests build it through
 // the same Variant storage entry point the engine uses.
 static Variant make_unsigned_variant(uint64_t p_value) {
-	Variant value;
-	VariantInternal::initialize(&value, Variant::UINT);
-	*VariantInternal::get_uint(&value) = p_value;
-	return value;
+	return Variant(p_value);
 }
 
 enum TestDuplicateMode {
@@ -650,6 +646,45 @@ TEST_CASE("[Resource][UInt] Text resources round-trip unsigned metadata") {
 	REQUIRE_EQ(ResourceSaver::save(resource, save_path), OK);
 
 	const Ref<Resource> loaded = ResourceLoader::load(save_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE);
+	REQUIRE(loaded.is_valid());
+	if (loaded.is_null()) {
+		return;
+	}
+
+	struct ExpectedEntry {
+		const char *key;
+		uint64_t value;
+	};
+	const ExpectedEntry entries[] = {
+		{ "zero", 0 },
+		{ "above_signed_max", uint64_t(INT64_MAX) + 1 },
+		{ "maximum", UINT64_MAX },
+	};
+	for (const ExpectedEntry &entry : entries) {
+		const Variant loaded_value = loaded->get_meta(entry.key);
+		CHECK_MESSAGE(loaded_value.get_type() == Variant::UINT, entry.key);
+		CHECK_EQ(loaded_value.operator uint64_t(), entry.value);
+	}
+
+	const Variant loaded_control = loaded->get_meta("signed_control");
+	CHECK_EQ(loaded_control.get_type(), Variant::INT);
+	CHECK_EQ(loaded_control.operator int64_t(), -1);
+}
+
+TEST_CASE("[Resource][UInt] Binary resources round-trip unsigned metadata") {
+	Ref<Resource> resource = memnew(Resource);
+	resource->set_name("Unsigned metadata");
+	resource->set_meta("zero", make_unsigned_variant(0));
+	resource->set_meta("above_signed_max", make_unsigned_variant(uint64_t(INT64_MAX) + 1));
+	resource->set_meta("maximum", make_unsigned_variant(UINT64_MAX));
+	resource->set_meta("signed_control", Variant(int64_t(-1)));
+
+	const String save_path = TestUtils::get_temp_path("uint_binary_round_trip.res");
+	REQUIRE_EQ(ResourceSaver::save(resource, save_path), OK);
+
+	Error error = FAILED;
+	const Ref<Resource> loaded = ResourceLoader::load(save_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	REQUIRE_EQ(error, OK);
 	REQUIRE(loaded.is_valid());
 	if (loaded.is_null()) {
 		return;

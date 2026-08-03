@@ -462,7 +462,8 @@ bool Animation::_get(const StringName &p_name, Variant &r_ret) const {
 			return false;
 		}
 		Dictionary comp;
-		comp["fps"] = compression.fps;
+		// The `_compression` schema is persisted and read back as signed integers.
+		comp["fps"] = int64_t(compression.fps);
 		Array bounds;
 		bounds.resize(compression.bounds.size());
 		for (uint32_t i = 0; i < compression.bounds.size(); i++) {
@@ -478,7 +479,7 @@ bool Animation::_get(const StringName &p_name, Variant &r_ret) const {
 			pages[i] = page;
 		}
 		comp["pages"] = pages;
-		comp["format_version"] = Compression::FORMAT_VERSION;
+		comp["format_version"] = int64_t(Compression::FORMAT_VERSION);
 
 		r_ret = comp;
 		return true;

@@ -297,7 +297,8 @@ Dictionary LightmapGIData::_get_probe_data() const {
 	d["sh"] = get_capture_sh();
 	d["interior"] = is_interior();
 	d["baked_exposure"] = get_baked_exposure();
-	d["lightprobe_hash"] = lightprobe_hash;
+	// The capture-data schema is persisted and read back as a signed integer.
+	d["lightprobe_hash"] = int64_t(lightprobe_hash);
 	return d;
 }
 

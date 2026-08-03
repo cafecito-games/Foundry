@@ -96,6 +96,28 @@ Vector<StringName> MethodBind::get_argument_names() const {
 void MethodBind::set_default_arguments(const Vector<Variant> &p_defargs) {
 	default_arguments = p_defargs;
 	default_argument_count = default_arguments.size();
+
+	// A default built from an unsigned C++ integer carries `Variant::UINT`, while the parameter it
+	// fills declares `Variant::INT` through `GetTypeInfo<T>`. Retag it so the advertised default
+	// matches the advertised parameter type. Extension binds only build the argument type table in
+	// debug builds, and a build without that table also skips the argument validation the retag
+	// serves, so there is nothing to reconcile against.
+	if (argument_types == nullptr) {
+		return;
+	}
+	const int first_default_argument = argument_count - default_argument_count;
+	for (int i = 0; i < default_argument_count; i++) {
+		if (default_arguments[i].get_type() != Variant::UINT) {
+			continue;
+		}
+		const int argument_index = first_default_argument + i;
+		if (argument_index < 0 || argument_index >= argument_count) {
+			continue;
+		}
+		if (get_argument_type(argument_index) == Variant::INT) {
+			default_arguments.write[i] = int64_t(default_arguments[i].operator uint64_t());
+		}
+	}
 }
 
 void MethodBind::_generate_argument_types(int p_count) {

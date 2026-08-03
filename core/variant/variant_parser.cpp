@@ -36,18 +36,13 @@
 #include "core/object/script_language.h"
 #include "core/string/string_buffer.h"
 #include "core/variant/container_type_validate.h"
-#include "core/variant/variant_internal.h"
 
 namespace {
 
-// Text persistence spells the unsigned carrier with an explicit suffix because it has no C++
-// nominal type: `Variant(uint64_t)` still selects the signed carrier, so the value has to be
-// written into Variant storage directly.
+// Text persistence spells the unsigned carrier with an explicit suffix, since the carrier is what
+// distinguishes a magnitude above `INT64_MAX` from a signed value with the same bits.
 Variant make_unsigned_variant(uint64_t p_value) {
-	Variant value;
-	VariantInternal::initialize(&value, Variant::UINT);
-	*VariantInternal::get_uint(&value) = p_value;
-	return value;
+	return Variant(p_value);
 }
 
 // Accumulates decimal digits without ever passing through a signed intermediate, so magnitudes

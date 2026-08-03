@@ -2359,14 +2359,12 @@ TEST_CASE("[Variant][UInt] Construction preserves the full unsigned range") {
 	}
 }
 
-TEST_CASE("[Variant][UInt] Unsigned C++ constructors keep the signed carrier") {
-	// Routing unsigned C++ integers to UINT needs the conversion, operator, and persistence surfaces
-	// that later work adds, so every C++ integer constructor still produces INT today.
-	CHECK_EQ(Variant(uint8_t(200)).get_type(), Variant::INT);
-	CHECK_EQ(Variant(uint16_t(60000)).get_type(), Variant::INT);
-	CHECK_EQ(Variant(uint32_t(4000000000u)).get_type(), Variant::INT);
-	CHECK_EQ(Variant(uint64_t(1)).get_type(), Variant::INT);
-	CHECK_EQ(Variant(Math::uint_alt_t(7)).get_type(), Variant::INT);
+TEST_CASE("[Variant][UInt] Unsigned C++ constructors select the unsigned carrier") {
+	CHECK_EQ(Variant(uint8_t(200)).get_type(), Variant::UINT);
+	CHECK_EQ(Variant(uint16_t(60000)).get_type(), Variant::UINT);
+	CHECK_EQ(Variant(uint32_t(4000000000u)).get_type(), Variant::UINT);
+	CHECK_EQ(Variant(uint64_t(1)).get_type(), Variant::UINT);
+	CHECK_EQ(Variant(Math::uint_alt_t(7)).get_type(), Variant::UINT);
 	CHECK_EQ(Variant(int64_t(-1)).get_type(), Variant::INT);
 
 	// Nominal wrappers keep their existing carrier contract regardless.
