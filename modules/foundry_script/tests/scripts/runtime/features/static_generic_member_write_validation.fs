@@ -1,7 +1,8 @@
 # A static member typed as a class generic parameter is validated at runtime the same way an
-# instance member is: against a binding fixed by a trait/base specialization, or against the
-# reified argument of the instance a static write is routed through. Well-typed values (including
-# ones that convert) are accepted on every reachable write path.
+# instance member is: against a binding fixed by a trait/base specialization, against the reified
+# argument of the instance a static write is routed through, or (for a member inherited from a
+# generic base) against the subclass's own specialization projected through the ancestor chain.
+# Well-typed values (including ones that convert) are accepted on every reachable write path.
 trait Slotted[T]:
 	static var slot: T
 
@@ -12,6 +13,10 @@ class Box[T]:
 
 class Holder:
 	uses Slotted[int]
+
+
+class IntBox extends Box[int]:
+	pass
 
 
 func test() -> void:
@@ -28,3 +33,12 @@ func test() -> void:
 	print(box.value)
 	dynamic_instance.value = 4.5
 	print(box.value)
+
+	var dynamic_inherited_class: Variant = IntBox
+	dynamic_inherited_class.value = 6
+	print(IntBox.value)
+
+	var inherited_box := IntBox.new()
+	var dynamic_inherited_instance: Variant = inherited_box
+	dynamic_inherited_instance.value = 7
+	print(inherited_box.value)

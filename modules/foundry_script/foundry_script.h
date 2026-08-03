@@ -176,19 +176,32 @@ class FoundryScript : public Script {
 		FSDataType data_type;
 		PropertyInfo property_info;
 		// When this member is typed as a class generic parameter (e.g. `value: T` in `class Box[T]`),
-		// how its reified type argument resolves for instances of the owning (leaf) class. `NONE` for
-		// ordinary, non-parameter members. Re-resolved through the `extends` chain when a subclass
-		// inherits the member, so a base member fixed by `extends Base[int]` validates as `int`.
+		// how its reified type argument resolves against the class that declares this `MemberInfo`.
+		// `NONE` for ordinary, non-parameter members. For an instance member this is re-resolved
+		// through the `extends` chain when a subclass inherits it (`member_indices` is copied and
+		// re-specialized per subclass), so the binding is already relative to the owning (leaf) class.
+		// A static member is never copied into subclasses, so its binding stays relative to whichever
+		// class actually declares it; a write reached through a more-derived class must project the
+		// binding through that receiver's specialization chain (see `_validate_static_member_write`).
 		TypeArgumentBinding type_argument_binding;
 	};
 
 	// Validates a write to a member whose declared type is a class generic parameter, erased to a
-	// Variant slot. Shared by every write path that can reach such a member: instance members, static
-	// members written through an instance, and static members written through the class itself.
-	// `p_leaf_type_arguments` is the reified argument vector to resolve an OPEN binding against (an
-	// instance's `type_arguments`, or empty when there is no instance, e.g. a static write through
-	// the bare class).
+	// Variant slot, where `p_binding` is already expressed relative to the receiving class: an instance
+	// member's binding (always re-specialized per subclass at compile time), or a static member's
+	// binding when the receiver is the very class that declares it. `p_leaf_type_arguments` is the
+	// reified argument vector to resolve an OPEN binding against (an instance's `type_arguments`, or
+	// empty when there is no instance, e.g. a static write through the bare class).
 	static bool _validate_type_argument_binding_write(const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value);
+
+	// Validates a write to a static member reached through `p_receiver` (the class or instance's leaf
+	// script the write was addressed to) but declared by `p_declaring_script`, which may be a proper
+	// ancestor of `p_receiver` (the member is never copied into subclasses). When the binding is FIXED,
+	// or the declaring script is the receiver itself, it is already self-sufficient or already relative
+	// to the receiver, so this delegates to `_validate_type_argument_binding_write`. Otherwise an OPEN
+	// binding's ordinal indexes the declaring ancestor's own type parameters, so it is projected through
+	// `p_receiver`'s per-ancestor specialization table before validating.
+	static bool _validate_static_member_write(FoundryScript *p_receiver, FoundryScript *p_declaring_script, const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value);
 
 public:
 	// A generic type parameter declared on this class, e.g. `T` in `class Box[T]` or
