@@ -1033,6 +1033,20 @@ void FSAnalyzer::resolve_enum_interface(FSParser::EnumNode *p_enum,
 	}
 }
 
+bool FSAnalyzer::enum_declared_by(const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum) {
+	if (p_class == nullptr || p_enum == nullptr) {
+		return false;
+	}
+	if (p_class->is_enum_file && p_class->enum_file_decl == p_enum) {
+		return true;
+	}
+	if (p_enum->identifier == nullptr || !p_class->has_member(p_enum->identifier->name)) {
+		return false;
+	}
+	const FSParser::ClassNode::Member &member = p_class->get_member(p_enum->identifier->name);
+	return member.type == FSParser::ClassNode::Member::ENUM && member.m_enum == p_enum;
+}
+
 bool FSAnalyzer::resolve_type_parameter(const StringName &p_name, FSParser::DataType &r_type) {
 	const FSParser::TypeParameterNode *parameter = nullptr;
 	FSParser::DataType::TypeParameterScope scope = FSParser::DataType::TYPE_PARAMETER_NONE;
@@ -1065,12 +1079,18 @@ bool FSAnalyzer::resolve_type_parameter(const StringName &p_name, FSParser::Data
 		}
 		enclosing = enclosing->source_lambda != nullptr ? enclosing->source_lambda->parent_function : nullptr;
 	}
+	// A union's parameters are visible only while analyzing declarations inside the class that owns the
+	// union. Anchoring visibility to that lexical owner — rather than to whichever declaration happened
+	// to leave an enum active — keeps a class pulled in during payload resolution from binding its own
+	// parameter names to the union's.
+	const FSParser::EnumNode *active_enum = enum_declared_by(parser->current_class, current_enum) ? current_enum : nullptr;
+
 	const FSParser::EnumNode *declaring_enum = nullptr;
 	if (found_method_parameter) {
 		// Found a method type parameter.
-	} else if (current_enum != nullptr && match_in(current_enum->type_parameters, FSParser::DataType::TYPE_PARAMETER_ENUM)) {
+	} else if (active_enum != nullptr && match_in(active_enum->type_parameters, FSParser::DataType::TYPE_PARAMETER_ENUM)) {
 		// A generic tagged union's own parameters sit between its methods and its declaring class.
-		declaring_enum = current_enum;
+		declaring_enum = active_enum;
 	} else {
 		for (FSParser::ClassNode *script_class = parser->current_class; script_class != nullptr; script_class = script_class->outer) {
 			if (match_in(script_class->type_parameters, FSParser::DataType::TYPE_PARAMETER_CLASS)) {

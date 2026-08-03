@@ -591,6 +591,48 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Bounded parameters 
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum scope does not reach a forward-resolved class") {
+	// Resolving the payload pulls `Sibling` in while the union is the active enum. `Sibling`'s own `T`
+	// is a class parameter and must stay one, so parameter visibility follows lexical ownership rather
+	// than whichever declaration happened to trigger the resolution.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T]:\n"
+					   "\tValue(box: Sibling)\n"
+					   "\n"
+					   "class Sibling:\n"
+					   "\tclass Inner[T]:\n"
+					   "\t\tvar held: T\n",
+					   "user://generic_tagged_union_sibling.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+
+	const FSParser::ClassNode *sibling = find_inner_class(parser.get_tree(), SNAME("Sibling"));
+	REQUIRE(sibling != nullptr);
+	const FSParser::ClassNode *inner = find_inner_class(sibling, SNAME("Inner"));
+	REQUIRE(inner != nullptr);
+	CHECK(is_type_parameter(inner->get_member(SNAME("held")).variable->get_datatype(), SNAME("T"),
+			FSParser::DataType::TYPE_PARAMETER_CLASS, 0));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] A union parameter is invisible outside its owner") {
+	// `Helper` declares no `T`, so it must report the unresolved name whether or not the union that
+	// pulled it in is still the active enum.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T]:\n"
+					   "\tValue(box: Helper)\n"
+					   "\n"
+					   "class Helper:\n"
+					   "\tvar held: T\n",
+					   "user://generic_tagged_union_outside_owner.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_NE(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String(R"(Could not find type "T" in the current scope.)"));
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum arguments do not bind enclosing class parameters") {
 	// A union's open arguments belong to the union, not to the class that owns it, so calling an enum
 	// function must not substitute the enum's parameters for the enclosing class's.

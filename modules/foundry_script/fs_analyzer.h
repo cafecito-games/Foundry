@@ -478,6 +478,9 @@ private:
 	// The open handle for a generic tagged union's own type parameter, mirroring the class-parameter
 	// handle: enum scope, declaration ordinal, spelling, and the eagerly resolved bound.
 	static FSParser::DataType enum_type_parameter_handle(const FSParser::TypeParameterNode *p_parameter, int p_index);
+	// Whether `p_class` lexically declares `p_enum`, which is what makes the union's type parameters
+	// visible: an unrelated class resolved while a union is being analyzed must not see them.
+	static bool enum_declared_by(const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum);
 	static FSParser::DataType complete_self_referential_enum_type(const FSParser::DataType &p_type);
 	FSParser::EnumNode *resolve_enum_declaration(const FSParser::DataType &p_enum_type,
 			const FSParser::Node *p_source);
