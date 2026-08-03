@@ -1166,6 +1166,31 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
 	}
 
+	TEST_CASE("Override method keeps a rest override from completing normally under @noreturn") {
+		const String source =
+				"class Base:\n"
+				"\t@noreturn\n"
+				"\tfunc fail(...values: Array[int]) -> void:\n"
+				"\t\tpush_fatal(str(values.size()))\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "fail");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 5, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		// Callers resolved through the base type rely on the declared contract, so the stub keeps
+		// the annotation and terminates instead of falling through.
+		CHECK(out.contains("\t@noreturn\n\tfunc fail(...values: Array[int]) -> void:\n"));
+		CHECK(out.contains("\t\tpush_fatal(\"Not implemented: fail\")\n"));
+		CHECK_FALSE(out.contains("\t\tpass\n"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
 	TEST_CASE("Override method substitutes a generic rest tail into the concrete override") {
 		const String source =
 				"class Base[T]:\n"

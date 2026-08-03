@@ -5791,10 +5791,16 @@ String render_super_call_body(const FSParser::FunctionNode *p_function, const St
 // the fixed arguments alone would silently drop every surplus argument. The stub says so and yields
 // a default result the author replaces.
 String render_unforwardable_rest_override_body(
+		const FSParser::FunctionNode *p_function,
 		const FSParser::DataType &p_return_type,
 		const String &p_class_indent) {
 	const String body_indent = p_class_indent + "\t";
 	String body = body_indent + "# `super` cannot receive rest arguments, so implement this override directly.\n";
+	// The base declares that it never completes normally, and callers resolved through the base type
+	// rely on that. A stub that fell through would silently break the contract, so terminate instead.
+	if (p_function->is_noreturn) {
+		return body + body_indent + "push_fatal(\"Not implemented: " + String(p_function->identifier->name) + "\")\n";
+	}
 	const bool is_void = p_return_type.is_set() && !p_return_type.is_variant() &&
 			p_return_type.kind == FSParser::DataType::BUILTIN &&
 			p_return_type.builtin_type == Variant::NIL;
@@ -5828,7 +5834,10 @@ String render_concrete_script_override_stub(
 	if (p_function->rest_parameter != nullptr) {
 		const FSParser::DataType return_type =
 				p_return_type_override != nullptr ? *p_return_type_override : p_function->get_datatype();
-		return signature + ":\n" + render_unforwardable_rest_override_body(return_type, p_class_indent);
+		// `@noreturn` is part of the overridden signature's contract, so it is reproduced on the stub.
+		const String annotations = p_function->is_noreturn ? p_class_indent + "@noreturn\n" : String();
+		return annotations + signature + ":\n" +
+				render_unforwardable_rest_override_body(p_function, return_type, p_class_indent);
 	}
 	return signature + ":\n" + render_super_call_body(p_function, p_class_indent);
 }
