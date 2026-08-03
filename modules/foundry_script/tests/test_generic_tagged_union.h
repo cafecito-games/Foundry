@@ -32,6 +32,7 @@
 
 #include "../fs_analyzer.h"
 #include "../fs_parser.h"
+#include "../fs_type.h"
 
 #ifdef TOOLS_ENABLED
 #include "../fs_format.h"
@@ -492,24 +493,6 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Generic union misus
 				String(R"(Generic tagged union "Pair" expects 2 type argument(s), but 1 were given.)"));
 	}
 
-	SUBCASE("exact-arity external application") {
-		FSParser parser;
-		REQUIRE_EQ(parser.parse(
-						   "enum Outcome[T, E]:\n"
-						   "\tOk(value: T)\n"
-						   "\tErr(error: E)\n"
-						   "\n"
-						   "func take(outcome: Outcome[int, String]) -> void:\n"
-						   "\tprint(outcome)\n",
-						   "user://generic_tagged_union_application.fs", false),
-				OK);
-		FSAnalyzer analyzer(&parser);
-		CHECK_NE(analyzer.analyze(), OK);
-		REQUIRE_EQ(parser.get_errors().size(), 1);
-		CHECK_EQ(first_error_message(parser),
-				String(R"(Generic tagged union "Outcome" type application is not available yet.)"));
-	}
-
 	SUBCASE("external case reference") {
 		FSParser parser;
 		REQUIRE_EQ(parser.parse(
@@ -528,8 +511,8 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Generic union misus
 	}
 
 	SUBCASE("decorated self argument") {
-		// `T?` names the same parameter but is a different type, so it is an application, not the
-		// declaration's own open vector.
+		// `T?` names the same parameter but is a different type, so it is an ordinary application
+		// rather than the declaration's own open vector.
 		FSParser parser;
 		REQUIRE_EQ(parser.parse(
 						   "enum Slot[T]:\n"
@@ -538,10 +521,17 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Generic union misus
 						   "user://generic_tagged_union_nullable_self.fs", false),
 				OK);
 		FSAnalyzer analyzer(&parser);
-		CHECK_NE(analyzer.analyze(), OK);
-		REQUIRE_EQ(parser.get_errors().size(), 1);
-		CHECK_EQ(first_error_message(parser),
-				String(R"(Generic tagged union "Slot" type application is not available yet.)"));
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		const FSParser::EnumNode *slot = find_enum(parser, SNAME("Slot"));
+		REQUIRE(slot != nullptr);
+		const FSParser::DataType nested = payload_field_type(slot, SNAME("Nested"), 0);
+		CHECK(nested.kind == FSParser::DataType::ENUM);
+		REQUIRE_EQ(nested.type_arguments.size(), 1);
+		const FSParser::DataType argument = type_at(nested.type_arguments, 0);
+		CHECK(is_type_parameter(argument, SNAME("T"), FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+		CHECK(argument.is_nullable);
 	}
 }
 
@@ -823,6 +813,411 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] An enum parameter c
 	REQUIRE_EQ(parser.get_errors().size(), 1);
 	CHECK_EQ(first_error_message(parser),
 			String(R"(Type argument "Bounded" does not satisfy the bound "Bounded" of type parameter "X".)"));
+}
+
+// Argument application coverage. The assertions read the analyzed `DataType` of a declaration that
+// applied arguments, or the diagnostic the application reported.
+
+static const FSParser::FunctionNode *find_function_in(const FSParser::ClassNode *p_class, const StringName &p_name) {
+	if (p_class == nullptr || !p_class->has_member(p_name)) {
+		return nullptr;
+	}
+	const FSParser::ClassNode::Member &member = p_class->get_member(p_name);
+	return member.type == FSParser::ClassNode::Member::FUNCTION ? member.function : nullptr;
+}
+
+// The declared type of a root-level function's first parameter, which is where the application
+// fixtures place the type they exercise.
+// The initializer of the first local variable in a root-level function, or null when the function or
+// that statement is absent. Doctest runs without exceptions here, so a failed lookup has to yield
+// null rather than be dereferenced by the assertions that follow.
+static const FSParser::ExpressionNode *first_local_initializer(const FSParser &p_parser, const StringName &p_function) {
+	const FSParser::FunctionNode *function = find_function_in(p_parser.get_tree(), p_function);
+	if (function == nullptr || function->body == nullptr || function->body->statements.is_empty() ||
+			function->body->statements[0]->type != FSParser::Node::VARIABLE) {
+		return nullptr;
+	}
+	return static_cast<const FSParser::VariableNode *>(function->body->statements[0])->initializer;
+}
+
+static FSParser::DataType first_local_initializer_type(const FSParser &p_parser, const StringName &p_function) {
+	const FSParser::ExpressionNode *initializer = first_local_initializer(p_parser, p_function);
+	return initializer != nullptr ? initializer->get_datatype() : FSParser::DataType();
+}
+
+static FSParser::DataType first_parameter_type(const FSParser &p_parser, const StringName &p_function) {
+	const FSParser::FunctionNode *function = find_function_in(p_parser.get_tree(), p_function);
+	if (function == nullptr || function->parameters.is_empty()) {
+		return FSParser::DataType();
+	}
+	return function->parameters[0]->get_datatype();
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Applied arguments bind positionally") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "func take(outcome: Outcome[int, String]) -> void:\n"
+					   "\tprint(outcome)\n"
+					   "\n"
+					   "func take_nullable(outcome: Outcome[String?, int]) -> void:\n"
+					   "\tprint(outcome)\n"
+					   "\n"
+					   "func take_nested(outcomes: Array[Outcome[int, String]]) -> void:\n"
+					   "\tprint(outcomes)\n",
+					   "user://generic_tagged_union_applied.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::DataType applied = first_parameter_type(parser, SNAME("take"));
+	CHECK(applied.kind == FSParser::DataType::ENUM);
+	CHECK(applied.is_tagged_union);
+	CHECK_FALSE(applied.is_meta_type);
+	REQUIRE_EQ(applied.type_arguments.size(), 2);
+	CHECK_EQ(type_at(applied.type_arguments, 0).builtin_type, Variant::INT);
+	CHECK_EQ(type_at(applied.type_arguments, 1).builtin_type, Variant::STRING);
+	CHECK(applied.to_string().ends_with("[int, String]"));
+
+	// A `?` on an argument decorates that argument, not the union.
+	const FSParser::DataType nullable = first_parameter_type(parser, SNAME("take_nullable"));
+	REQUIRE_EQ(nullable.type_arguments.size(), 2);
+	CHECK(type_at(nullable.type_arguments, 0).is_nullable);
+	CHECK_FALSE(type_at(nullable.type_arguments, 1).is_nullable);
+	CHECK_FALSE(nullable.is_nullable);
+
+	// An application nests inside a collection element type like any other type.
+	const FSParser::DataType nested = first_parameter_type(parser, SNAME("take_nested"));
+	REQUIRE(nested.has_container_element_type(0));
+	const FSParser::DataType element = nested.get_container_element_type(0);
+	CHECK(element.kind == FSParser::DataType::ENUM);
+	REQUIRE_EQ(element.type_arguments.size(), 2);
+	CHECK_EQ(type_at(element.type_arguments, 0).builtin_type, Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Value-position application yields a specialized handle") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "func take() -> void:\n"
+					   "\tvar handle = Outcome[int, String]\n"
+					   "\tprint(handle)\n",
+					   "user://generic_tagged_union_value_application.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::ExpressionNode *initializer = first_local_initializer(parser, SNAME("take"));
+	REQUIRE(initializer != nullptr);
+
+	const FSParser::DataType handle = initializer->get_datatype();
+	CHECK(handle.kind == FSParser::DataType::ENUM);
+	CHECK(handle.is_meta_type);
+	REQUIRE_EQ(handle.type_arguments.size(), 2);
+	CHECK_EQ(type_at(handle.type_arguments, 0).builtin_type, Variant::INT);
+	CHECK_EQ(type_at(handle.type_arguments, 1).builtin_type, Variant::STRING);
+	// The specialized handle still denotes the same declaration, so its constant value survives.
+	CHECK(initializer->is_constant);
+	CHECK_EQ(initializer->reduced_value.get_type(), Variant::DICTIONARY);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] A qualified union applies its arguments") {
+	// A union reached through member access publishes its metatype onto the trailing identifier rather
+	// than onto the whole expression, so the application has to recognize that head too.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Outer:\n"
+					   "\tenum Outcome[T, E]:\n"
+					   "\t\tOk(value: T)\n"
+					   "\t\tErr(error: E)\n"
+					   "\n"
+					   "func valued() -> void:\n"
+					   "\tvar handle = Outer.Outcome[int, String]\n"
+					   "\tprint(handle)\n",
+					   "user://generic_tagged_union_qualified.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	// Reaching an inner class in value position loads the declaring script, which this in-memory
+	// `user://` path has no file for. What this case pins is the application itself: the union is not
+	// reported as a bare reference, and the resulting handle carries the supplied arguments.
+	CHECK_FALSE(has_error_containing(parser, "expects 2 type argument(s)"));
+
+	const FSParser::DataType handle = first_local_initializer_type(parser, SNAME("valued"));
+	CHECK(handle.kind == FSParser::DataType::ENUM);
+	CHECK(handle.is_meta_type);
+	REQUIRE_EQ(handle.type_arguments.size(), 2);
+	CHECK_EQ(type_at(handle.type_arguments, 0).builtin_type, Variant::INT);
+	CHECK_EQ(type_at(handle.type_arguments, 1).builtin_type, Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] An application nests inside another argument") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Box[T]:\n"
+					   "\tvar held: T\n"
+					   "\n"
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "enum Slot[T]:\n"
+					   "\tValue(value: T)\n"
+					   "\n"
+					   "func annotated(box: Box[Outcome[int, String]]) -> void:\n"
+					   "\tprint(box)\n"
+					   "\n"
+					   "func valued() -> void:\n"
+					   "\tvar handle = Outcome[Slot[int], String]\n"
+					   "\tprint(handle)\n",
+					   "user://generic_tagged_union_nested_argument.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	// Type arguments are invariant, so a nested application has to be carried whole in both positions.
+	const FSParser::DataType annotated = first_parameter_type(parser, SNAME("annotated"));
+	REQUIRE_EQ(annotated.type_arguments.size(), 1);
+	const FSParser::DataType annotated_argument = type_at(annotated.type_arguments, 0);
+	CHECK(annotated_argument.kind == FSParser::DataType::ENUM);
+	REQUIRE_EQ(annotated_argument.type_arguments.size(), 2);
+	CHECK_EQ(type_at(annotated_argument.type_arguments, 1).builtin_type, Variant::STRING);
+
+	const FSParser::DataType handle = first_local_initializer_type(parser, SNAME("valued"));
+	REQUIRE_EQ(handle.type_arguments.size(), 2);
+	const FSParser::DataType valued_argument = type_at(handle.type_arguments, 0);
+	CHECK(valued_argument.kind == FSParser::DataType::ENUM);
+	REQUIRE_EQ(valued_argument.type_arguments.size(), 1);
+	CHECK_EQ(type_at(valued_argument.type_arguments, 0).builtin_type, Variant::INT);
+	CHECK_EQ(type_at(handle.type_arguments, 1).builtin_type, Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Applications are invariant in every argument") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "func narrow(outcome: Outcome[int, String]) -> void:\n"
+					   "\tprint(outcome)\n"
+					   "\n"
+					   "func widen(outcome: Outcome[float, String]) -> void:\n"
+					   "\tprint(outcome)\n"
+					   "\n"
+					   "func same(outcome: Outcome[int, String]) -> void:\n"
+					   "\tprint(outcome)\n",
+					   "user://generic_tagged_union_invariance.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::DataType narrow = first_parameter_type(parser, SNAME("narrow"));
+	const FSParser::DataType widen = first_parameter_type(parser, SNAME("widen"));
+	const FSParser::DataType same = first_parameter_type(parser, SNAME("same"));
+
+	FSTypeCompatibility::Options options;
+	CHECK(FSTypeCompatibility::check(same, narrow, options).compatible);
+	// `int` converts to `float`, but a type argument is an invariant position.
+	CHECK_FALSE(FSTypeCompatibility::check(widen, narrow, options).compatible);
+	CHECK_FALSE(FSTypeCompatibility::check(narrow, widen, options).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Applied arguments satisfy declared bounds") {
+	SUBCASE("a satisfied bound analyzes") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Bounded[T: Resource, U: T]:\n"
+						   "\tPair(first: T, second: U)\n"
+						   "\n"
+						   "func take(pair: Bounded[Resource, Texture2D]) -> void:\n"
+						   "\tprint(pair)\n",
+						   "user://generic_tagged_union_bound_ok.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		const FSParser::DataType applied = first_parameter_type(parser, SNAME("take"));
+		REQUIRE_EQ(applied.type_arguments.size(), 2);
+		CHECK_EQ(type_at(applied.type_arguments, 1).native_type, SNAME("Texture2D"));
+	}
+
+	SUBCASE("a violated bound is reported") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Bounded[T: Resource]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "func take(value: Bounded[int]) -> void:\n"
+						   "\tprint(value)\n",
+						   "user://generic_tagged_union_bound_violation.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Type argument "int" does not satisfy the bound "Resource" of type parameter "T".)"));
+	}
+
+	SUBCASE("a sibling-dependent bound is checked against the supplied argument") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Bounded[T: Resource, U: T]:\n"
+						   "\tPair(first: T, second: U)\n"
+						   "\n"
+						   "func take(pair: Bounded[Texture2D, Resource]) -> void:\n"
+						   "\tprint(pair)\n",
+						   "user://generic_tagged_union_sibling_bound.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Type argument "Resource" does not satisfy the bound "Texture2D" of type parameter "U".)"));
+	}
+
+	SUBCASE("a bound resolves in the union's own scope") {
+		// `Holder`'s bound names the class parameter `Bounded` that the declaration sees, not the
+		// same-named enum parameter that happens to be active at the use site.
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "class Outer[Bounded: Resource]:\n"
+						   "\tenum Holder[T: Bounded]:\n"
+						   "\t\tValue(value: T)\n"
+						   "\n"
+						   "\tenum Other[Bounded]:\n"
+						   "\t\tValue(held: Holder[Bounded])\n",
+						   "user://generic_tagged_union_bound_scope.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Type argument "Bounded" does not satisfy the bound "Bounded" of type parameter "T".)"));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Arity and non-generic misuse are reported") {
+	SUBCASE("too few arguments") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Outcome[T, E]:\n"
+						   "\tOk(value: T)\n"
+						   "\tErr(error: E)\n"
+						   "\n"
+						   "func take(outcome: Outcome[int]) -> void:\n"
+						   "\tprint(outcome)\n",
+						   "user://generic_tagged_union_too_few.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Outcome" expects 2 type argument(s), but 1 were given.)"));
+	}
+
+	SUBCASE("too many arguments") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Outcome[T, E]:\n"
+						   "\tOk(value: T)\n"
+						   "\tErr(error: E)\n"
+						   "\n"
+						   "func take(outcome: Outcome[int, String, float]) -> void:\n"
+						   "\tprint(outcome)\n",
+						   "user://generic_tagged_union_too_many.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Outcome" expects 2 type argument(s), but 3 were given.)"));
+	}
+
+	SUBCASE("arguments on a union with no parameters") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Plain:\n"
+						   "\tValue(value: int)\n"
+						   "\n"
+						   "func take(value: Plain[int, String]) -> void:\n"
+						   "\tprint(value)\n",
+						   "user://generic_tagged_union_not_generic.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK(first_error_message(parser).ends_with(
+				R"(Plain" is not generic and cannot take type arguments.)"));
+	}
+
+	SUBCASE("value-position arity mismatch") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Outcome[T, E]:\n"
+						   "\tOk(value: T)\n"
+						   "\tErr(error: E)\n"
+						   "\n"
+						   "func take() -> void:\n"
+						   "\tvar handle = Outcome[int]\n"
+						   "\tprint(handle)\n",
+						   "user://generic_tagged_union_value_arity.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Outcome" expects 2 type argument(s), but 1 were given.)"));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Generic classes keep their own diagnostics") {
+	// Application is shared between declarations, so the class-specific wording and the deferred
+	// inheritance bound check must survive the extraction.
+	SUBCASE("class arity") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "class Box[T]:\n"
+						   "\tvar held: T\n"
+						   "\n"
+						   "func take(box: Box[int, String]) -> void:\n"
+						   "\tprint(box)\n",
+						   "user://generic_class_arity.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic class "Box" expects 1 type argument(s), but 2 were given.)"));
+	}
+
+	SUBCASE("non-generic class") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "class Box:\n"
+						   "\tvar held: int\n"
+						   "\n"
+						   "func take(box: Box[int]) -> void:\n"
+						   "\tprint(box)\n",
+						   "user://generic_class_not_generic.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Class "Box" is not generic and cannot take type arguments.)"));
+	}
 }
 
 } // namespace GenericTaggedUnion

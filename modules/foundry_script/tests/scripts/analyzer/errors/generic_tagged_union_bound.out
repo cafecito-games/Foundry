@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: Type argument "int" does not satisfy the bound "Resource" of type parameter "T".

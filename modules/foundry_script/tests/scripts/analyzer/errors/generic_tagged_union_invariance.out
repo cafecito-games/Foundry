@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Cannot assign a value of type generic_tagged_union_invariance.fs.Result[int, String] to variable "widened" with specified type generic_tagged_union_invariance.fs.Result[float, String].

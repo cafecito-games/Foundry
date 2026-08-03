@@ -1169,14 +1169,53 @@ FSParser::FunctionNode *FSAnalyzer::find_generic_method(FSParser::ClassNode *p_c
 	return nullptr;
 }
 
+FSAnalyzer::GenericDeclaration FSAnalyzer::class_generic_declaration(const FSParser::DataType &p_type) {
+	GenericDeclaration declaration;
+	declaration.kind = "Class";
+	declaration.generic_kind = "Generic class";
+	declaration.name = p_type.to_string();
+	declaration.declaring_class = p_type.class_type;
+	if (p_type.class_type != nullptr) {
+		declaration.parameters = p_type.class_type->type_parameters;
+	}
+	return declaration;
+}
+
+FSAnalyzer::GenericDeclaration FSAnalyzer::enum_generic_declaration(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner) {
+	GenericDeclaration declaration;
+	declaration.kind = "Enum";
+	declaration.generic_kind = "Generic tagged union";
+	declaration.declaring_class = p_owner;
+	declaration.declaring_enum = p_enum;
+	if (p_enum != nullptr) {
+		declaration.parameters = p_enum->type_parameters;
+		if (p_enum->identifier != nullptr) {
+			declaration.name = p_enum->identifier->name;
+		}
+	}
+	return declaration;
+}
+
 bool FSAnalyzer::apply_class_type_arguments(FSParser::DataType &r_type, const Vector<FSParser::TypeNode *> &p_argument_nodes, const FSParser::Node *p_source, bool p_check_bounds, Vector<bool> *r_argument_failed) {
-	const int expected_argument_count = r_type.class_type->type_parameters.size();
+	return apply_type_arguments(r_type, class_generic_declaration(r_type), p_argument_nodes, p_source, p_check_bounds, r_argument_failed);
+}
+
+bool FSAnalyzer::bind_class_type_arguments(FSParser::DataType &r_type, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, bool p_check_bounds) {
+	return bind_type_arguments(r_type, class_generic_declaration(r_type), p_arguments, p_argument_failed, p_argument_sources, p_check_bounds);
+}
+
+bool FSAnalyzer::check_class_type_argument_bounds(FSParser::DataType &r_type, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources) {
+	return check_type_argument_bounds(r_type, class_generic_declaration(r_type), p_argument_failed, p_argument_sources);
+}
+
+bool FSAnalyzer::apply_type_arguments(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<FSParser::TypeNode *> &p_argument_nodes, const FSParser::Node *p_source, bool p_check_bounds, Vector<bool> *r_argument_failed) {
+	const int expected_argument_count = p_declaration.parameters.size();
 	if (expected_argument_count == 0) {
-		push_error(vformat(R"(Class "%s" is not generic and cannot take type arguments.)", r_type.to_string()), p_source);
+		push_error(vformat(R"(%s "%s" is not generic and cannot take type arguments.)", p_declaration.kind, p_declaration.name), p_source);
 		return false;
 	}
 	if (p_argument_nodes.size() != expected_argument_count) {
-		push_error(vformat(R"(Generic class "%s" expects %d type argument(s), but %d were given.)", r_type.to_string(), expected_argument_count, p_argument_nodes.size()), p_source);
+		push_error(vformat(R"(%s "%s" expects %d type argument(s), but %d were given.)", p_declaration.generic_kind, p_declaration.name, expected_argument_count, p_argument_nodes.size()), p_source);
 		return false;
 	}
 
@@ -1200,21 +1239,21 @@ bool FSAnalyzer::apply_class_type_arguments(FSParser::DataType &r_type, const Ve
 		*r_argument_failed = argument_failed;
 	}
 
-	return bind_class_type_arguments(r_type, resolved_arguments, argument_failed, argument_sources, p_source, p_check_bounds);
+	return bind_type_arguments(r_type, p_declaration, resolved_arguments, argument_failed, argument_sources, p_check_bounds);
 }
 
-bool FSAnalyzer::bind_class_type_arguments(FSParser::DataType &r_type, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, const FSParser::Node *p_source, bool p_check_bounds) {
+bool FSAnalyzer::bind_type_arguments(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, bool p_check_bounds) {
 	r_type.type_arguments = p_arguments;
 	if (!p_check_bounds) {
 		// The caller will validate the bounds later (e.g. after a class's specialized base is fully
 		// installed, so a self-referential argument is checked against the real chain).
 		return true;
 	}
-	return check_class_type_argument_bounds(r_type, p_argument_failed, p_argument_sources);
+	return check_type_argument_bounds(r_type, p_declaration, p_argument_failed, p_argument_sources);
 }
 
-bool FSAnalyzer::check_class_type_argument_bounds(FSParser::DataType &r_type, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources) {
-	const Vector<FSParser::TypeParameterNode *> &type_parameters = r_type.class_type->type_parameters;
+bool FSAnalyzer::check_type_argument_bounds(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources) {
+	const Vector<FSParser::TypeParameterNode *> &type_parameters = p_declaration.parameters;
 
 	// Bind every parameter to its argument so a dependent bound like `[U: Resource, T: U]` (or its
 	// forward-referencing form `[T: U, U: Resource]`) is checked against the concrete argument
@@ -1236,15 +1275,16 @@ bool FSAnalyzer::check_class_type_argument_bounds(FSParser::DataType &r_type, co
 		if (parameter == nullptr || parameter->bound == nullptr || p_argument_failed[i]) {
 			continue;
 		}
-		// Resolve the bound in the generic class's own scope so relative bound names bind to the
-		// declaring class rather than the (possibly unrelated) use site, where an enclosing
-		// class, enum, or method type parameter could otherwise shadow them.
+		// Resolve the bound in the declaration's own scope so relative bound names bind there rather
+		// than at the (possibly unrelated) use site, where an enclosing class, enum, or method type
+		// parameter could otherwise shadow them. A union's bound also needs its own parameters visible,
+		// which is what the declaring enum provides.
 		FSParser::ClassNode *previous_class = parser->current_class;
 		FSParser::FunctionNode *previous_function = parser->current_function;
 		const FSParser::EnumNode *previous_enum = current_enum;
-		parser->current_class = r_type.class_type;
+		parser->current_class = p_declaration.declaring_class;
 		parser->current_function = nullptr;
-		current_enum = nullptr;
+		current_enum = p_declaration.declaring_enum;
 		const FSParser::DataType bound = type_from_metatype(resolve_datatype(parameter->bound));
 		parser->current_class = previous_class;
 		parser->current_function = previous_function;
