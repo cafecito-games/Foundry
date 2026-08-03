@@ -905,6 +905,11 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 			return true;
 		}
 		Array validated;
+		if (array.is_typed()) {
+			// Keep the source's own element type so a conversion discovered below can be stored without
+			// throwing the array's declared shape away.
+			validated.set_typed(array.get_element_type());
+		}
 		validated.resize(array.size());
 		bool converted = false;
 		for (int i = 0; i < array.size(); i++) {
@@ -916,12 +921,11 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 			converted = converted || !element.identity_compare(original);
 			validated[i] = element;
 		}
-		if (converted && !array.is_typed()) {
+		if (converted) {
 			// A descendant validator converted an element (a nested untyped array becoming typed, a
 			// specialized handle erasing to its script). The outer container cannot be rebuilt with the
-			// declared shape — an unknown slot has no type to bake in — but its elements must still be
-			// stored in the form validation accepted them in. A typed source keeps its own element type,
-			// which replacing it with this untyped copy would throw away.
+			// projected shape — an unknown slot has no type to bake in — but its elements must still be
+			// stored in the form validation accepted them in.
 			p_value = validated;
 		}
 		return true;
@@ -946,6 +950,9 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 			return true;
 		}
 		Dictionary validated;
+		if (dictionary.is_typed()) {
+			validated.set_typed(dictionary.get_key_type(), dictionary.get_value_type());
+		}
 		validated.reserve(dictionary.size());
 		bool converted = false;
 		for (const KeyValue<Variant, Variant> &entry : dictionary) {
@@ -961,7 +968,7 @@ bool ProjectedContainerType::_validate_known_descendants(Variant &p_value, const
 			converted = converted || !value.identity_compare(entry.value);
 			validated[key] = value;
 		}
-		if (converted && !dictionary.is_typed()) {
+		if (converted) {
 			p_value = validated;
 		}
 		return true;

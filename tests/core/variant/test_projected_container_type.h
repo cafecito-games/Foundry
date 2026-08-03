@@ -181,6 +181,22 @@ TEST_CASE("[ProjectedContainerType] Untyped containers are enforced value by val
 	CHECK(stored_inner.is_typed());
 	CHECK_EQ(stored_inner.get_element_type(), make_builtin(Variant::INT));
 
+	// A typed outer container whose metadata does not witness the known evidence is still checked value
+	// by value, and keeps both its own element type and the conversions that check produced.
+	Array typed_outer;
+	typed_outer.set_typed(make_builtin(Variant::ARRAY));
+	Array typed_outer_inner;
+	typed_outer_inner.push_back(2);
+	typed_outer.push_back(typed_outer_inner);
+	Variant typed_outer_value = typed_outer;
+	REQUIRE(partial_array_of_typed_arrays.validate_value(typed_outer_value, "member", "assign"));
+	const Array typed_stored = typed_outer_value;
+	CHECK(typed_stored.is_typed());
+	CHECK_EQ(typed_stored.get_element_type(), make_builtin(Variant::ARRAY));
+	const Array typed_stored_inner = typed_stored[0];
+	CHECK(typed_stored_inner.is_typed());
+	CHECK_EQ(typed_stored_inner.get_element_type(), make_builtin(Variant::INT));
+
 	// An entirely unknown element slot still accepts anything.
 	ProjectedContainerType unknown_element_array;
 	unknown_element_array.state = ProjectedContainerType::PARTIAL;
