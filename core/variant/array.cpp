@@ -848,6 +848,7 @@ void Array::set_typed(const ContainerType &p_element_type) {
 	ERR_FAIL_COND_MSG(_p->typed.type != Variant::NIL, "Type can only be set once.");
 	ERR_FAIL_COND_MSG(p_element_type.class_name != StringName() && p_element_type.builtin_type != Variant::OBJECT, "Class names can only be set for type OBJECT");
 	ERR_FAIL_COND_MSG(p_element_type.script.is_valid() && p_element_type.class_name == StringName(), "Script class can only be set together with base class name");
+	ERR_FAIL_COND_MSG(!numeric_type_is_carrier_consistent(p_element_type.numeric_type, p_element_type.builtin_type), "Numeric type can only be set together with its own integer carrier.");
 
 	_p->typed = ContainerTypeValidate(p_element_type);
 	_p->typed.where = "TypedArray";

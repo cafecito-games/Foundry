@@ -32,10 +32,14 @@
 
 #include "core/object/script_language.h"
 #include "core/templates/vector.h"
+#include "core/variant/numeric_type.h"
 #include "core/variant/variant.h"
 
 struct ContainerType {
 	Variant::Type builtin_type = Variant::NIL;
+	// Exact width and signedness of an integer slot. `NONE` means the slot is constrained by its
+	// carrier alone, which is what every non-numeric and every unannotated numeric slot uses.
+	NumericType numeric_type = NumericType::NONE;
 	StringName class_name;
 	Ref<Script> script;
 	Vector<ContainerType> element_types;
@@ -54,6 +58,9 @@ struct ContainerType {
 
 struct ContainerTypeValidate {
 	Variant::Type type = Variant::NIL;
+	// Mirrors `ContainerType::numeric_type`. Only consulted when it is not `NONE`, so a slot without a
+	// declared width keeps behaving exactly as it did before descriptors existed.
+	NumericType numeric_type = NumericType::NONE;
 	StringName class_name;
 	Ref<Script> script;
 	Vector<ContainerTypeValidate> element_types;

@@ -536,6 +536,7 @@ void Dictionary::set_typed(const ContainerType &p_key_type, const ContainerType 
 	ERR_FAIL_COND_MSG((p_key_type.class_name != StringName() && p_key_type.builtin_type != Variant::OBJECT) || (p_value_type.class_name != StringName() && p_value_type.builtin_type != Variant::OBJECT), "Class names can only be set for type OBJECT.");
 	ERR_FAIL_COND_MSG(p_key_type.script.is_valid() && p_key_type.class_name == StringName(), "Script class can only be set together with base class name.");
 	ERR_FAIL_COND_MSG(p_value_type.script.is_valid() && p_value_type.class_name == StringName(), "Script class can only be set together with base class name.");
+	ERR_FAIL_COND_MSG(!numeric_type_is_carrier_consistent(p_key_type.numeric_type, p_key_type.builtin_type) || !numeric_type_is_carrier_consistent(p_value_type.numeric_type, p_value_type.builtin_type), "Numeric type can only be set together with its own integer carrier.");
 
 	_p->typed_key = ContainerTypeValidate(p_key_type);
 	_p->typed_key.where = "TypedDictionary.Key";
