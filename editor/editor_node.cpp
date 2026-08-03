@@ -5121,6 +5121,14 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	_update_unsaved_cache();
 }
 
+int EditorNode::_tile_id_for_scene_context(EditorSceneContext *p_context) const {
+	if (!p_context || p_context == no_scene_context) {
+		return -1;
+	}
+	const int scene_idx = editor_data.find_scene_index_for_context(p_context);
+	return scene_idx >= 0 ? editor_data.get_scene_tile(scene_idx) : -1;
+}
+
 void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	// "No scene open" is represented by the persistent no_scene_context, so a
 	// null request binds the docks and editor selection/history to it rather
@@ -5153,9 +5161,16 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	// deriving UI state from the selection get notified.
 	editor_selection->mark_changed();
 
-	// Rebind the focused tile's in-tile docks to the newly focused context.
+	// Rebind the in-tile docks of the tile that owns the incoming context. The
+	// workspace's focused leaf is not a stand-in for that owner: activating a
+	// scene in a tile that does not hold leaf focus (creating a root node in an
+	// unfocused tile, for example) would otherwise rebind the leaf-focused
+	// tile's docks to another tile's scene and leave them there.
 	if (scene_workspace) {
-		WorkspaceLeafNode *leaf = scene_workspace->get_focused_leaf();
+		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(_tile_id_for_scene_context(p_context));
+		if (!leaf) {
+			leaf = scene_workspace->get_focused_leaf();
+		}
 		if (leaf && leaf->get_pane_tile()) {
 			ScenePaneTile *tile = leaf->get_pane_tile();
 			tile->get_scene_tree_dock()->set_scene_context(p_context);
@@ -7807,7 +7822,7 @@ void EditorNode::_queue_focus_tile_activation(int p_tile_id) {
 	ERR_FAIL_NULL(scene_workspace->get_leaf_by_id(p_tile_id));
 
 	pending_focus_tile_id = p_tile_id;
-	const uint64_t generation = ++pending_focus_tile_generation;
+	const int64_t generation = ++pending_focus_tile_generation;
 	SceneTree *tree = get_tree();
 	if (tree) {
 		tree->connect(SNAME("process_frame"),
@@ -7818,7 +7833,7 @@ void EditorNode::_queue_focus_tile_activation(int p_tile_id) {
 	}
 }
 
-void EditorNode::_activate_queued_focus_tile(int p_tile_id, uint64_t p_generation) {
+void EditorNode::_activate_queued_focus_tile(int p_tile_id, int64_t p_generation) {
 	if (p_generation != pending_focus_tile_generation || pending_focus_tile_id != p_tile_id) {
 		return;
 	}

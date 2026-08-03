@@ -100,6 +100,68 @@ public:
 
 namespace TestDockSceneContextBinding {
 
+// Opens one scene owned by p_tile_id without disturbing which tile is focused
+// afterwards, mirroring how a docked tile acquires a scene.
+static int open_scene_in_tile(EditorData &p_editor_data, int p_tile_id, const String &p_root_name) {
+	const int previous_focused_tile = p_editor_data.get_focused_tile_id();
+	p_editor_data.register_tile(p_tile_id);
+	p_editor_data.set_focused_tile_id(p_tile_id);
+	const int scene_idx = p_editor_data.add_edited_scene(-1);
+	if (p_editor_data.get_scene_tile(scene_idx) != p_tile_id) {
+		p_editor_data.set_scene_tile(scene_idx, p_tile_id);
+	}
+	p_editor_data.set_edited_scene(scene_idx);
+
+	Node2D *root = memnew(Node2D);
+	root->set_name(p_root_name);
+	p_editor_data.get_scene_context(scene_idx)->set_scene_root_node(root);
+
+	if (previous_focused_tile != p_tile_id && p_editor_data.get_tile_current_scene(previous_focused_tile) >= 0) {
+		p_editor_data.set_focused_tile_id(previous_focused_tile);
+		p_editor_data.set_edited_scene(p_editor_data.get_tile_current_scene(previous_focused_tile));
+	}
+	return scene_idx;
+}
+
+// A scene context belongs to the tile that opened it, never to whichever tile
+// happens to hold focus. EditorNode rebinds in-tile docks off this mapping, so
+// resolving it through focus instead would rebind an unfocused tile's docks to
+// another tile's scene (issue #1706).
+TEST_CASE("[SceneTree][Editor] Scene contexts resolve to their owning tile, not the focused tile") {
+	EditorData editor_data;
+
+	const int left_scene = open_scene_in_tile(editor_data, 0, "First");
+	const int right_scene = open_scene_in_tile(editor_data, 1, "Second");
+	const int right_extra_scene = open_scene_in_tile(editor_data, 1, "Third");
+
+	EditorSceneContext *left_context = editor_data.get_scene_context(left_scene);
+	EditorSceneContext *right_context = editor_data.get_scene_context(right_scene);
+	EditorSceneContext *right_extra_context = editor_data.get_scene_context(right_extra_scene);
+
+	CHECK(editor_data.find_scene_index_for_context(left_context) == left_scene);
+	CHECK(editor_data.find_scene_index_for_context(right_context) == right_scene);
+	CHECK(editor_data.find_scene_index_for_context(right_extra_context) == right_extra_scene);
+	CHECK(editor_data.find_scene_index_for_context(nullptr) == -1);
+
+	// Focus the left tile, then activate a scene that the right tile owns. This
+	// is the state a root-node creation in an unfocused tile produces.
+	editor_data.set_focused_tile_id(0);
+	editor_data.set_edited_scene(left_scene);
+	REQUIRE(editor_data.get_focused_tile_id() == 0);
+
+	CHECK(editor_data.get_scene_tile(editor_data.find_scene_index_for_context(right_extra_context)) == 1);
+	CHECK(editor_data.get_scene_tile(editor_data.find_scene_index_for_context(left_context)) == 0);
+
+	// The left tile keeps its own scene while the right tile's scene is current.
+	editor_data.set_focused_tile_id(1);
+	editor_data.set_edited_scene(right_extra_scene);
+	CHECK(editor_data.get_tile_current_scene(0) == left_scene);
+	CHECK(editor_data.get_scene_tile(editor_data.find_scene_index_for_context(right_extra_context)) == 1);
+	REQUIRE(editor_data.get_scene_context(editor_data.get_tile_current_scene(0)) == left_context);
+	REQUIRE(left_context->get_scene_root_node() != nullptr);
+	CHECK(String(left_context->get_scene_root_node()->get_name()) == "First");
+}
+
 TEST_CASE("[SceneTree][Editor] SceneTreeDock constructs without an EditorNode") {
 	Window *tree_root = SceneTree::get_singleton()->get_root();
 	EditorData editor_data;

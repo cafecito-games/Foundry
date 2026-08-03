@@ -857,6 +857,18 @@ Node *EditorData::EditedScene::get_root() const {
 	return context ? context->get_scene_root_node() : nullptr;
 }
 
+int EditorData::find_scene_index_for_context(const EditorSceneContext *p_context) const {
+	if (!p_context) {
+		return -1;
+	}
+	for (int i = 0; i < edited_scene.size(); i++) {
+		if (edited_scene[i].context == p_context) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 EditorSceneContext *EditorData::get_scene_context(int p_idx) const {
 	if (p_idx < 0) {
 		p_idx = current_edited_scene;

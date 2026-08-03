@@ -346,7 +346,9 @@ private:
 	Control *center_overlay = nullptr;
 	EditorSceneWorkspace *scene_workspace = nullptr;
 	int pending_focus_tile_id = -1;
-	uint64_t pending_focus_tile_generation = 0;
+	// Marshaled through a Callable bind, so it must be a Variant-representable
+	// signed integer rather than an unsigned one.
+	int64_t pending_focus_tile_generation = 0;
 	Control *global_screen_host = nullptr;
 
 	// Main tabs.
@@ -637,6 +639,7 @@ private:
 
 	void _set_current_scene(int p_idx);
 	void _set_current_scene_nocheck(int p_idx);
+	int _tile_id_for_scene_context(EditorSceneContext *p_context) const;
 	void _activate_scene_context(EditorSceneContext *p_context);
 	void _attach_active_scene_context();
 	void _configure_editor_selection(EditorSelection *p_selection);
@@ -746,7 +749,7 @@ private:
 	void _on_leaf_focus_requested(int p_leaf_id);
 	void _cancel_queued_focus_tile_activation();
 	void _queue_focus_tile_activation(int p_tile_id);
-	void _activate_queued_focus_tile(int p_tile_id, uint64_t p_generation);
+	void _activate_queued_focus_tile(int p_tile_id, int64_t p_generation);
 	void _focus_tile_internal(int p_tile_id, bool p_activate_content_if_already_focused = false);
 	void _focus_tile(int p_tile_id);
 	void _focus_script_leaf(int p_leaf_id);
