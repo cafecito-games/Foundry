@@ -75,6 +75,12 @@ public:
 	//
 	// Only integer and floating built-ins are numerically related; anything else is `INVALID` and the
 	// caller's own type rules decide.
+	//
+	// The classification is about value preservation alone. Whether a conversion the caller can
+	// actually lower exists is a separate question the caller keeps answering for itself: crossing
+	// between the signed and unsigned carriers is value-preserving in one direction but has no
+	// registered `Variant` conversion, so the built-in compatibility rules reject it before this
+	// classifier is consulted.
 	static Conversion classify(const FSParser::DataType &p_target, const FSParser::DataType &p_source, const Variant *p_constant_source_value);
 
 	// Whether a built-in type participates in numeric conversion at all.

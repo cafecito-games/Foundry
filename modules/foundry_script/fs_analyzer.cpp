@@ -14144,8 +14144,10 @@ String FSAnalyzer::make_integer_promotion_error(const FSParser::DataType &p_left
 				p_left.to_string(), p_right.to_string(), Variant::get_operator_name(p_operation));
 	}
 	if (p_left.builtin_type != p_right.builtin_type) {
-		// The promoted type exists, but the two carriers cannot meet without a conversion the operand
-		// has to spell out.
+		// The matrix does name a common type, but one operand would have to change carrier to reach it
+		// and `Variant` registers neither a mixed-carrier arithmetic operator nor a conversion between
+		// the two integer carriers. Naming the promoted type keeps the required conversion obvious
+		// while the operation itself stays a static error rather than one that cannot be executed.
 		return vformat(R"(The "%s" operator cannot mix "%s" and "%s" operands. Convert both to "%s" explicitly.)",
 				Variant::get_operator_name(p_operation), p_left.to_string(), p_right.to_string(),
 				numeric_type_public_name(promoted));
