@@ -12186,7 +12186,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				return true;
 			};
 			// A bound value only rules out a slot when its type proves the mismatch. An unknown or
-			// untyped value stays gradual and must never narrow what the bound callable accepts.
+			// untyped value stays gradual, and a supertype that a runtime check could narrow is
+			// accepted at the call site, so neither may narrow what the bound callable accepts.
 			auto bound_argument_conflicts_with = [&](const FSParser::ExpressionNode *p_argument, const FSParser::DataType &p_expected_type) -> bool {
 				if (p_argument == nullptr || !p_expected_type.is_hard_type() || p_expected_type.is_variant()) {
 					return false;
@@ -12197,7 +12198,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					return false;
 				}
 
-				return !is_type_compatible(p_expected_type, argument_type, true);
+				return !is_type_compatible(p_expected_type, argument_type, true) &&
+						!FSTypeCompatibility::allows_runtime_narrowing(p_expected_type, argument_type);
 			};
 			auto bound_argument_conflicts_with_rest_tail = [&](const FSParser::ExpressionNode *p_argument) -> bool {
 				if (!p_base_type.has_method_rest_parameter_type()) {

@@ -3875,6 +3875,18 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An untyped bound value d
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A runtime-narrowable bound value does not restrict the call arity") {
+	// Passing an `Object` where a `Node` is expected is accepted with a runtime check, so it is not
+	// the kind of proven mismatch that may drop an arity.
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[Object, ...Array[Node]], void]\n"
+					 "\tvar value: Object = Node.new()\n"
+					 "\tvar bound := callback.bind(value)\n"
+					 "\tbound.call(value)\n"),
+			OK);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() rejects a value no call arity can place") {
 	// Arity 1 would put `7` in the `String` parameter and every larger arity puts it in the `String`
 	// rest tail, while arity 0 cannot omit the required `String`. Nothing accepts the bound value.
