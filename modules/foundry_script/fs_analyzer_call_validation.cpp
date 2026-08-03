@@ -1039,11 +1039,31 @@ FSParser::DataType FSAnalyzer::CallSiteValidationContext::explicit_signal_type_f
 	return signal_type;
 }
 
-FSParser::DataType FSAnalyzer::CallSiteValidationContext::explicit_signal_type_from_node(const FSParser::SignalNode *p_signal) const {
+FSParser::DataType FSAnalyzer::CallSiteValidationContext::explicit_signal_type_from_node(const FSParser::SignalNode *p_signal, const FSParser::DataType &p_receiver_type, const FSParser::ClassNode *p_declaring_class) const {
 	FSParser::DataType signal_type = p_signal->get_datatype();
 	signal_type.method_parameter_types.clear();
+
+	// A signal's parameters are written in its declaring class's scope, so an inherited signal on a
+	// generic ancestor still spells them with that ancestor's type parameters. Project the receiver
+	// through every `extends` edge down to the declaring class and substitute the resulting bindings
+	// recursively into each parameter, exactly as the inherited variable and method paths do. The
+	// result is per use site: the declaration stays untouched, so `Base[int]` and `Base[String]` in
+	// one source independently produce `Signal[[int]]` and `Signal[[String]]`.
+	const bool can_specialize = p_declaring_class != nullptr && p_receiver_type.class_type != nullptr;
+	FSParser::DataType declaring_type;
+	FSParser::DataType self_type;
+	if (can_specialize) {
+		declaring_type = analyzer->specialize_ancestor_type(p_receiver_type, p_declaring_class);
+		self_type = type_handle_represented_type(p_receiver_type);
+	}
+
 	for (FSParser::ParameterNode *parameter : p_signal->parameters) {
-		signal_type.method_parameter_types.push_back(parameter->get_datatype());
+		if (can_specialize) {
+			signal_type.method_parameter_types.push_back(
+					analyzer->substitute_member_type(parameter->get_datatype(), declaring_type, nullptr, &self_type));
+		} else {
+			signal_type.method_parameter_types.push_back(parameter->get_datatype());
+		}
 	}
 	signal_type.has_method_signature = true;
 	signal_type.has_explicit_method_signature = true;
@@ -1071,7 +1091,7 @@ bool FSAnalyzer::CallSiteValidationContext::signal_name_from_constant_arg(const 
 
 bool FSAnalyzer::CallSiteValidationContext::signal_type_from_receiver(const FSParser::DataType &p_receiver_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const {
 	if (p_receiver_type.kind == FSParser::DataType::CLASS) {
-		return signal_type_from_class_constant_arg(p_receiver_type.class_type, p_call, p_signal_arg_index, r_signal_type);
+		return signal_type_from_class_constant_arg(p_receiver_type, p_call, p_signal_arg_index, r_signal_type);
 	}
 	if (p_receiver_type.kind == FSParser::DataType::NATIVE) {
 		return signal_type_from_native_constant_arg(p_receiver_type.native_type, p_call, p_signal_arg_index, r_signal_type);
@@ -1079,8 +1099,8 @@ bool FSAnalyzer::CallSiteValidationContext::signal_type_from_receiver(const FSPa
 	return false;
 }
 
-bool FSAnalyzer::CallSiteValidationContext::signal_type_from_class_constant_arg(const FSParser::ClassNode *p_class, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const {
-	if (p_class == nullptr) {
+bool FSAnalyzer::CallSiteValidationContext::signal_type_from_class_constant_arg(const FSParser::DataType &p_receiver_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const {
+	if (p_receiver_type.class_type == nullptr) {
 		return false;
 	}
 
@@ -1089,14 +1109,16 @@ bool FSAnalyzer::CallSiteValidationContext::signal_type_from_class_constant_arg(
 		return false;
 	}
 
-	for (const FSParser::ClassNode *class_node = p_class; class_node != nullptr;) {
+	for (const FSParser::ClassNode *class_node = p_receiver_type.class_type; class_node != nullptr;) {
 		if (class_node->has_member(signal_name)) {
 			const FSParser::ClassNode::Member &member = class_node->get_member(signal_name);
 			if (member.type != FSParser::ClassNode::Member::SIGNAL) {
 				return false;
 			}
 
-			r_signal_type = explicit_signal_type_from_node(member.signal);
+			// The walk found the declaring class; the receiver type still carries the bindings that
+			// specialize the signal's parameters against it.
+			r_signal_type = explicit_signal_type_from_node(member.signal, p_receiver_type, class_node);
 			return true;
 		}
 
@@ -1132,7 +1154,12 @@ bool FSAnalyzer::CallSiteValidationContext::signal_type_from_native_constant_arg
 }
 
 bool FSAnalyzer::CallSiteValidationContext::local_signal_type_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const {
-	return signal_type_from_class_constant_arg(analyzer->parser->current_class, p_call, p_signal_arg_index, r_signal_type);
+	if (analyzer->parser->current_class == nullptr) {
+		return false;
+	}
+	// Start from the current class's instance type rather than a bare class pointer so a local
+	// `connect("inherited", ...)` projects through its own `extends` chain like an external receiver.
+	return signal_type_from_class_constant_arg(FSAnalyzer::type_from_metatype(analyzer->parser->current_class->get_datatype()), p_call, p_signal_arg_index, r_signal_type);
 }
 
 void FSAnalyzer::CallSiteValidationContext::validate_strict_signal_name_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_signal_arg_index) {

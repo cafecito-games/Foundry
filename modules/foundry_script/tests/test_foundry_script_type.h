@@ -1948,6 +1948,148 @@ TEST_CASE("[Modules][FoundryScript] Analyzer checks FoundryScript member Signal.
 	CHECK(analyze_source(source_prefix + "\temitter.event.emit(get_dynamic())\n", false, true) != OK);
 }
 
+// A signal declared on a generic base is observed through a receiver's type arguments, so the whole
+// statically resolved signal surface (value APIs, string-name Object APIs, and the `Signal(receiver,
+// name)` constructor) must validate against the substituted parameter types.
+static const char *GENERIC_SIGNAL_CLASSES =
+		"class Base[T]:\n"
+		"\tsignal reported(value: T)\n"
+		"class Child extends Base[int]:\n"
+		"\tpass\n";
+static const char *GENERIC_SIGNAL_HANDLERS =
+		"func accept_int(value: int) -> void:\n\tpass\n"
+		"func accept_string(value: String) -> void:\n\tpass\n";
+// Bare and `self.` access happen inside the subclass, whose own methods are the reachable handlers.
+static const char *GENERIC_SIGNAL_LOCAL_PREFIX =
+		"class Base[T]:\n"
+		"\tsignal reported(value: T)\n"
+		"class Child extends Base[int]:\n"
+		"\tfunc accept_int(value: int) -> void:\n\t\tpass\n"
+		"\tfunc accept_string(value: String) -> void:\n\t\tpass\n"
+		"\tfunc go() -> void:\n";
+
+TEST_CASE("[Modules][FoundryScript] Analyzer specializes inherited generic Signal values") {
+	const String source_prefix = String(GENERIC_SIGNAL_CLASSES) + GENERIC_SIGNAL_HANDLERS + "func test(child: Child, base: Base[int]) -> void:\n";
+	const String local_prefix = GENERIC_SIGNAL_LOCAL_PREFIX;
+
+	CHECK(analyze_source(local_prefix + "\t\treported.emit(1)\n") == OK);
+	CHECK(analyze_source(local_prefix + "\t\treported.emit(\"nope\")\n") != OK);
+	CHECK(analyze_source(local_prefix + "\t\tself.reported.emit(1)\n") == OK);
+	CHECK(analyze_source(local_prefix + "\t\tself.reported.emit(\"nope\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tchild.reported.emit(1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tchild.reported.emit(\"nope\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tbase.reported.emit(1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tbase.reported.emit(\"nope\")\n") != OK);
+
+	CHECK(analyze_source(local_prefix + "\t\treported.connect(accept_int)\n") == OK);
+	CHECK(analyze_source(local_prefix + "\t\treported.connect(accept_string)\n") != OK);
+	CHECK(analyze_source(local_prefix + "\t\tself.reported.connect(accept_int)\n") == OK);
+	CHECK(analyze_source(local_prefix + "\t\tself.reported.connect(accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tchild.reported.connect(accept_int)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tchild.reported.connect(accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tchild.reported.disconnect(accept_int)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tchild.reported.disconnect(accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = child.reported.is_connected(accept_int)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = child.reported.is_connected(accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tbase.reported.connect(accept_int)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tbase.reported.connect(accept_string)\n") != OK);
+
+	// The specialized signature is visible as a value type, and two receivers of the same generic
+	// base specialize independently.
+	CHECK(analyze_source(source_prefix + "\tvar typed: Signal[[int]] = child.reported\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar typed: Signal[[String]] = child.reported\n") != OK);
+	CHECK(analyze_source(String(GENERIC_SIGNAL_CLASSES) + "func test(ints: Base[int], strings: Base[String]) -> void:\n\tints.reported.emit(1)\n\tstrings.reported.emit(\"ok\")\n") == OK);
+	CHECK(analyze_source(String(GENERIC_SIGNAL_CLASSES) + "func test(ints: Base[int], strings: Base[String]) -> void:\n\tints.reported.emit(1)\n\tstrings.reported.emit(1)\n") != OK);
+
+	// A raw generic receiver supplies no concrete binding, so the parameter stays the declaration's
+	// type parameter and keeps the repository's existing gradual behavior: no new diagnostic.
+	CHECK(analyze_source(String(GENERIC_SIGNAL_CLASSES) + "func test(raw: Base) -> void:\n\traw.reported.emit(1)\n") == OK);
+	CHECK(analyze_source(String(GENERIC_SIGNAL_CLASSES) + "func test(raw: Base) -> void:\n\traw.reported.emit(\"anything\")\n") == OK);
+	CHECK(analyze_source(String(GENERIC_SIGNAL_CLASSES) + "func test(raw: Base) -> void:\n\traw.emit_signal(\"reported\", \"anything\")\n") == OK);
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer specializes inherited generic string-name Object signal APIs") {
+	const String source_prefix = String(GENERIC_SIGNAL_CLASSES) + GENERIC_SIGNAL_HANDLERS + "func test(child: Child) -> void:\n";
+	const String local_prefix = GENERIC_SIGNAL_LOCAL_PREFIX;
+	const String dynamic_prefix = String(GENERIC_SIGNAL_CLASSES) + GENERIC_SIGNAL_HANDLERS + "func test(child: Child, signal_name: StringName) -> void:\n";
+
+	CHECK(analyze_source(local_prefix + "\t\temit_signal(\"reported\", 1)\n") == OK);
+	CHECK(analyze_source(local_prefix + "\t\temit_signal(\"reported\", \"nope\")\n") != OK);
+	CHECK(analyze_source(local_prefix + "\t\temit_signal(&\"reported\", \"nope\")\n") != OK);
+	CHECK(analyze_source(local_prefix + "\t\tconnect(\"reported\", accept_int)\n") == OK);
+	CHECK(analyze_source(local_prefix + "\t\tconnect(\"reported\", accept_string)\n") != OK);
+	CHECK(analyze_source(local_prefix + "\t\tdisconnect(\"reported\", accept_string)\n") != OK);
+	CHECK(analyze_source(local_prefix + "\t\tvar connected: bool = is_connected(\"reported\", accept_string)\n") != OK);
+
+	CHECK(analyze_source(source_prefix + "\tchild.emit_signal(\"reported\", 1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tchild.emit_signal(\"reported\", \"nope\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tchild.emit_signal(&\"reported\", \"nope\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tchild.connect(\"reported\", accept_int)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tchild.connect(\"reported\", accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tchild.connect(&\"reported\", accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tchild.disconnect(\"reported\", accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar connected: bool = child.is_connected(\"reported\", accept_string)\n") != OK);
+
+	// A dynamic or unknown signal name keeps its legacy fallback: specialization must not invent a
+	// diagnostic where no signal was resolved.
+	CHECK(analyze_source(dynamic_prefix + "\tchild.emit_signal(signal_name, \"nope\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tchild.emit_signal(\"unknown\", \"nope\")\n") == OK);
+	CHECK(analyze_source(dynamic_prefix + "\tchild.connect(signal_name, accept_string)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tchild.connect(\"unknown\", accept_string)\n") == OK);
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer specializes inherited generic Signal constructors") {
+	const String source_prefix = String(GENERIC_SIGNAL_CLASSES) + GENERIC_SIGNAL_HANDLERS + "func test(child: Child, signal_name: StringName) -> void:\n";
+
+	CHECK(analyze_source(source_prefix + "\tSignal(child, \"reported\").emit(1)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(child, \"reported\").emit(\"nope\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(child, \"reported\").connect(accept_int)\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(child, \"reported\").connect(accept_string)\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar typed: Signal[[int]] = Signal(child, \"reported\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar typed: Signal[[String]] = Signal(child, \"reported\")\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(child, signal_name).emit(\"nope\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(child, \"unknown\").emit(\"nope\")\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(child, signal_name).emit(1)\n", false, true) != OK);
+	CHECK(analyze_source(source_prefix + "\tSignal(child, \"unknown\").emit(1)\n", false, true) != OK);
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer renders inherited generic signal diagnostics with concrete types") {
+	const String source_prefix = String(GENERIC_SIGNAL_CLASSES) + GENERIC_SIGNAL_HANDLERS + "func test(child: Child) -> void:\n";
+
+	check_source_error(source_prefix + "\tchild.reported.connect(accept_string)\n",
+			R"*(Cannot connect signal "Signal[[int]]" to callable "Callable[[String], void]": signal argument 1 of type "int" cannot be passed to callable parameter of type "String".)*");
+	check_source_has_error(source_prefix + "\tchild.reported.emit(\"nope\")\n",
+			R"*(Invalid argument for "emit()" function: argument 1 should be "int" but is "String".)*");
+	check_source_has_error(source_prefix + "\tchild.emit_signal(\"reported\", \"nope\")\n",
+			R"*(Invalid argument for "emit_signal()" function: argument 2 should be "int" but is "String".)*");
+	check_source_error(source_prefix + "\tvar typed: Signal[[String]] = child.reported\n",
+			R"*(Cannot assign a value of type Signal[[int]] to variable "typed" with specified type Signal[[String]].)*");
+}
+
+TEST_CASE("[Modules][FoundryScript] Analyzer specializes inherited generic signals through a reordering chain") {
+	const String source_prefix = "class Base[A, B]:\n"
+								 "\tsignal reported(first: A, second: Array[B])\n"
+								 "class Middle[X, Y] extends Base[Y, X]:\n\tpass\n"
+								 "class Child extends Middle[String, int]:\n\tpass\n"
+								 "func test(child: Child) -> void:\n";
+	// The declaring class's own parameters win over a same-named parameter at the use site.
+	const String declaring_scope_prefix = "class A[T]:\n"
+										  "\tsignal reported(value: T)\n"
+										  "class B[K] extends A[K]:\n\tpass\n"
+										  "class C[T] extends B[int]:\n\tpass\n"
+										  "func test(c: C[String]) -> void:\n";
+
+	CHECK(analyze_source(source_prefix + "\tchild.reported.emit(1, [\"ok\"])\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tchild.reported.emit(\"bad\", [\"ok\"])\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tchild.reported.emit(1, [1])\n") != OK);
+	CHECK(analyze_source(source_prefix + "\tvar typed: Signal[[int, Array[String]]] = child.reported\n") == OK);
+	CHECK(analyze_source(source_prefix + "\tvar typed: Signal[[String, Array[int]]] = child.reported\n") != OK);
+
+	CHECK(analyze_source(declaring_scope_prefix + "\tc.reported.emit(1)\n") == OK);
+	CHECK(analyze_source(declaring_scope_prefix + "\tc.reported.emit(\"nope\")\n") != OK);
+	CHECK(analyze_source(declaring_scope_prefix + "\tc.emit_signal(\"reported\", \"nope\")\n") != OK);
+}
+
 TEST_CASE("[Modules][FoundryScript] Analyzer checks native member Signal.connect callables") {
 	const String source_prefix = "func accept_none() -> void:\n\tpass\nfunc accept_float(value: float) -> void:\n\tpass\nfunc accept_string(value: String) -> void:\n\tpass\nfunc test(button: Button, range: Range) -> void:\n";
 
