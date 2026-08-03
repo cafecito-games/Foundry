@@ -641,9 +641,11 @@ public:
 	static Variant::Type get_return_type() { return Variant::UINT; }
 };
 
-// Like the signed division and shift evaluators, only the reporting `evaluate()` entry point rejects a
-// right operand the operation cannot accept. The validated and pointer entry points stay branch-free
-// because their callers are responsible for having checked the operands first.
+// Division, remainder, and shifts have right operands the C++ operation cannot evaluate at all: a zero
+// divisor, and a shift count that is not smaller than the operand width. Every entry point rejects
+// those instead of running the undefined operation. `evaluate()` reports the failure through its
+// validity flag; the validated and pointer entry points cannot, so they fall back to zero and raise an
+// engine error, the same shape the string-format evaluators use for an unreportable failure.
 template <typename Operation>
 class OperatorEvaluatorUIntCheckedBinary {
 public:
@@ -661,10 +663,22 @@ public:
 		r_valid = true;
 	}
 	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantUIntCarrier::set(r_ret, Operation::compute(VariantUIntCarrier::get(left), VariantUIntCarrier::get(right)));
+		const uint64_t left_value = VariantUIntCarrier::get(left);
+		const uint64_t right_value = VariantUIntCarrier::get(right);
+		if (unlikely(!Operation::accepts(right_value))) {
+			VariantUIntCarrier::set(r_ret, 0);
+			ERR_FAIL_MSG(Operation::error_message());
+		}
+		VariantUIntCarrier::set(r_ret, Operation::compute(left_value, right_value));
 	}
 	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<uint64_t>::encode(Operation::compute(VariantUIntCarrier::get_ptr(left), VariantUIntCarrier::get_ptr(right)), r_ret);
+		const uint64_t left_value = VariantUIntCarrier::get_ptr(left);
+		const uint64_t right_value = VariantUIntCarrier::get_ptr(right);
+		if (unlikely(!Operation::accepts(right_value))) {
+			PtrToArg<uint64_t>::encode(0, r_ret);
+			ERR_FAIL_MSG(Operation::error_message());
+		}
+		PtrToArg<uint64_t>::encode(Operation::compute(left_value, right_value), r_ret);
 	}
 	static Variant::Type get_return_type() { return Variant::UINT; }
 };

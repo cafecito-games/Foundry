@@ -2813,6 +2813,51 @@ TEST_CASE("[Variant][UInt] Shifts are logical across the full width") {
 	}
 }
 
+TEST_CASE("[Variant][UInt] Validated and pointer paths refuse operands they cannot compute") {
+	// Neither entry point can report failure through its signature, so instead of running the
+	// undefined C++ operation they must fall back to a defined result.
+	struct RejectedCase {
+		Variant::Operator op;
+		uint64_t right;
+	};
+	const RejectedCase cases[] = {
+		{ Variant::OP_DIVIDE, 0 },
+		{ Variant::OP_MODULE, 0 },
+		{ Variant::OP_SHIFT_LEFT, 64 },
+		{ Variant::OP_SHIFT_RIGHT, 64 },
+		{ Variant::OP_SHIFT_LEFT, UINT64_MAX },
+		{ Variant::OP_SHIFT_RIGHT, UINT64_MAX },
+	};
+
+	ERR_PRINT_OFF;
+	for (const RejectedCase &rejected : cases) {
+		const Variant left = make_uint(UINT64_MAX);
+		const Variant right = make_uint(rejected.right);
+
+		const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(rejected.op, Variant::UINT, Variant::UINT);
+		REQUIRE(validated != nullptr);
+		if (validated != nullptr) {
+			Variant validated_result;
+			VariantInternal::initialize(&validated_result, Variant::UINT);
+			VariantInternal::get_uint(&validated_result)[0] = 7;
+			validated(&left, &right, &validated_result);
+			CHECK_EQ(validated_result.get_type(), Variant::UINT);
+			CHECK_EQ(validated_result.operator uint64_t(), 0u);
+		}
+
+		const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(rejected.op, Variant::UINT, Variant::UINT);
+		REQUIRE(pointer != nullptr);
+		if (pointer != nullptr) {
+			const uint64_t left_value = UINT64_MAX;
+			const uint64_t right_value = rejected.right;
+			uint64_t pointer_result = 7;
+			pointer(&left_value, &right_value, &pointer_result);
+			CHECK_EQ(pointer_result, 0u);
+		}
+	}
+	ERR_PRINT_ON;
+}
+
 TEST_CASE("[Variant][UInt] Bitwise operators cover the sign bit") {
 	CHECK_EQ(evaluate_uint_binary(Variant::OP_BIT_OR, uint64_t(1) << 63, uint64_t(INT64_MAX)), UINT64_MAX);
 	CHECK_EQ(evaluate_uint_binary(Variant::OP_BIT_AND, UINT64_MAX, uint64_t(1) << 63), uint64_t(1) << 63);
