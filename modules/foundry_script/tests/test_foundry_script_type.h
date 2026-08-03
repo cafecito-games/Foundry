@@ -3887,6 +3887,27 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A runtime-narrowable bou
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An untyped bound value keeps only the arities left open") {
+	// Arity 1 would pass `7` as the `String` parameter and larger arities pass it through the `String`
+	// rest tail, so only arity 0 survives; the untyped second value must not close that off too.
+	CHECK_EQ(analyze_source(
+					 "func anything() -> Variant:\n"
+					 "\treturn \"x\"\n"
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, String, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.bind(7, anything())\n"
+					 "\tbound.call()\n"),
+			OK);
+	check_source_has_error(
+			"func anything() -> Variant:\n"
+			"\treturn \"x\"\n"
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, String, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bind(7, anything())\n"
+			"\tbound.call(1)\n",
+			R"*(Too many arguments for "call()" call. Expected at most 0 but received 1.)*");
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() rejects a value no call arity can place") {
 	// Arity 1 would put `7` in the `String` parameter and every larger arity puts it in the `String`
 	// rest tail, while arity 0 cannot omit the required `String`. Nothing accepts the bound value.

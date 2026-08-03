@@ -12261,18 +12261,24 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				const int highest_candidate_argument_count = stays_variadic ? fixed_argument_count : fixed_argument_count - 1;
 
 				Vector<int> allowed_argument_counts;
+				Vector<int> possible_argument_counts;
 				for (int argument_count = 0; argument_count <= highest_candidate_argument_count; argument_count++) {
 					if (fixed_vararg_accepts_argument_count(p_bound_arguments, argument_count)) {
 						allowed_argument_counts.push_back(argument_count);
 					}
+					if (!fixed_vararg_rules_out_argument_count(p_bound_arguments, argument_count)) {
+						possible_argument_counts.push_back(argument_count);
+					}
 				}
 
-				if (allowed_argument_counts.is_empty()) {
-					bool any_argument_count_possible = false;
-					for (int argument_count = 0; argument_count <= highest_candidate_argument_count && !any_argument_count_possible; argument_count++) {
-						any_argument_count_possible = !fixed_vararg_rules_out_argument_count(p_bound_arguments, argument_count);
-					}
-					if (!any_argument_count_possible && p_base_type.has_method_rest_parameter_type()) {
+				// The strict set holds the arities the bound values are proven to satisfy. When a rest-tail
+				// conflict leaves none of them, an untyped bound value may still make some arity work at
+				// runtime, so the weaker "not ruled out" set keeps those arities alive. Either way the
+				// arities this analysis already ruled out stay rejected.
+				const Vector<int> &surviving_argument_counts = allowed_argument_counts.is_empty() ? possible_argument_counts : allowed_argument_counts;
+
+				if (surviving_argument_counts.is_empty()) {
+					if (p_base_type.has_method_rest_parameter_type()) {
 						// No call arity can place the bound values, so the mismatch is reported at the bind.
 						const FSParser::DataType rest_element_type = p_base_type.get_method_rest_parameter_type().get_container_element_type(0);
 						for (int i = 0; i < MIN(fixed_argument_count, p_bound_arguments.size()); i++) {
@@ -12288,13 +12294,13 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					return true;
 				}
 
-				const int highest_allowed_argument_count = allowed_argument_counts[allowed_argument_counts.size() - 1];
+				const int highest_allowed_argument_count = surviving_argument_counts[surviving_argument_counts.size() - 1];
 				int lowest_continuous_argument_count = highest_allowed_argument_count;
-				for (int index = allowed_argument_counts.size() - 2; index >= 0; index--) {
-					if (allowed_argument_counts[index] != lowest_continuous_argument_count - 1) {
+				for (int index = surviving_argument_counts.size() - 2; index >= 0; index--) {
+					if (surviving_argument_counts[index] != lowest_continuous_argument_count - 1) {
 						break;
 					}
-					lowest_continuous_argument_count = allowed_argument_counts[index];
+					lowest_continuous_argument_count = surviving_argument_counts[index];
 				}
 
 				Vector<FSParser::DataType> remaining_parameter_types;
@@ -12308,9 +12314,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					// No call argument can reach the tail any more, so the result no longer has one.
 					r_return_type.clear_method_rest_parameter_type();
 				}
-				for (int index = 0; index < allowed_argument_counts.size(); index++) {
-					if (allowed_argument_counts[index] < lowest_continuous_argument_count) {
-						r_return_type.method_extra_allowed_argument_counts.push_back(allowed_argument_counts[index]);
+				for (int index = 0; index < surviving_argument_counts.size(); index++) {
+					if (surviving_argument_counts[index] < lowest_continuous_argument_count) {
+						r_return_type.method_extra_allowed_argument_counts.push_back(surviving_argument_counts[index]);
 					}
 				}
 				return true;
