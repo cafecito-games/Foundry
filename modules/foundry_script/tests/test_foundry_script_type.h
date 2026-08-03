@@ -3570,4 +3570,217 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Signal arguments must fi
 			OK);
 }
 
+// Parses and analyzes `p_source`, returning the resolved type of top-level variable `p_name`.
+// `r_analyzed` reports whether the parse and analysis both succeeded.
+static FSParser::DataType variable_type_of(const String &p_source, const StringName &p_name, bool &r_analyzed) {
+	IgnoreWarningsScope ignore_warnings;
+	FSParser parser;
+	r_analyzed = false;
+	if (parser.parse(p_source, "user://typed_variadic_callable.fs", false) != OK) {
+		return FSParser::DataType();
+	}
+	FSAnalyzer analyzer(&parser);
+	if (analyzer.analyze() != OK) {
+		return FSParser::DataType();
+	}
+	const FSParser::ClassNode::Member member = parser.get_tree()->get_member(p_name);
+	if (member.type != FSParser::ClassNode::Member::VARIABLE) {
+		return FSParser::DataType();
+	}
+	r_analyzed = true;
+	return member.variable->get_datatype();
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Callable type stores a typed rest tail") {
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var callback: Callable[[int, ...Array[String]], bool]\n", SNAME("callback"), analyzed);
+	REQUIRE(analyzed);
+	CHECK((type.method_info.flags & METHOD_FLAG_VARARG) != 0);
+	REQUIRE(type.has_method_rest_parameter_type());
+	CHECK_EQ(type.get_method_rest_parameter_type().to_string(), "Array[String]");
+	CHECK_EQ(type.method_parameter_types.size(), 1);
+	CHECK_EQ(type.to_string(), "Callable[[int, ...Array[String]], bool]");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rest-only Callable signature is variadic") {
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var sink: AsyncCallable[[...Array[int]], void]\n", SNAME("sink"), analyzed);
+	REQUIRE(analyzed);
+	CHECK((type.method_info.flags & METHOD_FLAG_VARARG) != 0);
+	CHECK(type.signature_is_async);
+	REQUIRE(type.has_method_rest_parameter_type());
+	CHECK_EQ(type.to_string(), "AsyncCallable[[...Array[int]], void]");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A gradual Callable rest tail stays untyped") {
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var sink: Callable[[...Array], void]\n", SNAME("sink"), analyzed);
+	REQUIRE(analyzed);
+	// Gradual tails must stay indistinguishable from a native untyped vararg: variadic, no rich slot.
+	CHECK((type.method_info.flags & METHOD_FLAG_VARARG) != 0);
+	CHECK_FALSE(type.has_method_rest_parameter_type());
+	CHECK_EQ(type.to_string(), "Callable[[], void]");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A non-Array Callable rest type is rejected") {
+	check_source_error(
+			"var sink: Callable[[...int], void]\n",
+			R"(The Callable rest parameter type must be "Array", but "int" is specified.)");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A Variant Callable rest type is rejected") {
+	check_source_error(
+			"var sink: Callable[[...Variant], void]\n",
+			R"(The Callable rest parameter type must be "Array", but "Variant" is specified.)");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A middle-position Callable rest type is rejected") {
+	check_source_has_error(
+			"var sink: Callable[[...Array[int], String], void]\n",
+			"The rest parameter type must be the final Callable parameter type.");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A repeated Callable rest type is rejected") {
+	check_source_has_error(
+			"var sink: Callable[[...Array[int], ...Array[String]], void]\n",
+			"A Callable signature can contain only one rest parameter type.");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A Signal rest type is rejected") {
+	check_source_has_error(
+			"signal ready_signal\n"
+			"var sink: Signal[[...Array[int]]]\n",
+			"Signal signatures cannot declare a rest parameter.");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A function reference keeps its typed rest tail") {
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"func collect(index: int, ...names: Array[String]) -> bool:\n"
+			"\treturn index == names.size()\n"
+			"var callback := collect\n",
+			SNAME("callback"), analyzed);
+	REQUIRE(analyzed);
+	REQUIRE(type.has_method_rest_parameter_type());
+	CHECK_EQ(type.get_method_rest_parameter_type().to_string(), "Array[String]");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An explicit variadic Callable accepts a matching function") {
+	CHECK_EQ(analyze_source(
+					 "func accept(index: int, ...names: Array[String]) -> bool:\n"
+					 "\treturn index == names.size()\n"
+					 "func test() -> bool:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool] = accept\n"
+					 "\treturn callback.call(2, \"a\", \"b\") and callback.callv([2, \"a\", \"b\"])\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Callable.call() checks surplus arguments") {
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tcallback.call(2, 7)\n",
+			R"*(Invalid argument for "call()" function: argument 2 should be "String" but is "int".)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Callable.callv() checks surplus literal elements") {
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tcallback.callv([2, 7])\n",
+			R"*(Invalid argument for "callv()" function: argument 2 should be "String" but is "int".)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A gradual Callable vararg accepts any surplus argument") {
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array], void]\n"
+					 "\tcallback.call(2, 7, \"a\", null)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() preserves the typed rest tail") {
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var callback: Callable[[int, ...Array[String]], bool]\n"
+			"var bound := callback.bind(\"tail\")\n",
+			SNAME("bound"), analyzed);
+	REQUIRE(analyzed);
+	CHECK((type.method_info.flags & METHOD_FLAG_VARARG) != 0);
+	REQUIRE(type.has_method_rest_parameter_type());
+	CHECK_EQ(type.get_method_rest_parameter_type().to_string(), "Array[String]");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() rejects a value that can only fill the rest tail") {
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bind(\"ok\", 7)\n"
+			"\tprint(bound)\n",
+			R"*(Invalid argument for "bind()" function: argument 2 should be "String" but is "int".)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] unbind() keeps the typed rest tail") {
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var callback: Callable[[int, ...Array[String]], bool]\n"
+			"var unbound := callback.unbind(1)\n",
+			SNAME("unbound"), analyzed);
+	REQUIRE(analyzed);
+	REQUIRE(type.has_method_rest_parameter_type());
+	CHECK_EQ(type.get_method_rest_parameter_type().to_string(), "Array[String]");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] unbind() slots do not shadow the rest element") {
+	// `unbind(1)` appends one Variant slot for the argument it drops. The second supplied argument
+	// still reaches the rest array, so it must be checked against the rest element, not that slot.
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar unbound := callback.unbind(1)\n"
+			"\tunbound.call(2, 7, \"dropped\")\n",
+			R"*(Invalid argument for "call()" function: argument 2 should be "String" but is "int".)*");
+	check_source_has_error(
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar unbound := callback.unbind(1)\n"
+			"\tunbound.callv([2, 7, \"dropped\"])\n",
+			R"*(Invalid argument for "callv()" function: argument 2 should be "String" but is "int".)*");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] unbind() still accepts a matching rest argument") {
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+					 "\tvar unbound := callback.unbind(1)\n"
+					 "\tunbound.call(2, \"a\", 7)\n"
+					 "\tunbound.callv([2, \"a\", 7])\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rich rest tail round-trips through the property hint") {
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var callback: Callable[[int, ...Array[String]], bool]\n", SNAME("callback"), analyzed);
+	REQUIRE(analyzed);
+	const PropertyInfo info = type.to_property_info("callback");
+	CHECK_EQ(info.hint, PROPERTY_HINT_CALLABLE_TYPE);
+	CHECK_EQ(info.hint_string, "[[int, ...Array[String]], bool]");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A MethodInfo-only vararg callable crosses untyped") {
+	FSParser::DataType callable = make_builtin_type(Variant::CALLABLE);
+	callable.has_method_signature = true;
+	callable.has_explicit_method_signature = true;
+	callable.method_return_type.push_back(make_builtin_type(Variant::NIL));
+	callable.method_info.flags |= METHOD_FLAG_VARARG;
+
+	const PropertyInfo info = callable.to_property_info("callback");
+	CHECK_EQ(info.hint, PROPERTY_HINT_NONE);
+	CHECK(info.hint_string.is_empty());
+}
+
 } // namespace FSTests

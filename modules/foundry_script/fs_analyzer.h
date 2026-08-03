@@ -308,7 +308,7 @@ private:
 		static bool call_has_named_arguments(const FSParser::CallNode *p_call);
 		void reject_named_call_arguments(const FSParser::CallNode *p_call);
 		bool canonicalize_named_call_arguments(FSParser::CallNode *p_call, const FSParser::FunctionNode *p_function);
-		void validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0);
+		void validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0, const FSParser::DataType *p_rest_parameter_type = nullptr);
 		String make_invalid_argument_error(
 				const StringName &p_function,
 				int p_argument_number,

@@ -1199,8 +1199,13 @@ type_suffix =
     | type_handle_arg ;                              (* Type[T] *)
 
 collection_args   = "[", type, { ",", type }, "]" ;
-callable_signature= "[", "[", [ type, { ",", type } ], "]", ",", type, "]" ;
+callable_signature= "[", "[", [ callable_parameter_list ], "]", ",", type, "]" ;
+callable_parameter_list
+                  = callable_parameter, { ",", callable_parameter } ;
+callable_parameter= type
+                  | "...", type ;                    (* rest tail; final and at most once *)
 signal_signature  = "[", "[", [ type, { ",", type } ], "]", "]" ;
+                                                     (* a Signal never has a rest tail *)
 coroutine_arg     = "[", type, "]" ;                 (* exactly one; void allowed *)
 type_handle_arg   = "[", type, "]" ;                 (* exactly one *)
 ```
@@ -1210,10 +1215,20 @@ Details (`parse_type`):
 - A trailing `?` marks the type **nullable** (`Node?`, `Array[int]?`, `Callable[...]?`).
 - **Typed collections**: `Array[int]`, `Dictionary[String, int]`, etc. — one or more
   comma-separated element types. `void` is not allowed as an element type.
-- **`Callable[[P1, P2, ...], R]`** — a parameter-type list in inner brackets, a comma, then
+- **`Callable[[P1, P2], R]`** — a parameter-type list in inner brackets, a comma, then
   the return type (`void` allowed). `AsyncCallable[...]` is the same shape but flagged async.
-- **`Signal[[P1, P2, ...]]`** — a parameter-type list only; a signal signature may not
-  specify a return type.
+- **Variadic callable `Callable[[P1, ...Array[T]], R]`** — the parameter list may end with one
+  rest entry spelled `"..."` followed by a type. The rest entry is optional, may appear at most
+  once, must be the **final** parameter entry, and is **Callable-only**. Its type must resolve to
+  `Array` or `Array[T]`; any other resolved type is an error
+  (`The Callable rest parameter type must be "Array", but "int" is specified.`). A middle-position
+  rest entry (`The rest parameter type must be the final Callable parameter type.`), a repeated one
+  (`A Callable signature can contain only one rest parameter type.`), and a rest entry on a `Signal`
+  (`Signal signatures cannot declare a rest parameter.`) are parse errors. An untyped `...Array`
+  (or `...Array[Variant]`) tail marks the callable variadic but stays gradual, indistinguishable
+  from a native untyped vararg.
+- **`Signal[[P1, P2]]`** — a parameter-type list only; a signal signature may not
+  specify a return type, and signals are always fixed-arity (no rest entry).
 - **`Coroutine[T]`** — exactly one result type (`void` allowed) — the typed handle to an
   in-flight async computation.
 - **`Type[T]`** — exactly one represented instance type (a class/type handle).

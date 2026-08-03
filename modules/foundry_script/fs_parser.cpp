@@ -6167,13 +6167,39 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 			type->has_signature = true;
 			if (!check(FSTokenizer::Token::BRACKET_CLOSE)) {
 				bool first_pass = true;
+				// Count of fixed parameter types seen when the rest entry was parsed. A later fixed entry
+				// means the rest entry was not final.
+				int rest_parameter_position = -1;
 				do {
+					if (match(FSTokenizer::Token::PERIOD_PERIOD_PERIOD)) {
+						if (is_signal_type) {
+							push_error("Signal signatures cannot declare a rest parameter.");
+						} else if (rest_parameter_position >= 0) {
+							push_error("A Callable signature can contain only one rest parameter type.");
+						}
+						TypeNode *rest_type = parse_type(false);
+						if (rest_type == nullptr) {
+							push_error(R"(Expected rest parameter type for signature after "...".)");
+							break;
+						}
+						// Keep the first rest entry so a duplicated or Signal spelling still recovers with a
+						// usable signature while retaining the original error.
+						if (rest_parameter_position < 0 && !is_signal_type) {
+							type->signature_rest_parameter_type = rest_type;
+							rest_parameter_position = type->signature_parameter_types.size();
+						}
+						first_pass = false;
+						continue;
+					}
 					TypeNode *parameter_type = parse_type(false);
 					if (parameter_type == nullptr) {
 						push_error(vformat(R"(Expected parameter type for signature after "%s".)", first_pass ? "[" : ","));
 						break;
 					}
 					type->signature_parameter_types.append(parameter_type);
+					if (rest_parameter_position >= 0 && type->signature_parameter_types.size() == rest_parameter_position + 1) {
+						push_error("The rest parameter type must be the final Callable parameter type.");
+					}
 					first_pass = false;
 				} while (match(FSTokenizer::Token::COMMA) && !check(FSTokenizer::Token::BRACKET_CLOSE));
 			}
