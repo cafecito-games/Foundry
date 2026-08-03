@@ -333,6 +333,7 @@ TEST_CASE("[Editor][DebugSession] Debugger sessions are aggregated within one la
 	CHECK_FALSE(DebugSessionResultCoordinator::is_last_debugger_for_launch(22, active_launches));
 	CHECK_FALSE(DebugSessionResultCoordinator::is_last_debugger_for_launch(0, active_launches));
 	CHECK(DebugSessionResultCoordinator::is_last_debugger_for_launch(11, active_launches));
+	CHECK_FALSE(DebugSessionResultCoordinator::is_last_debugger_for_launch(11, active_launches, true));
 
 	active_launches.remove_at(0);
 	CHECK(DebugSessionResultCoordinator::is_last_debugger_for_launch(22, active_launches));

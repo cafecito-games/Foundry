@@ -11,6 +11,10 @@ identify the current launch.
 Use the same launch identity already authoritative for process-result acceptance, and cover the complete
 breakpoint/restart/continue lifecycle over the real tooling-host DAP socket.
 
+Connections remain explicitly unidentified until the handshake arrives. A stop that overlaps that window is deferred
+and re-evaluated when the pending connection identifies itself or closes, so multi-instance cleanup cannot race the
+handshake.
+
 **Tech Stack:** C++17, Godot/Foundry signals, doctest, Foundry tooling-host DAP integration fixtures, SCons agent build
 wrapper.
 

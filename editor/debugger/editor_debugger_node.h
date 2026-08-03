@@ -74,7 +74,7 @@ public:
 	Outcome observe_process_completed(uint64_t p_launch_id, int p_exit_code);
 	Outcome observe_debugger_stopped(uint64_t p_launch_id);
 	Outcome observe_forced_termination();
-	static bool is_last_debugger_for_launch(uint64_t p_launch_id, const Vector<uint64_t> &p_active_launches);
+	static bool is_last_debugger_for_launch(uint64_t p_launch_id, const Vector<uint64_t> &p_active_launches, bool p_has_unidentified = false);
 
 	bool is_active() const { return active; }
 	uint64_t get_launch_id() const { return launch_id; }
@@ -169,7 +169,10 @@ private:
 	HashSet<Ref<EditorDebuggerPlugin>> debugger_plugins;
 
 	DebugSessionResultCoordinator session_coordinator;
+	HashSet<uint64_t> pending_launch_stops;
 	void _finalize_debug_session(const DebugSessionResultCoordinator::Outcome &p_outcome);
+	void _evaluate_launch_stop(uint64_t p_launch_id);
+	void _reevaluate_pending_launch_stops();
 
 	ScriptEditorDebugger *_add_debugger();
 	void _update_errors();
@@ -181,6 +184,7 @@ private:
 	EditorDebuggerNode();
 
 protected:
+	void _debugger_started(int p_id);
 	void _debugger_stopped(int64_t p_launch_id, int p_id);
 	void _debugger_wants_stop(int p_id);
 	void _debugger_changed(int p_tab);

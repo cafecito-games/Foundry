@@ -33,6 +33,12 @@ only when it identifies the current launch. A delayed notification from the
 replaced launch will therefore be ignored instead of starting forced-cleanup
 handling for the replacement.
 
+A newly accepted socket is explicitly marked unidentified until its initial
+handshake is parsed. If another session stops during that short window, the node
+defers the launch-stop decision. It re-evaluates as soon as the pending socket is
+identified or closes, preventing both premature cleanup of a surviving sibling and
+indefinite suppression by an unrelated connection.
+
 The same launch identity remains authoritative for accepting process-completion
 results in `DebugSessionResultCoordinator` and `DebugAdapterProtocol`. Using it for
 debugger-socket lifecycle events also covers multi-instance runs and connections
@@ -48,6 +54,9 @@ results into successful ones.
   run is ignored.
 - Every debugger belonging to a multi-instance launch shares the launch ID, so the
   last session to close can still start the current run's bounded cleanup.
+- An active connection awaiting its initial handshake defers cleanup until its
+  launch is known; matching siblings cancel the deferred stop, while unrelated
+  sessions release it.
 - A child sends its launch ID in the first debugger handshake alongside its PID, so
   a queued connection from a replaced launch remains attributable to that launch.
 - A connection that never supplies the initial handshake remains unowned and cannot

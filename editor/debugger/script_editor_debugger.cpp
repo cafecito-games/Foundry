@@ -429,6 +429,7 @@ void ScriptEditorDebugger::_msg_set_pid(uint64_t p_thread_id, const Array &p_dat
 	ERR_FAIL_COND(p_data.is_empty());
 	remote_pid = p_data[0];
 	launch_id = p_data.size() >= 2 ? (uint64_t)(int64_t)p_data[1] : 0;
+	launch_identified = true;
 	// We emit the started signal after we've set the PID.
 	emit_signal(SNAME("started"));
 }
@@ -1336,6 +1337,7 @@ void ScriptEditorDebugger::stop() {
 	debugging_thread_id = Thread::UNASSIGNED_ID;
 	remote_pid = 0;
 	launch_id = 0;
+	launch_identified = false;
 	_clear_execution();
 
 	inspector->clear_cache();

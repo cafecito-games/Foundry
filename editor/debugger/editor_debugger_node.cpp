@@ -111,6 +111,7 @@ ScriptEditorDebugger *EditorDebuggerNode::_add_debugger() {
 	ScriptEditorDebugger *node = memnew(ScriptEditorDebugger);
 
 	int id = tabs->get_tab_count();
+	node->connect("started", callable_mp(this, &EditorDebuggerNode::_debugger_started).bind(id));
 	node->connect("stop_requested", callable_mp(this, &EditorDebuggerNode::_debugger_wants_stop).bind(id));
 	node->connect("stopped", callable_mp(this, &EditorDebuggerNode::_debugger_stopped).bind(id));
 	node->connect("stack_frame_selected", callable_mp(this, &EditorDebuggerNode::_stack_frame_selected).bind(id));
@@ -270,8 +271,8 @@ DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_fo
 	return outcome;
 }
 
-bool DebugSessionResultCoordinator::is_last_debugger_for_launch(uint64_t p_launch_id, const Vector<uint64_t> &p_active_launches) {
-	return !p_active_launches.has(p_launch_id);
+bool DebugSessionResultCoordinator::is_last_debugger_for_launch(uint64_t p_launch_id, const Vector<uint64_t> &p_active_launches, bool p_has_unidentified) {
+	return !p_has_unidentified && !p_active_launches.has(p_launch_id);
 }
 
 void EditorDebuggerNode::_bind_methods() {
@@ -570,22 +571,61 @@ void EditorDebuggerNode::_update_margins() {
 	add_theme_constant_override("margin_bottom", -bottom_panel_margins->get_margin(SIDE_BOTTOM));
 }
 
+void EditorDebuggerNode::_evaluate_launch_stop(uint64_t p_launch_id) {
+	Vector<uint64_t> active_launches;
+	bool has_unidentified = false;
+	_for_all(tabs, [&](ScriptEditorDebugger *p_debugger) {
+		if (!p_debugger->is_session_active()) {
+			return;
+		}
+		if (p_debugger->is_launch_identified()) {
+			active_launches.push_back(p_debugger->get_launch_id());
+		} else {
+			has_unidentified = true;
+		}
+	});
+
+	if (active_launches.has(p_launch_id)) {
+		pending_launch_stops.erase(p_launch_id);
+		return;
+	}
+	if (!DebugSessionResultCoordinator::is_last_debugger_for_launch(p_launch_id, active_launches, has_unidentified)) {
+		pending_launch_stops.insert(p_launch_id);
+		return;
+	}
+
+	pending_launch_stops.erase(p_launch_id);
+	_finalize_debug_session(session_coordinator.observe_debugger_stopped(p_launch_id));
+	EditorNode::get_singleton()->notify_all_debug_sessions_exited(p_launch_id);
+}
+
+void EditorDebuggerNode::_reevaluate_pending_launch_stops() {
+	Vector<uint64_t> launches;
+	for (const uint64_t &launch_id : pending_launch_stops) {
+		launches.push_back(launch_id);
+	}
+	for (uint64_t launch_id : launches) {
+		_evaluate_launch_stop(launch_id);
+	}
+}
+
+void EditorDebuggerNode::_debugger_started(int p_id) {
+	ERR_FAIL_NULL(get_debugger(p_id));
+	_reevaluate_pending_launch_stops();
+}
+
 void EditorDebuggerNode::_debugger_stopped(int64_t p_launch_id, int p_id) {
 	ScriptEditorDebugger *dbg = get_debugger(p_id);
 	ERR_FAIL_NULL(dbg);
 
 	bool found = false;
-	Vector<uint64_t> active_launches;
 	_for_all(tabs, [&](ScriptEditorDebugger *p_debugger) {
 		if (p_debugger->is_session_active()) {
 			found = true;
-			active_launches.push_back(p_debugger->get_launch_id());
 		}
 	});
-	if (DebugSessionResultCoordinator::is_last_debugger_for_launch((uint64_t)p_launch_id, active_launches)) {
-		_finalize_debug_session(session_coordinator.observe_debugger_stopped((uint64_t)p_launch_id));
-		EditorNode::get_singleton()->notify_all_debug_sessions_exited((uint64_t)p_launch_id);
-	}
+	_evaluate_launch_stop((uint64_t)p_launch_id);
+	_reevaluate_pending_launch_stops();
 	if (!found) {
 		EditorRunBar::get_singleton()->get_pause_button()->set_pressed(false);
 		EditorRunBar::get_singleton()->get_pause_button()->set_disabled(true);
