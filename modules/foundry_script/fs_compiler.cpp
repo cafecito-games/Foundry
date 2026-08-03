@@ -4442,38 +4442,38 @@ Variant FSCompiler::_normalize_compiled_constant(const Variant &p_value, int p_d
 			return p_value;
 		}
 		case Variant::ARRAY: {
-			const Array source = p_value;
+			const Array source_array = p_value;
 			Array normalized;
-			if (source.is_typed()) {
+			if (source_array.is_typed()) {
 				// Establish the canonical descriptor before inserting values so typed-container
 				// validation accepts the rewritten element identities.
-				normalized.set_typed(_normalize_compiled_container_type(source.get_element_type(), p_depth + 1));
+				normalized.set_typed(_normalize_compiled_container_type(source_array.get_element_type(), p_depth + 1));
 			}
-			normalized.resize(source.size());
-			for (int i = 0; i < source.size(); i++) {
-				normalized[i] = _normalize_compiled_constant(source[i], p_depth + 1);
+			normalized.resize(source_array.size());
+			for (int i = 0; i < source_array.size(); i++) {
+				normalized[i] = _normalize_compiled_constant(source_array[i], p_depth + 1);
 			}
-			if (source.is_read_only()) {
+			if (source_array.is_read_only()) {
 				normalized.make_read_only();
 			}
 			return normalized;
 		}
 		case Variant::DICTIONARY: {
-			const Dictionary source = p_value;
+			const Dictionary source_dictionary = p_value;
 			Dictionary normalized;
-			if (source.is_typed()) {
+			if (source_dictionary.is_typed()) {
 				normalized.set_typed(
-						_normalize_compiled_container_type(source.get_key_type(), p_depth + 1),
-						_normalize_compiled_container_type(source.get_value_type(), p_depth + 1));
+						_normalize_compiled_container_type(source_dictionary.get_key_type(), p_depth + 1),
+						_normalize_compiled_container_type(source_dictionary.get_value_type(), p_depth + 1));
 			}
-			const Array keys = source.keys();
+			const Array keys = source_dictionary.keys();
 			for (int i = 0; i < keys.size(); i++) {
 				// Canonicalize keys before insertion so object-key hashes match the replacement
 				// identity and later lookups succeed.
 				const Variant normalized_key = _normalize_compiled_constant(keys[i], p_depth + 1);
-				normalized[normalized_key] = _normalize_compiled_constant(source[keys[i]], p_depth + 1);
+				normalized[normalized_key] = _normalize_compiled_constant(source_dictionary[keys[i]], p_depth + 1);
 			}
-			if (source.is_read_only()) {
+			if (source_dictionary.is_read_only()) {
 				normalized.make_read_only();
 			}
 			return normalized;
