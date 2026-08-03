@@ -4832,7 +4832,9 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Stages and restores the confo
 	CHECK_FALSE(FSConformanceRegistry::get_singleton()->has_conformance(
 			original_target, original_trait));
 	CHECK_EQ(name_mangler_application_run(script, SNAME("run")), 42);
-	CHECK(staged[0].target_keys.has(source));
+	// The target is an inner class, so the declaring file's path is not one of its aliases: every class
+	// in the file reports that path, and answering by it would cross class boundaries.
+	CHECK_FALSE(staged[0].target_keys.has(source));
 
 	transaction.rollback();
 	const Vector<FSConformanceRegistry::RuntimeConformance> restored =
@@ -5096,20 +5098,11 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Correlates runtime conformanc
 
 	Vector<FSConformanceRegistry::RuntimeConformance> malformed_keys =
 			runtime_entries;
-	int distinct_key = -1;
-	for (int i = 1;
-			i < malformed_keys[0].target_keys.size(); i++) {
-		if (malformed_keys[0].target_keys[i] !=
-				malformed_keys[0].target_keys[0]) {
-			distinct_key = i;
-			break;
-		}
-	}
-	REQUIRE_GE(distinct_key, 0);
-	malformed_keys.write[0].target_keys.write[distinct_key] =
-			malformed_keys[0].target_keys[0];
+	REQUIRE_FALSE(malformed_keys[0].target_keys.is_empty());
+	malformed_keys.write[0].target_keys.push_back(
+			malformed_keys[0].target_keys[0]);
 	expect_correlation_rejected(
-			"duplicate and missing target alias", malformed_keys);
+			"duplicate target alias", malformed_keys);
 
 	Vector<FSConformanceRegistry::RuntimeConformance> unmatched_runtime =
 			runtime_entries;

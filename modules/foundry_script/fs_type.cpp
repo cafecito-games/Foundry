@@ -36,6 +36,15 @@
 
 #include "core/object/class_db.h"
 
+// A resource path identifies the one class that owns the file. Every inner class compiled from the
+// file reports that same path, so a conformance lookup by path on behalf of an inner class would
+// answer with a sibling's or the root class's conformance. See
+// `FSConformanceRegistry::Conformance::target_script_path`.
+static bool _path_identifies_script(const Ref<Script> &p_script) {
+	const FoundryScript *foundry_script = Object::cast_to<FoundryScript>(p_script.ptr());
+	return foundry_script == nullptr || foundry_script->is_root_script();
+}
+
 static bool _is_signature_builtin_type(Variant::Type p_type) {
 	return p_type == Variant::CALLABLE || p_type == Variant::SIGNAL;
 }
@@ -258,7 +267,8 @@ static bool _class_has_trait(const FSParser::ClassNode *p_class, const FSParser:
 									->has_script_trait(trait_name))) {
 				return true;
 			}
-			return registry->has_conformance(current->base_type.script_path, trait_name) ||
+			return (_path_identifies_script(current->base_type.script_type) &&
+						   registry->has_conformance(current->base_type.script_path, trait_name)) ||
 					registry->has_conformance(current->base_type.script_type->get_global_name(), trait_name) ||
 					registry->native_class_conforms(current->base_type.script_type->get_instance_base_type(), trait_name);
 		} else if (current->base_type.kind == FSParser::DataType::NATIVE) {
@@ -527,7 +537,8 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				// the compiled script's own trait set. A conformance declared on the script's native base
 				// class (`extend Node uses ...`) also applies to any script extending that class.
 				const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
-				result.compatible = registry->has_conformance(p_source.script_path, trait_name) ||
+				result.compatible = (_path_identifies_script(p_source.script_type) &&
+											registry->has_conformance(p_source.script_path, trait_name)) ||
 						registry->has_conformance(p_source.script_type->get_global_name(), trait_name) ||
 						registry->native_class_conforms(p_source.script_type->get_instance_base_type(), trait_name);
 			}

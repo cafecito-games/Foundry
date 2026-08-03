@@ -61,13 +61,23 @@ public:
 	using WitnessMap = HashMap<StringName, FSParser::FunctionNode *>;
 
 	struct Conformance {
-		// Alias keys the target can be looked up by (FQCN, global class name, script path).
+		// Alias keys the target can be looked up by (FQCN, global class name, script path). Registration
+		// drops any alias that does not identify the target, so what the registry stores may be narrower
+		// than what a producer supplied.
 		Vector<String> target_keys;
 		// The target's fully-qualified class name: the one alias in `target_keys` that identifies the
 		// target exactly. The others are shared — every class in a file registers the file's path, and a
 		// root class without `class_name` has that path as its FQCN — so a lookup that must not cross
 		// class boundaries matches on this instead.
 		String target_fqcn;
+		// The resource path of the file that defines the target, which is one of `target_keys` so a caller
+		// holding nothing but a path can still find the conformance.
+		String target_script_path;
+		// True when the target is the root class of its file, which is what makes the script-path alias a
+		// real identity for it. An inner-class target shares that path with its siblings and with the root
+		// class, so registration drops the alias for it. Defaults to the permissive value so a producer
+		// that cannot tell keeps the full alias set.
+		bool target_is_root_class = true;
 		// A direct trait from the declaration or one of its implied supertraits. Implied entries retain
 		// the declaring conformance's source, index, and witness map.
 		StringName trait_name;
@@ -115,6 +125,8 @@ public:
 		// The target whose member layout witness functions use. This explicit pointer also preserves
 		// the target identity for marker conformances, whose function map is intentionally empty.
 		FoundryScript *target_script = nullptr;
+		// See `Conformance::target_keys`: registration narrows this to the aliases that identify
+		// `target_script`, using the pointer rather than a stored flag to decide.
 		Vector<String> target_keys;
 		// A direct trait from the declaration or one of its implied supertraits. Every identity emitted
 		// from one declaration borrows the same compiled witness functions.
@@ -170,7 +182,10 @@ private:
 public:
 	static FSConformanceRegistry *get_singleton();
 
-	// Replaces every conformance previously registered by `p_source_file` with `p_conformances`.
+	// Replaces every conformance previously registered by `p_source_file` with `p_conformances`. Alias
+	// sets are narrowed to the keys that identify the target (see `Conformance::target_keys`) before
+	// they are stored, so every consumer — index lookups, witness scans, and bytecode serialization —
+	// observes the same identity rules regardless of which producer built the entry.
 	void register_file_conformances(const String &p_source_file, const Vector<Conformance> &p_conformances);
 
 	// Drops every conformance previously registered by `p_source_file`.
@@ -229,7 +244,9 @@ public:
 
 	// Replaces every compiled runtime witness previously registered by `p_source_file`. The
 	// `FSFunction *` in `p_conformances` stay owned by the declaring script; the registry borrows
-	// them until the next re-registration or `clear_runtime_witnesses`.
+	// them until the next re-registration or `clear_runtime_witnesses`. Alias sets are narrowed the
+	// same way `register_file_conformances` narrows them, so a conformance compiled from source and the
+	// same conformance restored from bytecode answer identically.
 	void register_runtime_witnesses(const String &p_source_file, const Vector<RuntimeConformance> &p_conformances);
 
 	// Drops every compiled runtime witness previously registered by `p_source_file`. Call this before

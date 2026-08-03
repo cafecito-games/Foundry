@@ -2108,9 +2108,13 @@ bool FoundryScript::_has_script_trait(const StringName &p_trait, bool p_include_
 	if (script_global_name != StringName() && registry->has_conformance(String(script_global_name), p_trait, p_include_runtime)) {
 		return true;
 	}
-	const String script_path = get_script_path();
-	if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait, p_include_runtime)) {
-		return true;
+	// Only a root script is identified by its resource path: an inner class reports the same path as its
+	// siblings and as the enclosing root class, so asking by path would answer with their conformances.
+	if (is_root_script()) {
+		const String script_path = get_script_path();
+		if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait, p_include_runtime)) {
+			return true;
+		}
 	}
 
 	if (base.is_valid()) {
@@ -2912,7 +2916,9 @@ Variant FSInstance::callp(const StringName &p_method, const Variant **p_args, in
 				witness = registry->find_witness_function(String(global_name), p_method);
 			}
 		}
-		if (witness == nullptr) {
+		if (witness == nullptr && cursor->is_root_script()) {
+			// See `_has_script_trait`: the resource path identifies a root script only, so an inner class
+			// must not be answered with a witness declared for a class that merely shares its file.
 			witness = registry->find_witness_function(cursor->get_script_path(), p_method);
 		}
 		if (witness != nullptr) {
