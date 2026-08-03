@@ -31,9 +31,11 @@
 #pragma once
 
 #include "core/object/class_db.h"
+#include "core/object/message_queue.h"
 #include "core/object/object.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestCallable {
 
@@ -211,6 +213,110 @@ TEST_CASE("[Callable] Is async") {
 	CHECK_FALSE(Callable().is_async());
 
 	memdelete(my_test);
+}
+
+class TestUnsignedArgumentReceiver : public Object {
+	FOUNDRY_CLASS(TestUnsignedArgumentReceiver, Object);
+
+public:
+	int call_count = 0;
+	int received_tile_id = -1;
+	uint64_t received_generation = 0;
+
+	void receive(int p_tile_id, uint64_t p_generation) {
+		call_count++;
+		received_tile_id = p_tile_id;
+		received_generation = p_generation;
+	}
+
+	// `Variant::operator Color()` only reads `Variant::INT`, so an unsigned argument must not be
+	// silently accepted here.
+	void receive_color(Color p_color) {
+		call_count++;
+	}
+};
+
+// Tagged `[SceneTree]` because the deferred subcase needs a live `MessageQueue`.
+TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
+	TestUnsignedArgumentReceiver *receiver = memnew(TestUnsignedArgumentReceiver);
+
+	// Above `UINT32_MAX` so a carrier that truncates the value stays visible in the assertions.
+	const uint64_t generation = 4294967297ULL;
+
+	SUBCASE("bound argument") {
+		ErrorDetector detector;
+
+		Callable callable = callable_mp(receiver, &TestUnsignedArgumentReceiver::receive).bind(7, generation);
+		Callable::CallError error;
+		Variant result;
+		callable.callp(nullptr, 0, result, error);
+
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK_FALSE(detector.has_error);
+		CHECK(receiver->call_count == 1);
+		CHECK(receiver->received_tile_id == 7);
+		CHECK(receiver->received_generation == generation);
+	}
+
+	SUBCASE("deferred call") {
+		ErrorDetector detector;
+
+		callable_mp(receiver, &TestUnsignedArgumentReceiver::receive).call_deferred(7, generation);
+		MessageQueue::get_singleton()->flush();
+
+		CHECK_FALSE(detector.has_error);
+		CHECK(receiver->call_count == 1);
+		CHECK(receiver->received_tile_id == 7);
+		CHECK(receiver->received_generation == generation);
+	}
+
+	SUBCASE("signal emission with a bound argument") {
+		Object *emitter = memnew(Object);
+		emitter->add_user_signal(MethodInfo("tile_activation_queued"));
+		emitter->connect("tile_activation_queued",
+				callable_mp(receiver, &TestUnsignedArgumentReceiver::receive).bind(7, generation),
+				Object::CONNECT_ONE_SHOT);
+
+		ErrorDetector detector;
+		emitter->emit_signal("tile_activation_queued");
+
+		CHECK_FALSE(detector.has_error);
+		CHECK(receiver->call_count == 1);
+		CHECK(receiver->received_tile_id == 7);
+		CHECK(receiver->received_generation == generation);
+
+		memdelete(emitter);
+	}
+
+	SUBCASE("value beyond the signed range") {
+		ErrorDetector detector;
+
+		// The whole point of the unsigned carrier is that this value survives; it has no signed
+		// 64-bit representation, so it would be corrupted if the argument were routed through `INT`.
+		const uint64_t unrepresentable_as_signed = UINT64_MAX;
+		Callable callable = callable_mp(receiver, &TestUnsignedArgumentReceiver::receive).bind(7, unrepresentable_as_signed);
+		Callable::CallError error;
+		Variant result;
+		callable.callp(nullptr, 0, result, error);
+
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK_FALSE(detector.has_error);
+		CHECK(receiver->received_generation == unrepresentable_as_signed);
+	}
+
+	SUBCASE("parameter whose conversion cannot read the unsigned carrier") {
+		ErrorDetector detector;
+
+		Callable callable = callable_mp(receiver, &TestUnsignedArgumentReceiver::receive_color).bind(generation);
+		Callable::CallError error;
+		Variant result;
+		callable.callp(nullptr, 0, result, error);
+
+		CHECK(error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+		CHECK(error.expected == Variant::COLOR);
+	}
+
+	memdelete(receiver);
 }
 
 } // namespace TestCallable
