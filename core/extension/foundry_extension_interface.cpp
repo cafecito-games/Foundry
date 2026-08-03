@@ -1262,8 +1262,7 @@ static FoundryExtensionBool foundry_extension_array_set_typed_by_descriptor(Foun
 		ERR_PRINT(vformat("Invalid Array element type descriptor: %s", error));
 		return false;
 	}
-	self->set_typed(element_type);
-	return true;
+	return self->set_typed(element_type);
 }
 
 static void foundry_extension_array_get_typed_element_type_descriptor(FoundryExtensionConstTypePtr p_self, FoundryExtensionUninitializedVariantPtr r_element_type_descriptor) {
@@ -1310,8 +1309,7 @@ static FoundryExtensionBool foundry_extension_dictionary_set_typed_by_descriptor
 		return false;
 	}
 
-	self->set_typed(key_type, value_type);
-	return true;
+	return self->set_typed(key_type, value_type);
 }
 
 static void foundry_extension_dictionary_get_typed_key_type_descriptor(FoundryExtensionConstTypePtr p_self, FoundryExtensionUninitializedVariantPtr r_key_type_descriptor) {

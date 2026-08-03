@@ -102,7 +102,11 @@ public:
 	Dictionary duplicate_deep(ResourceDeepDuplicateMode p_deep_subresources_mode = RESOURCE_DEEP_DUPLICATE_INTERNAL) const;
 	Dictionary recursive_duplicate(bool p_deep, ResourceDeepDuplicateMode p_deep_subresources_mode, int recursion_count) const;
 
-	void set_typed(const ContainerType &p_key_type, const ContainerType &p_value_type);
+	// Returns `true` when both types were applied. Returns `false` and leaves the dictionary untyped
+	// when a guard rejects it (already typed, non-empty, shared by more than one reference, or
+	// read-only); callers that need to know whether typing actually took effect must check the
+	// return value.
+	bool set_typed(const ContainerType &p_key_type, const ContainerType &p_value_type);
 	void set_typed(uint32_t p_key_type, const StringName &p_key_class_name, const Variant &p_key_script, uint32_t p_value_type, const StringName &p_value_class_name, const Variant &p_value_script);
 
 	bool is_typed() const;
