@@ -1326,7 +1326,8 @@ validates the witness *declaration*, never what `Self` means when the witness *r
 - An inherited implementation that delegates through an unqualified call or `super` preserves the
   incoming receiver; it does not reset `Self` to the class containing the delegated implementation.
 - A specialized generic receiver keeps all of its concrete type arguments in `Self`.
-- In an instance method, `Self` is the class of the object the method runs on.
+- In an instance method, `Self` is the class the running member was materialized for, and
+  `Self` in expression position is the class handle of the object the method runs on.
 
 Runtime validation uses that exact specialization. Argument and return checks, typed containers,
 reified generic arguments, class handles, construction, casts, and type tests are all resolved

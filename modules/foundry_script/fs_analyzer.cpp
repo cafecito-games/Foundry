@@ -10022,7 +10022,19 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 	// function runs for every receiver that inherits it, and the receiver is only known at execution.
 	if (p_identifier->name == SNAME("Self") && parser->current_class != nullptr && parser->current_function != nullptr &&
 			!enum_self_type(parser->current_function).is_set()) {
+		if (parser->current_class->is_builtin_conformance_shim) {
+			// A builtin conformance target is a value type with no class-handle object, so there is
+			// nothing for `Self` to evaluate to. Rejecting it here keeps a body that could only ever
+			// fail at runtime from compiling; `Self` as a *type* stays available.
+			push_error(R"(Type "Self" cannot be used as a value here: a builtin conformance target has no class handle.)",
+					p_identifier);
+			p_identifier->set_datatype(FSParser::DataType());
+			return;
+		}
 		parser->current_function->uses_receiver_relative_self = true;
+		// A lambda that spells `Self` must keep the enclosing receiver, exactly like one that reads a
+		// member: without it the lambda frame runs with nothing to resolve `Self` against.
+		mark_lambda_use_self();
 		FSParser::DataType self_handle = _self_type_parameter_for_class(parser->current_class);
 		self_handle.is_meta_type = true;
 		self_handle.is_type_handle_annotation = true;
