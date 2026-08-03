@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 15: Too few arguments for "call()" call. Expected at least 2 but received 1.
