@@ -1,0 +1,9 @@
+FS_TEST_OK
+~~ WARNING at line 14: (RETURN_VALUE_DISCARDED) The function "connect()" returns a value that will be discarded if not used.
+~~ WARNING at line 16: (RETURN_VALUE_DISCARDED) The function "emit_signal()" returns a value that will be discarded if not used.
+~~ WARNING at line 19: (RETURN_VALUE_DISCARDED) The function "connect()" returns a value that will be discarded if not used.
+~~ WARNING at line 23: (RETURN_VALUE_DISCARDED) The function "connect()" returns a value that will be discarded if not used.
+reported: 1
+reported: 2
+reported: 3
+pair: 4 ["ok"]

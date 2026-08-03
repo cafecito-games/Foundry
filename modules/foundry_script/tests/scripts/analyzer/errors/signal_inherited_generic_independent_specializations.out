@@ -1,0 +1,5 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 10: Cannot pass a value of type "String" as "int".
+>> ERROR at line 10: Invalid argument for "emit()" function: argument 1 should be "int" but is "String".
+>> ERROR at line 11: Cannot pass a value of type "int" as "String".
+>> ERROR at line 11: Invalid argument for "emit()" function: argument 1 should be "String" but is "int".

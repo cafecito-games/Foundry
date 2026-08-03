@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 13: Invalid argument for "emit_signal()" function: argument 2 should be "int" but is "String".
+>> ERROR at line 9: Invalid argument for "emit_signal()" function: argument 2 should be "int" but is "String".

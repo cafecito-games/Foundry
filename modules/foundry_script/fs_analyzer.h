@@ -284,7 +284,11 @@ private:
 		FSParser::DataType transformed_callable_type(const FSParser::DataType &p_source_callable_type, const Vector<FSParser::DataType> &p_parameter_types, int p_default_arg_count, bool p_is_vararg) const;
 		FSParser::DataType explicit_callable_type_from_info(const MethodInfo &p_info) const;
 		FSParser::DataType explicit_signal_type_from_info(const MethodInfo &p_info) const;
-		FSParser::DataType explicit_signal_type_from_node(const FSParser::SignalNode *p_signal) const;
+		// Builds the per-use-site type of a Foundry Script signal. `p_receiver_type` is the complete
+		// receiver type (with its type arguments) and `p_declaring_class` the class that actually
+		// declares the signal, so an inherited signal's parameters can be projected through the
+		// receiver's `extends` chain. The declaration itself is never mutated.
+		FSParser::DataType explicit_signal_type_from_node(const FSParser::SignalNode *p_signal, const FSParser::DataType &p_receiver_type, const FSParser::ClassNode *p_declaring_class) const;
 		FSParser::ArrayNode *array_literal_argument(const FSParser::CallNode *p_call, int p_argument_index) const;
 		bool callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type);
 		bool callable_type_from_constant_method_args(const FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type);
@@ -292,7 +296,9 @@ private:
 		void validate_strict_callable_method_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_method_arg_index);
 		bool signal_name_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, StringName &r_signal_name) const;
 		bool signal_type_from_receiver(const FSParser::DataType &p_receiver_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
-		bool signal_type_from_class_constant_arg(const FSParser::ClassNode *p_class, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
+		// Takes the complete receiver type rather than a bare `ClassNode *`: the receiver's type
+		// arguments are what specialize an inherited signal declared on a generic ancestor.
+		bool signal_type_from_class_constant_arg(const FSParser::DataType &p_receiver_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 		bool signal_type_from_native_constant_arg(const StringName &p_native_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 		bool local_signal_type_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 		void validate_strict_signal_name_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_signal_arg_index);
