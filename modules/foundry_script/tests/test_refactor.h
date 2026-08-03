@@ -701,12 +701,40 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		String out;
 		RefactorResult r = FSTests::run_override_method(source, 5, 1, candidate->id, out);
 		REQUIRE_MESSAGE(r.ok, r.error_message);
+		// The override must stay a coroutine to match the base, so the awaited super call is kept.
 		// The analyzer's `@noreturn` finality check only recognizes a bare call statement as
-		// terminating, not one wrapped in `await`, so an awaited `super.fail()` here could not prove
-		// its own reproduced annotation. The stub terminates explicitly instead.
+		// terminating, not one wrapped in `await`, so an explicit terminator follows it.
 		CHECK(out.contains("\t@noreturn\n\tasync func fail() -> void:\n"));
+		CHECK(out.contains("\t\tawait super.fail()\n"));
 		CHECK(out.contains("\t\tpush_fatal(\"Not implemented: fail\")\n"));
-		CHECK_FALSE(out.contains("await super.fail()"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
+	TEST_CASE("Override method keeps a body-inferred coroutine override from completing normally under @noreturn") {
+		const String source =
+				"class Base:\n"
+				"\tsignal done\n"
+				"\t@noreturn\n"
+				"\tfunc fail() -> void:\n"
+				"\t\tawait done\n"
+				"\t\tpush_fatal(\"base failure\")\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 7, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "fail");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 7, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		// The base has no `async` modifier to reproduce; its coroutine status is inferred purely
+		// from the awaited super call the override keeps, which must stay in the generated body so
+		// the override's own coroutine status still matches the base's.
+		CHECK(out.contains("\t@noreturn\n\tfunc fail() -> void:\n"));
+		CHECK(out.contains("\t\tawait super.fail()\n"));
+		CHECK(out.contains("\t\tpush_fatal(\"Not implemented: fail\")\n"));
 		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
 	}
 

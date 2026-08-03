@@ -5803,10 +5803,13 @@ String render_super_call_body(const FSParser::FunctionNode *p_function, const St
 
 	if (p_function->is_noreturn) {
 		if (p_function->is_coroutine) {
-			// The analyzer's `@noreturn` finality check only recognizes a bare call statement as
-			// terminating, not one wrapped in `await`, so an awaited super call here would leave the
-			// generated stub unable to prove its own reproduced annotation. Terminate explicitly instead.
-			return render_noreturn_stub_terminator(name, p_class_indent);
+			// The override must stay a coroutine to match the base (which may only be inferred as
+			// one from its own body, with no `async` modifier to reproduce on the signature), so the
+			// awaited super call is kept. But the analyzer's `@noreturn` finality check only
+			// recognizes a bare call statement as terminating, not one wrapped in `await`, so the
+			// awaited call alone cannot prove this stub's own reproduced annotation. Follow it with
+			// an explicit terminator the analyzer does recognize.
+			return body_indent + expression + "\n" + render_noreturn_stub_terminator(name, p_class_indent);
 		}
 		// A `@noreturn` override can never contain a `return` statement, regardless of its declared
 		// return type, so the call is emitted bare: the base's own `@noreturn` contract guarantees
