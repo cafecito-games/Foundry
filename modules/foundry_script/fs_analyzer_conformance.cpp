@@ -783,6 +783,8 @@ void FSAnalyzer::resolve_conformances(FSParser::ClassNode *p_class) {
 			FSConformanceRegistry::Conformance entry;
 			entry.target_keys = target_keys;
 			entry.target_fqcn = target->fqcn;
+			entry.target_script_path = target_type.script_path;
+			entry.target_is_root_class = target->outer == nullptr;
 			entry.source_file = source_file;
 			entry.conformance_index = conformance_index;
 			for (FSParser::FunctionNode *witness : conformance->witnesses) {

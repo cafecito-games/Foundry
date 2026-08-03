@@ -51,6 +51,39 @@ bool FSConformanceRegistry::_is_visible(const String &p_source_file) {
 	return active_visibility == nullptr || active_visibility->can_see(p_source_file);
 }
 
+// The alias set a producer supplies includes the target file's resource path, because a caller that
+// only holds a path must still find a conformance declared on that file's class. The path identifies
+// exactly one class though: the file's root class. Every inner class compiled from the file reports
+// the same path, and a root class declared without `class_name` even has that path as its FQCN, so
+// keeping the path for an inner-class target lets a lookup answer with a sibling's conformance — or
+// answer the root class with an inner class's conformance. Exactly that one alias is dropped; every
+// other alias is stored as given, so an alias set that is wrong for other reasons still reaches the
+// integrity checks that exist to catch it.
+static Vector<String> _identifying_target_keys(const Vector<String> &p_target_keys, const String &p_target_script_path, bool p_target_is_root_class) {
+	if (p_target_is_root_class || p_target_script_path.is_empty() || !p_target_keys.has(p_target_script_path)) {
+		return p_target_keys;
+	}
+	Vector<String> identifying;
+	for (const String &target_key : p_target_keys) {
+		if (target_key != p_target_script_path) {
+			identifying.push_back(target_key);
+		}
+	}
+	return identifying;
+}
+
+// Runtime entries carry the target as a pointer instead of a name, so the same rule is applied through
+// the target script. Native and builtin targets deliberately use the declaring script as a codegen
+// stand-in; that script is a root script and its aliases are engine/builtin type names, so those
+// entries are never narrowed.
+static Vector<String> _identifying_runtime_target_keys(const FSConformanceRegistry::RuntimeConformance &p_conformance) {
+	const FoundryScript *target_script = p_conformance.target_script;
+	if (target_script == nullptr || target_script->is_root_script()) {
+		return p_conformance.target_keys;
+	}
+	return _identifying_target_keys(p_conformance.target_keys, target_script->get_script_path(), false);
+}
+
 bool FSConformanceRegistry::validate_runtime_conformance_target(
 		const RuntimeConformance &p_conformance,
 		const FoundryScript *p_declaring_script,
@@ -124,8 +157,12 @@ bool FSConformanceRegistry::validate_runtime_conformance_target(
 			// class uses the same text as its fully-qualified identity.
 			script_aliases.push_back(global_name);
 		}
+		// The script path identifies the target only when the target is its file's root script; an inner
+		// class is identified by its fully-qualified name alone, matching how registration narrows the
+		// stored alias set.
 		if (!script_path.is_empty() &&
-				!script_aliases.has(script_path)) {
+				!script_aliases.has(script_path) &&
+				p_conformance.target_script->is_root_script()) {
 			script_aliases.push_back(script_path);
 		}
 		if (!same_aliases(
@@ -189,7 +226,12 @@ void FSConformanceRegistry::register_file_conformances(const String &p_source_fi
 	if (p_conformances.is_empty()) {
 		conformances_by_file.erase(p_source_file);
 	} else {
-		conformances_by_file[p_source_file] = p_conformances;
+		Vector<Conformance> stored = p_conformances;
+		for (Conformance &conformance : stored) {
+			conformance.target_keys = _identifying_target_keys(
+					conformance.target_keys, conformance.target_script_path, conformance.target_is_root_class);
+		}
+		conformances_by_file[p_source_file] = stored;
 	}
 	_rebuild_index();
 }
@@ -230,7 +272,11 @@ void FSConformanceRegistry::register_runtime_witnesses(const String &p_source_fi
 	if (p_conformances.is_empty()) {
 		runtime_by_file.erase(p_source_file);
 	} else {
-		runtime_by_file[p_source_file] = p_conformances;
+		Vector<RuntimeConformance> stored = p_conformances;
+		for (RuntimeConformance &conformance : stored) {
+			conformance.target_keys = _identifying_runtime_target_keys(conformance);
+		}
+		runtime_by_file[p_source_file] = stored;
 	}
 	_rebuild_runtime_index();
 }

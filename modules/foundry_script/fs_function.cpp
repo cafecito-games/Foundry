@@ -51,8 +51,12 @@ bool FSDataType::_script_conforms_to_trait(const Ref<Script> &p_base, const Stri
 		if (global_name != StringName() && registry->has_conformance(String(global_name), p_trait, true)) {
 			return true;
 		}
+		// The path is an identity only for a script that owns the file. An inner class shares its file
+		// with its siblings and with the enclosing root class, so asking by path would report their
+		// conformances as its own.
+		const bool path_identifies_script = foundry_script == nullptr || foundry_script->is_root_script();
 		const String script_path = script->get_path();
-		if (!script_path.is_empty() && registry->has_conformance(script_path, p_trait, true)) {
+		if (path_identifies_script && !script_path.is_empty() && registry->has_conformance(script_path, p_trait, true)) {
 			return true;
 		}
 		script = script->get_base_script();
