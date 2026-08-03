@@ -3137,10 +3137,8 @@ static const RestVarianceRow REST_VARIANCE_ROWS[] = {
 };
 
 // Resolves the callable types the analyzer infers for two variadic function references and reports
-// whether the second is statically assignable to the first. A callable assignment is an ordinary
-// assignment, so a rest tail the rule rejects still qualifies for the engine-wide runtime-narrowing
-// allowance and reaches the user as a runtime check rather than a parse error; the static verdict is
-// what the shared rest rule decides, so that is what this asserts.
+// whether the second is statically assignable to the first, which is exactly the verdict the shared
+// rest rule produces for a callable assignment.
 static bool callable_rest_tail_is_statically_assignable(const String &p_required_tail, const String &p_implementation_tail) {
 	IgnoreWarningsScope ignore_warnings;
 	const String source =
@@ -3318,6 +3316,56 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rest tail must accept 
 					 "\t\tprint(values)\n"
 					 "func test() -> void:\n"
 					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A typed rest tail cannot absorb a hard Variant parameter") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(value: Variant) -> void:\n"
+					 "\t\tprint(value)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(value: Variant) -> void:\n"
+					 "\t\tprint(value)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A narrowing callable rest tail is a static error") {
+	// A Callable erases its signature at runtime, so a rejected rest tail must not slip through as a
+	// runtime-checked narrowing the runtime cannot actually perform.
+	CHECK_NE(analyze_source(
+					 "func take_nodes(...values: Array[Node]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func take_node2ds(...values: Array[Node2D]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tvar handler := take_nodes\n"
+					 "\thandler = take_node2ds\n"
+					 "\thandler.call()\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "func take_nodes(...values: Array[Node]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func take_objects(...values: Array[Object]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tvar handler := take_nodes\n"
+					 "\thandler = take_objects\n"
+					 "\thandler.call()\n"),
 			OK);
 }
 

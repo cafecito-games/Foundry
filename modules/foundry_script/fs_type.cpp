@@ -742,6 +742,12 @@ bool FSTypeCompatibility::rest_parameter_accepts_required_argument(
 	if (!rest_parameter_type_is_narrowing(*p_implementation_rest_array)) {
 		return true;
 	}
+	if (p_required_argument_type.is_variant() && p_required_argument_type.is_hard_type()) {
+		// Same exception the fixed-parameter contravariance uses: a hard `Variant` promises callers may
+		// pass anything, which a narrowing tail would reject. `is_compatible()` would say yes because
+		// one of its operands is `Variant`.
+		return false;
+	}
 	if (!p_required_argument_type.is_set()) {
 		// Still resolving; an unset type is treated as compatible everywhere else too.
 		return true;
@@ -766,6 +772,15 @@ bool FSTypeCompatibility::callable_signature_rest_parameter_type(const FSParser:
 
 bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide) {
 	if (p_narrow.kind == FSParser::DataType::TUPLE || p_wide.kind == FSParser::DataType::TUPLE) {
+		return false;
+	}
+	if (p_narrow.kind == FSParser::DataType::BUILTIN && p_wide.kind == FSParser::DataType::BUILTIN &&
+			p_narrow.builtin_type == p_wide.builtin_type && _is_signature_builtin_type(p_narrow.builtin_type) &&
+			p_narrow.has_method_signature && p_wide.has_method_signature) {
+		// A Callable/Signal erases its signature at runtime, so nothing distinguishes two signatures
+		// there. Every other signature slot is compared symmetrically, so this only ever mattered once
+		// rest tails became contravariant: the unsafe direction must stay a static error rather than
+		// become a "runtime check" the runtime cannot perform.
 		return false;
 	}
 	return is_compatible(p_wide, p_narrow);
