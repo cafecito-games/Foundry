@@ -238,6 +238,37 @@ static bool _erase_specialized_class_handle_for_native_data_type(const FSDataTyp
 	return true;
 }
 
+bool FoundryScript::_validate_type_argument_binding_write(const FoundryScript::TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value) {
+	if (p_binding.kind == FoundryScript::TypeArgumentBinding::NONE) {
+		return true;
+	}
+
+	bool has_expected_type = false;
+	ContainerType expected_type;
+	if (p_binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
+		expected_type = p_binding.fixed.to_container_type();
+		has_expected_type = true;
+	} else if (p_binding.leaf_ordinal >= 0 && p_binding.leaf_ordinal < p_leaf_type_arguments.size()) {
+		expected_type = p_leaf_type_arguments[p_binding.leaf_ordinal];
+		has_expected_type = true;
+	}
+	if (!has_expected_type) {
+		// An OPEN binding with no reified argument (e.g. an unspecialized generic class) leaves the
+		// slot effectively untyped.
+		return true;
+	}
+
+	if (p_binding.is_type_handle) {
+		const FSDataType expected_handle_type = FSDataType::from_type_handle_container_type(expected_type);
+		return expected_handle_type.is_type(r_value);
+	}
+
+	_erase_specialized_class_handle_for_native_container_type(expected_type, r_value);
+	ContainerTypeValidate validator(expected_type);
+	validator.where = "member";
+	return validator.validate(r_value, "assign");
+}
+
 Ref<FSAnnotation> FSAnnotation::from_usage(const FoundryScript::AnnotationUsage &p_usage) {
 	Ref<FSAnnotation> descriptor;
 	descriptor.instantiate();
@@ -1590,6 +1621,12 @@ bool FoundryScript::_set(const StringName &p_name, const Variant &p_value) {
 		if (E) {
 			const MemberInfo *member = &E->value;
 			Variant value = p_value;
+			// A static member typed as a class generic parameter has no instance whose reified
+			// `type_arguments` an OPEN binding could resolve against here; only a binding fixed by an
+			// `extends Base[int]`/`uses Trait[int]` specialization in the chain (FIXED) can be validated.
+			if (!_validate_type_argument_binding_write(member->type_argument_binding, Vector<ContainerType>(), value)) {
+				return false;
+			}
 			_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
 			if (!member->data_type.is_type(value)) {
 				const Variant *args = &p_value;
@@ -2375,30 +2412,8 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 				// `extends Base[int]` specialization in the chain (FIXED), or the argument reified onto this
 				// instance (OPEN). An OPEN member on an instance created without explicit arguments carries
 				// no binding, leaving the slot effectively untyped.
-				bool has_expected_type = false;
-				ContainerType expected_type;
-				if (member->type_argument_binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
-					expected_type = member->type_argument_binding.fixed.to_container_type();
-					has_expected_type = true;
-				} else if (member->type_argument_binding.leaf_ordinal >= 0 &&
-						member->type_argument_binding.leaf_ordinal < type_arguments.size()) {
-					expected_type = type_arguments[member->type_argument_binding.leaf_ordinal];
-					has_expected_type = true;
-				}
-				if (has_expected_type) {
-					if (member->type_argument_binding.is_type_handle) {
-						const FSDataType expected_handle_type = FSDataType::from_type_handle_container_type(expected_type);
-						if (!expected_handle_type.is_type(value)) {
-							return false;
-						}
-					} else {
-						_erase_specialized_class_handle_for_native_container_type(expected_type, value);
-						ContainerTypeValidate validator(expected_type);
-						validator.where = "member";
-						if (!validator.validate(value, "assign")) {
-							return false;
-						}
-					}
+				if (!FoundryScript::_validate_type_argument_binding_write(member->type_argument_binding, type_arguments, value)) {
+					return false;
 				}
 			} else {
 				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
@@ -2430,6 +2445,12 @@ bool FSInstance::set(const StringName &p_name, const Variant &p_value) {
 			if (E) {
 				const FoundryScript::MemberInfo *member = &E->value;
 				Variant value = p_value;
+				// A static member has no per-instance reification of its own: an OPEN binding resolves
+				// against the leaf instance's `type_arguments` the same way an instance member does, since
+				// a `Box[int].new()` instance's reified argument applies to `Box`'s static members too.
+				if (!FoundryScript::_validate_type_argument_binding_write(member->type_argument_binding, type_arguments, value)) {
+					return false;
+				}
 				_erase_specialized_class_handle_for_native_data_type(member->data_type, value);
 				if (!member->data_type.is_type(value)) {
 					const Variant *args = &p_value;

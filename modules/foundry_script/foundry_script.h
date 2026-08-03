@@ -182,6 +182,14 @@ class FoundryScript : public Script {
 		TypeArgumentBinding type_argument_binding;
 	};
 
+	// Validates a write to a member whose declared type is a class generic parameter, erased to a
+	// Variant slot. Shared by every write path that can reach such a member: instance members, static
+	// members written through an instance, and static members written through the class itself.
+	// `p_leaf_type_arguments` is the reified argument vector to resolve an OPEN binding against (an
+	// instance's `type_arguments`, or empty when there is no instance, e.g. a static write through
+	// the bare class).
+	static bool _validate_type_argument_binding_write(const TypeArgumentBinding &p_binding, const Vector<ContainerType> &p_leaf_type_arguments, Variant &r_value);
+
 public:
 	// A generic type parameter declared on this class, e.g. `T` in `class Box[T]` or
 	// `K`/`V` in `class_name Pair[K, V: RefCounted]`. Surfaced through runtime reflection.
