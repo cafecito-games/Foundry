@@ -3553,6 +3553,363 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An absorbed trait parame
 	CHECK_NE(analyze_source(source, true), OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A concrete rest tail cannot absorb an open required parameter") {
+	// Callers may instantiate `T` as any type, so an implementation that only accepts `int` values is
+	// not a witness for the universally quantified requirement.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A container around the open parameter is just as dependent: `Array[U]` is not `Array[int]`.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: Array[T]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Array[int]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: Array[T]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Array[U]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A dependent dictionary must match structurally too.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: Dictionary[String, T]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Dictionary[String, int]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: Dictionary[String, T]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Dictionary[String, U]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An open rest tail cannot absorb a concrete required parameter") {
+	// The implementation's own callers choose `U`, so a tail of `Array[U]` cannot promise it accepts
+	// the concrete `int` the requirement delivers. The class-scoped parameter makes neither function
+	// generic, so the rule cannot be gated on method type parameters.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit(value: int) -> void\n"
+					 "class Impl[U]:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit(...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// The same holds for a method-scoped parameter alongside a concrete required parameter.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](first: int, second: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Absorption is checked at every required position") {
+	// Position 0 is alpha-equivalent while position 1 is a concrete type the open tail cannot promise
+	// to accept, so the whole signature must be rejected.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](first: T, second: int) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// Every absorbed position is alpha-equivalent here, so the implementation is a witness.
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](first: T, second: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An absorbed open parameter keeps its bound") {
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T: Node](value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U: Node](...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// The bound is not a stand-in for the parameter: a tail of the bound itself, of a supertype, or of
+	// a subtype all fail to witness the universally quantified requirement.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T: Node](value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U: Node](...values: Array[Node]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T: Node](value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U: Node](...values: Array[Object]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T: Node](value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U: Node](...values: Array[Node2D]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A gradual rest tail cannot absorb an open required parameter") {
+	// An untyped tail accepts everything at runtime, but it erases the dependency the requirement
+	// declares, so it is rejected for a dependent slot.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Variant]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A concrete required parameter keeps the existing gradual behavior.
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit(value: int) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit(...values: Array) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A dependent absorbed nullability matches structurally") {
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: T?) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[U?]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A non-nullable dependent tail is not a witness for a nullable requirement in either checking
+	// mode, because the dependency is compared structurally rather than by null compatibility.
+	const String nullable_mismatch =
+			"trait Sink:\n"
+			"\tabstract func visit[T](value: T?) -> void\n"
+			"class Impl:\n"
+			"\tuses Sink\n"
+			"\tfunc visit[U](...values: Array[U]) -> void:\n"
+			"\t\tprint(values)\n"
+			"func test() -> void:\n"
+			"\tpass\n";
+	CHECK_NE(analyze_source(nullable_mismatch), OK);
+	CHECK_NE(analyze_source(nullable_mismatch, true), OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An absorbed dependent Callable matches its whole signature") {
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[T], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Callable[[U], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[T], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Callable[[int], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// The dependency can hide in the Callable's own typed rest tail.
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[...Array[T]], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Callable[[...Array[U]], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[...Array[T]], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Callable[[...Array[int]], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A dependent Callable's variadicity is part of its signature") {
+	// A gradual variadic Callable records its tail only in the method flags, so it must not match an
+	// otherwise identical fixed Callable: the implementation could invoke the callback with extra
+	// arguments the trait's callers never promised to accept.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[T], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](handler: Callable[[U, ...Array], void]) -> void:\n"
+					 "\t\tprint(handler)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[T], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Callable[[U, ...Array], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](handler: Callable[[T, ...Array], void]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[Callable[[U, ...Array], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A class-scoped parameter forwards into an absorbing tail") {
+	CHECK_EQ(analyze_source(
+					 "trait Sink[T]:\n"
+					 "\tabstract func visit(value: T) -> void\n"
+					 "class Impl[U]:\n"
+					 "\tuses Sink[U]\n"
+					 "\tfunc visit(...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink[T]:\n"
+					 "\tabstract func visit(value: T) -> void\n"
+					 "class Impl[U]:\n"
+					 "\tuses Sink[U]\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A trait specialized at the use site delivers a concrete argument, so the concrete acceptance
+	// rules still apply.
+	CHECK_EQ(analyze_source(
+					 "trait Sink[T]:\n"
+					 "\tabstract func visit(value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink[int]\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Concrete absorption keeps widening and null behavior") {
+	// A widening concrete tail still absorbs a required parameter.
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit(value: Node2D) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit(...values: Array[Node]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A narrowing concrete tail does not.
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit(value: Node) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit(...values: Array[Node2D]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Signal arguments past a fixed prefix reach the rest tail") {
 	CHECK_NE(analyze_source(
 					 "signal three_nodes(first: Node, second: Node, third: Node)\n"

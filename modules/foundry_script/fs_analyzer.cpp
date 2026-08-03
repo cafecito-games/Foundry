@@ -8037,10 +8037,17 @@ static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser:
 	if (p_a.signature_is_async != p_b.signature_is_async) {
 		return false;
 	}
+	// A gradual variadic Callable records its tail only in the method flags (`method_rest_parameter_type`
+	// stays empty), so variadicity has to be compared separately or `Callable[[T], void]` would match
+	// `Callable[[T, ...Array], void]`.
+	if ((p_a.method_info.flags & METHOD_FLAG_VARARG) != (p_b.method_info.flags & METHOD_FLAG_VARARG)) {
+		return false;
+	}
 	if (p_a.container_element_types.size() != p_b.container_element_types.size() ||
 			p_a.type_arguments.size() != p_b.type_arguments.size() ||
 			p_a.method_parameter_types.size() != p_b.method_parameter_types.size() ||
 			p_a.method_return_type.size() != p_b.method_return_type.size() ||
+			p_a.method_rest_parameter_type.size() != p_b.method_rest_parameter_type.size() ||
 			p_a.type_parameter_bound.size() != p_b.type_parameter_bound.size()) {
 		return false;
 	}
@@ -8066,6 +8073,13 @@ static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser:
 	}
 	for (int i = 0; i < p_a.method_return_type.size(); i++) {
 		if (!_datatype_alpha_equal(p_a.method_return_type[i], p_b.method_return_type[i])) {
+			return false;
+		}
+	}
+	// A typed variadic Callable carries its tail element type here, so `Callable[[...Array[U]], void]`
+	// must not match `Callable[[...Array[int]], void]`.
+	for (int i = 0; i < p_a.method_rest_parameter_type.size(); i++) {
+		if (!_datatype_alpha_equal(p_a.method_rest_parameter_type[i], p_b.method_rest_parameter_type[i])) {
 			return false;
 		}
 	}
@@ -8391,10 +8405,29 @@ bool FSAnalyzer::validate_trait_method_signature(FSParser::ClassNode *p_trait,
 		// A required parameter the implementation does not declare is delivered into its rest tail
 		// instead, so the tail's element type must accept it.
 		if (valid && implementation_function->is_vararg()) {
+			// A gradual tail (`...values: Array` / `Array[Variant]`) has no element type to compare, so
+			// only a narrowing tail can carry a dependency.
+			const bool tail_is_narrowing = FSTypeCompatibility::rest_parameter_type_is_narrowing(implementation_rest_type);
+			const FSParser::DataType implementation_rest_element_type = tail_is_narrowing
+					? implementation_rest_type.get_container_element_type(0)
+					: FSParser::DataType();
+			const bool tail_element_is_dependent = tail_is_narrowing &&
+					_signature_type_involves_type_parameter(implementation_rest_element_type);
 			for (int i = implementation_function->parameters.size(); i < p_required_function->parameters.size(); i++) {
 				const FSParser::DataType required_parameter_type = _substitute_type_parameters_and_self(
 						p_required_function->parameters[i]->datatype, method_trait_substitution, implementation_self_type);
-				valid = valid && FSTypeCompatibility::rest_parameter_accepts_required_argument(&implementation_rest_type, required_parameter_type, strict_null_checks);
+				if (tail_element_is_dependent || _signature_type_involves_type_parameter(required_parameter_type)) {
+					// An absorbed position where either side is still universally quantified must match by
+					// alpha-equivalence, never by runtime-checkable compatibility. An implementation that
+					// only handles one specialization (`Array[int]`) is not a witness for a required `T`,
+					// and an open tail (`Array[U]`) cannot promise to accept a concrete required argument
+					// because the implementation's own callers choose `U`. This is not gated on method
+					// type parameters: a class-scoped parameter is just as universally quantified.
+					valid = valid && tail_is_narrowing &&
+							_datatype_alpha_equal(required_parameter_type, implementation_rest_element_type);
+				} else {
+					valid = valid && FSTypeCompatibility::rest_parameter_accepts_required_argument(&implementation_rest_type, required_parameter_type, strict_null_checks);
+				}
 			}
 		}
 	}
