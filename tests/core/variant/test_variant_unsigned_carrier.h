@@ -32,6 +32,7 @@
 
 #include "core/object/object.h"
 #include "core/os/time.h"
+#include "core/variant/typed_array.h"
 #include "core/variant/variant.h"
 
 #include "tests/test_macros.h"
@@ -108,6 +109,18 @@ TEST_CASE("[Variant] Native reflection masks compose with int operands") {
 	CHECK(method["flags"].get_type() == Variant::INT);
 
 	memdelete(object);
+}
+
+TEST_CASE("[Variant] Unsigned typed containers declare signed elements") {
+	// `GetTypeInfo<uint64_t>` declares `Variant::INT`, so a `TypedArray<uint64_t>` validates its
+	// elements against the signed carrier and callers filling one carry ids nominally.
+	TypedArray<uint64_t> ids;
+	CHECK_EQ(ids.get_typed_builtin(), int64_t(Variant::INT));
+
+	ids.push_back(int64_t(4242));
+	REQUIRE_EQ(ids.size(), 1);
+	CHECK_EQ(ids[0].get_type(), Variant::INT);
+	CHECK(ids.has(ObjectID(uint64_t(4242))));
 }
 
 } // namespace TestVariantUnsignedCarrier
