@@ -756,7 +756,12 @@ TypedArray<Dictionary> JavaClass::get_java_method_list() const {
 			Dictionary method;
 
 			method["name"] = mi._constructor ? java_constructor_name : String(item.key);
-			method["id"] = (uint64_t)mi.method;
+			// mi.method is an opaque JNI method identifier; the public method-list
+			// dictionary must still follow Object.get_method_list()'s signed "id"
+			// carrier, so round-trip through uint64_t to preserve the bit pattern
+			// and land on the signed Variant type. Do not simplify to a direct
+			// uint64_t assignment, which would expose TYPE_UINT here instead.
+			method["id"] = int64_t(uint64_t(mi.method));
 			method["default_args"] = Array();
 			method["flags"] = METHOD_FLAGS_DEFAULT & (mi._static || mi._constructor ? METHOD_FLAG_STATIC : METHOD_FLAG_NORMAL);
 
