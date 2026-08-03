@@ -916,6 +916,19 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 		// carry it before any payload is resolved: a payload naming the union bare or as its exact
 		// open spelling reads that published identity instead of re-entering resolution.
 		if (!p_enum->type_parameters.is_empty()) {
+			auto publish_open_identity = [&]() {
+				enum_type.type_arguments.clear();
+				for (int i = 0; i < p_enum->type_parameters.size(); i++) {
+					enum_type.type_arguments.push_back(enum_type_parameter_handle(p_enum->type_parameters[i], i));
+				}
+				p_enum->set_datatype(enum_type);
+			};
+
+			// A bound may itself name the union (`enum Recursive[T: Recursive]`), so the open identity is
+			// published once before the bounds are resolved and again once they are known. Without the
+			// first publication that bound re-enters this resolution and reports a false cycle.
+			publish_open_identity();
+
 			FSParser::FunctionNode *previous_function = parser->current_function;
 			parser->current_function = nullptr;
 			for (FSParser::TypeParameterNode *parameter : p_enum->type_parameters) {
@@ -925,12 +938,10 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 			}
 			parser->current_function = previous_function;
 
-			enum_type.type_arguments.clear();
-			for (int i = 0; i < p_enum->type_parameters.size(); i++) {
-				enum_type.type_arguments.push_back(enum_type_parameter_handle(p_enum->type_parameters[i], i));
-			}
+			publish_open_identity();
+		} else {
+			p_enum->set_datatype(enum_type);
 		}
-		p_enum->set_datatype(enum_type);
 	}
 
 	Dictionary dictionary;

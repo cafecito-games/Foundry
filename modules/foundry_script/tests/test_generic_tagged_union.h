@@ -545,6 +545,52 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Generic union misus
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Bounded parameters still spell the open self type") {
+	SUBCASE("explicit Variant bound") {
+		// A use-site handle carries the explicit `Variant` bound that the published open handle drops,
+		// so identity must not depend on the bound.
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Slot[T: Variant]:\n"
+						   "\tValue(value: T)\n"
+						   "\tNested(inner: Slot[T])\n",
+						   "user://generic_tagged_union_variant_bound.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		const FSParser::EnumNode *slot = find_enum(parser, SNAME("Slot"));
+		REQUIRE(slot != nullptr);
+		const FSParser::DataType nested = payload_field_type(slot, SNAME("Nested"), 0);
+		CHECK(nested.kind == FSParser::DataType::ENUM);
+		REQUIRE_EQ(nested.type_arguments.size(), 1);
+		CHECK(is_type_parameter(type_at(nested.type_arguments, 0), SNAME("T"),
+				FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+	}
+
+	SUBCASE("bound naming the union itself") {
+		// The open identity is published before bounds are resolved, so a self-referential bound reads
+		// it instead of re-entering resolution and reporting a cycle.
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Recursive[T: Recursive]:\n"
+						   "\tValue(value: T)\n",
+						   "user://generic_tagged_union_self_bound.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		const FSParser::EnumNode *recursive = find_enum(parser, SNAME("Recursive"));
+		REQUIRE(recursive != nullptr);
+		REQUIRE_EQ(recursive->type_parameters.size(), 1);
+		const FSParser::DataType bound = recursive->type_parameters[0]->resolved_bound;
+		CHECK(bound.kind == FSParser::DataType::ENUM);
+		CHECK(bound.is_tagged_union);
+	}
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] An enum parameter cannot shadow a class bound") {
 	// `Box`'s bound resolves in `Box`'s own scope, so the enum parameter active at the use site must
 	// not stand in for the outer class's same-named parameter: the enum's `Bounded` is a different

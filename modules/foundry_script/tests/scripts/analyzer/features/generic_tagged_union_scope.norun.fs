@@ -22,3 +22,12 @@ class Shadow[T]:
 
 enum Bounded[T: Resource, U: T]:
 	Pair(first: T, second: U)
+
+# An explicit Variant bound does not change the parameter's identity, and a bound may name the
+# union being declared because its open identity is published before bounds are resolved.
+enum Slot[T: Variant]:
+	Value(value: T)
+	Nested(inner: Slot[T])
+
+enum Recursive[T: Recursive]:
+	Value(value: T)

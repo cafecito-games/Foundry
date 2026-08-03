@@ -2328,12 +2328,17 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 
 			bool is_own_open_vector = is_current_declaration && result.type_arguments.size() == expected;
 			for (int i = 0; is_own_open_vector && i < expected; i++) {
-				const FSParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
-				// Full equality, so a decorated spelling of the same parameter — `T?`, `Type[T]` — is an
-				// application rather than the open self type.
+				FSParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
+				// Everything but the bound has to match, so a decorated spelling of the same parameter —
+				// `T?`, `Type[T]` — is an application rather than the open self type. The bound is redundant
+				// for identity, and a use-site handle spells an explicit `Variant` bound that the published
+				// handle drops.
+				FSParser::DataType open_argument = result.type_arguments[i];
+				argument.type_parameter_bound.clear();
+				open_argument.type_parameter_bound.clear();
 				is_own_open_vector = argument.kind == FSParser::DataType::TYPE_PARAMETER &&
 						argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_ENUM &&
-						argument.type_parameter_index == i && argument == result.type_arguments[i];
+						argument.type_parameter_index == i && argument == open_argument;
 			}
 			if (is_own_open_vector) {
 				// `Tree[T]` spelled inside `Tree[T]` canonicalizes to the same open handle as bare `Tree`.
