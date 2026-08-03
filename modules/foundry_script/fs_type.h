@@ -32,12 +32,72 @@
 
 #include "fs_parser.h"
 
+// The one decision point for what an integer width means when two of them meet.
+//
+// Two questions have to be answered the same way everywhere, or the language grows corners: which
+// type an operator's operands agree on, and whether a value of one width may enter a slot of
+// another. Both are answered here so that a binary operation, an assignment, an argument, a return,
+// a signal emission, and a typed collection element cannot drift apart.
+class FSNumericConversion {
+public:
+	// What it costs to move a value of one numeric type into a slot of another.
+	enum class Conversion {
+		// The slot constrains nothing the value does not already satisfy.
+		IDENTITY,
+		// Every value of the source is representable in the destination, so the conversion is safe
+		// without inspecting the value.
+		IMPLICIT_WIDEN,
+		// Not safe in general, but the analyzer proved this particular constant is representable.
+		CONSTANT_CHECKED,
+		// A representable value exists, but proving it needs an explicit conversion at the call site.
+		EXPLICIT_REQUIRED,
+		// The two slots are not numerically related.
+		INVALID,
+	};
+
+	// The value-preserving common type of two integer descriptors.
+	//
+	// Implements the promotion matrix exactly: the four same-type rows, `int`/`long`, `int`/`uint`,
+	// `uint`/`long`, and `uint`/`ulong`. Every other signed/unsigned pair -- `int`/`ulong`,
+	// `long`/`ulong`, and any narrowing-only mix -- has no type that holds all of both ranges and is
+	// rejected. The relation is symmetric, so operand order never changes the answer.
+	//
+	// `NumericType::NONE` is the absence of a width constraint rather than a fifth type: a pair that
+	// includes one yields `NONE` and succeeds, which is what keeps a slot that never declared a width
+	// behaving exactly as it did before descriptors existed. The 8- and 16-bit native-only
+	// descriptors promote as their 32-bit counterparts, since neither has a source spelling that
+	// could name a result.
+	static bool promote_integer_pair(NumericType p_left, NumericType p_right, NumericType &r_result);
+
+	// Classifies moving a value of `p_source` into a slot of `p_target`. Pass the source expression's
+	// constant value when it has one, so an exactly representable constant can cross a boundary a
+	// dynamic value of the same type may not.
+	//
+	// Only integer and floating built-ins are numerically related; anything else is `INVALID` and the
+	// caller's own type rules decide.
+	//
+	// The classification is about value preservation alone. Whether a conversion the caller can
+	// actually lower exists is a separate question the caller keeps answering for itself: crossing
+	// between the signed and unsigned carriers is value-preserving in one direction but has no
+	// registered `Variant` conversion, so the built-in compatibility rules reject it before this
+	// classifier is consulted.
+	static Conversion classify(const FSParser::DataType &p_target, const FSParser::DataType &p_source, const Variant *p_constant_source_value);
+
+	// Whether a built-in type participates in numeric conversion at all.
+	static bool is_numeric_builtin(const FSParser::DataType &p_type);
+};
+
 class FSTypeCompatibility {
 public:
 	struct Options {
 		bool allow_implicit_conversion = false;
 		bool strict_dynamic = false;
 		bool strict_null = false;
+		// The source expression's constant value, when the source is a constant. A constant may enter
+		// a narrower or differently signed numeric slot that a dynamic value of the same type may not,
+		// because its exact value can be checked against the destination's range. Never propagated
+		// into a nested element check: the constant describes the whole value, not its parts.
+		const Variant *constant_source_value = nullptr;
 	};
 
 	struct Result {

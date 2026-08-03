@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 3: Cannot include a value of type "ulong" as "uint".
+>> ERROR at line 3: Cannot have an element of type "ulong" in an array of type "Array[uint]".

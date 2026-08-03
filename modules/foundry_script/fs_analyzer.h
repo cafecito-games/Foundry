@@ -672,7 +672,15 @@ private:
 			const FSParser::DataType &p_value_element_type,
 			bool p_self_parameter_contract = false,
 			bool p_substitute_self_runtime_type = false);
-	bool is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false, const FSParser::Node *p_source_node = nullptr);
+	// `p_constant_source` is the expression the value actually comes from, when the caller has it. A
+	// constant may enter a numeric slot a dynamic value of the same type may not, because the exact
+	// value can be checked against the destination's range; pass it wherever a numeric boundary is
+	// validated so assignment, arguments, returns, signals, and typed collection elements agree.
+	bool is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false, const FSParser::Node *p_source_node = nullptr, const FSParser::ExpressionNode *p_constant_source = nullptr);
+
+	// The unsafe-integer-mix diagnostic for an operator whose operand types have no common integer
+	// type, or an empty string when they do. Shared so every operator site words it the same way.
+	String make_integer_promotion_error(const FSParser::DataType &p_left, const FSParser::DataType &p_right, Variant::Operator p_operation) const;
 	void push_error(const String &p_message, const FSParser::Node *p_origin = nullptr);
 	void mark_node_unsafe(const FSParser::Node *p_node);
 	void downgrade_node_type_source(FSParser::Node *p_node);
