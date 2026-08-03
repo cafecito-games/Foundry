@@ -484,6 +484,13 @@ private:
 	static FSParser::DataType complete_self_referential_enum_type(const FSParser::DataType &p_type);
 	FSParser::EnumNode *resolve_enum_declaration(const FSParser::DataType &p_enum_type,
 			const FSParser::Node *p_source);
+	// A generic tagged union has no bare form outside its own declaration, in an expression any more
+	// than in a type. This is the single gate for the metatype: every expression surface that can name
+	// a union goes through it, so a bare reference cannot leak out one surface at a time.
+	bool reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source);
+	// Publishes an enum metatype onto an identifier, or rejects a bare generic union and leaves the
+	// identifier on the Variant fallback. Returns whether the metatype was published.
+	bool publish_enum_meta_identifier(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);

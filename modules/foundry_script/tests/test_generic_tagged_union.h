@@ -609,6 +609,82 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] External case const
 			String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] External static function access is rejected") {
+	// Reaching a static enum function through the bare union would let the caller pass an argument
+	// against the declaration's own unbound parameter, so the declared bound would not hold.
+	SUBCASE("static function call") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T: Resource]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "\tstatic func identity(value: T) -> T:\n"
+						   "\t\treturn value\n"
+						   "\n"
+						   "func leak() -> Variant:\n"
+						   "\treturn Holder.identity(123)\n",
+						   "user://generic_tagged_union_external_static_call.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+	}
+
+	SUBCASE("bare metatype as a value") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "func leak() -> Variant:\n"
+						   "\treturn Holder\n",
+						   "user://generic_tagged_union_bare_value.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+	}
+
+	SUBCASE("a non-generic union stays reachable") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder:\n"
+						   "\tValue(value: int)\n"
+						   "\n"
+						   "\tstatic func identity(value: int) -> int:\n"
+						   "\t\treturn value\n"
+						   "\n"
+						   "func use() -> int:\n"
+						   "\treturn Holder.identity(123)\n",
+						   "user://generic_tagged_union_non_generic_static_call.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] An enum file still names its own generic union") {
+	// An `enum_name` file's body reaches the union through the file's own name rather than through a
+	// class member, so the bare-form gate has to recognize that position as the declaration too.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum_name GlobalHolder[T]:\n"
+					   "\tValue(value: T)\n"
+					   "\n"
+					   "\tstatic func make(value: T) -> GlobalHolder:\n"
+					   "\t\treturn GlobalHolder.Value(value)\n",
+					   "user://generic_tagged_union_enum_file_self.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum scope does not reach a forward-resolved class") {
 	// Resolving the payload pulls `Sibling` in while the union is the active enum. `Sibling`'s own `T`
 	// is a class parameter and must stay one, so parameter visibility follows lexical ownership rather
@@ -681,8 +757,8 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum arguments do n
 					   "\t\tstatic func identity(value: ClassT) -> ClassT:\n"
 					   "\t\t\treturn value\n"
 					   "\n"
-					   "\tfunc call_it(value: ClassT) -> ClassT:\n"
-					   "\t\treturn Choice.identity(value)\n",
+					   "\t\tstatic func call_it(value: ClassT) -> ClassT:\n"
+					   "\t\t\treturn Choice.identity(value)\n",
 					   "user://generic_tagged_union_enum_arguments.fs", false),
 			OK);
 	FSAnalyzer analyzer(&parser);
