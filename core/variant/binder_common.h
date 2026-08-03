@@ -172,27 +172,47 @@ struct VariantObjectClassChecker<const Ref<T> &> {
 
 #ifdef DEBUG_ENABLED
 
+// Parameter types whose `Variant` conversion reads either integer carrier, because it goes through
+// `operator int64_t()` / `operator double()` / `is_zero()`. Conversions that only inspect
+// `Variant::INT` directly, such as `ObjectID` and `Color`, are deliberately excluded: they would
+// hand the method a default-constructed value instead of the argument, so they must keep rejecting
+// `Variant::UINT` loudly.
+template <typename T>
+struct VariantReadsBothIntegerCarriers {
+	static constexpr bool value = std::is_arithmetic_v<T> || std::is_enum_v<T>;
+};
+
+template <typename T>
+struct VariantReadsBothIntegerCarriers<BitField<T>> {
+	static constexpr bool value = true;
+};
+
 // The native binding layer collapses every C++ integer width and signedness onto `Variant::INT`
 // (see `GetTypeInfo<uint64_t>` in `core/variant/type_info.h`, which keeps the distinction in
 // argument metadata only), so a declared integer parameter stands for both integer carriers. A
-// `Variant` built from an unsigned C++ value carries `Variant::UINT` and `VariantCaster` already
-// reads either carrier, so argument validation has to normalize the carrier before consulting the
-// script-facing conversion table. `Variant::can_convert_strict()` itself stays strict.
+// `Variant` built from an unsigned C++ value carries `Variant::UINT`, so argument validation has to
+// normalize the carrier before consulting the script-facing conversion table wherever the parameter
+// can actually receive it. `Variant::can_convert_strict()` itself stays strict.
 //
 // Like the rest of this layer the check is about carriers, not value ranges: an argument that does
 // not fit the parameter's width is narrowed by `VariantCaster`, exactly as an oversized `INT` has
 // always been narrowed into a smaller signed parameter. `GetTypeInfo` reports `INT` for signed and
 // unsigned parameters alike, so a range check here could not tell the two apart anyway.
+template <typename T>
 _FORCE_INLINE_ bool is_valid_native_argument_type(Variant::Type p_type_from, Variant::Type p_type_to) {
-	const Variant::Type source_type = p_type_from == Variant::UINT ? Variant::INT : p_type_from;
-	return Variant::can_convert_strict(source_type, p_type_to);
+	if constexpr (VariantReadsBothIntegerCarriers<T>::value) {
+		if (p_type_from == Variant::UINT) {
+			return Variant::can_convert_strict(Variant::INT, p_type_to);
+		}
+	}
+	return Variant::can_convert_strict(p_type_from, p_type_to);
 }
 
 template <typename T>
 struct VariantCasterAndValidate {
 	static _FORCE_INLINE_ T cast(const Variant **p_args, uint32_t p_arg_idx, Callable::CallError &r_error) {
 		Variant::Type argtype = GetTypeInfo<T>::VARIANT_TYPE;
-		if (!is_valid_native_argument_type(p_args[p_arg_idx]->get_type(), argtype) ||
+		if (!is_valid_native_argument_type<T>(p_args[p_arg_idx]->get_type(), argtype) ||
 				!VariantObjectClassChecker<T>::check(*p_args[p_arg_idx])) {
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 			r_error.argument = p_arg_idx;
@@ -207,7 +227,7 @@ template <typename T>
 struct VariantCasterAndValidate<T &> {
 	static _FORCE_INLINE_ T cast(const Variant **p_args, uint32_t p_arg_idx, Callable::CallError &r_error) {
 		Variant::Type argtype = GetTypeInfo<T>::VARIANT_TYPE;
-		if (!is_valid_native_argument_type(p_args[p_arg_idx]->get_type(), argtype) ||
+		if (!is_valid_native_argument_type<T>(p_args[p_arg_idx]->get_type(), argtype) ||
 				!VariantObjectClassChecker<T>::check(*p_args[p_arg_idx])) {
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 			r_error.argument = p_arg_idx;
@@ -222,7 +242,7 @@ template <typename T>
 struct VariantCasterAndValidate<const T &> {
 	static _FORCE_INLINE_ T cast(const Variant **p_args, uint32_t p_arg_idx, Callable::CallError &r_error) {
 		Variant::Type argtype = GetTypeInfo<T>::VARIANT_TYPE;
-		if (!is_valid_native_argument_type(p_args[p_arg_idx]->get_type(), argtype) ||
+		if (!is_valid_native_argument_type<T>(p_args[p_arg_idx]->get_type(), argtype) ||
 				!VariantObjectClassChecker<T>::check(*p_args[p_arg_idx])) {
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
 			r_error.argument = p_arg_idx;

@@ -228,6 +228,12 @@ public:
 		received_tile_id = p_tile_id;
 		received_generation = p_generation;
 	}
+
+	// `Variant::operator Color()` only reads `Variant::INT`, so an unsigned argument must not be
+	// silently accepted here.
+	void receive_color(Color p_color) {
+		call_count++;
+	}
 };
 
 // Tagged `[SceneTree]` because the deferred subcase needs a live `MessageQueue`.
@@ -296,6 +302,18 @@ TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 		CHECK(error.error == Callable::CallError::CALL_OK);
 		CHECK_FALSE(detector.has_error);
 		CHECK(receiver->received_generation == unrepresentable_as_signed);
+	}
+
+	SUBCASE("parameter whose conversion cannot read the unsigned carrier") {
+		ErrorDetector detector;
+
+		Callable callable = callable_mp(receiver, &TestUnsignedArgumentReceiver::receive_color).bind(generation);
+		Callable::CallError error;
+		Variant result;
+		callable.callp(nullptr, 0, result, error);
+
+		CHECK(error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+		CHECK(error.expected == Variant::COLOR);
 	}
 
 	memdelete(receiver);
