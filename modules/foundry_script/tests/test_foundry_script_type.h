@@ -3053,8 +3053,10 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not chan
 			OK);
 }
 
-TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not drop a typed rest tail") {
-	CHECK_NE(analyze_source(
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may drop to a gradual rest tail") {
+	// A gradual tail accepts every trailing argument the typed base contract can produce, so widening
+	// the tail all the way to `Array` is the contravariant limit rather than a violation.
+	CHECK_EQ(analyze_source(
 					 "class Base:\n"
 					 "\tfunc visit(...values: Array[int]) -> void:\n"
 					 "\t\tprint(values)\n"
@@ -3186,6 +3188,385 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter][GenericMethod] A solved 
 					 "func test() -> void:\n"
 					 "\tvar bad := collect[int](\"one\")\n"
 					 "\tprint(bad)\n"),
+			OK);
+}
+
+// A three-level hierarchy the rest-variance rows are expressed against, so no engine class is needed
+// to distinguish "same", "broader" and "narrower" element types.
+static const char *REST_VARIANCE_HIERARCHY =
+		"class Being:\n"
+		"\tvar id := 0\n"
+		"class Animal:\n"
+		"\textends Being\n"
+		"\tvar age := 0\n"
+		"class Dog:\n"
+		"\textends Animal\n"
+		"\tvar pet_name := \"\"\n";
+
+struct RestVarianceRow {
+	const char *required_tail;
+	const char *implementation_tail;
+	bool accepted;
+};
+
+static const RestVarianceRow REST_VARIANCE_ROWS[] = {
+	{ "Array[Animal]", "Array[Animal]", true },
+	{ "Array[Animal]", "Array[Being]", true },
+	{ "Array[Animal]", "Array", true },
+	{ "Array[Animal]", "Array[Variant]", true },
+	{ "Array", "Array[Animal]", false },
+	{ "Array[Variant]", "Array[Animal]", false },
+	{ "Array[Animal]", "Array[Dog]", false },
+	{ "Array", "Array", true },
+};
+
+// Resolves the callable types the analyzer infers for two variadic function references and reports
+// whether the second is statically assignable to the first, which is exactly the verdict the shared
+// rest rule produces for a callable assignment.
+static bool callable_rest_tail_is_statically_assignable(const String &p_required_tail, const String &p_implementation_tail) {
+	IgnoreWarningsScope ignore_warnings;
+	const String source =
+			String(REST_VARIANCE_HIERARCHY) +
+			"func required_shape(...values: " + p_required_tail +
+			") -> void:\n"
+			"\tprint(values)\n"
+			"func implementation_shape(...values: " +
+			p_implementation_tail +
+			") -> void:\n"
+			"\tprint(values)\n"
+			"var required_handler := required_shape\n"
+			"var implementation_handler := implementation_shape\n";
+	INFO(source);
+	FSParser parser;
+	REQUIRE(parser.parse(source, "user://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	FSParser::DataType required_type;
+	FSParser::DataType implementation_type;
+	for (const FSParser::ClassNode::Member &member : parser.get_tree()->members) {
+		if (member.type != FSParser::ClassNode::Member::VARIABLE) {
+			continue;
+		}
+		if (member.variable->identifier->name == StringName("required_handler")) {
+			required_type = member.variable->get_datatype();
+		} else if (member.variable->identifier->name == StringName("implementation_handler")) {
+			implementation_type = member.variable->get_datatype();
+		}
+	}
+	REQUIRE(required_type.kind == FSParser::DataType::BUILTIN);
+	REQUIRE(required_type.builtin_type == Variant::CALLABLE);
+	REQUIRE(implementation_type.kind == FSParser::DataType::BUILTIN);
+	REQUIRE(implementation_type.builtin_type == Variant::CALLABLE);
+	return FSTypeCompatibility::check(required_type, implementation_type).compatible;
+}
+
+static void check_rest_variance_row(const String &p_surface, const String &p_source, bool p_accepted) {
+	INFO(p_surface);
+	INFO(p_source);
+	if (p_accepted) {
+		CHECK_EQ(analyze_source(p_source), OK);
+	} else {
+		CHECK_NE(analyze_source(p_source), OK);
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Variance truth table") {
+	for (const RestVarianceRow &row : REST_VARIANCE_ROWS) {
+		const String required_tail = row.required_tail;
+		const String implementation_tail = row.implementation_tail;
+
+		check_rest_variance_row("class override",
+				String(REST_VARIANCE_HIERARCHY) +
+						"class Base:\n"
+						"\tfunc visit(...values: " +
+						required_tail +
+						") -> void:\n"
+						"\t\tprint(values)\n"
+						"class Derived:\n"
+						"\textends Base\n"
+						"\tfunc visit(...values: " +
+						implementation_tail +
+						") -> void:\n"
+						"\t\tprint(values)\n"
+						"func test() -> void:\n"
+						"\tpass\n",
+				row.accepted);
+
+		check_rest_variance_row("abstract requirement",
+				String(REST_VARIANCE_HIERARCHY) +
+						"abstract class Base:\n"
+						"\tabstract func visit(...values: " +
+						required_tail +
+						") -> void\n"
+						"class Derived:\n"
+						"\textends Base\n"
+						"\tfunc visit(...values: " +
+						implementation_tail +
+						") -> void:\n"
+						"\t\tprint(values)\n"
+						"func test() -> void:\n"
+						"\tpass\n",
+				row.accepted);
+
+		check_rest_variance_row("trait witness",
+				String(REST_VARIANCE_HIERARCHY) +
+						"trait Sink:\n"
+						"\tabstract func visit(...values: " +
+						required_tail +
+						") -> void\n"
+						"class Impl:\n"
+						"\tuses Sink\n"
+						"\tfunc visit(...values: " +
+						implementation_tail +
+						") -> void:\n"
+						"\t\tprint(values)\n"
+						"func test() -> void:\n"
+						"\tpass\n",
+				row.accepted);
+
+		CHECK_EQ(callable_rest_tail_is_statically_assignable(required_tail, implementation_tail), row.accepted);
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A missing rest tail is governed by the arity interval") {
+	// A requirement with no rest tail promises no trailing arguments, so an implementation may add one.
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(count: int) -> void:\n"
+					 "\t\tprint(count)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(count: int, ...values: Array[int]) -> void:\n"
+					 "\t\tprint(values.size() + count)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A required rest tail is unreachable without one, which the arity interval already rejects.
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit() -> void:\n"
+					 "\t\tpass\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rest tail must accept the required parameters it absorbs") {
+	// The override declares no fixed parameter, so a polymorphic call's argument lands in its rest
+	// tail. A tail that rejects the parent's parameter type would fail at dispatch time.
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(value: String) -> void:\n"
+					 "\t\tprint(value)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(value: String) -> void:\n"
+					 "\t\tprint(value)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array[String]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit(value: String) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit(value: String) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit(...values: Array[String]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A typed rest tail cannot absorb a hard Variant parameter") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(value: Variant) -> void:\n"
+					 "\t\tprint(value)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(value: Variant) -> void:\n"
+					 "\t\tprint(value)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Rest variance honors strict null checks") {
+	// A nullable required element is only accepted by a nullable implementation element once nullability
+	// is enforced, matching how fixed parameters behave in strict-null mode.
+	const String source =
+			"class Base:\n"
+			"\tfunc visit(...values: Array[Node?]) -> void:\n"
+			"\t\tprint(values)\n"
+			"class Derived:\n"
+			"\textends Base\n"
+			"\tfunc visit(...values: Array[Node]) -> void:\n"
+			"\t\tprint(values)\n"
+			"func test() -> void:\n"
+			"\tpass\n";
+	CHECK_EQ(analyze_source(source), OK);
+	CHECK_NE(analyze_source(source, true), OK);
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[Node?]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array[Node?]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n",
+					 true),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Signal arguments past a fixed prefix reach the rest tail") {
+	CHECK_NE(analyze_source(
+					 "signal three_nodes(first: Node, second: Node, third: Node)\n"
+					 "func handler(first: Node, ...rest: Array[Node2D]) -> void:\n"
+					 "\tprint(rest)\n"
+					 "func test() -> void:\n"
+					 "\tthree_nodes.connect(handler)\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "signal three_nodes(first: Node, second: Node, third: Node)\n"
+					 "func handler(first: Node, ...rest: Array[Node]) -> void:\n"
+					 "\tprint(rest)\n"
+					 "func test() -> void:\n"
+					 "\tthree_nodes.connect(handler)\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A narrowing callable rest tail is a static error") {
+	// A Callable erases its signature at runtime, so a rejected rest tail must not slip through as a
+	// runtime-checked narrowing the runtime cannot actually perform.
+	CHECK_NE(analyze_source(
+					 "func take_nodes(...values: Array[Node]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func take_node2ds(...values: Array[Node2D]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tvar handler := take_nodes\n"
+					 "\thandler = take_node2ds\n"
+					 "\thandler.call()\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "func take_nodes(...values: Array[Node]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func take_objects(...values: Array[Object]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tvar handler := take_nodes\n"
+					 "\thandler = take_objects\n"
+					 "\thandler.call()\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A narrowing override names both rest types") {
+	check_source_has_error(
+			"class Base:\n"
+			"\tfunc visit(...values: Array[int]) -> void:\n"
+			"\t\tprint(values)\n"
+			"class Derived:\n"
+			"\textends Base\n"
+			"\tfunc visit(...values: Array[String]) -> void:\n"
+			"\t\tprint(values)\n"
+			"func test() -> void:\n"
+			"\tpass\n",
+			R"(The rest parameter type "Array[String]" does not accept every trailing argument allowed by the parent rest parameter type "Array[int]".)");
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A generic trait rest tail matches up to renaming") {
+	CHECK_EQ(analyze_source(
+					 String(REST_VARIANCE_HIERARCHY) +
+					 "trait Sink:\n"
+					 "\tabstract func visit[T: Animal](...values: Array[T]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U: Animal](...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A different bound is a different requirement.
+	CHECK_NE(analyze_source(
+					 String(REST_VARIANCE_HIERARCHY) +
+					 "trait Sink:\n"
+					 "\tabstract func visit[T: Animal](...values: Array[T]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U: Being](...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+	// A concrete tail does not satisfy an open requirement just because one instantiation would.
+	CHECK_NE(analyze_source(
+					 String(REST_VARIANCE_HIERARCHY) +
+					 "trait Sink:\n"
+					 "\tabstract func visit[T: Animal](...values: Array[T]) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U: Animal](...values: Array[Dog]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Signal arguments must fit a variadic handler rest tail") {
+	CHECK_EQ(analyze_source(
+					 String(REST_VARIANCE_HIERARCHY) +
+					 "signal pets_seen(first: Dog, second: Dog)\n"
+					 "func handler(...values: Array[Animal]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpets_seen.connect(handler)\n"),
+			OK);
+	CHECK_NE(analyze_source(
+					 String(REST_VARIANCE_HIERARCHY) +
+					 "signal pets_seen(first: Animal, second: Animal)\n"
+					 "func handler(...values: Array[Dog]) -> void:\n"
+					 "\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpets_seen.connect(handler)\n"),
 			OK);
 }
 

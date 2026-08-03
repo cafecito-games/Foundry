@@ -68,4 +68,37 @@ public:
 	// parameter, return and rest signatures -- matches as well. `DataType::operator==` stops at the
 	// principal type, so it accepts two callables with different signatures.
 	static bool is_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
+
+	// Whether a rest ("...") tail narrows the trailing arguments below Variant. A bare `Array` and an
+	// `Array[Variant]` tail are both gradual and therefore not narrowing.
+	static bool rest_parameter_type_is_narrowing(const FSParser::DataType &p_rest_parameter_type);
+
+	// The single rest-tail acceptance rule shared by class overrides, abstract requirements, trait
+	// witnesses, callable assignment and signal connection.
+	//
+	// A rest tail sits in parameter position: callers pass individual elements, so the element type is
+	// contravariant. The implementation may accept the same or a broader element type, and a gradual
+	// implementation tail accepts anything, but a typed implementation tail cannot satisfy a gradual
+	// requirement whose callers may pass any value.
+	//
+	// Pass `nullptr` for a side that declares no rest tail at all. A requirement without a rest tail
+	// promises no trailing arguments, so an extra implementation tail is governed by the arity interval
+	// alone; a requirement with a rest tail is unreachable for an implementation that has none.
+	static bool rest_parameter_accepts_required_arguments(
+			const FSParser::DataType *p_implementation_rest_array,
+			const FSParser::DataType *p_required_rest_array,
+			bool p_strict_null = false);
+
+	// Whether a rest tail can absorb one fixed argument the requirement declares but the implementation
+	// does not, which the caller delivers into the tail instead. Same contravariant element rule: a
+	// gradual tail absorbs anything, a typed tail must accept the declared type.
+	static bool rest_parameter_accepts_required_argument(
+			const FSParser::DataType *p_implementation_rest_array,
+			const FSParser::DataType &p_required_argument_type,
+			bool p_strict_null = false);
+
+	// Resolves the rest tail a Callable/Signal type promises. Returns false when the signature is not
+	// variadic. `METHOD_FLAG_VARARG` is the arity bit, while the rich rest slot is filled only when the
+	// element narrows below Variant, so a variadic signature without that slot yields a gradual `Array`.
+	static bool callable_signature_rest_parameter_type(const FSParser::DataType &p_signature, FSParser::DataType &r_rest_array);
 };
