@@ -134,100 +134,13 @@ public:
 	using ReturnType = R;
 };
 
+// Dividing an integer vector by a float has a defined result for every operand pair, so the only
+// remaining division evaluator without an operand contract is the integer-vector-by-float
+// specialization in `variant_op.cpp`. Integer divisors go through
+// `OperatorEvaluatorVectorIntCheckedBinary` instead, which is why this template has no definition:
+// any other instantiation must fail to compile rather than divide unchecked.
 template <typename R, typename A, typename B>
-class OperatorEvaluatorDivNZ {
-public:
-	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const A &a = VariantInternalAccessor<A>::get(&p_left);
-		const B &b = VariantInternalAccessor<B>::get(&p_right);
-		if (b == 0) {
-			r_valid = false;
-			*r_ret = "Division by zero error";
-			return;
-		}
-		*r_ret = a / b;
-		r_valid = true;
-	}
-	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantInternalAccessor<R>::get(r_ret) = VariantInternalAccessor<A>::get(left) / VariantInternalAccessor<B>::get(right);
-	}
-	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<R>::encode(PtrToArg<A>::convert(left) / PtrToArg<B>::convert(right), r_ret);
-	}
-	static Variant::Type get_return_type() { return GetTypeInfo<R>::VARIANT_TYPE; }
-};
-
-template <>
-class OperatorEvaluatorDivNZ<Vector2i, Vector2i, Vector2i> {
-public:
-	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const Vector2i &a = VariantInternalAccessor<Vector2i>::get(&p_left);
-		const Vector2i &b = VariantInternalAccessor<Vector2i>::get(&p_right);
-		if (unlikely(b.x == 0 || b.y == 0)) {
-			r_valid = false;
-			*r_ret = "Division by zero error";
-			return;
-		}
-		*r_ret = a / b;
-		r_valid = true;
-	}
-	static void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantTypeChanger<Vector2i>::change(r_ret);
-		VariantInternalAccessor<Vector2i>::get(r_ret) = VariantInternalAccessor<Vector2i>::get(left) / VariantInternalAccessor<Vector2i>::get(right);
-	}
-	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<Vector2i>::encode(PtrToArg<Vector2i>::convert(left) / PtrToArg<Vector2i>::convert(right), r_ret);
-	}
-	static Variant::Type get_return_type() { return GetTypeInfo<Vector2i>::VARIANT_TYPE; }
-};
-
-template <>
-class OperatorEvaluatorDivNZ<Vector3i, Vector3i, Vector3i> {
-public:
-	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const Vector3i &a = VariantInternalAccessor<Vector3i>::get(&p_left);
-		const Vector3i &b = VariantInternalAccessor<Vector3i>::get(&p_right);
-		if (unlikely(b.x == 0 || b.y == 0 || b.z == 0)) {
-			r_valid = false;
-			*r_ret = "Division by zero error";
-			return;
-		}
-		*r_ret = a / b;
-		r_valid = true;
-	}
-	static void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantTypeChanger<Vector3i>::change(r_ret);
-		VariantInternalAccessor<Vector3i>::get(r_ret) = VariantInternalAccessor<Vector3i>::get(left) / VariantInternalAccessor<Vector3i>::get(right);
-	}
-	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<Vector3i>::encode(PtrToArg<Vector3i>::convert(left) / PtrToArg<Vector3i>::convert(right), r_ret);
-	}
-	static Variant::Type get_return_type() { return GetTypeInfo<Vector3i>::VARIANT_TYPE; }
-};
-
-template <>
-class OperatorEvaluatorDivNZ<Vector4i, Vector4i, Vector4i> {
-public:
-	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const Vector4i &a = VariantInternalAccessor<Vector4i>::get(&p_left);
-		const Vector4i &b = VariantInternalAccessor<Vector4i>::get(&p_right);
-		if (unlikely(b.x == 0 || b.y == 0 || b.z == 0 || b.w == 0)) {
-			r_valid = false;
-			*r_ret = "Division by zero error";
-			return;
-		}
-		*r_ret = a / b;
-		r_valid = true;
-	}
-	static void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantTypeChanger<Vector4i>::change(r_ret);
-		VariantInternalAccessor<Vector4i>::get(r_ret) = VariantInternalAccessor<Vector4i>::get(left) / VariantInternalAccessor<Vector4i>::get(right);
-	}
-	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<Vector4i>::encode(PtrToArg<Vector4i>::convert(left) / PtrToArg<Vector4i>::convert(right), r_ret);
-	}
-	static Variant::Type get_return_type() { return GetTypeInfo<Vector4i>::VARIANT_TYPE; }
-};
+class OperatorEvaluatorDivNZ;
 
 template <typename R, typename A, typename B>
 class OperatorEvaluatorMod : public CommonEvaluate<OperatorEvaluatorMod<R, A, B>> {
@@ -241,99 +154,148 @@ public:
 	using ReturnType = R;
 };
 
-template <typename R, typename A, typename B>
-class OperatorEvaluatorModNZ {
-public:
-	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const A &a = VariantInternalAccessor<A>::get(&p_left);
-		const B &b = VariantInternalAccessor<B>::get(&p_right);
-		if (b == 0) {
-			r_valid = false;
-			*r_ret = "Modulo by zero error";
-			return;
+// The only component pairs the 32-bit componentwise operation cannot evaluate: a zero divisor, and
+// the minimum dividend against a divisor of -1, whose quotient is not representable.
+static _ALWAYS_INLINE_ bool variant_vector_int_component_accepted(int32_t p_left, int32_t p_right) {
+	return p_right != 0 && !(p_left == INT32_MIN && p_right == -1);
+}
+
+struct VariantVectorIntDivideOperation {
+	static _ALWAYS_INLINE_ int32_t compute(int32_t p_left, int32_t p_right) { return p_left / p_right; }
+	static _ALWAYS_INLINE_ const char *component_error_message(int32_t p_right) {
+		if (p_right == 0) {
+			return "Division by zero error";
 		}
-		*r_ret = a % b;
-		r_valid = true;
+		return "Division overflow error. The quotient of the minimum integer and -1 is not representable.";
 	}
-	static inline void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantInternalAccessor<R>::get(r_ret) = VariantInternalAccessor<A>::get(left) % VariantInternalAccessor<B>::get(right);
+	static _ALWAYS_INLINE_ const char *divisor_range_error_message() {
+		return "Invalid operands for division. The divisor must fit in a 32-bit integer.";
 	}
-	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<R>::encode(PtrToArg<A>::convert(left) % PtrToArg<B>::convert(right), r_ret);
-	}
-	static Variant::Type get_return_type() { return GetTypeInfo<R>::VARIANT_TYPE; }
 };
 
-template <>
-class OperatorEvaluatorModNZ<Vector2i, Vector2i, Vector2i> {
+struct VariantVectorIntModuloOperation {
+	static _ALWAYS_INLINE_ int32_t compute(int32_t p_left, int32_t p_right) { return p_left % p_right; }
+	static _ALWAYS_INLINE_ const char *component_error_message(int32_t p_right) {
+		if (p_right == 0) {
+			return "Modulo by zero error";
+		}
+		return "Modulo overflow error. The quotient of the minimum integer and -1 is not representable.";
+	}
+	static _ALWAYS_INLINE_ const char *divisor_range_error_message() {
+		return "Invalid operands for modulo. The divisor must fit in a 32-bit integer.";
+	}
+};
+
+// Returns `nullptr` and fills `r_result` when every component pair is evaluable; otherwise returns
+// the diagnostic and leaves `r_result` zeroed. The result is produced into a local, so a destination
+// that aliases an operand is only written once the whole operation is known to succeed.
+template <typename VectorType, typename Operation>
+static const char *variant_vector_int_evaluate(const VectorType &p_left, const VectorType &p_right, VectorType &r_result) {
+	VectorType result;
+	for (int axis = 0; axis < VectorType::AXIS_COUNT; axis++) {
+		if (unlikely(!variant_vector_int_component_accepted(p_left[axis], p_right[axis]))) {
+			r_result = VectorType();
+			return Operation::component_error_message(p_right[axis]);
+		}
+		result[axis] = Operation::compute(p_left[axis], p_right[axis]);
+	}
+	r_result = result;
+	return nullptr;
+}
+
+// A scalar divisor arrives as a 64-bit value while the componentwise operation is 32-bit, so a
+// divisor outside the 32-bit range is rejected before any component is evaluated. Narrowing it first
+// would silently answer a different question: a nonzero divisor such as 2^32 becomes a zero divisor,
+// and one such as 2^32 + 5 becomes 5.
+template <typename VectorType, typename Operation>
+static const char *variant_vector_int_evaluate_scalar(const VectorType &p_left, int64_t p_right, VectorType &r_result) {
+	if (unlikely(p_right < INT32_MIN || p_right > INT32_MAX)) {
+		r_result = VectorType();
+		return Operation::divisor_range_error_message();
+	}
+	const int32_t right_value = int32_t(p_right);
+	VectorType result;
+	for (int axis = 0; axis < VectorType::AXIS_COUNT; axis++) {
+		if (unlikely(!variant_vector_int_component_accepted(p_left[axis], right_value))) {
+			r_result = VectorType();
+			return Operation::component_error_message(right_value);
+		}
+		result[axis] = Operation::compute(p_left[axis], right_value);
+	}
+	r_result = result;
+	return nullptr;
+}
+
+// Every entry point rejects operands the componentwise operation cannot evaluate instead of running
+// the undefined C++ operation, in every build. `evaluate()` reports the failure through its validity
+// flag; the validated and pointer entry points cannot, so they write a zero vector and raise an
+// engine error, the same shape the scalar checked evaluators use for an unreportable failure.
+template <typename VectorType, typename Operation>
+class OperatorEvaluatorVectorIntCheckedBinary {
 public:
 	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const Vector2i &a = VariantInternalAccessor<Vector2i>::get(&p_left);
-		const Vector2i &b = VariantInternalAccessor<Vector2i>::get(&p_right);
-		if (unlikely(b.x == 0 || b.y == 0)) {
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate<VectorType, Operation>(VariantInternalAccessor<VectorType>::get(&p_left), VariantInternalAccessor<VectorType>::get(&p_right), result);
+		if (unlikely(failure != nullptr)) {
+			*r_ret = failure;
 			r_valid = false;
-			*r_ret = "Modulo by zero error";
 			return;
 		}
-		*r_ret = a % b;
+		*r_ret = result;
 		r_valid = true;
 	}
 	static void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantTypeChanger<Vector2i>::change(r_ret);
-		VariantInternalAccessor<Vector2i>::get(r_ret) = VariantInternalAccessor<Vector2i>::get(left) % VariantInternalAccessor<Vector2i>::get(right);
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate<VectorType, Operation>(VariantInternalAccessor<VectorType>::get(left), VariantInternalAccessor<VectorType>::get(right), result);
+		VariantTypeChanger<VectorType>::change(r_ret);
+		VariantInternalAccessor<VectorType>::get(r_ret) = result;
+		if (unlikely(failure != nullptr)) {
+			ERR_FAIL_MSG(failure);
+		}
 	}
 	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<Vector2i>::encode(PtrToArg<Vector2i>::convert(left) % PtrToArg<Vector2i>::convert(right), r_ret);
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate<VectorType, Operation>(PtrToArg<VectorType>::convert(left), PtrToArg<VectorType>::convert(right), result);
+		PtrToArg<VectorType>::encode(result, r_ret);
+		if (unlikely(failure != nullptr)) {
+			ERR_FAIL_MSG(failure);
+		}
 	}
-	static Variant::Type get_return_type() { return GetTypeInfo<Vector2i>::VARIANT_TYPE; }
+	static Variant::Type get_return_type() { return GetTypeInfo<VectorType>::VARIANT_TYPE; }
 };
 
-template <>
-class OperatorEvaluatorModNZ<Vector3i, Vector3i, Vector3i> {
+template <typename VectorType, typename Operation>
+class OperatorEvaluatorVectorIntScalarCheckedBinary {
 public:
 	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const Vector3i &a = VariantInternalAccessor<Vector3i>::get(&p_left);
-		const Vector3i &b = VariantInternalAccessor<Vector3i>::get(&p_right);
-		if (unlikely(b.x == 0 || b.y == 0 || b.z == 0)) {
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar<VectorType, Operation>(VariantInternalAccessor<VectorType>::get(&p_left), VariantInternalAccessor<int64_t>::get(&p_right), result);
+		if (unlikely(failure != nullptr)) {
+			*r_ret = failure;
 			r_valid = false;
-			*r_ret = "Modulo by zero error";
 			return;
 		}
-		*r_ret = a % b;
+		*r_ret = result;
 		r_valid = true;
 	}
 	static void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantTypeChanger<Vector3i>::change(r_ret);
-		VariantInternalAccessor<Vector3i>::get(r_ret) = VariantInternalAccessor<Vector3i>::get(left) % VariantInternalAccessor<Vector3i>::get(right);
-	}
-	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<Vector3i>::encode(PtrToArg<Vector3i>::convert(left) % PtrToArg<Vector3i>::convert(right), r_ret);
-	}
-	static Variant::Type get_return_type() { return GetTypeInfo<Vector3i>::VARIANT_TYPE; }
-};
-
-template <>
-class OperatorEvaluatorModNZ<Vector4i, Vector4i, Vector4i> {
-public:
-	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
-		const Vector4i &a = VariantInternalAccessor<Vector4i>::get(&p_left);
-		const Vector4i &b = VariantInternalAccessor<Vector4i>::get(&p_right);
-		if (unlikely(b.x == 0 || b.y == 0 || b.z == 0 || b.w == 0)) {
-			r_valid = false;
-			*r_ret = "Modulo by zero error";
-			return;
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar<VectorType, Operation>(VariantInternalAccessor<VectorType>::get(left), VariantInternalAccessor<int64_t>::get(right), result);
+		VariantTypeChanger<VectorType>::change(r_ret);
+		VariantInternalAccessor<VectorType>::get(r_ret) = result;
+		if (unlikely(failure != nullptr)) {
+			ERR_FAIL_MSG(failure);
 		}
-		*r_ret = a % b;
-		r_valid = true;
-	}
-	static void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
-		VariantTypeChanger<Vector4i>::change(r_ret);
-		VariantInternalAccessor<Vector4i>::get(r_ret) = VariantInternalAccessor<Vector4i>::get(left) % VariantInternalAccessor<Vector4i>::get(right);
 	}
 	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
-		PtrToArg<Vector4i>::encode(PtrToArg<Vector4i>::convert(left) % PtrToArg<Vector4i>::convert(right), r_ret);
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar<VectorType, Operation>(PtrToArg<VectorType>::convert(left), PtrToArg<int64_t>::convert(right), result);
+		PtrToArg<VectorType>::encode(result, r_ret);
+		if (unlikely(failure != nullptr)) {
+			ERR_FAIL_MSG(failure);
+		}
 	}
-	static Variant::Type get_return_type() { return GetTypeInfo<Vector4i>::VARIANT_TYPE; }
+	static Variant::Type get_return_type() { return GetTypeInfo<VectorType>::VARIANT_TYPE; }
 };
 
 template <typename R, typename A>
