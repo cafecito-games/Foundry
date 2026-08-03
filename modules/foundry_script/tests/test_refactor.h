@@ -610,6 +610,34 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(candidate->origin.contains("Base"));
 	}
 
+	TEST_CASE("Override method lists an abstract generic method solved only by its rest tail") {
+		// A rest tail is an inference source, so `T` is solvable and the method is offerable even
+		// though no fixed parameter mentions it.
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func collect[T](...values: Array[T]) -> Array[T]\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "collect");
+		REQUIRE(candidate != nullptr);
+		CHECK(candidate->signature.contains("collect[T](...values: Array[T]) -> Array[T]"));
+	}
+
+	TEST_CASE("Override method omits an abstract generic method no argument can solve") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func make[T]() -> Array[T]\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		CHECK(FSTests::find_override_candidate(result.candidates, "make") == nullptr);
+	}
+
 	TEST_CASE("Override method renders concrete script base stub with super call") {
 		const String source =
 				"class Base:\n"

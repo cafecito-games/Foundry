@@ -276,7 +276,7 @@ private:
 		void collect_type_parameter_bindings(const FSParser::DataType &p_parameter_type, const FSParser::DataType &p_argument_type,
 				HashMap<StringName, FSParser::DataType> &r_bindings, HashSet<StringName> &r_conflicts);
 		void apply_generic_method_call(FSParser::CallNode *p_call, FSParser::FunctionNode *p_function,
-				List<FSParser::DataType> &r_par_types, FSParser::DataType &r_return_type);
+				List<FSParser::DataType> &r_par_types, FSParser::DataType &r_rest_parameter_type, FSParser::DataType &r_return_type);
 		bool callable_signature_from_type(const FSParser::DataType &p_callable_type, Vector<FSParser::DataType> &r_par_types, int &r_default_arg_count, bool &r_is_vararg) const;
 		FSParser::DataType plain_callable_type() const;
 		FSParser::DataType over_bound_callable_type(const FSParser::DataType &p_source_callable_type) const;
