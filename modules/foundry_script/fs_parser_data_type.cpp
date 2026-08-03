@@ -63,6 +63,33 @@ void FSParser::clear_builtin_type_cache() {
 	builtin_types.clear();
 }
 
+// The source spellings of the integer types, which cannot be derived from `Variant::Type`: `int` and
+// `long` share the `INT` carrier and `uint` and `ulong` share the `UINT` carrier, so only an explicit
+// registry can tell the four apart.
+static constexpr struct {
+	const char *name;
+	Variant::Type builtin_type;
+	NumericType numeric_type;
+} NUMERIC_BUILTIN_TYPES[] = {
+	{ "int", Variant::INT, NumericType::INT32 },
+	{ "uint", Variant::UINT, NumericType::UINT32 },
+	{ "long", Variant::INT, NumericType::INT64 },
+	{ "ulong", Variant::UINT, NumericType::UINT64 },
+};
+
+FSParser::BuiltinDataType FSParser::get_builtin_data_type(const StringName &p_type) {
+	BuiltinDataType result;
+	for (const auto &numeric_builtin : NUMERIC_BUILTIN_TYPES) {
+		if (p_type == StringName(numeric_builtin.name)) {
+			result.builtin_type = numeric_builtin.builtin_type;
+			result.numeric_type = numeric_builtin.numeric_type;
+			return result;
+		}
+	}
+	result.builtin_type = get_builtin_type(p_type);
+	return result;
+}
+
 static String _datatype_signature_type_to_string(const FSParser::DataType &p_type, bool p_nil_is_void = false) {
 	if (p_nil_is_void && p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL) {
 		return "void";
@@ -150,14 +177,15 @@ String FSParser::DataType::to_string() const {
 				result = vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
 				break;
 			}
-			// Deliberately carrier-only, so a width never reaches this name. `to_string()` is the source
-			// spelling of a type: refactorings write its result straight back into a script, so every name
-			// it produces has to be one the built-in registry can resolve. That registry still maps `int`
-			// and `uint` to the full 64-bit carrier and has no spelling for any other width, so a width
-			// gets a name here only once the registry gains one. Width-aware naming meanwhile lives on the
-			// container-type description (`ContainerType::get_type_name()`), which is read by diagnostics
-			// rather than written into source.
-			result = Variant::get_type_name(builtin_type);
+			// `to_string()` is the source spelling of a type: refactorings write its result straight back
+			// into a script, so every name it produces has to be one the built-in registry can resolve.
+			// A declared width now has such a name, so render it; a slot that declared none still falls
+			// back to the carrier's name, which is all the evidence it has.
+			if (numeric_type_has_public_name(numeric_type) && numeric_type_is_carrier_consistent(numeric_type, builtin_type)) {
+				result = numeric_type_public_name(numeric_type);
+			} else {
+				result = Variant::get_type_name(builtin_type);
+			}
 			break;
 		case NATIVE:
 			if (is_meta_type) {

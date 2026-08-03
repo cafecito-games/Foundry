@@ -33,7 +33,7 @@
 #include "core/io/compression.h"
 #include "core/io/marshalls.h"
 
-int FSTokenizerBuffer::_token_to_binary(const Token &p_token, Vector<uint8_t> &r_buffer, int p_start, HashMap<StringName, uint32_t> &r_identifiers_map, HashMap<Variant, uint32_t> &r_constants_map) {
+int FSTokenizerBuffer::_token_to_binary(const Token &p_token, Vector<uint8_t> &r_buffer, int p_start, HashMap<StringName, uint32_t> &r_identifiers_map, ConstantMap &r_constants_map) {
 	int pos = p_start;
 
 	int token_type = p_token.type & TOKEN_MASK;
@@ -55,12 +55,13 @@ int FSTokenizerBuffer::_token_to_binary(const Token &p_token, Vector<uint8_t> &r
 		case FSTokenizer::Token::ERROR:
 		case FSTokenizer::Token::LITERAL: {
 			// Add literal to map.
+			const ConstantKey constant_key = { p_token.literal };
 			int constant_pos;
-			if (r_constants_map.has(p_token.literal)) {
-				constant_pos = r_constants_map[p_token.literal];
+			if (r_constants_map.has(constant_key)) {
+				constant_pos = r_constants_map[constant_key];
 			} else {
 				constant_pos = r_constants_map.size();
-				r_constants_map[p_token.literal] = constant_pos;
+				r_constants_map[constant_key] = constant_pos;
 			}
 			token_type |= constant_pos << TOKEN_BITS;
 		} break;
@@ -68,20 +69,28 @@ int FSTokenizerBuffer::_token_to_binary(const Token &p_token, Vector<uint8_t> &r
 			break;
 	}
 
-	// Encode token.
+	// Encode token. A literal carries one extra descriptor byte, because the constant pool stores the
+	// Variant carrier only: `1` and `1L` share a pooled entry, so nothing else in the record can tell
+	// the two widths apart.
+	const bool has_numeric_descriptor = p_token.type == FSTokenizer::Token::LITERAL;
 	int token_len;
 	if (token_type & TOKEN_MASK) {
 		token_len = 8;
-		r_buffer.resize(pos + token_len);
+		r_buffer.resize(pos + token_len + (has_numeric_descriptor ? 1 : 0));
 		encode_uint32(token_type | TOKEN_BYTE_MASK, &r_buffer.write[pos]);
 		pos += 4;
 	} else {
 		token_len = 5;
-		r_buffer.resize(pos + token_len);
+		r_buffer.resize(pos + token_len + (has_numeric_descriptor ? 1 : 0));
 		r_buffer.write[pos] = token_type;
 		pos++;
 	}
 	encode_uint32(p_token.start_line, &r_buffer.write[pos]);
+	if (has_numeric_descriptor) {
+		pos += 4;
+		r_buffer.write[pos] = uint8_t(p_token.numeric_type) | (p_token.numeric_type_is_explicit ? NUMERIC_TYPE_EXPLICIT_FLAG : 0);
+		token_len += 1;
+	}
 	return token_len;
 }
 
@@ -98,6 +107,21 @@ FSTokenizer::Token FSTokenizerBuffer::_binary_to_token(const uint8_t *p_buffer) 
 	}
 	token.start_line = decode_uint32(b);
 	token.end_line = token.start_line;
+	if (token.type == Token::LITERAL) {
+		const uint8_t descriptor = b[4];
+		const NumericType numeric_type = NumericType(descriptor & ~NUMERIC_TYPE_EXPLICIT_FLAG);
+		const bool numeric_type_is_explicit = (descriptor & NUMERIC_TYPE_EXPLICIT_FLAG) != 0;
+		// An unconstrained slot cannot have declared a width, so the flag without a descriptor is as
+		// malformed as a descriptor value no `NumericType` defines.
+		if (unlikely(!numeric_type_is_valid(numeric_type) || (numeric_type_is_explicit && numeric_type == NumericType::NONE))) {
+			Token error;
+			error.type = Token::ERROR;
+			error.literal = "Invalid numeric type descriptor on a literal token.";
+			return error;
+		}
+		token.numeric_type = numeric_type;
+		token.numeric_type_is_explicit = numeric_type_is_explicit;
+	}
 
 	token.literal = token.get_name();
 	if (token.type == Token::CONST_NAN) {
@@ -128,6 +152,16 @@ FSTokenizer::Token FSTokenizerBuffer::_binary_to_token(const uint8_t *p_buffer) 
 				return error;
 			}
 			token.literal = constants[constant_pos];
+			if (unlikely(token.numeric_type != NumericType::NONE &&
+						!numeric_type_contains(token.numeric_type, token.literal))) {
+				// A declared width has to match the pooled constant it describes; otherwise a crafted
+				// buffer could hand the analyzer a `ulong`-typed negative value or an `int`-typed value
+				// far outside the 32-bit range.
+				Token error;
+				error.type = Token::ERROR;
+				error.literal = "Literal token descriptor does not match its constant.";
+				return error;
+			}
 		} break;
 		default:
 			break;
@@ -224,6 +258,11 @@ Error FSTokenizerBuffer::set_code_buffer(const Vector<uint8_t> &p_buffer) {
 		if ((*b) & TOKEN_BYTE_MASK) {
 			token_len = 8;
 		}
+		// The token type occupies the low bits of the first byte in both encodings, so the trailing
+		// literal descriptor byte can be accounted for before the record is decoded.
+		if (((*b) & TOKEN_MASK) == Token::LITERAL) {
+			token_len += 1;
+		}
 		ERR_FAIL_COND_V(total_len < token_len, ERR_INVALID_DATA);
 		Token token = _binary_to_token(b);
 		b += token_len;
@@ -239,7 +278,7 @@ Error FSTokenizerBuffer::set_code_buffer(const Vector<uint8_t> &p_buffer) {
 
 Vector<uint8_t> FSTokenizerBuffer::parse_code_string(const String &p_code, CompressMode p_compress_mode) {
 	HashMap<StringName, uint32_t> identifier_map;
-	HashMap<Variant, uint32_t> constant_map;
+	ConstantMap constant_map;
 	Vector<uint8_t> token_buffer;
 	HashMap<uint32_t, uint32_t> token_lines;
 	HashMap<uint32_t, uint32_t> token_columns;
@@ -273,8 +312,8 @@ Vector<uint8_t> FSTokenizerBuffer::parse_code_string(const String &p_code, Compr
 	}
 	Vector<Variant> rev_constant_map;
 	rev_constant_map.resize(constant_map.size());
-	for (const KeyValue<Variant, uint32_t> &E : constant_map) {
-		rev_constant_map.write[E.value] = E.key;
+	for (const KeyValue<ConstantKey, uint32_t> &E : constant_map) {
+		rev_constant_map.write[E.value] = E.key.value;
 	}
 	HashMap<uint32_t, uint32_t> rev_token_lines;
 	for (const KeyValue<uint32_t, uint32_t> &E : token_lines) {

@@ -464,6 +464,17 @@ int FSAnalyzer::test_get_external_parser_cache_size(const FSAnalyzer *p_analyzer
 }
 #endif // TESTS_ENABLED
 
+// The width a resolved built-in type name constrains its slot to today.
+//
+// `int` keeps an unconstrained width for now: every native integer boundary still decodes wide (see
+// `type_from_property()`), so pinning the 32-bit constraint before the promotion classifier and the
+// native metadata mapping exist would reject correct code rather than narrow it. The three new
+// spellings have no such history and carry their exact width immediately. The registry itself keeps
+// the accurate descriptor, so this is the only place the distinction is made.
+static NumericType _applied_numeric_type(NumericType p_registry_numeric_type) {
+	return p_registry_numeric_type == NumericType::INT32 ? NumericType::NONE : p_registry_numeric_type;
+}
+
 static String _normalize_bootstrap_path(const String &p_path) {
 	return ResourceUID::ensure_path(p_path).replace_char('\\', '/').simplify_path();
 }
@@ -1909,10 +1920,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				return bad_type;
 			}
 			result.kind = FSParser::DataType::VARIANT;
-		} else if (FSParser::get_builtin_type(first) < Variant::VARIANT_MAX || first == SNAME("AsyncCallable")) {
+		} else if (FSParser::get_builtin_data_type(first).is_valid() || first == SNAME("AsyncCallable")) {
 			// Built-in types. AsyncCallable is an async-marked alias of Callable.
 			const bool is_async_callable = first == SNAME("AsyncCallable");
-			const Variant::Type builtin_type = is_async_callable ? Variant::CALLABLE : FSParser::get_builtin_type(first);
+			const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(first);
+			const Variant::Type builtin_type = is_async_callable ? Variant::CALLABLE : builtin_data_type.builtin_type;
 
 			if (p_type->type_chain.size() == 2) {
 				// May be nested enum.
@@ -1931,6 +1943,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 
 			result.kind = FSParser::DataType::BUILTIN;
 			result.builtin_type = builtin_type;
+			result.numeric_type = _applied_numeric_type(builtin_data_type.numeric_type);
 
 			if (builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) {
 				result.signature_is_async = is_async_callable;
@@ -10103,7 +10116,14 @@ void FSAnalyzer::reduce_literal(FSParser::LiteralNode *p_literal) {
 	p_literal->reduced_value = p_literal->value;
 	p_literal->is_constant = true;
 
-	p_literal->set_datatype(type_from_variant(p_literal->reduced_value, p_literal));
+	FSParser::DataType literal_type = type_from_variant(p_literal->reduced_value, p_literal);
+	// A suffix declares the literal's width, so it is part of its type and a slot of any other width
+	// rejects it. An unsuffixed literal keeps an unconstrained width: which integer type it may enter
+	// is decided by the destination, not by the narrowest type that happens to represent it.
+	if (p_literal->numeric_type_is_explicit) {
+		literal_type.numeric_type = p_literal->numeric_type;
+	}
+	p_literal->set_datatype(literal_type);
 }
 
 void FSAnalyzer::reduce_preload(FSParser::PreloadNode *p_preload) {
@@ -11889,7 +11909,11 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 				// result type T instead of resolving "Coroutine[...]" as a bogus class name.
 				elem_type = _decode_signature_type(p_property.hint_string);
 			} else {
-				Variant::Type elem_builtin_type = FSParser::get_builtin_type(elem_type_name);
+				// A container element hint is spelled with the carrier's name, so both unsigned spellings
+				// arrive as `uint`, which the carrier-only registry excludes. Resolve it through the source
+				// registry to recover the carrier, and leave the width unconstrained: the hint never
+				// carried one.
+				Variant::Type elem_builtin_type = FSParser::get_builtin_data_type(elem_type_name).builtin_type;
 				if (elem_builtin_type < Variant::VARIANT_MAX) {
 					// Builtin type.
 					elem_type.kind = FSParser::DataType::BUILTIN;
@@ -11919,7 +11943,7 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 			FSParser::DataType key_elem_type;
 			key_elem_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 
-			Variant::Type key_elem_builtin_type = FSParser::get_builtin_type(key_elem_type_name);
+			Variant::Type key_elem_builtin_type = FSParser::get_builtin_data_type(key_elem_type_name).builtin_type;
 			if (_container_element_hint_is_coroutine(key_elem_type_name)) {
 				// A Coroutine[T] dictionary key is encoded via the signature grammar (see to_property_info),
 				// so decode it through the shared coroutine grammar to recover the coroutine identity and
@@ -11951,7 +11975,7 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 			FSParser::DataType value_elem_type;
 			value_elem_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 
-			Variant::Type value_elem_builtin_type = FSParser::get_builtin_type(value_elem_type_name);
+			Variant::Type value_elem_builtin_type = FSParser::get_builtin_data_type(value_elem_type_name).builtin_type;
 			if (_container_element_hint_is_coroutine(value_elem_type_name)) {
 				// A Coroutine[T] dictionary value is encoded via the signature grammar (see to_property_info),
 				// so decode it through the shared coroutine grammar to recover the coroutine identity and
@@ -13349,9 +13373,13 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 
 	if (p_expression->type == FSParser::Node::IDENTIFIER) {
 		FSParser::IdentifierNode *identifier = static_cast<FSParser::IdentifierNode *>(p_expression);
-		const Variant::Type builtin_type = FSParser::get_builtin_type(identifier->name);
-		if (builtin_type < Variant::VARIANT_MAX) {
-			r_type_argument = type_from_metatype(make_builtin_meta_type(builtin_type));
+		// An explicit type argument is a type position, so it resolves the four integer spellings
+		// through the same registry an annotation does.
+		const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(identifier->name);
+		if (builtin_data_type.is_valid()) {
+			FSParser::DataType builtin_argument = make_builtin_meta_type(builtin_data_type.builtin_type);
+			builtin_argument.numeric_type = _applied_numeric_type(builtin_data_type.numeric_type);
+			r_type_argument = type_from_metatype(builtin_argument);
 			return true;
 		}
 

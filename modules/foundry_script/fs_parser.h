@@ -1503,6 +1503,12 @@ public:
 
 	struct LiteralNode : public ExpressionNode {
 		Variant value;
+		// Width and signedness the integer literal declared through its suffix, or that its magnitude
+		// selected when unsuffixed. `NONE` for every non-integer literal.
+		NumericType numeric_type = NumericType::NONE;
+		// Whether the width was written as a suffix. Only a declared width becomes part of the literal's
+		// type; an inferred one records which type the value would take on its own.
+		bool numeric_type_is_explicit = false;
 
 		LiteralNode() {
 			type = LITERAL;
@@ -2368,6 +2374,17 @@ public:
 	ClassNode *find_class(const String &p_qualified_name) const;
 	bool has_class(const FSParser::ClassNode *p_class) const;
 	static Variant::Type get_builtin_type(const StringName &p_type); // Excluding `Variant::NIL` and `Variant::OBJECT`.
+
+	// A built-in source name resolved to both the Variant carrier it travels in and the exact width it
+	// declares. The four integer spellings do not map one-to-one onto `Variant::Type`, so a carrier
+	// alone cannot answer what a source type name means.
+	struct BuiltinDataType {
+		Variant::Type builtin_type = Variant::VARIANT_MAX;
+		NumericType numeric_type = NumericType::NONE;
+
+		bool is_valid() const { return builtin_type < Variant::VARIANT_MAX; }
+	};
+	static BuiltinDataType get_builtin_data_type(const StringName &p_type);
 
 	CompletionContext get_completion_context() const { return completion_context; }
 	void get_annotation_list(List<MethodInfo> *r_annotations) const;

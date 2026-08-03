@@ -556,7 +556,7 @@ TEST_CASE("[Modules][FoundryScript] Tokenizer rejects a hex prefix on a tuple in
 }
 
 TEST_CASE("[Modules][FoundryScript] Tokenizer emits ENUM_NAME for the enum_name keyword") {
-	CHECK_EQ(FSTokenizerBuffer::TOKENIZER_VERSION, 107);
+	CHECK_EQ(FSTokenizerBuffer::TOKENIZER_VERSION, 108);
 
 	FSTokenizerText tokenizer;
 	tokenizer.set_source_code("enum_name");

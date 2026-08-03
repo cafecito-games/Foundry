@@ -171,9 +171,58 @@ static void _collect_constant_floats(const Variant &p_value, LocalVector<double>
 	}
 }
 
+// The signed/unsigned carrier of every integer the constant reaches, in traversal order. An INT and a
+// UINT of equal value compare and hash equally, so without this the pool would merge `1` and `1U` and
+// hand the second spelling the first one's carrier.
+static void _collect_constant_integer_carriers(const Variant &p_value, LocalVector<Variant::Type> &r_carriers, int p_recursion_count) {
+	if (unlikely(p_recursion_count > Variant::MAX_RECURSION_DEPTH)) {
+		return;
+	}
+	const int next_recursion_count = p_recursion_count + 1;
+
+	switch (p_value.get_type()) {
+		case Variant::INT:
+		case Variant::UINT: {
+			r_carriers.push_back(p_value.get_type());
+		} break;
+		case Variant::ARRAY: {
+			const Array value = p_value;
+			for (const Variant &element : value) {
+				_collect_constant_integer_carriers(element, r_carriers, next_recursion_count);
+			}
+		} break;
+		case Variant::DICTIONARY: {
+			// Iterated in insertion order on both sides, which is how two dictionaries that compare
+			// equal line their entries up.
+			const Dictionary value = p_value;
+			for (const KeyValue<Variant, Variant> &element : value) {
+				_collect_constant_integer_carriers(element.key, r_carriers, next_recursion_count);
+				_collect_constant_integer_carriers(element.value, r_carriers, next_recursion_count);
+			}
+		} break;
+		default: {
+		} break;
+	}
+}
+
 bool FSConstantPoolComparator::compare(const Variant &p_lhs, const Variant &p_rhs) {
 	if (!p_lhs.hash_compare(p_rhs)) {
 		return false;
+	}
+
+	LocalVector<Variant::Type> lhs_carriers;
+	LocalVector<Variant::Type> rhs_carriers;
+	_collect_constant_integer_carriers(p_lhs, lhs_carriers, 0);
+	_collect_constant_integer_carriers(p_rhs, rhs_carriers, 0);
+	if (lhs_carriers.size() != rhs_carriers.size()) {
+		return false;
+	}
+	for (uint32_t i = 0; i < lhs_carriers.size(); i++) {
+		// Signedness is not erased at runtime, so two constants that differ only in carrier are
+		// distinct constants and a script that spells both must get both.
+		if (lhs_carriers[i] != rhs_carriers[i]) {
+			return false;
+		}
 	}
 
 	LocalVector<double> lhs_floats;
