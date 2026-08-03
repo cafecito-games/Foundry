@@ -3348,6 +3348,20 @@ void FSAnalyzer::resolve_custom_annotation(FSParser::AnnotationNode *p_annotatio
 	}
 }
 
+#ifdef TOOLS_ENABLED
+// Renders a rest tail for a signature-mismatch diagnostic. A gradual tail always prints as the bare
+// `Array` it behaves as, so `Array[Variant]` and `Array` read alike in the message.
+static String _rest_parameter_type_to_string(const FSParser::DataType *p_rest_array) {
+	if (p_rest_array == nullptr) {
+		return "<none>";
+	}
+	if (!FSTypeCompatibility::rest_parameter_type_is_narrowing(*p_rest_array)) {
+		return "Array";
+	}
+	return p_rest_array->to_string();
+}
+#endif // TOOLS_ENABLED
+
 void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, const FSParser::Node *p_source, bool p_is_lambda) {
 	if (p_source == nullptr) {
 		p_source = p_function;
@@ -3395,6 +3409,11 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 	}
 	if (p_function->is_coroutine) {
 		method_info.flags |= MethodFlags::METHOD_FLAG_ASYNC;
+	}
+	if (p_function->is_vararg()) {
+		// `METHOD_FLAG_VARARG` is the arity bit every consumer of this MethodInfo reads, including the
+		// callable type formed from a reference to this function.
+		method_info.flags |= MethodFlags::METHOD_FLAG_VARARG;
 	}
 
 	FSParser::DataType prev_datatype = p_function->get_datatype();
@@ -3591,20 +3610,16 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 				}
 			}
 
-			// A typed rest tail is an exact contract between a base and its override: every surplus
-			// argument a polymorphic call may pass is checked against the base's element type, so an
-			// override that narrows it, widens it, or pairs it with a gradual tail would accept a
-			// different set of trailing arguments than the call site was checked against.
+			// A rest tail sits in parameter position: every surplus argument a polymorphic call may pass
+			// is checked against the base's element type, so the override may accept the same or a
+			// broader element type but never a narrower one. Reported separately from `valid` so the
+			// diagnostic names the two rest types instead of an unrelated fixed-arity mismatch.
 			const FSParser::DataType current_rest_type =
 					p_function->is_vararg() ? p_function->rest_parameter->get_datatype() : FSParser::DataType();
-			const bool parent_rest_is_typed = rest_parameter_type_is_narrowing(parent_rest_type);
-			const bool current_rest_is_typed = rest_parameter_type_is_narrowing(current_rest_type);
-			if (parent_rest_is_typed || current_rest_is_typed) {
-				valid = valid && parent_rest_is_typed && current_rest_is_typed &&
-						FSTypeCompatibility::is_invariant_equal(
-								parent_rest_type.get_container_element_type(0),
-								current_rest_type.get_container_element_type(0));
-			}
+			const bool parent_is_variadic = method_flags.has_flag(METHOD_FLAG_VARARG);
+			const bool rest_valid = FSTypeCompatibility::rest_parameter_accepts_required_arguments(
+					p_function->is_vararg() ? &current_rest_type : nullptr,
+					parent_is_variadic ? &parent_rest_type : nullptr);
 
 			if (!valid_coroutine_override) {
 				if (parent_is_coroutine) {
@@ -3631,11 +3646,14 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 
 					j++;
 				}
-				if (method_flags & METHOD_FLAG_VARARG) {
+				if (parent_is_variadic) {
 					if (!parameters_types.is_empty()) {
 						parent_signature += ", ";
 					}
 					parent_signature += "...";
+					if (rest_parameter_type_is_narrowing(parent_rest_type)) {
+						parent_signature += ": " + parent_rest_type.to_string();
+					}
 				}
 				parent_signature += ") -> ";
 
@@ -3647,6 +3665,11 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 				}
 
 				push_error(vformat(R"(The function signature doesn't match the parent. Parent signature is "%s".)", parent_signature), p_function);
+			} else if (!rest_valid) {
+				push_error(vformat(R"(The rest parameter type "%s" does not accept every trailing argument allowed by the parent rest parameter type "%s".)",
+								   _rest_parameter_type_to_string(p_function->is_vararg() ? &current_rest_type : nullptr),
+								   _rest_parameter_type_to_string(parent_is_variadic ? &parent_rest_type : nullptr)),
+						p_function->is_vararg() ? static_cast<const FSParser::Node *>(p_function->rest_parameter) : static_cast<const FSParser::Node *>(p_function));
 			}
 #ifdef DEBUG_ENABLED
 			if (native_base != StringName() && !FSScriptExtensibleNativeHooks::is_allowed_override(native_base, function_name) &&
@@ -8274,6 +8297,28 @@ bool FSAnalyzer::validate_trait_method_signature(FSParser::ClassNode *p_trait,
 		}
 	}
 
+	// The rest tail follows the same shared acceptance rule as a class override, so a trait requiring
+	// `...values: Array[Node]` is not witnessed by an implementation that only accepts `Array[Sprite2D]`.
+	// A type-parameter-involving tail matches by alpha-equivalence, exactly like a generic fixed
+	// parameter above, so a concrete `Array[int]` never satisfies an open required `Array[T]`.
+	{
+		const FSParser::DataType required_rest_type = p_required_function->is_vararg()
+				? _substitute_type_parameters_and_self(p_required_function->rest_parameter->get_datatype(),
+						  method_trait_substitution, implementation_self_type)
+				: FSParser::DataType();
+		const FSParser::DataType implementation_rest_type = implementation_function->is_vararg()
+				? _substitute_type_parameters_and_self(implementation_function->rest_parameter->get_datatype(),
+						  type_parameter_renaming, implementation_self_type)
+				: FSParser::DataType();
+		if (is_generic_method &&
+				(_signature_type_involves_type_parameter(required_rest_type) ||
+						_signature_type_involves_type_parameter(implementation_rest_type))) {
+			valid = valid && _datatype_alpha_equal(required_rest_type, implementation_rest_type);
+		} else {
+			valid = valid && FSTypeCompatibility::rest_parameter_accepts_required_arguments(implementation_function->is_vararg() ? &implementation_rest_type : nullptr, p_required_function->is_vararg() ? &required_rest_type : nullptr);
+		}
+	}
+
 	if (!valid) {
 		push_error(vformat(R"*(The function "%s()" signature does not match required trait method "%s".)*",
 						   function_name, trait_method_name),
@@ -11742,10 +11787,7 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 }
 
 bool FSAnalyzer::rest_parameter_type_is_narrowing(const FSParser::DataType &p_rest_parameter_type) {
-	return p_rest_parameter_type.kind == FSParser::DataType::BUILTIN &&
-			p_rest_parameter_type.builtin_type == Variant::ARRAY &&
-			p_rest_parameter_type.has_container_element_type(0) &&
-			!p_rest_parameter_type.get_container_element_type(0).is_variant();
+	return FSTypeCompatibility::rest_parameter_type_is_narrowing(p_rest_parameter_type);
 }
 
 bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_constructor,
