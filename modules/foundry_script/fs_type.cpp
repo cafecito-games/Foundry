@@ -69,7 +69,8 @@ static bool _method_signature_equal(const MethodInfo &p_left, const MethodInfo &
 
 static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
 
-static bool _datatype_method_signature_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right);
+static bool _datatype_method_signature_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right,
+		bool p_contravariant_rest = false, bool p_strict_null = false);
 
 // Strict signature-slot comparison for the explicit `Callable[[...], ...]` / `Signal[[...]]` path.
 // `operator==` establishes matching outer structure (including is_nullable, generic type arguments, and
@@ -142,15 +143,21 @@ static bool _has_rich_method_signature(const FSParser::DataType &p_type) {
 			!p_type.method_rest_parameter_type.is_empty();
 }
 
-static bool _method_signature_slots_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right,
-		bool (*p_slot_equal)(const FSParser::DataType &, const FSParser::DataType &)) {
-	if (p_left.method_parameter_types.size() != p_right.method_parameter_types.size()) {
-		return false;
-	}
-	for (int i = 0; i < p_left.method_parameter_types.size(); i++) {
-		if (!p_slot_equal(p_left.method_parameter_types[i], p_right.method_parameter_types[i])) {
-			return false;
-		}
+// Compares the rest tails of two Callable/Signal signatures. In an assignment position `p_left` is the
+// target (what callers are promised) and `p_right` the assigned source, so the shared contravariant rest
+// rule applies. In an invariant position (a nested container element, for instance) neither side is a
+// target and the slots must match exactly.
+static bool _method_signature_rest_slots_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right,
+		bool (*p_slot_equal)(const FSParser::DataType &, const FSParser::DataType &), bool p_contravariant_rest,
+		bool p_strict_null) {
+	if (p_contravariant_rest) {
+		FSParser::DataType target_rest;
+		FSParser::DataType source_rest;
+		const bool target_is_variadic = FSTypeCompatibility::callable_signature_rest_parameter_type(p_left, target_rest);
+		const bool source_is_variadic = FSTypeCompatibility::callable_signature_rest_parameter_type(p_right, source_rest);
+		return FSTypeCompatibility::rest_parameter_accepts_required_arguments(
+				source_is_variadic ? &source_rest : nullptr,
+				target_is_variadic ? &target_rest : nullptr, p_strict_null);
 	}
 	if (p_left.method_rest_parameter_type.size() != p_right.method_rest_parameter_type.size()) {
 		return false;
@@ -159,6 +166,23 @@ static bool _method_signature_slots_equal(const FSParser::DataType &p_left, cons
 		if (!p_slot_equal(p_left.method_rest_parameter_type[i], p_right.method_rest_parameter_type[i])) {
 			return false;
 		}
+	}
+	return true;
+}
+
+static bool _method_signature_slots_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right,
+		bool (*p_slot_equal)(const FSParser::DataType &, const FSParser::DataType &), bool p_contravariant_rest,
+		bool p_strict_null) {
+	if (p_left.method_parameter_types.size() != p_right.method_parameter_types.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_left.method_parameter_types.size(); i++) {
+		if (!p_slot_equal(p_left.method_parameter_types[i], p_right.method_parameter_types[i])) {
+			return false;
+		}
+	}
+	if (!_method_signature_rest_slots_equal(p_left, p_right, p_slot_equal, p_contravariant_rest, p_strict_null)) {
+		return false;
 	}
 	if (p_left.builtin_type == Variant::CALLABLE) {
 		if (p_left.method_return_type.size() != p_right.method_return_type.size()) {
@@ -173,7 +197,8 @@ static bool _method_signature_slots_equal(const FSParser::DataType &p_left, cons
 	return true;
 }
 
-static bool _datatype_method_signature_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right) {
+static bool _datatype_method_signature_equal(const FSParser::DataType &p_left, const FSParser::DataType &p_right,
+		bool p_contravariant_rest, bool p_strict_null) {
 	// AsyncCallable and plain Callable are not interchangeable: a callable whose signature is async
 	// carries a coroutine result that a synchronous Callable does not, so their signatures differ.
 	if (p_left.signature_is_async != p_right.signature_is_async) {
@@ -182,13 +207,13 @@ static bool _datatype_method_signature_equal(const FSParser::DataType &p_left, c
 	// Both sides written as explicit annotations: compare the rich slots strictly, exactly as the
 	// explicit Callable/Signal path always has.
 	if (p_left.has_explicit_method_signature && p_right.has_explicit_method_signature) {
-		return _method_signature_slots_equal(p_left, p_right, _datatype_signature_slot_equal);
+		return _method_signature_slots_equal(p_left, p_right, _datatype_signature_slot_equal, p_contravariant_rest, p_strict_null);
 	}
 	// A lambda/function-reference Callable or a declared Signal carries rich slots without the explicit
 	// flag. Compare those slots the way the `MethodInfo` fallback did, but recurse to catch the nested
 	// Callable/Signal mismatches the fallback erased — the #382 fix for the non-explicit source path.
 	if (_has_rich_method_signature(p_left) && _has_rich_method_signature(p_right)) {
-		return _method_signature_slots_equal(p_left, p_right, _nonexplicit_signature_slot_equal);
+		return _method_signature_slots_equal(p_left, p_right, _nonexplicit_signature_slot_equal, p_contravariant_rest, p_strict_null);
 	}
 	return _method_signature_equal(p_left.method_info, p_right.method_info);
 }
@@ -392,7 +417,9 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		}
 		if (result.compatible && p_source.kind == FSParser::DataType::BUILTIN && p_target.builtin_type == p_source.builtin_type && _is_signature_builtin_type(p_target.builtin_type)) {
 			if (p_target.has_method_signature && p_source.has_method_signature) {
-				result.compatible = _datatype_method_signature_equal(p_target, p_source);
+				// Assignment position: the target states what callers may pass, so its rest tail is
+				// contravariant while every other slot stays invariant.
+				result.compatible = _datatype_method_signature_equal(p_target, p_source, true, p_options.strict_null);
 			} else if (p_target.has_method_signature && !p_source.has_method_signature) {
 				result.requires_runtime_check = true;
 			}
@@ -677,8 +704,91 @@ bool FSTypeCompatibility::is_invariant_equal(const FSParser::DataType &p_a, cons
 	return p_a == p_b && _datatype_invariant_equal(p_a, p_b);
 }
 
+bool FSTypeCompatibility::rest_parameter_type_is_narrowing(const FSParser::DataType &p_rest_parameter_type) {
+	return p_rest_parameter_type.kind == FSParser::DataType::BUILTIN &&
+			p_rest_parameter_type.builtin_type == Variant::ARRAY &&
+			p_rest_parameter_type.has_container_element_type(0) &&
+			!p_rest_parameter_type.get_container_element_type(0).is_variant();
+}
+
+bool FSTypeCompatibility::rest_parameter_accepts_required_arguments(
+		const FSParser::DataType *p_implementation_rest_array,
+		const FSParser::DataType *p_required_rest_array, bool p_strict_null) {
+	if (p_required_rest_array == nullptr) {
+		// The requirement promises no trailing arguments, so there is nothing the implementation must
+		// accept. Whether it may declare a rest tail of its own is an arity question.
+		return true;
+	}
+	if (p_implementation_rest_array == nullptr) {
+		// The requirement's arity interval is unreachable without a rest tail.
+		return false;
+	}
+	if (!rest_parameter_type_is_narrowing(*p_implementation_rest_array)) {
+		// A gradual implementation tail accepts every trailing argument the requirement allows.
+		return true;
+	}
+	if (!rest_parameter_type_is_narrowing(*p_required_rest_array)) {
+		// Callers of the gradual requirement may pass any value, which a typed tail would reject.
+		return false;
+	}
+	Options element_options;
+	element_options.strict_null = p_strict_null;
+	return check(p_implementation_rest_array->get_container_element_type(0),
+			p_required_rest_array->get_container_element_type(0), element_options)
+			.compatible;
+}
+
+bool FSTypeCompatibility::rest_parameter_accepts_required_argument(
+		const FSParser::DataType *p_implementation_rest_array,
+		const FSParser::DataType &p_required_argument_type, bool p_strict_null) {
+	if (p_implementation_rest_array == nullptr) {
+		return false;
+	}
+	if (!rest_parameter_type_is_narrowing(*p_implementation_rest_array)) {
+		return true;
+	}
+	if (p_required_argument_type.is_variant() && p_required_argument_type.is_hard_type()) {
+		// Same exception the fixed-parameter contravariance uses: a hard `Variant` promises callers may
+		// pass anything, which a narrowing tail would reject. `is_compatible()` would say yes because
+		// one of its operands is `Variant`.
+		return false;
+	}
+	if (!p_required_argument_type.is_set()) {
+		// Still resolving; an unset type is treated as compatible everywhere else too.
+		return true;
+	}
+	Options element_options;
+	element_options.strict_null = p_strict_null;
+	return check(p_implementation_rest_array->get_container_element_type(0), p_required_argument_type, element_options)
+			.compatible;
+}
+
+bool FSTypeCompatibility::callable_signature_rest_parameter_type(const FSParser::DataType &p_signature, FSParser::DataType &r_rest_array) {
+	if (!(p_signature.method_info.flags & METHOD_FLAG_VARARG)) {
+		return false;
+	}
+	if (p_signature.has_method_rest_parameter_type()) {
+		r_rest_array = p_signature.get_method_rest_parameter_type();
+	} else {
+		r_rest_array = FSParser::DataType();
+		r_rest_array.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+		r_rest_array.kind = FSParser::DataType::BUILTIN;
+		r_rest_array.builtin_type = Variant::ARRAY;
+	}
+	return true;
+}
+
 bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide) {
 	if (p_narrow.kind == FSParser::DataType::TUPLE || p_wide.kind == FSParser::DataType::TUPLE) {
+		return false;
+	}
+	if (p_narrow.kind == FSParser::DataType::BUILTIN && p_wide.kind == FSParser::DataType::BUILTIN &&
+			p_narrow.builtin_type == p_wide.builtin_type && _is_signature_builtin_type(p_narrow.builtin_type) &&
+			p_narrow.has_method_signature && p_wide.has_method_signature) {
+		// A Callable/Signal erases its signature at runtime, so nothing distinguishes two signatures
+		// there. Every other signature slot is compared symmetrically, so this only ever mattered once
+		// rest tails became contravariant: the unsafe direction must stay a static error rather than
+		// become a "runtime check" the runtime cannot perform.
 		return false;
 	}
 	return is_compatible(p_wide, p_narrow);

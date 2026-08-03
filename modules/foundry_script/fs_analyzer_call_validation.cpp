@@ -1197,6 +1197,34 @@ void FSAnalyzer::CallSiteValidationContext::validate_signal_connect_arg(const FS
 			return;
 		}
 	}
+
+	// A signal never becomes variadic, but a variadic handler receives every signal argument past its
+	// fixed prefix through its rest tail, so each of those must fit the tail's element type. A gradual
+	// tail accepts anything and records no element.
+	if (callable_is_vararg && callable_type.has_method_rest_parameter_type()) {
+		const FSParser::DataType &rest_array = callable_type.get_method_rest_parameter_type();
+		if (rest_array.has_container_element_type(0)) {
+			const FSParser::DataType rest_element = rest_array.get_container_element_type(0);
+			// `unbind()` appends ignored placeholders to the fixed parameter list, so the real fixed
+			// prefix ends before them; every signal argument past that prefix enters the rest tail.
+			const int callable_fixed_argument_count =
+					MAX(callable_argument_count - callable_type.method_unbound_argument_count, 0);
+			for (int i = callable_fixed_argument_count; i < checked_signal_argument_count; i++) {
+				const FSParser::DataType &signal_parameter_type = p_signal_type.method_parameter_types[i];
+				if (!FSTypeCompatibility::check(rest_element, signal_parameter_type, options).compatible) {
+					analyzer->push_error(vformat(R"*(Cannot %s signal "%s" to callable "%s": signal argument %d of type "%s" cannot be passed to callable rest parameter of type "%s".)*",
+												 action_name,
+												 signal_type_string,
+												 callable_type_string,
+												 i + 1,
+												 signal_parameter_type.to_string(),
+												 rest_array.to_string()),
+							p_call->arguments[p_callable_arg_index]);
+					return;
+				}
+			}
+		}
+	}
 }
 
 void FSAnalyzer::CallSiteValidationContext::validate_signal_emit_args(const FSParser::DataType &p_signal_type, const FSParser::CallNode *p_call, int p_first_emit_arg_index) {
