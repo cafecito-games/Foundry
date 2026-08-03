@@ -3053,4 +3053,177 @@ TEST_CASE("[Variant][UInt] The carrier name round-trips") {
 	}
 }
 
+static Error parse_variant_text(const String &p_text, Variant &r_value, String &r_error) {
+	VariantParser::StreamString stream;
+	stream.s = p_text;
+	int line = 0;
+	return VariantParser::parse(&stream, r_value, r_error, line);
+}
+
+static String write_variant_text(const Variant &p_value, bool p_compat = true) {
+	String text;
+	VariantWriter::write_to_string(p_value, text, nullptr, nullptr, p_compat);
+	return text;
+}
+
+TEST_CASE("[Variant][UInt] Text parsing accepts the canonical integer suffixes") {
+	struct AcceptedForm {
+		const char *text;
+		Variant::Type type;
+		uint64_t unsigned_value;
+		int64_t signed_value;
+	};
+
+	const AcceptedForm forms[] = {
+		{ "0U", Variant::UINT, 0, 0 },
+		{ "4294967295U", Variant::UINT, uint64_t(UINT32_MAX), 0 },
+		{ "0L", Variant::INT, 0, 0 },
+		{ "-9223372036854775808L", Variant::INT, 0, INT64_MIN },
+		{ "9223372036854775807L", Variant::INT, 0, INT64_MAX },
+		{ "0UL", Variant::UINT, 0, 0 },
+		{ "9223372036854775808UL", Variant::UINT, uint64_t(INT64_MAX) + 1, 0 },
+		{ "18446744073709551615UL", Variant::UINT, UINT64_MAX, 0 },
+	};
+
+	for (const AcceptedForm &form : forms) {
+		Variant parsed;
+		String error;
+		REQUIRE_MESSAGE(parse_variant_text(form.text, parsed, error) == OK, form.text);
+		CHECK_EQ(parsed.get_type(), form.type);
+		if (form.type == Variant::UINT) {
+			CHECK_EQ(parsed.operator uint64_t(), form.unsigned_value);
+		} else {
+			CHECK_EQ(parsed.operator int64_t(), form.signed_value);
+		}
+	}
+
+	// Redundant leading zeroes still parse; only writer output is canonical.
+	Variant parsed;
+	String error;
+	REQUIRE(parse_variant_text("007UL", parsed, error) == OK);
+	CHECK_EQ(parsed.get_type(), Variant::UINT);
+	CHECK_EQ(parsed.operator uint64_t(), uint64_t(7));
+}
+
+TEST_CASE("[Variant][UInt] Text parsing rejects malformed integer suffixes") {
+	struct RejectedForm {
+		const char *text;
+		const char *error;
+	};
+
+	const RejectedForm forms[] = {
+		{ "4294967296U", "Integer literal \"4294967296\" is out of range for suffix \"U\"." },
+		{ "9223372036854775808L", "Integer literal \"9223372036854775808\" is out of range for suffix \"L\"." },
+		{ "-9223372036854775809L", "Integer literal \"-9223372036854775809\" is out of range for suffix \"L\"." },
+		{ "18446744073709551616UL", "Integer literal \"18446744073709551616\" is out of range for suffix \"UL\"." },
+		{ "-0U", "Unsigned integer literal \"-0\" cannot be negative." },
+		{ "-1U", "Unsigned integer literal \"-1\" cannot be negative." },
+		{ "-0UL", "Unsigned integer literal \"-0\" cannot be negative." },
+		{ "-1UL", "Unsigned integer literal \"-1\" cannot be negative." },
+		{ "1u", "Invalid integer suffix \"u\"; use \"U\"." },
+		{ "1l", "Invalid integer suffix \"l\"; use \"L\"." },
+		{ "1ul", "Invalid integer suffix \"ul\"; use \"UL\"." },
+		{ "1Ul", "Invalid integer suffix \"Ul\"; use \"UL\"." },
+		{ "1uL", "Invalid integer suffix \"uL\"; use \"UL\"." },
+		{ "1LU", "Invalid integer suffix \"LU\"; use \"UL\"." },
+		{ "1lu", "Invalid integer suffix \"lu\"; use \"UL\"." },
+		{ "1ULL", "Invalid integer suffix \"ULL\"." },
+		{ "1ULx", "Invalid integer suffix \"ULx\"." },
+		{ "1UL2", "Invalid integer suffix \"UL2\"." },
+		{ "1.0L", "Invalid integer suffix \"L\"." },
+		{ "1e2UL", "Invalid integer suffix \"UL\"." },
+	};
+
+	for (const RejectedForm &form : forms) {
+		Variant parsed = "sentinel";
+		String error;
+		CHECK_MESSAGE(parse_variant_text(form.text, parsed, error) == ERR_PARSE_ERROR, form.text);
+		CHECK_EQ(error, String(form.error));
+		// A rejected literal must never partially replace the destination.
+		CHECK_EQ(parsed.get_type(), Variant::STRING);
+		CHECK_EQ(parsed.operator String(), "sentinel");
+	}
+}
+
+TEST_CASE("[Variant][UInt] Unsuffixed integer and float text is unchanged") {
+	Variant parsed;
+	String error;
+
+	REQUIRE(parse_variant_text("42", parsed, error) == OK);
+	CHECK_EQ(parsed.get_type(), Variant::INT);
+	CHECK_EQ(parsed.operator int64_t(), 42);
+
+	REQUIRE(parse_variant_text("-9223372036854775808", parsed, error) == OK);
+	CHECK_EQ(parsed.get_type(), Variant::INT);
+	CHECK_EQ(parsed.operator int64_t(), INT64_MIN);
+
+	REQUIRE(parse_variant_text("1.5", parsed, error) == OK);
+	CHECK_EQ(parsed.get_type(), Variant::FLOAT);
+	CHECK_EQ(parsed.operator double(), doctest::Approx(1.5));
+
+	REQUIRE(parse_variant_text("1e3", parsed, error) == OK);
+	CHECK_EQ(parsed.get_type(), Variant::FLOAT);
+	CHECK_EQ(parsed.operator double(), doctest::Approx(1000.0));
+
+	CHECK_EQ(write_variant_text(Variant(int64_t(INT64_MIN))), "-9223372036854775808");
+	CHECK_EQ(write_variant_text(Variant(int64_t(42))), "42");
+}
+
+TEST_CASE("[Variant][UInt] The writer emits canonical unsigned persistence text") {
+	CHECK_EQ(write_variant_text(make_uint(0)), "0UL");
+	CHECK_EQ(write_variant_text(make_uint(uint64_t(INT64_MAX))), "9223372036854775807UL");
+	CHECK_EQ(write_variant_text(make_uint(uint64_t(INT64_MAX) + 1)), "9223372036854775808UL");
+	CHECK_EQ(write_variant_text(make_uint(UINT64_MAX)), "18446744073709551615UL");
+
+	// There is no lossy legacy spelling for the unsigned carrier.
+	CHECK_EQ(write_variant_text(make_uint(UINT64_MAX), false), "18446744073709551615UL");
+	CHECK_EQ(write_variant_text(make_uint(UINT64_MAX), true), "18446744073709551615UL");
+}
+
+TEST_CASE("[Variant][UInt] Writer and parser preserve unsigned magnitude") {
+	const uint64_t values[] = { 0, 1, uint64_t(INT64_MAX), uint64_t(INT64_MAX) + 1, UINT64_MAX };
+	for (uint64_t value : values) {
+		const String text = write_variant_text(make_uint(value));
+		Variant decoded;
+		String error;
+		REQUIRE(parse_variant_text(text, decoded, error) == OK);
+		CHECK_EQ(decoded.get_type(), Variant::UINT);
+		CHECK_EQ(decoded.operator uint64_t(), value);
+	}
+}
+
+TEST_CASE("[Variant][UInt] Nested containers round-trip the unsigned carrier") {
+	Array array;
+	array.push_back(make_uint(UINT64_MAX));
+	array.push_back(Variant(int64_t(-1)));
+
+	Dictionary dictionary;
+	dictionary["unsigned"] = make_uint(uint64_t(INT64_MAX) + 1);
+	dictionary["signed"] = Variant(int64_t(INT64_MAX));
+	dictionary["nested"] = array;
+
+	Variant decoded;
+	String error;
+	REQUIRE(parse_variant_text(write_variant_text(dictionary), decoded, error) == OK);
+	REQUIRE_EQ(decoded.get_type(), Variant::DICTIONARY);
+
+	const Dictionary loaded = decoded;
+	const Variant loaded_unsigned = loaded["unsigned"];
+	CHECK_EQ(loaded_unsigned.get_type(), Variant::UINT);
+	CHECK_EQ(loaded_unsigned.operator uint64_t(), uint64_t(INT64_MAX) + 1);
+
+	const Variant loaded_signed = loaded["signed"];
+	CHECK_EQ(loaded_signed.get_type(), Variant::INT);
+	CHECK_EQ(loaded_signed.operator int64_t(), INT64_MAX);
+
+	const Array loaded_array = loaded["nested"];
+	REQUIRE_EQ(loaded_array.size(), 2);
+	const Variant loaded_element = loaded_array[0];
+	CHECK_EQ(loaded_element.get_type(), Variant::UINT);
+	CHECK_EQ(loaded_element.operator uint64_t(), UINT64_MAX);
+	const Variant loaded_signed_element = loaded_array[1];
+	CHECK_EQ(loaded_signed_element.get_type(), Variant::INT);
+	CHECK_EQ(loaded_signed_element.operator int64_t(), -1);
+}
+
 } // namespace TestVariant

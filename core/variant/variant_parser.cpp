@@ -36,6 +36,51 @@
 #include "core/object/script_language.h"
 #include "core/string/string_buffer.h"
 #include "core/variant/container_type_validate.h"
+#include "core/variant/variant_internal.h"
+
+namespace {
+
+// Text persistence spells the unsigned carrier with an explicit suffix because it has no C++
+// nominal type: `Variant(uint64_t)` still selects the signed carrier, so the value has to be
+// written into Variant storage directly.
+Variant make_unsigned_variant(uint64_t p_value) {
+	Variant value;
+	VariantInternal::initialize(&value, Variant::UINT);
+	*VariantInternal::get_uint(&value) = p_value;
+	return value;
+}
+
+// Accumulates decimal digits without ever passing through a signed intermediate, so magnitudes
+// above `INT64_MAX` stay exact. Returns false when the digits exceed the unsigned 64-bit range.
+bool accumulate_decimal_magnitude(const String &p_digits, uint64_t &r_magnitude) {
+	constexpr uint64_t limit = UINT64_MAX / 10;
+	constexpr uint64_t last_digit_limit = UINT64_MAX % 10;
+
+	r_magnitude = 0;
+	for (int index = 0; index < p_digits.length(); index++) {
+		const uint64_t digit = uint64_t(p_digits[index] - '0');
+		if (r_magnitude > limit || (r_magnitude == limit && digit > last_digit_limit)) {
+			return false;
+		}
+		r_magnitude = r_magnitude * 10 + digit;
+	}
+	return true;
+}
+
+// Maps a rejected suffix spelling to the canonical uppercase form, or to an empty string when the
+// suffix is not a recognizable misspelling of `U`, `L`, or `UL`.
+String canonical_integer_suffix(const String &p_suffix) {
+	const String upper = p_suffix.to_upper();
+	if (upper == "U" || upper == "L" || upper == "UL") {
+		return upper;
+	}
+	if (upper == "LU") {
+		return "UL";
+	}
+	return String();
+}
+
+} // namespace
 
 char32_t VariantParser::Stream::get_char() {
 	// is within buffer?
@@ -478,14 +523,71 @@ Error VariantParser::get_token(Stream *p_stream, Token &r_token, int &line, Stri
 						c = p_stream->get_char();
 					}
 
+					// Consume the whole adjacent identifier-like run before judging it, so a malformed
+					// suffix is diagnosed as part of this numeric token instead of being left in the
+					// stream as a separate identifier after a numeric prefix was already accepted.
+					StringBuffer<> suffix_text;
+					while (is_ascii_alphabet_char(c) || is_underscore(c) || (suffix_text.length() > 0 && is_digit(c))) {
+						suffix_text += c;
+						c = p_stream->get_char();
+					}
+
 					p_stream->saved = c;
 
 					r_token.type = TK_NUMBER;
 
-					if (is_float) {
-						r_token.value = token_text.as_double();
+					const String suffix = suffix_text.as_string();
+					if (suffix.is_empty()) {
+						if (is_float) {
+							r_token.value = token_text.as_double();
+						} else {
+							r_token.value = token_text.as_int();
+						}
+						return OK;
+					}
+
+					const String literal = token_text.as_string();
+					if (is_float || (suffix != "U" && suffix != "L" && suffix != "UL")) {
+						const String canonical = is_float ? String() : canonical_integer_suffix(suffix);
+						if (canonical.is_empty()) {
+							r_err_str = vformat("Invalid integer suffix \"%s\".", suffix);
+						} else {
+							r_err_str = vformat("Invalid integer suffix \"%s\"; use \"%s\".", suffix, canonical);
+						}
+						r_token.type = TK_ERROR;
+						return ERR_PARSE_ERROR;
+					}
+
+					const bool negative = literal.begins_with("-");
+					if (negative && suffix != "L") {
+						r_err_str = vformat("Unsigned integer literal \"%s\" cannot be negative.", literal);
+						r_token.type = TK_ERROR;
+						return ERR_PARSE_ERROR;
+					}
+
+					uint64_t magnitude = 0;
+					bool in_range = accumulate_decimal_magnitude(negative ? literal.substr(1) : literal, magnitude);
+					if (in_range) {
+						if (suffix == "U") {
+							in_range = magnitude <= uint64_t(UINT32_MAX);
+						} else if (suffix == "L") {
+							in_range = magnitude <= (negative ? uint64_t(INT64_MAX) + 1 : uint64_t(INT64_MAX));
+						}
+					}
+					if (!in_range) {
+						r_err_str = vformat("Integer literal \"%s\" is out of range for suffix \"%s\".", literal, suffix);
+						r_token.type = TK_ERROR;
+						return ERR_PARSE_ERROR;
+					}
+
+					if (suffix == "L") {
+						// `INT64_MIN` has no positive counterpart, so it is spelled out rather than negated.
+						r_token.value = negative
+								? (magnitude == uint64_t(INT64_MAX) + 1 ? INT64_MIN : -int64_t(magnitude))
+								: int64_t(magnitude);
 					} else {
-						r_token.value = token_text.as_int();
+						// `U` range-checks as unsigned 32-bit and then width-erases to the unsigned carrier.
+						r_token.value = make_unsigned_variant(magnitude);
 					}
 					return OK;
 				} else if (is_ascii_alphabet_char(cchar) || is_underscore(cchar)) {
@@ -2180,6 +2282,12 @@ Error VariantWriter::write(const Variant &p_variant, StoreStringFunc p_store_str
 		} break;
 		case Variant::INT: {
 			p_store_string_func(p_store_string_ud, itos(p_variant.operator int64_t()));
+		} break;
+		case Variant::UINT: {
+			// The unsigned carrier shares its digits with the signed one above `INT64_MAX` only by
+			// wrapping, so persistence always tags it. There is no lossy legacy spelling to fall
+			// back to, which is why `p_compat` does not change this output.
+			p_store_string_func(p_store_string_ud, String::num_uint64(p_variant.operator uint64_t()) + "UL");
 		} break;
 		case Variant::FLOAT: {
 			const double value = p_variant.operator double();
