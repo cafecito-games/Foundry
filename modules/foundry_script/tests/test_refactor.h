@@ -1116,7 +1116,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(FSTests::find_override_candidate(result.candidates, "available") != nullptr);
 	}
 
-	TEST_CASE("Override method skips rest-parameter script base methods") {
+	TEST_CASE("Override method offers untyped rest-parameter script base methods") {
 		const String source =
 				"class Base:\n"
 				"\tfunc record(...args: Array) -> void:\n"
@@ -1128,8 +1128,63 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 
 		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 6, 1);
 		REQUIRE_MESSAGE(result.ok, result.error_message);
-		CHECK(FSTests::find_override_candidate(result.candidates, "record") == nullptr);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "record");
+		REQUIRE(candidate != nullptr);
+		CHECK(candidate->signature.contains("func record(...args: Array) -> void"));
 		CHECK(FSTests::find_override_candidate(result.candidates, "configure") != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 6, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc record(...args: Array) -> void:\n"));
+		// Rest arguments have no spread-call form, so no truncated `super` call is emitted.
+		CHECK_FALSE(out.contains("super.record"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
+	TEST_CASE("Override method preserves a typed rest tail from a concrete script base") {
+		const String source =
+				"class Base:\n"
+				"\tfunc collect(prefix: String, ...values: Array[int]) -> int:\n"
+				"\t\treturn values.size()\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "collect");
+		REQUIRE(candidate != nullptr);
+		CHECK(candidate->signature.contains("func collect(prefix: String, ...values: Array[int]) -> int"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc collect(prefix: String, ...values: Array[int]) -> int:\n"));
+		// The parser forbids a default on a rest parameter, so none is ever rendered.
+		CHECK_FALSE(out.contains("...values: Array[int] ="));
+		CHECK(out.contains("\t\treturn 0\n"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
+	TEST_CASE("Override method substitutes a generic rest tail into the concrete override") {
+		const String source =
+				"class Base[T]:\n"
+				"\tfunc collect(...values: Array[T]) -> int:\n"
+				"\t\treturn values.size()\n"
+				"class Child extends Base[Node]:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "collect");
+		REQUIRE(candidate != nullptr);
+		CHECK(candidate->signature.contains("func collect(...values: Array[Node]) -> int"));
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		CHECK(out.contains("\tfunc collect(...values: Array[Node]) -> int:\n"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
 	}
 
 	TEST_CASE("Override method skips script base constructors") {

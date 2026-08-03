@@ -1195,6 +1195,55 @@ TEST_CASE("[Modules][FoundryScript] Docgen displays nested typed container value
 	CHECK(docs[0].constants[1].value == "Dictionary[String, Array[int]]({\"scores\": Array[int]([1])})");
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Docgen names and types the rest argument") {
+	FSParser parser;
+	Error err = parser.parse(
+			"func collect(prefix: String, ...values: Array[int]) -> int:\n"
+			"\treturn values.size()\n"
+			"func nested(...groups: Array[Array[int]]) -> int:\n"
+			"\treturn groups.size()\n"
+			"func gradual(...args: Array) -> int:\n"
+			"\treturn args.size()\n",
+			"user://typed_rest_docgen.fs", false);
+	REQUIRE(err == OK);
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	REQUIRE(err == OK);
+
+	const FSParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	FSDocGen::generate_docs(script.ptr(), root_class);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	REQUIRE(docs.size() == 1);
+	HashMap<String, DocData::MethodDoc> methods_by_name;
+	for (const DocData::MethodDoc &method : docs[0].methods) {
+		methods_by_name[method.name] = method;
+	}
+
+	REQUIRE(methods_by_name.has("collect"));
+	const DocData::MethodDoc &collect = methods_by_name["collect"];
+	CHECK(collect.qualifiers.contains("vararg"));
+	// The rest argument carries the declaration's own name and element type, not a generic
+	// `args: Variant` placeholder.
+	CHECK_EQ(collect.rest_argument.name, "values");
+	CHECK_EQ(collect.rest_argument.type, "int[]");
+	REQUIRE(collect.arguments.size() == 1);
+	CHECK_EQ(collect.arguments[0].name, "prefix");
+
+	REQUIRE(methods_by_name.has("nested"));
+	CHECK_EQ(methods_by_name["nested"].rest_argument.name, "groups");
+	CHECK_EQ(methods_by_name["nested"].rest_argument.type, "int[][]");
+
+	REQUIRE(methods_by_name.has("gradual"));
+	CHECK_EQ(methods_by_name["gradual"].rest_argument.name, "args");
+	CHECK_EQ(methods_by_name["gradual"].rest_argument.type, "Array");
+}
+
 #endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][FoundryScript] Analyzer checks callable and signal signature assignments") {

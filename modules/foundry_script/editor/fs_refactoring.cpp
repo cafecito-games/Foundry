@@ -5786,15 +5786,51 @@ String render_super_call_body(const FSParser::FunctionNode *p_function, const St
 	return body_indent + (is_void ? expression : "return " + expression) + "\n";
 }
 
+// Body for an override of a concrete base method that collects rest arguments. The language has no
+// spread-call form, so the packed rest Array cannot be handed back to `super`; emitting a call with
+// the fixed arguments alone would silently drop every surplus argument. The stub says so and yields
+// a default result the author replaces.
+String render_unforwardable_rest_override_body(
+		const FSParser::DataType &p_return_type,
+		const String &p_class_indent) {
+	const String body_indent = p_class_indent + "\t";
+	String body = body_indent + "# `super` cannot receive rest arguments, so implement this override directly.\n";
+	const bool is_void = p_return_type.is_set() && !p_return_type.is_variant() &&
+			p_return_type.kind == FSParser::DataType::BUILTIN &&
+			p_return_type.builtin_type == Variant::NIL;
+	String rendered_return;
+	String literal;
+	if (!is_void && FSRefactorTypes::render_annotatable_type(p_return_type, rendered_return) &&
+			default_return_literal(p_return_type, literal)) {
+		body += body_indent + "return " + literal + "\n";
+	} else {
+		body += body_indent + "pass\n";
+	}
+	return body;
+}
+
 String render_concrete_script_override_stub(
 		const FSParser::FunctionNode *p_function,
 		const Vector<String> &p_lines,
 		const String &p_class_indent,
 		const Vector<FSParser::DataType> *p_parameter_types = nullptr,
 		const FSParser::DataType *p_return_type_override = nullptr,
-		const Vector<FSParser::DataType> *p_type_parameter_bounds = nullptr) {
-	return render_function_signature(p_function, p_lines, p_class_indent, p_parameter_types, p_return_type_override, p_type_parameter_bounds) + ":\n" +
-			render_super_call_body(p_function, p_class_indent);
+		const Vector<FSParser::DataType> *p_type_parameter_bounds = nullptr,
+		const FSParser::DataType *p_rest_parameter_type = nullptr) {
+	const String signature = render_function_signature(
+			p_function,
+			p_lines,
+			p_class_indent,
+			p_parameter_types,
+			p_return_type_override,
+			p_type_parameter_bounds,
+			p_rest_parameter_type);
+	if (p_function->rest_parameter != nullptr) {
+		const FSParser::DataType return_type =
+				p_return_type_override != nullptr ? *p_return_type_override : p_function->get_datatype();
+		return signature + ":\n" + render_unforwardable_rest_override_body(return_type, p_class_indent);
+	}
+	return signature + ":\n" + render_super_call_body(p_function, p_class_indent);
 }
 
 // Per-member indentation of the target class. When the class has members, mirror the
@@ -6339,7 +6375,6 @@ void add_script_override_candidate(
 		int p_insertion_line,
 		Vector<OverrideMethodCandidate> &r_candidates) {
 	if (p_function == nullptr || p_function->identifier == nullptr || p_function->is_final || p_function->is_abstract ||
-			p_function->rest_parameter != nullptr ||
 			is_constructor_like_override_method(p_function->identifier->name)) {
 		return;
 	}
@@ -6353,7 +6388,17 @@ void add_script_override_candidate(
 		}
 		parameter_types.push_back(parameter_type);
 	}
-	if (!generic_method_type_parameters_are_inferable_from_parameter_types(p_function, parameter_types)) {
+	FSParser::DataType rest_parameter_type;
+	const FSParser::DataType *rest_parameter_type_ptr = nullptr;
+	if (p_function->rest_parameter != nullptr) {
+		rest_parameter_type = substitute_override_member_type(
+				p_function->rest_parameter->get_datatype(),
+				p_specialized_base,
+				p_declaring_class,
+				p_function);
+		rest_parameter_type_ptr = &rest_parameter_type;
+	}
+	if (!generic_method_type_parameters_are_inferable_from_parameter_types(p_function, parameter_types, rest_parameter_type_ptr)) {
 		return;
 	}
 	const FSParser::DataType return_type =
@@ -6380,13 +6425,14 @@ void add_script_override_candidate(
 			p_class_indent,
 			&parameter_types,
 			&return_type,
-			&type_parameter_bounds);
+			&type_parameter_bounds,
+			rest_parameter_type_ptr);
 	candidate.insertion_line = p_insertion_line;
 	const String origin = p_declaring_class != nullptr && p_declaring_class->identifier != nullptr
 			? String(p_declaring_class->identifier->name)
 			: String("base class");
 	candidate.public_candidate.name = String(p_function->identifier->name);
-	candidate.public_candidate.signature = render_function_signature(p_function, lines, "", &parameter_types, &return_type, &type_parameter_bounds);
+	candidate.public_candidate.signature = render_function_signature(p_function, lines, "", &parameter_types, &return_type, &type_parameter_bounds, rest_parameter_type_ptr);
 	candidate.public_candidate.origin = origin;
 	candidate.public_candidate.detail = candidate.public_candidate.signature + " - " + origin;
 	candidate.public_candidate.id = make_override_method_id("script", origin, p_function->identifier->name, candidate.rendered_block);
