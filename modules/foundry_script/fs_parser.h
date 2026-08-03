@@ -161,6 +161,11 @@ public:
 		// no width, which is what the legacy `int`/`uint` spellings still produce, so an undeclared slot
 		// behaves exactly as it did before descriptors existed.
 		NumericType numeric_type = NumericType::NONE;
+		// True when `numeric_type` was not declared anywhere but reconstructed from a boundary that
+		// transports the carrier alone (see `FSAnalyzer::type_from_property()`). Such a descriptor
+		// describes the range a value may occupy, not a constraint anybody wrote, so it must not be
+		// copied into a constraint slot. Provenance only: it takes no part in type identity.
+		bool numeric_type_is_carrier_erased = false;
 		StringName native_type;
 		StringName enum_type; // Enum name or the value name in an enum.
 		Ref<Script> script_type;
@@ -267,12 +272,29 @@ public:
 			return datatype;
 		}
 
+		// A container element or a reified type argument states a constraint on what the slot may hold,
+		// while a value type states the range a value may occupy. A width reconstructed from a
+		// carrier-only boundary is the latter: `type_from_property()` decodes wide because an erased
+		// value may be anything its carrier holds, not because the width was ever declared. Copying
+		// that fabricated width into a slot would make an inferred `Array[int]` a different type from a
+		// declared one under the strict container equality of `is_same_container_type()`. A width that
+		// really was declared carries no erasure provenance and is preserved untouched.
+		_FORCE_INLINE_ static DataType as_container_slot_type(const DataType &p_type) {
+			if (!p_type.numeric_type_is_carrier_erased) {
+				return p_type;
+			}
+			DataType slot_type = p_type;
+			slot_type.numeric_type = NumericType::NONE;
+			slot_type.numeric_type_is_carrier_erased = false;
+			return slot_type;
+		}
+
 		_FORCE_INLINE_ void set_container_element_type(int p_index, const DataType &p_type) {
 			ERR_FAIL_COND(p_index < 0);
 			while (p_index >= container_element_types.size()) {
 				container_element_types.push_back(get_variant_type());
 			}
-			container_element_types.write[p_index] = DataType(p_type);
+			container_element_types.write[p_index] = as_container_slot_type(p_type);
 		}
 
 		_FORCE_INLINE_ int get_container_element_type_count() const {
@@ -396,6 +418,7 @@ public:
 			is_nullable = p_other.is_nullable;
 			builtin_type = p_other.builtin_type;
 			numeric_type = p_other.numeric_type;
+			numeric_type_is_carrier_erased = p_other.numeric_type_is_carrier_erased;
 			native_type = p_other.native_type;
 			enum_type = p_other.enum_type;
 			script_type = p_other.script_type;
