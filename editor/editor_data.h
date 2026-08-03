@@ -209,6 +209,7 @@ public:
 	void set_edited_scene(int p_idx);
 	void set_edited_scene_root(Node *p_root, bool p_attach_to_viewport = true);
 	EditorSceneContext *get_scene_context(int p_idx) const;
+	int find_scene_index_for_context(const EditorSceneContext *p_context) const;
 	EditorSceneContext *get_active_scene_context() const;
 	int get_edited_scene() const;
 	int get_edited_scene_from_path(const String &p_path) const;
