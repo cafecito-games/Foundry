@@ -267,11 +267,11 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorUIntBinary<VariantUIntMultiplyOperation>>(Variant::OP_MULTIPLY, Variant::UINT, Variant::UINT);
 	register_op<OperatorEvaluatorMul<double, int64_t, double>>(Variant::OP_MULTIPLY, Variant::INT, Variant::FLOAT);
 	register_op<OperatorEvaluatorMul<Vector2, int64_t, Vector2>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR2);
-	register_op<OperatorEvaluatorMul<Vector2i, int64_t, Vector2i>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR2I);
+	register_op<OperatorEvaluatorScalarVectorIntMultiplyCheckedBinary<Vector2i>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR2I);
 	register_op<OperatorEvaluatorMul<Vector3, int64_t, Vector3>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR3);
-	register_op<OperatorEvaluatorMul<Vector3i, int64_t, Vector3i>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR3I);
+	register_op<OperatorEvaluatorScalarVectorIntMultiplyCheckedBinary<Vector3i>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR3I);
 	register_op<OperatorEvaluatorMul<Vector4, int64_t, Vector4>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR4);
-	register_op<OperatorEvaluatorMul<Vector4i, int64_t, Vector4i>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR4I);
+	register_op<OperatorEvaluatorScalarVectorIntMultiplyCheckedBinary<Vector4i>>(Variant::OP_MULTIPLY, Variant::INT, Variant::VECTOR4I);
 
 	register_op<OperatorEvaluatorMul<double, double, double>>(Variant::OP_MULTIPLY, Variant::FLOAT, Variant::FLOAT);
 	register_op<OperatorEvaluatorMul<double, double, int64_t>>(Variant::OP_MULTIPLY, Variant::FLOAT, Variant::INT);
@@ -287,7 +287,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorMul<Vector2, Vector2, double>>(Variant::OP_MULTIPLY, Variant::VECTOR2, Variant::FLOAT);
 
 	register_op<OperatorEvaluatorMul<Vector2i, Vector2i, Vector2i>>(Variant::OP_MULTIPLY, Variant::VECTOR2I, Variant::VECTOR2I);
-	register_op<OperatorEvaluatorMul<Vector2i, Vector2i, int64_t>>(Variant::OP_MULTIPLY, Variant::VECTOR2I, Variant::INT);
+	register_op<OperatorEvaluatorVectorIntScalarMultiplyCheckedBinary<Vector2i>>(Variant::OP_MULTIPLY, Variant::VECTOR2I, Variant::INT);
 	register_op<OperatorEvaluatorMul<Vector2, Vector2i, double>>(Variant::OP_MULTIPLY, Variant::VECTOR2I, Variant::FLOAT);
 
 	register_op<OperatorEvaluatorMul<Vector3, Vector3, Vector3>>(Variant::OP_MULTIPLY, Variant::VECTOR3, Variant::VECTOR3);
@@ -295,7 +295,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorMul<Vector3, Vector3, double>>(Variant::OP_MULTIPLY, Variant::VECTOR3, Variant::FLOAT);
 
 	register_op<OperatorEvaluatorMul<Vector3i, Vector3i, Vector3i>>(Variant::OP_MULTIPLY, Variant::VECTOR3I, Variant::VECTOR3I);
-	register_op<OperatorEvaluatorMul<Vector3i, Vector3i, int64_t>>(Variant::OP_MULTIPLY, Variant::VECTOR3I, Variant::INT);
+	register_op<OperatorEvaluatorVectorIntScalarMultiplyCheckedBinary<Vector3i>>(Variant::OP_MULTIPLY, Variant::VECTOR3I, Variant::INT);
 	register_op<OperatorEvaluatorMul<Vector3, Vector3i, double>>(Variant::OP_MULTIPLY, Variant::VECTOR3I, Variant::FLOAT);
 
 	register_op<OperatorEvaluatorMul<Vector4, Vector4, Vector4>>(Variant::OP_MULTIPLY, Variant::VECTOR4, Variant::VECTOR4);
@@ -303,7 +303,7 @@ void Variant::_register_variant_operators() {
 	register_op<OperatorEvaluatorMul<Vector4, Vector4, double>>(Variant::OP_MULTIPLY, Variant::VECTOR4, Variant::FLOAT);
 
 	register_op<OperatorEvaluatorMul<Vector4i, Vector4i, Vector4i>>(Variant::OP_MULTIPLY, Variant::VECTOR4I, Variant::VECTOR4I);
-	register_op<OperatorEvaluatorMul<Vector4i, Vector4i, int64_t>>(Variant::OP_MULTIPLY, Variant::VECTOR4I, Variant::INT);
+	register_op<OperatorEvaluatorVectorIntScalarMultiplyCheckedBinary<Vector4i>>(Variant::OP_MULTIPLY, Variant::VECTOR4I, Variant::INT);
 	register_op<OperatorEvaluatorMul<Vector4, Vector4i, double>>(Variant::OP_MULTIPLY, Variant::VECTOR4I, Variant::FLOAT);
 
 	register_op<OperatorEvaluatorMul<Quaternion, Quaternion, Quaternion>>(Variant::OP_MULTIPLY, Variant::QUATERNION, Variant::QUATERNION);
