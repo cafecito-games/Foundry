@@ -8334,7 +8334,9 @@ bool FSAnalyzer::validate_trait_method_signature(FSParser::ClassNode *p_trait,
 				? _substitute_type_parameters_and_self(implementation_function->rest_parameter->get_datatype(),
 						  type_parameter_renaming, implementation_self_type)
 				: FSParser::DataType();
-		if (is_generic_method &&
+		// Alpha-equivalence only decides how two rest tails relate to each other. When the requirement
+		// declares none, there is no tail to be equivalent to and the acceptance rules below govern.
+		if (p_required_function->is_vararg() && implementation_function->is_vararg() && is_generic_method &&
 				(_signature_type_involves_type_parameter(required_rest_type) ||
 						_signature_type_involves_type_parameter(implementation_rest_type))) {
 			valid = valid && _datatype_alpha_equal(required_rest_type, implementation_rest_type);
@@ -8348,7 +8350,7 @@ bool FSAnalyzer::validate_trait_method_signature(FSParser::ClassNode *p_trait,
 			for (int i = implementation_function->parameters.size(); i < p_required_function->parameters.size(); i++) {
 				const FSParser::DataType required_parameter_type = _substitute_type_parameters_and_self(
 						p_required_function->parameters[i]->datatype, method_trait_substitution, implementation_self_type);
-				valid = valid && FSTypeCompatibility::rest_parameter_accepts_required_argument(&implementation_rest_type, required_parameter_type);
+				valid = valid && FSTypeCompatibility::rest_parameter_accepts_required_argument(&implementation_rest_type, required_parameter_type, strict_null_checks);
 			}
 		}
 	}
