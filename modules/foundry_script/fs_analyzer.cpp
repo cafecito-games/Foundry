@@ -10588,7 +10588,7 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 		if (!argument_type.is_set()) {
 			continue;
 		}
-		if (!is_type_compatible(field_type, argument_type, true)) {
+		if (!is_type_compatible(field_type, argument_type, true, nullptr, argument)) {
 			push_error(vformat(R"*(Invalid argument %d for tuple "%s": should be "%s" but is "%s".)*",
 							   i + 1, tuple_type.to_string(), field_type.to_string(), argument_type.to_string()),
 					argument);
@@ -10648,7 +10648,7 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		if (!argument_type.is_set()) {
 			continue;
 		}
-		if (!is_type_compatible(field_type, argument_type, true)) {
+		if (!is_type_compatible(field_type, argument_type, true, nullptr, argument)) {
 			push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
 							   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), argument_type.to_string()),
 					argument);

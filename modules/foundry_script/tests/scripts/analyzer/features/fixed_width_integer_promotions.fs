@@ -1,3 +1,8 @@
+tuple Bounds(low: uint, high: ulong)
+
+enum Reading:
+	Sample(value: uint)
+
 func take_uint(value: uint) -> uint:
 	return value
 
@@ -21,6 +26,8 @@ func test():
 	var elements: Array[uint] = [4000000000UL]
 	var passed: uint = take_uint(4000000000UL)
 	reported.emit(4UL)
+	var sample = Reading.Sample(4000000000UL)
+	var bounds = Bounds(4000000000UL, 4UL)
 
 	print(same_long)
 	print(widened)
@@ -28,3 +35,5 @@ func test():
 	print(exact_float)
 	print(elements[0])
 	print(passed)
+	print(sample)
+	print(bounds)
