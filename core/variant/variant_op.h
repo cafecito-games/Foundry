@@ -298,6 +298,100 @@ public:
 	static Variant::Type get_return_type() { return GetTypeInfo<VectorType>::VARIANT_TYPE; }
 };
 
+// Unlike division and modulo, multiplying an integer vector by a scalar has no per-component failure
+// mode: once the scalar itself fits in 32 bits, every componentwise product is defined by ordinary
+// 32-bit integer multiplication with the same wraparound behavior the accepted path already had.
+// Narrowing the scalar before checking its range would silently multiply by a different number than
+// the caller supplied: 2^32 + 5 narrows to 5, and 2^32 narrows to 0.
+static _ALWAYS_INLINE_ const char *variant_vector_int_scalar_multiply_range_error_message() {
+	return "Invalid operands for multiplication. The scalar must fit in a 32-bit integer.";
+}
+
+template <typename VectorType>
+static const char *variant_vector_int_evaluate_scalar_multiply(const VectorType &p_left, int64_t p_right, VectorType &r_result) {
+	if (unlikely(p_right < INT32_MIN || p_right > INT32_MAX)) {
+		r_result = VectorType();
+		return variant_vector_int_scalar_multiply_range_error_message();
+	}
+	r_result = p_left * int32_t(p_right);
+	return nullptr;
+}
+
+// Every entry point rejects an out-of-range scalar instead of narrowing it, in every build. `evaluate()`
+// reports the failure through its validity flag; the validated and pointer entry points cannot, so they
+// write a zero vector and raise an engine error, the same shape `OperatorEvaluatorVectorIntCheckedBinary`
+// uses for an unreportable failure.
+template <typename VectorType>
+class OperatorEvaluatorVectorIntScalarMultiplyCheckedBinary {
+public:
+	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar_multiply<VectorType>(VariantInternalAccessor<VectorType>::get(&p_left), VariantInternalAccessor<int64_t>::get(&p_right), result);
+		if (unlikely(failure != nullptr)) {
+			*r_ret = failure;
+			r_valid = false;
+			return;
+		}
+		*r_ret = result;
+		r_valid = true;
+	}
+	static void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar_multiply<VectorType>(VariantInternalAccessor<VectorType>::get(left), VariantInternalAccessor<int64_t>::get(right), result);
+		VariantTypeChanger<VectorType>::change(r_ret);
+		VariantInternalAccessor<VectorType>::get(r_ret) = result;
+		if (unlikely(failure != nullptr)) {
+			ERR_FAIL_MSG(failure);
+		}
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar_multiply<VectorType>(PtrToArg<VectorType>::convert(left), PtrToArg<int64_t>::convert(right), result);
+		PtrToArg<VectorType>::encode(result, r_ret);
+		if (unlikely(failure != nullptr)) {
+			ERR_FAIL_MSG(failure);
+		}
+	}
+	static Variant::Type get_return_type() { return GetTypeInfo<VectorType>::VARIANT_TYPE; }
+};
+
+// Same operand contract as `OperatorEvaluatorVectorIntScalarMultiplyCheckedBinary`, for the commutative
+// registration where the scalar is the left operand (`INT * VECTOR2I`, and its `Vector3i`/`Vector4i`
+// siblings).
+template <typename VectorType>
+class OperatorEvaluatorScalarVectorIntMultiplyCheckedBinary {
+public:
+	static void evaluate(const Variant &p_left, const Variant &p_right, Variant *r_ret, bool &r_valid) {
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar_multiply<VectorType>(VariantInternalAccessor<VectorType>::get(&p_right), VariantInternalAccessor<int64_t>::get(&p_left), result);
+		if (unlikely(failure != nullptr)) {
+			*r_ret = failure;
+			r_valid = false;
+			return;
+		}
+		*r_ret = result;
+		r_valid = true;
+	}
+	static void validated_evaluate(const Variant *left, const Variant *right, Variant *r_ret) {
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar_multiply<VectorType>(VariantInternalAccessor<VectorType>::get(right), VariantInternalAccessor<int64_t>::get(left), result);
+		VariantTypeChanger<VectorType>::change(r_ret);
+		VariantInternalAccessor<VectorType>::get(r_ret) = result;
+		if (unlikely(failure != nullptr)) {
+			ERR_FAIL_MSG(failure);
+		}
+	}
+	static void ptr_evaluate(const void *left, const void *right, void *r_ret) {
+		VectorType result;
+		const char *failure = variant_vector_int_evaluate_scalar_multiply<VectorType>(PtrToArg<VectorType>::convert(right), PtrToArg<int64_t>::convert(left), result);
+		PtrToArg<VectorType>::encode(result, r_ret);
+		if (unlikely(failure != nullptr)) {
+			ERR_FAIL_MSG(failure);
+		}
+	}
+	static Variant::Type get_return_type() { return GetTypeInfo<VectorType>::VARIANT_TYPE; }
+};
+
 template <typename R, typename A>
 class OperatorEvaluatorNeg : public CommonEvaluate<OperatorEvaluatorNeg<R, A>> {
 public:

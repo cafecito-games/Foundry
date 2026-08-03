@@ -3549,4 +3549,163 @@ TEST_CASE("[Variant][VectorInt] Each rejected component pair reports its own dia
 	CHECK(diagnostic(Variant::OP_DIVIDE, Vector4i(7, 7, 7, 7), int64_t(INT32_MAX) + 1).contains("32-bit"));
 }
 
+// Multiplying an integer vector by a scalar is registered both `VectorType * INT` and
+// `INT * VectorType`, through two distinct evaluator classes. This runs the requested direction through
+// the plain, validated, and pointer operator tables and checks the three agree.
+template <typename VectorType>
+static VectorType evaluate_vector_int_scalar_multiply(const VectorType &p_vector, int64_t p_scalar, bool p_scalar_left) {
+	const Variant vector_variant = p_vector;
+	const Variant scalar_variant = p_scalar;
+	const Variant &left = p_scalar_left ? scalar_variant : vector_variant;
+	const Variant &right = p_scalar_left ? vector_variant : scalar_variant;
+	const Variant::Type left_type = left.get_type();
+	const Variant::Type right_type = right.get_type();
+	const Variant::Type vector_type = vector_variant.get_type();
+
+	bool valid = false;
+	Variant result;
+	Variant::evaluate(Variant::OP_MULTIPLY, left, right, result, valid);
+	REQUIRE(valid);
+	REQUIRE_EQ(result.get_type(), vector_type);
+	REQUIRE_EQ(Variant::get_operator_return_type(Variant::OP_MULTIPLY, left_type, right_type), vector_type);
+	const VectorType expected = result;
+
+	const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(Variant::OP_MULTIPLY, left_type, right_type);
+	REQUIRE(validated != nullptr);
+	if (validated != nullptr) {
+		Variant validated_result = vector_int_filled<VectorType>(7);
+		validated(&left, &right, &validated_result);
+		CHECK_EQ(validated_result.get_type(), vector_type);
+		const VectorType validated_value = validated_result;
+		CHECK_EQ(validated_value, expected);
+	}
+
+	const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(Variant::OP_MULTIPLY, left_type, right_type);
+	REQUIRE(pointer != nullptr);
+	if (pointer != nullptr) {
+		VectorType pointer_result = vector_int_filled<VectorType>(7);
+		if (p_scalar_left) {
+			pointer(&p_scalar, &p_vector, &pointer_result);
+		} else {
+			pointer(&p_vector, &p_scalar, &pointer_result);
+		}
+		CHECK_EQ(pointer_result, expected);
+	}
+
+	return expected;
+}
+
+// Checks that an out-of-32-bit-range scalar multiplier is rejected before narrowing, on every evaluator
+// path, for the requested direction of the commutative `VectorType * INT` / `INT * VectorType`
+// registration. The reporting path answers through its validity flag; the two `void` paths write a zero
+// vector over their destination and raise an engine error.
+template <typename VectorType>
+static void check_vector_int_scalar_multiply_rejected(const VectorType &p_vector, int64_t p_scalar, bool p_scalar_left) {
+	const Variant vector_variant = p_vector;
+	const Variant scalar_variant = p_scalar;
+	const Variant &left = p_scalar_left ? scalar_variant : vector_variant;
+	const Variant &right = p_scalar_left ? vector_variant : scalar_variant;
+	const Variant::Type left_type = left.get_type();
+	const Variant::Type right_type = right.get_type();
+	const Variant::Type vector_type = vector_variant.get_type();
+
+	bool valid = true;
+	Variant result;
+	Variant::evaluate(Variant::OP_MULTIPLY, left, right, result, valid);
+	CHECK_FALSE(valid);
+	REQUIRE_EQ(result.get_type(), Variant::STRING);
+	CHECK_FALSE(result.operator String().is_empty());
+
+	ErrorDetector detector;
+	ERR_PRINT_OFF;
+
+	const Variant::ValidatedOperatorEvaluator validated = Variant::get_validated_operator_evaluator(Variant::OP_MULTIPLY, left_type, right_type);
+	REQUIRE(validated != nullptr);
+	if (validated != nullptr) {
+		Variant validated_result = vector_int_filled<VectorType>(7);
+		detector.clear();
+		validated(&left, &right, &validated_result);
+		CHECK_EQ(validated_result.get_type(), vector_type);
+		const VectorType validated_value = validated_result;
+		CHECK_EQ(validated_value, VectorType());
+		CHECK(detector.has_error);
+	}
+
+	const Variant::PTROperatorEvaluator pointer = Variant::get_ptr_operator_evaluator(Variant::OP_MULTIPLY, left_type, right_type);
+	REQUIRE(pointer != nullptr);
+	if (pointer != nullptr) {
+		VectorType pointer_result = vector_int_filled<VectorType>(7);
+		detector.clear();
+		if (p_scalar_left) {
+			pointer(&p_scalar, &p_vector, &pointer_result);
+		} else {
+			pointer(&p_vector, &p_scalar, &pointer_result);
+		}
+		CHECK_EQ(pointer_result, VectorType());
+		CHECK(detector.has_error);
+	}
+
+	ERR_PRINT_ON;
+}
+
+// Runs the accepted-scalar-multiplication contract for one integer vector type in both registration
+// orders. Boundary scalars are multiplied against a unit vector so the componentwise product itself
+// stays representable; overflow of the componentwise product is a separate, pre-existing hazard this
+// change does not add a check for.
+template <typename VectorType>
+static void check_vector_int_scalar_multiply_accepted_operands() {
+	const VectorType small = vector_int_filled<VectorType>(-7);
+	CHECK_EQ(evaluate_vector_int_scalar_multiply(small, int64_t(3), false), small * 3);
+	CHECK_EQ(evaluate_vector_int_scalar_multiply(small, int64_t(3), true), small * 3);
+
+	const VectorType unit = vector_int_filled<VectorType>(1);
+	CHECK_EQ(evaluate_vector_int_scalar_multiply(unit, int64_t(INT32_MIN), false), vector_int_filled<VectorType>(INT32_MIN));
+	CHECK_EQ(evaluate_vector_int_scalar_multiply(unit, int64_t(INT32_MAX), true), vector_int_filled<VectorType>(INT32_MAX));
+
+	// A zero scalar multiplier is accepted, unlike a zero divisor: multiplication has no per-component
+	// failure mode, only the 32-bit range contract on the scalar itself.
+	CHECK_EQ(evaluate_vector_int_scalar_multiply(small, int64_t(0), false), VectorType());
+	CHECK_EQ(evaluate_vector_int_scalar_multiply(small, int64_t(0), true), VectorType());
+}
+
+// Runs the rejected-scalar-multiplication contract for one integer vector type in both registration
+// orders: a nonzero 64-bit scalar that narrows to zero, one that narrows to a different nonzero value,
+// and one immediately outside each bound of the 32-bit range.
+template <typename VectorType>
+static void check_vector_int_scalar_multiply_rejected_operands() {
+	const VectorType vector = vector_int_filled<VectorType>(7);
+	check_vector_int_scalar_multiply_rejected(vector, int64_t(1) << 32, false);
+	check_vector_int_scalar_multiply_rejected(vector, int64_t(1) << 32, true);
+	check_vector_int_scalar_multiply_rejected(vector, -(int64_t(1) << 32), false);
+	check_vector_int_scalar_multiply_rejected(vector, -(int64_t(1) << 32), true);
+	check_vector_int_scalar_multiply_rejected(vector, int64_t(INT32_MAX) + 1, false);
+	check_vector_int_scalar_multiply_rejected(vector, int64_t(INT32_MIN) - 1, true);
+}
+
+TEST_CASE("[Variant][VectorInt] Componentwise scalar multiplication agrees across every evaluator path") {
+	check_vector_int_scalar_multiply_accepted_operands<Vector2i>();
+	check_vector_int_scalar_multiply_accepted_operands<Vector3i>();
+	check_vector_int_scalar_multiply_accepted_operands<Vector4i>();
+}
+
+TEST_CASE("[Variant][VectorInt] An out-of-32-bit-range scalar multiplier is rejected on every path") {
+	check_vector_int_scalar_multiply_rejected_operands<Vector2i>();
+	check_vector_int_scalar_multiply_rejected_operands<Vector3i>();
+	check_vector_int_scalar_multiply_rejected_operands<Vector4i>();
+}
+
+TEST_CASE("[Variant][VectorInt] Out-of-range scalar multiplier diagnostic names the 32-bit contract") {
+	auto diagnostic = [](const Variant &p_left, const Variant &p_right) {
+		bool valid = true;
+		Variant result;
+		Variant::evaluate(Variant::OP_MULTIPLY, p_left, p_right, result, valid);
+		CHECK_FALSE(valid);
+		return result.operator String();
+	};
+
+	CHECK(diagnostic(Vector2i(7, 7), int64_t(1) << 32).contains("32-bit"));
+	CHECK(diagnostic(int64_t(1) << 32, Vector3i(7, 7, 7)).contains("32-bit"));
+	CHECK(diagnostic(Vector4i(7, 7, 7, 7), int64_t(INT32_MIN) - 1).contains("32-bit"));
+}
+
 } // namespace TestVariant
