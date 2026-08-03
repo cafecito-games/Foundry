@@ -206,6 +206,7 @@
 #include "tests/core/variant/test_container_type_numeric.h"
 #include "tests/core/variant/test_dictionary.h"
 #include "tests/core/variant/test_numeric_type.h"
+#include "tests/core/variant/test_projected_container_type.h"
 #include "tests/core/variant/test_variant.h"
 #include "tests/core/variant/test_variant_unsigned_carrier.h"
 #include "tests/core/variant/test_variant_utility.h"
