@@ -5638,6 +5638,23 @@ void Main::force_redraw() {
  * so that the engine closes cleanly without leaking memory or crashing.
  * The order matters as some of those steps are linked with each other.
  */
+void Main::_finish_script_languages(void *) {
+	ScriptServer::finish_languages();
+}
+
+void Main::_cleanup_script_languages(void (*p_finish_languages)(void *), void *p_userdata) {
+	// Debugger queues can retain script-backed Variant values. Stop the transport
+	// and release those values before their script languages are finished or deleted.
+	EngineDebugger::shutdown_transport();
+	p_finish_languages(p_userdata);
+}
+
+#ifdef TESTS_ENABLED
+void Main::test_cleanup_script_languages(void (*p_finish_languages)(void *), void *p_userdata) {
+	_cleanup_script_languages(p_finish_languages, p_userdata);
+}
+#endif
+
 void Main::cleanup(bool p_force) {
 	FoundryProfileZone("cleanup");
 	OS::get_singleton()->benchmark_begin_measure("Shutdown", "Main::Cleanup");
@@ -5690,11 +5707,7 @@ void Main::cleanup(bool p_force) {
 
 	WorkerThreadPool::get_singleton()->exit_languages_threads();
 
-	// Debugger queues can retain script-backed Variant values. Stop the transport
-	// and release those values before their script languages are finished or deleted.
-	EngineDebugger::shutdown_transport();
-
-	ScriptServer::finish_languages();
+	_cleanup_script_languages(_finish_script_languages, nullptr);
 
 	// Sync pending commands that may have been queued from a different thread during ScriptServer finalization
 	RenderingServer::get_singleton()->sync();

@@ -37,6 +37,8 @@ template <typename T>
 class Vector;
 
 class Main {
+	static void _finish_script_languages(void *p_userdata);
+	static void _cleanup_script_languages(void (*p_finish_languages)(void *), void *p_userdata);
 	static void print_header(bool p_rich);
 	static void print_help_copyright(const char *p_notice);
 	static void print_help(const char *p_binary);
@@ -67,6 +69,7 @@ public:
 #ifdef TESTS_ENABLED
 	static Error test_setup();
 	static void test_cleanup();
+	static void test_cleanup_script_languages(void (*p_finish_languages)(void *), void *p_userdata);
 #endif
 	static int start();
 

@@ -43,6 +43,7 @@
 #include "editor/debugger/debug_adapter/debug_adapter_types.h"
 #include "editor/run/editor_run.h"
 #include "editor/tooling/editor_tooling_host.h"
+#include "main/main.h"
 
 #include "tests/editor/editor_workflow_test_fixtures.h"
 #include "tests/test_macros.h"
@@ -124,7 +125,11 @@ public:
 	}
 };
 
-TEST_CASE("[Core][EngineDebugger] Transport shutdown releases queued script-owned values before language finish") {
+static void finish_debugger_payload_sentinel_language(void *p_userdata) {
+	static_cast<DebuggerPayloadSentinelLanguage *>(p_userdata)->finish();
+}
+
+TEST_CASE("[Main][Cleanup] Debugger transport releases queued script-owned values before language finish") {
 	REQUIRE_MESSAGE(EngineDebugger::get_singleton() == nullptr, "The lifecycle test requires an inactive debugger.");
 
 	DebuggerPayloadSentinelLanguage *language = memnew(DebuggerPayloadSentinelLanguage);
@@ -150,12 +155,9 @@ TEST_CASE("[Core][EngineDebugger] Transport shutdown releases queued script-owne
 	CHECK_EQ(release_count, 0);
 	CHECK_FALSE(released_before_language_finish);
 
-	EngineDebugger::shutdown_transport();
+	Main::test_cleanup_script_languages(finish_debugger_payload_sentinel_language, language);
 	CHECK_EQ(release_count, 1);
 	CHECK(released_before_language_finish);
-	CHECK_FALSE(language->is_finished());
-
-	language->finish();
 	CHECK(language->is_finished());
 	memdelete(language);
 }
