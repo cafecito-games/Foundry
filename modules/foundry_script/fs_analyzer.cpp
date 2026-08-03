@@ -12398,19 +12398,23 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			// proven mismatch: an unknown or untyped bound value stays gradual and keeps the shift
 			// alive, so it is checked with `bound_argument_conflicts_with` rather than the stricter
 			// `can_bound_argument_fill_parameter`, which would otherwise narrow what a dynamically
-			// typed bound value accepts. The contiguous run of successful shifts starting at the base
-			// arity becomes the result's own default count; any further shifts that succeed past a gap
-			// survive as extra allowed argument counts, matching how non-contiguous arities are
-			// represented elsewhere.
+			// typed bound value accepts. A preceding unbind() discards its trailing bound values
+			// before they ever reach the target, at every arity, so only the values that still
+			// reach it participate in the shift check; the discarded tail cannot prove a mismatch
+			// against a parameter it never fills. The contiguous run of successful shifts starting
+			// at the base arity becomes the result's own default count; any further shifts that
+			// succeed past a gap survive as extra allowed argument counts, matching how
+			// non-contiguous arities are represented elsewhere.
 			auto default_survival_for_bind = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments,
 										  int p_checked_bind_start, int p_remaining_argument_count,
 										  int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
 				r_result_default_arg_count = 0;
 				const int max_shift = MIN(int(p_base_type.method_info.default_arguments.size()), p_checked_bind_start);
+				const int reaching_bound_argument_count = bound_arguments_reaching_target(p_bound_arguments);
 				for (int shift = 1; shift <= max_shift; shift++) {
 					const int shifted_start = p_checked_bind_start - shift;
 					bool bound_arguments_fit_shift = true;
-					for (int i = 0; i < p_bound_arguments.size() && bound_arguments_fit_shift; i++) {
+					for (int i = 0; i < reaching_bound_argument_count && bound_arguments_fit_shift; i++) {
 						bound_arguments_fit_shift = !bound_argument_conflicts_with(
 								p_bound_arguments[i], p_base_type.method_parameter_types[shifted_start + i]);
 					}
