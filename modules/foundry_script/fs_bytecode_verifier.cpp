@@ -221,13 +221,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_ADDR(ip + 3);
 				ip += 5;
 			} break;
-			case FSFunction::OPCODE_TYPE_TEST_NATIVE: {
-				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
-				CHECK_ADDR(ip + 1);
-				CHECK_ADDR(ip + 2);
-				CHECK_TABLE(ip + 3, global_names_count, "global name");
-				ip += 5;
-			} break;
+			case FSFunction::OPCODE_TYPE_TEST_NATIVE:
 			case FSFunction::OPCODE_TYPE_TEST_SCRIPT:
 			case FSFunction::OPCODE_ASSIGN_TYPED_NATIVE:
 			case FSFunction::OPCODE_ASSIGN_TYPED_SCRIPT:
@@ -524,6 +518,11 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 			case FSFunction::OPCODE_TYPE_ADJUST_PACKED_VECTOR3_ARRAY:
 			case FSFunction::OPCODE_TYPE_ADJUST_PACKED_COLOR_ARRAY:
 			case FSFunction::OPCODE_TYPE_ADJUST_PACKED_VECTOR4_ARRAY: {
+				VERIFY_FAIL_COND(ip + 2 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				ip += 2;
+			} break;
+			case FSFunction::OPCODE_LOAD_STATIC_SELF_CLASS: {
 				VERIFY_FAIL_COND(ip + 2 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);
 				ip += 2;

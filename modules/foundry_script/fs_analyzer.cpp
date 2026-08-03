@@ -10016,6 +10016,37 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		}
 	}
 
+	// `Self` in an expression position denotes the class handle of the receiver the running static call
+	// was made through, so it is typed exactly like the `Self` annotation is -- receiver-relative -- and
+	// wrapped as a class handle. It deliberately does not fold to the enclosing class: one compiled
+	// function runs for every receiver that inherits it, and the receiver is only known at execution.
+	if (p_identifier->name == SNAME("Self") && parser->current_class != nullptr && parser->current_function != nullptr &&
+			!enum_self_type(parser->current_function).is_set()) {
+		if (parser->current_class->is_builtin_conformance_shim) {
+			// A builtin conformance target is a value type with no class-handle object, so there is
+			// nothing for `Self` to evaluate to. Rejecting it here keeps a body that could only ever
+			// fail at runtime from compiling; `Self` as a *type* stays available.
+			push_error(R"(Type "Self" cannot be used as a value here: a builtin conformance target has no class handle.)",
+					p_identifier);
+			p_identifier->set_datatype(FSParser::DataType());
+			return;
+		}
+		parser->current_function->uses_receiver_relative_self = true;
+		// A lambda in an instance method must keep the enclosing receiver, exactly like one that reads a
+		// member: without it the lambda frame runs with nothing to resolve `Self` against. A static
+		// function has no instance to capture, and a self-capturing lambda cannot be created without
+		// one, so it is left alone and the frame reports the missing receiver if it ever runs.
+		if (!parser->current_function->is_static) {
+			mark_lambda_use_self();
+		}
+		FSParser::DataType self_handle = _self_type_parameter_for_class(parser->current_class);
+		self_handle.is_meta_type = true;
+		self_handle.is_type_handle_annotation = true;
+		p_identifier->source = FSParser::IdentifierNode::STATIC_SELF_CLASS;
+		p_identifier->set_datatype(self_handle);
+		return;
+	}
+
 	bool found_source = false;
 	// Check if identifier is local.
 	// If that's the case, the declaration already was solved before.
@@ -10066,6 +10097,9 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		case FSParser::IdentifierNode::MEMBER_FUNCTION:
 		case FSParser::IdentifierNode::MEMBER_CLASS:
 		case FSParser::IdentifierNode::NATIVE_CLASS:
+		// `Self` is handled above and returns before reaching this switch; a node carrying the source
+		// on re-entry already has its type and needs no further lookup.
+		case FSParser::IdentifierNode::STATIC_SELF_CLASS:
 			break;
 	}
 
@@ -10167,6 +10201,7 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 				case FSParser::IdentifierNode::INHERITED_VARIABLE:
 				case FSParser::IdentifierNode::STATIC_VARIABLE:
 				case FSParser::IdentifierNode::NATIVE_CLASS:
+				case FSParser::IdentifierNode::STATIC_SELF_CLASS:
 					return; // No need to capture.
 			}
 
@@ -12727,8 +12762,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			// succeed past a gap survive as extra allowed argument counts, matching how
 			// non-contiguous arities are represented elsewhere.
 			auto default_survival_for_bind = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments,
-													 int p_checked_bind_start, int p_remaining_argument_count,
-													 int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
+										  int p_checked_bind_start, int p_remaining_argument_count,
+										  int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
 				r_result_default_arg_count = 0;
 				const int max_shift = MIN(int(p_base_type.method_info.default_arguments.size()), p_checked_bind_start);
 				const int reaching_bound_argument_count = bound_arguments_reaching_target(p_bound_arguments);

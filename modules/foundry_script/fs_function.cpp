@@ -252,6 +252,78 @@ String FSStaticSelfContext::get_type_name() const {
 	return "<no static receiver>";
 }
 
+bool FSStaticSelfContext::to_data_type(FSDataType &r_type) const {
+	FSDataType type;
+	switch (kind) {
+		case NONE:
+			return false;
+		case NATIVE_CLASS: {
+			type.kind = FSDataType::NATIVE;
+			type.builtin_type = Variant::OBJECT;
+			type.native_type = native_class;
+		} break;
+		case BUILTIN_TYPE: {
+			type.kind = FSDataType::BUILTIN;
+			type.builtin_type = builtin_type;
+		} break;
+		case SCRIPT: {
+			const Ref<Script> script = get_script();
+			if (script.is_null()) {
+				return false;
+			}
+			type.kind = Object::cast_to<FoundryScript>(script.ptr()) != nullptr ? FSDataType::FOUNDRY_SCRIPT : FSDataType::SCRIPT;
+			type.builtin_type = Variant::OBJECT;
+			type.native_type = script->get_instance_base_type();
+			type.script_type_ref = script;
+			type.script_type = type.script_type_ref.ptr();
+			type.is_script_trait = script->is_trait_type();
+			type.script_trait = script->get_trait_type_name();
+			// A specialized generic receiver keeps every concrete argument, so `Self` never degrades to
+			// the unspecialized script.
+			for (const ContainerType &argument : type_arguments) {
+				type.type_arguments.push_back(FSDataType::from_container_type(argument));
+			}
+		} break;
+	}
+	r_type = type;
+	return true;
+}
+
+bool FSStaticSelfContext::resolve_self(const FSDataType &p_type, const FSStaticSelfContext *p_context,
+		FSDataType &r_resolved) {
+	if (p_type.is_self_type) {
+		FSDataType receiver;
+		if (p_context == nullptr || !p_context->to_data_type(receiver)) {
+			return false;
+		}
+		// Only *which* class the position denotes comes from the receiver. `Type[Self]` still describes a
+		// class handle rather than an instance, and a nullable `Self` still accepts null, so both layers
+		// are carried over from the position being resolved.
+		receiver.is_type_handle = p_type.is_type_handle;
+		receiver.is_nullable = p_type.is_nullable;
+		r_resolved = receiver;
+		return true;
+	}
+
+	FSDataType resolved = p_type;
+	for (int i = 0; i < resolved.container_element_types.size(); i++) {
+		FSDataType element_type;
+		if (!resolve_self(resolved.container_element_types[i], p_context, element_type)) {
+			return false;
+		}
+		resolved.container_element_types.write[i] = element_type;
+	}
+	for (int i = 0; i < resolved.type_arguments.size(); i++) {
+		FSDataType argument_type;
+		if (!resolve_self(resolved.type_arguments[i], p_context, argument_type)) {
+			return false;
+		}
+		resolved.type_arguments.write[i] = argument_type;
+	}
+	r_resolved = resolved;
+	return true;
+}
+
 thread_local const FSStaticSelfContext *FSFunction::_current_static_self_context = nullptr;
 
 const FSStaticSelfContext *FSFunction::get_current_static_self_context() {
@@ -271,6 +343,12 @@ StringName FSFunction::get_global_name(int p_idx) const {
 void FSFunction::setup_runtime_pointers() {
 	_code_size = code.size();
 	_code_ptr = code.is_empty() ? nullptr : code.ptrw();
+
+	// Cached because every call would otherwise walk the whole signature, including the nested type
+	// arguments and container element types of every parameter, just to learn that nothing needs the
+	// receiver. Both producers -- the byte code generator and the compiled-bytecode loader -- reach
+	// this, so the cached answer cannot drift from the signature it describes.
+	_references_self_types = has_self_referencing_signature();
 
 	if (default_arguments.is_empty()) {
 		_default_arg_count = 0;

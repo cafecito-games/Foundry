@@ -182,8 +182,35 @@ static bool _is_container_type_descriptor(const Variant &p_type_info) {
 	return descriptor.has("builtin_type");
 }
 
-static ContainerType _container_type_from_descriptor(const Variant &p_descriptor) {
+// What a running frame knows about `Self`. A static call carries the exact class handle it was made
+// through, and every position lowering marked as having come from `Self` re-binds to it. An instance
+// or witness frame has no such handle: its `Self` was already bound when the member was materialized
+// for the class that owns the running function, so its descriptors are used as they were compiled.
+struct FrameSelfBinding {
+	const FSStaticSelfContext *receiver = nullptr;
+	// True for a static frame, which has no `self` to fall back on. Missing its receiver means dispatch
+	// handed the frame nothing to resolve against, and that is reported instead of quietly using the
+	// class the declaration was lowered against.
+	bool requires_receiver = false;
+};
+
+// Every node the descriptor marks as having come from `Self` is re-bound through the one resolver, at
+// every nesting depth. Returns false only when a static frame needs a receiver and has none; the
+// caller must fail the instruction rather than proceed with an ancestor specialization.
+static bool _container_type_from_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
+		ContainerType &r_type) {
 	Dictionary descriptor = p_descriptor;
+	if (descriptor.get("is_self_type", false) && (p_frame_self.receiver != nullptr || p_frame_self.requires_receiver)) {
+		FSDataType self_position;
+		self_position.is_self_type = true;
+		self_position.is_type_handle = descriptor.get("is_type_handle", false);
+		FSDataType resolved;
+		if (!FSStaticSelfContext::resolve_self(self_position, p_frame_self.receiver, resolved)) {
+			return false;
+		}
+		r_type = resolved.to_container_type();
+		return true;
+	}
 	ContainerType type;
 	type.builtin_type = Variant::Type(int(descriptor.get("builtin_type", Variant::NIL)));
 	type.class_name = descriptor.get("native_type", StringName());
@@ -202,28 +229,42 @@ static ContainerType _container_type_from_descriptor(const Variant &p_descriptor
 
 	Array element_types = descriptor.get("element_types", Array());
 	for (int i = 0; i < element_types.size(); i++) {
-		type.element_types.push_back(_container_type_from_descriptor(element_types[i]));
+		ContainerType element_type;
+		if (!_container_type_from_descriptor(element_types[i], p_frame_self, element_type)) {
+			return false;
+		}
+		type.element_types.push_back(element_type);
 	}
 
 	Array type_arguments = descriptor.get("type_arguments", Array());
 	for (int i = 0; i < type_arguments.size(); i++) {
-		type.type_arguments.push_back(_container_type_from_descriptor(type_arguments[i]));
+		ContainerType argument_type;
+		if (!_container_type_from_descriptor(type_arguments[i], p_frame_self, argument_type)) {
+			return false;
+		}
+		type.type_arguments.push_back(argument_type);
 	}
-	return type;
+	r_type = type;
+	return true;
 }
 
 // Rebuilds the tuple shape a type test was compiled against. Only tuple descriptors carry the
 // `is_tuple` marker, so every other node reads back through the shared container-type path.
-static FSDataType _data_type_from_tuple_descriptor(const Variant &p_descriptor) {
+static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
+		FSDataType &r_type) {
 	const Dictionary descriptor = p_descriptor;
 	FSDataType type;
 	if (!descriptor.get("is_tuple", false)) {
-		const ContainerType container_type = _container_type_from_descriptor(descriptor);
+		ContainerType container_type;
+		if (!_container_type_from_descriptor(descriptor, p_frame_self, container_type)) {
+			return false;
+		}
 		type = descriptor.get("is_type_handle", false)
 				? FSDataType::from_type_handle_container_type(container_type)
 				: FSDataType::from_container_type(container_type);
 		type.is_nullable = descriptor.get("is_nullable", false);
-		return type;
+		r_type = type;
+		return true;
 	}
 
 	type.kind = FSDataType::TUPLE;
@@ -231,21 +272,105 @@ static FSDataType _data_type_from_tuple_descriptor(const Variant &p_descriptor) 
 	type.is_nullable = descriptor.get("is_nullable", false);
 	const Array element_types = descriptor.get("element_types", Array());
 	for (int i = 0; i < element_types.size(); i++) {
-		type.container_element_types.push_back(_data_type_from_tuple_descriptor(element_types[i]));
+		FSDataType element_type;
+		if (!_data_type_from_tuple_descriptor(element_types[i], p_frame_self, element_type)) {
+			return false;
+		}
+		type.container_element_types.push_back(element_type);
 	}
-	return type;
+	r_type = type;
+	return true;
 }
 
-static ContainerType _container_type_from_type_info(const Variant &p_type_info, Variant::Type p_builtin_type, const StringName &p_native_type) {
+static bool _container_type_from_type_info(const Variant &p_type_info, Variant::Type p_builtin_type,
+		const StringName &p_native_type, const FrameSelfBinding &p_frame_self, ContainerType &r_type) {
 	if (_is_container_type_descriptor(p_type_info)) {
-		return _container_type_from_descriptor(p_type_info);
+		return _container_type_from_descriptor(p_type_info, p_frame_self, r_type);
 	}
 	ContainerType type;
 	type.builtin_type = p_builtin_type;
 	type.class_name = p_native_type;
 	Ref<Script> script = p_type_info;
 	type.script = script;
-	return type;
+	r_type = type;
+	return true;
+}
+
+// The frame's receiver as the class-handle value `Self` denotes in an expression position. A builtin
+// receiver has no class-handle object, and a script receiver of a suspended call may have been freed,
+// so both report failure instead of producing a handle for some other class.
+static bool _static_self_class_handle(const FSStaticSelfContext &p_context, Variant &r_handle) {
+	switch (p_context.get_kind()) {
+		case FSStaticSelfContext::NONE:
+		case FSStaticSelfContext::BUILTIN_TYPE:
+			return false;
+		case FSStaticSelfContext::NATIVE_CLASS: {
+			const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
+			const HashMap<StringName, int>::ConstIterator element = global_map.find(p_context.get_native_class());
+			if (!element) {
+				return false;
+			}
+			r_handle = FSLanguage::get_singleton()->get_global_array()[element->value];
+			return true;
+		}
+		case FSStaticSelfContext::SCRIPT: {
+			const Ref<Script> script = p_context.get_script();
+			if (script.is_null()) {
+				return false;
+			}
+			const Ref<FoundryScript> foundry_script = script;
+			if (!p_context.get_type_arguments().is_empty() && foundry_script.is_valid()) {
+				// A specialized generic receiver keeps its concrete arguments, so `Self.new()` through
+				// `Crate[int]` constructs `Crate[int]` rather than the unspecialized script.
+				r_handle = FSSpecializedClassHandle::create(foundry_script, p_context.get_type_arguments());
+				return true;
+			}
+			r_handle = script;
+			return true;
+		}
+	}
+	return false;
+}
+
+// `Self` in an expression position: the class handle of a static frame's exact receiver, or of the
+// instance an instance frame is running on. A static frame with no receiver has nothing to produce.
+static bool _frame_self_class_handle(const FrameSelfBinding &p_frame_self, const FSInstance *p_instance,
+		const Variant *p_self_override, Variant &r_handle) {
+	if (p_frame_self.receiver != nullptr) {
+		return _static_self_class_handle(*p_frame_self.receiver, r_handle);
+	}
+	if (p_instance != nullptr) {
+		// An instance frame's `Self` is the class of the object it runs on, including the concrete
+		// arguments of a specialized generic instance.
+		return _static_self_class_handle(
+				FSStaticSelfContext::for_specialized_script(p_instance->get_script(), p_instance->get_type_arguments()),
+				r_handle);
+	}
+	if (p_self_override != nullptr) {
+		// An instance witness dispatched on a receiver with no `FSInstance`: a native engine object,
+		// which still names a class, or a builtin value, which does not.
+		Object *receiver = p_self_override->get_validated_object();
+		if (receiver == nullptr) {
+			return false;
+		}
+		const Ref<Script> receiver_script = receiver->get_script_instance() != nullptr
+				? receiver->get_script_instance()->get_script()
+				: Ref<Script>();
+		return _static_self_class_handle(receiver_script.is_valid()
+						? FSStaticSelfContext::for_script(receiver_script)
+						: FSStaticSelfContext::for_native_class(receiver->get_class_name()),
+				r_handle);
+	}
+	return false;
+}
+
+// One diagnostic for every instruction that needed the frame's receiver and could not get it. Naming
+// the function keeps a broken dispatch path identifiable instead of surfacing as a type mismatch
+// against whichever class the declaration happened to be lowered against.
+static String _missing_static_self_error(const StringName &p_function_name) {
+	return vformat(
+			R"(Cannot resolve "Self" in "%s": the running frame has no static receiver to resolve it against.)",
+			String(p_function_name));
 }
 
 // Returns the fully wrapped `Type[...]` display name for a class-handle-typed slot, ready to use
@@ -258,20 +383,71 @@ static ContainerType _container_type_from_type_info(const Variant &p_type_info, 
 	return "Type[" + FoundryScript::debug_get_script_name(Ref<Script>(p_base_type)) + "]";
 }
 
-static Script *_script_type_from_type_info(const Variant &p_type_info, FSDataType *r_type_handle = nullptr) {
+static bool _script_type_from_type_info(const Variant &p_type_info, const FrameSelfBinding &p_frame_self,
+		Script *&r_script, FSDataType *r_type_handle = nullptr) {
 	if (_is_container_type_descriptor(p_type_info)) {
-		const ContainerType type = _container_type_from_descriptor(p_type_info);
+		ContainerType type;
+		if (!_container_type_from_descriptor(p_type_info, p_frame_self, type)) {
+			return false;
+		}
 		if (r_type_handle != nullptr) {
 			*r_type_handle = FSDataType::from_type_handle_container_type(type);
 		}
-		return type.script.ptr();
+		r_script = type.script.ptr();
+		return true;
 	}
 
 	Script *script = Object::cast_to<Script>(p_type_info.operator Object *());
 	if (r_type_handle != nullptr && script != nullptr) {
 		*r_type_handle = _make_script_type_handle_type(script);
 	}
-	return script;
+	r_script = script;
+	return true;
+}
+
+// The type operand of a native-lowered type test or cast. A plain operand is the `FSNativeClass`
+// constant naming the engine class the declaration was lowered against. A `Self` operand travels as a
+// descriptor instead, so the running frame can re-bind it to its exact receiver -- which may itself be
+// a script class, because a script subclass of the conformance target can invoke a native witness.
+// Returns false only when a static frame needed a receiver and had none; an operand that names no
+// class at all leaves `r_resolved` unset for the caller's own bug check.
+static bool _native_type_from_type_info(const Variant &p_type_info, const FrameSelfBinding &p_frame_self,
+		bool p_is_type_handle, FSDataType &r_resolved) {
+	if (_is_container_type_descriptor(p_type_info)) {
+		ContainerType container_type;
+		if (!_container_type_from_descriptor(p_type_info, p_frame_self, container_type)) {
+			return false;
+		}
+		r_resolved = p_is_type_handle
+				? FSDataType::from_type_handle_container_type(container_type)
+				: FSDataType::from_container_type(container_type);
+		return true;
+	}
+	FSNativeClass *native_class = Object::cast_to<FSNativeClass>(p_type_info.operator Object *());
+	if (native_class != nullptr) {
+		r_resolved.kind = FSDataType::NATIVE;
+		r_resolved.builtin_type = Variant::OBJECT;
+		r_resolved.native_type = native_class->get_name();
+		r_resolved.is_type_handle = p_is_type_handle;
+	}
+	return true;
+}
+
+// Nominal script membership: true when the object's script chain reaches `p_script_type`. A native
+// witness's `Self` can re-bind to a script receiver, so the native type test and cast both need this
+// rule instead of an engine class-hierarchy walk.
+static bool _object_has_script_type(Object *p_object, Script *p_script_type) {
+	if (p_object == nullptr || p_object->get_script_instance() == nullptr) {
+		return false;
+	}
+	Script *script_ptr = p_object->get_script_instance()->get_script().ptr();
+	while (script_ptr != nullptr) {
+		if (script_ptr == p_script_type) {
+			return true;
+		}
+		script_ptr = script_ptr->get_base_script().ptr();
+	}
+	return false;
 }
 
 static FSSpecializedClassHandle *_specialized_handle_from_variant(const Variant *p_value) {
@@ -795,6 +971,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_TYPE_ADJUST_PACKED_VECTOR3_ARRAY,       \
 		&&OPCODE_TYPE_ADJUST_PACKED_COLOR_ARRAY,         \
 		&&OPCODE_TYPE_ADJUST_PACKED_VECTOR4_ARRAY,       \
+		&&OPCODE_LOAD_STATIC_SELF_CLASS,                 \
 		&&OPCODE_ASSERT,                                 \
 		&&OPCODE_BREAKPOINT,                             \
 		&&OPCODE_LINE,                                   \
@@ -1012,6 +1189,40 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		p_state->stack_size = 0;
 
 	} else {
+		// A signature written in terms of `Self` only has a meaning once the frame's exact receiver is
+		// known, so it is substituted here, before any argument is accepted. Validating against the
+		// unresolved types would check arguments against whichever class the declaration was lowered
+		// against -- the declaring class, or a conformance target that may be several levels above the
+		// receiver -- and silently accept values the caller's specialization forbids.
+		LocalVector<FSDataType> resolved_argument_types;
+		FSDataType resolved_rest_parameter_type;
+		const bool resolve_signature_self = _references_self_types && _static;
+		if (unlikely(resolve_signature_self)) {
+			bool resolved = p_static_self != nullptr;
+			if (resolved) {
+				resolved_argument_types.resize(argument_types.size());
+				for (int i = 0; i < argument_types.size() && resolved; i++) {
+					resolved = FSStaticSelfContext::resolve_self(argument_types[i], p_static_self, resolved_argument_types[i]);
+				}
+				resolved = resolved && FSStaticSelfContext::resolve_self(rest_parameter_type, p_static_self, resolved_rest_parameter_type);
+			}
+			if (!resolved) {
+				// No fallback: continuing against the declaration target would hide a broken dispatch
+				// path behind a call that appears to succeed.
+				ERR_PRINT(vformat(R"(Cannot call "%s": its signature references "Self", but the call supplied no static receiver to resolve it against.)",
+						String(name)));
+				r_err.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+				call_depth--;
+				return Variant();
+			}
+		}
+		const FSDataType *effective_argument_types = resolve_signature_self && !resolved_argument_types.is_empty()
+				? resolved_argument_types.ptr()
+				: argument_types.ptr();
+		const FSDataType &effective_rest_parameter_type = resolve_signature_self
+				? resolved_rest_parameter_type
+				: rest_parameter_type;
+
 		if (p_argcount != _argument_count) {
 			if (p_argcount > _argument_count) {
 				if (!is_vararg()) {
@@ -1046,7 +1257,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		const int non_vararg_arg_count = MIN(p_argcount, _argument_count);
 		for (int i = 0; i < non_vararg_arg_count; i++) {
 			memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant);
-			if (!_convert_call_argument(*p_args[i], argument_types[i], stack[i + FIXED_ADDRESSES_MAX], r_err, i)) {
+			if (!_convert_call_argument(*p_args[i], effective_argument_types[i], stack[i + FIXED_ADDRESSES_MAX], r_err, i)) {
 				destroy_partial_stack(i + FIXED_ADDRESSES_MAX + 1);
 				call_depth--;
 				return _get_default_variant_for_data_type(return_type);
@@ -1063,8 +1274,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			// reflection or Callable boundary cannot inject a value the body was never typed for.
 			Array vararg;
 			FSDataType element_data;
-			if (rest_parameter_type.has_container_element_type(0)) {
-				element_data = rest_parameter_type.container_element_types[0];
+			if (effective_rest_parameter_type.has_container_element_type(0)) {
+				element_data = effective_rest_parameter_type.container_element_types[0];
 				const ContainerType element_type = element_data.to_container_type();
 				if (element_type.builtin_type != Variant::NIL) {
 					vararg.set_typed(element_type);
@@ -1113,6 +1324,10 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	}
 	memnew_placement(&stack[ADDR_STACK_CLASS], Variant(script));
 	memnew_placement(&stack[ADDR_STACK_NIL], Variant);
+
+	// Built after the resume path has restored the receiver a suspended call was made with, so a
+	// resumed frame cannot come back resolving `Self` against nothing.
+	const FrameSelfBinding frame_self{ p_static_self, _static };
 
 	// The receiver descriptor belongs to this frame alone. The guard restores the caller's descriptor
 	// on every exit path, including the one that suspends this frame into an `FSFunctionState`.
@@ -1335,7 +1550,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int native_type_idx = _code_ptr[ip + 5];
 				GD_ERR_BREAK(native_type_idx < 0 || native_type_idx >= _global_names_count);
 				const StringName native_type = _global_names_ptr[native_type_idx];
-				const ContainerType expected_type = _container_type_from_type_info(*type_info, builtin_type, native_type);
+				ContainerType expected_type;
+				if (unlikely(!_container_type_from_type_info(*type_info, builtin_type, native_type, frame_self, expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				bool result = false;
 				if (value->get_type() == Variant::ARRAY) {
@@ -1359,14 +1578,22 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int key_native_type_idx = _code_ptr[ip + 6];
 				GD_ERR_BREAK(key_native_type_idx < 0 || key_native_type_idx >= _global_names_count);
 				const StringName key_native_type = _global_names_ptr[key_native_type_idx];
-				const ContainerType expected_key_type = _container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type);
+				ContainerType expected_key_type;
+				if (unlikely(!_container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type, frame_self, expected_key_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				GET_VARIANT_PTR(value_type_info, 3);
 				Variant::Type value_builtin_type = (Variant::Type)_code_ptr[ip + 7];
 				int value_native_type_idx = _code_ptr[ip + 8];
 				GD_ERR_BREAK(value_native_type_idx < 0 || value_native_type_idx >= _global_names_count);
 				const StringName value_native_type = _global_names_ptr[value_native_type_idx];
-				const ContainerType expected_value_type = _container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type);
+				ContainerType expected_value_type;
+				if (unlikely(!_container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type, frame_self, expected_value_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				bool result = false;
 				if (value->get_type() == Variant::DICTIONARY) {
@@ -1392,11 +1619,20 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				if (value->get_type() == Variant::ARRAY) {
 					// The arity check is the cheap rejection; only a candidate of the right shape pays
 					// for rebuilding the element types and testing them one by one.
-					result = VariantInternal::get_array(value)->size() == arity &&
-							_data_type_from_tuple_descriptor(*type_info).is_type(*value);
+					FSDataType tuple_type;
+					if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, tuple_type))) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
+					result = VariantInternal::get_array(value)->size() == arity && tuple_type.is_type(*value);
 				} else if (value->get_type() == Variant::NIL) {
 					// A nullable tuple type accepts null; the flag travels on the descriptor.
-					result = _data_type_from_tuple_descriptor(*type_info).is_nullable;
+					FSDataType tuple_type;
+					if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, tuple_type))) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
+					result = tuple_type.is_nullable;
 				}
 
 				*dst = result;
@@ -1475,18 +1711,17 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(value, 1);
+				GET_VARIANT_PTR(type, 2);
 
-				int native_type_idx = _code_ptr[ip + 3];
-				GD_ERR_BREAK(native_type_idx < 0 || native_type_idx >= _global_names_count);
-				const StringName native_type = _global_names_ptr[native_type_idx];
 				const bool is_type_handle = _code_ptr[ip + 4];
+				FSDataType expected_type;
+				if (unlikely(!_native_type_from_type_info(*type, frame_self, is_type_handle, expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+				GD_ERR_BREAK(!expected_type.has_type());
 
 				if (is_type_handle) {
-					FSDataType expected_type;
-					expected_type.kind = FSDataType::NATIVE;
-					expected_type.builtin_type = Variant::OBJECT;
-					expected_type.native_type = native_type;
-					expected_type.is_type_handle = true;
 					bool was_freed = false;
 					*dst = _type_handle_test_matches(expected_type, *value, was_freed);
 					if (was_freed) {
@@ -1501,8 +1736,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						OPCODE_BREAK;
 					}
 
-					*dst = _specialized_handle_assignable_to_native_script(value, native_type) != nullptr ||
-							(object && ClassDB::is_parent_class(object->get_class_name(), native_type));
+					if (expected_type.script_type != nullptr) {
+						// A `Self` operand re-bound to a script receiver asks a nominal script question.
+						*dst = _object_has_script_type(object, expected_type.script_type);
+					} else if (expected_type.kind == FSDataType::NATIVE) {
+						*dst = _specialized_handle_assignable_to_native_script(value, expected_type.native_type) != nullptr ||
+								(object && ClassDB::is_parent_class(object->get_class_name(), expected_type.native_type));
+					} else {
+						*dst = expected_type.is_type(*value);
+					}
 				}
 				ip += 5;
 			}
@@ -1522,7 +1764,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					bool was_freed = false;
 					{
 						FSDataType expected_handle_type;
-						[[maybe_unused]] Script *script_type = _script_type_from_type_info(*type, &expected_handle_type);
+						[[maybe_unused]] Script *script_type = nullptr;
+						if (unlikely(!_script_type_from_type_info(*type, frame_self, script_type, &expected_handle_type))) {
+							err_text = _missing_static_self_error(name);
+							OPCODE_BREAK;
+						}
 						GD_ERR_BREAK(!script_type);
 						result = _type_handle_test_matches(expected_handle_type, *value, was_freed);
 					}
@@ -1531,7 +1777,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						OPCODE_BREAK;
 					}
 				} else {
-					Script *script_type = _script_type_from_type_info(*type);
+					Script *script_type = nullptr;
+					if (unlikely(!_script_type_from_type_info(*type, frame_self, script_type))) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
 					GD_ERR_BREAK(!script_type);
 					FoundryScript *fs_type = Object::cast_to<FoundryScript>(script_type);
 					const bool is_trait_type = fs_type != nullptr && fs_type->is_trait_type();
@@ -2116,7 +2366,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int native_type_idx = _code_ptr[ip + 5];
 				GD_ERR_BREAK(native_type_idx < 0 || native_type_idx >= _global_names_count);
 				const StringName native_type = _global_names_ptr[native_type_idx];
-				const ContainerType expected_type = _container_type_from_type_info(*type_info, builtin_type, native_type);
+				ContainerType expected_type;
+				if (unlikely(!_container_type_from_type_info(*type_info, builtin_type, native_type, frame_self, expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				if (src->get_type() != Variant::ARRAY) {
 #ifdef DEBUG_ENABLED
@@ -2152,14 +2406,22 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int key_native_type_idx = _code_ptr[ip + 6];
 				GD_ERR_BREAK(key_native_type_idx < 0 || key_native_type_idx >= _global_names_count);
 				const StringName key_native_type = _global_names_ptr[key_native_type_idx];
-				const ContainerType expected_key_type = _container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type);
+				ContainerType expected_key_type;
+				if (unlikely(!_container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type, frame_self, expected_key_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				GET_VARIANT_PTR(value_type_info, 3);
 				Variant::Type value_builtin_type = (Variant::Type)_code_ptr[ip + 7];
 				int value_native_type_idx = _code_ptr[ip + 8];
 				GD_ERR_BREAK(value_native_type_idx < 0 || value_native_type_idx >= _global_names_count);
 				const StringName value_native_type = _global_names_ptr[value_native_type_idx];
-				const ContainerType expected_value_type = _container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type);
+				ContainerType expected_value_type;
+				if (unlikely(!_container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type, frame_self, expected_value_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				if (src->get_type() != Variant::DICTIONARY) {
 #ifdef DEBUG_ENABLED
@@ -2242,7 +2504,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				GET_VARIANT_PTR(type, 2);
 				FSDataType expected_handle_type;
-				Script *base_type = _script_type_from_type_info(*type, &expected_handle_type);
+				Script *base_type = nullptr;
+				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				GD_ERR_BREAK(!base_type);
 				FoundryScript *fs_base_type = Object::cast_to<FoundryScript>(base_type);
@@ -2364,7 +2630,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int native_type_idx = _code_ptr[ip + 5];
 				GD_ERR_BREAK(native_type_idx < 0 || native_type_idx >= _global_names_count);
 				const StringName native_type = _global_names_ptr[native_type_idx];
-				const ContainerType expected_type = _container_type_from_type_info(*type_info, builtin_type, native_type);
+				ContainerType expected_type;
+				if (unlikely(!_container_type_from_type_info(*type_info, builtin_type, native_type, frame_self, expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				if (src->get_type() != Variant::ARRAY) {
 #ifdef DEBUG_ENABLED
@@ -2394,14 +2664,22 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int key_native_type_idx = _code_ptr[ip + 6];
 				GD_ERR_BREAK(key_native_type_idx < 0 || key_native_type_idx >= _global_names_count);
 				const StringName key_native_type = _global_names_ptr[key_native_type_idx];
-				const ContainerType expected_key_type = _container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type);
+				ContainerType expected_key_type;
+				if (unlikely(!_container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type, frame_self, expected_key_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				GET_VARIANT_PTR(value_type_info, 3);
 				Variant::Type value_builtin_type = (Variant::Type)_code_ptr[ip + 7];
 				int value_native_type_idx = _code_ptr[ip + 8];
 				GD_ERR_BREAK(value_native_type_idx < 0 || value_native_type_idx >= _global_names_count);
 				const StringName value_native_type = _global_names_ptr[value_native_type_idx];
-				const ContainerType expected_value_type = _container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type);
+				ContainerType expected_value_type;
+				if (unlikely(!_container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type, frame_self, expected_value_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				if (src->get_type() != Variant::DICTIONARY) {
 #ifdef DEBUG_ENABLED
@@ -2466,9 +2744,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(dst, 1);
 				GET_VARIANT_PTR(to_type, 2);
 
-				FSNativeClass *nc = Object::cast_to<FSNativeClass>(to_type->operator Object *());
-				GD_ERR_BREAK(!nc);
 				const bool is_type_handle = _code_ptr[ip + 4];
+				FSDataType expected_type;
+				if (unlikely(!_native_type_from_type_info(*to_type, frame_self, is_type_handle, expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+				GD_ERR_BREAK(!expected_type.has_type());
 
 #ifdef DEBUG_ENABLED
 				if (src->operator Object *() && !src->get_validated_object()) {
@@ -2481,17 +2763,18 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				}
 #endif
 				Object *src_obj = src->operator Object *();
-				FSSpecializedClassHandle *specialized_handle = !is_type_handle ? _specialized_handle_assignable_to_native_script(src, nc->get_name()) : nullptr;
+				FSSpecializedClassHandle *specialized_handle = !is_type_handle ? _specialized_handle_assignable_to_native_script(src, expected_type.native_type) : nullptr;
 
 				if (is_type_handle) {
-					if (_make_native_type_handle_type(nc).is_type(*src)) {
-						*dst = *src;
-					} else {
-						*dst = Variant();
-					}
+					*dst = expected_type.is_type(*src) ? *src : Variant();
+				} else if (expected_type.script_type != nullptr) {
+					// A `Self` target re-bound to a script receiver: membership is the script chain.
+					*dst = _object_has_script_type(src_obj, expected_type.script_type) ? *src : Variant();
 				} else if (specialized_handle != nullptr) {
 					*dst = specialized_handle->get_specialized_script();
-				} else if (src_obj && !ClassDB::is_parent_class(src_obj->get_class_name(), nc->get_name())) {
+				} else if (expected_type.kind != FSDataType::NATIVE) {
+					*dst = expected_type.is_type(*src) ? *src : Variant();
+				} else if (src_obj && !ClassDB::is_parent_class(src_obj->get_class_name(), expected_type.native_type)) {
 					*dst = Variant(); // invalid cast, assign NULL
 				} else {
 					*dst = *src;
@@ -2508,7 +2791,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(to_type, 2);
 
 				FSDataType expected_handle_type;
-				Script *base_type = _script_type_from_type_info(*to_type, &expected_handle_type);
+				Script *base_type = nullptr;
+				if (unlikely(!_script_type_from_type_info(*to_type, frame_self, base_type, &expected_handle_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				GD_ERR_BREAK(!base_type);
 				FoundryScript *fs_base_type = Object::cast_to<FoundryScript>(base_type);
@@ -2658,7 +2945,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int native_type_idx = _code_ptr[ip + 3];
 				GD_ERR_BREAK(native_type_idx < 0 || native_type_idx >= _global_names_count);
 				const StringName native_type = _global_names_ptr[native_type_idx];
-				const ContainerType element_type = _container_type_from_type_info(*type_info, builtin_type, native_type);
+				ContainerType element_type;
+				if (unlikely(!_container_type_from_type_info(*type_info, builtin_type, native_type, frame_self, element_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				Array array;
 				array.set_typed(element_type);
@@ -2747,14 +3038,22 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int key_native_type_idx = _code_ptr[ip + 3];
 				GD_ERR_BREAK(key_native_type_idx < 0 || key_native_type_idx >= _global_names_count);
 				const StringName key_native_type = _global_names_ptr[key_native_type_idx];
-				const ContainerType key_type = _container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type);
+				ContainerType key_type;
+				if (unlikely(!_container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type, frame_self, key_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				GET_INSTRUCTION_ARG(value_type_info, argc * 2 + 2);
 				Variant::Type value_builtin_type = (Variant::Type)_code_ptr[ip + 4];
 				int value_native_type_idx = _code_ptr[ip + 5];
 				GD_ERR_BREAK(value_native_type_idx < 0 || value_native_type_idx >= _global_names_count);
 				const StringName value_native_type = _global_names_ptr[value_native_type_idx];
-				const ContainerType value_type = _container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type);
+				ContainerType value_type;
+				if (unlikely(!_container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type, frame_self, value_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				Dictionary dict;
 				dict.set_typed(key_type, value_type);
@@ -2814,7 +3113,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				} else if (expected_foundry_script.is_null() || foundry_script == expected_foundry_script) {
 					for (int i = 0; i < type_argument_count; i++) {
 						GET_INSTRUCTION_ARG(type_info, argc + i);
-						type_arguments.push_back(_container_type_from_type_info(*type_info, Variant::NIL, StringName()));
+						ContainerType type_argument;
+						if (unlikely(!_container_type_from_type_info(*type_info, Variant::NIL, StringName(), frame_self, type_argument))) {
+							err_text = _missing_static_self_error(name);
+							OPCODE_BREAK;
+						}
+						type_arguments.push_back(type_argument);
 					}
 				}
 
@@ -3984,7 +4288,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int native_type_idx = _code_ptr[ip + 4];
 				GD_ERR_BREAK(native_type_idx < 0 || native_type_idx >= _global_names_count);
 				const StringName native_type = _global_names_ptr[native_type_idx];
-				const ContainerType expected_type = _container_type_from_type_info(*type_info, builtin_type, native_type);
+				ContainerType expected_type;
+				if (unlikely(!_container_type_from_type_info(*type_info, builtin_type, native_type, frame_self, expected_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				if (r->get_type() != Variant::ARRAY) {
 #ifdef DEBUG_ENABLED
@@ -4021,14 +4329,22 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				int key_native_type_idx = _code_ptr[ip + 5];
 				GD_ERR_BREAK(key_native_type_idx < 0 || key_native_type_idx >= _global_names_count);
 				const StringName key_native_type = _global_names_ptr[key_native_type_idx];
-				const ContainerType expected_key_type = _container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type);
+				ContainerType expected_key_type;
+				if (unlikely(!_container_type_from_type_info(*key_type_info, key_builtin_type, key_native_type, frame_self, expected_key_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				GET_VARIANT_PTR(value_type_info, 2);
 				Variant::Type value_builtin_type = (Variant::Type)_code_ptr[ip + 6];
 				int value_native_type_idx = _code_ptr[ip + 7];
 				GD_ERR_BREAK(value_native_type_idx < 0 || value_native_type_idx >= _global_names_count);
 				const StringName value_native_type = _global_names_ptr[value_native_type_idx];
-				const ContainerType expected_value_type = _container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type);
+				ContainerType expected_value_type;
+				if (unlikely(!_container_type_from_type_info(*value_type_info, value_builtin_type, value_native_type, frame_self, expected_value_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 
 				if (r->get_type() != Variant::DICTIONARY) {
 #ifdef DEBUG_ENABLED
@@ -4119,7 +4435,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				GET_VARIANT_PTR(type, 1);
 				FSDataType expected_handle_type;
-				Script *base_type = _script_type_from_type_info(*type, &expected_handle_type);
+				Script *base_type = nullptr;
+				if (unlikely(!_script_type_from_type_info(*type, frame_self, base_type, &expected_handle_type))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
 				GD_ERR_BREAK(!base_type);
 				const bool is_type_handle = _code_ptr[ip + 3];
 
@@ -5029,6 +5349,21 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			OPCODE_TYPE_ADJUST(PACKED_VECTOR3_ARRAY, PackedVector3Array);
 			OPCODE_TYPE_ADJUST(PACKED_COLOR_ARRAY, PackedColorArray);
 			OPCODE_TYPE_ADJUST(PACKED_VECTOR4_ARRAY, PackedVector4Array);
+
+			OPCODE(OPCODE_LOAD_STATIC_SELF_CLASS) {
+				CHECK_SPACE(2);
+				GET_VARIANT_PTR(dst, 0);
+
+				Variant handle;
+				if (unlikely(!_frame_self_class_handle(frame_self, p_instance, p_self_override, handle))) {
+					err_text = _missing_static_self_error(name);
+					OPCODE_BREAK;
+				}
+				*dst = handle;
+
+				ip += 2;
+			}
+			DISPATCH_OPCODE;
 
 			OPCODE(OPCODE_ASSERT) {
 				CHECK_SPACE(3);

@@ -463,6 +463,20 @@ public:
 	// Human-readable receiver name, used by runtime diagnostics that must name the exact
 	// specialization a call was made through.
 	String get_type_name() const;
+
+	// The receiver as an instance-position type descriptor. Returns false when there is no receiver, or
+	// when the script receiver of a suspended call was freed before it resumed.
+	bool to_data_type(FSDataType &r_type) const;
+
+	// The single substitution of a call frame's receiver into runtime type metadata. Every position
+	// that lowering marked as having come from `Self` -- at any nesting depth, through specialized
+	// type arguments and typed container element types -- is replaced by `p_context`'s exact receiver,
+	// keeping the position's own class-handle and nullability layers.
+	//
+	// Returns false when a position needs a receiver and `p_context` is absent or describes a freed
+	// one. Callers must report that as an error: falling back to the declaration target, the
+	// conformance target, or Variant would turn a broken dispatch path into a silent wrong answer.
+	static bool resolve_self(const FSDataType &p_type, const FSStaticSelfContext *p_context, FSDataType &r_resolved);
 };
 
 class FSFunction {
@@ -649,6 +663,7 @@ public:
 		OPCODE_TYPE_ADJUST_PACKED_VECTOR3_ARRAY,
 		OPCODE_TYPE_ADJUST_PACKED_COLOR_ARRAY,
 		OPCODE_TYPE_ADJUST_PACKED_VECTOR4_ARRAY,
+		OPCODE_LOAD_STATIC_SELF_CLASS,
 		OPCODE_ASSERT,
 		OPCODE_BREAKPOINT,
 		OPCODE_LINE,
@@ -891,6 +906,9 @@ private:
 	uint8_t self_reflection_kinds = REFLECTION_NONE;
 	uint8_t unresolved_reflection_kinds = REFLECTION_NONE;
 #endif // TOOLS_ENABLED
+
+	// Mirror of `has_self_referencing_signature()`, refreshed by `setup_runtime_pointers()`.
+	bool _references_self_types = false;
 
 	static thread_local const FSStaticSelfContext *_current_static_self_context;
 
