@@ -212,6 +212,13 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 		// the round trip through the descriptor.
 		descriptor["is_type_handle"] = true;
 	}
+	if (p_type.numeric_type != NumericType::NONE) {
+		// Emitted only when a width was declared, so a slot constrained by its carrier alone keeps the
+		// exact descriptor shape it had before widths existed. The analyzer builds the container type
+		// for the same annotation with the descriptor included, so dropping it here would make the two
+		// descriptions of one slot disagree at runtime.
+		descriptor["numeric_type"] = int64_t(p_type.numeric_type);
+	}
 
 	Array element_types;
 	for (const FSDataType &element_type : p_type.container_element_types) {

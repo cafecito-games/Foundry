@@ -38,6 +38,7 @@
 #include "modules/foundry_script/fs_type.h"
 
 #include "core/config/project_settings.h"
+#include "core/variant/container_type_validate.h"
 
 #include "tests/test_macros.h"
 
@@ -123,6 +124,23 @@ public:
 		FSParser parser;
 		FSAnalyzer analyzer(&parser);
 		return analyzer.type_from_property(p_property);
+	}
+
+	// Resolves the static type the analyzer gives a constant value, which is where a typed container
+	// built at runtime is converted back into a rich type record.
+	static FSParser::DataType type_of_constant(const Variant &p_value) {
+		FSParser parser;
+		FSAnalyzer analyzer(&parser);
+		return analyzer.type_from_variant(p_value, nullptr);
+	}
+
+	// The container-type description the analyzer derives for a parser type record, which is the
+	// width-aware naming surface: unlike `DataType::to_string()`, its names are read by diagnostics
+	// rather than written back into source.
+	static ContainerType container_type_of(const FSParser::DataType &p_type) {
+		FSParser parser;
+		FSAnalyzer analyzer(&parser);
+		return analyzer.make_container_type_from_datatype(p_type, nullptr);
 	}
 
 	// Resolves the call-result return type the analyzer derives for a method exposed through MethodInfo
@@ -4117,6 +4135,160 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A MethodInfo-only vararg
 	const PropertyInfo info = callable.to_property_info("callback");
 	CHECK_EQ(info.hint, PROPERTY_HINT_NONE);
 	CHECK(info.hint_string.is_empty());
+}
+
+static FSParser::DataType make_numeric_type(Variant::Type p_carrier, NumericType p_numeric_type) {
+	FSParser::DataType type = make_builtin_type(p_carrier);
+	type.numeric_type = p_numeric_type;
+	return type;
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] Two widths on one carrier are observably distinct") {
+	const FSParser::DataType narrow = make_numeric_type(Variant::INT, NumericType::INT32);
+
+	// Copy construction and assignment both go through hand-written code, so each is checked on its
+	// own: a forgotten field in either produces a width-less duplicate that still compares equal.
+	const FSParser::DataType copied(narrow);
+	CHECK(copied.numeric_type == NumericType::INT32);
+	FSParser::DataType assigned;
+	assigned = narrow;
+	CHECK(assigned.numeric_type == NumericType::INT32);
+
+	FSParser::DataType wide = narrow;
+	wide.numeric_type = NumericType::INT64;
+
+	CHECK(narrow == copied);
+	CHECK(narrow != wide);
+
+	// `to_string()` is the source spelling and stays carrier-only: no width has a name the built-in
+	// registry can resolve yet, and a refactoring writes this result straight back into a script.
+	CHECK(narrow.to_string() == "int");
+	CHECK(wide.to_string() == "int");
+	CHECK(make_numeric_type(Variant::UINT, NumericType::UINT32).to_string() == "uint");
+
+	// Width-aware naming lives on the container-type description, which diagnostics read.
+	CHECK(TestFSAnalyzerAccessor::container_type_of(narrow).get_type_name() == "int");
+	CHECK(TestFSAnalyzerAccessor::container_type_of(wide).get_type_name() == "long");
+	CHECK(TestFSAnalyzerAccessor::container_type_of(make_numeric_type(Variant::UINT, NumericType::UINT64)).get_type_name() == "ulong");
+
+	CHECK_FALSE(FSTypeCompatibility::check(narrow, wide).compatible);
+	CHECK_FALSE(FSTypeCompatibility::check(wide, narrow).compatible);
+	CHECK(FSTypeCompatibility::check(narrow, copied).compatible);
+	CHECK_FALSE(FSTypeCompatibility::is_invariant_equal(narrow, wide));
+	CHECK(FSTypeCompatibility::is_invariant_equal(narrow, copied));
+
+	CHECK_FALSE(narrow.can_reference(wide));
+	CHECK_FALSE(wide.can_reference(narrow));
+	CHECK(narrow.can_reference(copied));
+
+	// Substitution carries the descriptor into the bound position, including through a container.
+	FSParser::DataType parameter;
+	parameter.kind = FSParser::DataType::TYPE_PARAMETER;
+	parameter.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	parameter.type_parameter_name = SNAME("T");
+	HashMap<StringName, FSParser::DataType> bindings;
+	bindings[SNAME("T")] = narrow;
+	CHECK(FSParser::DataType::substitute(parameter, bindings).numeric_type == NumericType::INT32);
+
+	FSParser::DataType array_of_parameter = make_builtin_type(Variant::ARRAY);
+	array_of_parameter.set_container_element_type(0, parameter);
+	const FSParser::DataType substituted_array = FSParser::DataType::substitute(array_of_parameter, bindings);
+	CHECK(substituted_array.get_container_element_type(0).numeric_type == NumericType::INT32);
+
+	// Two container specializations that differ only in element width stay invariant.
+	FSParser::DataType array_of_wide = make_builtin_type(Variant::ARRAY);
+	array_of_wide.set_container_element_type(0, wide);
+	CHECK_FALSE(FSTypeCompatibility::check(substituted_array, array_of_wide).compatible);
+	CHECK_FALSE(FSTypeCompatibility::is_invariant_equal(substituted_array, array_of_wide));
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] An undeclared width constrains nothing") {
+	// `NONE` is the absence of a constraint, not an empty range, so a slot that never declared a width
+	// keeps behaving exactly as it did before descriptors existed. This is what keeps the legacy `int`
+	// spelling interchangeable with the wide descriptor an erased boundary decodes to.
+	const FSParser::DataType unconstrained = make_builtin_type(Variant::INT);
+	const FSParser::DataType wide = make_numeric_type(Variant::INT, NumericType::INT64);
+	const FSParser::DataType narrow = make_numeric_type(Variant::INT, NumericType::INT32);
+
+	CHECK(unconstrained == wide);
+	CHECK(unconstrained == narrow);
+	CHECK(FSTypeCompatibility::check(unconstrained, wide).compatible);
+	CHECK(FSTypeCompatibility::check(wide, unconstrained).compatible);
+	CHECK(FSTypeCompatibility::is_invariant_equal(unconstrained, narrow));
+
+	// Referencing is directional: it hands out the value without re-validating it, so an unconstrained
+	// slot may alias any width on its carrier while a declared width may not alias an unconstrained one.
+	CHECK(unconstrained.can_reference(narrow));
+	CHECK(unconstrained.can_reference(wide));
+	CHECK_FALSE(narrow.can_reference(unconstrained));
+	CHECK_FALSE(wide.can_reference(unconstrained));
+
+	// A different carrier is still a different type, descriptor or not.
+	CHECK_FALSE(FSTypeCompatibility::check(narrow, make_numeric_type(Variant::UINT, NumericType::UINT32)).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] PropertyInfo erases width and decodes wide") {
+	const FSParser::DataType narrow = make_numeric_type(Variant::INT, NumericType::INT32);
+	const PropertyInfo narrow_info = narrow.to_property_info("value");
+	CHECK(narrow_info.type == Variant::INT);
+
+	// Deliberate lossy boundary: the carrier is all a PropertyInfo can transport, so the decode widens
+	// rather than claiming a 32-bit constraint the encoded value never carried.
+	const FSParser::DataType decoded_narrow = TestFSAnalyzerAccessor::decode_property(narrow_info);
+	CHECK(decoded_narrow.kind == FSParser::DataType::BUILTIN);
+	CHECK(decoded_narrow.builtin_type == Variant::INT);
+	CHECK(decoded_narrow.numeric_type == NumericType::INT64);
+	CHECK(decoded_narrow.to_string() == "int");
+
+	const PropertyInfo unsigned_info = make_numeric_type(Variant::UINT, NumericType::UINT32).to_property_info("value");
+	CHECK(unsigned_info.type == Variant::UINT);
+	const FSParser::DataType decoded_unsigned = TestFSAnalyzerAccessor::decode_property(unsigned_info);
+	CHECK(decoded_unsigned.builtin_type == Variant::UINT);
+	CHECK(decoded_unsigned.numeric_type == NumericType::UINT64);
+
+	// Non-integer carriers pin no width, so nothing is invented for them.
+	const PropertyInfo string_info = make_builtin_type(Variant::STRING).to_property_info("text");
+	CHECK(TestFSAnalyzerAccessor::decode_property(string_info).numeric_type == NumericType::NONE);
+
+	// The widened decode still flows through a legacy `int` slot in both directions, so the boundary
+	// costs precision but never compatibility.
+	const FSParser::DataType legacy = make_builtin_type(Variant::INT);
+	CHECK(FSTypeCompatibility::check(legacy, decoded_narrow).compatible);
+	CHECK(FSTypeCompatibility::check(decoded_narrow, legacy).compatible);
+
+	// Array element hints are spelled by carrier name, so an element width erases the same way.
+	FSParser::DataType array_of_narrow = make_builtin_type(Variant::ARRAY);
+	array_of_narrow.set_container_element_type(0, narrow);
+	const PropertyInfo array_info = array_of_narrow.to_property_info("values");
+	CHECK(array_info.hint == PROPERTY_HINT_ARRAY_TYPE);
+	CHECK(array_info.hint_string == "int");
+	const FSParser::DataType decoded_array = TestFSAnalyzerAccessor::decode_property(array_info);
+	REQUIRE(decoded_array.has_container_element_type(0));
+	CHECK(decoded_array.get_container_element_type(0).numeric_type == NumericType::NONE);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] A typed container constant converts back with its width") {
+	// Typed containers are the channel that does keep the width, so reading one back must not degrade
+	// it to a carrier-only element the way a plain PropertyInfo does.
+	ContainerType element_type;
+	element_type.builtin_type = Variant::INT;
+	element_type.numeric_type = NumericType::INT32;
+
+	Array typed_array;
+	REQUIRE(typed_array.set_typed(element_type));
+	const FSParser::DataType array_type = TestFSAnalyzerAccessor::type_of_constant(typed_array);
+	REQUIRE(array_type.has_container_element_type(0));
+	CHECK(array_type.get_container_element_type(0).numeric_type == NumericType::INT32);
+
+	ContainerType value_type;
+	value_type.builtin_type = Variant::UINT;
+	value_type.numeric_type = NumericType::UINT32;
+	Dictionary typed_dictionary;
+	REQUIRE(typed_dictionary.set_typed(element_type, value_type));
+	const FSParser::DataType dictionary_type = TestFSAnalyzerAccessor::type_of_constant(typed_dictionary);
+	REQUIRE(dictionary_type.has_container_element_type(1));
+	CHECK(dictionary_type.get_container_element_type(0).numeric_type == NumericType::INT32);
+	CHECK(dictionary_type.get_container_element_type(1).numeric_type == NumericType::UINT32);
 }
 
 } // namespace FSTests

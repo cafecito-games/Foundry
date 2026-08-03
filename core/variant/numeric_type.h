@@ -190,4 +190,40 @@ _FORCE_INLINE_ String numeric_type_public_name(NumericType p_numeric_type) {
 	return String(row.public_name);
 }
 
+// Symmetric agreement rule, for the places that compare two descriptions of the same slot: equality,
+// invariant identity, and assignment compatibility.
+//
+// `NONE` is the absence of a width constraint, not an empty range, so it neither adds nor removes
+// identity and agrees with every descriptor. Two declared widths agree only with themselves, which is
+// what keeps `int` and `long` observably distinct while a slot that never declared a width keeps
+// behaving exactly as it did before descriptors existed.
+_FORCE_INLINE_ bool numeric_types_agree(NumericType p_left, NumericType p_right) {
+	return p_left == NumericType::NONE || p_right == NumericType::NONE || p_left == p_right;
+}
+
+// Directional aliasing rule, for the places that hand out a reference to a slot rather than copy a
+// value through it. Referencing skips per-value validation, so it must not be more permissive: an
+// unconstrained slot accepts every value its carrier holds and can therefore alias any width on that
+// carrier, but a slot that declared a width would let values it rejects in through an alias of any
+// other descriptor -- including an unconstrained one.
+_FORCE_INLINE_ bool numeric_type_can_alias(NumericType p_referencing, NumericType p_referenced) {
+	return p_referencing == NumericType::NONE || p_referencing == p_referenced;
+}
+
+// The descriptor a genuinely width-erased value of `p_carrier` decodes to.
+//
+// A boundary that transports only the carrier (a plain `PropertyInfo`) loses the width, so the value
+// that arrives may be anything the carrier can hold. Only the 64-bit descriptor covers that whole
+// range, so decoding wide is the sole choice that cannot claim a constraint the value never had.
+// Non-integer carriers pin no width at all.
+_FORCE_INLINE_ NumericType numeric_type_wide_for_carrier(Variant::Type p_carrier) {
+	if (p_carrier == Variant::INT) {
+		return NumericType::INT64;
+	}
+	if (p_carrier == Variant::UINT) {
+		return NumericType::UINT64;
+	}
+	return NumericType::NONE;
+}
+
 #undef _NUMERIC_TYPE_ROW_V

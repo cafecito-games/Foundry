@@ -326,6 +326,9 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 		case FSParser::DataType::BUILTIN: {
 			result.kind = FSDataType::BUILTIN;
 			result.builtin_type = p_datatype.builtin_type;
+			// Only a builtin slot can carry a width: every integer type stays `BUILTIN` on an `INT` or
+			// `UINT` carrier, and no other kind has one to lower.
+			result.numeric_type = p_datatype.numeric_type;
 		} break;
 		case FSParser::DataType::TUPLE: {
 			// Tuple elements are heterogeneous, so there is no typed-array container to describe:

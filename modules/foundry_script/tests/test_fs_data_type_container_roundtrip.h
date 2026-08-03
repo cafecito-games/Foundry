@@ -206,4 +206,75 @@ TEST_CASE("[Modules][FoundryScript][DataType] A nullable FSDataType converts to 
 	CHECK_FALSE(container_type.is_type_handle);
 }
 
+static FSDataType data_type_numeric(Variant::Type p_carrier, NumericType p_numeric_type) {
+	FSDataType type = data_type_builtin(p_carrier);
+	type.numeric_type = p_numeric_type;
+	return type;
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] Container conversion preserves nested descriptors two levels deep") {
+	const FSDataType narrow = data_type_numeric(Variant::INT, NumericType::INT32);
+	const FSDataType unsigned_narrow = data_type_numeric(Variant::UINT, NumericType::UINT32);
+
+	// `Dictionary[int, Array[uint]]`: the unsigned descriptor sits two levels below the root, which is
+	// where a conversion that only copies the field at the top silently drops it.
+	const FSDataType nested = data_type_dictionary_of(narrow, data_type_array_of(unsigned_narrow));
+
+	const ContainerType container = nested.to_container_type();
+	REQUIRE(container.element_types.size() == 2);
+	CHECK(container.element_types[0].numeric_type == NumericType::INT32);
+	REQUIRE(container.element_types[1].element_types.size() == 1);
+	CHECK(container.element_types[1].element_types[0].numeric_type == NumericType::UINT32);
+	CHECK(container.element_types[0].get_type_name() == "int");
+	CHECK(container.element_types[1].get_type_name() == "Array[uint]");
+
+	const FSDataType restored = FSDataType::from_container_type(container);
+	REQUIRE(restored.container_element_types.size() == 2);
+	CHECK(restored.container_element_types[0].numeric_type == NumericType::INT32);
+	REQUIRE(restored.container_element_types[1].container_element_types.size() == 1);
+	CHECK(restored.container_element_types[1].container_element_types[0].numeric_type == NumericType::UINT32);
+	CHECK(restored == nested);
+
+	// Reified type arguments recurse through the same conversion, so `Box[Array[int]]` keeps the width
+	// of its innermost element too.
+	FSDataType specialized = data_type_native_handle(SNAME("Node"), false);
+	specialized.type_arguments.push_back(data_type_array_of(narrow));
+	const ContainerType specialized_container = specialized.to_container_type();
+	REQUIRE(specialized_container.type_arguments.size() == 1);
+	REQUIRE(specialized_container.type_arguments[0].element_types.size() == 1);
+	CHECK(specialized_container.type_arguments[0].element_types[0].numeric_type == NumericType::INT32);
+	const FSDataType restored_specialized = FSDataType::from_container_type(specialized_container);
+	REQUIRE(restored_specialized.type_arguments.size() == 1);
+	REQUIRE(restored_specialized.type_arguments[0].container_element_types.size() == 1);
+	CHECK(restored_specialized.type_arguments[0].container_element_types[0].numeric_type == NumericType::INT32);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] Runtime data types keep two widths on one carrier distinct") {
+	const FSDataType narrow = data_type_numeric(Variant::INT, NumericType::INT32);
+	FSDataType wide = narrow;
+	wide.numeric_type = NumericType::INT64;
+
+	const FSDataType copied(narrow);
+	CHECK(copied.numeric_type == NumericType::INT32);
+	FSDataType assigned;
+	assigned = narrow;
+	CHECK(assigned.numeric_type == NumericType::INT32);
+
+	CHECK(narrow == copied);
+	CHECK(narrow != wide);
+	CHECK_FALSE(narrow.is_same_container_type(wide.to_container_type()));
+	CHECK(narrow.is_same_container_type(copied.to_container_type()));
+
+	// A typed container declared with one width does not accept an alias of the other.
+	const ContainerTypeValidate narrow_slot(data_type_array_of(narrow).to_container_type().element_types[0]);
+	const ContainerTypeValidate wide_slot(data_type_array_of(wide).to_container_type().element_types[0]);
+	CHECK_FALSE(narrow_slot.can_reference(wide_slot));
+	CHECK_FALSE(wide_slot.can_reference(narrow_slot));
+
+	// An element that declared no width is unconstrained and may alias either.
+	const ContainerTypeValidate unconstrained_slot(data_type_array_of(data_type_builtin(Variant::INT)).to_container_type().element_types[0]);
+	CHECK(unconstrained_slot.can_reference(narrow_slot));
+	CHECK_FALSE(narrow_slot.can_reference(unconstrained_slot));
+}
+
 } // namespace FSTests

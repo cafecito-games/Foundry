@@ -40,6 +40,7 @@
 #include "core/templates/pair.h"
 #include "core/templates/self_list.h"
 #include "core/variant/container_type_validate.h"
+#include "core/variant/numeric_type.h"
 #include "core/variant/variant.h"
 
 class FSInstance;
@@ -86,6 +87,9 @@ public:
 	};
 
 	Variant::Type builtin_type = Variant::NIL;
+	// Exact width and signedness of an integer slot, lowered from the parser type record. `NONE` means
+	// the slot declared no width and is constrained by its carrier alone.
+	NumericType numeric_type = NumericType::NONE;
 	StringName native_type;
 	Script *script_type = nullptr;
 	Ref<Script> script_type_ref;
@@ -328,6 +332,7 @@ public:
 			return type;
 		}
 		type.builtin_type = builtin_type;
+		type.numeric_type = numeric_type;
 		if (builtin_type == Variant::OBJECT) {
 			type.class_name = native_type;
 			if (script_type_ref.is_valid()) {
@@ -355,6 +360,7 @@ public:
 	bool operator==(const FSDataType &p_other) const {
 		return kind == p_other.kind &&
 				builtin_type == p_other.builtin_type &&
+				numeric_types_agree(numeric_type, p_other.numeric_type) &&
 				native_type == p_other.native_type &&
 				is_nullable == p_other.is_nullable &&
 				is_type_handle == p_other.is_type_handle &&
@@ -376,6 +382,7 @@ public:
 	void operator=(const FSDataType &p_other) {
 		kind = p_other.kind;
 		builtin_type = p_other.builtin_type;
+		numeric_type = p_other.numeric_type;
 		native_type = p_other.native_type;
 		script_type = p_other.script_type;
 		script_type_ref = p_other.script_type_ref;

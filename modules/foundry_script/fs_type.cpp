@@ -419,6 +419,15 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			result.compatible = Variant::can_convert_strict(p_source.builtin_type, p_target.builtin_type);
 			result.uses_implicit_conversion = result.compatible;
 		}
+		if (result.compatible && p_source.kind == FSParser::DataType::BUILTIN &&
+				!numeric_types_agree(p_target.numeric_type, p_source.numeric_type)) {
+			// Width is part of the target's contract. Crossing between two declared widths needs an
+			// explicit conversion, so neither a plain assignment nor an implicit builtin conversion may
+			// silently reinterpret one as the other. An undeclared width on either side constrains
+			// nothing and leaves the existing behavior untouched.
+			result.compatible = false;
+			result.uses_implicit_conversion = false;
+		}
 		if (!result.compatible && p_target.builtin_type == Variant::INT && p_source.kind == FSParser::DataType::ENUM &&
 				!p_source.is_meta_type && !p_source.is_tagged_union) {
 			// An int-backed enum value is also an integer. A tagged-union value is a read-only
@@ -827,7 +836,10 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 			equal = true;
 			break;
 		case FSParser::DataType::BUILTIN:
-			equal = p_a.builtin_type == p_b.builtin_type;
+			// Two declared widths are different types even on one carrier, so a typed container or
+			// generic argument of `int` is not identical to one of `long`. A slot that declared no width
+			// carries no evidence either way and stays identical to both.
+			equal = p_a.builtin_type == p_b.builtin_type && numeric_types_agree(p_a.numeric_type, p_b.numeric_type);
 			break;
 		case FSParser::DataType::NATIVE:
 		case FSParser::DataType::ENUM:

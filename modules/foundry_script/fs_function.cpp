@@ -83,6 +83,8 @@ bool FSDataType::_builtin_type_conforms_to_trait(Variant::Type p_builtin_type, c
 static FSDataType _gdtype_from_container_type(const ContainerType &p_container_type) {
 	FSDataType type;
 	type.is_type_handle = p_container_type.is_type_handle;
+	// Assigned before the kind branches so it survives at every recursion level, not only at the root.
+	type.numeric_type = p_container_type.numeric_type;
 
 	if (p_container_type.script.is_valid()) {
 		type.kind = Object::cast_to<FoundryScript>(p_container_type.script.ptr()) != nullptr ? FSDataType::FOUNDRY_SCRIPT : FSDataType::SCRIPT;
