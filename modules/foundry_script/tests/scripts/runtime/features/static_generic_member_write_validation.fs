@@ -34,6 +34,14 @@ class DependentHolder[V]:
 	uses Slotted[Box[V]]
 
 
+# A dependent argument that is itself a class handle (`Type[Box[V]]`) has a sound upper bound at its
+# root (`Type[Box]`, any handle for a `Box`) even though `V` is erased, so the write must still be
+# validated (a wrong represented class, e.g. `Type[NotBox]`, is rejected elsewhere), but the nested,
+# unrecoverable `V` argument must not trip an invariant mismatch against a real `Box[int]` handle.
+class DependentHandleHolder[V]:
+	uses Slotted[Type[Box[V]]]
+
+
 func test() -> void:
 	Holder.slot = 1
 	print(Holder.slot)
@@ -70,3 +78,8 @@ func test() -> void:
 	dynamic_dependent.slot = payload
 	@warning_ignore("unsafe_property_access")
 	print(dependent_holder.slot.value)
+
+	var dependent_handle_holder := DependentHandleHolder[int].new()
+	var dynamic_dependent_handle: Variant = dependent_handle_holder
+	dynamic_dependent_handle.slot = Box[int]
+	print(dependent_handle_holder.slot == Box[int])

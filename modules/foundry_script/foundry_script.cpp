@@ -266,16 +266,24 @@ bool FoundryScript::_validate_type_argument_binding_write(const FoundryScript::T
 			// checking against that erased type would reject a genuinely well-typed `Box[int]` value. Leave
 			// the slot untyped rather than reject a value that may in fact match the true (unrecoverable)
 			// argument.
-			//
-			// A dependent argument that resolves to a class handle (`extends Slot[Type[U]]`, an open `U`
-			// wrapped in `Type[]`) does not have this problem: its erased form (`Type[Object]`) is a sound
-			// upper bound regardless of what `U` resolves to, so any concrete class handle validates against
-			// it without a false rejection. Note this is `p_binding.fixed.is_type_handle` (whether the baked
-			// argument is itself a handle), not `p_binding.is_type_handle` (whether the *member's own*
-			// declared type is `Type[T]`, a separate, unrelated concept for an OPEN binding's own site).
 		} else {
 			expected_type = p_binding.fixed.to_container_type();
 			has_expected_type = true;
+			// A dependent argument that itself resolves to a class handle (`extends Slot[Type[U]]`, or
+			// nested as `extends Slot[Type[Box[U]]]`) does not have the problem above at the root: its
+			// erased form (`Type[Object]`, or `Type[Box[...]]` with `Box` itself concrete) is a sound upper
+			// bound regardless of what the open parameter resolves to. But any *nested* reified type
+			// arguments the erasure produced (e.g. `Box`'s own `Variant` standing in for `U` in
+			// `Type[Box[U]]`) are just as unrecoverable as the plain-container case, and
+			// `ContainerTypeValidate`'s class-handle path checks those invariantly too. Strip them so only
+			// the handle's represented class is checked, not its (unrecoverable) reified arguments — this is
+			// a no-op for a non-nested dependent handle (`Type[U]`), which never had any to begin with. Note
+			// this uses `p_binding.fixed.is_type_handle` (whether the baked argument is itself a handle), not
+			// `p_binding.is_type_handle` (whether the *member's own* declared type is `Type[T]`, a separate,
+			// unrelated concept for an OPEN binding's own site).
+			if (p_binding.fixed_is_dependent && p_binding.fixed.is_type_handle) {
+				expected_type.type_arguments.clear();
+			}
 		}
 	} else if (p_binding.leaf_ordinal >= 0 && p_binding.leaf_ordinal < p_leaf_type_arguments.size()) {
 		expected_type = p_leaf_type_arguments[p_binding.leaf_ordinal];
