@@ -11540,6 +11540,10 @@ Array FSAnalyzer::make_array_from_element_datatype(const FSParser::DataType &p_e
 ContainerType FSAnalyzer::make_container_type_from_datatype(const FSParser::DataType &p_datatype, const FSParser::Node *p_source_node) {
 	ContainerType type;
 	type.builtin_type = p_datatype.builtin_type;
+	// Built field by field rather than copied, so the descriptor has to be carried across explicitly.
+	// Dropping it here would make an analyzer-built container (a typed default value, a folded literal)
+	// disagree with the descriptor the compiler emits for the same annotation.
+	type.numeric_type = p_datatype.numeric_type;
 
 	if (p_datatype.builtin_type == Variant::OBJECT) {
 		Ref<Script> script_type = p_datatype.script_type;
@@ -11803,6 +11807,13 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 	} else {
 		result.kind = FSParser::DataType::BUILTIN;
 		result.builtin_type = p_property.type;
+		// Matching end of the approved width-erasure boundary opened in `DataType::to_property_info()`:
+		// a PropertyInfo transports the carrier only, so nothing here can tell an `int` slot from a
+		// `long` one. Decoding wide is the only choice that does not invent a constraint the encoded
+		// value never had. Rich compiled member/signature metadata is preferred wherever it exists;
+		// this path is what a genuinely generic property falls back to. Container element hints below
+		// are spelled by carrier name and stay unconstrained for the same reason.
+		result.numeric_type = numeric_type_wide_for_carrier(p_property.type);
 		if ((p_property.type == Variant::CALLABLE || p_property.type == Variant::SIGNAL) &&
 				p_property.hint == PROPERTY_HINT_CALLABLE_TYPE && !p_property.hint_string.is_empty()) {
 			// The hint string is only the signature suffix; the leading type name is implied by the

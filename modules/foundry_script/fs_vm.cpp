@@ -192,6 +192,13 @@ static ContainerType _container_type_from_descriptor(const Variant &p_descriptor
 	// A `Type[T]` node tests class handles rather than instances at every nesting depth, so the flag
 	// is read back per node instead of only at the descriptor root.
 	type.is_type_handle = descriptor.get("is_type_handle", false);
+	// A declared integer width is read back per node too. An out-of-range byte in untrusted compiled
+	// data leaves the slot unconstrained rather than describing a range that does not exist.
+	const int64_t numeric_type_id = descriptor.get("numeric_type", int64_t(NumericType::NONE));
+	if (numeric_type_id > int64_t(NumericType::NONE) && numeric_type_id < int64_t(NumericType::MAX) &&
+			numeric_type_is_carrier_consistent(NumericType(numeric_type_id), type.builtin_type)) {
+		type.numeric_type = NumericType(numeric_type_id);
+	}
 
 	Array element_types = descriptor.get("element_types", Array());
 	for (int i = 0; i < element_types.size(); i++) {

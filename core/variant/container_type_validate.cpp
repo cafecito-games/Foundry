@@ -560,7 +560,7 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 	// width constraint accepts every value its carrier holds and can therefore alias any width on that
 	// carrier; two different declared widths describe values the other would reject, so `int` and `long`
 	// containers stay invariant.
-	if (numeric_type != NumericType::NONE && numeric_type != p_type.numeric_type) {
+	if (!numeric_type_can_alias(numeric_type, p_type.numeric_type)) {
 		return false;
 	}
 

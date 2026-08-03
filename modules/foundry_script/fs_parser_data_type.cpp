@@ -150,6 +150,19 @@ String FSParser::DataType::to_string() const {
 				result = vformat("Dictionary[%s, %s]", get_container_element_type_or_variant(0).to_string(), get_container_element_type_or_variant(1).to_string());
 				break;
 			}
+			if (numeric_type != NumericType::NONE && numeric_type_is_carrier_consistent(numeric_type, builtin_type) &&
+					numeric_type != numeric_type_wide_for_carrier(builtin_type)) {
+				// A width narrower than its carrier names itself, since `Variant::get_type_name()` knows
+				// only the carrier. The diagnostic name is used rather than the source spelling because no
+				// width has a source spelling yet: the built-in registry still resolves `int` and `uint` to
+				// the full 64-bit carrier, and the narrow spellings arrive with that registry change. A
+				// rendered type flows into refactor output and hovers, so a name that cannot be parsed back
+				// must not appear here.
+				result = numeric_type_name(numeric_type);
+				break;
+			}
+			// The carrier-wide descriptor is exactly what the carrier already means, including for a type
+			// reconstructed at a width-erased boundary, so it keeps the carrier's spelling.
 			result = Variant::get_type_name(builtin_type);
 			break;
 		case NATIVE:
@@ -597,6 +610,12 @@ PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 
 	switch (kind) {
 		case BUILTIN:
+			// Approved width-erasure boundary: a plain PropertyInfo transports the carrier only, so an
+			// integer slot encodes as `INT`/`UINT` and its `numeric_type` is dropped here. The same
+			// erasure applies to the array/dictionary element hints written below, which spell elements
+			// with `Variant::get_type_name()`. Rich compiled Foundry metadata is the authoritative
+			// channel for width; anything decoded back from a PropertyInfo alone widens to the carrier's
+			// 64-bit descriptor (see FSAnalyzer::type_from_property).
 			result.type = builtin_type;
 			if ((builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) && has_explicit_method_signature && _signature_type_is_encodable(*this)) {
 				result.hint = PROPERTY_HINT_CALLABLE_TYPE;
@@ -898,7 +917,17 @@ bool FSParser::DataType::can_reference(const FSParser::DataType &p_other) const 
 
 	if (builtin_type != p_other.builtin_type) {
 		return false;
-	} else if (builtin_type != Variant::OBJECT) {
+	}
+
+	// Referencing hands out the value without re-validating it against this slot's range, so it must
+	// not be more permissive than an assignment through the slot would be. A slot that declared no
+	// width accepts everything its carrier holds and can alias any width; a declared width cannot
+	// alias a different one, nor an unconstrained slot that may hold values outside its range.
+	if (!numeric_type_can_alias(numeric_type, p_other.numeric_type)) {
+		return false;
+	}
+
+	if (builtin_type != Variant::OBJECT) {
 		return true;
 	}
 

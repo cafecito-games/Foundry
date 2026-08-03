@@ -47,6 +47,7 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/list.h"
 #include "core/templates/vector.h"
+#include "core/variant/numeric_type.h"
 #include "core/variant/variant.h"
 
 #ifdef DEBUG_ENABLED
@@ -155,6 +156,11 @@ public:
 		bool is_nullable = false;
 
 		Variant::Type builtin_type = Variant::NIL;
+		// Exact width and signedness of an integer slot, independent of `kind`: every integer type is
+		// still `BUILTIN` carrying `INT` or `UINT` plus this descriptor. `NONE` means the slot declared
+		// no width, which is what the legacy `int`/`uint` spellings still produce, so an undeclared slot
+		// behaves exactly as it did before descriptors existed.
+		NumericType numeric_type = NumericType::NONE;
 		StringName native_type;
 		StringName enum_type; // Enum name or the value name in an enum.
 		Ref<Script> script_type;
@@ -324,7 +330,9 @@ public:
 					equal = true; // All variants are the same.
 					break;
 				case BUILTIN:
-					equal = builtin_type == p_other.builtin_type && container_element_types == p_other.container_element_types;
+					equal = builtin_type == p_other.builtin_type &&
+							numeric_types_agree(numeric_type, p_other.numeric_type) &&
+							container_element_types == p_other.container_element_types;
 					break;
 				case NATIVE:
 					// Coroutine[T] is a NATIVE skin over FSFunctionState whose identity also
@@ -387,6 +395,7 @@ public:
 			is_coroutine = p_other.is_coroutine;
 			is_nullable = p_other.is_nullable;
 			builtin_type = p_other.builtin_type;
+			numeric_type = p_other.numeric_type;
 			native_type = p_other.native_type;
 			enum_type = p_other.enum_type;
 			script_type = p_other.script_type;
