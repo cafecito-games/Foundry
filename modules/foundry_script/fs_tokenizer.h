@@ -33,6 +33,7 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/list.h"
 #include "core/templates/vector.h"
+#include "core/variant/numeric_type.h"
 #include "core/variant/variant.h"
 
 class FSTokenizer {
@@ -173,6 +174,11 @@ public:
 
 		Type type = EMPTY;
 		Variant literal;
+		// Exact width and signedness an integer literal declared, either through an explicit `U`/`L`/`UL`
+		// suffix or through the range the unsuffixed magnitude falls in. `NONE` on every other token, and
+		// on non-integer literals, because they constrain no width. The Variant carrier alone cannot tell
+		// an `int` literal from a `long` one, so this is the only place the choice survives.
+		NumericType numeric_type = NumericType::NONE;
 		int start_line = 0, end_line = 0, start_column = 0, end_column = 0;
 		int cursor_position = -1;
 		CursorPlace cursor_place = CURSOR_NONE;
@@ -297,6 +303,7 @@ class FSTokenizerText : public FSTokenizer {
 	Token make_paren_error(char32_t p_paren);
 	Token make_token(Token::Type p_type);
 	Token make_literal(const Variant &p_literal);
+	Token make_numeric_literal(const Variant &p_literal, NumericType p_numeric_type);
 	Token make_identifier(const StringName &p_identifier);
 	Token check_vcs_marker(char32_t p_test, Token::Type p_double_type);
 	void push_paren(char32_t p_char);

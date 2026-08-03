@@ -39,7 +39,10 @@ public:
 		COMPRESS_ZSTD,
 	};
 
-	static constexpr uint32_t TOKENIZER_VERSION = 107;
+	// Layout version of the token buffer only. It is deliberately independent of the compiled
+	// bytecode format version: the two formats change for different reasons and are read by
+	// different loaders.
+	static constexpr uint32_t TOKENIZER_VERSION = 108;
 	static constexpr uint32_t TOKEN_BYTE_MASK = 0x80;
 	static constexpr uint32_t TOKEN_BITS = 8;
 	static constexpr uint32_t TOKEN_MASK = (1 << (TOKEN_BITS - 1)) - 1;
@@ -63,7 +66,26 @@ public:
 	HashMap<int, CommentData> dummy;
 #endif // TOOLS_ENABLED
 
-	static int _token_to_binary(const Token &p_token, Vector<uint8_t> &r_buffer, int p_start, HashMap<StringName, uint32_t> &r_identifiers_map, HashMap<Variant, uint32_t> &r_constants_map);
+	// Pool key for literal constants. Plain Variant equality and hashing are cross-carrier, so `1` and
+	// `1U` would otherwise share one pool entry and the second literal encoded would read back with the
+	// first one's carrier. Pooling per carrier keeps every literal exactly as it was written.
+	struct ConstantKey {
+		Variant value;
+
+		bool operator==(const ConstantKey &p_other) const {
+			return value.get_type() == p_other.value.get_type() && value == p_other.value;
+		}
+	};
+
+	struct ConstantKeyHasher {
+		static _FORCE_INLINE_ uint32_t hash(const ConstantKey &p_key) {
+			return hash_murmur3_one_32(uint32_t(p_key.value.get_type()), p_key.value.hash());
+		}
+	};
+
+	using ConstantMap = HashMap<ConstantKey, uint32_t, ConstantKeyHasher>;
+
+	static int _token_to_binary(const Token &p_token, Vector<uint8_t> &r_buffer, int p_start, HashMap<StringName, uint32_t> &r_identifiers_map, ConstantMap &r_constants_map);
 	Token _binary_to_token(const uint8_t *p_buffer);
 
 public:

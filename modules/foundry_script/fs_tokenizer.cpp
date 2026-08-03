@@ -459,6 +459,12 @@ FSTokenizer::Token FSTokenizerText::make_literal(const Variant &p_literal) {
 	return token;
 }
 
+FSTokenizer::Token FSTokenizerText::make_numeric_literal(const Variant &p_literal, NumericType p_numeric_type) {
+	Token token = make_literal(p_literal);
+	token.numeric_type = p_numeric_type;
+	return token;
+}
+
 FSTokenizer::Token FSTokenizerText::make_identifier(const StringName &p_identifier) {
 	Token identifier = make_token(Token::IDENTIFIER);
 	identifier.literal = p_identifier;
@@ -754,6 +760,55 @@ void FSTokenizerText::newline(bool p_make_token) {
 	column = 1;
 }
 
+// The canonical uppercase spelling of an integer suffix, or an empty string when the run of letters
+// after a numeric body is not a suffix at all. Only the four case-insensitive spellings of `U`, `L`,
+// `UL`, and `LU` are suffixes: anything else stays an ordinary "letter after a number" error, so
+// `1abc` keeps reporting invalid notation instead of proposing a replacement it cannot justify.
+static String _canonical_integer_suffix(const String &p_suffix) {
+	const String upper = p_suffix.to_upper();
+	if (upper == "U" || upper == "L" || upper == "UL") {
+		return upper;
+	}
+	if (upper == "LU") {
+		return "UL";
+	}
+	return String();
+}
+
+static NumericType _numeric_type_for_integer_suffix(const String &p_canonical_suffix) {
+	if (p_canonical_suffix == "U") {
+		return NumericType::UINT32;
+	}
+	if (p_canonical_suffix == "L") {
+		return NumericType::INT64;
+	}
+	return NumericType::UINT64;
+}
+
+// Whether an unsigned magnitude with the given sign is inside a descriptor's inclusive range.
+// The magnitude is kept unsigned throughout so a literal like `-9223372036854775808` (whose
+// magnitude is one past `INT64_MAX`) and `18446744073709551615UL` are both judged exactly.
+static bool _magnitude_fits_numeric_type(NumericType p_numeric_type, bool p_is_negative, uint64_t p_magnitude) {
+	if (numeric_type_is_unsigned(p_numeric_type)) {
+		return !p_is_negative && p_magnitude <= numeric_type_maximum(p_numeric_type);
+	}
+	if (!p_is_negative) {
+		return p_magnitude <= numeric_type_maximum(p_numeric_type);
+	}
+	const int64_t minimum = numeric_type_minimum(p_numeric_type);
+	return p_magnitude <= uint64_t(-(minimum + 1)) + 1;
+}
+
+static uint64_t _numeric_digit_value(char32_t p_character) {
+	if (is_digit(p_character)) {
+		return uint64_t(p_character - '0');
+	}
+	if (p_character >= 'a' && p_character <= 'f') {
+		return uint64_t(p_character - 'a') + 10;
+	}
+	return uint64_t(p_character - 'A') + 10;
+}
+
 FSTokenizer::Token FSTokenizerText::number() {
 	int base = 10;
 	bool has_decimal = false;
@@ -907,6 +962,27 @@ FSTokenizer::Token FSTokenizerText::number() {
 		return error;
 	}
 
+	// Integer suffix. The numeric body ends here, so remember where it stops before consuming any
+	// suffix letters: the literal's value and the replacement a diagnostic proposes both come from
+	// the body text alone. A suffix is only meaningful on an integer, so a tuple index, a fractional
+	// part, or an exponent leaves the letters to the "letter after a number" error below.
+	const char32_t *body_end = _current;
+	String suffix_text;
+	String canonical_suffix;
+	if (!is_tuple_index && !has_decimal && !has_exponent && is_unicode_identifier_start(_peek())) {
+		int suffix_length = 0;
+		while (is_unicode_identifier_continue(_peek(suffix_length))) {
+			suffix_text += String::chr(_peek(suffix_length));
+			suffix_length++;
+		}
+		canonical_suffix = _canonical_integer_suffix(suffix_text);
+		if (!canonical_suffix.is_empty()) {
+			for (int i = 0; i < suffix_length; i++) {
+				_advance();
+			}
+		}
+	}
+
 	// Detect extra decimal point.
 	if (is_tuple_index && (is_unicode_identifier_start(_peek()) || is_unicode_identifier_continue(_peek()))) {
 		// A tuple index is a bare decimal integer; no exponent, prefix, or suffix is allowed.
@@ -923,24 +999,75 @@ FSTokenizer::Token FSTokenizerText::number() {
 		push_error("Invalid numeric notation.");
 	}
 
-	// Create a string with the whole number.
-	int len = _current - _start;
-	String number = String::utf32(Span(_start, len)).remove_char('_');
+	// Create a string with the numeric body, excluding any suffix that was consumed above.
+	int len = body_end - _start;
+	const String body_text = String::utf32(Span(_start, len));
+	String number = body_text.remove_char('_');
 
-	// Convert to the appropriate literal type.
-	if (base == 16) {
-		int64_t value = number.hex_to_int();
-		return make_literal(value);
-	} else if (base == 2) {
-		int64_t value = number.bin_to_int();
-		return make_literal(value);
-	} else if (has_decimal || has_exponent) {
+	if (has_decimal || has_exponent) {
 		double value = number.to_float();
 		return make_literal(value);
-	} else {
-		int64_t value = number.to_int();
-		return make_literal(value);
 	}
+
+	// Accumulate the magnitude in unsigned arithmetic rather than routing it through `int64_t`, so a
+	// `UL` literal reaches `UINT64_MAX` and an out-of-range literal is diagnosed instead of silently
+	// wrapping or saturating into a value the source never wrote.
+	bool is_negative = false;
+	int digit_index = 0;
+	if (number[0] == '-') {
+		is_negative = true;
+		digit_index = 1;
+	} else if (number[0] == '+') {
+		digit_index = 1;
+	}
+	if (base != 10) {
+		digit_index += 2; // Skip the `0x`/`0b` prefix.
+	}
+
+	uint64_t magnitude = 0;
+	bool magnitude_overflowed = false;
+	for (; digit_index < number.length(); digit_index++) {
+		const uint64_t digit = _numeric_digit_value(number[digit_index]);
+		if (magnitude > (UINT64_MAX - digit) / uint64_t(base)) {
+			magnitude_overflowed = true;
+			break;
+		}
+		magnitude = magnitude * uint64_t(base) + digit;
+	}
+
+	NumericType numeric_type = NumericType::NONE;
+	if (!canonical_suffix.is_empty()) {
+		if (suffix_text != canonical_suffix) {
+			// The suffix set is uppercase-only and ordered, so every other spelling has exactly one
+			// intended replacement. Name it so the fix is mechanical rather than a guess.
+			return make_error(vformat(R"(Invalid integer suffix "%s". Integer suffixes are uppercase "U", "L", or "UL"; write "%s%s".)", suffix_text, body_text, canonical_suffix));
+		}
+		numeric_type = _numeric_type_for_integer_suffix(canonical_suffix);
+		if (is_negative && numeric_type_is_unsigned(numeric_type)) {
+			return make_error(vformat(R"(Cannot write a negative "%s" literal: the "%s" suffix selects an unsigned type.)", numeric_type_public_name(numeric_type), canonical_suffix));
+		}
+		if (magnitude_overflowed || !_magnitude_fits_numeric_type(numeric_type, is_negative, magnitude)) {
+			// A suffix selects the type outright; it never widens on overflow and never reinterprets
+			// the bit pattern, so a value outside the selected range is an error.
+			return make_error(vformat(R"(Integer literal is out of range for "%s".)", numeric_type_public_name(numeric_type)));
+		}
+	} else if (magnitude_overflowed || !_magnitude_fits_numeric_type(NumericType::INT64, is_negative, magnitude)) {
+		if (is_negative) {
+			return make_error(R"(Integer literal is out of range for "long", the widest signed type.)");
+		}
+		return make_error(R"(Integer literal is out of range for "long"; add the "UL" suffix to write a "ulong".)");
+	} else {
+		// An unsuffixed literal takes the narrowest signed type that represents it exactly.
+		numeric_type = _magnitude_fits_numeric_type(NumericType::INT32, is_negative, magnitude) ? NumericType::INT32 : NumericType::INT64;
+	}
+
+	if (numeric_type_is_unsigned(numeric_type)) {
+		return make_numeric_literal(magnitude, numeric_type);
+	}
+	// Negating through the unsigned magnitude keeps `INT64_MIN` representable, which negating the
+	// signed value would not.
+	const int64_t signed_value = is_negative ? int64_t(uint64_t(0) - magnitude) : int64_t(magnitude);
+	return make_numeric_literal(signed_value, numeric_type);
 }
 
 FSTokenizer::Token FSTokenizerText::string() {

@@ -179,7 +179,11 @@ value/type.
 #### 2.6.1 Numbers
 
 ```ebnf
-number       = int_dec | int_hex | int_bin | float ;
+number       = integer | float ;
+
+integer      = integer_body, [ integer_suffix ] ;
+integer_body = int_dec | int_hex | int_bin ;
+integer_suffix = "U" | "L" | "UL" ;    (* uppercase only; "LU" is not a suffix *)
 
 int_dec      = digit, { digit | "_" } ;
 int_hex      = "0", ("x" | "X"), hex_digit, { hex_digit | "_" } ;
@@ -204,9 +208,33 @@ Rules and constraints enforced by the tokenizer:
   a decimal point or exponent.
 - A decimal point may not appear twice; `..` is tokenized as the range/rest token, not a
   second decimal point, so `1..2` is `1`, `..`, `2`.
-- A letter immediately following a number is an "invalid numeric notation" error.
+- A letter immediately following a number is an "invalid numeric notation" error, except for
+  the integer suffixes below.
 - Decimal literals with a `.` or exponent become floats; otherwise integers. Hex/bin become
   integers.
+- An integer suffix applies equally to decimal, hexadecimal, binary, and underscore-separated
+  literals, and selects the literal's type: `U` is `uint`, `L` is `long`, and `UL` is `ulong`.
+  An unsuffixed integer is `int` when its value fits `int`, otherwise `long`.
+
+  ```foundry
+  42       # int
+  42U      # uint
+  42L      # long
+  42UL     # ulong
+  0xFFFFU  # uint
+  0b1010UL # ulong
+  1_000L   # long
+  ```
+
+- Suffixes are **uppercase only** and ordered `U` before `L`. `1u`, `1l`, `1uL`, `1Ul`, and
+  `1LU` are all errors naming the exact canonical replacement (`1U`, `1L`, `1UL`, `1UL`, and
+  `1UL`). Any other trailing letters remain an "invalid numeric notation" error.
+- A suffix selects the type outright: it never widens on overflow and never reinterprets the
+  bit pattern. A literal outside the suffixed type's inclusive range is an error, as is a
+  negative literal with `U` or `UL`. An unsuffixed literal above the `long` range is an error
+  that names the `UL` suffix.
+- A suffix is not allowed on a float literal (one with a decimal point or exponent) or on a
+  tuple index.
 - A digit is only the start of a number when the preceding token cannot end a value
   (`Token::can_precede_bin_op()` is false), mirroring the `+`/`-` sign-number rule. After a
   value token (`IDENTIFIER`, a literal, `)`, `]`, or a numeric constant keyword), `.` followed
@@ -1237,6 +1265,9 @@ type_handle_arg   = "[", type, "]" ;                 (* exactly one *)
 Details (`parse_type`):
 
 - A trailing `?` marks the type **nullable** (`Node?`, `Array[int]?`, `Callable[...]?`).
+- **Integer type names** are exactly `int`, `uint`, `long`, and `ulong`. They are ordinary
+  built-in type names rather than keywords, so they are resolved in type position only and
+  remain usable as identifiers elsewhere. No other integer spelling exists.
 - **Typed collections**: `Array[int]`, `Dictionary[String, int]`, etc. — one or more
   comma-separated element types. `void` is not allowed as an element type.
 - **`Callable[[P1, P2], R]`** — a parameter-type list in inner brackets, a comma, then

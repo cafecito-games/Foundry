@@ -4786,6 +4786,7 @@ FSParser::ExpressionNode *FSParser::parse_literal(ExpressionNode *p_previous_ope
 
 	LiteralNode *literal = alloc_node<LiteralNode>();
 	literal->value = previous.literal;
+	literal->numeric_type = previous.numeric_type;
 	reset_extents(literal, p_previous_operand);
 	update_extents(literal);
 	make_completion_context(COMPLETION_NONE, literal, -1);

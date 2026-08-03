@@ -5239,7 +5239,9 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			String out;
 			RefactorResult r = run_insert_cast(source, 1, 6, out);
 			REQUIRE(r.ok);
-			CHECK(out.contains("absi(value as int)"));
+			// A native parameter arrives through a plain PropertyInfo, which transports the carrier
+			// only, so the width the cast can prove is the wide one and the inserted name says so.
+			CHECK(out.contains("absi(value as long)"));
 		}
 		SUBCASE("casts a call argument inside a lambda body") {
 			const String source =

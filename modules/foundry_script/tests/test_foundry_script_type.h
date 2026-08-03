@@ -4160,11 +4160,12 @@ TEST_CASE("[Modules][FoundryScript][NumericType] Two widths on one carrier are o
 	CHECK(narrow == copied);
 	CHECK(narrow != wide);
 
-	// `to_string()` is the source spelling and stays carrier-only: no width has a name the built-in
-	// registry can resolve yet, and a refactoring writes this result straight back into a script.
+	// `to_string()` is the source spelling, and every declared width now has a name the built-in
+	// registry resolves, so a refactoring can write this result straight back into a script.
 	CHECK(narrow.to_string() == "int");
-	CHECK(wide.to_string() == "int");
+	CHECK(wide.to_string() == "long");
 	CHECK(make_numeric_type(Variant::UINT, NumericType::UINT32).to_string() == "uint");
+	CHECK(make_numeric_type(Variant::UINT, NumericType::UINT64).to_string() == "ulong");
 
 	// Width-aware naming lives on the container-type description, which diagnostics read.
 	CHECK(TestFSAnalyzerAccessor::container_type_of(narrow).get_type_name() == "int");
@@ -4238,7 +4239,7 @@ TEST_CASE("[Modules][FoundryScript][NumericType] PropertyInfo erases width and d
 	CHECK(decoded_narrow.kind == FSParser::DataType::BUILTIN);
 	CHECK(decoded_narrow.builtin_type == Variant::INT);
 	CHECK(decoded_narrow.numeric_type == NumericType::INT64);
-	CHECK(decoded_narrow.to_string() == "int");
+	CHECK(decoded_narrow.to_string() == "long");
 
 	const PropertyInfo unsigned_info = make_numeric_type(Variant::UINT, NumericType::UINT32).to_property_info("value");
 	CHECK(unsigned_info.type == Variant::UINT);

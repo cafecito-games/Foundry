@@ -1909,10 +1909,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				return bad_type;
 			}
 			result.kind = FSParser::DataType::VARIANT;
-		} else if (FSParser::get_builtin_type(first) < Variant::VARIANT_MAX || first == SNAME("AsyncCallable")) {
+		} else if (FSParser::get_builtin_data_type(first).is_valid() || first == SNAME("AsyncCallable")) {
 			// Built-in types. AsyncCallable is an async-marked alias of Callable.
 			const bool is_async_callable = first == SNAME("AsyncCallable");
-			const Variant::Type builtin_type = is_async_callable ? Variant::CALLABLE : FSParser::get_builtin_type(first);
+			const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(first);
+			const Variant::Type builtin_type = is_async_callable ? Variant::CALLABLE : builtin_data_type.builtin_type;
 
 			if (p_type->type_chain.size() == 2) {
 				// May be nested enum.
@@ -1931,6 +1932,14 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 
 			result.kind = FSParser::DataType::BUILTIN;
 			result.builtin_type = builtin_type;
+			// `int` keeps an unconstrained width for now: every native integer boundary still decodes
+			// wide, so pinning the 32-bit constraint here before the promotion classifier (#1566) and the
+			// native metadata mapping (#1570) exist would reject correct code rather than narrow it. The
+			// three new spellings have no such history, so they carry their exact width immediately.
+			const bool width_constraint_deferred = builtin_data_type.numeric_type == NumericType::INT32;
+			if (!width_constraint_deferred) {
+				result.numeric_type = builtin_data_type.numeric_type;
+			}
 
 			if (builtin_type == Variant::CALLABLE || builtin_type == Variant::SIGNAL) {
 				result.signature_is_async = is_async_callable;
