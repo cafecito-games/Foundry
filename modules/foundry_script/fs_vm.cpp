@@ -1125,11 +1125,19 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		uint8_t *aptr = (uint8_t *)alloca(alloca_size);
 		stack = (Variant *)aptr;
 
+		// The reserved addresses are constructed further below, so a rejected argument must unwind only
+		// the stack window above them. `p_constructed_end` is one past the last constructed slot.
+		auto destroy_partial_stack = [&](int p_constructed_end) {
+			for (int slot = FIXED_ADDRESSES_MAX; slot < p_constructed_end; slot++) {
+				stack[slot].~Variant();
+			}
+		};
+
 		const int non_vararg_arg_count = MIN(p_argcount, _argument_count);
 		for (int i = 0; i < non_vararg_arg_count; i++) {
-			// A failed conversion leaves the slot NIL, so nothing constructed here needs unwinding.
 			memnew_placement(&stack[i + FIXED_ADDRESSES_MAX], Variant);
 			if (!_convert_call_argument(*p_args[i], argument_types[i], stack[i + FIXED_ADDRESSES_MAX], r_err, i)) {
+				destroy_partial_stack(i + FIXED_ADDRESSES_MAX + 1);
 				call_depth--;
 				return _get_default_variant_for_data_type(return_type);
 			}
@@ -1158,6 +1166,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				for (int i = 0; i < rest_count; i++) {
 					Variant value;
 					if (!_convert_call_argument(*p_args[_argument_count + i], element_data, value, r_err, _argument_count + i)) {
+						destroy_partial_stack(_stack_size);
 						call_depth--;
 						return _get_default_variant_for_data_type(return_type);
 					}

@@ -3027,4 +3027,56 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rest argument diagnost
 	CHECK(errors.has(R"*(Invalid argument for "collect()" function: argument 3 should be "int" but is "String".)*"));
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An exact typed rest override is accepted") {
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not change the rest element type") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[String]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not drop a typed rest tail") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not add a typed rest tail to a gradual parent") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[int]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
 } // namespace FSTests

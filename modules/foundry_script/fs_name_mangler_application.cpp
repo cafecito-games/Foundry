@@ -122,6 +122,7 @@ struct FSNameManglerApplication::Transaction::Data {
 
 		StringName name;
 		Vector<FSDataType> argument_types;
+		FSDataType rest_parameter_type;
 		FSDataType return_type;
 		MethodInfo method_info;
 		Vector<StringName> global_names;
@@ -640,6 +641,7 @@ struct FSNameManglerApplication::Transaction::Data {
 				(p_owner_name != StringName() && rename_map.has(p_owner_name));
 		snapshot.name = p_function->name;
 		snapshot.argument_types = p_function->argument_types;
+		snapshot.rest_parameter_type = p_function->rest_parameter_type;
 		snapshot.return_type = p_function->return_type;
 		snapshot.method_info = p_function->method_info;
 		snapshot.global_names = p_function->global_names;
@@ -2004,6 +2006,12 @@ struct FSNameManglerApplication::Transaction::Data {
 					r_surface = "function argument type";
 					return true;
 				}
+			}
+			if (data_type_contains_name(
+						snapshot.rest_parameter_type, p_name,
+						visited_external_scripts)) {
+				r_surface = "function rest parameter type";
+				return true;
 			}
 			if (data_type_contains_name(
 						snapshot.return_type, p_name,
@@ -3603,6 +3611,10 @@ struct FSNameManglerApplication::Transaction::Data {
 					return false;
 				}
 			}
+			if (!validate_data_type_closure(snapshot.rest_parameter_type, referring,
+						"function rest parameter type", p_roots, r_diagnostics)) {
+				return false;
+			}
 			if (!validate_data_type_closure(snapshot.return_type, referring,
 						"function return type", p_roots, r_diagnostics)) {
 				return false;
@@ -3942,6 +3954,8 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (FSDataType &argument_type : function->argument_types) {
 			rewrite_data_type(argument_type);
 		}
+		function->rest_parameter_type = snapshot.rest_parameter_type;
+		rewrite_data_type(function->rest_parameter_type);
 		function->return_type = snapshot.return_type;
 		rewrite_data_type(function->return_type);
 		function->method_info = snapshot.method_info;
@@ -3979,6 +3993,7 @@ struct FSNameManglerApplication::Transaction::Data {
 		for (const FunctionSnapshot &snapshot : function_snapshots) {
 			snapshot.function->name = snapshot.name;
 			snapshot.function->argument_types = snapshot.argument_types;
+			snapshot.function->rest_parameter_type = snapshot.rest_parameter_type;
 			snapshot.function->return_type = snapshot.return_type;
 			snapshot.function->method_info = snapshot.method_info;
 			snapshot.function->global_names = snapshot.global_names;

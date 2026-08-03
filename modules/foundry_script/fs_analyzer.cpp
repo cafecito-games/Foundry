@@ -3511,7 +3511,8 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 		FSParser::FunctionNode *parent_function = nullptr;
 		FSParser::ClassNode *parent_function_class = nullptr;
 		const FSParser::DataType override_self_type = _self_type_for_class(parser->current_class);
-		const bool has_parent_signature = !p_is_lambda && !is_enum_function && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base, nullptr, &parent_function, &parent_function_class, &override_self_type);
+		FSParser::DataType parent_rest_type;
+		const bool has_parent_signature = !p_is_lambda && !is_enum_function && get_function_signature(p_function, false, base_type, function_name, parent_return_type, parameters_types, default_par_count, method_flags, &native_base, nullptr, &parent_function, &parent_function_class, &override_self_type, &parent_rest_type);
 
 		// get_function_signature reports an async parent's return as Coroutine[T], but a function's own
 		// declared return type is the raw T. Async-ness is checked separately via METHOD_FLAG_ASYNC, so
@@ -3588,6 +3589,19 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 						valid = valid && is_type_compatible(current_par_type, parent_par_type);
 					}
 				}
+			}
+
+			// A typed rest tail is an exact contract between a base and its override: every surplus
+			// argument a polymorphic call may pass is checked against the base's element type, so an
+			// override that narrows it, widens it, or pairs it with a gradual tail would accept a
+			// different set of trailing arguments than the call site was checked against.
+			const FSParser::DataType current_rest_type =
+					p_function->is_vararg() ? p_function->rest_parameter->get_datatype() : FSParser::DataType();
+			const bool parent_rest_is_typed = rest_parameter_type_is_narrowing(parent_rest_type);
+			const bool current_rest_is_typed = rest_parameter_type_is_narrowing(current_rest_type);
+			if (parent_rest_is_typed || current_rest_is_typed) {
+				valid = valid && parent_rest_is_typed && current_rest_is_typed &&
+						parent_rest_type.get_container_element_type(0) == current_rest_type.get_container_element_type(0);
 			}
 
 			if (!valid_coroutine_override) {
