@@ -12367,7 +12367,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			// at arity `r` passes `r + <values bound here>` arguments on to the base, so every extra
 			// allowed count survives shifted down by that many. Dropping them would reject valid calls.
 			// The values bound here fill different parameters at each of those arities than they do at
-			// the highest one, so each extra arity is kept only while they still fit.
+			// the highest one, so each extra arity is kept only while they still fit. As with the
+			// default-shift path, a proven mismatch is what drops an arity; an unknown or untyped bound
+			// value stays gradual and keeps it alive.
 			auto preserve_extra_allowed_argument_counts = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments) {
 				for (int extra_allowed_argument_count : p_base_type.method_extra_allowed_argument_counts) {
 					const int remaining_argument_count = extra_allowed_argument_count - p_bound_arguments.size();
@@ -12377,11 +12379,52 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 
 					bool bound_arguments_fit_extra_arity = true;
 					for (int i = 0; i < p_bound_arguments.size() && bound_arguments_fit_extra_arity; i++) {
-						bound_arguments_fit_extra_arity = can_bound_argument_fill_parameter(
+						bound_arguments_fit_extra_arity = !bound_argument_conflicts_with(
 								p_bound_arguments[i], p_base_type.method_parameter_types[remaining_argument_count + i]);
 					}
 					if (bound_arguments_fit_extra_arity) {
 						r_return_type.method_extra_allowed_argument_counts.push_back(remaining_argument_count);
+					}
+				}
+			};
+
+			// A fixed-arity base's own trailing default parameters are independent of the values
+			// bound here: bound values fill the last `bind_argument_count` positions only when the
+			// call supplies every remaining parameter, but each of the base's `D` defaults lets the
+			// call omit one more, sliding the bound values one parameter earlier each time. The
+			// minimum result arity is therefore `n - D - bind_argument_count`, not `n - D`, but each
+			// slide is only valid while the bound values still fit the parameter they land on, so
+			// every shift is re-checked. As with the extra-arity path, a shift is only dropped on a
+			// proven mismatch: an unknown or untyped bound value stays gradual and keeps the shift
+			// alive, so it is checked with `bound_argument_conflicts_with` rather than the stricter
+			// `can_bound_argument_fill_parameter`, which would otherwise narrow what a dynamically
+			// typed bound value accepts. A preceding unbind() discards its trailing bound values
+			// before they ever reach the target, at every arity, so only the values that still
+			// reach it participate in the shift check; the discarded tail cannot prove a mismatch
+			// against a parameter it never fills. The contiguous run of successful shifts starting
+			// at the base arity becomes the result's own default count; any further shifts that
+			// succeed past a gap survive as extra allowed argument counts, matching how
+			// non-contiguous arities are represented elsewhere.
+			auto default_survival_for_bind = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments,
+										  int p_checked_bind_start, int p_remaining_argument_count,
+										  int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
+				r_result_default_arg_count = 0;
+				const int max_shift = MIN(int(p_base_type.method_info.default_arguments.size()), p_checked_bind_start);
+				const int reaching_bound_argument_count = bound_arguments_reaching_target(p_bound_arguments);
+				for (int shift = 1; shift <= max_shift; shift++) {
+					const int shifted_start = p_checked_bind_start - shift;
+					bool bound_arguments_fit_shift = true;
+					for (int i = 0; i < reaching_bound_argument_count && bound_arguments_fit_shift; i++) {
+						bound_arguments_fit_shift = !bound_argument_conflicts_with(
+								p_bound_arguments[i], p_base_type.method_parameter_types[shifted_start + i]);
+					}
+					if (!bound_arguments_fit_shift) {
+						continue;
+					}
+					if (shift == r_result_default_arg_count + 1) {
+						r_result_default_arg_count = shift;
+					} else {
+						r_extra_allowed_argument_counts.push_back(p_remaining_argument_count - shift);
 					}
 				}
 			};
@@ -12464,11 +12507,19 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 							remaining_parameter_types.push_back(p_base_type.method_parameter_types[i]);
 						}
 
-						const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
-						r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
 						Vector<const FSParser::ExpressionNode *> bound_arguments;
 						for (FSParser::ExpressionNode *argument : call->arguments) {
 							bound_arguments.push_back(argument);
+						}
+
+						int remaining_default_arg_count = 0;
+						Vector<int> default_survival_extra_argument_counts;
+						default_survival_for_bind(bound_arguments, checked_bind_start, remaining_argument_count,
+								remaining_default_arg_count, default_survival_extra_argument_counts);
+
+						r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+						for (int extra_allowed_argument_count : default_survival_extra_argument_counts) {
+							r_return_type.method_extra_allowed_argument_counts.push_back(extra_allowed_argument_count);
 						}
 						preserve_extra_allowed_argument_counts(bound_arguments);
 					}
@@ -12518,11 +12569,19 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 							remaining_parameter_types.push_back(p_base_type.method_parameter_types[i]);
 						}
 
-						const int remaining_default_arg_count = MAX(p_base_type.method_info.default_arguments.size() - bind_argument_count, 0);
-						r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
 						Vector<const FSParser::ExpressionNode *> bound_arguments;
 						for (FSParser::ExpressionNode *argument : bind_array->elements) {
 							bound_arguments.push_back(argument);
+						}
+
+						int remaining_default_arg_count = 0;
+						Vector<int> default_survival_extra_argument_counts;
+						default_survival_for_bind(bound_arguments, checked_bind_start, remaining_argument_count,
+								remaining_default_arg_count, default_survival_extra_argument_counts);
+
+						r_return_type = call_site_validation.transformed_callable_type(p_base_type, remaining_parameter_types, remaining_default_arg_count, false);
+						for (int extra_allowed_argument_count : default_survival_extra_argument_counts) {
+							r_return_type.method_extra_allowed_argument_counts.push_back(extra_allowed_argument_count);
 						}
 						preserve_extra_allowed_argument_counts(bound_arguments);
 					}
