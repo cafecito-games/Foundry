@@ -3457,6 +3457,35 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Rest variance honors str
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A generic rest tail may absorb a required generic parameter") {
+	// The requirement declares no rest tail, so there is nothing for alpha-equivalence to compare; the
+	// implementation's `Array[U]` tail exactly accepts the required `U` argument.
+	CHECK_EQ(analyze_source(
+					 "trait Sink:\n"
+					 "\tabstract func visit[T](value: T) -> void\n"
+					 "class Impl:\n"
+					 "\tuses Sink\n"
+					 "\tfunc visit[U](...values: Array[U]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An absorbed trait parameter honors strict null checks") {
+	const String source =
+			"trait Sink:\n"
+			"\tabstract func visit(value: Node?) -> void\n"
+			"class Impl:\n"
+			"\tuses Sink\n"
+			"\tfunc visit(...values: Array[Node]) -> void:\n"
+			"\t\tprint(values)\n"
+			"func test() -> void:\n"
+			"\tpass\n";
+	CHECK_EQ(analyze_source(source), OK);
+	CHECK_NE(analyze_source(source, true), OK);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Signal arguments past a fixed prefix reach the rest tail") {
 	CHECK_NE(analyze_source(
 					 "signal three_nodes(first: Node, second: Node, third: Node)\n"
