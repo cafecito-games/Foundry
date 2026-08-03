@@ -394,20 +394,31 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] Ordering compares across carri
 	check_initializer_type(snippet, "ordered", Variant::BOOL, NumericType::NONE);
 }
 
-TEST_CASE("[Modules][FoundryScript][NumericTypes] A folded constant only keeps a width its value fits") {
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A folded constant keeps the width it was checked at") {
 	using namespace TestIntegerPromotion;
 
 	const AnalyzedSnippet snippet(
 			"func test():\n"
 			"\tvar in_range = 2000000000U + 100U\n"
-			"\tvar out_of_range = 4000000000U + 4000000000U\n"
-			"\tprint(in_range, out_of_range)\n");
+			"\tprint(in_range)\n");
 	REQUIRE(snippet.parse_error == OK);
 	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
 
 	check_initializer_type(snippet, "in_range", Variant::UINT, NumericType::UINT32);
-	// The sum leaves uint's range, so it reports what it actually is: a wide unsigned constant.
-	check_initializer_type(snippet, "out_of_range", Variant::UINT, NumericType::UINT64);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A sum that leaves the promoted range is refused") {
+	using namespace TestIntegerPromotion;
+
+	// The operands agree on `uint`, so the sum is a `uint` sum. It does not silently widen to the
+	// carrier that happens to hold it, and it does not wrap the way unsigned C++ arithmetic would.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar out_of_range = 4000000000U + 4000000000U\n"
+			"\tprint(out_of_range)\n");
+	REQUIRE(snippet.parse_error == OK);
+	CHECK(snippet.first_error().contains(R"(The "+" operator overflows "uint")"));
+	CHECK(snippet.first_error().contains("0 to 4294967295"));
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] A width-less constant is still range-checked") {

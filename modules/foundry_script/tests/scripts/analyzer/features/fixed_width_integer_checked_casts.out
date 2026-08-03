@@ -1,0 +1,12 @@
+FS_TEST_OK
+~~ WARNING at line 3: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+~~ WARNING at line 4: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+~~ WARNING at line 5: (NARROWING_CONVERSION) Narrowing conversion (float is converted to int and loses precision).
+3
+-3
+4000000000
+2000000100
+9223372036854775806
+9223372036854775808
+4052555153018976267
+4294967295

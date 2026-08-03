@@ -33,6 +33,7 @@
 #include "foundry_script.h"
 #include "fs_builtin_sources.h"
 #include "fs_builtin_types.h"
+#include "fs_numeric_ops.h"
 #include "fs_script_extensible_native_hooks.h"
 #include "fs_tagged_union.h"
 #include "fs_trait_utils.h"
@@ -508,6 +509,43 @@ static NumericType _integer_operation_numeric_type(
 	}
 
 	return numeric_type_is_carrier_consistent(promoted, p_result_type) ? promoted : NumericType::NONE;
+}
+
+// The width a constant integer operation is checked at, or `NONE` when the operation is not a checked
+// integer one and the generic evaluator decides it.
+//
+// The carrier comes from the values rather than the declared types, because that is the storage the
+// arithmetic actually happens in. Both operands must share it: a mixed signed/unsigned pair has no
+// common integer type, which is the promotion matrix's answer and also the only pair the runtime
+// evaluator has no entry for, so it keeps reporting itself through the existing diagnostic.
+//
+// A shift is not a promotion. Its right operand is a count, not a second range, so the result keeps
+// the left operand's width and the count is validated against that width.
+static NumericType _checked_constant_operation_type(
+		const FSParser::DataType &p_left,
+		const FSParser::DataType &p_right,
+		const Variant &p_left_value,
+		const Variant &p_right_value,
+		Variant::Operator p_operation) {
+	if (!FSNumericOps::handles_operation(p_operation)) {
+		return NumericType::NONE;
+	}
+	const Variant::Type carrier = p_left_value.get_type();
+	if (carrier != Variant::INT && carrier != Variant::UINT) {
+		return NumericType::NONE;
+	}
+	if (p_right_value.get_type() != carrier) {
+		return NumericType::NONE;
+	}
+
+	NumericType declared = NumericType::NONE;
+	if (p_operation == Variant::OP_SHIFT_LEFT || p_operation == Variant::OP_SHIFT_RIGHT) {
+		declared = _operand_numeric_type(p_left);
+	} else if (!FSNumericConversion::promote_integer_pair(_operand_numeric_type(p_left), _operand_numeric_type(p_right), declared)) {
+		return NumericType::NONE;
+	}
+
+	return FSNumericOps::operation_type(declared, carrier);
 }
 
 static String _normalize_bootstrap_path(const String &p_path) {
@@ -5325,12 +5363,30 @@ void FSAnalyzer::update_const_expression_builtin_type(FSParser::ExpressionNode *
 	}
 
 	Variant converted_to;
-	const Variant *converted_from = &p_expression->reduced_value;
-	Callable::CallError call_error;
-	Variant::construct(p_type.builtin_type, converted_to, &converted_from, 1, call_error);
-	if (call_error.error) {
-		push_error(vformat(R"(Failed to convert a value of type "%s" to "%s".)", value_type.to_string(), p_type.to_string()), p_expression);
-		return;
+	// An integer destination is a checked conversion. `Variant::construct()` reinterprets a value the
+	// destination cannot hold -- and converting a non-finite or out-of-range float to an integer is
+	// undefined outright -- so the shared helper decides representability first. Sources it does not
+	// model, such as a string or a boolean, keep the generic construction.
+	const NumericType conversion_target = p_type.kind == FSParser::DataType::BUILTIN
+			? FSNumericOps::operation_type(p_type.numeric_type, p_type.builtin_type)
+			: NumericType::NONE;
+	FSNumericError conversion_error = FSNumericError::UNSUPPORTED;
+	bool converted = false;
+	if (conversion_target != NumericType::NONE) {
+		converted = FSNumericOps::convert(conversion_target, p_expression->reduced_value, converted_to, conversion_error);
+		if (!converted && conversion_error != FSNumericError::UNSUPPORTED) {
+			push_error(FSNumericOps::describe_conversion_error(conversion_error, conversion_target, p_expression->reduced_value, p_type.to_string()), p_expression);
+			return;
+		}
+	}
+	if (!converted) {
+		const Variant *converted_from = &p_expression->reduced_value;
+		Callable::CallError call_error;
+		Variant::construct(p_type.builtin_type, converted_to, &converted_from, 1, call_error);
+		if (call_error.error) {
+			push_error(vformat(R"(Failed to convert a value of type "%s" to "%s".)", value_type.to_string(), p_type.to_string()), p_expression);
+			return;
+		}
 	}
 
 #ifdef DEBUG_ENABLED
@@ -5958,8 +6014,30 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 		p_binary_op->is_constant = true;
 		if (p_binary_op->variant_op < Variant::OP_MAX) {
 			bool valid = false;
-			Variant::evaluate(p_binary_op->variant_op, p_binary_op->left_operand->reduced_value, p_binary_op->right_operand->reduced_value, p_binary_op->reduced_value, valid);
-			if (!valid) {
+			// An integer operation is checked rather than evaluated. The generic evaluator computes on
+			// the wide carrier, which wraps an unsigned result silently and makes a signed one
+			// undefined, so the shared helper decides representability from the operands first and only
+			// then produces a value.
+			const NumericType checked_type = _checked_constant_operation_type(
+					left_type, right_type,
+					p_binary_op->left_operand->reduced_value, p_binary_op->right_operand->reduced_value,
+					p_binary_op->variant_op);
+			FSNumericError numeric_error = FSNumericError::UNSUPPORTED;
+			if (checked_type != NumericType::NONE) {
+				valid = FSNumericOps::binary(p_binary_op->variant_op, checked_type,
+						p_binary_op->left_operand->reduced_value, p_binary_op->right_operand->reduced_value,
+						p_binary_op->reduced_value, numeric_error);
+			}
+			if (!valid && numeric_error != FSNumericError::UNSUPPORTED) {
+				push_error(FSNumericOps::describe_operation_error(numeric_error, p_binary_op->variant_op, checked_type), p_binary_op);
+				// The expression still has the type it was checked at, so give it that type's zero. The
+				// failure is already reported; letting the value stay unset would report it a second
+				// time at whatever slot the expression feeds.
+				p_binary_op->reduced_value = FSNumericOps::zero(checked_type);
+			} else if (!valid) {
+				Variant::evaluate(p_binary_op->variant_op, p_binary_op->left_operand->reduced_value, p_binary_op->right_operand->reduced_value, p_binary_op->reduced_value, valid);
+			}
+			if (!valid && numeric_error == FSNumericError::UNSUPPORTED) {
 				const String promotion_error = make_integer_promotion_error(left_type, right_type, p_binary_op->variant_op);
 				if (p_binary_op->reduced_value.get_type() == Variant::STRING) {
 					push_error(vformat(R"(%s in operator %s.)", p_binary_op->reduced_value, Variant::get_operator_name(p_binary_op->variant_op)), p_binary_op);
@@ -11360,6 +11438,14 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 			if (value_type.is_set() && is_type_compatible(compatibility_type, value_type)) {
 				p_type_test->reduced_value = test_type.builtin_type != Variant::OBJECT || !p_type_test->operand->reduced_value.is_null();
 			}
+			// A type test is a predicate on a value, not a constraint on a slot, so a declared width
+			// narrows it: an integer only "is" a type whose range also holds it. A descriptor that pins
+			// no width tests the carrier alone, which is what `numeric_type_contains()` already means.
+			if (test_type.kind == FSParser::DataType::BUILTIN &&
+					(test_type.builtin_type == Variant::INT || test_type.builtin_type == Variant::UINT) &&
+					bool(p_type_test->reduced_value)) {
+				p_type_test->reduced_value = numeric_type_contains(test_type.numeric_type, p_type_test->operand->reduced_value);
+			}
 		}
 
 		return;
@@ -11428,7 +11514,23 @@ void FSAnalyzer::reduce_unary_op(FSParser::UnaryOpNode *p_unary_op) {
 
 	if (p_unary_op->operand->is_constant) {
 		p_unary_op->is_constant = true;
-		p_unary_op->reduced_value = Variant::evaluate(p_unary_op->variant_op, p_unary_op->operand->reduced_value, Variant());
+		// Negating the minimum of a signed type and complementing a narrow one are both decided by the
+		// declared width, so an integer operand goes through the same checked layer the binary
+		// operators use instead of being evaluated on the wide carrier.
+		const NumericType checked_type = FSNumericOps::operation_type(
+				_operand_numeric_type(operand_type), p_unary_op->operand->reduced_value.get_type());
+		FSNumericError numeric_error = FSNumericError::UNSUPPORTED;
+		bool checked = false;
+		if (checked_type != NumericType::NONE) {
+			checked = FSNumericOps::unary(p_unary_op->variant_op, checked_type,
+					p_unary_op->operand->reduced_value, p_unary_op->reduced_value, numeric_error);
+		}
+		if (!checked && numeric_error != FSNumericError::UNSUPPORTED) {
+			push_error(FSNumericOps::describe_operation_error(numeric_error, p_unary_op->variant_op, checked_type), p_unary_op);
+			p_unary_op->reduced_value = FSNumericOps::zero(checked_type);
+		} else if (!checked) {
+			p_unary_op->reduced_value = Variant::evaluate(p_unary_op->variant_op, p_unary_op->operand->reduced_value, Variant());
+		}
 		result = type_from_variant(p_unary_op->reduced_value, p_unary_op);
 	}
 
