@@ -1881,6 +1881,9 @@ TEST_CASE("[Editor][ToolingHost] A structured project_test restart preserves the
 
 	CHECK_EQ(session.client.lifecycle_events(), expected_known_result_lifecycle());
 	CHECK_EQ(session.client.exit_code_of_first_exited(), 0);
+	drain_pipe(session.host.stdout_pipe, session.host.output);
+	drain_pipe(session.host.stderr_pipe, session.host.output);
+	CHECK_FALSE(session.host.output.contains("Error calling from signal 'stopped'"));
 }
 
 TEST_CASE("[Editor][ToolingHost] A replaced launch cannot leak its result into the next one") {

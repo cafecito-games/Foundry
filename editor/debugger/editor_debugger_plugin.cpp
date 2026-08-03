@@ -44,7 +44,7 @@ void EditorDebuggerSession::_started() {
 	emit_signal(SNAME("started"));
 }
 
-void EditorDebuggerSession::_stopped() {
+void EditorDebuggerSession::_stopped(int64_t) {
 	emit_signal(SNAME("stopped"));
 }
 
