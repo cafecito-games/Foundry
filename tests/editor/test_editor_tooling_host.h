@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/config_file.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/io/stream_peer_tcp.h"
@@ -1684,7 +1685,7 @@ TEST_CASE("[Editor][ToolingHost] A malformed project_test launch is refused over
 // Stages the checked-in exit-status fixture project beneath the shared scratch space.
 // Its runner and scenes decide the child's real result, so the lifecycle assertions
 // below are about what the adapter reports, never about a script pinned in C++.
-static String prepare_exit_status_project() {
+static String prepare_exit_status_project(bool p_without_main_scene = false) {
 	EditorWorkflowTestFixtures::DisposableProjectSpec spec;
 	spec.fixture_name = "dap_exit_status";
 	PackedStringArray paths;
@@ -1695,7 +1696,22 @@ static String prepare_exit_status_project() {
 	paths.push_back("idle.tscn");
 	paths.push_back("stay_running.fs");
 	spec.relative_paths = paths;
-	return EditorWorkflowTestFixtures::prepare_disposable_project(spec);
+	const String project_path = EditorWorkflowTestFixtures::prepare_disposable_project(spec);
+	if (project_path.is_empty() || !p_without_main_scene) {
+		return project_path;
+	}
+
+	const String config_path = project_path.path_join("project.foundry");
+	Ref<ConfigFile> config;
+	config.instantiate();
+	if (config->load(config_path) != OK) {
+		return String();
+	}
+	config->erase_section_key("application", "run/main_scene");
+	if (config->save(config_path) != OK) {
+		return String();
+	}
+	return project_path;
 }
 
 // Owns a tooling host serving the exit-status project, with a connected and
@@ -1706,8 +1722,8 @@ struct ExitStatusSession {
 	String project_path;
 	bool ready = false;
 
-	ExitStatusSession() {
-		project_path = prepare_exit_status_project();
+	ExitStatusSession(bool p_without_main_scene = false) {
+		project_path = prepare_exit_status_project(p_without_main_scene);
 		if (project_path.is_empty()) {
 			return;
 		}
@@ -1739,6 +1755,7 @@ struct ExitStatusSession {
 		initialize_arguments["adapterID"] = "foundry";
 		initialize_arguments["linesStartAt1"] = true;
 		initialize_arguments["columnsStartAt1"] = true;
+		initialize_arguments["supportsVariableType"] = true;
 		const Dictionary response = client.await_response(client.send_request("initialize", initialize_arguments), 30000);
 		ready = bool(response.get("success", false));
 	}
@@ -1829,10 +1846,14 @@ TEST_CASE("[Editor][ToolingHost] A structured test launch reports the runner's r
 }
 
 TEST_CASE("[Editor][ToolingHost] A structured project_test restart preserves the replacement's natural result") {
-	ExitStatusSession session;
+	ExitStatusSession session(true);
 	REQUIRE_MESSAGE(!session.project_path.is_empty(), "Failed to stage the exit-status project.");
 	INFO("Tooling host output:\n", session.host.output);
 	REQUIRE_MESSAGE(session.ready, "The tooling host never accepted a debug adapter session.");
+	Ref<ConfigFile> project_config;
+	project_config.instantiate();
+	REQUIRE(project_config->load(session.artifact("project.foundry")) == OK);
+	CHECK_FALSE(project_config->has_section_key("application", "run/main_scene"));
 
 	const int breakpoint_line = 41;
 	Dictionary source;
@@ -1854,7 +1875,49 @@ TEST_CASE("[Editor][ToolingHost] A structured project_test restart preserves the
 	REQUIRE_MESSAGE(bool(session.client.await_response(launch_seq, 60000).get("success", false)),
 			"launch did not succeed.");
 	REQUIRE_MESSAGE(!session.client.await_event("process", 120000).is_empty(), "The first runner never started.");
-	REQUIRE_MESSAGE(!session.client.await_event("stopped", 120000).is_empty(), "The first runner never stopped.");
+	const Dictionary stopped_event = session.client.await_event("stopped", 120000);
+	REQUIRE_MESSAGE(!stopped_event.is_empty(), "The first runner never stopped.");
+
+	const Dictionary stopped_body = stopped_event.get("body", Dictionary());
+	Dictionary stack_arguments;
+	stack_arguments["threadId"] = stopped_body.get("threadId", -1);
+	const Dictionary stack_response = session.client.await_response(
+			session.client.send_request("stackTrace", stack_arguments), 30000);
+	REQUIRE_MESSAGE(bool(stack_response.get("success", false)), "stackTrace did not succeed.");
+	const Array stack_frames = Dictionary(stack_response.get("body", Dictionary())).get("stackFrames", Array());
+	REQUIRE_MESSAGE(!stack_frames.is_empty(), "stackTrace did not expose the stopped runner frame.");
+
+	Dictionary scopes_arguments;
+	scopes_arguments["frameId"] = Dictionary(stack_frames[0]).get("id", -1);
+	const Dictionary scopes_response = session.client.await_response(
+			session.client.send_request("scopes", scopes_arguments), 30000);
+	REQUIRE_MESSAGE(bool(scopes_response.get("success", false)), "scopes did not succeed.");
+	const Array scopes = Dictionary(scopes_response.get("body", Dictionary())).get("scopes", Array());
+	int locals_reference = 0;
+	for (Dictionary scope : scopes) {
+		if (String(scope.get("name", "")) == "Locals") {
+			locals_reference = scope.get("variablesReference", 0);
+			break;
+		}
+	}
+	REQUIRE_MESSAGE(locals_reference > 0, "scopes did not expose the stopped runner's Locals.");
+
+	Dictionary variables_arguments;
+	variables_arguments["variablesReference"] = locals_reference;
+	const Dictionary variables_response = session.client.await_response(
+			session.client.send_request("variables", variables_arguments), 30000);
+	REQUIRE_MESSAGE(bool(variables_response.get("success", false)), "variables did not succeed.");
+	const Array variables = Dictionary(variables_response.get("body", Dictionary())).get("variables", Array());
+	Dictionary file_variable;
+	for (Dictionary variable : variables) {
+		if (String(variable.get("name", "")) == "file") {
+			file_variable = variable;
+			break;
+		}
+	}
+	REQUIRE_MESSAGE(!file_variable.is_empty(), "Locals did not expose the FileAccess object variable.");
+	CHECK_EQ(String(file_variable.get("type", "")), "Object");
+	CHECK(int(file_variable.get("variablesReference", 0)) > 0);
 
 	session.client.clear_events();
 	Dictionary restart_arguments;
