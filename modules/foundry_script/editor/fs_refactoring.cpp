@@ -5712,6 +5712,20 @@ String render_function_signature(
 	return result;
 }
 
+// `@noreturn` is part of the overridden signature's contract: callers resolved through the
+// base type rely on it, so every override renderer that emits a full member declaration
+// reproduces the annotation rather than silently narrowing the contract.
+String render_noreturn_annotation_prefix(bool p_is_noreturn, const String &p_class_indent) {
+	return p_is_noreturn ? p_class_indent + "@noreturn\n" : String();
+}
+
+// Terminates a generated stub body that must never complete normally. A body that fell
+// through (or returned a default value) would break the `@noreturn` contract for every
+// caller resolved through the base type, so the stub aborts instead.
+String render_noreturn_stub_terminator(const String &p_name, const String &p_class_indent) {
+	return p_class_indent + "\t" + "push_fatal(\"Not implemented: " + p_name + "\")\n";
+}
+
 // Renders a concrete stub for an inherited abstract method: a faithful signature
 // (preserving `static`, parameter names, annotated parameter/return types and base
 // default values where recoverable) plus a body that reports the missing
@@ -5745,8 +5759,16 @@ String render_abstract_stub(
 			p_type_parameter_bounds,
 			p_rest_parameter_type);
 	result += ":\n";
-	result += body_indent + "push_error(\"Not implemented: " + name + "\")\n";
 
+	if (p_function->is_noreturn) {
+		// A `@noreturn` function can never contain a `return` statement, regardless of its
+		// declared return type, so the usual push_error-plus-default-return body would make
+		// the generated stub itself analyze-fail. Abort instead.
+		result += render_noreturn_stub_terminator(name, p_class_indent);
+		return render_noreturn_annotation_prefix(true, p_class_indent) + result;
+	}
+
+	result += body_indent + "push_error(\"Not implemented: " + name + "\")\n";
 	if (has_typed_return) {
 		String literal;
 		if (default_return_literal(return_type, literal)) {
@@ -5779,6 +5801,23 @@ String render_super_call_body(const FSParser::FunctionNode *p_function, const St
 	call += ")";
 	const String expression = p_function->is_coroutine ? "await " + call : call;
 
+	if (p_function->is_noreturn) {
+		if (p_function->is_coroutine) {
+			// The override must stay a coroutine to match the base (which may only be inferred as
+			// one from its own body, with no `async` modifier to reproduce on the signature), so the
+			// awaited super call is kept. But the analyzer's `@noreturn` finality check only
+			// recognizes a bare call statement as terminating, not one wrapped in `await`, so the
+			// awaited call alone cannot prove this stub's own reproduced annotation. Follow it with
+			// an explicit terminator the analyzer does recognize.
+			return body_indent + expression + "\n" + render_noreturn_stub_terminator(name, p_class_indent);
+		}
+		// A `@noreturn` override can never contain a `return` statement, regardless of its declared
+		// return type, so the call is emitted bare: the base's own `@noreturn` contract guarantees
+		// `super.<name>(...)` never completes, which is what lets this stub satisfy its own
+		// reproduced annotation without a "not all paths return a value" error.
+		return body_indent + expression + "\n";
+	}
+
 	const FSParser::DataType return_type = p_function->get_datatype();
 	const bool is_void = return_type.is_set() && !return_type.is_variant() &&
 			return_type.kind == FSParser::DataType::BUILTIN &&
@@ -5799,7 +5838,7 @@ String render_unforwardable_rest_override_body(
 	// The base declares that it never completes normally, and callers resolved through the base type
 	// rely on that. A stub that fell through would silently break the contract, so terminate instead.
 	if (p_function->is_noreturn) {
-		return body + body_indent + "push_fatal(\"Not implemented: " + String(p_function->identifier->name) + "\")\n";
+		return body + render_noreturn_stub_terminator(String(p_function->identifier->name), p_class_indent);
 	}
 	const bool is_void = p_return_type.is_set() && !p_return_type.is_variant() &&
 			p_return_type.kind == FSParser::DataType::BUILTIN &&
@@ -5831,15 +5870,14 @@ String render_concrete_script_override_stub(
 			p_return_type_override,
 			p_type_parameter_bounds,
 			p_rest_parameter_type);
+	const String annotations = render_noreturn_annotation_prefix(p_function->is_noreturn, p_class_indent);
 	if (p_function->rest_parameter != nullptr) {
 		const FSParser::DataType return_type =
 				p_return_type_override != nullptr ? *p_return_type_override : p_function->get_datatype();
-		// `@noreturn` is part of the overridden signature's contract, so it is reproduced on the stub.
-		const String annotations = p_function->is_noreturn ? p_class_indent + "@noreturn\n" : String();
 		return annotations + signature + ":\n" +
 				render_unforwardable_rest_override_body(p_function, return_type, p_class_indent);
 	}
-	return signature + ":\n" + render_super_call_body(p_function, p_class_indent);
+	return annotations + signature + ":\n" + render_super_call_body(p_function, p_class_indent);
 }
 
 // Per-member indentation of the target class. When the class has members, mirror the

@@ -658,6 +658,86 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn super.configure(speed)\n"));
 	}
 
+	TEST_CASE("Override method keeps a concrete override from completing normally under @noreturn") {
+		const String source =
+				"class Base:\n"
+				"\t@noreturn\n"
+				"\tfunc fail() -> void:\n"
+				"\t\tpush_fatal(\"base failure\")\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "fail");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 5, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		// Callers resolved through the base type rely on the declared contract, so the stub keeps
+		// the annotation. The base's own `@noreturn` guarantees `super.fail()` never returns, so the
+		// call is emitted bare rather than prefixed with `return`.
+		CHECK(out.contains("\t@noreturn\n\tfunc fail() -> void:\n"));
+		CHECK(out.contains("\t\tsuper.fail()\n"));
+		CHECK_FALSE(out.contains("\t\treturn super.fail()\n"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
+	TEST_CASE("Override method keeps an async concrete override from completing normally under @noreturn") {
+		const String source =
+				"class Base:\n"
+				"\t@noreturn\n"
+				"\tasync func fail() -> void:\n"
+				"\t\tpush_fatal(\"base failure\")\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 5, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "fail");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 5, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		// The override must stay a coroutine to match the base, so the awaited super call is kept.
+		// The analyzer's `@noreturn` finality check only recognizes a bare call statement as
+		// terminating, not one wrapped in `await`, so an explicit terminator follows it.
+		CHECK(out.contains("\t@noreturn\n\tasync func fail() -> void:\n"));
+		CHECK(out.contains("\t\tawait super.fail()\n"));
+		CHECK(out.contains("\t\tpush_fatal(\"Not implemented: fail\")\n"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
+	TEST_CASE("Override method keeps a body-inferred coroutine override from completing normally under @noreturn") {
+		const String source =
+				"class Base:\n"
+				"\tsignal done\n"
+				"\t@noreturn\n"
+				"\tfunc fail() -> void:\n"
+				"\t\tawait done\n"
+				"\t\tpush_fatal(\"base failure\")\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult candidates = FSTests::override_method_candidates(source, 7, 1);
+		REQUIRE_MESSAGE(candidates.ok, candidates.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(candidates.candidates, "fail");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 7, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		// The base has no `async` modifier to reproduce; its coroutine status is inferred purely
+		// from the awaited super call the override keeps, which must stay in the generated body so
+		// the override's own coroutine status still matches the base's.
+		CHECK(out.contains("\t@noreturn\n\tfunc fail() -> void:\n"));
+		CHECK(out.contains("\t\tawait super.fail()\n"));
+		CHECK(out.contains("\t\tpush_fatal(\"Not implemented: fail\")\n"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
+	}
+
 #ifndef FOUNDRY_SCRIPT_NO_LSP
 	TEST_CASE("Override method resolves a concrete base defined in another file") {
 		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
@@ -982,6 +1062,30 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("func area() -> float:"));
 		CHECK(out.contains("push_error(\"Not implemented: area\")"));
 		CHECK(out.contains("return 0.0"));
+	}
+
+	TEST_CASE("Override method keeps an abstract override from completing normally under @noreturn") {
+		const String source =
+				"abstract class Base:\n"
+				"\t@noreturn abstract func fail() -> void\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 3, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "fail");
+		REQUIRE(candidate != nullptr);
+
+		String out;
+		RefactorResult r = FSTests::run_override_method(source, 3, 1, candidate->id, out);
+		REQUIRE_MESSAGE(r.ok, r.error_message);
+		// Callers resolved through the base type rely on the declared contract, so the stub keeps
+		// the annotation and terminates via `push_fatal` instead of `push_error` plus a default return.
+		CHECK(out.contains("\t@noreturn\n\tfunc fail() -> void:\n"));
+		CHECK(out.contains("\t\tpush_fatal(\"Not implemented: fail\")\n"));
+		CHECK_FALSE(out.contains("push_error"));
+		CHECK_FALSE(out.contains("\t\tpass\n"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
 	}
 
 	TEST_CASE("Override method includes abstract candidates in abstract target classes") {
@@ -1674,6 +1778,23 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("func tick() -> void:"));
 		CHECK(out.contains("push_error(\"Not implemented: tick\")"));
 		CHECK_FALSE(out.contains("return"));
+	}
+
+	TEST_CASE("Implement abstract: keeps a stub from completing normally under @noreturn") {
+		const String source =
+				"abstract class Base:\n"
+				"\t@noreturn abstract func fail() -> void\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+		String out;
+		RefactorResult r = FSTests::run_implement_abstract(source, 3, 1, out);
+		REQUIRE(r.ok);
+		// Callers resolved through the base type rely on the declared contract, so the stub keeps
+		// the annotation and terminates via `push_fatal` instead of `push_error` plus a default return.
+		CHECK(out.contains("\t@noreturn\n\tfunc fail() -> void:\n"));
+		CHECK(out.contains("push_fatal(\"Not implemented: fail\")"));
+		CHECK_FALSE(out.contains("push_error"));
+		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
 	}
 
 	TEST_CASE("Implement abstract: generic method preserves its type-parameter list") {
