@@ -4344,7 +4344,16 @@ void FSCompiler::_specialize_type_argument_binding(FoundryScript::TypeArgumentBi
 	}
 	const int base_ordinal = r_binding.leaf_ordinal; // Open relative to the base's parameters.
 	if (base_ordinal < 0 || base_ordinal >= p_base_specialization.size()) {
-		return; // Base not specialized at this ordinal (e.g. raw `extends Base`); leave open.
+		// Base not specialized at this ordinal (e.g. raw `extends Base`): there is no forwarding
+		// evidence at this level, and none can appear later either (a class with no type parameters
+		// of its own, like a raw `extends Base` subclass, cannot be specialized further). Invalidate
+		// the ordinal rather than leaving it pointing at the base's own parameter list — every
+		// downstream reader of a per-ancestor OPEN binding (`project_type_arguments_onto_base`,
+		// `OPCODE_GET_TYPE_PARAMETER`) treats `leaf_ordinal` as an index into the *leaf's* own
+		// parameters, so leaving the base's ordinal in place would let it collide with an unrelated
+		// same-numbered parameter the leaf declares on its own.
+		r_binding.leaf_ordinal = -1;
+		return;
 	}
 	const FSParser::DataType &argument = p_base_specialization[base_ordinal];
 	// A handle-wrapped parameter (`extends Slot[Type[U]]`) is not a plain forward of `U`: the leaf

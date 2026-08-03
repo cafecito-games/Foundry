@@ -258,8 +258,25 @@ bool FoundryScript::_validate_type_argument_binding_write(const FoundryScript::T
 	bool has_expected_type = false;
 	ContainerType expected_type;
 	if (p_binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
-		expected_type = p_binding.fixed.to_container_type();
-		has_expected_type = true;
+		if (p_binding.fixed_is_dependent && !p_binding.fixed.is_type_handle) {
+			// The fixing argument still mentions an open parameter (`extends Box[Array[T]]`) and does not
+			// itself bake down to a class-handle type, so the erased `fixed` type is a raw, unspecialized
+			// container (e.g. `Box[Variant]` for a true `Box[int]`) that no longer reflects the concrete
+			// reification. `ContainerTypeValidate` validates a specialized script container invariantly, so
+			// checking against that erased type would reject a genuinely well-typed `Box[int]` value. Leave
+			// the slot untyped rather than reject a value that may in fact match the true (unrecoverable)
+			// argument.
+			//
+			// A dependent argument that resolves to a class handle (`extends Slot[Type[U]]`, an open `U`
+			// wrapped in `Type[]`) does not have this problem: its erased form (`Type[Object]`) is a sound
+			// upper bound regardless of what `U` resolves to, so any concrete class handle validates against
+			// it without a false rejection. Note this is `p_binding.fixed.is_type_handle` (whether the baked
+			// argument is itself a handle), not `p_binding.is_type_handle` (whether the *member's own*
+			// declared type is `Type[T]`, a separate, unrelated concept for an OPEN binding's own site).
+		} else {
+			expected_type = p_binding.fixed.to_container_type();
+			has_expected_type = true;
+		}
 	} else if (p_binding.leaf_ordinal >= 0 && p_binding.leaf_ordinal < p_leaf_type_arguments.size()) {
 		expected_type = p_leaf_type_arguments[p_binding.leaf_ordinal];
 		has_expected_type = true;
