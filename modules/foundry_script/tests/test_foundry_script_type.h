@@ -3079,4 +3079,30 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not add 
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An override may not change a nested rest element signature") {
+	CHECK_NE(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[Callable[[int], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[Callable[[String], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An identical nested rest element signature is accepted") {
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[Callable[[int], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived extends Base:\n"
+					 "\tfunc visit(...values: Array[Callable[[int], void]]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n"),
+			OK);
+}
+
 } // namespace FSTests

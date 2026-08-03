@@ -3601,7 +3601,9 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 			const bool current_rest_is_typed = rest_parameter_type_is_narrowing(current_rest_type);
 			if (parent_rest_is_typed || current_rest_is_typed) {
 				valid = valid && parent_rest_is_typed && current_rest_is_typed &&
-						parent_rest_type.get_container_element_type(0) == current_rest_type.get_container_element_type(0);
+						FSTypeCompatibility::is_invariant_equal(
+								parent_rest_type.get_container_element_type(0),
+								current_rest_type.get_container_element_type(0));
 			}
 
 			if (!valid_coroutine_override) {

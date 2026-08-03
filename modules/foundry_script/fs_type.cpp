@@ -673,6 +673,10 @@ bool FSTypeCompatibility::is_compatible(const FSParser::DataType &p_target, cons
 	return check(p_target, p_source, options).compatible;
 }
 
+bool FSTypeCompatibility::is_invariant_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
+	return p_a == p_b && _datatype_invariant_equal(p_a, p_b);
+}
+
 bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_narrow, const FSParser::DataType &p_wide) {
 	if (p_narrow.kind == FSParser::DataType::TUPLE || p_wide.kind == FSParser::DataType::TUPLE) {
 		return false;
