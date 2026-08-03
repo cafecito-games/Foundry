@@ -404,7 +404,7 @@ FSNumericConversion::Conversion FSNumericConversion::classify(const FSParser::Da
 		// `int` and `uint` fit the double's exact integer range whole. The 64-bit widths do not, so
 		// only a constant whose value survives the round trip may cross without an explicit cast. A
 		// source that declared no width states no range, so it keeps its pre-descriptor behavior.
-		const NumericType source_numeric_type = _promotion_descriptor(p_source.numeric_type);
+		const NumericType source_numeric_type = p_source.numeric_type;
 		if (source_numeric_type == NumericType::NONE) {
 			return Conversion::IDENTITY;
 		}
@@ -423,8 +423,12 @@ FSNumericConversion::Conversion FSNumericConversion::classify(const FSParser::Da
 		return Conversion::IDENTITY;
 	}
 
-	const NumericType target_numeric_type = _promotion_descriptor(p_target.numeric_type);
-	const NumericType source_numeric_type = _promotion_descriptor(p_source.numeric_type);
+	// Conversion asks about the exact declared ranges, so the descriptors are used as written. The
+	// promotion normalization that folds the native-only 8- and 16-bit widths into their 32-bit
+	// counterparts belongs to result-type selection alone: applying it here would range-check an
+	// 8-bit destination as if it were 32 bits wide.
+	const NumericType target_numeric_type = p_target.numeric_type;
+	const NumericType source_numeric_type = p_source.numeric_type;
 	if (target_numeric_type != NumericType::NONE && source_numeric_type == NumericType::NONE &&
 			p_constant_source_value != nullptr) {
 		// The source states no width, but the value is known exactly, so the destination's range is

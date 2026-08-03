@@ -420,3 +420,26 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] A width-less constant is still
 	CHECK(classify_constant(uint32_type, unconstrained_unsigned, uint64_t(7)) == Conversion::CONSTANT_CHECKED);
 	CHECK(classify_constant(uint32_type, unconstrained_unsigned, uint64_t(8000000000)) == Conversion::EXPLICIT_REQUIRED);
 }
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A native narrow destination keeps its own range") {
+	using namespace TestIntegerPromotion;
+
+	// The 8- and 16-bit descriptors have no source spelling, so they only ever appear as a native
+	// signature's constraint. Conversion still has to honor their exact range, unlike promotion, which
+	// folds them into their 32-bit counterparts because neither can name a result type.
+	const FSParser::DataType int8_type = make_integer_type(NumericType::INT8);
+	const FSParser::DataType int32_type = make_integer_type(NumericType::INT32);
+
+	CHECK(classify(int32_type, int8_type) == Conversion::IMPLICIT_WIDEN);
+	CHECK(classify(int8_type, int32_type) == Conversion::EXPLICIT_REQUIRED);
+	CHECK(classify_constant(int8_type, int32_type, int64_t(127)) == Conversion::CONSTANT_CHECKED);
+	CHECK(classify_constant(int8_type, int32_type, int64_t(128)) == Conversion::EXPLICIT_REQUIRED);
+	CHECK(classify_constant(int8_type, int32_type, int64_t(-129)) == Conversion::EXPLICIT_REQUIRED);
+
+	const FSParser::DataType uint16_type = make_integer_type(NumericType::UINT16);
+	CHECK(classify_constant(uint16_type, make_integer_type(NumericType::UINT32), uint64_t(65535)) == Conversion::CONSTANT_CHECKED);
+	CHECK(classify_constant(uint16_type, make_integer_type(NumericType::UINT32), uint64_t(65536)) == Conversion::EXPLICIT_REQUIRED);
+
+	// A narrow native source still fits the double exactly, so it promotes to float.
+	CHECK(classify(make_float_type(), int8_type) == Conversion::IMPLICIT_WIDEN);
+}
