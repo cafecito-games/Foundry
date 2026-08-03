@@ -1982,6 +1982,13 @@ void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 			}
 			print_type(p_type->signature_parameter_types[i]);
 		}
+		if (p_type->signature_rest_parameter_type != nullptr) {
+			if (!p_type->signature_parameter_types.is_empty()) {
+				write(", ");
+			}
+			write("...");
+			print_type(p_type->signature_rest_parameter_type);
+		}
 		write("]");
 		if (p_type->signature_return_type != nullptr) {
 			write(", ");

@@ -976,7 +976,7 @@ void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParse
 	}
 }
 
-void FSAnalyzer::CallSiteValidationContext::validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count) {
+void FSAnalyzer::CallSiteValidationContext::validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count, const FSParser::DataType *p_rest_parameter_type) {
 	if (p_array == nullptr) {
 		return;
 	}
@@ -988,12 +988,16 @@ void FSAnalyzer::CallSiteValidationContext::validate_callable_array_literal_args
 		analyzer->push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most %d but received %d.)*", p_function, p_par_types.size(), p_array->elements.size()), p_array->elements[p_par_types.size()]);
 	}
 
+	const FSParser::DataType *element_type = rest_element_type(p_rest_parameter_type);
 	const int checked_argument_count = MAX(p_array->elements.size() - p_trailing_unbound_argument_count, 0);
 	for (int i = 0; i < checked_argument_count; i++) {
-		if (i >= p_par_types.size()) {
+		// Surplus literal elements occupy repeated rest-element slots, so they are checked against the
+		// rest array's element type under the same policy as a fixed parameter.
+		const FSParser::DataType *expected_type = i < p_par_types.size() ? &p_par_types[i] : element_type;
+		if (expected_type == nullptr) {
 			break;
 		}
-		validate_argument_against_type(p_par_types[i], p_array->elements[i], i + 1, p_function, nullptr);
+		validate_argument_against_type(*expected_type, p_array->elements[i], i + 1, p_function, nullptr);
 	}
 }
 

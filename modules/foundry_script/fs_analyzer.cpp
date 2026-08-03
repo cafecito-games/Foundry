@@ -1189,9 +1189,21 @@ static bool _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 	Vector<FSParser::DataType> parameter_types;
 	const String params_block = inner.substr(1, params_end - 1); // between the inner brackets
 	const String trimmed_params = params_block.strip_edges();
+	Vector<FSParser::DataType> rest_parameter_type;
 	if (!trimmed_params.is_empty()) {
-		for (const String &parameter : _split_signature_top_level(params_block)) {
+		const Vector<String> parameters = _split_signature_top_level(params_block);
+		for (int i = 0; i < parameters.size(); i++) {
+			const String parameter = parameters[i].strip_edges();
 			if (parameter.is_empty()) {
+				continue;
+			}
+			// A `...T` entry is the variadic rest tail. Only a Callable has one, and only as the final
+			// entry; anything else is a malformed hint the encoder never emits.
+			if (parameter.begins_with("...")) {
+				if (!p_has_return || i != parameters.size() - 1 || !rest_parameter_type.is_empty()) {
+					return false;
+				}
+				rest_parameter_type.push_back(_decode_signature_type(parameter.substr(3)));
 				continue;
 			}
 			parameter_types.push_back(_decode_signature_type(parameter));
@@ -1226,6 +1238,7 @@ static bool _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 	r_type.has_method_signature = true;
 	r_type.has_explicit_method_signature = true;
 	r_type.method_parameter_types = parameter_types;
+	r_type.method_rest_parameter_type = rest_parameter_type;
 	r_type.method_return_type = return_types;
 
 	// Mirror the rich slots into method_info too. Callable compatibility falls back to a MethodInfo
@@ -1238,6 +1251,9 @@ static bool _decode_method_signature_suffix(const String &p_suffix, bool p_has_r
 	}
 	if (p_has_return && !return_types.is_empty()) {
 		signature_info.return_val = return_types[0].to_property_info("");
+	}
+	if (!rest_parameter_type.is_empty()) {
+		signature_info.flags |= METHOD_FLAG_VARARG;
 	}
 	r_type.method_info = signature_info;
 	return true;
@@ -1925,6 +1941,23 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 						FSParser::DataType parameter_type = type_from_metatype(resolve_datatype(p_type->signature_parameter_types[i]));
 						result.method_parameter_types.push_back(parameter_type);
 						method_info.arguments.push_back(parameter_type.to_property_info(""));
+					}
+					// An explicit `...Array[T]` tail makes the callable variadic. The rich slot is filled only
+					// when the element narrows below Variant, so a gradual `...Array` tail stays indistinguishable
+					// from a native untyped vararg.
+					if (builtin_type == Variant::CALLABLE && p_type->signature_rest_parameter_type != nullptr) {
+						FSParser::DataType rest_type = type_from_metatype(resolve_datatype(p_type->signature_rest_parameter_type));
+						if (rest_type.is_set() && !rest_type.is_variant()) {
+							if (rest_type.kind != FSParser::DataType::BUILTIN || rest_type.builtin_type != Variant::ARRAY) {
+								push_error(vformat(R"(The Callable rest parameter type must be "Array", but "%s" is specified.)", rest_type.to_string()), p_type->signature_rest_parameter_type);
+							} else {
+								method_info.flags |= METHOD_FLAG_VARARG;
+								if (FSAnalyzer::rest_parameter_type_is_narrowing(rest_type)) {
+									rest_type.is_constant = false;
+									result.set_method_rest_parameter_type(rest_type);
+								}
+							}
+						}
 					}
 					if (builtin_type == Variant::CALLABLE) {
 						FSParser::DataType return_type = type_from_metatype(resolve_datatype(p_type->signature_return_type));
@@ -7974,6 +8007,13 @@ static bool _signature_type_involves_type_parameter(const FSParser::DataType &p_
 			return true;
 		}
 	}
+	// A typed variadic Callable can hide a type parameter in its rest tail
+	// (e.g. `Callable[[...Array[U]], void]`).
+	for (const FSParser::DataType &rest_type : p_type.method_rest_parameter_type) {
+		if (_signature_type_involves_type_parameter(rest_type)) {
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -12067,6 +12107,16 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				}
 
 				const int fixed_argument_count = p_base_type.method_parameter_types.size();
+				// Bound values occupy the trailing argument positions. A bound value past the fixed arity can
+				// only ever land in the rest tail, whatever the eventual call arity, so it is checked against
+				// the rest element type. Earlier bound values may still fill a fixed slot and are left to the
+				// arity analysis below.
+				if (p_base_type.has_method_rest_parameter_type()) {
+					const FSParser::DataType rest_element_type = p_base_type.get_method_rest_parameter_type().get_container_element_type(0);
+					for (int i = fixed_argument_count; i < p_bound_arguments.size(); i++) {
+						call_site_validation.validate_argument_against_type(rest_element_type, const_cast<FSParser::ExpressionNode *>(p_bound_arguments[i]), i + 1, p_function, nullptr);
+					}
+				}
 				const int default_arg_count = fixed_vararg_default_arg_count(p_bound_arguments);
 				const int continuous_min_argument_count = fixed_argument_count - default_arg_count;
 				r_return_type = call_site_validation.transformed_callable_type(p_base_type, p_base_type.method_parameter_types, default_arg_count, true);
@@ -12099,6 +12149,11 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				for (const FSParser::DataType &parameter_type : p_base_type.method_parameter_types) {
 					r_par_types.push_back(parameter_type);
 				}
+				// A typed variadic Callable checks every surplus argument against its rest element type,
+				// exactly as a direct call to the variadic function would.
+				if (r_rest_parameter_type != nullptr && p_base_type.has_method_rest_parameter_type()) {
+					*r_rest_parameter_type = p_base_type.get_method_rest_parameter_type();
+				}
 				return true;
 			}
 
@@ -12114,7 +12169,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				if (p_base_type.signature_is_async) {
 					r_return_type = make_coroutine_type(r_return_type);
 				}
-				call_site_validation.validate_callable_array_literal_args(p_base_type.method_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg, call_site_validation.array_literal_argument(call, 0), p_function, p_base_type.method_extra_allowed_argument_counts, p_base_type.method_unbound_argument_count);
+				const FSParser::DataType *callv_rest_type = p_base_type.has_method_rest_parameter_type() ? &p_base_type.get_method_rest_parameter_type() : nullptr;
+				call_site_validation.validate_callable_array_literal_args(p_base_type.method_parameter_types, p_base_type.method_info.default_arguments.size(), is_callable_vararg, call_site_validation.array_literal_argument(call, 0), p_function, p_base_type.method_extra_allowed_argument_counts, p_base_type.method_unbound_argument_count, callv_rest_type);
 				return true;
 			}
 

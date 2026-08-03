@@ -1768,6 +1768,8 @@ public:
 		Vector<IdentifierNode *> type_chain;
 		Vector<TypeNode *> container_types;
 		Vector<TypeNode *> signature_parameter_types;
+		// Optional final `...Array[T]` entry of a Callable signature. A Signal never has one.
+		TypeNode *signature_rest_parameter_type = nullptr;
 		TypeNode *signature_return_type = nullptr;
 		bool has_signature = false;
 		bool signature_is_async = false; // Set when the type was written as AsyncCallable.

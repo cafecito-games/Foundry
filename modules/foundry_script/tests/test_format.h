@@ -667,6 +667,7 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 					a->is_nullable == b->is_nullable && a->is_tuple == b->is_tuple &&
 					node_vector_eq(a->tuple_element_types, b->tuple_element_types) &&
 					node_vector_eq(a->signature_parameter_types, b->signature_parameter_types) &&
+					node_eq(a->signature_rest_parameter_type, b->signature_rest_parameter_type) &&
 					node_eq(a->signature_return_type, b->signature_return_type);
 		}
 		case Node::TUPLE_LITERAL: {

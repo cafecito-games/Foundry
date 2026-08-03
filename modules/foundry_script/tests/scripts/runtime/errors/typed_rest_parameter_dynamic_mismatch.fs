@@ -3,5 +3,5 @@ func collect(...values: Array[int]) -> void:
 
 func test() -> void:
 	print("before")
-	var callback := collect
+	var callback: Callable = collect
 	callback.call("bad")

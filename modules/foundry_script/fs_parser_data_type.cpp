@@ -70,10 +70,14 @@ static String _datatype_signature_type_to_string(const FSParser::DataType &p_typ
 	return p_type.to_string();
 }
 
-static String _method_signature_to_string(const Vector<FSParser::DataType> &p_argument_types, const Vector<FSParser::DataType> &p_return_type, bool p_has_return) {
+static String _method_signature_to_string(const Vector<FSParser::DataType> &p_argument_types, const Vector<FSParser::DataType> &p_rest_parameter_type, const Vector<FSParser::DataType> &p_return_type, bool p_has_return) {
 	Vector<String> argument_types;
 	for (const FSParser::DataType &argument_type : p_argument_types) {
 		argument_types.append(_datatype_signature_type_to_string(argument_type));
+	}
+	// A rich rest tail renders as the final `...Array[T]` entry, matching the source spelling.
+	for (const FSParser::DataType &rest_type : p_rest_parameter_type) {
+		argument_types.append("..." + _datatype_signature_type_to_string(rest_type));
 	}
 
 	const String arguments = String(", ").join(argument_types);
@@ -125,7 +129,7 @@ String FSParser::DataType::to_string() const {
 			}
 			if (builtin_type == Variant::CALLABLE && has_explicit_method_signature) {
 				const char *callable_name = signature_is_async ? "AsyncCallable" : "Callable";
-				result = vformat("%s%s", callable_name, _method_signature_to_string(method_parameter_types, method_return_type, true));
+				result = vformat("%s%s", callable_name, _method_signature_to_string(method_parameter_types, method_rest_parameter_type, method_return_type, true));
 				break;
 			}
 			if (builtin_type == Variant::CALLABLE && signature_is_async) {
@@ -135,7 +139,7 @@ String FSParser::DataType::to_string() const {
 				break;
 			}
 			if (builtin_type == Variant::SIGNAL && has_explicit_method_signature) {
-				result = vformat("Signal%s", _method_signature_to_string(method_parameter_types, method_return_type, false));
+				result = vformat("Signal%s", _method_signature_to_string(method_parameter_types, Vector<DataType>(), method_return_type, false));
 				break;
 			}
 			if (builtin_type == Variant::ARRAY && has_container_element_type(0)) {
@@ -332,6 +336,10 @@ static String _encode_method_signature_suffix(const FSParser::DataType &p_type, 
 	for (const FSParser::DataType &param : p_type.method_parameter_types) {
 		params.push_back(_encode_signature_type(param));
 	}
+	// Only a Callable can carry a rest tail; it is always the final entry so the decoder can find it.
+	if (p_has_return && p_type.has_method_rest_parameter_type()) {
+		params.push_back("..." + _encode_signature_type(p_type.get_method_rest_parameter_type()));
+	}
 	const String joined = String(", ").join(params);
 	if (p_has_return) {
 		String return_name;
@@ -479,12 +487,20 @@ static bool _signature_type_is_encodable(const FSParser::DataType &p_type) {
 					if (!p_type.has_explicit_method_signature) {
 						return true;
 					}
-					// The hint encodes only a fixed parameter/return list. Default-argument and vararg
-					// arity metadata cannot round-trip, so a callable carrying it must cross untyped to
-					// avoid rejecting valid default-arg/vararg calls at the script-API boundary.
-					if (!p_type.method_info.default_arguments.is_empty() ||
-							(p_type.method_info.flags & METHOD_FLAG_VARARG) != 0) {
+					// Default-argument arity cannot round-trip through the hint grammar, so a callable
+					// carrying it must cross untyped to avoid rejecting valid default-arg calls at the
+					// script-API boundary.
+					if (!p_type.method_info.default_arguments.is_empty()) {
 						return false;
+					}
+					// A vararg callable only round-trips when a rich `...Array[T]` tail describes it and that
+					// tail is itself encodable. A MethodInfo-only vararg (native/legacy) has no spelling in
+					// the hint grammar, so it still crosses untyped.
+					if ((p_type.method_info.flags & METHOD_FLAG_VARARG) != 0) {
+						if (p_type.builtin_type != Variant::CALLABLE || !p_type.has_method_rest_parameter_type() ||
+								!_signature_type_is_encodable(p_type.get_method_rest_parameter_type())) {
+							return false;
+						}
 					}
 					for (const FSParser::DataType &parameter_type : p_type.method_parameter_types) {
 						if (!_signature_type_is_encodable(parameter_type)) {
