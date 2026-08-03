@@ -258,30 +258,42 @@ bool FoundryScript::_validate_type_argument_binding_write(const FoundryScript::T
 	bool has_expected_type = false;
 	ContainerType expected_type;
 	if (p_binding.kind == FoundryScript::TypeArgumentBinding::FIXED) {
-		if (p_binding.fixed_is_dependent && !p_binding.fixed.is_type_handle) {
+		// A dependently-fixed argument can end up handle-typed two independent ways: the member's own
+		// declared type is `Type[T]` (`class Slot[T]: var value: Type[T]` fixed by `extends Slot[Box[U]]`,
+		// a plain, non-handle-wrapped argument — `p_binding.is_type_handle`), or the fixing argument
+		// itself is `Type[...]`-wrapped (`extends Slot[Type[U]]` for a plain `value: T` member — baked
+		// into `p_binding.fixed.is_type_handle` by `_gdtype_from_datatype`). `ContainerTypeValidate`
+		// dispatches to its class-handle path off the *container type's own* `is_type_handle` (set from
+		// `p_binding.fixed` either way), so either signal means the effective slot validates as a handle.
+		const bool fixed_resolves_to_handle = p_binding.is_type_handle || p_binding.fixed.is_type_handle;
+		if (p_binding.fixed_is_dependent && !fixed_resolves_to_handle) {
 			// The fixing argument still mentions an open parameter (`extends Box[Array[T]]`) and does not
-			// itself bake down to a class-handle type, so the erased `fixed` type is a raw, unspecialized
-			// container (e.g. `Box[Variant]` for a true `Box[int]`) that no longer reflects the concrete
-			// reification. `ContainerTypeValidate` validates a specialized script container invariantly, so
-			// checking against that erased type would reject a genuinely well-typed `Box[int]` value. Leave
-			// the slot untyped rather than reject a value that may in fact match the true (unrecoverable)
-			// argument.
+			// resolve to a class-handle slot, so the erased `fixed` type is a raw, unspecialized container
+			// (e.g. `Box[Variant]` for a true `Box[int]`) that no longer reflects the concrete reification.
+			// `ContainerTypeValidate` validates a specialized script container invariantly, so checking
+			// against that erased type would reject a genuinely well-typed `Box[int]` value. Leave the slot
+			// untyped rather than reject a value that may in fact match the true (unrecoverable) argument.
 		} else {
 			expected_type = p_binding.fixed.to_container_type();
 			has_expected_type = true;
-			// A dependent argument that itself resolves to a class handle (`extends Slot[Type[U]]`, or
-			// nested as `extends Slot[Type[Box[U]]]`) does not have the problem above at the root: its
-			// erased form (`Type[Object]`, or `Type[Box[...]]` with `Box` itself concrete) is a sound upper
-			// bound regardless of what the open parameter resolves to. But any *nested* reified type
-			// arguments the erasure produced (e.g. `Box`'s own `Variant` standing in for `U` in
-			// `Type[Box[U]]`) are just as unrecoverable as the plain-container case, and
-			// `ContainerTypeValidate`'s class-handle path checks those invariantly too. Strip them so only
-			// the handle's represented class is checked, not its (unrecoverable) reified arguments — this is
-			// a no-op for a non-nested dependent handle (`Type[U]`), which never had any to begin with. Note
-			// this uses `p_binding.fixed.is_type_handle` (whether the baked argument is itself a handle), not
-			// `p_binding.is_type_handle` (whether the *member's own* declared type is `Type[T]`, a separate,
-			// unrelated concept for an OPEN binding's own site).
-			if (p_binding.fixed_is_dependent && p_binding.fixed.is_type_handle) {
+			if (p_binding.fixed_is_dependent && fixed_resolves_to_handle) {
+				// A class handle has a sound upper bound at its represented class regardless of what the
+				// open parameter resolves to, so the write must still be validated as *some* handle for that
+				// class (a wrong represented class, e.g. a handle for an unrelated type, is still rejected).
+				// But any reified type arguments the erasure produced for that represented class (e.g.
+				// `Box`'s own `Variant` standing in for `U` in `Type[Box[U]]`) are unrecoverable, so
+				// `ContainerTypeValidate`'s invariant nested-argument check on them is dropped by clearing
+				// them here.
+				//
+				// This intentionally also drops any argument in that same list that happened to be fully
+				// concrete rather than open (e.g. `Type[Pair[int, U]]`, where only `U` is unresolved): there
+				// is currently no per-argument tracking of which individual nested slot is the dependent
+				// one, only a single dependent flag for the whole fixed type, so a handle with an
+				// incompatible *concrete* nested argument in that position is not caught either. Narrowing
+				// that requires per-argument dependency tracking on `TypeArgumentBinding`/`FSDataType`,
+				// which is a larger follow-up, not a regression this fix can introduce (a plain,
+				// non-dependent FIXED binding, the common case, is unaffected and still validates its
+				// arguments invariantly).
 				expected_type.type_arguments.clear();
 			}
 		}
