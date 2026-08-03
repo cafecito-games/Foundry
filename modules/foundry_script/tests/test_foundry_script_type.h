@@ -3925,6 +3925,22 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An untyped bound value k
 			R"*(Too many arguments for "call()" call. Expected at most 0 but received 1.)*");
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Strict dynamic checks reject an untyped bound value") {
+	// Strict mode treats every dynamic boundary as an error, so an untyped bound value no longer keeps
+	// the arities it would land in alive; the mismatch is reported at the bind instead.
+	const String source =
+			"func anything() -> Variant:\n"
+			"\treturn 7\n"
+			"func test() -> void:\n"
+			"\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+			"\tvar bound := callback.bind(anything())\n"
+			"\tprint(bound)\n";
+	CHECK_EQ(analyze_source(source), OK);
+	check_source_has_error(source,
+			R"*(Cannot pass Variant value as argument 1 of "bind()" in strict dynamic mode; expected "String".)*",
+			false, true);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] bind() rejects a value no call arity can place") {
 	// Arity 1 would put `7` in the `String` parameter and every larger arity puts it in the `String`
 	// rest tail, while arity 0 cannot omit the required `String`. Nothing accepts the bound value.

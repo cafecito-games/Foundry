@@ -12173,7 +12173,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 
 				const FSParser::DataType argument_type = p_argument->get_datatype();
 				if (argument_type.is_variant() || !argument_type.is_hard_type()) {
-					return false;
+					// Strict dynamic checks reject crossing the dynamic boundary wherever the value lands,
+					// so there an untyped bound value is a proven mismatch rather than a gradual one.
+					return strict_dynamic_checks && argument_type.is_variant();
 				}
 
 				return !is_type_compatible(p_expected_type, argument_type, true) &&
