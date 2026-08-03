@@ -1302,6 +1302,39 @@ Types appear in: variable/constant/parameter annotations, `for` loop variable an
 return types, casts (`as type`), type tests (`is type`), `extends`/`uses` type arguments,
 and type-parameter bounds.
 
+### 7.1 `Self`
+
+`Self` is a contextual type name, not a keyword: it is an ordinary identifier that only has this
+meaning inside a class, trait, or `extend` body, and remains usable as a plain identifier
+everywhere else. It is written wherever a `type_name` is, may not be qualified (`Self.Inner`) or
+specialized (`Self[T]`), and nests like any other type: `Array[Self]`, `Dictionary[String, Self]`,
+`Type[Self]`, `Callable[[Self], Self]`, and a generic specialization such as `Crate[Self]`.
+
+`Self` also appears in **expression** position inside a function body, where it denotes the class
+handle of the receiver the running call was made through — the same value `Type[Self]` describes.
+`Self.new()` is therefore the ordinary class-handle construction form, and its result type is
+`Self`.
+
+**Receiver rule.** For a static call made through a class handle whose exact runtime type is `R`,
+every occurrence of `Self` in the invoked implementation denotes `R`, at every nesting depth. This
+holds when method lookup selects an implementation declared on an ancestor `B`, and equally when
+it selects a retroactive conformance witness declared for a conformance target: the target is what
+validates the witness *declaration*, never what `Self` means when the witness *runs*.
+
+- `Derived.make()` uses `Derived`, even when `make` is inherited from `Base`.
+- An explicit `Base.make()` uses `Base`.
+- An inherited implementation that delegates through an unqualified call or `super` preserves the
+  incoming receiver; it does not reset `Self` to the class containing the delegated implementation.
+- A specialized generic receiver keeps all of its concrete type arguments in `Self`.
+- In an instance method, `Self` is the class of the object the method runs on.
+
+Runtime validation uses that exact specialization. Argument and return checks, typed containers,
+reified generic arguments, class handles, construction, casts, and type tests are all resolved
+against it, and none of them widen `Self` to `Variant`, to the declaring class, to the conformance
+target, or to a common base in order to make a call succeed. A static call that reaches an
+implementation without a receiver is reported as an error rather than resolved approximately.
+
+
 ---
 
 ## 8. Built-in annotations

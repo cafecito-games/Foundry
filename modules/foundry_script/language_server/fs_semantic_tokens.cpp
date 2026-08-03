@@ -695,6 +695,10 @@ bool DocumentClassifier::classify_identifier_reference(const FSParser::Identifie
 			return add_identifier(p_identifier, TokenType::EVENT, 0);
 		case FSParser::IdentifierNode::NATIVE_CLASS:
 			return add_identifier(p_identifier, TokenType::CLASS, bit(TokenModifier::DEFAULT_LIBRARY));
+		case FSParser::IdentifierNode::STATIC_SELF_CLASS:
+			// `Self` in an expression position names the receiver's class, so it highlights as a class
+			// rather than falling through to the meta-type path, which would report the bound instead.
+			return add_identifier(p_identifier, TokenType::CLASS, 0);
 		case FSParser::IdentifierNode::MEMBER_CLASS:
 		case FSParser::IdentifierNode::UNDEFINED_SOURCE:
 			break;

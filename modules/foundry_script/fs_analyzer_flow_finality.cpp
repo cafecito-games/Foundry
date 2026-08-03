@@ -1608,6 +1608,7 @@ const FSParser::Node *FSAnalyzer::FlowFinalityContext::flow_narrowing_key_from_i
 		case FSParser::IdentifierNode::INHERITED_VARIABLE:
 		case FSParser::IdentifierNode::STATIC_VARIABLE:
 		case FSParser::IdentifierNode::NATIVE_CLASS:
+		case FSParser::IdentifierNode::STATIC_SELF_CLASS:
 			return nullptr;
 	}
 

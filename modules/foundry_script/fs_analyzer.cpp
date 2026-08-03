@@ -10081,6 +10081,9 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		case FSParser::IdentifierNode::MEMBER_FUNCTION:
 		case FSParser::IdentifierNode::MEMBER_CLASS:
 		case FSParser::IdentifierNode::NATIVE_CLASS:
+		// `Self` is handled above and returns before reaching this switch; a node carrying the source
+		// on re-entry already has its type and needs no further lookup.
+		case FSParser::IdentifierNode::STATIC_SELF_CLASS:
 			break;
 	}
 
@@ -10182,6 +10185,7 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 				case FSParser::IdentifierNode::INHERITED_VARIABLE:
 				case FSParser::IdentifierNode::STATIC_VARIABLE:
 				case FSParser::IdentifierNode::NATIVE_CLASS:
+				case FSParser::IdentifierNode::STATIC_SELF_CLASS:
 					return; // No need to capture.
 			}
 
