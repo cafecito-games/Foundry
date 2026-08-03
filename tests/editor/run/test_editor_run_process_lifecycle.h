@@ -351,9 +351,10 @@ TEST_CASE("[Editor][DebugSession] An unavailable status ends the session without
 
 TEST_CASE("[Editor][DebugSession] An unowned session ends without a result") {
 	DebugSessionResultCoordinator coordinator;
-	coordinator.begin_unowned_session();
+	coordinator.begin_unowned_session(19);
 
-	const DebugSessionResultCoordinator::Outcome outcome = coordinator.observe_debugger_stopped(0);
+	CHECK_FALSE(coordinator.observe_debugger_stopped(18).ended);
+	const DebugSessionResultCoordinator::Outcome outcome = coordinator.observe_debugger_stopped(19);
 	CHECK(outcome.ended);
 	CHECK_FALSE(outcome.has_result);
 	CHECK_EQ(outcome.launch_id, (uint64_t)0);

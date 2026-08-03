@@ -399,13 +399,13 @@ Dictionary DebugAdapterParser::_launch_process(const Dictionary &p_params) const
 
 Dictionary DebugAdapterParser::req_attach(const Dictionary &p_params) const {
 	ScriptEditorDebugger *dbg = EditorDebuggerNode::get_singleton()->get_default_debugger();
-	if (!dbg->is_session_active()) {
+	if (!dbg->is_session_active() || !dbg->is_launch_identified()) {
 		return prepare_error_response(p_params, DAP::ErrorType::NOT_RUNNING);
 	}
 
 	// An attached debuggee is not owned by this editor, so its session can only ever
 	// end without a process result.
-	EditorDebuggerNode::get_singleton()->begin_unowned_debug_session();
+	EditorDebuggerNode::get_singleton()->begin_unowned_debug_session(dbg->get_launch_id());
 	DebugAdapterProtocol::get_singleton()->get_current_peer()->attached = true;
 	DebugAdapterProtocol::get_singleton()->notify_process();
 	return prepare_success_response(p_params);

@@ -29,6 +29,7 @@ wrapper.
 - `main/cli_parser.cpp` and `editor/run/editor_run.{h,cpp}`: carry the internal launch ID to editor-owned children.
 - `editor/debugger/editor_debugger_node.h`: accept the stopped launch ID in the debugger callback.
 - `editor/debugger/editor_debugger_node.cpp`: aggregate sessions by launch and forward the stopped launch ID after result coordination.
+- `editor/debugger/debug_adapter/debug_adapter_parser.cpp`: bind result-less attach sessions to the debugger launch they observe.
 - `editor/editor_node.h`: add the launch ID to the run-bar forwarding method.
 - `editor/editor_node.cpp`: forward the launch ID to `EditorRunBar`.
 - `editor/run/editor_run_bar.h`: make debug-session closure launch-specific.

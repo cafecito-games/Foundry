@@ -65,7 +65,10 @@ results into successful ones.
   `exited` event with its real exit code, followed by exactly one `terminated`.
 - Explicit termination still kills the current child and emits `terminated`
   without fabricating `exited`.
-- Unowned/native sessions retain their existing result-less termination behavior.
+- Attached sessions bind their result-less DAP lifecycle to the debugger's actual
+  launch ID, so attaching to an editor-owned child still terminates when that child
+  disconnects without fabricating an `exited` result.
+- Other unowned/native sessions retain their existing result-less termination behavior.
 
 ## Regression Coverage
 

@@ -69,7 +69,7 @@ public:
 	void begin_owned_launch(uint64_t p_launch_id);
 	// Starts a session for an attached, remote, or native debuggee, whose result this
 	// editor has no trustworthy source for.
-	void begin_unowned_session();
+	void begin_unowned_session(uint64_t p_debugger_launch_id = 0);
 
 	Outcome observe_process_completed(uint64_t p_launch_id, int p_exit_code);
 	Outcome observe_debugger_stopped(uint64_t p_launch_id);
@@ -83,6 +83,7 @@ private:
 	bool active = false;
 	bool owned = false;
 	uint64_t launch_id = 0;
+	uint64_t debugger_launch_id = 0;
 };
 
 class EditorDebuggerNode : public EditorDock {
@@ -287,7 +288,7 @@ public:
 	// Debug-session result coordination. Each of these emits at most one
 	// "debug_session_ended" signal, carrying either a known process result or none.
 	void begin_owned_debug_session(uint64_t p_launch_id);
-	void begin_unowned_debug_session();
+	void begin_unowned_debug_session(uint64_t p_debugger_launch_id = 0);
 	void notify_owned_process_completed(uint64_t p_launch_id, int p_exit_code);
 	void notify_debug_session_terminated();
 

@@ -218,12 +218,14 @@ void DebugSessionResultCoordinator::begin_owned_launch(uint64_t p_launch_id) {
 	active = true;
 	owned = true;
 	launch_id = p_launch_id;
+	debugger_launch_id = p_launch_id;
 }
 
-void DebugSessionResultCoordinator::begin_unowned_session() {
+void DebugSessionResultCoordinator::begin_unowned_session(uint64_t p_debugger_launch_id) {
 	active = true;
 	owned = false;
 	launch_id = 0;
+	debugger_launch_id = p_debugger_launch_id;
 }
 
 DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_process_completed(uint64_t p_launch_id, int p_exit_code) {
@@ -244,7 +246,7 @@ DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_pr
 
 DebugSessionResultCoordinator::Outcome DebugSessionResultCoordinator::observe_debugger_stopped(uint64_t p_launch_id) {
 	Outcome outcome;
-	if (!active || p_launch_id != launch_id) {
+	if (!active || p_launch_id != debugger_launch_id) {
 		return outcome;
 	}
 	if (owned) {
@@ -307,8 +309,8 @@ void EditorDebuggerNode::begin_owned_debug_session(uint64_t p_launch_id) {
 	session_coordinator.begin_owned_launch(p_launch_id);
 }
 
-void EditorDebuggerNode::begin_unowned_debug_session() {
-	session_coordinator.begin_unowned_session();
+void EditorDebuggerNode::begin_unowned_debug_session(uint64_t p_debugger_launch_id) {
+	session_coordinator.begin_unowned_session(p_debugger_launch_id);
 }
 
 void EditorDebuggerNode::notify_owned_process_completed(uint64_t p_launch_id, int p_exit_code) {
