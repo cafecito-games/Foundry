@@ -56,6 +56,7 @@ static bool _projected_type_arguments_conflict(const Vector<ContainerType> &p_ex
 
 bool ContainerType::operator==(const ContainerType &p_type) const {
 	return builtin_type == p_type.builtin_type &&
+			numeric_type == p_type.numeric_type &&
 			class_name == p_type.class_name &&
 			script == p_type.script &&
 			element_types == p_type.element_types &&
@@ -91,6 +92,7 @@ String ContainerType::get_type_name() const {
 
 ContainerTypeValidate::ContainerTypeValidate(const ContainerType &p_type) {
 	type = p_type.builtin_type;
+	numeric_type = p_type.numeric_type;
 	class_name = p_type.class_name;
 	script = p_type.script;
 	for (const ContainerType &element_type : p_type.element_types) {
@@ -103,6 +105,7 @@ ContainerTypeValidate::ContainerTypeValidate(const ContainerType &p_type) {
 ContainerType ContainerTypeValidate::get_container_type() const {
 	ContainerType result;
 	result.builtin_type = type;
+	result.numeric_type = numeric_type;
 	result.class_name = class_name;
 	result.script = script;
 	for (const ContainerTypeValidate &element_type : element_types) {
@@ -136,6 +139,11 @@ String ContainerTypeValidate::get_type_name() const {
 String ContainerTypeValidate::_get_value_type_name() const {
 	if (type == Variant::NIL) {
 		return "Variant";
+	}
+	// A declared width names itself: `Variant::get_type_name()` only knows the carrier, so it cannot
+	// tell `int` from `long`. Descriptors without a source spelling fall back to their diagnostic name.
+	if (numeric_type != NumericType::NONE && numeric_type_is_carrier_consistent(numeric_type, type)) {
+		return numeric_type_has_public_name(numeric_type) ? numeric_type_public_name(numeric_type) : numeric_type_name(numeric_type);
 	}
 	if (type == Variant::ARRAY && !element_types.is_empty()) {
 		return vformat("Array[%s]", element_types[0].get_type_name());
@@ -208,6 +216,16 @@ bool ContainerTypeValidate::_internal_validate(Variant &inout_variant, const cha
 			}
 			return false;
 		}
+	}
+
+	// The carrier now matches, so an integer slot with a declared width can check the magnitude. A
+	// `NONE` descriptor is the absence of a width constraint rather than an empty range, so it is not
+	// consulted at all: an unannotated container keeps accepting everything its carrier can hold.
+	if (numeric_type != NumericType::NONE && !numeric_type_contains(numeric_type, inout_variant)) {
+		if (p_output_errors) {
+			ERR_FAIL_V_MSG(false, vformat("Attempted to %s the value %s into a %s of type '%s', which only accepts values from %s to %s.", String(p_operation), inout_variant.stringify(), where, get_type_name(), String::num_int64(numeric_type_minimum(numeric_type)), String::num_uint64(numeric_type_maximum(numeric_type))));
+		}
+		return false;
 	}
 
 	if (type == Variant::OBJECT) {
@@ -538,6 +556,14 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 		return false;
 	}
 
+	// Referencing skips per-value validation, so it must not be more permissive than it. A slot with no
+	// width constraint accepts every value its carrier holds and can therefore alias any width on that
+	// carrier; two different declared widths describe values the other would reject, so `int` and `long`
+	// containers stay invariant.
+	if (numeric_type != NumericType::NONE && numeric_type != p_type.numeric_type) {
+		return false;
+	}
+
 	if (type == Variant::ARRAY) {
 		if (element_types.is_empty()) {
 			return true;
@@ -617,6 +643,7 @@ bool ContainerTypeValidate::can_reference(const ContainerTypeValidate &p_type) c
 
 bool ContainerTypeValidate::operator==(const ContainerTypeValidate &p_type) const {
 	return type == p_type.type &&
+			numeric_type == p_type.numeric_type &&
 			class_name == p_type.class_name &&
 			script == p_type.script &&
 			element_types == p_type.element_types &&
@@ -659,6 +686,21 @@ bool from_variant(const Variant &p_descriptor, ContainerType &r_type, String *r_
 
 	ContainerType type;
 	type.builtin_type = Variant::Type(type_id);
+
+	if (descriptor.has("numeric_type")) {
+		const Variant numeric_type_value = descriptor["numeric_type"];
+		if (numeric_type_value.get_type() != Variant::INT) {
+			return _fail(r_error, R"(Container type descriptor "numeric_type" must be an int.)");
+		}
+		const int64_t numeric_type_id = numeric_type_value;
+		if (numeric_type_id < 0 || numeric_type_id >= int64_t(NumericType::MAX)) {
+			return _fail(r_error, vformat("Container type descriptor has invalid numeric type id %d.", numeric_type_id));
+		}
+		type.numeric_type = NumericType(numeric_type_id);
+		if (!numeric_type_is_carrier_consistent(type.numeric_type, type.builtin_type)) {
+			return _fail(r_error, vformat("Container type descriptor numeric type '%s' does not match type '%s'.", numeric_type_name(type.numeric_type), Variant::get_type_name(type.builtin_type)));
+		}
+	}
 
 	if (descriptor.has("is_type_handle")) {
 		const Variant is_type_handle_value = descriptor["is_type_handle"];
@@ -752,6 +794,11 @@ bool from_variant(const Variant &p_descriptor, ContainerType &r_type, String *r_
 Variant to_variant(const ContainerType &p_type) {
 	Dictionary descriptor;
 	descriptor["type"] = p_type.builtin_type;
+	// Only emitted when a width is declared, so a carrier-only descriptor is spelled exactly as it was
+	// before numeric descriptors existed and an absent key decodes back to an unconstrained slot.
+	if (p_type.numeric_type != NumericType::NONE) {
+		descriptor["numeric_type"] = int64_t(p_type.numeric_type);
+	}
 	// Only emitted when set, so an instance-typed descriptor is spelled exactly as it was before class
 	// handles existed and an absent key decodes back to an instance type.
 	if (p_type.is_type_handle) {
