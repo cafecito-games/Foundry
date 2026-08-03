@@ -30,22 +30,33 @@
 
 #pragma once
 
-#include "core/object/class_handle.h"
 #include "core/variant/callable.h"
+#include "core/variant/container_type_validate.h"
+
+class FoundryScript;
+class FSSpecializedClassHandle;
 
 // A static callable extracted from a specialized generic class handle, e.g. `Crate[int].make`.
 //
-// A standard `Callable` keeps only its receiver's `ObjectID`, which is enough for a script or a
-// native class handle because both outlive any extraction: the script cache owns one, the language
-// globals own the other. A specialized handle is a transient value object built per expression and
-// owned by nothing else, so a standard callable extracted from one dangles as soon as the extraction
-// scope releases it -- silently turning a wrong receiver into a freed one. This callable owns its
-// handle instead, so an extracted callable that outlives the extraction scope still dispatches
-// through the same specialization it was extracted from.
+// A standard `Callable` records its receiver's `ObjectID`, which is enough for a script or a native
+// class handle because both outlive any extraction: the script cache owns one, the language globals
+// own the other. A specialized handle is a transient value object built per expression and owned by
+// nothing else, so a standard callable extracted from one dangles as soon as the extraction scope
+// releases it. This callable therefore records the *specialization* -- the represented script plus
+// its concrete arguments -- and rebuilds an equivalent handle for each dispatch, so a callable that
+// outlives its extraction scope still dispatches through the specialization it was extracted from.
+//
+// The script is held by id, never by reference, for the same reason a suspended call's receiver
+// descriptor is: a callable kept in a static variable of the script it was extracted from would
+// otherwise close a reference cycle that nothing tears down. A receiver that is gone by dispatch time
+// is reported as an error rather than approximated by the unspecialized script.
 class FSClassHandleCallable : public CallableCustom {
-	Ref<ClassHandle> handle;
+	ObjectID script_id;
+	Vector<ContainerType> type_arguments;
 	StringName method;
 	uint32_t h = 0;
+
+	Ref<FSSpecializedClassHandle> resolve_handle() const;
 
 	static bool compare_equal(const CallableCustom *p_a, const CallableCustom *p_b);
 	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
@@ -62,6 +73,7 @@ public:
 	bool is_async() const override;
 	void call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const override;
 
-	FSClassHandleCallable(const Ref<ClassHandle> &p_handle, const StringName &p_method);
+	FSClassHandleCallable(const Ref<FoundryScript> &p_script, const Vector<ContainerType> &p_type_arguments,
+			const StringName &p_method);
 	virtual ~FSClassHandleCallable() = default;
 };

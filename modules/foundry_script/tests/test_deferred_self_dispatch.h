@@ -180,12 +180,102 @@ TEST_CASE("[Modules][FoundryScript][DeferredSelf] A callable outliving its extra
 	CHECK(reified_arguments[0].class_name == SNAME("ImageTexture"));
 }
 
+TEST_CASE("[Modules][FoundryScript][DeferredSelf] An extracted inherited callable describes itself as callable") {
+	DeferredSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_deferred_self_source(
+			"class Base:\n"
+			"\tstatic func spawn(seed: int) -> Self:\n"
+			"\t\tprint(seed)\n"
+			"\t\treturn Self.new()\n"
+			"\n"
+			"class Derived extends Base:\n"
+			"\tpass\n");
+
+	const Ref<FoundryScript> derived = deferred_self_subclass(script, SNAME("Derived"));
+	REQUIRE(derived.is_valid());
+
+	// Binding the receiver rather than the declaring class must not make a callable that works look
+	// broken to anything that validates one before using it.
+	const Callable from_derived = extract_deferred_self_callable(derived.ptr(), SNAME("spawn"));
+	CHECK(from_derived.is_valid());
+	bool argument_count_is_valid = false;
+	CHECK_EQ(from_derived.get_argument_count(&argument_count_is_valid), 1);
+	CHECK(argument_count_is_valid);
+}
+
+TEST_CASE("[Modules][FoundryScript][DeferredSelf] Callables for different specializations stay distinct") {
+	DeferredSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_deferred_self_source(
+			"class Crate[T]:\n"
+			"\tstatic func spawn() -> Self:\n"
+			"\t\treturn Self.new()\n");
+
+	const Ref<FoundryScript> crate = deferred_self_subclass(script, SNAME("Crate"));
+	REQUIRE(crate.is_valid());
+
+	ContainerType image_argument;
+	image_argument.builtin_type = Variant::OBJECT;
+	image_argument.class_name = SNAME("ImageTexture");
+	ContainerType material_argument;
+	material_argument.builtin_type = Variant::OBJECT;
+	material_argument.class_name = SNAME("Material");
+
+	const Ref<FSSpecializedClassHandle> image_handle = FSSpecializedClassHandle::create(crate, { image_argument });
+	const Ref<FSSpecializedClassHandle> material_handle = FSSpecializedClassHandle::create(crate, { material_argument });
+	const Ref<FSSpecializedClassHandle> same_image_handle = FSSpecializedClassHandle::create(crate, { image_argument });
+
+	const Callable from_image = extract_deferred_self_callable(image_handle.ptr(), SNAME("spawn"));
+	const Callable from_material = extract_deferred_self_callable(material_handle.ptr(), SNAME("spawn"));
+	const Callable from_same_image = extract_deferred_self_callable(same_image_handle.ptr(), SNAME("spawn"));
+
+	// Identity is the specialization, so separately built handles for one specialization agree while
+	// two specializations never collide, whatever their hashes do.
+	CHECK(from_image == from_same_image);
+	CHECK(from_image != from_material);
+}
+
+TEST_CASE("[Modules][FoundryScript][DeferredSelf] An extracted callable does not keep its script alive") {
+	DeferredSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_deferred_self_source(
+			"class Crate[T]:\n"
+			"\tstatic func spawn() -> Self:\n"
+			"\t\treturn Self.new()\n");
+
+	const Ref<FoundryScript> crate = deferred_self_subclass(script, SNAME("Crate"));
+	REQUIRE(crate.is_valid());
+
+	ContainerType image_argument;
+	image_argument.builtin_type = Variant::OBJECT;
+	image_argument.class_name = SNAME("ImageTexture");
+	const Ref<FSSpecializedClassHandle> handle = FSSpecializedClassHandle::create(crate, { image_argument });
+
+	// One warm-up extraction first, so one-time bookkeeping is not mistaken for a retained script.
+	{
+		const Callable warm_up = extract_deferred_self_callable(handle.ptr(), SNAME("spawn"));
+		CHECK(warm_up.is_valid());
+	}
+	const int settled_reference_count = crate->get_reference_count();
+
+	// A callable that owned its receiver would own the script through it, and a script that stores such
+	// a callable in one of its own static variables would then close a cycle nothing tears down.
+	LocalVector<Callable> retained;
+	for (int i = 0; i < 4; i++) {
+		retained.push_back(extract_deferred_self_callable(handle.ptr(), SNAME("spawn")));
+		CHECK_EQ(crate->get_reference_count(), settled_reference_count);
+	}
+	CHECK(retained[0].is_valid());
+}
+
 TEST_CASE("[Modules][FoundryScript][DeferredSelf] A callable with no receiver refuses instead of falling back") {
 	DeferredSelfLanguageScope language;
 
 	// A missing receiver is a broken dispatch path. Dispatching through the unspecialized script the
-	// handle would have represented is exactly the silent wrong answer this must not produce.
-	const Callable without_receiver = Callable(memnew(FSClassHandleCallable(Ref<ClassHandle>(), SNAME("spawn"))));
+	// receiver would have specialized is exactly the silent wrong answer this must not produce.
+	const Callable without_receiver = Callable(memnew(FSClassHandleCallable(Ref<FoundryScript>(),
+			Vector<ContainerType>(), SNAME("spawn"))));
 	CHECK_FALSE(without_receiver.is_valid());
 
 	Variant result;

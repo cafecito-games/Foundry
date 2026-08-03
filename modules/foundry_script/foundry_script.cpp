@@ -165,8 +165,9 @@ bool FSSpecializedClassHandle::_get(const StringName &p_name, Variant &r_ret) co
 	if (script->resolves_to_static_function(p_name)) {
 		// The receiver of an extracted static callable is this specialization, not the unspecialized
 		// script: invoking it later has to construct `Crate[int]` exactly as calling through this handle
-		// directly would. The callable owns the handle because nothing else does.
-		r_ret = Callable(memnew(FSClassHandleCallable(Ref<ClassHandle>(const_cast<FSSpecializedClassHandle *>(this)), p_name)));
+		// directly would. This handle is a transient value with no other owner, so the callable records
+		// the specialization instead of the handle object.
+		r_ret = Callable(memnew(FSClassHandleCallable(script, type_arguments, p_name)));
 		return true;
 	}
 	return script->_get(p_name, r_ret);
@@ -979,22 +980,32 @@ bool FoundryScript::has_method(const StringName &p_method) const {
 }
 
 bool FoundryScript::has_static_method(const StringName &p_method) const {
-	return member_functions.has(p_method) && member_functions[p_method]->is_static();
+	// An inherited static function is reachable through this class -- that is what dispatch through a
+	// derived handle does -- so the answer follows the same base chain the dispatch does.
+	for (const FoundryScript *top = this; top != nullptr; top = top->base.ptr()) {
+		HashMap<StringName, FSFunction *>::ConstIterator element = top->member_functions.find(p_method);
+		if (element) {
+			return element->value->is_static();
+		}
+	}
+	return false;
 }
 
 int FoundryScript::get_script_method_argument_count(const StringName &p_method, bool *r_is_valid) const {
-	HashMap<StringName, FSFunction *>::ConstIterator E = member_functions.find(p_method);
-	if (!E) {
-		if (r_is_valid) {
-			*r_is_valid = false;
+	for (const FoundryScript *top = this; top != nullptr; top = top->base.ptr()) {
+		HashMap<StringName, FSFunction *>::ConstIterator element = top->member_functions.find(p_method);
+		if (element) {
+			if (r_is_valid) {
+				*r_is_valid = true;
+			}
+			return element->value->get_argument_count();
 		}
-		return 0;
 	}
 
 	if (r_is_valid) {
-		*r_is_valid = true;
+		*r_is_valid = false;
 	}
-	return E->value->get_argument_count();
+	return 0;
 }
 
 MethodInfo FoundryScript::get_method_info(const StringName &p_method) const {
