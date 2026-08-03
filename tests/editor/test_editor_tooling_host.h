@@ -30,11 +30,14 @@
 
 #pragma once
 
+#include "core/debugger/engine_debugger.h"
+#include "core/debugger/remote_debugger_peer.h"
 #include "core/io/config_file.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/io/stream_peer_tcp.h"
 #include "core/io/tcp_server.h"
+#include "core/object/script_language_extension.h"
 #include "core/os/os.h"
 #include "editor/debugger/debug_adapter/debug_adapter_protocol.h"
 #include "editor/debugger/debug_adapter/debug_adapter_types.h"
@@ -51,6 +54,111 @@
 #endif
 
 namespace TestEditorToolingHost {
+
+class RetainingDebuggerPeer : public RemoteDebuggerPeer {
+	FOUNDRY_SOFTCLASS(RetainingDebuggerPeer, RemoteDebuggerPeer);
+
+	List<Array> queued_messages;
+
+public:
+	bool is_peer_connected() override { return true; }
+	int get_max_message_size() const override { return 1 << 20; }
+	bool has_message() override { return false; }
+	Error put_message(const Array &p_arr) override {
+		queued_messages.push_back(p_arr);
+		return OK;
+	}
+	Array get_message() override { return Array(); }
+	void close() override {}
+	void poll() override {}
+	int get_queued_message_count() const { return queued_messages.size(); }
+};
+
+class RetainingTestDebugger : public EngineDebugger {
+	Ref<RemoteDebuggerPeer> peer;
+
+	explicit RetainingTestDebugger(const Ref<RemoteDebuggerPeer> &p_peer) :
+			peer(p_peer) {}
+
+public:
+	static void install(const Ref<RemoteDebuggerPeer> &p_peer) {
+		DEV_ASSERT(singleton == nullptr);
+		singleton = memnew(RetainingTestDebugger(p_peer));
+	}
+
+	void send_message(const String &p_msg, const Array &p_data) override {
+		peer->put_message(Array{ p_msg, p_data });
+	}
+	void send_error(const String &p_func, const String &p_file, int p_line, const String &p_err,
+			const String &p_descr, bool p_editor_notify, ErrorHandlerType p_type) override {}
+	void debug(bool p_can_continue = true, bool p_is_error_breakpoint = false) override {}
+};
+
+class DebuggerPayloadSentinelLanguage : public ScriptLanguageExtension {
+	FOUNDRY_SOFTCLASS(DebuggerPayloadSentinelLanguage, ScriptLanguageExtension);
+
+	bool finished = false;
+
+public:
+	void finish() override { finished = true; }
+	bool is_finished() const { return finished; }
+};
+
+class ScriptOwnedDebuggerPayload : public RefCounted {
+	FOUNDRY_SOFTCLASS(ScriptOwnedDebuggerPayload, RefCounted);
+
+	DebuggerPayloadSentinelLanguage *language = nullptr;
+	bool *released_before_language_finish = nullptr;
+	int *release_count = nullptr;
+
+public:
+	ScriptOwnedDebuggerPayload(DebuggerPayloadSentinelLanguage *p_language, bool *p_released_before_language_finish,
+			int *p_release_count) :
+			language(p_language),
+			released_before_language_finish(p_released_before_language_finish),
+			release_count(p_release_count) {}
+
+	~ScriptOwnedDebuggerPayload() {
+		*released_before_language_finish = !language->is_finished();
+		(*release_count)++;
+	}
+};
+
+TEST_CASE("[Core][EngineDebugger] Transport shutdown releases queued script-owned values before language finish") {
+	REQUIRE_MESSAGE(EngineDebugger::get_singleton() == nullptr, "The lifecycle test requires an inactive debugger.");
+
+	DebuggerPayloadSentinelLanguage *language = memnew(DebuggerPayloadSentinelLanguage);
+	bool released_before_language_finish = false;
+	int release_count = 0;
+	Ref<RetainingDebuggerPeer> peer;
+	// The projectless test runner does not register the TCP peer's queue-limit setting.
+	ERR_PRINT_OFF;
+	peer.instantiate();
+	ERR_PRINT_ON;
+	RetainingTestDebugger::install(peer);
+
+	{
+		Ref<ScriptOwnedDebuggerPayload> payload = memnew(
+				ScriptOwnedDebuggerPayload(language, &released_before_language_finish, &release_count));
+		Array message_data;
+		message_data.push_back(payload);
+		EngineDebugger::get_singleton()->send_message("script_owned_payload", message_data);
+	}
+	CHECK_EQ(peer->get_queued_message_count(), 1);
+	CHECK_EQ(release_count, 0);
+	peer.unref();
+	CHECK_EQ(release_count, 0);
+	CHECK_FALSE(released_before_language_finish);
+
+	EngineDebugger::shutdown_transport();
+	CHECK_EQ(release_count, 1);
+	CHECK(released_before_language_finish);
+	CHECK_FALSE(language->is_finished());
+
+	language->finish();
+	CHECK(language->is_finished());
+	memdelete(language);
+}
 
 static Dictionary parse_marker_record(const String &p_output, const String &p_marker) {
 	const int marker_index = p_output.find(p_marker);
