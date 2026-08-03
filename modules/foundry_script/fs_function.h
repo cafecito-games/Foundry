@@ -494,6 +494,15 @@ public:
 	enum Opcode {
 		OPCODE_OPERATOR,
 		OPCODE_OPERATOR_VALIDATED,
+		// Checked integer arithmetic. Unlike the generic and validated operators, these carry the
+		// exact width the operation is checked at and refuse a result that width cannot represent
+		// instead of wrapping. They write their destination only after the operation succeeds, so a
+		// failing compound assignment leaves its target untouched.
+		OPCODE_NUMERIC_BINARY,
+		OPCODE_NUMERIC_UNARY,
+		// Checked integer conversion, including the unsigned carrier that `Variant::construct()` has
+		// no constructor for.
+		OPCODE_NUMERIC_CAST,
 		OPCODE_TYPE_TEST_BUILTIN,
 		OPCODE_TYPE_TEST_ARRAY,
 		OPCODE_TYPE_TEST_DICTIONARY,
@@ -627,6 +636,7 @@ public:
 		OPCODE_STORE_NAMED_GLOBAL,
 		OPCODE_TYPE_ADJUST_BOOL,
 		OPCODE_TYPE_ADJUST_INT,
+		OPCODE_TYPE_ADJUST_UINT,
 		OPCODE_TYPE_ADJUST_FLOAT,
 		OPCODE_TYPE_ADJUST_STRING,
 		OPCODE_TYPE_ADJUST_VECTOR2,

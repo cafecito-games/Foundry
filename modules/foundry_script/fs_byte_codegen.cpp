@@ -30,6 +30,9 @@
 
 #include "fs_byte_codegen.h"
 
+#include "fs_numeric_ops.h"
+#include "fs_type.h"
+
 #include "core/debugger/engine_debugger.h"
 
 // Appends every float reachable from `p_value`, in a fixed order, so two constants that are equal
@@ -375,6 +378,7 @@ uint32_t FSByteCodeGenerator::add_temporary(const FSDataType &p_type) {
 			case Variant::NIL:
 			case Variant::BOOL:
 			case Variant::INT:
+			case Variant::UINT:
 			case Variant::FLOAT:
 			case Variant::STRING:
 			case Variant::VECTOR2:
@@ -413,7 +417,6 @@ uint32_t FSByteCodeGenerator::add_temporary(const FSDataType &p_type) {
 			case Variant::PACKED_VECTOR3_ARRAY:
 			case Variant::PACKED_COLOR_ARRAY:
 			case Variant::PACKED_VECTOR4_ARRAY:
-			case Variant::UINT:
 			case Variant::VARIANT_MAX:
 				// Arrays, dictionaries, and objects are reference counted, so we don't use the pool for them.
 				temp_type = Variant::NIL;
@@ -638,6 +641,85 @@ void FSByteCodeGenerator::set_initial_line(int p_line) {
 #define IS_BUILTIN_TYPE(m_var, m_type) \
 	(m_var.type.kind == FSDataType::BUILTIN && !m_var.type.is_nullable && m_var.type.builtin_type == m_type && m_type != Variant::NIL)
 
+static bool _is_integer_carrier(Variant::Type p_type) {
+	return p_type == Variant::INT || p_type == Variant::UINT;
+}
+
+// Whether an operand travels in a statically known integer carrier, and therefore has a width the
+// operation can be checked at. A dynamically typed operand does not: its carrier is only known once
+// it holds a value, so it stays on the generic evaluator.
+static bool _has_static_integer_carrier(const FSCodeGenerator::Address &p_address) {
+	return p_address.type.kind == FSDataType::BUILTIN && !p_address.type.is_nullable &&
+			_is_integer_carrier(p_address.type.builtin_type);
+}
+
+// The width a destination declares, or `NumericType::NONE` when it declares none. The analyzer wrote
+// the promoted result type onto the destination slot, so it is the authoritative answer whenever it
+// exists: an operand address can reach code generation with its width erased (a constant carries only
+// the value's carrier), while the destination carries what the analyzer decided.
+static NumericType _destination_numeric_type(const FSCodeGenerator::Address &p_target, Variant::Type p_carrier) {
+	if (!_has_static_integer_carrier(p_target) || p_target.type.builtin_type != p_carrier) {
+		return NumericType::NONE;
+	}
+	return p_target.type.numeric_type;
+}
+
+// Whether a binary operation is a checked integer one, and if so the exact width it is checked at.
+//
+// A shift is not a promotion: its right operand is a count rather than a second range, so the result
+// keeps the left operand's width. Every other operation promotes both declared widths. A pair that
+// declares no width at all is checked at the widest range its shared carrier can hold, which is what
+// keeps a width-erased value behaving as it always has while still refusing a result its carrier
+// cannot represent.
+//
+// `r_type` is `NumericType::NONE` when the operands have no common integer type — two carriers with
+// no promotion between them. That is still a checked integer operation, and it reports invalid
+// operands at run time rather than reinterpreting one carrier as the other.
+static bool _checked_binary_type(Variant::Operator p_operation, const FSCodeGenerator::Address &p_target,
+		const FSCodeGenerator::Address &p_left, const FSCodeGenerator::Address &p_right, NumericType &r_type) {
+	r_type = NumericType::NONE;
+	if (!FSNumericOps::handles_operation(p_operation)) {
+		return false;
+	}
+	if (!_has_static_integer_carrier(p_left) || !_has_static_integer_carrier(p_right)) {
+		return false;
+	}
+
+	const Variant::Type left_carrier = p_left.type.builtin_type;
+	NumericType declared = _destination_numeric_type(p_target, left_carrier);
+	if (declared == NumericType::NONE) {
+		if (p_operation == Variant::OP_SHIFT_LEFT || p_operation == Variant::OP_SHIFT_RIGHT) {
+			declared = p_left.type.numeric_type;
+		} else {
+			if (left_carrier != p_right.type.builtin_type) {
+				return true;
+			}
+			if (!FSNumericConversion::promote_integer_pair(p_left.type.numeric_type, p_right.type.numeric_type, declared)) {
+				return true;
+			}
+		}
+	} else if (p_operation != Variant::OP_SHIFT_LEFT && p_operation != Variant::OP_SHIFT_RIGHT &&
+			left_carrier != p_right.type.builtin_type) {
+		return true;
+	}
+
+	r_type = FSNumericOps::operation_type(declared, left_carrier);
+	return true;
+}
+
+static NumericType _checked_unary_type(Variant::Operator p_operation, const FSCodeGenerator::Address &p_target,
+		const FSCodeGenerator::Address &p_operand) {
+	if (!FSNumericOps::handles_operation(p_operation) || !_has_static_integer_carrier(p_operand)) {
+		return NumericType::NONE;
+	}
+	const Variant::Type carrier = p_operand.type.builtin_type;
+	NumericType declared = _destination_numeric_type(p_target, carrier);
+	if (declared == NumericType::NONE) {
+		declared = p_operand.type.numeric_type;
+	}
+	return FSNumericOps::operation_type(declared, carrier);
+}
+
 void FSByteCodeGenerator::write_type_adjust(const Address &p_target, Variant::Type p_new_type) {
 	switch (p_new_type) {
 		case Variant::BOOL:
@@ -645,6 +727,9 @@ void FSByteCodeGenerator::write_type_adjust(const Address &p_target, Variant::Ty
 			break;
 		case Variant::INT:
 			append_opcode(FSFunction::OPCODE_TYPE_ADJUST_INT);
+			break;
+		case Variant::UINT:
+			append_opcode(FSFunction::OPCODE_TYPE_ADJUST_UINT);
 			break;
 		case Variant::FLOAT:
 			append_opcode(FSFunction::OPCODE_TYPE_ADJUST_FLOAT);
@@ -755,7 +840,6 @@ void FSByteCodeGenerator::write_type_adjust(const Address &p_target, Variant::Ty
 			append_opcode(FSFunction::OPCODE_TYPE_ADJUST_PACKED_VECTOR4_ARRAY);
 			break;
 		case Variant::NIL:
-		case Variant::UINT:
 		case Variant::VARIANT_MAX:
 			return;
 	}
@@ -763,6 +847,22 @@ void FSByteCodeGenerator::write_type_adjust(const Address &p_target, Variant::Ty
 }
 
 void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand) {
+	const NumericType unary_numeric_type = _checked_unary_type(p_operator, p_target, p_left_operand);
+	if (unary_numeric_type != NumericType::NONE) {
+		if (p_target.mode == Address::TEMPORARY) {
+			const Variant::Type result_carrier = numeric_type_carrier(unary_numeric_type);
+			if (temporaries[p_target.address].type != result_carrier) {
+				write_type_adjust(p_target, result_carrier);
+			}
+		}
+		append_opcode(FSFunction::OPCODE_NUMERIC_UNARY);
+		append(p_left_operand);
+		append(p_target);
+		append(p_operator);
+		append(int(unary_numeric_type));
+		return;
+	}
+
 	if (HAS_BUILTIN_TYPE(p_left_operand)) {
 		// Gather specific operator.
 		Variant::ValidatedOperatorEvaluator op_func = Variant::get_validated_operator_evaluator(p_operator, p_left_operand.type.builtin_type, Variant::NIL);
@@ -802,6 +902,23 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 }
 
 void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand, const Address &p_right_operand) {
+	NumericType binary_numeric_type = NumericType::NONE;
+	if (_checked_binary_type(p_operator, p_target, p_left_operand, p_right_operand, binary_numeric_type)) {
+		if (p_target.mode == Address::TEMPORARY && binary_numeric_type != NumericType::NONE) {
+			const Variant::Type result_carrier = numeric_type_carrier(binary_numeric_type);
+			if (temporaries[p_target.address].type != result_carrier) {
+				write_type_adjust(p_target, result_carrier);
+			}
+		}
+		append_opcode(FSFunction::OPCODE_NUMERIC_BINARY);
+		append(p_left_operand);
+		append(p_right_operand);
+		append(p_target);
+		append(p_operator);
+		append(int(binary_numeric_type));
+		return;
+	}
+
 	bool valid = HAS_BUILTIN_TYPE(p_left_operand) && HAS_BUILTIN_TYPE(p_right_operand);
 
 	// Avoid validated evaluator for modulo and division when operands are int or integer vector, since there's no check for division by zero.
@@ -895,6 +1012,9 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 				append(p_target);
 				append(p_source);
 				append(p_type.builtin_type | (p_type.is_nullable ? FSFunction::NULLABLE_TYPE_OPERAND_FLAG : 0));
+				// A width-constrained integer test is a range test as well as a carrier test: a value
+				// whose carrier matches but whose magnitude the width cannot hold is not of that type.
+				append(int(p_type.numeric_type));
 			}
 		} break;
 		case FSDataType::TUPLE: {
@@ -1419,6 +1539,23 @@ void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_s
 
 	switch (p_type.kind) {
 		case FSDataType::BUILTIN: {
+			// An integer destination is converted through the checked helper rather than through
+			// `Variant::construct()`: the unsigned carrier has no constructor at all, and a signed one
+			// silently reinterprets a value the destination cannot represent. A source that is not
+			// statically numeric keeps the generic construction path, which still answers for the
+			// conversions it does define (a numeric string, for instance).
+			const bool numeric_source = p_source.type.kind == FSDataType::BUILTIN &&
+					(_is_integer_carrier(p_source.type.builtin_type) || p_source.type.builtin_type == Variant::FLOAT);
+			if (_is_integer_carrier(p_type.builtin_type) &&
+					(numeric_source || p_type.builtin_type == Variant::UINT)) {
+				const NumericType target = FSNumericOps::operation_type(p_type.numeric_type, p_type.builtin_type);
+				append_opcode(FSFunction::OPCODE_NUMERIC_CAST);
+				append(p_source);
+				append(p_target);
+				append(int(target));
+				append(p_type.is_nullable);
+				return;
+			}
 			append_opcode(FSFunction::OPCODE_CAST_TO_BUILTIN);
 			index = p_type.builtin_type | (p_type.is_nullable ? FSFunction::NULLABLE_TYPE_OPERAND_FLAG : 0);
 		} break;

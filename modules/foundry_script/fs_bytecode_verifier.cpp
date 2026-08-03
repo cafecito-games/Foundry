@@ -32,6 +32,7 @@
 
 #include "foundry_script.h"
 #include "fs_function.h"
+#include "fs_numeric_ops.h"
 
 #include "core/templates/local_vector.h"
 
@@ -144,6 +145,24 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 		VERIFY_FAIL_COND(m_index < 0 || m_index >= (m_size), m_label " index is out of range"); \
 	} while (false)
 #define COLLECT_JUMP(m_offset) jump_targets.push_back(code_ptr[(m_offset)])
+// A checked numeric instruction names an operator the checked integer model actually defines. An
+// operator outside that set has no meaning for these opcodes, so it is corrupt rather than merely
+// unsupported.
+#define CHECK_NUMERIC_OPERATION(m_offset)                                                   \
+	do {                                                                                    \
+		const int m_operation = code_ptr[(m_offset)];                                       \
+		VERIFY_FAIL_COND(m_operation < 0 || m_operation >= Variant::OP_MAX ||               \
+						!FSNumericOps::handles_operation((Variant::Operator)m_operation),   \
+				"numeric instruction names an operator outside the checked integer model"); \
+	} while (false)
+#define CHECK_NUMERIC_TYPE(m_offset, m_allow_none)                                  \
+	do {                                                                            \
+		const int m_descriptor = code_ptr[(m_offset)];                              \
+		VERIFY_FAIL_COND(m_descriptor < 0 || m_descriptor >= int(NumericType::MAX), \
+				"numeric instruction names an unknown numeric descriptor");         \
+		VERIFY_FAIL_COND(!(m_allow_none) && m_descriptor == int(NumericType::NONE), \
+				"numeric instruction has no width to check against");               \
+	} while (false)
 
 	constexpr int operator_pointer_size = sizeof(Variant::ValidatedOperatorEvaluator) / sizeof(int);
 
@@ -172,11 +191,46 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_TABLE(ip + 4, operator_funcs_count, "operator");
 				ip += 5;
 			} break;
-			case FSFunction::OPCODE_TYPE_TEST_BUILTIN: {
-				VERIFY_FAIL_COND(ip + 4 > code_size, "instruction overruns code");
+			case FSFunction::OPCODE_NUMERIC_BINARY: {
+				VERIFY_FAIL_COND(ip + 6 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);
 				CHECK_ADDR(ip + 2);
-				ip += 4;
+				CHECK_ADDR(ip + 3);
+				CHECK_NUMERIC_OPERATION(ip + 4);
+				// `NONE` is the encoding for a pair with no common integer type; the VM reports it as
+				// invalid operands, so it is a legal operand rather than a corrupt one.
+				CHECK_NUMERIC_TYPE(ip + 5, true);
+				ip += 6;
+			} break;
+			case FSFunction::OPCODE_NUMERIC_UNARY: {
+				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				CHECK_NUMERIC_OPERATION(ip + 3);
+				CHECK_NUMERIC_TYPE(ip + 4, false);
+				ip += 5;
+			} break;
+			case FSFunction::OPCODE_NUMERIC_CAST: {
+				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				CHECK_NUMERIC_TYPE(ip + 3, false);
+				ip += 5;
+			} break;
+			case FSFunction::OPCODE_TYPE_TEST_BUILTIN: {
+				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				{
+					const int builtin_type_operand = code_ptr[ip + 3] & ~FSFunction::NULLABLE_TYPE_OPERAND_FLAG;
+					VERIFY_FAIL_COND(builtin_type_operand < 0 || builtin_type_operand >= Variant::VARIANT_MAX,
+							"type test names an unknown built-in type");
+					CHECK_NUMERIC_TYPE(ip + 4, true);
+					const NumericType numeric_type = (NumericType)code_ptr[ip + 4];
+					VERIFY_FAIL_COND(!numeric_type_is_carrier_consistent(numeric_type, (Variant::Type)builtin_type_operand),
+							"numeric descriptor disagrees with the tested carrier");
+				}
+				ip += 5;
 			} break;
 			case FSFunction::OPCODE_TYPE_TEST_ARRAY:
 			case FSFunction::OPCODE_ASSIGN_TYPED_ARRAY:
@@ -482,6 +536,7 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 			} break;
 			case FSFunction::OPCODE_TYPE_ADJUST_BOOL:
 			case FSFunction::OPCODE_TYPE_ADJUST_INT:
+			case FSFunction::OPCODE_TYPE_ADJUST_UINT:
 			case FSFunction::OPCODE_TYPE_ADJUST_FLOAT:
 			case FSFunction::OPCODE_TYPE_ADJUST_STRING:
 			case FSFunction::OPCODE_TYPE_ADJUST_VECTOR2:
