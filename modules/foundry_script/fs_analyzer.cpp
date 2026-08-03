@@ -3619,7 +3619,7 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 			const bool parent_is_variadic = method_flags.has_flag(METHOD_FLAG_VARARG);
 			const bool rest_valid = FSTypeCompatibility::rest_parameter_accepts_required_arguments(
 					p_function->is_vararg() ? &current_rest_type : nullptr,
-					parent_is_variadic ? &parent_rest_type : nullptr);
+					parent_is_variadic ? &parent_rest_type : nullptr, strict_null_checks);
 
 			// A parent parameter the override does not declare is still passed by polymorphic callers,
 			// and lands in the override's rest tail instead. The tail's element type must accept it.
@@ -3631,7 +3631,8 @@ void FSAnalyzer::resolve_function_signature(FSParser::FunctionNode *p_function, 
 					if (parameter_index++ < p_function->parameters.size()) {
 						continue;
 					}
-					if (!FSTypeCompatibility::rest_parameter_accepts_required_argument(&current_rest_type, parent_par_type)) {
+					if (!FSTypeCompatibility::rest_parameter_accepts_required_argument(&current_rest_type, parent_par_type,
+								strict_null_checks)) {
 						absorbed_parameters_valid = false;
 						unabsorbed_parent_parameter_type = parent_par_type;
 						break;
@@ -8338,7 +8339,7 @@ bool FSAnalyzer::validate_trait_method_signature(FSParser::ClassNode *p_trait,
 						_signature_type_involves_type_parameter(implementation_rest_type))) {
 			valid = valid && _datatype_alpha_equal(required_rest_type, implementation_rest_type);
 		} else {
-			valid = valid && FSTypeCompatibility::rest_parameter_accepts_required_arguments(implementation_function->is_vararg() ? &implementation_rest_type : nullptr, p_required_function->is_vararg() ? &required_rest_type : nullptr);
+			valid = valid && FSTypeCompatibility::rest_parameter_accepts_required_arguments(implementation_function->is_vararg() ? &implementation_rest_type : nullptr, p_required_function->is_vararg() ? &required_rest_type : nullptr, strict_null_checks);
 		}
 
 		// A required parameter the implementation does not declare is delivered into its rest tail

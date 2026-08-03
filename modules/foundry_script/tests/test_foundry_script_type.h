@@ -3344,6 +3344,52 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A typed rest tail cannot
 			OK);
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Rest variance honors strict null checks") {
+	// A nullable required element is only accepted by a nullable implementation element once nullability
+	// is enforced, matching how fixed parameters behave in strict-null mode.
+	const String source =
+			"class Base:\n"
+			"\tfunc visit(...values: Array[Node?]) -> void:\n"
+			"\t\tprint(values)\n"
+			"class Derived:\n"
+			"\textends Base\n"
+			"\tfunc visit(...values: Array[Node]) -> void:\n"
+			"\t\tprint(values)\n"
+			"func test() -> void:\n"
+			"\tpass\n";
+	CHECK_EQ(analyze_source(source), OK);
+	CHECK_NE(analyze_source(source, true), OK);
+	CHECK_EQ(analyze_source(
+					 "class Base:\n"
+					 "\tfunc visit(...values: Array[Node?]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "class Derived:\n"
+					 "\textends Base\n"
+					 "\tfunc visit(...values: Array[Node?]) -> void:\n"
+					 "\t\tprint(values)\n"
+					 "func test() -> void:\n"
+					 "\tpass\n",
+					 true),
+			OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Signal arguments past a fixed prefix reach the rest tail") {
+	CHECK_NE(analyze_source(
+					 "signal three_nodes(first: Node, second: Node, third: Node)\n"
+					 "func handler(first: Node, ...rest: Array[Node2D]) -> void:\n"
+					 "\tprint(rest)\n"
+					 "func test() -> void:\n"
+					 "\tthree_nodes.connect(handler)\n"),
+			OK);
+	CHECK_EQ(analyze_source(
+					 "signal three_nodes(first: Node, second: Node, third: Node)\n"
+					 "func handler(first: Node, ...rest: Array[Node]) -> void:\n"
+					 "\tprint(rest)\n"
+					 "func test() -> void:\n"
+					 "\tthree_nodes.connect(handler)\n"),
+			OK);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A narrowing callable rest tail is a static error") {
 	// A Callable erases its signature at runtime, so a rejected rest tail must not slip through as a
 	// runtime-checked narrowing the runtime cannot actually perform.

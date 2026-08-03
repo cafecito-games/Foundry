@@ -86,14 +86,16 @@ public:
 	// alone; a requirement with a rest tail is unreachable for an implementation that has none.
 	static bool rest_parameter_accepts_required_arguments(
 			const FSParser::DataType *p_implementation_rest_array,
-			const FSParser::DataType *p_required_rest_array);
+			const FSParser::DataType *p_required_rest_array,
+			bool p_strict_null = false);
 
 	// Whether a rest tail can absorb one fixed argument the requirement declares but the implementation
 	// does not, which the caller delivers into the tail instead. Same contravariant element rule: a
 	// gradual tail absorbs anything, a typed tail must accept the declared type.
 	static bool rest_parameter_accepts_required_argument(
 			const FSParser::DataType *p_implementation_rest_array,
-			const FSParser::DataType &p_required_argument_type);
+			const FSParser::DataType &p_required_argument_type,
+			bool p_strict_null = false);
 
 	// Resolves the rest tail a Callable/Signal type promises. Returns false when the signature is not
 	// variadic. `METHOD_FLAG_VARARG` is the arity bit, while the rich rest slot is filled only when the
