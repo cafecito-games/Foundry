@@ -4669,4 +4669,135 @@ TEST_CASE("[Modules][FoundryScript][NumericType] A typed container constant conv
 	CHECK(dictionary_type.get_container_element_type(1).numeric_type == NumericType::UINT32);
 }
 
+static FSParser::DataType type_parameter_named(const StringName &p_name) {
+	FSParser::DataType type;
+	type.kind = FSParser::DataType::TYPE_PARAMETER;
+	type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	type.type_parameter_name = p_name;
+	return type;
+}
+
+// `numeric_types_agree()` makes `NONE` agree with every descriptor, so `DataType::operator==` alone
+// cannot tell a preserved descriptor from a dropped one. Every case below asserts `numeric_type`
+// explicitly, and reads strict container equality through `ContainerType`, which is what
+// `FSDataType::is_same_container_type()` compares.
+TEST_CASE("[Modules][FoundryScript][NumericType] A width-erased property type enters a container element unconstrained") {
+	// A carrier-only PropertyInfo still decodes wide for its own value slot: that contract is what
+	// keeps the decode from claiming a constraint the encoded value never had.
+	const FSParser::DataType decoded = TestFSAnalyzerAccessor::decode_property(PropertyInfo(Variant::INT, "value"));
+	CHECK(decoded.builtin_type == Variant::INT);
+	CHECK(decoded.numeric_type == NumericType::INT64);
+	CHECK(decoded.numeric_type_is_carrier_erased);
+	CHECK(numeric_type_is_carrier_consistent(decoded.numeric_type, decoded.builtin_type));
+
+	// An element slot states a constraint rather than a value range, so the fabricated width does not
+	// travel into it. Otherwise this element would be a distinct type from a source-declared `int` one
+	// under the strict equality typed containers use.
+	const FSParser::DataType inferred_array = make_array_of(decoded);
+	REQUIRE(inferred_array.has_container_element_type(0));
+	CHECK(inferred_array.get_container_element_type(0).numeric_type == NumericType::NONE);
+	CHECK_FALSE(inferred_array.get_container_element_type(0).numeric_type_is_carrier_erased);
+
+	const FSParser::DataType declared_array = make_array_of(make_builtin_type(Variant::INT));
+	CHECK(declared_array.get_container_element_type(0).numeric_type == NumericType::NONE);
+	const ContainerType inferred_container = TestFSAnalyzerAccessor::container_type_of(inferred_array);
+	const ContainerType declared_container = TestFSAnalyzerAccessor::container_type_of(declared_array);
+	REQUIRE(inferred_container.element_types.size() == 1);
+	CHECK(inferred_container.element_types[0].numeric_type == NumericType::NONE);
+	CHECK(inferred_container == declared_container);
+
+	// The unsigned carrier erases the same way.
+	const FSParser::DataType decoded_unsigned = TestFSAnalyzerAccessor::decode_property(PropertyInfo(Variant::UINT, "value"));
+	CHECK(decoded_unsigned.numeric_type == NumericType::UINT64);
+	CHECK(make_array_of(decoded_unsigned).get_container_element_type(0).numeric_type == NumericType::NONE);
+
+	// A non-integer carrier pins no width, so nothing is flagged and nothing is dropped.
+	const FSParser::DataType decoded_string = TestFSAnalyzerAccessor::decode_property(PropertyInfo(Variant::STRING, "text"));
+	CHECK(decoded_string.numeric_type == NumericType::NONE);
+	CHECK_FALSE(decoded_string.numeric_type_is_carrier_erased);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] A declared element width survives the same slot and stays distinct") {
+	// The complement of the case above: dropping every inferred element width would erase genuine
+	// declarations too, and strict container equality must keep telling two declared widths apart.
+	const FSParser::DataType narrow = make_numeric_type(Variant::INT, NumericType::INT32);
+	const FSParser::DataType wide = make_numeric_type(Variant::INT, NumericType::INT64);
+	CHECK_FALSE(narrow.numeric_type_is_carrier_erased);
+	CHECK_FALSE(wide.numeric_type_is_carrier_erased);
+
+	CHECK(make_array_of(narrow).get_container_element_type(0).numeric_type == NumericType::INT32);
+	CHECK(make_array_of(wide).get_container_element_type(0).numeric_type == NumericType::INT64);
+
+	const ContainerType narrow_container = TestFSAnalyzerAccessor::container_type_of(make_array_of(narrow));
+	const ContainerType wide_container = TestFSAnalyzerAccessor::container_type_of(make_array_of(wide));
+	const ContainerType unconstrained_container = TestFSAnalyzerAccessor::container_type_of(make_array_of(make_builtin_type(Variant::INT)));
+	CHECK(narrow_container != wide_container);
+	CHECK(narrow_container != unconstrained_container);
+	// A declared `long` element is still not the same container type as an undeclared one: the fix
+	// removes a fabricated constraint, it does not make `NONE` equal to a width at the equality site.
+	CHECK(wide_container != unconstrained_container);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] Generic inference does not widen a container element from a property argument") {
+	// The reachable path: a type parameter solved from an argument whose type came from a carrier-only
+	// PropertyInfo, then substituted into `Array[T]` and into a reified `Box[T]` argument.
+	HashMap<StringName, FSParser::DataType> erased_bindings;
+	erased_bindings[SNAME("T")] = TestFSAnalyzerAccessor::decode_property(PropertyInfo(Variant::INT, "value"));
+
+	const FSParser::DataType array_of_parameter = make_array_of(type_parameter_named(SNAME("T")));
+	const FSParser::DataType substituted = FSParser::DataType::substitute(array_of_parameter, erased_bindings);
+	REQUIRE(substituted.has_container_element_type(0));
+	CHECK(substituted.get_container_element_type(0).builtin_type == Variant::INT);
+	CHECK(substituted.get_container_element_type(0).numeric_type == NumericType::NONE);
+	CHECK(TestFSAnalyzerAccessor::container_type_of(substituted) ==
+			TestFSAnalyzerAccessor::container_type_of(make_array_of(make_builtin_type(Variant::INT))));
+
+	FSParser::DataType box_of_parameter;
+	box_of_parameter.kind = FSParser::DataType::NATIVE;
+	box_of_parameter.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	box_of_parameter.builtin_type = Variant::OBJECT;
+	box_of_parameter.native_type = SNAME("RefCounted");
+	box_of_parameter.type_arguments.push_back(type_parameter_named(SNAME("T")));
+	const FSParser::DataType substituted_box = FSParser::DataType::substitute(box_of_parameter, erased_bindings);
+	REQUIRE(substituted_box.type_arguments.size() == 1);
+	CHECK(substituted_box.type_arguments[0].numeric_type == NumericType::NONE);
+
+	// The scalar value position keeps the decoded descriptor: only constraint slots are normalized.
+	CHECK(FSParser::DataType::substitute(type_parameter_named(SNAME("T")), erased_bindings).numeric_type == NumericType::INT64);
+
+	// A binding that really declared a width substitutes unchanged into the same slots.
+	HashMap<StringName, FSParser::DataType> declared_bindings;
+	declared_bindings[SNAME("T")] = make_numeric_type(Variant::INT, NumericType::INT32);
+	CHECK(FSParser::DataType::substitute(array_of_parameter, declared_bindings).get_container_element_type(0).numeric_type == NumericType::INT32);
+	CHECK(FSParser::DataType::substitute(box_of_parameter, declared_bindings).type_arguments[0].numeric_type == NumericType::INT32);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericType] A nested container element normalizes at every depth") {
+	// `Dictionary[T, Array[T]]`: the inner element is two levels below the root, which is where a
+	// normalization applied only at the top would let the fabricated width through.
+	HashMap<StringName, FSParser::DataType> bindings;
+	bindings[SNAME("T")] = TestFSAnalyzerAccessor::decode_property(PropertyInfo(Variant::INT, "value"));
+
+	FSParser::DataType dictionary_of_parameter = make_builtin_type(Variant::DICTIONARY);
+	dictionary_of_parameter.set_container_element_type(0, type_parameter_named(SNAME("T")));
+	dictionary_of_parameter.set_container_element_type(1, make_array_of(type_parameter_named(SNAME("T"))));
+
+	const FSParser::DataType substituted = FSParser::DataType::substitute(dictionary_of_parameter, bindings);
+	REQUIRE(substituted.get_container_element_type_count() == 2);
+	CHECK(substituted.get_container_element_type(0).numeric_type == NumericType::NONE);
+	REQUIRE(substituted.get_container_element_type(1).has_container_element_type(0));
+	CHECK(substituted.get_container_element_type(1).get_container_element_type(0).numeric_type == NumericType::NONE);
+
+	const ContainerType container = TestFSAnalyzerAccessor::container_type_of(substituted);
+	REQUIRE(container.element_types.size() == 2);
+	CHECK(container.element_types[0].numeric_type == NumericType::NONE);
+	REQUIRE(container.element_types[1].element_types.size() == 1);
+	CHECK(container.element_types[1].element_types[0].numeric_type == NumericType::NONE);
+
+	FSParser::DataType declared_dictionary = make_builtin_type(Variant::DICTIONARY);
+	declared_dictionary.set_container_element_type(0, make_builtin_type(Variant::INT));
+	declared_dictionary.set_container_element_type(1, make_array_of(make_builtin_type(Variant::INT)));
+	CHECK(container == TestFSAnalyzerAccessor::container_type_of(declared_dictionary));
+}
+
 } // namespace FSTests

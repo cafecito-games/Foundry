@@ -11871,7 +11871,12 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 		// value never had. Rich compiled member/signature metadata is preferred wherever it exists;
 		// this path is what a genuinely generic property falls back to. Container element hints below
 		// are spelled by carrier name and stay unconstrained for the same reason.
+		//
+		// The wide descriptor describes this property's own value slot. It is flagged as erasure-derived
+		// so it cannot be copied on into a constraint slot, where it would make an inferred element
+		// differ from an identically declared one under strict container equality.
 		result.numeric_type = numeric_type_wide_for_carrier(p_property.type);
+		result.numeric_type_is_carrier_erased = result.numeric_type != NumericType::NONE;
 		if ((p_property.type == Variant::CALLABLE || p_property.type == Variant::SIGNAL) &&
 				p_property.hint == PROPERTY_HINT_CALLABLE_TYPE && !p_property.hint_string.is_empty()) {
 			// The hint string is only the signature suffix; the leading type name is implied by the

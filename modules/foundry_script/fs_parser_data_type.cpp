@@ -305,11 +305,14 @@ FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const 
 	}
 
 	DataType result = p_type;
+	// Element and type-argument positions are constraint slots, so a binding solved from a
+	// width-erased value type enters them unconstrained rather than carrying the wide descriptor the
+	// carrier-only decode had to invent (see `as_container_slot_type`).
 	for (int i = 0; i < result.container_element_types.size(); i++) {
-		result.container_element_types.write[i] = substitute(result.container_element_types[i], p_bindings);
+		result.set_container_element_type(i, substitute(result.container_element_types[i], p_bindings));
 	}
 	for (int i = 0; i < result.type_arguments.size(); i++) {
-		result.type_arguments.write[i] = substitute(result.type_arguments[i], p_bindings);
+		result.type_arguments.write[i] = as_container_slot_type(substitute(result.type_arguments[i], p_bindings));
 	}
 	for (int i = 0; i < result.method_parameter_types.size(); i++) {
 		result.method_parameter_types.write[i] = substitute(result.method_parameter_types[i], p_bindings);
