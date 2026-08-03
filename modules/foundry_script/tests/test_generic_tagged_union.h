@@ -668,6 +668,44 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] External static fun
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] A constant cannot alias the bare generic union") {
+	SUBCASE("plain class constant") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T: Resource]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "const LEAK = Holder\n",
+						   "user://generic_tagged_union_constant_alias.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+	}
+
+	SUBCASE("constant pulled in while the union is still being analyzed") {
+		// Resolving the enum function body reaches the sibling constant reentrantly, so the union is
+		// still the active enum and its owner is still the current class. The alias is nonetheless
+		// outside the declaration and must not capture the open metatype.
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T: Resource]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "\tstatic func reach() -> Variant:\n"
+						   "\t\treturn LEAK\n"
+						   "\n"
+						   "const LEAK = Holder\n",
+						   "user://generic_tagged_union_constant_alias_reentrant.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+	}
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] An enum file still names its own generic union") {
 	// An `enum_name` file's body reaches the union through the file's own name rather than through a
 	// class member, so the bare-form gate has to recognize that position as the declaration too.

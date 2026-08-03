@@ -10843,6 +10843,14 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 						p_subscript->set_datatype(dummy);
 						return;
 					}
+					// A qualified chain names the union just as directly as a bare identifier does, so
+					// the bare-form gate applies before the chain publishes the metatype.
+					if (reject_bare_generic_union_reference(namespace_class_type, p_subscript)) {
+						FSParser::DataType rejected;
+						rejected.kind = FSParser::DataType::VARIANT;
+						p_subscript->set_datatype(rejected);
+						return;
+					}
 					const FSParser::DataType resolved_namespace_class_type = namespace_class_type;
 					for (int i = namespace_type_chain_size; i < type_chain.size(); i++) {
 						FSParser::DataType base = namespace_class_type;
