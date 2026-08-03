@@ -203,6 +203,7 @@
 #include "tests/core/variant/test_container_type_class_handle.h"
 #include "tests/core/variant/test_container_type_handle_transport.h"
 #include "tests/core/variant/test_dictionary.h"
+#include "tests/core/variant/test_numeric_type.h"
 #include "tests/core/variant/test_variant.h"
 #include "tests/core/variant/test_variant_utility.h"
 #include "tests/scene/test_animation.h"
