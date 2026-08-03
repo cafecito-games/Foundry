@@ -3925,6 +3925,26 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] An untyped bound value k
 			R"*(Too many arguments for "call()" call. Expected at most 0 but received 1.)*");
 }
 
+TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A value bound after unbind() never reaches the rest tail") {
+	// `unbind(1)` drops the last argument it receives and bound values are passed last, so the bound
+	// `7` is discarded before the target sees it and must not restrict the surviving arities.
+	CHECK_EQ(analyze_source(
+					 "func test() -> void:\n"
+					 "\tvar callback: Callable[[int, ...Array[String]], bool]\n"
+					 "\tvar bound := callback.unbind(1).bind(7)\n"
+					 "\tbound.call(2, \"a\")\n"),
+			OK);
+	bool analyzed = false;
+	const FSParser::DataType type = variable_type_of(
+			"var callback: Callable[[int, ...Array[String]], bool]\n"
+			"var bound := callback.unbind(1).bind(7)\n",
+			SNAME("bound"), analyzed);
+	REQUIRE(analyzed);
+	CHECK((type.method_info.flags & METHOD_FLAG_VARARG) != 0);
+	REQUIRE(type.has_method_rest_parameter_type());
+	CHECK_EQ(type.get_method_rest_parameter_type().to_string(), "Array[String]");
+}
+
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Strict dynamic checks reject an untyped bound value") {
 	// Strict mode treats every dynamic boundary as an error, so an untyped bound value no longer keeps
 	// the arities it would land in alive; the mismatch is reported at the bind instead.

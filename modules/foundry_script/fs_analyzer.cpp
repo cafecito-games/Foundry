@@ -12187,6 +12187,11 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				}
 				return bound_argument_conflicts_with(p_argument, p_base_type.get_method_rest_parameter_type().get_container_element_type(0));
 			};
+			// A preceding unbind() drops the trailing arguments it receives, and bound values are passed
+			// last, so that many of them are discarded before the target ever sees them.
+			auto bound_arguments_reaching_target = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments) -> int {
+				return MAX(p_bound_arguments.size() - p_base_type.method_unbound_argument_count, 0);
+			};
 			auto fixed_vararg_accepts_argument_count = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments, int p_argument_count) -> bool {
 				const int fixed_argument_count = p_base_type.method_parameter_types.size();
 				const int original_default_arg_count = MIN(p_base_type.method_info.default_arguments.size(), fixed_argument_count);
@@ -12207,7 +12212,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					}
 				}
 				// Bound values the fixed parameters do not absorb spill into the rest tail at this arity.
-				for (int i = bound_filled_count; i < p_bound_arguments.size(); i++) {
+				const int reaching_bound_count = bound_arguments_reaching_target(p_bound_arguments);
+				for (int i = bound_filled_count; i < reaching_bound_count; i++) {
 					if (bound_argument_conflicts_with_rest_tail(p_bound_arguments[i])) {
 						return false;
 					}
@@ -12230,7 +12236,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					}
 				}
 				// Every bound value the fixed parameters do not absorb reaches the rest tail.
-				for (int i = bound_filled_count; i < p_bound_arguments.size(); i++) {
+				const int reaching_bound_count = bound_arguments_reaching_target(p_bound_arguments);
+				for (int i = bound_filled_count; i < reaching_bound_count; i++) {
 					if (bound_argument_conflicts_with_rest_tail(p_bound_arguments[i])) {
 						return true;
 					}
@@ -12249,13 +12256,14 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				// the call arity, so it is reported straight away. An earlier bound value only reaches the rest
 				// tail once the call supplies enough arguments of its own, so a conflict there bounds the
 				// arities at which the result can still be invoked instead of failing the bind outright.
+				const int reaching_bound_count = bound_arguments_reaching_target(p_bound_arguments);
 				bool rest_tail_conflicts = false;
 				if (p_base_type.has_method_rest_parameter_type()) {
 					const FSParser::DataType rest_element_type = p_base_type.get_method_rest_parameter_type().get_container_element_type(0);
-					for (int i = fixed_argument_count; i < p_bound_arguments.size(); i++) {
+					for (int i = fixed_argument_count; i < reaching_bound_count; i++) {
 						call_site_validation.validate_argument_against_type(rest_element_type, const_cast<FSParser::ExpressionNode *>(p_bound_arguments[i]), i + 1, p_function, nullptr);
 					}
-					for (int i = 0; i < MIN(fixed_argument_count, p_bound_arguments.size()); i++) {
+					for (int i = 0; i < MIN(fixed_argument_count, reaching_bound_count); i++) {
 						if (bound_argument_conflicts_with_rest_tail(p_bound_arguments[i])) {
 							rest_tail_conflicts = true;
 							break;
@@ -12289,7 +12297,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 					if (p_base_type.has_method_rest_parameter_type()) {
 						// No call arity can place the bound values, so the mismatch is reported at the bind.
 						const FSParser::DataType rest_element_type = p_base_type.get_method_rest_parameter_type().get_container_element_type(0);
-						for (int i = 0; i < MIN(fixed_argument_count, p_bound_arguments.size()); i++) {
+						for (int i = 0; i < MIN(fixed_argument_count, reaching_bound_count); i++) {
 							if (bound_argument_conflicts_with_rest_tail(p_bound_arguments[i])) {
 								call_site_validation.validate_argument_against_type(rest_element_type, const_cast<FSParser::ExpressionNode *>(p_bound_arguments[i]), i + 1, p_function, nullptr);
 							}
