@@ -194,6 +194,13 @@ struct VariantReadsBothIntegerCarriers<BitField<T>> {
 // normalize the carrier before consulting the script-facing conversion table wherever the parameter
 // can actually receive it. `Variant::can_convert_strict()` itself stays strict.
 //
+// Contributor contract: unsigned C++ arithmetic parameters are supported for `callable_mp`,
+// bound, deferred, signal, and queued invocation. Keep the type required by the domain; do not
+// cast or change an unsigned parameter to a signed type solely for marshaling. Carrier acceptance
+// is separate from range checking and preserves the existing native narrowing behavior. Types
+// whose `Variant` conversion cannot read both integer carriers (for example `Color` and
+// `ObjectID`) remain rejected.
+//
 // Like the rest of this layer the check is about carriers, not value ranges: an argument that does
 // not fit the parameter's width is narrowed by `VariantCaster`, exactly as an oversized `INT` has
 // always been narrowed into a smaller signed parameter. `GetTypeInfo` reports `INT` for signed and

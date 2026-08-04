@@ -222,11 +222,34 @@ public:
 	int call_count = 0;
 	int received_tile_id = -1;
 	uint64_t received_generation = 0;
+	uint32_t received_mask = 0;
+	uint32_t received_flags = 0;
+
+	static int static_call_count;
+	static uint32_t static_received_value;
 
 	void receive(int p_tile_id, uint64_t p_generation) {
 		call_count++;
 		received_tile_id = p_tile_id;
 		received_generation = p_generation;
+	}
+
+	void receive_mask(uint32_t p_mask) {
+		call_count++;
+		received_mask = p_mask;
+	}
+
+	// Mirrors `Object::connect(..., uint32_t)`: a non-void native target that takes an unsigned
+	// flags argument and returns a sentinel `Error`.
+	Error receive_flags(uint32_t p_flags) {
+		call_count++;
+		received_flags = p_flags;
+		return ERR_BUSY;
+	}
+
+	static void receive_static(uint32_t p_value) {
+		static_call_count++;
+		static_received_value = p_value;
 	}
 
 	// `Variant::operator Color()` only reads `Variant::INT`, so an unsigned argument must not be
@@ -236,12 +259,20 @@ public:
 	}
 };
 
+int TestUnsignedArgumentReceiver::static_call_count = 0;
+uint32_t TestUnsignedArgumentReceiver::static_received_value = 0;
+
 // Tagged `[SceneTree]` because the deferred subcase needs a live `MessageQueue`.
 TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 	TestUnsignedArgumentReceiver *receiver = memnew(TestUnsignedArgumentReceiver);
+	TestUnsignedArgumentReceiver::static_call_count = 0;
+	TestUnsignedArgumentReceiver::static_received_value = 0;
 
 	// Above `UINT32_MAX` so a carrier that truncates the value stays visible in the assertions.
 	const uint64_t generation = 4294967297ULL;
+	const uint32_t mask = 0xA5A5A5A5u;
+	const uint32_t flags = 0xC0FFEEu;
+	const uint32_t static_value = 0xDEADBEEFu;
 
 	SUBCASE("bound argument") {
 		ErrorDetector detector;
@@ -288,6 +319,53 @@ TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 		memdelete(emitter);
 	}
 
+	SUBCASE("signal-emitted unsigned argument") {
+		// Matches `EditorPropertyLayersGrid` emitting a `uint32_t` mask onto a `uint32_t` receiver.
+		Object *emitter = memnew(Object);
+		emitter->add_user_signal(MethodInfo("flag_changed", PropertyInfo(Variant::INT, "value")));
+		emitter->connect("flag_changed", callable_mp(receiver, &TestUnsignedArgumentReceiver::receive_mask), Object::CONNECT_ONE_SHOT);
+
+		ErrorDetector detector;
+		emitter->emit_signal("flag_changed", mask);
+
+		CHECK_FALSE(detector.has_error);
+		CHECK(receiver->call_count == 1);
+		CHECK(receiver->received_mask == mask);
+
+		memdelete(emitter);
+	}
+
+	SUBCASE("non-void member target with uint32_t") {
+		// Matches `Object::connect(..., uint32_t)` reached through `callable_mp(...).call_deferred`.
+		ErrorDetector detector;
+
+		Callable callable = callable_mp(receiver, &TestUnsignedArgumentReceiver::receive_flags).bind(flags);
+		Callable::CallError error;
+		Variant result;
+		callable.callp(nullptr, 0, result, error);
+
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK_FALSE(detector.has_error);
+		CHECK(receiver->call_count == 1);
+		CHECK(receiver->received_flags == flags);
+		CHECK((Error)result == ERR_BUSY);
+	}
+
+	SUBCASE("static callable with bound uint32_t") {
+		// Matches OpenXR render-thread `callable_mp_static(...).bind(uint32_t, ...)` sites.
+		ErrorDetector detector;
+
+		Callable callable = callable_mp_static(&TestUnsignedArgumentReceiver::receive_static).bind(static_value);
+		Callable::CallError error;
+		Variant result;
+		callable.callp(nullptr, 0, result, error);
+
+		CHECK(error.error == Callable::CallError::CALL_OK);
+		CHECK_FALSE(detector.has_error);
+		CHECK(TestUnsignedArgumentReceiver::static_call_count == 1);
+		CHECK(TestUnsignedArgumentReceiver::static_received_value == static_value);
+	}
+
 	SUBCASE("value beyond the signed range") {
 		ErrorDetector detector;
 
@@ -301,6 +379,8 @@ TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 
 		CHECK(error.error == Callable::CallError::CALL_OK);
 		CHECK_FALSE(detector.has_error);
+		CHECK(receiver->call_count == 1);
+		CHECK(receiver->received_tile_id == 7);
 		CHECK(receiver->received_generation == unrepresentable_as_signed);
 	}
 

@@ -7822,7 +7822,7 @@ void EditorNode::_queue_focus_tile_activation(int p_tile_id) {
 	ERR_FAIL_NULL(scene_workspace->get_leaf_by_id(p_tile_id));
 
 	pending_focus_tile_id = p_tile_id;
-	const int64_t generation = ++pending_focus_tile_generation;
+	const uint64_t generation = ++pending_focus_tile_generation;
 	SceneTree *tree = get_tree();
 	if (tree) {
 		tree->connect(SNAME("process_frame"),
@@ -7833,7 +7833,7 @@ void EditorNode::_queue_focus_tile_activation(int p_tile_id) {
 	}
 }
 
-void EditorNode::_activate_queued_focus_tile(int p_tile_id, int64_t p_generation) {
+void EditorNode::_activate_queued_focus_tile(int p_tile_id, uint64_t p_generation) {
 	if (p_generation != pending_focus_tile_generation || pending_focus_tile_id != p_tile_id) {
 		return;
 	}
