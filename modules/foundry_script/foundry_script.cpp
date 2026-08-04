@@ -162,7 +162,7 @@ bool FSSpecializedClassHandle::_get(const StringName &p_name, Variant &r_ret) co
 	if (script.is_null()) {
 		return false;
 	}
-	if (script->resolves_to_static_function(p_name)) {
+	if (script->find_static_function_owner(p_name) != nullptr) {
 		// The receiver of an extracted static callable is this specialization, not the unspecialized
 		// script: invoking it later has to construct `Crate[int]` exactly as calling through this handle
 		// directly would. This handle is a transient value with no other owner, so the callable records
@@ -1837,22 +1837,22 @@ Variant FoundryScript::call_static_with_context(const StringName &p_method, cons
 	return result;
 }
 
-bool FoundryScript::resolves_to_static_function(const StringName &p_name) const {
+const FoundryScript *FoundryScript::find_static_function_owner(const StringName &p_name) const {
 	for (const FoundryScript *top = this; top != nullptr; top = top->base.ptr()) {
 		if (top->constants.has(p_name) || top->static_variables_indices.has(p_name)) {
-			return false;
+			return nullptr;
 		}
 		if (likely(top->valid)) {
 			HashMap<StringName, FSFunction *>::ConstIterator function_element = top->member_functions.find(p_name);
 			if (function_element && function_element->value->is_static()) {
-				return true;
+				return top;
 			}
 		}
 		if (top->subclasses.has(p_name)) {
-			return false;
+			return nullptr;
 		}
 	}
-	return false;
+	return nullptr;
 }
 
 bool FoundryScript::_get(const StringName &p_name, Variant &r_ret) const {

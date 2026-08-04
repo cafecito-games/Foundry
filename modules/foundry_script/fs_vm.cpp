@@ -378,7 +378,11 @@ static bool _class_slot_receiver_handle(const FSStaticSelfContext *p_static_self
 		return false;
 	}
 	FoundryScript *declaring_script = Object::cast_to<FoundryScript>(p_class_slot.get_validated_object());
-	if (declaring_script == nullptr || !declaring_script->resolves_to_static_function(p_name)) {
+	if (declaring_script == nullptr) {
+		return false;
+	}
+	const FoundryScript *selected_owner = declaring_script->find_static_function_owner(p_name);
+	if (selected_owner == nullptr) {
 		return false;
 	}
 	const Ref<Script> receiver_script = p_static_self->get_script();
@@ -386,12 +390,11 @@ static bool _class_slot_receiver_handle(const FSStaticSelfContext *p_static_self
 	if (receiver == nullptr) {
 		return false;
 	}
-	if (!receiver->resolves_to_static_function(p_name)) {
-		// The receiver declares a constant, a static variable, or an inner class under this name, which
-		// shadows the function in a read. The reference was resolved to the function, so it keeps
-		// reading the class that declares it rather than turning into an unrelated member. Analyzed
-		// source cannot express that shadowing -- redeclaring a base member is rejected -- so this
-		// guards compiled data the front-end did not produce.
+	if (receiver->find_static_function_owner(p_name) != selected_owner) {
+		// Only the receiver context travels, never the selection: reading through the receiver has to
+		// mean the same declaration the reference already resolved to. A receiver that overrides the
+		// function, or that shadows the name with a constant, a static variable, or an inner class,
+		// would otherwise answer with something an unqualified direct call would not have selected.
 		return false;
 	}
 	if (receiver == declaring_script && p_static_self->get_type_arguments().is_empty()) {
