@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/checked_integer_dynamic_signed_overflow.fs:2 on add(): The "+" operator overflows "long": the result is outside its range -9223372036854775808 to 9223372036854775807.
+<null>

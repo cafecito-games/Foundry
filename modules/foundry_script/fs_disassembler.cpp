@@ -227,6 +227,47 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 5;
 			} break;
+			case OPCODE_NUMERIC_BINARY: {
+				text += "checked operator ";
+				text += DADDR(3);
+				text += " = ";
+				text += DADDR(1);
+				text += " ";
+				text += Variant::get_operator_name(Variant::Operator(_code_ptr[ip + 4]));
+				text += " ";
+				text += DADDR(2);
+				text += " (";
+				text += numeric_type_name(NumericType(_code_ptr[ip + 5]));
+				text += ")";
+
+				incr += 6;
+			} break;
+			case OPCODE_NUMERIC_UNARY: {
+				text += "checked operator ";
+				text += DADDR(2);
+				text += " = ";
+				text += Variant::get_operator_name(Variant::Operator(_code_ptr[ip + 3]));
+				text += " ";
+				text += DADDR(1);
+				text += " (";
+				text += numeric_type_name(NumericType(_code_ptr[ip + 4]));
+				text += ")";
+
+				incr += 5;
+			} break;
+			case OPCODE_NUMERIC_CAST: {
+				text += "checked cast ";
+				text += DADDR(2);
+				text += " = ";
+				text += DADDR(1);
+				text += " as ";
+				text += numeric_type_name(NumericType(_code_ptr[ip + 3]));
+				if (_code_ptr[ip + 4] != 0) {
+					text += "?";
+				}
+
+				incr += 5;
+			} break;
 			case OPCODE_TYPE_TEST_BUILTIN: {
 				text += "type test ";
 				text += DADDR(1);
@@ -237,8 +278,13 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 				if (_code_ptr[ip + 3] & FSFunction::NULLABLE_TYPE_OPERAND_FLAG) {
 					text += "?";
 				}
+				if (NumericType(_code_ptr[ip + 4]) != NumericType::NONE) {
+					text += " (";
+					text += numeric_type_name(NumericType(_code_ptr[ip + 4]));
+					text += ")";
+				}
 
-				incr += 4;
+				incr += 5;
 			} break;
 			case OPCODE_TYPE_TEST_ARRAY: {
 				text += "type test ";
@@ -1532,6 +1578,7 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				DISASSEMBLE_TYPE_ADJUST(BOOL);
 				DISASSEMBLE_TYPE_ADJUST(INT);
+				DISASSEMBLE_TYPE_ADJUST(UINT);
 				DISASSEMBLE_TYPE_ADJUST(FLOAT);
 				DISASSEMBLE_TYPE_ADJUST(STRING);
 				DISASSEMBLE_TYPE_ADJUST(VECTOR2);

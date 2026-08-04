@@ -57,7 +57,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Format version is pinned") {
 	// The reader rejects any other version outright, so the on-disk layout and this constant move
 	// together. Bump FORMAT_VERSION in the same change as ANY layout change to the `.fsb` format
 	// (sections, field order/width, opcode operand layout, tag/fixup sets) and update this pin.
-	CHECK(FSBytecodeFormat::FORMAT_VERSION == 10);
+	CHECK(FSBytecodeFormat::FORMAT_VERSION == 11);
 }
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects a stale format version") {
@@ -793,6 +793,9 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Executed operator inline cache is 
 	// first execution with inline-cache words: an operand signature, a cached return type, and a raw
 	// validated-evaluator function pointer split across ints. Those words are process-local and must
 	// never reach a `.fsb`; the exporter zeroes them back to the never-executed layout.
+	//
+	// The operands are strings rather than integers on purpose: a dynamic integer pair is answered by
+	// the checked integer model instead of a validated evaluator, so it never populates this cache.
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"static func add(a, b):\n"
 			"\treturn a + b\n");
@@ -811,10 +814,10 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Executed operator inline cache is 
 
 	// Executing the function once populates the inline cache in place.
 	Vector<Variant> arguments;
-	arguments.push_back((int64_t)2);
-	arguments.push_back((int64_t)3);
+	arguments.push_back(String("first"));
+	arguments.push_back(String("second"));
 	const Variant original_result = bytecode_call_function(function, arguments);
-	CHECK((int64_t)original_result == 5);
+	CHECK(original_result == Variant("firstsecond"));
 
 	// The signature word is now non-zero: the executed function really baked cache state, which is the
 	// exact leak the exporter must strip.
@@ -835,7 +838,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Executed operator inline cache is 
 
 	// The round-tripped function re-heals its cache on first run and computes the same result.
 	const Variant restored_result = bytecode_call_function(restored, arguments);
-	CHECK((int64_t)restored_result == 5);
+	CHECK(restored_result == Variant("firstsecond"));
 	const Vector<int> &restored_operator_offsets =
 			restored->export_fixups.operator_cache_offsets;
 	REQUIRE_EQ(restored_operator_offsets.size(), 1);
@@ -1014,6 +1017,194 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Every accepted temporary slot type
 	type_init_function_table[Variant::UINT](&unsigned_slot);
 	CHECK_EQ(unsigned_slot.get_type(), Variant::UINT);
 	CHECK_EQ(unsigned_slot.operator uint64_t(), 0u);
+}
+
+TEST_CASE("[FoundryScript][BytecodeHardening] Verifier validates checked numeric opcode operands") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"func placeholder() -> void:\n"
+			"\tpass\n");
+
+	FSDataType signed_type;
+	signed_type.kind = FSDataType::BUILTIN;
+	signed_type.builtin_type = Variant::INT;
+	signed_type.numeric_type = NumericType::INT64;
+
+	FSDataType unsigned_type;
+	unsigned_type.kind = FSDataType::BUILTIN;
+	unsigned_type.builtin_type = Variant::UINT;
+	unsigned_type.numeric_type = NumericType::UINT32;
+
+	FSDataType boolean_type;
+	boolean_type.kind = FSDataType::BUILTIN;
+	boolean_type.builtin_type = Variant::BOOL;
+
+	const auto out_of_range_address = [](const FSFunction *p_function) {
+		return int(FSFunction::ADDR_TYPE_STACK << FSFunction::ADDR_BITS | p_function->get_max_stack_size());
+	};
+
+	SUBCASE("Checked binary operation") {
+		FSByteCodeGenerator generator;
+		generator.write_start(script.ptr(), SNAME("numeric_binary"), true, Variant(), FSDataType());
+		const FSCodeGenerator::Address left(FSCodeGenerator::Address::CONSTANT, generator.add_or_get_constant(1), signed_type);
+		const FSCodeGenerator::Address right(FSCodeGenerator::Address::CONSTANT, generator.add_or_get_constant(2), signed_type);
+		const FSCodeGenerator::Address target(FSCodeGenerator::Address::TEMPORARY, generator.add_temporary(signed_type), signed_type);
+		generator.write_binary_operator(target, Variant::OP_ADD, left, right);
+		generator.pop_temporary();
+		FSFunction *function = generator.write_end();
+		REQUIRE(function != nullptr);
+
+		// The trailing entry is the OPCODE_END every generated function is closed with.
+		const Vector<int> valid = function->get_code();
+		REQUIRE(valid.size() == 7);
+		CHECK(valid[0] == FSFunction::OPCODE_NUMERIC_BINARY);
+		CHECK(valid[5] == int(NumericType::INT64));
+		CHECK(bytecode_verify_with_code(script, function, valid) == OK);
+
+		Vector<int> truncated = valid;
+		truncated.resize(5);
+		CHECK(bytecode_verify_with_code(script, function, truncated) == ERR_INVALID_DATA);
+
+		for (int operand = 1; operand <= 3; operand++) {
+			Vector<int> bad_address = valid;
+			bad_address.write[operand] = out_of_range_address(function);
+			CHECK(bytecode_verify_with_code(script, function, bad_address) == ERR_INVALID_DATA);
+		}
+
+		// An operator outside the checked integer model has no meaning for this opcode.
+		Vector<int> unmodelled_operator = valid;
+		unmodelled_operator.write[4] = Variant::OP_EQUAL;
+		CHECK(bytecode_verify_with_code(script, function, unmodelled_operator) == ERR_INVALID_DATA);
+
+		Vector<int> unknown_operator = valid;
+		unknown_operator.write[4] = Variant::OP_MAX;
+		CHECK(bytecode_verify_with_code(script, function, unknown_operator) == ERR_INVALID_DATA);
+
+		Vector<int> unknown_descriptor = valid;
+		unknown_descriptor.write[5] = int(NumericType::MAX);
+		CHECK(bytecode_verify_with_code(script, function, unknown_descriptor) == ERR_INVALID_DATA);
+
+		Vector<int> negative_descriptor = valid;
+		negative_descriptor.write[5] = -1;
+		CHECK(bytecode_verify_with_code(script, function, negative_descriptor) == ERR_INVALID_DATA);
+
+		// `NONE` encodes a pair with no common integer type; the VM reports it as invalid operands, so
+		// it is a legal operand rather than a corrupt one.
+		Vector<int> unconstrained_descriptor = valid;
+		unconstrained_descriptor.write[5] = int(NumericType::NONE);
+		CHECK(bytecode_verify_with_code(script, function, unconstrained_descriptor) == OK);
+	}
+
+	SUBCASE("Checked unary operation") {
+		FSByteCodeGenerator generator;
+		generator.write_start(script.ptr(), SNAME("numeric_unary"), true, Variant(), FSDataType());
+		const FSCodeGenerator::Address operand(FSCodeGenerator::Address::CONSTANT, generator.add_or_get_constant(3), signed_type);
+		const FSCodeGenerator::Address target(FSCodeGenerator::Address::TEMPORARY, generator.add_temporary(signed_type), signed_type);
+		generator.write_unary_operator(target, Variant::OP_NEGATE, operand);
+		generator.pop_temporary();
+		FSFunction *function = generator.write_end();
+		REQUIRE(function != nullptr);
+
+		const Vector<int> valid = function->get_code();
+		REQUIRE(valid.size() == 6);
+		CHECK(valid[0] == FSFunction::OPCODE_NUMERIC_UNARY);
+		CHECK(bytecode_verify_with_code(script, function, valid) == OK);
+
+		Vector<int> truncated = valid;
+		truncated.resize(4);
+		CHECK(bytecode_verify_with_code(script, function, truncated) == ERR_INVALID_DATA);
+
+		for (int operand_offset = 1; operand_offset <= 2; operand_offset++) {
+			Vector<int> bad_address = valid;
+			bad_address.write[operand_offset] = out_of_range_address(function);
+			CHECK(bytecode_verify_with_code(script, function, bad_address) == ERR_INVALID_DATA);
+		}
+
+		Vector<int> unmodelled_operator = valid;
+		unmodelled_operator.write[3] = Variant::OP_LESS;
+		CHECK(bytecode_verify_with_code(script, function, unmodelled_operator) == ERR_INVALID_DATA);
+
+		// A unary operation has one operand, so there is no pair without a common type: it always has
+		// a width to check against.
+		Vector<int> unconstrained_descriptor = valid;
+		unconstrained_descriptor.write[4] = int(NumericType::NONE);
+		CHECK(bytecode_verify_with_code(script, function, unconstrained_descriptor) == ERR_INVALID_DATA);
+	}
+
+	SUBCASE("Checked cast") {
+		FSByteCodeGenerator generator;
+		generator.write_start(script.ptr(), SNAME("numeric_cast"), true, Variant(), FSDataType());
+		const FSCodeGenerator::Address source(FSCodeGenerator::Address::CONSTANT, generator.add_or_get_constant(4), signed_type);
+		const FSCodeGenerator::Address target(FSCodeGenerator::Address::TEMPORARY, generator.add_temporary(unsigned_type), unsigned_type);
+		generator.write_cast(target, source, unsigned_type);
+		generator.pop_temporary();
+		FSFunction *function = generator.write_end();
+		REQUIRE(function != nullptr);
+
+		const Vector<int> valid = function->get_code();
+		REQUIRE(valid.size() == 6);
+		CHECK(valid[0] == FSFunction::OPCODE_NUMERIC_CAST);
+		CHECK(valid[3] == int(NumericType::UINT32));
+		CHECK(bytecode_verify_with_code(script, function, valid) == OK);
+
+		Vector<int> truncated = valid;
+		truncated.resize(4);
+		CHECK(bytecode_verify_with_code(script, function, truncated) == ERR_INVALID_DATA);
+
+		for (int operand_offset = 1; operand_offset <= 2; operand_offset++) {
+			Vector<int> bad_address = valid;
+			bad_address.write[operand_offset] = out_of_range_address(function);
+			CHECK(bytecode_verify_with_code(script, function, bad_address) == ERR_INVALID_DATA);
+		}
+
+		Vector<int> unknown_descriptor = valid;
+		unknown_descriptor.write[3] = int(NumericType::MAX);
+		CHECK(bytecode_verify_with_code(script, function, unknown_descriptor) == ERR_INVALID_DATA);
+
+		// A conversion with no destination width has nothing to check the value against.
+		Vector<int> unconstrained_descriptor = valid;
+		unconstrained_descriptor.write[3] = int(NumericType::NONE);
+		CHECK(bytecode_verify_with_code(script, function, unconstrained_descriptor) == ERR_INVALID_DATA);
+	}
+
+	SUBCASE("Width-constrained built-in type test") {
+		FSByteCodeGenerator generator;
+		generator.write_start(script.ptr(), SNAME("numeric_type_test"), true, Variant(), FSDataType());
+		const FSCodeGenerator::Address source(FSCodeGenerator::Address::CONSTANT, generator.add_or_get_constant(5), FSDataType());
+		const FSCodeGenerator::Address target(FSCodeGenerator::Address::TEMPORARY, generator.add_temporary(boolean_type), boolean_type);
+		generator.write_type_test(target, source, unsigned_type);
+		generator.pop_temporary();
+		FSFunction *function = generator.write_end();
+		REQUIRE(function != nullptr);
+
+		const Vector<int> valid = function->get_code();
+		REQUIRE(valid.size() == 6);
+		CHECK(valid[0] == FSFunction::OPCODE_TYPE_TEST_BUILTIN);
+		CHECK(valid[3] == int(Variant::UINT));
+		CHECK(valid[4] == int(NumericType::UINT32));
+		CHECK(bytecode_verify_with_code(script, function, valid) == OK);
+
+		Vector<int> truncated = valid;
+		truncated.resize(4);
+		CHECK(bytecode_verify_with_code(script, function, truncated) == ERR_INVALID_DATA);
+
+		Vector<int> unknown_builtin = valid;
+		unknown_builtin.write[3] = int(Variant::VARIANT_MAX);
+		CHECK(bytecode_verify_with_code(script, function, unknown_builtin) == ERR_INVALID_DATA);
+
+		Vector<int> unknown_descriptor = valid;
+		unknown_descriptor.write[4] = int(NumericType::MAX);
+		CHECK(bytecode_verify_with_code(script, function, unknown_descriptor) == ERR_INVALID_DATA);
+
+		// A signed width cannot constrain a value travelling in the unsigned carrier.
+		Vector<int> inconsistent_carrier = valid;
+		inconsistent_carrier.write[4] = int(NumericType::INT64);
+		CHECK(bytecode_verify_with_code(script, function, inconsistent_carrier) == ERR_INVALID_DATA);
+
+		// An unconstrained test is the plain carrier test every other built-in type emits.
+		Vector<int> unconstrained_descriptor = valid;
+		unconstrained_descriptor.write[4] = int(NumericType::NONE);
+		CHECK(bytecode_verify_with_code(script, function, unconstrained_descriptor) == OK);
+	}
 }
 
 } // namespace FSTests

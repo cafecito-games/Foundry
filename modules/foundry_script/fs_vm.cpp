@@ -33,12 +33,21 @@
 #include "fs_conformance_registry.h"
 #include "fs_function.h"
 #include "fs_lambda_callable.h"
+#include "fs_numeric_ops.h"
 #include "fs_script_test_guard.h"
 #include "fs_static_self_callable.h"
 
 #include "core/object/script_function_state.h"
 #include "core/os/os.h"
 #include "core/profiling/profiling.h"
+
+// The name a checked integer type is quoted by in a runtime diagnostic. The 8- and 16-bit widths
+// exist only as native constraints and have no source spelling, so they fall back to their stable
+// descriptor name rather than quoting an empty string.
+static String _numeric_type_diagnostic_name(NumericType p_numeric_type) {
+	const String public_name = numeric_type_public_name(p_numeric_type);
+	return public_name.is_empty() ? numeric_type_name(p_numeric_type) : public_name;
+}
 
 #ifdef DEBUG_ENABLED
 
@@ -829,6 +838,9 @@ void (*type_init_function_table[])(Variant *) = {
 	static const void *switch_table_ops[] = {            \
 		&&OPCODE_OPERATOR,                               \
 		&&OPCODE_OPERATOR_VALIDATED,                     \
+		&&OPCODE_NUMERIC_BINARY,                         \
+		&&OPCODE_NUMERIC_UNARY,                          \
+		&&OPCODE_NUMERIC_CAST,                           \
 		&&OPCODE_TYPE_TEST_BUILTIN,                      \
 		&&OPCODE_TYPE_TEST_ARRAY,                        \
 		&&OPCODE_TYPE_TEST_DICTIONARY,                   \
@@ -957,6 +969,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_STORE_NAMED_GLOBAL,                     \
 		&&OPCODE_TYPE_ADJUST_BOOL,                       \
 		&&OPCODE_TYPE_ADJUST_INT,                        \
+		&&OPCODE_TYPE_ADJUST_UINT,                       \
 		&&OPCODE_TYPE_ADJUST_FLOAT,                      \
 		&&OPCODE_TYPE_ADJUST_STRING,                     \
 		&&OPCODE_TYPE_ADJUST_VECTOR2,                    \
@@ -1457,6 +1470,43 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(a, 0);
 				GET_VARIANT_PTR(b, 1);
 				GET_VARIANT_PTR(dst, 2);
+
+				// A dynamically typed integer is checked too. The carrier the value travels in is all
+				// the information there is, so the operation is checked at the widest range that
+				// carrier can hold: signed values as `long`, unsigned as `ulong`. A pair of different
+				// carriers has no common integer type and falls through to the generic evaluator, which
+				// already reports it as invalid operands.
+				bool dynamic_numeric_handled = false;
+				{
+					const Variant::Type dynamic_left_type = a->get_type();
+					if ((dynamic_left_type == Variant::INT || dynamic_left_type == Variant::UINT) &&
+							FSNumericOps::handles_operation(op)) {
+						const NumericType dynamic_type = FSNumericOps::operation_type(NumericType::NONE, dynamic_left_type);
+						const Variant::Type dynamic_right_type = b->get_type();
+						Variant numeric_result;
+						FSNumericError numeric_error = FSNumericError::NONE;
+						if (dynamic_right_type == Variant::NIL) {
+							// The generic operator opcode carries a nil right operand for unary operators.
+							dynamic_numeric_handled = FSNumericOps::unary(op, dynamic_type, *a, numeric_result, numeric_error);
+						} else if (dynamic_right_type == dynamic_left_type) {
+							dynamic_numeric_handled = FSNumericOps::binary(op, dynamic_type, *a, *b, numeric_result, numeric_error);
+						}
+						if (dynamic_numeric_handled) {
+							*dst = numeric_result;
+						} else if (numeric_error != FSNumericError::NONE && numeric_error != FSNumericError::UNSUPPORTED) {
+							// `UNSUPPORTED` means the pair is not part of the checked integer model at
+							// all (an integer with a float, or negating an unsigned value); the generic
+							// evaluator answers for it, exactly as it did before.
+							err_text = FSNumericOps::describe_operation_error(numeric_error, op, dynamic_type);
+							OPCODE_BREAK;
+						}
+					}
+				}
+				if (dynamic_numeric_handled) {
+					ip += 7 + _pointer_size;
+					DISPATCH_OPCODE;
+				}
+
 				// Compute signatures (types of operands) so it can be optimized when matching.
 				uint32_t op_signature = _code_ptr[ip + 5];
 				uint32_t actual_signature = (a->get_type() << 8) | (b->get_type());
@@ -1545,8 +1595,135 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			}
 			DISPATCH_OPCODE;
 
+			OPCODE(OPCODE_NUMERIC_BINARY) {
+				CHECK_SPACE(6);
+
+				GET_VARIANT_PTR(a, 0);
+				GET_VARIANT_PTR(b, 1);
+				GET_VARIANT_PTR(dst, 2);
+
+				const Variant::Operator op = (Variant::Operator)_code_ptr[ip + 4];
+				GD_ERR_BREAK(op < 0 || op >= Variant::OP_MAX);
+				const NumericType numeric_type = (NumericType)_code_ptr[ip + 5];
+
+				// A shift's right operand is a count, not a second range, so only the left operand has
+				// to travel in the checked type's carrier. Every other operation needs both operands in
+				// that one carrier: reinterpreting one as the other would change the value computed.
+				const bool is_shift = op == Variant::OP_SHIFT_LEFT || op == Variant::OP_SHIFT_RIGHT;
+				const bool carriers_agree = numeric_type != NumericType::NONE &&
+						numeric_type_is_carrier_consistent(numeric_type, a->get_type()) &&
+						(is_shift ? (b->get_type() == Variant::INT || b->get_type() == Variant::UINT)
+								  : numeric_type_is_carrier_consistent(numeric_type, b->get_type()));
+				if (unlikely(!carriers_agree)) {
+					err_text = "Invalid operands '" + Variant::get_type_name(a->get_type()) + "' and '" +
+							Variant::get_type_name(b->get_type()) + "' in operator '" + Variant::get_operator_name(op) + "'.";
+					OPCODE_BREAK;
+				}
+
+				// The destination is written only after the operation succeeds, so a failed compound
+				// assignment leaves its target holding the value it had.
+				Variant numeric_result;
+				FSNumericError numeric_error = FSNumericError::NONE;
+				if (unlikely(!FSNumericOps::binary(op, numeric_type, *a, *b, numeric_result, numeric_error))) {
+					if (numeric_error == FSNumericError::UNSUPPORTED) {
+						err_text = "Invalid operands '" + Variant::get_type_name(a->get_type()) + "' and '" +
+								Variant::get_type_name(b->get_type()) + "' in operator '" + Variant::get_operator_name(op) + "'.";
+					} else {
+						err_text = FSNumericOps::describe_operation_error(numeric_error, op, numeric_type);
+					}
+					OPCODE_BREAK;
+				}
+				*dst = numeric_result;
+
+				ip += 6;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_NUMERIC_UNARY) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(a, 0);
+				GET_VARIANT_PTR(dst, 1);
+
+				const Variant::Operator op = (Variant::Operator)_code_ptr[ip + 3];
+				GD_ERR_BREAK(op < 0 || op >= Variant::OP_MAX);
+				const NumericType numeric_type = (NumericType)_code_ptr[ip + 4];
+
+				Variant numeric_result;
+				FSNumericError numeric_error = FSNumericError::NONE;
+				if (unlikely(!FSNumericOps::unary(op, numeric_type, *a, numeric_result, numeric_error))) {
+					if (numeric_error == FSNumericError::UNSUPPORTED) {
+						err_text = "Invalid operand '" + Variant::get_type_name(a->get_type()) + "' in operator '" +
+								Variant::get_operator_name(op) + "'.";
+					} else {
+						err_text = FSNumericOps::describe_operation_error(numeric_error, op, numeric_type);
+					}
+					OPCODE_BREAK;
+				}
+				*dst = numeric_result;
+
+				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_NUMERIC_CAST) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(src, 0);
+				GET_VARIANT_PTR(dst, 1);
+
+				const NumericType numeric_type = (NumericType)_code_ptr[ip + 3];
+				const bool is_nullable = _code_ptr[ip + 4] != 0;
+
+				if (is_nullable && src->get_type() == Variant::NIL) {
+					// Casting null to a nullable integer yields null instead of the type's zero.
+					*dst = *src;
+					ip += 5;
+					DISPATCH_OPCODE;
+				}
+
+				{
+					Variant numeric_result;
+					FSNumericError numeric_error = FSNumericError::NONE;
+					bool converted = FSNumericOps::convert(numeric_type, *src, numeric_result, numeric_error);
+					if (unlikely(!converted) && numeric_error == FSNumericError::UNSUPPORTED &&
+							numeric_type_carrier(numeric_type) == Variant::INT) {
+						// The source is not a number at all. A signed destination still accepts whatever
+						// generic construction defines for it (a numeric string, a boolean); an unsigned
+						// destination has no constructor to fall back to.
+#ifdef DEBUG_ENABLED
+						if (src->operator Object *() && !src->get_validated_object()) {
+							err_text = "Trying to cast a freed object.";
+							OPCODE_BREAK;
+						}
+#endif
+						Callable::CallError construct_error;
+						Variant::construct(Variant::INT, numeric_result, (const Variant **)&src, 1, construct_error);
+						converted = construct_error.error == Callable::CallError::CALL_OK;
+						if (converted) {
+							numeric_error = FSNumericError::NONE;
+						}
+					}
+					if (unlikely(!converted)) {
+						if (numeric_error == FSNumericError::UNSUPPORTED) {
+							err_text = "Invalid cast: could not convert value of type '" +
+									Variant::get_type_name(src->get_type()) + "' to '" +
+									_numeric_type_diagnostic_name(numeric_type) + "'.";
+						} else {
+							err_text = FSNumericOps::describe_conversion_error(numeric_error, numeric_type, *src,
+									_numeric_type_diagnostic_name(numeric_type));
+						}
+						OPCODE_BREAK;
+					}
+					*dst = numeric_result;
+				}
+
+				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
 			OPCODE(OPCODE_TYPE_TEST_BUILTIN) {
-				CHECK_SPACE(4);
+				CHECK_SPACE(5);
 
 				GET_VARIANT_PTR(dst, 0);
 				GET_VARIANT_PTR(value, 1);
@@ -1555,9 +1732,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				const bool is_nullable = builtin_type_operand & FSFunction::NULLABLE_TYPE_OPERAND_FLAG;
 				Variant::Type builtin_type = (Variant::Type)(builtin_type_operand & ~FSFunction::NULLABLE_TYPE_OPERAND_FLAG);
 				GD_ERR_BREAK(builtin_type < 0 || builtin_type >= Variant::VARIANT_MAX);
+				const NumericType numeric_type = (NumericType)_code_ptr[ip + 4];
 
-				*dst = value->get_type() == builtin_type || (is_nullable && value->get_type() == Variant::NIL);
-				ip += 4;
+				bool type_matches = value->get_type() == builtin_type;
+				if (type_matches && numeric_type != NumericType::NONE) {
+					// A declared width narrows the test: a value on the right carrier whose magnitude the
+					// width cannot hold is not a value of that type.
+					type_matches = numeric_type_contains(numeric_type, *value);
+				}
+				*dst = type_matches || (is_nullable && value->get_type() == Variant::NIL);
+				ip += 5;
 			}
 			DISPATCH_OPCODE;
 
@@ -5343,6 +5527,20 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 			OPCODE_TYPE_ADJUST(BOOL, bool);
 			OPCODE_TYPE_ADJUST(INT, int64_t);
+
+			// The unsigned carrier has no C++ nominal type, so it cannot go through
+			// `VariantTypeAdjust<T>`, which resolves the destination from `GetTypeInfo<T>`.
+			OPCODE(OPCODE_TYPE_ADJUST_UINT) {
+				CHECK_SPACE(2);
+				GET_VARIANT_PTR(arg, 0);
+				if (arg->get_type() != Variant::UINT) {
+					VariantInternal::clear(arg);
+					VariantUIntInitializer::init(arg);
+				}
+				ip += 2;
+			}
+			DISPATCH_OPCODE;
+
 			OPCODE_TYPE_ADJUST(FLOAT, double);
 			OPCODE_TYPE_ADJUST(STRING, String);
 			OPCODE_TYPE_ADJUST(VECTOR2, Vector2);
