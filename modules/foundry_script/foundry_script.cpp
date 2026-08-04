@@ -1889,15 +1889,17 @@ bool FoundryScript::_get(const StringName &p_name, Variant &r_ret) const {
 		if (likely(top->valid)) {
 			HashMap<StringName, FSFunction *>::ConstIterator E = top->member_functions.find(p_name);
 			if (E && E->value->is_static()) {
-				// An extracted static callable is the pair of the selected function and the exact receiver
-				// it was extracted from, so it binds the class the read began on rather than the ancestor
-				// the implementation happens to be declared on. Dispatching it later then resolves `Self`
-				// to the same class a direct call through this handle would have.
-				FoundryScript *receiver = const_cast<FoundryScript *>(this);
 				if (top->rpc_config.has(p_name)) {
-					r_ret = Callable(memnew(FSRPCCallable(receiver, E->key)));
+					// The remote-call form keeps naming the declaring class. It holds its object by raw
+					// pointer and requires a `Node`, so it is not an extraction that can outlive anything
+					// or carry a class receiver in the first place.
+					r_ret = Callable(memnew(FSRPCCallable(const_cast<FoundryScript *>(top), E->key)));
 				} else {
-					r_ret = Callable(receiver, E->key);
+					// An extracted static callable is the pair of the selected function and the exact
+					// receiver it was extracted from, so it binds the class the read began on rather than
+					// the ancestor the implementation happens to be declared on. Dispatching it later then
+					// resolves `Self` to the same class a direct call through this handle would have.
+					r_ret = Callable(const_cast<FoundryScript *>(this), E->key);
 				}
 				return true;
 			}
