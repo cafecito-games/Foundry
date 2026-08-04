@@ -2406,9 +2406,13 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	// An enum is decided before the collection/class argument handling below, because an enum metatype
 	// is Dictionary-backed and would otherwise consume exactly two arguments as key and value types.
 	if (result.kind == FSParser::DataType::ENUM &&
-			(!p_type->container_types.is_empty() || (result.is_tagged_union && result.has_type_arguments()))) {
+			(!p_type->container_types.is_empty() || !p_type->type_argument_expressions.is_empty() ||
+					(result.is_tagged_union && result.has_type_arguments()))) {
 		FSParser::EnumNode *declaration = resolve_enum_declaration(result, p_type);
-		const int given = p_type->container_types.size();
+		// A `match` case-pattern head carries its arguments as expressions rather than as parsed types
+		// (see `TypeNode::type_argument_expressions`); the two spellings are never both present.
+		const bool arguments_are_expressions = !p_type->type_argument_expressions.is_empty();
+		const int given = arguments_are_expressions ? p_type->type_argument_expressions.size() : p_type->container_types.size();
 		if (declaration == nullptr || declaration->type_parameters.is_empty()) {
 			if (given > 0) {
 				push_error(vformat(R"(Enum "%s" is not generic and cannot take type arguments.)", result.to_string()), p_type);
@@ -2425,6 +2429,40 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			// Bare use outside the declaration is not: it gives zero of the required arguments, which the
 			// shared arity check below reports.
 			if (given == 0 && is_current_declaration) {
+				return finalize_datatype(result);
+			}
+
+			if (arguments_are_expressions) {
+				if (given != expected) {
+					push_error(vformat(R"(Generic tagged union "%s" expects %d type argument(s), but %d were given.)",
+									   declaration->identifier != nullptr ? declaration->identifier->name : StringName(),
+									   expected, given),
+							p_type);
+					return bad_type;
+				}
+				Vector<FSParser::DataType> resolved_arguments;
+				Vector<bool> argument_failed;
+				Vector<const FSParser::Node *> argument_sources;
+				for (int i = 0; i < given; i++) {
+					FSParser::ExpressionNode *argument_expression = p_type->type_argument_expressions[i];
+					FSParser::DataType argument;
+					if (resolve_explicit_type_argument(argument_expression, argument)) {
+						apply_use_site_nullable_type_argument_marker(argument, p_type->type_argument_expression_is_nullable[i]);
+						argument_failed.push_back(false);
+					} else {
+						push_error(vformat(R"(Could not resolve the type argument for generic tagged union "%s".)", result.to_string()), argument_expression);
+						argument = FSParser::DataType();
+						argument.kind = FSParser::DataType::VARIANT;
+						argument.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+						argument_failed.push_back(true);
+					}
+					resolved_arguments.push_back(argument);
+					argument_sources.push_back(argument_expression);
+				}
+				if (!bind_type_arguments(result, enum_generic_declaration(declaration, result.class_type),
+							resolved_arguments, argument_failed, argument_sources)) {
+					return bad_type;
+				}
 				return finalize_datatype(result);
 			}
 

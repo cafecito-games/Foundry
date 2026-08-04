@@ -4441,7 +4441,9 @@ FSParser::PatternNode *FSParser::parse_match_pattern(PatternNode *p_root_pattern
 		default: {
 			// A dotted name directly followed by `(` is a tagged-union case pattern; anything else is
 			// an ordinary value pattern, so the dotted head is handed back to the expression parser.
-			if (current.is_identifier() && peek().type == FSTokenizer::Token::PERIOD) {
+			// A bracketed head (`Result[int, String].Ok(...)`) applies a generic union's type arguments
+			// before the dotted case name, and is disambiguated from an indexed value pattern there.
+			if (current.is_identifier() && (peek().type == FSTokenizer::Token::PERIOD || peek().type == FSTokenizer::Token::BRACKET_OPEN)) {
 				parse_match_pattern_dotted_head(pattern, p_root_pattern);
 				break;
 			}
@@ -4484,6 +4486,33 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 		case_chain.push_back(static_cast<IdentifierNode *>(head_expression));
 	}
 
+	// Type arguments applied to a generic tagged union before its case name. Only the trailing `(`
+	// below tells `Result[int, String].Ok(value)` apart from an indexed value pattern such as
+	// `TABLE[KEY]`, and one token of lookahead cannot see that far, so the brackets are parsed as an
+	// ordinary subscript and their arguments are carried as expressions to be read as types later.
+	Vector<ExpressionNode *> type_argument_expressions;
+	Vector<bool> type_argument_expression_is_nullable;
+	if (head_expression != nullptr && check(FSTokenizer::Token::BRACKET_OPEN)) {
+		push_multiline(true);
+		advance(); // Consume "[", so `parse_subscript()` sees the same tokenizer state as the Pratt driver.
+		head_expression = parse_subscript(head_expression, false);
+		const SubscriptNode *application = head_expression != nullptr && head_expression->type == Node::SUBSCRIPT
+				? static_cast<const SubscriptNode *>(head_expression)
+				: nullptr;
+		if (application == nullptr || application->is_attribute) {
+			case_chain.clear();
+		} else if (!application->type_arguments.is_empty()) {
+			type_argument_expressions = application->type_arguments;
+			type_argument_expression_is_nullable = application->type_argument_is_nullable;
+		} else if (application->index != nullptr) {
+			// A single-argument list keeps aliasing `index`, exactly as `Box[int]` does in value position.
+			type_argument_expressions.push_back(application->index);
+			type_argument_expression_is_nullable.push_back(false);
+		} else {
+			case_chain.clear();
+		}
+	}
+
 	while (head_expression != nullptr && check(FSTokenizer::Token::PERIOD) && peek().is_identifier()) {
 		advance(); // Consume ".", so `parse_attribute()` sees the same tokenizer state as the Pratt driver.
 		head_expression = parse_attribute(head_expression, false);
@@ -4509,6 +4538,8 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 		update_extents(case_type);
 		case_type->type_chain = case_chain;
 		case_type->allows_enum_case = true;
+		case_type->type_argument_expressions = type_argument_expressions;
+		case_type->type_argument_expression_is_nullable = type_argument_expression_is_nullable;
 		complete_extents(case_type);
 
 		p_pattern->pattern_type = PatternNode::PT_ENUM_CASE;
@@ -6300,13 +6331,12 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 			first_pass = false;
 		} while (match(FSTokenizer::Token::COMMA));
 		consume(FSTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after collection type.)");
-		if (type != nullptr) {
-			if (match(FSTokenizer::Token::QUESTION_MARK)) {
-				type->is_nullable = true;
-			}
-			complete_extents(type);
+		if (type == nullptr) {
+			return nullptr;
 		}
-		return type;
+		// Fall through to the shared trailing chain below: an applied generic tagged union names one
+		// of its cases after its argument list (`Result[int, String].Ok`) wherever a case reference is
+		// admitted, and the nullable marker is handled there for both spellings alike.
 	}
 
 	int chain_index = 1;

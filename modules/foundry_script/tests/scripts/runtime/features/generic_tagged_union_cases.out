@@ -1,0 +1,9 @@
+FS_TEST_OK
+ok 42
+err 4
+ok HI
+err 42
+6
+0
+true
+false

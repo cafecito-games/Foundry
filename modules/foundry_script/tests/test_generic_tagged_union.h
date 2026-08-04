@@ -1220,5 +1220,232 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionApplication] Generic class
 	}
 }
 
+// The payload field type carried by an already-resolved specialization, or an unset type when the
+// case or field does not exist.
+static FSParser::DataType specialized_payload_field_type(const FSParser::DataType &p_type, const StringName &p_case, int p_field) {
+	const FSParser::DataType::EnumCasePayload *payload = p_type.get_enum_case_payload(p_case);
+	if (payload == nullptr || p_field < 0 || p_field >= payload->field_types.size()) {
+		return FSParser::DataType();
+	}
+	return payload->field_types[p_field];
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] Applied arguments specialize the payload schema") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "enum Bundle[T]:\n"
+					   "\tItems(values: Array[T])\n"
+					   "\tTable(rows: Dictionary[String, T?])\n"
+					   "\tWrapped(inner: Outcome[T, String])\n"
+					   "\n"
+					   "func take(outcome: Outcome[int, String]) -> void:\n"
+					   "\tprint(outcome)\n"
+					   "\n"
+					   "func take_structural(bundle: Bundle[int]) -> void:\n"
+					   "\tprint(bundle)\n",
+					   "user://generic_tagged_union_case_specialization.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	// The declaration itself keeps its open schema: a specialization is per use site, never written
+	// back onto the declaration.
+	const FSParser::EnumNode *declaration = find_enum(parser, SNAME("Outcome"));
+	REQUIRE(declaration != nullptr);
+	CHECK(is_type_parameter(payload_field_type(declaration, SNAME("Ok"), 0), SNAME("T"),
+			FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+
+	const FSParser::DataType applied = first_parameter_type(parser, SNAME("take"));
+	CHECK_EQ(specialized_payload_field_type(applied, SNAME("Ok"), 0).builtin_type, Variant::INT);
+	CHECK_EQ(specialized_payload_field_type(applied, SNAME("Err"), 0).builtin_type, Variant::STRING);
+
+	// Substitution reaches through every structural slot, not just a top-level parameter position.
+	const FSParser::DataType structural = first_parameter_type(parser, SNAME("take_structural"));
+	const FSParser::DataType items = specialized_payload_field_type(structural, SNAME("Items"), 0);
+	REQUIRE(items.has_container_element_type(0));
+	CHECK_EQ(items.get_container_element_type(0).builtin_type, Variant::INT);
+
+	const FSParser::DataType table = specialized_payload_field_type(structural, SNAME("Table"), 0);
+	REQUIRE_EQ(table.container_element_types.size(), 2);
+	CHECK_EQ(type_at(table.container_element_types, 0).builtin_type, Variant::STRING);
+	CHECK_EQ(type_at(table.container_element_types, 1).builtin_type, Variant::INT);
+	CHECK(type_at(table.container_element_types, 1).is_nullable);
+
+	// A nested union's own schema is rewritten too, so the inner payload is concrete rather than
+	// naming the outer declaration's parameter.
+	const FSParser::DataType wrapped = specialized_payload_field_type(structural, SNAME("Wrapped"), 0);
+	REQUIRE(wrapped.is_tagged_union_type());
+	REQUIRE_EQ(wrapped.type_arguments.size(), 2);
+	CHECK_EQ(type_at(wrapped.type_arguments, 0).builtin_type, Variant::INT);
+	CHECK_EQ(specialized_payload_field_type(wrapped, SNAME("Ok"), 0).builtin_type, Variant::INT);
+	CHECK_EQ(specialized_payload_field_type(wrapped, SNAME("Err"), 0).builtin_type, Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] Two applications keep independent schemas") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "func forward(outcome: Outcome[int, String]) -> void:\n"
+					   "\tprint(outcome)\n"
+					   "\n"
+					   "func mirrored(outcome: Outcome[String, int]) -> void:\n"
+					   "\tprint(outcome)\n",
+					   "user://generic_tagged_union_case_independence.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::DataType forward = first_parameter_type(parser, SNAME("forward"));
+	const FSParser::DataType mirrored = first_parameter_type(parser, SNAME("mirrored"));
+	CHECK_EQ(specialized_payload_field_type(forward, SNAME("Ok"), 0).builtin_type, Variant::INT);
+	CHECK_EQ(specialized_payload_field_type(forward, SNAME("Err"), 0).builtin_type, Variant::STRING);
+	CHECK_EQ(specialized_payload_field_type(mirrored, SNAME("Ok"), 0).builtin_type, Variant::STRING);
+	CHECK_EQ(specialized_payload_field_type(mirrored, SNAME("Err"), 0).builtin_type, Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] A recursive edge completes into the same specialization") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum TokenTree[T]:\n"
+					   "\tLeaf(value: T)\n"
+					   "\tBranch(children: Array[TokenTree[T]])\n"
+					   "\n"
+					   "func walk(tree: TokenTree[int]) -> void:\n"
+					   "\tprint(tree)\n",
+					   "user://generic_tagged_union_case_recursion.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::DataType applied = first_parameter_type(parser, SNAME("walk"));
+	CHECK_EQ(specialized_payload_field_type(applied, SNAME("Leaf"), 0).builtin_type, Variant::INT);
+
+	// The recursive edge is still an identity shell, but it now carries the applied argument, so
+	// completing it yields the same specialization rather than the open declaration.
+	const FSParser::DataType children = specialized_payload_field_type(applied, SNAME("Branch"), 0);
+	REQUIRE(children.has_container_element_type(0));
+	const FSParser::DataType edge = children.get_container_element_type(0);
+	REQUIRE(edge.kind == FSParser::DataType::ENUM);
+	CHECK(edge.enum_values.is_empty());
+	REQUIRE_EQ(edge.type_arguments.size(), 1);
+	CHECK_EQ(type_at(edge.type_arguments, 0).builtin_type, Variant::INT);
+
+	const FSParser::DataType completed = FSAnalyzer::test_complete_self_referential_enum_type(edge);
+	CHECK_EQ(completed.enum_values.size(), 2);
+	CHECK_EQ(specialized_payload_field_type(completed, SNAME("Leaf"), 0).builtin_type, Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] Case binds and construction read the specialization") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "func build() -> void:\n"
+					   "\tvar made = Outcome[int, String].Ok(1)\n"
+					   "\tprint(made)\n"
+					   "\n"
+					   "func bind_test(outcome: Outcome[int, String]) -> void:\n"
+					   "\tif outcome is Outcome[int, String].Ok(number):\n"
+					   "\t\tprint(number)\n"
+					   "\n"
+					   "func bind_pattern(outcome: Outcome[int, String]) -> void:\n"
+					   "\tmatch outcome:\n"
+					   "\t\tOutcome[int, String].Err(var message):\n"
+					   "\t\t\tprint(message)\n"
+					   "\t\t_:\n"
+					   "\t\t\tpass\n",
+					   "user://generic_tagged_union_case_binds.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	// A constructed case is a value of the applied specialization.
+	const FSParser::DataType constructed = first_local_initializer_type(parser, SNAME("build"));
+	REQUIRE(constructed.is_tagged_union_type());
+	CHECK_FALSE(constructed.is_meta_type);
+	REQUIRE_EQ(constructed.type_arguments.size(), 2);
+	CHECK_EQ(type_at(constructed.type_arguments, 0).builtin_type, Variant::INT);
+
+	const FSParser::FunctionNode *bind_test = find_function_in(parser.get_tree(), SNAME("bind_test"));
+	REQUIRE(bind_test != nullptr);
+	REQUIRE(bind_test->body != nullptr);
+	REQUIRE_FALSE(bind_test->body->statements.is_empty());
+	REQUIRE_EQ(bind_test->body->statements[0]->type, FSParser::Node::IF);
+	const FSParser::IfNode *condition = static_cast<const FSParser::IfNode *>(bind_test->body->statements[0]);
+	REQUIRE(condition->condition != nullptr);
+	REQUIRE_EQ(condition->condition->type, FSParser::Node::TYPE_TEST);
+	const FSParser::TypeTestNode *type_test = static_cast<const FSParser::TypeTestNode *>(condition->condition);
+	REQUIRE_EQ(type_test->case_binds.size(), 1);
+	REQUIRE(type_test->case_binds[0] != nullptr);
+	CHECK_EQ(type_test->case_binds[0]->get_datatype().builtin_type, Variant::INT);
+
+	const FSParser::FunctionNode *bind_pattern = find_function_in(parser.get_tree(), SNAME("bind_pattern"));
+	REQUIRE(bind_pattern != nullptr);
+	REQUIRE(bind_pattern->body != nullptr);
+	REQUIRE_FALSE(bind_pattern->body->statements.is_empty());
+	REQUIRE_EQ(bind_pattern->body->statements[0]->type, FSParser::Node::MATCH);
+	const FSParser::MatchNode *match_node = static_cast<const FSParser::MatchNode *>(bind_pattern->body->statements[0]);
+	REQUIRE_FALSE(match_node->branches.is_empty());
+	REQUIRE(match_node->branches[0] != nullptr);
+	REQUIRE_FALSE(match_node->branches[0]->patterns.is_empty());
+	const FSParser::PatternNode *pattern = match_node->branches[0]->patterns[0];
+	REQUIRE(pattern != nullptr);
+	REQUIRE_EQ(pattern->pattern_type, FSParser::PatternNode::PT_ENUM_CASE);
+	// The pattern's own case type carries the applied arguments, which is what flow narrowing reads.
+	REQUIRE_EQ(pattern->case_datatype.type_arguments.size(), 2);
+	CHECK_EQ(type_at(pattern->case_datatype.type_arguments, 0).builtin_type, Variant::INT);
+	REQUIRE_EQ(pattern->array.size(), 1);
+	REQUIRE(pattern->array[0] != nullptr);
+	REQUIRE(pattern->array[0]->bind != nullptr);
+	CHECK_EQ(pattern->array[0]->bind->get_datatype().builtin_type, Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] An indexed value pattern is not a case pattern") {
+	// The case-pattern head is parsed as an expression precisely so an ordinary indexed value pattern
+	// keeps working; only the trailing `(` after a dotted name turns it into a case reference.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "const TABLE: Array[int] = [1, 2]\n"
+					   "const INDEX: int = 0\n"
+					   "\n"
+					   "func classify(value: int) -> String:\n"
+					   "\tmatch value:\n"
+					   "\t\tTABLE[INDEX]:\n"
+					   "\t\t\treturn \"first\"\n"
+					   "\t\t_:\n"
+					   "\t\t\treturn \"other\"\n"
+					   "\treturn \"other\"\n",
+					   "user://generic_tagged_union_indexed_pattern.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::FunctionNode *classify = find_function_in(parser.get_tree(), SNAME("classify"));
+	REQUIRE(classify != nullptr);
+	REQUIRE(classify->body != nullptr);
+	REQUIRE_FALSE(classify->body->statements.is_empty());
+	REQUIRE_EQ(classify->body->statements[0]->type, FSParser::Node::MATCH);
+	const FSParser::MatchNode *match_node = static_cast<const FSParser::MatchNode *>(classify->body->statements[0]);
+	REQUIRE_FALSE(match_node->branches.is_empty());
+	REQUIRE(match_node->branches[0] != nullptr);
+	REQUIRE_FALSE(match_node->branches[0]->patterns.is_empty());
+	REQUIRE(match_node->branches[0]->patterns[0] != nullptr);
+	CHECK_EQ(match_node->branches[0]->patterns[0]->pattern_type, FSParser::PatternNode::PT_EXPRESSION);
+}
+
 } // namespace GenericTaggedUnion
 } // namespace FSTests
