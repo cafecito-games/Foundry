@@ -386,6 +386,14 @@ static bool _class_slot_receiver_handle(const FSStaticSelfContext *p_static_self
 	if (receiver == nullptr) {
 		return false;
 	}
+	if (!receiver->resolves_to_static_function(p_name)) {
+		// The receiver declares a constant, a static variable, or an inner class under this name, which
+		// shadows the function in a read. The reference was resolved to the function, so it keeps
+		// reading the class that declares it rather than turning into an unrelated member. Analyzed
+		// source cannot express that shadowing -- redeclaring a base member is rejected -- so this
+		// guards compiled data the front-end did not produce.
+		return false;
+	}
 	if (receiver == declaring_script && p_static_self->get_type_arguments().is_empty()) {
 		// The class slot already names the receiver exactly.
 		return false;
