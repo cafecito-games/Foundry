@@ -686,20 +686,20 @@ static bool _checked_binary_type(Variant::Operator p_operation, const FSCodeGene
 	}
 
 	const Variant::Type left_carrier = p_left.type.builtin_type;
+	if (p_operation == Variant::OP_SHIFT_LEFT || p_operation == Variant::OP_SHIFT_RIGHT) {
+		// The destination has no say here. A count wider than the value being shifted would otherwise
+		// widen the result past the left operand's declared range, and constant folding — which uses
+		// the left operand alone — would answer differently from the same expression at run time.
+		r_type = FSNumericOps::operation_type(p_left.type.numeric_type, left_carrier);
+		return true;
+	}
+	if (left_carrier != p_right.type.builtin_type) {
+		return true;
+	}
+
 	NumericType declared = _destination_numeric_type(p_target, left_carrier);
-	if (declared == NumericType::NONE) {
-		if (p_operation == Variant::OP_SHIFT_LEFT || p_operation == Variant::OP_SHIFT_RIGHT) {
-			declared = p_left.type.numeric_type;
-		} else {
-			if (left_carrier != p_right.type.builtin_type) {
-				return true;
-			}
-			if (!FSNumericConversion::promote_integer_pair(p_left.type.numeric_type, p_right.type.numeric_type, declared)) {
-				return true;
-			}
-		}
-	} else if (p_operation != Variant::OP_SHIFT_LEFT && p_operation != Variant::OP_SHIFT_RIGHT &&
-			left_carrier != p_right.type.builtin_type) {
+	if (declared == NumericType::NONE &&
+			!FSNumericConversion::promote_integer_pair(p_left.type.numeric_type, p_right.type.numeric_type, declared)) {
 		return true;
 	}
 
