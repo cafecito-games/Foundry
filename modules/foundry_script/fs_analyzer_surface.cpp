@@ -1285,6 +1285,16 @@ bool FSAnalyzer::bind_type_arguments(FSParser::DataType &r_type, const GenericDe
 	// is rewritten per application. Doing it here rather than at each application surface is what keeps
 	// a type position, a value position, and a nested argument agreeing on the same payload types.
 	if (r_type.is_tagged_union_type() && p_declaration.declaring_enum != nullptr) {
+		// Start from the declaration's open schema rather than from whatever the handle carries. An
+		// already-specialized handle can be applied again (`Result[int, String][float, bool]`), and
+		// rewriting its concrete field types would substitute nothing, leaving a type whose arguments
+		// and payload constraints disagree. A recursive union's identity shell publishes no schema yet,
+		// so it stays a shell and is completed, and specialized, when it is used.
+		const FSParser::DataType declared_type = p_declaration.declaring_enum->get_datatype();
+		if (declared_type.is_set() && declared_type.kind == FSParser::DataType::ENUM &&
+				!declared_type.enum_case_payloads.is_empty()) {
+			r_type.enum_case_payloads = declared_type.enum_case_payloads;
+		}
 		r_type = specialize_enum_type(r_type, p_declaration.declaring_enum,
 				enum_type_argument_bindings(p_declaration.declaring_enum, p_arguments));
 	}

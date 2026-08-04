@@ -1312,6 +1312,32 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] Two applications ke
 	CHECK_EQ(specialized_payload_field_type(mirrored, SNAME("Err"), 0).builtin_type, Variant::INT);
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] Reapplying a handle re-derives its schema") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Outcome[T, E]:\n"
+					   "\tOk(value: T)\n"
+					   "\tErr(error: E)\n"
+					   "\n"
+					   "func reapply() -> void:\n"
+					   "\tvar handle = Outcome[int, String][float, bool]\n"
+					   "\tprint(handle)\n",
+					   "user://generic_tagged_union_case_reapplication.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	// The last application wins for the arguments, so it has to win for the payload schema too: a
+	// handle whose arguments and payload constraints disagree accepts values of the wrong type.
+	const FSParser::DataType handle = first_local_initializer_type(parser, SNAME("reapply"));
+	REQUIRE_EQ(handle.type_arguments.size(), 2);
+	CHECK_EQ(type_at(handle.type_arguments, 0).builtin_type, Variant::FLOAT);
+	CHECK_EQ(type_at(handle.type_arguments, 1).builtin_type, Variant::BOOL);
+	CHECK_EQ(specialized_payload_field_type(handle, SNAME("Ok"), 0).builtin_type, Variant::FLOAT);
+	CHECK_EQ(specialized_payload_field_type(handle, SNAME("Err"), 0).builtin_type, Variant::BOOL);
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] A recursive edge completes into the same specialization") {
 	FSParser parser;
 	REQUIRE_EQ(parser.parse(
