@@ -645,12 +645,12 @@ static bool _is_integer_carrier(Variant::Type p_type) {
 	return p_type == Variant::INT || p_type == Variant::UINT;
 }
 
-// Whether an operand travels in a statically known integer carrier, and therefore has a width the
-// operation can be checked at. A dynamically typed operand does not: its carrier is only known once
-// it holds a value, so it stays on the generic evaluator.
+// Whether an operand declares an integer carrier, and therefore has a width the operation can be
+// checked at. A nullable declaration still contributes that width: the numeric opcode validates the
+// actual runtime carrier and reports null as invalid operands. A dynamically typed operand declares
+// neither a carrier nor a width, so it stays on the generic evaluator.
 static bool _has_static_integer_carrier(const FSCodeGenerator::Address &p_address) {
-	return p_address.type.kind == FSDataType::BUILTIN && !p_address.type.is_nullable &&
-			_is_integer_carrier(p_address.type.builtin_type);
+	return p_address.type.kind == FSDataType::BUILTIN && _is_integer_carrier(p_address.type.builtin_type);
 }
 
 // The width a destination declares, or `NumericType::NONE` when it declares none. The analyzer wrote

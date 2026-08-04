@@ -212,4 +212,52 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A failed checked cast leaves
 	CHECK(object->get("converted") == Variant(uint64_t(9)));
 }
 
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Nullable integer arithmetic keeps its declared width") {
+	ScopedCheckedNumericLanguage language;
+
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func overflow_nullable():\n"
+			"\tvar left: uint? = 4294967295U\n"
+			"\tvar right: uint? = 1U\n"
+			"\treturn left + right\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	Callable::CallError error;
+	ERR_PRINT_OFF;
+	const Variant result = object->callp(SNAME("overflow_nullable"), nullptr, 0, error);
+	ERR_PRINT_ON;
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(result.get_type() == Variant::NIL);
+}
+
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Dynamic shifts require matching integer carriers") {
+	ScopedCheckedNumericLanguage language;
+
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func shift(left, right):\n"
+			"\treturn left << right\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	const Variant unsigned_one = uint64_t(1);
+	const Variant signed_one = int64_t(1);
+	const Variant *mixed_arguments[] = { &unsigned_one, &signed_one };
+	Callable::CallError error;
+	ERR_PRINT_OFF;
+	const Variant mixed_result = object->callp(SNAME("shift"), mixed_arguments, 2, error);
+	ERR_PRINT_ON;
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(mixed_result.get_type() == Variant::NIL);
+
+	const Variant *matching_arguments[] = { &unsigned_one, &unsigned_one };
+	const Variant matching_result = object->callp(SNAME("shift"), matching_arguments, 2, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(matching_result == Variant(uint64_t(2)));
+}
+
 } // namespace FSTests

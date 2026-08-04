@@ -1461,14 +1461,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 							FSNumericOps::handles_operation(op)) {
 						const NumericType dynamic_type = FSNumericOps::operation_type(NumericType::NONE, dynamic_left_type);
 						const Variant::Type dynamic_right_type = b->get_type();
-						const bool is_shift = op == Variant::OP_SHIFT_LEFT || op == Variant::OP_SHIFT_RIGHT;
 						Variant numeric_result;
 						FSNumericError numeric_error = FSNumericError::NONE;
 						if (dynamic_right_type == Variant::NIL) {
 							// The generic operator opcode carries a nil right operand for unary operators.
 							dynamic_numeric_handled = FSNumericOps::unary(op, dynamic_type, *a, numeric_result, numeric_error);
-						} else if (dynamic_right_type == dynamic_left_type ||
-								(is_shift && (dynamic_right_type == Variant::INT || dynamic_right_type == Variant::UINT))) {
+						} else if (dynamic_right_type == dynamic_left_type) {
 							dynamic_numeric_handled = FSNumericOps::binary(op, dynamic_type, *a, *b, numeric_result, numeric_error);
 						}
 						if (dynamic_numeric_handled) {
