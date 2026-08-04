@@ -194,10 +194,12 @@ struct VariantReadsBothIntegerCarriers<BitField<T>> {
 // normalize the carrier before consulting the script-facing conversion table wherever the parameter
 // can actually receive it. `Variant::can_convert_strict()` itself stays strict.
 //
-// Like the rest of this layer the check is about carriers, not value ranges: an argument that does
-// not fit the parameter's width is narrowed by `VariantCaster`, exactly as an oversized `INT` has
-// always been narrowed into a smaller signed parameter. `GetTypeInfo` reports `INT` for signed and
-// unsigned parameters alike, so a range check here could not tell the two apart anyway.
+// Unsigned C++ arithmetic parameters are supported through `callable_mp`, including bound,
+// deferred, signal, and queued invocation. Callers should keep the type required by their domain;
+// they must not cast or change it to signed solely for marshaling. Carrier acceptance is separate
+// from range checking: an argument that does not fit the parameter's width is narrowed by
+// `VariantCaster`, preserving the existing native narrowing behavior. Types whose `Variant`
+// conversion cannot read both integer carriers remain rejected.
 template <typename T>
 _FORCE_INLINE_ bool is_valid_native_argument_type(Variant::Type p_type_from, Variant::Type p_type_to) {
 	if constexpr (VariantReadsBothIntegerCarriers<T>::value) {
