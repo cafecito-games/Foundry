@@ -793,6 +793,9 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Executed operator inline cache is 
 	// first execution with inline-cache words: an operand signature, a cached return type, and a raw
 	// validated-evaluator function pointer split across ints. Those words are process-local and must
 	// never reach a `.fsb`; the exporter zeroes them back to the never-executed layout.
+	//
+	// The operands are strings rather than integers on purpose: a dynamic integer pair is answered by
+	// the checked integer model instead of a validated evaluator, so it never populates this cache.
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"static func add(a, b):\n"
 			"\treturn a + b\n");
@@ -811,10 +814,10 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Executed operator inline cache is 
 
 	// Executing the function once populates the inline cache in place.
 	Vector<Variant> arguments;
-	arguments.push_back((int64_t)2);
-	arguments.push_back((int64_t)3);
+	arguments.push_back(String("first"));
+	arguments.push_back(String("second"));
 	const Variant original_result = bytecode_call_function(function, arguments);
-	CHECK((int64_t)original_result == 5);
+	CHECK(original_result == Variant("firstsecond"));
 
 	// The signature word is now non-zero: the executed function really baked cache state, which is the
 	// exact leak the exporter must strip.
@@ -835,7 +838,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Executed operator inline cache is 
 
 	// The round-tripped function re-heals its cache on first run and computes the same result.
 	const Variant restored_result = bytecode_call_function(restored, arguments);
-	CHECK((int64_t)restored_result == 5);
+	CHECK(restored_result == Variant("firstsecond"));
 	const Vector<int> &restored_operator_offsets =
 			restored->export_fixups.operator_cache_offsets;
 	REQUIRE_EQ(restored_operator_offsets.size(), 1);

@@ -54,6 +54,13 @@ func test():
 	print(fractional as long)
 	print(unsigned_long_max as ulong)
 
+	# Comparison is not part of the checked model, so a mixed-carrier pair is still compared exactly
+	# rather than reinterpreted through either carrier.
+	var negative_one: long = -1L
+	print(negative_one < unsigned_max)
+	print(negative_one < unsigned_long_max)
+	print(signed_max < unsigned_long_max)
+
 	# A width-constrained type test is a range test as well as a carrier test, so a value whose
 	# carrier matches but whose magnitude the width cannot hold is not a value of that type.
 	var erased: Array = [4294967296UL, 5UL, 42L]

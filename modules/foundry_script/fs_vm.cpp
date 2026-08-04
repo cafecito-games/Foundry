@@ -1448,6 +1448,45 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(a, 0);
 				GET_VARIANT_PTR(b, 1);
 				GET_VARIANT_PTR(dst, 2);
+
+				// A dynamically typed integer is checked too. The carrier the value travels in is all
+				// the information there is, so the operation is checked at the widest range that
+				// carrier can hold: signed values as `long`, unsigned as `ulong`. A pair of different
+				// carriers has no common integer type and falls through to the generic evaluator, which
+				// already reports it as invalid operands.
+				bool dynamic_numeric_handled = false;
+				{
+					const Variant::Type dynamic_left_type = a->get_type();
+					if ((dynamic_left_type == Variant::INT || dynamic_left_type == Variant::UINT) &&
+							FSNumericOps::handles_operation(op)) {
+						const NumericType dynamic_type = FSNumericOps::operation_type(NumericType::NONE, dynamic_left_type);
+						const Variant::Type dynamic_right_type = b->get_type();
+						const bool is_shift = op == Variant::OP_SHIFT_LEFT || op == Variant::OP_SHIFT_RIGHT;
+						Variant numeric_result;
+						FSNumericError numeric_error = FSNumericError::NONE;
+						if (dynamic_right_type == Variant::NIL) {
+							// The generic operator opcode carries a nil right operand for unary operators.
+							dynamic_numeric_handled = FSNumericOps::unary(op, dynamic_type, *a, numeric_result, numeric_error);
+						} else if (dynamic_right_type == dynamic_left_type ||
+								(is_shift && (dynamic_right_type == Variant::INT || dynamic_right_type == Variant::UINT))) {
+							dynamic_numeric_handled = FSNumericOps::binary(op, dynamic_type, *a, *b, numeric_result, numeric_error);
+						}
+						if (dynamic_numeric_handled) {
+							*dst = numeric_result;
+						} else if (numeric_error != FSNumericError::NONE && numeric_error != FSNumericError::UNSUPPORTED) {
+							// `UNSUPPORTED` means the pair is not part of the checked integer model at
+							// all (an integer with a float, or negating an unsigned value); the generic
+							// evaluator answers for it, exactly as it did before.
+							err_text = FSNumericOps::describe_operation_error(numeric_error, op, dynamic_type);
+							OPCODE_BREAK;
+						}
+					}
+				}
+				if (dynamic_numeric_handled) {
+					ip += 7 + _pointer_size;
+					DISPATCH_OPCODE;
+				}
+
 				// Compute signatures (types of operands) so it can be optimized when matching.
 				uint32_t op_signature = _code_ptr[ip + 5];
 				uint32_t actual_signature = (a->get_type() << 8) | (b->get_type());

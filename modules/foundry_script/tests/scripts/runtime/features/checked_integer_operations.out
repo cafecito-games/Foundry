@@ -23,6 +23,9 @@ FS_TEST_OK
 4294967295
 3
 18446744073709551615
+true
+true
+true
 false
 true
 true

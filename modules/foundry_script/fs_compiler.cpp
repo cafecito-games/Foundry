@@ -788,7 +788,19 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 		// Analyzer-folded container constants can nest shallow same-unit class identities in
 		// elements, keys, values, and typed descriptors. Canonicalize those before they enter the
 		// function constant pool so bytecode export indexes the live compiled subclasses.
-		return codegen.add_constant(_resolve_aliased_class_constant(p_expression->reduced_value));
+		FSCodeGenerator::Address constant_address =
+				codegen.add_constant(_resolve_aliased_class_constant(p_expression->reduced_value));
+		// A constant address is built from the value's carrier alone, which cannot tell a 32-bit
+		// integer from a 64-bit one. A suffixed literal or a width-typed constant declares an exact
+		// width, and code generation checks operations against the operand widths, so restore it from
+		// the analyzed type.
+		const FSParser::DataType &constant_datatype = p_expression->get_datatype();
+		if (constant_address.type.kind == FSDataType::BUILTIN &&
+				constant_datatype.kind == FSParser::DataType::BUILTIN &&
+				constant_datatype.builtin_type == constant_address.type.builtin_type) {
+			constant_address.type.numeric_type = constant_datatype.numeric_type;
+		}
+		return constant_address;
 	}
 
 	FSCodeGenerator *gen = codegen.generator;
