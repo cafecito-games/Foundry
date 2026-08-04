@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Pattern matches a case of "generic_tagged_union_pattern_specialization.fs.Result[float, String]", but the "match" subject is of type "generic_tagged_union_pattern_specialization.fs.Result[int, String]".

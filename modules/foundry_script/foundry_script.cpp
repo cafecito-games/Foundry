@@ -44,6 +44,7 @@
 #include "fs_reflection.h"
 #include "fs_rpc_callable.h"
 #include "fs_script_test_guard.h"
+#include "fs_static_self_callable.h"
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_tokenizer_buffer.h"
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
@@ -158,7 +159,19 @@ int64_t FSSpecializedClassHandle::_hash_code() const {
 }
 
 bool FSSpecializedClassHandle::_get(const StringName &p_name, Variant &r_ret) const {
-	return script.is_valid() && script->_get(p_name, r_ret);
+	if (script.is_null()) {
+		return false;
+	}
+	if (script->find_static_function_owner(p_name) != nullptr) {
+		// The receiver of an extracted static callable is this specialization, not the unspecialized
+		// script: invoking it later has to construct `Crate[int]` exactly as calling through this handle
+		// directly would. This handle is a transient value with no other owner, so the callable records
+		// the specialization rather than the handle object.
+		r_ret = Callable(memnew(FSStaticSelfCallable(script,
+				FSStaticSelfContext::for_specialized_script(script, type_arguments), p_name)));
+		return true;
+	}
+	return script->_get(p_name, r_ret);
 }
 
 Variant FSSpecializedClassHandle::callp(const StringName &p_method, const Variant **p_args, int p_argcount,
@@ -968,22 +981,32 @@ bool FoundryScript::has_method(const StringName &p_method) const {
 }
 
 bool FoundryScript::has_static_method(const StringName &p_method) const {
-	return member_functions.has(p_method) && member_functions[p_method]->is_static();
+	// An inherited static function is reachable through this class -- that is what dispatch through a
+	// derived handle does -- so the answer follows the same base chain the dispatch does.
+	for (const FoundryScript *top = this; top != nullptr; top = top->base.ptr()) {
+		HashMap<StringName, FSFunction *>::ConstIterator element = top->member_functions.find(p_method);
+		if (element) {
+			return element->value->is_static();
+		}
+	}
+	return false;
 }
 
 int FoundryScript::get_script_method_argument_count(const StringName &p_method, bool *r_is_valid) const {
-	HashMap<StringName, FSFunction *>::ConstIterator E = member_functions.find(p_method);
-	if (!E) {
-		if (r_is_valid) {
-			*r_is_valid = false;
+	for (const FoundryScript *top = this; top != nullptr; top = top->base.ptr()) {
+		HashMap<StringName, FSFunction *>::ConstIterator element = top->member_functions.find(p_method);
+		if (element) {
+			if (r_is_valid) {
+				*r_is_valid = true;
+			}
+			return element->value->get_argument_count();
 		}
-		return 0;
 	}
 
 	if (r_is_valid) {
-		*r_is_valid = true;
+		*r_is_valid = false;
 	}
-	return E->value->get_argument_count();
+	return 0;
 }
 
 MethodInfo FoundryScript::get_method_info(const StringName &p_method) const {
@@ -1815,6 +1838,24 @@ Variant FoundryScript::call_static_with_context(const StringName &p_method, cons
 	return result;
 }
 
+const FoundryScript *FoundryScript::find_static_function_owner(const StringName &p_name) const {
+	for (const FoundryScript *top = this; top != nullptr; top = top->base.ptr()) {
+		if (top->constants.has(p_name) || top->static_variables_indices.has(p_name)) {
+			return nullptr;
+		}
+		if (likely(top->valid)) {
+			HashMap<StringName, FSFunction *>::ConstIterator function_element = top->member_functions.find(p_name);
+			if (function_element && function_element->value->is_static()) {
+				return top;
+			}
+		}
+		if (top->subclasses.has(p_name)) {
+			return nullptr;
+		}
+	}
+	return nullptr;
+}
+
 bool FoundryScript::_get(const StringName &p_name, Variant &r_ret) const {
 	if (p_name == FSLanguage::get_singleton()->strings._script_source) {
 		r_ret = get_source_code();
@@ -1849,9 +1890,16 @@ bool FoundryScript::_get(const StringName &p_name, Variant &r_ret) const {
 			HashMap<StringName, FSFunction *>::ConstIterator E = top->member_functions.find(p_name);
 			if (E && E->value->is_static()) {
 				if (top->rpc_config.has(p_name)) {
+					// The remote-call form keeps naming the declaring class. It holds its object by raw
+					// pointer and requires a `Node`, so it is not an extraction that can outlive anything
+					// or carry a class receiver in the first place.
 					r_ret = Callable(memnew(FSRPCCallable(const_cast<FoundryScript *>(top), E->key)));
 				} else {
-					r_ret = Callable(const_cast<FoundryScript *>(top), E->key);
+					// An extracted static callable is the pair of the selected function and the exact
+					// receiver it was extracted from, so it binds the class the read began on rather than
+					// the ancestor the implementation happens to be declared on. Dispatching it later then
+					// resolves `Self` to the same class a direct call through this handle would have.
+					r_ret = Callable(const_cast<FoundryScript *>(this), E->key);
 				}
 				return true;
 			}

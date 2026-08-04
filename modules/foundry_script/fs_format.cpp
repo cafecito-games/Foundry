@@ -1963,15 +1963,12 @@ void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 		}
 		return;
 	}
+	// A type suffix binds to the leading name, and the dotted tail follows it: an applied generic
+	// tagged union names one of its cases after its argument list (`Result[int, String].Ok`).
 	if (p_type->type_chain.is_empty()) {
 		write("void");
 	} else {
-		for (int i = 0; i < p_type->type_chain.size(); i++) {
-			if (i > 0) {
-				write(".");
-			}
-			write(p_type->type_chain[i]->name);
-		}
+		write(p_type->type_chain[0]->name);
 	}
 
 	if (p_type->has_signature) {
@@ -2004,6 +2001,25 @@ void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 			print_type(p_type->container_types[i]);
 		}
 		write("]");
+	} else if (!p_type->type_argument_expressions.is_empty()) {
+		// A `match` case-pattern head carries its arguments in expression form (see
+		// `TypeNode::type_argument_expressions`), including their own nullable markers.
+		write("[");
+		for (int i = 0; i < p_type->type_argument_expressions.size(); i++) {
+			if (i > 0) {
+				write(", ");
+			}
+			print_expression(p_type->type_argument_expressions[i]);
+			if (i < p_type->type_argument_expression_is_nullable.size() && p_type->type_argument_expression_is_nullable[i]) {
+				write("?");
+			}
+		}
+		write("]");
+	}
+
+	for (int i = 1; i < p_type->type_chain.size(); i++) {
+		write(".");
+		write(p_type->type_chain[i]->name);
 	}
 
 	if (p_type->is_nullable) {

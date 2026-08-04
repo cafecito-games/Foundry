@@ -35,6 +35,7 @@
 #include "fs_lambda_callable.h"
 #include "fs_numeric_ops.h"
 #include "fs_script_test_guard.h"
+#include "fs_static_self_callable.h"
 
 #include "core/object/script_function_state.h"
 #include "core/os/os.h"
@@ -371,6 +372,27 @@ static bool _frame_self_class_handle(const FrameSelfBinding &p_frame_self, const
 				r_handle);
 	}
 	return false;
+}
+
+// Reading an unqualified static function inside a static frame targets the class slot, which holds
+// the class that declares the running function. An unqualified *call* in the same position keeps the
+// receiver the call began on while still selecting the declaring class's implementation, so the
+// extracted callable is built from both halves rather than from whichever single object a standard
+// callable could name.
+//
+// Only a name the class slot resolves to a static function is an extraction; a constant, a static
+// variable, or an inner class of that name is an ordinary read and is left alone.
+static bool _class_slot_static_callable(const FSStaticSelfContext *p_static_self, const Variant &p_class_slot,
+		const StringName &p_name, Variant &r_callable) {
+	if (p_static_self == nullptr || !p_static_self->is_valid()) {
+		return false;
+	}
+	const Ref<FoundryScript> declaring_script = Object::cast_to<FoundryScript>(p_class_slot.get_validated_object());
+	if (declaring_script.is_null() || declaring_script->find_static_function_owner(p_name) == nullptr) {
+		return false;
+	}
+	r_callable = Callable(memnew(FSStaticSelfCallable(declaring_script, *p_static_self, p_name)));
+	return true;
 }
 
 // One diagnostic for every instruction that needed the frame's receiver and could not get it. Naming
@@ -2313,21 +2335,29 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
 				const StringName *index = &_global_names_ptr[indexname];
 
-				bool valid;
+				Variant static_callable;
+				const bool extracts_static_callable = unlikely(src == &stack[ADDR_STACK_CLASS] &&
+						_class_slot_static_callable(p_static_self, *src, *index, static_callable));
+
+				if (extracts_static_callable) {
+					*dst = static_callable;
+				} else {
+					bool valid;
 #ifdef DEBUG_ENABLED
-				//allow better error message in cases where src and dst are the same stack position
-				Variant ret = src->get_named(*index, valid);
+					//allow better error message in cases where src and dst are the same stack position
+					Variant ret = src->get_named(*index, valid);
 
 #else
-				*dst = src->get_named(*index, valid);
+					*dst = src->get_named(*index, valid);
 #endif
 #ifdef DEBUG_ENABLED
-				if (!valid) {
-					err_text = "Invalid access to property or key '" + index->operator String() + "' on a base object of type '" + _get_var_type(src) + "'.";
-					OPCODE_BREAK;
-				}
-				*dst = ret;
+					if (!valid) {
+						err_text = "Invalid access to property or key '" + index->operator String() + "' on a base object of type '" + _get_var_type(src) + "'.";
+						OPCODE_BREAK;
+					}
+					*dst = ret;
 #endif
+				}
 				ip += 4;
 			}
 			DISPATCH_OPCODE;

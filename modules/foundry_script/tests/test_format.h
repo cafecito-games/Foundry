@@ -663,6 +663,8 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 			const FSParser::TypeNode *b = static_cast<const FSParser::TypeNode *>(p_b);
 			return identifier_chain_eq(a->type_chain, b->type_chain) &&
 					node_vector_eq(a->container_types, b->container_types) &&
+					node_vector_eq(a->type_argument_expressions, b->type_argument_expressions) &&
+					a->type_argument_expression_is_nullable == b->type_argument_expression_is_nullable &&
 					a->has_signature == b->has_signature && a->signature_is_async == b->signature_is_async &&
 					a->is_nullable == b->is_nullable && a->is_tuple == b->is_tuple &&
 					node_vector_eq(a->tuple_element_types, b->tuple_element_types) &&
