@@ -1368,6 +1368,22 @@ against it, and none of them widen `Self` to `Variant`, to the declaring class, 
 target, or to a common base in order to make a call succeed. A static call that reaches an
 implementation without a receiver is reported as an error rather than resolved approximately.
 
+**Deferred execution.** The receiver rule is unaffected by a call and its execution being separated
+in time.
+
+- Reading a static function off a class handle without calling it (`Derived.make`, or an
+  unqualified `make` inside a static body) yields a callable paired with that exact receiver.
+  Invoking it later means what calling through the same handle would have meant, and two callables
+  extracted from different receivers for one inherited implementation keep their own
+  specializations. A callable extracted from a specialized generic handle keeps that
+  specialization for as long as the callable is reachable, including past the scope it was
+  extracted in.
+- A call that suspends resumes with the receiver it began on, including across a suspension that
+  happens inside a nested call it awaits. Validation performed after a resumption reports that
+  receiver, not the class the resumed implementation was declared on.
+- A callable or a resumption whose receiver is gone is an error, never a call resolved against the
+  declaring class.
+
 
 ---
 

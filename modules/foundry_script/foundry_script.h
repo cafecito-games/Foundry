@@ -514,6 +514,12 @@ public:
 	Variant call_static_with_context(const StringName &p_method, const Variant **p_args, int p_argcount,
 			Callable::CallError &r_error, const FSStaticSelfContext &p_static_self);
 
+	// The class whose declaration a read of `p_name` off this class selects, when that read yields a
+	// static member function. Follows the same precedence `_get` uses: a constant, a static variable, or
+	// an inner class declared closer to this class shadows the function and makes the read something
+	// other than a callable extraction, which reports null.
+	const FoundryScript *find_static_function_owner(const StringName &p_name) const;
+
 	static String debug_get_script_name(const Ref<Script> &p_script);
 
 	static String canonicalize_path(const String &p_path);

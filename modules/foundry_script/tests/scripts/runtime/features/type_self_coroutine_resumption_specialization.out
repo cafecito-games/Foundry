@@ -1,0 +1,6 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 28: (UNSAFE_METHOD_ACCESS) The method "get_class()" is not present on the inferred type "Variant" (but may be present on a subtype).
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign an object of type 'Material' into a member, which does not inherit from 'ImageTexture'.
+>> SCRIPT ERROR at runtime/features/type_self_coroutine_resumption_specialization.fs:29 on drain(): Invalid assignment of property or key 'value' with value of type 'Material' on a base object of type 'RefCounted (Crate)'.
+ImageTexture
