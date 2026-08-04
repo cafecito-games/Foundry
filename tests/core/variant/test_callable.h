@@ -221,12 +221,10 @@ class TestUnsignedArgumentReceiver : public Object {
 public:
 	int call_count = 0;
 	int received_tile_id = -1;
-	uint64_t received_generation = 0;
 	uint32_t received_mask = 0;
-	uint32_t received_flags = 0;
-
-	static int static_call_count;
-	static uint32_t static_received_value;
+	uint64_t received_generation = 0;
+	static inline int static_call_count = 0;
+	static inline uint32_t static_received_mask = 0;
 
 	void receive(int p_tile_id, uint64_t p_generation) {
 		call_count++;
@@ -239,17 +237,18 @@ public:
 		received_mask = p_mask;
 	}
 
-	// Mirrors `Object::connect(..., uint32_t)`: a non-void native target that takes an unsigned
-	// flags argument and returns a sentinel `Error`.
-	Error receive_flags(uint32_t p_flags) {
+	// Non-void member matching `Object::connect(..., uint32_t)`: returns a sentinel while taking a
+	// top-level unsigned parameter. The call site below supplies the UINT carrier via `callp`
+	// arguments (not only `.bind()`), matching deferred/live argument dispatch.
+	int receive_mask_with_result(uint32_t p_mask) {
 		call_count++;
-		received_flags = p_flags;
-		return ERR_BUSY;
+		received_mask = p_mask;
+		return 73;
 	}
 
-	static void receive_static(uint32_t p_value) {
+	static void receive_mask_static(uint32_t p_mask) {
 		static_call_count++;
-		static_received_value = p_value;
+		static_received_mask = p_mask;
 	}
 
 	// `Variant::operator Color()` only reads `Variant::INT`, so an unsigned argument must not be
@@ -259,20 +258,14 @@ public:
 	}
 };
 
-int TestUnsignedArgumentReceiver::static_call_count = 0;
-uint32_t TestUnsignedArgumentReceiver::static_received_value = 0;
-
 // Tagged `[SceneTree]` because the deferred subcase needs a live `MessageQueue`.
 TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 	TestUnsignedArgumentReceiver *receiver = memnew(TestUnsignedArgumentReceiver);
 	TestUnsignedArgumentReceiver::static_call_count = 0;
-	TestUnsignedArgumentReceiver::static_received_value = 0;
+	TestUnsignedArgumentReceiver::static_received_mask = 0;
 
 	// Above `UINT32_MAX` so a carrier that truncates the value stays visible in the assertions.
 	const uint64_t generation = 4294967297ULL;
-	const uint32_t mask = 0xA5A5A5A5u;
-	const uint32_t flags = 0xC0FFEEu;
-	const uint32_t static_value = 0xDEADBEEFu;
 
 	SUBCASE("bound argument") {
 		ErrorDetector detector;
@@ -321,11 +314,13 @@ TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 
 	SUBCASE("signal-emitted unsigned argument") {
 		// Matches `EditorPropertyLayersGrid` emitting a `uint32_t` mask onto a `uint32_t` receiver.
+		// High bit set so a signed reinterpretation would not preserve the value.
 		Object *emitter = memnew(Object);
 		emitter->add_user_signal(MethodInfo("flag_changed", PropertyInfo(Variant::INT, "value")));
-		emitter->connect("flag_changed", callable_mp(receiver, &TestUnsignedArgumentReceiver::receive_mask), Object::CONNECT_ONE_SHOT);
+		emitter->connect("flag_changed", callable_mp(receiver, &TestUnsignedArgumentReceiver::receive_mask));
 
 		ErrorDetector detector;
+		const uint32_t mask = 0x80000001U;
 		emitter->emit_signal("flag_changed", mask);
 
 		CHECK_FALSE(detector.has_error);
@@ -335,27 +330,30 @@ TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 		memdelete(emitter);
 	}
 
-	SUBCASE("non-void member target with uint32_t") {
-		// Matches `Object::connect(..., uint32_t)` reached through `callable_mp(...).call_deferred`.
+	SUBCASE("non-void member target") {
+		// Matches `Object::connect(..., uint32_t)` with a live call-site UINT carrier (as in
+		// `callable_mp(...).call_deferred(..., 0U)`), not only a bound argument.
 		ErrorDetector detector;
-
-		Callable callable = callable_mp(receiver, &TestUnsignedArgumentReceiver::receive_flags).bind(flags);
+		const uint32_t flags = 0x80000002U;
+		Variant argument = flags;
+		const Variant *arguments[] = { &argument };
+		Callable callable = callable_mp(receiver, &TestUnsignedArgumentReceiver::receive_mask_with_result);
 		Callable::CallError error;
 		Variant result;
-		callable.callp(nullptr, 0, result, error);
+		callable.callp(arguments, 1, result, error);
 
 		CHECK(error.error == Callable::CallError::CALL_OK);
 		CHECK_FALSE(detector.has_error);
 		CHECK(receiver->call_count == 1);
-		CHECK(receiver->received_flags == flags);
-		CHECK((Error)result == ERR_BUSY);
+		CHECK(receiver->received_mask == flags);
+		CHECK(int(result) == 73);
 	}
 
-	SUBCASE("static callable with bound uint32_t") {
+	SUBCASE("static target with a bound argument") {
 		// Matches OpenXR render-thread `callable_mp_static(...).bind(uint32_t, ...)` sites.
 		ErrorDetector detector;
-
-		Callable callable = callable_mp_static(&TestUnsignedArgumentReceiver::receive_static).bind(static_value);
+		const uint32_t view_count = 0x80000003U;
+		Callable callable = callable_mp_static(&TestUnsignedArgumentReceiver::receive_mask_static).bind(view_count);
 		Callable::CallError error;
 		Variant result;
 		callable.callp(nullptr, 0, result, error);
@@ -363,7 +361,7 @@ TEST_CASE("[SceneTree][Callable] Unsigned native parameter dispatch") {
 		CHECK(error.error == Callable::CallError::CALL_OK);
 		CHECK_FALSE(detector.has_error);
 		CHECK(TestUnsignedArgumentReceiver::static_call_count == 1);
-		CHECK(TestUnsignedArgumentReceiver::static_received_value == static_value);
+		CHECK(TestUnsignedArgumentReceiver::static_received_mask == view_count);
 	}
 
 	SUBCASE("value beyond the signed range") {
