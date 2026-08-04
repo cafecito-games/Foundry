@@ -2890,6 +2890,176 @@ func identity(factory: Type[Node]) -> Type[Node]:
 	check_callable_members(restored);
 }
 
+static Ref<FoundryScript> bytecode_static_self_subclass(const Ref<FoundryScript> &p_script, const StringName &p_name) {
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator element = p_script->get_subclasses().find(p_name);
+	return element ? element->value : Ref<FoundryScript>();
+}
+
+static Variant bytecode_static_self_call(Object *p_receiver, const StringName &p_method,
+		const Vector<Variant> &p_arguments, Callable::CallError &r_error) {
+	LocalVector<const Variant *> argument_pointers;
+	argument_pointers.resize(p_arguments.size());
+	for (int i = 0; i < p_arguments.size(); i++) {
+		argument_pointers[i] = &p_arguments[i];
+	}
+	return p_receiver->callp(p_method, argument_pointers.ptr(), p_arguments.size(), r_error);
+}
+
+static void bytecode_check_static_self_object(const Variant &p_value, const Ref<FoundryScript> &p_expected_script) {
+	const Ref<RefCounted> object = p_value;
+	REQUIRE(object.is_valid());
+	CHECK(object->get_script() == Variant(p_expected_script));
+}
+
+static String bytecode_check_static_self_runtime(const Ref<FoundryScript> &p_script) {
+	const Ref<FoundryScript> base = bytecode_static_self_subclass(p_script, SNAME("Base"));
+	const Ref<FoundryScript> derived = bytecode_static_self_subclass(p_script, SNAME("Derived"));
+	const Ref<FoundryScript> witness_base = bytecode_static_self_subclass(p_script, SNAME("WitnessBase"));
+	const Ref<FoundryScript> witness_derived = bytecode_static_self_subclass(p_script, SNAME("WitnessDerived"));
+	REQUIRE(base.is_valid());
+	REQUIRE(derived.is_valid());
+	REQUIRE(witness_base.is_valid());
+	REQUIRE(witness_derived.is_valid());
+
+	Callable::CallError call_error;
+	const Variant base_value = bytecode_static_self_call(base.ptr(), SNAME("spawn"), {}, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	bytecode_check_static_self_object(base_value, base);
+	const Variant derived_value = bytecode_static_self_call(derived.ptr(), SNAME("spawn"), {}, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	bytecode_check_static_self_object(derived_value, derived);
+
+	const Variant direct_witness = bytecode_static_self_call(witness_base.ptr(), SNAME("leaf_make"), {}, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	bytecode_check_static_self_object(direct_witness, witness_base);
+	const Variant inherited_witness = bytecode_static_self_call(witness_derived.ptr(), SNAME("leaf_make"), {}, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	bytecode_check_static_self_object(inherited_witness, witness_derived);
+	const Variant implied_witness = bytecode_static_self_call(witness_derived.ptr(), SNAME("root_make"), {}, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	bytecode_check_static_self_object(implied_witness, witness_derived);
+
+	const Variant packed = bytecode_static_self_call(derived.ptr(), SNAME("pack"), { derived_value }, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	FSInstance *crate_instance = bytecode_fs_instance_of(packed);
+	REQUIRE(crate_instance != nullptr);
+	const Vector<ContainerType> &crate_arguments = crate_instance->get_type_arguments();
+	REQUIRE_EQ(crate_arguments.size(), 1);
+	CHECK(crate_arguments[0].script == derived);
+	Object *crate_object = packed;
+	REQUIRE(crate_object != nullptr);
+	bytecode_check_static_self_object(crate_object->get(SNAME("value")), derived);
+
+	bool extracted_is_valid = false;
+	const Variant extracted_value = derived->get(SNAME("spawn"), &extracted_is_valid);
+	REQUIRE(extracted_is_valid);
+	REQUIRE(extracted_value.get_type() == Variant::CALLABLE);
+	const Callable extracted = extracted_value;
+	CHECK(extracted.is_valid());
+	bytecode_check_static_self_object(extracted.call(), derived);
+	const Variant invoked = bytecode_static_self_call(derived.ptr(), SNAME("invoke"), { extracted }, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	bytecode_check_static_self_object(invoked, derived);
+
+	Object *resume_source = memnew(Object);
+	const Variant suspended = bytecode_static_self_call(derived.ptr(), SNAME("resume_after"), { resume_source }, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	Ref<FSFunctionState> state = suspended;
+	REQUIRE(state.is_valid());
+	bytecode_check_static_self_object(state->resume(), derived);
+	memdelete(resume_source);
+
+	const Variant rejected = bytecode_static_self_call(derived.ptr(), SNAME("accept"), { base_value }, call_error);
+	CHECK(call_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+	CHECK_EQ(call_error.argument, 0);
+	CHECK_EQ(call_error.expected, Variant::OBJECT);
+	CHECK(rejected.get_type() == Variant::NIL);
+	const Variant *rejected_arguments[] = { &base_value };
+	const String diagnostic = Variant::get_call_error_text(SNAME("accept"), rejected_arguments, 1, call_error);
+	CHECK(diagnostic.contains("Cannot convert argument 1"));
+	return vformat("%s: %s", derived->get_fully_qualified_name(), diagnostic);
+}
+
+static String bytecode_check_static_self_metadata(const Ref<FoundryScript> &p_script) {
+	const Ref<FoundryScript> base = bytecode_static_self_subclass(p_script, SNAME("Base"));
+	REQUIRE(base.is_valid());
+	REQUIRE(base->get_member_functions().has(SNAME("nested_types")));
+	const FSFunction *nested = base->get_member_functions()[SNAME("nested_types")];
+	REQUIRE(nested != nullptr);
+	REQUIRE_EQ(nested->get_argument_count(), 4);
+
+	const FSDataType &values = nested->get_argument_type(0);
+	REQUIRE_EQ(values.container_element_types.size(), 1);
+	CHECK(values.container_element_types[0].is_self_type);
+	const FSDataType &by_name = nested->get_argument_type(1);
+	REQUIRE_EQ(by_name.container_element_types.size(), 2);
+	CHECK(by_name.container_element_types[1].is_self_type);
+	const FSDataType &handle = nested->get_argument_type(2);
+	CHECK(handle.is_type_handle);
+	CHECK(handle.is_self_type);
+
+	const FSDataType &result = nested->get_return_type();
+	REQUIRE_EQ(result.type_arguments.size(), 1);
+	const FSDataType &array_argument = result.type_arguments[0];
+	REQUIRE_EQ(array_argument.container_element_types.size(), 1);
+	CHECK(array_argument.container_element_types[0].is_type_handle);
+	CHECK(array_argument.container_element_types[0].is_self_type);
+
+	REQUIRE_EQ(nested->get_method_info().arguments.size(), 4);
+	const PropertyInfo &callable_info = nested->get_method_info().arguments[3];
+	CHECK(callable_info.type == Variant::CALLABLE);
+	const FSDataType &callable = nested->get_argument_type(3);
+	CHECK(callable.kind == FSDataType::BUILTIN);
+	CHECK(callable.builtin_type == Variant::CALLABLE);
+	// Callable signature slots are analyzer-only today; the runtime carrier is intentionally erased.
+	CHECK_FALSE(callable.references_self_type());
+	return vformat("%d:%d:%d:%s", callable.kind, callable.builtin_type, callable_info.hint, callable_info.hint_string);
+}
+
+TEST_CASE("[FoundryScript][BytecodeScript][StaticSelf] Loaded bytecode is source-free and receiver-exact") {
+	const String fixture_path = "modules/foundry_script/tests/scripts/runtime/features/type_self_bytecode_isolation.notest.fs";
+	Ref<FoundryScript> source = compile_bytecode_test_source(FileAccess::get_file_as_string(fixture_path));
+	const String source_path = source->get_script_path();
+	const ObjectID source_id = source->get_instance_id();
+	const String source_diagnostic = bytecode_check_static_self_runtime(source);
+	const String source_callable_signature = bytecode_check_static_self_metadata(source);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(source, buffer) == OK);
+
+	// An exported game never has the parser, compiler graph, or source-registered witnesses. Clear all
+	// three before loading so every assertion below is forced through the bytes and the loader's own
+	// reconstructed graph.
+	FSConformanceRegistry::get_singleton()->clear_file(source_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(source_path);
+	FSCache::remove_script(source_path);
+	source->clear();
+	source.unref();
+	CHECK_FALSE(TestFSCacheAccessor::has_shallow(source_path));
+	CHECK_FALSE(TestFSCacheAccessor::has_full(source_path));
+	CHECK(ObjectDB::get_instance(source_id) == nullptr);
+	CHECK(FSConformanceRegistry::get_singleton()->get_file_conformances(source_path).is_empty());
+	CHECK(FSConformanceRegistry::get_singleton()->get_runtime_witnesses(source_path).is_empty());
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(source_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_skeleton(buffer, restored) == OK);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+	CHECK(restored->is_compiled_binary());
+
+	CHECK(bytecode_check_static_self_metadata(restored) == source_callable_signature);
+	CHECK(bytecode_check_static_self_runtime(restored) == source_diagnostic);
+
+	FSConformanceRegistry::get_singleton()->clear_file(source_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(source_path);
+	restored->clear();
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED
