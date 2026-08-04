@@ -1898,6 +1898,40 @@ static FSParser::DataType make_builtin_meta_type(Variant::Type p_type) {
 	return type;
 }
 
+// Recognizes one argument of the current generic union's exact open vector without resolving the
+// argument. Resolving an enum parameter also resolves its bound, which would re-enter an outer bound
+// such as `Recursive[T]` while that TypeNode is RESOLVING. The spelling and lexical shadow check are
+// sufficient here because the caller has already proven that the head names the current declaration.
+static bool _is_exact_open_enum_parameter_node(const FSParser::TypeNode *p_type,
+		const FSParser::EnumNode *p_declaration, const FSParser::FunctionNode *p_function, int p_index) {
+	if (p_type == nullptr || p_declaration == nullptr || p_index < 0 || p_index >= p_declaration->type_parameters.size() ||
+			p_type->type_chain.size() != 1 || p_type->type_chain[0] == nullptr ||
+			!p_type->container_types.is_empty() || !p_type->type_argument_expressions.is_empty() ||
+			p_type->is_nullable || p_type->is_tuple || p_type->is_coroutine || p_type->has_signature) {
+		return false;
+	}
+
+	const FSParser::TypeParameterNode *parameter = p_declaration->type_parameters[p_index];
+	if (parameter == nullptr || parameter->identifier == nullptr ||
+			p_type->type_chain[0]->name != parameter->identifier->name) {
+		return false;
+	}
+
+	// Method parameters shadow enum parameters, including through a nested lambda. Mirror that part of
+	// resolve_type_parameter's lexical lookup without constructing a bound-carrying parameter handle.
+	for (const FSParser::FunctionNode *enclosing = p_function; enclosing != nullptr;
+			enclosing = enclosing->source_lambda != nullptr ? enclosing->source_lambda->parent_function : nullptr) {
+		for (const FSParser::TypeParameterNode *method_parameter : enclosing->type_parameters) {
+			if (method_parameter != nullptr && method_parameter->identifier != nullptr &&
+					method_parameter->identifier->name == parameter->identifier->name) {
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
 FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	FSParser::DataType bad_type;
 	bad_type.kind = FSParser::DataType::VARIANT;
@@ -2476,17 +2510,20 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			bool is_own_open_vector = is_current_declaration && given == expected &&
 					result.type_arguments.size() == expected;
 			for (int i = 0; is_own_open_vector && i < expected; i++) {
-				FSParser::DataType argument = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(i)));
-				// Everything but the bound has to match, so a decorated spelling of the same parameter —
-				// `T?`, `Type[T]` — is an application rather than the open self type. The bound is redundant
-				// for identity, and a use-site handle spells an explicit `Variant` bound that the published
-				// handle drops.
-				FSParser::DataType open_argument = result.type_arguments[i];
-				argument.type_parameter_bound.clear();
-				open_argument.type_parameter_bound.clear();
-				is_own_open_vector = argument.kind == FSParser::DataType::TYPE_PARAMETER &&
-						argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_ENUM &&
-						argument.type_parameter_index == i && argument == open_argument;
+				const FSParser::TypeParameterNode *parameter = declaration->type_parameters[i];
+				const FSParser::DataType &open_argument = result.type_arguments[i];
+				// The published handle proves enum scope, ordinal, and spelling. The TypeNode matcher proves
+				// that this occurrence is the same undecorated lexical parameter without resolving its bound.
+				is_own_open_vector = _is_exact_open_enum_parameter_node(
+											 p_type->get_container_type_or_null(i), declaration, parser->current_function, i) &&
+						parameter != nullptr && parameter->identifier != nullptr &&
+						open_argument.kind == FSParser::DataType::TYPE_PARAMETER &&
+						open_argument.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_ENUM &&
+						open_argument.type_parameter_index == i &&
+						open_argument.type_parameter_name == parameter->identifier->name &&
+						!open_argument.is_meta_type && !open_argument.is_nullable &&
+						!open_argument.is_type_handle_annotation && open_argument.type_arguments.is_empty() &&
+						open_argument.container_element_types.is_empty();
 			}
 			if (is_own_open_vector) {
 				// `Tree[T]` spelled inside `Tree[T]` canonicalizes to the same open handle as bare `Tree`.
@@ -12878,8 +12915,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			// succeed past a gap survive as extra allowed argument counts, matching how
 			// non-contiguous arities are represented elsewhere.
 			auto default_survival_for_bind = [&](const Vector<const FSParser::ExpressionNode *> &p_bound_arguments,
-										  int p_checked_bind_start, int p_remaining_argument_count,
-										  int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
+													 int p_checked_bind_start, int p_remaining_argument_count,
+													 int &r_result_default_arg_count, Vector<int> &r_extra_allowed_argument_counts) {
 				r_result_default_arg_count = 0;
 				const int max_shift = MIN(int(p_base_type.method_info.default_arguments.size()), p_checked_bind_start);
 				const int reaching_bound_argument_count = bound_arguments_reaching_target(p_bound_arguments);

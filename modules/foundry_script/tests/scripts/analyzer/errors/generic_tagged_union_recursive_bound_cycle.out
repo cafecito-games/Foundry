@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 3: Could not resolve datatype: Cyclic reference.
