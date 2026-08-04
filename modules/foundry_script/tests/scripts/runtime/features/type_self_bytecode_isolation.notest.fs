@@ -3,6 +3,9 @@ class Crate[T]:
 
 
 class Base:
+	static func ordinary_label() -> String:
+		return "base"
+
 	static func spawn() -> Self:
 		return Self.new()
 

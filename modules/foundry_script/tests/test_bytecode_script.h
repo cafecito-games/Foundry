@@ -2928,6 +2928,12 @@ static String bytecode_check_static_self_runtime(const Ref<FoundryScript> &p_scr
 	const Variant derived_value = bytecode_static_self_call(derived.ptr(), SNAME("spawn"), {}, call_error);
 	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
 	bytecode_check_static_self_object(derived_value, derived);
+	const Variant ordinary_base = bytecode_static_self_call(base.ptr(), SNAME("ordinary_label"), {}, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	CHECK(ordinary_base == Variant("base"));
+	const Variant ordinary_derived = bytecode_static_self_call(derived.ptr(), SNAME("ordinary_label"), {}, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	CHECK(ordinary_derived == Variant("base"));
 
 	const Variant direct_witness = bytecode_static_self_call(witness_base.ptr(), SNAME("leaf_make"), {}, call_error);
 	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
