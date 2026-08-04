@@ -1,0 +1,9 @@
+FS_TEST_OK
+~~ WARNING at line 4: (UNSAFE_CAST) Casting "Variant" to "long" is unsafe.
+~~ WARNING at line 7: (UNSAFE_CAST) Casting "Variant" to "ulong" is unsafe.
+9223372036854775807
+-5
+3
+42
+1
+7

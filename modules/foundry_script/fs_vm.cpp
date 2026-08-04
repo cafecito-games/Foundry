@@ -1662,19 +1662,41 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					DISPATCH_OPCODE;
 				}
 
-				Variant numeric_result;
-				FSNumericError numeric_error = FSNumericError::NONE;
-				if (unlikely(!FSNumericOps::convert(numeric_type, *src, numeric_result, numeric_error))) {
-					if (numeric_error == FSNumericError::UNSUPPORTED) {
-						err_text = "Invalid cast: could not convert value of type '" +
-								Variant::get_type_name(src->get_type()) + "' to '" + numeric_type_name(numeric_type) + "'.";
-					} else {
-						err_text = FSNumericOps::describe_conversion_error(numeric_error, numeric_type, *src,
-								_numeric_type_diagnostic_name(numeric_type));
+				{
+					Variant numeric_result;
+					FSNumericError numeric_error = FSNumericError::NONE;
+					bool converted = FSNumericOps::convert(numeric_type, *src, numeric_result, numeric_error);
+					if (unlikely(!converted) && numeric_error == FSNumericError::UNSUPPORTED &&
+							numeric_type_carrier(numeric_type) == Variant::INT) {
+						// The source is not a number at all. A signed destination still accepts whatever
+						// generic construction defines for it (a numeric string, a boolean); an unsigned
+						// destination has no constructor to fall back to.
+#ifdef DEBUG_ENABLED
+						if (src->operator Object *() && !src->get_validated_object()) {
+							err_text = "Trying to cast a freed object.";
+							OPCODE_BREAK;
+						}
+#endif
+						Callable::CallError construct_error;
+						Variant::construct(Variant::INT, numeric_result, (const Variant **)&src, 1, construct_error);
+						converted = construct_error.error == Callable::CallError::CALL_OK;
+						if (converted) {
+							numeric_error = FSNumericError::NONE;
+						}
 					}
-					OPCODE_BREAK;
+					if (unlikely(!converted)) {
+						if (numeric_error == FSNumericError::UNSUPPORTED) {
+							err_text = "Invalid cast: could not convert value of type '" +
+									Variant::get_type_name(src->get_type()) + "' to '" +
+									_numeric_type_diagnostic_name(numeric_type) + "'.";
+						} else {
+							err_text = FSNumericOps::describe_conversion_error(numeric_error, numeric_type, *src,
+									_numeric_type_diagnostic_name(numeric_type));
+						}
+						OPCODE_BREAK;
+					}
+					*dst = numeric_result;
 				}
-				*dst = numeric_result;
 
 				ip += 5;
 			}

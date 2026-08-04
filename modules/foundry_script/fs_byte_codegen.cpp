@@ -1541,13 +1541,11 @@ void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_s
 		case FSDataType::BUILTIN: {
 			// An integer destination is converted through the checked helper rather than through
 			// `Variant::construct()`: the unsigned carrier has no constructor at all, and a signed one
-			// silently reinterprets a value the destination cannot represent. A source that is not
-			// statically numeric keeps the generic construction path, which still answers for the
+			// fails on a value the destination cannot represent — a failure a release build ignores,
+			// leaving the destination holding whatever it held before. A source that turns out not to
+			// be numeric at run time still gets the generic construction path, which answers for the
 			// conversions it does define (a numeric string, for instance).
-			const bool numeric_source = p_source.type.kind == FSDataType::BUILTIN &&
-					(_is_integer_carrier(p_source.type.builtin_type) || p_source.type.builtin_type == Variant::FLOAT);
-			if (_is_integer_carrier(p_type.builtin_type) &&
-					(numeric_source || p_type.builtin_type == Variant::UINT)) {
+			if (_is_integer_carrier(p_type.builtin_type)) {
 				const NumericType target = FSNumericOps::operation_type(p_type.numeric_type, p_type.builtin_type);
 				append_opcode(FSFunction::OPCODE_NUMERIC_CAST);
 				append(p_source);

@@ -1,0 +1,4 @@
+FS_TEST_RUNTIME_ERROR
+~~ WARNING at line 2: (UNSAFE_CAST) Casting "Variant" to "long" is unsafe.
+>> SCRIPT ERROR at runtime/errors/checked_integer_dynamic_cast_out_of_range.fs:2 on widen(): Cannot convert 18446744073709551615 to "long": the value is outside its range -9223372036854775808 to 9223372036854775807.
+0
