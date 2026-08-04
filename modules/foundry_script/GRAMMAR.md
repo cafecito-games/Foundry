@@ -1211,8 +1211,9 @@ case_pattern = case_reference,
 
 case_reference = identifier, [ case_type_arguments ], ".", identifier, { ".", identifier } ;
 
-case_type_arguments = "[", type, { ",", type }, "]" ;
-                                                    (* generic tagged union application *)
+case_type_arguments = "[", type_arg, { ",", type_arg }, "]" ;
+                                                    (* generic tagged union application;
+                                                       `type_arg` as in subscript, section 8 *)
 
 case_payload_pattern =
       identifier                                    (* payload bind, no "var" needed *)
@@ -1243,8 +1244,14 @@ Rules:
   rejected. A payload-less case of a generic union is written the same way and matched as the
   ordinary value it is (`Bundle[int].Empty`). Only the `(` that follows the dotted name tells a
   case reference apart from an indexed value pattern (`TABLE[INDEX]`), so `case_type_arguments`
-  is parsed with the ordinary expression rules and each argument is read as a type only once the
-  head is known to be a case reference.
+  is the same `type_arg` list a subscript carries, and each argument is read as a type only once
+  the head is known to be a case reference. An argument therefore has to be spelled as an
+  expression, exactly as in the value-position application `Result[int, String]`: a specialization
+  whose argument has no expression spelling, such as an unnamed tuple type `(int, String)`, is
+  nameable in a type annotation but not on a case-pattern head.
+- A case reference carries its arguments on the name that owns them and never after a qualifier, so
+  a generic union nested under a class (`Outer.Result[int].Ok(...)`) has no case-pattern spelling —
+  the same restriction the type production has for `Outer.Result[int]`.
 - Directly inside a case pattern's parentheses a bare identifier is a payload bind, matching the
   `is Case(x, y)` form; `_` skips the position and any other expression stays a value pattern
   (so a constant is still written `Message.Move(Config.ORIGIN_X, y)`). Nested patterns follow the
