@@ -34,6 +34,7 @@
 #include "fs_function.h"
 #include "fs_lambda_callable.h"
 #include "fs_script_test_guard.h"
+#include "fs_static_self_callable.h"
 
 #include "core/object/script_function_state.h"
 #include "core/os/os.h"
@@ -364,54 +365,25 @@ static bool _frame_self_class_handle(const FrameSelfBinding &p_frame_self, const
 	return false;
 }
 
-// An unqualified static member reference inside a static frame reads the class slot, which holds the
-// class that declares the running function. When the call began on a script receiver that inherits
-// that class -- or on a specialization of it -- reading the member through the receiver selects the
-// same function while keeping the receiver the call was made through, so an extracted callable
-// carries what a direct call through the same reference already carries.
+// Reading an unqualified static function inside a static frame targets the class slot, which holds
+// the class that declares the running function. An unqualified *call* in the same position keeps the
+// receiver the call began on while still selecting the declaring class's implementation, so the
+// extracted callable is built from both halves rather than from whichever single object a standard
+// callable could name.
 //
-// A native or builtin receiver names no member of the declaring script, so the class slot stays
-// authoritative there rather than turning a working reference into a failed read.
-static bool _class_slot_receiver_handle(const FSStaticSelfContext *p_static_self, const Variant &p_class_slot,
-		const StringName &p_name, Variant &r_receiver) {
-	if (p_static_self == nullptr || p_static_self->get_kind() != FSStaticSelfContext::SCRIPT) {
+// Only a name the class slot resolves to a static function is an extraction; a constant, a static
+// variable, or an inner class of that name is an ordinary read and is left alone.
+static bool _class_slot_static_callable(const FSStaticSelfContext *p_static_self, const Variant &p_class_slot,
+		const StringName &p_name, Variant &r_callable) {
+	if (p_static_self == nullptr || !p_static_self->is_valid()) {
 		return false;
 	}
-	FoundryScript *declaring_script = Object::cast_to<FoundryScript>(p_class_slot.get_validated_object());
-	if (declaring_script == nullptr) {
+	const Ref<FoundryScript> declaring_script = Object::cast_to<FoundryScript>(p_class_slot.get_validated_object());
+	if (declaring_script.is_null() || declaring_script->find_static_function_owner(p_name) == nullptr) {
 		return false;
 	}
-	const FoundryScript *selected_owner = declaring_script->find_static_function_owner(p_name);
-	if (selected_owner == nullptr) {
-		return false;
-	}
-	const Ref<Script> receiver_script = p_static_self->get_script();
-	const FoundryScript *receiver = Object::cast_to<FoundryScript>(receiver_script.ptr());
-	if (receiver == nullptr) {
-		return false;
-	}
-	if (receiver->find_static_function_owner(p_name) != selected_owner) {
-		// Only the receiver context travels, never the selection: reading through the receiver has to
-		// mean the same declaration the reference already resolved to. A receiver that overrides the
-		// function, or that shadows the name with a constant, a static variable, or an inner class,
-		// would otherwise answer with something an unqualified direct call would not have selected.
-		return false;
-	}
-	if (receiver == declaring_script && p_static_self->get_type_arguments().is_empty()) {
-		// The class slot already names the receiver exactly.
-		return false;
-	}
-	bool receiver_inherits_declaring_script = false;
-	for (Ref<Script> cursor = receiver_script; cursor.is_valid(); cursor = cursor->get_base_script()) {
-		if (cursor.ptr() == declaring_script) {
-			receiver_inherits_declaring_script = true;
-			break;
-		}
-	}
-	if (!receiver_inherits_declaring_script) {
-		return false;
-	}
-	return _static_self_class_handle(*p_static_self, r_receiver);
+	r_callable = Callable(memnew(FSStaticSelfCallable(declaring_script, *p_static_self, p_name)));
+	return true;
 }
 
 // One diagnostic for every instruction that needed the frame's receiver and could not get it. Naming
@@ -2179,27 +2151,29 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GD_ERR_BREAK(indexname < 0 || indexname >= _global_names_count);
 				const StringName *index = &_global_names_ptr[indexname];
 
-				Variant class_slot_receiver;
-				if (unlikely(src == &stack[ADDR_STACK_CLASS] &&
-							_class_slot_receiver_handle(p_static_self, *src, *index, class_slot_receiver))) {
-					src = &class_slot_receiver;
-				}
+				Variant static_callable;
+				const bool extracts_static_callable = unlikely(src == &stack[ADDR_STACK_CLASS] &&
+						_class_slot_static_callable(p_static_self, *src, *index, static_callable));
 
-				bool valid;
+				if (extracts_static_callable) {
+					*dst = static_callable;
+				} else {
+					bool valid;
 #ifdef DEBUG_ENABLED
-				//allow better error message in cases where src and dst are the same stack position
-				Variant ret = src->get_named(*index, valid);
+					//allow better error message in cases where src and dst are the same stack position
+					Variant ret = src->get_named(*index, valid);
 
 #else
-				*dst = src->get_named(*index, valid);
+					*dst = src->get_named(*index, valid);
 #endif
 #ifdef DEBUG_ENABLED
-				if (!valid) {
-					err_text = "Invalid access to property or key '" + index->operator String() + "' on a base object of type '" + _get_var_type(src) + "'.";
-					OPCODE_BREAK;
-				}
-				*dst = ret;
+					if (!valid) {
+						err_text = "Invalid access to property or key '" + index->operator String() + "' on a base object of type '" + _get_var_type(src) + "'.";
+						OPCODE_BREAK;
+					}
+					*dst = ret;
 #endif
+				}
 				ip += 4;
 			}
 			DISPATCH_OPCODE;

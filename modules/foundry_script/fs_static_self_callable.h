@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  fs_class_handle_callable.h                                            */
+/*  fs_static_self_callable.h                                             */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -30,33 +30,34 @@
 
 #pragma once
 
+#include "fs_function.h"
+
 #include "core/variant/callable.h"
-#include "core/variant/container_type_validate.h"
 
 class FoundryScript;
-class FSSpecializedClassHandle;
 
-// A static callable extracted from a specialized generic class handle, e.g. `Crate[int].make`.
+// An extracted static callable that keeps both halves a static call has: the class its lookup starts
+// from, which decides *which* implementation runs, and the exact receiver the call was made through,
+// which decides what `Self` means while it runs.
 //
-// A standard `Callable` records its receiver's `ObjectID`, which is enough for a script or a native
-// class handle because both outlive any extraction: the script cache owns one, the language globals
-// own the other. A specialized handle is a transient value object built per expression and owned by
-// nothing else, so a standard callable extracted from one dangles as soon as the extraction scope
-// releases it. This callable therefore records the *specialization* -- the represented script plus
-// its concrete arguments -- and rebuilds an equivalent handle for each dispatch, so a callable that
-// outlives its extraction scope still dispatches through the specialization it was extracted from.
+// A standard `Callable` can express only one object, so it has to conflate the two. Binding the
+// declaring class loses the receiver, and binding the receiver changes the selection whenever the
+// receiver declares its own function of that name. Neither half is always an object that outlives
+// the extraction either: a specialized generic receiver is a transient value built per expression,
+// and a retroactive-witness receiver may be a native class or a builtin type.
 //
-// The script is held by id, never by reference, for the same reason a suspended call's receiver
-// descriptor is: a callable kept in a static variable of the script it was extracted from would
-// otherwise close a reference cycle that nothing tears down. A receiver that is gone by dispatch time
-// is reported as an error rather than approximated by the unspecialized script.
-class FSClassHandleCallable : public CallableCustom {
-	ObjectID script_id;
-	Vector<ContainerType> type_arguments;
+// Nothing here is owned. The lookup target and the receiver script are held by id, exactly as a
+// suspended call's receiver descriptor holds its own: a callable stored in a static variable of the
+// script it was extracted from would otherwise close a reference cycle that nothing tears down. A
+// target or receiver that is gone by dispatch time is reported as an error rather than approximated
+// by whichever class is still reachable.
+class FSStaticSelfCallable : public CallableCustom {
+	ObjectID target_id;
+	FSStaticSelfContext receiver;
 	StringName method;
 	uint32_t h = 0;
 
-	Ref<FSSpecializedClassHandle> resolve_handle() const;
+	Ref<FoundryScript> resolve_target() const;
 
 	static bool compare_equal(const CallableCustom *p_a, const CallableCustom *p_b);
 	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
@@ -73,7 +74,7 @@ public:
 	bool is_async() const override;
 	void call(const Variant **p_arguments, int p_argcount, Variant &r_return_value, Callable::CallError &r_call_error) const override;
 
-	FSClassHandleCallable(const Ref<FoundryScript> &p_script, const Vector<ContainerType> &p_type_arguments,
+	FSStaticSelfCallable(const Ref<FoundryScript> &p_target, const FSStaticSelfContext &p_receiver,
 			const StringName &p_method);
-	virtual ~FSClassHandleCallable() = default;
+	virtual ~FSStaticSelfCallable() = default;
 };

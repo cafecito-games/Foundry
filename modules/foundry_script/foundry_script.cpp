@@ -37,7 +37,6 @@
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_bytecode_loader.h"
 #include "fs_cache.h"
-#include "fs_class_handle_callable.h"
 #include "fs_conformance_registry.h"
 #include "fs_no_frontend.h"
 #include "fs_parser.h"
@@ -45,6 +44,7 @@
 #include "fs_reflection.h"
 #include "fs_rpc_callable.h"
 #include "fs_script_test_guard.h"
+#include "fs_static_self_callable.h"
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 #include "fs_tokenizer_buffer.h"
 #endif // FOUNDRY_SCRIPT_NO_FRONTEND
@@ -166,8 +166,9 @@ bool FSSpecializedClassHandle::_get(const StringName &p_name, Variant &r_ret) co
 		// The receiver of an extracted static callable is this specialization, not the unspecialized
 		// script: invoking it later has to construct `Crate[int]` exactly as calling through this handle
 		// directly would. This handle is a transient value with no other owner, so the callable records
-		// the specialization instead of the handle object.
-		r_ret = Callable(memnew(FSClassHandleCallable(script, type_arguments, p_name)));
+		// the specialization rather than the handle object.
+		r_ret = Callable(memnew(FSStaticSelfCallable(script,
+				FSStaticSelfContext::for_specialized_script(script, type_arguments), p_name)));
 		return true;
 	}
 	return script->_get(p_name, r_ret);

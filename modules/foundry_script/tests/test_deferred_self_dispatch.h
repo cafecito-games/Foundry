@@ -33,10 +33,10 @@
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
 #include "../fs_cache.h"
-#include "../fs_class_handle_callable.h"
 #include "../fs_compiler.h"
 #include "../fs_function.h"
 #include "../fs_parser.h"
+#include "../fs_static_self_callable.h"
 
 #include "core/io/file_access.h"
 
@@ -274,8 +274,8 @@ TEST_CASE("[Modules][FoundryScript][DeferredSelf] A callable with no receiver re
 
 	// A missing receiver is a broken dispatch path. Dispatching through the unspecialized script the
 	// receiver would have specialized is exactly the silent wrong answer this must not produce.
-	const Callable without_receiver = Callable(memnew(FSClassHandleCallable(Ref<FoundryScript>(),
-			Vector<ContainerType>(), SNAME("spawn"))));
+	const Callable without_receiver = Callable(memnew(FSStaticSelfCallable(Ref<FoundryScript>(),
+			FSStaticSelfContext(), SNAME("spawn"))));
 	CHECK_FALSE(without_receiver.is_valid());
 
 	Variant result;
