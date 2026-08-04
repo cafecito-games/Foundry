@@ -49,7 +49,7 @@ jobs:
       - name: Setup dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwayland-bin
+          sudo apt-get install -y --no-install-recommends libwayland-bin xvfb
 
       - name: Free disk space on runner
         run: |
@@ -97,4 +97,4 @@ jobs:
           "${FOUNDRY_BIN}" --version
           "${FOUNDRY_BIN}" --help
           # shellcheck disable=SC2086 # TEST_ARGS is an optional operator-supplied argument string.
-          "${FOUNDRY_BIN}" test run --force-colors ${TEST_ARGS}
+          xvfb-run -a "${FOUNDRY_BIN}" --headless test run --force-colors ${TEST_ARGS}

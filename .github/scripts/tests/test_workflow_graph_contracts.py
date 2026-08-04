@@ -12,6 +12,7 @@ graph properties `actionlint` cannot know about.
 from __future__ import annotations
 
 import re
+import shlex
 import sys
 import tempfile
 import unittest
@@ -112,6 +113,12 @@ def scons_flag(value: Any) -> str:
 
 def load_workflow(name: str) -> workflow_graph.Workflow:
     return workflow_graph.load(WORKFLOWS / name)
+
+
+def shell_commands(script: str) -> list[list[str]]:
+    """Tokenize the non-comment commands in a parsed workflow step."""
+
+    return [shlex.split(line) for line in script.splitlines() if line.strip() and not line.lstrip().startswith("#")]
 
 
 def local_hook(hook_id: str) -> dict[str, Any]:
@@ -704,6 +711,30 @@ class AndroidRuntimeWorkflowTests(WorkflowContractTestCase):
 
     def test_the_release_workflow_publishes_no_android_library(self) -> None:
         self.assert_no_scalar_contains(self.release, FORBIDDEN_RELEASE_PUBLICATION)
+
+
+class FullSuiteDisplayWorkflowTests(WorkflowContractTestCase):
+    FULL_SUITES = (
+        ("linux_builds.yml", "build-linux"),
+        ("sanitizer_tests.yml", "sanitizer-tests"),
+    )
+
+    def test_every_full_suite_runs_with_a_virtual_display(self) -> None:
+        for workflow_name, job_name in self.FULL_SUITES:
+            workflow = load_workflow(workflow_name)
+            with self.subTest(workflow=workflow_name):
+                setup_commands = shell_commands(workflow.step_run(job_name, "Setup dependencies"))
+                install_command = next(command for command in setup_commands if "install" in command)
+                self.assertIn("xvfb", install_command)
+
+                unit_test_commands = shell_commands(workflow.step_run(job_name, "Unit tests"))
+                test_command = next(
+                    command
+                    for command in unit_test_commands
+                    if any(left == "test" and right == "run" for left, right in zip(command, command[1:]))
+                )
+                self.assertEqual(["xvfb-run", "-a"], test_command[:2])
+                self.assertLess(test_command.index("--headless"), test_command.index("test"))
 
 
 class MacosBuildsWorkflowTests(WorkflowContractTestCase):
