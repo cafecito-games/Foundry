@@ -1843,6 +1843,14 @@ public:
 		// tagged-union case (`Message.Move`) instead of a type. Type annotations keep rejecting
 		// case names, since a case is not a type.
 		bool allows_enum_case = false;
+		// Type arguments written in expression form, produced only by a `match` case-pattern head such
+		// as `Result[int, String].Ok(value)`. Only the trailing `(` tells a case reference apart from
+		// an ordinary indexed value pattern (`TABLE[KEY]`), so the brackets are parsed as a subscript
+		// and their arguments are reinterpreted as types once the case is known. A type written in a
+		// type position fills `container_types` instead; the two are never both populated.
+		Vector<ExpressionNode *> type_argument_expressions;
+		// Parallel to `type_argument_expressions`: whether each argument carried a trailing `?`.
+		Vector<bool> type_argument_expression_is_nullable;
 
 		TypeNode *get_container_type_or_null(int p_index) const {
 			return p_index >= 0 && p_index < container_types.size() ? container_types[p_index] : nullptr;

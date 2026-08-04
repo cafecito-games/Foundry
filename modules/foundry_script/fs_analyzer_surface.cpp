@@ -850,6 +850,12 @@ FSParser::DataType FSAnalyzer::complete_self_referential_enum_type(const FSParse
 					!declared_type.enum_values.is_empty()) {
 				completed.enum_values = declared_type.enum_values;
 				completed.enum_case_payloads = declared_type.enum_case_payloads;
+				// The schema just re-read from the declaration names the declaration's own parameters,
+				// while the shell carries the arguments the use site applied. Specializing here is what
+				// keeps a recursive generic union concrete at every level instead of degrading a nested
+				// value back to the open declaration.
+				completed = specialize_enum_type(completed, declaration,
+						enum_type_argument_bindings(declaration, completed.type_arguments));
 			}
 		}
 	}
@@ -872,6 +878,37 @@ FSParser::DataType FSAnalyzer::complete_self_referential_enum_type(const FSParse
 	complete_each(completed.type_arguments);
 
 	return completed;
+}
+
+HashMap<StringName, FSParser::DataType> FSAnalyzer::enum_type_argument_bindings(
+		const FSParser::EnumNode *p_declaration, const Vector<FSParser::DataType> &p_arguments) {
+	HashMap<StringName, FSParser::DataType> bindings;
+	if (p_declaration == nullptr || p_declaration->type_parameters.size() != p_arguments.size()) {
+		return bindings;
+	}
+	for (int i = 0; i < p_arguments.size(); i++) {
+		const FSParser::TypeParameterNode *parameter = p_declaration->type_parameters[i];
+		if (parameter != nullptr && parameter->identifier != nullptr) {
+			bindings.insert(parameter->identifier->name, p_arguments[i]);
+		}
+	}
+	return bindings;
+}
+
+FSParser::DataType FSAnalyzer::specialize_enum_type(const FSParser::DataType &p_type,
+		const FSParser::EnumNode *p_declaration,
+		const HashMap<StringName, FSParser::DataType> &p_bindings) {
+	if (p_declaration == nullptr || p_bindings.is_empty() || p_type.enum_case_payloads.is_empty()) {
+		return p_type;
+	}
+
+	FSParser::DataType result = p_type;
+	for (KeyValue<StringName, FSParser::DataType::EnumCasePayload> &entry : result.enum_case_payloads) {
+		for (int i = 0; i < entry.value.field_types.size(); i++) {
+			entry.value.field_types.write[i] = FSParser::DataType::substitute(entry.value.field_types[i], p_bindings);
+		}
+	}
+	return result;
 }
 
 FSParser::DataType FSAnalyzer::enum_type_parameter_handle(const FSParser::TypeParameterNode *p_parameter, int p_index) {
@@ -1244,6 +1281,23 @@ bool FSAnalyzer::apply_type_arguments(FSParser::DataType &r_type, const GenericD
 
 bool FSAnalyzer::bind_type_arguments(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, bool p_check_bounds) {
 	r_type.type_arguments = p_arguments;
+	// A union's payload schema is part of its specialization, not a property of the declaration, so it
+	// is rewritten per application. Doing it here rather than at each application surface is what keeps
+	// a type position, a value position, and a nested argument agreeing on the same payload types.
+	if (r_type.is_tagged_union_type() && p_declaration.declaring_enum != nullptr) {
+		// Start from the declaration's open schema rather than from whatever the handle carries. An
+		// already-specialized handle can be applied again (`Result[int, String][float, bool]`), and
+		// rewriting its concrete field types would substitute nothing, leaving a type whose arguments
+		// and payload constraints disagree. A recursive union's identity shell publishes no schema yet,
+		// so it stays a shell and is completed, and specialized, when it is used.
+		const FSParser::DataType declared_type = p_declaration.declaring_enum->get_datatype();
+		if (declared_type.is_set() && declared_type.kind == FSParser::DataType::ENUM &&
+				!declared_type.enum_case_payloads.is_empty()) {
+			r_type.enum_case_payloads = declared_type.enum_case_payloads;
+		}
+		r_type = specialize_enum_type(r_type, p_declaration.declaring_enum,
+				enum_type_argument_bindings(p_declaration.declaring_enum, p_arguments));
+	}
 	if (!p_check_bounds) {
 		// The caller will validate the bounds later (e.g. after a class's specialized base is fully
 		// installed, so a self-referential argument is checked against the real chain).

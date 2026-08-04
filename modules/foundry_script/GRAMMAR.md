@@ -1209,7 +1209,11 @@ tuple_pattern = "(", pattern, ",", [ pattern, { ",", pattern } ], [ "," ], ")" ;
 case_pattern = case_reference,
                "(", case_payload_pattern, { ",", case_payload_pattern }, [ "," ], ")" ;
 
-case_reference = identifier, ".", identifier, { ".", identifier } ;
+case_reference = identifier, [ case_type_arguments ], ".", identifier, { ".", identifier } ;
+
+case_type_arguments = "[", type_arg, { ",", type_arg }, "]" ;
+                                                    (* generic tagged union application;
+                                                       `type_arg` as in subscript, section 8 *)
 
 case_payload_pattern =
       identifier                                    (* payload bind, no "var" needed *)
@@ -1234,6 +1238,20 @@ Rules:
 - A case pattern is a dotted name **immediately** followed by `(`, and names a tagged-union case;
   its sub-pattern count must equal the case's payload arity. A payload-less case is matched as
   the ordinary value it is (`Message.Quit`), without parentheses.
+- A **generic** tagged union's case pattern applies the union's full type-argument vector on the
+  head, before the case name: `Result[int, String].Ok(value)`. The payload binds then take the
+  specialized field types, and a pattern from a different specialization than the subject is
+  rejected. A payload-less case of a generic union is written the same way and matched as the
+  ordinary value it is (`Bundle[int].Empty`). Only the `(` that follows the dotted name tells a
+  case reference apart from an indexed value pattern (`TABLE[INDEX]`), so `case_type_arguments`
+  is the same `type_arg` list a subscript carries, and each argument is read as a type only once
+  the head is known to be a case reference. An argument therefore has to be spelled as an
+  expression, exactly as in the value-position application `Result[int, String]`: a specialization
+  whose argument has no expression spelling, such as an unnamed tuple type `(int, String)`, is
+  nameable in a type annotation but not on a case-pattern head.
+- A case reference carries its arguments on the name that owns them and never after a qualifier, so
+  a generic union nested under a class (`Outer.Result[int].Ok(...)`) has no case-pattern spelling —
+  the same restriction the type production has for `Outer.Result[int]`.
 - Directly inside a case pattern's parentheses a bare identifier is a payload bind, matching the
   `is Case(x, y)` form; `_` skips the position and any other expression stays a value pattern
   (so a constant is still written `Message.Move(Config.ORIGIN_X, y)`). Nested patterns follow the
@@ -1249,7 +1267,7 @@ Rules:
 ```ebnf
 type =
       "void"                                         (* only where allowed: return type *)
-    | type_name, [ type_suffix ], [ "?" ]
+    | identifier, [ type_suffix ], { ".", identifier }, [ "?" ]
     | tuple_type ;
 
 type_name = identifier, { ".", identifier } ;        (* dotted, e.g. MyEnum, A.B *)
@@ -1279,6 +1297,12 @@ type_handle_arg   = "[", type, "]" ;                 (* exactly one *)
 Details (`parse_type`):
 
 - A trailing `?` marks the type **nullable** (`Node?`, `Array[int]?`, `Callable[...]?`).
+- A **type suffix binds to the leading name only**, and the dotted tail follows it. In practice
+  only `collection_args` is ever followed by a tail, because the other suffixes name built-in
+  forms that carry no members: the tail after an argument list applies a generic tagged union
+  before naming one of its cases (`Result[int, String].Ok`), which is admitted only where a case
+  reference is — the right-hand side of `is`. `A.B[int]` (a suffix after a dotted name) is not a
+  type; the value-position spelling `A.B[int]` is an expression, not a type annotation.
 - **Integer type names** are exactly `int`, `uint`, `long`, and `ulong`. They are ordinary
   built-in type names rather than keywords, so they are resolved in type position only and
   remain usable as identifiers elsewhere. No other integer spelling exists.

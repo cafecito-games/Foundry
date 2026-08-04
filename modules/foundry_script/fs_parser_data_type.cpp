@@ -327,6 +327,16 @@ FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const 
 	for (int i = 0; i < result.method_rest_parameter_type.size(); i++) {
 		result.method_rest_parameter_type.write[i] = substitute(result.method_rest_parameter_type[i], p_bindings, p_mark_substituted_self);
 	}
+	// A tagged union nested inside a substituted slot carries its own payload schema, already written
+	// in terms of the parameters bound here (`Result[T, String]` inside `enum Bundle[T]` holds
+	// `Ok(value: T)`). Rewriting only its type arguments would leave the schema naming a parameter the
+	// use site has already bound. A union that names itself is published as an identity shell with an
+	// empty schema, so this terminates: each level is filled in, and specialized, when it is used.
+	for (KeyValue<StringName, EnumCasePayload> &payload : result.enum_case_payloads) {
+		for (int i = 0; i < payload.value.field_types.size(); i++) {
+			payload.value.field_types.write[i] = substitute(payload.value.field_types[i], p_bindings, p_mark_substituted_self);
+		}
+	}
 	return result;
 }
 

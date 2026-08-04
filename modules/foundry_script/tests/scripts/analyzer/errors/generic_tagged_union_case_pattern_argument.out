@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 10: Could not resolve the type argument for generic tagged union "generic_tagged_union_case_pattern_argument.fs.Result[T, E]".

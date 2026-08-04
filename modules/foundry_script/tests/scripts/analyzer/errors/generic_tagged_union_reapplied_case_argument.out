@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 10: Invalid argument 1 for enum case "Result.Ok": should be "float" but is "String".

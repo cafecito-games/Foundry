@@ -527,6 +527,19 @@ private:
 	// visible: an unrelated class resolved while a union is being analyzed must not see them.
 	static bool enum_declared_by(const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum);
 	static FSParser::DataType complete_self_referential_enum_type(const FSParser::DataType &p_type);
+	// Binds a union declaration's type parameters to the arguments applied at one use site. Empty when
+	// the declaration is not generic or the argument vector does not fill it, which is what tells a
+	// caller "nothing to substitute" from "substitute with these".
+	static HashMap<StringName, FSParser::DataType> enum_type_argument_bindings(
+			const FSParser::EnumNode *p_declaration, const Vector<FSParser::DataType> &p_arguments);
+	// Rewrites one declaration level of a tagged union's payload schema with the bindings applied at a
+	// use site, so a field spelled `T`, `Array[T]`, or `Box[T]` reads as its concrete form. Each field
+	// type is substituted structurally, but the schema of a *nested* union is never re-derived from its
+	// own declaration here: it already names this declaration's parameters, and a union that names
+	// itself has no finite fixed point. Each nested level is specialized when it is itself used.
+	static FSParser::DataType specialize_enum_type(const FSParser::DataType &p_type,
+			const FSParser::EnumNode *p_declaration,
+			const HashMap<StringName, FSParser::DataType> &p_bindings);
 	FSParser::EnumNode *resolve_enum_declaration(const FSParser::DataType &p_enum_type,
 			const FSParser::Node *p_source);
 	// A generic tagged union has no bare form outside its own declaration, in an expression any more
