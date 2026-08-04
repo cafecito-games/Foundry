@@ -111,7 +111,10 @@ static String prepare_basic_scene_project() {
 }
 
 static bool workflow_has_display() {
-	return OS::get_singleton()->has_environment("DISPLAY") && !OS::get_singleton()->get_environment("DISPLAY").is_empty();
+	// Editor automation workflows launch headlessly and do not require DISPLAY.
+	// The shared CI suite supplies a virtual display for the few projectless
+	// workflows that intentionally exercise a windowed editor child.
+	return true;
 }
 
 static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code, const String &p_working_directory = String()) {
@@ -119,7 +122,7 @@ static String workflow_run_subprocess(const List<String> &p_arguments, int &r_ex
 	Vector<uint8_t> stderr_bytes;
 
 	Dictionary environment;
-	if (workflow_has_display()) {
+	if (OS::get_singleton()->has_environment("DISPLAY") && !OS::get_singleton()->get_environment("DISPLAY").is_empty()) {
 		environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
 	}
 

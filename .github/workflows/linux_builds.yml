@@ -33,7 +33,7 @@ jobs:
       - name: Setup dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libwayland-bin
+          sudo apt-get install -y --no-install-recommends libwayland-bin xvfb
 
       - name: Free disk space on runner
         run: |
@@ -67,7 +67,7 @@ jobs:
         run: |
           ./bin/foundry.linuxbsd.editor.dev.x86_64 --version
           ./bin/foundry.linuxbsd.editor.dev.x86_64 --help
-          ./bin/foundry.linuxbsd.editor.dev.x86_64 test run --force-colors
+          xvfb-run -a ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --force-colors
 
   release-vm-error-tests:
     runs-on: ubuntu-22.04
