@@ -2975,6 +2975,19 @@ static String bytecode_check_static_self_runtime(const Ref<FoundryScript> &p_scr
 	bytecode_check_static_self_object(state->resume(), derived);
 	memdelete(resume_source);
 
+	REQUIRE(base->get_member_functions().has(SNAME("accept")));
+	const FSFunction *accept = base->get_member_functions()[SNAME("accept")];
+	REQUIRE(accept != nullptr);
+	const FSStaticSelfContext receiver = FSStaticSelfContext::for_script(derived);
+	FSDataType expected_argument;
+	REQUIRE(FSStaticSelfContext::resolve_self(accept->get_argument_type(0), &receiver, expected_argument));
+	CHECK(expected_argument.kind == FSDataType::FOUNDRY_SCRIPT);
+	CHECK(expected_argument.script_type_ref == derived);
+	// Local classes have no global Script name, so ContainerType diagnostics fall back to their native
+	// base. The resolved FoundryScript identity above is authoritative; use its qualified source name.
+	const String expected_type_name = derived->get_fully_qualified_name();
+	CHECK(expected_type_name.contains("Derived"));
+
 	const Variant rejected = bytecode_static_self_call(derived.ptr(), SNAME("accept"), { base_value }, call_error);
 	CHECK(call_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
 	CHECK_EQ(call_error.argument, 0);
@@ -2983,7 +2996,7 @@ static String bytecode_check_static_self_runtime(const Ref<FoundryScript> &p_scr
 	const Variant *rejected_arguments[] = { &base_value };
 	const String diagnostic = Variant::get_call_error_text(SNAME("accept"), rejected_arguments, 1, call_error);
 	CHECK(diagnostic.contains("Cannot convert argument 1"));
-	return vformat("%s: %s", derived->get_fully_qualified_name(), diagnostic);
+	return vformat("%s expects %s: %s", derived->get_fully_qualified_name(), expected_type_name, diagnostic);
 }
 
 static String bytecode_check_static_self_metadata(const Ref<FoundryScript> &p_script) {
@@ -3017,8 +3030,11 @@ static String bytecode_check_static_self_metadata(const Ref<FoundryScript> &p_sc
 	const FSDataType &callable = nested->get_argument_type(3);
 	CHECK(callable.kind == FSDataType::BUILTIN);
 	CHECK(callable.builtin_type == Variant::CALLABLE);
-	// Callable signature slots are analyzer-only today; the runtime carrier is intentionally erased.
+	// The analyzer retains the symbolic signature (covered by test_symbolic_self_lowering.h), but the
+	// lowered FSDataType deliberately has no callable-signature fields and therefore no bytecode-time
+	// substitution position. Source and loader must preserve the same intentionally erased carrier.
 	CHECK_FALSE(callable.references_self_type());
+	CHECK(callable_info.hint == PROPERTY_HINT_NONE);
 	return vformat("%d:%d:%d:%s", callable.kind, callable.builtin_type, callable_info.hint, callable_info.hint_string);
 }
 
@@ -3028,6 +3044,7 @@ TEST_CASE("[FoundryScript][BytecodeScript][StaticSelf] Loaded bytecode is source
 	const String source_path = source->get_script_path();
 	const ObjectID source_id = source->get_instance_id();
 	const String source_diagnostic = bytecode_check_static_self_runtime(source);
+	CHECK(source_diagnostic.contains("Derived"));
 	const String source_callable_signature = bytecode_check_static_self_metadata(source);
 
 	FSBytecodeExporter exporter;
@@ -3039,6 +3056,9 @@ TEST_CASE("[FoundryScript][BytecodeScript][StaticSelf] Loaded bytecode is source
 	// reconstructed graph.
 	FSConformanceRegistry::get_singleton()->clear_file(source_path);
 	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(source_path);
+	// Snapshot the intentionally empty state, not the just-compiled witnesses: the source graph is
+	// destroyed below, so restoring its entries would resurrect dangling script/function pointers.
+	BytecodeConformanceRegistryRestore registry_restore(source_path);
 	FSCache::remove_script(source_path);
 	source->clear();
 	source.unref();
@@ -3059,7 +3079,9 @@ TEST_CASE("[FoundryScript][BytecodeScript][StaticSelf] Loaded bytecode is source
 	CHECK(restored->is_compiled_binary());
 
 	CHECK(bytecode_check_static_self_metadata(restored) == source_callable_signature);
-	CHECK(bytecode_check_static_self_runtime(restored) == source_diagnostic);
+	const String restored_diagnostic = bytecode_check_static_self_runtime(restored);
+	CHECK(restored_diagnostic.contains("Derived"));
+	CHECK(restored_diagnostic == source_diagnostic);
 
 	FSConformanceRegistry::get_singleton()->clear_file(source_path);
 	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(source_path);
