@@ -3306,6 +3306,11 @@ TEST_CASE("[FoundryScript][BytecodeScript][GenericTaggedUnionBytecode] Nested un
 	Object *instance = owner;
 	REQUIRE(instance != nullptr);
 	CHECK(int(bytecode_instance_call(instance, SNAME("run"), Vector<Variant>())) == 7);
+
+	// `apply(..., flip)` bakes a method reference into the constant pool, which is a self-reference
+	// production only breaks at language shutdown; break it here so neither script outlives the case.
+	restored->clear();
+	original->clear();
 }
 
 // Enum methods and recursive payloads are the two places a specialization is resolved through the
