@@ -216,16 +216,17 @@ void apply_signature_type_names(const Ref<FSMethodDescriptor> &p_descriptor, con
 	if (p_descriptor.is_null() || p_function == nullptr) {
 		return;
 	}
-	const int argument_count = p_function->get_method_info().arguments.size();
+	// One entry per declared parameter, so the result stays index-parallel to the descriptor's `args`.
+	// The compiler appends to the `MethodInfo` argument list and to the compiled parameter types
+	// together, and a rest parameter is in neither; the bound below keeps the two arrays the same
+	// length even if that ever stops holding.
+	const int listed_count = p_function->get_method_info().arguments.size();
+	const int declared_count = p_function->get_argument_count();
 	PackedStringArray argument_type_names;
-	argument_type_names.resize(argument_count);
+	argument_type_names.resize(listed_count);
 	String *argument_type_names_write = argument_type_names.ptrw();
-	for (int i = 0; i < argument_count; i++) {
-		// A rest parameter has no entry in `argument_types`, so it names its own collected type.
-		const FSDataType &argument_type = i < p_function->get_argument_count()
-				? p_function->get_argument_type(i)
-				: p_function->get_rest_parameter_type();
-		argument_type_names_write[i] = argument_type.get_source_type_name();
+	for (int i = 0; i < listed_count; i++) {
+		argument_type_names_write[i] = i < declared_count ? p_function->get_argument_type(i).get_source_type_name() : String("Variant");
 	}
 	p_descriptor->set_signature_type_names(argument_type_names, p_function->get_return_type().get_source_type_name());
 }

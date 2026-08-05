@@ -14,14 +14,18 @@ func test() -> void:
 	for property in foundry.reflection.get_property_descriptors(Producer):
 		print(property.name, " ", property.type_name, " carrier=", property.type, " hint_string=", property.hint_string)
 
-	var method_names: Array[StringName] = [&"measure", &"measure_unsigned", &"echo", &"inherited_only", &"overridable"]
+	var method_names: Array[StringName] = [&"measure", &"measure_unsigned", &"echo", &"inherited_only",
+			&"overridable", &"collect", &"nullable_slot"]
 	for method_name in method_names:
 		var descriptor := foundry.reflection.get_method_descriptor(Producer, method_name)
 		var carriers: Array = []
 		for argument in descriptor.args:
 			carriers.append(argument["type"])
+		# The exact names stay index-parallel with the generic argument list, including for a method
+		# with a rest parameter and a default argument.
 		print(descriptor.name, " ", descriptor.arg_type_names, " -> ", descriptor.return_type_name,
-				" carriers=", carriers, " -> ", descriptor.return_value["type"])
+				" carriers=", carriers, " -> ", descriptor.return_value["type"],
+				" parallel=", descriptor.arg_type_names.size() == descriptor.args.size())
 
 	# The bulk enumeration carries the same names, including for the inherited declarations.
 	var enumerated: Array = []

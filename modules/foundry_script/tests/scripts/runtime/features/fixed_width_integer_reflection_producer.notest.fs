@@ -27,3 +27,15 @@ func echo[T](value: T) -> T:
 
 func overridable(value: uint) -> uint:
 	return value + 1U
+
+
+# A rest parameter is not a declared parameter, so it appears in neither the descriptor's argument
+# list nor its exact type names; the default keeps its declared width like any other parameter.
+func collect(first: ulong, second: uint = 2U, ...rest: Array) -> ulong:
+	if rest.is_empty():
+		return first + second
+	return first
+
+
+func nullable_slot(value: ulong?) -> ulong?:
+	return value

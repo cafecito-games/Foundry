@@ -8,11 +8,13 @@ wide_signed_list Array[long] carrier=28 hint_string=int
 narrow_unsigned_map Dictionary[uint, int] carrier=27 hint_string=uint;int
 wide_unsigned_map Dictionary[ulong, long] carrier=27 hint_string=uint;int
 inherited_wide_unsigned ulong carrier=39 hint_string=
-measure ["long", "long"] -> long carriers=[2, 2] -> 2
-measure_unsigned ["uint", "ulong"] -> ulong carriers=[39, 39] -> 39
-echo ["Variant"] -> Variant carriers=[0] -> 0
-inherited_only ["ulong"] -> ulong carriers=[39] -> 39
-overridable ["uint"] -> uint carriers=[39] -> 39
-["echo:Variant", "inherited_only:ulong", "measure:long", "measure_unsigned:ulong", "overridable:uint", "overridable:uint"]
+measure ["long", "long"] -> long carriers=[2, 2] -> 2 parallel=true
+measure_unsigned ["uint", "ulong"] -> ulong carriers=[39, 39] -> 39 parallel=true
+echo ["Variant"] -> Variant carriers=[0] -> 0 parallel=true
+inherited_only ["ulong"] -> ulong carriers=[39] -> 39 parallel=true
+overridable ["uint"] -> uint carriers=[39] -> 39 parallel=true
+collect ["ulong", "uint"] -> ulong carriers=[39, 39] -> 39 parallel=true
+nullable_slot ["ulong?"] -> ulong? carriers=[39] -> 39 parallel=true
+["collect:ulong", "echo:Variant", "inherited_only:ulong", "measure:long", "measure_unsigned:ulong", "nullable_slot:ulong?", "overridable:uint", "overridable:uint"]
 ["long", "long"] -> long
 wide_signed_list Array[long]
