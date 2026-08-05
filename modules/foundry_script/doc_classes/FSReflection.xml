@@ -140,7 +140,7 @@
 			<param index="1" name="method" type="StringName" />
 			<description>
 				Returns the descriptor for the method named [param method] declared by [param target]'s script or one of its base scripts, in the same shape as the entries of [method Object.get_method_list]. [param target] may be a [Script] class handle, a typed class handle stored in a [code]Type[T][/code] variable, or an instance whose script is used. Returns an empty [Dictionary] if the method is not declared.
-				For a FoundryScript target the descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [FSAnnotation] array (empty when the method has none), matching [method get_method_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member FSAnnotation.builtin] to tell them apart.
+				For a FoundryScript target the descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [FSAnnotation] array (empty when the method has none), matching [method get_method_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member FSAnnotation.builtin] to tell them apart. The descriptor also carries [code]"arg_type_names"[/code] and [code]"return_type_name"[/code] keys holding the exact declared signature types, which keep the integer widths the [enum Variant.Type] entries erase.
 			</description>
 		</method>
 		<method name="get_methods" qualifiers="const">
@@ -148,7 +148,7 @@
 			<param index="0" name="target" type="Variant" />
 			<description>
 				Returns the descriptors of every method declared by [param target]'s script and its base scripts, in the same shape as [method Object.get_method_list]. [param target] may be a [Script] class handle, a typed class handle stored in a [code]Type[T][/code] variable, or an instance whose script is used. Returns an empty array if [param target] has no script.
-				For a FoundryScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [FSAnnotation] array (empty when the method has none), matching [method get_method_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member FSAnnotation.builtin] to tell them apart.
+				For a FoundryScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [FSAnnotation] array (empty when the method has none), matching [method get_method_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member FSAnnotation.builtin] to tell them apart. Each descriptor also carries [code]"arg_type_names"[/code] and [code]"return_type_name"[/code] keys holding the exact declared signature types, which keep the integer widths the [enum Variant.Type] entries erase.
 			</description>
 		</method>
 		<method name="get_property_descriptors" qualifiers="const">
@@ -163,7 +163,7 @@
 			<param index="0" name="target" type="Variant" />
 			<description>
 				Returns the descriptors of the variables declared by [param target]'s script and its base scripts, in the same shape as [method Object.get_property_list]. Only declared [code]var[/code]s are returned (category and group headers are omitted). [param target] may be a [Script] class handle, a typed class handle stored in a [code]Type[T][/code] variable, or an instance whose script is used.
-				For a FoundryScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [FSAnnotation] array (empty when the variable has none), matching [method get_variable_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member FSAnnotation.builtin] to tell them apart.
+				For a FoundryScript target each descriptor also carries an [code]"annotations"[/code] key holding the effective annotations as an [FSAnnotation] array (empty when the variable has none), matching [method get_variable_annotations]. Both custom and Godot built-in annotations (for example [code]@export[/code]) are included; use [member FSAnnotation.builtin] to tell them apart. Each descriptor also carries a [code]"type_name"[/code] key holding the exact declared type, which keeps the integer width and the typed-container element types the [enum Variant.Type] entry erases.
 			</description>
 		</method>
 		<method name="get_signal_annotations" qualifiers="const">

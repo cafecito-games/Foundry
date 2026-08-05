@@ -1,0 +1,6 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 13: Cannot assign a value of type ulong to variable "narrow_member" with specified type uint.
+>> ERROR at line 14: Cannot assign a value of type ulong to variable "narrow_result" with specified type uint.
+>> ERROR at line 15: Cannot assign a value of type Array[ulong] to variable "narrow_list" with specified type Array[uint].
+>> ERROR at line 16: Invalid argument for "take_narrow()" function: argument 1 should be "uint" but is "ulong".
+>> ERROR at line 17: Cannot connect signal "Signal[[ulong]]" to callable "Callable[[uint], void]": signal argument 1 of type "ulong" cannot be passed to callable parameter of type "uint".

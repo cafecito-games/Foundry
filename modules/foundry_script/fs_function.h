@@ -111,6 +111,13 @@ public:
 
 	_FORCE_INLINE_ bool has_type() const { return kind != VARIANT; }
 
+	// The FoundryScript source spelling of this type, reconstructed from the stored descriptor alone and
+	// never from a runtime value. Integer slots name their declared width (`int`, `uint`, `long`,
+	// `ulong`); a slot that stores only a carrier decodes to the wide spelling, matching the width
+	// erasure a plain `PropertyInfo` round trip has. Containers, generic arguments, tuples, and
+	// nullability recurse through the same rule, so `Array[int]` and `Array[long]` stay distinguishable.
+	String get_source_type_name() const;
+
 	bool is_type_handle_type(const Variant &p_variant) const;
 	static FSDataType from_type_handle_container_type(const ContainerType &p_container_type);
 	// Value-position counterpart of the above: rebuilds a plain type (not a type handle) from the

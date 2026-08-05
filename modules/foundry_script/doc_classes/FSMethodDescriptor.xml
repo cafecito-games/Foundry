@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		Describes one method declared by a [FoundryScript] type or its base scripts, as a typed alternative to the loosely-keyed [Dictionary] entries of [method FSReflection.get_methods]. Instances are produced by [method FSReflection.get_method_descriptors] and [method FSReflection.get_method_descriptor] and are immutable snapshots of the compiled method metadata.
-		Beyond the [method Object.get_method_list] fields it mirrors ([member name], [member args], [member return_value], [member default_args], and [member flags]), each descriptor carries the method's passive [member annotations]. The accessors return copies, so mutating them does not change the script's stored metadata. Use [method to_dictionary] to obtain the equivalent loosely-keyed descriptor [Dictionary].
+		Beyond the [method Object.get_method_list] fields it mirrors ([member name], [member args], [member return_value], [member default_args], and [member flags]), each descriptor carries the method's passive [member annotations] and the exact declared types of its signature ([member arg_type_names] and [member return_type_name]). The accessors return copies, so mutating them does not change the script's stored metadata. Use [method to_dictionary] to obtain the equivalent loosely-keyed descriptor [Dictionary].
 	</description>
 	<tutorials>
 	</tutorials>
@@ -13,13 +13,17 @@
 		<method name="to_dictionary" qualifiers="const">
 			<return type="Dictionary" />
 			<description>
-				Returns the equivalent loosely-keyed method descriptor [Dictionary], matching the entries of [method FSReflection.get_methods]: an [method Object.get_method_list] [Dictionary] plus an [code]"annotations"[/code] key holding the [member annotations].
+				Returns the equivalent loosely-keyed method descriptor [Dictionary], matching the entries of [method FSReflection.get_methods]: an [method Object.get_method_list] [Dictionary] plus [code]"annotations"[/code], [code]"arg_type_names"[/code], and [code]"return_type_name"[/code] keys holding the [member annotations], [member arg_type_names], and [member return_type_name].
 			</description>
 		</method>
 	</methods>
 	<members>
 		<member name="annotations" type="FSAnnotation[]" setter="" getter="get_annotations">
 			The passive annotations applied to the method, in source order, as [FSAnnotation] descriptors. Empty when the method has no annotations. Each call returns an independent snapshot.
+		</member>
+		<member name="arg_type_names" type="PackedStringArray" setter="" getter="get_argument_type_names">
+			The exact FoundryScript types the parameters were declared with, in declaration order and parallel to [member args]. Unlike the [enum Variant.Type] carried by each [member args] entry, these keep the declared integer width and the element, key, and value types of a typed container, so an [code]Array[int][/code] parameter and an [code]Array[long][/code] one stay distinguishable. The names come from the compiled declaration, never from a passed value. Empty for a native method, which has no FoundryScript declaration to name.
+			An integer parameter that declares no width names the full range its carrier spans ([code]"long"[/code] or [code]"ulong"[/code]), and a generic type parameter names [code]"Variant"[/code] because it is erased before execution.
 		</member>
 		<member name="args" type="Dictionary[]" setter="" getter="get_arguments">
 			The method's parameter descriptors, in declaration order, each in the same [Dictionary] shape as an [method Object.get_method_list] argument.
@@ -32,6 +36,9 @@
 		</member>
 		<member name="name" type="StringName" setter="" getter="get_method_name">
 			The method's name.
+		</member>
+		<member name="return_type_name" type="String" setter="" getter="get_return_type_name">
+			The exact FoundryScript type the return value was declared with, following the same rules as [member arg_type_names]. Empty for a native method.
 		</member>
 		<member name="return_value" type="Dictionary" setter="" getter="get_return_value">
 			The method's return value descriptor, in the same [Dictionary] shape as an [method Object.get_method_list] return value.

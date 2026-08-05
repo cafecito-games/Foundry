@@ -115,6 +115,79 @@ static FSDataType _gdtype_from_container_type(const ContainerType &p_container_t
 	return type;
 }
 
+String FSDataType::get_source_type_name() const {
+	String name;
+	switch (kind) {
+		case VARIANT: {
+			// An untyped slot already accepts null, so it never takes the nullable suffix below.
+			return "Variant";
+		}
+		case TYPE_PARAMETER: {
+			name = type_parameter_name == StringName() ? String("Variant") : String(type_parameter_name);
+		} break;
+		case TUPLE: {
+			String elements;
+			for (int i = 0; i < container_element_types.size(); i++) {
+				if (i > 0) {
+					elements += ", ";
+				}
+				elements += container_element_types[i].get_source_type_name();
+			}
+			name = "(" + elements + ")";
+		} break;
+		case BUILTIN: {
+			if (builtin_type == Variant::INT || builtin_type == Variant::UINT) {
+				// A slot that stored no width is only constrained by its carrier, which spans the full
+				// 64-bit range; naming it `int`/`uint` would invent a narrowing the declaration never had.
+				const NumericType effective = numeric_type == NumericType::NONE
+						? numeric_type_wide_for_carrier(builtin_type)
+						: numeric_type;
+				name = numeric_type_has_public_name(effective) ? numeric_type_public_name(effective) : numeric_type_name(effective);
+				break;
+			}
+			FSDataType value_type = *this;
+			value_type.is_nullable = false;
+			name = value_type.to_container_type().get_type_name();
+		} break;
+		case NATIVE:
+		case SCRIPT:
+		case FOUNDRY_SCRIPT: {
+			if (is_script_trait && script_trait != StringName()) {
+				name = String(script_trait);
+				break;
+			}
+			const Ref<Script> script = script_type_ref.is_valid() ? script_type_ref : Ref<Script>(script_type);
+			if (script.is_valid() && script->get_global_name() == StringName()) {
+				// `ContainerType` names an object slot by the script's global name and falls back to the
+				// engine base class, so a script declared without `class_name` would render as its base.
+				// Name the script itself instead, keeping the specialization and handle wrappers.
+				name = FoundryScript::debug_get_script_name(script);
+				if (!type_arguments.is_empty()) {
+					String arguments;
+					for (int i = 0; i < type_arguments.size(); i++) {
+						if (i > 0) {
+							arguments += ", ";
+						}
+						arguments += type_arguments[i].get_source_type_name();
+					}
+					name += "[" + arguments + "]";
+				}
+				if (is_type_handle) {
+					name = "Type[" + name + "]";
+				}
+				break;
+			}
+			FSDataType value_type = *this;
+			value_type.is_nullable = false;
+			name = value_type.to_container_type().get_type_name();
+		} break;
+	}
+	if (name.is_empty()) {
+		name = "Variant";
+	}
+	return is_nullable ? name + "?" : name;
+}
+
 bool FSDataType::is_type_handle_type(const Variant &p_variant) const {
 	// The class-handle compatibility rule lives in core so nested `Type[T]` inside a typed container and
 	// top-level `Type[T]` cannot answer differently. Only object-shaped types describe a class; a

@@ -556,6 +556,11 @@ public:
 		CRASH_COND(!member_indices.has(p_member));
 		return member_indices[p_member].data_type;
 	}
+	// The compiled declaration type of an instance member, or null when neither this script nor its
+	// base scripts declare one. This is the rich metadata channel: unlike the member's `PropertyInfo`,
+	// it keeps the declared integer width and the element types of a typed container, so reflection can
+	// tell an `Array[int]` slot from an `Array[long]` one. `member_indices` already spans the base chain.
+	const FSDataType *find_member_data_type(const StringName &p_member) const;
 	const Ref<FSNativeClass> &get_native() const { return native; }
 
 	_FORCE_INLINE_ const HashMap<StringName, FSFunction *> &get_member_functions() const { return member_functions; }
@@ -721,6 +726,12 @@ class FSMethodDescriptor : public RefCounted {
 	FOUNDRY_CLASS(FSMethodDescriptor, RefCounted);
 
 	MethodInfo method_info;
+	// Exact declared type names for the parameters and the return value, parallel to `method_info`'s
+	// argument list. `method_info` transports only the Variant carrier, so an `int` parameter and a
+	// `long` one are indistinguishable there; these come from the compiled signature descriptors.
+	// Empty for a native method, which has no FoundryScript declaration to name.
+	PackedStringArray argument_type_names;
+	String return_type_name;
 	TypedArray<FSAnnotation> annotations;
 	HashMap<StringName, TypedArray<FSAnnotation>> parameter_annotations;
 	// Whether the reflected method is a FoundryScript declaration. Only FoundryScript descriptors carry an
@@ -737,6 +748,12 @@ public:
 	TypedArray<Dictionary> get_arguments() const;
 	// The return value's PropertyInfo as a Dictionary.
 	Dictionary get_return_value() const;
+	// The exact FoundryScript type names of the parameters, in declaration order, and of the return
+	// value. Unlike the Variant types in `get_arguments()` / `get_return_value()`, these keep the
+	// declared integer width (`int` versus `long`, `uint` versus `ulong`) and the element, key, and
+	// value types of typed containers. Empty for a native method.
+	PackedStringArray get_argument_type_names() const { return argument_type_names; }
+	String get_return_type_name() const { return return_type_name; }
 	// Trailing default argument values, in declaration order.
 	Array get_default_arguments() const;
 	int64_t get_flags() const { return method_info.flags; }
@@ -744,7 +761,8 @@ public:
 	// Returns a fresh array so the caller cannot mutate the descriptor's stored annotations.
 	TypedArray<FSAnnotation> get_annotations() const { return annotations.duplicate(); }
 	// The equivalent loosely-keyed descriptor Dictionary, matching `FSReflection.get_methods()`
-	// entries: an `Object.get_method_list()` Dictionary, plus an `annotations` key for FoundryScript methods.
+	// entries: an `Object.get_method_list()` Dictionary, plus `annotations`, `arg_type_names`, and
+	// `return_type_name` keys for FoundryScript methods.
 	Dictionary to_dictionary() const;
 
 	// Builds a descriptor from a method's MethodInfo and its already-resolved annotation descriptors.
@@ -753,6 +771,10 @@ public:
 	// `p_parameter_annotations` maps each argument name to its passive annotation descriptors.
 	// Only FoundryScript methods populate this map; native methods pass an empty map.
 	static Ref<FSMethodDescriptor> create(const MethodInfo &p_method_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member = true, const HashMap<StringName, TypedArray<FSAnnotation>> &p_parameter_annotations = HashMap<StringName, TypedArray<FSAnnotation>>());
+
+	// Attaches the exact declared signature type names produced by the compiled function descriptors.
+	// Kept apart from `create()` so the many native/annotation-only call sites stay unchanged.
+	void set_signature_type_names(const PackedStringArray &p_argument_type_names, const String &p_return_type_name);
 };
 
 // Read-only structured descriptor for a single reflected FoundryScript member variable, returned by the
@@ -764,6 +786,10 @@ class FSPropertyDescriptor : public RefCounted {
 	FOUNDRY_CLASS(FSPropertyDescriptor, RefCounted);
 
 	PropertyInfo property_info;
+	// The exact declared type name. `property_info` transports only the Variant carrier, so an `int`
+	// variable and a `long` one are indistinguishable there; this comes from the compiled member
+	// descriptor. Empty for a native property, which has no FoundryScript declaration to name.
+	String type_name;
 	TypedArray<FSAnnotation> annotations;
 	// Whether the reflected variable is a FoundryScript declaration. Only FoundryScript descriptors carry an
 	// `annotations` key in their Dictionary form, matching `FSReflection.get_properties()`, which
@@ -780,17 +806,23 @@ public:
 	int64_t get_property_hint() const { return property_info.hint; }
 	String get_property_hint_string() const { return property_info.hint_string; }
 	int64_t get_property_usage() const { return property_info.usage; }
+	// The exact FoundryScript type name of the declaration. Unlike `type`, it keeps the declared
+	// integer width (`int` versus `long`, `uint` versus `ulong`) and the element, key, and value types
+	// of typed containers, so `Array[int]` and `Array[long]` stay distinguishable. Empty for a native
+	// property.
+	String get_type_name() const { return type_name; }
 	// Passive annotations applied to the variable, as FSAnnotation descriptors, in source order.
 	// Returns a fresh array so the caller cannot mutate the descriptor's stored annotations.
 	TypedArray<FSAnnotation> get_annotations() const { return annotations.duplicate(); }
 	// The equivalent loosely-keyed descriptor Dictionary, matching `FSReflection.get_properties()`
-	// entries: an `Object.get_property_list()` Dictionary, plus an `annotations` key for FoundryScript variables.
+	// entries: an `Object.get_property_list()` Dictionary, plus `annotations` and `type_name` keys for
+	// FoundryScript variables.
 	Dictionary to_dictionary() const;
 
 	// Builds a descriptor from a variable's PropertyInfo and its already-resolved annotation descriptors.
 	// `p_fs_member` is false for native (non-FoundryScript) variables, which omit the Dictionary's
-	// `annotations` key.
-	static Ref<FSPropertyDescriptor> create(const PropertyInfo &p_property_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member = true);
+	// `annotations` key. `p_type_name` is the exact declared type name, empty when there is none.
+	static Ref<FSPropertyDescriptor> create(const PropertyInfo &p_property_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member = true, const String &p_type_name = String());
 };
 
 class FSInstance : public ScriptInstance {
