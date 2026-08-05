@@ -716,6 +716,8 @@ public:
 		// True for a FoundryScript tagged union: an enum where at least one case carries a payload,
 		// so its cases are constructors and values rather than integer constants.
 		bool is_tagged_union = false;
+		// Canonical declaration spelling for a generic tagged union, e.g. `Result[T, E]`.
+		String signature;
 		static EnumDoc from_dict(const Dictionary &p_dict) {
 			EnumDoc doc;
 
@@ -725,6 +727,10 @@ public:
 
 			if (p_dict.has("is_tagged_union")) {
 				doc.is_tagged_union = p_dict["is_tagged_union"];
+			}
+
+			if (p_dict.has("signature")) {
+				doc.signature = p_dict["signature"];
 			}
 
 			if (p_dict.has("deprecated")) {
@@ -748,6 +754,10 @@ public:
 
 			if (p_doc.is_tagged_union) {
 				dict["is_tagged_union"] = true;
+			}
+
+			if (!p_doc.signature.is_empty()) {
+				dict["signature"] = p_doc.signature;
 			}
 
 			if (p_doc.is_deprecated) {

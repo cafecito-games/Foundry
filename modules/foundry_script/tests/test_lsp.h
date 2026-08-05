@@ -1052,6 +1052,25 @@ func f():
 			CHECK_EQ(message->children[2].detail, "Write(text: String)");
 		}
 
+		SUBCASE("Generic tagged unions expose type parameters in symbol detail") {
+			String path = "res://lsp/generic_tagged_unions.fs";
+			assert_no_errors_in(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			const LSP::DocumentSymbol *bounded = parser->get_member_symbol("Bounded");
+			REQUIRE(bounded);
+			CHECK_EQ(bounded->kind, LSP::SymbolKind::Enum);
+			CHECK_EQ(bounded->detail, "enum Bounded[T: Resource, U: T]");
+			REQUIRE(bounded->children.size() >= 3);
+			CHECK_EQ(bounded->children[0].name, "T");
+			CHECK_EQ(bounded->children[0].kind, LSP::SymbolKind::TypeParameter);
+			CHECK_EQ(bounded->children[1].name, "U");
+			CHECK_EQ(bounded->children[1].kind, LSP::SymbolKind::TypeParameter);
+			CHECK_EQ(bounded->children[2].name, "Pair");
+			CHECK_EQ(bounded->children[2].detail, "Pair(first: T, second: U)");
+		}
+
 		SUBCASE("A global enum_name file is reported as an enum with members") {
 			LSPGlobalScriptClassBackup global_class_backup;
 			ScriptServer::global_classes_clear();
@@ -4186,6 +4205,22 @@ func f():
 			// A comparison is not a specialization: neither operand becomes a type.
 			check_semantic_token_at(tokens, 7, 16, 5, LSP::SemanticTokenType::PARAMETER); // value
 			check_no_semantic_token_at(tokens, 7, 22); // `<`
+		}
+
+		SUBCASE("generic tagged union parameters classify definitions and scoped references") {
+			const String uri = workspace->get_file_uri("res://lsp/generic_tagged_unions.fs");
+			text_document->didOpen(make_did_open_params(uri, FileAccess::get_file_as_string(ProjectSettings::get_singleton()->localize_path("res://lsp/generic_tagged_unions.fs"))));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 10, 13, 1, LSP::SemanticTokenType::TYPE_PARAMETER, declaration_modifier); // enum Choice[T]
+			check_semantic_token_at(tokens, 11, 15, 1, LSP::SemanticTokenType::TYPE_PARAMETER); // Value(value: T)
+			check_semantic_token_at(tokens, 16, 13, 1, LSP::SemanticTokenType::TYPE_PARAMETER, declaration_modifier); // Bounded[T]
+			check_semantic_token_at(tokens, 16, 26, 1, LSP::SemanticTokenType::TYPE_PARAMETER, declaration_modifier); // U
+			check_semantic_token_at(tokens, 16, 29, 1, LSP::SemanticTokenType::TYPE_PARAMETER); // U: T
+			check_semantic_token_at(tokens, 17, 13, 1, LSP::SemanticTokenType::TYPE_PARAMETER); // Pair(first: T
+			check_semantic_token_at(tokens, 17, 24, 1, LSP::SemanticTokenType::TYPE_PARAMETER); // second: U
+			check_semantic_token_at(tokens, 19, 15, 1, LSP::SemanticTokenType::TYPE_PARAMETER, declaration_modifier); // Recursive[T]
+			check_semantic_token_at(tokens, 20, 14, 1, LSP::SemanticTokenType::TYPE_PARAMETER); // Value(value: T)
 		}
 
 		SUBCASE("tagged-union cases and native constants classify as enum members and constants") {

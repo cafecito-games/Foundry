@@ -520,9 +520,6 @@ private:
 			const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner);
 	void resolve_enum_bodies(FSParser::EnumNode *p_enum, FSParser::ClassNode *p_owner);
 	FSParser::DataType enum_self_type(const FSParser::FunctionNode *p_function) const;
-	// The open handle for a generic tagged union's own type parameter, mirroring the class-parameter
-	// handle: enum scope, declaration ordinal, spelling, and the eagerly resolved bound.
-	static FSParser::DataType enum_type_parameter_handle(const FSParser::TypeParameterNode *p_parameter, int p_index);
 	// Whether `p_class` lexically declares `p_enum`, which is what makes the union's type parameters
 	// visible: an unrelated class resolved while a union is being analyzed must not see them.
 	static bool enum_declared_by(const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum);
@@ -530,16 +527,11 @@ private:
 	// Binds a union declaration's type parameters to the arguments applied at one use site. Empty when
 	// the declaration is not generic or the argument vector does not fill it, which is what tells a
 	// caller "nothing to substitute" from "substitute with these".
-	static HashMap<StringName, FSParser::DataType> enum_type_argument_bindings(
-			const FSParser::EnumNode *p_declaration, const Vector<FSParser::DataType> &p_arguments);
 	// Rewrites one declaration level of a tagged union's payload schema with the bindings applied at a
 	// use site, so a field spelled `T`, `Array[T]`, or `Box[T]` reads as its concrete form. Each field
 	// type is substituted structurally, but the schema of a *nested* union is never re-derived from its
 	// own declaration here: it already names this declaration's parameters, and a union that names
 	// itself has no finite fixed point. Each nested level is specialized when it is itself used.
-	static FSParser::DataType specialize_enum_type(const FSParser::DataType &p_type,
-			const FSParser::EnumNode *p_declaration,
-			const HashMap<StringName, FSParser::DataType> &p_bindings);
 	// Returns a use-site copy of a global generic union: open parameter handles and the declaration's
 	// unspecialized payload map. Global resolution must never hand consumers the depended declaration's
 	// cached datatype, or one specialization can rewrite the payload schema every later use site reads.
@@ -789,6 +781,14 @@ public:
 
 	static bool check_type_compatibility(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false, const FSParser::Node *p_source_node = nullptr);
 	static FSParser::DataType type_from_metatype(const FSParser::DataType &p_meta_type);
+	static HashMap<StringName, FSParser::DataType> enum_type_argument_bindings(
+			const FSParser::EnumNode *p_declaration, const Vector<FSParser::DataType> &p_arguments);
+	// The open handle for a generic tagged union's own type parameter, mirroring the class-parameter
+	// handle: enum scope, declaration ordinal, spelling, and the eagerly resolved bound.
+	static FSParser::DataType enum_type_parameter_handle(const FSParser::TypeParameterNode *p_parameter, int p_index);
+	static FSParser::DataType specialize_enum_type(const FSParser::DataType &p_type,
+			const FSParser::EnumNode *p_declaration,
+			const HashMap<StringName, FSParser::DataType> &p_bindings);
 	static bool class_exists(const StringName &p_class);
 	static void set_bootstrap_allowed_dependency_root(const String &p_root);
 	static String get_bootstrap_allowed_dependency_root();

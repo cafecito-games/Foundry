@@ -661,6 +661,34 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		doc.tuples[name] = tuple_doc;
 	};
 
+	auto format_enum_type_parameters = [](const GDP::EnumNode *p_enum) -> String {
+		if (p_enum == nullptr || p_enum->type_parameters.is_empty()) {
+			return String();
+		}
+
+		String detail = "[";
+		bool first_type_parameter = true;
+		for (const GDP::TypeParameterNode *type_parameter : p_enum->type_parameters) {
+			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+				continue;
+			}
+			if (!first_type_parameter) {
+				detail += ", ";
+			}
+			first_type_parameter = false;
+			detail += type_parameter->identifier->name;
+			if (type_parameter->bound != nullptr) {
+				String bound_type;
+				String bound_enum;
+				_doctype_from_gdtype_nested(FSAnalyzer::type_from_metatype(type_parameter->bound->get_datatype()), bound_type, bound_enum);
+				if (!bound_type.is_empty()) {
+					detail += ": " + bound_type;
+				}
+			}
+		}
+		return detail + "]";
+	};
+
 	auto add_enum_docs = [&](const GDP::EnumNode *p_enum, const String &p_description_fallback = String(), bool p_requires_resolved_values = false) {
 		ERR_FAIL_NULL(p_enum);
 		ERR_FAIL_NULL(p_enum->identifier);
@@ -676,6 +704,7 @@ void FSDocGen::_generate_docs(FoundryScript *p_script, const GDP::ClassNode *p_c
 		enum_doc.is_experimental = p_enum->doc_data.is_experimental;
 		enum_doc.experimental_message = p_enum->doc_data.experimental_message;
 		enum_doc.is_tagged_union = p_enum->is_tagged_union;
+		enum_doc.signature = String(name) + format_enum_type_parameters(p_enum);
 		doc.enums[name] = enum_doc;
 
 		for (const GDP::EnumNode::Value &val : p_enum->values) {

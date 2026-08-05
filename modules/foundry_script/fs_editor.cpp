@@ -2866,8 +2866,44 @@ static void _populate_global_enum_completion_values(
 	}
 
 	const FSParser::EnumNode *enum_node = enum_class != nullptr ? enum_class->enum_file_decl : nullptr;
+	if (enum_node == nullptr && enum_class != nullptr && enum_class->has_member(r_type.enum_type)) {
+		const FSParser::ClassNode::Member &member = enum_class->get_member(r_type.enum_type);
+		if (member.type == FSParser::ClassNode::Member::ENUM) {
+			enum_node = member.m_enum;
+		}
+	}
 	if (enum_node == nullptr) {
 		return;
+	}
+
+	if (!r_type.enum_values.is_empty()) {
+		if (enum_node->type_parameters.is_empty()) {
+			return;
+		}
+		bool needs_refresh = false;
+		for (int i = 0; i < enum_node->values.size(); i++) {
+			const FSParser::EnumNode::Value &element = enum_node->values[i];
+			if (element.identifier == nullptr || !element.has_payload()) {
+				continue;
+			}
+			const FSParser::DataType::EnumCasePayload *payload = r_type.get_enum_case_payload(element.identifier->name);
+			if (payload == nullptr || payload->field_types.size() != element.payload_fields.size()) {
+				needs_refresh = true;
+				break;
+			}
+			for (const FSParser::DataType &field_type : payload->field_types) {
+				if (!field_type.is_hard_type()) {
+					needs_refresh = true;
+					break;
+				}
+			}
+			if (needs_refresh) {
+				break;
+			}
+		}
+		if (!needs_refresh) {
+			return;
+		}
 	}
 
 	r_type.is_tagged_union = enum_node->is_tagged_union;
@@ -2892,12 +2928,36 @@ static void _populate_global_enum_completion_values(
 			FSParser::DataType field_type;
 			if (field.type != nullptr && field.type->get_datatype().is_set()) {
 				field_type = FSAnalyzer::type_from_metatype(field.type->get_datatype());
+			} else if (!enum_node->type_parameters.is_empty() && field.type != nullptr && field.type->type_chain.size() == 1 &&
+					field.type->type_chain[0] != nullptr) {
+				const StringName type_name = field.type->type_chain[0]->name;
+				const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(type_name);
+				if (builtin_data_type.is_valid()) {
+					field_type.kind = FSParser::DataType::BUILTIN;
+					field_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+					field_type.builtin_type = builtin_data_type.builtin_type;
+				} else {
+					for (int parameter_index = 0; parameter_index < enum_node->type_parameters.size(); parameter_index++) {
+						const FSParser::TypeParameterNode *type_parameter = enum_node->type_parameters[parameter_index];
+						if (type_parameter != nullptr && type_parameter->identifier != nullptr &&
+								type_parameter->identifier->name == type_name) {
+							field_type = FSAnalyzer::enum_type_parameter_handle(type_parameter, parameter_index);
+							break;
+						}
+					}
+				}
 			}
 			payload.field_types.push_back(field_type);
 		}
 		r_type.enum_case_payloads[element.identifier->name] = payload;
 	}
 }
+
+static bool _guess_expression_type(FSParser::CompletionContext &p_context, const FSParser::ExpressionNode *p_expression, FSCompletionIdentifier &r_type);
+static bool _try_specialize_generic_enum_subscript(
+		FSParser::CompletionContext &p_context,
+		const FSParser::SubscriptNode *p_subscript,
+		FSCompletionIdentifier &r_type);
 
 static bool _guess_expression_type(FSParser::CompletionContext &p_context, const FSParser::ExpressionNode *p_expression, FSCompletionIdentifier &r_type) {
 	bool found = false;
@@ -3074,6 +3134,11 @@ static bool _guess_expression_type(FSParser::CompletionContext &p_context, const
 			} break;
 			case FSParser::Node::SUBSCRIPT: {
 				const FSParser::SubscriptNode *subscript = static_cast<const FSParser::SubscriptNode *>(p_expression);
+				if (!subscript->is_attribute && !subscript->type_arguments.is_empty() &&
+						_try_specialize_generic_enum_subscript(p_context, subscript, r_type)) {
+					found = true;
+					break;
+				}
 				if (subscript->is_attribute) {
 					FSParser::CompletionContext c = p_context;
 					c.current_line = subscript->start_line;
@@ -3298,6 +3363,90 @@ static bool _guess_expression_type(FSParser::CompletionContext &p_context, const
 	}
 
 	return found;
+}
+
+static bool _resolve_completion_type_argument(
+		FSParser::CompletionContext &p_context, const FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type) {
+	if (p_expression == nullptr) {
+		return false;
+	}
+
+	if (p_expression->get_datatype().is_hard_type()) {
+		r_type = p_expression->get_datatype();
+		return true;
+	}
+
+	if (p_expression->type == FSParser::Node::IDENTIFIER) {
+		const FSParser::IdentifierNode *identifier = static_cast<const FSParser::IdentifierNode *>(p_expression);
+		const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(identifier->name);
+		if (builtin_data_type.is_valid()) {
+			r_type = FSParser::DataType();
+			r_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			r_type.kind = FSParser::DataType::BUILTIN;
+			r_type.builtin_type = builtin_data_type.builtin_type;
+			r_type.is_meta_type = true;
+			return true;
+		}
+
+		FSCompletionIdentifier identifier_type;
+		if (_guess_identifier_type(p_context, identifier, identifier_type) && identifier_type.type.is_meta_type) {
+			r_type = FSAnalyzer::type_from_metatype(identifier_type.type);
+			return r_type.is_set();
+		}
+	}
+
+	return false;
+}
+
+static bool _try_specialize_generic_enum_subscript(
+		FSParser::CompletionContext &p_context,
+		const FSParser::SubscriptNode *p_subscript,
+		FSCompletionIdentifier &r_type) {
+	if (p_subscript == nullptr || p_subscript->type_arguments.is_empty()) {
+		return false;
+	}
+
+	FSCompletionIdentifier base;
+	if (!_guess_expression_type(p_context, p_subscript->base, base)) {
+		return false;
+	}
+
+	FSParser::DataType base_type = base.type;
+	const FSParser::EnumNode *enum_node = _get_script_enum_declaration(base_type);
+	if (enum_node == nullptr || enum_node->type_parameters.is_empty()) {
+		return false;
+	}
+	if (!base_type.is_meta_type || base_type.kind != FSParser::DataType::ENUM || !enum_node->is_tagged_union) {
+		return false;
+	}
+
+	_populate_global_enum_completion_values(p_context, base_type);
+	if (base_type.enum_values.is_empty()) {
+		return false;
+	}
+
+	Vector<FSParser::DataType> resolved_arguments;
+	for (const FSParser::ExpressionNode *argument_expression : p_subscript->type_arguments) {
+		FSParser::DataType argument_type;
+		if (!_resolve_completion_type_argument(p_context, argument_expression, argument_type)) {
+			return false;
+		}
+		resolved_arguments.push_back(argument_type);
+	}
+
+	if (resolved_arguments.size() != enum_node->type_parameters.size()) {
+		return false;
+	}
+
+	base_type.type_arguments = resolved_arguments;
+	base_type.is_meta_type = true;
+	base_type.is_tagged_union = true;
+	const HashMap<StringName, FSParser::DataType> bindings = FSAnalyzer::enum_type_argument_bindings(enum_node, resolved_arguments);
+	base_type = FSAnalyzer::specialize_enum_type(base_type, enum_node, bindings);
+
+	r_type.type = base_type;
+	r_type.value = base.value;
+	return true;
 }
 
 static bool _guess_identifier_type(FSParser::CompletionContext &p_context, const FSParser::IdentifierNode *p_identifier, FSCompletionIdentifier &r_type) {
@@ -3625,7 +3774,16 @@ static bool _guess_identifier_type_from_base(FSParser::CompletionContext &p_cont
 							return false;
 						case FSParser::ClassNode::Member::ENUM:
 							r_type.type = member.m_enum->get_datatype();
+							if (!r_type.type.is_set() || r_type.type.kind != FSParser::DataType::ENUM) {
+								r_type.type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+								r_type.type.kind = FSParser::DataType::ENUM;
+								r_type.type.class_type = base_type.class_type;
+								r_type.type.enum_type = member.m_enum->identifier->name;
+								r_type.type.is_meta_type = true;
+								r_type.type.is_tagged_union = member.m_enum->is_tagged_union;
+							}
 							r_type.enumeration = member.m_enum->identifier->name;
+							_populate_global_enum_completion_values(p_context, r_type.type);
 							return true;
 						case FSParser::ClassNode::Member::ENUM_VALUE:
 							r_type = _type_from_variant(member.enum_value.value, p_context);

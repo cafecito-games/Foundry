@@ -230,6 +230,7 @@ private:
 	Vector<LexicalToken> tokens;
 	Vector<Candidate> candidates;
 	const FSParser::ClassNode *current_class = nullptr;
+	const FSParser::EnumNode *current_enum = nullptr;
 	FSParser::DataType current_dispatch_type;
 	bool has_current_dispatch_type = false;
 
@@ -1191,14 +1192,20 @@ void DocumentClassifier::walk_enum(const FSParser::EnumNode *p_enum) {
 	if (p_enum == nullptr) {
 		return;
 	}
+	const FSParser::EnumNode *previous_enum = current_enum;
+	current_enum = p_enum;
 	walk_annotations(p_enum);
 	add_identifier(p_enum->identifier, TokenType::ENUM, bit(TokenModifier::DECLARATION));
+	for (const FSParser::TypeParameterNode *type_parameter : p_enum->type_parameters) {
+		walk_type_parameter(type_parameter);
+	}
 	for (const FSParser::EnumNode::Value &value : p_enum->values) {
 		walk_enum_value(value);
 	}
 	for (const FSParser::FunctionNode *function : p_enum->functions) {
 		walk_function(function, false);
 	}
+	current_enum = previous_enum;
 }
 
 void DocumentClassifier::walk_enum_value(const FSParser::EnumNode::Value &p_value) {
@@ -1448,6 +1455,11 @@ void DocumentClassifier::walk_type(const FSParser::TypeNode *p_type) {
 	if (p_type == nullptr) {
 		return;
 	}
+	if (current_enum != nullptr && current_enum->identifier != nullptr && p_type->type_chain.size() == 1 &&
+			p_type->type_chain[0] != nullptr && p_type->type_chain[0]->name == current_enum->identifier->name) {
+		add_identifier(p_type->type_chain[0], TokenType::ENUM, 0);
+		return;
+	}
 	classify_chain(p_type->type_chain, p_type->get_datatype(), TokenType::TYPE, p_type->allows_enum_case);
 	for (const FSParser::TypeNode *element : p_type->tuple_element_types) {
 		walk_type(element);
@@ -1466,6 +1478,13 @@ void DocumentClassifier::walk_type_parameter(const FSParser::TypeParameterNode *
 		return;
 	}
 	add_identifier(p_type_parameter->identifier, TokenType::TYPE_PARAMETER, bit(TokenModifier::DECLARATION));
+	if (current_enum != nullptr && current_enum->identifier != nullptr && p_type_parameter->bound != nullptr) {
+		for (const FSParser::IdentifierNode *part : p_type_parameter->bound->type_chain) {
+			if (part != nullptr && part->name == current_enum->identifier->name) {
+				add_identifier(part, TokenType::ENUM, 0);
+			}
+		}
+	}
 	walk_type(p_type_parameter->bound);
 }
 

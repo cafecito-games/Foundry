@@ -4680,6 +4680,70 @@ enum Message:
 	CHECK(found_restored_move);
 }
 
+TEST_CASE("[Modules][FoundryScript] Docgen documents generic tagged union parameters") {
+	FSParser parser;
+	Error err = parser.parse(R"(
+class_name ResultDoc
+
+enum Result[T, E]:
+	Ok(value: T)
+	Err(error: E)
+)",
+			"res://generic_tagged_union_docgen.fs", false);
+	CHECK_EQ(err, OK);
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	CHECK(root != nullptr);
+	if (err != OK || root == nullptr) {
+		return;
+	}
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	FSCompiler::make_scripts(script.ptr(), root, false);
+	FSDocGen::generate_docs(script.ptr(), root);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	CHECK_EQ(docs.size(), 1);
+	if (docs.size() != 1) {
+		return;
+	}
+
+	CHECK(docs[0].enums.has("Result"));
+	if (!docs[0].enums.has("Result")) {
+		return;
+	}
+	CHECK_EQ(docs[0].enums["Result"].signature, "Result[T, E]");
+	CHECK(docs[0].enums["Result"].is_tagged_union);
+
+	HashMap<String, DocData::ConstantDoc> cases;
+	for (const DocData::ConstantDoc &constant : docs[0].constants) {
+		if (constant.enumeration == "Result") {
+			cases[constant.name] = constant;
+		}
+	}
+	CHECK(cases.has("Ok"));
+	CHECK(cases.has("Err"));
+	if (!cases.has("Ok") || !cases.has("Err")) {
+		return;
+	}
+
+	CHECK_EQ(cases["Ok"].payload_fields.size(), 1);
+	CHECK_EQ(cases["Err"].payload_fields.size(), 1);
+	if (cases["Ok"].payload_fields.size() != 1 || cases["Err"].payload_fields.size() != 1) {
+		return;
+	}
+	CHECK_EQ(cases["Ok"].payload_fields[0].name, "value");
+	CHECK_EQ(cases["Ok"].payload_fields[0].type, "T");
+	CHECK_EQ(cases["Err"].payload_fields[0].name, "error");
+	CHECK_EQ(cases["Err"].payload_fields[0].type, "E");
+	CHECK_EQ(cases["Ok"].value, "(value: T)");
+}
+
 TEST_CASE("[Modules][FoundryScript] Docgen qualifies tuple link targets by declaration site") {
 	Vector<FSParser::DataType> element_types;
 	FSParser::DataType element;
