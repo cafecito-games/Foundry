@@ -116,6 +116,17 @@ static FSDataType _gdtype_from_container_type(const ContainerType &p_container_t
 }
 
 String FSDataType::get_source_type_name() const {
+	// Nullability is spelled as a suffix, so the value type is named without it. Only a nullable slot
+	// pays for the copy that clears the flag.
+	const auto value_type_name = [this]() {
+		if (!is_nullable) {
+			return to_container_type().get_type_name();
+		}
+		FSDataType value_type = *this;
+		value_type.is_nullable = false;
+		return value_type.to_container_type().get_type_name();
+	};
+
 	String name;
 	switch (kind) {
 		case VARIANT: {
@@ -137,17 +148,16 @@ String FSDataType::get_source_type_name() const {
 		} break;
 		case BUILTIN: {
 			if (builtin_type == Variant::INT || builtin_type == Variant::UINT) {
-				// A slot that stored no width is only constrained by its carrier, which spans the full
-				// 64-bit range; naming it `int`/`uint` would invent a narrowing the declaration never had.
-				const NumericType effective = numeric_type == NumericType::NONE
-						? numeric_type_wide_for_carrier(builtin_type)
-						: numeric_type;
+				// A slot that stored no width, or one whose stored width disagrees with its carrier, is
+				// only constrained by that carrier, which spans the full 64-bit range. Naming it
+				// `int`/`uint` would invent a narrowing the declaration never had.
+				const NumericType effective = numeric_type_is_carrier_consistent(numeric_type, builtin_type) && numeric_type != NumericType::NONE
+						? numeric_type
+						: numeric_type_wide_for_carrier(builtin_type);
 				name = numeric_type_has_public_name(effective) ? numeric_type_public_name(effective) : numeric_type_name(effective);
 				break;
 			}
-			FSDataType value_type = *this;
-			value_type.is_nullable = false;
-			name = value_type.to_container_type().get_type_name();
+			name = value_type_name();
 		} break;
 		case NATIVE:
 		case SCRIPT:
@@ -177,9 +187,7 @@ String FSDataType::get_source_type_name() const {
 				}
 				break;
 			}
-			FSDataType value_type = *this;
-			value_type.is_nullable = false;
-			name = value_type.to_container_type().get_type_name();
+			name = value_type_name();
 		} break;
 	}
 	if (name.is_empty()) {

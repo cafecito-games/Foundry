@@ -216,15 +216,16 @@ void apply_signature_type_names(const Ref<FSMethodDescriptor> &p_descriptor, con
 	if (p_descriptor.is_null() || p_function == nullptr) {
 		return;
 	}
-	const MethodInfo method_info = p_function->get_method_info();
+	const int argument_count = p_function->get_method_info().arguments.size();
 	PackedStringArray argument_type_names;
-	argument_type_names.resize(method_info.arguments.size());
-	for (int i = 0; i < method_info.arguments.size(); i++) {
+	argument_type_names.resize(argument_count);
+	String *argument_type_names_write = argument_type_names.ptrw();
+	for (int i = 0; i < argument_count; i++) {
 		// A rest parameter has no entry in `argument_types`, so it names its own collected type.
 		const FSDataType &argument_type = i < p_function->get_argument_count()
 				? p_function->get_argument_type(i)
 				: p_function->get_rest_parameter_type();
-		argument_type_names.write[i] = argument_type.get_source_type_name();
+		argument_type_names_write[i] = argument_type.get_source_type_name();
 	}
 	p_descriptor->set_signature_type_names(argument_type_names, p_function->get_return_type().get_source_type_name());
 }
