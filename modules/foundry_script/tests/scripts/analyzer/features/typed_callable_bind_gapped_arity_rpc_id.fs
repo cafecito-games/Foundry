@@ -8,9 +8,10 @@ extends Node
 
 # Four parameters with two trailing defaults. Binding `2` fills `q` (mirrors the existing
 # typed_callable_bind_default_arity.fs behavior), leaving the target invocable at exactly one
-# surviving argument (the first), with `r` and `s` defaulted.
-func gapped(p: int, _q: int, _r: String = "x", _s: int = 1) -> int:
-	return p
+# surviving argument (the first), with `r` and `s` defaulted. Returns void so the analyzer
+# acceptance check is not coupled to a RETURN_VALUE_DISCARDED warning.
+func gapped(_p: int, _q: int, _r: String = "x", _s: int = 1) -> void:
+	pass
 
 
 func test() -> void:

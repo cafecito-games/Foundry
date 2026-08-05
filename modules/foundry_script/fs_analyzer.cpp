@@ -7044,9 +7044,11 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		if (named_arguments_valid) {
 			const FSParser::DataType *rest_type = rest_parameter_type.is_set() ? &rest_parameter_type : nullptr;
 			// `Callable.rpc_id()` prepends a synthetic `peer_id` parameter to the surviving target arity,
-			// so each recorded extra arity must be shifted by one before the arity comparison. See
+			// so each recorded extra arity must be shifted by one before the arity comparison. Other
+			// invocation forms (call, rpc, call_deferred, callv) prepend nothing and pass zero. See
 			// `_method_signature_accepts_argument_count`.
-			const int extra_allowed_argument_offset = (base_type.builtin_type == Variant::CALLABLE && p_call->function_name == SNAME("rpc_id")) ? 1 : 0;
+			constexpr int callable_rpc_id_peer_id_argument_count = 1;
+			const int extra_allowed_argument_offset = (base_type.builtin_type == Variant::CALLABLE && p_call->function_name == SNAME("rpc_id")) ? callable_rpc_id_peer_id_argument_count : 0;
 			call_site_validation.validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count, rest_type, extra_allowed_argument_offset);
 		}
 		call_site_validation.validate_signal_connect_arg(base_type, p_call);
