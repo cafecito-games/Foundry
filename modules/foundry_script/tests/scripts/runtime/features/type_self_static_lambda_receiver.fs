@@ -44,6 +44,13 @@ class Child:
 class Sibling:
 	extends Base
 
+	# B. The lexical receiver beats the invocation context even when an unrelated static receiver is
+	# active on the frame below: invoking a Child-captured lambda from here must still mean Child,
+	# never Sibling. This guards against reading the caller's thread-local static receiver.
+	static func probe_other(other_factory: Callable) -> bool:
+		var made = other_factory.call()
+		return made is Child
+
 
 func test() -> void:
 	# A. The mandatory escape path: the outer static frame is gone before the callable runs.
@@ -56,6 +63,10 @@ func test() -> void:
 	# function, yet still resolve to the captured receiver rather than reporting one missing.
 	var made := child_factory.call()
 	print(made is Child)
+
+	# B. Invoked from inside a Sibling static frame -- a different active receiver -- the
+	# Child-captured lambda still resolves to Child, never the caller's receiver.
+	print(Sibling.probe_other(child_factory))
 
 	# A. Two escaped callables created through sibling receivers keep independent receivers when
 	# invoked in interleaved order; resolving one never contaminates the other.
