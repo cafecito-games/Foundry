@@ -1663,5 +1663,64 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] An indexed value pa
 	CHECK_EQ(match_node->branches[0]->patterns[0]->pattern_type, FSParser::PatternNode::PT_EXPRESSION);
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionMethods] Specialized receivers type enum method signatures") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Option[T]:\n"
+					   "\tNone\n"
+					   "\tSome(value: T)\n"
+					   "\n"
+					   "\tstatic func some(value: T) -> Option:\n"
+					   "\t\treturn Option.Some(value)\n"
+					   "\n"
+					   "\tfunc is_some() -> bool:\n"
+					   "\t\treturn self is Option.Some(_)\n"
+					   "\n"
+					   "\tstatic func echo[U](value: U) -> U:\n"
+					   "\t\treturn value\n"
+					   "\n"
+					   "func call_static() -> void:\n"
+					   "\tOption[int].some(1)\n"
+					   "\n"
+					   "func call_instance(value: Option[int]) -> void:\n"
+					   "\tvalue.is_some()\n",
+					   "user://generic_tagged_union_methods.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::EnumNode *option = find_enum(parser, SNAME("Option"));
+	REQUIRE(option != nullptr);
+	const FSParser::FunctionNode *some = find_enum_function(option, SNAME("some"));
+	REQUIRE(some != nullptr);
+	REQUIRE_EQ(some->parameters.size(), 1);
+	CHECK(is_type_parameter(some->parameters[0]->get_datatype(), SNAME("T"),
+			FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+
+	const FSParser::FunctionNode *call_static = find_function_in(parser.get_tree(), SNAME("call_static"));
+	REQUIRE(call_static != nullptr);
+	REQUIRE(call_static->body != nullptr);
+	REQUIRE_FALSE(call_static->body->statements.is_empty());
+	REQUIRE_EQ(call_static->body->statements[0]->type, FSParser::Node::CALL);
+	const FSParser::CallNode *static_call = static_cast<const FSParser::CallNode *>(call_static->body->statements[0]);
+	REQUIRE(static_call != nullptr);
+	CHECK_EQ(static_call->arguments.size(), 1);
+	REQUIRE(static_call->arguments[0] != nullptr);
+	CHECK_EQ(static_call->arguments[0]->get_datatype().builtin_type, Variant::INT);
+	CHECK(static_call->get_datatype().is_tagged_union_type());
+	REQUIRE_EQ(static_call->get_datatype().type_arguments.size(), 1);
+	CHECK_EQ(type_at(static_call->get_datatype().type_arguments, 0).builtin_type, Variant::INT);
+
+	const FSParser::FunctionNode *call_instance = find_function_in(parser.get_tree(), SNAME("call_instance"));
+	REQUIRE(call_instance != nullptr);
+	REQUIRE(call_instance->body != nullptr);
+	REQUIRE_FALSE(call_instance->body->statements.is_empty());
+	REQUIRE_EQ(call_instance->body->statements[0]->type, FSParser::Node::CALL);
+	const FSParser::CallNode *instance_call = static_cast<const FSParser::CallNode *>(call_instance->body->statements[0]);
+	REQUIRE(instance_call != nullptr);
+	CHECK_EQ(instance_call->get_datatype().builtin_type, Variant::BOOL);
+}
+
 } // namespace GenericTaggedUnion
 } // namespace FSTests

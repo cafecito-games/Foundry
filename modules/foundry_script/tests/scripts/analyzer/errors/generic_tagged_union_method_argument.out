@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Invalid argument 1 for function "Option.some": should be "int" but is "String".
