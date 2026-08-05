@@ -123,14 +123,17 @@ FSAnalyzer::CallSiteValidationContext::CallSiteValidationContext(FSAnalyzer *p_a
 		analyzer(p_analyzer) {
 }
 
-static bool _method_signature_accepts_argument_count(int p_argument_count, int p_parameter_count, int p_default_args_count, bool p_is_vararg, const Vector<int> &p_extra_allowed_argument_counts) {
+static bool _method_signature_accepts_argument_count(int p_argument_count, int p_parameter_count, int p_default_args_count, bool p_is_vararg, const Vector<int> &p_extra_allowed_argument_counts, int p_extra_allowed_argument_offset = 0) {
 	const int min_argument_count = p_parameter_count - p_default_args_count;
 	if (p_argument_count >= min_argument_count && (p_is_vararg || p_argument_count <= p_parameter_count)) {
 		return true;
 	}
 
+	// `Callable.rpc_id()` prepends a synthetic `peer_id` parameter to the surviving target arity, so
+	// each recorded extra arity must be shifted by the offset before comparing against the call's
+	// argument count. Other invocations pass a zero offset and are unaffected.
 	for (int extra_argument_count : p_extra_allowed_argument_counts) {
-		if (extra_argument_count == p_argument_count) {
+		if (extra_argument_count + p_extra_allowed_argument_offset == p_argument_count) {
 			return true;
 		}
 	}
@@ -963,11 +966,11 @@ void FSAnalyzer::CallSiteValidationContext::validate_argument_against_type(const
 	}
 }
 
-void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count, const FSParser::DataType *p_rest_parameter_type) {
-	if (p_call->arguments.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
+void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count, const FSParser::DataType *p_rest_parameter_type, int p_extra_allowed_argument_offset) {
+	if (p_call->arguments.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts, p_extra_allowed_argument_offset)) {
 		analyzer->push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least %d but received %d.)*", p_call->function_name, p_par_types.size() - p_default_args_count, p_call->arguments.size()), p_call);
 	}
-	if (!p_is_vararg && p_call->arguments.size() > p_par_types.size() && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
+	if (!p_is_vararg && p_call->arguments.size() > p_par_types.size() && !_method_signature_accepts_argument_count(p_call->arguments.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts, p_extra_allowed_argument_offset)) {
 		analyzer->push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most %d but received %d.)*", p_call->function_name, p_par_types.size(), p_call->arguments.size()), p_call->arguments[p_par_types.size()]);
 	}
 
@@ -1001,15 +1004,15 @@ void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParse
 	}
 }
 
-void FSAnalyzer::CallSiteValidationContext::validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count, const FSParser::DataType *p_rest_parameter_type) {
+void FSAnalyzer::CallSiteValidationContext::validate_callable_array_literal_args(const Vector<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, FSParser::ArrayNode *p_array, const StringName &p_function, const Vector<int> &p_extra_allowed_argument_counts, int p_trailing_unbound_argument_count, const FSParser::DataType *p_rest_parameter_type, int p_extra_allowed_argument_offset) {
 	if (p_array == nullptr) {
 		return;
 	}
 
-	if (p_array->elements.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_array->elements.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
+	if (p_array->elements.size() < p_par_types.size() - p_default_args_count && !_method_signature_accepts_argument_count(p_array->elements.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts, p_extra_allowed_argument_offset)) {
 		analyzer->push_error(vformat(R"*(Too few arguments for "%s()" call. Expected at least %d but received %d.)*", p_function, p_par_types.size() - p_default_args_count, p_array->elements.size()), p_array);
 	}
-	if (!p_is_vararg && p_array->elements.size() > p_par_types.size() && !_method_signature_accepts_argument_count(p_array->elements.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts)) {
+	if (!p_is_vararg && p_array->elements.size() > p_par_types.size() && !_method_signature_accepts_argument_count(p_array->elements.size(), p_par_types.size(), p_default_args_count, p_is_vararg, p_extra_allowed_argument_counts, p_extra_allowed_argument_offset)) {
 		analyzer->push_error(vformat(R"*(Too many arguments for "%s()" call. Expected at most %d but received %d.)*", p_function, p_par_types.size(), p_array->elements.size()), p_array->elements[p_par_types.size()]);
 	}
 
