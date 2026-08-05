@@ -1386,6 +1386,14 @@ in time.
   receiver, not the class the resumed implementation was declared on.
 - A callable or a resumption whose receiver is gone is an error, never a call resolved against the
   declaring class.
+- A lambda created while a static frame runs captures that frame's receiver lexically, the same way
+  it captures an enclosing local. The captured receiver is immutable for that callable, so invoking
+  it after the creating function has returned, from a non-static caller, or while an unrelated
+  receiver `S` is active all use the captured receiver `R`, never `S` or the declaring class. Two
+  lambdas created through sibling receivers keep independent receivers. This is the ordinary lambda
+  path, distinct from instance-`self` capture: a static lambda never carries an instance object, and
+  a lambda created with no receiver reports the missing receiver if its body or signature needs
+  `Self` rather than substituting another class.
 
 
 ---

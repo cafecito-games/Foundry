@@ -36,6 +36,7 @@
 #include "../fs_compiler.h"
 #include "../fs_conformance_registry.h"
 #include "../fs_function.h"
+#include "../fs_lambda_callable.h"
 #include "../fs_parser.h"
 
 #include "core/io/file_access.h"
@@ -225,6 +226,141 @@ TEST_CASE("[Modules][FoundryScript][RuntimeSelf] A static call with no receiver 
 	Callable::CallError error;
 	ERR_PRINT_OFF;
 	const Variant result = witness->call(nullptr, arguments, 1, error, nullptr, nullptr, nullptr);
+	ERR_PRINT_ON;
+	CHECK(error.error == Callable::CallError::CALL_ERROR_INVALID_METHOD);
+	CHECK(result.get_type() == Variant::NIL);
+}
+
+// A lambda created in a static receiver context captures that receiver the same way an extracted
+// static callable does, and the captured value travels with the callable after the creating frame is
+// gone. These cases inspect the constructed object's exact script rather than the lambda's declared
+// return type: a `Variant` or declaring-class substitution reads back as the right type while still
+// constructing the wrong object.
+
+static Ref<FoundryScript> runtime_self_subclass(const Ref<FoundryScript> &p_script, const StringName &p_name) {
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator element = p_script->get_subclasses().find(p_name);
+	return element ? element->value : Ref<FoundryScript>();
+}
+
+// Invokes a Callable returned by a static factory and returns the constructed object, failing the
+// case clearly if the factory or the lambda itself reported an error.
+static Ref<RefCounted> invoke_runtime_self_factory(const Variant &p_factory_variant) {
+	REQUIRE(p_factory_variant.get_type() == Variant::CALLABLE);
+	Callable factory = p_factory_variant;
+	REQUIRE(factory.is_valid());
+
+	Variant produced;
+	Callable::CallError invoke_error;
+	factory.callp(nullptr, 0, produced, invoke_error);
+	REQUIRE(invoke_error.error == Callable::CallError::CALL_OK);
+	const Ref<RefCounted> produced_object = produced;
+	REQUIRE(produced_object.is_valid());
+	return produced_object;
+}
+
+TEST_CASE("[Modules][FoundryScript][RuntimeSelf] A static lambda captures and retains the exact script receiver") {
+	RuntimeSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_runtime_self_source(
+			"class Base:\n"
+			"\tstatic func make_factory() -> Callable:\n"
+			"\t\treturn func() -> Self:\n"
+			"\t\t\treturn Self.new()\n"
+			"\n"
+			"class Child extends Base:\n"
+			"\tpass\n"
+			"\n"
+			"class Sibling extends Base:\n"
+			"\tpass\n");
+	const Ref<FoundryScript> base = runtime_self_subclass(script, SNAME("Base"));
+	REQUIRE(base.is_valid());
+	const Ref<FoundryScript> child = runtime_self_subclass(script, SNAME("Child"));
+	REQUIRE(child.is_valid());
+	const Ref<FoundryScript> sibling = runtime_self_subclass(script, SNAME("Sibling"));
+	REQUIRE(sibling.is_valid());
+
+	// The mandatory escape path: the outer static frame is gone before each callable runs. Each must
+	// construct the receiver it was created through, never the declaring class.
+	Callable::CallError error;
+	const Variant child_factory = call_runtime_self_handle(child.ptr(), SNAME("make_factory"), {}, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant base_factory = call_runtime_self_handle(base.ptr(), SNAME("make_factory"), {}, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	const Variant sibling_factory = call_runtime_self_handle(sibling.ptr(), SNAME("make_factory"), {}, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+
+	const Ref<RefCounted> child_made = invoke_runtime_self_factory(child_factory);
+	const Ref<RefCounted> base_made = invoke_runtime_self_factory(base_factory);
+	const Ref<RefCounted> sibling_made = invoke_runtime_self_factory(sibling_factory);
+
+	// Exact identity, read off the value: `Child`/`Base`/`Sibling`, not a common ancestor.
+	CHECK(child_made->get_script_instance()->get_script()->get_instance_id() == child->get_instance_id());
+	CHECK(base_made->get_script_instance()->get_script()->get_instance_id() == base->get_instance_id());
+	CHECK(sibling_made->get_script_instance()->get_script()->get_instance_id() == sibling->get_instance_id());
+
+	// Sibling independence under interleaved invocation: resolving one receiver never contaminates
+	// another escaped callable created through a different handle.
+	CHECK(invoke_runtime_self_factory(child_factory)->get_script_instance()->get_script()->get_instance_id() == child->get_instance_id());
+	CHECK(invoke_runtime_self_factory(sibling_factory)->get_script_instance()->get_script()->get_instance_id() == sibling->get_instance_id());
+
+	// A static lambda is NOT an instance-self lambda: the analyzer must not set `use_self` just
+	// because the lambda references `Self`. That flag routes through `FSLambdaSelfCallable`, whose
+	// receiver is an instance object a static frame does not have.
+	REQUIRE_FALSE(base->get_lambda_info().is_empty());
+	const FoundryScript::LambdaInfo &lambda_info = base->get_lambda_info().begin()->value;
+	CHECK_FALSE(lambda_info.use_self);
+}
+
+TEST_CASE("[Modules][FoundryScript][RuntimeSelf] A static lambda created by a native witness captures that receiver") {
+	RuntimeSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_runtime_self_source(
+			"trait Factory:\n"
+			"\tabstract static func make_factory() -> Callable\n"
+			"\n"
+			"extend RefCounted uses Factory:\n"
+			"\tstatic func make_factory() -> Callable:\n"
+			"\t\treturn func() -> Self:\n"
+			"\t\t\treturn Self.new()\n");
+	RuntimeSelfConformanceScope conformance_scope(script->get_script_path());
+
+	const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
+	REQUIRE(global_map.has(SNAME("Resource")));
+	Object *resource_handle = FSLanguage::get_singleton()->get_global_array()[global_map[SNAME("Resource")]];
+	REQUIRE(resource_handle != nullptr);
+
+	Callable::CallError error;
+	const Variant factory = call_runtime_self_handle(resource_handle, SNAME("make_factory"), {}, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+
+	const Ref<RefCounted> made = invoke_runtime_self_factory(factory);
+	REQUIRE(made.is_valid());
+	// The witness was declared for `RefCounted`; the value must be the class the call was made
+	// through, not the conformance target it was compiled against.
+	CHECK(made->get_class_name() == SNAME("Resource"));
+}
+
+TEST_CASE("[Modules][FoundryScript][RuntimeSelf] A static lambda with no captured receiver is refused, not approximated") {
+	RuntimeSelfLanguageScope language;
+
+	// The lambda's signature references `Self`, so it can only run with a receiver. Constructing the
+	// ordinary callable directly with no captured context simulates a callable that escaped a frame
+	// which never had a receiver to give (e.g. a low-level dispatch path), and verifies the failure
+	// surfaces instead of a fallback to the owning class, the conformance target, or `Variant`.
+	const Ref<FoundryScript> script = compile_runtime_self_source(
+			"static func make_echo() -> Callable:\n"
+			"\treturn func(value: Self) -> Self:\n"
+			"\t\treturn value\n");
+	REQUIRE_FALSE(script->get_lambda_info().is_empty());
+	FSFunction *echo_lambda = script->get_lambda_info().begin()->key;
+	REQUIRE(echo_lambda != nullptr);
+
+	FSLambdaCallable callable(script, echo_lambda, {});
+
+	Variant result;
+	Callable::CallError error;
+	ERR_PRINT_OFF;
+	callable.call(nullptr, 0, result, error);
 	ERR_PRINT_ON;
 	CHECK(error.error == Callable::CallError::CALL_ERROR_INVALID_METHOD);
 	CHECK(result.get_type() == Variant::NIL);

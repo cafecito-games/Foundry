@@ -105,6 +105,11 @@ void FSLambdaCallable::call(const Variant **p_arguments, int p_argcount, Variant
 		return;
 	}
 
+	// The captured receiver is the callable's own lexical context, not whatever static receiver the
+	// caller happens to be running under. Passing it here -- rather than reading the thread-local
+	// current context -- is what makes the closure result independent of where it is invoked.
+	const FSStaticSelfContext *static_self = static_self_context.is_valid() ? &static_self_context : nullptr;
+
 	if (captures_amount > 0) {
 		const int total_argcount = p_argcount + captures_amount;
 		const Variant **args = (const Variant **)alloca(sizeof(Variant *) * total_argcount);
@@ -124,7 +129,7 @@ void FSLambdaCallable::call(const Variant **p_arguments, int p_argcount, Variant
 			args[i + captures_amount] = p_arguments[i];
 		}
 
-		r_return_value = function->call(nullptr, args, total_argcount, r_call_error);
+		r_return_value = function->call(nullptr, args, total_argcount, r_call_error, nullptr, nullptr, static_self);
 		switch (r_call_error.error) {
 			case Callable::CallError::CALL_ERROR_INVALID_ARGUMENT:
 				r_call_error.argument -= captures_amount;
@@ -153,16 +158,19 @@ void FSLambdaCallable::call(const Variant **p_arguments, int p_argcount, Variant
 				break;
 		}
 	} else {
-		r_return_value = function->call(nullptr, p_arguments, p_argcount, r_call_error);
+		r_return_value = function->call(nullptr, p_arguments, p_argcount, r_call_error, nullptr, nullptr, static_self);
 	}
 }
 
-FSLambdaCallable::FSLambdaCallable(Ref<FoundryScript> p_script, FSFunction *p_function, const Vector<Variant> &p_captures) :
+FSLambdaCallable::FSLambdaCallable(Ref<FoundryScript> p_script, FSFunction *p_function, const Vector<Variant> &p_captures, const FSStaticSelfContext *p_static_self) :
 		function(p_function) {
 	ERR_FAIL_COND(p_script.is_null());
 	ERR_FAIL_NULL(p_function);
 	script = p_script;
 	captures = p_captures;
+	if (p_static_self != nullptr) {
+		static_self_context = *p_static_self;
+	}
 
 	h = (uint32_t)hash_murmur3_one_64((uint64_t)this);
 }
