@@ -1,0 +1,6 @@
+FS_TEST_OK
+boxed LinkedBox[ulong]
+narrow_boxed LinkedBox[uint]
+nested Array[Dictionary[uint, Array[long]]]
+shape Array
+handle Type[LinkedBox[uint]]
