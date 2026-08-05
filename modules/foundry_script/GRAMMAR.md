@@ -575,6 +575,9 @@ function_annotation = ANNOTATION, [ "(", [ annotation_args ], ")" ], [ NEWLINE ]
   `async`, and reject `abstract` and `final`. Variables, constants, signals, nested
   classes/enums/traits, and conformances are not valid enum-body declarations. Enum
   functions remain supported on a tagged union.
+- The builtin `Result[T, E]` union ships at `foundry://builtin/result.fs` with stable
+  case order: `Ok` is tag 0 and `Err` is tag 1. It follows the same specialization,
+  construction, match, and `is` rules as user-declared generic tagged unions.
 - An empty enum uses `pass` as its only body statement (`enum Empty:` followed by
   an indented `pass`).
 - `enum_name` (§3.2) declares a file-level named enum using the same indented body,

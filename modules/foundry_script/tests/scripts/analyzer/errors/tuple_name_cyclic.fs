@@ -1,1 +1,4 @@
-tuple_name TupleNameCyclic(value: int, next: TupleNameCyclic)
+tuple TupleNameCyclic(value: int, next: TupleNameCyclic)
+
+func test():
+	print("unreachable")

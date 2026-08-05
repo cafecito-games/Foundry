@@ -35,7 +35,7 @@
 
 // The Foundry Script types that ship inside the binary: their source text is embedded at build
 // time from `builtin/*.fs`, and their names are registered as global classes so any script can
-// use them without an import.
+// use them without an import. Generic union builtins such as `Result[T, E]` register as enums.
 class FSBuiltinTypes {
 public:
 	// Native APIs cannot express script-defined generic return types through PropertyInfo. Builtin

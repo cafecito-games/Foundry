@@ -220,6 +220,52 @@ inside a generic method). And native `MethodInfo`-only varargs remain untyped an
 the engine-wide `MethodInfo`, `ClassDB`, and GDExtension ABI are unchanged.
 
 
+## Generic tagged unions
+
+Named tagged unions may declare type parameters between the enum name and the body. Only **named**
+tagged unions may be generic; integer-backed enums and unnamed enums reject type parameters. Every
+external use supplies the complete argument list — bare `Result` is an error outside `Result`'s own
+declaration.
+
+```foundry
+enum Result[T, E]:
+	Ok(value: T)
+	Err(error: E)
+
+func parse_count(text: String) -> Result[int, String]:
+	if text.is_valid_int():
+		return Result[int, String].Ok(text.to_int())
+	return Result[int, String].Err("not an integer")
+```
+
+Type parameters use the same bounds syntax as generic classes (`[T: Resource]`, dependent bounds,
+nullable arguments). Parameters are **invariant**: `Result[int, String]` and `Result[float, String]`
+are unrelated types in assignments, calls, returns, containers, comparisons, and patterns. Inside a
+generic union's own declaration, the bare union name denotes the open self-specialization
+(`Branch(children: Array[Tree])` means `Array[Tree[T]]`); explicit `Tree[T]` is equivalent.
+
+Construction is always explicit in v1: `Result[int, String].Ok(1)`, not `Result.Ok(1)`. Payload-less
+cases such as `None` remain valid. Match patterns and `is` binds substitute the specialized payload
+types. Enum functions on a generic union specialize with the receiver's type arguments; a function's
+own type parameters shadow union parameters with the same names.
+
+**Runtime erasure.** Values remain the existing read-only `[tag, payload...]` Array representation.
+Specialization is static only: once a value crosses a `Variant` boundary, runtime tests can validate
+tag shape and payload slots but cannot distinguish erased type arguments. Two specializations of one
+declaration that agree on tag and payload compare equal.
+
+**Builtin `Result[T, E]`.** Foundry ships a global generic union at `foundry://builtin/result.fs`:
+
+```foundry
+enum_name Result[T, E]:
+	Ok(value: T)
+	Err(error: E)
+```
+
+`Ok` is tag 0 and `Err` is tag 1; that order is a stable runtime contract. The existing
+`JsonResult[T]` wrapper is unchanged in v1.
+
+
 ## Other
 
 There are many other classes in the FoundryScript module. Here is a brief overview of some of them:
@@ -245,7 +291,7 @@ Export templates omit the Foundry Script front-end by default (`foundry_script_f
 
 **Builtin types in compiled-bytecode exports:**
 
-The builtin Foundry Script types (`JsonNode`, `JsonDecodeError`, `JsonResult[T]`, `JsonSerializable`) are declared in source that ships inside the binary under the reserved `foundry://builtin/<relative-path>.fs` identity. A stripped template has no front-end to compile that source, so a **Compiled bytecode** export packages every registered builtin as a private companion artifact at `res://.foundry/builtin/<relative-path>.fsb`:
+The builtin Foundry Script types (`JsonNode`, `JsonDecodeError`, `JsonResult[T]`, `JsonSerializable`, `Result[T, E]`) are declared in source that ships inside the binary under the reserved `foundry://builtin/<relative-path>.fs` identity. A stripped template has no front-end to compile that source, so a **Compiled bytecode** export packages every registered builtin as a private companion artifact at `res://.foundry/builtin/<relative-path>.fsb`:
 
 - The public identity of a builtin never changes: exported project bytecode keeps recording `foundry://builtin/*.fs`, and the runtime maps that identity to the private artifact when it needs the bytes.
 - All registered builtins are packaged unconditionally, in sorted order, with identical bytes across repeated exports of the same engine build and export profile.

@@ -98,6 +98,19 @@ func _ready() -> void:
 		_:
 			check(false, "JsonNode.of() builds a string case")
 
+	var ok_result: Result[int, String] = Result[int, String].Ok(3)
+	match ok_result:
+		Result[int, String].Ok(var value):
+			check(value == 3, "builtin Result Ok payload")
+		Result[int, String].Err(_):
+			check(false, "builtin Result Ok case")
+
+	var err_result: Result[int, String] = Result[int, String].Err("bad")
+	if err_result is Result[int, String].Err(message):
+		check(message == "bad", "builtin Result Err is bind")
+	else:
+		check(false, "builtin Result Err is bind")
+
 	if failures.is_empty():
 		print("BUILTIN_EXPORT_RUNTIME_OK")
 		get_tree().quit(0)
