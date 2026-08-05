@@ -1227,10 +1227,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	int line = _initial_line;
 
 	// An instance frame has no compiled-in receiver, but the running instance is its receiver. The
-	// descriptor is built once for the frame and borrowed by both the signature validation below and
-	// `FrameSelfBinding` further down, so it has to outlive both; declaring it here keeps it alive
-	// until the call returns. An explicitly supplied `p_static_self` (extracted callable, coroutine
-	// resumption) always wins, so the instance form is only derived when none was given.
+	// descriptor is built once for the frame and borrowed by the signature validation below (and, once
+	// the deferred analyzer work lands, by `FrameSelfBinding` further down), so it has to outlive that
+	// use; declaring it here keeps it alive until the call returns. An explicitly supplied
+	// `p_static_self` (extracted callable, coroutine resumption) always wins, so the instance form is
+	// only derived when none was given.
 	FSStaticSelfContext instance_self_context;
 
 	if (p_state) {
@@ -1300,9 +1301,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					return Variant();
 				}
 				// An instance frame always has an instance, so a receiver-derived resolution only fails
-				// when the receiver's script was freed mid-call. Aborting would hard-fail a frame that
-				// by definition has a `self`, so the call falls back to the unresolved signature rather
-				// than substituting another class.
+				// when the receiver's script or a nested type-argument script has been freed mid-call.
+				// Aborting would hard-fail a frame that by definition has a `self`, so the call falls
+				// back to the unresolved signature rather than substituting another class.
 				resolved_argument_types.clear();
 				resolved_rest_parameter_type = FSDataType();
 			}
