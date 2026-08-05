@@ -278,6 +278,95 @@ TEST_CASE("[FSBuiltinTypes] JsonNode.of() push_errors and returns Null for an un
 	CHECK(detector.has_error);
 }
 
+static Ref<FoundryScript> compile_result_probe() {
+	static int unique_index = 0;
+	const String path = vformat("user://test_result_probe_%d.fs", unique_index++);
+
+	const char *source =
+			"class_name ResultProbe extends RefCounted\n"
+			"\n"
+			"static func tag_of(value: Result[int, String]) -> int:\n"
+			"\tvar erased: Variant = value\n"
+			"\treturn erased[0]\n"
+			"\n"
+			"static func ok_tag() -> int:\n"
+			"\treturn tag_of(Result[int, String].Ok(7))\n"
+			"\n"
+			"static func err_tag() -> int:\n"
+			"\treturn tag_of(Result[int, String].Err(\"bad\"))\n"
+			"\n"
+			"static func ok_payload() -> int:\n"
+			"\tmatch Result[int, String].Ok(7):\n"
+			"\t\tResult[int, String].Ok(var number):\n"
+			"\t\t\treturn number\n"
+			"\t\t_:\n"
+			"\t\t\treturn -1\n"
+			"\n"
+			"static func err_payload() -> String:\n"
+			"\tmatch Result[int, String].Err(\"bad\"):\n"
+			"\t\tResult[int, String].Err(var message):\n"
+			"\t\t\treturn message\n"
+			"\t\t_:\n"
+			"\t\t\treturn \"\"\n";
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path(path);
+	script->set_source_code(source);
+
+	FSParser parser;
+	Error error = parser.parse(source, script->get_path(), false);
+	REQUIRE(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	error = analyzer.analyze();
+	REQUIRE(error == OK);
+
+	FSCompiler compiler;
+	error = compiler.compile(&parser, script.ptr(), false);
+	REQUIRE(error == OK);
+
+	error = script->reload();
+	REQUIRE(error == OK);
+
+	return script;
+}
+
+static int call_result_probe_int(const Ref<FoundryScript> &p_probe, const StringName &p_method) {
+	Object *probe_object = p_probe.ptr();
+	Callable::CallError call_error;
+	const Variant result = probe_object->callp(p_method, nullptr, 0, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	return result;
+}
+
+static String call_result_probe_string(const Ref<FoundryScript> &p_probe, const StringName &p_method) {
+	Object *probe_object = p_probe.ptr();
+	Callable::CallError call_error;
+	const Variant result = probe_object->callp(p_method, nullptr, 0, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	return result;
+}
+
+TEST_CASE("[FSBuiltinTypes][GenericTaggedUnion] Result is a builtin generic union") {
+	FSLanguage::get_singleton()->init();
+	CHECK(ScriptServer::is_global_class(SNAME("Result")));
+	CHECK(ScriptServer::is_global_class_enum(SNAME("Result")));
+	CHECK_EQ(ScriptServer::get_global_class_path(SNAME("Result")),
+			String("foundry://builtin/result.fs"));
+	CHECK(ScriptServer::is_builtin_global_class("Result"));
+}
+
+TEST_CASE("[FSBuiltinTypes][GenericTaggedUnion] Result case tags are the stable contract") {
+	FSLanguage::get_singleton()->init();
+	const Ref<FoundryScript> probe = compile_result_probe();
+
+	CHECK_EQ(call_result_probe_int(probe, SNAME("ok_tag")), 0);
+	CHECK_EQ(call_result_probe_int(probe, SNAME("err_tag")), 1);
+	CHECK_EQ(call_result_probe_int(probe, SNAME("ok_payload")), 7);
+	CHECK_EQ(call_result_probe_string(probe, SNAME("err_payload")), "bad");
+}
+
 TEST_CASE("[FSBuiltinTypes] A project scan cannot remove a builtin global class") {
 	// The editor reconciles the global class table against the files it finds on disk. A builtin
 	// type has no file, so it must not be reconciled away.

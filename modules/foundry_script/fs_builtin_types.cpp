@@ -92,6 +92,8 @@ void FSBuiltinTypes::register_types() {
 			"foundry://builtin/json_result.fs", false, false, false, false);
 	ScriptServer::add_builtin_global_class(SNAME("JsonSerializable"), StringName(), language,
 			"foundry://builtin/json_serializable.fs", false, false, true, false);
+	ScriptServer::add_builtin_global_class(SNAME("Result"), StringName(), language,
+			"foundry://builtin/result.fs", false, false, false, true);
 }
 
 void FSBuiltinTypes::unregister_types() {

@@ -2097,6 +2097,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	}
 
 	if (!type_found) {
+		bool current_scope_has_name = false;
 		if (first == SNAME("Variant")) {
 			if (p_type->type_chain.size() == 2) {
 				// May be nested enum.
@@ -2203,7 +2204,6 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			result.builtin_type = Variant::OBJECT;
 			result.native_type = first;
 		} else {
-			bool current_scope_has_name = false;
 			List<FSParser::ClassNode *> script_classes;
 			HashSet<FSParser::ClassNode *> declaration_site_classes;
 			get_effective_scope_classes(parser->current_class, &script_classes, p_type, &declaration_site_classes);
@@ -2250,7 +2250,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 
 		if (result.is_set()) {
 			// Found.
-		} else if (ScriptServer::is_global_class(first)) {
+		} else if (!current_scope_has_name && ScriptServer::is_global_class(first)) {
 			if (reject_bootstrap_global_class_dependency(first, p_type, "global type")) {
 				return bad_type;
 			}
@@ -2760,6 +2760,13 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 				make_standalone_global_enum_type(p_class->enum_file_decl->identifier->name, true),
 				p_class);
 		resolve_enum_bodies(p_class->enum_file_decl, p_class);
+	}
+
+	if (p_class == parser->head && p_class->is_tuple_file && p_class->tuple_file_decl != nullptr &&
+			p_class->tuple_file_decl->identifier != nullptr) {
+		// Mirror the enum_name hook above: a `tuple_name` file has no body consumer, so resolve its
+		// field types here or cyclic by-value declarations look clean until something names the tuple.
+		make_global_tuple_type_from_current_parser(p_class->tuple_file_decl->identifier->name, p_class);
 	}
 
 	// Do functions, properties, and groups now.

@@ -295,6 +295,8 @@ TEST_CASE("[FoundryScript][BuiltinBytecodeExport] A broken builtin fails atomica
 TEST_CASE("[FoundryScript][BuiltinBytecodeExport] Runtime bytecode lookups map builtin identities") {
 	CHECK_EQ(FSCache::get_bytecode_artifact_path("foundry://builtin/json_node.fs"),
 			"res://.foundry/builtin/json_node.fsb");
+	CHECK_EQ(FSCache::get_bytecode_artifact_path("foundry://builtin/result.fs"),
+			"res://.foundry/builtin/result.fsb");
 	// Everything else reads its own path; the caller has already applied any remap.
 	CHECK_EQ(FSCache::get_bytecode_artifact_path("res://player.fsb"), "res://player.fsb");
 	CHECK_EQ(FSCache::get_bytecode_artifact_path("res://player.fsc"), "res://player.fsc");
