@@ -1362,6 +1362,96 @@ TEST_CASE("[Modules][FoundryScript][Editor] Syntax highlighter colors UID-backed
 
 	memdelete(text_edit);
 }
+
+TEST_CASE("[Modules][FoundryScript][Editor] Syntax highlighter treats canonical integer suffixes as part of the numeric token") {
+	const Color number_color = EDITOR_GET("text_editor/theme/highlighting/number_color");
+
+	struct Case {
+		String line;
+		String suffix;
+	};
+	const Case cases[] = {
+		{ "var a = 100UL", "UL" }, // Decimal.
+		{ "var b = 0xFF00U", "U" }, // Hexadecimal.
+		{ "var c = 0b1010L", "L" }, // Binary.
+	};
+
+	for (const Case &test_case : cases) {
+		CAPTURE(test_case.line);
+
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text(test_case.line + "\n");
+
+		Ref<FSSyntaxHighlighter> highlighter;
+		highlighter.instantiate();
+		highlighter->set_text_edit(text_edit);
+		highlighter->_update_cache();
+
+		const Dictionary highlighting = highlighter->_get_line_syntax_highlighting_impl(0);
+		const int suffix_start = test_case.line.length() - test_case.suffix.length();
+		CHECK_EQ(test_case.line.substr(suffix_start), test_case.suffix);
+		for (int i = 0; i < test_case.suffix.length(); i++) {
+			CHECK_EQ(get_highlighted_color_at(highlighting, suffix_start + i), number_color);
+		}
+
+		memdelete(text_edit);
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][Editor] Syntax highlighter does not extend a lowercase integer suffix into the numeric token") {
+	const Color number_color = EDITOR_GET("text_editor/theme/highlighting/number_color");
+
+	TextEdit *text_edit = memnew(TextEdit);
+	const String line = "var a = 100ul";
+	text_edit->set_text(line + "\n");
+
+	Ref<FSSyntaxHighlighter> highlighter;
+	highlighter.instantiate();
+	highlighter->set_text_edit(text_edit);
+	highlighter->_update_cache();
+
+	const Dictionary highlighting = highlighter->_get_line_syntax_highlighting_impl(0);
+	const int suffix_column = line.find("ul");
+	CHECK(suffix_column >= 0);
+	if (suffix_column < 0) {
+		memdelete(text_edit);
+		return;
+	}
+	// The digits before the invalid lowercase suffix are still a number...
+	CHECK_EQ(get_highlighted_color_at(highlighting, suffix_column - 1), number_color);
+	// ...but the lowercase letters themselves are not part of the numeric token.
+	CHECK_NE(get_highlighted_color_at(highlighting, suffix_column), number_color);
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[Modules][FoundryScript][Editor] Syntax highlighter colors uint, long, and ulong as built-in types") {
+	const Color basetype_color = EDITOR_GET("text_editor/theme/highlighting/base_type_color");
+
+	const String lines[] = { "var a: uint = 1", "var b: long = 1", "var c: ulong = 1" };
+	const String names[] = { "uint", "long", "ulong" };
+
+	for (int i = 0; i < 3; i++) {
+		CAPTURE(lines[i]);
+
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text(lines[i] + "\n");
+
+		Ref<FSSyntaxHighlighter> highlighter;
+		highlighter.instantiate();
+		highlighter->set_text_edit(text_edit);
+		highlighter->_update_cache();
+
+		const Dictionary highlighting = highlighter->_get_line_syntax_highlighting_impl(0);
+		const int type_column = lines[i].find(names[i]);
+		CHECK(type_column >= 0);
+		if (type_column >= 0) {
+			CHECK_EQ(get_highlighted_color_at(highlighting, type_column), basetype_color);
+		}
+
+		memdelete(text_edit);
+	}
+}
 #endif // TOOLS_ENABLED
 
 TEST_CASE("[Modules][FoundryScript] Parser stores namespace and import declarations") {

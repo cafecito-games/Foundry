@@ -2598,6 +2598,7 @@ void FSPrinter::print_literal(const FSParser::LiteralNode *p_literal) {
 				write(canonicalize_string_literal(found->value.source));
 				break;
 			case Variant::INT:
+			case Variant::UINT:
 			case Variant::FLOAT:
 				write(canonicalize_number_literal(found->value.source));
 				break;

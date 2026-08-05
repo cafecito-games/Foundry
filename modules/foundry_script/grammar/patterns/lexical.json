@@ -241,14 +241,15 @@
     "match": "\\\\(?:[abfnrtv'\\\"\\\\]|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{6}|\\r?\\n)"
   },
   "numbers": {
+    "$comment": "An integer body may carry one canonical uppercase suffix ('U', 'L', or 'UL'); the alternation lists 'UL' first so the engine cannot stop at a bare 'U' and leave a dangling 'L'. A float never takes a suffix, matching the tokenizer, which only looks for one when the literal has no fractional part or exponent.",
     "patterns": [
       {
         "name": "constant.numeric.hex.foundryscript",
-        "match": "\\b0[xX][0-9A-Fa-f](?:_?[0-9A-Fa-f])*\\b"
+        "match": "\\b0[xX][0-9A-Fa-f](?:_?[0-9A-Fa-f])*(?:UL|U|L)?\\b"
       },
       {
         "name": "constant.numeric.binary.foundryscript",
-        "match": "\\b0[bB][01](?:_?[01])*\\b"
+        "match": "\\b0[bB][01](?:_?[01])*(?:UL|U|L)?\\b"
       },
       {
         "name": "constant.numeric.float.foundryscript",
@@ -256,7 +257,7 @@
       },
       {
         "name": "constant.numeric.integer.foundryscript",
-        "match": "(?:(?<![\\w.])|(?<=\\.\\.))\\d(?:_?\\d)*\\b"
+        "match": "(?:(?<![\\w.])|(?<=\\.\\.))\\d(?:_?\\d)*(?:UL|U|L)?\\b"
       }
     ]
   },
