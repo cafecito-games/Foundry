@@ -240,6 +240,29 @@ static bool is_type_parameter(const FSParser::DataType &p_type, const StringName
 			p_type.type_parameter_scope == p_scope && p_type.type_parameter_index == p_index;
 }
 
+// Cross-parser comparison deliberately omits parser-owned pointers and source-qualified native names
+// while retaining the nominal enum name and every open-type wrapper, argument, and bound.
+// `DataType::operator==` is intentionally too shallow for enum applications, so it cannot prove this
+// equivalence.
+static String normalized_open_type_shape(const FSParser::DataType &p_type) {
+	String shape = vformat("%d|%d|%s|%d|%d|%d|%d|%d|%s|%d",
+			(int)p_type.kind, (int)p_type.builtin_type, String(p_type.enum_type),
+			(int)p_type.is_tagged_union, (int)p_type.is_meta_type, (int)p_type.is_nullable,
+			(int)p_type.is_type_handle_annotation,
+			(int)p_type.type_parameter_scope, String(p_type.type_parameter_name), p_type.type_parameter_index);
+	auto append_types = [&](const String &p_label, const Vector<FSParser::DataType> &p_types) {
+		shape += p_label + "[";
+		for (const FSParser::DataType &type : p_types) {
+			shape += normalized_open_type_shape(type) + ";";
+		}
+		shape += "]";
+	};
+	append_types("args", p_type.type_arguments);
+	append_types("containers", p_type.container_element_types);
+	append_types("bounds", p_type.type_parameter_bound);
+	return shape;
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum parameters resolve between method and class scopes") {
 	FSParser parser;
 	const Error parse_error = parser.parse(
@@ -578,6 +601,173 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Bounded parameters 
 		const FSParser::DataType bound = recursive->type_parameters[0]->resolved_bound;
 		CHECK(bound.kind == FSParser::DataType::ENUM);
 		CHECK(bound.is_tagged_union);
+	}
+
+	SUBCASE("explicit open bound naming the union itself") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Recursive[T: Recursive[T]]:\n"
+						   "\tLeaf\n"
+						   "\tNode(value: T)\n",
+						   "user://generic_tagged_union_explicit_self_bound.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK(parser.get_errors().is_empty());
+
+		const FSParser::EnumNode *recursive = find_enum(parser, SNAME("Recursive"));
+		REQUIRE(recursive != nullptr);
+		REQUIRE_EQ(recursive->type_parameters.size(), 1);
+		const FSParser::DataType declaration_type = recursive->get_datatype();
+		const FSParser::DataType bound = recursive->type_parameters[0]->resolved_bound;
+		CHECK(bound.is_set());
+		CHECK(bound.kind == FSParser::DataType::ENUM);
+		CHECK(bound.kind != FSParser::DataType::VARIANT);
+		CHECK(bound.kind != FSParser::DataType::UNRESOLVED);
+		CHECK(bound.kind != FSParser::DataType::RESOLVING);
+		CHECK(bound.is_tagged_union);
+		CHECK_EQ(bound.native_type, declaration_type.native_type);
+		CHECK_EQ(bound.enum_type, declaration_type.enum_type);
+		CHECK(bound.class_type == declaration_type.class_type);
+		CHECK_FALSE(bound.is_meta_type);
+		REQUIRE_EQ(bound.type_arguments.size(), 1);
+		const FSParser::DataType bound_argument = type_at(bound.type_arguments, 0);
+		CHECK(is_type_parameter(bound_argument, SNAME("T"), FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+		CHECK_FALSE(bound_argument.is_nullable);
+		CHECK_FALSE(bound_argument.is_type_handle_annotation);
+		CHECK(bound.to_string().ends_with(".Recursive[T]"));
+
+		// Final publication replaces the provisional argument with a handle that retains the completed bound.
+		REQUIRE_EQ(declaration_type.type_arguments.size(), 1);
+		const FSParser::DataType declaration_argument = type_at(declaration_type.type_arguments, 0);
+		CHECK(is_type_parameter(declaration_argument, SNAME("T"), FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+		REQUIRE_EQ(declaration_argument.type_parameter_bound.size(), 1);
+		CHECK_EQ(normalized_open_type_shape(type_at(declaration_argument.type_parameter_bound, 0)),
+				normalized_open_type_shape(bound));
+
+		const FSParser::DataType completed = FSAnalyzer::test_complete_self_referential_enum_type(bound);
+		const FSParser::DataType completed_twice = FSAnalyzer::test_complete_self_referential_enum_type(completed);
+		CHECK_EQ(completed.enum_values.size(), 2);
+		CHECK_EQ(completed_twice.enum_values.size(), completed.enum_values.size());
+		CHECK_EQ(completed_twice.enum_case_payloads.size(), completed.enum_case_payloads.size());
+		CHECK_EQ(normalized_open_type_shape(completed_twice), normalized_open_type_shape(completed));
+	}
+
+	SUBCASE("bare and explicit bound shapes match across parser instances") {
+		FSParser bare_parser;
+		REQUIRE_EQ(bare_parser.parse(
+						   "enum Recursive[T: Recursive]:\n"
+						   "\tLeaf\n"
+						   "\tNode(value: T)\n",
+						   "user://generic_tagged_union_bare_bound_shape.fs", false),
+				OK);
+		FSAnalyzer bare_analyzer(&bare_parser);
+		REQUIRE_EQ(bare_analyzer.analyze(), OK);
+
+		FSParser explicit_parser;
+		REQUIRE_EQ(explicit_parser.parse(
+						   "enum Recursive[T: Recursive[T]]:\n"
+						   "\tLeaf\n"
+						   "\tNode(value: T)\n",
+						   "user://generic_tagged_union_explicit_bound_shape.fs", false),
+				OK);
+		FSAnalyzer explicit_analyzer(&explicit_parser);
+		REQUIRE_EQ(explicit_analyzer.analyze(), OK);
+
+		const FSParser::EnumNode *bare_recursive = find_enum(bare_parser, SNAME("Recursive"));
+		const FSParser::EnumNode *explicit_recursive = find_enum(explicit_parser, SNAME("Recursive"));
+		REQUIRE(bare_recursive != nullptr);
+		REQUIRE(explicit_recursive != nullptr);
+		const FSParser::DataType bare_bound = bare_recursive->type_parameters[0]->resolved_bound;
+		const FSParser::DataType explicit_bound = explicit_recursive->type_parameters[0]->resolved_bound;
+		CHECK_EQ(normalized_open_type_shape(explicit_bound), normalized_open_type_shape(bare_bound));
+		CHECK(explicit_bound.to_string().ends_with(".Recursive[T]"));
+		CHECK(bare_bound.to_string().ends_with(".Recursive[T]"));
+	}
+
+	SUBCASE("two-parameter exact open vector preserves scope and order") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum PairRecursive[T, E: PairRecursive[T, E]]:\n"
+						   "\tLeaf\n"
+						   "\tNode(first: T, second: E)\n",
+						   "user://generic_tagged_union_pair_self_bound.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK(parser.get_errors().is_empty());
+
+		const FSParser::EnumNode *pair = find_enum(parser, SNAME("PairRecursive"));
+		REQUIRE(pair != nullptr);
+		REQUIRE_EQ(pair->type_parameters.size(), 2);
+		const FSParser::DataType bound = pair->type_parameters[1]->resolved_bound;
+		CHECK(bound.kind == FSParser::DataType::ENUM);
+		CHECK(bound.is_tagged_union);
+		CHECK_EQ(bound.native_type, pair->get_datatype().native_type);
+		CHECK_EQ(bound.enum_type, pair->get_datatype().enum_type);
+		REQUIRE_EQ(bound.type_arguments.size(), 2);
+		CHECK(is_type_parameter(type_at(bound.type_arguments, 0), SNAME("T"),
+				FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+		CHECK(is_type_parameter(type_at(bound.type_arguments, 1), SNAME("E"),
+				FSParser::DataType::TYPE_PARAMETER_ENUM, 1));
+	}
+
+	SUBCASE("a method parameter with the same spelling remains an ordinary application") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Shadow[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "\tstatic func retain[T](value: Shadow[T]) -> void:\n"
+						   "\t\tprint(value)\n",
+						   "user://generic_tagged_union_method_shadow_application.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK(parser.get_errors().is_empty());
+
+		const FSParser::EnumNode *shadow = find_enum(parser, SNAME("Shadow"));
+		REQUIRE(shadow != nullptr);
+		const FSParser::FunctionNode *retain = find_enum_function(shadow, SNAME("retain"));
+		REQUIRE(retain != nullptr);
+		REQUIRE_EQ(retain->parameters.size(), 1);
+		const FSParser::DataType applied = retain->parameters[0]->get_datatype();
+		REQUIRE_EQ(applied.type_arguments.size(), 1);
+		CHECK(is_type_parameter(type_at(applied.type_arguments, 0), SNAME("T"),
+				FSParser::DataType::TYPE_PARAMETER_METHOD, 0));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Recursive bound diagnostics remain exact") {
+	SUBCASE("a parameter bounded by itself is a genuine cycle") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Invalid[T: T]:\n"
+						   "\tLeaf\n"
+						   "\tNode(value: T)\n",
+						   "user://generic_tagged_union_parameter_bound_cycle.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser), String("Could not resolve datatype: Cyclic reference."));
+	}
+
+	SUBCASE("a wrong open-vector arity reports only the union arity") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Invalid[T: Invalid[T, T]]:\n"
+						   "\tLeaf\n"
+						   "\tNode(value: int)\n",
+						   "user://generic_tagged_union_bound_wrong_arity.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		REQUIRE_EQ(parser.get_errors().size(), 1);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Invalid" expects 1 type argument(s), but 2 were given.)"));
+		CHECK_FALSE(first_error_message(parser).contains("Cyclic reference"));
+		CHECK_FALSE(first_error_message(parser).contains("Dictionary"));
 	}
 }
 

@@ -11,3 +11,12 @@ enum TokenTree[T]:
 
 	static func wrap(node: TokenTree[T]) -> TokenTree:
 		return TokenTree.Link(node)
+
+# The exact open vector is also the published open self identity while parameter bounds resolve.
+enum Recursive[T: Recursive[T]]:
+	Leaf
+	Node(value: T)
+
+enum PairRecursive[T, E: PairRecursive[T, E]]:
+	Leaf
+	Node(first: T, second: E)
