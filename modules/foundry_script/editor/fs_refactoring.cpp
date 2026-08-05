@@ -130,6 +130,17 @@ void add_class_scope_shadow_names(FSRefactorTypes::AnnotationScope &r_scope, con
 	}
 }
 
+void add_enum_scope_shadow_names(FSRefactorTypes::AnnotationScope &r_scope, const FSParser::EnumNode *p_enum) {
+	if (p_enum == nullptr) {
+		return;
+	}
+	for (const FSParser::TypeParameterNode *type_parameter : p_enum->type_parameters) {
+		if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+			r_scope.shadowing_local_names.push_back(type_parameter->identifier->name);
+		}
+	}
+}
+
 // Builds the namespace render context for the root class of the edited file. Each
 // class's own scope names are added as the collector descends into it, so this
 // only carries the file-level namespace and imports.
@@ -4694,6 +4705,26 @@ void collect_type_annotation_in_class(
 #endif // FOUNDRY_SCRIPT_NO_LSP
 				);
 				break;
+			case FSParser::ClassNode::Member::ENUM: {
+				if (member.m_enum == nullptr) {
+					break;
+				}
+				TypeAnnotationRenderContext enum_context;
+				const TypeAnnotationRenderContext *enum_render_context = render_context;
+				if (render_context != nullptr) {
+					enum_context = *render_context;
+					add_enum_scope_shadow_names(enum_context.scope, member.m_enum);
+					enum_render_context = &enum_context;
+				}
+				for (const FSParser::FunctionNode *function : member.m_enum->functions) {
+					collect_type_annotation_in_function(p_lines, p_class, function, p_location, r_candidates, enum_render_context
+#ifndef FOUNDRY_SCRIPT_NO_LSP
+							,
+							p_workspace, p_parser, p_parse_results
+#endif // FOUNDRY_SCRIPT_NO_LSP
+					);
+				}
+			} break;
 			default:
 				break;
 		}

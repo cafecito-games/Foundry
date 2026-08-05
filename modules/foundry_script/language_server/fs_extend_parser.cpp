@@ -201,6 +201,55 @@ LSP::Range ExtendFSParser::range_of_node(const FSParser::Node *p_node) const {
 	return FoundryRange(start, end).to_lsp(lines);
 }
 
+String ExtendFSParser::format_type_parameters_detail(const Vector<FSParser::TypeParameterNode *> &p_type_parameters) {
+	if (p_type_parameters.is_empty()) {
+		return String();
+	}
+
+	String detail = "[";
+	bool first_type_parameter = true;
+	for (const FSParser::TypeParameterNode *type_parameter : p_type_parameters) {
+		if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+			continue;
+		}
+		if (!first_type_parameter) {
+			detail += ", ";
+		}
+		first_type_parameter = false;
+		detail += type_parameter->identifier->name;
+		FSParser::DataType bound_type = type_parameter->resolved_bound;
+		if ((!bound_type.is_set() || bound_type.is_variant()) && type_parameter->bound != nullptr) {
+			bound_type = type_parameter->bound->get_datatype();
+			bound_type.is_meta_type = false;
+		}
+		if (bound_type.is_set() && !bound_type.is_variant()) {
+			detail += ": " + bound_type.to_string();
+		}
+	}
+	return detail + "]";
+}
+
+void ExtendFSParser::append_type_parameter_symbol_children(const Vector<FSParser::TypeParameterNode *> &p_type_parameters, LSP::DocumentSymbol &r_symbol) {
+	const String uri = get_uri();
+
+	for (const FSParser::TypeParameterNode *type_parameter : p_type_parameters) {
+		if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+			continue;
+		}
+
+		LSP::DocumentSymbol child;
+		child.name = type_parameter->identifier->name;
+		child.kind = LSP::SymbolKind::TypeParameter;
+		child.deprecated = false;
+		child.range = range_of_node(type_parameter);
+		child.selectionRange = range_of_node(type_parameter->identifier);
+		child.uri = uri;
+		child.script_path = path;
+		child.detail = "type parameter " + String(type_parameter->identifier->name);
+		r_symbol.children.push_back(child);
+	}
+}
+
 String ExtendFSParser::enum_case_detail(const FSParser::EnumNode::Value &p_value) {
 	const String name = p_value.identifier != nullptr ? String(p_value.identifier->name) : String();
 
@@ -235,6 +284,8 @@ String ExtendFSParser::enum_case_detail(const FSParser::EnumNode::Value &p_value
 
 void ExtendFSParser::append_enum_symbol_children(const FSParser::EnumNode *p_enum, LSP::DocumentSymbol &r_symbol) {
 	const String uri = get_uri();
+
+	append_type_parameter_symbol_children(p_enum->type_parameters, r_symbol);
 
 	for (const FSParser::EnumNode::Value &value : p_enum->values) {
 		LSP::DocumentSymbol child;
@@ -334,7 +385,7 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 		if (enum_node->identifier != nullptr) {
 			r_symbol.selectionRange = range_of_node(enum_node->identifier);
 		}
-		r_symbol.detail = "enum " + r_symbol.name;
+		r_symbol.detail = "enum " + r_symbol.name + format_type_parameters_detail(enum_node->type_parameters);
 
 		append_enum_symbol_children(enum_node, r_symbol);
 		return;
@@ -529,9 +580,13 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 				symbol.uri = uri;
 				symbol.script_path = path;
 
-				symbol.detail = "enum " + String(m.m_enum->identifier->name) + ":";
-				for (int j = 0; j < m.m_enum->values.size(); j++) {
-					symbol.detail += "\n\t" + enum_case_detail(m.m_enum->values[j]);
+				if (!m.m_enum->type_parameters.is_empty()) {
+					symbol.detail = "enum " + String(m.m_enum->identifier->name) + format_type_parameters_detail(m.m_enum->type_parameters);
+				} else {
+					symbol.detail = "enum " + String(m.m_enum->identifier->name) + ":";
+					for (int j = 0; j < m.m_enum->values.size(); j++) {
+						symbol.detail += "\n\t" + enum_case_detail(m.m_enum->values[j]);
+					}
 				}
 
 				append_enum_symbol_children(m.m_enum, symbol);
