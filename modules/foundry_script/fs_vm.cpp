@@ -1418,17 +1418,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	memnew_placement(&stack[ADDR_STACK_NIL], Variant);
 
 	// Built after the resume path has restored the receiver a suspended call was made with, so a
-	// resumed frame cannot come back resolving `Self` against nothing.
-	//
-	// NOTE: instance-frame container and return positions are not wired here yet. Lowering keeps the
-	// `Self` marker on function signatures (so the argument validation above resolves it), but the
-	// analyzer pre-substitutes `Self` to the declaring class for array/dictionary literals in return
-	// position (`_substitute_self_type_parameter_with_bounds` via `substitute_self_runtime_type`), and
-	// substitutes it on member-variable materialization. Populating this binding for instance frames
-	// therefore makes return validation resolve to the receiver's leaf while the returned literal
-	// stays the declaring class, breaking `return [self]`. Closing that gap needs the analyzer change
-	// tracked as a follow-up, not a runtime change.
-	const FrameSelfBinding frame_self{ p_static_self, _static };
+	// resumed frame cannot come back resolving `Self` against nothing. An instance frame has no
+	// compiled-in receiver, so the leaf script of its running instance (derived above for signature
+	// validation) stands in for it here; every container and return position marked as having come
+	// from `Self` then re-binds to the receiver's leaf through the one resolver. An explicitly
+	// supplied `p_static_self` (extracted callable, coroutine resumption) still wins.
+	const FSStaticSelfContext *frame_self_receiver = p_static_self;
+	if (frame_self_receiver == nullptr && !_static && instance_self_context.is_valid()) {
+		frame_self_receiver = &instance_self_context;
+	}
+	const FrameSelfBinding frame_self{ frame_self_receiver, _static };
 
 	// The receiver descriptor belongs to this frame alone. The guard restores the caller's descriptor
 	// on every exit path, including the one that suspends this frame into an `FSFunctionState`.
