@@ -36,6 +36,10 @@
 
 #ifdef TOOLS_ENABLED
 #include "../fs_format.h"
+// Shared in-process compile fixture. Compiled-metadata coverage needs a real parse-analyze-compile
+// run, and every module test header lands in the same generated translation unit, so including it
+// here does not duplicate registrations.
+#include "test_bytecode_serialization.h"
 #endif // TOOLS_ENABLED
 
 #include "tests/test_macros.h"
@@ -1721,6 +1725,103 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionMethods] Specialized recei
 	REQUIRE(instance_call != nullptr);
 	CHECK_EQ(instance_call->get_datatype().builtin_type, Variant::BOOL);
 }
+
+#ifdef TOOLS_ENABLED
+
+// The compiled-metadata half of erasure: a specialized union lowers its *value* kind to the plain
+// tagged-union Array every union shares, while the specialization survives beside it as static
+// `type_arguments`. Both halves are asserted here because keeping only one of them is a silent
+// defect: dropping the arguments loses reflection and typed-slot fidelity, and keeping a
+// union-specific value kind would break every runtime that only knows the erased Array.
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionBytecode] Compiled descriptors keep union arguments") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"enum Result[T, E]:\n"
+			"\tOk(value: T)\n"
+			"\tErr(error: E)\n"
+			"\n"
+			"func swap(value: Result[int, String]) -> Result[String, int]:\n"
+			"\tif value is Result[int, String].Ok(number):\n"
+			"\t\treturn Result[String, int].Err(number)\n"
+			"\treturn Result[String, int].Ok(\"failed\")\n");
+
+	FSFunction *swap = script->get_member_functions()[SNAME("swap")];
+	REQUIRE(swap != nullptr);
+	REQUIRE_EQ(swap->get_argument_count(), 1);
+
+	const FSDataType &argument = swap->get_argument_type(0);
+	CHECK_EQ(argument.kind, FSDataType::BUILTIN);
+	CHECK_EQ(argument.builtin_type, Variant::ARRAY);
+	// The erased value is a plain Array, so the slot must not demand a typed one.
+	CHECK(argument.container_element_types.is_empty());
+	REQUIRE_EQ(argument.type_arguments.size(), 2);
+	CHECK_EQ(argument.type_arguments[0].builtin_type, Variant::INT);
+	CHECK_EQ(argument.type_arguments[0].numeric_type, NumericType::NONE);
+	CHECK_EQ(argument.type_arguments[1].builtin_type, Variant::STRING);
+
+	// Two specializations of one declaration stay distinct in the same compiled function.
+	const FSDataType &returned = swap->get_return_type();
+	CHECK_EQ(returned.builtin_type, Variant::ARRAY);
+	REQUIRE_EQ(returned.type_arguments.size(), 2);
+	CHECK_EQ(returned.type_arguments[0].builtin_type, Variant::STRING);
+	CHECK_EQ(returned.type_arguments[1].builtin_type, Variant::INT);
+	CHECK(argument != returned);
+
+	// `ContainerType` is the descriptor typed slots, reflection, and the runtime read, so the
+	// arguments have to survive that conversion as well.
+	const ContainerType argument_container = argument.to_container_type();
+	CHECK_EQ(argument_container.builtin_type, Variant::ARRAY);
+	REQUIRE_EQ(argument_container.type_arguments.size(), 2);
+	CHECK_EQ(argument_container.type_arguments[0].builtin_type, Variant::INT);
+	CHECK_EQ(argument_container.type_arguments[0].numeric_type, NumericType::NONE);
+	CHECK_EQ(argument_container.type_arguments[1].builtin_type, Variant::STRING);
+	CHECK(argument_container != returned.to_container_type());
+}
+
+// A union argument nested inside a typed container is reached through the recursive element
+// conversion, which is a different path from the top-level one above.
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionBytecode] Nested descriptors keep union arguments") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"enum Result[T, E]:\n"
+			"\tOk(value: T)\n"
+			"\tErr(error: E)\n"
+			"\n"
+			"func count_array(values: Array[Result[int, String]]) -> int:\n"
+			"\treturn values.size()\n"
+			"\n"
+			"func count_dictionary(values: Dictionary[String, Result[int, String]]) -> int:\n"
+			"\treturn values.size()\n");
+
+	FSFunction *count_array = script->get_member_functions()[SNAME("count_array")];
+	REQUIRE(count_array != nullptr);
+	REQUIRE_EQ(count_array->get_argument_count(), 1);
+	const FSDataType &array_argument = count_array->get_argument_type(0);
+	CHECK_EQ(array_argument.builtin_type, Variant::ARRAY);
+	REQUIRE_EQ(array_argument.container_element_types.size(), 1);
+	CHECK_EQ(array_argument.container_element_types[0].builtin_type, Variant::ARRAY);
+	REQUIRE_EQ(array_argument.container_element_types[0].type_arguments.size(), 2);
+	CHECK_EQ(array_argument.container_element_types[0].type_arguments[0].builtin_type, Variant::INT);
+	CHECK_EQ(array_argument.container_element_types[0].type_arguments[1].builtin_type, Variant::STRING);
+
+	const ContainerType array_container = array_argument.to_container_type();
+	REQUIRE_EQ(array_container.element_types.size(), 1);
+	REQUIRE_EQ(array_container.element_types[0].type_arguments.size(), 2);
+	CHECK_EQ(array_container.element_types[0].type_arguments[0].builtin_type, Variant::INT);
+	CHECK_EQ(array_container.element_types[0].type_arguments[1].builtin_type, Variant::STRING);
+
+	FSFunction *count_dictionary = script->get_member_functions()[SNAME("count_dictionary")];
+	REQUIRE(count_dictionary != nullptr);
+	REQUIRE_EQ(count_dictionary->get_argument_count(), 1);
+	const FSDataType &dictionary_argument = count_dictionary->get_argument_type(0);
+	CHECK_EQ(dictionary_argument.builtin_type, Variant::DICTIONARY);
+	REQUIRE_EQ(dictionary_argument.container_element_types.size(), 2);
+	CHECK_EQ(dictionary_argument.container_element_types[0].builtin_type, Variant::STRING);
+	CHECK_EQ(dictionary_argument.container_element_types[1].builtin_type, Variant::ARRAY);
+	REQUIRE_EQ(dictionary_argument.container_element_types[1].type_arguments.size(), 2);
+	CHECK_EQ(dictionary_argument.container_element_types[1].type_arguments[0].builtin_type, Variant::INT);
+	CHECK_EQ(dictionary_argument.container_element_types[1].type_arguments[1].builtin_type, Variant::STRING);
+}
+
+#endif // TOOLS_ENABLED
 
 } // namespace GenericTaggedUnion
 } // namespace FSTests

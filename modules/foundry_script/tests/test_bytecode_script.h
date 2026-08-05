@@ -134,6 +134,32 @@ public:
 		return member_info != nullptr ? member_info->data_type.numeric_type : NumericType::MAX;
 	}
 
+	static FSDataType get_member_data_type(const Ref<FoundryScript> &p_script, const StringName &p_member) {
+		const FoundryScript::MemberInfo *member_info = p_script->member_indices.getptr(p_member);
+		return member_info != nullptr ? member_info->data_type : FSDataType();
+	}
+
+	// A width stamped on one nested type argument of a member slot. Comparing whole descriptors for
+	// equality cannot tell a faithful recursive argument encoder from one that only writes each
+	// argument's kind and builtin type, so the width is stamped and read back on its own.
+	static void set_member_type_argument_numeric_type(const Ref<FoundryScript> &p_script, const StringName &p_member,
+			int p_argument, NumericType p_numeric_type) {
+		FoundryScript::MemberInfo *member_info = p_script->member_indices.getptr(p_member);
+		REQUIRE(member_info != nullptr);
+		REQUIRE(p_argument >= 0);
+		REQUIRE(p_argument < member_info->data_type.type_arguments.size());
+		member_info->data_type.type_arguments.write[p_argument].numeric_type = p_numeric_type;
+	}
+
+	static NumericType get_member_type_argument_numeric_type(const Ref<FoundryScript> &p_script, const StringName &p_member,
+			int p_argument) {
+		const FoundryScript::MemberInfo *member_info = p_script->member_indices.getptr(p_member);
+		if (member_info == nullptr || p_argument < 0 || p_argument >= member_info->data_type.type_arguments.size()) {
+			return NumericType::MAX;
+		}
+		return member_info->data_type.type_arguments[p_argument].numeric_type;
+	}
+
 	static void set_argument_numeric_type(FSFunction *p_function, int p_index, NumericType p_numeric_type) {
 		REQUIRE(p_function != nullptr);
 		REQUIRE(p_index >= 0);
@@ -3085,6 +3111,314 @@ TEST_CASE("[FoundryScript][BytecodeScript][StaticSelf] Loaded bytecode is source
 
 	FSConformanceRegistry::get_singleton()->clear_file(source_path);
 	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(source_path);
+	restored->clear();
+}
+
+// A generic tagged union is specialized entirely by the front end and erased at run time, so a
+// compiled script is the only place the specialization can still live once the parser and analyzer
+// are gone. This is the exported-game situation: nothing but the bytes remains, and the script still
+// has to construct, match, and bind specialized cases.
+TEST_CASE("[FoundryScript][BytecodeScript][GenericTaggedUnionBytecode] Specialized unions survive a front-end-free reload") {
+	Ref<FoundryScript> source = compile_bytecode_test_source(
+			"enum Result[T, E]:\n"
+			"\tOk(value: T)\n"
+			"\tErr(error: E)\n"
+			"\n"
+			"var slot: Result[int, String] = Result[int, String].Ok(0)\n"
+			"\n"
+			"func make_ok() -> Result[int, String]:\n"
+			"\treturn Result[int, String].Ok(21)\n"
+			"\n"
+			"func make_err() -> Result[int, String]:\n"
+			"\treturn Result[int, String].Err(\"nope\")\n"
+			"\n"
+			"func read(value: Result[int, String]) -> int:\n"
+			"\tif value is Result[int, String].Ok(number):\n"
+			"\t\treturn number * 2\n"
+			"\tif value is Result[int, String].Err(message):\n"
+			"\t\treturn -message.length()\n"
+			"\treturn 0\n"
+			"\n"
+			"func typed_payload() -> Result[Array[int], String]:\n"
+			"\treturn Result[Array[int], String].Ok([1, 2])\n");
+
+	const String source_path = source->get_script_path();
+	const ObjectID source_id = source->get_instance_id();
+
+	TestFSBytecodeScriptAccessor::set_member_type_argument_numeric_type(source, SNAME("slot"), 0, NumericType::INT32);
+	const FSDataType original_slot = TestFSBytecodeScriptAccessor::get_member_data_type(source, SNAME("slot"));
+	REQUIRE(original_slot.type_arguments.size() == 2);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(source, buffer) == OK);
+
+	// Drop every trace of the front end, so the assertions below can only be satisfied by what the
+	// bytes carry.
+	FSCache::remove_script(source_path);
+	source->clear();
+	source.unref();
+	CHECK_FALSE(TestFSCacheAccessor::has_shallow(source_path));
+	CHECK_FALSE(TestFSCacheAccessor::has_full(source_path));
+	CHECK(ObjectDB::get_instance(source_id) == nullptr);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(source_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_skeleton(buffer, restored) == OK);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+	CHECK(restored->is_compiled_binary());
+
+	// The member slot keeps the whole specialized descriptor, down to a nested argument's width.
+	const FSDataType restored_slot = TestFSBytecodeScriptAccessor::get_member_data_type(restored, SNAME("slot"));
+	CHECK(restored_slot == original_slot);
+	CHECK(restored_slot.builtin_type == Variant::ARRAY);
+	REQUIRE(restored_slot.type_arguments.size() == 2);
+	CHECK(restored_slot.type_arguments[0].builtin_type == Variant::INT);
+	CHECK(restored_slot.type_arguments[1].builtin_type == Variant::STRING);
+	CHECK(TestFSBytecodeScriptAccessor::get_member_type_argument_numeric_type(restored, SNAME("slot"), 0) == NumericType::INT32);
+
+	// Signature metadata carries the specialization the same way, including through a nested
+	// typed-container argument (`Result[Array[int], String]`).
+	FSFunction *restored_read = restored->get_member_functions()[SNAME("read")];
+	REQUIRE(restored_read != nullptr);
+	REQUIRE(restored_read->get_argument_count() == 1);
+	const FSDataType &restored_argument = restored_read->get_argument_type(0);
+	CHECK(restored_argument.builtin_type == Variant::ARRAY);
+	REQUIRE(restored_argument.type_arguments.size() == 2);
+	CHECK(restored_argument.type_arguments[0].builtin_type == Variant::INT);
+	CHECK(restored_argument.type_arguments[1].builtin_type == Variant::STRING);
+
+	FSFunction *restored_typed_payload = restored->get_member_functions()[SNAME("typed_payload")];
+	REQUIRE(restored_typed_payload != nullptr);
+	const FSDataType &restored_return = restored_typed_payload->get_return_type();
+	REQUIRE(restored_return.type_arguments.size() == 2);
+	CHECK(restored_return.type_arguments[0].builtin_type == Variant::ARRAY);
+	REQUIRE(restored_return.type_arguments[0].container_element_types.size() == 1);
+	CHECK(restored_return.type_arguments[0].container_element_types[0].builtin_type == Variant::INT);
+
+	const Variant owner = bytecode_new_instance(restored);
+	Object *instance = owner;
+	REQUIRE(instance != nullptr);
+
+	const Variant ok = bytecode_instance_call(instance, SNAME("make_ok"), Vector<Variant>());
+	const Array ok_value = ok;
+	CHECK(ok_value.is_read_only());
+	REQUIRE(ok_value.size() == 2);
+	CHECK(int(ok_value[0]) == 0);
+	CHECK(int(ok_value[1]) == 21);
+
+	Vector<Variant> ok_arguments;
+	ok_arguments.push_back(ok);
+	CHECK(int(bytecode_instance_call(instance, SNAME("read"), ok_arguments)) == 42);
+
+	const Variant err = bytecode_instance_call(instance, SNAME("make_err"), Vector<Variant>());
+	const Array err_value = err;
+	REQUIRE(err_value.size() == 2);
+	CHECK(int(err_value[0]) == 1);
+	Vector<Variant> err_arguments;
+	err_arguments.push_back(err);
+	CHECK(int(bytecode_instance_call(instance, SNAME("read"), err_arguments)) == -4);
+
+	// The payload conversion uses the specialized field type, so `Array[int]` reaches the value as a
+	// typed Array rather than an untyped one.
+	const Array typed = bytecode_instance_call(instance, SNAME("typed_payload"), Vector<Variant>());
+	CHECK(typed.is_read_only());
+	REQUIRE(typed.size() == 2);
+	const Array typed_payload = typed[1];
+	CHECK(typed_payload.is_typed());
+	CHECK(typed_payload.get_typed_builtin() == uint32_t(Variant::INT));
+	CHECK(typed_payload.size() == 2);
+
+	restored->clear();
+}
+
+// Nested descriptors reach the wire through the recursive element/argument encoders rather than the
+// top-level one, and a callable-typed slot is the case where the union appears in a signature the
+// compiled script only ever invokes.
+TEST_CASE("[FoundryScript][BytecodeScript][GenericTaggedUnionBytecode] Nested union descriptors round-trip and stay callable") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"enum Result[T, E]:\n"
+			"\tOk(value: T)\n"
+			"\tErr(error: E)\n"
+			"\n"
+			"var results: Array[Result[int, String]] = []\n"
+			"var by_name: Dictionary[String, Result[int, String]] = {}\n"
+			"\n"
+			"func flip(value: Result[int, String]) -> Result[String, int]:\n"
+			"\tif value is Result[int, String].Ok(number):\n"
+			"\t\treturn Result[String, int].Err(number)\n"
+			"\treturn Result[String, int].Ok(\"flipped\")\n"
+			"\n"
+			"func apply(value: Result[int, String], mapper: Callable[[Result[int, String]], Result[String, int]]) -> Result[String, int]:\n"
+			"\treturn mapper.call(value)\n"
+			"\n"
+			"func run() -> int:\n"
+			"\tresults.append(Result[int, String].Ok(3))\n"
+			"\tby_name[\"first\"] = Result[int, String].Ok(4)\n"
+			"\tvar mapped := apply(Result[int, String].Ok(5), flip)\n"
+			"\tif mapped is Result[String, int].Err(code):\n"
+			"\t\treturn results.size() + by_name.size() + code\n"
+			"\treturn -1\n");
+
+	const FSDataType original_results = TestFSBytecodeScriptAccessor::get_member_data_type(original, SNAME("results"));
+	const FSDataType original_by_name = TestFSBytecodeScriptAccessor::get_member_data_type(original, SNAME("by_name"));
+
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(original, &resolver);
+
+	const FSDataType restored_results = TestFSBytecodeScriptAccessor::get_member_data_type(restored, SNAME("results"));
+	CHECK(restored_results == original_results);
+	CHECK(restored_results.builtin_type == Variant::ARRAY);
+	REQUIRE(restored_results.container_element_types.size() == 1);
+	REQUIRE(restored_results.container_element_types[0].type_arguments.size() == 2);
+	CHECK(restored_results.container_element_types[0].type_arguments[0].builtin_type == Variant::INT);
+	CHECK(restored_results.container_element_types[0].type_arguments[1].builtin_type == Variant::STRING);
+
+	const FSDataType restored_by_name = TestFSBytecodeScriptAccessor::get_member_data_type(restored, SNAME("by_name"));
+	CHECK(restored_by_name == original_by_name);
+	CHECK(restored_by_name.builtin_type == Variant::DICTIONARY);
+	REQUIRE(restored_by_name.container_element_types.size() == 2);
+	CHECK(restored_by_name.container_element_types[0].builtin_type == Variant::STRING);
+	REQUIRE(restored_by_name.container_element_types[1].type_arguments.size() == 2);
+	CHECK(restored_by_name.container_element_types[1].type_arguments[0].builtin_type == Variant::INT);
+	CHECK(restored_by_name.container_element_types[1].type_arguments[1].builtin_type == Variant::STRING);
+
+	// The typed-container descriptors the runtime validates writes against keep the arguments too, so
+	// two specializations remain distinct slots after the round trip.
+	const ContainerType restored_element = restored_results.container_element_types[0].to_container_type();
+	CHECK(restored_element.type_arguments.size() == 2);
+	CHECK(restored_element == original_results.container_element_types[0].to_container_type());
+
+	FSFunction *restored_apply = restored->get_member_functions()[SNAME("apply")];
+	REQUIRE(restored_apply != nullptr);
+	REQUIRE(restored_apply->get_argument_count() == 2);
+	CHECK(restored_apply->get_argument_type(1).builtin_type == Variant::CALLABLE);
+	const FSDataType &restored_apply_return = restored_apply->get_return_type();
+	REQUIRE(restored_apply_return.type_arguments.size() == 2);
+	CHECK(restored_apply_return.type_arguments[0].builtin_type == Variant::STRING);
+	CHECK(restored_apply_return.type_arguments[1].builtin_type == Variant::INT);
+
+	const Variant owner = bytecode_new_instance(restored);
+	Object *instance = owner;
+	REQUIRE(instance != nullptr);
+	CHECK(int(bytecode_instance_call(instance, SNAME("run"), Vector<Variant>())) == 7);
+
+	// `apply(..., flip)` bakes a method reference into the constant pool, which is a self-reference
+	// production only breaks at language shutdown; break it here so neither script outlives the case.
+	restored->clear();
+	original->clear();
+}
+
+// Enum methods and recursive payloads are the two places a specialization is resolved through the
+// declaration rather than through a written type, so they are the ones most likely to silently
+// degrade to the open declaration once the analyzer that specialized them is gone.
+TEST_CASE("[FoundryScript][BytecodeScript][GenericTaggedUnionBytecode] Union methods and recursive payloads reload specialized") {
+	Ref<FoundryScript> source = compile_bytecode_test_source(
+			"enum Option[T]:\n"
+			"\tNone\n"
+			"\tSome(value: T)\n"
+			"\n"
+			"\tstatic func some(value: T) -> Option:\n"
+			"\t\treturn Option.Some(value)\n"
+			"\n"
+			"\tfunc is_some() -> bool:\n"
+			"\t\treturn self is Option.Some\n"
+			"\n"
+			"enum TokenTree[T]:\n"
+			"\tLeaf(value: T)\n"
+			"\tBranch(children: Array[TokenTree[T]])\n"
+			"\n"
+			"func made() -> Option[int]:\n"
+			"\treturn Option[int].some(6)\n"
+			"\n"
+			"func empty() -> Option[int]:\n"
+			"\treturn Option[int].None\n"
+			"\n"
+			"func unwrap(value: Option[int]) -> int:\n"
+			"\tif value is Option[int].Some(number):\n"
+			"\t\treturn number\n"
+			"\treturn -1\n"
+			"\n"
+			"func has_value(value: Option[int]) -> bool:\n"
+			"\treturn value.is_some()\n"
+			"\n"
+			"func sum_leaves(tree: TokenTree[int]) -> int:\n"
+			"\tmatch tree:\n"
+			"\t\tTokenTree[int].Leaf(var value):\n"
+			"\t\t\treturn value\n"
+			"\t\tTokenTree[int].Branch(var children):\n"
+			"\t\t\tvar total := 0\n"
+			"\t\t\tfor child in children:\n"
+			"\t\t\t\ttotal += sum_leaves(child)\n"
+			"\t\t\treturn total\n"
+			"\treturn -1\n"
+			"\n"
+			"func nested_total() -> int:\n"
+			"\treturn sum_leaves(TokenTree[int].Branch([TokenTree[int].Leaf(3), TokenTree[int].Leaf(4)]))\n");
+
+	const String source_path = source->get_script_path();
+	const ObjectID source_id = source->get_instance_id();
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(source, buffer) == OK);
+
+	FSCache::remove_script(source_path);
+	source->clear();
+	source.unref();
+	CHECK(ObjectDB::get_instance(source_id) == nullptr);
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(source_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_skeleton(buffer, restored) == OK);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+	CHECK(restored->is_compiled_binary());
+
+	// A recursive payload's own element type is the same specialization, all the way down.
+	FSFunction *restored_sum = restored->get_member_functions()[SNAME("sum_leaves")];
+	REQUIRE(restored_sum != nullptr);
+	REQUIRE(restored_sum->get_argument_count() == 1);
+	const FSDataType &tree_argument = restored_sum->get_argument_type(0);
+	CHECK(tree_argument.builtin_type == Variant::ARRAY);
+	REQUIRE(tree_argument.type_arguments.size() == 1);
+	CHECK(tree_argument.type_arguments[0].builtin_type == Variant::INT);
+
+	const Variant owner = bytecode_new_instance(restored);
+	Object *instance = owner;
+	REQUIRE(instance != nullptr);
+
+	const Variant option = bytecode_instance_call(instance, SNAME("made"), Vector<Variant>());
+	const Array option_value = option;
+	CHECK(option_value.is_read_only());
+	REQUIRE(option_value.size() == 2);
+	CHECK(int(option_value[0]) == 1);
+
+	Vector<Variant> option_arguments;
+	option_arguments.push_back(option);
+	CHECK(int(bytecode_instance_call(instance, SNAME("unwrap"), option_arguments)) == 6);
+	CHECK(bool(bytecode_instance_call(instance, SNAME("has_value"), option_arguments)));
+
+	// A payload-less specialized case stays the read-only `[tag]` singleton.
+	const Variant none = bytecode_instance_call(instance, SNAME("empty"), Vector<Variant>());
+	const Array none_value = none;
+	CHECK(none_value.is_read_only());
+	REQUIRE(none_value.size() == 1);
+	CHECK(int(none_value[0]) == 0);
+	Vector<Variant> none_arguments;
+	none_arguments.push_back(none);
+	CHECK(int(bytecode_instance_call(instance, SNAME("unwrap"), none_arguments)) == -1);
+	CHECK_FALSE(bool(bytecode_instance_call(instance, SNAME("has_value"), none_arguments)));
+
+	CHECK(int(bytecode_instance_call(instance, SNAME("nested_total"), Vector<Variant>())) == 7);
+
 	restored->clear();
 }
 
