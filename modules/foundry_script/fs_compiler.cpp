@@ -448,6 +448,12 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			}
 		} break;
 		case FSParser::DataType::ENUM:
+			// An enum only lowers its *value* kind here: an integer-backed enum to its carrier, a
+			// tagged union to the erased Array its `[tag, payload...]` value already is. A generic
+			// union's specialization is static metadata that lives beside that value, so this branch
+			// must fall out of the switch and let the shared tail below preserve `type_arguments`.
+			// Returning early (as the tuple branch does) would silently erase `Result[int, String]`
+			// down to a bare Array in every compiled signature, member slot, and `.fsb` record.
 			if (p_handle_metatype && p_datatype.is_meta_type) {
 				result.kind = FSDataType::BUILTIN;
 				result.builtin_type = Variant::DICTIONARY;
@@ -1283,6 +1289,9 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					}
 					// The analyzer accepts implicit conversions and dynamic arguments for a typed payload
 					// field, so each argument is converted to its declared type before it enters the value.
+					// The payload schema is read off the call's own result type, which for a generic
+					// union is the applied specialization: `Result[Array[int], String].Ok` converts its
+					// argument to a typed `Array[int]`, not to the declaration's open `T`.
 					const FSDataType field_type = _gdtype_from_datatype(payload->field_types[i], codegen.script);
 					if (field_type.has_type()) {
 						FSCodeGenerator::Address converted = codegen.add_temporary(field_type);
