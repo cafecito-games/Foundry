@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+intcrate accepts intcrate: true
+>> SCRIPT ERROR at runtime/features/type_self_instance_specialized_receiver.fs:26 on test(): Invalid type in function 'accept (via call)' in base 'RefCounted (IntCrate)'. The Object-derived class of argument 2 (RefCounted (Crate)) is not a subclass of the expected argument class.

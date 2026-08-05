@@ -366,4 +366,107 @@ TEST_CASE("[Modules][FoundryScript][RuntimeSelf] A static lambda with no capture
 	CHECK(result.get_type() == Variant::NIL);
 }
 
+// The instance counterpart of the static-frame cases above. An inherited instance method has no
+// compiled-in receiver either, so the running instance is its receiver: the leaf script the instance
+// was created from, including its reified generic arguments. A `Self`-typed parameter is validated
+// against that leaf, so a value that is legal for the declaring class but not for the receiver is
+// rejected at the call frame -- the way any engine caller observes it through `Object::call`.
+TEST_CASE("[Modules][FoundryScript][RuntimeSelf] An instance frame resolves Self to the receiver's leaf script") {
+	RuntimeSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_runtime_self_source(
+			"class Base:\n"
+			"\tfunc consume(other: Self) -> void:\n"
+			"\t\tpass\n"
+			"\n"
+			"class Child extends Base:\n"
+			"\tpass\n"
+			"\n"
+			"class Sibling extends Base:\n"
+			"\tpass\n");
+	const Ref<FoundryScript> base = runtime_self_subclass(script, SNAME("Base"));
+	REQUIRE(base.is_valid());
+	const Ref<FoundryScript> child = runtime_self_subclass(script, SNAME("Child"));
+	REQUIRE(child.is_valid());
+	const Ref<FoundryScript> sibling = runtime_self_subclass(script, SNAME("Sibling"));
+	REQUIRE(sibling.is_valid());
+
+	Callable::CallError instantiate_error;
+	const Variant child_instance_variant = child->_new(nullptr, -1, instantiate_error);
+	REQUIRE(instantiate_error.error == Callable::CallError::CALL_OK);
+	Object *child_instance = child_instance_variant;
+	REQUIRE(child_instance != nullptr);
+
+	const Variant child_argument_variant = child->_new(nullptr, -1, instantiate_error);
+	REQUIRE(instantiate_error.error == Callable::CallError::CALL_OK);
+	const Variant sibling_argument_variant = sibling->_new(nullptr, -1, instantiate_error);
+	REQUIRE(instantiate_error.error == Callable::CallError::CALL_OK);
+
+	// A `Child` receiver resolves the `Self` parameter to `Child`. A `Child` argument is accepted,
+	// and a `Sibling` -- legal for the declaring `Base` but not for the receiver's leaf -- is
+	// rejected at the call frame rather than silently accepted.
+	Callable::CallError accept_error;
+	call_runtime_self_handle(child_instance, SNAME("consume"), { child_argument_variant }, accept_error);
+	CHECK(accept_error.error == Callable::CallError::CALL_OK);
+
+	ERR_PRINT_OFF;
+	call_runtime_self_handle(child_instance, SNAME("consume"), { sibling_argument_variant }, accept_error);
+	ERR_PRINT_ON;
+	CHECK(accept_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+
+	// A non-generic leaf fixed to a concrete argument resolves `Self` to the leaf, not the generic
+	// base. Assert on the produced value's reified argument vector (not the declared signature): a
+	// `Variant` or base-class substitution would read back as the right script while erasing the slot.
+	const Ref<FoundryScript> crate_script = compile_runtime_self_source(
+			"class Crate[T]:\n"
+			"\tvar value: T\n"
+			"\tfunc accept(other: Self) -> bool:\n"
+			"\t\treturn other != null\n"
+			"\n"
+			"class IntCrate extends Crate[int]:\n"
+			"\t\tpass\n");
+	const Ref<FoundryScript> crate = runtime_self_subclass(crate_script, SNAME("Crate"));
+	REQUIRE(crate.is_valid());
+	const Ref<FoundryScript> int_crate = runtime_self_subclass(crate_script, SNAME("IntCrate"));
+	REQUIRE(int_crate.is_valid());
+
+	// A specialized generic receiver carries its concrete argument on the instance. Reading it back
+	// off the value -- not the declared signature -- catches a `Variant` or unspecialized
+	// substitution that would otherwise read back as the right script while erasing the slot.
+	ContainerType int_container_argument;
+	int_container_argument.builtin_type = Variant::INT;
+	const Variant crate_int_instance_variant = crate->_new_specialized(nullptr, 0,
+			{ int_container_argument }, instantiate_error);
+	REQUIRE(instantiate_error.error == Callable::CallError::CALL_OK);
+	Object *crate_int_instance = crate_int_instance_variant;
+	REQUIRE(crate_int_instance != nullptr);
+	ScriptInstance *crate_int_script_instance = crate_int_instance->get_script_instance();
+	REQUIRE(crate_int_script_instance != nullptr);
+	Vector<ContainerType> reified_arguments;
+	crate_int_script_instance->get_reified_type_arguments(reified_arguments);
+	REQUIRE_EQ(reified_arguments.size(), 1);
+	CHECK(reified_arguments[0].builtin_type == Variant::INT);
+
+	// A non-generic leaf fixed to `int` resolves `Self` to the leaf itself, not `Crate[int]`. An
+	// `IntCrate` is accepted for `Self` on an `IntCrate` receiver...
+	const Variant int_crate_instance_variant = int_crate->_new(nullptr, -1, instantiate_error);
+	REQUIRE(instantiate_error.error == Callable::CallError::CALL_OK);
+	Object *int_crate_instance = int_crate_instance_variant;
+	REQUIRE(int_crate_instance != nullptr);
+
+	const Variant int_crate_argument_variant = int_crate->_new(nullptr, -1, instantiate_error);
+	REQUIRE(instantiate_error.error == Callable::CallError::CALL_OK);
+
+	Callable::CallError leaf_accept_error;
+	call_runtime_self_handle(int_crate_instance, SNAME("accept"), { int_crate_argument_variant }, leaf_accept_error);
+	CHECK(leaf_accept_error.error == Callable::CallError::CALL_OK);
+
+	// ...and a `Crate[int]` -- the generic base of `IntCrate`, not an `IntCrate` itself -- is
+	// rejected, because `Self` on the `IntCrate` receiver is `IntCrate`, not `Crate[int]`.
+	ERR_PRINT_OFF;
+	call_runtime_self_handle(int_crate_instance, SNAME("accept"), { crate_int_instance_variant }, leaf_accept_error);
+	ERR_PRINT_ON;
+	CHECK(leaf_accept_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+}
+
 } //namespace FSTests
