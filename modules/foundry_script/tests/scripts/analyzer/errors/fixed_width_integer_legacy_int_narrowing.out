@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: Cannot assign a value of type long to variable "migrated" with specified type uint.

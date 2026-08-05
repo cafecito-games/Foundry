@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 3: Invalid operand of type "uint" for unary operator "unary-".
