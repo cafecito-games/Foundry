@@ -753,6 +753,20 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK(result.error_line > 0);
 	}
 
+	// A lowercase or mixed-case integer suffix is a tokenizer error (invalid suffix
+	// spelling), so the formatter must refuse the whole source rather than silently
+	// uppercasing the suffix into a "helpful" canonical spelling.
+	TEST_CASE("[Format] Refuses to format an invalid lowercase integer suffix") {
+		for (const String &source : { "var n = 100u\n", "var n = 100l\n", "var n = 100ul\n", "var n = 100Lu\n" }) {
+			CAPTURE(source);
+			FSFormatter formatter;
+			FSFormatter::Result result;
+			Error err = formatter.format(source, "bad_suffix.fs", result);
+			CHECK(err != OK);
+			CHECK(result.formatted.is_empty());
+		}
+	}
+
 	// A bodyless `func` parses but is only valid when marked `abstract`; the analyzer
 	// is what rejects the unmarked form. The formatter must not "repair" it by
 	// synthesizing a `pass` body -- that would add a statement to the parse tree and
@@ -1053,6 +1067,32 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	TEST_CASE("[Format] Normalizes exponent casing and preserves underscores") {
 		CHECK_EQ(format_or_fail("var n = 1_000E3\n"), "var n = 1_000e3\n");
 		CHECK_EQ(format_or_fail("var h = 0xDE_AD\n"), "var h = 0xDE_AD\n");
+	}
+
+	// Every canonical suffix spelling round-trips byte-for-byte across decimal,
+	// hexadecimal, and binary bases, including underscores and unary minus.
+	TEST_CASE("[Format] Preserves canonical integer suffixes exactly") {
+		const char *sources[] = {
+			"var n = 100U\n",
+			"var n = 100L\n",
+			"var n = 100UL\n",
+			"var n = 1_000_000UL\n",
+			"var n = -42\n",
+			"var n = -42L\n",
+			"var n = 0xFF00U\n",
+			"var n = 0xDEAD_BEEFL\n",
+			"var n = 0b1010_1010UL\n",
+		};
+		for (const char *source : sources) {
+			CAPTURE(source);
+			CHECK_EQ(format_or_fail(source), source);
+		}
+	}
+
+	// A hex literal's digits still canonicalize to uppercase even when the literal
+	// carries a suffix; the suffix itself (already canonical) is untouched.
+	TEST_CASE("[Format] Canonicalizes hex digit casing ahead of an integer suffix") {
+		CHECK_EQ(format_or_fail("var n = 0xffUL\n"), "var n = 0xFFUL\n");
 	}
 
 	TEST_CASE("[Format] Single-line array has no trailing comma") {

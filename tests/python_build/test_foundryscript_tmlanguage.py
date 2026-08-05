@@ -234,6 +234,27 @@ class TokenizationTests(unittest.TestCase):
         self.assertNotScoped("pair.0", "constant.numeric.integer.foundryscript", offset=5)
         self.assertNotScoped("pair.0", "constant.numeric.float.foundryscript", offset=4)
 
+    def test_canonical_integer_suffixes_are_scoped_with_their_base(self) -> None:
+        for source, scope in (
+            ("var n = 100U\n", "constant.numeric.integer.foundryscript"),
+            ("var n = 100L\n", "constant.numeric.integer.foundryscript"),
+            ("var n = 100UL\n", "constant.numeric.integer.foundryscript"),
+            ("var n = 0xFF00U\n", "constant.numeric.hex.foundryscript"),
+            ("var n = 0xDEAD_BEEFL\n", "constant.numeric.hex.foundryscript"),
+            ("var n = 0b1010_1010UL\n", "constant.numeric.binary.foundryscript"),
+        ):
+            with self.subTest(source=source):
+                # The last non-newline character of the literal is the last suffix letter.
+                self.assertScoped(source, scope, offset=len(source) - 2, source=source)
+
+    def test_an_invalid_lowercase_suffix_is_not_scoped_as_part_of_the_number(self) -> None:
+        # A trailing letter run that is not a canonical suffix keeps the whole run out
+        # of the numeric scope, the same way an arbitrary "letter after a number" does
+        # (e.g. "100x"); the tokenizer reports it as an error rather than a literal.
+        source = "var n = 100ul\n"
+        self.assertNotScoped(source, "constant.numeric.integer.foundryscript", offset=source.index("100ul"), source=source)
+        self.assertNotScoped(source, "constant.numeric.integer.foundryscript", offset=source.index("ul"), source=source)
+
     # -- keywords and constants -------------------------------------------
 
     def test_reserved_words_carry_their_generated_scope(self) -> None:
@@ -368,6 +389,30 @@ class TokenizationTests(unittest.TestCase):
         self.assertScoped("-> bool", "entity.name.type.foundryscript", offset=3, source=source)
         self.assertScoped("Array[int]", "entity.name.type.foundryscript", offset=0, source=source)
         self.assertScoped("Array[int]", "entity.name.type.foundryscript", offset=6, source=source)
+
+    def test_fixed_width_integer_types_are_scoped_in_syntactic_type_positions(self) -> None:
+        source = (
+            "var a: uint = 0\n"
+            "var b: long = 0\n"
+            "var c: ulong = 0\n"
+            "\n"
+            "func widen(value: uint) -> long:\n"
+            "\treturn value\n"
+            "\n"
+            "var values: Array[ulong] = []\n"
+        )
+        self.assertScoped(": uint", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped(": long", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped(": ulong", "entity.name.type.foundryscript", offset=2, source=source)
+        self.assertScoped("-> long", "entity.name.type.foundryscript", offset=3, source=source)
+        self.assertScoped("Array[ulong]", "entity.name.type.foundryscript", offset=6, source=source)
+
+    def test_fixed_width_integer_types_stay_contextual_outside_type_positions(self) -> None:
+        source = "var uint = 0\nuint += 1\nprint(uint)\n"
+        self.assertNotScoped("var uint", "entity.name.type.foundryscript", offset=4, source=source)
+        self.assertScoped("var uint", "variable.other.declaration.foundryscript", offset=4, source=source)
+        self.assertNotScoped("uint += 1", "entity.name.type.foundryscript", source=source)
+        self.assertNotScoped("print(uint)", "entity.name.type.foundryscript", offset=6, source=source)
 
     def test_lowercase_built_in_types_stay_contextual_outside_type_positions(self) -> None:
         source = "var int = 0\nint += 1\nprint(int)\n"
