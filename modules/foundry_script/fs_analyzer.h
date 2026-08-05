@@ -540,15 +540,22 @@ private:
 	static FSParser::DataType specialize_enum_type(const FSParser::DataType &p_type,
 			const FSParser::EnumNode *p_declaration,
 			const HashMap<StringName, FSParser::DataType> &p_bindings);
+	// Returns a use-site copy of a global generic union: open parameter handles and the declaration's
+	// unspecialized payload map. Global resolution must never hand consumers the depended declaration's
+	// cached datatype, or one specialization can rewrite the payload schema every later use site reads.
+	static FSParser::DataType copy_open_global_enum_type_for_use_site(const FSParser::DataType &p_type,
+			const FSParser::EnumNode *p_declaration);
 	FSParser::EnumNode *resolve_enum_declaration(const FSParser::DataType &p_enum_type,
 			const FSParser::Node *p_source);
 	// A generic tagged union has no bare form outside its own declaration, in an expression any more
 	// than in a type. This is the single gate for the metatype: every expression surface that can name
 	// a union goes through it, so a bare reference cannot leak out one surface at a time.
-	bool reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source);
+	bool reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source,
+			bool p_allow_open_script_handle_metatype = false);
 	// Publishes an enum metatype onto an identifier, or rejects a bare generic union and leaves the
 	// identifier on the Variant fallback. Returns whether the metatype was published.
-	bool publish_enum_meta_identifier(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type);
+	bool publish_enum_meta_identifier(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type,
+			bool p_allow_open_script_handle_metatype = false);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_trait_uses(FSParser::ClassNode *p_class, bool p_recursive);
 	void resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);

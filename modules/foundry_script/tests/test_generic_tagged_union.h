@@ -33,6 +33,10 @@
 #include "../fs_analyzer.h"
 #include "../fs_parser.h"
 #include "../fs_type.h"
+#include "../foundry_script.h"
+
+#include "core/config/project_settings.h"
+#include "core/object/script_language.h"
 
 #ifdef TOOLS_ENABLED
 #include "../fs_format.h"
@@ -1504,6 +1508,56 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] Two applications ke
 	CHECK_EQ(specialized_payload_field_type(forward, SNAME("Err"), 0).builtin_type, Variant::STRING);
 	CHECK_EQ(specialized_payload_field_type(mirrored, SNAME("Ok"), 0).builtin_type, Variant::STRING);
 	CHECK_EQ(specialized_payload_field_type(mirrored, SNAME("Err"), 0).builtin_type, Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionGlobal] Global dependency applications keep independent schemas") {
+	const String provider_path = "modules/foundry_script/tests/scripts/analyzer/features/generic_tagged_union_global_values.notest.fs";
+
+	String base_type;
+	bool is_enum = false;
+	const String global_name = FSLanguage::get_singleton()->get_global_class_name(provider_path, &base_type,
+			nullptr, nullptr, nullptr, nullptr, &is_enum);
+	REQUIRE_FALSE(global_name.is_empty());
+	REQUIRE(is_enum);
+	ScriptServer::add_global_class(global_name, base_type, FSLanguage::get_singleton()->get_name(), provider_path,
+			false, false, false, true);
+
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "import generic_union_fixture\n"
+					   "\n"
+					   "func forward(value: GlobalResult[int, String]) -> void:\n"
+					   "\tprint(value)\n"
+					   "\n"
+					   "func mirrored(value: GlobalResult[String, int]) -> void:\n"
+					   "\tprint(value)\n",
+					   "user://generic_tagged_union_global_cpp_consumer.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::DataType forward = first_parameter_type(parser, SNAME("forward"));
+	const FSParser::DataType mirrored = first_parameter_type(parser, SNAME("mirrored"));
+	CHECK_EQ(specialized_payload_field_type(forward, SNAME("Ok"), 0).builtin_type, Variant::INT);
+	CHECK_EQ(specialized_payload_field_type(forward, SNAME("Err"), 0).builtin_type, Variant::STRING);
+	CHECK_EQ(specialized_payload_field_type(mirrored, SNAME("Ok"), 0).builtin_type, Variant::STRING);
+	CHECK_EQ(specialized_payload_field_type(mirrored, SNAME("Err"), 0).builtin_type, Variant::INT);
+
+	const Ref<FSParserRef> provider_ref = FSAnalyzer::test_get_depended_parser_ref(&analyzer, provider_path);
+	REQUIRE(provider_ref.is_valid());
+	const FSParser::ClassNode *provider_head = provider_ref->get_parser()->get_tree();
+	REQUIRE(provider_head != nullptr);
+	REQUIRE(provider_head->enum_file_decl != nullptr);
+	const FSParser::DataType &declared_type = provider_head->enum_file_decl->get_datatype();
+	REQUIRE(declared_type.is_set());
+	REQUIRE_EQ(declared_type.type_arguments.size(), 2);
+	CHECK(is_type_parameter(type_at(declared_type.type_arguments, 0), SNAME("T"),
+			FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+	CHECK(is_type_parameter(type_at(declared_type.type_arguments, 1), SNAME("E"),
+			FSParser::DataType::TYPE_PARAMETER_ENUM, 1));
+	CHECK(is_type_parameter(specialized_payload_field_type(declared_type, SNAME("Ok"), 0), SNAME("T"),
+			FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
 }
 
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] Reapplying a handle re-derives its schema") {
