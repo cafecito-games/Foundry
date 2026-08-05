@@ -117,7 +117,7 @@
         }
       },
       {
-        "match": "(?<=->|:|\\p{Lu}[\\p{L}\\p{N}_]*\\[)\\s*\\b(int|float|bool)\\b",
+        "match": "(?<=->|:|\\p{Lu}[\\p{L}\\p{N}_]*\\[)\\s*\\b(int|uint|long|ulong|float|bool)\\b",
         "captures": {
           "1": {
             "name": "entity.name.type.foundryscript"
@@ -131,7 +131,7 @@
     "name": "meta.dictionary.entry.foundryscript",
     "contentName": "meta.dictionary.key.foundryscript",
     "begin": "(?:^[ \\t]*|(?<=[{,])[ \\t]{0,4})(?=[^\\s,:}#@]){{entry_boundary_guard}}",
-    "end": "(:)[ \\t]*((?:(?>\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)|\\b(?:int|float|bool)\\b)(?!\\s*\\())?|(?=[,}])|$",
+    "end": "(:)[ \\t]*((?:(?>\\p{Lu}[\\p{L}\\p{N}_]*(?:\\.[\\p{L}_][\\p{L}\\p{N}_]*)*)|\\b(?:int|uint|long|ulong|float|bool)\\b)(?!\\s*\\())?|(?=[,}])|$",
     "patterns": [
       {
         "include": "#comments"

@@ -233,6 +233,89 @@ FSDataType FSDataType::from_container_type(const ContainerType &p_container_type
 	return _gdtype_from_container_type(p_container_type);
 }
 
+FSWeakContainerType FSWeakContainerType::from_container_type(const ContainerType &p_type) {
+	FSWeakContainerType weak;
+	weak.builtin_type = p_type.builtin_type;
+	weak.numeric_type = p_type.numeric_type;
+	weak.class_name = p_type.class_name;
+	weak.script_id = p_type.script.is_valid() ? p_type.script->get_instance_id() : ObjectID();
+	weak.is_type_handle = p_type.is_type_handle;
+	for (const ContainerType &element_type : p_type.element_types) {
+		weak.element_types.push_back(from_container_type(element_type));
+	}
+	for (const ContainerType &argument_type : p_type.type_arguments) {
+		weak.type_arguments.push_back(from_container_type(argument_type));
+	}
+	return weak;
+}
+
+ContainerType FSWeakContainerType::to_container_type() const {
+	ContainerType type;
+	type.builtin_type = builtin_type;
+	type.numeric_type = numeric_type;
+	type.class_name = class_name;
+	if (script_id.is_valid()) {
+		type.script = Ref<Script>(Object::cast_to<Script>(ObjectDB::get_instance(script_id)));
+	}
+	type.is_type_handle = is_type_handle;
+	for (const FSWeakContainerType &element_type : element_types) {
+		type.element_types.push_back(element_type.to_container_type());
+	}
+	for (const FSWeakContainerType &argument_type : type_arguments) {
+		type.type_arguments.push_back(argument_type.to_container_type());
+	}
+	return type;
+}
+
+bool FSWeakContainerType::is_fully_live() const {
+	if (script_id.is_valid() && ObjectDB::get_instance(script_id) == nullptr) {
+		return false;
+	}
+	for (const FSWeakContainerType &element_type : element_types) {
+		if (!element_type.is_fully_live()) {
+			return false;
+		}
+	}
+	for (const FSWeakContainerType &argument_type : type_arguments) {
+		if (!argument_type.is_fully_live()) {
+			return false;
+		}
+	}
+	return true;
+}
+
+String FSWeakContainerType::get_type_name() const {
+	// Render through the materialized form so the name matches `ContainerType::get_type_name()`, but
+	// flag a freed script explicitly: a dangling id is a freed argument, not the native class its
+	// captured `class_name` happens to name.
+	if (script_id.is_valid() && ObjectDB::get_instance(script_id) == nullptr) {
+		return "<freed type argument>";
+	}
+	return to_container_type().get_type_name();
+}
+
+bool FSWeakContainerType::operator==(const FSWeakContainerType &p_other) const {
+	if (builtin_type != p_other.builtin_type || numeric_type != p_other.numeric_type ||
+			class_name != p_other.class_name || script_id != p_other.script_id ||
+			is_type_handle != p_other.is_type_handle) {
+		return false;
+	}
+	if (element_types.size() != p_other.element_types.size() || type_arguments.size() != p_other.type_arguments.size()) {
+		return false;
+	}
+	for (int i = 0; i < element_types.size(); i++) {
+		if (element_types[i] != p_other.element_types[i]) {
+			return false;
+		}
+	}
+	for (int i = 0; i < type_arguments.size(); i++) {
+		if (type_arguments[i] != p_other.type_arguments[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
 FSStaticSelfContext FSStaticSelfContext::for_native_class(const StringName &p_class_name) {
 	FSStaticSelfContext context;
 	if (p_class_name == StringName()) {
@@ -256,6 +339,17 @@ FSStaticSelfContext FSStaticSelfContext::for_script(const Ref<Script> &p_script)
 FSStaticSelfContext FSStaticSelfContext::for_specialized_script(const Ref<Script> &p_script, const Vector<ContainerType> &p_type_arguments) {
 	FSStaticSelfContext context = for_script(p_script);
 	if (context.kind == SCRIPT) {
+		context.type_arguments.resize(p_type_arguments.size());
+		for (int i = 0; i < p_type_arguments.size(); i++) {
+			context.type_arguments.write[i] = FSWeakContainerType::from_container_type(p_type_arguments[i]);
+		}
+	}
+	return context;
+}
+
+FSStaticSelfContext FSStaticSelfContext::for_specialized_script(const Ref<Script> &p_script, const Vector<FSWeakContainerType> &p_type_arguments) {
+	FSStaticSelfContext context = for_script(p_script);
+	if (context.kind == SCRIPT) {
 		context.type_arguments = p_type_arguments;
 	}
 	return context;
@@ -273,6 +367,36 @@ FSStaticSelfContext FSStaticSelfContext::for_builtin_type(Variant::Type p_builti
 
 Ref<Script> FSStaticSelfContext::get_script() const {
 	return Ref<Script>(Object::cast_to<Script>(ObjectDB::get_instance(script_id)));
+}
+
+Vector<ContainerType> FSStaticSelfContext::get_type_arguments() const {
+	Vector<ContainerType> result;
+	result.resize(type_arguments.size());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		result.write[i] = type_arguments[i].to_container_type();
+	}
+	return result;
+}
+
+bool FSStaticSelfContext::is_fully_live() const {
+	switch (kind) {
+		case NONE:
+			return false;
+		case NATIVE_CLASS:
+		case BUILTIN_TYPE:
+			break;
+		case SCRIPT:
+			if (get_script().is_null()) {
+				return false;
+			}
+			break;
+	}
+	for (const FSWeakContainerType &argument : type_arguments) {
+		if (!argument.is_fully_live()) {
+			return false;
+		}
+	}
+	return true;
 }
 
 void FSStaticSelfContext::clear() {
@@ -322,11 +446,16 @@ String FSStaticSelfContext::get_type_name() const {
 			if (script.is_null()) {
 				return "<freed static receiver>";
 			}
+			// A freed type-argument script is named as such rather than rendered as the native class its
+			// captured `class_name` happens to share, so a diagnostic never reads as a substitution.
+			if (!type_arguments.is_empty() && !is_fully_live()) {
+				return "<freed type argument>";
+			}
 			ContainerType type;
 			type.builtin_type = Variant::OBJECT;
 			type.class_name = script->get_instance_base_type();
 			type.script = script;
-			type.type_arguments = type_arguments;
+			type.type_arguments = get_type_arguments();
 			return type.get_type_name();
 		}
 	}
@@ -352,6 +481,12 @@ bool FSStaticSelfContext::to_data_type(FSDataType &r_type) const {
 			if (script.is_null()) {
 				return false;
 			}
+			// A descriptor whose argument script was freed resolves to no receiver, mirroring a freed
+			// receiver script: resolving it would substitute the bare class or `Variant` for the freed
+			// argument, which is a silent wrong answer rather than a recoverable one.
+			if (!is_fully_live()) {
+				return false;
+			}
 			type.kind = Object::cast_to<FoundryScript>(script.ptr()) != nullptr ? FSDataType::FOUNDRY_SCRIPT : FSDataType::SCRIPT;
 			type.builtin_type = Variant::OBJECT;
 			type.native_type = script->get_instance_base_type();
@@ -361,8 +496,8 @@ bool FSStaticSelfContext::to_data_type(FSDataType &r_type) const {
 			type.script_trait = script->get_trait_type_name();
 			// A specialized generic receiver keeps every concrete argument, so `Self` never degrades to
 			// the unspecialized script.
-			for (const ContainerType &argument : type_arguments) {
-				type.type_arguments.push_back(FSDataType::from_container_type(argument));
+			for (const FSWeakContainerType &argument : type_arguments) {
+				type.type_arguments.push_back(FSDataType::from_container_type(argument.to_container_type()));
 			}
 		} break;
 	}

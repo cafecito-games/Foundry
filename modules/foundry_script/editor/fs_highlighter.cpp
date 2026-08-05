@@ -65,6 +65,25 @@ static bool _is_contextual_async_modifier(const String &p_text, int p_word_end) 
 	return _is_word_at(p_text, next_column, "func");
 }
 
+// The exclusive end column of the run of identifier-continue characters starting at
+// `p_start` when that run is exactly one of the three canonical integer suffixes ("U",
+// "L", "UL"). Returns `p_start` (an empty run) when the characters at `p_start` are not
+// a canonical suffix, so the caller can tell "no suffix" from "suffix of length zero".
+// Lowercase and mixed-case spellings are deliberately excluded: the tokenizer still
+// consumes them into the literal, but they are parser errors, not part of the highlighted
+// numeric token.
+static int _canonical_integer_suffix_end(const String &p_text, int p_start, int p_line_length) {
+	int end = p_start;
+	while (end < p_line_length && is_unicode_identifier_continue(p_text[end])) {
+		end++;
+	}
+	const String run = p_text.substr(p_start, end - p_start);
+	if (run == "U" || run == "L" || run == "UL") {
+		return end;
+	}
+	return p_start;
+}
+
 static bool _is_contextual_uses_keyword(const String &p_text, int p_word_end) {
 	// `uses` is contextual and remains a valid identifier; it only acts as the
 	// trait-application keyword when followed by a trait name, which is the only
@@ -111,6 +130,10 @@ Dictionary FSSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_line) {
 	bool in_string_name = false;
 	bool is_hex_notation = false;
 	bool is_bin_notation = false;
+	// The exclusive end column of a canonical integer suffix ("U", "L", "UL") currently
+	// being highlighted as part of the enclosing numeric literal, or -1 when none is
+	// pending. Reset whenever a new number starts.
+	int number_suffix_end = -1;
 	bool in_member_variable = false;
 	bool in_lambda = false;
 
@@ -456,14 +479,21 @@ Dictionary FSSyntaxHighlighter::_get_line_syntax_highlighting_impl(int p_line) {
 
 		if (!in_number && !in_word && is_a_digit) {
 			in_number = true;
+			number_suffix_end = -1;
 		}
 
 		// Special cases for numbers.
 		if (in_number && !is_a_digit) {
-			if ((str[j] == 'b' || str[j] == 'B') && str[j - 1] == '0') {
+			if (j < number_suffix_end) {
+				// Still inside a canonical integer suffix ("U", "L", "UL") detected below;
+				// keep highlighting it as part of the number.
+			} else if ((str[j] == 'b' || str[j] == 'B') && str[j - 1] == '0') {
 				is_bin_notation = true;
 			} else if ((str[j] == 'x' || str[j] == 'X') && str[j - 1] == '0') {
 				is_hex_notation = true;
+			} else if (prev_is_digit && (str[j] == 'U' || str[j] == 'L') &&
+					_canonical_integer_suffix_end(str, j, line_length) > j) {
+				number_suffix_end = _canonical_integer_suffix_end(str, j, line_length);
 			} else if (!((str[j] == '-' || str[j] == '+') && (str[j - 1] == 'e' || str[j - 1] == 'E') && !prev_is_digit) &&
 					!(str[j] == '_' && (prev_is_digit || str[j - 1] == 'b' || str[j - 1] == 'B' || str[j - 1] == 'x' || str[j - 1] == 'X' || str[j - 1] == '.')) &&
 					!((str[j] == 'e' || str[j] == 'E') && (prev_is_digit || str[j - 1] == '_')) &&
@@ -872,6 +902,9 @@ void FSSyntaxHighlighter::_update_cache() {
 	// `get_core_type_words()` doesn't return primitive types.
 	class_names[SNAME("bool")] = basetype_color;
 	class_names[SNAME("int")] = basetype_color;
+	class_names[SNAME("uint")] = basetype_color;
+	class_names[SNAME("long")] = basetype_color;
+	class_names[SNAME("ulong")] = basetype_color;
 	class_names[SNAME("float")] = basetype_color;
 
 	/* Reserved words. */

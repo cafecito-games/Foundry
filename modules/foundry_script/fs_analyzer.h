@@ -302,7 +302,7 @@ private:
 		bool signal_type_from_native_constant_arg(const StringName &p_native_type, const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 		bool local_signal_type_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, FSParser::DataType &r_signal_type) const;
 		void validate_strict_signal_name_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_signal_arg_index);
-		void validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0, const FSParser::DataType *p_rest_parameter_type = nullptr);
+		void validate_call_arg(const List<FSParser::DataType> &p_par_types, int p_default_args_count, bool p_is_vararg, const FSParser::CallNode *p_call, const Vector<int> &p_extra_allowed_argument_counts = Vector<int>(), int p_trailing_unbound_argument_count = 0, const FSParser::DataType *p_rest_parameter_type = nullptr, int p_extra_allowed_argument_offset = 0);
 		// Applies the fixed-parameter argument policy (constant coercion, `Self` contracts, nullable and
 		// strict-dynamic rejection, implicit conversion, unsafe/narrowing warnings) to one argument.
 		// `p_call` is null for an argument written as an array literal element rather than a call argument.

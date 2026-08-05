@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 16: Too few arguments for "rpc_id()" call. Expected at least 4 but received 1.

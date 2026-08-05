@@ -423,6 +423,35 @@ public:
 // Every field is a value owned by one invocation. Nothing here aliases mutable `FSFunction`, AST,
 // constant-pool, or bytecode state, so the same inherited function can execute concurrently through
 // different receivers without any shared write.
+// Non-owning mirror of `ContainerType` for receiver descriptors. A descriptor must not own any script
+// it describes: a script that stores its own specialized receiver in a static variable would otherwise
+// close a reference cycle nothing tears down (script -> static storage -> descriptor -> type-argument
+// script -> script). Scripts are held by `ObjectID` at every nesting depth -- in `type_arguments` and
+// in `element_types` -- and a `ContainerType` is materialized on demand for callers that need a strong
+// reference. A dangling id materializes to a `ContainerType` whose `script` is null; consumers that
+// resolve a descriptor for use must report that as a freed/missing argument instead of silently
+// substituting the bare class or `Variant` (see `FSStaticSelfContext::is_fully_live()`).
+struct FSWeakContainerType {
+	Variant::Type builtin_type = Variant::NIL;
+	NumericType numeric_type = NumericType::NONE;
+	StringName class_name;
+	ObjectID script_id;
+	Vector<FSWeakContainerType> element_types;
+	Vector<FSWeakContainerType> type_arguments;
+	bool is_type_handle = false;
+
+	static FSWeakContainerType from_container_type(const ContainerType &p_type);
+	// Materializes the strong form. A `script_id` that no longer resolves yields a null `Ref<Script>`;
+	// the caller decides whether that is a freed argument it must diagnose.
+	ContainerType to_container_type() const;
+	// True when this node and every descendant still resolve the script they describe. A node that
+	// never carried a script (a builtin or native class) is live.
+	bool is_fully_live() const;
+	String get_type_name() const;
+	bool operator==(const FSWeakContainerType &p_other) const;
+	_FORCE_INLINE_ bool operator!=(const FSWeakContainerType &p_other) const { return !(*this == p_other); }
+};
+
 class FSStaticSelfContext {
 public:
 	enum Kind {
@@ -442,14 +471,18 @@ private:
 	// runtime must treat as a missing receiver rather than silently substituting another class.
 	ObjectID script_id;
 	// Concrete arguments of a specialized generic receiver, e.g. the `ImageTexture` of
-	// `Crate[ImageTexture]`. Empty for an unspecialized script receiver.
-	Vector<ContainerType> type_arguments;
+	// `Crate[ImageTexture]`. Held as `FSWeakContainerType`, not `ContainerType`, for the same reason
+	// `script_id` is held instead of a `Ref<Script>`: an argument script can be the same script that
+	// owns the descriptor (e.g. `static var handle := Crate[Self]`), so owning it would close a cycle.
+	// Empty for an unspecialized script receiver.
+	Vector<FSWeakContainerType> type_arguments;
 	Variant::Type builtin_type = Variant::NIL;
 
 public:
 	static FSStaticSelfContext for_native_class(const StringName &p_class_name);
 	static FSStaticSelfContext for_script(const Ref<Script> &p_script);
 	static FSStaticSelfContext for_specialized_script(const Ref<Script> &p_script, const Vector<ContainerType> &p_type_arguments);
+	static FSStaticSelfContext for_specialized_script(const Ref<Script> &p_script, const Vector<FSWeakContainerType> &p_type_arguments);
 	static FSStaticSelfContext for_builtin_type(Variant::Type p_builtin_type);
 
 	_FORCE_INLINE_ Kind get_kind() const { return kind; }
@@ -457,11 +490,17 @@ public:
 	_FORCE_INLINE_ const StringName &get_native_class() const { return native_class; }
 	// Null when the receiver script was freed while a call was suspended.
 	Ref<Script> get_script() const;
-	_FORCE_INLINE_ const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
+	// Materializes the concrete arguments of a specialized receiver. Returns by value because the
+	// descriptor stores them weakly; a still-live argument script becomes a strong `Ref<Script>` here.
+	Vector<ContainerType> get_type_arguments() const;
 	_FORCE_INLINE_ Variant::Type get_builtin_type() const { return builtin_type; }
+	// True when the receiver and every type-argument script (at any nesting depth) is still reachable.
+	// A descriptor that references a freed script resolves to a missing receiver rather than a silent
+	// substitution.
+	bool is_fully_live() const;
 
-	// Drops the described receiver, including the references its generic arguments hold. A finished or
-	// abandoned call must release them instead of keeping them reachable through a retained state.
+	// Resets the descriptor to no receiver. The arguments are stored weakly, so this only drops the
+	// descriptions; it never releases a script the descriptor never owned.
 	void clear();
 
 	bool operator==(const FSStaticSelfContext &p_other) const;
