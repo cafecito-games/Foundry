@@ -324,15 +324,18 @@ static bool _static_self_class_handle(const FSStaticSelfContext &p_context, Vari
 			return true;
 		}
 		case FSStaticSelfContext::SCRIPT: {
-			const Ref<Script> script = p_context.get_script();
-			if (script.is_null()) {
+			// A receiver whose own script or any type-argument script has been freed resolves to no
+			// handle: building one would carry a silently degraded argument slot.
+			if (!p_context.is_fully_live()) {
 				return false;
 			}
+			const Ref<Script> script = p_context.get_script();
 			const Ref<FoundryScript> foundry_script = script;
-			if (!p_context.get_type_arguments().is_empty() && foundry_script.is_valid()) {
+			const Vector<ContainerType> type_arguments = p_context.get_type_arguments();
+			if (!type_arguments.is_empty() && foundry_script.is_valid()) {
 				// A specialized generic receiver keeps its concrete arguments, so `Self.new()` through
 				// `Crate[int]` constructs `Crate[int]` rather than the unspecialized script.
-				r_handle = FSSpecializedClassHandle::create(foundry_script, p_context.get_type_arguments());
+				r_handle = FSSpecializedClassHandle::create(foundry_script, type_arguments);
 				return true;
 			}
 			r_handle = script;
@@ -3323,6 +3326,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				Vector<ContainerType> type_arguments;
 				if (specialized_handle.is_valid()) {
+					// A freed type-argument script makes the specialization unconstructable: building from it
+					// would silently degrade the argument slot. Report the existing missing-receiver error.
+					if (!specialized_handle->is_fully_live()) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
 					type_arguments = specialized_handle->get_type_arguments();
 				} else if (expected_foundry_script.is_null() || foundry_script == expected_foundry_script) {
 					for (int i = 0; i < type_argument_count; i++) {

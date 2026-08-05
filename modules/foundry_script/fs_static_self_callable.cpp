@@ -39,12 +39,11 @@ Ref<FoundryScript> FSStaticSelfCallable::resolve_target() const {
 }
 
 // A receiver that names a script but can no longer produce it was freed after the extraction, which
-// is a broken dispatch path rather than a reason to run against another class.
+// is a broken dispatch path rather than a reason to run against another class. The same is true of a
+// type-argument script that has been freed: resolving the specialization would substitute the bare
+// class or `Variant` for the missing argument, so the whole receiver is treated as missing.
 static bool _static_self_callable_receiver_is_live(const FSStaticSelfContext &p_receiver) {
-	if (!p_receiver.is_valid()) {
-		return false;
-	}
-	return p_receiver.get_kind() != FSStaticSelfContext::SCRIPT || p_receiver.get_script().is_valid();
+	return p_receiver.is_fully_live();
 }
 
 bool FSStaticSelfCallable::compare_equal(const CallableCustom *p_a, const CallableCustom *p_b) {
