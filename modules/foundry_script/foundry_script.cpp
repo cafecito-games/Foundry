@@ -129,15 +129,37 @@ Ref<Script> FSSpecializedClassHandle::get_represented_script() const {
 	return script;
 }
 
+Vector<ContainerType> FSSpecializedClassHandle::get_type_arguments() const {
+	Vector<ContainerType> result;
+	result.resize(type_arguments.size());
+	for (int i = 0; i < type_arguments.size(); i++) {
+		result.write[i] = type_arguments[i].to_container_type();
+	}
+	return result;
+}
+
+void FSSpecializedClassHandle::get_represented_type_arguments(Vector<ContainerType> &r_arguments) const {
+	r_arguments = get_type_arguments();
+}
+
 String FSSpecializedClassHandle::get_type_name() const {
 	if (script.is_null()) {
 		return "FoundryScript";
+	}
+	// A freed type-argument script surfaces as a diagnostic marker rather than the bare class name, so
+	// the rendered specialization never reads as a substitution.
+	if (!type_arguments.is_empty()) {
+		for (const FSWeakContainerType &argument : type_arguments) {
+			if (!argument.is_fully_live()) {
+				return "<freed type argument>";
+			}
+		}
 	}
 	ContainerType type;
 	type.builtin_type = Variant::OBJECT;
 	type.class_name = script->get_instance_base_type();
 	type.script = script;
-	type.type_arguments = type_arguments;
+	type.type_arguments = get_type_arguments();
 	return type.get_type_name();
 }
 
@@ -152,7 +174,7 @@ bool FSSpecializedClassHandle::_equals(const Variant &p_other) const {
 
 int64_t FSSpecializedClassHandle::_hash_code() const {
 	uint32_t hash = hash_murmur3_one_64(reinterpret_cast<uint64_t>(script.ptr()));
-	for (const ContainerType &argument_type : type_arguments) {
+	for (const FSWeakContainerType &argument_type : type_arguments) {
 		hash = hash_murmur3_one_32(argument_type.get_type_name().hash(), hash);
 	}
 	return hash_fmix32(hash);
@@ -181,7 +203,7 @@ Variant FSSpecializedClassHandle::callp(const StringName &p_method, const Varian
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 			return Variant();
 		}
-		return script->_new_specialized(p_args, p_argcount, type_arguments, r_error);
+		return script->_new_specialized(p_args, p_argcount, get_type_arguments(), r_error);
 	}
 	if (p_method == CoreStringName(_equals) || p_method == CoreStringName(_hash_code)) {
 		return RefCounted::callp(p_method, p_args, p_argcount, r_error);
@@ -203,7 +225,10 @@ Ref<FSSpecializedClassHandle> FSSpecializedClassHandle::create(const Ref<Foundry
 	Ref<FSSpecializedClassHandle> handle;
 	handle.instantiate();
 	handle->script = p_script;
-	handle->type_arguments = p_type_arguments;
+	handle->type_arguments.resize(p_type_arguments.size());
+	for (int i = 0; i < p_type_arguments.size(); i++) {
+		handle->type_arguments.write[i] = FSWeakContainerType::from_container_type(p_type_arguments[i]);
+	}
 	return handle;
 }
 

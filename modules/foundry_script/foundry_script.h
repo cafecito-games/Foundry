@@ -95,8 +95,13 @@ public:
 class FSSpecializedClassHandle : public ClassHandle {
 	FOUNDRY_CLASS(FSSpecializedClassHandle, ClassHandle);
 
+	// The script this handle specializes is held strongly: the handle exists to keep that class
+	// reachable. Its type arguments are held weakly (`FSWeakContainerType`, not `ContainerType`),
+	// because an argument script can be the same script that owns the handle (e.g.
+	// `static var handle := Crate[Self]`), and owning it would close a reference cycle nothing tears
+	// down. A dangling argument is a diagnosed freed argument, not a silent substitution.
 	Ref<FoundryScript> script;
-	Vector<ContainerType> type_arguments;
+	Vector<FSWeakContainerType> type_arguments;
 
 protected:
 	bool _get(const StringName &p_name, Variant &r_ret) const;
@@ -104,9 +109,10 @@ protected:
 
 public:
 	const Ref<FoundryScript> &get_specialized_script() const { return script; }
-	const Vector<ContainerType> &get_type_arguments() const { return type_arguments; }
+	// Materializes the concrete arguments. Returns by value because the handle stores them weakly.
+	Vector<ContainerType> get_type_arguments() const;
 	virtual Ref<Script> get_represented_script() const override;
-	virtual void get_represented_type_arguments(Vector<ContainerType> &r_arguments) const override { r_arguments = type_arguments; }
+	virtual void get_represented_type_arguments(Vector<ContainerType> &r_arguments) const override;
 	String get_type_name() const;
 	bool is_assignable_to_native_type(const StringName &p_native_type) const;
 	bool _equals(const Variant &p_other) const;

@@ -36,6 +36,7 @@
 #include "../fs_conformance_registry.h"
 #include "../fs_function.h"
 #include "../fs_parser.h"
+#include "../fs_static_self_callable.h"
 
 #include "core/object/callable_method_pointer.h"
 #include "core/os/thread.h"
@@ -526,6 +527,156 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] Concurrent calls through differe
 	CHECK_EQ(second.mismatch_count.get(), 0);
 	CHECK_EQ(first.completed_count.get(), first.iteration_count);
 	CHECK_EQ(second.completed_count.get(), second.iteration_count);
+}
+
+// A `ContainerType` describing a script as a receiver type argument, e.g. the `Item` in `Crate[Item]`.
+static ContainerType static_self_script_type_argument(const Ref<Script> &p_script) {
+	ContainerType type;
+	type.builtin_type = Variant::OBJECT;
+	type.script = p_script;
+	if (p_script.is_valid()) {
+		type.class_name = p_script->get_instance_base_type();
+	}
+	return type;
+}
+
+// A `ContainerType` describing a specialized container of `p_argument`, e.g. `Box[Item]`, so the
+// depth-2 ownership rule (`Crate[Box[Item]]`) is exercised alongside the top-level one.
+static ContainerType static_self_nested_type_argument(const Ref<Script> &p_container, const Ref<Script> &p_argument) {
+	ContainerType type = static_self_script_type_argument(p_container);
+	type.type_arguments.push_back(static_self_script_type_argument(p_argument));
+	return type;
+}
+
+// A freshly instantiated FoundryScript whose only strong reference is the caller's. Unlike a compiled
+// script (cached by path) or a nested class (held by its parent's subclass map), dropping this
+// reference actually frees it, which is what the freed-argument diagnostic depends on.
+static Ref<FoundryScript> static_self_uncached_argument() {
+	Ref<FoundryScript> script;
+	script.instantiate();
+	return script;
+}
+
+TEST_CASE("[Modules][FoundryScript][StaticSelf] A receiver descriptor does not own its type-argument scripts") {
+	StaticSelfLanguageScope language;
+
+	const Ref<FoundryScript> file_script = compile_static_self_source(
+			"class Crate:\n"
+			"\tpass\n"
+			"\n"
+			"class Box:\n"
+			"\tpass\n");
+	const Ref<FoundryScript> crate = static_self_subclass(file_script, SNAME("Crate"));
+	const Ref<FoundryScript> box = static_self_subclass(file_script, SNAME("Box"));
+	REQUIRE(crate.is_valid());
+	REQUIRE(box.is_valid());
+
+	const Ref<FoundryScript> argument = static_self_uncached_argument();
+	REQUIRE(argument.is_valid());
+	// Baseline once the input's only other holder (the helper's returned Ref) is settled. The argument
+	// has no other strong reference, so a descriptor that owns it would show up as a permanent +1 here.
+	const int settled_reference_count = argument->get_reference_count();
+
+	// `FSStaticSelfContext`: the descriptor must describe the argument without owning it.
+	{
+		FSStaticSelfContext context;
+		{
+			Vector<ContainerType> arguments;
+			arguments.push_back(static_self_script_type_argument(argument));
+			context = FSStaticSelfContext::for_specialized_script(crate, arguments);
+		}
+		CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+		CHECK(context.is_fully_live());
+
+		// Depth-2 nesting (`Crate[Box[argument]]`) proves the rule is applied recursively.
+		{
+			FSStaticSelfContext deep;
+			{
+				Vector<ContainerType> arguments;
+				arguments.push_back(static_self_nested_type_argument(box, argument));
+				deep = FSStaticSelfContext::for_specialized_script(crate, arguments);
+			}
+			CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+			CHECK(deep.is_fully_live());
+		}
+		CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+	}
+	// Destroying the descriptor must not over-release a script it never owned.
+	CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+
+	// `FSSpecializedClassHandle`: the handle owns the script it specializes (`crate`) but not its
+	// type-argument scripts.
+	{
+		Ref<FSSpecializedClassHandle> handle;
+		{
+			Vector<ContainerType> arguments;
+			arguments.push_back(static_self_script_type_argument(argument));
+			handle = FSSpecializedClassHandle::create(crate, arguments);
+		}
+		REQUIRE(handle.is_valid());
+		CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+	}
+	CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+
+	// `FSStaticSelfCallable`: the callable embeds an `FSStaticSelfContext` by value, so it inherits the
+	// rule. Constructing and destroying it must not move the argument's reference count.
+	{
+		FSStaticSelfContext context;
+		{
+			Vector<ContainerType> arguments;
+			arguments.push_back(static_self_script_type_argument(argument));
+			context = FSStaticSelfContext::for_specialized_script(crate, arguments);
+		}
+		FSStaticSelfCallable *callable = memnew(FSStaticSelfCallable(crate, context, SNAME("anything")));
+		CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+		memdelete(callable);
+	}
+	CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+}
+
+TEST_CASE("[Modules][FoundryScript][StaticSelf] A freed type-argument script is diagnosed, not substituted") {
+	StaticSelfLanguageScope language;
+
+	const Ref<FoundryScript> file_script = compile_static_self_source(
+			"class Target:\n"
+			"\tstatic func ping() -> void:\n"
+			"\t\tpass\n");
+	const Ref<FoundryScript> target = static_self_subclass(file_script, SNAME("Target"));
+	REQUIRE(target.is_valid());
+	REQUIRE(target->has_static_method(SNAME("ping")));
+
+	Ref<FoundryScript> argument = static_self_uncached_argument();
+	REQUIRE(argument.is_valid());
+
+	FSStaticSelfContext receiver;
+	{
+		Vector<ContainerType> arguments;
+		arguments.push_back(static_self_script_type_argument(argument));
+		receiver = FSStaticSelfContext::for_specialized_script(target, arguments);
+	}
+	// `arguments` is gone; `argument` is the only strong reference, and the receiver describes it
+	// weakly, so both halves of the descriptor are live.
+	REQUIRE(receiver.is_fully_live());
+
+	FSStaticSelfCallable *callable = memnew(FSStaticSelfCallable(target, receiver, SNAME("ping")));
+	CHECK(callable->is_valid());
+	CHECK(receiver.get_type_name() != "<freed type argument>");
+
+	// Dropping the last strong reference frees the argument. The descriptor and callable still name it,
+	// so every script they describe must now report as a missing receiver rather than degrade into the
+	// bare target script, another class, or Variant.
+	argument = Ref<FoundryScript>();
+
+	CHECK_FALSE(receiver.is_fully_live());
+	CHECK_EQ(receiver.get_type_name(), "<freed type argument>");
+	CHECK_FALSE(callable->is_valid());
+
+	Variant return_value;
+	Callable::CallError call_error;
+	callable->call(nullptr, 0, return_value, call_error);
+	CHECK_EQ(call_error.error, Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL);
+
+	memdelete(callable);
 }
 
 } // namespace FSTests
