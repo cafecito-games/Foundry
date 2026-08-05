@@ -12594,24 +12594,35 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				if (found_function->is_coroutine) {
 					r_method_flags.set_flag(METHOD_FLAG_ASYNC);
 				}
-				const FSParser::DataType enum_value_type = type_handle_represented_type(p_base_type);
+				const FSParser::DataType enum_receiver_type = type_handle_represented_type(p_base_type);
+				HashMap<StringName, FSParser::DataType> enum_bindings =
+						enum_type_argument_bindings(enum_declaration, p_base_type.type_arguments);
+				for (const FSParser::TypeParameterNode *parameter : found_function->type_parameters) {
+					if (parameter != nullptr && parameter->identifier != nullptr) {
+						enum_bindings.erase(parameter->identifier->name);
+					}
+				}
+				auto substitute_enum_signature_type = [&](const FSParser::DataType &p_member_type) -> FSParser::DataType {
+					FSParser::DataType result = FSParser::DataType::substitute(p_member_type, enum_bindings);
+					if (enum_receiver_type.is_set()) {
+						result = _substitute_self_type_parameter(result, enum_receiver_type);
+					}
+					return result;
+				};
 				if (found_function->is_vararg()) {
 					r_method_flags.set_flag(METHOD_FLAG_VARARG);
 					if (r_rest_parameter_type != nullptr) {
-						*r_rest_parameter_type = substitute_member_type(
-								found_function->rest_parameter->get_datatype(), enum_value_type, found_function, &enum_value_type);
+						*r_rest_parameter_type = substitute_enum_signature_type(found_function->rest_parameter->get_datatype());
 					}
 				}
 
 				for (FSParser::ParameterNode *parameter : found_function->parameters) {
-					r_par_types.push_back(substitute_member_type(
-							parameter->get_datatype(), enum_value_type, found_function, &enum_value_type));
+					r_par_types.push_back(substitute_enum_signature_type(parameter->get_datatype()));
 					if (parameter->initializer != nullptr) {
 						r_default_arg_count++;
 					}
 				}
-				r_return_type = substitute_member_type(
-						found_function->get_datatype(), enum_value_type, found_function, &enum_value_type);
+				r_return_type = substitute_enum_signature_type(found_function->get_datatype());
 				r_return_type.is_meta_type = false;
 				if (found_function->is_coroutine) {
 					r_return_type = make_coroutine_type(r_return_type);
