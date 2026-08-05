@@ -212,13 +212,41 @@ FSParser::EnumNode *FSAnalyzer::resolve_enum_declaration(const FSParser::DataTyp
 	return member.type == FSParser::ClassNode::Member::ENUM ? member.m_enum : nullptr;
 }
 
-bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source) {
+static bool is_open_generic_union_metatype(const FSParser::DataType &p_type, const FSParser::EnumNode *p_declaration) {
+	if (p_declaration == nullptr || p_declaration->type_parameters.is_empty()) {
+		return false;
+	}
+	if (p_type.type_arguments.size() != p_declaration->type_parameters.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_type.type_arguments.size(); i++) {
+		const FSParser::TypeParameterNode *parameter = p_declaration->type_parameters[i];
+		const FSParser::DataType &argument = p_type.type_arguments[i];
+		if (parameter == nullptr || parameter->identifier == nullptr) {
+			return false;
+		}
+		if (argument.kind != FSParser::DataType::TYPE_PARAMETER ||
+				argument.type_parameter_scope != FSParser::DataType::TYPE_PARAMETER_ENUM ||
+				argument.type_parameter_index != i ||
+				argument.type_parameter_name != parameter->identifier->name) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source,
+		bool p_allow_open_script_handle_metatype) {
 	if (!p_enum_meta_type.is_tagged_union_type() || !p_enum_meta_type.is_meta_type) {
 		return false;
 	}
 
 	const FSParser::EnumNode *declaration = resolve_enum_declaration(p_enum_meta_type, p_source);
 	if (declaration == nullptr || declaration->type_parameters.is_empty()) {
+		return false;
+	}
+
+	if (p_allow_open_script_handle_metatype && is_open_generic_union_metatype(p_enum_meta_type, declaration)) {
 		return false;
 	}
 
@@ -1873,8 +1901,9 @@ static Dictionary make_enum_dictionary_from_type(const FSParser::DataType &p_typ
 	return dictionary;
 }
 
-bool FSAnalyzer::publish_enum_meta_identifier(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type) {
-	if (reject_bare_generic_union_reference(p_type, p_identifier)) {
+bool FSAnalyzer::publish_enum_meta_identifier(FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_type,
+		bool p_allow_open_script_handle_metatype) {
+	if (reject_bare_generic_union_reference(p_type, p_identifier, p_allow_open_script_handle_metatype)) {
 		FSParser::DataType rejected;
 		rejected.kind = FSParser::DataType::VARIANT;
 		p_identifier->set_datatype(rejected);
@@ -9745,7 +9774,7 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 
 				if (enum_file_decl->identifier->name == name) {
 					publish_enum_meta_identifier(p_identifier,
-							copy_open_global_enum_type_for_use_site(enum_type, enum_file_decl));
+							copy_open_global_enum_type_for_use_site(enum_type, enum_file_decl), true);
 					return;
 				}
 			}
@@ -9791,7 +9820,10 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 				}
 
 				case FSParser::ClassNode::Member::ENUM: {
-					if (!publish_enum_meta_identifier(p_identifier, member.get_datatype())) {
+					const FSParser::DataType enum_type = base.is_meta_type
+							? copy_open_global_enum_type_for_use_site(member.get_datatype(), member.m_enum)
+							: member.get_datatype();
+					if (!publish_enum_meta_identifier(p_identifier, enum_type, base.is_meta_type)) {
 						return;
 					}
 					p_identifier->is_constant = true;
@@ -10063,7 +10095,8 @@ bool FSAnalyzer::reduce_identifier_from_witness_declaration_scope(FSParser::Iden
 				return true;
 			}
 			case FSParser::ClassNode::Member::ENUM: {
-				if (!publish_enum_meta_identifier(p_identifier, member.get_datatype())) {
+				const FSParser::DataType enum_type = copy_open_global_enum_type_for_use_site(member.get_datatype(), member.m_enum);
+				if (!publish_enum_meta_identifier(p_identifier, enum_type, true)) {
 					p_identifier->resolved_from_conformance_declaration_scope = true;
 					return true;
 				}
