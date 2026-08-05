@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/fixed_width_integer_flow_narrowed_nullable_overflow.fs:4 on increment(): The "+" operator overflows "uint": the result is outside its range 0 to 4294967295.
+<null>

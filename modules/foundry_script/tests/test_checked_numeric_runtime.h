@@ -233,6 +233,33 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Nullable integer arithmetic 
 	CHECK(result.get_type() == Variant::NIL);
 }
 
+// A nullable slot narrowed by a null guard keeps its declared width, so the addition below is checked
+// at `uint` and not at the wide carrier the value travels in. Narrowing a `Variant` through a type
+// test instead reaches the operator on the dynamic path, which is pinned by the script fixture
+// `runtime/features/fixed_width_integer_flow_narrowed_type_test.fs`.
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A null-guarded nullable keeps its declared width") {
+	ScopedCheckedNumericLanguage language;
+
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func add_after_null_guard(value: uint?):\n"
+			"\tif value == null:\n"
+			"\t\treturn null\n"
+			"\treturn value + 1U\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	const Variant maximum = uint64_t(UINT32_MAX);
+	const Variant *arguments[] = { &maximum };
+	Callable::CallError error;
+	ERR_PRINT_OFF;
+	const Variant result = object->callp(SNAME("add_after_null_guard"), arguments, 1, error);
+	ERR_PRINT_ON;
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(result.get_type() == Variant::NIL);
+}
+
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Dynamic shifts require matching integer carriers") {
 	ScopedCheckedNumericLanguage language;
 
