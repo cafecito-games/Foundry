@@ -46,6 +46,13 @@ class FSLambdaCallable : public CallableCustom {
 	uint32_t h;
 
 	Vector<Variant> captures;
+	// The exact receiver the creating static frame was invoked through, captured by value the way a
+	// closure captures a lexical local. A static lambda is not an instance-self lambda (`use_self` is
+	// left false), so this descriptor -- not an `FSInstance` -- is what `Self` resolves against while
+	// the callable runs, including after the creating frame has returned. Scripts are held weakly at
+	// every depth, matching `FSStaticSelfCallable` and `CallState::static_self`, so a callable stored
+	// by the script it describes does not close an uncollectable cycle.
+	FSStaticSelfContext static_self_context;
 
 	static bool compare_equal(const CallableCustom *p_a, const CallableCustom *p_b);
 	static bool compare_less(const CallableCustom *p_a, const CallableCustom *p_b);
@@ -64,7 +71,7 @@ public:
 
 	FSLambdaCallable(FSLambdaCallable &) = delete;
 	FSLambdaCallable(const FSLambdaCallable &) = delete;
-	FSLambdaCallable(Ref<FoundryScript> p_script, FSFunction *p_function, const Vector<Variant> &p_captures);
+	FSLambdaCallable(Ref<FoundryScript> p_script, FSFunction *p_function, const Vector<Variant> &p_captures, const FSStaticSelfContext *p_static_self = nullptr);
 	virtual ~FSLambdaCallable() = default;
 };
 

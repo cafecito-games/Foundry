@@ -1,0 +1,15 @@
+FS_TEST_OK
+~~ WARNING at line 57: (INFERENCE_ON_VARIANT) The variable type is being inferred from a Variant value, so it will be typed as Variant.
+~~ WARNING at line 74: (INFERENCE_ON_VARIANT) The variable type is being inferred from a Variant value, so it will be typed as Variant.
+~~ WARNING at line 87: (INFERENCE_ON_VARIANT) The variable type is being inferred from a Variant value, so it will be typed as Variant.
+~~ WARNING at line 88: (UNSAFE_METHOD_ACCESS) The method "call()" is not present on the inferred type "Variant" (but may be present on a subtype).
+true
+true
+true
+true
+true
+hi from RefCounted
+true
+true
+true false
+true

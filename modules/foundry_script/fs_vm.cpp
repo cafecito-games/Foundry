@@ -4353,7 +4353,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					captures.write[i] = *arg;
 				}
 
-				FSLambdaCallable *callable = memnew(FSLambdaCallable(Ref<FoundryScript>(script), lambda, captures));
+				FSLambdaCallable *callable = memnew(FSLambdaCallable(Ref<FoundryScript>(script), lambda, captures, p_static_self));
 
 				GET_INSTRUCTION_ARG(result, captures_count);
 				*result = Callable(callable);
