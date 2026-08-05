@@ -324,15 +324,18 @@ static bool _static_self_class_handle(const FSStaticSelfContext &p_context, Vari
 			return true;
 		}
 		case FSStaticSelfContext::SCRIPT: {
-			const Ref<Script> script = p_context.get_script();
-			if (script.is_null()) {
+			// A receiver whose own script or any type-argument script has been freed resolves to no
+			// handle: building one would carry a silently degraded argument slot.
+			if (!p_context.is_fully_live()) {
 				return false;
 			}
+			const Ref<Script> script = p_context.get_script();
 			const Ref<FoundryScript> foundry_script = script;
-			if (!p_context.get_type_arguments().is_empty() && foundry_script.is_valid()) {
+			const Vector<ContainerType> type_arguments = p_context.get_type_arguments();
+			if (!type_arguments.is_empty() && foundry_script.is_valid()) {
 				// A specialized generic receiver keeps its concrete arguments, so `Self.new()` through
 				// `Crate[int]` constructs `Crate[int]` rather than the unspecialized script.
-				r_handle = FSSpecializedClassHandle::create(foundry_script, p_context.get_type_arguments());
+				r_handle = FSSpecializedClassHandle::create(foundry_script, type_arguments);
 				return true;
 			}
 			r_handle = script;

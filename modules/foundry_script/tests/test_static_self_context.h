@@ -615,6 +615,17 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] A receiver descriptor does not o
 		}
 		REQUIRE(handle.is_valid());
 		CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+
+		// Depth-2 nesting (`Crate[Box[argument]]`) proves the rule is applied recursively for the
+		// handle too.
+		Ref<FSSpecializedClassHandle> deep_handle;
+		{
+			Vector<ContainerType> arguments;
+			arguments.push_back(static_self_nested_type_argument(box, argument));
+			deep_handle = FSSpecializedClassHandle::create(crate, arguments);
+		}
+		REQUIRE(deep_handle.is_valid());
+		CHECK_EQ(argument->get_reference_count(), settled_reference_count);
 	}
 	CHECK_EQ(argument->get_reference_count(), settled_reference_count);
 
@@ -630,6 +641,17 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] A receiver descriptor does not o
 		FSStaticSelfCallable *callable = memnew(FSStaticSelfCallable(crate, context, SNAME("anything")));
 		CHECK_EQ(argument->get_reference_count(), settled_reference_count);
 		memdelete(callable);
+
+		// Depth-2 nesting for the callable too.
+		FSStaticSelfContext deep_context;
+		{
+			Vector<ContainerType> arguments;
+			arguments.push_back(static_self_nested_type_argument(box, argument));
+			deep_context = FSStaticSelfContext::for_specialized_script(crate, arguments);
+		}
+		FSStaticSelfCallable *deep_callable = memnew(FSStaticSelfCallable(crate, deep_context, SNAME("anything")));
+		CHECK_EQ(argument->get_reference_count(), settled_reference_count);
+		memdelete(deep_callable);
 	}
 	CHECK_EQ(argument->get_reference_count(), settled_reference_count);
 }
@@ -649,31 +671,40 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] A freed type-argument script is 
 	REQUIRE(argument.is_valid());
 
 	FSStaticSelfContext receiver;
+	Ref<FSSpecializedClassHandle> handle;
 	{
 		Vector<ContainerType> arguments;
 		arguments.push_back(static_self_script_type_argument(argument));
 		receiver = FSStaticSelfContext::for_specialized_script(target, arguments);
+		handle = FSSpecializedClassHandle::create(target, arguments);
 	}
-	// `arguments` is gone; `argument` is the only strong reference, and the receiver describes it
-	// weakly, so both halves of the descriptor are live.
+	// `arguments` is gone; `argument` is the only strong reference, and the receiver and handle
+	// describe it weakly, so all three are live.
 	REQUIRE(receiver.is_fully_live());
 
 	FSStaticSelfCallable *callable = memnew(FSStaticSelfCallable(target, receiver, SNAME("ping")));
 	CHECK(callable->is_valid());
 	CHECK(receiver.get_type_name() != "<freed type argument>");
+	CHECK(handle->get_type_name() != "<freed type argument>");
 
-	// Dropping the last strong reference frees the argument. The descriptor and callable still name it,
-	// so every script they describe must now report as a missing receiver rather than degrade into the
-	// bare target script, another class, or Variant.
+	// Dropping the last strong reference frees the argument. The descriptor, callable, and handle
+	// still name it, so every script they describe must now report as a missing receiver rather than
+	// degrade into the bare target script, another class, or Variant.
 	argument = Ref<FoundryScript>();
 
 	CHECK_FALSE(receiver.is_fully_live());
 	CHECK_EQ(receiver.get_type_name(), "<freed type argument>");
+	CHECK_EQ(handle->get_type_name(), "<freed type argument>");
 	CHECK_FALSE(callable->is_valid());
 
 	Variant return_value;
 	Callable::CallError call_error;
 	callable->call(nullptr, 0, return_value, call_error);
+	CHECK_EQ(call_error.error, Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL);
+
+	// Constructing through a handle whose argument was freed is a missing receiver, not a silently
+	// degraded instance.
+	return_value = handle->callp(SNAME("new"), nullptr, 0, call_error);
 	CHECK_EQ(call_error.error, Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL);
 
 	memdelete(callable);

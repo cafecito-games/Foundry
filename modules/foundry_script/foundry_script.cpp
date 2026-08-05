@@ -203,6 +203,17 @@ Variant FSSpecializedClassHandle::callp(const StringName &p_method, const Varian
 			r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
 			return Variant();
 		}
+		// A freed type-argument script leaves the specialization broken: constructing through it would
+		// build an instance whose argument slot silently degraded to the bare class. Report a missing
+		// receiver instead. (Static-method dispatch below does not need this gate: any position that
+		// actually reads the arguments routes through `FSStaticSelfContext::to_data_type`, which already
+		// fails on a freed argument.)
+		for (const FSWeakContainerType &argument : type_arguments) {
+			if (!argument.is_fully_live()) {
+				r_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+				return Variant();
+			}
+		}
 		return script->_new_specialized(p_args, p_argcount, get_type_arguments(), r_error);
 	}
 	if (p_method == CoreStringName(_equals) || p_method == CoreStringName(_hash_code)) {
