@@ -252,7 +252,9 @@ class TokenizationTests(unittest.TestCase):
         # of the numeric scope, the same way an arbitrary "letter after a number" does
         # (e.g. "100x"); the tokenizer reports it as an error rather than a literal.
         source = "var n = 100ul\n"
-        self.assertNotScoped(source, "constant.numeric.integer.foundryscript", offset=source.index("100ul"), source=source)
+        self.assertNotScoped(
+            source, "constant.numeric.integer.foundryscript", offset=source.index("100ul"), source=source
+        )
         self.assertNotScoped(source, "constant.numeric.integer.foundryscript", offset=source.index("ul"), source=source)
 
     # -- keywords and constants -------------------------------------------
