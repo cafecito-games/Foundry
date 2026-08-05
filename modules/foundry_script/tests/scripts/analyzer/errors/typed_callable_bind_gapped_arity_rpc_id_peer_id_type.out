@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 14: Cannot pass a value of type "String" as "long".
+>> ERROR at line 14: Invalid argument for "rpc_id()" function: argument 1 should be "long" but is "String".
