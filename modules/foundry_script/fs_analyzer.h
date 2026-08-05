@@ -540,6 +540,11 @@ private:
 	static FSParser::DataType specialize_enum_type(const FSParser::DataType &p_type,
 			const FSParser::EnumNode *p_declaration,
 			const HashMap<StringName, FSParser::DataType> &p_bindings);
+	// Returns a use-site copy of a global generic union: open parameter handles and the declaration's
+	// unspecialized payload map. Global resolution must never hand consumers the depended declaration's
+	// cached datatype, or one specialization can rewrite the payload schema every later use site reads.
+	static FSParser::DataType copy_open_global_enum_type_for_use_site(const FSParser::DataType &p_type,
+			const FSParser::EnumNode *p_declaration);
 	FSParser::EnumNode *resolve_enum_declaration(const FSParser::DataType &p_enum_type,
 			const FSParser::Node *p_source);
 	// A generic tagged union has no bare form outside its own declaration, in an expression any more

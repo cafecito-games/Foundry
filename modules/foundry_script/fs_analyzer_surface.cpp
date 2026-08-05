@@ -1029,6 +1029,28 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 	return enum_type;
 }
 
+FSParser::DataType FSAnalyzer::copy_open_global_enum_type_for_use_site(const FSParser::DataType &p_type,
+		const FSParser::EnumNode *p_declaration) {
+	FSParser::DataType copy = p_type;
+	if (p_declaration == nullptr || p_declaration->type_parameters.is_empty() || !copy.is_tagged_union_type()) {
+		return copy;
+	}
+
+	copy.type_arguments.clear();
+	for (int i = 0; i < p_declaration->type_parameters.size(); i++) {
+		copy.type_arguments.push_back(enum_type_parameter_handle(p_declaration->type_parameters[i], i));
+	}
+
+	const FSParser::DataType &declared_type = p_declaration->get_datatype();
+	if (declared_type.is_set() && declared_type.kind == FSParser::DataType::ENUM) {
+		copy.enum_values = declared_type.enum_values;
+		if (!declared_type.enum_case_payloads.is_empty()) {
+			copy.enum_case_payloads = declared_type.enum_case_payloads;
+		}
+	}
+	return copy;
+}
+
 void FSAnalyzer::resolve_enum_interface(FSParser::EnumNode *p_enum,
 		const FSParser::DataType &p_enum_type, FSParser::ClassNode *p_owner) {
 	ERR_FAIL_NULL(p_enum);

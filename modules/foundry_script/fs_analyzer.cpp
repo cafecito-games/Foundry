@@ -7494,7 +7494,7 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_current_parser(const S
 		// A tagged union publishes its identity before resolving payload types, so a payload field
 		// naming this same union lands here and gets the identity shell. That is the correct answer
 		// in a type position, and the complete type replaces the shell once resolution finishes.
-		return enum_node->get_datatype();
+		return copy_open_global_enum_type_for_use_site(enum_node->get_datatype(), enum_node);
 	}
 
 	FSParser::DataType resolving_datatype;
@@ -7594,7 +7594,9 @@ FSParser::DataType FSAnalyzer::make_global_enum_type_from_path(const StringName 
 		return error_type;
 	}
 
-	return enum_type;
+	FSParser::ClassNode *provider_head = enum_parser->head;
+	const FSParser::EnumNode *provider_declaration = provider_head != nullptr ? provider_head->enum_file_decl : nullptr;
+	return copy_open_global_enum_type_for_use_site(enum_type, provider_declaration);
 }
 
 bool FSAnalyzer::get_autoload_singleton_value_type(const StringName &p_name, FSParser::DataType &r_type) {
@@ -9742,10 +9744,8 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 				}
 
 				if (enum_file_decl->identifier->name == name) {
-					p_identifier->set_datatype(enum_type);
-					p_identifier->is_constant = true;
-					p_identifier->reduced_value = enum_file_decl->dictionary;
-					p_identifier->source = FSParser::IdentifierNode::MEMBER_CONSTANT;
+					publish_enum_meta_identifier(p_identifier,
+							copy_open_global_enum_type_for_use_site(enum_type, enum_file_decl));
 					return;
 				}
 			}
