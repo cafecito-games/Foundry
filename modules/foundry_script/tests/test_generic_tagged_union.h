@@ -1674,7 +1674,7 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionMethods] Specialized recei
 					   "\t\treturn Option.Some(value)\n"
 					   "\n"
 					   "\tfunc is_some() -> bool:\n"
-					   "\t\treturn self is Option.Some(_)\n"
+					   "\t\treturn self is Option.Some\n"
 					   "\n"
 					   "\tstatic func echo[U](value: U) -> U:\n"
 					   "\t\treturn value\n"

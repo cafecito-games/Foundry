@@ -1,3 +1,4 @@
+FS_TEST_OK
 before resume
 async:true
 after resume

@@ -7,6 +7,9 @@ enum AsyncOption[T]:
 	static async func load(value: T) -> AsyncOption:
 		return AsyncOption.Some(value)
 
+	func is_some() -> bool:
+		return self is AsyncOption.Some
+
 	async func describe_after(resume_signal: Signal) -> String:
 		await resume_signal
 		return "async:" + str(self.is_some())

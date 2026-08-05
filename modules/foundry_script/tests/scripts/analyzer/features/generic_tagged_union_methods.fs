@@ -8,7 +8,7 @@ enum Option[T]:
 		return Option.Some(value)
 
 	func is_some() -> bool:
-		return self is Option.Some(_)
+		return self is Option.Some
 
 	static func echo[U](value: U) -> U:
 		return value
