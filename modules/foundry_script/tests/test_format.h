@@ -757,7 +757,7 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 	// spelling), so the formatter must refuse the whole source rather than silently
 	// uppercasing the suffix into a "helpful" canonical spelling.
 	TEST_CASE("[Format] Refuses to format an invalid lowercase integer suffix") {
-		for (const String &source : { "var n = 100u\n", "var n = 100l\n", "var n = 100ul\n", "var n = 100Lu\n" }) {
+		for (const char *source : { "var n = 100u\n", "var n = 100l\n", "var n = 100ul\n", "var n = 100Lu\n" }) {
 			CAPTURE(source);
 			FSFormatter formatter;
 			FSFormatter::Result result;
