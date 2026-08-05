@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		Describes one member variable declared by a [FoundryScript] type or its base scripts, as a typed alternative to the loosely-keyed [Dictionary] entries of [method FSReflection.get_properties]. Instances are produced by [method FSReflection.get_property_descriptors] and are immutable snapshots of the compiled property metadata.
-		Beyond the [method Object.get_property_list] fields it mirrors ([member name], [member type], [member class_name], [member hint], [member hint_string], and [member usage]), each descriptor carries the variable's passive [member annotations]. The accessors return copies, so mutating them does not change the script's stored metadata. Use [method to_dictionary] to obtain the equivalent loosely-keyed descriptor [Dictionary].
+		Beyond the [method Object.get_property_list] fields it mirrors ([member name], [member type], [member class_name], [member hint], [member hint_string], and [member usage]), each descriptor carries the variable's passive [member annotations] and its exact declared [member type_name]. The accessors return copies, so mutating them does not change the script's stored metadata. Use [method to_dictionary] to obtain the equivalent loosely-keyed descriptor [Dictionary].
 	</description>
 	<tutorials>
 	</tutorials>
@@ -13,7 +13,7 @@
 		<method name="to_dictionary" qualifiers="const">
 			<return type="Dictionary" />
 			<description>
-				Returns the equivalent loosely-keyed property descriptor [Dictionary], matching the entries of [method FSReflection.get_properties]: an [method Object.get_property_list] [Dictionary] plus an [code]"annotations"[/code] key holding the [member annotations].
+				Returns the equivalent loosely-keyed property descriptor [Dictionary], matching the entries of [method FSReflection.get_properties]: an [method Object.get_property_list] [Dictionary] plus [code]"annotations"[/code] and [code]"type_name"[/code] keys holding the [member annotations] and [member type_name].
 			</description>
 		</method>
 	</methods>
@@ -35,6 +35,10 @@
 		</member>
 		<member name="type" type="int" setter="" getter="get_property_type">
 			The property's [enum Variant.Type].
+		</member>
+		<member name="type_name" type="String" setter="" getter="get_type_name">
+			The exact FoundryScript type the variable was declared with, for example [code]"ulong"[/code], [code]"Array[int]"[/code], or [code]"Dictionary[uint, long]"[/code]. Unlike [member type], which carries only the [enum Variant.Type] the value travels in, this keeps the declared integer width and the element, key, and value types of a typed container, so [code]Array[int][/code] and [code]Array[long][/code] stay distinguishable. The name comes from the compiled declaration, never from a stored value. Empty for a native property, which has no FoundryScript declaration to name.
+			An integer slot that declares no width names the full range its carrier spans ([code]"long"[/code] or [code]"ulong"[/code]), since narrowing it further would claim a constraint the declaration never had.
 		</member>
 		<member name="usage" type="int" setter="" getter="get_property_usage">
 			The property's usage flags, a bitmask of [enum PropertyUsageFlags] values.

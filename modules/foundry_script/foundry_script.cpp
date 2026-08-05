@@ -666,8 +666,15 @@ Dictionary FSMethodDescriptor::to_dictionary() const {
 	// Duplicate so the returned Dictionary never aliases this read-only descriptor's stored array.
 	if (fs_member) {
 		descriptor["annotations"] = annotations.duplicate();
+		descriptor["arg_type_names"] = argument_type_names;
+		descriptor["return_type_name"] = return_type_name;
 	}
 	return descriptor;
+}
+
+void FSMethodDescriptor::set_signature_type_names(const PackedStringArray &p_argument_type_names, const String &p_return_type_name) {
+	argument_type_names = p_argument_type_names;
+	return_type_name = p_return_type_name;
 }
 
 void FSMethodDescriptor::_bind_methods() {
@@ -676,23 +683,28 @@ void FSMethodDescriptor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_return_value"), &FSMethodDescriptor::get_return_value);
 	ClassDB::bind_method(D_METHOD("get_default_arguments"), &FSMethodDescriptor::get_default_arguments);
 	ClassDB::bind_method(D_METHOD("get_flags"), &FSMethodDescriptor::get_flags);
+	ClassDB::bind_method(D_METHOD("get_argument_type_names"), &FSMethodDescriptor::get_argument_type_names);
+	ClassDB::bind_method(D_METHOD("get_return_type_name"), &FSMethodDescriptor::get_return_type_name);
 	ClassDB::bind_method(D_METHOD("get_annotations"), &FSMethodDescriptor::get_annotations);
 	ClassDB::bind_method(D_METHOD("to_dictionary"), &FSMethodDescriptor::to_dictionary);
 
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_method_name");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "args", PROPERTY_HINT_ARRAY_TYPE, "Dictionary", PROPERTY_USAGE_READ_ONLY), "", "get_arguments");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "return_value", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_return_value");
+	ADD_PROPERTY(PropertyInfo(Variant::PACKED_STRING_ARRAY, "arg_type_names", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_argument_type_names");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "return_type_name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_return_type_name");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "default_args", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_default_arguments");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "flags", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_flags");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "annotations", PROPERTY_HINT_ARRAY_TYPE, "FSAnnotation", PROPERTY_USAGE_READ_ONLY), "", "get_annotations");
 }
 
-Ref<FSPropertyDescriptor> FSPropertyDescriptor::create(const PropertyInfo &p_property_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member) {
+Ref<FSPropertyDescriptor> FSPropertyDescriptor::create(const PropertyInfo &p_property_info, const TypedArray<FSAnnotation> &p_annotations, bool p_fs_member, const String &p_type_name) {
 	Ref<FSPropertyDescriptor> descriptor;
 	descriptor.instantiate();
 	descriptor->property_info = p_property_info;
 	descriptor->annotations = p_annotations;
 	descriptor->fs_member = p_fs_member;
+	descriptor->type_name = p_type_name;
 	return descriptor;
 }
 
@@ -703,6 +715,7 @@ Dictionary FSPropertyDescriptor::to_dictionary() const {
 	// Duplicate so the returned Dictionary never aliases this read-only descriptor's stored array.
 	if (fs_member) {
 		descriptor["annotations"] = annotations.duplicate();
+		descriptor["type_name"] = type_name;
 	}
 	return descriptor;
 }
@@ -714,6 +727,7 @@ void FSPropertyDescriptor::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_property_hint"), &FSPropertyDescriptor::get_property_hint);
 	ClassDB::bind_method(D_METHOD("get_property_hint_string"), &FSPropertyDescriptor::get_property_hint_string);
 	ClassDB::bind_method(D_METHOD("get_property_usage"), &FSPropertyDescriptor::get_property_usage);
+	ClassDB::bind_method(D_METHOD("get_type_name"), &FSPropertyDescriptor::get_type_name);
 	ClassDB::bind_method(D_METHOD("get_annotations"), &FSPropertyDescriptor::get_annotations);
 	ClassDB::bind_method(D_METHOD("to_dictionary"), &FSPropertyDescriptor::to_dictionary);
 
@@ -723,6 +737,7 @@ void FSPropertyDescriptor::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "hint", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_hint");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "hint_string", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_hint_string");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "usage", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_property_usage");
+	ADD_PROPERTY(PropertyInfo(Variant::STRING, "type_name", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_READ_ONLY), "", "get_type_name");
 	ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "annotations", PROPERTY_HINT_ARRAY_TYPE, "FSAnnotation", PROPERTY_USAGE_READ_ONLY), "", "get_annotations");
 }
 
@@ -2461,6 +2476,11 @@ void FoundryScript::_save_orphaned_subclasses() {
 		// subclass is not released
 		FSLanguage::get_singleton()->add_orphan_subclass(subclass.fully_qualified_name, subclass.id);
 	}
+}
+
+const FSDataType *FoundryScript::find_member_data_type(const StringName &p_member) const {
+	const MemberInfo *member = member_indices.getptr(p_member);
+	return member != nullptr ? &member->data_type : nullptr;
 }
 
 String FoundryScript::debug_get_script_name(const Ref<Script> &p_script) {

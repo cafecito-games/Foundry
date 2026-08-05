@@ -208,6 +208,41 @@ Vector<FoundryScript::AnnotationUsage> compute_annotations(const Ref<Script> &p_
 	}
 	return usages != nullptr ? *usages : Vector<FoundryScript::AnnotationUsage>();
 }
+
+// Copies the exact declared signature type names off the compiled function descriptors. `MethodInfo`
+// only transports the Variant carrier, so this is the channel that keeps a `long` parameter apart
+// from an `int` one; the names come from the stored descriptors and never from a runtime value.
+void apply_signature_type_names(const Ref<FSMethodDescriptor> &p_descriptor, const FSFunction *p_function) {
+	if (p_descriptor.is_null() || p_function == nullptr) {
+		return;
+	}
+	// One entry per declared parameter, so the result stays index-parallel to the descriptor's `args`.
+	// The compiler appends to the `MethodInfo` argument list and to the compiled parameter types
+	// together, and a rest parameter is in neither; the bound below keeps the two arrays the same
+	// length even if that ever stops holding.
+	const int listed_count = p_function->get_method_info().arguments.size();
+	const int declared_count = p_function->get_argument_count();
+	PackedStringArray argument_type_names;
+	argument_type_names.resize(listed_count);
+	String *argument_type_names_write = argument_type_names.ptrw();
+	for (int i = 0; i < listed_count; i++) {
+		argument_type_names_write[i] = i < declared_count ? p_function->get_argument_type(i).get_source_type_name() : String("Variant");
+	}
+	p_descriptor->set_signature_type_names(argument_type_names, p_function->get_return_type().get_source_type_name());
+}
+
+// The most-derived declaration of `p_method` along the script base chain, or null when no
+// FoundryScript class in the chain declares it. The visited set guards a malformed cyclic chain.
+const FSFunction *find_member_function(const FoundryScript *p_script, const StringName &p_method) {
+	HashSet<const FoundryScript *> visited;
+	for (const FoundryScript *script = p_script; script != nullptr && !visited.has(script); script = Object::cast_to<FoundryScript>(script->get_base_script().ptr())) {
+		visited.insert(script);
+		if (FSFunction *const *function = script->get_member_functions().getptr(p_method)) {
+			return *function;
+		}
+	}
+	return nullptr;
+}
 } // namespace
 
 StringName FSReflection::_resolve_trait_name(const Variant &p_trait) {
@@ -258,7 +293,9 @@ TypedArray<FSMethodDescriptor> FSReflection::get_method_descriptors(const Varian
 			TypedArray<FSAnnotation> annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<FSAnnotation>();
 			const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *parameter_usages = current->get_method_parameter_annotations().getptr(entry.key);
 			HashMap<StringName, TypedArray<FSAnnotation>> parameter_annotations = parameter_usages != nullptr ? parameter_usages_to_descriptors(*parameter_usages) : HashMap<StringName, TypedArray<FSAnnotation>>();
-			result.push_back(FSMethodDescriptor::create(entry.value->get_method_info(), annotations, true, parameter_annotations));
+			Ref<FSMethodDescriptor> descriptor = FSMethodDescriptor::create(entry.value->get_method_info(), annotations, true, parameter_annotations);
+			apply_signature_type_names(descriptor, entry.value);
+			result.push_back(descriptor);
 		}
 	}
 	return result;
@@ -284,7 +321,12 @@ Ref<FSMethodDescriptor> FSReflection::get_method_descriptor(const Variant &p_tar
 				const HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> *parameter_usages = find_effective_method_parameter_annotations(foundry_script, p_method);
 				parameter_annotations = parameter_usages != nullptr ? parameter_usages_to_descriptors(*parameter_usages) : HashMap<StringName, TypedArray<FSAnnotation>>();
 			}
-			return FSMethodDescriptor::create(script->get_method_info(p_method), annotations, foundry_script != nullptr, parameter_annotations);
+			Ref<FSMethodDescriptor> descriptor = FSMethodDescriptor::create(script->get_method_info(p_method), annotations, foundry_script != nullptr, parameter_annotations);
+			if (foundry_script != nullptr) {
+				// Resolve from the leaf so an override's signature wins, matching the annotations above.
+				apply_signature_type_names(descriptor, find_member_function(foundry_script, p_method));
+			}
+			return descriptor;
 		}
 		script = script->get_base_script();
 	}
@@ -306,11 +348,17 @@ TypedArray<FSPropertyDescriptor> FSReflection::get_property_descriptors(const Va
 			continue;
 		}
 		TypedArray<FSAnnotation> annotations;
+		String type_name;
 		if (foundry_script != nullptr) {
 			const Vector<FoundryScript::AnnotationUsage> *usages = find_effective_variable_annotations(foundry_script, property.name);
 			annotations = usages != nullptr ? usages_to_descriptors(*usages) : TypedArray<FSAnnotation>();
+			// The compiled member descriptor, not the PropertyInfo above, is what still knows the
+			// declared integer width and the element types of a typed container.
+			if (const FSDataType *data_type = foundry_script->find_member_data_type(property.name)) {
+				type_name = data_type->get_source_type_name();
+			}
 		}
-		result.push_back(FSPropertyDescriptor::create(property, annotations, foundry_script != nullptr));
+		result.push_back(FSPropertyDescriptor::create(property, annotations, foundry_script != nullptr, type_name));
 	}
 	return result;
 }
