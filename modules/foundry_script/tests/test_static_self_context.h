@@ -685,6 +685,7 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] A freed type-argument script is 
 	FSStaticSelfCallable *callable = memnew(FSStaticSelfCallable(target, receiver, SNAME("ping")));
 	CHECK(callable->is_valid());
 	CHECK(receiver.get_type_name() != "<freed type argument>");
+	CHECK(handle->is_fully_live());
 	CHECK(handle->get_type_name() != "<freed type argument>");
 
 	// Dropping the last strong reference frees the argument. The descriptor, callable, and handle
@@ -693,6 +694,7 @@ TEST_CASE("[Modules][FoundryScript][StaticSelf] A freed type-argument script is 
 	argument = Ref<FoundryScript>();
 
 	CHECK_FALSE(receiver.is_fully_live());
+	CHECK_FALSE(handle->is_fully_live());
 	CHECK_EQ(receiver.get_type_name(), "<freed type argument>");
 	CHECK_EQ(handle->get_type_name(), "<freed type argument>");
 	CHECK_FALSE(callable->is_valid());

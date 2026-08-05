@@ -142,6 +142,15 @@ void FSSpecializedClassHandle::get_represented_type_arguments(Vector<ContainerTy
 	r_arguments = get_type_arguments();
 }
 
+bool FSSpecializedClassHandle::is_fully_live() const {
+	for (const FSWeakContainerType &argument : type_arguments) {
+		if (!argument.is_fully_live()) {
+			return false;
+		}
+	}
+	return true;
+}
+
 String FSSpecializedClassHandle::get_type_name() const {
 	if (script.is_null()) {
 		return "FoundryScript";
@@ -208,11 +217,9 @@ Variant FSSpecializedClassHandle::callp(const StringName &p_method, const Varian
 		// receiver instead. (Static-method dispatch below does not need this gate: any position that
 		// actually reads the arguments routes through `FSStaticSelfContext::to_data_type`, which already
 		// fails on a freed argument.)
-		for (const FSWeakContainerType &argument : type_arguments) {
-			if (!argument.is_fully_live()) {
-				r_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
-				return Variant();
-			}
+		if (!is_fully_live()) {
+			r_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+			return Variant();
 		}
 		return script->_new_specialized(p_args, p_argcount, get_type_arguments(), r_error);
 	}

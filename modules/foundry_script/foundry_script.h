@@ -111,6 +111,10 @@ public:
 	const Ref<FoundryScript> &get_specialized_script() const { return script; }
 	// Materializes the concrete arguments. Returns by value because the handle stores them weakly.
 	Vector<ContainerType> get_type_arguments() const;
+	// True when every type-argument script (at any nesting depth) is still reachable. The handle's own
+	// script is held strongly, so only the arguments can go stale; a stale argument makes the handle
+	// unusable for construction or `Self` resolution.
+	bool is_fully_live() const;
 	virtual Ref<Script> get_represented_script() const override;
 	virtual void get_represented_type_arguments(Vector<ContainerType> &r_arguments) const override;
 	String get_type_name() const;

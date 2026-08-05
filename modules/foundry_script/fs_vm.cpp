@@ -3326,6 +3326,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				Vector<ContainerType> type_arguments;
 				if (specialized_handle.is_valid()) {
+					// A freed type-argument script makes the specialization unconstructable: building from it
+					// would silently degrade the argument slot. Report the existing missing-receiver error.
+					if (!specialized_handle->is_fully_live()) {
+						err_text = _missing_static_self_error(name);
+						OPCODE_BREAK;
+					}
 					type_arguments = specialized_handle->get_type_arguments();
 				} else if (expected_foundry_script.is_null() || foundry_script == expected_foundry_script) {
 					for (int i = 0; i < type_argument_count; i++) {
