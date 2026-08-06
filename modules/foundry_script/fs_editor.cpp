@@ -2712,7 +2712,12 @@ static FSCompletionIdentifier _type_from_property(const PropertyInfo &p_property
 		}
 	} else {
 		ci.type.kind = FSParser::DataType::BUILTIN;
-		ci.type.numeric_type = _numeric_type_from_property(p_property, p_metadata);
+		// An enum-flagged integer names its constant set rather than a width, and the analyzer gives
+		// such a slot no descriptor at all. Stamping one here would make the guessed type claim a
+		// constraint the analyzed type never has.
+		if (ci.enumeration.is_empty()) {
+			ci.type.numeric_type = _numeric_type_from_property(p_property, p_metadata);
+		}
 	}
 	return ci;
 }
