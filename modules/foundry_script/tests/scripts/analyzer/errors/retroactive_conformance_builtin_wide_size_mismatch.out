@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: The native function "size()" signature does not match required trait method "RtcBuiltinWideSize.size()". Implementation comes from builtin type "Array".
