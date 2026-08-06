@@ -110,7 +110,7 @@ TEST_CASE("[MultiplayerAPI][UInt] Unsigned RPC arguments compress by magnitude")
 	for (const ExpectedSize &expectation : expectations) {
 		int size = 0;
 		REQUIRE_EQ(MultiplayerAPI::encode_and_compress_variant(Variant(expectation.value), nullptr, size, false), OK);
-		CHECK_MESSAGE(size == expectation.size, vformat("Unsigned value %d should encode in %d bytes.", expectation.value, expectation.size));
+		CHECK_MESSAGE(size == expectation.size, vformat("Unsigned value %s should encode in %d bytes.", String::num_uint64(expectation.value), expectation.size));
 	}
 }
 
@@ -143,22 +143,22 @@ TEST_CASE("[MultiplayerAPI][UInt] Mixed RPC argument lists keep every carrier") 
 	const Variant *arguments[] = { &signed_minimum, &signed_maximum, &unsigned_zero, &unsigned_maximum };
 	const int argument_count = 4;
 
+	// The raw single-argument optimization only applies to a lone `PackedByteArray`, so a
+	// multi-argument list always travels through the per-argument codec.
 	int required_size = 0;
-	bool raw = false;
-	REQUIRE_EQ(MultiplayerAPI::encode_and_compress_variants(arguments, argument_count, nullptr, required_size, &raw, false), OK);
-	CHECK_FALSE(raw);
+	REQUIRE_EQ(MultiplayerAPI::encode_and_compress_variants(arguments, argument_count, nullptr, required_size, nullptr, false), OK);
 
 	LocalVector<uint8_t> buffer;
 	buffer.resize(required_size);
 	int written_size = 0;
-	REQUIRE_EQ(MultiplayerAPI::encode_and_compress_variants(arguments, argument_count, buffer.ptr(), written_size, &raw, false), OK);
+	REQUIRE_EQ(MultiplayerAPI::encode_and_compress_variants(arguments, argument_count, buffer.ptr(), written_size, nullptr, false), OK);
 
 	// The decoder fills a caller-sized argument list, matching how a receiving peer allocates the
 	// slots from the callee's expected argument count.
 	Vector<Variant> decoded;
 	decoded.resize(argument_count);
 	int consumed_size = 0;
-	REQUIRE_EQ(MultiplayerAPI::decode_and_decompress_variants(decoded, buffer.ptr(), written_size, consumed_size, raw, false), OK);
+	REQUIRE_EQ(MultiplayerAPI::decode_and_decompress_variants(decoded, buffer.ptr(), written_size, consumed_size, false, false), OK);
 	REQUIRE_EQ(decoded.size(), argument_count);
 
 	CHECK_EQ(decoded[0].get_type(), Variant::INT);
