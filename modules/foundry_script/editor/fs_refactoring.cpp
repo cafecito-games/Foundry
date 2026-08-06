@@ -5434,7 +5434,7 @@ FSParser::DataType specialize_trait_requirement_type(
 				type_argument = *binding;
 			}
 		}
-		specialized_trait.type_arguments.push_back(type_argument);
+		specialized_trait.add_type_argument(type_argument);
 	}
 	return specialized_trait;
 }

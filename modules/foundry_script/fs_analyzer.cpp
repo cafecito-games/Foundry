@@ -664,7 +664,7 @@ static FSParser::DataType _self_type_for_class(FSParser::ClassNode *p_class) {
 		self_type.is_meta_type = false;
 		self_type.type_arguments.clear();
 		for (int i = 0; i < p_class->type_parameters.size(); i++) {
-			self_type.type_arguments.push_back(_class_type_parameter_handle(p_class->type_parameters[i], i));
+			self_type.add_type_argument(_class_type_parameter_handle(p_class->type_parameters[i], i));
 		}
 	}
 	return self_type;
@@ -776,7 +776,7 @@ static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSPa
 				_substitute_self_type_parameter_with_bounds(result.container_element_types[i], p_mark_substituted_self);
 	}
 	for (int i = 0; i < result.type_arguments.size(); i++) {
-		result.type_arguments.write[i] = _substitute_self_type_parameter_with_bounds(result.type_arguments[i], p_mark_substituted_self);
+		result.set_type_argument(i, _substitute_self_type_parameter_with_bounds(result.type_arguments[i], p_mark_substituted_self));
 	}
 	for (int i = 0; i < result.method_parameter_types.size(); i++) {
 		result.method_parameter_types.write[i] =
@@ -7259,7 +7259,10 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		// Constructing a specialized generic class (`Box[int].new()`) yields a specialized instance,
 		// so the call's result carries the reified type arguments supplied at the base.
 		if (is_constructor && base_type.has_type_arguments()) {
-			return_type.type_arguments = base_type.type_arguments;
+			return_type.type_arguments.clear();
+			for (const FSParser::DataType &argument : base_type.type_arguments) {
+				return_type.add_type_argument(argument);
+			}
 		}
 
 		call_type = return_type;
@@ -12328,7 +12331,7 @@ static FSParser::DataType _type_from_container_type(const ContainerType &p_type)
 		result.set_container_element_type(result.get_container_element_type_count(), _type_from_container_type(element_type));
 	}
 	for (const ContainerType &argument_type : p_type.type_arguments) {
-		result.type_arguments.push_back(_type_from_container_type(argument_type));
+		result.add_type_argument(_type_from_container_type(argument_type));
 	}
 	return result;
 }

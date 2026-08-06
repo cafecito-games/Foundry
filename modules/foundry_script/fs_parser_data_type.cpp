@@ -319,7 +319,7 @@ FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const 
 		result.set_container_element_type(i, substitute(result.container_element_types[i], p_bindings, p_mark_substituted_self));
 	}
 	for (int i = 0; i < result.type_arguments.size(); i++) {
-		result.type_arguments.write[i] = as_container_slot_type(substitute(result.type_arguments[i], p_bindings, p_mark_substituted_self));
+		result.set_type_argument(i, substitute(result.type_arguments[i], p_bindings, p_mark_substituted_self));
 	}
 	for (int i = 0; i < result.method_parameter_types.size(); i++) {
 		result.method_parameter_types.write[i] = substitute(result.method_parameter_types[i], p_bindings, p_mark_substituted_self);

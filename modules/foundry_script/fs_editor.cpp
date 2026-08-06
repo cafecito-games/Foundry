@@ -3472,7 +3472,10 @@ static bool _try_specialize_generic_enum_subscript(
 		return false;
 	}
 
-	base_type.type_arguments = resolved_arguments;
+	base_type.type_arguments.clear();
+	for (const FSParser::DataType &argument : resolved_arguments) {
+		base_type.add_type_argument(argument);
+	}
 	base_type.is_meta_type = true;
 	base_type.is_tagged_union = true;
 	const HashMap<StringName, FSParser::DataType> bindings = FSAnalyzer::enum_type_argument_bindings(enum_node, resolved_arguments);
