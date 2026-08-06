@@ -486,6 +486,24 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] An unsuffixed constant crosses
 	CHECK(out_of_range.first_error().contains(R"(Cannot assign a value of type "int" as "uint".)"));
 }
 
+TEST_CASE("[Modules][FoundryScript][NumericTypes] The signedness-crossing fix does not reach `uint`/`ulong` -> float") {
+	using namespace TestIntegerPromotion;
+
+	// `classify()` can prove a `ulong` constant exactly representable as `float` (design section 6.1's
+	// floating-side carve-out), but `Variant::construct()` -- the fallback the caller uses once
+	// compatibility is granted -- has no registered `UINT` -> `FLOAT` conversion. `check()` therefore
+	// keeps this pairing exactly as unsupported as it already was rather than trading a clear type
+	// error for a confusing conversion failure; implementing that carve-out for the `uint` carrier is
+	// its own change. `int`/`long` constants already promote to `float` through
+	// `Variant::can_convert_strict()` and are unaffected.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar from_ulong: float = 5UL\n"
+			"\tprint(from_ulong)\n");
+	CHECK(snippet.parse_error == OK);
+	CHECK(snippet.first_error().contains(R"(Cannot assign a value of type "ulong" as "float".)"));
+}
+
 TEST_CASE("[Modules][FoundryScript][NumericTypes] A sum that leaves the promoted range is refused") {
 	using namespace TestIntegerPromotion;
 

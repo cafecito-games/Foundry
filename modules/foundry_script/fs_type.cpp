@@ -603,26 +603,35 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			result.compatible = Variant::can_convert_strict(p_source.builtin_type, p_target.builtin_type);
 			result.uses_implicit_conversion = result.compatible;
 		}
-		if (!result.compatible && p_options.allow_implicit_conversion && p_options.constant_source_value != nullptr &&
-				p_source.kind == FSParser::DataType::BUILTIN &&
-				FSNumericConversion::is_numeric_builtin(p_target) && FSNumericConversion::is_numeric_builtin(p_source) &&
-				FSNumericConversion::classify(p_target, p_source, p_options.constant_source_value) == FSNumericConversion::Conversion::CONSTANT_CHECKED) {
-			// The `int`/`uint` carriers (and their 64-bit `long`/`ulong` counterparts) have no
-			// unconditional strict conversion above: most values of one carrier are not representable in
-			// the other, so `Variant::can_convert_strict()` rejects both directions outright. A constant
-			// is different -- its exact value is known -- which is what design section 6.1 permits: a
-			// representable constant may cross signedness without an explicit cast.
+
+		const bool both_numeric = p_source.kind == FSParser::DataType::BUILTIN &&
+				FSNumericConversion::is_numeric_builtin(p_target) && FSNumericConversion::is_numeric_builtin(p_source);
+		// Computed once and reused below.
+		const FSNumericConversion::Conversion conversion = both_numeric
+				? FSNumericConversion::classify(p_target, p_source, p_options.constant_source_value)
+				: FSNumericConversion::Conversion::INVALID;
+		// Both carriers are integer: `int`/`uint` crossing to `long`/`ulong` (design section 6.1). The
+		// floating side is excluded here even though `classify()` can also prove a `long`/`ulong`
+		// constant exactly representable as `float`: `Variant::construct()` (the fallback the caller
+		// uses once compatibility is granted) has no registered `UINT` -> `FLOAT` conversion, so
+		// admitting that pairing here would trade a clear type error for a confusing conversion failure
+		// instead of actually implementing the carve-out. `int`/`long` sources already reach `float`
+		// through `Variant::can_convert_strict()` above and are unaffected.
+		const bool both_integer_carriers = both_numeric && p_target.builtin_type != Variant::FLOAT && p_source.builtin_type != Variant::FLOAT;
+		if (!result.compatible && p_options.allow_implicit_conversion && both_integer_carriers &&
+				conversion == FSNumericConversion::Conversion::CONSTANT_CHECKED) {
+			// `Variant::can_convert_strict()` above has no unconditional answer for `int`/`uint` (or
+			// `long`/`ulong`): most values of one carrier are not representable on the other. A constant
+			// is different -- its exact value is known -- which is what design section 6.1 permits.
 			result.compatible = true;
 			result.uses_implicit_conversion = true;
 		}
-		if (result.compatible && p_source.kind == FSParser::DataType::BUILTIN &&
-				FSNumericConversion::is_numeric_builtin(p_target) && FSNumericConversion::is_numeric_builtin(p_source)) {
+		if (result.compatible && both_numeric) {
 			// Width is part of the target's contract, so every numeric boundary -- assignment,
 			// argument, return, signal emission, typed collection element -- asks the same classifier
 			// whether the value may cross. A conversion that needs proof is rejected unless the source
 			// is a constant whose exact value the destination is known to hold.
-			const FSNumericConversion::Conversion conversion =
-					FSNumericConversion::classify(p_target, p_source, p_options.constant_source_value);
+			//
 			// A widening or a proven constant is still a conversion, so it is only available where a
 			// conversion is. An invariant position -- a typed container element, a generic argument, an
 			// override's signature -- asks with conversions disabled and therefore requires the exact
