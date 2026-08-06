@@ -246,6 +246,15 @@ bool FSConstantPoolComparator::compare(const Variant &p_lhs, const Variant &p_rh
 	return true;
 }
 
+// The runtime view of a typed Array/Dictionary element. Core container types cannot express "this
+// type or null", so a declared-nullable element describes an untyped element at runtime, exactly as
+// `FSDataType::to_container_type()` does for every slot it reifies. The compiled `FSDataType` keeps
+// the declared element identity so the reflection surface can still name it; only the metadata this
+// generator emits is erased. The analyzer still enforces element types statically.
+static FSDataType _runtime_container_element_type(const FSDataType &p_element_type) {
+	return p_element_type.is_nullable ? FSDataType() : p_element_type;
+}
+
 Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_type) const {
 	Dictionary descriptor;
 	descriptor["builtin_type"] = p_type.builtin_type;
@@ -281,7 +290,12 @@ Variant FSByteCodeGenerator::make_container_type_descriptor(const FSDataType &p_
 
 	Array element_types;
 	for (const FSDataType &element_type : p_type.container_element_types) {
-		element_types.push_back(make_container_type_descriptor(element_type));
+		// A tuple descriptor describes a structural shape whose `is` test reads `is_nullable` back, so
+		// a nullable tuple element keeps its identity. A typed Array/Dictionary element cannot: the
+		// container-type decoder has no representation for "this type or null" and would read a
+		// nullable element back as a plain typed element, so it is erased here instead.
+		element_types.push_back(make_container_type_descriptor(
+				p_type.kind == FSDataType::TUPLE ? element_type : _runtime_container_element_type(element_type)));
 	}
 	descriptor["element_types"] = element_types;
 
@@ -1034,7 +1048,7 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 	switch (p_type.kind) {
 		case FSDataType::BUILTIN: {
 			if (p_type.builtin_type == Variant::ARRAY && p_type.has_container_element_type(0)) {
-				const FSDataType &element_type = p_type.get_container_element_type(0);
+				const FSDataType element_type = _runtime_container_element_type(p_type.get_container_element_type(0));
 				append_opcode(FSFunction::OPCODE_TYPE_TEST_ARRAY);
 				append(p_target);
 				append(p_source);
@@ -1042,8 +1056,8 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 				append(element_type.builtin_type);
 				append(element_type.native_type);
 			} else if (p_type.builtin_type == Variant::DICTIONARY && p_type.has_container_element_types()) {
-				const FSDataType &key_element_type = p_type.get_container_element_type_or_variant(0);
-				const FSDataType &value_element_type = p_type.get_container_element_type_or_variant(1);
+				const FSDataType key_element_type = _runtime_container_element_type(p_type.get_container_element_type_or_variant(0));
+				const FSDataType value_element_type = _runtime_container_element_type(p_type.get_container_element_type_or_variant(1));
 				append_opcode(FSFunction::OPCODE_TYPE_TEST_DICTIONARY);
 				append(p_target);
 				append(p_source);
@@ -1363,7 +1377,7 @@ void FSByteCodeGenerator::write_assign_with_conversion(const Address &p_target, 
 	switch (p_target.type.kind) {
 		case FSDataType::BUILTIN: {
 			if (p_target.type.builtin_type == Variant::ARRAY && p_target.type.has_container_element_type(0)) {
-				const FSDataType &element_type = p_target.type.get_container_element_type(0);
+				const FSDataType element_type = _runtime_container_element_type(p_target.type.get_container_element_type(0));
 				append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_ARRAY);
 				append(p_target);
 				append(p_source);
@@ -1371,8 +1385,8 @@ void FSByteCodeGenerator::write_assign_with_conversion(const Address &p_target, 
 				append(element_type.builtin_type);
 				append(element_type.native_type);
 			} else if (p_target.type.builtin_type == Variant::DICTIONARY && p_target.type.has_container_element_types()) {
-				const FSDataType &key_type = p_target.type.get_container_element_type_or_variant(0);
-				const FSDataType &value_type = p_target.type.get_container_element_type_or_variant(1);
+				const FSDataType key_type = _runtime_container_element_type(p_target.type.get_container_element_type_or_variant(0));
+				const FSDataType value_type = _runtime_container_element_type(p_target.type.get_container_element_type_or_variant(1));
 				append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_DICTIONARY);
 				append(p_target);
 				append(p_source);
@@ -1475,7 +1489,7 @@ void FSByteCodeGenerator::write_assign(const Address &p_target, const Address &p
 	}
 
 	if (p_target.type.kind == FSDataType::BUILTIN && p_target.type.builtin_type == Variant::ARRAY && p_target.type.has_container_element_type(0)) {
-		const FSDataType &element_type = p_target.type.get_container_element_type(0);
+		const FSDataType element_type = _runtime_container_element_type(p_target.type.get_container_element_type(0));
 		append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_ARRAY);
 		append(p_target);
 		append(p_source);
@@ -1483,8 +1497,8 @@ void FSByteCodeGenerator::write_assign(const Address &p_target, const Address &p
 		append(element_type.builtin_type);
 		append(element_type.native_type);
 	} else if (p_target.type.kind == FSDataType::BUILTIN && p_target.type.builtin_type == Variant::DICTIONARY && p_target.type.has_container_element_types()) {
-		const FSDataType &key_type = p_target.type.get_container_element_type_or_variant(0);
-		const FSDataType &value_type = p_target.type.get_container_element_type_or_variant(1);
+		const FSDataType key_type = _runtime_container_element_type(p_target.type.get_container_element_type_or_variant(0));
+		const FSDataType value_type = _runtime_container_element_type(p_target.type.get_container_element_type_or_variant(1));
 		append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_DICTIONARY);
 		append(p_target);
 		append(p_source);
@@ -1515,7 +1529,7 @@ void FSByteCodeGenerator::write_assign_typed_parameter(const Address &p_target, 
 }
 
 void FSByteCodeGenerator::write_assign_typed_array_convert(const Address &p_target, const Address &p_source) {
-	const FSDataType &element_type = p_target.type.get_container_element_type(0);
+	const FSDataType element_type = _runtime_container_element_type(p_target.type.get_container_element_type(0));
 	append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_ARRAY_CONVERT);
 	append(p_target);
 	append(p_source);
@@ -1525,8 +1539,8 @@ void FSByteCodeGenerator::write_assign_typed_array_convert(const Address &p_targ
 }
 
 void FSByteCodeGenerator::write_assign_typed_dictionary_convert(const Address &p_target, const Address &p_source) {
-	const FSDataType &key_type = p_target.type.get_container_element_type_or_variant(0);
-	const FSDataType &value_type = p_target.type.get_container_element_type_or_variant(1);
+	const FSDataType key_type = _runtime_container_element_type(p_target.type.get_container_element_type_or_variant(0));
+	const FSDataType value_type = _runtime_container_element_type(p_target.type.get_container_element_type_or_variant(1));
 	append_opcode(FSFunction::OPCODE_ASSIGN_TYPED_DICTIONARY_CONVERT);
 	append(p_target);
 	append(p_source);
@@ -2187,16 +2201,17 @@ void FSByteCodeGenerator::write_construct_tuple(const Address &p_target, const V
 }
 
 void FSByteCodeGenerator::write_construct_typed_array(const Address &p_target, const FSDataType &p_element_type, const Vector<Address> &p_arguments) {
+	const FSDataType element_type = _runtime_container_element_type(p_element_type);
 	append_opcode_and_argcount(FSFunction::OPCODE_CONSTRUCT_TYPED_ARRAY, 2 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
 	}
 	CallTarget ct = get_call_target(p_target);
 	append(ct.target);
-	append(get_container_type_pos(p_element_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+	append(get_container_type_pos(element_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 	append(p_arguments.size());
-	append(p_element_type.builtin_type);
-	append(p_element_type.native_type);
+	append(element_type.builtin_type);
+	append(element_type.native_type);
 	ct.cleanup();
 }
 
@@ -2236,19 +2251,21 @@ void FSByteCodeGenerator::write_construct_dictionary(const Address &p_target, co
 }
 
 void FSByteCodeGenerator::write_construct_typed_dictionary(const Address &p_target, const FSDataType &p_key_type, const FSDataType &p_value_type, const Vector<Address> &p_arguments) {
+	const FSDataType key_type = _runtime_container_element_type(p_key_type);
+	const FSDataType value_type = _runtime_container_element_type(p_value_type);
 	append_opcode_and_argcount(FSFunction::OPCODE_CONSTRUCT_TYPED_DICTIONARY, 3 + p_arguments.size());
 	for (int i = 0; i < p_arguments.size(); i++) {
 		append(p_arguments[i]);
 	}
 	CallTarget ct = get_call_target(p_target);
 	append(ct.target);
-	append(get_container_type_pos(p_key_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
-	append(get_container_type_pos(p_value_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+	append(get_container_type_pos(key_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
+	append(get_container_type_pos(value_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 	append(p_arguments.size() / 2); // This is number of key-value pairs, so only half of actual arguments.
-	append(p_key_type.builtin_type);
-	append(p_key_type.native_type);
-	append(p_value_type.builtin_type);
-	append(p_value_type.native_type);
+	append(key_type.builtin_type);
+	append(key_type.native_type);
+	append(value_type.builtin_type);
+	append(value_type.native_type);
 	ct.cleanup();
 }
 
@@ -2617,7 +2634,7 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 				append(true);
 			} else if (function->return_type.kind == FSDataType::BUILTIN && function->return_type.builtin_type == Variant::ARRAY && function->return_type.has_container_element_type(0)) {
 				// Typed array.
-				const FSDataType &element_type = function->return_type.get_container_element_type(0);
+				const FSDataType element_type = _runtime_container_element_type(function->return_type.get_container_element_type(0));
 				append_opcode(FSFunction::OPCODE_RETURN_TYPED_ARRAY);
 				append(p_return_value);
 				append(get_container_type_pos(element_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
@@ -2626,8 +2643,8 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 			} else if (function->return_type.kind == FSDataType::BUILTIN && function->return_type.builtin_type == Variant::DICTIONARY &&
 					function->return_type.has_container_element_types()) {
 				// Typed dictionary.
-				const FSDataType &key_type = function->return_type.get_container_element_type_or_variant(0);
-				const FSDataType &value_type = function->return_type.get_container_element_type_or_variant(1);
+				const FSDataType key_type = _runtime_container_element_type(function->return_type.get_container_element_type_or_variant(0));
+				const FSDataType value_type = _runtime_container_element_type(function->return_type.get_container_element_type_or_variant(1));
 				append_opcode(FSFunction::OPCODE_RETURN_TYPED_DICTIONARY);
 				append(p_return_value);
 				append(get_container_type_pos(key_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
@@ -2654,15 +2671,15 @@ void FSByteCodeGenerator::write_return(const Address &p_return_value) {
 		switch (function->return_type.kind) {
 			case FSDataType::BUILTIN: {
 				if (function->return_type.builtin_type == Variant::ARRAY && function->return_type.has_container_element_type(0)) {
-					const FSDataType &element_type = function->return_type.get_container_element_type(0);
+					const FSDataType element_type = _runtime_container_element_type(function->return_type.get_container_element_type(0));
 					append_opcode(FSFunction::OPCODE_RETURN_TYPED_ARRAY);
 					append(p_return_value);
 					append(get_container_type_pos(element_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 					append(element_type.builtin_type);
 					append(element_type.native_type);
 				} else if (function->return_type.builtin_type == Variant::DICTIONARY && function->return_type.has_container_element_types()) {
-					const FSDataType &key_type = function->return_type.get_container_element_type_or_variant(0);
-					const FSDataType &value_type = function->return_type.get_container_element_type_or_variant(1);
+					const FSDataType key_type = _runtime_container_element_type(function->return_type.get_container_element_type_or_variant(0));
+					const FSDataType value_type = _runtime_container_element_type(function->return_type.get_container_element_type_or_variant(1));
 					append_opcode(FSFunction::OPCODE_RETURN_TYPED_DICTIONARY);
 					append(p_return_value);
 					append(get_container_type_pos(key_type) | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
