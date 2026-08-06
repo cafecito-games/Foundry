@@ -302,6 +302,69 @@ static _FORCE_INLINE_ Variant::Type vc_get_return_type(void (*method)(P...)) {
 	return Variant::NIL;
 }
 
+// Metadata is the only record of a builtin method's declared integer width, mirroring
+// `MethodBind::get_argument_meta()` for the class-bound native call path. Without it, unsigned
+// builtin parameters and returns (e.g. `Color.hex`'s `uint32_t`) decode to the wide `uint`/`ulong`
+// carrier instead of their exact declared width.
+template <typename R, typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_argument_metadata(R (T::*method)(P...), int p_arg) {
+	return call_get_argument_metadata<P...>(p_arg);
+}
+template <typename R, typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_argument_metadata(R (T::*method)(P...) const, int p_arg) {
+	return call_get_argument_metadata<P...>(p_arg);
+}
+
+template <typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_argument_metadata(void (T::*method)(P...), int p_arg) {
+	return call_get_argument_metadata<P...>(p_arg);
+}
+
+template <typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_argument_metadata(void (T::*method)(P...) const, int p_arg) {
+	return call_get_argument_metadata<P...>(p_arg);
+}
+
+template <typename R, typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_argument_metadata(R (*method)(T *, P...), int p_arg) {
+	return call_get_argument_metadata<P...>(p_arg);
+}
+
+template <typename R, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_argument_metadata_static(R (*method)(P...), int p_arg) {
+	return call_get_argument_metadata<P...>(p_arg);
+}
+
+template <typename R, typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_return_metadata(R (T::*method)(P...)) {
+	return GetTypeInfo<R>::METADATA;
+}
+
+template <typename R, typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_return_metadata(R (T::*method)(P...) const) {
+	return GetTypeInfo<R>::METADATA;
+}
+
+template <typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_return_metadata(void (T::*method)(P...)) {
+	return FoundryTypeInfo::METADATA_NONE;
+}
+
+template <typename T, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_return_metadata(void (T::*method)(P...) const) {
+	return FoundryTypeInfo::METADATA_NONE;
+}
+
+template <typename R, typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_return_metadata(R (*method)(P...)) {
+	return GetTypeInfo<R>::METADATA;
+}
+
+template <typename... P>
+static _FORCE_INLINE_ FoundryTypeInfo::Metadata vc_get_return_metadata(void (*method)(P...)) {
+	return FoundryTypeInfo::METADATA_NONE;
+}
+
 template <typename R, typename T, typename... P>
 static _FORCE_INLINE_ bool vc_has_return_type(R (T::*method)(P...)) {
 	return true;
@@ -386,8 +449,14 @@ static _FORCE_INLINE_ Variant::Type vc_get_base_type(void (T::*method)(P...) con
 		static Variant::Type get_argument_type(int p_arg) {                                                                                                       \
 			return vc_get_argument_type(m_method_ptr, p_arg);                                                                                                     \
 		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_argument_metadata(int p_arg) {                                                                                       \
+			return vc_get_argument_metadata(m_method_ptr, p_arg);                                                                                                 \
+		}                                                                                                                                                         \
 		static Variant::Type get_return_type() {                                                                                                                  \
 			return vc_get_return_type(m_method_ptr);                                                                                                              \
+		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_return_metadata() {                                                                                                  \
+			return vc_get_return_metadata(m_method_ptr);                                                                                                          \
 		}                                                                                                                                                         \
 		static bool has_return_type() {                                                                                                                           \
 			return vc_has_return_type(m_method_ptr);                                                                                                              \
@@ -426,8 +495,14 @@ static _FORCE_INLINE_ Variant::Type vc_get_base_type(void (T::*method)(P...) con
 		static Variant::Type get_argument_type(int p_arg) {                                                                                                       \
 			return vc_get_argument_type(m_method_ptr, p_arg);                                                                                                     \
 		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_argument_metadata(int p_arg) {                                                                                       \
+			return vc_get_argument_metadata(m_method_ptr, p_arg);                                                                                                 \
+		}                                                                                                                                                         \
 		static Variant::Type get_return_type() {                                                                                                                  \
 			return vc_get_return_type(m_method_ptr);                                                                                                              \
+		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_return_metadata() {                                                                                                  \
+			return vc_get_return_metadata(m_method_ptr);                                                                                                          \
 		}                                                                                                                                                         \
 		static bool has_return_type() {                                                                                                                           \
 			return vc_has_return_type(m_method_ptr);                                                                                                              \
@@ -476,8 +551,14 @@ static _FORCE_INLINE_ void vc_static_ptrcall(void (*method)(P...), const void **
 		static Variant::Type get_argument_type(int p_arg) {                                                                                                       \
 			return vc_get_argument_type_static(m_method_ptr, p_arg);                                                                                              \
 		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_argument_metadata(int p_arg) {                                                                                       \
+			return vc_get_argument_metadata_static(m_method_ptr, p_arg);                                                                                          \
+		}                                                                                                                                                         \
 		static Variant::Type get_return_type() {                                                                                                                  \
 			return vc_get_return_type(m_method_ptr);                                                                                                              \
+		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_return_metadata() {                                                                                                  \
+			return vc_get_return_metadata(m_method_ptr);                                                                                                          \
 		}                                                                                                                                                         \
 		static bool has_return_type() {                                                                                                                           \
 			return vc_has_return_type_static(m_method_ptr);                                                                                                       \
@@ -526,8 +607,14 @@ static _FORCE_INLINE_ void vc_ptrcall(void (*method)(T *, P...), void *p_base, c
 		static Variant::Type get_argument_type(int p_arg) {                                                                                                       \
 			return vc_get_argument_type(m_method_ptr, p_arg);                                                                                                     \
 		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_argument_metadata(int p_arg) {                                                                                       \
+			return vc_get_argument_metadata(m_method_ptr, p_arg);                                                                                                 \
+		}                                                                                                                                                         \
 		static Variant::Type get_return_type() {                                                                                                                  \
 			return vc_get_return_type(m_method_ptr);                                                                                                              \
+		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_return_metadata() {                                                                                                  \
+			return vc_get_return_metadata(m_method_ptr);                                                                                                          \
 		}                                                                                                                                                         \
 		static bool has_return_type() {                                                                                                                           \
 			return vc_has_return_type_static(m_method_ptr);                                                                                                       \
@@ -582,8 +669,14 @@ static _FORCE_INLINE_ void vc_ptrcall(void (*method)(T *, P...), void *p_base, c
 		static Variant::Type get_argument_type(int p_arg) {                                                                                                       \
 			return Variant::NIL;                                                                                                                                  \
 		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_argument_metadata(int p_arg) {                                                                                       \
+			return FoundryTypeInfo::METADATA_NONE;                                                                                                                \
+		}                                                                                                                                                         \
 		static Variant::Type get_return_type() {                                                                                                                  \
 			return GetTypeInfo<m_return_type>::VARIANT_TYPE;                                                                                                      \
+		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_return_metadata() {                                                                                                  \
+			return m_has_return ? GetTypeInfo<m_return_type>::METADATA : FoundryTypeInfo::METADATA_NONE;                                                          \
 		}                                                                                                                                                         \
 		static bool has_return_type() {                                                                                                                           \
 			return m_has_return;                                                                                                                                  \
@@ -634,8 +727,14 @@ static _FORCE_INLINE_ void vc_ptrcall(void (*method)(T *, P...), void *p_base, c
 		static Variant::Type get_argument_type(int p_arg) {                                                                                                       \
 			return m_arg_type;                                                                                                                                    \
 		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_argument_metadata(int p_arg) {                                                                                       \
+			return FoundryTypeInfo::METADATA_NONE;                                                                                                                \
+		}                                                                                                                                                         \
 		static Variant::Type get_return_type() {                                                                                                                  \
 			return Variant::NIL;                                                                                                                                  \
+		}                                                                                                                                                         \
+		static FoundryTypeInfo::Metadata get_return_metadata() {                                                                                                  \
+			return FoundryTypeInfo::METADATA_NONE;                                                                                                                \
 		}                                                                                                                                                         \
 		static bool has_return_type() {                                                                                                                           \
 			return false;                                                                                                                                         \
@@ -1278,6 +1377,8 @@ struct VariantBuiltInMethodInfo {
 	Variant::Type return_type;
 	int argument_count = 0;
 	Variant::Type (*get_argument_type)(int p_arg) = nullptr;
+	FoundryTypeInfo::Metadata (*get_argument_metadata)(int p_arg) = nullptr;
+	FoundryTypeInfo::Metadata (*get_return_metadata)() = nullptr;
 
 	MethodInfo get_method_info(const StringName &p_name) const {
 		MethodInfo mi;
@@ -1288,6 +1389,10 @@ struct VariantBuiltInMethodInfo {
 			if (mi.return_val.type == Variant::NIL) {
 				mi.return_val.usage |= PROPERTY_USAGE_NIL_IS_VARIANT;
 			}
+			// A `PropertyInfo` transports only the integer carrier, so the declared width of a builtin
+			// method's return value lives exclusively in this metadata, mirroring `info_from_bind()` for
+			// class-bound native methods.
+			mi.return_val_metadata = (*get_return_metadata)();
 		}
 
 		if (is_const) {
@@ -1312,6 +1417,7 @@ struct VariantBuiltInMethodInfo {
 				pi.usage |= PROPERTY_USAGE_NIL_IS_VARIANT;
 			}
 			mi.arguments.push_back(pi);
+			mi.arguments_metadata.push_back((*get_argument_metadata)(i));
 		}
 
 		mi.default_arguments = default_arguments;
@@ -1356,6 +1462,8 @@ static void _populate_variant_builtin_method_info(VariantBuiltInMethodInfo &r_im
 	r_imi.return_type = T::get_return_type();
 	r_imi.argument_count = T::get_argument_count();
 	r_imi.get_argument_type = T::get_argument_type;
+	r_imi.get_argument_metadata = T::get_argument_metadata;
+	r_imi.get_return_metadata = T::get_return_metadata;
 }
 
 template <typename T>
@@ -1524,6 +1632,25 @@ Variant::Type Variant::get_builtin_method_argument_type(Variant::Type p_type, co
 	ERR_FAIL_NULL_V(method, Variant::NIL);
 	ERR_FAIL_INDEX_V(p_argument, method->argument_count, Variant::NIL);
 	return method->get_argument_type(p_argument);
+}
+
+// Mirrors `MethodBind::get_argument_meta()` for the class-bound native call path: the exact declared
+// integer width (int8/16/32/64, uint8/16/32/64, ...) that a `Variant::Type` carrier alone cannot
+// express. Returned as a plain `int` (see `FoundryTypeInfo::Metadata`) to match `MethodInfo`'s
+// `arguments_metadata`/`return_val_metadata` fields and avoid a circular include on `type_info.h`.
+int Variant::get_builtin_method_argument_metadata(Variant::Type p_type, const StringName &p_method, int p_argument) {
+	ERR_FAIL_INDEX_V(p_type, Variant::VARIANT_MAX, 0);
+	const VariantBuiltInMethodInfo *method = builtin_method_info[p_type].getptr(p_method);
+	ERR_FAIL_NULL_V(method, 0);
+	ERR_FAIL_INDEX_V(p_argument, method->argument_count, 0);
+	return method->get_argument_metadata(p_argument);
+}
+
+int Variant::get_builtin_method_return_metadata(Variant::Type p_type, const StringName &p_method) {
+	ERR_FAIL_INDEX_V(p_type, Variant::VARIANT_MAX, 0);
+	const VariantBuiltInMethodInfo *method = builtin_method_info[p_type].getptr(p_method);
+	ERR_FAIL_NULL_V(method, 0);
+	return method->get_return_metadata();
 }
 
 String Variant::get_builtin_method_argument_name(Variant::Type p_type, const StringName &p_method, int p_argument) {

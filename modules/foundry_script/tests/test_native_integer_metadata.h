@@ -384,4 +384,74 @@ TEST_CASE("[Modules][FoundryScript][NativeIntegerMetadata] A failed boundary con
 	CHECK(seed == Variant(uint64_t(3)));
 }
 
+TEST_CASE("[Modules][FoundryScript][NativeIntegerMetadata] A builtin method reports the width its C++ signature declares") {
+	// `Color::hex(uint32_t)` is a static builtin method; its lone parameter is `uint32_t`, not the wide
+	// `uint64_t` a caller gets when no metadata is available at all.
+	CHECK(Variant::get_builtin_method_argument_metadata(Variant::COLOR, SNAME("hex"), 0) == FoundryTypeInfo::METADATA_INT_IS_UINT32);
+	CHECK(Variant::get_builtin_method_argument_type(Variant::COLOR, SNAME("hex"), 0) == Variant::UINT);
+
+	// `Color::hex64(uint64_t)` is genuinely 64-bit, and stays that way.
+	CHECK(Variant::get_builtin_method_argument_metadata(Variant::COLOR, SNAME("hex64"), 0) == FoundryTypeInfo::METADATA_INT_IS_UINT64);
+	CHECK(Variant::get_builtin_method_argument_type(Variant::COLOR, SNAME("hex64"), 0) == Variant::UINT);
+
+	// `Signal::connect(const Callable &, uint32_t p_flags = 0)`: the second argument is the `uint32_t`
+	// flags word, not a `uint64_t`.
+	CHECK(Variant::get_builtin_method_argument_metadata(Variant::SIGNAL, SNAME("connect"), 1) == FoundryTypeInfo::METADATA_INT_IS_UINT32);
+	CHECK(Variant::get_builtin_method_argument_type(Variant::SIGNAL, SNAME("connect"), 1) == Variant::UINT);
+	// Its first argument, the callable, carries no integer metadata at all.
+	CHECK(Variant::get_builtin_method_argument_metadata(Variant::SIGNAL, SNAME("connect"), 0) == FoundryTypeInfo::METADATA_NONE);
+
+	// `String::num_uint64(uint64_t, int base = 10, bool capitalize_hex = false)`.
+	CHECK(Variant::get_builtin_method_argument_metadata(Variant::STRING, SNAME("num_uint64"), 0) == FoundryTypeInfo::METADATA_INT_IS_UINT64);
+	CHECK(Variant::get_builtin_method_argument_type(Variant::STRING, SNAME("num_uint64"), 0) == Variant::UINT);
+
+	// `Signal::get_object_id()` returns an `ObjectID`, a nominal unsigned wrapper that keeps the signed
+	// `INT` carrier while declaring `METADATA_INT_IS_UINT64`; the return metadata surfaces that exactly
+	// as `MethodBind::get_argument_meta(-1)` would for the equivalent class-bound method.
+	CHECK(Variant::get_builtin_method_return_metadata(Variant::SIGNAL, SNAME("get_object_id")) == FoundryTypeInfo::METADATA_INT_IS_UINT64);
+	CHECK(Variant::get_builtin_method_return_type(Variant::SIGNAL, SNAME("get_object_id")) == Variant::INT);
+
+	// A method with no declared width at all (a `bool` return, `Callable` argument) reports
+	// `METADATA_NONE` rather than fabricating a width.
+	CHECK(Variant::get_builtin_method_return_metadata(Variant::SIGNAL, SNAME("is_connected")) == FoundryTypeInfo::METADATA_NONE);
+}
+
+TEST_CASE("[Modules][FoundryScript][NativeIntegerMetadata] A builtin method's exact argument width participates in call validation") {
+	ScopedNativeIntegerMetadataLanguage language;
+
+	// `Color.hex()` declares `uint32_t`, so a `uint` literal at the exact width type-checks.
+	CHECK_NATIVE_INTEGER_ANALYSIS_SUCCEEDS(
+			"func run() -> Color:\n"
+			"\treturn Color.hex(4294967295U)\n");
+
+	// `Color.hex64()` declares `uint64_t`, so a `ulong` literal at that width type-checks.
+	CHECK_NATIVE_INTEGER_ANALYSIS_SUCCEEDS(
+			"func run() -> Color:\n"
+			"\treturn Color.hex64(4294967295UL)\n");
+
+	// A dynamic `ulong` value is wider than the declared `uint32_t` parameter and needs an explicit
+	// narrowing conversion spelled out, exactly as it does for a class-bound native method (see
+	// `RandomNumberGenerator.set_seed()` above). If the parameter still decoded as the wide `ulong`
+	// carrier (the pre-fix behavior, from missing metadata), a `ulong` argument would incorrectly be
+	// treated as an exact match and this would succeed without the cast.
+	CHECK_NATIVE_INTEGER_ANALYSIS_FAILS(
+			"func run(value: ulong) -> Color:\n"
+			"\treturn Color.hex(value)\n");
+	CHECK_NATIVE_INTEGER_ANALYSIS_SUCCEEDS(
+			"func run(value: ulong) -> Color:\n"
+			"\treturn Color.hex(value as uint)\n");
+}
+
+TEST_CASE("[Modules][FoundryScript][NativeIntegerMetadata] A builtin method's exact-width mismatch names the exact declared type") {
+	ScopedNativeIntegerMetadataLanguage language;
+
+	// `Color.hex()`'s parameter is `uint32_t`; a wrong-typed argument's diagnostic must name "uint",
+	// not the wide "ulong" carrier a missing-metadata decode would fall back to.
+	const String errors = native_integer_analysis_errors(
+			"func run() -> void:\n"
+			"\tColor.hex(true)\n");
+	CHECK(errors.contains("should be \"uint\""));
+	CHECK_FALSE(errors.contains("should be \"ulong\""));
+}
+
 } // namespace FSTests

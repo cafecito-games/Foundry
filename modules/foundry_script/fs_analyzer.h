@@ -742,9 +742,11 @@ private:
 	bool make_type_handle_meta_type(const FSParser::DataType &p_represented_type, const FSParser::Node *p_source, FSParser::DataType &r_type);
 	void apply_use_site_nullable_type_argument_marker(FSParser::DataType &r_type_argument, bool p_is_nullable);
 	void reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::SubscriptNode *p_callee);
-	// `p_method_bind` is the bind the info was built from, when there is one. It carries the exact
-	// integer widths that `MethodInfo` cannot express; without it the signature decodes wide.
-	bool function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, const MethodBind *p_method_bind = nullptr);
+	// `p_info` carries the exact integer widths in `arguments_metadata`/`return_val_metadata` whenever
+	// its source populated them (`ClassDB::info_from_bind()` for class-bound native methods,
+	// `VariantBuiltInMethodInfo::get_method_info()` for builtin methods); a `MethodInfo` with no such
+	// metadata (e.g. a script method) simply decodes to the wide carrier, same as before.
+	bool function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
 	bool string_name_from_constant_arg(const FSParser::CallNode *p_call, int p_argument_index, StringName &r_name) const;
 	bool is_node_compatible_type(const FSParser::DataType &p_type) const;
 	bool property_type_from_class(FSParser::ClassNode *p_class, const StringName &p_property_name, FSParser::Node *p_source, FSParser::DataType &r_property_type);
