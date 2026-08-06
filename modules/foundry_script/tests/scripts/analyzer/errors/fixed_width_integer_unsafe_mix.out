@@ -1,16 +1,16 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 10: No integer type holds every value of both "long" and "ulong", so the "+" operator has no common type here. Convert one operand explicitly.
->> ERROR at line 11: No integer type holds every value of both "ulong" and "long", so the "+" operator has no common type here. Convert one operand explicitly.
->> ERROR at line 12: Invalid operands "int" and "ulong" for "+" operator.
->> ERROR at line 13: Invalid operands "ulong" and "int" for "+" operator.
->> ERROR at line 14: Invalid operands "int" and "uint" for "+" operator.
->> ERROR at line 15: Invalid operands "uint" and "int" for "+" operator.
->> ERROR at line 16: The "+" operator cannot mix "uint" and "long" operands. Convert both to "long" explicitly.
->> ERROR at line 17: The "+" operator cannot mix "long" and "uint" operands. Convert both to "long" explicitly.
->> ERROR at line 20: Cannot assign a value of type ulong to variable "narrowed" with specified type uint.
->> ERROR at line 21: Cannot assign a value of type long to variable "crossed" with specified type uint.
->> ERROR at line 22: Cannot assign a value of type long to variable "lossy_float" with specified type float.
->> ERROR at line 23: Cannot assign a value of type ulong to variable "lossy_unsigned_float" with specified type float.
->> ERROR at line 27: Cannot assign a value of type uint to variable "unsigned_narrow_float" with specified type float.
->> ERROR at line 30: Cannot assign a value of type "ulong" as "uint".
->> ERROR at line 30: Cannot assign a value of type ulong to variable "too_large" with specified type uint.
+>> ERROR at line 8: No integer type holds every value of both "long" and "ulong", so the "+" operator has no common type here. Convert one operand explicitly.
+>> ERROR at line 9: No integer type holds every value of both "ulong" and "long", so the "+" operator has no common type here. Convert one operand explicitly.
+>> ERROR at line 10: No integer type holds every value of both "int" and "ulong", so the "+" operator has no common type here. Convert one operand explicitly.
+>> ERROR at line 11: No integer type holds every value of both "ulong" and "int", so the "+" operator has no common type here. Convert one operand explicitly.
+>> ERROR at line 12: The "+" operator cannot mix "int" and "uint" operands. Convert both to "long" explicitly.
+>> ERROR at line 13: The "+" operator cannot mix "uint" and "int" operands. Convert both to "long" explicitly.
+>> ERROR at line 14: The "+" operator cannot mix "uint" and "long" operands. Convert both to "long" explicitly.
+>> ERROR at line 15: The "+" operator cannot mix "long" and "uint" operands. Convert both to "long" explicitly.
+>> ERROR at line 18: Cannot assign a value of type ulong to variable "narrowed" with specified type uint.
+>> ERROR at line 19: Cannot assign a value of type long to variable "crossed" with specified type uint.
+>> ERROR at line 20: Cannot assign a value of type long to variable "lossy_float" with specified type float.
+>> ERROR at line 21: Cannot assign a value of type ulong to variable "lossy_unsigned_float" with specified type float.
+>> ERROR at line 25: Cannot assign a value of type uint to variable "unsigned_narrow_float" with specified type float.
+>> ERROR at line 28: Cannot assign a value of type "ulong" as "uint".
+>> ERROR at line 28: Cannot assign a value of type ulong to variable "too_large" with specified type uint.

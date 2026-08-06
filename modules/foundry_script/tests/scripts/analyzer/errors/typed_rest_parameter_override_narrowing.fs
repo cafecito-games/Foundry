@@ -13,26 +13,26 @@ class Dog:
 
 
 class Base:
-	func visit(...pets: Array[Animal]) -> int:
+	func visit(...pets: Array[Animal]) -> long:
 		return pets.size()
 
 
 class Narrower:
 	extends Base
 
-	func visit(...pets: Array[Dog]) -> int:
+	func visit(...pets: Array[Dog]) -> long:
 		return pets.size()
 
 
 class GradualBase:
-	func visit(...values: Array) -> int:
+	func visit(...values: Array) -> long:
 		return values.size()
 
 
 class TypedTail:
 	extends GradualBase
 
-	func visit(...values: Array[int]) -> int:
+	func visit(...values: Array[int]) -> long:
 		return values.size()
 
 

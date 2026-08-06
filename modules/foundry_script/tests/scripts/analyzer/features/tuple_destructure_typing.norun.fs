@@ -2,7 +2,7 @@
 # and named tuples, and a `_` slot simply skips its element.
 tuple Vec2(x: float, y: float)
 
-func unnamed() -> int:
+func unnamed() -> long:
 	var (count, label) = (1, "one")
 	var typed_count: int = count
 	var typed_label: String = label

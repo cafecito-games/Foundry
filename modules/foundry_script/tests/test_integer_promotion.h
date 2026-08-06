@@ -311,14 +311,13 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] Non-numeric types are outside 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] An operator's result carries the promoted width") {
 	using namespace TestIntegerPromotion;
 
-	// `int` deliberately declares no width yet (see `_applied_numeric_type()`), so its two matrix rows
-	// are covered by the descriptor-level test above; the three spellings that do declare one are
-	// checked here through the analyzer.
 	const AnalyzedSnippet snippet(
 			"func test():\n"
+			"\tvar i: int = 1\n"
 			"\tvar u: uint = 2U\n"
 			"\tvar ul: ulong = 4UL\n"
 			"\tvar l: long = 3L\n"
+			"\tvar same_int = i + i\n"
 			"\tvar same_uint = u + u\n"
 			"\tvar same_long = l + l\n"
 			"\tvar same_ulong = ul + ul\n"
@@ -326,11 +325,12 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] An operator's result carries t
 			"\tvar ulong_uint = ul + u\n"
 			"\tvar folded_long = 1L + 2L\n"
 			"\tvar negated_long = -l\n"
-			"\tprint(same_uint, same_long, same_ulong, uint_ulong, ulong_uint, folded_long, negated_long)\n");
+			"\tprint(same_int, same_uint, same_long, same_ulong, uint_ulong, ulong_uint, folded_long, negated_long)\n");
 
 	REQUIRE(snippet.parse_error == OK);
 	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
 
+	check_initializer_type(snippet, "same_int", Variant::INT, NumericType::INT32);
 	check_initializer_type(snippet, "same_uint", Variant::UINT, NumericType::UINT32);
 	check_initializer_type(snippet, "same_long", Variant::INT, NumericType::INT64);
 	check_initializer_type(snippet, "same_ulong", Variant::UINT, NumericType::UINT64);
@@ -338,6 +338,36 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] An operator's result carries t
 	check_initializer_type(snippet, "ulong_uint", Variant::UINT, NumericType::UINT64);
 	check_initializer_type(snippet, "folded_long", Variant::INT, NumericType::INT64);
 	check_initializer_type(snippet, "negated_long", Variant::INT, NumericType::INT64);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A declared int contributes its 32-bit width to a promotion") {
+	using namespace TestIntegerPromotion;
+
+	// `int` carries the same `INT32` width as every other 32-bit-declaring slot, so it promotes and
+	// narrows exactly like `uint`, `long`, and `ulong` already did: mixing it with `long` promotes to
+	// `long`, and a value outside the 32-bit signed range is refused at an `int` destination.
+	const AnalyzedSnippet widened(
+			"func test():\n"
+			"\tvar i: int = 1\n"
+			"\tvar l: long = 2L\n"
+			"\tvar sum = i + l\n"
+			"\tprint(sum)\n");
+	REQUIRE(widened.parse_error == OK);
+	CHECK_MESSAGE(widened.first_error().is_empty(), widened.first_error());
+	check_initializer_type(widened, "sum", Variant::INT, NumericType::INT64);
+
+	const AnalyzedSnippet out_of_range(
+			"func test():\n"
+			"\tvar source: long = 3000000000L\n"
+			"\tvar overflowed: int = source\n"
+			"\tprint(overflowed)\n");
+	CHECK(out_of_range.parse_error == OK);
+	CHECK(out_of_range.first_error().contains("Cannot assign a value of type long to variable \"overflowed\" with specified type int."));
+
+	const FSParser::DataType int32_type = make_integer_type(NumericType::INT32);
+	const FSParser::DataType int64_type = make_integer_type(NumericType::INT64);
+	CHECK(classify_constant(int32_type, int64_type, int64_t(INT32_MAX)) == Conversion::CONSTANT_CHECKED);
+	CHECK(classify_constant(int32_type, int64_type, int64_t(INT32_MAX) + 1) == Conversion::EXPLICIT_REQUIRED);
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] A mixed signed/unsigned operand pair is rejected in both orders") {

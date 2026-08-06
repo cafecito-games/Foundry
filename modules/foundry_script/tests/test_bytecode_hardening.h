@@ -191,7 +191,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier validates every enum-call
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range operand addresses") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func measure(text: String) -> int:\n"
+			"static func measure(text: String) -> long:\n"
 			"\treturn text.length()\n");
 	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("measure"));
 
@@ -221,7 +221,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range oper
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects malformed jumps and truncated instructions") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func measure(text: String) -> int:\n"
+			"static func measure(text: String) -> long:\n"
 			"\treturn text.length()\n");
 	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("measure"));
 
@@ -269,7 +269,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects malformed jumps a
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects overflowing variable-argument counts") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func measure(text: String) -> int:\n"
+			"static func measure(text: String) -> long:\n"
 			"\treturn text.length()\n");
 	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("measure"));
 
@@ -349,7 +349,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Verifier checks the typed-dictiona
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects out-of-range table indices") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func measure(text: String) -> int:\n"
+			"static func measure(text: String) -> long:\n"
 			"\treturn text.length()\n");
 	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("measure"));
 
@@ -504,7 +504,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects a rest type without
 	// disagree, the VM would either carry an element contract it never packs or pack into a slot it
 	// has no contract for, so a payload that separates them must be rejected at load time.
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func collect(...values: Array[int]) -> int:\n"
+			"static func collect(...values: Array[int]) -> long:\n"
 			"\treturn values.size()\n");
 	const HashMap<StringName, FSFunction *>::ConstIterator element = script->get_member_functions().find(SNAME("collect"));
 	REQUIRE(element);
@@ -694,7 +694,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Loader rejects a function payload 
 	// and fixup-table fields, so truncating at every length sweeps through nearly all of them in one
 	// pass.
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func demo(text: String = \"hi\", ...rest: Array[int]) -> int:\n"
+			"static func demo(text: String = \"hi\", ...rest: Array[int]) -> long:\n"
 			"\tvar total := text.length()\n"
 			"\tfor value in rest:\n"
 			"\t\ttotal += value\n"
@@ -732,7 +732,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Serialized bytecode leaks no sourc
 	const String source =
 			"var member_marker: int = 5 # DISTINCTIVE_TRAILING_COMMENT_MARKER\n"
 			"\n"
-			"func method_marker(hidden_parameter: int) -> int:\n"
+			"func method_marker(hidden_parameter: int) -> long:\n"
 			"\tvar UNIQUE_LOCAL_VARIABLE_MARKER := hidden_parameter + 1\n"
 			"\tvar note := \"DISTINCTIVE_STRUCTURE_STRING_MARKER\"\n"
 			"\treturn UNIQUE_LOCAL_VARIABLE_MARKER + note.length()\n";
@@ -755,7 +755,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] Serialized bytecode leaks no sourc
 
 TEST_CASE("[FoundryScript][BytecodeHardening] Verifier rejects fall-through and one-past-end targets") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func measure(text: String) -> int:\n"
+			"static func measure(text: String) -> long:\n"
 			"\treturn text.length()\n");
 	FSFunction *function = bytecode_round_trip_member_function(script, SNAME("measure"));
 

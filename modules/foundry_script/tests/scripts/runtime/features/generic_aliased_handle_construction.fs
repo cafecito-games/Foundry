@@ -47,11 +47,11 @@ func return_object() -> Object:
 	return Box[int]
 
 
-func accept_gdscript(script: FoundryScript) -> int:
+func accept_gdscript(script: FoundryScript) -> long:
 	return foundry.reflection.get_type_arguments(script.new()).size()
 
 
-func accept_script(script: Script) -> int:
+func accept_script(script: Script) -> long:
 	return foundry.reflection.get_type_arguments(script.call("new")).size()
 
 

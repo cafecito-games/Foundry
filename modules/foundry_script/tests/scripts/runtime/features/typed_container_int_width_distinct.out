@@ -1,0 +1,7 @@
+FS_TEST_RUNTIME_ERROR
+[3000000000]
+{ "value": 3000000000 }
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to set the value 3000000000 into a TypedArray of type 'int', which only accepts values from -2147483648 to 2147483647.
+>> ERROR: Condition "!_p->typed.validate(value, "set")" is true.
+[0]

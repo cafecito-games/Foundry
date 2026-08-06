@@ -3,9 +3,8 @@
 # `INT`/`UINT` carrier. `Array[int]` and `Array[long]` therefore stay distinguishable even though both
 # encode as `INT`, and the exact names come from the compiled descriptors rather than from any value.
 #
-# A scalar `int` slot still names itself `long`: it declares no width constraint yet, so naming it
-# `int` would claim a narrowing the analyzer does not enforce. Its typed-container form does carry the
-# 32-bit constraint, which is why `Array[int]` names its element exactly. A method type parameter is
+# A scalar `int` slot now names itself `int`: it carries the same 32-bit constraint its typed-container
+# form already did, which is why `Array[int]` names its element exactly too. A method type parameter is
 # erased before execution, so a generic signature names `Variant`.
 const Producer = preload("fixed_width_integer_reflection_producer.notest.fs")
 

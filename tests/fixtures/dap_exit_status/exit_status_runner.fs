@@ -38,7 +38,7 @@ func run(args: PackedStringArray) -> int:
 	if file == null:
 		return 2
 
-	var result: int = _requested_result(selections)
+	var result: long = _requested_result(selections)
 	var leaves := selections
 	if leaves.size() == 0:
 		leaves = PackedStringArray(["exit::0"])
@@ -49,9 +49,9 @@ func run(args: PackedStringArray) -> int:
 	for i in leaves.size():
 		_store_point(file, i + 1, leaves[i], result == 0)
 	file.close()
-	return result
+	return result as int
 
-func _requested_result(selections: PackedStringArray) -> int:
+func _requested_result(selections: PackedStringArray) -> long:
 	for selection in selections:
 		if selection.begins_with("exit::"):
 			return selection.substr(6).to_int()

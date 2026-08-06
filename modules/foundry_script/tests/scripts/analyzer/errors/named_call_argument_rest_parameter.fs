@@ -1,4 +1,4 @@
-func collect(first: int, ...rest: Array) -> int:
+func collect(first: int, ...rest: Array) -> long:
 	return first + rest.size()
 
 func test():

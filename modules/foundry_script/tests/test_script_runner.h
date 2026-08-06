@@ -204,7 +204,7 @@ TEST_CASE("[Modules][FoundryScript][ScriptRunner][SceneTree] Inline eval return 
 TEST_CASE("[Modules][FoundryScript][ScriptRunner][SceneTree] Inline eval exposes user args") {
 	ScriptRunnerProjectFixture project;
 	String error;
-	const Ref<ScriptRunner> runner = FSInlineEval::compile_runner("return args.size()", error);
+	const Ref<ScriptRunner> runner = FSInlineEval::compile_runner("return args.size() as int", error);
 	REQUIRE_MESSAGE(runner.is_valid(), error);
 	PackedStringArray user_args;
 	user_args.push_back("--first");

@@ -8,7 +8,7 @@ func collect[T](...values: Array[T]) -> Array[T]:
 	return values
 
 
-func collect_ints[T](_witness: T, ...values: Array[int]) -> int:
+func collect_ints[T](_witness: T, ...values: Array[int]) -> long:
 	# The element type is concrete, so it is reified even inside a generic method.
 	Utils.check(values.is_typed())
 	Utils.check(values.get_typed_builtin() == TYPE_INT)

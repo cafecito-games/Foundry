@@ -115,7 +115,7 @@ func _return_code(framework: PackedStringArray, fallback: int) -> int:
 	var value: String = _framework_value(framework, "return-code")
 	if value.is_empty():
 		return fallback
-	return value.to_int()
+	return value.to_int() as int
 
 func _quoted_list(values: PackedStringArray) -> String:
 	var document: String = "["

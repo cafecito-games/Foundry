@@ -446,6 +446,7 @@ static void check_specialized_generic_is_as(const Ref<FoundryScript> &p_script) 
 
 	ContainerType int_argument;
 	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
 	ContainerType string_argument;
 	string_argument.builtin_type = Variant::STRING;
 	ContainerType int_array_argument;

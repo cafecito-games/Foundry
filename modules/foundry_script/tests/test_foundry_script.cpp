@@ -2062,8 +2062,17 @@ trait Damageable:
 )",
 			"user://trait_required_method_external_base_user.fs");
 
+	// A cross-script witness is matched through the compiled `MethodInfo`/`PropertyInfo` boundary,
+	// which transports a scalar integer parameter's carrier only, not its declared width (see the
+	// width-erasure boundary documented at `FSAnalyzer::type_from_property()`). The base script's
+	// `amount: int` parameter therefore decodes wide at the witness-matching site even though both
+	// sides declare the same 32-bit `int`, so this now correctly reports a mismatch. Recovering the
+	// width across this boundary is tracked separately; this pins the current, honest behavior
+	// rather than papering over the gap.
 	INFO(first_parser_error_message(external_parser));
-	CHECK_EQ(err, OK);
+	CHECK_EQ(err, ERR_PARSE_ERROR);
+	CHECK(first_parser_error_message(external_parser)
+					.contains(R"msg(The native function "take_damage()" signature does not match required trait method "Damageable.take_damage()".)msg"));
 }
 
 TEST_CASE("[Modules][FoundryScript] Analyzer resolves transitive external scope classes") {

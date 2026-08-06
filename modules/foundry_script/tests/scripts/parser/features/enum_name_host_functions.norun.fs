@@ -5,5 +5,5 @@ enum_name GlobalHostFunctionLevel:
 	func name() -> String:
 		return "name"
 
-	static func parse(p_name: String) -> int:
+	static func parse(p_name: String) -> long:
 		return p_name.length()

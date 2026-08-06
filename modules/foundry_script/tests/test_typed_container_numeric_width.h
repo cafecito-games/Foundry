@@ -193,10 +193,7 @@ TEST_CASE("[Modules][FoundryScript][NumericType] Each applied integer width reac
 		NumericType numeric_type;
 	};
 	const Expectation expectations[] = {
-		// `int` deliberately applies no width yet (`_applied_numeric_type()` in the analyzer), because
-		// native integer boundaries still decode wide. It reaches the runtime unconstrained on the signed
-		// carrier, which is what it did before widths existed.
-		{ "of_int", Variant::INT, NumericType::NONE },
+		{ "of_int", Variant::INT, NumericType::INT32 },
 		{ "of_uint", Variant::UINT, NumericType::UINT32 },
 		{ "of_long", Variant::INT, NumericType::INT64 },
 		{ "of_ulong", Variant::UINT, NumericType::UINT64 },

@@ -838,7 +838,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Namespace conformance load edges surv
 			"\tfunc ping() -> int:\n"
 			"\t\treturn power * 2\n"
 			"\n"
-			"func run() -> int:\n"
+			"func run() -> long:\n"
 			"\treturn 1\n");
 	const String consumer_path = original->get_script_path();
 	const String gadget_key = original->get_subclasses().find(SNAME("Gadget"))->value->get_fully_qualified_name();
@@ -909,7 +909,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Conformance witnesses re-register wit
 			"\tfunc ping() -> int:\n"
 			"\t\treturn 5\n"
 			"\n"
-			"func run() -> int:\n"
+			"func run() -> long:\n"
 			"\tvar gadget := Gadget.new()\n"
 			"\tvar pingable: Pingable = gadget\n"
 			"\tvar widened: Object = gadget\n"
@@ -1060,7 +1060,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Marker conformances survive compiled-
 			"extend Target uses Marker:\n"
 			"\tpass\n"
 			"\n"
-			"func run() -> int:\n"
+			"func run() -> long:\n"
 			"\tvar value: Variant = Target.new()\n"
 			"\tif not value is Marker:\n"
 			"\t\treturn 0\n"
@@ -1208,7 +1208,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Native and builtin conformance stand-
 			"\tfunc native_ping() -> int:\n"
 			"\t\treturn 20\n"
 			"\n"
-			"func run() -> int:\n"
+			"func run() -> long:\n"
 			"\tvar value: Pingable = 21\n"
 			"\tvar native_value: NativePingable = RefCounted.new()\n"
 			"\treturn value.ping() + native_value.native_ping()\n");
@@ -2099,7 +2099,7 @@ TEST_CASE("[FoundryScript][BytecodeScript] Named lambdas may shadow member funct
 			"func helper() -> int:\n"
 			"\treturn 1\n"
 			"\n"
-			"func run() -> int:\n"
+			"func run() -> long:\n"
 			"\tvar f := func helper() -> int:\n"
 			"\t\treturn 2\n"
 			"\treturn int(f.call()) + helper()\n");
@@ -2722,7 +2722,7 @@ TEST_CASE("[FoundryScript][BytecodeHardening] A dependent .fsb refuses to link a
 		dependent_file->store_string(vformat(
 				"const Base = preload(\"%s\")\n"
 				"\n"
-				"func run() -> int:\n"
+				"func run() -> long:\n"
 				"\treturn Base.base_value()\n",
 				base_path));
 	}
@@ -3132,7 +3132,7 @@ TEST_CASE("[FoundryScript][BytecodeScript][GenericTaggedUnionBytecode] Specializ
 			"func make_err() -> Result[int, String]:\n"
 			"\treturn Result[int, String].Err(\"nope\")\n"
 			"\n"
-			"func read(value: Result[int, String]) -> int:\n"
+			"func read(value: Result[int, String]) -> long:\n"
 			"\tif value is Result[int, String].Ok(number):\n"
 			"\t\treturn number * 2\n"
 			"\tif value is Result[int, String].Err(message):\n"
@@ -3256,7 +3256,7 @@ TEST_CASE("[FoundryScript][BytecodeScript][GenericTaggedUnionBytecode] Nested un
 			"func apply(value: Result[int, String], mapper: Callable[[Result[int, String]], Result[String, int]]) -> Result[String, int]:\n"
 			"\treturn mapper.call(value)\n"
 			"\n"
-			"func run() -> int:\n"
+			"func run() -> long:\n"
 			"\tresults.append(Result[int, String].Ok(3))\n"
 			"\tby_name[\"first\"] = Result[int, String].Ok(4)\n"
 			"\tvar mapped := apply(Result[int, String].Ok(5), flip)\n"
