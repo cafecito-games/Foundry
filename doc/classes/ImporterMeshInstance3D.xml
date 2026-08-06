@@ -9,7 +9,7 @@
 	<members>
 		<member name="cast_shadow" type="int" setter="set_cast_shadows_setting" getter="get_cast_shadows_setting" enum="GeometryInstance3D.ShadowCastingSetting" default="SHADOW_CASTING_SETTING_ON">
 		</member>
-		<member name="layer_mask" type="int" setter="set_layer_mask" getter="get_layer_mask" default="1">
+		<member name="layer_mask" type="uint" setter="set_layer_mask" getter="get_layer_mask" default="1UL">
 		</member>
 		<member name="mesh" type="ImporterMesh" setter="set_mesh" getter="get_mesh">
 		</member>

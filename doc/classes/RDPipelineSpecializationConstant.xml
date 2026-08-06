@@ -10,7 +10,7 @@
 	<tutorials>
 	</tutorials>
 	<members>
-		<member name="constant_id" type="int" setter="set_constant_id" getter="get_constant_id" default="0">
+		<member name="constant_id" type="uint" setter="set_constant_id" getter="get_constant_id" default="0UL">
 			The identifier of the specialization constant. This is a value starting from [code]0[/code] and that increments for every different specialization constant for a given shader.
 		</member>
 		<member name="value" type="Variant" setter="set_value" getter="get_value">

@@ -309,7 +309,7 @@
 		<member name="audio_listener_enable_3d" type="bool" setter="set_as_audio_listener_3d" getter="is_audio_listener_3d" default="false">
 			If [code]true[/code], the viewport will process 3D audio streams.
 		</member>
-		<member name="canvas_cull_mask" type="int" setter="set_canvas_cull_mask" getter="get_canvas_cull_mask" default="4294967295">
+		<member name="canvas_cull_mask" type="uint" setter="set_canvas_cull_mask" getter="get_canvas_cull_mask" default="4294967295UL">
 			The rendering layers in which this [Viewport] renders [CanvasItem] nodes.
 			[b]Note:[/b] A [CanvasItem] does not inherit its parents' visibility layers. See [member CanvasItem.visibility_layer]'s description for details.
 		</member>

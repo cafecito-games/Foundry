@@ -24,7 +24,7 @@
 		<member name="metadata_flags" type="int" setter="set_metadata_flags" getter="get_metadata_flags" enum="NavigationPathQueryParameters2D.PathMetadataFlags" is_bitfield="true" default="PATH_METADATA_INCLUDE_ALL">
 			Additional information to include with the navigation path.
 		</member>
-		<member name="navigation_layers" type="int" setter="set_navigation_layers" getter="get_navigation_layers" default="1">
+		<member name="navigation_layers" type="uint" setter="set_navigation_layers" getter="get_navigation_layers" default="1UL">
 			The navigation layers the query will use (as a bitmask).
 		</member>
 		<member name="path_postprocessing" type="int" setter="set_path_postprocessing" getter="get_path_postprocessing" enum="NavigationPathQueryParameters2D.PathPostProcessing" default="PATH_POSTPROCESSING_CORRIDORFUNNEL">

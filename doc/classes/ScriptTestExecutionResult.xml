@@ -19,7 +19,7 @@
 		<member name="return_value" type="Variant" setter="" getter="get_return_value">
 			Return value from the guarded method. Meaningful only for [constant STATUS_COMPLETED].
 		</member>
-		<member name="status" type="int" setter="" getter="get_status" enum="Status" default="0">
+		<member name="status" type="int" setter="" getter="get_status" enum="Status" default="STATUS_COMPLETED">
 			Completion status for the guarded call.
 		</member>
 		<member name="timeout_seconds" type="float" setter="" getter="get_timeout_seconds" default="0.0">

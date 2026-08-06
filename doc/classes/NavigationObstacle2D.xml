@@ -54,7 +54,7 @@
 		<member name="avoidance_enabled" type="bool" setter="set_avoidance_enabled" getter="get_avoidance_enabled" default="true">
 			If [code]true[/code] the obstacle affects avoidance using agents.
 		</member>
-		<member name="avoidance_layers" type="int" setter="set_avoidance_layers" getter="get_avoidance_layers" default="1">
+		<member name="avoidance_layers" type="uint" setter="set_avoidance_layers" getter="get_avoidance_layers" default="1UL">
 			A bitfield determining the avoidance layers for this obstacle. Agents with a matching bit on the their avoidance mask will avoid this obstacle.
 		</member>
 		<member name="carve_navigation_mesh" type="bool" setter="set_carve_navigation_mesh" getter="get_carve_navigation_mesh" default="false">
