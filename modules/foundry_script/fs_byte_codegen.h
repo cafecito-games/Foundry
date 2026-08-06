@@ -389,6 +389,12 @@ class FSByteCodeGenerator : public FSCodeGenerator {
 
 	CallTarget get_call_target(const Address &p_target, Variant::Type p_type = Variant::NIL);
 
+	// Widens a `uint` binary operand into a fresh `long` temporary, for the one mixed-carrier promotion
+	// design section 6.1 allows unconditionally. The returned address is pushed as the newest temporary,
+	// so the caller must pop it (in LIFO order with any other operand it widens) once the operation that
+	// consumes it has been emitted.
+	Address write_widen_uint_binary_operand(const Address &p_operand);
+
 	int address_of(const Address &p_address) {
 		switch (p_address.mode) {
 			case Address::SELF:

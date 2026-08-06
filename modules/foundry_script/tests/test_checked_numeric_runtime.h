@@ -286,6 +286,77 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A signedness-crossing constr
 	CHECK(succeeded_result == Variant(int64_t(9)));
 }
 
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A uint value widens to long at runtime (#1771)") {
+	ScopedCheckedNumericLanguage language;
+
+	// Design section 6.1 lists `uint -> long` as value-preserving: assigning a `uint` local into a
+	// `long` local, and mixing `uint` and `long` operands in an arithmetic operator, both need no
+	// explicit conversion and must compute the real value rather than trip a runtime "invalid operands"
+	// error.
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func widen_assign(source: uint) -> long:\n"
+			"\tvar l: long = source\n"
+			"\treturn l\n"
+			"\n"
+			"func widen_return(source: uint) -> long:\n"
+			"\treturn source\n"
+			"\n"
+			"func add_uint_and_long(u: uint, l: long) -> long:\n"
+			"\treturn u + l\n"
+			"\n"
+			"func add_long_and_uint(l: long, u: uint) -> long:\n"
+			"\treturn l + u\n"
+			"\n"
+			"func add_int_and_uint(i: int, u: uint) -> long:\n"
+			"\treturn i + u\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	// A value above `INT32_MAX` proves the widen reads the full unsigned magnitude rather than
+	// reinterpreting the 32-bit carrier's bit pattern as a (possibly negative) `int`.
+	const Variant large_uint = uint64_t(UINT32_MAX);
+	const Variant *widen_arguments[] = { &large_uint };
+	Callable::CallError error;
+
+	const Variant widen_assign_result = object->callp(SNAME("widen_assign"), widen_arguments, 1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(widen_assign_result.get_type() == Variant::INT);
+	CHECK(widen_assign_result == Variant(int64_t(UINT32_MAX)));
+
+	const Variant widen_return_result = object->callp(SNAME("widen_return"), widen_arguments, 1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(widen_return_result.get_type() == Variant::INT);
+	CHECK(widen_return_result == Variant(int64_t(UINT32_MAX)));
+
+	const Variant uint_operand = uint64_t(UINT32_MAX);
+	// Well beyond `INT32_MAX` but nowhere near `INT64_MAX`, so the sum with `uint_operand` cannot
+	// overflow `int64_t` and the test proves the widen computes the real value rather than merely
+	// avoiding a compile-time-detectable overflow.
+	const Variant long_operand = int64_t(5000000000);
+	const int64_t expected_sum = int64_t(uint64_t(UINT32_MAX)) + int64_t(5000000000);
+
+	const Variant *add_uint_long_arguments[] = { &uint_operand, &long_operand };
+	const Variant add_uint_long_result = object->callp(SNAME("add_uint_and_long"), add_uint_long_arguments, 2, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(add_uint_long_result.get_type() == Variant::INT);
+	CHECK(add_uint_long_result == Variant(expected_sum));
+
+	const Variant *add_long_uint_arguments[] = { &long_operand, &uint_operand };
+	const Variant add_long_uint_result = object->callp(SNAME("add_long_and_uint"), add_long_uint_arguments, 2, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(add_long_uint_result.get_type() == Variant::INT);
+	CHECK(add_long_uint_result == Variant(expected_sum));
+
+	const Variant int_operand = int64_t(5);
+	const Variant *add_int_uint_arguments[] = { &int_operand, &uint_operand };
+	const Variant add_int_uint_result = object->callp(SNAME("add_int_and_uint"), add_int_uint_arguments, 2, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(add_int_uint_result.get_type() == Variant::INT);
+	CHECK(add_int_uint_result == Variant(int64_t(5) + int64_t(uint64_t(UINT32_MAX))));
+}
+
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Nullable integer arithmetic keeps its declared width") {
 	ScopedCheckedNumericLanguage language;
 
