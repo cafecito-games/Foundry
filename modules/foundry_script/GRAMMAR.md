@@ -1085,7 +1085,14 @@ access (`(t.0).1`), never a float.
 subscript      = expression, "[", index_or_type_args, "]" ;
 index_or_type_args = expression
                    | type_arg, { ",", type_arg }, [ "," ] ;   (* >1 arg, or "?" markers *)
-type_arg       = expression, [ "?" ] ;
+type_arg       = ( expression | tuple_type_arg | signature_type_arg ), [ "?" ] ;
+
+tuple_type_arg     = "(", type_arg, ",", type_arg, { ",", type_arg }, [ "," ], ")" ;
+signature_type_arg = ( "Callable" | "AsyncCallable" ),
+                     "[", "[", [ type_arg, { ",", type_arg } ], "]", ",", type_arg, "]"
+                   | "Signal", "[", "[", [ type_arg, { ",", type_arg } ], "]", "]"
+                   | "Coroutine", "[", type_arg, "]"
+                   | "Type", "[", type_arg, "]" ;
 ```
 
 A single index is ordinary subscription. When the bracket list contains commas and/or a
@@ -1093,6 +1100,15 @@ trailing `?` nullable marker on an element (`Pair[int, String]`, `id[Node?]`), i
 use-site type-argument list captured for generic specialization. The first element always
 aliases the index. (Parsing stops the index expression before a trailing `?` so the nullable
 marker is not consumed as the invalid `?` operator.)
+
+A type argument is a type, so the spellings a type has that an expression does not are admitted
+here too and denote exactly the same type they do in an annotation: an unnamed tuple type
+(`Box[(int, String)]`) and the built-in signature forms (`Box[Callable[[int], bool]]`,
+`Box[Signal[[int]]]`, `Box[Coroutine[int]]`, `Box[Type[Node]]`). These shapes are read out of the
+expression grammar — a tuple type is lexed as a tuple literal and a signature's parameter list as an
+array literal — and are re-read as types once the head is known to take type arguments. The two
+type-only spellings with no value-position form are `void` and a Callable rest tail (`...Array[T]`);
+neither is spellable as a type argument.
 
 #### Array and dictionary literals
 
@@ -1253,7 +1269,8 @@ tuple_pattern = "(", pattern, ",", [ pattern, { ",", pattern } ], [ "," ], ")" ;
 case_pattern = case_reference,
                "(", case_payload_pattern, { ",", case_payload_pattern }, [ "," ], ")" ;
 
-case_reference = identifier, [ case_type_arguments ], ".", identifier, { ".", identifier } ;
+case_reference = identifier, { ".", identifier }, [ case_type_arguments ],
+                 ".", identifier, { ".", identifier } ;
 
 case_type_arguments = "[", type_arg, { ",", type_arg }, "]" ;
                                                     (* generic tagged union application;
@@ -1289,13 +1306,13 @@ Rules:
   ordinary value it is (`Bundle[int].Empty`). Only the `(` that follows the dotted name tells a
   case reference apart from an indexed value pattern (`TABLE[INDEX]`), so `case_type_arguments`
   is the same `type_arg` list a subscript carries, and each argument is read as a type only once
-  the head is known to be a case reference. An argument therefore has to be spelled as an
-  expression, exactly as in the value-position application `Result[int, String]`: a specialization
-  whose argument has no expression spelling, such as an unnamed tuple type `(int, String)`, is
-  nameable in a type annotation but not on a case-pattern head.
-- A case reference carries its arguments on the name that owns them and never after a qualifier, so
-  a generic union nested under a class (`Outer.Result[int].Ok(...)`) has no case-pattern spelling —
-  the same restriction the type production has for `Outer.Result[int]`.
+  the head is known to be a case reference. `type_arg` admits every type spelling, so a
+  specialization whose argument has no expression form — an unnamed tuple type, a signature form —
+  is written the same way here as in an annotation: `Holder[(int, String)].Some(value)`.
+- A case reference carries its arguments on the name that owns them, which is the **last** name of
+  the qualified head, so a generic union nested under a class is written
+  `Outer.Result[int, String].Ok(...)` — the same position the type production uses for
+  `Outer.Result[int, String]`.
 - Directly inside a case pattern's parentheses a bare identifier is a payload bind, matching the
   `is Case(x, y)` form; `_` skips the position and any other expression stays a value pattern
   (so a constant is still written `Message.Move(Config.ORIGIN_X, y)`). Nested patterns follow the
@@ -1311,8 +1328,10 @@ Rules:
 ```ebnf
 type =
       "void"                                         (* only where allowed: return type *)
-    | identifier, [ type_suffix ], { ".", identifier }, [ "?" ]
+    | identifier, { ".", identifier }, [ type_suffix ], { ".", identifier }, [ "?" ]
     | tuple_type ;
+                                                     (* at most one type_suffix, and only
+                                                        collection_args may follow a dotted head *)
 
 type_name = identifier, { ".", identifier } ;        (* dotted, e.g. MyEnum, A.B *)
 
@@ -1341,12 +1360,21 @@ type_handle_arg   = "[", type, "]" ;                 (* exactly one *)
 Details (`parse_type`):
 
 - A trailing `?` marks the type **nullable** (`Node?`, `Array[int]?`, `Callable[...]?`).
-- A **type suffix binds to the leading name only**, and the dotted tail follows it. In practice
-  only `collection_args` is ever followed by a tail, because the other suffixes name built-in
-  forms that carry no members: the tail after an argument list applies a generic tagged union
-  before naming one of its cases (`Result[int, String].Ok`), which is admitted only where a case
-  reference is — the right-hand side of `is`. `A.B[int]` (a suffix after a dotted name) is not a
-  type; the value-position spelling `A.B[int]` is an expression, not a type annotation.
+- A **type suffix binds to the last name of the dotted head**, so `Outer.Box[int]` applies `[int]`
+  to `Box`, exactly as the value-position spelling does. A type carries **at most one** suffix;
+  writing it on an earlier name (`Outer[int].Box`) is a parse error
+  (`A type-argument list must be written after the last name of a qualified type.`), and so is a
+  second one (`A type can carry only one type-argument list, written after the last name of a
+  qualified type.`).
+- Only `collection_args` is reachable after a dotted head. The built-in suffix forms
+  (`callable_signature`, `signal_signature`, `coroutine_arg`, `type_handle_arg`) stay
+  **unqualified**, so `A.Callable[[int], bool]` is a parse error.
+- A dotted tail may follow the suffix, and in practice only `collection_args` is ever followed by
+  one, because the other suffixes name built-in forms that carry no members: the tail after an
+  argument list applies a generic tagged union before naming one of its cases
+  (`Result[int, String].Ok`, `Outer.Result[int, String].Ok`). That tail is admitted only where a
+  case reference is — the right-hand side of `is` — and it is what makes the suffix-position parse
+  error above unambiguous everywhere else.
 - **Integer type names** are exactly `int`, `uint`, `long`, and `ulong`. They are ordinary
   built-in type names rather than keywords, so they are resolved in type position only and
   remain usable as identifiers elsewhere. No other integer spelling exists.

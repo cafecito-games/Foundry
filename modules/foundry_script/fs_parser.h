@@ -1813,6 +1813,10 @@ public:
 		Vector<ExpressionNode *> type_argument_expressions;
 		// Parallel to `type_argument_expressions`: whether each argument carried a trailing `?`.
 		Vector<bool> type_argument_expression_is_nullable;
+		// Index in `type_chain` of the name the argument list was written after: 0 for `Box[int]` and
+		// 1 for `Outer.Box[int]`. Only meaningful when the type carries arguments, and it is what lets
+		// the type be printed back with the suffix in the position the author wrote it.
+		int type_arguments_chain_index = 0;
 
 		TypeNode *get_container_type_or_null(int p_index) const {
 			return p_index >= 0 && p_index < container_types.size() ? container_types[p_index] : nullptr;
@@ -2348,7 +2352,7 @@ private:
 	void parse_type_test_case_binds(TypeTestNode *p_type_test);
 	ExpressionNode *parse_yield(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_invalid_token(ExpressionNode *p_previous_operand, bool p_can_assign);
-	TypeNode *parse_type(bool p_allow_void = false, CompletionType p_forced_completion = COMPLETION_NONE);
+	TypeNode *parse_type(bool p_allow_void = false, CompletionType p_forced_completion = COMPLETION_NONE, bool p_allow_enum_case = false);
 
 	// Declares a case-payload bind name as a transient local of `current_suite`, as soon as it is
 	// parsed, so later `and`-conjuncts of the same condition can already reference it. Rejects names

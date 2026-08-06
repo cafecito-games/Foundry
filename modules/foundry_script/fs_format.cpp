@@ -1963,12 +1963,19 @@ void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 		}
 		return;
 	}
-	// A type suffix binds to the leading name, and the dotted tail follows it: an applied generic
-	// tagged union names one of its cases after its argument list (`Result[int, String].Ok`).
+	// A type suffix binds to the last name of the dotted head (`Outer.Box[int]`), and a dotted tail may
+	// still follow it: an applied generic tagged union names one of its cases after its argument list
+	// (`Outer.Result[int, String].Ok`). `type_arguments_chain_index` is where the author wrote the
+	// suffix, so printing it back there is what makes formatting idempotent.
+	const int suffix_chain_index = CLAMP(p_type->type_arguments_chain_index, 0, p_type->type_chain.size() - 1);
 	if (p_type->type_chain.is_empty()) {
 		write("void");
 	} else {
 		write(p_type->type_chain[0]->name);
+		for (int i = 1; i <= suffix_chain_index; i++) {
+			write(".");
+			write(p_type->type_chain[i]->name);
+		}
 	}
 
 	if (p_type->has_signature) {
@@ -2017,7 +2024,7 @@ void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 		write("]");
 	}
 
-	for (int i = 1; i < p_type->type_chain.size(); i++) {
+	for (int i = suffix_chain_index + 1; i < p_type->type_chain.size(); i++) {
 		write(".");
 		write(p_type->type_chain[i]->name);
 	}
