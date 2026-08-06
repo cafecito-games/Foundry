@@ -232,7 +232,20 @@ public:
 	static bool container_type_accepts_specialized_handle_erasure(const ContainerType &p_expected_type);
 	// Erases every `FSSpecializedClassHandle` in `r_value` that a slot of `p_expected_type` would rather
 	// see as the bare script it specializes, recursing through array elements and dictionary entries.
-	static bool erase_specialized_class_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value);
+	//
+	// Two differently specialized handles of the same script (`Box[int]`, `Box[String]`) erase to the
+	// same bare `Script` key, so erasing a dictionary's keys can collapse distinct entries onto one
+	// identity-hashed slot. When that would happen, the write is rejected instead of silently dropping
+	// an entry: the function returns `false`, leaves `r_value` a (typed, when the source was) empty
+	// dictionary, and, when `r_error` is non-null, names both colliding specializations. Callers must
+	// treat a non-empty `*r_error` as a rejected write regardless of the returned bool, since `false`
+	// alone is also the ordinary "nothing needed erasing" answer.
+	static bool erase_specialized_class_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value, String *r_error = nullptr);
+	// Single-key counterpart for the `set()` / `get_or_add()` / subscript-assignment paths, which write
+	// one key into an already-live destination dictionary rather than rebuilding a whole source. Erases
+	// `r_key` against `p_key_type` and, if that erasure would collide with a key `p_destination` already
+	// holds, rejects the write the same way the whole-dictionary rebuild does (see above).
+	static bool erase_specialized_class_handle_for_dictionary_set_key(const ContainerType &p_key_type, const Dictionary &p_destination, Variant &r_key, String *r_error = nullptr);
 
 	// A generic type parameter declared on this class, e.g. `T` in `class Box[T]` or
 	// `K`/`V` in `class_name Pair[K, V: RefCounted]`. Surfaced through runtime reflection.

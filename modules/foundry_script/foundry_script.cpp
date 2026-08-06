@@ -305,7 +305,17 @@ static bool _erase_specialized_class_handle_for_native_container_type(const Cont
 	return true;
 }
 
-static bool _erase_specialized_class_handles_for_array_type(const ContainerType &p_expected_type, Variant &r_value) {
+// Renders a dictionary key for the erasure-collision error: a specialized handle names its concrete
+// specialization (`Box[int]`), anything else falls back to its Variant string form.
+static String _describe_dictionary_erasure_key(const Variant &p_original_key) {
+	FSSpecializedClassHandle *handle = _specialized_class_handle_from_variant(p_original_key);
+	if (handle != nullptr) {
+		return handle->get_type_name();
+	}
+	return p_original_key.operator String();
+}
+
+static bool _erase_specialized_class_handles_for_array_type(const ContainerType &p_expected_type, Variant &r_value, String *r_error) {
 	if (p_expected_type.builtin_type != Variant::ARRAY || p_expected_type.element_types.is_empty() ||
 			r_value.get_type() != Variant::ARRAY) {
 		return false;
@@ -319,7 +329,10 @@ static bool _erase_specialized_class_handles_for_array_type(const ContainerType 
 	bool changed = false;
 	for (int i = 0; i < source.size(); i++) {
 		Variant value = source[i];
-		changed = FoundryScript::erase_specialized_class_handles_for_container_type(element_type, value) || changed;
+		changed = FoundryScript::erase_specialized_class_handles_for_container_type(element_type, value, r_error) || changed;
+		if (r_error != nullptr && !r_error->is_empty()) {
+			return false;
+		}
 		values.write[i] = value;
 	}
 
@@ -353,7 +366,13 @@ static bool _erase_specialized_class_handles_for_array_type(const ContainerType 
 	return true;
 }
 
-static bool _erase_specialized_class_handles_for_dictionary_type(const ContainerType &p_expected_type, Variant &r_value) {
+// Rebuilds a whole dictionary with every erasable key/value replaced by the bare script it specializes.
+// Two distinct source keys can erase to the same identity-hashed key (`Box[int]` and `Box[String]` both
+// erase to `Box`); inserting the second would silently discard the first's entry. Erasure must never
+// reduce the entry count of a dictionary, so that case rejects the whole write instead: `r_value` becomes
+// an empty dictionary (typed like the source when the source was typed) and, when `r_error` is non-null,
+// it names both colliding specializations.
+static bool _erase_specialized_class_handles_for_dictionary_type(const ContainerType &p_expected_type, Variant &r_value, String *r_error) {
 	if (p_expected_type.builtin_type != Variant::DICTIONARY || p_expected_type.element_types.is_empty() ||
 			r_value.get_type() != Variant::DICTIONARY) {
 		return false;
@@ -363,20 +382,45 @@ static bool _erase_specialized_class_handles_for_dictionary_type(const Container
 	const ContainerType value_type = p_expected_type.element_types.size() > 1 ? p_expected_type.element_types[1] : ContainerType();
 	const Dictionary source = r_value;
 
+	Vector<Variant> original_keys;
 	Vector<Pair<Variant, Variant>> entries;
+	original_keys.resize(source.size());
 	entries.resize(source.size());
 	int entry_index = 0;
 	bool changed = false;
 	for (const KeyValue<Variant, Variant> &E : source) {
 		Variant key = E.key;
 		Variant value = E.value;
-		changed = FoundryScript::erase_specialized_class_handles_for_container_type(key_type, key) || changed;
-		changed = FoundryScript::erase_specialized_class_handles_for_container_type(value_type, value) || changed;
+		original_keys.write[entry_index] = E.key;
+		changed = FoundryScript::erase_specialized_class_handles_for_container_type(key_type, key, r_error) || changed;
+		if (r_error == nullptr || r_error->is_empty()) {
+			changed = FoundryScript::erase_specialized_class_handles_for_container_type(value_type, value, r_error) || changed;
+		}
+		if (r_error != nullptr && !r_error->is_empty()) {
+			return false;
+		}
 		entries.write[entry_index++] = Pair<Variant, Variant>(key, value);
 	}
 
 	if (!changed) {
 		return false;
+	}
+
+	Dictionary erased_key_origins;
+	for (int i = 0; i < entries.size(); i++) {
+		const Variant &erased_key = entries[i].first;
+		if (erased_key_origins.has(erased_key)) {
+			if (r_error != nullptr) {
+				*r_error = vformat(
+						"Erasing specialized class handles collapses distinct dictionary keys '%s' and '%s' into the same '%s' key; the write was rejected instead of silently dropping an entry.",
+						_describe_dictionary_erasure_key(erased_key_origins[erased_key]),
+						_describe_dictionary_erasure_key(original_keys[i]),
+						key_type.get_type_name());
+			}
+			r_value = Dictionary();
+			return false;
+		}
+		erased_key_origins[erased_key] = original_keys[i];
 	}
 
 	Dictionary erased;
@@ -405,14 +449,38 @@ static bool _erase_specialized_class_handles_for_dictionary_type(const Container
 	return true;
 }
 
-bool FoundryScript::erase_specialized_class_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value) {
+bool FoundryScript::erase_specialized_class_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value, String *r_error) {
 	if (_erase_specialized_class_handle_for_native_container_type(p_expected_type, r_value)) {
 		return true;
 	}
-	if (_erase_specialized_class_handles_for_array_type(p_expected_type, r_value)) {
+	if (_erase_specialized_class_handles_for_array_type(p_expected_type, r_value, r_error)) {
 		return true;
 	}
-	return _erase_specialized_class_handles_for_dictionary_type(p_expected_type, r_value);
+	return _erase_specialized_class_handles_for_dictionary_type(p_expected_type, r_value, r_error);
+}
+
+bool FoundryScript::erase_specialized_class_handle_for_dictionary_set_key(const ContainerType &p_key_type, const Dictionary &p_destination, Variant &r_key, String *r_error) {
+	const Variant original_key = r_key;
+	const bool changed = erase_specialized_class_handles_for_container_type(p_key_type, r_key, r_error);
+	if (r_error != nullptr && !r_error->is_empty()) {
+		return false;
+	}
+	if (!changed || !p_destination.has(r_key)) {
+		return changed;
+	}
+
+	// The destination already holds an entry at the erased key. Since specialization identity is lost
+	// once a handle is erased, there is no way to tell this write apart from an idempotent re-set of the
+	// exact same specialization, so any second erasure onto an already-occupied key is rejected rather
+	// than risked as a silent overwrite. A caller that wants overwrite semantics can erase the key
+	// explicitly first.
+	if (r_error != nullptr) {
+		*r_error = vformat(
+				"Erasing specialized class handle '%s' for a dictionary key collides with an existing '%s' key; the write was rejected instead of silently overwriting the entry.",
+				_describe_dictionary_erasure_key(original_key),
+				p_key_type.get_type_name());
+	}
+	return false;
 }
 
 static bool _erase_specialized_class_handle_for_native_data_type(const FSDataType &p_expected_type, Variant &r_value) {
@@ -537,7 +605,17 @@ static bool _validate_write_against_projected_type(ProjectedContainerType p_expe
 		expected.outer.is_type_handle = true;
 	}
 
-	FoundryScript::erase_specialized_class_handles_for_container_type(expected.to_container_type(), r_value);
+	String erasure_error;
+	FoundryScript::erase_specialized_class_handles_for_container_type(expected.to_container_type(), r_value, &erasure_error);
+	if (!erasure_error.is_empty()) {
+		// A collision between two specializations that would otherwise erase to the same dictionary key:
+		// report it as a member-type mismatch rather than let the emptied-out dictionary silently pass
+		// validation.
+		if (r_expected_type_name != nullptr) {
+			*r_expected_type_name = erasure_error;
+		}
+		return false;
+	}
 	if (!expected.validate_value(r_value, "member", "assign")) {
 		if (r_expected_type_name != nullptr) {
 			*r_expected_type_name = expected.get_type_name();

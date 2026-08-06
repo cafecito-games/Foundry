@@ -337,4 +337,62 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] Null and non-handle values agre
 	CHECK(check_class_handle_agreement(native_expected, base));
 }
 
+TEST_CASE("[Modules][FoundryScript][ClassHandle] Erasing distinct specializations into one dictionary key is rejected") {
+	ScopedClassHandleContainerLanguage language;
+
+	const char *source =
+			"class Box[T]:\n"
+			"\tpass\n";
+
+	Ref<FoundryScript> script = compile_class_handle_container_source(source);
+	Ref<FoundryScript> box = class_handle_container_subclass(script, "Box");
+	REQUIRE(box.is_valid());
+
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
+	ContainerType string_argument;
+	string_argument.builtin_type = Variant::STRING;
+
+	Ref<FSSpecializedClassHandle> int_box = FSSpecializedClassHandle::create(box, { int_argument });
+	Ref<FSSpecializedClassHandle> string_box = FSSpecializedClassHandle::create(box, { string_argument });
+	REQUIRE(int_box.is_valid());
+	REQUIRE(string_box.is_valid());
+
+	// A slot typed with the bare `Script` key (no reified arguments) accepts erasing both handles, and
+	// both erase to the same `box` script, so a two-entry source collapses onto one key.
+	ContainerType key_type;
+	key_type.builtin_type = Variant::OBJECT;
+	key_type.class_name = SNAME("Script");
+	ContainerType value_type;
+	value_type.builtin_type = Variant::INT;
+
+	ContainerType dictionary_type;
+	dictionary_type.builtin_type = Variant::DICTIONARY;
+	dictionary_type.element_types.push_back(key_type);
+	dictionary_type.element_types.push_back(value_type);
+
+	Dictionary source_dictionary;
+	source_dictionary[int_box] = 1;
+	source_dictionary[string_box] = 2;
+	REQUIRE_EQ(source_dictionary.size(), 2);
+
+	Variant value = source_dictionary;
+	String error;
+	const bool changed = FoundryScript::erase_specialized_class_handles_for_container_type(dictionary_type, value, &error);
+
+	// The helper reports failure rather than silently dropping an entry, and leaves the destination
+	// empty instead of returning a partially built dictionary.
+	CHECK_FALSE(changed);
+	CHECK_FALSE(error.is_empty());
+	CHECK(error.contains(int_box->get_type_name()));
+	CHECK(error.contains(string_box->get_type_name()));
+	const Dictionary erased = value;
+	CHECK(erased.is_empty());
+
+	// The source dictionary itself is a distinct value from `value` (a Variant copy erasure never
+	// mutates in place), so it still holds both original entries.
+	CHECK_EQ(source_dictionary.size(), 2);
+}
+
 } // namespace FSTests
