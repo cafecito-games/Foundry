@@ -1,0 +1,18 @@
+FS_TEST_OK
+array crate is Crate[Array[int]]: true
+array crate is Crate[Array[String]]: false
+array crate is Crate[Array]: false
+string array crate is Crate[Array[int]]: false
+dictionary crate matches: true
+dictionary crate rejects swapped: false
+nested crate matches: true
+nested crate rejects inner mismatch: false
+nested crate is Crate: true
+handle argument matches: true
+handle argument rejects instance argument: false
+populated matches: true
+empty matches the same way: true
+contents do not change the answer: true
+member-less object matches: true
+member-less object rejects mismatch: false
+is/as nested arguments ok

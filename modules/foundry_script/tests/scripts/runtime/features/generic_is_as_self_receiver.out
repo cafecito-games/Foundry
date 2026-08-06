@@ -1,0 +1,18 @@
+FS_TEST_OK
+~~ WARNING at line 12: (UNSAFE_CAST) Casting "Variant" to "Self" is unsafe.
+~~ WARNING at line 21: (UNSAFE_CAST) Casting "Variant" to "Self" is unsafe.
+static Self accepts matching: true
+static Self rejects mismatch: false
+static Self rejects raw: false
+static Self cast keeps matching: true
+static Self cast nulls mismatch: true
+nested Self accepts matching: true
+nested Self rejects mismatch: false
+instance Self accepts matching: true
+instance Self rejects mismatch: false
+instance Self rejects raw: false
+instance Self cast keeps matching: true
+instance Self cast nulls mismatch: true
+string receiver accepts string: true
+string receiver rejects int: false
+is/as Self receiver ok

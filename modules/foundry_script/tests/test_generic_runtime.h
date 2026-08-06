@@ -39,6 +39,11 @@
 
 #include "tests/test_macros.h"
 
+// Shared bytecode round-trip fixtures (in-process compile through the cache, test resolver). The
+// header is tools-only and self-guarded; every module test header is compiled into the one generated
+// test translation unit, so this include duplicates no test registrations.
+#include "test_bytecode_script.h"
+
 // Runtime coverage for reified generic instance bindings (issue #135). The full
 // `Box[int].new()` analyzer + codegen path is exercised by the integration runner fixture
 // `runtime/features/generic_reified_construction.fs`; these tests pin the C++ pieces that the
@@ -398,5 +403,201 @@ TEST_CASE("[Modules][FoundryScript][Generics] Type handle ContainerType restores
 	CHECK(handle.type_arguments[0].builtin_type == Variant::INT);
 	CHECK_FALSE(handle.type_arguments[0].is_type_handle);
 }
+
+#ifdef TOOLS_ENABLED
+
+static Variant call_generic_runtime_static(const Ref<FoundryScript> &p_script, const StringName &p_method,
+		const Vector<Variant> &p_arguments) {
+	LocalVector<const Variant *> argument_pointers;
+	argument_pointers.resize(p_arguments.size());
+	for (int i = 0; i < p_arguments.size(); i++) {
+		argument_pointers[i] = &p_arguments[i];
+	}
+	Callable::CallError call_error;
+	Object *script_object = p_script.ptr();
+	const Variant result = script_object->callp(p_method, argument_pointers.ptr(), p_arguments.size(), call_error);
+	CHECK(call_error.error == Callable::CallError::CALL_OK);
+	return result;
+}
+
+static Variant new_generic_runtime_instance(const Ref<FoundryScript> &p_script,
+		const Vector<ContainerType> &p_type_arguments) {
+	Callable::CallError call_error;
+	const Variant instance = p_type_arguments.is_empty()
+			? p_script->_new(nullptr, 0, call_error)
+			: p_script->_new_specialized(nullptr, 0, p_type_arguments, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(instance.get_type() == Variant::OBJECT);
+	return instance;
+}
+
+// Exercises the whole specialized predicate against real runtime values. Runs once against the
+// compiled script and once against the same script rebuilt from bytecode, so source execution and
+// compiled execution are held to the same answers.
+static void check_specialized_generic_is_as(const Ref<FoundryScript> &p_script) {
+	const Ref<FoundryScript> crate = get_generic_subclass(p_script, SNAME("Crate"));
+	const Ref<FoundryScript> other = get_generic_subclass(p_script, SNAME("Other"));
+	const Ref<FoundryScript> int_crate_class = get_generic_subclass(p_script, SNAME("IntCrate"));
+	const Ref<FoundryScript> derived = get_generic_subclass(p_script, SNAME("Derived"));
+	REQUIRE(crate.is_valid());
+	REQUIRE(other.is_valid());
+	REQUIRE(int_crate_class.is_valid());
+	REQUIRE(derived.is_valid());
+
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	ContainerType string_argument;
+	string_argument.builtin_type = Variant::STRING;
+	ContainerType int_array_argument;
+	int_array_argument.builtin_type = Variant::ARRAY;
+	int_array_argument.element_types.push_back(int_argument);
+
+	Vector<ContainerType> int_arguments;
+	int_arguments.push_back(int_argument);
+	Vector<ContainerType> string_arguments;
+	string_arguments.push_back(string_argument);
+	Vector<ContainerType> int_array_arguments;
+	int_array_arguments.push_back(int_array_argument);
+
+	const Variant int_crate = new_generic_runtime_instance(crate, int_arguments);
+	const Variant string_crate = new_generic_runtime_instance(crate, string_arguments);
+	const Variant raw_crate = new_generic_runtime_instance(crate, Vector<ContainerType>());
+	const Variant array_crate = new_generic_runtime_instance(crate, int_array_arguments);
+	const Variant other_int = new_generic_runtime_instance(other, int_arguments);
+	const Variant fixed_leaf = new_generic_runtime_instance(int_crate_class, Vector<ContainerType>());
+	const Variant forwarded_leaf = new_generic_runtime_instance(derived, int_arguments);
+
+	// The value's own leaf identity and reified vector are what the predicate reads, so they are
+	// asserted directly before any test result is trusted.
+	FSInstance *int_crate_instance = fs_instance_of(int_crate);
+	REQUIRE(int_crate_instance != nullptr);
+	CHECK(int_crate_instance->get_script() == crate);
+	REQUIRE(int_crate_instance->get_type_arguments().size() == 1);
+	CHECK(int_crate_instance->get_type_arguments()[0].builtin_type == Variant::INT);
+
+	FSInstance *raw_crate_instance = fs_instance_of(raw_crate);
+	REQUIRE(raw_crate_instance != nullptr);
+	CHECK(raw_crate_instance->get_script() == crate);
+	CHECK(raw_crate_instance->get_type_arguments().is_empty());
+
+	// A non-generic leaf reifies nothing of its own; its evidence comes from the fixed base binding.
+	FSInstance *fixed_leaf_instance = fs_instance_of(fixed_leaf);
+	REQUIRE(fixed_leaf_instance != nullptr);
+	CHECK(fixed_leaf_instance->get_script() == int_crate_class);
+	CHECK(fixed_leaf_instance->get_type_arguments().is_empty());
+
+	FSInstance *array_crate_instance = fs_instance_of(array_crate);
+	REQUIRE(array_crate_instance != nullptr);
+	REQUIRE(array_crate_instance->get_type_arguments().size() == 1);
+	CHECK(array_crate_instance->get_type_arguments()[0].builtin_type == Variant::ARRAY);
+	REQUIRE(array_crate_instance->get_type_arguments()[0].element_types.size() == 1);
+	CHECK(array_crate_instance->get_type_arguments()[0].element_types[0].builtin_type == Variant::INT);
+
+	// Raw targets stay nominal.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_crate"), { int_crate })));
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_crate"), { raw_crate })));
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_crate"), { fixed_leaf })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_crate"), { other_int })));
+
+	// Same script, exact match and mismatch.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate"), { int_crate })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_crate"), { int_crate })));
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_string_crate"), { string_crate })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate"), { string_crate })));
+
+	// A raw instance carries no evidence for a specialized predicate.
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate"), { raw_crate })));
+
+	// An unrelated generic class with the same argument is still unrelated.
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate"), { other_int })));
+
+	// Fixed-base and forwarded-base projection.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate"), { fixed_leaf })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_crate"), { fixed_leaf })));
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate"), { forwarded_leaf })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_crate"), { forwarded_leaf })));
+
+	// Nested arguments compare recursively.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_array_crate"), { array_crate })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_array_crate"), { array_crate })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_array_crate"), { int_crate })));
+
+	// Null is neither an instance nor a handle.
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate"), { Variant() })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate_handle"), { Variant() })));
+
+	// `as` agrees with `is`, preserving identity on success and yielding null on failure.
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_int_crate"), { int_crate }) == int_crate);
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_int_crate"), { fixed_leaf }) == fixed_leaf);
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_int_crate"), { string_crate }).get_type() == Variant::NIL);
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_int_crate"), { raw_crate }).get_type() == Variant::NIL);
+
+	// The class-handle form answers with the same relation over its own runtime values.
+	const Variant int_handle = call_generic_runtime_static(p_script, SNAME("int_crate_handle"), {});
+	const Variant raw_handle = call_generic_runtime_static(p_script, SNAME("raw_crate_handle"), {});
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate_handle"), { int_handle })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_crate_handle"), { int_handle })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate_handle"), { raw_handle })));
+	// The two forms stay distinct value kinds: an instance is not a class handle, and vice versa.
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate_handle"), { int_crate })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_crate"), { int_handle })));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericRuntime] Specialized generic is/as uses reified arguments") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tvar item: T\n"
+			"\n"
+			"class Other[T]:\n"
+			"\tvar item: T\n"
+			"\n"
+			"class IntCrate extends Crate[int]:\n"
+			"\tpass\n"
+			"\n"
+			"class Derived[U] extends Crate[U]:\n"
+			"\tpass\n"
+			"\n"
+			"static func is_crate(value: Variant) -> bool:\n"
+			"\treturn value is Crate\n"
+			"\n"
+			"static func is_int_crate(value: Variant) -> bool:\n"
+			"\treturn value is Crate[int]\n"
+			"\n"
+			"static func is_string_crate(value: Variant) -> bool:\n"
+			"\treturn value is Crate[String]\n"
+			"\n"
+			"static func is_int_array_crate(value: Variant) -> bool:\n"
+			"\treturn value is Crate[Array[int]]\n"
+			"\n"
+			"static func is_string_array_crate(value: Variant) -> bool:\n"
+			"\treturn value is Crate[Array[String]]\n"
+			"\n"
+			"static func as_int_crate(value: Variant) -> Variant:\n"
+			"\treturn value as Crate[int]\n"
+			"\n"
+			"static func is_int_crate_handle(value: Variant) -> bool:\n"
+			"\treturn value is Type[Crate[int]]\n"
+			"\n"
+			"static func is_string_crate_handle(value: Variant) -> bool:\n"
+			"\treturn value is Type[Crate[String]]\n"
+			"\n"
+			"static func int_crate_handle() -> Variant:\n"
+			"\treturn Crate[int]\n"
+			"\n"
+			"static func raw_crate_handle() -> Variant:\n"
+			"\treturn Crate\n");
+
+	check_specialized_generic_is_as(script);
+
+	// The compiled form must answer identically: the descriptor operands survive export and load.
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(script, &resolver);
+	check_specialized_generic_is_as(restored);
+
+	restored->clear();
+	script->clear();
+}
+
+#endif // TOOLS_ENABLED
 
 } // namespace FSTests

@@ -1,0 +1,21 @@
+FS_TEST_OK
+~~ WARNING at line 32: (UNSAFE_CAST) Casting "Variant" to "Crate[String]" is unsafe.
+~~ WARNING at line 47: (UNSAFE_CAST) Casting "Variant" to "PairCrate[String, int]" is unsafe.
+fixed leaf is Crate: true
+fixed leaf is Crate[int]: true
+fixed leaf is Crate[String]: false
+fixed leaf as Crate[String] is null: true
+forwarded leaf is Crate[int]: true
+forwarded leaf is Crate[String]: false
+forwarded leaf is Derived[int]: true
+forwarded leaf is Derived[String]: false
+raw forwarded leaf is Crate: true
+raw forwarded leaf is Crate[int]: false
+swapped is PairCrate[String, int]: true
+swapped is PairCrate[int, String]: false
+swapped as PairCrate[String, int] keeps identity: true
+pair is PairCrate[int, String]: true
+pair is PairCrate[String, int]: false
+fixed leaf handle is Type[Crate[int]]: true
+fixed leaf handle is Type[Crate[String]]: false
+is/as inheritance projection ok

@@ -1,0 +1,9 @@
+FS_TEST_OK
+int crate narrows: 7
+string crate does not narrow to int: -1
+raw crate does not narrow to int: -1
+fixed leaf narrows through its base: 11
+string crate narrows: seven
+int crate does not narrow to String: <none>
+raw crate does not narrow to String: <none>
+is/as specialized narrowing ok

@@ -1,11 +1,36 @@
 FS_TEST_OK
-~~ WARNING at line 18: (UNSAFE_CAST) Casting "Variant" to "Box" is unsafe.
-~~ WARNING at line 21: (UNSAFE_CAST) Casting "Variant" to "Box[int]" is unsafe.
-~~ WARNING at line 24: (UNSAFE_CAST) Casting "Variant" to "Box[String]" is unsafe.
-true
-true
-true
-5
-5
-true
+~~ WARNING at line 38: (UNSAFE_CAST) Casting "Variant" to "Crate[int]" is unsafe.
+~~ WARNING at line 40: (UNSAFE_CAST) Casting "Variant" to "Crate[String]" is unsafe.
+~~ WARNING at line 42: (UNSAFE_CAST) Casting "Variant" to "Crate" is unsafe.
+~~ WARNING at line 44: (UNSAFE_CAST) Casting "Variant" to "Crate[int]" is unsafe.
+~~ WARNING at line 46: (UNSAFE_CAST) Casting "Variant" to "Crate[int]" is unsafe.
+~~ WARNING at line 59: (UNSAFE_CAST) Casting "Variant" to "Type[Crate[int]]" is unsafe.
+~~ WARNING at line 61: (UNSAFE_CAST) Casting "Variant" to "Type[Crate[String]]" is unsafe.
+~~ WARNING at line 63: (UNSAFE_CAST) Casting "Variant" to "Type[Crate[int]]" is unsafe.
+int crate is Crate: true
+string crate is Crate: true
+raw crate is Crate: true
+int crate is Crate[int]: true
+int crate is Crate[String]: false
+string crate is Crate[int]: false
+raw crate is Crate[int]: false
+variant crate is Crate[Variant]: true
+variant crate is Crate[int]: false
+int crate is Crate[Variant]: false
+other int is Crate[int]: false
+null is Crate[int]: false
+matched cast keeps identity: true
+mismatched cast is null: true
+raw target cast keeps identity: true
+raw value cast is null: true
+null cast is null: true
+int handle is Type[Crate]: true
+int handle is Type[Crate[int]]: true
+int handle is Type[Crate[String]]: false
+raw handle is Type[Crate]: true
+raw handle is Type[Crate[int]]: false
+null is Type[Crate[int]]: false
+matched handle cast keeps identity: true
+mismatched handle cast is null: true
+raw handle cast is null: true
 is/as specialized ok

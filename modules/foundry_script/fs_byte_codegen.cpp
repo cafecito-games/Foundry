@@ -1039,8 +1039,10 @@ void FSByteCodeGenerator::write_type_test(const Address &p_target, const Address
 			append(p_source);
 			// A `Self` position is tested against the frame's exact receiver, so it travels as a
 			// descriptor; the bare script constant would test against the class the declaration was
-			// lowered against and answer for an ancestor specialization.
-			const bool needs_descriptor = p_type.references_self_type() || (p_type.is_type_handle && !p_type.type_arguments.is_empty());
+			// lowered against and answer for an ancestor specialization. A specialized target travels as
+			// a descriptor for the same reason: the bare script constant carries no type arguments, so
+			// the test could only answer the nominal question and would accept every specialization.
+			const bool needs_descriptor = p_type.references_self_type() || !p_type.type_arguments.is_empty();
 			const int type_idx = needs_descriptor ? get_container_type_pos(p_type) : get_constant_pos(script);
 			append(type_idx | (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS));
 			append(p_type.is_type_handle);
@@ -1564,8 +1566,9 @@ void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_s
 		case FSDataType::SCRIPT:
 		case FSDataType::FOUNDRY_SCRIPT: {
 			Variant script = p_type.script_type;
-			// See `write_type_test`: a `Self` target is cast against the frame's exact receiver.
-			const bool needs_descriptor = p_type.references_self_type() || (p_type.is_type_handle && !p_type.type_arguments.is_empty());
+			// See `write_type_test`: a `Self` target is cast against the frame's exact receiver, and a
+			// specialized target needs its arguments to reach the cast at all.
+			const bool needs_descriptor = p_type.references_self_type() || !p_type.type_arguments.is_empty();
 			int idx = needs_descriptor ? get_container_type_pos(p_type) : get_constant_pos(script);
 			idx |= (FSFunction::ADDR_TYPE_CONSTANT << FSFunction::ADDR_BITS);
 			append_opcode(FSFunction::OPCODE_CAST_TO_SCRIPT);
