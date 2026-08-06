@@ -2027,6 +2027,34 @@ void FSByteCodeGenerator::write_lambda(const Address &p_target, FSFunction *p_fu
 }
 
 void FSByteCodeGenerator::write_construct(const Address &p_target, Variant::Type p_type, const Vector<Address> &p_arguments) {
+	// A single-argument constructor call that crosses the signed/unsigned 64-bit carrier boundary
+	// (`int(some_ulong)`, or a future `uint(some_long)`) cannot be proven in range at compile time: the
+	// source is an arbitrary runtime value. `Variant`'s validated constructors for that pair only
+	// assert the range precondition instead of checking it, so routing the call through the ordinary
+	// validated-constructor fast path below would trip a `DEV_ASSERT` in dev builds and leave the
+	// destination holding whatever bit pattern the carrier produced in release. Route it through the
+	// same checked-numeric machinery `as` casts use instead, so an out-of-range value is a stable
+	// runtime error in every build.
+	if (p_arguments.size() == 1 && HAS_BUILTIN_TYPE(p_arguments[0])) {
+		const Variant::Type argument_type = p_arguments[0].type.builtin_type;
+		NumericType target_numeric_type = NumericType::NONE;
+		if (p_type == Variant::INT && argument_type == Variant::UINT) {
+			target_numeric_type = NumericType::INT64;
+		} else if (p_type == Variant::UINT && argument_type == Variant::INT) {
+			target_numeric_type = NumericType::UINT64;
+		}
+		if (target_numeric_type != NumericType::NONE) {
+			append_opcode(FSFunction::OPCODE_NUMERIC_CAST);
+			append(p_arguments[0]);
+			CallTarget ct = get_call_target(p_target);
+			append(ct.target);
+			append(int(target_numeric_type));
+			append(false);
+			ct.cleanup();
+			return;
+		}
+	}
+
 	// Try to find an appropriate constructor.
 	bool all_have_type = true;
 	Vector<Variant::Type> arg_types;

@@ -236,6 +236,39 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A failed checked cast leaves
 	CHECK(object->get("converted") == Variant(uint64_t(9)));
 }
 
+// `int(source)` compiles to `Variant::construct()` against `VariantConstructorIntFromUInt`, whose
+// range precondition the compiler cannot prove from the `ulong` carrier alone: the value is only
+// known at run time. That constructor's validated fast path only asserts the precondition instead of
+// checking it, so an out-of-range value used to trip a `DEV_ASSERT` in dev builds and silently keep
+// whatever bit pattern the carrier held in release. The constructor call is routed through the same
+// checked-numeric machinery `as` casts use, so the failure is a stable runtime error in every build.
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A signedness-crossing constructor call is checked") {
+	ScopedCheckedNumericLanguage language;
+
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func cast_to_int(source: ulong):\n"
+			"\treturn int(source)\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	const Variant out_of_range = uint64_t(UINT64_MAX);
+	const Variant *out_of_range_arguments[] = { &out_of_range };
+	Callable::CallError error;
+	ERR_PRINT_OFF;
+	const Variant failed_result = object->callp(SNAME("cast_to_int"), out_of_range_arguments, 1, error);
+	ERR_PRINT_ON;
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(failed_result.get_type() == Variant::NIL);
+
+	const Variant in_range = uint64_t(9);
+	const Variant *in_range_arguments[] = { &in_range };
+	const Variant succeeded_result = object->callp(SNAME("cast_to_int"), in_range_arguments, 1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(succeeded_result == Variant(int64_t(9)));
+}
+
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Nullable integer arithmetic keeps its declared width") {
 	ScopedCheckedNumericLanguage language;
 
