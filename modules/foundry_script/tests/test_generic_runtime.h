@@ -621,6 +621,7 @@ static void check_specialized_generic_trait_is_as(const Ref<FoundryScript> &p_sc
 
 	ContainerType int_argument;
 	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
 	ContainerType string_argument;
 	string_argument.builtin_type = Variant::STRING;
 	Vector<ContainerType> int_arguments;
