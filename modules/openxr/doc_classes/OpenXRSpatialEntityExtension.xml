@@ -12,8 +12,8 @@
 		<method name="add_spatial_entity">
 			<return type="RID" />
 			<param index="0" name="spatial_context" type="RID" />
-			<param index="1" name="entity_id" type="int" />
-			<param index="2" name="entity" type="int" />
+			<param index="1" name="entity_id" type="uint" />
+			<param index="2" name="entity" type="uint" />
 			<description>
 				Registers an entity that was created directly on the OpenXR runtime.
 			</description>
@@ -43,7 +43,7 @@
 		</method>
 		<method name="find_spatial_entity">
 			<return type="RID" />
-			<param index="0" name="entity_id" type="int" />
+			<param index="0" name="entity_id" type="uint" />
 			<description>
 				Returns the [RID] for the specified spatial entity ID.
 			</description>
@@ -72,13 +72,13 @@
 		<method name="get_float_buffer" qualifiers="const">
 			<return type="PackedFloat32Array" />
 			<param index="0" name="spatial_snapshot" type="RID" />
-			<param index="1" name="buffer_id" type="int" />
+			<param index="1" name="buffer_id" type="uint" />
 			<description>
 				Returns a buffer with floats from a buffer that was retrieved when taking a snapshot.
 			</description>
 		</method>
 		<method name="get_spatial_context_handle" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="spatial_context" type="RID" />
 			<description>
 				Returns the OpenXR spatial context handle for this snapshot.
@@ -100,7 +100,7 @@
 			</description>
 		</method>
 		<method name="get_spatial_entity_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="entity" type="RID" />
 			<description>
 				Returns the internal [code]XrSpatialEntityIdEXT[/code] associated with the entity.
@@ -114,7 +114,7 @@
 			</description>
 		</method>
 		<method name="get_spatial_snapshot_handle" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="spatial_snapshot" type="RID" />
 			<description>
 				Returns the OpenXR spatial snapshot handle for this snapshot.
@@ -124,7 +124,7 @@
 		<method name="get_string" qualifiers="const">
 			<return type="String" />
 			<param index="0" name="spatial_snapshot" type="RID" />
-			<param index="1" name="buffer_id" type="int" />
+			<param index="1" name="buffer_id" type="uint" />
 			<description>
 				Returns a string from a buffer that was retrieved when taking a snapshot.
 			</description>
@@ -132,7 +132,7 @@
 		<method name="get_uint8_buffer" qualifiers="const">
 			<return type="PackedByteArray" />
 			<param index="0" name="spatial_snapshot" type="RID" />
-			<param index="1" name="buffer_id" type="int" />
+			<param index="1" name="buffer_id" type="uint" />
 			<description>
 				Returns a buffer with 8 bit ints from a buffer that was retrieved when taking a snapshot.
 			</description>
@@ -140,7 +140,7 @@
 		<method name="get_uint16_buffer" qualifiers="const">
 			<return type="PackedInt32Array" />
 			<param index="0" name="spatial_snapshot" type="RID" />
-			<param index="1" name="buffer_id" type="int" />
+			<param index="1" name="buffer_id" type="uint" />
 			<description>
 				Returns a buffer with 16 bit ints from a buffer that was retrieved when taking a snapshot.
 			</description>
@@ -148,7 +148,7 @@
 		<method name="get_uint32_buffer" qualifiers="const">
 			<return type="PackedInt32Array" />
 			<param index="0" name="spatial_snapshot" type="RID" />
-			<param index="1" name="buffer_id" type="int" />
+			<param index="1" name="buffer_id" type="uint" />
 			<description>
 				Returns a buffer with 32 bit ints from a buffer that was retrieved when taking a snapshot.
 			</description>
@@ -156,7 +156,7 @@
 		<method name="get_vector2_buffer" qualifiers="const">
 			<return type="PackedVector2Array" />
 			<param index="0" name="spatial_snapshot" type="RID" />
-			<param index="1" name="buffer_id" type="int" />
+			<param index="1" name="buffer_id" type="uint" />
 			<description>
 				Returns a buffer with [Vector2] entries from a buffer that was retrieved when taking a snapshot.
 			</description>
@@ -164,7 +164,7 @@
 		<method name="get_vector3_buffer" qualifiers="const">
 			<return type="PackedVector3Array" />
 			<param index="0" name="spatial_snapshot" type="RID" />
-			<param index="1" name="buffer_id" type="int" />
+			<param index="1" name="buffer_id" type="uint" />
 			<description>
 				Returns a buffer with [Vector3] entries from a buffer that was retrieved when taking a snapshot.
 			</description>
@@ -172,7 +172,7 @@
 		<method name="make_spatial_entity">
 			<return type="RID" />
 			<param index="0" name="spatial_context" type="RID" />
-			<param index="1" name="entity_id" type="int" />
+			<param index="1" name="entity_id" type="uint" />
 			<description>
 				Creates a new entity for this [param entity_id]. The [param spatial_context] should match the context that discovered the entity.
 			</description>

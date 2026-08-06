@@ -34,7 +34,7 @@
 			<param index="1" name="velocity" type="Vector2" />
 			<param index="2" name="color" type="Color" />
 			<param index="3" name="custom" type="Color" />
-			<param index="4" name="flags" type="int" />
+			<param index="4" name="flags" type="uint" />
 			<description>
 				Emits a single particle. Whether [param xform], [param velocity], [param color] and [param custom] are applied depends on the value of [param flags]. See [enum EmitFlags].
 				The default ParticleProcessMaterial will overwrite [param color] and use the contents of [param custom] as [code](rotation, age, animation, lifetime)[/code].
@@ -115,7 +115,7 @@
 		<member name="randomness" type="float" setter="set_randomness_ratio" getter="get_randomness_ratio" default="0.0">
 			Emission lifetime randomness ratio.
 		</member>
-		<member name="seed" type="int" setter="set_seed" getter="get_seed" default="0">
+		<member name="seed" type="uint" setter="set_seed" getter="get_seed" default="0">
 			Sets the random seed used by the particle system. Only effective if [member use_fixed_seed] is [code]true[/code].
 		</member>
 		<member name="speed_scale" type="float" setter="set_speed_scale" getter="get_speed_scale" default="1.0">

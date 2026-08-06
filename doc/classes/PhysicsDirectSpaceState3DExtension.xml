@@ -16,7 +16,7 @@
 			<param index="1" name="transform" type="Transform3D" />
 			<param index="2" name="motion" type="Vector3" />
 			<param index="3" name="margin" type="float" />
-			<param index="4" name="collision_mask" type="int" />
+			<param index="4" name="collision_mask" type="uint" />
 			<param index="5" name="collide_with_bodies" type="bool" />
 			<param index="6" name="collide_with_areas" type="bool" />
 			<param index="7" name="closest_safe" type="float*" />
@@ -31,7 +31,7 @@
 			<param index="1" name="transform" type="Transform3D" />
 			<param index="2" name="motion" type="Vector3" />
 			<param index="3" name="margin" type="float" />
-			<param index="4" name="collision_mask" type="int" />
+			<param index="4" name="collision_mask" type="uint" />
 			<param index="5" name="collide_with_bodies" type="bool" />
 			<param index="6" name="collide_with_areas" type="bool" />
 			<param index="7" name="results" type="void*" />
@@ -50,7 +50,7 @@
 		<method name="_intersect_point" qualifiers="virtual required">
 			<return type="int" />
 			<param index="0" name="position" type="Vector3" />
-			<param index="1" name="collision_mask" type="int" />
+			<param index="1" name="collision_mask" type="uint" />
 			<param index="2" name="collide_with_bodies" type="bool" />
 			<param index="3" name="collide_with_areas" type="bool" />
 			<param index="4" name="results" type="PhysicsServer3DExtensionShapeResult*" />
@@ -62,7 +62,7 @@
 			<return type="bool" />
 			<param index="0" name="from" type="Vector3" />
 			<param index="1" name="to" type="Vector3" />
-			<param index="2" name="collision_mask" type="int" />
+			<param index="2" name="collision_mask" type="uint" />
 			<param index="3" name="collide_with_bodies" type="bool" />
 			<param index="4" name="collide_with_areas" type="bool" />
 			<param index="5" name="hit_from_inside" type="bool" />
@@ -78,7 +78,7 @@
 			<param index="1" name="transform" type="Transform3D" />
 			<param index="2" name="motion" type="Vector3" />
 			<param index="3" name="margin" type="float" />
-			<param index="4" name="collision_mask" type="int" />
+			<param index="4" name="collision_mask" type="uint" />
 			<param index="5" name="collide_with_bodies" type="bool" />
 			<param index="6" name="collide_with_areas" type="bool" />
 			<param index="7" name="result_count" type="PhysicsServer3DExtensionShapeResult*" />
@@ -92,7 +92,7 @@
 			<param index="1" name="transform" type="Transform3D" />
 			<param index="2" name="motion" type="Vector3" />
 			<param index="3" name="margin" type="float" />
-			<param index="4" name="collision_mask" type="int" />
+			<param index="4" name="collision_mask" type="uint" />
 			<param index="5" name="collide_with_bodies" type="bool" />
 			<param index="6" name="collide_with_areas" type="bool" />
 			<param index="7" name="rest_info" type="PhysicsServer3DExtensionShapeRestInfo*" />

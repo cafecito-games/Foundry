@@ -33,6 +33,7 @@
 #include "core/object/object.h"
 #include "core/templates/simple_type.h"
 #include "core/typedefs.h"
+#include "core/variant/numeric_type.h"
 #include "core/variant/variant.h"
 
 #include <type_traits>
@@ -54,6 +55,47 @@ enum Metadata {
 	METADATA_INT_IS_CHAR32,
 	METADATA_OBJECT_IS_REQUIRED,
 };
+}
+
+// The exact integer descriptor a native declaration states, from its Variant carrier together with
+// its argument metadata, or `NumericType::NONE` when the declaration pins no width.
+//
+// Metadata alone is not authoritative. A nominal unsigned wrapper such as `ObjectID` declares the
+// signed carrier while carrying `METADATA_INT_IS_UINT64`, so metadata that disagrees with the
+// carrier describes the C++ storage rather than the value's range and pins nothing. Character and
+// floating metadata pin no integer width either. A caller that gets `NONE` back keeps whatever
+// default its carrier already implies.
+_FORCE_INLINE_ NumericType numeric_type_from_native_metadata(Variant::Type p_carrier, FoundryTypeInfo::Metadata p_metadata) {
+	NumericType declared = NumericType::NONE;
+	switch (p_metadata) {
+		case FoundryTypeInfo::METADATA_INT_IS_INT8:
+			declared = NumericType::INT8;
+			break;
+		case FoundryTypeInfo::METADATA_INT_IS_INT16:
+			declared = NumericType::INT16;
+			break;
+		case FoundryTypeInfo::METADATA_INT_IS_INT32:
+			declared = NumericType::INT32;
+			break;
+		case FoundryTypeInfo::METADATA_INT_IS_INT64:
+			declared = NumericType::INT64;
+			break;
+		case FoundryTypeInfo::METADATA_INT_IS_UINT8:
+			declared = NumericType::UINT8;
+			break;
+		case FoundryTypeInfo::METADATA_INT_IS_UINT16:
+			declared = NumericType::UINT16;
+			break;
+		case FoundryTypeInfo::METADATA_INT_IS_UINT32:
+			declared = NumericType::UINT32;
+			break;
+		case FoundryTypeInfo::METADATA_INT_IS_UINT64:
+			declared = NumericType::UINT64;
+			break;
+		default:
+			return NumericType::NONE;
+	}
+	return numeric_type_is_carrier_consistent(declared, p_carrier) ? declared : NumericType::NONE;
 }
 
 // If the compiler fails because it's trying to instantiate the primary 'GetTypeInfo' template
@@ -88,13 +130,19 @@ struct GetTypeInfo<T, std::enable_if_t<!std::is_same_v<T, GetSimpleTypeT<T>>>> :
 	};
 
 MAKE_TYPE_INFO(bool, Variant::BOOL)
-MAKE_TYPE_INFO_WITH_META(uint8_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_UINT8)
+// A C++ integer declares the carrier its signedness belongs to plus its exact width. The carrier is
+// what a generic `PropertyInfo` transports and what a bound result is built as; the metadata is the
+// only record of the width, and the two together are what FoundryScript maps to a source type.
+//
+// Nominal unsigned wrappers such as `ObjectID` are deliberately not covered by this rule: they
+// declare their own carrier below and keep the signed one.
+MAKE_TYPE_INFO_WITH_META(uint8_t, Variant::UINT, FoundryTypeInfo::METADATA_INT_IS_UINT8)
 MAKE_TYPE_INFO_WITH_META(int8_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_INT8)
-MAKE_TYPE_INFO_WITH_META(uint16_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_UINT16)
+MAKE_TYPE_INFO_WITH_META(uint16_t, Variant::UINT, FoundryTypeInfo::METADATA_INT_IS_UINT16)
 MAKE_TYPE_INFO_WITH_META(int16_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_INT16)
-MAKE_TYPE_INFO_WITH_META(uint32_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_UINT32)
+MAKE_TYPE_INFO_WITH_META(uint32_t, Variant::UINT, FoundryTypeInfo::METADATA_INT_IS_UINT32)
 MAKE_TYPE_INFO_WITH_META(int32_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_INT32)
-MAKE_TYPE_INFO_WITH_META(uint64_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_UINT64)
+MAKE_TYPE_INFO_WITH_META(uint64_t, Variant::UINT, FoundryTypeInfo::METADATA_INT_IS_UINT64)
 MAKE_TYPE_INFO_WITH_META(int64_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_INT64)
 MAKE_TYPE_INFO_WITH_META(char16_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_CHAR16)
 MAKE_TYPE_INFO_WITH_META(char32_t, Variant::INT, FoundryTypeInfo::METADATA_INT_IS_CHAR32)

@@ -187,12 +187,11 @@ struct VariantReadsBothIntegerCarriers<BitField<T>> {
 	static constexpr bool value = true;
 };
 
-// The native binding layer collapses every C++ integer width and signedness onto `Variant::INT`
-// (see `GetTypeInfo<uint64_t>` in `core/variant/type_info.h`, which keeps the distinction in
-// argument metadata only), so a declared integer parameter stands for both integer carriers. A
-// `Variant` built from an unsigned C++ value carries `Variant::UINT`, so argument validation has to
-// normalize the carrier before consulting the script-facing conversion table wherever the parameter
-// can actually receive it. `Variant::can_convert_strict()` itself stays strict.
+// A C++ integer parameter declares the carrier matching its signedness (see `GetTypeInfo<uint64_t>`
+// in `core/variant/type_info.h`) plus its exact width as metadata, but the C++ conversion that
+// receives the argument reads either integer carrier. Argument validation therefore normalizes the
+// carrier before consulting the script-facing conversion table wherever the parameter can actually
+// receive it, in both directions. `Variant::can_convert_strict()` itself stays strict.
 //
 // Unsigned C++ arithmetic parameters are supported through `callable_mp`, including bound,
 // deferred, signal, and queued invocation. Callers should keep the type required by their domain;
@@ -204,7 +203,12 @@ template <typename T>
 _FORCE_INLINE_ bool is_valid_native_argument_type(Variant::Type p_type_from, Variant::Type p_type_to) {
 	if constexpr (VariantReadsBothIntegerCarriers<T>::value) {
 		if (p_type_from == Variant::UINT) {
-			return Variant::can_convert_strict(Variant::INT, p_type_to);
+			return Variant::can_convert_strict(Variant::INT, p_type_to) ||
+					Variant::can_convert_strict(Variant::UINT, p_type_to);
+		}
+		if (p_type_to == Variant::UINT) {
+			return Variant::can_convert_strict(p_type_from, Variant::INT) ||
+					Variant::can_convert_strict(p_type_from, Variant::UINT);
 		}
 	}
 	return Variant::can_convert_strict(p_type_from, p_type_to);
@@ -680,7 +684,8 @@ void call_get_argument_type_info(int p_arg, PropertyInfo &info) {
 	(void)index; // Suppress GCC warning.
 }
 
-#ifdef DEBUG_ENABLED
+// Argument metadata is the only record of a native integer's declared width, so it is available in
+// every build configuration that can compile Foundry source rather than only in debug builds.
 template <typename Q>
 void call_get_argument_metadata_helper(int p_arg, int &index, FoundryTypeInfo::Metadata &md) {
 	if (p_arg == index) {
@@ -701,8 +706,6 @@ FoundryTypeInfo::Metadata call_get_argument_metadata(int p_arg) {
 	(void)index;
 	return md;
 }
-
-#endif // DEBUG_ENABLED
 
 //////////////////////
 

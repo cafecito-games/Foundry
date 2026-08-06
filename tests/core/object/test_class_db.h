@@ -177,6 +177,7 @@ struct NamesCache {
 	StringName node_path_type = StringName("NodePath");
 	StringName bool_type = StringName("bool");
 	StringName int_type = StringName("int");
+	StringName uint_type = StringName("uint");
 	StringName float_type = StringName("float");
 	StringName void_type = StringName("void");
 	StringName vararg_stub_type = StringName("@VarArg@");
@@ -269,8 +270,12 @@ bool arg_default_value_is_assignable_to_type(const Context &p_context, const Var
 					p_context.names_cache.is_nullable_type(p_arg_type.name);
 		case Variant::BOOL:
 			return p_arg_type.name == p_context.names_cache.bool_type;
+		// A C++ integer parameter reads either integer carrier (see `is_valid_native_argument_type()`),
+		// so a default written on one carrier is assignable to a parameter declared on the other.
 		case Variant::INT:
+		case Variant::UINT:
 			return p_arg_type.name == p_context.names_cache.int_type ||
+					p_arg_type.name == p_context.names_cache.uint_type ||
 					p_arg_type.name == p_context.names_cache.float_type ||
 					p_arg_type.is_enum;
 		case Variant::FLOAT:
@@ -324,7 +329,6 @@ bool arg_default_value_is_assignable_to_type(const Context &p_context, const Var
 		case Variant::VECTOR4I:
 			return p_arg_type.name == p_context.names_cache.vector4_type ||
 					p_arg_type.name == Variant::get_type_name(p_val.get_type());
-		case Variant::UINT:
 		case Variant::VARIANT_MAX:
 			break;
 	}

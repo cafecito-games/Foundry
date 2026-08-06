@@ -35,7 +35,7 @@
 	<methods>
 		<method name="append">
 			<return type="bool" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Appends an element at the end of the array (alias of [method push_back]).
 			</description>
@@ -49,7 +49,7 @@
 		</method>
 		<method name="bsearch" qualifiers="const">
 			<return type="int" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<param index="1" name="before" type="bool" default="true" />
 			<description>
 				Finds the index of an existing value (or the insertion index that maintains sorting order, if the value is not yet present in the array) using binary search. Optionally, a [param before] specifier can be passed. If [code]false[/code], the returned index comes after all existing entries of the value in the array.
@@ -95,7 +95,7 @@
 		</method>
 		<method name="count" qualifiers="const">
 			<return type="int" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Returns the number of times an element is in the array.
 			</description>
@@ -318,28 +318,28 @@
 		</method>
 		<method name="erase">
 			<return type="bool" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Removes the first occurrence of a value from the array and returns [code]true[/code]. If the value does not exist in the array, nothing happens and [code]false[/code] is returned. To remove an element by index, use [method remove_at] instead.
 			</description>
 		</method>
 		<method name="fill">
 			<return type="void" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Assigns the given value to all elements in the array. This can typically be used together with [method resize] to create an array with a given size and initialized elements.
 			</description>
 		</method>
 		<method name="find" qualifiers="const">
 			<return type="int" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<param index="1" name="from" type="int" default="0" />
 			<description>
 				Searches the array for a value and returns its index or [code]-1[/code] if not found. Optionally, the initial search index can be passed.
 			</description>
 		</method>
 		<method name="get" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="index" type="int" />
 			<description>
 				Returns the byte at the given [param index] in the array. If [param index] is out-of-bounds or negative, this method fails and returns [code]0[/code].
@@ -388,7 +388,7 @@
 		</method>
 		<method name="has" qualifiers="const">
 			<return type="bool" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Returns [code]true[/code] if the array contains [param value].
 			</description>
@@ -420,7 +420,7 @@
 		<method name="insert">
 			<return type="int" />
 			<param index="0" name="at_index" type="int" />
-			<param index="1" name="value" type="int" />
+			<param index="1" name="value" type="uint" />
 			<description>
 				Inserts a new element at a given position in the array. The position must be valid, or at the end of the array ([code]idx == size()[/code]).
 			</description>
@@ -433,7 +433,7 @@
 		</method>
 		<method name="push_back">
 			<return type="bool" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Appends an element at the end of the array.
 			</description>
@@ -461,7 +461,7 @@
 		</method>
 		<method name="rfind" qualifiers="const">
 			<return type="int" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<param index="1" name="from" type="int" default="-1" />
 			<description>
 				Searches the array in reverse order. Optionally, a start search index can be passed. If negative, the start index is considered relative to the end of the array.
@@ -470,7 +470,7 @@
 		<method name="set">
 			<return type="void" />
 			<param index="0" name="index" type="int" />
-			<param index="1" name="value" type="int" />
+			<param index="1" name="value" type="uint" />
 			<description>
 				Changes the byte at the given index.
 			</description>

@@ -15,7 +15,7 @@
 	</tutorials>
 	<methods>
 		<method name="_get_composition_layer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="index" type="int" />
 			<description>
 				Returns a pointer to an [code]XrCompositionLayerBaseHeader[/code] struct to provide the given composition layer.
@@ -42,7 +42,7 @@
 		</method>
 		<method name="_get_requested_extensions" qualifiers="virtual">
 			<return type="Dictionary" />
-			<param index="0" name="xr_version" type="int" />
+			<param index="0" name="xr_version" type="uint" />
 			<description>
 				Returns a [Dictionary] of OpenXR extensions related to this extension. [param xr_version] specifies the OpenXR version we're instantiating. This will be zero if the editor requests this list to flag supported features. The [Dictionary] should contain the name of the extension, mapped to a [code]bool *[/code] cast to an integer:
 				- If the [code]bool *[/code] is a [code]nullptr[/code] this extension is mandatory.
@@ -84,7 +84,7 @@
 		</method>
 		<method name="_on_instance_created" qualifiers="virtual">
 			<return type="void" />
-			<param index="0" name="instance" type="int" />
+			<param index="0" name="instance" type="uint" />
 			<description>
 				Called right after the OpenXR instance is created.
 				[b]Note:[/b] This virtual method will be called on the main thread, however, it will be called [i]before[/i] OpenXR becomes involved in rendering, so it is safe to write to data that will be used by the render thread.
@@ -143,7 +143,7 @@
 		</method>
 		<method name="_on_session_created" qualifiers="virtual">
 			<return type="void" />
-			<param index="0" name="session" type="int" />
+			<param index="0" name="session" type="uint" />
 			<description>
 				Called right after the OpenXR session is created.
 				[b]Note:[/b] This virtual method will be called on the main thread, however, it will be called [i]before[/i] OpenXR becomes involved in rendering, so it is safe to write to data that will be used by the render thread.
@@ -233,7 +233,7 @@
 			</description>
 		</method>
 		<method name="_set_android_surface_swapchain_create_info_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="property_values" type="Dictionary" />
 			<param index="1" name="next_pointer" type="void*" />
 			<description>
@@ -243,7 +243,7 @@
 			</description>
 		</method>
 		<method name="_set_frame_end_info_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="next_pointer" type="void*" />
 			<description>
 				Add additional data structures to [code]XrFrameEndInfo[/code].
@@ -252,7 +252,7 @@
 			</description>
 		</method>
 		<method name="_set_frame_wait_info_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="next_pointer" type="void*" />
 			<description>
 				Add additional data structures to [code]XrFrameWaitInfo[/code].
@@ -261,7 +261,7 @@
 			</description>
 		</method>
 		<method name="_set_hand_joint_locations_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="hand_index" type="int" />
 			<param index="1" name="next_pointer" type="void*" />
 			<description>
@@ -269,15 +269,15 @@
 			</description>
 		</method>
 		<method name="_set_instance_create_info_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
-			<param index="0" name="xr_version" type="int" />
+			<return type="uint" />
+			<param index="0" name="xr_version" type="uint" />
 			<param index="1" name="next_pointer" type="void*" />
 			<description>
 				Add additional data structures when the OpenXR instance is created. [param xr_version] specifies the OpenXR version we're instantiating.
 			</description>
 		</method>
 		<method name="_set_projection_views_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="view_index" type="int" />
 			<param index="1" name="next_pointer" type="void*" />
 			<description>
@@ -286,7 +286,7 @@
 			</description>
 		</method>
 		<method name="_set_reference_space_create_info_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="reference_space_type" type="int" />
 			<param index="1" name="next_pointer" type="void*" />
 			<description>
@@ -294,36 +294,36 @@
 			</description>
 		</method>
 		<method name="_set_session_create_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="next_pointer" type="void*" />
 			<description>
 				Add additional data structures when the OpenXR session is created.
 			</description>
 		</method>
 		<method name="_set_swapchain_create_info_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="next_pointer" type="void*" />
 			<description>
 				Add additional data structures when creating OpenXR swapchains.
 			</description>
 		</method>
 		<method name="_set_system_properties_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="next_pointer" type="void*" />
 			<description>
 				Add additional data structures when querying OpenXR system abilities.
 			</description>
 		</method>
 		<method name="_set_view_configuration_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
-			<param index="0" name="view" type="int" />
+			<return type="uint" />
+			<param index="0" name="view" type="uint" />
 			<param index="1" name="next_pointer" type="void*" />
 			<description>
 				Add additional data structures when querying OpenXR view configuration.
 			</description>
 		</method>
 		<method name="_set_view_locate_info_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="next_pointer" type="void*" />
 			<description>
 				Add additional data structures to [code]XrViewLocateInfo[/code].
@@ -332,7 +332,7 @@
 			</description>
 		</method>
 		<method name="_set_viewport_composition_layer_and_get_next_pointer" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="layer" type="const void*" />
 			<param index="1" name="property_values" type="Dictionary" />
 			<param index="2" name="next_pointer" type="void*" />

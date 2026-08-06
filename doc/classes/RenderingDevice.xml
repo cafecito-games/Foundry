@@ -33,8 +33,8 @@
 		<method name="buffer_clear">
 			<return type="int" enum="Error" />
 			<param index="0" name="buffer" type="RID" />
-			<param index="1" name="offset" type="int" />
-			<param index="2" name="size_bytes" type="int" />
+			<param index="1" name="offset" type="uint" />
+			<param index="2" name="size_bytes" type="uint" />
 			<description>
 				Clears the contents of the [param buffer], clearing [param size_bytes] bytes, starting at [param offset].
 				Prints an error if:
@@ -48,9 +48,9 @@
 			<return type="int" enum="Error" />
 			<param index="0" name="src_buffer" type="RID" />
 			<param index="1" name="dst_buffer" type="RID" />
-			<param index="2" name="src_offset" type="int" />
-			<param index="3" name="dst_offset" type="int" />
-			<param index="4" name="size" type="int" />
+			<param index="2" name="src_offset" type="uint" />
+			<param index="3" name="dst_offset" type="uint" />
+			<param index="4" name="size" type="uint" />
 			<description>
 				Copies [param size] bytes from the [param src_buffer] at [param src_offset] into [param dst_buffer] at [param dst_offset].
 				Prints an error if:
@@ -90,7 +90,7 @@
 			</description>
 		</method>
 		<method name="buffer_get_device_address">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="buffer" type="RID" />
 			<description>
 				Returns the address of the given [param buffer] which can be passed to shaders in any way to access underlying data. Buffer must have been created with this feature enabled.
@@ -100,8 +100,8 @@
 		<method name="buffer_update">
 			<return type="int" enum="Error" />
 			<param index="0" name="buffer" type="RID" />
-			<param index="1" name="offset" type="int" />
-			<param index="2" name="size_bytes" type="int" />
+			<param index="1" name="offset" type="uint" />
+			<param index="2" name="size_bytes" type="uint" />
 			<param index="3" name="data" type="PackedByteArray" />
 			<description>
 				Updates a region of [param size_bytes] bytes, starting at [param offset], in the buffer, with the specified [param data].
@@ -160,7 +160,7 @@
 			<return type="void" />
 			<param index="0" name="compute_list" type="int" />
 			<param index="1" name="uniform_set" type="RID" />
-			<param index="2" name="set_index" type="int" />
+			<param index="2" name="set_index" type="uint" />
 			<description>
 				Binds the [param uniform_set] to this [param compute_list]. Godot ensures that all textures in the uniform set have the correct Vulkan access masks. If Godot had to change access masks of textures, it will raise a Vulkan image memory barrier.
 			</description>
@@ -168,9 +168,9 @@
 		<method name="compute_list_dispatch">
 			<return type="void" />
 			<param index="0" name="compute_list" type="int" />
-			<param index="1" name="x_groups" type="int" />
-			<param index="2" name="y_groups" type="int" />
-			<param index="3" name="z_groups" type="int" />
+			<param index="1" name="x_groups" type="uint" />
+			<param index="2" name="y_groups" type="uint" />
+			<param index="3" name="z_groups" type="uint" />
 			<description>
 				Submits the compute list for processing on the GPU. This is the compute equivalent to [method draw_list_draw].
 			</description>
@@ -179,7 +179,7 @@
 			<return type="void" />
 			<param index="0" name="compute_list" type="int" />
 			<param index="1" name="buffer" type="RID" />
-			<param index="2" name="offset" type="int" />
+			<param index="2" name="offset" type="uint" />
 			<description>
 				Submits the compute list for processing on the GPU with the given group counts stored in the [param buffer] at [param offset]. Buffer must have been created with [constant STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT] flag.
 			</description>
@@ -194,7 +194,7 @@
 			<return type="void" />
 			<param index="0" name="compute_list" type="int" />
 			<param index="1" name="buffer" type="PackedByteArray" />
-			<param index="2" name="size_bytes" type="int" />
+			<param index="2" name="size_bytes" type="uint" />
 			<description>
 				Sets the push constant data to [param buffer] for the specified [param compute_list]. The shader determines how this binary data is used. The buffer's size in bytes must also be specified in [param size_bytes] (this can be obtained by calling the [method PackedByteArray.size] method on the passed [param buffer]).
 			</description>
@@ -305,7 +305,7 @@
 			<return type="void" />
 			<param index="0" name="draw_list" type="int" />
 			<param index="1" name="uniform_set" type="RID" />
-			<param index="2" name="set_index" type="int" />
+			<param index="2" name="set_index" type="uint" />
 			<description>
 				Binds [param uniform_set] to the specified [param draw_list]. A [param set_index] must also be specified, which is an identifier starting from [code]0[/code] that must match the one expected by the draw list.
 			</description>
@@ -322,7 +322,7 @@
 			<return type="void" />
 			<param index="0" name="draw_list" type="int" />
 			<param index="1" name="vertex_format" type="int" />
-			<param index="2" name="vertex_count" type="int" />
+			<param index="2" name="vertex_count" type="uint" />
 			<param index="3" name="vertex_buffers" type="RID[]" />
 			<param index="4" name="offsets" type="PackedInt64Array" default="PackedInt64Array()" />
 			<description>
@@ -385,7 +385,7 @@
 			<return type="void" />
 			<param index="0" name="draw_list" type="int" />
 			<param index="1" name="buffer" type="PackedByteArray" />
-			<param index="2" name="size_bytes" type="int" />
+			<param index="2" name="size_bytes" type="uint" />
 			<description>
 				Sets the push constant data to [param buffer] for the specified [param draw_list]. The shader determines how this binary data is used. The buffer's size in bytes must also be specified in [param size_bytes] (this can be obtained by calling the [method PackedByteArray.size] method on the passed [param buffer]).
 			</description>
@@ -484,48 +484,48 @@
 			</description>
 		</method>
 		<method name="get_captured_timestamp_cpu_time" qualifiers="const">
-			<return type="int" />
-			<param index="0" name="index" type="int" />
+			<return type="uint" />
+			<param index="0" name="index" type="uint" />
 			<description>
 				Returns the timestamp in CPU time for the rendering step specified by [param index] (in microseconds since the engine started). See also [method get_captured_timestamp_gpu_time] and [method capture_timestamp].
 			</description>
 		</method>
 		<method name="get_captured_timestamp_gpu_time" qualifiers="const">
-			<return type="int" />
-			<param index="0" name="index" type="int" />
+			<return type="uint" />
+			<param index="0" name="index" type="uint" />
 			<description>
 				Returns the timestamp in GPU time for the rendering step specified by [param index] (in microseconds since the engine started). See also [method get_captured_timestamp_cpu_time] and [method capture_timestamp].
 			</description>
 		</method>
 		<method name="get_captured_timestamp_name" qualifiers="const">
 			<return type="String" />
-			<param index="0" name="index" type="int" />
+			<param index="0" name="index" type="uint" />
 			<description>
 				Returns the timestamp's name for the rendering step specified by [param index]. See also [method capture_timestamp].
 			</description>
 		</method>
 		<method name="get_captured_timestamps_count" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the total number of timestamps (rendering steps) available for profiling.
 			</description>
 		</method>
 		<method name="get_captured_timestamps_frame" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the index of the last frame rendered that has rendering timestamps available for querying.
 			</description>
 		</method>
 		<method name="get_device_allocation_count" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns how many allocations the GPU has performed for internal driver structures.
 				This is only used by Vulkan in debug builds and can return 0 when this information is not tracked or unknown.
 			</description>
 		</method>
 		<method name="get_device_allocs_by_object_type" qualifiers="const">
-			<return type="int" />
-			<param index="0" name="type" type="int" />
+			<return type="uint" />
+			<param index="0" name="type" type="uint" />
 			<description>
 				Same as [method get_device_allocation_count] but filtered for a given object type.
 				The type argument must be in range [code][0; get_tracked_object_type_count - 1][/code]. If [method get_tracked_object_type_count] is 0, then type argument is ignored and always returns 0.
@@ -533,8 +533,8 @@
 			</description>
 		</method>
 		<method name="get_device_memory_by_object_type" qualifiers="const">
-			<return type="int" />
-			<param index="0" name="type" type="int" />
+			<return type="uint" />
+			<param index="0" name="type" type="uint" />
 			<description>
 				Same as [method get_device_total_memory] but filtered for a given object type.
 				The type argument must be in range [code][0; get_tracked_object_type_count - 1][/code]. If [method get_tracked_object_type_count] is 0, then type argument is ignored and always returns 0.
@@ -554,7 +554,7 @@
 			</description>
 		</method>
 		<method name="get_device_total_memory" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns how much bytes the GPU is using.
 				This is only used by Vulkan in debug builds and can return 0 when this information is not tracked or unknown.
@@ -567,15 +567,15 @@
 			</description>
 		</method>
 		<method name="get_driver_allocation_count" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns how many allocations the GPU driver has performed for internal driver structures.
 				This is only used by Vulkan in debug builds and can return 0 when this information is not tracked or unknown.
 			</description>
 		</method>
 		<method name="get_driver_allocs_by_object_type" qualifiers="const">
-			<return type="int" />
-			<param index="0" name="type" type="int" />
+			<return type="uint" />
+			<param index="0" name="type" type="uint" />
 			<description>
 				Same as [method get_driver_allocation_count] but filtered for a given object type.
 				The type argument must be in range [code][0; get_tracked_object_type_count - 1][/code]. If [method get_tracked_object_type_count] is 0, then type argument is ignored and always returns 0.
@@ -600,8 +600,8 @@
 			</description>
 		</method>
 		<method name="get_driver_memory_by_object_type" qualifiers="const">
-			<return type="int" />
-			<param index="0" name="type" type="int" />
+			<return type="uint" />
+			<param index="0" name="type" type="uint" />
 			<description>
 				Same as [method get_driver_total_memory] but filtered for a given object type.
 				The type argument must be in range [code][0; get_tracked_object_type_count - 1][/code]. If [method get_tracked_object_type_count] is 0, then type argument is ignored and always returns 0.
@@ -609,29 +609,29 @@
 			</description>
 		</method>
 		<method name="get_driver_resource">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="resource" type="int" enum="RenderingDevice.DriverResource" />
 			<param index="1" name="rid" type="RID" />
-			<param index="2" name="index" type="int" />
+			<param index="2" name="index" type="uint" />
 			<description>
 				Returns the unique identifier of the driver [param resource] for the specified [param rid]. Some driver resource types ignore the specified [param rid]. [param index] is always ignored but must be specified anyway.
 			</description>
 		</method>
 		<method name="get_driver_total_memory" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns how much bytes the GPU driver is using for internal driver structures.
 				This is only used by Vulkan in debug builds and can return 0 when this information is not tracked or unknown.
 			</description>
 		</method>
 		<method name="get_frame_delay" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the frame count kept by the graphics API. Higher values result in higher input lag, but with more consistent throughput. For the main [RenderingDevice], frames are cycled (usually 3 with triple-buffered V-Sync enabled). However, local [RenderingDevice]s only have 1 frame.
 			</description>
 		</method>
 		<method name="get_memory_usage" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="type" type="int" enum="RenderingDevice.MemoryType" />
 			<description>
 				Returns the memory usage in bytes corresponding to the given [param type]. When using Vulkan, these statistics are calculated by [url=https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator]Vulkan Memory Allocator[/url].
@@ -645,7 +645,7 @@
 		</method>
 		<method name="get_tracked_object_name" qualifiers="const">
 			<return type="String" />
-			<param index="0" name="type_index" type="int" />
+			<param index="0" name="type_index" type="uint" />
 			<description>
 				Returns the name of the type of object for the given [param type_index]. This value must be in range [code][0; get_tracked_object_type_count - 1][/code]. If [method get_tracked_object_type_count] is 0, then type argument is ignored and always returns the same string.
 				The return value is important because it gives meaning to the types passed to [method get_driver_memory_by_object_type], [method get_driver_allocs_by_object_type], [method get_device_memory_by_object_type], and [method get_device_allocs_by_object_type]. Examples of strings it can return (not exhaustive):
@@ -658,7 +658,7 @@
 			</description>
 		</method>
 		<method name="get_tracked_object_type_count" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns how many types of trackable objects there are.
 				This is only used by Vulkan in debug builds. Godot must also be started with the [code]--extra-gpu-memory-tracking[/code] [url=$DOCS_URL/tutorials/editor/command_line_tutorial.html]command line argument[/url].
@@ -674,7 +674,7 @@
 		<method name="hit_sbt_create">
 			<return type="RID" />
 			<param index="0" name="raytracing_pipeline" type="RID" />
-			<param index="1" name="initial_hit_group_capacity" type="int" />
+			<param index="1" name="initial_hit_group_capacity" type="uint" />
 			<description>
 				Creates a new hit shader binding table (SBT). It can be accessed with the RID that is returned.
 				Once finished with your RID, you will want to free the RID using the RenderingDevice's [method free_rid] method.
@@ -685,7 +685,7 @@
 		<method name="hit_sbt_range_alloc">
 			<return type="int" />
 			<param index="0" name="hit_sbt" type="RID" />
-			<param index="1" name="hit_group_count" type="int" />
+			<param index="1" name="hit_group_count" type="uint" />
 			<description>
 				Allocates a contiguous range of SBT entries from [param hit_sbt].
 				The returned value should be assigned to [member RDAccelerationStructureInstance.hit_sbt_range].
@@ -713,7 +713,7 @@
 			<return type="int" enum="Error" />
 			<param index="0" name="hit_sbt" type="RID" />
 			<param index="1" name="range" type="int" />
-			<param index="2" name="offset" type="int" />
+			<param index="2" name="offset" type="uint" />
 			<param index="3" name="hit_group_indices" type="PackedInt32Array" />
 			<description>
 				Updates the contents of a hit SBT range.
@@ -734,8 +734,8 @@
 		<method name="index_array_create">
 			<return type="RID" />
 			<param index="0" name="index_buffer" type="RID" />
-			<param index="1" name="index_offset" type="int" />
-			<param index="2" name="index_count" type="int" />
+			<param index="1" name="index_offset" type="uint" />
+			<param index="2" name="index_count" type="uint" />
 			<description>
 				Creates a new index array. It can be accessed with the RID that is returned.
 				Once finished with your RID, you will want to free the RID using the RenderingDevice's [method free_rid] method.
@@ -744,7 +744,7 @@
 		</method>
 		<method name="index_buffer_create">
 			<return type="RID" />
-			<param index="0" name="size_indices" type="int" />
+			<param index="0" name="size_indices" type="uint" />
 			<param index="1" name="format" type="int" enum="RenderingDevice.IndexBufferFormat" />
 			<param index="2" name="data" type="PackedByteArray" default="PackedByteArray()" />
 			<param index="3" name="use_restart_indices" type="bool" default="false" />
@@ -755,7 +755,7 @@
 			</description>
 		</method>
 		<method name="limit_get" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="limit" type="int" enum="RenderingDevice.Limit" />
 			<description>
 				Returns the value of the specified [param limit]. This limit varies depending on the current graphics hardware (and sometimes the driver version). If the given limit is exceeded, rendering errors will occur.
@@ -828,7 +828,7 @@
 			<return type="void" />
 			<param index="0" name="raytracing_list" type="int" />
 			<param index="1" name="uniform_set" type="RID" />
-			<param index="2" name="set_index" type="int" />
+			<param index="2" name="set_index" type="uint" />
 			<description>
 				Binds the [param uniform_set] to this [param raytracing_list].
 			</description>
@@ -843,7 +843,7 @@
 			<return type="void" />
 			<param index="0" name="raytracing_list" type="int" />
 			<param index="1" name="buffer" type="PackedByteArray" />
-			<param index="2" name="size_bytes" type="int" />
+			<param index="2" name="size_bytes" type="uint" />
 			<description>
 				Sets the push constant data to [param buffer] for the specified [param raytracing_list]. The shader determines how this binary data is used. The buffer's size in bytes must also be specified in [param size_bytes] (this can be obtained by calling the [method PackedByteArray.size] method on the passed [param buffer]).
 			</description>
@@ -851,11 +851,11 @@
 		<method name="raytracing_list_trace_rays">
 			<return type="void" />
 			<param index="0" name="raytracing_list" type="int" />
-			<param index="1" name="raygen_shader_index" type="int" />
+			<param index="1" name="raygen_shader_index" type="uint" />
 			<param index="2" name="hit_sbt" type="RID" />
-			<param index="3" name="width" type="int" />
-			<param index="4" name="height" type="int" />
-			<param index="5" name="depth" type="int" />
+			<param index="3" name="width" type="uint" />
+			<param index="4" name="height" type="uint" />
+			<param index="5" name="depth" type="uint" />
 			<description>
 				Initializes a raytracing dispatch for [param raytracing_list], launching [param width] × [param height] × [param depth] rays.
 				[param raygen_shader_index] selects the ray generation shader from the pipeline bound with [method raytracing_list_bind_raytracing_pipeline].
@@ -867,7 +867,7 @@
 			<param index="0" name="raygen_shaders" type="RDPipelineShader[]" />
 			<param index="1" name="miss_shaders" type="RDPipelineShader[]" />
 			<param index="2" name="hit_groups" type="RDHitGroup[]" />
-			<param index="3" name="max_trace_recursion_depth" type="int" />
+			<param index="3" name="max_trace_recursion_depth" type="uint" />
 			<description>
 				Creates a new raytracing pipeline. It can be accessed with the RID that is returned.
 				Once finished with your RID, you will want to free the RID using the RenderingDevice's [method free_rid] method.
@@ -1004,7 +1004,7 @@
 			</description>
 		</method>
 		<method name="shader_get_vertex_input_attribute_mask">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="shader" type="RID" />
 			<description>
 				Returns the internal vertex input mask. Internally, the vertex input mask is an unsigned integer consisting of the locations (specified in GLSL via. [code]layout(location = ...)[/code]) of the input variables (specified in GLSL by the [code]in[/code] keyword).
@@ -1012,7 +1012,7 @@
 		</method>
 		<method name="storage_buffer_create">
 			<return type="RID" />
-			<param index="0" name="size_bytes" type="int" />
+			<param index="0" name="size_bytes" type="uint" />
 			<param index="1" name="data" type="PackedByteArray" default="PackedByteArray()" />
 			<param index="2" name="usage" type="int" enum="RenderingDevice.StorageBufferUsage" is_bitfield="true" default="0" />
 			<param index="3" name="creation_bits" type="int" enum="RenderingDevice.BufferCreationBits" is_bitfield="true" default="0" />
@@ -1038,7 +1038,7 @@
 		</method>
 		<method name="texture_buffer_create">
 			<return type="RID" />
-			<param index="0" name="size_bytes" type="int" />
+			<param index="0" name="size_bytes" type="uint" />
 			<param index="1" name="format" type="int" enum="RenderingDevice.DataFormat" />
 			<param index="2" name="data" type="PackedByteArray" default="PackedByteArray()" />
 			<description>
@@ -1050,10 +1050,10 @@
 			<return type="int" enum="Error" />
 			<param index="0" name="texture" type="RID" />
 			<param index="1" name="color" type="Color" />
-			<param index="2" name="base_mipmap" type="int" />
-			<param index="3" name="mipmap_count" type="int" />
-			<param index="4" name="base_layer" type="int" />
-			<param index="5" name="layer_count" type="int" />
+			<param index="2" name="base_mipmap" type="uint" />
+			<param index="3" name="mipmap_count" type="uint" />
+			<param index="4" name="base_layer" type="uint" />
+			<param index="5" name="layer_count" type="uint" />
 			<description>
 				Clears the specified [param texture] by replacing all of its pixels with the specified [param color]. [param base_mipmap] and [param mipmap_count] determine which mipmaps of the texture are affected by this clear operation, while [param base_layer] and [param layer_count] determine which layers of a 3D texture (or texture array) are affected by this clear operation. For 2D textures (which only have one layer by design), [param base_layer] must be [code]0[/code] and [param layer_count] must be [code]1[/code].
 				[b]Note:[/b] [param texture] can't be cleared while a draw list that uses it as part of a framebuffer is being created. Ensure the draw list is finalized to clear this texture.
@@ -1066,10 +1066,10 @@
 			<param index="2" name="from_pos" type="Vector3" />
 			<param index="3" name="to_pos" type="Vector3" />
 			<param index="4" name="size" type="Vector3" />
-			<param index="5" name="src_mipmap" type="int" />
-			<param index="6" name="dst_mipmap" type="int" />
-			<param index="7" name="src_layer" type="int" />
-			<param index="8" name="dst_layer" type="int" />
+			<param index="5" name="src_mipmap" type="uint" />
+			<param index="6" name="dst_mipmap" type="uint" />
+			<param index="7" name="src_layer" type="uint" />
+			<param index="8" name="dst_layer" type="uint" />
 			<description>
 				Copies the [param from_texture] to [param to_texture] with the specified [param from_pos], [param to_pos] and [param size] coordinates. The Z axis of the [param from_pos], [param to_pos] and [param size] must be [code]0[/code] for 2-dimensional textures. Source and destination mipmaps/layers must also be specified, with these parameters being [code]0[/code] for textures without mipmaps or single-layer textures. Returns [constant @GlobalScope.OK] if the texture copy was successful or [constant @GlobalScope.ERR_INVALID_PARAMETER] otherwise.
 				[b]Note:[/b] [param from_texture] texture can't be copied while a draw list that uses it as part of a framebuffer is being created. Ensure the draw list is finalized to copy this texture.
@@ -1134,7 +1134,7 @@
 		<method name="texture_get_data">
 			<return type="PackedByteArray" />
 			<param index="0" name="texture" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 				Returns the [param texture] data for the specified [param layer] as raw binary data. For 2D textures (which only have one layer), [param layer] must be [code]0[/code].
 				[b]Note:[/b] [param texture] can't be retrieved while a draw list that uses it as part of a framebuffer is being created. Ensure the draw list is finalized to retrieve this texture. Otherwise, an error is printed and an empty [PackedByteArray] is returned.
@@ -1145,7 +1145,7 @@
 		<method name="texture_get_data_async">
 			<return type="int" enum="Error" />
 			<param index="0" name="texture" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<param index="2" name="callback" type="Callable" />
 			<description>
 				Asynchronous version of [method texture_get_data]. RenderingDevice will call [param callback] in a certain amount of frames with the data the texture had at the time of the request.
@@ -1225,7 +1225,7 @@
 		<method name="texture_update">
 			<return type="int" enum="Error" />
 			<param index="0" name="texture" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<param index="2" name="data" type="PackedByteArray" />
 			<description>
 				Updates texture data with new data, replacing the previous data in place. The updated texture data must have the same dimensions and format. For 2D textures (which only have one layer), [param layer] must be [code]0[/code]. Returns [constant @GlobalScope.OK] if the update was successful, [constant @GlobalScope.ERR_INVALID_PARAMETER] otherwise.
@@ -1247,7 +1247,7 @@
 		</method>
 		<method name="tlas_create">
 			<return type="RID" />
-			<param index="0" name="max_instance_count" type="int" />
+			<param index="0" name="max_instance_count" type="uint" />
 			<param index="1" name="flags" type="int" enum="RenderingDevice.AccelerationStructureFlagBits" is_bitfield="true" />
 			<description>
 				Creates a new Top-Level Acceleration Structure (TLAS). It can be accessed with the RID that is returned.
@@ -1256,7 +1256,7 @@
 		</method>
 		<method name="uniform_buffer_create">
 			<return type="RID" />
-			<param index="0" name="size_bytes" type="int" />
+			<param index="0" name="size_bytes" type="uint" />
 			<param index="1" name="data" type="PackedByteArray" default="PackedByteArray()" />
 			<param index="2" name="creation_bits" type="int" enum="RenderingDevice.BufferCreationBits" is_bitfield="true" default="0" />
 			<description>
@@ -1268,7 +1268,7 @@
 			<return type="RID" />
 			<param index="0" name="uniforms" type="RDUniform[]" />
 			<param index="1" name="shader" type="RID" />
-			<param index="2" name="shader_set" type="int" />
+			<param index="2" name="shader_set" type="uint" />
 			<description>
 				Creates a new uniform set. It can be accessed with the RID that is returned.
 				Once finished with your RID, you will want to free the RID using the RenderingDevice's [method free_rid] method.
@@ -1284,7 +1284,7 @@
 		</method>
 		<method name="vertex_array_create">
 			<return type="RID" />
-			<param index="0" name="vertex_count" type="int" />
+			<param index="0" name="vertex_count" type="uint" />
 			<param index="1" name="vertex_format" type="int" />
 			<param index="2" name="src_buffers" type="RID[]" />
 			<param index="3" name="offsets" type="PackedInt64Array" default="PackedInt64Array()" />
@@ -1296,7 +1296,7 @@
 		</method>
 		<method name="vertex_buffer_create">
 			<return type="RID" />
-			<param index="0" name="size_bytes" type="int" />
+			<param index="0" name="size_bytes" type="uint" />
 			<param index="1" name="data" type="PackedByteArray" default="PackedByteArray()" />
 			<param index="2" name="creation_bits" type="int" enum="RenderingDevice.BufferCreationBits" is_bitfield="true" default="0" />
 			<description>

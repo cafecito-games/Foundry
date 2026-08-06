@@ -61,7 +61,7 @@
 		</method>
 		<method name="get_canvas_cull_mask_bit" qualifiers="const">
 			<return type="bool" />
-			<param index="0" name="layer" type="int" />
+			<param index="0" name="layer" type="uint" />
 			<description>
 				Returns an individual bit on the rendering layer mask.
 			</description>
@@ -260,7 +260,7 @@
 		</method>
 		<method name="set_canvas_cull_mask_bit">
 			<return type="void" />
-			<param index="0" name="layer" type="int" />
+			<param index="0" name="layer" type="uint" />
 			<param index="1" name="enable" type="bool" />
 			<description>
 				Set/clear individual bits on the rendering layer mask. This simplifies editing this [Viewport]'s layers.

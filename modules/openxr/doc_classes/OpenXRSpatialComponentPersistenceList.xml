@@ -10,7 +10,7 @@
 	</tutorials>
 	<methods>
 		<method name="get_persistent_state" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="index" type="int" />
 			<description>
 				Returns the persistent state ([code]XrSpatialPersistenceStateEXT[/code]) for the entity at this [param index].

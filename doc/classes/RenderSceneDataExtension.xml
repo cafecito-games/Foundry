@@ -28,21 +28,21 @@
 			</description>
 		</method>
 		<method name="_get_view_count" qualifiers="virtual const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Implement this in FoundryExtension to return the view count.
 			</description>
 		</method>
 		<method name="_get_view_eye_offset" qualifiers="virtual const">
 			<return type="Vector3" />
-			<param index="0" name="view" type="int" />
+			<param index="0" name="view" type="uint" />
 			<description>
 				Implement this in FoundryExtension to return the eye offset for the given [param view].
 			</description>
 		</method>
 		<method name="_get_view_projection" qualifiers="virtual const">
 			<return type="Projection" />
-			<param index="0" name="view" type="int" />
+			<param index="0" name="view" type="uint" />
 			<description>
 				Implement this in FoundryExtension to return the view [Projection] for the given [param view].
 			</description>

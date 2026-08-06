@@ -87,7 +87,7 @@
 			</description>
 		</method>
 		<method name="get_group_processed_element_count" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="group_id" type="int" />
 			<description>
 				Returns how many times the [Callable] of the group task with the given ID has already been executed by the worker threads.

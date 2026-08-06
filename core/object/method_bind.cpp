@@ -97,25 +97,40 @@ void MethodBind::set_default_arguments(const Vector<Variant> &p_defargs) {
 	default_arguments = p_defargs;
 	default_argument_count = default_arguments.size();
 
-	// A default built from an unsigned C++ integer carries `Variant::UINT`, while the parameter it
-	// fills declares `Variant::INT` through `GetTypeInfo<T>`. Retag it so the advertised default
-	// matches the advertised parameter type. Extension binds only build the argument type table in
-	// debug builds, and a build without that table also skips the argument validation the retag
-	// serves, so there is nothing to reconcile against.
+	// A default and the parameter it fills must advertise the same integer carrier. The two are
+	// written independently -- `DEFVAL(0)` is a signed C++ literal whatever the parameter's
+	// signedness is -- so retag a default the declared carrier can represent. A value it cannot hold
+	// is left alone, so a genuine mismatch stays visible instead of silently changing meaning.
+	// Extension binds only build the argument type table in debug builds, and a build without that
+	// table also skips the argument validation the retag serves, so there is nothing to reconcile
+	// against.
 	if (argument_types == nullptr) {
 		return;
 	}
 	const int first_default_argument = argument_count - default_argument_count;
 	for (int i = 0; i < default_argument_count; i++) {
-		if (default_arguments[i].get_type() != Variant::UINT) {
+		const Variant::Type default_type = default_arguments[i].get_type();
+		if (default_type != Variant::INT && default_type != Variant::UINT) {
 			continue;
 		}
 		const int argument_index = first_default_argument + i;
 		if (argument_index < 0 || argument_index >= argument_count) {
 			continue;
 		}
-		if (get_argument_type(argument_index) == Variant::INT) {
-			default_arguments.write[i] = int64_t(default_arguments[i].operator uint64_t());
+		const Variant::Type declared_type = get_argument_type(argument_index);
+		if (declared_type == default_type) {
+			continue;
+		}
+		if (default_type == Variant::UINT && declared_type == Variant::INT) {
+			const uint64_t value = default_arguments[i].operator uint64_t();
+			if (value <= uint64_t(INT64_MAX)) {
+				default_arguments.write[i] = int64_t(value);
+			}
+		} else if (default_type == Variant::INT && declared_type == Variant::UINT) {
+			const int64_t value = default_arguments[i].operator int64_t();
+			if (value >= 0) {
+				default_arguments.write[i] = uint64_t(value);
+			}
 		}
 	}
 }

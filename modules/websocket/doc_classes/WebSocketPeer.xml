@@ -87,7 +87,7 @@
 			</description>
 		</method>
 		<method name="get_connected_port" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the remote port of the connected peer.
 				[b]Note:[/b] Not available in the Web export.

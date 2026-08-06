@@ -24,11 +24,11 @@
 			<param index="0" name="context" type="StringName" />
 			<param index="1" name="name" type="StringName" />
 			<param index="2" name="data_format" type="int" enum="RenderingDevice.DataFormat" />
-			<param index="3" name="usage_bits" type="int" />
+			<param index="3" name="usage_bits" type="uint" />
 			<param index="4" name="texture_samples" type="int" enum="RenderingDevice.TextureSamples" />
 			<param index="5" name="size" type="Vector2i" />
-			<param index="6" name="layers" type="int" />
-			<param index="7" name="mipmaps" type="int" />
+			<param index="6" name="layers" type="uint" />
+			<param index="7" name="mipmaps" type="uint" />
 			<param index="8" name="unique" type="bool" />
 			<param index="9" name="discardable" type="bool" />
 			<description>
@@ -58,7 +58,7 @@
 		</method>
 		<method name="get_color_layer">
 			<return type="RID" />
-			<param index="0" name="layer" type="int" />
+			<param index="0" name="layer" type="uint" />
 			<param index="1" name="msaa" type="bool" default="false" />
 			<description>
 				Returns the specified layer from the color texture we are rendering 3D content to.
@@ -75,7 +75,7 @@
 		</method>
 		<method name="get_depth_layer">
 			<return type="RID" />
-			<param index="0" name="layer" type="int" />
+			<param index="0" name="layer" type="uint" />
 			<param index="1" name="msaa" type="bool" default="false" />
 			<description>
 				Returns the specified layer from the depth texture we are rendering 3D content to.
@@ -158,10 +158,10 @@
 			<return type="RID" />
 			<param index="0" name="context" type="StringName" />
 			<param index="1" name="name" type="StringName" />
-			<param index="2" name="layer" type="int" />
-			<param index="3" name="mipmap" type="int" />
-			<param index="4" name="layers" type="int" />
-			<param index="5" name="mipmaps" type="int" />
+			<param index="2" name="layer" type="uint" />
+			<param index="3" name="mipmap" type="uint" />
+			<param index="4" name="layers" type="uint" />
+			<param index="5" name="mipmaps" type="uint" />
 			<description>
 				Returns a specific slice (layer or mipmap) for a cached texture.
 			</description>
@@ -170,7 +170,7 @@
 			<return type="Vector2i" />
 			<param index="0" name="context" type="StringName" />
 			<param index="1" name="name" type="StringName" />
-			<param index="2" name="mipmap" type="int" />
+			<param index="2" name="mipmap" type="uint" />
 			<description>
 				Returns the texture size of a given slice of a cached texture.
 			</description>
@@ -179,10 +179,10 @@
 			<return type="RID" />
 			<param index="0" name="context" type="StringName" />
 			<param index="1" name="name" type="StringName" />
-			<param index="2" name="layer" type="int" />
-			<param index="3" name="mipmap" type="int" />
-			<param index="4" name="layers" type="int" />
-			<param index="5" name="mipmaps" type="int" />
+			<param index="2" name="layer" type="uint" />
+			<param index="3" name="mipmap" type="uint" />
+			<param index="4" name="layers" type="uint" />
+			<param index="5" name="mipmaps" type="uint" />
 			<param index="6" name="view" type="RDTextureView" />
 			<description>
 				Returns a specific view of a slice (layer or mipmap) for a cached texture.
@@ -202,7 +202,7 @@
 		</method>
 		<method name="get_velocity_layer">
 			<return type="RID" />
-			<param index="0" name="layer" type="int" />
+			<param index="0" name="layer" type="uint" />
 			<param index="1" name="msaa" type="bool" default="false" />
 			<description>
 				Returns the specified layer from the velocity texture we are rendering 3D content to.
@@ -217,7 +217,7 @@
 			</description>
 		</method>
 		<method name="get_view_count" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the view count for the associated viewport.
 			</description>

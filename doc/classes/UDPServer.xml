@@ -145,7 +145,7 @@
 		</method>
 		<method name="listen">
 			<return type="int" enum="Error" />
-			<param index="0" name="port" type="int" />
+			<param index="0" name="port" type="uint" />
 			<param index="1" name="bind_address" type="String" default="&quot;*&quot;" />
 			<description>
 				Starts the server by opening a UDP socket listening on the given [param port]. You can optionally specify a [param bind_address] to only listen for packets sent to that address. See also [method PacketPeerUDP.bind].

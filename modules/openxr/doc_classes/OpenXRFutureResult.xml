@@ -16,7 +16,7 @@
 			</description>
 		</method>
 		<method name="get_future" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Return the [code]XrFutureEXT[/code] value this result relates to.
 			</description>

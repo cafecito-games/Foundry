@@ -106,14 +106,14 @@
 			</description>
 		</method>
 		<method name="get_ticks_msec" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the amount of time passed in milliseconds since the engine started.
 				Will always be positive or 0 and uses a 64-bit value (it will wrap after roughly 500 million years).
 			</description>
 		</method>
 		<method name="get_ticks_usec" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the amount of time passed in microseconds since the engine started.
 				Will always be positive or 0 and uses a 64-bit value (it will wrap after roughly half a million years).

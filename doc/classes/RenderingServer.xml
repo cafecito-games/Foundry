@@ -129,7 +129,7 @@
 		<method name="camera_set_cull_mask">
 			<return type="void" />
 			<param index="0" name="camera" type="RID" />
-			<param index="1" name="layers" type="int" />
+			<param index="1" name="layers" type="uint" />
 			<description>
 				Sets the cull mask associated with this camera. The cull mask describes which 3D layers are rendered by this camera. Equivalent to [member Camera3D.cull_mask].
 			</description>
@@ -644,7 +644,7 @@
 		<method name="canvas_item_set_visibility_layer">
 			<return type="void" />
 			<param index="0" name="item" type="RID" />
-			<param index="1" name="visibility_layer" type="int" />
+			<param index="1" name="visibility_layer" type="uint" />
 			<description>
 				Sets the rendering visibility layer associated with this [CanvasItem]. Only [Viewport] nodes with a matching rendering mask will render this [CanvasItem].
 			</description>
@@ -1151,7 +1151,7 @@
 		<method name="decal_set_cull_mask">
 			<return type="void" />
 			<param index="0" name="decal" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the cull [param mask] in the decal specified by the [param decal] RID. Equivalent to [member Decal.cull_mask].
 			</description>
@@ -1655,7 +1655,7 @@
 			</description>
 		</method>
 		<method name="get_rendering_info">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="info" type="int" enum="RenderingServer.RenderingInfo" />
 			<description>
 				Returns a statistic about the rendering engine which can be used for performance profiling. See also [method viewport_get_render_info], which returns information specific to a viewport.
@@ -1997,7 +1997,7 @@
 		<method name="instance_set_layer_mask">
 			<return type="void" />
 			<param index="0" name="instance" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the render layers that this instance will be drawn to. Equivalent to [member VisualInstance3D.layers].
 			</description>
@@ -2151,7 +2151,7 @@
 		<method name="light_set_cull_mask">
 			<return type="void" />
 			<param index="0" name="light" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the cull mask for this 3D light. Lights only affect objects in the selected layers. Equivalent to [member Light3D.light_cull_mask].
 			</description>
@@ -2170,7 +2170,7 @@
 		<method name="light_set_max_sdfgi_cascade">
 			<return type="void" />
 			<param index="0" name="light" type="RID" />
-			<param index="1" name="cascade" type="int" />
+			<param index="1" name="cascade" type="uint" />
 			<description>
 				Sets the maximum SDFGI cascade in which the 3D light's indirect lighting is rendered. Higher values allow the light to be rendered in SDFGI further away from the camera.
 			</description>
@@ -2219,7 +2219,7 @@
 		<method name="light_set_shadow_caster_mask">
 			<return type="void" />
 			<param index="0" name="light" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the shadow caster mask for this 3D light. Shadows will only be cast using objects in the selected layers. Equivalent to [member Light3D.shadow_caster_mask].
 			</description>
@@ -2493,7 +2493,7 @@
 			</description>
 		</method>
 		<method name="mesh_surface_get_format_attribute_stride" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="format" type="int" enum="RenderingServer.ArrayFormat" is_bitfield="true" />
 			<param index="1" name="vertex_count" type="int" />
 			<description>
@@ -2501,7 +2501,7 @@
 			</description>
 		</method>
 		<method name="mesh_surface_get_format_index_stride" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="format" type="int" enum="RenderingServer.ArrayFormat" is_bitfield="true" />
 			<param index="1" name="vertex_count" type="int" />
 			<description>
@@ -2509,7 +2509,7 @@
 			</description>
 		</method>
 		<method name="mesh_surface_get_format_normal_tangent_stride" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="format" type="int" enum="RenderingServer.ArrayFormat" is_bitfield="true" />
 			<param index="1" name="vertex_count" type="int" />
 			<description>
@@ -2517,7 +2517,7 @@
 			</description>
 		</method>
 		<method name="mesh_surface_get_format_offset" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="format" type="int" enum="RenderingServer.ArrayFormat" is_bitfield="true" />
 			<param index="1" name="vertex_count" type="int" />
 			<param index="2" name="array_index" type="int" />
@@ -2526,7 +2526,7 @@
 			</description>
 		</method>
 		<method name="mesh_surface_get_format_skin_stride" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="format" type="int" enum="RenderingServer.ArrayFormat" is_bitfield="true" />
 			<param index="1" name="vertex_count" type="int" />
 			<description>
@@ -2534,7 +2534,7 @@
 			</description>
 		</method>
 		<method name="mesh_surface_get_format_vertex_stride" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="format" type="int" enum="RenderingServer.ArrayFormat" is_bitfield="true" />
 			<param index="1" name="vertex_count" type="int" />
 			<description>
@@ -2939,7 +2939,7 @@
 		<method name="particles_collision_set_cull_mask">
 			<return type="void" />
 			<param index="0" name="particles_collision" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the cull [param mask] for the 3D GPU particles collision or attractor specified by the [param particles_collision] RID. Equivalent to [member GPUParticlesCollision3D.cull_mask] or [member GPUParticlesAttractor3D.cull_mask] depending on the [param particles_collision] type.
 			</description>
@@ -2955,7 +2955,7 @@
 		<method name="particles_collision_set_height_field_mask">
 			<return type="void" />
 			<param index="0" name="particles_collision" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the heightfield [param mask] for the 3D GPU particles heightfield collision specified by the [param particles_collision] RID. Equivalent to [member GPUParticlesCollisionHeightField3D.heightfield_mask].
 			</description>
@@ -2993,7 +2993,7 @@
 			<param index="2" name="velocity" type="Vector3" />
 			<param index="3" name="color" type="Color" />
 			<param index="4" name="custom" type="Color" />
-			<param index="5" name="emit_flags" type="int" />
+			<param index="5" name="emit_flags" type="uint" />
 			<description>
 				Manually emits particles from the [param particles] instance.
 			</description>
@@ -3314,7 +3314,7 @@
 		<method name="reflection_probe_set_cull_mask">
 			<return type="void" />
 			<param index="0" name="probe" type="RID" />
-			<param index="1" name="layers" type="int" />
+			<param index="1" name="layers" type="uint" />
 			<description>
 				Sets the render cull mask for this reflection probe. Only instances with a matching layer will be reflected by this probe. Equivalent to [member ReflectionProbe.cull_mask].
 			</description>
@@ -3370,7 +3370,7 @@
 		<method name="reflection_probe_set_reflection_mask">
 			<return type="void" />
 			<param index="0" name="probe" type="RID" />
-			<param index="1" name="layers" type="int" />
+			<param index="1" name="layers" type="uint" />
 			<description>
 				Sets the render reflection mask for this reflection probe. Only instances with a matching layer will have reflections applied from this probe. Equivalent to [member ReflectionProbe.reflection_mask].
 			</description>
@@ -3776,7 +3776,7 @@
 			<return type="RID" />
 			<param index="0" name="type" type="int" enum="RenderingServer.TextureType" />
 			<param index="1" name="format" type="int" enum="Image.Format" />
-			<param index="2" name="native_handle" type="int" />
+			<param index="2" name="native_handle" type="uint" />
 			<param index="3" name="width" type="int" />
 			<param index="4" name="height" type="int" />
 			<param index="5" name="depth" type="int" />
@@ -3795,7 +3795,7 @@
 			</description>
 		</method>
 		<method name="texture_get_native_handle" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="texture" type="RID" />
 			<param index="1" name="srgb" type="bool" default="false" />
 			<description>
@@ -4007,7 +4007,7 @@
 		<method name="viewport_set_canvas_cull_mask">
 			<return type="void" />
 			<param index="0" name="viewport" type="RID" />
-			<param index="1" name="canvas_cull_mask" type="int" />
+			<param index="1" name="canvas_cull_mask" type="uint" />
 			<description>
 				Sets the rendering mask associated with this [Viewport]. Only [CanvasItem] nodes with a matching rendering visibility layer will be rendered by this [Viewport].
 			</description>

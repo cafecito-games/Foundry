@@ -520,7 +520,7 @@ TypedArray<uint64_t> PhysicsTestMotionParameters3D::get_exclude_objects() const 
 
 	int object_index = 0;
 	for (const ObjectID &object_id : parameters.exclude_objects) {
-		exclude[object_index++] = object_id;
+		exclude[object_index++] = uint64_t(object_id);
 	}
 
 	return exclude;

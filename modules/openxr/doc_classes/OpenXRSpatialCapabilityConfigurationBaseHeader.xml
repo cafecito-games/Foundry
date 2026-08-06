@@ -10,7 +10,7 @@
 	</tutorials>
 	<methods>
 		<method name="_get_configuration" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Return a pointer (encoded as an [code]int64_t[/code]) to a struct holding the spatial capability configuration data. The memory for this struct should remain accessible as long as this object remains instantiated.
 			</description>

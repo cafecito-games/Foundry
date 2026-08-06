@@ -13,7 +13,7 @@
 			<return type="RID" />
 			<param index="0" name="textures" type="RID[]" />
 			<param index="1" name="passes" type="RDFramebufferPass[]" />
-			<param index="2" name="views" type="int" />
+			<param index="2" name="views" type="uint" />
 			<description>
 				Creates, or obtains a cached, framebuffer. [param textures] lists textures accessed. [param passes] defines the subpasses and texture allocation, if left empty a single pass is created and textures are allocated depending on their usage flags. [param views] defines the number of views used when rendering.
 			</description>

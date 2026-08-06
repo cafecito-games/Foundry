@@ -2375,8 +2375,8 @@ Variant::Variant(Math::int_alt_t p_int_alt) :
 
 // Unsigned C++ integers select the unsigned carrier. Boundaries that declare their Variant type
 // through `GetTypeInfo<T>` — bound method results, property values, and the FoundryExtension ABI —
-// still declare `INT` plus width metadata, so those results are retagged in `VariantInternal::make()`
-// instead of inheriting the carrier chosen here.
+// declare the same carrier plus their exact width as metadata, so a value built here agrees with the
+// type its declaration advertises.
 Variant::Variant(uint64_t p_uint64) :
 		type(UINT) {
 	_data._uint = p_uint64;

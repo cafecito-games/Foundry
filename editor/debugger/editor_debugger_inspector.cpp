@@ -144,7 +144,7 @@ void EditorDebuggerInspector::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
-			variables->remote_object_ids.append(0);
+			variables->remote_object_ids.append(uint64_t(0));
 			edit(variables);
 		} break;
 	}
@@ -167,9 +167,7 @@ EditorDebuggerRemoteObjects *EditorDebuggerInspector::set_objects(const Array &p
 		SceneDebuggerObject obj;
 		obj.deserialize(arr);
 		if (obj.id.is_valid()) {
-			// The element type of a `TypedArray<uint64_t>` is declared `Variant::INT`, so the
-			// instance id is carried nominally rather than in the unsigned carrier.
-			ids.push_back((int64_t)(uint64_t)obj.id);
+			ids.push_back((uint64_t)obj.id);
 			objects.push_back(obj);
 		}
 	}

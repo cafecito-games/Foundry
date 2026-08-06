@@ -33,7 +33,7 @@
 			</description>
 		</method>
 		<method name="_get_layered_type" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Called when the layers' type in the [TextureLayered] is queried.
 			</description>

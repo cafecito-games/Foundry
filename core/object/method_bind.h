@@ -99,9 +99,14 @@ public:
 #ifdef DEBUG_ENABLED
 	void set_argument_names(const Vector<StringName> &p_names); // Set by ClassDB, can't be inferred otherwise.
 	Vector<StringName> get_argument_names() const;
-
-	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const = 0;
 #endif // DEBUG_ENABLED
+
+	// Exact width and signedness of an argument (`-1` for the return value), as declared by
+	// `GetTypeInfo<T>`. A `PropertyInfo` transports only the Variant carrier, so this is the sole
+	// source of a native integer's declared width. Every build that can compile Foundry source needs
+	// it, so it is read-only metadata available outside `DEBUG_ENABLED` rather than debug-only
+	// diagnostic storage.
+	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const = 0;
 
 	void set_hint_flags(uint32_t p_hint) { hint_flags = p_hint; }
 	uint32_t get_hint_flags() const { return hint_flags | (is_const() ? METHOD_FLAG_CONST : 0) | (is_vararg() ? METHOD_FLAG_VARARG : 0) | (is_static() ? METHOD_FLAG_STATIC : 0); }
@@ -160,11 +165,9 @@ public:
 		return _gen_argument_type_info(p_arg).type;
 	}
 
-#ifdef DEBUG_ENABLED
 	virtual FoundryTypeInfo::Metadata get_argument_meta(int) const override {
 		return FoundryTypeInfo::METADATA_NONE;
 	}
-#endif // DEBUG_ENABLED
 
 	virtual void validated_call(Object *p_object, const Variant **p_args, Variant *r_ret) const override {
 		ERR_FAIL_MSG("Validated call can't be used with vararg methods. This is a bug.");
@@ -321,12 +324,10 @@ protected:
 	}
 
 public:
-#ifdef DEBUG_ENABLED
 	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const override {
 		return call_get_argument_metadata<P...>(p_arg);
 	}
 
-#endif // DEBUG_ENABLED
 	virtual Variant call(Object *p_object, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) const override {
 #ifdef TOOLS_ENABLED
 		ERR_FAIL_COND_V_MSG(p_object && p_object->is_extension_placeholder() && p_object->get_class_name() == get_instance_class(), Variant(), vformat("Cannot call method bind '%s' on placeholder instance.", MethodBind::get_name()));
@@ -405,12 +406,10 @@ protected:
 	}
 
 public:
-#ifdef DEBUG_ENABLED
 	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const override {
 		return call_get_argument_metadata<P...>(p_arg);
 	}
 
-#endif // DEBUG_ENABLED
 	virtual Variant call(Object *p_object, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) const override {
 #ifdef TOOLS_ENABLED
 		ERR_FAIL_COND_V_MSG(p_object && p_object->is_extension_placeholder() && p_object->get_class_name() == get_instance_class(), Variant(), vformat("Cannot call method bind '%s' on placeholder instance.", MethodBind::get_name()));
@@ -494,7 +493,6 @@ protected:
 	}
 
 public:
-#ifdef DEBUG_ENABLED
 	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const override {
 		if (p_arg >= 0) {
 			return call_get_argument_metadata<P...>(p_arg);
@@ -502,7 +500,6 @@ public:
 			return GetTypeInfo<R>::METADATA;
 		}
 	}
-#endif // DEBUG_ENABLED
 
 	virtual Variant call(Object *p_object, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) const override {
 		Variant ret;
@@ -589,7 +586,6 @@ protected:
 	}
 
 public:
-#ifdef DEBUG_ENABLED
 	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const override {
 		if (p_arg >= 0) {
 			return call_get_argument_metadata<P...>(p_arg);
@@ -597,7 +593,6 @@ public:
 			return GetTypeInfo<R>::METADATA;
 		}
 	}
-#endif // DEBUG_ENABLED
 
 	virtual Variant call(Object *p_object, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) const override {
 		Variant ret;
@@ -678,12 +673,10 @@ protected:
 	}
 
 public:
-#ifdef DEBUG_ENABLED
 	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const override {
 		return call_get_argument_metadata<P...>(p_arg);
 	}
 
-#endif // DEBUG_ENABLED
 	virtual Variant call(Object *p_object, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) const override {
 		(void)p_object; // unused
 		call_with_variant_args_static_dv(function, p_args, p_arg_count, r_error, get_default_arguments());
@@ -740,7 +733,6 @@ protected:
 	}
 
 public:
-#ifdef DEBUG_ENABLED
 	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const override {
 		if (p_arg >= 0) {
 			return call_get_argument_metadata<P...>(p_arg);
@@ -749,7 +741,6 @@ public:
 		}
 	}
 
-#endif // DEBUG_ENABLED
 	virtual Variant call(Object *p_object, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) const override {
 		Variant ret;
 		call_with_variant_args_static_ret_dv(function, p_args, p_arg_count, ret, r_error, get_default_arguments());

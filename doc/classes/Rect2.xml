@@ -148,7 +148,7 @@
 		</method>
 		<method name="grow_side" qualifiers="const">
 			<return type="Rect2" />
-			<param index="0" name="side" type="int" />
+			<param index="0" name="side" type="uint" />
 			<param index="1" name="amount" type="float" />
 			<description>
 				Returns a copy of this rectangle with its [param side] extended by the given [param amount] (see [enum Side] constants). A negative [param amount] shrinks the rectangle, instead. See also [method grow] and [method grow_individual].

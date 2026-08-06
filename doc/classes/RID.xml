@@ -27,7 +27,7 @@
 	</constructors>
 	<methods>
 		<method name="get_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the ID of the referenced low-level resource.
 			</description>

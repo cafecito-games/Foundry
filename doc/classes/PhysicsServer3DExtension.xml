@@ -38,13 +38,13 @@
 			</description>
 		</method>
 		<method name="_area_get_collision_layer" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="area" type="RID" />
 			<description>
 			</description>
 		</method>
 		<method name="_area_get_collision_mask" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="area" type="RID" />
 			<description>
 			</description>
@@ -111,14 +111,14 @@
 		<method name="_area_set_collision_layer" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="area" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 			</description>
 		</method>
 		<method name="_area_set_collision_mask" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="area" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 			</description>
 		</method>
@@ -296,13 +296,13 @@
 			</description>
 		</method>
 		<method name="_body_get_collision_layer" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 			</description>
 		</method>
 		<method name="_body_get_collision_mask" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 			</description>
@@ -396,7 +396,7 @@
 			</description>
 		</method>
 		<method name="_body_get_user_flags" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 			</description>
@@ -458,14 +458,14 @@
 		<method name="_body_set_collision_layer" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 			</description>
 		</method>
 		<method name="_body_set_collision_mask" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 			</description>
 		</method>
@@ -597,7 +597,7 @@
 		<method name="_body_set_user_flags" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="flags" type="int" />
+			<param index="1" name="flags" type="uint" />
 			<description>
 			</description>
 		</method>
@@ -1037,13 +1037,13 @@
 			</description>
 		</method>
 		<method name="_soft_body_get_collision_layer" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 			</description>
 		</method>
 		<method name="_soft_body_get_collision_mask" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 			</description>
@@ -1149,14 +1149,14 @@
 		<method name="_soft_body_set_collision_layer" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 			</description>
 		</method>
 		<method name="_soft_body_set_collision_mask" qualifiers="virtual required">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 			</description>
 		</method>

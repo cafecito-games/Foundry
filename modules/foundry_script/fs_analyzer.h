@@ -35,9 +35,11 @@
 #include "fs_conformance_registry.h"
 #include "fs_parser.h"
 
+#include "core/object/method_bind.h"
 #include "core/object/object.h"
 #include "core/object/ref_counted.h"
 #include "core/variant/container_type_validate.h"
+#include "core/variant/type_info.h"
 
 #ifdef TESTS_ENABLED
 namespace FSTests {
@@ -630,7 +632,27 @@ private:
 	Dictionary make_dictionary_from_element_datatype(const FSParser::DataType &p_key_element_datatype, const FSParser::DataType &p_value_element_datatype, const FSParser::Node *p_source_node = nullptr);
 	ContainerType make_container_type_from_datatype(const FSParser::DataType &p_datatype, const FSParser::Node *p_source_node);
 	FSParser::DataType type_from_variant(const Variant &p_value, const FSParser::Node *p_source);
-	FSParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg = false, bool p_is_readonly = false) const;
+	// The metadata a bind states for one position (`-1` for the return value), or `METADATA_NONE`
+	// when there is no bind or the position is beyond its declared arguments.
+	static FoundryTypeInfo::Metadata native_argument_metadata(const MethodBind *p_method_bind, int p_argument);
+
+	// The metadata a native property's own accessors state about its value.
+	//
+	// A `PropertyInfo` registered with `ADD_PROPERTY` names only the carrier, so the width -- if the
+	// property has one -- lives on the getter's return value and the setter's value argument. Both
+	// accessors describe the same slot, so a disagreement is an engine registration mistake that
+	// cannot be resolved here; the property then declares no width rather than picking one accessor's
+	// claim over the other's.
+	static FoundryTypeInfo::Metadata native_property_metadata(const StringName &p_native_type, const StringName &p_property_name);
+
+	// Decodes a native or cross-script slot description into an analyzer type.
+	//
+	// `p_metadata` is the declaring `MethodBind`'s argument metadata, which is the only record of a
+	// native integer's exact width: a `PropertyInfo` transports the carrier alone. Every native
+	// boundary -- method parameters and returns, property getters and setters, and signal parameters
+	// -- decodes through this one helper, so a width is either stated here or genuinely absent.
+	FSParser::DataType type_from_property(const PropertyInfo &p_property, bool p_is_arg = false, bool p_is_readonly = false,
+			FoundryTypeInfo::Metadata p_metadata = FoundryTypeInfo::METADATA_NONE) const;
 	bool is_bootstrap_dependency_path_allowed(const String &p_path) const;
 	bool validate_bootstrap_namespace_import(const String &p_import, const LocalVector<StringName> &p_global_classes);
 	bool reject_bootstrap_global_class_dependency(const StringName &p_class_name, const FSParser::Node *p_source, const String &p_context);
@@ -720,7 +742,9 @@ private:
 	bool make_type_handle_meta_type(const FSParser::DataType &p_represented_type, const FSParser::Node *p_source, FSParser::DataType &r_type);
 	void apply_use_site_nullable_type_argument_marker(FSParser::DataType &r_type_argument, bool p_is_nullable);
 	void reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::SubscriptNode *p_callee);
-	bool function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags);
+	// `p_method_bind` is the bind the info was built from, when there is one. It carries the exact
+	// integer widths that `MethodInfo` cannot express; without it the signature decodes wide.
+	bool function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, const MethodBind *p_method_bind = nullptr);
 	bool string_name_from_constant_arg(const FSParser::CallNode *p_call, int p_argument_index, StringName &r_name) const;
 	bool is_node_compatible_type(const FSParser::DataType &p_type) const;
 	bool property_type_from_class(FSParser::ClassNode *p_class, const StringName &p_property_name, FSParser::Node *p_source, FSParser::DataType &r_property_type);

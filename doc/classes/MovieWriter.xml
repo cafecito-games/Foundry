@@ -19,7 +19,7 @@
 	</tutorials>
 	<methods>
 		<method name="_get_audio_mix_rate" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Called when the audio sample rate used for recording the audio is requested by the engine. The value returned must be specified in Hz. Defaults to 48000 Hz if [method _get_audio_mix_rate] is not overridden.
 			</description>
@@ -52,7 +52,7 @@
 		<method name="_write_begin" qualifiers="virtual required">
 			<return type="int" enum="Error" />
 			<param index="0" name="movie_size" type="Vector2i" />
-			<param index="1" name="fps" type="int" />
+			<param index="1" name="fps" type="uint" />
 			<param index="2" name="base_path" type="String" />
 			<description>
 				Called once before the engine starts writing video and audio data. [param movie_size] is the width and height of the video to save. [param fps] is the number of frames per second specified in the project settings or using the [code]--fixed-fps &lt;fps&gt;[/code] [url=$DOCS_URL/tutorials/editor/command_line_tutorial.html]command line argument[/url].

@@ -49,14 +49,14 @@
 			</description>
 		</method>
 		<method name="area_get_collision_layer" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="area" type="RID" />
 			<description>
 				Returns the physics layer or layers an area belongs to.
 			</description>
 		</method>
 		<method name="area_get_collision_mask" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="area" type="RID" />
 			<description>
 				Returns the physics layer or layers an area can contact with.
@@ -139,7 +139,7 @@
 		<method name="area_set_collision_layer">
 			<return type="void" />
 			<param index="0" name="area" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 				Assigns the area to one or many physics layers.
 			</description>
@@ -147,7 +147,7 @@
 		<method name="area_set_collision_mask">
 			<return type="void" />
 			<param index="0" name="area" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets which physics layers the area will monitor.
 			</description>
@@ -357,14 +357,14 @@
 			</description>
 		</method>
 		<method name="body_get_collision_layer" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 				Returns the physics layer or layers a body belongs to.
 			</description>
 		</method>
 		<method name="body_get_collision_mask" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 				Returns the physics layer or layers a body can collide with.
@@ -531,7 +531,7 @@
 		<method name="body_set_collision_layer">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 				Sets the physics layer or layers a body belongs to.
 			</description>
@@ -539,7 +539,7 @@
 		<method name="body_set_collision_mask">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the physics layer or layers a body can collide with.
 			</description>
@@ -1128,14 +1128,14 @@
 			</description>
 		</method>
 		<method name="soft_body_get_collision_layer" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 				Returns the physics layer or layers that the given soft body belongs to.
 			</description>
 		</method>
 		<method name="soft_body_get_collision_mask" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 				Returns the physics layer or layers that the given soft body can collide with.
@@ -1259,7 +1259,7 @@
 		<method name="soft_body_set_collision_layer">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 				Sets the physics layer or layers the given soft body belongs to.
 			</description>
@@ -1267,7 +1267,7 @@
 		<method name="soft_body_set_collision_mask">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the physics layer or layers the given soft body can collide with.
 			</description>

@@ -48,7 +48,7 @@
 			</description>
 		</method>
 		<method name="get_texture_tex_id">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="feed_image_type" type="int" enum="CameraServer.FeedImage" />
 			<description>
 				Returns the texture backend ID (usable by some external libraries that need a handle to a texture to write data).

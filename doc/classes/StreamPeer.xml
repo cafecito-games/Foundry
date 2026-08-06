@@ -80,25 +80,25 @@
 			</description>
 		</method>
 		<method name="get_u8">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Gets an unsigned byte from the stream.
 			</description>
 		</method>
 		<method name="get_u16">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Gets an unsigned 16-bit value from the stream.
 			</description>
 		</method>
 		<method name="get_u32">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Gets an unsigned 32-bit value from the stream.
 			</description>
 		</method>
 		<method name="get_u64">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Gets an unsigned 64-bit value from the stream.
 			</description>
@@ -200,28 +200,28 @@
 		</method>
 		<method name="put_u8">
 			<return type="void" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Puts an unsigned byte into the stream.
 			</description>
 		</method>
 		<method name="put_u16">
 			<return type="void" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Puts an unsigned 16-bit value into the stream.
 			</description>
 		</method>
 		<method name="put_u32">
 			<return type="void" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Puts an unsigned 32-bit value into the stream.
 			</description>
 		</method>
 		<method name="put_u64">
 			<return type="void" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Puts an unsigned 64-bit value into the stream.
 			</description>

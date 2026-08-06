@@ -8,9 +8,9 @@ static func static_func():
 	pass
 
 func test():
-	print(String.num_uint64(8589934592))
+	print(String.num_uint64(8589934592UL))
 	var some_string := String()
-	print(some_string.num_uint64(8589934592)) # Warning.
+	print(some_string.num_uint64(8589934592UL)) # Warning.
 
 	TestStaticCalledOnInstance.static_func()
 	static_func()

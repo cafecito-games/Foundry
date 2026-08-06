@@ -53,7 +53,7 @@ class FoundryExtensionMethodBind : public MethodBind {
 	bool vararg;
 	uint32_t argument_count;
 	PropertyInfo return_value_info;
-	FoundryTypeInfo::Metadata return_value_metadata;
+	FoundryTypeInfo::Metadata return_value_metadata = FoundryTypeInfo::METADATA_NONE;
 	List<PropertyInfo> arguments_info;
 	List<FoundryTypeInfo::Metadata> arguments_metadata;
 
@@ -86,7 +86,6 @@ public:
 	virtual bool is_valid() const override { return valid; }
 #endif
 
-#ifdef DEBUG_ENABLED
 	virtual FoundryTypeInfo::Metadata get_argument_meta(int p_arg) const override {
 		if (p_arg < 0) {
 			return return_value_metadata;
@@ -94,7 +93,6 @@ public:
 			return arguments_metadata.get(p_arg);
 		}
 	}
-#endif // DEBUG_ENABLED
 
 	virtual Variant call(Object *p_object, const Variant **p_args, int p_arg_count, Callable::CallError &r_error) const override {
 #ifdef TOOLS_ENABLED

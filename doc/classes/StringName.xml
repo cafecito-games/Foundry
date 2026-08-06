@@ -337,7 +337,7 @@
 			</description>
 		</method>
 		<method name="hash" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the 32-bit hash value representing the string's contents.
 				[b]Note:[/b] Strings with equal hash values are [i]not[/i] guaranteed to be the same, as a result of hash collisions. On the contrary, strings with different hash values are guaranteed to be different.

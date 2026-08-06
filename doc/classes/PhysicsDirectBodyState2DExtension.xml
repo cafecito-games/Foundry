@@ -95,12 +95,12 @@
 			</description>
 		</method>
 		<method name="_get_collision_layer" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 			</description>
 		</method>
 		<method name="_get_collision_mask" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 			</description>
 		</method>
@@ -281,13 +281,13 @@
 		</method>
 		<method name="_set_collision_layer" qualifiers="virtual required">
 			<return type="void" />
-			<param index="0" name="layer" type="int" />
+			<param index="0" name="layer" type="uint" />
 			<description>
 			</description>
 		</method>
 		<method name="_set_collision_mask" qualifiers="virtual required">
 			<return type="void" />
-			<param index="0" name="mask" type="int" />
+			<param index="0" name="mask" type="uint" />
 			<description>
 			</description>
 		</method>

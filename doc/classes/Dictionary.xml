@@ -266,7 +266,7 @@
 			</description>
 		</method>
 		<method name="get_typed_key_builtin" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the built-in [Variant] type of the typed dictionary's keys as a [enum Variant.Type] constant. If the keys are not typed, returns [constant TYPE_NIL]. See also [method is_typed_key].
 			</description>
@@ -284,7 +284,7 @@
 			</description>
 		</method>
 		<method name="get_typed_value_builtin" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the built-in [Variant] type of the typed dictionary's values as a [enum Variant.Type] constant. If the values are not typed, returns [constant TYPE_NIL]. See also [method is_typed_value].
 			</description>
@@ -349,7 +349,7 @@
 			</description>
 		</method>
 		<method name="hash" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns a hashed 32-bit integer value representing the dictionary contents.
 				[codeblocks]

@@ -243,7 +243,7 @@
 			</description>
 		</method>
 		<method name="get_space_left">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the available space on the current directory's disk, in bytes. Returns [code]0[/code] if the platform-specific method to query the available space fails.
 			</description>
