@@ -1,0 +1,34 @@
+FS_TEST_OK
+~~ WARNING at line 85: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
+~~ WARNING at line 87: (UNSAFE_CAST) Casting "Variant" to "Holder[String]" is unsafe.
+~~ WARNING at line 89: (UNSAFE_CAST) Casting "Variant" to "Holder" is unsafe.
+~~ WARNING at line 91: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
+~~ WARNING at line 93: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
+int holder is Holder: true
+string holder is Holder: true
+raw forwarder is Holder: true
+plain is Holder: false
+int holder is Holder[int]: true
+int holder is Holder[String]: false
+string holder is Holder[int]: false
+string holder is Holder[String]: true
+box holder is Holder[Box[int]]: true
+box holder is Holder[Box[String]]: false
+forwarded int is Holder[int]: true
+forwarded int is Holder[String]: false
+raw forwarder is Holder[int]: false
+relay holder is Relayed[int]: true
+relay holder is Relayed[String]: false
+relay holder is Holder[int]: true
+relay holder is Holder[String]: false
+derived holder is Holder: true
+derived holder is Holder[int]: true
+derived holder is Holder[String]: false
+plain is Holder[int]: false
+null is Holder[int]: false
+matched cast keeps identity: true
+mismatched cast is null: true
+raw target cast keeps identity: true
+raw value cast is null: true
+null cast is null: true
+is/as specialized trait ok
