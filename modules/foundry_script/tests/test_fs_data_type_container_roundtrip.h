@@ -212,6 +212,24 @@ static FSDataType data_type_numeric(Variant::Type p_carrier, NumericType p_numer
 	return type;
 }
 
+TEST_CASE("[Modules][FoundryScript][DataType] get_source_type_name keeps a nullable container element's declared type") {
+	// `to_container_type()` cannot express "this type or null", so a nullable element used to fold to
+	// `Variant` when `get_source_type_name()` named it by round-tripping through that conversion. This
+	// descriptor is built directly (bypassing `FSCompiler`, which currently erases a nullable element's
+	// identity before it reaches this call), so it pins the fix at the `FSDataType` level regardless of
+	// whether any compiled surface yet produces a descriptor shaped this way.
+	FSDataType nullable_element = data_type_native_handle(SNAME("Node"), false);
+	nullable_element.is_nullable = true;
+	CHECK(data_type_array_of(nullable_element).get_source_type_name() == "Array[Node?]");
+
+	FSDataType nullable_value = data_type_numeric(Variant::UINT, NumericType::UINT64);
+	nullable_value.is_nullable = true;
+	CHECK(data_type_dictionary_of(data_type_builtin(Variant::STRING), nullable_value).get_source_type_name() == "Dictionary[String, ulong?]");
+
+	// A non-nullable element is unaffected.
+	CHECK(data_type_array_of(data_type_builtin(Variant::INT)).get_source_type_name() == "Array[long]");
+}
+
 TEST_CASE("[Modules][FoundryScript][NumericType] Container conversion preserves nested descriptors two levels deep") {
 	const FSDataType narrow = data_type_numeric(Variant::INT, NumericType::INT32);
 	const FSDataType unsigned_narrow = data_type_numeric(Variant::UINT, NumericType::UINT32);
