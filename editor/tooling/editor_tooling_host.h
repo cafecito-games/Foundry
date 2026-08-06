@@ -48,6 +48,30 @@ public:
 		SERVICE_MAX,
 	};
 
+	// Why a `--project` target cannot host tooling. Validation is a preflight, so these
+	// only cover what can be decided from the directory entry itself; anything wrong
+	// inside a present `project.foundry` is left to normal project loading.
+	enum InvalidProjectReason {
+		INVALID_PROJECT_NONE,
+		INVALID_PROJECT_MISSING_DIRECTORY,
+		INVALID_PROJECT_NOT_DIRECTORY,
+		INVALID_PROJECT_MISSING_PROJECT_FILE,
+	};
+
+	// Resolves a `--project` value against the invocation's working directory. Must be
+	// called before anything changes the process working directory.
+	static String resolve_project_candidate(const String &p_project_path);
+	static InvalidProjectReason classify_project_candidate(const String &p_project_path);
+	static String get_invalid_project_reason_name(InvalidProjectReason p_reason);
+	static String get_invalid_project_message(InvalidProjectReason p_reason, const String &p_project);
+	static String build_invalid_project_record(InvalidProjectReason p_reason, const String &p_project, const String &p_message);
+
+	// Rejects a tooling-host invocation whose project directory cannot serve tooling.
+	// Emits the terminal diagnostic and record and returns false, leaving the caller to
+	// exit nonzero without loading the project, initializing the editor, configuring the
+	// listeners, or installing the shutdown handlers.
+	static bool preflight_project(const String &p_project_path);
+
 	// Closes an already-bound listener when its sibling fails to bind. A plain
 	// function pointer keeps the owning plugins free of a second base class, which
 	// would break the single-Object-base assumption of the class bindings.

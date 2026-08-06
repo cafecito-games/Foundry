@@ -1188,6 +1188,15 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 
 #ifdef TOOLS_ENABLED
+	// The tooling host answers to a supervisor that waits for one terminal record, so an
+	// unusable project has to be rejected here: before the working directory changes,
+	// before the project loads, and before either listener is configured.
+	if ((cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::TOOLING_SERVE ||
+				cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::LSP_SERVE) &&
+			!EditorToolingHost::preflight_project(cli_parse.invocation.project_path)) {
+		exit_err = ERR_INVALID_PARAMETER;
+		goto error;
+	}
 	apply_foundry_cli_invocation(cli_parse, project_path, audio_driver, args, test_rd_support, test_rd_creation);
 	if (cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT ||
 			cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_LINT) {

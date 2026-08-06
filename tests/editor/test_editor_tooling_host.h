@@ -469,6 +469,279 @@ TEST_CASE("[Editor][ToolingHost] An occupied debug adapter port fails the whole 
 	CHECK_FALSE(host.output.contains("FOUNDRY_TOOLING {"));
 }
 
+// A tooling host launched against an invalid project has to terminate on its own, so
+// these runs are collected to completion under a short deadline instead of being
+// polled for a marker and killed.
+struct TerminalRun {
+	bool launched = false;
+	bool exited = false;
+	int exit_code = -1;
+	String standard_output;
+	String standard_error;
+};
+
+static TerminalRun run_tooling_host_to_completion(const List<String> &p_arguments, uint64_t p_timeout_msec) {
+	TerminalRun run;
+	Dictionary environment;
+	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
+			OS::get_singleton()->get_executable_path(), p_arguments, false, String(), environment, false);
+	if (pipe_info.is_empty()) {
+		return run;
+	}
+	run.launched = true;
+	Ref<FileAccess> stdout_pipe = pipe_info["stdio"];
+	Ref<FileAccess> stderr_pipe = pipe_info["stderr"];
+	const OS::ProcessID pid = pipe_info["pid"];
+
+	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + p_timeout_msec;
+	while (OS::get_singleton()->get_ticks_msec() < deadline) {
+		drain_pipe(stdout_pipe, run.standard_output);
+		drain_pipe(stderr_pipe, run.standard_error);
+		if (!OS::get_singleton()->is_process_running(pid)) {
+			run.exited = true;
+			break;
+		}
+		OS::get_singleton()->delay_usec(20000);
+	}
+	drain_pipe(stdout_pipe, run.standard_output);
+	drain_pipe(stderr_pipe, run.standard_error);
+
+	if (run.exited) {
+		run.exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	} else {
+		// Clean the child up before the caller reports the deadline failure.
+		OS::get_singleton()->kill(pid);
+	}
+	if (stdout_pipe.is_valid()) {
+		stdout_pipe->close();
+	}
+	if (stderr_pipe.is_valid()) {
+		stderr_pipe->close();
+	}
+	return run;
+}
+
+static int count_occurrences(const String &p_text, const String &p_needle) {
+	int count = 0;
+	int from = 0;
+	while (true) {
+		const int found = p_text.find(p_needle, from);
+		if (found < 0) {
+			return count;
+		}
+		count++;
+		from = found + p_needle.length();
+	}
+}
+
+// Returns a loopback port number that is free right now, so a test can assert that no
+// listener appeared on it after a rejected invocation.
+static int reserve_free_local_port() {
+	Ref<TCPServer> probe;
+	probe.instantiate();
+	if (probe->listen(0, IPAddress("127.0.0.1")) != OK) {
+		return -1;
+	}
+	const int port = probe->get_local_port();
+	probe->stop();
+	return port;
+}
+
+static String make_invalid_project_scratch_dir(const String &p_name) {
+	const String path = TestUtils::get_temp_path(
+			"tooling_preflight_" + p_name + "_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (dir.is_null() || dir->make_dir_recursive(path) != OK) {
+		return String();
+	}
+	return path;
+}
+
+static bool write_scratch_file(const String &p_path, const String &p_contents) {
+	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (dir.is_null() || dir->make_dir_recursive(p_path.get_base_dir()) != OK) {
+		return false;
+	}
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE);
+	if (file.is_null()) {
+		return false;
+	}
+	file->store_string(p_contents);
+	return true;
+}
+
+enum ToolingCommandForm {
+	TOOLING_COMMAND_TOOLING_SERVE,
+	TOOLING_COMMAND_LSP_SERVE,
+};
+
+static List<String> build_tooling_host_arguments(ToolingCommandForm p_form, const String &p_project, int p_lsp_port,
+		int p_dap_port, bool p_quiet) {
+	List<String> arguments;
+	if (p_form == TOOLING_COMMAND_TOOLING_SERVE) {
+		arguments.push_back("tooling");
+	} else {
+		arguments.push_back("lsp");
+	}
+	arguments.push_back("serve");
+	if (p_quiet) {
+		arguments.push_back("--quiet");
+	}
+	arguments.push_back("--project");
+	arguments.push_back(p_project);
+	if (p_form == TOOLING_COMMAND_TOOLING_SERVE) {
+		arguments.push_back("--lsp-port");
+		arguments.push_back(String::num_int64(p_lsp_port));
+		arguments.push_back("--dap-port");
+		arguments.push_back(String::num_int64(p_dap_port));
+	} else {
+		arguments.push_back("--port");
+		arguments.push_back(String::num_int64(p_lsp_port));
+	}
+	return arguments;
+}
+
+// Runs one invalid-project invocation and asserts the whole failure contract: a single
+// structured stdout record, the matching stderr diagnostic, a self-driven nonzero exit,
+// no readiness record, and no bound listener.
+static void check_invalid_project_rejection(ToolingCommandForm p_form, const String &p_project,
+		const String &p_expected_reason, bool p_quiet = false) {
+	const int lsp_port = reserve_free_local_port();
+	const int dap_port = reserve_free_local_port();
+	REQUIRE_MESSAGE(lsp_port > 0, "Failed to find a free loopback port for the language server.");
+	REQUIRE_MESSAGE(dap_port > 0, "Failed to find a free loopback port for the debug adapter.");
+	REQUIRE_MESSAGE(lsp_port != dap_port, "The tooling host requires distinct ports.");
+
+	const List<String> arguments = build_tooling_host_arguments(p_form, p_project, lsp_port, dap_port, p_quiet);
+	const TerminalRun run = run_tooling_host_to_completion(arguments, 5000);
+	REQUIRE_MESSAGE(run.launched, "Failed to launch the tooling host.");
+	INFO("Tooling host stdout:\n", run.standard_output);
+	INFO("Tooling host stderr:\n", run.standard_error);
+	REQUIRE_MESSAGE(run.exited, "The tooling host did not exit on its own for an invalid project.");
+	CHECK_MESSAGE(run.exit_code != 0, "An invalid project must exit nonzero.");
+
+	CHECK_EQ(count_occurrences(run.standard_output, "FOUNDRY_TOOLING_ERROR "), 1);
+	CHECK_FALSE(run.standard_output.contains("FOUNDRY_TOOLING {"));
+	CHECK_FALSE(run.standard_output.contains("no main scene defined"));
+	CHECK_FALSE(run.standard_error.contains("no main scene defined"));
+
+	const Dictionary payload = parse_marker_record(run.standard_output, "FOUNDRY_TOOLING_ERROR ");
+	CHECK_EQ(String(payload["error"]), "invalid_project");
+	CHECK_EQ(String(payload["reason"]), p_expected_reason);
+	CHECK_FALSE(String(payload["project"]).is_empty());
+	const String message = payload["message"];
+	CHECK_FALSE(message.is_empty());
+	CHECK_MESSAGE(run.standard_error.contains(message), "The human-readable diagnostic must reach stderr.");
+
+	CHECK_FALSE(can_connect_to_local_port(lsp_port));
+	CHECK_FALSE(can_connect_to_local_port(dap_port));
+}
+
+TEST_CASE("[Editor][ToolingHost] Invalid project records name the reason and the resolved path") {
+	const String record = EditorToolingHost::build_invalid_project_record(
+			EditorToolingHost::INVALID_PROJECT_MISSING_PROJECT_FILE, "/games/demo",
+			"Project directory does not contain project.foundry: /games/demo");
+	const Variant parsed = JSON::parse_string(record);
+	REQUIRE(parsed.get_type() == Variant::DICTIONARY);
+	const Dictionary payload = parsed;
+	CHECK_EQ(String(payload["error"]), "invalid_project");
+	CHECK_EQ(String(payload["reason"]), "missing_project_file");
+	CHECK_EQ(String(payload["project"]), "/games/demo");
+	CHECK_EQ(String(payload["message"]), "Project directory does not contain project.foundry: /games/demo");
+}
+
+TEST_CASE("[Editor][ToolingHost] Project candidates are classified before any startup work") {
+	const String root = make_invalid_project_scratch_dir("classify");
+	REQUIRE_FALSE(root.is_empty());
+
+	CHECK_EQ(EditorToolingHost::classify_project_candidate(root.path_join("absent")),
+			EditorToolingHost::INVALID_PROJECT_MISSING_DIRECTORY);
+
+	REQUIRE(write_scratch_file(root.path_join("regular_file"), "not a project"));
+	CHECK_EQ(EditorToolingHost::classify_project_candidate(root.path_join("regular_file")),
+			EditorToolingHost::INVALID_PROJECT_NOT_DIRECTORY);
+
+	// A nested project does not make its ancestor a project.
+	REQUIRE(write_scratch_file(root.path_join("nested/inner/project.foundry"), ""));
+	CHECK_EQ(EditorToolingHost::classify_project_candidate(root.path_join("nested")),
+			EditorToolingHost::INVALID_PROJECT_MISSING_PROJECT_FILE);
+	// Nor does an ancestor project make its child one.
+	REQUIRE(write_scratch_file(root.path_join("nested/inner/child/keep.txt"), ""));
+	CHECK_EQ(EditorToolingHost::classify_project_candidate(root.path_join("nested/inner/child")),
+			EditorToolingHost::INVALID_PROJECT_MISSING_PROJECT_FILE);
+	// An exported project binary is not a source project.
+	REQUIRE(write_scratch_file(root.path_join("packed/project.binary"), ""));
+	CHECK_EQ(EditorToolingHost::classify_project_candidate(root.path_join("packed")),
+			EditorToolingHost::INVALID_PROJECT_MISSING_PROJECT_FILE);
+	// An empty `project.foundry` is still a project as far as this preflight is concerned.
+	CHECK_EQ(EditorToolingHost::classify_project_candidate(root.path_join("nested/inner")),
+			EditorToolingHost::INVALID_PROJECT_NONE);
+}
+
+TEST_CASE("[Editor][ToolingHost] A missing project directory ends the tooling host immediately") {
+	const String root = make_invalid_project_scratch_dir("missing_directory");
+	REQUIRE_FALSE(root.is_empty());
+	const String absent = root.path_join("absent_project");
+
+	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, absent, "missing_directory");
+	check_invalid_project_rejection(TOOLING_COMMAND_LSP_SERVE, absent, "missing_directory");
+}
+
+TEST_CASE("[Editor][ToolingHost] A file passed as the project ends the tooling host immediately") {
+	const String root = make_invalid_project_scratch_dir("not_directory");
+	REQUIRE_FALSE(root.is_empty());
+	const String file_path = root.path_join("project.foundry");
+	REQUIRE(write_scratch_file(file_path, ""));
+
+	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, file_path, "not_directory");
+	check_invalid_project_rejection(TOOLING_COMMAND_LSP_SERVE, file_path, "not_directory");
+}
+
+TEST_CASE("[Editor][ToolingHost] Only a direct project.foundry satisfies the tooling preflight") {
+	const String root = make_invalid_project_scratch_dir("missing_project_file");
+	REQUIRE_FALSE(root.is_empty());
+	// A descendant project must not validate its ancestor.
+	REQUIRE(write_scratch_file(root.path_join("test_project/project.foundry"), ""));
+	// A descendant of a project must not inherit its ancestor's project file.
+	REQUIRE(write_scratch_file(root.path_join("test_project/scripts/player.fs"), "func test() -> void:\n\tpass\n"));
+	// An exported project binary is not a source project.
+	REQUIRE(write_scratch_file(root.path_join("packed/project.binary"), ""));
+
+	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, root, "missing_project_file");
+	check_invalid_project_rejection(TOOLING_COMMAND_LSP_SERVE, root, "missing_project_file");
+	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, root.path_join("test_project/scripts"),
+			"missing_project_file");
+	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, root.path_join("packed"), "missing_project_file");
+}
+
+TEST_CASE("[Editor][ToolingHost] The invalid-project record survives suppressed logging") {
+	const String root = make_invalid_project_scratch_dir("quiet_invalid");
+	REQUIRE_FALSE(root.is_empty());
+
+	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, root, "missing_project_file", true);
+	check_invalid_project_rejection(TOOLING_COMMAND_LSP_SERVE, root, "missing_project_file", true);
+}
+
+TEST_CASE("[Editor][ToolingHost] An empty project.foundry passes the preflight and reaches readiness") {
+	const String root = make_invalid_project_scratch_dir("empty_project");
+	REQUIRE_FALSE(root.is_empty());
+	REQUIRE(write_scratch_file(root.path_join("project.foundry"), ""));
+
+	const List<String> arguments = build_tooling_host_arguments(TOOLING_COMMAND_TOOLING_SERVE, root, 0, 0, false);
+	HostProcess host = launch_tooling_host(arguments);
+	REQUIRE_MESSAGE(host.is_valid(), "Failed to launch the tooling host.");
+
+	const bool ready = wait_for_marker(host, "FOUNDRY_TOOLING {", 180000);
+	INFO("Tooling host output:\n", host.output);
+	shutdown_host(host);
+
+	CHECK_FALSE(host.output.contains("invalid_project"));
+	REQUIRE_MESSAGE(ready, "A project with an empty project.foundry must still reach readiness.");
+	const Dictionary payload = parse_marker_record(host.output, "FOUNDRY_TOOLING ");
+	CHECK(int(payload["lsp_port"]) > 0);
+	CHECK(int(payload["dap_port"]) > 0);
+}
+
 // A minimal debug adapter client: `Content-Length` framed JSON over loopback TCP,
 // enough to drive a real session against a running tooling host.
 struct DebugAdapterClient {
