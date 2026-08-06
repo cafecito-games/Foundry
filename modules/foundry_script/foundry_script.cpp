@@ -151,6 +151,37 @@ bool FSSpecializedClassHandle::is_fully_live() const {
 	return true;
 }
 
+// Returns the deepest node of `p_type` that names a freed script, or null when the whole subtree is
+// live. Children are searched first so a diagnostic points at the node that actually went stale
+// rather than at a live ancestor that merely contains it: rendering the ancestor would print the
+// freed script's captured native class name, which is the very substitution the diagnostic exists to
+// refuse.
+static const FSWeakContainerType *_find_freed_weak_node(const FSWeakContainerType &p_type) {
+	for (const FSWeakContainerType &element_type : p_type.element_types) {
+		const FSWeakContainerType *found = _find_freed_weak_node(element_type);
+		if (found != nullptr) {
+			return found;
+		}
+	}
+	for (const FSWeakContainerType &argument_type : p_type.type_arguments) {
+		const FSWeakContainerType *found = _find_freed_weak_node(argument_type);
+		if (found != nullptr) {
+			return found;
+		}
+	}
+	return p_type.is_fully_live() ? nullptr : &p_type;
+}
+
+String FSSpecializedClassHandle::describe_freed_type_argument() const {
+	for (int i = 0; i < type_arguments.size(); i++) {
+		const FSWeakContainerType *freed_node = _find_freed_weak_node(type_arguments[i]);
+		if (freed_node != nullptr) {
+			return vformat("type argument %d (%s)", i, freed_node->get_type_name());
+		}
+	}
+	return String();
+}
+
 String FSSpecializedClassHandle::get_type_name() const {
 	if (script.is_null()) {
 		return "FoundryScript";

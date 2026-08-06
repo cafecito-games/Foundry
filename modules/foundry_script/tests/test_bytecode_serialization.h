@@ -88,6 +88,31 @@ public:
 	}
 };
 
+// Captures every engine error raised while it is alive, so a refused export can be asserted on by
+// the reason it reports rather than by the error code alone.
+struct BytecodeErrorRecorder {
+	BytecodeErrorRecorder() {
+		handler.errfunc = _record;
+		handler.userdata = this;
+		add_error_handler(&handler);
+	}
+
+	~BytecodeErrorRecorder() {
+		remove_error_handler(&handler);
+	}
+
+	static void _record(void *p_self, const char *p_function, const char *p_file, int p_line,
+			const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
+		BytecodeErrorRecorder *self = static_cast<BytecodeErrorRecorder *>(p_self);
+		self->messages += String::utf8(p_explanation != nullptr && p_explanation[0] != '\0' ? p_explanation : p_error) + "\n";
+	}
+
+	void clear() { messages = String(); }
+
+	ErrorHandlerList handler;
+	String messages;
+};
+
 static Error bytecode_encode_variant(FSBytecodeExporter &r_exporter, const Variant &p_value, Vector<uint8_t> &r_payload) {
 	Ref<StreamPeerBuffer> stream;
 	stream.instantiate();
@@ -1384,6 +1409,109 @@ TEST_CASE("[FoundryScript][BytecodeCodec] Specialized class handles round-trip")
 	CHECK(decoded_handle->get_specialized_script() == box_script);
 	REQUIRE(decoded_handle->get_type_arguments().size() == 1);
 	CHECK(decoded_handle->get_type_arguments()[0] == integer_argument);
+}
+
+TEST_CASE("[FoundryScript][BytecodeCodec] A specialized handle with a freed type-argument script is refused") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"class Crate[T]:\n"
+			"\tvar value\n");
+	const HashMap<StringName, Ref<FoundryScript>>::ConstIterator crate_element = script->get_subclasses().find(SNAME("Crate"));
+	REQUIRE(crate_element);
+	const Ref<FoundryScript> crate_script = crate_element->value;
+	REQUIRE(crate_script.is_valid());
+	const String crate_key = crate_script->get_script_path() + "::" + crate_script->get_fully_qualified_name();
+
+	// A freshly instantiated script is held by nothing else (a compiled script would stay alive in the
+	// cache), so dropping this reference actually frees it. The handle holds its arguments weakly.
+	Ref<FoundryScript> argument_script;
+	argument_script.instantiate();
+	argument_script->set_path_cache("res://freed_type_argument.fs");
+	const String argument_key = String("res://freed_type_argument.fs") + "::" + argument_script->get_fully_qualified_name();
+
+	Ref<FSSpecializedClassHandle> handle;
+	Ref<FSSpecializedClassHandle> nested_handle;
+	{
+		ContainerType script_argument;
+		script_argument.builtin_type = Variant::OBJECT;
+		script_argument.class_name = argument_script->get_instance_base_type();
+		script_argument.script = argument_script;
+		Vector<ContainerType> type_arguments;
+		type_arguments.push_back(script_argument);
+		handle = FSSpecializedClassHandle::create(crate_script, type_arguments);
+
+		// `Crate[Crate[argument]]`: the refusal has to reach a freed script at any nesting depth.
+		ContainerType nested_argument;
+		nested_argument.builtin_type = Variant::OBJECT;
+		nested_argument.class_name = crate_script->get_instance_base_type();
+		nested_argument.script = crate_script;
+		nested_argument.type_arguments.push_back(script_argument);
+		Vector<ContainerType> nested_type_arguments;
+		nested_type_arguments.push_back(nested_argument);
+		nested_handle = FSSpecializedClassHandle::create(crate_script, nested_type_arguments);
+	}
+	REQUIRE(handle.is_valid());
+	REQUIRE(handle->is_fully_live());
+	REQUIRE(nested_handle.is_valid());
+	REQUIRE(nested_handle->is_fully_live());
+
+	// While the argument script is reachable the handle round-trips with the argument's script
+	// identity intact. The resolver holds a strong reference, so it is scoped to this block.
+	{
+		BytecodeTestResolver resolver;
+		resolver.scripts.insert(crate_key, crate_script);
+		resolver.scripts.insert(argument_key, argument_script);
+
+		FSBytecodeExporter live_exporter;
+		Vector<uint8_t> live_payload;
+		REQUIRE(bytecode_encode_variant(live_exporter, handle, live_payload) == OK);
+		Variant decoded;
+		REQUIRE(bytecode_decode_variant(live_exporter, live_payload, &resolver, decoded) == OK);
+		const Ref<FSSpecializedClassHandle> decoded_handle = decoded;
+		REQUIRE(decoded_handle.is_valid());
+		CHECK(decoded_handle->get_specialized_script() == crate_script);
+		Vector<ContainerType> decoded_arguments;
+		decoded_handle->get_represented_type_arguments(decoded_arguments);
+		REQUIRE(decoded_arguments.size() == 1);
+		CHECK(decoded_arguments[0].script == Ref<Script>(argument_script));
+	}
+
+	// Freeing the argument leaves the handle describing a script that no longer exists. Exporting it
+	// must refuse rather than bake the argument's captured native class in the script's place.
+	argument_script = Ref<FoundryScript>();
+	REQUIRE_FALSE(handle->is_fully_live());
+	REQUIRE_FALSE(nested_handle->is_fully_live());
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> payload;
+	BytecodeErrorRecorder recorder;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_encode_variant(exporter, handle, payload) == ERR_INVALID_PARAMETER);
+	ERR_PRINT_ON;
+	// The refusal precedes the handle tag, so no specialized-handle record with a degraded argument
+	// slot reaches the stream at all.
+	CHECK(payload.is_empty());
+	// The diagnostic names the stale slot rather than the class name the freed script captured.
+	CHECK(recorder.messages.contains("type argument 0 (<freed type argument>)"));
+	CHECK_FALSE(recorder.messages.contains("type argument 0 (RefCounted)"));
+
+	// A freed script nested inside a live argument is named at the depth it went stale, not through
+	// the live ancestor that contains it.
+	recorder.clear();
+	Vector<uint8_t> nested_payload;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_encode_variant(exporter, nested_handle, nested_payload) == ERR_INVALID_PARAMETER);
+	ERR_PRINT_ON;
+	CHECK(nested_payload.is_empty());
+	CHECK(recorder.messages.contains("type argument 0 (<freed type argument>)"));
+
+	// A stale handle reached through an enclosing container fails the whole export, so no artifact is
+	// produced with the degraded argument either.
+	Array holder;
+	holder.push_back(handle);
+	Vector<uint8_t> holder_payload;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_encode_variant(exporter, holder, holder_payload) == ERR_INVALID_PARAMETER);
+	ERR_PRINT_ON;
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Unresolvable external references fail the decode") {
