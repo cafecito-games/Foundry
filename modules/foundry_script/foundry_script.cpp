@@ -151,6 +151,15 @@ bool FSSpecializedClassHandle::is_fully_live() const {
 	return true;
 }
 
+String FSSpecializedClassHandle::describe_freed_type_argument() const {
+	for (int i = 0; i < type_arguments.size(); i++) {
+		if (!type_arguments[i].is_fully_live()) {
+			return vformat("type argument %d (%s)", i, type_arguments[i].get_type_name());
+		}
+	}
+	return String();
+}
+
 String FSSpecializedClassHandle::get_type_name() const {
 	if (script.is_null()) {
 		return "FoundryScript";

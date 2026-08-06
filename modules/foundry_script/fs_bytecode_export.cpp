@@ -204,6 +204,15 @@ Error FSBytecodeExporter::_encode_object(StreamPeerBuffer *r_stream, Object *p_o
 		const Ref<FoundryScript> &specialized_script = specialized_handle->get_specialized_script();
 		ERR_FAIL_COND_V_MSG(specialized_script.is_null(), ERR_INVALID_PARAMETER,
 				"A specialized class handle without a script cannot be serialized to compiled bytecode.");
+		// Type arguments are held weakly, so one can be freed while the handle is still reachable for
+		// export. Materializing such an argument yields a null script with the freed script's captured
+		// class name, which would travel as a scriptless native-class slot and reload as a different
+		// specialization. Refuse before writing anything rather than bake that substitution in.
+		ERR_FAIL_COND_V_MSG(!specialized_handle->is_fully_live(), ERR_INVALID_PARAMETER,
+				vformat("A specialized class handle for '%s' cannot be serialized to compiled bytecode: %s "
+						"references a script that has been freed.",
+						specialized_script->get_script_path(),
+						specialized_handle->describe_freed_type_argument()));
 		r_stream->put_u8(FSBytecodeFormat::TAG_SPECIALIZED_HANDLE);
 		Error error = _encode_object(r_stream, specialized_script.ptr(), p_depth + 1);
 		if (error != OK) {

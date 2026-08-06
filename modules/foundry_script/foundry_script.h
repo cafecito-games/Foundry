@@ -115,6 +115,10 @@ public:
 	// script is held strongly, so only the arguments can go stale; a stale argument makes the handle
 	// unusable for construction or `Self` resolution.
 	bool is_fully_live() const;
+	// Names the first type argument whose script was freed, e.g. `type argument 0 (<freed type
+	// argument>)`. Empty when every argument is still live. Diagnostics that refuse a stale handle use
+	// it to point at the exact slot instead of the whole specialization.
+	String describe_freed_type_argument() const;
 	virtual Ref<Script> get_represented_script() const override;
 	virtual void get_represented_type_arguments(Vector<ContainerType> &r_arguments) const override;
 	String get_type_name() const;
