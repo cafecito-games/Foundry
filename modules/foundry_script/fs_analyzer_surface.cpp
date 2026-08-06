@@ -1382,14 +1382,86 @@ bool FSAnalyzer::check_type_argument_bounds(FSParser::DataType &r_type, const Ge
 	return !bound_violation;
 }
 
+bool FSAnalyzer::specialize_applied_trait_type(FSParser::ClassNode *p_owner, const FSParser::ClassNode *p_target, const HashMap<StringName, FSParser::DataType> &p_owner_bindings, FSParser::DataType &r_specialized) {
+	// Projects a trait-application edge the way the inheritance step projects `extends`: bind the
+	// trait's declared parameters to the arguments the `uses` clause supplied, then re-express those
+	// arguments in `p_owner`'s own frame so `class IntBox uses Holder[int]` yields `Holder[int]` and
+	// `class Pair[T] uses Holder[T]` reached through a `Pair[int]` receiver yields `Holder[int]` too.
+	if (p_owner == nullptr || p_target == nullptr || p_owner->used_traits.is_empty()) {
+		return false;
+	}
+	// A class whose `uses` clauses are mid-resolution has no trustworthy trait table yet, and forcing
+	// one here would report a false cycle.
+	if (p_owner->resolving_trait_uses || p_owner->failed_trait_uses) {
+		return false;
+	}
+	if (!p_owner->resolved_trait_uses && resolve_trait_uses(p_owner) != OK) {
+		return false;
+	}
+	FSParser::ClassNode *target = const_cast<FSParser::ClassNode *>(p_target);
+	if (!p_owner->resolved_traits.has(target)) {
+		return false;
+	}
+
+	FSParser::DataType trait_handle = type_from_metatype(target->get_datatype());
+	trait_handle.is_meta_type = false;
+	trait_handle.type_arguments.clear();
+	if (target->type_parameters.is_empty()) {
+		r_specialized = trait_handle;
+		return true;
+	}
+
+	// `trait_type_argument_substitution()` already composes the forwarding hops of a transitive
+	// application (`uses Reader[int]` where `trait Reader[T] uses Storage[T]`), so the arguments it
+	// reports are expressed in `p_owner`'s frame and only need this level's bindings applied.
+	const HashMap<StringName, FSParser::DataType> applied = trait_type_argument_substitution(p_owner, target);
+	for (const FSParser::TypeParameterNode *parameter : target->type_parameters) {
+		if (parameter == nullptr || parameter->identifier == nullptr) {
+			return false;
+		}
+		const FSParser::DataType *argument = applied.getptr(parameter->identifier->name);
+		if (argument == nullptr) {
+			// The application left this parameter unbound (an arity error already reported, or a
+			// non-generic application); a partial handle would substitute the wrong argument.
+			return false;
+		}
+		trait_handle.add_type_argument(p_owner_bindings.is_empty()
+						? *argument
+						: FSParser::DataType::substitute(*argument, p_owner_bindings));
+	}
+	r_specialized = trait_handle;
+	return true;
+}
+
 FSParser::DataType FSAnalyzer::specialize_ancestor_type(const FSParser::DataType &p_base, const FSParser::ClassNode *p_target) {
 	// Walks the inheritance chain from a specialized base down to `p_target`, applying each level's
 	// type arguments so a member declared in an ancestor sees the concrete arguments supplied at the
 	// most-derived use site. For `Stack[int] extends List[U]`, reaching `List` yields `List[int]`.
+	// A member flattened in through `uses Trait[Args]` is reached the same way: each level's trait
+	// applications are projected exactly as its `extends` edge is.
 	FSParser::DataType current = p_base;
 	while (current.class_type != nullptr) {
 		if (current.class_type == p_target) {
 			return current;
+		}
+
+		// The arguments bound at this level, which rewrite both the parent handle and anything a
+		// `uses` clause at this level forwards into a trait.
+		HashMap<StringName, FSParser::DataType> bindings;
+		if (current.has_type_arguments()) {
+			const Vector<FSParser::TypeParameterNode *> &type_parameters = current.class_type->type_parameters;
+			const int binding_count = MIN(type_parameters.size(), current.type_arguments.size());
+			for (int i = 0; i < binding_count; i++) {
+				const FSParser::TypeParameterNode *parameter = type_parameters[i];
+				if (parameter != nullptr && parameter->identifier != nullptr) {
+					bindings.insert(parameter->identifier->name, current.type_arguments[i]);
+				}
+			}
+		}
+
+		FSParser::DataType applied_trait;
+		if (specialize_applied_trait_type(current.class_type, p_target, bindings, applied_trait)) {
+			return applied_trait;
 		}
 
 		FSParser::DataType parent = current.class_type->base_type;
@@ -1399,26 +1471,15 @@ FSParser::DataType FSAnalyzer::specialize_ancestor_type(const FSParser::DataType
 
 		// Rewrite the parent handle's type arguments (which reference `current`'s parameters) into
 		// the concrete arguments bound at this level.
-		if (current.has_type_arguments()) {
-			const Vector<FSParser::TypeParameterNode *> &type_parameters = current.class_type->type_parameters;
-			HashMap<StringName, FSParser::DataType> bindings;
-			const int binding_count = MIN(type_parameters.size(), current.type_arguments.size());
-			for (int i = 0; i < binding_count; i++) {
-				const FSParser::TypeParameterNode *parameter = type_parameters[i];
-				if (parameter != nullptr && parameter->identifier != nullptr) {
-					bindings.insert(parameter->identifier->name, current.type_arguments[i]);
-				}
-			}
-			if (!bindings.is_empty()) {
-				parent = FSParser::DataType::substitute(parent, bindings);
-			}
+		if (!bindings.is_empty()) {
+			parent = FSParser::DataType::substitute(parent, bindings);
 		}
 
 		current = parent;
 	}
 
-	// `p_target` is not on the inheritance chain (e.g. an outer class or applied trait); return a
-	// non-specialized handle so member substitution is a no-op.
+	// `p_target` is not reachable through inheritance or trait application (it is an outer class);
+	// return a non-specialized handle so member substitution is a no-op.
 	FSParser::DataType fallback = p_base;
 	fallback.type_arguments.clear();
 	return fallback;
