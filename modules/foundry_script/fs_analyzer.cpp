@@ -5918,6 +5918,9 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 		FSParser::IdentifierNode *assignee_identifier = static_cast<FSParser::IdentifierNode *>(p_assignment->assignee);
 		const FSParser::Node *flow_key = flow_finality.flow_narrowing_key_from_identifier(assignee_identifier);
 		if (const FSParser::DataType *narrowed_type = flow_finality.lookup_flow_narrowed_type(flow_key)) {
+			// Mirrors the sources `reduce_identifier()` resolves a flow-narrowing key for
+			// (`flow_narrowing_key_from_identifier()` returns null for every other source, including
+			// `STATIC_VARIABLE`, so this narrowing can only have been applied to one of these).
 			FSParser::DataType declared_type;
 			bool found_declared_type = true;
 			switch (assignee_identifier->source) {
@@ -5925,12 +5928,17 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 					declared_type = assignee_identifier->parameter_source->get_datatype();
 					break;
 				case FSParser::IdentifierNode::LOCAL_VARIABLE:
-				case FSParser::IdentifierNode::STATIC_VARIABLE:
 					declared_type = assignee_identifier->variable_source->get_datatype();
 					break;
 				case FSParser::IdentifierNode::LOCAL_ITERATOR:
-				case FSParser::IdentifierNode::LOCAL_BIND:
 					declared_type = assignee_identifier->bind_source->get_datatype();
+					break;
+				case FSParser::IdentifierNode::LOCAL_BIND:
+					// A match/case bind is read-only: `reduce_identifier()` marks its resolved type
+					// `is_constant` even though the bind's own stored datatype does not, so the
+					// restored type must do the same or a narrowed bind could be silently reassigned.
+					declared_type = assignee_identifier->bind_source->get_datatype();
+					declared_type.is_constant = true;
 					break;
 				default:
 					found_declared_type = false;
