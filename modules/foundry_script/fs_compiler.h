@@ -181,6 +181,11 @@ class FSCompiler {
 	// are metadata a later `extends` step substitutes into, never a runtime slot descriptor, which must
 	// stay erased so the VM's exact typed-container comparisons keep working.
 	FSDataType _gdtype_from_datatype(const FSParser::DataType &p_datatype, FoundryScript *p_owner, bool p_handle_metatype = true, bool p_preserve_type_parameters = false);
+	// Overlays a flow-narrowed integer width (from a type test such as `is uint`) onto an address
+	// that otherwise carries its slot's declared type, so a checked integer operation on the
+	// narrowed read is validated at the narrowed width instead of the declaration's.
+	FSCodeGenerator::Address _apply_flow_narrowed_integer_width(
+			FSCodeGenerator::Address p_address, const FSParser::DataType &p_narrowed_datatype, FoundryScript *p_owner);
 	// Substitutes the `TYPE_PARAMETER` nodes surviving in a binding type through one `extends Base[args]`
 	// step: a forwarded parameter is rewritten to the deriving class's ordinal, a concrete argument
 	// replaces the node outright, and a step that supplies nothing marks the node permanently unresolved.

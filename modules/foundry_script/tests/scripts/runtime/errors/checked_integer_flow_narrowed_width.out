@@ -1,0 +1,2 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/checked_integer_flow_narrowed_width.fs:7 on widen(): The "+" operator overflows "uint": the result is outside its range 0 to 4294967295.

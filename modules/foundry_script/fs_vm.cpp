@@ -85,6 +85,13 @@ static String _get_element_type(const ContainerType &p_type) {
 	if (p_type.class_name != StringName()) {
 		return p_type.class_name.operator String();
 	}
+	// The carrier alone cannot tell a declared `uint` from a declared `ulong`: both are stored as
+	// `Variant::UINT`. `ContainerType::numeric_type` is where the declared width survives, so a
+	// script-facing message must consult it instead of falling through to the carrier's name, mirroring
+	// `ContainerTypeValidate::_get_value_type_name()` in core/variant/container_type_validate.cpp.
+	if (p_type.numeric_type != NumericType::NONE && numeric_type_is_carrier_consistent(p_type.numeric_type, p_type.builtin_type)) {
+		return numeric_type_has_public_name(p_type.numeric_type) ? numeric_type_public_name(p_type.numeric_type) : numeric_type_name(p_type.numeric_type);
+	}
 	return Variant::get_type_name(p_type.builtin_type);
 }
 

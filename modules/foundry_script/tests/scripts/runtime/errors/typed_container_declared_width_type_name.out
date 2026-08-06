@@ -1,0 +1,5 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to set a variable of type 'float' into a TypedDictionary.Value of type 'ulong'.
+>> ERROR: Condition "!_p->typed_value.validate(value, "set")" is true. Returning: false
+>> SCRIPT ERROR at runtime/errors/typed_container_declared_width_type_name.fs:9 on test(): Invalid assignment of property or key 'k' with value of type 'float' on a base object of type 'Dictionary[String, ulong]'.
