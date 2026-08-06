@@ -480,6 +480,11 @@ struct DebugAdapterClient {
 	// sequence a launch produced.
 	Vector<Dictionary> events;
 	List<Dictionary> responses;
+	// `received_messages` is the ordering record: every message, response or event,
+	// in the exact order it arrived on the wire. `events` and `responses` are lookup
+	// queues derived from it and carry no information about interleaving between the
+	// two kinds, so any assertion about relative wire order must be made against
+	// `received_messages`, not against those queues.
 	Vector<Dictionary> received_messages;
 
 	bool connect_to_port(int p_port) {
@@ -629,6 +634,51 @@ struct DebugAdapterClient {
 			}
 		}
 		return -1;
+	}
+
+	// Drains once and returns the current size of `received_messages`. Everything
+	// already on the wire is classified below the returned watermark, so an ordering
+	// assertion taken against it only sees messages caused by the request sent next.
+	int mark_arrivals() {
+		drain();
+		return received_messages.size();
+	}
+
+	// The position in `received_messages`, at or after `p_from`, of the response to
+	// request `p_request_seq`, or `-1` if it has not arrived yet.
+	int received_response_index(int p_request_seq, int p_from) const {
+		for (int i = p_from; i < received_messages.size(); i++) {
+			const Dictionary &message = received_messages[i];
+			if (String(message.get("type", "")) == "response" && int(message.get("request_seq", -1)) == p_request_seq) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	// The position in `received_messages`, at or after `p_from`, of the first event
+	// named `p_event`, or `-1` if it has not arrived yet.
+	int received_event_index(const String &p_event, int p_from) const {
+		for (int i = p_from; i < received_messages.size(); i++) {
+			const Dictionary &message = received_messages[i];
+			if (String(message.get("type", "")) == "event" && String(message.get("event", "")) == p_event) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	// True when the response to `p_request_seq` has arrived at or after `p_watermark`
+	// and either `p_event` has not arrived or arrived at a later wire position. A stop
+	// that never arrived cannot precede a response; the separate `await_event` step
+	// still requires it to arrive.
+	bool response_arrived_before_event(int p_request_seq, const String &p_event, int p_watermark) const {
+		const int response_index = received_response_index(p_request_seq, p_watermark);
+		if (response_index < 0) {
+			return false;
+		}
+		const int event_position = received_event_index(p_event, p_watermark);
+		return event_position < 0 || response_index < event_position;
 	}
 
 	// The ordered lifecycle events of the current window, which is what the DAP
@@ -1466,6 +1516,7 @@ TEST_CASE("[Editor][ToolingHost] Stepping out of a nested call resumes in its ca
 	}
 
 	session.client.clear_events();
+	const int arrival_mark = session.client.mark_arrivals();
 	Dictionary step_out_arguments;
 	step_out_arguments["threadId"] = thread_id;
 	const int step_out_seq = session.client.send_request("stepOut", step_out_arguments);
@@ -1484,7 +1535,7 @@ TEST_CASE("[Editor][ToolingHost] Stepping out of a nested call resumes in its ca
 		return;
 	}
 	// The response has to precede the stop it produced, and the stop is reported once.
-	if (session.client.event_index("stopped") >= 0) {
+	if (!session.client.response_arrived_before_event(step_out_seq, "stopped", arrival_mark)) {
 		FAIL(("A stop was reported before the `stepOut` response.\n" +
 				tooling_host_and_dap_diagnostic(session.host, session.client)));
 		return;
@@ -2375,6 +2426,7 @@ TEST_CASE("[Editor][ToolingHost] A rejected step request does not mislabel the n
 
 	auto step_and_check = [&](const String &p_command, int p_expected_line, const String &p_expected_frame_name) {
 		session.client.clear_events();
+		const int arrival_mark = session.client.mark_arrivals();
 		Dictionary step_arguments;
 		step_arguments["threadId"] = thread_id;
 		const int step_seq = session.client.send_request(p_command, step_arguments);
@@ -2389,6 +2441,12 @@ TEST_CASE("[Editor][ToolingHost] A rejected step request does not mislabel the n
 		CHECK_EQ(String(step_response.get("command", "")), p_command);
 		if (!bool(step_response.get("success", false))) {
 			FAIL_CHECK((("`" + p_command + "` did not succeed against a stopped debuggee.\n") +
+					tooling_host_and_dap_diagnostic(session.host, session.client)));
+			return;
+		}
+		// The response has to precede the stop it produced.
+		if (!session.client.response_arrived_before_event(step_seq, "stopped", arrival_mark)) {
+			FAIL_CHECK(("A stop was reported before the `" + p_command + "` response.\n" +
 					tooling_host_and_dap_diagnostic(session.host, session.client)));
 			return;
 		}
