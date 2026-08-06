@@ -697,8 +697,33 @@ ContainerType ProjectedContainerType::to_container_type() const {
 	return type;
 }
 
+ContainerType ProjectedContainerType::_to_named_container_type() const {
+	if (state == UNKNOWN) {
+		// `ContainerType` has no unresolved state, so an unknown subtree would otherwise materialize as an
+		// unconstrained slot and read as if the author had written `Variant`. Naming it through a
+		// placeholder class keeps the distinction visible while leaving every other node rendered exactly
+		// as it is today. The placeholder only ever reaches the name renderers below; validation always
+		// goes through `to_container_type()`.
+		ContainerType unresolved;
+		unresolved.builtin_type = Variant::OBJECT;
+		unresolved.class_name = UNRESOLVED_SLOT_NAME;
+		return unresolved;
+	}
+
+	ContainerType type = outer;
+	type.element_types.clear();
+	type.type_arguments.clear();
+	for (const ProjectedContainerType &element_type : element_types) {
+		type.element_types.push_back(element_type._to_named_container_type());
+	}
+	for (const ProjectedContainerType &type_argument : type_arguments) {
+		type.type_arguments.push_back(type_argument._to_named_container_type());
+	}
+	return type;
+}
+
 String ProjectedContainerType::get_type_name() const {
-	return to_container_type().get_type_name();
+	return _to_named_container_type().get_type_name();
 }
 
 bool ProjectedContainerType::conflicts_with_expected(const ContainerType &p_expected) const {

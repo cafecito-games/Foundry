@@ -540,9 +540,13 @@ static ProjectedContainerType _project_binding_data_type(const FSDataType &p_typ
 	}
 
 	if (p_type.is_nullable) {
-		// Core container types cannot express "this type or null", which is why `to_container_type()`
-		// erases a nullable type outright. There is no descriptor that would accept the nulls the slot
-		// admits, so the subtree carries no runtime evidence; the analyzer still enforces it statically.
+		// A deliberate limitation, not a defensive branch. `ContainerType` cannot express "this type or
+		// null", so any evidence produced here would reject the nulls the slot legitimately admits; the
+		// analyzer is what enforces a nullable declaration. The cost is confined to this node: it is the
+		// node itself that becomes `UNKNOWN`, so sibling slots and every ancestor keep their own evidence
+		// and keep validating (`Base[Pair[int, U?]]` still enforces the `int`). A node's own descendants
+		// cannot be salvaged, because stating anything about them requires stating the node itself, which
+		// is exactly what admits null.
 		return projected;
 	}
 
