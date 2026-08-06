@@ -14736,6 +14736,26 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 	Variant::ValidatedOperatorEvaluator op_eval = Variant::get_validated_operator_evaluator(p_operation, a_type, b_type);
 	bool validated = op_eval != nullptr;
 
+	// `Variant` registers no arithmetic/bitwise evaluator for a mixed `int`/`uint` carrier pair -- every
+	// operator it knows needs matching operand carriers -- but design section 6.1's binary promotion
+	// table names a common type for exactly two such pairs (`int`,`uint` and `uint`,`long`, both
+	// promoting to `long`), because every value on each side is representable there. Code generation
+	// widens the `uint` operand into that shared carrier before the checked-numeric evaluator runs, so
+	// this only ever applies to the operations that evaluator handles.
+	if (!validated && a_type != b_type && (a_type == Variant::INT || a_type == Variant::UINT) &&
+			(b_type == Variant::INT || b_type == Variant::UINT) && FSNumericOps::handles_operation(p_operation)) {
+		NumericType promoted = NumericType::NONE;
+		if (FSNumericConversion::promote_integer_pair(_operand_numeric_type(p_a), _operand_numeric_type(p_b), promoted) &&
+				numeric_type_carrier(promoted) == Variant::INT) {
+			r_valid = true;
+			result.type_source = hard_operation ? FSParser::DataType::ANNOTATED_INFERRED : FSParser::DataType::INFERRED;
+			result.kind = FSParser::DataType::BUILTIN;
+			result.builtin_type = Variant::INT;
+			result.numeric_type = promoted;
+			return result;
+		}
+	}
+
 	if (validated) {
 		r_valid = true;
 		result.type_source = hard_operation ? FSParser::DataType::ANNOTATED_INFERRED : FSParser::DataType::INFERRED;

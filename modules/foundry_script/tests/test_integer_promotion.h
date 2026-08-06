@@ -82,7 +82,10 @@ public:
 	}
 };
 
-// The width and carrier the analyzer recorded for `p_name`'s initializer.
+// The width and carrier the analyzer recorded for `p_name`'s initializer. For an inferred local this
+// is also the local's own type; for an explicitly typed local whose initializer is a plain value (not
+// a constant `update_const_expression_builtin_type()` rewrites) the initializer keeps its own natural
+// type, so an implicit-widen crossing is asserted with `check_declared_type()` below instead.
 static void check_initializer_type(const AnalyzedSnippet &p_snippet, const StringName &p_name, Variant::Type p_carrier, NumericType p_numeric_type) {
 	const FSParser::VariableNode *variable = p_snippet.local(p_name);
 	REQUIRE_MESSAGE(variable != nullptr, vformat("local \"%s\" must exist", String(p_name)));
@@ -94,6 +97,21 @@ static void check_initializer_type(const AnalyzedSnippet &p_snippet, const Strin
 	CHECK_MESSAGE(initializer_type.numeric_type == p_numeric_type,
 			vformat("\"%s\" width was %s, expected %s", String(p_name),
 					numeric_type_name(initializer_type.numeric_type), numeric_type_name(p_numeric_type)));
+}
+
+// The width and carrier the analyzer recorded for `p_name` itself -- its declared type, not its
+// initializer expression's type. An implicit-widen crossing (`var l: long = some_uint_variable`)
+// converts the value at the assignment boundary without retyping the source expression, so the local's
+// own type is the destination the promotion had to satisfy.
+static void check_declared_type(const AnalyzedSnippet &p_snippet, const StringName &p_name, Variant::Type p_carrier, NumericType p_numeric_type) {
+	const FSParser::VariableNode *variable = p_snippet.local(p_name);
+	REQUIRE_MESSAGE(variable != nullptr, vformat("local \"%s\" must exist", String(p_name)));
+	const FSParser::DataType declared_type = variable->get_datatype();
+	CHECK_MESSAGE(declared_type.builtin_type == p_carrier,
+			vformat("\"%s\" carrier was %s", String(p_name), Variant::get_type_name(declared_type.builtin_type)));
+	CHECK_MESSAGE(declared_type.numeric_type == p_numeric_type,
+			vformat("\"%s\" width was %s, expected %s", String(p_name),
+					numeric_type_name(declared_type.numeric_type), numeric_type_name(p_numeric_type)));
 }
 
 using Conversion = FSNumericConversion::Conversion;
@@ -240,6 +258,48 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] Widening within a carrier is i
 
 	CHECK(classify(make_integer_type(NumericType::INT32), make_integer_type(NumericType::INT64)) == Conversion::EXPLICIT_REQUIRED);
 	CHECK(classify(make_integer_type(NumericType::UINT32), make_integer_type(NumericType::UINT64)) == Conversion::EXPLICIT_REQUIRED);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A uint value widens to long unconditionally (#1771)") {
+	using namespace TestIntegerPromotion;
+
+	// Design section 6.1 lists `uint -> long` as value-preserving: every `uint` value is representable
+	// as a `long`, so a `uint` *value* -- not just a constant whose exact magnitude is known -- may
+	// cross into a `long` slot without proof, unlike the general signedness crossings `classify()`
+	// otherwise only grants a representable constant.
+	CHECK(classify(make_integer_type(NumericType::INT64), make_integer_type(NumericType::UINT32)) == Conversion::IMPLICIT_WIDEN);
+
+	// The reverse direction is not value-preserving (a negative `long` has no `uint` representation) and
+	// stays an explicit conversion.
+	CHECK(classify(make_integer_type(NumericType::UINT32), make_integer_type(NumericType::INT64)) == Conversion::EXPLICIT_REQUIRED);
+
+	// `uint` -> `int` (32-bit) is a genuine narrowing as well as a crossing and is unaffected.
+	CHECK(classify(make_integer_type(NumericType::INT32), make_integer_type(NumericType::UINT32)) == Conversion::EXPLICIT_REQUIRED);
+
+	// `ulong` -> `long` is a same-width signedness crossing, not the widening this fix grants.
+	CHECK(classify(make_integer_type(NumericType::INT64), make_integer_type(NumericType::UINT64)) == Conversion::EXPLICIT_REQUIRED);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A uint variable assigns into a long slot without an explicit cast (#1771)") {
+	using namespace TestIntegerPromotion;
+
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar u: uint = 1U\n"
+			"\tvar l: long = u\n"
+			"\tprint(l)\n");
+	REQUIRE(snippet.parse_error == OK);
+	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
+	check_declared_type(snippet, "l", Variant::INT, NumericType::INT64);
+
+	// The reverse direction still requires an explicit cast: not every `long` value is a `uint`.
+	const AnalyzedSnippet reversed(
+			"func test():\n"
+			"\tvar l: long = 1L\n"
+			"\tvar u: uint = l\n"
+			"\tprint(u)\n");
+	CHECK(reversed.parse_error == OK);
+	CHECK(reversed.first_error().contains(R"(Cannot assign a value of type)"));
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] An exactly representable constant narrows where a value may not") {
@@ -400,23 +460,41 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] A mixed signed/unsigned operan
 	CHECK(no_common_type_reversed.parse_error == OK);
 	CHECK(no_common_type_reversed.first_error().contains("No integer type holds every value of both"));
 
-	// A pair the matrix does promote still needs the conversion spelled out, because the two carriers
-	// cannot meet in one operation; the diagnostic names the promoted type.
+	// `uint`/`long` is design section 6.1's one value-preserving carrier crossing: every `uint` value is
+	// representable as a `long`, so the pair the matrix promotes to `long` needs no conversion spelled
+	// out, in either operand order (#1771).
 	const AnalyzedSnippet mixed_carriers(
 			"func test():\n"
 			"\tvar u: uint = 2U\n"
 			"\tvar l: long = 3L\n"
-			"\tprint(u + l)\n");
-	CHECK(mixed_carriers.parse_error == OK);
-	CHECK(mixed_carriers.first_error().contains("Convert both to \"long\" explicitly."));
+			"\tvar sum = u + l\n"
+			"\tprint(sum)\n");
+	REQUIRE(mixed_carriers.parse_error == OK);
+	CHECK_MESSAGE(mixed_carriers.first_error().is_empty(), mixed_carriers.first_error());
+	check_initializer_type(mixed_carriers, "sum", Variant::INT, NumericType::INT64);
 
 	const AnalyzedSnippet mixed_carriers_reversed(
 			"func test():\n"
 			"\tvar u: uint = 2U\n"
 			"\tvar l: long = 3L\n"
-			"\tprint(l + u)\n");
-	CHECK(mixed_carriers_reversed.parse_error == OK);
-	CHECK(mixed_carriers_reversed.first_error().contains("Convert both to \"long\" explicitly."));
+			"\tvar sum = l + u\n"
+			"\tprint(sum)\n");
+	REQUIRE(mixed_carriers_reversed.parse_error == OK);
+	CHECK_MESSAGE(mixed_carriers_reversed.first_error().is_empty(), mixed_carriers_reversed.first_error());
+	check_initializer_type(mixed_carriers_reversed, "sum", Variant::INT, NumericType::INT64);
+
+	// `int`/`uint` still has no unconditional crossing of its own, but both operands individually widen
+	// to `long` (`int` -> `long` and `uint` -> `long` are each value-preserving), so the pair the matrix
+	// promotes to `long` also needs no conversion spelled out.
+	const AnalyzedSnippet int_uint_mixed(
+			"func test():\n"
+			"\tvar i: int = 2\n"
+			"\tvar u: uint = 3U\n"
+			"\tvar sum = i + u\n"
+			"\tprint(sum)\n");
+	REQUIRE(int_uint_mixed.parse_error == OK);
+	CHECK_MESSAGE(int_uint_mixed.first_error().is_empty(), int_uint_mixed.first_error());
+	check_initializer_type(int_uint_mixed, "sum", Variant::INT, NumericType::INT64);
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] Ordering compares across carriers without a common type") {

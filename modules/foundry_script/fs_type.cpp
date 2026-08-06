@@ -470,6 +470,13 @@ FSNumericConversion::Conversion FSNumericConversion::classify(const FSParser::Da
 	if (_numeric_range_covers(target_numeric_type, source_numeric_type)) {
 		return Conversion::IMPLICIT_WIDEN;
 	}
+	if (target_numeric_type == NumericType::INT64 && source_numeric_type == NumericType::UINT32) {
+		// The one carrier-crossing widen design section 6.1 lists unconditionally: every `uint` value is
+		// representable as a `long`, so this needs no proof the way a constant crossing does.
+		// `int`/`long` and `uint`/`ulong` are same-carrier and already handled by `_numeric_range_covers()`
+		// above; `uint`/`long` is the only pair whose carriers differ but whose crossing is still total.
+		return Conversion::IMPLICIT_WIDEN;
+	}
 	if (p_constant_source_value != nullptr && _constant_fits_numeric_type(target_numeric_type, *p_constant_source_value)) {
 		return Conversion::CONSTANT_CHECKED;
 	}
@@ -619,10 +626,14 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		// through `Variant::can_convert_strict()` above and are unaffected.
 		const bool both_integer_carriers = both_numeric && p_target.builtin_type != Variant::FLOAT && p_source.builtin_type != Variant::FLOAT;
 		if (!result.compatible && p_options.allow_implicit_conversion && both_integer_carriers &&
-				conversion == FSNumericConversion::Conversion::CONSTANT_CHECKED) {
+				(conversion == FSNumericConversion::Conversion::CONSTANT_CHECKED ||
+						conversion == FSNumericConversion::Conversion::IMPLICIT_WIDEN)) {
 			// `Variant::can_convert_strict()` above has no unconditional answer for `int`/`uint` (or
 			// `long`/`ulong`): most values of one carrier are not representable on the other. A constant
-			// is different -- its exact value is known -- which is what design section 6.1 permits.
+			// is different -- its exact value is known -- which is what design section 6.1 permits. A
+			// `uint` source widening to `long` is different again: `classify()` only reaches
+			// `IMPLICIT_WIDEN` for a carrier crossing when every value of the source is representable in
+			// the target regardless of which value it holds, so no constant is needed to prove it.
 			result.compatible = true;
 			result.uses_implicit_conversion = true;
 		}

@@ -2858,7 +2858,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					*dst = *src;
 				} else if (src->get_type() != var_type) {
 #ifdef DEBUG_ENABLED
-					if (Variant::can_convert_strict(src->get_type(), var_type)) {
+					// `Variant::can_convert_strict()` has no unconditional entry for `UINT` -> `INT`, since
+					// most `uint` values are not representable as a 32-bit `int`. A `uint` widening to
+					// `long` is the one crossing design section 6.1 lists as always safe, and the analyzer
+					// (`FSTypeCompatibility::check()`) is the only source of this opcode's `UINT` source, so
+					// the runtime carrier check just needs to agree with what the analyzer already proved.
+					const bool is_uint_to_long_widen = src->get_type() == Variant::UINT && var_type == Variant::INT;
+					if (Variant::can_convert_strict(src->get_type(), var_type) || is_uint_to_long_widen) {
 #endif // DEBUG_ENABLED
 						Callable::CallError ce;
 						Variant::construct(var_type, *dst, const_cast<const Variant **>(&src), 1, ce);
@@ -4802,7 +4808,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					// A nullable return type returns null as-is instead of converting it to the underlying type.
 					retvalue = *r;
 				} else if (r->get_type() != ret_type) {
-					if (Variant::can_convert_strict(r->get_type(), ret_type)) {
+					// See `OPCODE_ASSIGN_TYPED_BUILTIN`: `Variant::can_convert_strict()` has no entry for
+					// `UINT` -> `INT`, but a `uint` widening to `long` is unconditionally safe and is the
+					// only source `FSTypeCompatibility::check()` lets reach this opcode with mismatched
+					// carriers.
+					const bool is_uint_to_long_widen = r->get_type() == Variant::UINT && ret_type == Variant::INT;
+					if (Variant::can_convert_strict(r->get_type(), ret_type) || is_uint_to_long_widen) {
 						Callable::CallError ce;
 						Variant::construct(ret_type, retvalue, const_cast<const Variant **>(&r), 1, ce);
 					} else {

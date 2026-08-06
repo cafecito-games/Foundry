@@ -675,9 +675,17 @@ static NumericType _destination_numeric_type(const FSCodeGenerator::Address &p_t
 // `r_type` is `NumericType::NONE` when the operands have no common integer type — two carriers with
 // no promotion between them. That is still a checked integer operation, and it reports invalid
 // operands at run time rather than reinterpreting one carrier as the other.
+//
+// `r_widen_left`/`r_widen_right` report whether that operand is a `uint` that must be widened into
+// `r_type`'s carrier before the checked-numeric evaluator runs: it requires both operands to already
+// share one carrier, and design section 6.1's mixed-carrier promotions (`int`,`uint` and `uint`,`long`,
+// both landing on `long`) only ever leave the `uint` side needing to cross.
 static bool _checked_binary_type(Variant::Operator p_operation, const FSCodeGenerator::Address &p_target,
-		const FSCodeGenerator::Address &p_left, const FSCodeGenerator::Address &p_right, NumericType &r_type) {
+		const FSCodeGenerator::Address &p_left, const FSCodeGenerator::Address &p_right, NumericType &r_type,
+		bool &r_widen_left, bool &r_widen_right) {
 	r_type = NumericType::NONE;
+	r_widen_left = false;
+	r_widen_right = false;
 	if (!FSNumericOps::handles_operation(p_operation)) {
 		return false;
 	}
@@ -694,6 +702,19 @@ static bool _checked_binary_type(Variant::Operator p_operation, const FSCodeGene
 		return true;
 	}
 	if (left_carrier != p_right.type.builtin_type) {
+		// A mismatched carrier still has a common integer type for exactly the two pairs the promotion
+		// matrix names as crossing carriers, and both land on the `int` carrier (`long`). Every other
+		// mismatched pair (`int`/`ulong`, `long`/`ulong`) has no common type, which `promote_integer_pair()`
+		// reports by returning `false`, leaving `r_type` at `NONE` so the operation reports invalid
+		// operands at run time.
+		NumericType promoted = NumericType::NONE;
+		if (!FSNumericConversion::promote_integer_pair(p_left.type.numeric_type, p_right.type.numeric_type, promoted) ||
+				numeric_type_carrier(promoted) != Variant::INT) {
+			return true;
+		}
+		r_type = FSNumericOps::operation_type(promoted, Variant::INT);
+		r_widen_left = left_carrier == Variant::UINT;
+		r_widen_right = p_right.type.builtin_type == Variant::UINT;
 		return true;
 	}
 
@@ -901,9 +922,27 @@ void FSByteCodeGenerator::write_unary_operator(const Address &p_target, Variant:
 #endif
 }
 
+FSCodeGenerator::Address FSByteCodeGenerator::write_widen_uint_binary_operand(const Address &p_operand) {
+	FSDataType widened_type;
+	widened_type.kind = FSDataType::BUILTIN;
+	widened_type.builtin_type = Variant::INT;
+	widened_type.numeric_type = NumericType::INT64;
+	Address widened(Address::TEMPORARY, add_temporary(widened_type), widened_type);
+	Vector<Address> arguments;
+	arguments.push_back(p_operand);
+	write_construct(widened, Variant::INT, arguments, NumericType::INT64);
+	return widened;
+}
+
 void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant::Operator p_operator, const Address &p_left_operand, const Address &p_right_operand) {
 	NumericType binary_numeric_type = NumericType::NONE;
-	if (_checked_binary_type(p_operator, p_target, p_left_operand, p_right_operand, binary_numeric_type)) {
+	bool widen_left = false;
+	bool widen_right = false;
+	if (_checked_binary_type(p_operator, p_target, p_left_operand, p_right_operand, binary_numeric_type, widen_left, widen_right)) {
+		// Temporaries are a stack: whichever widened operand is allocated first must be popped last.
+		Address left_operand = widen_left ? write_widen_uint_binary_operand(p_left_operand) : p_left_operand;
+		Address right_operand = widen_right ? write_widen_uint_binary_operand(p_right_operand) : p_right_operand;
+
 		if (p_target.mode == Address::TEMPORARY && binary_numeric_type != NumericType::NONE) {
 			const Variant::Type result_carrier = numeric_type_carrier(binary_numeric_type);
 			if (temporaries[p_target.address].type != result_carrier) {
@@ -911,11 +950,18 @@ void FSByteCodeGenerator::write_binary_operator(const Address &p_target, Variant
 			}
 		}
 		append_opcode(FSFunction::OPCODE_NUMERIC_BINARY);
-		append(p_left_operand);
-		append(p_right_operand);
+		append(left_operand);
+		append(right_operand);
 		append(p_target);
 		append(p_operator);
 		append(int(binary_numeric_type));
+
+		if (widen_right) {
+			pop_temporary();
+		}
+		if (widen_left) {
+			pop_temporary();
+		}
 		return;
 	}
 

@@ -4,15 +4,13 @@ func test():
 	var l: long = 3L
 	var ul: ulong = 4UL
 
-	# No integer type holds every value of both operands, in either order.
+	# No integer type holds every value of both operands, in either order. `int`/`uint` and `uint`/`long`
+	# are not here: design section 6.1 promotes both pairs to `long`, since every value on each side is
+	# representable there (see the `fixed_width_integer_promotions.fs` feature fixture).
 	var long_ulong: ulong = l + ul
 	var ulong_long: ulong = ul + l
 	var int_ulong: ulong = i + ul
 	var ulong_int: ulong = ul + i
-	var int_uint: long = i + u
-	var uint_int: long = u + i
-	var uint_long: long = u + l
-	var long_uint: long = l + u
 
 	# A dynamic value may not narrow or cross signedness.
 	var narrowed: uint = ul
