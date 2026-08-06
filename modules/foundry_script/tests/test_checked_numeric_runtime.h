@@ -242,6 +242,12 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A failed checked cast leaves
 // checking it, so an out-of-range value used to trip a `DEV_ASSERT` in dev builds and silently keep
 // whatever bit pattern the carrier held in release. The constructor call is routed through the same
 // checked-numeric machinery `as` casts use, so the failure is a stable runtime error in every build.
+//
+// `int(...)` also declares the narrower 32-bit width, not its 64-bit `INT` carrier's full range (see
+// the builtin-constructor typing in `FSAnalyzer::reduce_call`), so a value above `INT32_MAX` and
+// at or below `INT64_MAX` must still be refused even though it fits the carrier: checking only the
+// carrier's widest range here would silently accept a value `int` cannot hold, exactly the failure
+// mode a plain `as int` cast on the same value already rejects.
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A signedness-crossing constructor call is checked") {
 	ScopedCheckedNumericLanguage language;
 
@@ -261,6 +267,17 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A signedness-crossing constr
 	ERR_PRINT_ON;
 	REQUIRE(error.error == Callable::CallError::CALL_OK);
 	CHECK(failed_result.get_type() == Variant::NIL);
+
+	// This value fits `int`'s 64-bit carrier but not its declared 32-bit width, and used to be
+	// accepted when the checked cast validated at the carrier's widest range instead of `int`'s
+	// declared width.
+	const Variant beyond_declared_width = uint64_t(int64_t(INT32_MAX) + 1);
+	const Variant *beyond_declared_width_arguments[] = { &beyond_declared_width };
+	ERR_PRINT_OFF;
+	const Variant beyond_declared_width_result = object->callp(SNAME("cast_to_int"), beyond_declared_width_arguments, 1, error);
+	ERR_PRINT_ON;
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(beyond_declared_width_result.get_type() == Variant::NIL);
 
 	const Variant in_range = uint64_t(9);
 	const Variant *in_range_arguments[] = { &in_range };

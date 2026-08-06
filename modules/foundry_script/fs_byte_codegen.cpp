@@ -2026,7 +2026,7 @@ void FSByteCodeGenerator::write_lambda(const Address &p_target, FSFunction *p_fu
 	ct.cleanup();
 }
 
-void FSByteCodeGenerator::write_construct(const Address &p_target, Variant::Type p_type, const Vector<Address> &p_arguments) {
+void FSByteCodeGenerator::write_construct(const Address &p_target, Variant::Type p_type, const Vector<Address> &p_arguments, NumericType p_declared_numeric_type) {
 	// A single-argument constructor call that crosses the signed/unsigned 64-bit carrier boundary
 	// (`int(some_ulong)`, or a future `uint(some_long)`) cannot be proven in range at compile time: the
 	// source is an arbitrary runtime value. `Variant`'s validated constructors for that pair only
@@ -2034,16 +2034,20 @@ void FSByteCodeGenerator::write_construct(const Address &p_target, Variant::Type
 	// validated-constructor fast path below would trip a `DEV_ASSERT` in dev builds and leave the
 	// destination holding whatever bit pattern the carrier produced in release. Route it through the
 	// same checked-numeric machinery `as` casts use instead, so an out-of-range value is a stable
-	// runtime error in every build.
+	// runtime error in every build. `int(...)` declares a narrower width than its `INT` carrier (see
+	// the analyzer's builtin-constructor typing), so the check is made at that declared width, exactly
+	// as `write_cast` checks an `as` cast at the destination's declared width rather than at the wide
+	// carrier.
 	if (p_arguments.size() == 1 && HAS_BUILTIN_TYPE(p_arguments[0])) {
 		const Variant::Type argument_type = p_arguments[0].type.builtin_type;
-		NumericType target_numeric_type = NumericType::NONE;
+		bool is_signedness_crossing = false;
 		if (p_type == Variant::INT && argument_type == Variant::UINT) {
-			target_numeric_type = NumericType::INT64;
+			is_signedness_crossing = true;
 		} else if (p_type == Variant::UINT && argument_type == Variant::INT) {
-			target_numeric_type = NumericType::UINT64;
+			is_signedness_crossing = true;
 		}
-		if (target_numeric_type != NumericType::NONE) {
+		if (is_signedness_crossing) {
+			const NumericType target_numeric_type = FSNumericOps::operation_type(p_declared_numeric_type, p_type);
 			append_opcode(FSFunction::OPCODE_NUMERIC_CAST);
 			append(p_arguments[0]);
 			CallTarget ct = get_call_target(p_target);

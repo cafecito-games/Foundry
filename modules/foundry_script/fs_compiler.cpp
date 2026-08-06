@@ -1443,7 +1443,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					gen->pop_temporary();
 				}
 			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && FSParser::get_builtin_type(call->function_name) < Variant::VARIANT_MAX) {
-				gen->write_construct(result, FSParser::get_builtin_type(call->function_name), arguments);
+				gen->write_construct(result, FSParser::get_builtin_type(call->function_name), arguments, call->get_datatype().numeric_type);
 			} else if (!call->is_super && call->callee->type == FSParser::Node::IDENTIFIER && Variant::has_utility_function(call->function_name)) {
 				// Variant utility function.
 				gen->write_call_utility(result, call->function_name, arguments);
