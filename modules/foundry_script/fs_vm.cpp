@@ -2358,16 +2358,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				Variant erased_index = *index;
 				Variant erased_value = *value;
-#ifdef DEBUG_ENABLED
+				// Collision rejection is a data-loss guard, not a debug-only type-safety nicety, so it runs
+				// in every build configuration: a release build must not silently commit an emptied-out
+				// dictionary just because the DEBUG_ENABLED-only validation below it is skipped.
 				String erasure_error;
 				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value, &erasure_error);
 				if (!erasure_error.is_empty()) {
 					err_text = erasure_error;
 					OPCODE_BREAK;
 				}
-#else
-				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value);
-#endif
 				const Variant *index_arg = erased ? &erased_index : index;
 				const Variant *value_arg = erased ? &erased_value : value;
 
@@ -2419,16 +2418,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				Variant erased_index = *index;
 				Variant erased_value = *value;
-#ifdef DEBUG_ENABLED
+				// Same reasoning as OPCODE_SET_KEYED: this rejects data loss, not a type mismatch, so it
+				// must run in release builds too.
 				String erasure_error;
 				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value, &erasure_error);
 				if (!erasure_error.is_empty()) {
 					err_text = erasure_error;
 					OPCODE_BREAK;
 				}
-#else
-				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value);
-#endif
 				const Variant *index_arg = erased ? &erased_index : index;
 				const Variant *value_arg = erased ? &erased_value : value;
 
@@ -3520,7 +3517,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				array.resize(argc);
 				for (int i = 0; i < argc; i++) {
 					Variant value = *(instruction_args[i]);
-					_erase_specialized_handles_for_container_type(element_type, value);
+					// An element can itself be a typed dictionary whose keys collide under erasure (e.g.
+					// `Array[Dictionary[Script, int]]`); route through the same error channel as the
+					// dictionary-literal path instead of silently emptying it.
+					String erasure_error;
+					_erase_specialized_handles_for_container_type(element_type, value, &erasure_error);
+					if (!erasure_error.is_empty()) {
+						err_text = erasure_error;
+						OPCODE_BREAK;
+					}
 					// Use .set instead of operator[] to handle type conversion / validation.
 					array.set(i, value);
 				}
@@ -3631,11 +3636,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					// the same key are checked against the dictionary as constructed so far, same as `set()`.
 					String erasure_error;
 					FoundryScript::erase_specialized_class_handle_for_dictionary_set_key(key_type, dict, key, &erasure_error);
+					if (erasure_error.is_empty()) {
+						// The value can itself be a typed dictionary whose own keys collide under erasure
+						// (e.g. `Dictionary[Script, Dictionary[Script, int]]`); route through the same error
+						// channel instead of silently emptying it.
+						_erase_specialized_handles_for_container_type(value_type, value, &erasure_error);
+					}
 					if (!erasure_error.is_empty()) {
 						err_text = erasure_error;
 						OPCODE_BREAK;
 					}
-					_erase_specialized_handles_for_container_type(value_type, value);
 					// Use .set instead of operator[] to handle type conversion / validation.
 					dict.set(key, value);
 				}
@@ -3740,7 +3750,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_INSTRUCTION_ARG(base, argc);
 				Vector<Variant> erased_arg_storage;
 				Vector<const Variant *> erased_argptr_storage;
-#ifdef DEBUG_ENABLED
+				// Collision rejection is a data-loss guard, not a debug-only type-safety nicety (see
+				// OPCODE_SET_KEYED above), so it runs in every build configuration.
 				String erasure_error;
 				const Variant **argptrs = _erase_specialized_handles_for_typed_container_call(
 						base, *methodname, instruction_args, argc, erased_arg_storage, erased_argptr_storage, &erasure_error);
@@ -3748,10 +3759,6 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					err_text = erasure_error;
 					OPCODE_BREAK;
 				}
-#else
-				const Variant **argptrs = _erase_specialized_handles_for_typed_container_call(
-						base, *methodname, instruction_args, argc, erased_arg_storage, erased_argptr_storage);
-#endif
 
 #ifdef DEBUG_ENABLED
 				uint64_t call_time = 0;
@@ -4396,7 +4403,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				const StringName method_name = method_idx < builtin_method_names.size() ? builtin_method_names[method_idx] : StringName();
 				Vector<Variant> erased_arg_storage;
 				Vector<const Variant *> erased_argptr_storage;
-#ifdef DEBUG_ENABLED
+				// Collision rejection is a data-loss guard, not a debug-only type-safety nicety (see
+				// OPCODE_SET_KEYED above), so it runs in every build configuration.
 				String erasure_error;
 				const Variant **argptrs = _erase_specialized_handles_for_typed_container_call(
 						base, method_name, instruction_args, argc, erased_arg_storage, erased_argptr_storage, &erasure_error);
@@ -4404,10 +4412,6 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					err_text = erasure_error;
 					OPCODE_BREAK;
 				}
-#else
-				const Variant **argptrs = _erase_specialized_handles_for_typed_container_call(
-						base, method_name, instruction_args, argc, erased_arg_storage, erased_argptr_storage);
-#endif
 
 				GET_INSTRUCTION_ARG(ret, argc + 1);
 				method(base, argptrs, argc, ret);
