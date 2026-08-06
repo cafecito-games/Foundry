@@ -7582,6 +7582,94 @@ class Impl uses Mixin:
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript] FSReflection names a nullable typed-container element by its declared spelling") {
+	ScopedFSNativeGlobals native_globals;
+	FSParser parser;
+	Error err = parser.parse(R"(
+namespace cafecito.reflect_nullable_element_cpp
+
+class Sample:
+	var readings: Array[ulong?] = []
+	var lookup: Dictionary[String, Node?] = {}
+
+	func measure(values: Array[ulong?], names: Dictionary[String, int?]) -> Array[Node?]:
+		return []
+)",
+			"user://nullable_container_element_reflection_cpp.fs", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSCompiler compiler;
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path("user://nullable_container_element_reflection_cpp.fs");
+
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const HashMap<StringName, Ref<FoundryScript>> &subclasses = script->get_subclasses();
+	CHECK(subclasses.has(SNAME("Sample")));
+	if (!subclasses.has(SNAME("Sample"))) {
+		return;
+	}
+	Ref<FoundryScript> sample = subclasses[SNAME("Sample")];
+
+	Ref<FSReflection> reflection;
+	reflection.instantiate();
+
+	Ref<FSMethodDescriptor> measure;
+	const TypedArray<FSMethodDescriptor> methods = reflection->get_method_descriptors(sample);
+	for (int i = 0; i < methods.size(); i++) {
+		Ref<FSMethodDescriptor> method = methods[i];
+		if (method.is_valid() && method->get_method_name() == SNAME("measure")) {
+			measure = method;
+		}
+	}
+	CHECK(measure.is_valid());
+	if (measure.is_valid()) {
+		// The compiled descriptor is the only place that still knows a container element was declared
+		// nullable; erasing it there renders every nullable element as `Array[Variant]`.
+		const PackedStringArray argument_type_names = measure->get_argument_type_names();
+		CHECK_EQ(argument_type_names.size(), 2);
+		if (argument_type_names.size() == 2) {
+			CHECK_EQ(argument_type_names[0], "Array[ulong?]");
+			CHECK_EQ(argument_type_names[1], "Dictionary[String, int?]");
+		}
+		CHECK_EQ(measure->get_return_type_name(), "Array[Node?]");
+	}
+
+	HashMap<StringName, String> property_type_names;
+	const TypedArray<FSPropertyDescriptor> properties = reflection->get_property_descriptors(sample);
+	for (int i = 0; i < properties.size(); i++) {
+		Ref<FSPropertyDescriptor> property = properties[i];
+		if (property.is_valid()) {
+			property_type_names[property->get_property_name()] = property->get_type_name();
+		}
+	}
+	CHECK(property_type_names.has(SNAME("readings")));
+	if (property_type_names.has(SNAME("readings"))) {
+		CHECK_EQ(property_type_names[SNAME("readings")], "Array[ulong?]");
+	}
+	CHECK(property_type_names.has(SNAME("lookup")));
+	if (property_type_names.has(SNAME("lookup"))) {
+		CHECK_EQ(property_type_names[SNAME("lookup")], "Dictionary[String, Node?]");
+	}
+}
+
 TEST_CASE("[Modules][FoundryScript] FSReflection exposes parameter annotation metadata") {
 	ScopedFSNativeGlobals native_globals;
 	FSParser parser;
