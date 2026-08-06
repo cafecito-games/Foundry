@@ -93,10 +93,19 @@ TEST_CASE("[DocData] synthetic AsyncCallable type links to the Callable class pa
 	CHECK(DocData::get_type_link_target("AsyncCallable") == "Callable");
 }
 
+TEST_CASE("[DocData] declared integer widths link to the page documenting their carrier") {
+	// `long` and `ulong` are source spellings of the two integer carriers and have no class help
+	// page of their own, so the width stays in the rendered text while the link resolves to the
+	// carrier's page. The carrier spellings keep addressing themselves.
+	CHECK(DocData::get_type_link_target("long") == "int");
+	CHECK(DocData::get_type_link_target("ulong") == "uint");
+	CHECK(DocData::get_type_link_target("int") == "int");
+	CHECK(DocData::get_type_link_target("uint") == "uint");
+}
+
 TEST_CASE("[DocData] non-synthetic types keep their own link target") {
 	CHECK(DocData::get_type_link_target("Callable") == "Callable");
 	CHECK(DocData::get_type_link_target("Node") == "Node");
-	CHECK(DocData::get_type_link_target("int") == "int");
 	CHECK(DocData::get_type_link_target("") == "");
 }
 

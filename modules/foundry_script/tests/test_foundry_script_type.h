@@ -1140,6 +1140,55 @@ TEST_CASE("[Modules][FoundryScript] Async method reference infers a bare AsyncCa
 }
 
 #ifdef TOOLS_ENABLED
+TEST_CASE("[Modules][FoundryScript] Docgen renders declared integer widths") {
+	FSParser parser;
+	Error err = parser.parse(
+			"var narrow: int\n"
+			"var unsigned_narrow: uint\n"
+			"var wide: long\n"
+			"var unsigned_wide: ulong\n"
+			"var widths: Array[long]\n"
+			"var lookup: Dictionary[ulong, long]\n"
+			"func measure(amount: ulong) -> long:\n"
+			"\treturn 0L\n",
+			"user://fixed_width_docgen.fs", false);
+	REQUIRE(err == OK);
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	REQUIRE(err == OK);
+
+	const FSParser::ClassNode *root_class = parser.get_tree();
+	REQUIRE(root_class != nullptr);
+
+	Ref<FoundryScript> script;
+	script.instantiate();
+	FSDocGen::generate_docs(script.ptr(), root_class);
+
+	const Vector<DocData::ClassDoc> docs = script->get_documentation();
+	REQUIRE(docs.size() == 1);
+	REQUIRE(docs[0].properties.size() == 6);
+	// The carrier a value travels in is shared by two widths, so the class reference documents the
+	// declared source type instead.
+	CHECK(docs[0].properties[0].type == "int");
+	CHECK(docs[0].properties[1].type == "uint");
+	CHECK(docs[0].properties[2].type == "long");
+	CHECK(docs[0].properties[3].type == "ulong");
+	// A nested descriptor survives the container spellings.
+	CHECK(docs[0].properties[4].type == "long[]");
+	CHECK(docs[0].properties[5].type == "Dictionary[ulong, long]");
+
+	HashMap<String, DocData::MethodDoc> methods_by_name;
+	for (const DocData::MethodDoc &method : docs[0].methods) {
+		methods_by_name[method.name] = method;
+	}
+	REQUIRE(methods_by_name.has("measure"));
+	const DocData::MethodDoc &measure = methods_by_name["measure"];
+	CHECK(measure.return_type == "long");
+	REQUIRE(measure.arguments.size() == 1);
+	CHECK(measure.arguments[0].type == "ulong");
+}
+
 TEST_CASE("[Modules][FoundryScript] Docgen renders AsyncCallable parameter and return types") {
 	FSParser parser;
 	Error err = parser.parse("var handler: AsyncCallable[[int], bool]\n", "user://async_callable_docgen.fs", false);

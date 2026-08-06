@@ -102,7 +102,7 @@ static String _doccontainer_type_from_container_type(const ContainerType &p_type
 	if (p_type.class_name != StringName()) {
 		return p_type.class_name;
 	}
-	return Variant::get_type_name(p_type.builtin_type);
+	return FSParser::get_builtin_type_source_name(p_type.builtin_type, p_type.numeric_type);
 }
 
 // Qualifies the nominal identity of a script-declared type (enum or named tuple) for the class
@@ -214,7 +214,9 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 				r_type = "AsyncCallable";
 				return;
 			}
-			r_type = Variant::get_type_name(p_gdtype.builtin_type);
+			// A declared integer width is part of the documented type, so the class reference names
+			// the source type rather than the carrier the two widths share.
+			r_type = FSParser::get_builtin_type_source_name(p_gdtype.builtin_type, p_gdtype.numeric_type);
 			return;
 		case GDType::NATIVE:
 			if (p_gdtype.is_meta_type) {
