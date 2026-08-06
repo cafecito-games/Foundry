@@ -48,6 +48,9 @@ TEST_CASE("[Variant] char32_t and char16_t construct the signed carrier") {
 
 	const Variant emoji = char32_t(0x1F600);
 	CHECK(emoji.operator int64_t() == 0x1F600);
+
+	const Variant surrogate = char16_t(0xFFFF);
+	CHECK(surrogate.operator int64_t() == 0xFFFF);
 	CHECK(emoji.stringify() == "128512");
 }
 
