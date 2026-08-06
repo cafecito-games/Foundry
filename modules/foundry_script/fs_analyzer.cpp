@@ -14741,9 +14741,16 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 	// table names a common type for exactly two such pairs (`int`,`uint` and `uint`,`long`, both
 	// promoting to `long`), because every value on each side is representable there. Code generation
 	// widens the `uint` operand into that shared carrier before the checked-numeric evaluator runs, so
-	// this only ever applies to the operations that evaluator handles.
+	// this only ever applies to the operations that evaluator handles. A shift is excluded even though
+	// `FSNumericOps` handles it: a shift is not a promotion, its result keeps the left operand's own
+	// width and carrier rather than a common one, and code generation's checked-shift path (see
+	// `_checked_binary_type()` in fs_byte_codegen.cpp) never widens the right-hand count -- it only
+	// reads it as a count, on whichever carrier it already has. Admitting a mixed pair here would give
+	// the expression a `long` result the shift is never checked at.
 	if (!validated && a_type != b_type && (a_type == Variant::INT || a_type == Variant::UINT) &&
-			(b_type == Variant::INT || b_type == Variant::UINT) && FSNumericOps::handles_operation(p_operation)) {
+			(b_type == Variant::INT || b_type == Variant::UINT) &&
+			p_operation != Variant::OP_SHIFT_LEFT && p_operation != Variant::OP_SHIFT_RIGHT &&
+			FSNumericOps::handles_operation(p_operation)) {
 		NumericType promoted = NumericType::NONE;
 		if (FSNumericConversion::promote_integer_pair(_operand_numeric_type(p_a), _operand_numeric_type(p_b), promoted) &&
 				numeric_type_carrier(promoted) == Variant::INT) {

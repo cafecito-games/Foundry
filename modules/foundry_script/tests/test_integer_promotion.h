@@ -495,6 +495,26 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] A mixed signed/unsigned operan
 	REQUIRE(int_uint_mixed.parse_error == OK);
 	CHECK_MESSAGE(int_uint_mixed.first_error().is_empty(), int_uint_mixed.first_error());
 	check_initializer_type(int_uint_mixed, "sum", Variant::INT, NumericType::INT64);
+
+	// A shift is not a promotion: its result keeps the left operand's own width and carrier rather than
+	// a common one (see `_checked_binary_type()` in fs_byte_codegen.cpp), so a mixed `int`/`uint` shift
+	// still needs an explicit conversion even though `+` no longer does (#1771 review finding). Admitting
+	// it here would give the expression a `long` result code generation never checks the shift at.
+	const AnalyzedSnippet shift_mixed_carriers(
+			"func test():\n"
+			"\tvar i: int = 1\n"
+			"\tvar u: uint = 31U\n"
+			"\tprint(i << u)\n");
+	CHECK(shift_mixed_carriers.parse_error == OK);
+	CHECK(shift_mixed_carriers.first_error().contains("Convert both to \"long\" explicitly."));
+
+	const AnalyzedSnippet shift_mixed_carriers_reversed(
+			"func test():\n"
+			"\tvar u: uint = 1U\n"
+			"\tvar l: long = 40L\n"
+			"\tprint(u << l)\n");
+	CHECK(shift_mixed_carriers_reversed.parse_error == OK);
+	CHECK(shift_mixed_carriers_reversed.first_error().contains("Convert both to \"long\" explicitly."));
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] Ordering compares across carriers without a common type") {
