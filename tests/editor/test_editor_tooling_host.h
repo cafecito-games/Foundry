@@ -570,49 +570,34 @@ static bool write_scratch_file(const String &p_path, const String &p_contents) {
 	return true;
 }
 
-enum ToolingCommandForm {
-	TOOLING_COMMAND_TOOLING_SERVE,
-	TOOLING_COMMAND_LSP_SERVE,
-};
-
-static List<String> build_tooling_host_arguments(ToolingCommandForm p_form, const String &p_project, int p_lsp_port,
-		int p_dap_port, bool p_quiet) {
+static List<String> build_tooling_host_arguments(const String &p_project, int p_lsp_port, int p_dap_port, bool p_quiet) {
 	List<String> arguments;
-	if (p_form == TOOLING_COMMAND_TOOLING_SERVE) {
-		arguments.push_back("tooling");
-	} else {
-		arguments.push_back("lsp");
-	}
+	arguments.push_back("tooling");
 	arguments.push_back("serve");
 	if (p_quiet) {
 		arguments.push_back("--quiet");
 	}
 	arguments.push_back("--project");
 	arguments.push_back(p_project);
-	if (p_form == TOOLING_COMMAND_TOOLING_SERVE) {
-		arguments.push_back("--lsp-port");
-		arguments.push_back(String::num_int64(p_lsp_port));
-		arguments.push_back("--dap-port");
-		arguments.push_back(String::num_int64(p_dap_port));
-	} else {
-		arguments.push_back("--port");
-		arguments.push_back(String::num_int64(p_lsp_port));
-	}
+	arguments.push_back("--lsp-port");
+	arguments.push_back(String::num_int64(p_lsp_port));
+	arguments.push_back("--dap-port");
+	arguments.push_back(String::num_int64(p_dap_port));
 	return arguments;
 }
 
 // Runs one invalid-project invocation and asserts the whole failure contract: a single
 // structured stdout record, the matching stderr diagnostic, a self-driven nonzero exit,
 // no readiness record, and no bound listener.
-static void check_invalid_project_rejection(ToolingCommandForm p_form, const String &p_project,
-		const String &p_expected_reason, bool p_quiet = false) {
+static void check_invalid_project_rejection(const String &p_project, const String &p_expected_reason,
+		bool p_quiet = false) {
 	const int lsp_port = reserve_free_local_port();
 	const int dap_port = reserve_free_local_port();
 	REQUIRE_MESSAGE(lsp_port > 0, "Failed to find a free loopback port for the language server.");
 	REQUIRE_MESSAGE(dap_port > 0, "Failed to find a free loopback port for the debug adapter.");
 	REQUIRE_MESSAGE(lsp_port != dap_port, "The tooling host requires distinct ports.");
 
-	const List<String> arguments = build_tooling_host_arguments(p_form, p_project, lsp_port, dap_port, p_quiet);
+	const List<String> arguments = build_tooling_host_arguments(p_project, lsp_port, dap_port, p_quiet);
 	const TerminalRun run = run_tooling_host_to_completion(arguments, 5000);
 	REQUIRE_MESSAGE(run.launched, "Failed to launch the tooling host.");
 	INFO("Tooling host stdout:\n", run.standard_output);
@@ -637,9 +622,7 @@ static void check_invalid_project_rejection(ToolingCommandForm p_form, const Str
 	// than from a bind attempt; these confirm no listener outlived the rejected run. Only
 	// the ports the invocation actually requested are meaningful here.
 	CHECK_FALSE(can_connect_to_local_port(lsp_port));
-	if (p_form == TOOLING_COMMAND_TOOLING_SERVE) {
-		CHECK_FALSE(can_connect_to_local_port(dap_port));
-	}
+	CHECK_FALSE(can_connect_to_local_port(dap_port));
 }
 
 TEST_CASE("[Editor][ToolingHost] Invalid project records name the reason and the resolved path") {
@@ -688,8 +671,7 @@ TEST_CASE("[Editor][ToolingHost] A missing project directory ends the tooling ho
 	REQUIRE_FALSE(root.is_empty());
 	const String absent = root.path_join("absent_project");
 
-	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, absent, "missing_directory");
-	check_invalid_project_rejection(TOOLING_COMMAND_LSP_SERVE, absent, "missing_directory");
+	check_invalid_project_rejection(absent, "missing_directory");
 }
 
 TEST_CASE("[Editor][ToolingHost] A file passed as the project ends the tooling host immediately") {
@@ -698,8 +680,7 @@ TEST_CASE("[Editor][ToolingHost] A file passed as the project ends the tooling h
 	const String file_path = root.path_join("project.foundry");
 	REQUIRE(write_scratch_file(file_path, ""));
 
-	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, file_path, "not_directory");
-	check_invalid_project_rejection(TOOLING_COMMAND_LSP_SERVE, file_path, "not_directory");
+	check_invalid_project_rejection(file_path, "not_directory");
 }
 
 TEST_CASE("[Editor][ToolingHost] Only a direct project.foundry satisfies the tooling preflight") {
@@ -712,19 +693,53 @@ TEST_CASE("[Editor][ToolingHost] Only a direct project.foundry satisfies the too
 	// An exported project binary is not a source project.
 	REQUIRE(write_scratch_file(root.path_join("packed/project.binary"), ""));
 
-	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, root, "missing_project_file");
-	check_invalid_project_rejection(TOOLING_COMMAND_LSP_SERVE, root, "missing_project_file");
-	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, root.path_join("test_project/scripts"),
+	check_invalid_project_rejection(root, "missing_project_file");
+	check_invalid_project_rejection(root.path_join("test_project/scripts"),
 			"missing_project_file");
-	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, root.path_join("packed"), "missing_project_file");
+	check_invalid_project_rejection(root.path_join("packed"), "missing_project_file");
 }
 
 TEST_CASE("[Editor][ToolingHost] The invalid-project record survives suppressed logging") {
 	const String root = make_invalid_project_scratch_dir("quiet_invalid");
 	REQUIRE_FALSE(root.is_empty());
 
-	check_invalid_project_rejection(TOOLING_COMMAND_TOOLING_SERVE, root, "missing_project_file", true);
-	check_invalid_project_rejection(TOOLING_COMMAND_LSP_SERVE, root, "missing_project_file", true);
+	check_invalid_project_rejection(root, "missing_project_file", true);
+}
+
+TEST_CASE("[Editor][ToolingHost] The removed lsp serve command reports the tooling serve migration") {
+	// A valid project isolates the removal from the invalid-project preflight: the
+	// command has to fail on the command name alone, before any startup work.
+	const String root = make_invalid_project_scratch_dir("removed_lsp_serve");
+	REQUIRE_FALSE(root.is_empty());
+	REQUIRE(write_scratch_file(root.path_join("project.foundry"), ""));
+
+	const int lsp_port = reserve_free_local_port();
+	REQUIRE_MESSAGE(lsp_port > 0, "Failed to find a free loopback port for the language server.");
+
+	List<String> arguments;
+	arguments.push_back("lsp");
+	arguments.push_back("serve");
+	arguments.push_back("--project");
+	arguments.push_back(root);
+	arguments.push_back("--port");
+	arguments.push_back(String::num_int64(lsp_port));
+
+	const TerminalRun run = run_tooling_host_to_completion(arguments, 5000);
+	REQUIRE_MESSAGE(run.launched, "Failed to launch the removed command.");
+	INFO("stdout:\n", run.standard_output);
+	INFO("stderr:\n", run.standard_error);
+	REQUIRE_MESSAGE(run.exited, "The removed command did not exit on its own.");
+	CHECK_MESSAGE(run.exit_code != 0, "The removed command must exit nonzero.");
+
+	CHECK(run.standard_error.contains("`foundry lsp serve` has been removed."));
+	CHECK(run.standard_error.contains("foundry tooling serve --project <dir> --lsp-port <port> --dap-port <port>"));
+
+	// This is a CLI migration error, not a tooling-host startup error.
+	CHECK_FALSE(run.standard_output.contains("FOUNDRY_TOOLING "));
+	CHECK_FALSE(run.standard_output.contains("FOUNDRY_TOOLING {"));
+	CHECK_FALSE(run.standard_output.contains("FOUNDRY_TOOLING_ERROR"));
+	CHECK_FALSE(run.standard_error.contains("FOUNDRY_TOOLING_ERROR"));
+	CHECK_FALSE(can_connect_to_local_port(lsp_port));
 }
 
 TEST_CASE("[Editor][ToolingHost] An empty project.foundry passes the preflight and reaches readiness") {
@@ -732,7 +747,7 @@ TEST_CASE("[Editor][ToolingHost] An empty project.foundry passes the preflight a
 	REQUIRE_FALSE(root.is_empty());
 	REQUIRE(write_scratch_file(root.path_join("project.foundry"), ""));
 
-	const List<String> arguments = build_tooling_host_arguments(TOOLING_COMMAND_TOOLING_SERVE, root, 0, 0, false);
+	const List<String> arguments = build_tooling_host_arguments(root, 0, 0, false);
 	HostProcess host = launch_tooling_host(arguments);
 	REQUIRE_MESSAGE(host.is_valid(), "Failed to launch the tooling host.");
 
