@@ -4163,8 +4163,8 @@ void FSAnalyzer::resolve_function_body(FSParser::FunctionNode *p_function, bool 
 		p_function->set_datatype(p_function->body->get_datatype());
 	} else if (p_function->get_datatype().is_hard_type() && (p_function->get_datatype().kind != FSParser::DataType::BUILTIN || p_function->get_datatype().builtin_type != Variant::NIL)) {
 		if (!body_exit.always_terminates && (p_is_lambda || p_function->identifier->name != FSLanguage::get_singleton()->strings._init)) {
-			// When a trailing `match` is what leaves the fallthrough open, name the gap; the
-			// non-exhaustiveness warning is never reached once this error is reported.
+			// When a trailing `match` is what leaves the fallthrough open, name the gap: the error is
+			// what stops the build, and warnings are not surfaced everywhere errors are.
 			const FSParser::MatchNode *incomplete_match = find_non_covering_match_cause(p_function->body);
 			if (incomplete_match != nullptr) {
 				push_error(vformat(R"(Not all code paths return a value. The "match" over "%s" does not cover: %s.)", incomplete_match->subject_domain_name, incomplete_match->uncovered_domain_values), p_function);
