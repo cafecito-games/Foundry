@@ -578,10 +578,10 @@ private:
 	void resolve_while(FSParser::WhileNode *p_while);
 	void resolve_assert(FSParser::AssertNode *p_assert);
 	void resolve_match(FSParser::MatchNode *p_match);
-#ifdef DEBUG_ENABLED
 	void check_match_exhaustiveness(FSParser::MatchNode *p_match);
-	void check_tagged_union_match_exhaustiveness(FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type);
-#endif
+	bool collect_uncovered_tagged_union_cases(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, Vector<String> &r_uncovered) const;
+	bool collect_uncovered_finite_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const;
+	const FSParser::MatchNode *find_non_covering_match_cause(const FSParser::SuiteNode *p_suite) const;
 	void resolve_match_branch(FSParser::MatchBranchNode *p_match_branch, FSParser::ExpressionNode *p_match_test);
 	void resolve_match_pattern(FSParser::PatternNode *p_match_pattern, FSParser::ExpressionNode *p_match_test, const FSParser::DataType *p_match_test_type = nullptr);
 	void resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern, const FSParser::DataType *p_match_test_type);

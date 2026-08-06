@@ -1320,6 +1320,12 @@ Rules:
 - Exhaustiveness over a tagged union counts a case as handled by a bind or wildcard branch, by a
   payload-less case value, or by a case pattern whose sub-patterns are all irrefutable
   (binds/wildcards, recursively). A refutable sub-pattern such as `Move(0, y)` covers nothing.
+- A guarded branch never contributes coverage, since its guard can fail, and a `match` over a
+  nullable subject is exhaustive only when a `null` pattern (or a wildcard) is also present.
+- Exhaustiveness is normative for flow analysis, not only for diagnostics: a `match` over a finite
+  domain — a tagged union, a plain enum, or `bool` — whose branches cover the whole domain and all
+  terminate is itself terminating, so a value-returning function needs no trailing `return` after
+  it. The same holds for a `match` with a wildcard branch.
 
 ---
 

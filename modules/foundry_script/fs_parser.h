@@ -1521,6 +1521,14 @@ public:
 	struct MatchNode : public Node {
 		ExpressionNode *test = nullptr;
 		Vector<MatchBranchNode *> branches;
+		// Set by the analyzer when the branches provably cover every value the subject can take, so a
+		// `match` whose branches all terminate is itself terminating for flow analysis. Computed in
+		// every build configuration: flow finality decides whether a program compiles.
+		bool covers_subject_domain = false;
+		// Display name of the subject's domain and the comma-joined values it leaves uncovered. Only
+		// populated for the finite domains coverage is computed over; used by diagnostics.
+		String subject_domain_name;
+		String uncovered_domain_values;
 
 		MatchNode() {
 			type = MATCH;
