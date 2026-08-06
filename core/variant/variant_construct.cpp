@@ -66,10 +66,16 @@ void Variant::_register_variant_constructors() {
 
 	add_constructor<VariantConstructNoArgs<int64_t>>(sarray());
 	add_constructor<VariantConstructor<int64_t, int64_t>>(sarray("from"));
+	// Registered before the `double` constructor below: `Variant::construct()` picks the first
+	// registered constructor whose declared argument type `Variant::can_convert_strict()`-accepts the
+	// call argument, not the first exact type match, and `UINT` now strict-converts to `FLOAT` (design
+	// section 6.1). A `UINT` argument must land on this checked, range-validated constructor instead of
+	// silently round-tripping through the unchecked `int64_t(double(...))` conversion the `double`
+	// constructor performs.
+	add_constructor<VariantConstructorIntFromUInt>(sarray("from"));
 	add_constructor<VariantConstructor<int64_t, double>>(sarray("from"));
 	add_constructor<VariantConstructor<int64_t, bool>>(sarray("from"));
 	add_constructor<VariantConstructorFromString<int64_t>>(sarray("from"));
-	add_constructor<VariantConstructorIntFromUInt>(sarray("from"));
 
 	add_constructor<VariantConstructNoArgsUInt>(sarray());
 	add_constructor<VariantConstructorUInt>(sarray("from"));
@@ -80,6 +86,7 @@ void Variant::_register_variant_constructors() {
 	add_constructor<VariantConstructor<double, int64_t>>(sarray("from"));
 	add_constructor<VariantConstructor<double, bool>>(sarray("from"));
 	add_constructor<VariantConstructorFromString<double>>(sarray("from"));
+	add_constructor<VariantConstructorFloatFromUInt>(sarray("from"));
 
 	add_constructor<VariantConstructNoArgs<String>>(sarray());
 	add_constructor<VariantConstructor<String, String>>(sarray("from"));

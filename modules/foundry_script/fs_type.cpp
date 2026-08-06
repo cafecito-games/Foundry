@@ -618,12 +618,12 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				? FSNumericConversion::classify(p_target, p_source, p_options.constant_source_value)
 				: FSNumericConversion::Conversion::INVALID;
 		// Both carriers are integer: `int`/`uint` crossing to `long`/`ulong` (design section 6.1). The
-		// floating side is excluded here even though `classify()` can also prove a `long`/`ulong`
-		// constant exactly representable as `float`: `Variant::construct()` (the fallback the caller
-		// uses once compatibility is granted) has no registered `UINT` -> `FLOAT` conversion, so
-		// admitting that pairing here would trade a clear type error for a confusing conversion failure
-		// instead of actually implementing the carve-out. `int`/`long` sources already reach `float`
-		// through `Variant::can_convert_strict()` above and are unaffected.
+		// floating side is excluded here because it needs no constant carve-out of its own:
+		// `Variant::can_convert_strict()` above already answers unconditionally for every integer
+		// carrier reaching `float` (`int`/`uint` because every 32-bit value is exactly representable,
+		// `long`/`ulong` because the existing `int64_t` -> `double` conversion is unconditional too), and
+		// the `both_numeric` block below narrows that down to the widths design section 6.1 actually
+		// allows implicitly, still permitting a `long`/`ulong` constant that survives the round trip.
 		const bool both_integer_carriers = both_numeric && p_target.builtin_type != Variant::FLOAT && p_source.builtin_type != Variant::FLOAT;
 		if (!result.compatible && p_options.allow_implicit_conversion && both_integer_carriers &&
 				(conversion == FSNumericConversion::Conversion::CONSTANT_CHECKED ||

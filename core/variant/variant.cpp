@@ -250,6 +250,7 @@ bool Variant::can_convert(Variant::Type p_type_from, Variant::Type p_type_to) {
 			static const Type valid[] = {
 				BOOL,
 				INT,
+				UINT,
 				STRING,
 				NIL,
 			};
@@ -592,6 +593,7 @@ bool Variant::can_convert_strict(Variant::Type p_type_from, Variant::Type p_type
 			static const Type valid[] = {
 				BOOL,
 				INT,
+				UINT,
 				//STRING,
 				NIL,
 			};

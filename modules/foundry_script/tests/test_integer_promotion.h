@@ -584,22 +584,47 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] An unsuffixed constant crosses
 	CHECK(out_of_range.first_error().contains(R"(Cannot assign a value of type "int" as "uint".)"));
 }
 
-TEST_CASE("[Modules][FoundryScript][NumericTypes] The signedness-crossing fix does not reach `uint`/`ulong` -> float") {
+TEST_CASE("[Modules][FoundryScript][NumericTypes] `uint` now reaches `float`, but a non-constant `ulong` still needs a cast") {
 	using namespace TestIntegerPromotion;
 
-	// `classify()` can prove a `ulong` constant exactly representable as `float` (design section 6.1's
-	// floating-side carve-out), but `Variant::construct()` -- the fallback the caller uses once
-	// compatibility is granted -- has no registered `UINT` -> `FLOAT` conversion. `check()` therefore
-	// keeps this pairing exactly as unsupported as it already was rather than trading a clear type
-	// error for a confusing conversion failure; implementing that carve-out for the `uint` carrier is
-	// its own change. `int`/`long` constants already promote to `float` through
-	// `Variant::can_convert_strict()` and are unaffected.
-	const AnalyzedSnippet snippet(
+	// Every `uint` value is exactly representable as a `double`, so it promotes to `float` exactly
+	// like `int` already does (design section 6.1). `Variant::can_convert_strict()` now answers
+	// `UINT` -> `FLOAT` unconditionally, the same way it already answers `INT` -> `FLOAT`, and
+	// `Variant::construct()` has a matching unchecked `UINT` -> `FLOAT` conversion.
+	const AnalyzedSnippet uint_widens(
+			"func test():\n"
+			"\tvar u: uint = 2U\n"
+			"\tvar widened: float = u\n"
+			"\tprint(widened)\n");
+	CHECK(uint_widens.parse_error == OK);
+	CHECK(uint_widens.first_error().is_empty());
+
+	// `ulong` cannot make the same unconditional promise: above 2^53 the round trip through `double`
+	// loses precision, so a non-constant `ulong` value still requires an explicit cast, mirroring the
+	// existing `long` -> `float` treatment.
+	const AnalyzedSnippet ulong_variable(
+			"func test():\n"
+			"\tvar ul: ulong = 4UL\n"
+			"\tvar from_ulong: float = ul\n"
+			"\tprint(from_ulong)\n");
+	CHECK(ulong_variable.parse_error == OK);
+	CHECK(ulong_variable.first_error().contains(R"(Cannot assign a value of type ulong to variable "from_ulong" with specified type float.)"));
+
+	// A `ulong` constant is different: its exact value is known, so design section 6.1's constant
+	// carve-out still applies once the value survives the round trip through `double`.
+	const AnalyzedSnippet ulong_constant_representable(
 			"func test():\n"
 			"\tvar from_ulong: float = 5UL\n"
 			"\tprint(from_ulong)\n");
-	CHECK(snippet.parse_error == OK);
-	CHECK(snippet.first_error().contains(R"(Cannot assign a value of type "ulong" as "float".)"));
+	CHECK(ulong_constant_representable.parse_error == OK);
+	CHECK(ulong_constant_representable.first_error().is_empty());
+
+	const AnalyzedSnippet ulong_constant_too_large(
+			"func test():\n"
+			"\tvar from_ulong: float = 9007199254740993UL\n"
+			"\tprint(from_ulong)\n");
+	CHECK(ulong_constant_too_large.parse_error == OK);
+	CHECK(ulong_constant_too_large.first_error().contains(R"(Cannot assign a value of type "ulong" as "float".)"));
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] A sum that leaves the promoted range is refused") {
