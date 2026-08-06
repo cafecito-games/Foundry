@@ -237,6 +237,18 @@ public:
 		int get_tuple_field_index(const StringName &p_name) const;
 		_FORCE_INLINE_ bool has_type_arguments() const { return !type_arguments.is_empty(); }
 
+		_FORCE_INLINE_ void set_type_argument(int p_index, const DataType &p_type) {
+			ERR_FAIL_COND(p_index < 0);
+			while (p_index >= type_arguments.size()) {
+				type_arguments.push_back(get_variant_type());
+			}
+			type_arguments.write[p_index] = as_container_slot_type(p_type);
+		}
+
+		_FORCE_INLINE_ void add_type_argument(const DataType &p_type) {
+			set_type_argument(type_arguments.size(), p_type);
+		}
+
 		_FORCE_INLINE_ bool has_method_rest_parameter_type() const {
 			return method_rest_parameter_type.size() == 1;
 		}
@@ -420,57 +432,7 @@ public:
 			return !(*this == p_other);
 		}
 
-		void operator=(const DataType &p_other) {
-			kind = p_other.kind;
-			type_source = p_other.type_source;
-			is_read_only = p_other.is_read_only;
-			is_constant = p_other.is_constant;
-			is_meta_type = p_other.is_meta_type;
-			is_type_handle_annotation = p_other.is_type_handle_annotation;
-			is_pseudo_type = p_other.is_pseudo_type;
-			is_coroutine = p_other.is_coroutine;
-			is_nullable = p_other.is_nullable;
-			builtin_type = p_other.builtin_type;
-			numeric_type = p_other.numeric_type;
-			numeric_type_is_carrier_erased = p_other.numeric_type_is_carrier_erased;
-			is_substituted_self = p_other.is_substituted_self;
-			native_type = p_other.native_type;
-			enum_type = p_other.enum_type;
-			script_type = p_other.script_type;
-			script_path = p_other.script_path;
-			class_type = p_other.class_type;
-			method_info = p_other.method_info;
-			has_method_signature = p_other.has_method_signature;
-			has_explicit_method_signature = p_other.has_explicit_method_signature;
-			signature_is_async = p_other.signature_is_async;
-			method_parameter_types = p_other.method_parameter_types;
-			method_return_type = p_other.method_return_type;
-			method_rest_parameter_type = p_other.method_rest_parameter_type;
-			method_return_is_erased_container = p_other.method_return_is_erased_container;
-			method_extra_allowed_argument_counts = p_other.method_extra_allowed_argument_counts;
-			method_unbound_argument_count = p_other.method_unbound_argument_count;
-			callable_is_over_bound = p_other.callable_is_over_bound;
-			enum_values = p_other.enum_values;
-			is_tagged_union = p_other.is_tagged_union;
-			enum_case_payloads = p_other.enum_case_payloads;
-			enum_case_name = p_other.enum_case_name;
-			tuple_name = p_other.tuple_name;
-			tuple_field_names = p_other.tuple_field_names;
-			container_element_types = p_other.container_element_types;
-			type_parameter_name = p_other.type_parameter_name;
-			type_parameter_index = p_other.type_parameter_index;
-			type_parameter_scope = p_other.type_parameter_scope;
-			type_parameter_bound = p_other.type_parameter_bound;
-			type_arguments = p_other.type_arguments;
-		}
-
 		DataType() = default;
-
-		DataType(const DataType &p_other) {
-			*this = p_other;
-		}
-
-		~DataType() {}
 	};
 
 	struct ParserError {

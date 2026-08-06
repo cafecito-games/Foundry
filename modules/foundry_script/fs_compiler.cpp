@@ -97,7 +97,7 @@ static FSParser::DataType _self_type_for_class(const FSParser::ClassNode *p_clas
 		self_type.is_meta_type = false;
 		self_type.type_arguments.clear();
 		for (int i = 0; i < p_class->type_parameters.size(); i++) {
-			self_type.type_arguments.push_back(_class_type_parameter_handle(p_class->type_parameters[i], i));
+			self_type.add_type_argument(_class_type_parameter_handle(p_class->type_parameters[i], i));
 		}
 	}
 	return self_type;
@@ -259,7 +259,7 @@ static bool _specialized_class_handle_datatype_from_expression(const FSParser::E
 		if (!_constant_type_argument_from_expression(argument_expression, argument_type)) {
 			return false;
 		}
-		specialized.type_arguments.push_back(argument_type);
+		specialized.add_type_argument(argument_type);
 	}
 	specialized.is_meta_type = true;
 	r_datatype = specialized;

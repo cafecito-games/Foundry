@@ -956,7 +956,7 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 			auto publish_open_identity = [&]() {
 				enum_type.type_arguments.clear();
 				for (int i = 0; i < p_enum->type_parameters.size(); i++) {
-					enum_type.type_arguments.push_back(enum_type_parameter_handle(p_enum->type_parameters[i], i));
+					enum_type.add_type_argument(enum_type_parameter_handle(p_enum->type_parameters[i], i));
 				}
 				p_enum->set_datatype(enum_type);
 			};
@@ -1038,7 +1038,7 @@ FSParser::DataType FSAnalyzer::copy_open_global_enum_type_for_use_site(const FSP
 
 	copy.type_arguments.clear();
 	for (int i = 0; i < p_declaration->type_parameters.size(); i++) {
-		copy.type_arguments.push_back(enum_type_parameter_handle(p_declaration->type_parameters[i], i));
+		copy.add_type_argument(enum_type_parameter_handle(p_declaration->type_parameters[i], i));
 	}
 
 	const FSParser::DataType &declared_type = p_declaration->get_datatype();
@@ -1302,7 +1302,10 @@ bool FSAnalyzer::apply_type_arguments(FSParser::DataType &r_type, const GenericD
 }
 
 bool FSAnalyzer::bind_type_arguments(FSParser::DataType &r_type, const GenericDeclaration &p_declaration, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, bool p_check_bounds) {
-	r_type.type_arguments = p_arguments;
+	r_type.type_arguments.clear();
+	for (const FSParser::DataType &argument : p_arguments) {
+		r_type.add_type_argument(argument);
+	}
 	// A union's payload schema is part of its specialization, not a property of the declaration, so it
 	// is rewritten per application. Doing it here rather than at each application surface is what keeps
 	// a type position, a value position, and a nested argument agreeing on the same payload types.
