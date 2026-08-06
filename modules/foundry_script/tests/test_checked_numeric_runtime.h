@@ -323,14 +323,10 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Dynamic shifts require match
 // int carve-out (#1684) declares no width yet, so it still runs the checked op at the carrier's widest
 // range, exactly as it did before this fix.
 //
-// A compound assignment's implicit read of the old value (`value += x`) is deliberately not covered
-// here: `FSAnalyzer::reduce_assignment()` clears the assignee's flow-narrowed type before typing the
-// assignee node (`flow_finality.clear_flow_narrowing()` in fs_analyzer.cpp), because a plain
-// assignment's target legitimately should not keep a stale narrowing after being overwritten. A
-// compound assignment reads the pre-narrowed value through that same now-cleared node, so no
-// analyzer-resolved narrowed type reaches this address at all — there is nothing for code generation to
-// overlay. Fixing that would require preserving the narrowing across the clear for compound assignment
-// specifically, which is an analyzer change outside this fix's codegen-only scope.
+// A compound assignment's implicit read of the old value (`value += x`) is covered separately by
+// "A compound assignment on a flow-narrowed value is checked at its narrowed width" below: that read
+// goes through the assignee node, which `FSAnalyzer::reduce_assignment()` retypes for a plain read/write
+// no differently than the ordinary reads exercised here.
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A flow-narrowed operand is checked at its narrowed width") {
 	ScopedCheckedNumericLanguage language;
 
@@ -406,6 +402,101 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A flow-narrowed operand is c
 		REQUIRE(error.error == Callable::CallError::CALL_OK);
 		CHECK(recorder.messages.contains("overflows \"ulong\""));
 	}
+}
+
+// `FSAnalyzer::reduce_assignment()` used to clear the assignee's flow-narrowed type before typing the
+// assignee node, so a compound assignment's implicit old-value read (`value += x` reading `value`)
+// always saw the declared width instead of a prior type test's narrower one. `uint` is the width whose
+// narrowed range is strictly inside its carrier's widest range, so `binary_uint` is the case that only
+// passes once the narrowed width reaches the compound op. `binary_long`/`binary_ulong` confirm the same
+// mechanism handles every declared width uniformly, even though `long`/`ulong` already coincide with
+// their carrier's widest range. `is int` is excluded for the same reason it is excluded from the
+// ordinary-read coverage above: the int carve-out (#1684) declares no width yet, so it still runs the
+// checked op at the carrier's widest range regardless of this fix.
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A compound assignment on a flow-narrowed value is checked at its narrowed width") {
+	ScopedCheckedNumericLanguage language;
+
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func binary_uint(value):\n"
+			"\tif value is uint:\n"
+			"\t\tvalue += 4294967295U\n"
+			"\treturn null\n"
+			"\n"
+			"func binary_long(value):\n"
+			"\tif value is long:\n"
+			"\t\tvalue += 9223372036854775807L\n"
+			"\treturn null\n"
+			"\n"
+			"func binary_ulong(value):\n"
+			"\tif value is ulong:\n"
+			"\t\tvalue += 18446744073709551615UL\n"
+			"\treturn null\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	{
+		FlowNarrowedWidthErrorRecorder recorder;
+		const Variant argument = uint64_t(1);
+		const Variant *arguments[] = { &argument };
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		object->callp(SNAME("binary_uint"), arguments, 1, error);
+		ERR_PRINT_ON;
+		REQUIRE(error.error == Callable::CallError::CALL_OK);
+		CHECK(recorder.messages.contains("overflows \"uint\""));
+	}
+
+	{
+		FlowNarrowedWidthErrorRecorder recorder;
+		const Variant argument = int64_t(1);
+		const Variant *arguments[] = { &argument };
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		object->callp(SNAME("binary_long"), arguments, 1, error);
+		ERR_PRINT_ON;
+		REQUIRE(error.error == Callable::CallError::CALL_OK);
+		CHECK(recorder.messages.contains("overflows \"long\""));
+	}
+
+	{
+		FlowNarrowedWidthErrorRecorder recorder;
+		const Variant argument = uint64_t(1);
+		const Variant *arguments[] = { &argument };
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		object->callp(SNAME("binary_ulong"), arguments, 1, error);
+		ERR_PRINT_ON;
+		REQUIRE(error.error == Callable::CallError::CALL_OK);
+		CHECK(recorder.messages.contains("overflows \"ulong\""));
+	}
+}
+
+// A plain assignment's destination must keep being checked against the variable's declared type, not
+// whatever it was momentarily narrowed to: overwriting a `Variant` that was narrowed to `uint` with an
+// incompatible value must still succeed, and a subsequent read must not still observe the stale
+// narrowing. This is the control proving the fix scopes the preserved narrowing to the compound
+// assignment's implicit read only, never to the assignment's destination or later statements.
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A simple assignment through a flow-narrowed variable clears the narrowing") {
+	ScopedCheckedNumericLanguage language;
+
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func reassign(value):\n"
+			"\tif value is uint:\n"
+			"\t\tvalue = \"not a uint anymore\"\n"
+			"\treturn value\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	const Variant argument = uint64_t(2);
+	const Variant *arguments[] = { &argument };
+	Callable::CallError error;
+	const Variant result = object->callp(SNAME("reassign"), arguments, 1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(result == Variant("not a uint anymore"));
 }
 
 } // namespace FSTests
