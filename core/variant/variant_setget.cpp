@@ -438,6 +438,8 @@ Variant Variant::get_named(const StringName &p_member, bool &r_valid) const {
 			m_assign_type num;                                                                                                 \
 			if (value->get_type() == Variant::INT) {                                                                           \
 				num = (m_assign_type) * &VariantInternalAccessor<int64_t>::get(value);                                         \
+			} else if (value->get_type() == Variant::UINT) {                                                                   \
+				num = (m_assign_type) * VariantInternal::get_uint(value);                                                      \
 			} else if (value->get_type() == Variant::FLOAT) {                                                                  \
 				num = (m_assign_type) * &VariantInternalAccessor<double>::get(value);                                          \
 			} else {                                                                                                           \
@@ -506,6 +508,8 @@ Variant Variant::get_named(const StringName &p_member, bool &r_valid) const {
 			m_assign_type num;                                                                                           \
 			if (value->get_type() == Variant::INT) {                                                                     \
 				num = (m_assign_type) * &VariantInternalAccessor<int64_t>::get(value);                                   \
+			} else if (value->get_type() == Variant::UINT) {                                                             \
+				num = (m_assign_type) * VariantInternal::get_uint(value);                                                \
 			} else if (value->get_type() == Variant::FLOAT) {                                                            \
 				num = (m_assign_type) * &VariantInternalAccessor<double>::get(value);                                    \
 			} else {                                                                                                     \

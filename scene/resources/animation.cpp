@@ -2466,8 +2466,10 @@ real_t Animation::_interpolate(const real_t &p_a, const real_t &p_b, real_t p_c)
 }
 
 Variant Animation::_interpolate_angle(const Variant &p_a, const Variant &p_b, real_t p_c) const {
-	Variant::Type type_a = p_a.get_type();
-	Variant::Type type_b = p_b.get_type();
+	// UINT sits past the packed array block in the enum, so fold it onto the INT bit before
+	// building the type mask below; otherwise the shift amount would overflow uint32_t.
+	Variant::Type type_a = Variant::get_ordering_rank(p_a.get_type());
+	Variant::Type type_b = Variant::get_ordering_rank(p_b.get_type());
 	uint32_t vformat = 1 << type_a;
 	vformat |= 1 << type_b;
 	if (vformat == ((1 << Variant::INT) | (1 << Variant::FLOAT)) || vformat == (1 << Variant::FLOAT)) {
@@ -2497,10 +2499,12 @@ real_t Animation::_cubic_interpolate_in_time(const real_t &p_pre_a, const real_t
 }
 
 Variant Animation::_cubic_interpolate_angle_in_time(const Variant &p_pre_a, const Variant &p_a, const Variant &p_b, const Variant &p_post_b, real_t p_c, real_t p_pre_a_t, real_t p_b_t, real_t p_post_b_t) const {
-	Variant::Type type_a = p_a.get_type();
-	Variant::Type type_b = p_b.get_type();
-	Variant::Type type_pa = p_pre_a.get_type();
-	Variant::Type type_pb = p_post_b.get_type();
+	// UINT sits past the packed array block in the enum, so fold it onto the INT bit before
+	// building the type mask below; otherwise the shift amount would overflow uint32_t.
+	Variant::Type type_a = Variant::get_ordering_rank(p_a.get_type());
+	Variant::Type type_b = Variant::get_ordering_rank(p_b.get_type());
+	Variant::Type type_pa = Variant::get_ordering_rank(p_pre_a.get_type());
+	Variant::Type type_pb = Variant::get_ordering_rank(p_post_b.get_type());
 	uint32_t vformat = 1 << type_a;
 	vformat |= 1 << type_b;
 	vformat |= 1 << type_pa;
@@ -5704,16 +5708,26 @@ Quaternion Animation::interpolate_via_rest(const Quaternion &p_from, const Quate
 // Helper math functions for Variant.
 bool Animation::is_variant_interpolatable(const Variant p_value) {
 	Variant::Type type = p_value.get_type();
-	return (type >= Variant::BOOL && type <= Variant::STRING_NAME) || type == Variant::ARRAY || type >= Variant::PACKED_INT32_ARRAY; // PackedByteArray is unsigned, so it would be better to ignore since blending uses float.
+	// PackedByteArray is unsigned, so it would be better to ignore since blending uses float.
+	// UINT sits past the packed array block in the enum; it interpolates like INT via cast_to_blendwise/cast_from_blendwise.
+	return (type >= Variant::BOOL && type <= Variant::STRING_NAME) || type == Variant::ARRAY || (type >= Variant::PACKED_INT32_ARRAY && type <= Variant::PACKED_VECTOR4_ARRAY) || type == Variant::UINT;
 }
 
 bool Animation::validate_type_match(const Variant &p_from, Variant &r_to) {
 	if (p_from.get_type() != r_to.get_type()) {
-		// Cast r_to between double and int to avoid minor annoyances.
+		// Cast r_to between double, int, and uint to avoid minor annoyances.
 		if (p_from.get_type() == Variant::FLOAT && r_to.get_type() == Variant::INT) {
 			r_to = double(r_to);
 		} else if (p_from.get_type() == Variant::INT && r_to.get_type() == Variant::FLOAT) {
 			r_to = int(r_to);
+		} else if (p_from.get_type() == Variant::FLOAT && r_to.get_type() == Variant::UINT) {
+			r_to = double(r_to);
+		} else if (p_from.get_type() == Variant::UINT && r_to.get_type() == Variant::FLOAT) {
+			r_to = uint64_t(r_to);
+		} else if (p_from.get_type() == Variant::INT && r_to.get_type() == Variant::UINT) {
+			r_to = int64_t(r_to);
+		} else if (p_from.get_type() == Variant::UINT && r_to.get_type() == Variant::INT) {
+			r_to = uint64_t(r_to);
 		} else {
 			ERR_FAIL_V_MSG(false, "Type mismatch between initial and final value: " + Variant::get_type_name(p_from.get_type()) + " and " + Variant::get_type_name(r_to.get_type()));
 		}
@@ -5724,7 +5738,8 @@ bool Animation::validate_type_match(const Variant &p_from, Variant &r_to) {
 Variant Animation::cast_to_blendwise(const Variant p_value) {
 	switch (p_value.get_type()) {
 		case Variant::BOOL:
-		case Variant::INT: {
+		case Variant::INT:
+		case Variant::UINT: {
 			return p_value.operator double();
 		} break;
 		case Variant::STRING:
@@ -5762,6 +5777,9 @@ Variant Animation::cast_from_blendwise(const Variant p_value, const Variant::Typ
 		} break;
 		case Variant::INT: {
 			return (int64_t)Math::round(p_value.operator double());
+		} break;
+		case Variant::UINT: {
+			return (uint64_t)Math::round(p_value.operator double());
 		} break;
 		case Variant::STRING: {
 			return array_to_string(p_value);
@@ -5877,6 +5895,7 @@ Variant Animation::add_variant(const Variant &a, const Variant &b) {
 			return (a.operator Transform3D()) * (b.operator Transform3D());
 		} break;
 		case Variant::INT:
+		case Variant::UINT:
 		case Variant::RECT2I:
 		case Variant::VECTOR2I:
 		case Variant::VECTOR3I:
@@ -5991,6 +6010,7 @@ Variant Animation::subtract_variant(const Variant &a, const Variant &b) {
 			return (b.operator Transform3D()).affine_inverse() * (a.operator Transform3D());
 		} break;
 		case Variant::INT:
+		case Variant::UINT:
 		case Variant::RECT2I:
 		case Variant::VECTOR2I:
 		case Variant::VECTOR3I:
@@ -6118,6 +6138,7 @@ Variant Animation::blend_variant(const Variant &a, const Variant &b, float c) {
 		} break;
 		case Variant::BOOL:
 		case Variant::INT:
+		case Variant::UINT:
 		case Variant::RECT2I:
 		case Variant::VECTOR2I:
 		case Variant::VECTOR3I:
@@ -6255,6 +6276,7 @@ Variant Animation::interpolate_variant(const Variant &a, const Variant &b, float
 		} break;
 		case Variant::BOOL:
 		case Variant::INT:
+		case Variant::UINT:
 		case Variant::RECT2I:
 		case Variant::VECTOR2I:
 		case Variant::VECTOR3I:
@@ -6442,6 +6464,7 @@ Variant Animation::cubic_interpolate_in_time_variant(const Variant &pre_a, const
 		} break;
 		case Variant::BOOL:
 		case Variant::INT:
+		case Variant::UINT:
 		case Variant::RECT2I:
 		case Variant::VECTOR2I:
 		case Variant::VECTOR3I:

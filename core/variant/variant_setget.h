@@ -90,6 +90,9 @@
 			} else if (value->get_type() == Variant::INT) {                                                                 \
 				VariantInternalAccessor<m_base_type>::get(base).m_member = VariantInternalAccessor<int64_t>::get(value);    \
 				valid = true;                                                                                               \
+			} else if (value->get_type() == Variant::UINT) {                                                                \
+				VariantInternalAccessor<m_base_type>::get(base).m_member = *VariantInternal::get_uint(value);               \
+				valid = true;                                                                                               \
 			} else {                                                                                                        \
 				valid = false;                                                                                              \
 			}                                                                                                               \
@@ -159,6 +162,9 @@
 			} else if (value->get_type() == Variant::INT) {                                                                 \
 				VariantInternalAccessor<m_base_type>::get(base).m_custom = VariantInternalAccessor<int64_t>::get(value);    \
 				valid = true;                                                                                               \
+			} else if (value->get_type() == Variant::UINT) {                                                                \
+				VariantInternalAccessor<m_base_type>::get(base).m_custom = *VariantInternal::get_uint(value);               \
+				valid = true;                                                                                               \
 			} else {                                                                                                        \
 				valid = false;                                                                                              \
 			}                                                                                                               \
@@ -227,6 +233,9 @@
 				valid = true;                                                                                                 \
 			} else if (value->get_type() == Variant::INT) {                                                                   \
 				VariantInternalAccessor<m_base_type>::get(base).m_setter(VariantInternalAccessor<int64_t>::get(value));       \
+				valid = true;                                                                                                 \
+			} else if (value->get_type() == Variant::UINT) {                                                                  \
+				VariantInternalAccessor<m_base_type>::get(base).m_setter(*VariantInternal::get_uint(value));                  \
 				valid = true;                                                                                                 \
 			} else {                                                                                                          \
 				valid = false;                                                                                                \
