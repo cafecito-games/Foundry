@@ -1202,6 +1202,26 @@ Error FSBytecodeExporter::_write_witness_section(StreamPeerBuffer *r_stream, con
 			r_stream->put_u32(string_table.insert(target_key));
 		}
 		r_stream->put_u32(string_table.insert(conformance.trait_name));
+		// The arguments this conformance supplied for that trait identity, in the trait's own
+		// parameter order. An empty vector is an absence of evidence and travels as a zero count; so
+		// does a vector holding a freed argument script, which must never be serialized as a
+		// null-script stand-in that would silently widen the recorded argument.
+		bool type_arguments_are_live = !conformance.trait_type_arguments.is_empty();
+		for (const FSWeakContainerType &type_argument : conformance.trait_type_arguments) {
+			if (!type_argument.is_fully_live()) {
+				type_arguments_are_live = false;
+				break;
+			}
+		}
+		r_stream->put_u32(type_arguments_are_live ? (uint32_t)conformance.trait_type_arguments.size() : 0);
+		if (type_arguments_are_live) {
+			for (const FSWeakContainerType &type_argument : conformance.trait_type_arguments) {
+				error = _encode_container_type(r_stream, type_argument.to_container_type(), 0);
+				if (error != OK) {
+					return error;
+				}
+			}
+		}
 		r_stream->put_u32((uint32_t)conformance.functions.size());
 		for (const KeyValue<StringName, FSFunction *> &witness : conformance.functions) {
 			r_stream->put_u32(string_table.insert(witness.key));

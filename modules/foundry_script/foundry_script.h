@@ -600,6 +600,11 @@ public:
 	// Frontend checks must ignore serialized runtime membership left alive while a source file is
 	// being reanalyzed; runtime Script API checks use `has_script_trait()` above.
 	bool has_script_trait_parse(const StringName &p_trait) const;
+	// The type arguments a retroactive conformance supplied for `p_trait`, searched by every identity
+	// alias this script is keyed by and then up the base chain, exactly as `has_script_trait` searches
+	// for membership. False when no runtime conformance recorded arguments for it, which is an absence
+	// of evidence rather than a wildcard.
+	bool get_retroactive_trait_type_arguments(const StringName &p_trait, Vector<ContainerType> &r_arguments) const;
 	virtual void get_script_trait_list(List<StringName> *r_traits) const override;
 
 	// Generic reflection: declared type parameters of this class and their optional bounds.

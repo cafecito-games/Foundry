@@ -246,9 +246,40 @@ static RuntimeSpecializationEvidence _class_handle_specialization_evidence(Objec
 // A trait target uses the very same relation: the binding table records a `uses Trait[args]` clause
 // alongside the `extends` chain, so a conforming class, a subclass of one, and a class reaching the
 // trait through a supertrait all project onto the trait's parameters. A value that conforms only
-// through the conformance registry (a retroactively conformed native class or builtin) has no leaf
-// script to project from and therefore fails a specialized trait target, since the registry records
-// conformances by trait identity alone.
+// through a retroactive conformance has no such binding table entry, so it answers from the arguments
+// that conformance recorded instead (see `_retroactive_conformance_matches`), through the identical
+// comparison below.
+//
+// The comparison itself, once evidence has been projected onto the target's parameters: same arity,
+// every position completely known, invariantly equal to the target's argument, recursively.
+static bool _projected_arguments_match(const Vector<ContainerType> &p_expected_arguments,
+		const Vector<ProjectedContainerType> &p_projected) {
+	if (p_projected.size() != p_expected_arguments.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_expected_arguments.size(); i++) {
+		// `PARTIAL` evidence leaves some subtree unproven, which a narrowing test cannot accept.
+		if (p_projected[i].state != ProjectedContainerType::EXACT) {
+			return false;
+		}
+		if (p_projected[i].conflicts_with_expected(p_expected_arguments[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// A recorded conformance argument vector is already expressed against the trait's own parameters, so
+// it needs no projection: every position is exact evidence exactly as it was declared.
+static Vector<ProjectedContainerType> _exact_projection(const Vector<ContainerType> &p_arguments) {
+	Vector<ProjectedContainerType> projected;
+	projected.resize(p_arguments.size());
+	for (int i = 0; i < p_arguments.size(); i++) {
+		projected.write[i] = ProjectedContainerType::exact(p_arguments[i]);
+	}
+	return projected;
+}
+
 static bool _specialization_matches(const Vector<ContainerType> &p_expected_arguments,
 		const Ref<Script> &p_expected_script, const RuntimeSpecializationEvidence &p_actual) {
 	if (p_expected_arguments.is_empty()) {
@@ -270,19 +301,57 @@ static bool _specialization_matches(const Vector<ContainerType> &p_expected_argu
 		}
 	}
 
-	if (projected.size() != p_expected_arguments.size()) {
+	return _projected_arguments_match(p_expected_arguments, projected);
+}
+
+// The specialized answer for a value that satisfies a trait only through a retroactive conformance
+// (`extend Target uses Trait[args]`). The conformance recorded the arguments it declared against the
+// trait's own parameters, so they need no projection; they go through the same comparison a declared
+// `uses` clause does, so the two paths cannot drift.
+//
+// Sources are consulted in the order a value's identities narrow: its own Foundry Script class (and
+// its bases), then its engine class (and its ancestors), then — for a builtin value, which has no
+// object at all — its builtin type. A class cannot both declare `uses Trait` and be retroactively
+// conformed to it, so this never competes with declared evidence.
+static bool _retroactive_conformance_matches(const Vector<ContainerType> &p_expected_arguments,
+		const StringName &p_trait_name, Object *p_object, const Variant &p_value) {
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	Vector<ContainerType> recorded_arguments;
+
+	if (p_object != nullptr) {
+		ScriptInstance *script_instance = p_object->get_script_instance();
+		if (script_instance != nullptr) {
+			const Ref<Script> instance_script = script_instance->get_script();
+			const FoundryScript *fs_instance_script = Object::cast_to<FoundryScript>(instance_script.ptr());
+			if (fs_instance_script != nullptr &&
+					fs_instance_script->get_retroactive_trait_type_arguments(p_trait_name, recorded_arguments)) {
+				return _projected_arguments_match(p_expected_arguments,
+						_exact_projection(recorded_arguments));
+			}
+		}
+		if (registry->get_native_conformance_type_arguments(p_object->get_class_name(), p_trait_name, recorded_arguments)) {
+			return _projected_arguments_match(p_expected_arguments, _exact_projection(recorded_arguments));
+		}
 		return false;
 	}
-	for (int i = 0; i < p_expected_arguments.size(); i++) {
-		// `PARTIAL` evidence leaves some subtree unproven, which a narrowing test cannot accept.
-		if (projected[i].state != ProjectedContainerType::EXACT) {
-			return false;
-		}
-		if (projected[i].conflicts_with_expected(p_expected_arguments[i])) {
-			return false;
-		}
+
+	if (p_value.get_type() != Variant::NIL && p_value.get_type() != Variant::OBJECT &&
+			registry->get_builtin_conformance_type_arguments(p_value.get_type(), p_trait_name, recorded_arguments)) {
+		return _projected_arguments_match(p_expected_arguments, _exact_projection(recorded_arguments));
 	}
-	return true;
+	return false;
+}
+
+// The specialized answer for a trait target, from whichever evidence the value carries: the binding
+// table a declared `uses Trait[args]` fills, or the arguments a retroactive conformance recorded.
+static bool _trait_specialization_matches(const Vector<ContainerType> &p_expected_arguments,
+		const Ref<Script> &p_expected_script, const StringName &p_trait_name,
+		Object *p_object, const Variant &p_value) {
+	if (_specialization_matches(p_expected_arguments, p_expected_script,
+				_instance_specialization_evidence(p_object))) {
+		return true;
+	}
+	return _retroactive_conformance_matches(p_expected_arguments, p_trait_name, p_object, p_value);
 }
 
 // A script-typed `is`/`as` whose target is a class handle (`Type[Crate[int]]`). The nominal answer
@@ -2244,10 +2313,11 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 							result = FSConformanceRegistry::get_singleton()->builtin_type_conforms(value->get_type(), trait_name, true);
 						}
 						// A specialized trait target asks the same second, invariant question a specialized
-						// class target does, against the arguments the value's implementer conformed with.
+						// class target does, against the arguments the value's implementer conformed with,
+						// whether it declared them itself or a retroactive conformance recorded them.
 						if (result && !expected_type_arguments.is_empty()) {
-							result = _specialization_matches(expected_type_arguments, Ref<Script>(script_type),
-									_instance_specialization_evidence(object));
+							result = _trait_specialization_matches(expected_type_arguments, Ref<Script>(script_type),
+									trait_name, object, *value);
 						}
 					} else if (object && object->get_script_instance()) {
 						Ref<Script> script_ref = object->get_script_instance()->get_script();
@@ -3291,8 +3361,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					// A trait cast succeeds exactly when the matching `is` would, so a specialized trait
 					// target requires the same invariant argument evidence.
 					if (valid && !expected_type_arguments.is_empty()) {
-						valid = _specialization_matches(expected_type_arguments, Ref<Script>(base_type),
-								_instance_specialization_evidence(src->get_validated_object()));
+						valid = _trait_specialization_matches(expected_type_arguments, Ref<Script>(base_type),
+								trait_name, src->get_validated_object(), *src);
 					}
 				} else if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
 					Object *src_obj = src->operator Object *();

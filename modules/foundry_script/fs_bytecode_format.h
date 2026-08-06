@@ -50,15 +50,12 @@
 // rename-map contract. `FSNameManglerApplication::Transaction` validates a closed compiled graph,
 // stages that map across every serialized project-name surface, and restores the live graph after
 // serialization. Export orchestration remains a follow-up. The application stage changes only the
-// values supplied to the existing writer: the version-3 wire layout and loader remain unchanged.
-// The loader also continues to accept legacy version-3 witness entries whose trait-name field is
-// empty. Their witness dispatch remains usable, but runtime trait membership cannot be reconstructed
-// because those older bytes contain no trait identity to recover.
+// values supplied to the existing writer: the wire layout and loader remain unchanged.
 class FSBytecodeFormat {
 public:
 	static constexpr uint8_t MAGIC[4] = { 'F', 'S', 'B', 'C' };
 	// Bump on ANY layout change; the reader rejects other versions outright.
-	static constexpr uint32_t FORMAT_VERSION = 11;
+	static constexpr uint32_t FORMAT_VERSION = 12;
 
 	enum SectionId : uint32_t {
 		SECTION_STRING_TABLE,

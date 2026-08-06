@@ -5683,6 +5683,50 @@ void FSCompiler::_get_function_ptr_replacements(HashMap<FSFunction *, FSFunction
 	}
 }
 
+Vector<FSWeakContainerType> FSCompiler::_conformance_trait_type_arguments(FoundryScript *p_script,
+		const FSParser::ClassNode *p_direct_trait,
+		const Vector<FSParser::DataType> &p_conformance_arguments,
+		const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
+		FSParser::ClassNode *p_identity_trait) {
+	Vector<FSWeakContainerType> arguments;
+	if (p_direct_trait == nullptr || p_identity_trait == nullptr || p_identity_trait->type_parameters.is_empty()) {
+		return arguments;
+	}
+
+	Vector<FSParser::DataType> resolved;
+	if (p_identity_trait == p_direct_trait) {
+		if (p_conformance_arguments.size() != p_identity_trait->type_parameters.size()) {
+			return arguments;
+		}
+		resolved = p_conformance_arguments;
+	} else {
+		const HashMap<StringName, FSParser::DataType> substitution =
+				_trait_type_argument_substitution(p_direct_trait, p_identity_trait);
+		for (const FSParser::TypeParameterNode *type_parameter : p_identity_trait->type_parameters) {
+			if (type_parameter == nullptr || type_parameter->identifier == nullptr) {
+				return Vector<FSWeakContainerType>();
+			}
+			const FSParser::DataType *bound = substitution.getptr(type_parameter->identifier->name);
+			if (bound == nullptr) {
+				return Vector<FSWeakContainerType>();
+			}
+			resolved.push_back(FSParser::DataType::substitute(*bound, p_direct_bindings));
+		}
+	}
+
+	arguments.resize(resolved.size());
+	for (int i = 0; i < resolved.size(); i++) {
+		// A position that stays a type parameter proves nothing concrete, and a vector that is only
+		// partly known would let an unproven position pass as exact evidence.
+		if (!resolved[i].is_set() || resolved[i].is_type_parameter()) {
+			return Vector<FSWeakContainerType>();
+		}
+		arguments.write[i] = FSWeakContainerType::from_container_type(
+				_gdtype_from_datatype(resolved[i], p_script).to_container_type());
+	}
+	return arguments;
+}
+
 Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const FSParser::ClassNode *p_class) {
 	// Retroactive conformances (`extend Target uses Trait: ...`) are recorded only on the head class.
 	if (p_class == nullptr || p_class->conformances.is_empty()) {
@@ -5833,10 +5877,10 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 			runtime_entry.functions[witness->identifier->name] = compiled;
 		}
 
-		// The version-3 witness section stores one trait identity per runtime entry. A single
-		// `extend` can declare several traits sharing one (possibly empty) compiled witness set, so
-		// expand that set in source order. Marker conformances deliberately serialize a zero witness
-		// count without changing the wire layout.
+		// The witness section stores one trait identity per runtime entry. A single `extend` can
+		// declare several traits sharing one (possibly empty) compiled witness set, so expand that
+		// set in source order. Marker conformances deliberately serialize a zero witness count
+		// without changing the wire layout.
 		HashSet<StringName> emitted_traits;
 		for (const FSParser::ClassNode::TraitUse &trait_use :
 				conformance->traits) {
@@ -5846,16 +5890,34 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 							"Cannot compile retroactive conformance in '%s': "
 							"a declared trait was not resolved.",
 							source_file));
-			const Vector<StringName> trait_identities =
-					fs_trait_identity_closure(trait_use.resolved_trait);
-			ERR_FAIL_COND_V_MSG(trait_identities.is_empty(),
+			const Vector<FSParser::ClassNode *> trait_identity_nodes =
+					fs_trait_identity_closure_nodes(trait_use.resolved_trait);
+			ERR_FAIL_COND_V_MSG(trait_identity_nodes.is_empty(),
 					ERR_COMPILATION_FAILED,
 					vformat(
 							"Cannot compile retroactive conformance in "
 							"'%s': a declared trait has no runtime "
 							"identity.",
 							source_file));
-			for (const StringName &trait_name : trait_identities) {
+
+			// The conformance's arguments, keyed by the *direct* trait's own parameter names. A
+			// supertrait identity's arguments are its own bindings into that frame, re-specialized
+			// through this map, exactly as `FSAnalyzer::resolve_trait_uses` re-specializes a
+			// transitive trait's binding.
+			FSParser::ClassNode *direct_trait = trait_use.resolved_trait;
+			HashMap<StringName, FSParser::DataType> direct_bindings;
+			const int direct_binding_count = MIN(direct_trait->type_parameters.size(),
+					trait_use.resolved_type_arguments.size());
+			for (int i = 0; i < direct_binding_count; i++) {
+				const FSParser::TypeParameterNode *type_parameter = direct_trait->type_parameters[i];
+				if (type_parameter != nullptr && type_parameter->identifier != nullptr) {
+					direct_bindings.insert(type_parameter->identifier->name,
+							trait_use.resolved_type_arguments[i]);
+				}
+			}
+
+			for (FSParser::ClassNode *identity_trait : trait_identity_nodes) {
+				const StringName trait_name = fs_trait_identity_name(identity_trait);
 				if (emitted_traits.has(trait_name)) {
 					continue;
 				}
@@ -5863,6 +5925,9 @@ Error FSCompiler::_compile_conformance_witnesses(FoundryScript *p_script, const 
 				FSConformanceRegistry::RuntimeConformance trait_entry =
 						runtime_entry;
 				trait_entry.trait_name = trait_name;
+				trait_entry.trait_type_arguments = _conformance_trait_type_arguments(
+						p_script, direct_trait, trait_use.resolved_type_arguments,
+						direct_bindings, identity_trait);
 				runtime_entries.push_back(trait_entry);
 			}
 		}

@@ -2502,9 +2502,24 @@ Error FSBytecodeLoader::_read_witness_section(StreamPeerBuffer *p_stream, Foundr
 			return error;
 		}
 		conformance.trait_name = StringName(trait_name);
-		// Legacy version-3 writers emitted an empty trait name. Keep accepting those entries so their
-		// witnesses still dispatch; the runtime membership index deliberately cannot index an identity
-		// that is absent from the file.
+
+		uint32_t type_argument_count = 0;
+		Error type_argument_count_error = _read_bounded_u32(p_stream, type_argument_count, "conformance type argument count");
+		if (type_argument_count_error != OK) {
+			return type_argument_count_error;
+		}
+		ERR_FAIL_COND_V_MSG((int64_t)type_argument_count * 4 > (int64_t)p_stream->get_available_bytes(), ERR_INVALID_DATA,
+				vformat("Truncated conformance section in compiled script '%s'.", script_path));
+		for (uint32_t type_argument_index = 0; type_argument_index < type_argument_count; type_argument_index++) {
+			ContainerType type_argument;
+			error = _decode_container_type(p_stream, type_argument, 0);
+			if (error != OK) {
+				return error;
+			}
+			// Held weakly, exactly as a source-compiled record holds it, so a bytecode-loaded
+			// conformance cannot keep an argument script alive past its own unload.
+			conformance.trait_type_arguments.push_back(FSWeakContainerType::from_container_type(type_argument));
+		}
 
 		uint32_t witness_count = 0;
 		Error witness_count_error = _read_bounded_u32(p_stream, witness_count, "witness count");

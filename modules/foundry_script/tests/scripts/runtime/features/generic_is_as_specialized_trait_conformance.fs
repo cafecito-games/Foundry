@@ -1,8 +1,7 @@
-# A retroactive conformance (`extend Target uses Trait[arg]`) is recorded by trait identity alone, so
-# a value that satisfies a trait only through the conformance registry carries no argument evidence.
-# A raw trait target still answers from the registry; a specialized one fails rather than accepting
-# every specialization, matching the rule a specialized class target follows when the value cannot
-# prove its arguments.
+# A retroactive conformance (`extend Target uses Trait[arg]`) records the arguments it declared, so a
+# value that satisfies a trait only through the conformance registry answers a specialized target from
+# them: an exact match succeeds and a mismatch fails, exactly as it would for a class that declared the
+# `uses` clause itself. A raw trait target still asks only the nominal question.
 extend Resource uses GenericStore[int]:
 	func store(_item: int) -> void:
 		pass
@@ -36,8 +35,10 @@ func test() -> void:
 	print("scripted is GenericStore[String]: ", scripted is GenericStore[String])
 
 	var conformed_cast: Variant = conformed as GenericStore[int]
-	print("conformed specialized cast is null: ", conformed_cast == null)
+	print("conformed specialized cast keeps identity: ", conformed_cast == conformed)
 	var conformed_raw_cast: Variant = conformed as GenericStore
 	print("conformed raw cast keeps identity: ", conformed_raw_cast == conformed)
+	var conformed_mismatched_cast: Variant = conformed as GenericStore[String]
+	print("conformed mismatched cast is null: ", conformed_mismatched_cast == null)
 	var scripted_cast: Variant = scripted as GenericStore[int]
 	print("scripted specialized cast keeps identity: ", scripted_cast == scripted)

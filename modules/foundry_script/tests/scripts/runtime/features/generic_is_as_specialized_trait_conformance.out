@@ -1,13 +1,15 @@
 FS_TEST_OK
-~~ WARNING at line 38: (UNSAFE_CAST) Casting "Variant" to "GenericStore[int]" is unsafe.
-~~ WARNING at line 40: (UNSAFE_CAST) Casting "Variant" to "GenericStore" is unsafe.
-~~ WARNING at line 42: (UNSAFE_CAST) Casting "Variant" to "GenericStore[int]" is unsafe.
+~~ WARNING at line 37: (UNSAFE_CAST) Casting "Variant" to "GenericStore[int]" is unsafe.
+~~ WARNING at line 39: (UNSAFE_CAST) Casting "Variant" to "GenericStore" is unsafe.
+~~ WARNING at line 41: (UNSAFE_CAST) Casting "Variant" to "GenericStore[String]" is unsafe.
+~~ WARNING at line 43: (UNSAFE_CAST) Casting "Variant" to "GenericStore[int]" is unsafe.
 resource is GenericStore: true
-resource is GenericStore[int]: false
+resource is GenericStore[int]: true
 resource is GenericStore[String]: false
 scripted is GenericStore: true
 scripted is GenericStore[int]: true
 scripted is GenericStore[String]: false
-conformed specialized cast is null: true
+conformed specialized cast keeps identity: true
 conformed raw cast keeps identity: true
+conformed mismatched cast is null: true
 scripted specialized cast keeps identity: true

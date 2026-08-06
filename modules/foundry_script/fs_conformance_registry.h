@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "fs_function.h"
 #include "fs_parser.h"
 
 #include "core/os/mutex.h"
@@ -131,6 +132,13 @@ public:
 		// A direct trait from the declaration or one of its implied supertraits. Every identity emitted
 		// from one declaration borrows the same compiled witness functions.
 		StringName trait_name;
+		// The type arguments this conformance supplied for `trait_name`, indexed by that trait's own
+		// type-parameter ordinals. Empty when the trait is not generic or the declaration supplied none,
+		// which is an absence of evidence, never a wildcard. Held weakly for the same reason receiver
+		// descriptors are: this registry is a process-global singleton that outlives the scripts it
+		// describes, and a strong `ContainerType::script` here would keep an argument script reachable
+		// past its own unload.
+		Vector<FSWeakContainerType> trait_type_arguments;
 		WitnessFunctionMap functions;
 	};
 
@@ -173,9 +181,20 @@ private:
 	// Flattened runtime lookup: target alias key -> method name -> compiled witness function (borrowed).
 	HashMap<String, WitnessFunctionMap> runtime_index;
 
+	// What a runtime membership hit carries besides the fact of membership: the declaring file, and the
+	// type arguments the conformance supplied for that trait identity.
+	struct RuntimeTraitEntry {
+		String source_file;
+		Vector<FSWeakContainerType> type_arguments;
+	};
+
 	// Runtime-loaded bytecode has no parser tree, so its serialized trait identities also provide the
 	// membership index used by `is`/`as` and typed assignment checks.
-	HashMap<String, HashMap<StringName, String>> runtime_trait_index;
+	HashMap<String, HashMap<StringName, RuntimeTraitEntry>> runtime_trait_index;
+
+	// The live argument vector recorded for a runtime membership hit, or false when the entry records
+	// none or any argument script has been freed. Callers must hold `mutex`.
+	bool _live_runtime_type_arguments(const RuntimeTraitEntry &p_entry, Vector<ContainerType> &r_arguments) const;
 
 	void _rebuild_runtime_index();
 
@@ -208,6 +227,25 @@ public:
 	// True when the builtin value type `p_type` (keyed by `Variant::get_type_name`) declares an external
 	// conformance to `p_trait_name`. Builtins have no inheritance chain, so this is an exact-key lookup.
 	bool builtin_type_conforms(Variant::Type p_type, const StringName &p_trait_name, bool p_include_runtime = false) const;
+
+	// The type arguments a *runtime-registered* conformance of `p_target_key` to `p_trait_name`
+	// supplied. False when no runtime record exists, when the record supplied no arguments, or when any
+	// argument script has been freed — all of which are an absence of evidence, not a wildcard. Reads
+	// the runtime store only: a declaring file that was analyzed but never compiled registers no
+	// witnesses and therefore no arguments, so a specialized target against it fails closed, coherently
+	// with the fact that its witnesses would also miss at run time.
+	bool get_conformance_type_arguments(const String &p_target_key, const StringName &p_trait_name,
+			Vector<ContainerType> &r_arguments) const;
+
+	// The same, for an engine class. Walks `ClassDB::get_parent_class`; the nearest conforming ancestor
+	// wins, exactly as `native_class_conforms` and `find_native_trait_witness_function` already do.
+	bool get_native_conformance_type_arguments(const StringName &p_native_class,
+			const StringName &p_trait_name, Vector<ContainerType> &r_arguments) const;
+
+	// The same, for a builtin value type. Builtins have no inheritance chain, so this is an exact-key
+	// lookup.
+	bool get_builtin_conformance_type_arguments(Variant::Type p_type, const StringName &p_trait_name,
+			Vector<ContainerType> &r_arguments) const;
 
 	// The declaring file of the (target, trait) conformance, or an empty string when none exists.
 	// Useful for diagnosing cross-file duplicate conformances.

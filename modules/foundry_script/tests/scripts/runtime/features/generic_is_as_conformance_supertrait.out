@@ -1,0 +1,11 @@
+FS_TEST_OK
+~~ WARNING at line 36: (UNSAFE_CAST) Casting "Variant" to "Super[int]" is unsafe.
+~~ WARNING at line 38: (UNSAFE_CAST) Casting "Variant" to "Super[String]" is unsafe.
+holder is Sub: true
+holder is Sub[int]: true
+holder is Sub[String]: false
+holder is Super: true
+holder is Super[int]: true
+holder is Super[String]: false
+exact supertrait cast keeps identity: true
+mismatched supertrait cast is null: true

@@ -253,8 +253,11 @@ void FSConformanceRegistry::_rebuild_runtime_index() {
 					continue;
 				}
 				if (conformance.trait_name != StringName()) {
-					runtime_trait_index[target_key][conformance.trait_name] =
-							file_entry.key;
+					RuntimeTraitEntry &trait_entry =
+							runtime_trait_index[target_key][conformance.trait_name];
+					trait_entry.source_file = file_entry.key;
+					trait_entry.type_arguments =
+							conformance.trait_type_arguments;
 				}
 				WitnessFunctionMap &functions = runtime_index[target_key];
 				for (const KeyValue<StringName, FSFunction *> &witness : conformance.functions) {
@@ -396,7 +399,7 @@ bool FSConformanceRegistry::has_conformance(const String &p_target_key, const St
 	if (!p_include_runtime) {
 		return false;
 	}
-	const HashMap<StringName, String> *runtime_traits =
+	const HashMap<StringName, RuntimeTraitEntry> *runtime_traits =
 			runtime_trait_index.getptr(p_target_key);
 	return runtime_traits != nullptr && runtime_traits->has(p_trait_name);
 }
@@ -431,7 +434,7 @@ bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_cla
 			}
 		}
 		if (p_include_runtime) {
-			const HashMap<StringName, String> *runtime_traits =
+			const HashMap<StringName, RuntimeTraitEntry> *runtime_traits =
 					runtime_trait_index.getptr(String(cursor));
 			if (runtime_traits != nullptr &&
 					runtime_traits->has(p_trait_name)) {
@@ -440,6 +443,71 @@ bool FSConformanceRegistry::native_class_conforms(const StringName &p_native_cla
 		}
 	}
 	return false;
+}
+
+bool FSConformanceRegistry::_live_runtime_type_arguments(const RuntimeTraitEntry &p_entry, Vector<ContainerType> &r_arguments) const {
+	if (p_entry.type_arguments.is_empty()) {
+		return false;
+	}
+	Vector<ContainerType> arguments;
+	arguments.resize(p_entry.type_arguments.size());
+	for (int i = 0; i < p_entry.type_arguments.size(); i++) {
+		// A freed argument script is an absence of evidence, never a null-script stand-in to compare
+		// against: materializing one would silently widen the recorded argument to its bare class.
+		if (!p_entry.type_arguments[i].is_fully_live()) {
+			return false;
+		}
+		arguments.write[i] = p_entry.type_arguments[i].to_container_type();
+	}
+	r_arguments = arguments;
+	return true;
+}
+
+bool FSConformanceRegistry::get_conformance_type_arguments(const String &p_target_key, const StringName &p_trait_name,
+		Vector<ContainerType> &r_arguments) const {
+	r_arguments.clear();
+	if (p_target_key.is_empty() || p_trait_name == StringName()) {
+		return false;
+	}
+	MutexLock lock(mutex);
+	const HashMap<StringName, RuntimeTraitEntry> *runtime_traits =
+			runtime_trait_index.getptr(p_target_key);
+	if (runtime_traits == nullptr) {
+		return false;
+	}
+	const RuntimeTraitEntry *entry = runtime_traits->getptr(p_trait_name);
+	return entry != nullptr && _live_runtime_type_arguments(*entry, r_arguments);
+}
+
+bool FSConformanceRegistry::get_native_conformance_type_arguments(const StringName &p_native_class,
+		const StringName &p_trait_name, Vector<ContainerType> &r_arguments) const {
+	r_arguments.clear();
+	if (p_native_class == StringName() || p_trait_name == StringName()) {
+		return false;
+	}
+	MutexLock lock(mutex);
+	// The nearest conforming ancestor wins, matching how membership itself is answered.
+	for (StringName cursor = p_native_class; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
+		const HashMap<StringName, RuntimeTraitEntry> *runtime_traits =
+				runtime_trait_index.getptr(String(cursor));
+		if (runtime_traits == nullptr) {
+			continue;
+		}
+		const RuntimeTraitEntry *entry = runtime_traits->getptr(p_trait_name);
+		if (entry != nullptr) {
+			return _live_runtime_type_arguments(*entry, r_arguments);
+		}
+	}
+	return false;
+}
+
+bool FSConformanceRegistry::get_builtin_conformance_type_arguments(Variant::Type p_type,
+		const StringName &p_trait_name, Vector<ContainerType> &r_arguments) const {
+	r_arguments.clear();
+	if (p_type == Variant::NIL || p_type == Variant::OBJECT || p_trait_name == StringName()) {
+		return false;
+	}
+	return get_conformance_type_arguments(Variant::get_type_name(p_type), p_trait_name, r_arguments);
 }
 
 String FSConformanceRegistry::get_conformance_source(const String &p_target_key, const StringName &p_trait_name) const {

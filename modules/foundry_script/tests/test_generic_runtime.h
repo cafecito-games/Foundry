@@ -33,6 +33,7 @@
 #include "../foundry_script.h"
 #include "../fs_analyzer.h"
 #include "../fs_compiler.h"
+#include "../fs_conformance_registry.h"
 #include "../fs_parser.h"
 
 #include "core/variant/container_type_validate.h"
@@ -747,6 +748,253 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] Specialized generic trait is
 	check_specialized_generic_trait_is_as(restored);
 
 	restored->clear();
+	script->clear();
+}
+
+// The `int` argument every retroactive-conformance case below declares. `int` lowers to a 32-bit
+// carrier, so a descriptor built without the width would never equal a recorded one.
+static ContainerType retroactive_conformance_int_argument() {
+	ContainerType argument;
+	argument.builtin_type = Variant::INT;
+	argument.numeric_type = NumericType::INT32;
+	return argument;
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericRuntime] Retroactive conformance arguments answer specialized is/as") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"trait ScriptStore[T]:\n"
+			"\tabstract func fetch() -> T\n"
+			"\n"
+			"trait SubStore[T]:\n"
+			"\tuses ScriptStore[T]\n"
+			"\n"
+			"\tabstract func stow(item: T) -> void\n"
+			"\n"
+			"trait NativeStore[T]:\n"
+			"\tabstract func native_fetch() -> T\n"
+			"\n"
+			"trait BuiltinStore[T]:\n"
+			"\tabstract func builtin_fetch() -> T\n"
+			"\n"
+			"class Target:\n"
+			"\tvar kept: int = 0\n"
+			"\n"
+			"class DerivedTarget extends Target:\n"
+			"\tpass\n"
+			"\n"
+			"extend Target uses SubStore[int]:\n"
+			"\tfunc stow(item: int) -> void:\n"
+			"\t\tkept = item\n"
+			"\n"
+			"\tfunc fetch() -> int:\n"
+			"\t\treturn kept\n"
+			"\n"
+			"extend RefCounted uses NativeStore[int]:\n"
+			"\tfunc native_fetch() -> int:\n"
+			"\t\treturn 7\n"
+			"\n"
+			"extend int uses BuiltinStore[int]:\n"
+			"\tfunc builtin_fetch() -> int:\n"
+			"\t\treturn self\n"
+			"\n"
+			"static func is_sub_store(value: Variant) -> bool:\n"
+			"\treturn value is SubStore\n"
+			"\n"
+			"static func is_int_sub_store(value: Variant) -> bool:\n"
+			"\treturn value is SubStore[int]\n"
+			"\n"
+			"static func is_string_sub_store(value: Variant) -> bool:\n"
+			"\treturn value is SubStore[String]\n"
+			"\n"
+			"static func is_int_script_store(value: Variant) -> bool:\n"
+			"\treturn value is ScriptStore[int]\n"
+			"\n"
+			"static func is_string_script_store(value: Variant) -> bool:\n"
+			"\treturn value is ScriptStore[String]\n"
+			"\n"
+			"static func is_int_native_store(value: Variant) -> bool:\n"
+			"\treturn value is NativeStore[int]\n"
+			"\n"
+			"static func is_string_native_store(value: Variant) -> bool:\n"
+			"\treturn value is NativeStore[String]\n"
+			"\n"
+			"static func is_int_builtin_store(value: Variant) -> bool:\n"
+			"\treturn value is BuiltinStore[int]\n"
+			"\n"
+			"static func is_string_builtin_store(value: Variant) -> bool:\n"
+			"\treturn value is BuiltinStore[String]\n"
+			"\n"
+			"static func as_int_sub_store(value: Variant) -> Variant:\n"
+			"\treturn value as SubStore[int]\n"
+			"\n"
+			"static func as_string_sub_store(value: Variant) -> Variant:\n"
+			"\treturn value as SubStore[String]\n");
+	REQUIRE(script->is_valid());
+
+	BytecodeConformanceRegistryRestore registry_restore(script->get_script_path());
+
+	const Ref<FoundryScript> target = get_generic_subclass(script, SNAME("Target"));
+	const Ref<FoundryScript> derived_target = get_generic_subclass(script, SNAME("DerivedTarget"));
+	const Ref<FoundryScript> script_store = get_generic_subclass(script, SNAME("ScriptStore"));
+	const Ref<FoundryScript> sub_store = get_generic_subclass(script, SNAME("SubStore"));
+	const Ref<FoundryScript> native_store = get_generic_subclass(script, SNAME("NativeStore"));
+	const Ref<FoundryScript> builtin_store = get_generic_subclass(script, SNAME("BuiltinStore"));
+	REQUIRE(target.is_valid());
+	REQUIRE(derived_target.is_valid());
+	REQUIRE(script_store.is_valid());
+	REQUIRE(sub_store.is_valid());
+	REQUIRE(native_store.is_valid());
+	REQUIRE(builtin_store.is_valid());
+
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	const ContainerType int_argument = retroactive_conformance_int_argument();
+
+	// The registry surface itself: the declared argument is recorded per trait identity, and the
+	// supertrait identity carries the argument substituted into it.
+	Vector<ContainerType> recorded;
+	REQUIRE(registry->get_conformance_type_arguments(target->get_fully_qualified_name(),
+			sub_store->get_trait_type_name(), recorded));
+	REQUIRE_EQ(recorded.size(), 1);
+	CHECK_EQ(recorded[0].builtin_type, Variant::INT);
+	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
+	CHECK(recorded[0] == int_argument);
+
+	REQUIRE(registry->get_conformance_type_arguments(target->get_fully_qualified_name(),
+			script_store->get_trait_type_name(), recorded));
+	REQUIRE_EQ(recorded.size(), 1);
+	CHECK_EQ(recorded[0].builtin_type, Variant::INT);
+	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
+
+	// A native conformance answers for the conforming class and, through the ancestor walk, for its
+	// subclasses.
+	REQUIRE(registry->get_native_conformance_type_arguments(SNAME("RefCounted"),
+			native_store->get_trait_type_name(), recorded));
+	REQUIRE_EQ(recorded.size(), 1);
+	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
+	REQUIRE(registry->get_native_conformance_type_arguments(SNAME("Resource"),
+			native_store->get_trait_type_name(), recorded));
+	REQUIRE_EQ(recorded.size(), 1);
+	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
+
+	REQUIRE(registry->get_builtin_conformance_type_arguments(Variant::INT,
+			builtin_store->get_trait_type_name(), recorded));
+	REQUIRE_EQ(recorded.size(), 1);
+	CHECK_EQ(recorded[0].numeric_type, NumericType::INT32);
+
+	// A trait nothing conformed to, and a target nothing conformed, report an absence of evidence
+	// rather than an empty (wildcard-shaped) success.
+	CHECK_FALSE(registry->get_conformance_type_arguments(target->get_fully_qualified_name(),
+			SNAME("NoSuchTraitIdentity"), recorded));
+	CHECK_FALSE(registry->get_builtin_conformance_type_arguments(Variant::STRING,
+			builtin_store->get_trait_type_name(), recorded));
+
+	// The VM answers `is`/`as` from those records, for the conformed script class, a subclass of it,
+	// a subclass of the conformed engine class, and a conformed builtin value.
+	const Variant target_value = new_generic_runtime_instance(target, Vector<ContainerType>());
+	const Variant derived_value = new_generic_runtime_instance(derived_target, Vector<ContainerType>());
+	Ref<Resource> native_resource;
+	native_resource.instantiate();
+	const Variant native_value = native_resource;
+	const Variant builtin_value = 3;
+
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_sub_store"), { target_value })));
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_int_sub_store"), { target_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(script, SNAME("is_string_sub_store"), { target_value })));
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_int_sub_store"), { derived_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(script, SNAME("is_string_sub_store"), { derived_value })));
+
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_int_script_store"), { target_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(script, SNAME("is_string_script_store"), { target_value })));
+
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_int_native_store"), { native_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(script, SNAME("is_string_native_store"), { native_value })));
+
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_int_builtin_store"), { builtin_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(script, SNAME("is_string_builtin_store"), { builtin_value })));
+
+	// `as` agrees with `is` row for row.
+	CHECK(call_generic_runtime_static(script, SNAME("as_int_sub_store"), { target_value }) == target_value);
+	CHECK(call_generic_runtime_static(script, SNAME("as_string_sub_store"), { target_value }).get_type() == Variant::NIL);
+	CHECK(call_generic_runtime_static(script, SNAME("as_int_sub_store"), { Variant() }).get_type() == Variant::NIL);
+
+	script->clear();
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericRuntime] A freed conformance type-argument script fails specialized is/as") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"trait Boxed[T]:\n"
+			"\tabstract func unbox() -> T\n"
+			"\n"
+			"class Payload:\n"
+			"\tpass\n"
+			"\n"
+			"class Target:\n"
+			"\tpass\n"
+			"\n"
+			"extend Target uses Boxed[Payload]:\n"
+			"\tfunc unbox() -> Payload:\n"
+			"\t\treturn null\n"
+			"\n"
+			"static func is_boxed(value: Variant) -> bool:\n"
+			"\treturn value is Boxed\n"
+			"\n"
+			"static func is_payload_boxed(value: Variant) -> bool:\n"
+			"\treturn value is Boxed[Payload]\n");
+	REQUIRE(script->is_valid());
+
+	const String script_path = script->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const Ref<FoundryScript> target = get_generic_subclass(script, SNAME("Target"));
+	const Ref<FoundryScript> boxed = get_generic_subclass(script, SNAME("Boxed"));
+	REQUIRE(target.is_valid());
+	REQUIRE(boxed.is_valid());
+	const StringName boxed_trait = boxed->get_trait_type_name();
+	const String target_key = target->get_fully_qualified_name();
+
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	const Variant target_value = new_generic_runtime_instance(target, Vector<ContainerType>());
+
+	// The live baseline: a script-typed argument is recorded and answers the specialized target.
+	Vector<ContainerType> recorded;
+	REQUIRE(registry->get_conformance_type_arguments(target_key, boxed_trait, recorded));
+	REQUIRE_EQ(recorded.size(), 1);
+	CHECK(recorded[0].script.is_valid());
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_boxed"), { target_value })));
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_payload_boxed"), { target_value })));
+
+	// Re-record the same conformance against an argument script whose only strong reference is local.
+	// A compiled argument is kept alive by the declaring script's own graph, so this is the only way
+	// to observe an argument outliving nothing: the registry describes it weakly.
+	Ref<FoundryScript> free_standing_argument;
+	free_standing_argument.instantiate();
+	{
+		Vector<FSConformanceRegistry::RuntimeConformance> conformances =
+				registry->get_runtime_witnesses(script_path);
+		REQUIRE_FALSE(conformances.is_empty());
+		ContainerType argument;
+		argument.builtin_type = Variant::OBJECT;
+		argument.script = free_standing_argument;
+		for (FSConformanceRegistry::RuntimeConformance &conformance : conformances) {
+			conformance.trait_type_arguments.clear();
+			conformance.trait_type_arguments.push_back(FSWeakContainerType::from_container_type(argument));
+		}
+		registry->register_runtime_witnesses(script_path, conformances);
+	}
+	REQUIRE(registry->get_conformance_type_arguments(target_key, boxed_trait, recorded));
+	REQUIRE_EQ(recorded.size(), 1);
+	CHECK(recorded[0].script.ptr() == free_standing_argument.ptr());
+
+	// Dropping the last strong reference frees the argument. The record still names it, so the query
+	// must report an absence of evidence rather than materialize a null-script stand-in, and the
+	// specialized target must fail while nominal membership is untouched.
+	free_standing_argument = Ref<FoundryScript>();
+
+	CHECK_FALSE(registry->get_conformance_type_arguments(target_key, boxed_trait, recorded));
+	CHECK(recorded.is_empty());
+	CHECK(bool(call_generic_runtime_static(script, SNAME("is_boxed"), { target_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(script, SNAME("is_payload_boxed"), { target_value })));
+
 	script->clear();
 }
 

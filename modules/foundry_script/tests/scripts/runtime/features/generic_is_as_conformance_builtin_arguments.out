@@ -1,0 +1,13 @@
+FS_TEST_OK
+~~ WARNING at line 22: (UNSAFE_CAST) Casting "Variant" to "GenericStore" is unsafe.
+~~ WARNING at line 24: (UNSAFE_CAST) Casting "Variant" to "GenericStore[int]" is unsafe.
+~~ WARNING at line 26: (UNSAFE_CAST) Casting "Variant" to "GenericStore[String]" is unsafe.
+int is GenericStore: true
+int is GenericStore[int]: true
+int is GenericStore[String]: false
+variant is GenericStore: true
+variant is GenericStore[int]: true
+variant is GenericStore[String]: false
+raw cast keeps identity: true
+exact cast keeps identity: true
+mismatched cast is null: true
