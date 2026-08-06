@@ -194,6 +194,44 @@ TEST_CASE("[Modules][FoundryScript][ProjectScripts] Descriptor metadata matches 
 	CHECK_EQ(Array(first_argument.get("annotations", Variant())).size(), 1);
 }
 
+TEST_CASE("[Modules][FoundryScript][ProjectScripts] get_methods populates signature type names from the parsed declaration") {
+	ScopedDiscoveryProject project;
+	Ref<FSProjectScripts> discovery;
+	discovery.instantiate();
+
+	const Ref<FSScriptDescriptor> descriptor = discovery->get_script_descriptor(project.fixture_path("signature_type_names.notest.fs"));
+	REQUIRE(descriptor.is_valid());
+	REQUIRE(descriptor->get_indexed_ok());
+
+	const TypedArray<FSMethodDescriptor> methods = descriptor->get_methods();
+	REQUIRE_EQ(methods.size(), 2);
+
+	Ref<FSMethodDescriptor> measure;
+	Ref<FSMethodDescriptor> announce;
+	for (int i = 0; i < methods.size(); i++) {
+		Ref<FSMethodDescriptor> method = methods[i];
+		if (method->get_method_name() == StringName("measure")) {
+			measure = method;
+		} else if (method->get_method_name() == StringName("announce")) {
+			announce = method;
+		}
+	}
+
+	REQUIRE(measure.is_valid());
+	const PackedStringArray measure_argument_type_names = measure->get_argument_type_names();
+	REQUIRE_EQ(measure_argument_type_names.size(), 3);
+	CHECK_EQ(measure_argument_type_names[0], "int");
+	CHECK_EQ(measure_argument_type_names[1], "long");
+	// A nullable typed-container element keeps its declared type and its "?" suffix here because this
+	// surface names types straight off the parser's `DataType`, which never goes through the
+	// compiled `FSDataType`'s container-element lowering.
+	CHECK_EQ(measure_argument_type_names[2], "Array[ulong?]");
+	CHECK_EQ(measure->get_return_type_name(), "Dictionary[String, int?]");
+
+	REQUIRE(announce.is_valid());
+	CHECK(announce->get_argument_type_names().is_empty());
+}
+
 TEST_CASE("[Modules][FoundryScript][ProjectScripts] implements_trait matches qualified trait identity and inherited traits") {
 	ScopedDiscoveryProject project;
 	ScopedGlobalClass base_global(project.fixture_path("trait_base.notest.fs"));

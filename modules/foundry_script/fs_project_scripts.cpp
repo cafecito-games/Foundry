@@ -64,6 +64,28 @@ HashMap<StringName, TypedArray<FSAnnotation>> parameter_usages_to_descriptors(co
 	return result;
 }
 
+// Copies the declared signature type names off the parsed function node. This surface only indexes a
+// script rather than compiling it, so there is no `FSFunction` to read the exact names from the way
+// `FSReflection::apply_signature_type_names` does; the parser's own resolved `DataType`s are the same
+// information before compilation lowers them, and `to_string_strict()` already falls back to `Variant`
+// for an unresolved or dynamic slot, matching the same escape hatch the compiled surface uses.
+void apply_parsed_signature_type_names(const Ref<FSMethodDescriptor> &p_descriptor, const FSParser::FunctionNode *p_function) {
+	if (p_descriptor.is_null() || p_function == nullptr) {
+		return;
+	}
+	// One entry per argument the `MethodInfo` lists, so the result stays index-parallel to the
+	// descriptor's `args`; a rest parameter is in neither.
+	const int listed_count = p_function->info.arguments.size();
+	const int declared_count = p_function->parameters.size();
+	PackedStringArray argument_type_names;
+	argument_type_names.resize(listed_count);
+	String *argument_type_names_write = argument_type_names.ptrw();
+	for (int i = 0; i < listed_count; i++) {
+		argument_type_names_write[i] = i < declared_count ? p_function->parameters[i]->get_datatype().to_string_strict() : String("Variant");
+	}
+	p_descriptor->set_signature_type_names(argument_type_names, p_function->get_datatype().to_string_strict());
+}
+
 TypedArray<Dictionary> collect_index_diagnostics(const FSParser *p_parser) {
 	TypedArray<Dictionary> diagnostics;
 	if (p_parser == nullptr) {
@@ -284,11 +306,13 @@ TypedArray<FSMethodDescriptor> FSScriptDescriptor::get_methods() const {
 		FSCompiler::collect_passive_annotations(member.function->annotations, method_usages);
 		HashMap<StringName, Vector<FoundryScript::AnnotationUsage>> parameter_usages;
 		FSCompiler::collect_passive_parameter_annotations(member.function->parameters, member.function->rest_parameter, parameter_usages);
-		result.push_back(FSMethodDescriptor::create(
+		Ref<FSMethodDescriptor> descriptor = FSMethodDescriptor::create(
 				member.function->info,
 				usages_to_descriptors(method_usages),
 				true,
-				parameter_usages_to_descriptors(parameter_usages)));
+				parameter_usages_to_descriptors(parameter_usages));
+		apply_parsed_signature_type_names(descriptor, member.function);
+		result.push_back(descriptor);
 	}
 #else
 	(void)indexed_ok;

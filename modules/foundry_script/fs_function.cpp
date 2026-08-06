@@ -157,6 +157,21 @@ String FSDataType::get_source_type_name() const {
 				name = numeric_type_has_public_name(effective) ? numeric_type_public_name(effective) : numeric_type_name(effective);
 				break;
 			}
+			if ((builtin_type == Variant::ARRAY || builtin_type == Variant::DICTIONARY) && has_container_element_types()) {
+				// `to_container_type()` cannot express "this type or null", so it drops a nullable element
+				// to an empty `ContainerType` and names it `Variant`. Recurse through the element
+				// `FSDataType`s directly instead, the same pattern the TUPLE branch above uses, so a
+				// nullable element keeps its declared type and its `?` suffix whenever the compiled
+				// element descriptor still carries one.
+				if (builtin_type == Variant::ARRAY) {
+					name = vformat("Array[%s]", container_element_types[0].get_source_type_name());
+				} else {
+					const String key = get_container_element_type_or_variant(0).get_source_type_name();
+					const String value = get_container_element_type_or_variant(1).get_source_type_name();
+					name = vformat("Dictionary[%s, %s]", key, value);
+				}
+				break;
+			}
 			name = value_type_name();
 		} break;
 		case NATIVE:
