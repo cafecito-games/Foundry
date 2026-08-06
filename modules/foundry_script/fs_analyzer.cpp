@@ -750,8 +750,11 @@ static bool _type_handle_source_is_handle(const FSParser::DataType &p_type);
 // `Self` so the compiler re-arms the `is_self_type` marker on the lowered descriptor; a frame then
 // re-binds the position to its actual receiver (instance leaf or static receiver). The marker is
 // preserved only for literal element/return positions and member-variable materialization, where the
-// substitution result becomes a runtime descriptor -- not for the local comparison copies the
-// parameter/return contract checks build, which never reach the compiler.
+// substitution result becomes a runtime descriptor a frame re-binds to its receiver. It is not
+// preserved for the local copies the parameter/return contract checks build, nor for the
+// `resolved_parameter_types` used for `Type[…]` argument coercion: both feed comparison or coercion
+// paths rather than runtime `Self` resolution, so carrying the marker there would re-bind positions
+// the author did not write as `Self`.
 static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSParser::DataType &p_type,
 		bool p_mark_substituted_self = false) {
 	if (_is_self_type_parameter(p_type)) {

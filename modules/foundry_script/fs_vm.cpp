@@ -1227,11 +1227,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	int line = _initial_line;
 
 	// An instance frame has no compiled-in receiver, but the running instance is its receiver. The
-	// descriptor is built once for the frame and borrowed by the signature validation below (and, once
-	// the deferred analyzer work lands, by `FrameSelfBinding` further down), so it has to outlive that
-	// use; declaring it here keeps it alive until the call returns. An explicitly supplied
-	// `p_static_self` (extracted callable, coroutine resumption) always wins, so the instance form is
-	// only derived when none was given.
+	// descriptor is built once for the frame and borrowed by the signature validation below and by
+	// `FrameSelfBinding` further down, so it has to outlive both; declaring it here keeps it alive
+	// until the call returns. It is derived on both entry paths: the initial call resolves the
+	// signature through it, and a resumed instance frame (whose instance is restored but which never
+	// carried a compiled-in receiver) needs it so container and return positions read through
+	// `FrameSelfBinding` rebind to the receiver's leaf on resume exactly as they do on the initial
+	// call. An explicitly supplied `p_static_self` (extracted callable, coroutine resumption) always
+	// wins, so the instance form is only derived when none was given.
 	FSStaticSelfContext instance_self_context;
 
 	if (p_state) {
@@ -1251,6 +1254,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			// The suspended frame kept its receiver, so resumption cannot come back with an absent or
 			// different specialization.
 			p_static_self = &p_state->static_self;
+		}
+		// A resumed instance frame restored its instance above but, like the initial call, carries no
+		// compiled-in receiver; derive the same leaf-script context so container and return positions
+		// read through `FrameSelfBinding` rebind to the receiver's leaf on resume. Without this, a
+		// `Self`-typed container built after an `await` would resolve against the declaring class
+		// instead of the receiver's leaf, splitting the frame's behavior across the suspension.
+		if (p_static_self == nullptr && !_static) {
+			instance_self_context = _instance_frame_self_context(p_instance, p_self_override);
 		}
 
 		// Responsibility for the stack is moved from `FSFunctionState` to this method. Reset
