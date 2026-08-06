@@ -286,9 +286,9 @@ TEST_CASE("[Modules][FoundryScript][NativeIntegerMetadata] A constant argument i
 			"func run() -> void:\n"
 			"\tvar rng := RandomNumberGenerator.new()\n"
 			"\trng.set_seed(18446744073709551615UL)\n");
-	// A signed constant does not cross to the unsigned carrier on its own, exactly as it does not in
-	// an assignment, and a negative one has no unsigned value at all.
-	CHECK_NATIVE_INTEGER_ANALYSIS_FAILS(
+	// An unsuffixed positive constant is representable in the unsigned carrier, so it crosses on its
+	// own, exactly as it does in an assignment. A negative one still has no unsigned value at all.
+	CHECK_NATIVE_INTEGER_ANALYSIS_SUCCEEDS(
 			"func run() -> void:\n"
 			"\tvar rng := RandomNumberGenerator.new()\n"
 			"\trng.set_seed(12)\n");
