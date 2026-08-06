@@ -36,7 +36,6 @@ func classify(msg: MatchMessage) -> String:
 			return "write " + text
 		MatchMessage.Quit:
 			return "quit"
-	return "unreachable"
 
 const EXPECTED_STEP: int = 5
 
@@ -57,7 +56,6 @@ func describe_shape(shape: MatchShape) -> String:
 			return "rect %dx%d" % [width, height]
 		MatchShape.Point:
 			return "point"
-	return "unreachable"
 
 func test():
 	handle_message(MatchMessage.Move(1, 2))

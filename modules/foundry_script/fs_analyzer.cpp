@@ -4163,7 +4163,14 @@ void FSAnalyzer::resolve_function_body(FSParser::FunctionNode *p_function, bool 
 		p_function->set_datatype(p_function->body->get_datatype());
 	} else if (p_function->get_datatype().is_hard_type() && (p_function->get_datatype().kind != FSParser::DataType::BUILTIN || p_function->get_datatype().builtin_type != Variant::NIL)) {
 		if (!body_exit.always_terminates && (p_is_lambda || p_function->identifier->name != FSLanguage::get_singleton()->strings._init)) {
-			push_error(R"(Not all code paths return a value.)", p_function);
+			// When a trailing `match` is what leaves the fallthrough open, name the gap: the error is
+			// what stops the build, and warnings are not surfaced everywhere errors are.
+			const FSParser::MatchNode *incomplete_match = find_non_covering_match_cause(p_function->body);
+			if (incomplete_match != nullptr) {
+				push_error(vformat(R"(Not all code paths return a value. The "match" over "%s" does not cover: %s.)", incomplete_match->subject_domain_name, incomplete_match->uncovered_domain_values), p_function);
+			} else {
+				push_error(R"(Not all code paths return a value.)", p_function);
+			}
 		}
 	}
 
@@ -4189,6 +4196,37 @@ FSAnalyzer::SuiteExitState FSAnalyzer::get_suite_exit_state(const FSParser::Suit
 	}
 
 	return result;
+}
+
+// Returns the trailing `match` that would have terminated the suite if it had covered its subject's
+// domain, so the missing-return diagnostic can name the uncovered values. Returns null for every other
+// cause of a fallthrough.
+const FSParser::MatchNode *FSAnalyzer::find_non_covering_match_cause(const FSParser::SuiteNode *p_suite) const {
+	if (p_suite == nullptr || p_suite->statements.is_empty()) {
+		return nullptr;
+	}
+
+	const FSParser::Node *last_statement = p_suite->statements[p_suite->statements.size() - 1];
+	if (last_statement == nullptr) {
+		return nullptr;
+	}
+	if (last_statement->type == FSParser::Node::SUITE) {
+		return find_non_covering_match_cause(static_cast<const FSParser::SuiteNode *>(last_statement));
+	}
+	if (last_statement->type != FSParser::Node::MATCH) {
+		return nullptr;
+	}
+
+	const FSParser::MatchNode *match_node = static_cast<const FSParser::MatchNode *>(last_statement);
+	if (match_node->uncovered_domain_values.is_empty() || match_node->branches.is_empty()) {
+		return nullptr;
+	}
+	for (const FSParser::MatchBranchNode *branch : match_node->branches) {
+		if (!get_suite_exit_state(branch->block).always_terminates) {
+			return nullptr; // A branch falls through on its own; coverage is not the missing piece.
+		}
+	}
+	return match_node;
 }
 
 FSAnalyzer::SuiteExitState FSAnalyzer::get_statement_exit_state(const FSParser::Node *p_statement) const {
@@ -4229,7 +4267,9 @@ FSAnalyzer::SuiteExitState FSAnalyzer::get_statement_exit_state(const FSParser::
 				all_branches_terminate = all_branches_terminate && branch_exit.always_terminates;
 				has_wildcard = has_wildcard || branch->has_wildcard;
 			}
-			result.always_terminates = has_wildcard && all_branches_terminate;
+			// A `match` whose branches provably cover the subject's whole domain leaves no fallthrough,
+			// exactly as a wildcard branch does.
+			result.always_terminates = (has_wildcard || match_node->covers_subject_domain) && all_branches_terminate;
 		} break;
 		case FSParser::Node::WHILE: {
 			const FSParser::WhileNode *while_node = static_cast<const FSParser::WhileNode *>(p_statement);
@@ -4875,13 +4915,16 @@ void FSAnalyzer::resolve_match(FSParser::MatchNode *p_match) {
 		decide_suite_type(p_match, p_match->branches[i]);
 	}
 
-#ifdef DEBUG_ENABLED
 	check_match_exhaustiveness(p_match);
-#endif
 }
 
-#ifdef DEBUG_ENABLED
+// Coverage decides whether a `match` is terminating for flow analysis, which decides whether a program
+// compiles, so it is computed in every build configuration. Only the warnings it feeds are gated.
 void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
+	p_match->covers_subject_domain = false;
+	p_match->subject_domain_name = String();
+	p_match->uncovered_domain_values = String();
+
 	if (p_match->test == nullptr) {
 		return; // Parse error: `match` with no test expression.
 	}
@@ -4904,16 +4947,13 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	// `domain_values` maps each value's display name to its integer value.
 	// Iteration order follows insertion order (Godot HashMap), i.e. enum
 	// declaration order, so the unhandled list is deterministic.
-	bool is_finite_domain = false;
+	const bool is_tagged_union = match_type.is_tagged_union_type();
+	bool is_finite_domain = is_tagged_union;
 	HashMap<StringName, int64_t> domain_values;
 	String type_name;
-	if (match_type.is_tagged_union_type()) {
-		if (!has_default) {
-			check_tagged_union_match_exhaustiveness(p_match, match_type);
-		}
-		return;
-	}
-	if (match_type.kind == FSParser::DataType::ENUM && !match_type.is_tagged_union) {
+	if (is_tagged_union) {
+		type_name = match_type.enum_type;
+	} else if (match_type.kind == FSParser::DataType::ENUM && !match_type.is_tagged_union) {
 		is_finite_domain = true;
 		domain_values = match_type.enum_values;
 		type_name = match_type.enum_type;
@@ -4925,33 +4965,63 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	}
 
 	if (!is_finite_domain) {
+#ifdef DEBUG_ENABLED
 		if (!has_default) {
 			parser->push_warning(p_match, FSWarning::MATCH_WITHOUT_DEFAULT);
 		}
+#endif // DEBUG_ENABLED
 		return;
 	}
 
-	if (has_default || domain_values.is_empty()) {
-		return; // Exhaustive via default, or nothing to check.
+	if (has_default) {
+		p_match->covers_subject_domain = true;
+		return; // Exhaustive via default.
+	}
+
+	Vector<String> unhandled;
+	const bool coverage_is_provable = is_tagged_union
+			? collect_uncovered_tagged_union_cases(p_match, match_type, unhandled)
+			: collect_uncovered_finite_domain_values(p_match, match_type, domain_values, unhandled);
+	if (!coverage_is_provable) {
+		return; // Coverage could not be determined; the match is treated as non-covering.
+	}
+
+	p_match->subject_domain_name = type_name;
+	p_match->covers_subject_domain = unhandled.is_empty();
+	if (unhandled.is_empty()) {
+		return;
+	}
+
+	p_match->uncovered_domain_values = String(", ").join(unhandled);
+#ifdef DEBUG_ENABLED
+	parser->push_warning(p_match, FSWarning::NON_EXHAUSTIVE_MATCH, type_name, p_match->uncovered_domain_values);
+#endif // DEBUG_ENABLED
+}
+
+// Collects the values of a plain enum or `bool` domain that no unguarded, statically-constant pattern
+// covers, in declaration order. Returns false when a pattern makes coverage unprovable.
+bool FSAnalyzer::collect_uncovered_finite_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const {
+	if (p_domain_values.is_empty()) {
+		return false; // Nothing to check; claim no coverage.
 	}
 
 	// `match` compares typeof() before value, so only same-typed constants can
 	// cover a value at runtime: INT for enums, BOOL for the bool domain.
-	const Variant::Type expected_type = match_type.kind == FSParser::DataType::ENUM ? Variant::INT : Variant::BOOL;
+	const Variant::Type expected_type = p_match_type.kind == FSParser::DataType::ENUM ? Variant::INT : Variant::BOOL;
 
 	// For nullable types, `null` (`Variant::NIL`) is a valid runtime value that
 	// no enum integer or bool constant can cover, so it must be handled by an
 	// explicit `null` pattern (or a wildcard) to be exhaustive.
-	const bool domain_includes_null = match_type.is_nullable;
+	const bool domain_includes_null = p_match_type.is_nullable;
 
 	// Collect values covered by unguarded, statically-constant patterns.
 	bool null_covered = false;
 	HashSet<int64_t> covered_values;
-	for (FSParser::MatchBranchNode *branch : p_match->branches) {
+	for (const FSParser::MatchBranchNode *branch : p_match->branches) {
 		if (branch->guard_body != nullptr) {
 			continue; // Guard may fail; does not guarantee coverage.
 		}
-		for (FSParser::PatternNode *pattern : branch->patterns) {
+		for (const FSParser::PatternNode *pattern : branch->patterns) {
 			const FSParser::ExpressionNode *value_node = nullptr;
 			if (pattern->pattern_type == FSParser::PatternNode::PT_LITERAL) {
 				value_node = pattern->literal;
@@ -4963,7 +5033,7 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 			}
 
 			if (value_node == nullptr || !value_node->is_constant) {
-				return; // Non-constant pattern: cannot prove coverage; bail out.
+				return false; // Non-constant pattern: cannot prove coverage; bail out.
 			}
 			if (value_node->reduced_value.get_type() != expected_type) {
 				// A `null` pattern covers the nullable domain's `null` value.
@@ -4979,36 +5049,32 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 		}
 	}
 
-	// Report any domain value with no covering pattern.
-	Vector<String> unhandled;
-	for (const KeyValue<StringName, int64_t> &E : domain_values) {
+	for (const KeyValue<StringName, int64_t> &E : p_domain_values) {
 		if (!covered_values.has(E.value)) {
-			unhandled.push_back(String(E.key));
+			r_uncovered.push_back(String(E.key));
 		}
 	}
 	if (domain_includes_null && !null_covered) {
-		unhandled.push_back("null");
+		r_uncovered.push_back("null");
 	}
-
-	if (!unhandled.is_empty()) {
-		parser->push_warning(p_match, FSWarning::NON_EXHAUSTIVE_MATCH, type_name, String(", ").join(unhandled));
-	}
+	return true;
 }
 
 // The domain of a tagged union is its case set. A case is covered by a payload-less case value used as
 // a plain pattern, or by a case pattern whose payload patterns accept every value of the case.
-void FSAnalyzer::check_tagged_union_match_exhaustiveness(FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type) {
+// Returns false when a pattern makes coverage unprovable.
+bool FSAnalyzer::collect_uncovered_tagged_union_cases(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, Vector<String> &r_uncovered) const {
 	if (p_match_type.enum_values.is_empty()) {
-		return;
+		return false;
 	}
 
 	HashSet<int64_t> covered_tags;
 	bool null_covered = false;
-	for (FSParser::MatchBranchNode *branch : p_match->branches) {
+	for (const FSParser::MatchBranchNode *branch : p_match->branches) {
 		if (branch->guard_body != nullptr) {
 			continue; // Guard may fail; does not guarantee coverage.
 		}
-		for (FSParser::PatternNode *pattern : branch->patterns) {
+		for (const FSParser::PatternNode *pattern : branch->patterns) {
 			if (pattern->pattern_type == FSParser::PatternNode::PT_ENUM_CASE) {
 				const FSParser::DataType &case_type = pattern->case_datatype;
 				if (!pattern->case_payload_is_irrefutable || case_type.enum_type != p_match_type.enum_type) {
@@ -5031,7 +5097,7 @@ void FSAnalyzer::check_tagged_union_match_exhaustiveness(FSParser::MatchNode *p_
 			}
 
 			if (value_node == nullptr || !value_node->is_constant) {
-				return; // Non-constant pattern: cannot prove coverage; bail out.
+				return false; // Non-constant pattern: cannot prove coverage; bail out.
 			}
 			// A payload-less case folds to its read-only `[tag]` singleton, which is the only constant
 			// that can cover a case at runtime.
@@ -5051,21 +5117,16 @@ void FSAnalyzer::check_tagged_union_match_exhaustiveness(FSParser::MatchNode *p_
 		}
 	}
 
-	Vector<String> unhandled;
 	for (const KeyValue<StringName, int64_t> &E : p_match_type.enum_values) {
 		if (!covered_tags.has(E.value)) {
-			unhandled.push_back(String(E.key));
+			r_uncovered.push_back(String(E.key));
 		}
 	}
 	if (p_match_type.is_nullable && !null_covered) {
-		unhandled.push_back("null");
+		r_uncovered.push_back("null");
 	}
-
-	if (!unhandled.is_empty()) {
-		parser->push_warning(p_match, FSWarning::NON_EXHAUSTIVE_MATCH, p_match_type.enum_type, String(", ").join(unhandled));
-	}
+	return true;
 }
-#endif // DEBUG_ENABLED
 
 void FSAnalyzer::resolve_match_branch(FSParser::MatchBranchNode *p_match_branch, FSParser::ExpressionNode *p_match_test) {
 	// Apply annotations.
