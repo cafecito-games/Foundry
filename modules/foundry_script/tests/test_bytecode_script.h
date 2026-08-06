@@ -1312,6 +1312,88 @@ TEST_CASE("[FoundryScript][BytecodeScript] Native and builtin conformance stand-
 	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 42);
 }
 
+TEST_CASE("[FoundryScript][BytecodeScript] Conformance trait arguments survive compiled-bytecode loading") {
+	const Ref<FoundryScript> original = compile_bytecode_test_source(
+			"trait Store[T]:\n"
+			"\tabstract func fetch() -> T\n"
+			"\n"
+			"trait SubStore[T]:\n"
+			"\tuses Store[T]\n"
+			"\n"
+			"trait BuiltinStore[T]:\n"
+			"\tabstract func builtin_fetch() -> T\n"
+			"\n"
+			"extend RefCounted uses SubStore[int]:\n"
+			"\tfunc fetch() -> int:\n"
+			"\t\treturn 20\n"
+			"\n"
+			"extend int uses BuiltinStore[String]:\n"
+			"\tfunc builtin_fetch() -> String:\n"
+			"\t\treturn \"kept\"\n"
+			"\n"
+			"func run() -> long:\n"
+			"\tvar native_value: SubStore[int] = RefCounted.new()\n"
+			"\treturn native_value.fetch()\n");
+	REQUIRE(original->is_valid());
+	const String script_path = original->get_script_path();
+	BytecodeConformanceRegistryRestore registry_restore(script_path);
+
+	const StringName store_trait =
+			original->get_subclasses().find(SNAME("Store"))->value->get_trait_type_name();
+	const StringName sub_store_trait =
+			original->get_subclasses().find(SNAME("SubStore"))->value->get_trait_type_name();
+	const StringName builtin_store_trait =
+			original->get_subclasses().find(SNAME("BuiltinStore"))->value->get_trait_type_name();
+
+	// The pre-export truth: the direct trait, its supertrait identity (whose argument was substituted
+	// through the conformance), and the builtin target each recorded one argument.
+	FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	Vector<ContainerType> compiled_sub_store_arguments;
+	Vector<ContainerType> compiled_store_arguments;
+	Vector<ContainerType> compiled_builtin_arguments;
+	REQUIRE(registry->get_native_conformance_type_arguments(SNAME("RefCounted"), sub_store_trait, compiled_sub_store_arguments));
+	REQUIRE(registry->get_native_conformance_type_arguments(SNAME("RefCounted"), store_trait, compiled_store_arguments));
+	REQUIRE(registry->get_builtin_conformance_type_arguments(Variant::INT, builtin_store_trait, compiled_builtin_arguments));
+	REQUIRE_EQ(compiled_sub_store_arguments.size(), 1);
+	REQUIRE_EQ(compiled_store_arguments.size(), 1);
+	REQUIRE_EQ(compiled_builtin_arguments.size(), 1);
+	CHECK_EQ(compiled_sub_store_arguments[0].builtin_type, Variant::INT);
+	CHECK_EQ(compiled_sub_store_arguments[0].numeric_type, NumericType::INT32);
+	CHECK_EQ(compiled_builtin_arguments[0].builtin_type, Variant::STRING);
+
+	FSBytecodeExporter exporter;
+	Vector<uint8_t> buffer;
+	REQUIRE(exporter.serialize(original, buffer) == OK);
+
+	FSConformanceRegistry::get_singleton()->clear_file(script_path);
+	FSConformanceRegistry::get_singleton()->clear_runtime_witnesses(script_path);
+	Vector<ContainerType> cleared_arguments;
+	CHECK_FALSE(registry->get_native_conformance_type_arguments(SNAME("RefCounted"), sub_store_trait, cleared_arguments));
+	CHECK_FALSE(registry->get_builtin_conformance_type_arguments(Variant::INT, builtin_store_trait, cleared_arguments));
+
+	Ref<FoundryScript> restored;
+	restored.instantiate();
+	restored->set_path_cache(script_path);
+	BytecodeTestResolver resolver;
+	FSBytecodeLoader loader;
+	loader.set_resolver(&resolver);
+	REQUIRE(loader.load_full(buffer, restored) == OK);
+
+	Vector<ContainerType> loaded_sub_store_arguments;
+	Vector<ContainerType> loaded_store_arguments;
+	Vector<ContainerType> loaded_builtin_arguments;
+	REQUIRE(registry->get_native_conformance_type_arguments(SNAME("RefCounted"), sub_store_trait, loaded_sub_store_arguments));
+	REQUIRE(registry->get_native_conformance_type_arguments(SNAME("RefCounted"), store_trait, loaded_store_arguments));
+	REQUIRE(registry->get_builtin_conformance_type_arguments(Variant::INT, builtin_store_trait, loaded_builtin_arguments));
+	CHECK(loaded_sub_store_arguments == compiled_sub_store_arguments);
+	CHECK(loaded_store_arguments == compiled_store_arguments);
+	CHECK(loaded_builtin_arguments == compiled_builtin_arguments);
+
+	const Variant instance_variant = bytecode_new_instance(restored);
+	Object *instance = instance_variant;
+	CHECK((int64_t)bytecode_instance_call(instance, SNAME("run"), {}) == 20);
+}
+
 TEST_CASE("[FoundryScript][BytecodeScript] A native witness returning a generic over Self exports") {
 	// The stand-in ClassNode a native conformance analyzes through is never registered as a real
 	// class, so it has no serializable Foundry Script identity. Lowered as an ordinary class it would

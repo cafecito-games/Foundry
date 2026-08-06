@@ -42,5 +42,9 @@ static _FORCE_INLINE_ StringName fs_trait_identity_name(const FSParser::ClassNod
 	return StringName(p_trait->fqcn);
 }
 
+// The trait itself followed by its supertraits, deduplicated by runtime identity name. The node form
+// exists so a caller that must ask each identity a question about its own declaration (its type
+// parameters, say) walks exactly the set `fs_trait_identity_closure` names, in the same order.
+Vector<FSParser::ClassNode *> fs_trait_identity_closure_nodes(const FSParser::ClassNode *p_trait);
 Vector<StringName> fs_trait_identity_closure(const FSParser::ClassNode *p_trait);
 bool fs_class_has_named_trait(const FSParser::ClassNode *p_class, const StringName &p_trait_name);

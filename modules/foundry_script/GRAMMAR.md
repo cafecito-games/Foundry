@@ -1020,9 +1020,13 @@ container contents, so an empty `Crate[int]` and a full one answer alike.
   `trait Relayed[U]: uses Holder[U]`, and a generic implementer `class Forwarder[W]: uses Holder[W]`
   all answer from the argument that reaches the tested trait. A raw `Forwarder` proves nothing and
   fails a specialized target.
-- A **retroactive** conformance (`extend Target uses Trait[arg]`) records the trait's identity only,
-  so a value that conforms solely through it carries no argument evidence: it satisfies the raw trait
-  target and fails every specialized one.
+- A **retroactive** conformance (`extend Target uses Trait[arg]`) records the arguments it declared,
+  so a value that conforms solely through it answers a specialized target from them: an exact match
+  succeeds, a mismatch fails, and a conformance that supplied no arguments at all satisfies only the
+  raw target. A supertrait reached through the conformance answers from the argument substituted into
+  it, so `trait Sub[T]: uses Super[T]` with `extend Target uses Sub[int]` satisfies `Super[int]` and
+  fails `Super[String]`. A conformed engine class answers for its subclasses, and a conformed builtin
+  answers for its values, by the same rules.
 - `null` is never an instance or a class handle, so it fails every such test.
 
 #### `await`

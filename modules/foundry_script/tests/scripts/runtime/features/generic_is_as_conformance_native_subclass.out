@@ -1,0 +1,8 @@
+FS_TEST_OK
+~~ WARNING at line 25: (UNSAFE_CAST) Casting "Variant" to "NativeStore[int]" is unsafe.
+~~ WARNING at line 27: (UNSAFE_CAST) Casting "Variant" to "NativeStore[String]" is unsafe.
+resource is NativeStore: true
+resource is NativeStore[int]: true
+resource is NativeStore[String]: false
+exact cast keeps identity: true
+mismatched cast is null: true

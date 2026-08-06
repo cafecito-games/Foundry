@@ -1,0 +1,9 @@
+FS_TEST_OK
+~~ WARNING at line 24: (UNSAFE_CAST) Casting "Variant" to "Boxed" is unsafe.
+~~ WARNING at line 26: (UNSAFE_CAST) Casting "Variant" to "Boxed[int]" is unsafe.
+crate is Boxed: true
+crate is Boxed[int]: false
+crate is Boxed[String]: false
+crate is Boxed[Variant]: false
+raw cast keeps identity: true
+specialized cast is null: true

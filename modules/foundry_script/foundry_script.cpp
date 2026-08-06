@@ -2408,6 +2408,40 @@ bool FoundryScript::has_script_trait(const StringName &p_trait) const {
 	return _has_script_trait(p_trait, true);
 }
 
+bool FoundryScript::get_retroactive_trait_type_arguments(const StringName &p_trait, Vector<ContainerType> &r_arguments) const {
+	r_arguments.clear();
+	if (p_trait == StringName()) {
+		return false;
+	}
+
+	// Mirrors `_has_script_trait`'s alias search so membership and its argument evidence are answered
+	// from the same records. `base_cache` is deliberately not consulted: it is parse-time editor state
+	// with no runtime registration behind it.
+	const FSConformanceRegistry *registry = FSConformanceRegistry::get_singleton();
+	if (registry->get_conformance_type_arguments(get_fully_qualified_name(), p_trait, r_arguments)) {
+		return true;
+	}
+	const StringName script_global_name = get_global_name();
+	if (script_global_name != StringName() &&
+			registry->get_conformance_type_arguments(String(script_global_name), p_trait, r_arguments)) {
+		return true;
+	}
+	// Only a root script is identified by its resource path: an inner class reports the same path as
+	// its siblings and as the enclosing root class, so asking by path would answer with theirs.
+	if (is_root_script()) {
+		const String script_path = get_script_path();
+		if (!script_path.is_empty() && registry->get_conformance_type_arguments(script_path, p_trait, r_arguments)) {
+			return true;
+		}
+	}
+
+	if (base.is_valid()) {
+		return base->get_retroactive_trait_type_arguments(p_trait, r_arguments);
+	}
+	r_arguments.clear();
+	return false;
+}
+
 bool FoundryScript::has_script_trait_parse(const StringName &p_trait) const {
 	return _has_script_trait(p_trait, false);
 }

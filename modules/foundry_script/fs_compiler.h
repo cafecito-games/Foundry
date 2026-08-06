@@ -242,6 +242,17 @@ class FSCompiler {
 	FSFunction *_parse_function(Error &r_error, FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::FunctionNode *p_func, bool p_for_ready = false, bool p_for_lambda = false, bool p_skip_member_register = false);
 	Error _compile_enum_functions(
 			FoundryScript *p_script, const FSParser::ClassNode *p_class, const FSParser::EnumNode *p_enum);
+	// The type arguments a retroactive conformance supplies for one trait identity, indexed by that
+	// identity's own type-parameter ordinals. For the directly declared trait these are the
+	// conformance's own arguments; for a supertrait they are that supertrait's bindings into the direct
+	// trait's frame, re-specialized through the conformance's arguments. Returns an empty vector — an
+	// absence of evidence, never a partially filled one — whenever any position stays a type parameter
+	// or the declaration supplied fewer arguments than the identity has parameters.
+	Vector<FSWeakContainerType> _conformance_trait_type_arguments(FoundryScript *p_script,
+			const FSParser::ClassNode *p_direct_trait,
+			const Vector<FSParser::DataType> &p_conformance_arguments,
+			const HashMap<StringName, FSParser::DataType> &p_direct_bindings,
+			FSParser::ClassNode *p_identity_trait);
 	Error _compile_conformance_witnesses(FoundryScript *p_script, const FSParser::ClassNode *p_class);
 	Error _load_namespace_conformance_scripts(FoundryScript *p_script);
 	void _invalidate_compiled_classes(FoundryScript *p_script);
