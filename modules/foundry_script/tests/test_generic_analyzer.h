@@ -1482,4 +1482,361 @@ func test() -> void:
 	CHECK(declared_value->get_datatype().type_parameter_name == StringName("T"));
 }
 
+static bool generic_has_error_containing(const FSParser &p_parser, const String &p_fragment) {
+	for (const FSParser::ParserError &parser_error : p_parser.get_errors()) {
+		if (parser_error.message.contains(p_fragment)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static FSParser::DataType generic_argument_at(const FSParser::DataType &p_type, int p_index) {
+	return p_index >= 0 && p_index < p_type.type_arguments.size() ? p_type.type_arguments[p_index] : FSParser::DataType();
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified head applies in a parameter type") {
+	FSParser parser;
+	const String source = R"(
+class Outer:
+	class Box[A, B]:
+		var first: A
+		var second: B
+
+func take(v: Outer.Box[int, String]) -> void:
+	print(v)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, "Could not find"));
+
+	const FSParser::FunctionNode *take = generic_find_function(parser.get_tree(), "take");
+	REQUIRE(take != nullptr);
+	REQUIRE(take->parameters.size() == 1);
+
+	const FSParser::DataType applied = take->parameters[0]->get_datatype();
+	CHECK(applied.kind == FSParser::DataType::CLASS);
+	REQUIRE(applied.type_arguments.size() == 2);
+	CHECK(generic_argument_at(applied, 0).builtin_type == Variant::INT);
+	CHECK(generic_argument_at(applied, 1).builtin_type == Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified head applies in a return type") {
+	FSParser parser;
+	const String source = R"(
+class Outer:
+	class Box[A, B]:
+		var first: A
+		var second: B
+
+func forward(v: Outer.Box[int, String]) -> Outer.Box[int, String]:
+	return v
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, "Could not find"));
+
+	const FSParser::FunctionNode *forward = generic_find_function(parser.get_tree(), "forward");
+	REQUIRE(forward != nullptr);
+
+	const FSParser::DataType returned = forward->get_datatype();
+	CHECK(returned.kind == FSParser::DataType::CLASS);
+	REQUIRE(returned.type_arguments.size() == 2);
+	CHECK(generic_argument_at(returned, 0).builtin_type == Variant::INT);
+	CHECK(generic_argument_at(returned, 1).builtin_type == Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified head applies in a variable annotation") {
+	FSParser parser;
+	const String source = R"(
+class Outer:
+	class Box[A, B]:
+		var first: A
+		var second: B
+
+func test() -> void:
+	var held: Outer.Box[int, String]
+	print(held)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, "Could not find"));
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *held = generic_find_local_variable(test, "held");
+	REQUIRE(held != nullptr);
+
+	const FSParser::DataType declared = held->get_datatype();
+	CHECK(declared.kind == FSParser::DataType::CLASS);
+	REQUIRE(declared.type_arguments.size() == 2);
+	CHECK(generic_argument_at(declared, 0).builtin_type == Variant::INT);
+	CHECK(generic_argument_at(declared, 1).builtin_type == Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified head nests inside a container type") {
+	FSParser parser;
+	const String source = R"(
+class Outer:
+	class Box[T]:
+		var value: T
+
+func take(v: Array[Outer.Box[int]]) -> void:
+	print(v)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, "Could not find"));
+
+	const FSParser::FunctionNode *take = generic_find_function(parser.get_tree(), "take");
+	REQUIRE(take != nullptr);
+	REQUIRE(take->parameters.size() == 1);
+
+	const FSParser::DataType collection = take->parameters[0]->get_datatype();
+	CHECK(collection.kind == FSParser::DataType::BUILTIN);
+	CHECK(collection.builtin_type == Variant::ARRAY);
+	REQUIRE(collection.has_container_element_type(0));
+
+	const FSParser::DataType element = collection.get_container_element_type(0);
+	CHECK(element.kind == FSParser::DataType::CLASS);
+	REQUIRE(element.type_arguments.size() == 1);
+	CHECK(generic_argument_at(element, 0).builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] Annotation and value position resolve a qualified head identically") {
+	FSParser parser;
+	const String source = R"(
+class Outer:
+	class Box[T]:
+		var value: T
+
+func test() -> void:
+	var annotated: Outer.Box[int]
+	var applied = Outer.Box[int]
+	print(annotated)
+	print(applied)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *annotated = generic_find_local_variable(test, "annotated");
+	const FSParser::VariableNode *applied = generic_find_local_variable(test, "applied");
+	REQUIRE(annotated != nullptr);
+	REQUIRE(applied != nullptr);
+
+	const FSParser::DataType annotation_type = annotated->get_datatype();
+	FSParser::DataType application_type = applied->get_datatype();
+	// Value position yields the class handle; stripping the meta layer is what makes the two spellings
+	// comparable, and they must then agree on the declaration and on every argument.
+	application_type.is_meta_type = false;
+	CHECK(annotation_type.kind == application_type.kind);
+	CHECK(annotation_type.class_type == application_type.class_type);
+	REQUIRE(annotation_type.type_arguments.size() == 1);
+	REQUIRE(application_type.type_arguments.size() == 1);
+	CHECK(generic_argument_at(annotation_type, 0).builtin_type == generic_argument_at(application_type, 0).builtin_type);
+	CHECK(generic_argument_at(annotation_type, 0).builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A suffix before the final chain element is rejected") {
+	FSParser parser;
+	const String source = R"(
+class Outer:
+	class Box[T]:
+		var value: T
+
+func take(v: Outer[int].Box) -> void:
+	print(v)
+)";
+	CHECK(parser.parse(source, "res://test.fs", false) != OK);
+	CHECK(generic_has_error_containing(parser, "A type-argument list must be written after the last name of a qualified type."));
+
+	// Tooling analyzes despite parse errors. The applied head is what the author meant, so the
+	// misplaced tail must not add a derived lookup complaint on top of the parse error.
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, R"(Could not find type "Box")"));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] Qualified arity violations report the unqualified diagnostic") {
+	FSParser parser;
+	const String source = R"(
+class Outer:
+	class Box[T]:
+		var value: T
+
+func take(v: Outer.Box[int, String]) -> void:
+	print(v)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK(generic_has_error_containing(parser, R"(Generic class "Box" expects 1 type argument(s), but 2 were given.)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified head does not reach a built-in signature form") {
+	FSParser parser;
+	const String source = R"(
+class A:
+	pass
+
+func take(v: A.Callable[[int], bool]) -> void:
+	print(v)
+)";
+	CHECK(parser.parse(source, "res://test.fs", false) != OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A tuple type argument applies in value position") {
+	FSParser parser;
+	const String source = R"(
+class Box[T]:
+	var value: T
+
+func test() -> void:
+	var handle = Box[(int, String)]
+	print(handle)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, "Could not resolve the type argument"));
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *handle = generic_find_local_variable(test, "handle");
+	REQUIRE(handle != nullptr);
+
+	const FSParser::DataType applied = handle->get_datatype();
+	CHECK(applied.is_meta_type);
+	REQUIRE(applied.type_arguments.size() == 1);
+
+	const FSParser::DataType tuple_argument = generic_argument_at(applied, 0);
+	CHECK(tuple_argument.kind == FSParser::DataType::TUPLE);
+	REQUIRE(tuple_argument.get_container_element_type_count() == 2);
+	CHECK(tuple_argument.get_container_element_type(0).builtin_type == Variant::INT);
+	CHECK(tuple_argument.get_container_element_type(1).builtin_type == Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A callable signature applies in value position") {
+	FSParser parser;
+	const String source = R"(
+class Box[T]:
+	var value: T
+
+func test() -> void:
+	var handle = Box[Callable[[int], bool]]
+	print(handle)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, "Could not resolve the type argument"));
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *handle = generic_find_local_variable(test, "handle");
+	REQUIRE(handle != nullptr);
+
+	const FSParser::DataType signature_argument = generic_argument_at(handle->get_datatype(), 0);
+	CHECK(signature_argument.kind == FSParser::DataType::BUILTIN);
+	CHECK(signature_argument.builtin_type == Variant::CALLABLE);
+	CHECK(signature_argument.has_method_signature);
+	REQUIRE(signature_argument.method_parameter_types.size() == 1);
+	CHECK(signature_argument.method_parameter_types[0].builtin_type == Variant::INT);
+	REQUIRE(signature_argument.method_return_type.size() == 1);
+	CHECK(signature_argument.method_return_type[0].builtin_type == Variant::BOOL);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] Annotation and application agree on a structural argument") {
+	FSParser parser;
+	const String source = R"(
+class Box[T]:
+	var value: T
+
+func test() -> void:
+	var annotated: Box[(int, String)]
+	var applied = Box[(int, String)]
+	print(annotated)
+	print(applied)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, "Box[Variant]"));
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *annotated = generic_find_local_variable(test, "annotated");
+	const FSParser::VariableNode *applied = generic_find_local_variable(test, "applied");
+	REQUIRE(annotated != nullptr);
+	REQUIRE(applied != nullptr);
+
+	const FSParser::DataType annotation_argument = generic_argument_at(annotated->get_datatype(), 0);
+	const FSParser::DataType application_argument = generic_argument_at(applied->get_datatype(), 0);
+	CHECK(annotation_argument.kind == FSParser::DataType::TUPLE);
+	CHECK(application_argument.kind == FSParser::DataType::TUPLE);
+	REQUIRE(annotation_argument.get_container_element_type_count() == 2);
+	REQUIRE(application_argument.get_container_element_type_count() == 2);
+	CHECK(annotation_argument.get_container_element_type(0).builtin_type == application_argument.get_container_element_type(0).builtin_type);
+	CHECK(annotation_argument.get_container_element_type(1).builtin_type == application_argument.get_container_element_type(1).builtin_type);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] Structural arguments still honor arity") {
+	FSParser parser;
+	const String source = R"(
+class Box[T]:
+	var value: T
+
+func test() -> void:
+	var handle = Box[(int, String), int]
+	print(handle)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK(generic_has_error_containing(parser, R"(Generic class "Box" expects 1 type argument(s), but 2 were given.)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] Structural arguments still honor declared bounds") {
+	FSParser parser;
+	const String source = R"(
+class Box[T: RefCounted]:
+	var value: T
+
+func test() -> void:
+	var handle = Box[(int, String)]
+	print(handle)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, "Could not resolve the type argument"));
+	CHECK(generic_has_error_containing(parser, "RefCounted"));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] An unsupported argument spelling names the spelling") {
+	FSParser parser;
+	const String source = R"(
+class Box[T]:
+	var value: T
+
+func test() -> void:
+	var handle = Box[42]
+	print(handle)
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	// The bare "could not resolve" message is gone: a rejected argument now says which argument it was
+	// and why the spelling is not a type.
+	CHECK_FALSE(generic_has_error_containing(parser, "Could not resolve the type argument"));
+	CHECK(generic_has_error_containing(parser, R"(Type argument 1 for generic class "Box" is not a valid type:)"));
+}
+
 } // namespace FSTests

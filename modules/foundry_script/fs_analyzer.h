@@ -739,7 +739,12 @@ private:
 			FSParser::DataType *r_rest_parameter_type = nullptr);
 	bool apply_builtin_native_return_type_hint(const StringName &p_native_method_owner, const StringName &p_method,
 			const FSParser::Node *p_source, FSParser::DataType &r_return_type);
-	bool resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument);
+	// Resolves one type argument written in value position. On failure `r_failure_reason` receives a
+	// sentence naming why the spelling is not a type, or is cleared when a specific diagnostic was
+	// already reported, so a caller never stacks a generic message on top of a precise one. The
+	// out-parameter is required rather than defaulted: dropping it would turn a rejected argument into
+	// a silent failure with no diagnostic at all.
+	bool resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument, String *r_failure_reason);
 	bool make_type_handle_meta_type(const FSParser::DataType &p_represented_type, const FSParser::Node *p_source, FSParser::DataType &r_type);
 	void apply_use_site_nullable_type_argument_marker(FSParser::DataType &r_type_argument, bool p_is_nullable);
 	void reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::SubscriptNode *p_callee);

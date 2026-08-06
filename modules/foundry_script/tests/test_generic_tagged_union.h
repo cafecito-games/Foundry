@@ -30,10 +30,10 @@
 
 #pragma once
 
+#include "../foundry_script.h"
 #include "../fs_analyzer.h"
 #include "../fs_parser.h"
 #include "../fs_type.h"
-#include "../foundry_script.h"
 
 #include "core/config/project_settings.h"
 #include "core/object/script_language.h"
@@ -1876,6 +1876,141 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionBytecode] Nested descripto
 }
 
 #endif // TOOLS_ENABLED
+
+// A payload bind declared by an `is` test or a `match` case-pattern head lives in the suite the branch
+// opens, so the reach cases below look the bind up by walking into those nested suites.
+static FSParser::DataType find_bound_local_type(const FSParser::SuiteNode *p_suite, const StringName &p_name) {
+	if (p_suite == nullptr) {
+		return FSParser::DataType();
+	}
+	if (p_suite->has_local(p_name)) {
+		return p_suite->get_local(p_name).get_datatype();
+	}
+	for (FSParser::Node *statement : p_suite->statements) {
+		if (statement->type == FSParser::Node::IF) {
+			const FSParser::IfNode *if_node = static_cast<const FSParser::IfNode *>(statement);
+			FSParser::DataType found = find_bound_local_type(if_node->true_block, p_name);
+			if (found.is_set()) {
+				return found;
+			}
+			found = find_bound_local_type(if_node->false_block, p_name);
+			if (found.is_set()) {
+				return found;
+			}
+		} else if (statement->type == FSParser::Node::MATCH) {
+			const FSParser::MatchNode *match_node = static_cast<const FSParser::MatchNode *>(statement);
+			for (FSParser::MatchBranchNode *branch : match_node->branches) {
+				const FSParser::DataType found = find_bound_local_type(branch->block, p_name);
+				if (found.is_set()) {
+					return found;
+				}
+			}
+		}
+	}
+	return FSParser::DataType();
+}
+
+static FSParser::DataType bound_local_type(const FSParser &p_parser, const StringName &p_function, const StringName &p_local) {
+	const FSParser::FunctionNode *function = find_function_in(p_parser.get_tree(), p_function);
+	return function != nullptr ? find_bound_local_type(function->body, p_local) : FSParser::DataType();
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified union head applies in a type annotation") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Outer:\n"
+					   "\tenum Outcome[T, E]:\n"
+					   "\t\tOk(value: T)\n"
+					   "\t\tErr(error: E)\n"
+					   "\n"
+					   "func take(v: Outer.Outcome[int, String]) -> void:\n"
+					   "\tprint(v)\n",
+					   "res://generic_qualified_union_annotation.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const FSParser::DataType applied = first_parameter_type(parser, SNAME("take"));
+	CHECK(applied.kind == FSParser::DataType::ENUM);
+	CHECK(applied.is_tagged_union);
+	REQUIRE_EQ(applied.type_arguments.size(), 2);
+	CHECK_EQ(type_at(applied.type_arguments, 0).builtin_type, Variant::INT);
+	CHECK_EQ(type_at(applied.type_arguments, 1).builtin_type, Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified applied union still names a case") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Outer:\n"
+					   "\tenum Outcome[T, E]:\n"
+					   "\t\tOk(value: T)\n"
+					   "\t\tErr(error: E)\n"
+					   "\n"
+					   "func classify(v: Outer.Outcome[int, String]) -> void:\n"
+					   "\tif v is Outer.Outcome[int, String].Ok(number):\n"
+					   "\t\tprint(number)\n",
+					   "res://generic_qualified_union_case.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+
+	const FSParser::DataType bound = bound_local_type(parser, SNAME("classify"), SNAME("number"));
+	CHECK(bound.kind == FSParser::DataType::BUILTIN);
+	CHECK_EQ(bound.builtin_type, Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A generic union case-pattern head takes a structural argument") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T]:\n"
+					   "\tSome(value: T)\n"
+					   "\tNone\n"
+					   "\n"
+					   "func inspect(v: Holder[(int, String)]) -> void:\n"
+					   "\tmatch v:\n"
+					   "\t\tHolder[(int, String)].Some(var pair):\n"
+					   "\t\t\tprint(pair)\n"
+					   "\t\t_:\n"
+					   "\t\t\tpass\n",
+					   "res://generic_structural_case_pattern.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(has_error_containing(parser, "Could not resolve the type argument"));
+
+	const FSParser::DataType bound = bound_local_type(parser, SNAME("inspect"), SNAME("pair"));
+	CHECK(bound.kind == FSParser::DataType::TUPLE);
+	REQUIRE_EQ(bound.get_container_element_type_count(), 2);
+	CHECK_EQ(bound.get_container_element_type(0).builtin_type, Variant::INT);
+	CHECK_EQ(bound.get_container_element_type(1).builtin_type, Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified head takes a structural argument") {
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "class Outer:\n"
+					   "\tenum Outcome[T, E]:\n"
+					   "\t\tOk(value: T)\n"
+					   "\t\tErr(error: E)\n"
+					   "\n"
+					   "func inspect(v: Outer.Outcome[(int, String), int]) -> void:\n"
+					   "\tmatch v:\n"
+					   "\t\tOuter.Outcome[(int, String), int].Ok(var pair):\n"
+					   "\t\t\tprint(pair)\n"
+					   "\t\t_:\n"
+					   "\t\t\tpass\n",
+					   "res://generic_qualified_structural_case_pattern.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(has_error_containing(parser, "Could not resolve the type argument"));
+
+	const FSParser::DataType bound = bound_local_type(parser, SNAME("inspect"), SNAME("pair"));
+	CHECK(bound.kind == FSParser::DataType::TUPLE);
+	REQUIRE_EQ(bound.get_container_element_type_count(), 2);
+	CHECK_EQ(bound.get_container_element_type(0).builtin_type, Variant::INT);
+	CHECK_EQ(bound.get_container_element_type(1).builtin_type, Variant::STRING);
+}
 
 } // namespace GenericTaggedUnion
 } // namespace FSTests

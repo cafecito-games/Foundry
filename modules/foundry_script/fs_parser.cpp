@@ -4492,7 +4492,11 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 	// ordinary subscript and their arguments are carried as expressions to be read as types later.
 	Vector<ExpressionNode *> type_argument_expressions;
 	Vector<bool> type_argument_expression_is_nullable;
-	if (head_expression != nullptr && check(FSTokenizer::Token::BRACKET_OPEN)) {
+	int type_argument_chain_index = 0;
+	bool parsed_type_arguments = false;
+	// The argument list binds to the last name of the head, so a qualified union
+	// (`Outer.Result[int, String].Ok(v)`) is spelled the same way it is in a type annotation.
+	auto parse_head_type_arguments = [&]() {
 		push_multiline(true);
 		advance(); // Consume "[", so `parse_subscript()` sees the same tokenizer state as the Pratt driver.
 		head_expression = parse_subscript(head_expression, false);
@@ -4511,6 +4515,12 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 		} else {
 			case_chain.clear();
 		}
+		type_argument_chain_index = case_chain.is_empty() ? 0 : case_chain.size() - 1;
+		parsed_type_arguments = true;
+	};
+
+	if (head_expression != nullptr && check(FSTokenizer::Token::BRACKET_OPEN)) {
+		parse_head_type_arguments();
 	}
 
 	while (head_expression != nullptr && check(FSTokenizer::Token::PERIOD) && peek().is_identifier()) {
@@ -4528,6 +4538,9 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 		if (!case_chain.is_empty()) {
 			case_chain.push_back(attribute->attribute);
 		}
+		if (!parsed_type_arguments && check(FSTokenizer::Token::BRACKET_OPEN)) {
+			parse_head_type_arguments();
+		}
 	}
 
 	if (head_expression != nullptr && case_chain.size() >= 2 && check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
@@ -4540,6 +4553,7 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 		case_type->allows_enum_case = true;
 		case_type->type_argument_expressions = type_argument_expressions;
 		case_type->type_argument_expression_is_nullable = type_argument_expression_is_nullable;
+		case_type->type_arguments_chain_index = type_argument_chain_index;
 		complete_extents(case_type);
 
 		p_pattern->pattern_type = PatternNode::PT_ENUM_CASE;
@@ -5924,9 +5938,8 @@ FSParser::ExpressionNode *FSParser::parse_type_test(ExpressionNode *p_previous_o
 	update_extents(type_test);
 
 	type_test->operand = p_previous_operand;
-	type_test->test_type = parse_type();
+	type_test->test_type = parse_type(false, COMPLETION_NONE, true);
 	if (type_test->test_type != nullptr) {
-		type_test->test_type->allows_enum_case = true;
 		if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
 			parse_type_test_case_binds(type_test);
 		}
@@ -6114,7 +6127,7 @@ FSParser::ExpressionNode *FSParser::parse_invalid_token(ExpressionNode *p_previo
 	return p_previous_operand;
 }
 
-FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_forced_completion) {
+FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_forced_completion, bool p_allow_enum_case) {
 	// Nested type annotations (e.g. `Array[Array[...]]`, Callable/Coroutine signatures)
 	// recurse through parse_type(); bound that depth so a pathologically nested type
 	// reports an error instead of overflowing the native stack.
@@ -6125,6 +6138,7 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 	}
 
 	TypeNode *type = alloc_node<TypeNode>();
+	type->allows_enum_case = p_allow_enum_case;
 	if (p_forced_completion != COMPLETION_NONE) {
 		make_completion_context(p_forced_completion, type);
 	} else {
@@ -6189,6 +6203,29 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 	if (type->type_chain.size() == 1 && type_element->name == SNAME("AsyncCallable")) {
 		type->signature_is_async = true;
 	}
+
+	// A type-argument list binds to the last name of the chain, so the same loop serves both the
+	// unqualified head (`Box[int]`) and the qualified one (`Outer.Box[int]`). `type` is cleared when an
+	// argument fails to parse, which the callers below turn into a null return.
+	auto parse_collection_type_arguments = [&]() {
+		type->type_arguments_chain_index = type->type_chain.size() - 1;
+		bool first_pass = true;
+		do {
+			TypeNode *container_type = parse_type(false); // Don't allow void for element type.
+			if (container_type == nullptr) {
+				push_error(vformat(R"(Expected type for collection after "%s".)", first_pass ? "[" : ","));
+				complete_extents(type);
+				type = nullptr;
+				break;
+			} else {
+				type->container_types.append(container_type);
+			}
+			first_pass = false;
+		} while (match(FSTokenizer::Token::COMMA));
+		consume(FSTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after collection type.)");
+	};
+
+	bool parsed_type_arguments = false;
 
 	if (match(FSTokenizer::Token::BRACKET_OPEN)) {
 		const bool is_type_handle = type->type_chain.size() == 1 && type_element->name == SNAME("Type");
@@ -6317,35 +6354,55 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 		}
 
 		// Typed collection (like Array[int], Dictionary[String, int]).
-		bool first_pass = true;
-		do {
-			TypeNode *container_type = parse_type(false); // Don't allow void for element type.
-			if (container_type == nullptr) {
-				push_error(vformat(R"(Expected type for collection after "%s".)", first_pass ? "[" : ","));
-				complete_extents(type);
-				type = nullptr;
-				break;
-			} else {
-				type->container_types.append(container_type);
-			}
-			first_pass = false;
-		} while (match(FSTokenizer::Token::COMMA));
-		consume(FSTokenizer::Token::BRACKET_CLOSE, R"(Expected closing "]" after collection type.)");
+		parse_collection_type_arguments();
 		if (type == nullptr) {
 			return nullptr;
 		}
+		parsed_type_arguments = true;
 		// Fall through to the shared trailing chain below: an applied generic tagged union names one
 		// of its cases after its argument list (`Result[int, String].Ok`) wherever a case reference is
 		// admitted, and the nullable marker is handled there for both spellings alike.
 	}
 
 	int chain_index = 1;
+	bool reported_suffix_position = false;
 	while (match(FSTokenizer::Token::PERIOD)) {
-		make_completion_context(COMPLETION_TYPE_ATTRIBUTE, type, chain_index++);
-		if (consume(FSTokenizer::Token::IDENTIFIER, R"(Expected inner type name after ".".)")) {
-			type_element = parse_identifier();
-			type->type_chain.push_back(type_element);
+		// A name after an argument list is a tagged-union case, so it is only a type where the caller
+		// asked for one. Everywhere else the arguments were written on the wrong chain element.
+		if (parsed_type_arguments && !p_allow_enum_case) {
+			if (!reported_suffix_position) {
+				push_error(R"(A type-argument list must be written after the last name of a qualified type.)", type);
+				reported_suffix_position = true;
+			}
+			// Consume the misplaced tail so parsing stays aligned, but keep it out of the chain: the
+			// applied head is the type the author meant, and resolving the tail against it would only
+			// add a derived "not a nested type" complaint after the real error.
+			if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected inner type name after ".".)")) {
+				break;
+			}
+			parse_identifier();
+			continue;
 		}
+		make_completion_context(COMPLETION_TYPE_ATTRIBUTE, type, chain_index++);
+		if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected inner type name after ".".)")) {
+			continue;
+		}
+		type_element = parse_identifier();
+		type->type_chain.push_back(type_element);
+
+		if (!parsed_type_arguments && match(FSTokenizer::Token::BRACKET_OPEN)) {
+			// Only the generic/typed-collection argument list is reachable after a dotted chain; the
+			// built-in signature forms above stay unqualified.
+			parse_collection_type_arguments();
+			if (type == nullptr) {
+				return nullptr;
+			}
+			parsed_type_arguments = true;
+		}
+	}
+
+	if (parsed_type_arguments && check(FSTokenizer::Token::BRACKET_OPEN) && !reported_suffix_position) {
+		push_error(R"(A type can carry only one type-argument list, written after the last name of a qualified type.)", type);
 	}
 
 	if (match(FSTokenizer::Token::QUESTION_MARK)) {

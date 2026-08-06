@@ -2426,8 +2426,31 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 		// binding below.
 		GenericUnionApplicationHeadScope head_scope(this, nullptr,
 				p_type->container_types.is_empty() ? nullptr : p_type->type_chain[p_type->type_chain.size() - 1]);
+		// A tagged-union case is not a type, so it is only accepted where the parser asked for it:
+		// the right-hand side of an `is` test. It can close either a bare chain (`Result[int].Ok`) or a
+		// qualified one (`Outer.Result[int].Ok`), so the case name's chain position is passed in.
+		auto apply_enum_case_tail = [&](int p_case_index) -> bool {
+			if (p_type->type_chain.size() > p_case_index + 1) {
+				push_error(R"(Enum cases cannot contain nested types.)", p_type->type_chain[p_case_index + 1]);
+				return false;
+			}
+			const StringName case_name = p_type->type_chain[p_case_index]->name;
+			if (!result.enum_values.has(case_name)) {
+				push_error(vformat(R"(Enum "%s" has no case named "%s".)", result.to_string(), case_name), p_type->type_chain[p_case_index]);
+				return false;
+			}
+			result.enum_case_name = case_name;
+			return true;
+		};
+
 		if (result.kind == FSParser::DataType::CLASS) {
 			for (int i = resolved_type_chain_size; i < p_type->type_chain.size(); i++) {
+				if (result.kind == FSParser::DataType::ENUM && result.is_tagged_union && p_type->allows_enum_case) {
+					if (!apply_enum_case_tail(i)) {
+						return bad_type;
+					}
+					break;
+				}
 				FSParser::DataType base = result;
 				reduce_identifier_from_base(p_type->type_chain[i], &base);
 				result = p_type->type_chain[i]->get_datatype();
@@ -2453,18 +2476,9 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				return bad_type;
 			}
 		} else if (result.kind == FSParser::DataType::ENUM && result.is_tagged_union && p_type->allows_enum_case) {
-			// A tagged-union case is not a type, so it is only accepted where the parser asked for it:
-			// the right-hand side of an `is` test.
-			if (p_type->type_chain.size() > resolved_type_chain_size + 1) {
-				push_error(R"(Enum cases cannot contain nested types.)", p_type->type_chain[resolved_type_chain_size + 1]);
+			if (!apply_enum_case_tail(resolved_type_chain_size)) {
 				return bad_type;
 			}
-			const StringName case_name = p_type->type_chain[resolved_type_chain_size]->name;
-			if (!result.enum_values.has(case_name)) {
-				push_error(vformat(R"(Enum "%s" has no case named "%s".)", result.to_string(), case_name), p_type->type_chain[resolved_type_chain_size]);
-				return bad_type;
-			}
-			result.enum_case_name = case_name;
 		} else if (result.kind == FSParser::DataType::VARIANT) {
 			// The base failed to resolve (or is an untyped Variant fallback). A second diagnostic
 			// naming "Variant" would leak that implementation detail after the root-cause error.
@@ -2519,11 +2533,14 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				for (int i = 0; i < given; i++) {
 					FSParser::ExpressionNode *argument_expression = p_type->type_argument_expressions[i];
 					FSParser::DataType argument;
-					if (resolve_explicit_type_argument(argument_expression, argument)) {
+					String failure_reason;
+					if (resolve_explicit_type_argument(argument_expression, argument, &failure_reason)) {
 						apply_use_site_nullable_type_argument_marker(argument, p_type->type_argument_expression_is_nullable[i]);
 						argument_failed.push_back(false);
 					} else {
-						push_error(vformat(R"(Could not resolve the type argument for generic tagged union "%s".)", result.to_string()), argument_expression);
+						if (!failure_reason.is_empty()) {
+							push_error(vformat(R"(Type argument %d for generic tagged union "%s" is not a valid type: %s)", i + 1, result.to_string(), failure_reason), argument_expression);
+						}
 						argument = FSParser::DataType();
 						argument.kind = FSParser::DataType::VARIANT;
 						argument.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
@@ -11492,14 +11509,17 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 				// fallback and flagged) so the arity check sees the count the user wrote and a later
 				// argument is never shifted into an earlier type parameter.
 				FSParser::DataType type_argument;
-				if (resolve_explicit_type_argument(argument_expression, type_argument)) {
+				String failure_reason;
+				if (resolve_explicit_type_argument(argument_expression, type_argument, &failure_reason)) {
 					if (argument_index < p_subscript->type_argument_is_nullable.size()) {
 						apply_use_site_nullable_type_argument_marker(type_argument, p_subscript->type_argument_is_nullable[argument_index]);
 					}
 					resolved_arguments.push_back(type_argument);
 					argument_failed.push_back(false);
 				} else {
-					push_error(vformat(R"(Could not resolve the type argument for %s "%s".)", declaration.generic_kind.to_lower(), declaration.name), argument_expression);
+					if (!failure_reason.is_empty()) {
+						push_error(vformat(R"(Type argument %d for %s "%s" is not a valid type: %s)", argument_index + 1, declaration.generic_kind.to_lower(), declaration.name, failure_reason), argument_expression);
+					}
 					FSParser::DataType fallback;
 					fallback.kind = FSParser::DataType::VARIANT;
 					fallback.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
@@ -14051,9 +14071,42 @@ bool FSAnalyzer::make_type_handle_meta_type(const FSParser::DataType &p_represen
 	return true;
 }
 
-bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument) {
-	if (p_expression == nullptr) {
+bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expression, FSParser::DataType &r_type_argument, String *r_failure_reason) {
+	// Every failure that does not report a diagnostic of its own leaves a reason behind, so the caller
+	// can always name the offending spelling instead of reporting a bare "could not resolve".
+	auto fail = [&](const String &p_reason) -> bool {
+		if (r_failure_reason != nullptr) {
+			*r_failure_reason = p_reason;
+		}
 		return false;
+	};
+	// A specific diagnostic was already pushed; an outer message would only bury it.
+	auto fail_reported = [&]() -> bool {
+		if (r_failure_reason != nullptr) {
+			*r_failure_reason = String();
+		}
+		return false;
+	};
+
+	if (p_expression == nullptr) {
+		return fail("the type argument is missing.");
+	}
+
+	if (p_expression->type == FSParser::Node::TUPLE_LITERAL) {
+		// An unnamed tuple type argument (`Box[(int, String)]`). Value position parses the spelling as a
+		// tuple literal, so its elements are re-read as types here and assembled exactly the way the
+		// annotation path assembles `(int, String)`; both positions then hold the same DataType.
+		const FSParser::TupleLiteralNode *tuple_literal = static_cast<const FSParser::TupleLiteralNode *>(p_expression);
+		Vector<FSParser::DataType> element_types;
+		for (FSParser::ExpressionNode *element : tuple_literal->elements) {
+			FSParser::DataType element_type;
+			if (!resolve_explicit_type_argument(element, element_type, r_failure_reason)) {
+				return false;
+			}
+			element_types.push_back(element_type);
+		}
+		r_type_argument = make_tuple_type(StringName(), String(), String(), element_types, Vector<StringName>(), false);
+		return true;
 	}
 
 	if (p_expression->type == FSParser::Node::IDENTIFIER) {
@@ -14101,7 +14154,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			r_type_argument = type_from_metatype(identifier_type);
 			return true;
 		}
-		return false;
+		return fail(vformat(R"("%s" does not name a type.)", identifier->name));
 	}
 
 	if (p_expression->type == FSParser::Node::SUBSCRIPT) {
@@ -14110,7 +14163,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 		// specialization (`Box[int]`).
 		FSParser::SubscriptNode *subscript = static_cast<FSParser::SubscriptNode *>(p_expression);
 		if (subscript->base == nullptr || subscript->index == nullptr) {
-			return false;
+			return fail("the type-argument list is incomplete.");
 		}
 		if (subscript->is_attribute) {
 			// A qualified type name (`Outer.Factory`) is an attribute access, not a type-argument list.
@@ -14122,7 +14175,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 				r_type_argument = type_from_metatype(attribute_type);
 				return true;
 			}
-			return false;
+			return fail("the qualified name does not name a type.");
 		}
 
 		Vector<FSParser::ExpressionNode *> element_expressions;
@@ -14141,23 +14194,84 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			}
 		};
 
+		const StringName base_name = subscript->base->type == FSParser::Node::IDENTIFIER
+				? static_cast<const FSParser::IdentifierNode *>(subscript->base)->name
+				: StringName();
+
+		// The built-in signature forms are structural spellings rather than declared classes, so they
+		// are recognized here the same way the parser recognizes them in annotation position. Value
+		// position reads the parameter list as an array literal, which is the only shape difference.
+		const bool is_async_callable_signature = base_name == SNAME("AsyncCallable");
+		const bool is_callable_signature = is_async_callable_signature || base_name == SNAME("Callable");
+		const bool is_signal_signature = base_name == SNAME("Signal");
+		if (is_callable_signature || is_signal_signature) {
+			const int expected_element_count = is_callable_signature ? 2 : 1;
+			if (element_expressions.size() != expected_element_count || element_expressions[0] == nullptr ||
+					element_expressions[0]->type != FSParser::Node::ARRAY) {
+				return fail(vformat(R"(a "%s" signature is written as %s.)", base_name,
+						is_callable_signature ? R"("[[<parameter types>], <return type>]")" : R"("[[<parameter types>]]")"));
+			}
+
+			FSParser::DataType signature_type;
+			signature_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			signature_type.kind = FSParser::DataType::BUILTIN;
+			signature_type.builtin_type = is_signal_signature ? Variant::SIGNAL : Variant::CALLABLE;
+			signature_type.signature_is_async = is_async_callable_signature;
+			signature_type.has_method_signature = true;
+			signature_type.has_explicit_method_signature = true;
+
+			MethodInfo method_info;
+			const FSParser::ArrayNode *parameter_list = static_cast<const FSParser::ArrayNode *>(element_expressions[0]);
+			for (FSParser::ExpressionNode *parameter_expression : parameter_list->elements) {
+				FSParser::DataType parameter_type;
+				if (!resolve_explicit_type_argument(parameter_expression, parameter_type, r_failure_reason)) {
+					return false;
+				}
+				signature_type.method_parameter_types.push_back(parameter_type);
+				method_info.arguments.push_back(parameter_type.to_property_info(""));
+			}
+			if (is_callable_signature) {
+				FSParser::DataType return_type;
+				if (!resolve_explicit_type_argument(element_expressions[1], return_type, r_failure_reason)) {
+					return false;
+				}
+				signature_type.method_return_type.push_back(return_type);
+				method_info.return_val = return_type.to_property_info("");
+			}
+			signature_type.method_info = method_info;
+			r_type_argument = signature_type;
+			return true;
+		}
+
+		if (base_name == SNAME("Coroutine")) {
+			if (element_expressions.size() != 1) {
+				return fail(R"(a "Coroutine" handle takes exactly one result type.)");
+			}
+			FSParser::DataType coroutine_result_type;
+			if (!resolve_explicit_type_argument(element_expressions[0], coroutine_result_type, r_failure_reason)) {
+				return false;
+			}
+			apply_nested_nullable_marker(0, coroutine_result_type);
+			r_type_argument = make_coroutine_type(coroutine_result_type);
+			return true;
+		}
+
 		// `Type` names the class-handle layer rather than a declared class, matching how the parser
 		// recognizes the same spelling structurally in annotation position. Resolving it as an
 		// ordinary identifier would report it as undeclared instead.
-		if (subscript->base->type == FSParser::Node::IDENTIFIER &&
-				static_cast<const FSParser::IdentifierNode *>(subscript->base)->name == SNAME("Type")) {
+		if (base_name == SNAME("Type")) {
 			if (element_expressions.size() != 1) {
 				push_error("Type[T] expects exactly one type argument.", p_expression);
-				return false;
+				return fail_reported();
 			}
 			FSParser::DataType represented_type;
-			if (!resolve_explicit_type_argument(element_expressions[0], represented_type)) {
+			if (!resolve_explicit_type_argument(element_expressions[0], represented_type, r_failure_reason)) {
 				return false;
 			}
 			apply_nested_nullable_marker(0, represented_type);
 			FSParser::DataType handle_type;
 			if (!make_type_handle_meta_type(represented_type, p_expression, handle_type)) {
-				return false;
+				return fail_reported();
 			}
 			r_type_argument = type_from_metatype(handle_type);
 			return true;
@@ -14171,7 +14285,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 					subscript->base->type == FSParser::Node::SUBSCRIPT
 							? static_cast<const FSParser::SubscriptNode *>(subscript->base)->attribute
 							: nullptr);
-			if (!resolve_explicit_type_argument(subscript->base, base_argument)) {
+			if (!resolve_explicit_type_argument(subscript->base, base_argument, r_failure_reason)) {
 				return false;
 			}
 		}
@@ -14198,14 +14312,14 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 				push_error(vformat(R"(%s "%s" expects %d type argument(s), but %d were given.)",
 								   declaration.generic_kind, declaration.name, expected_argument_count, element_expressions.size()),
 						p_expression);
-				return false;
+				return fail_reported();
 			}
 			Vector<FSParser::DataType> resolved_arguments;
 			Vector<bool> argument_failed;
 			Vector<const FSParser::Node *> argument_sources;
 			for (int i = 0; i < element_expressions.size(); i++) {
 				FSParser::DataType argument;
-				if (!resolve_explicit_type_argument(element_expressions[i], argument)) {
+				if (!resolve_explicit_type_argument(element_expressions[i], argument, r_failure_reason)) {
 					return false;
 				}
 				apply_nested_nullable_marker(i, argument);
@@ -14214,31 +14328,31 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 				argument_sources.push_back(element_expressions[i]);
 			}
 			if (!bind_type_arguments(base_argument, declaration, resolved_arguments, argument_failed, argument_sources)) {
-				return false;
+				return fail_reported();
 			}
 			r_type_argument = base_argument;
 			return true;
 		}
 
 		if (base_argument.kind != FSParser::DataType::BUILTIN) {
-			return false;
+			return fail(vformat(R"("%s" cannot take type arguments.)", base_argument.to_string()));
 		}
 
 		if (base_argument.builtin_type == Variant::ARRAY) {
 			if (element_expressions.size() != 1) {
-				return false;
+				return fail("\"Array\" takes exactly one element type.");
 			}
 		} else if (base_argument.builtin_type == Variant::DICTIONARY) {
 			if (element_expressions.size() != 2) {
-				return false;
+				return fail("\"Dictionary\" takes exactly one key type and one value type.");
 			}
 		} else {
-			return false;
+			return fail(vformat(R"("%s" cannot take type arguments.)", base_argument.to_string()));
 		}
 
 		for (int i = 0; i < element_expressions.size(); i++) {
 			FSParser::DataType element_argument;
-			if (!resolve_explicit_type_argument(element_expressions[i], element_argument)) {
+			if (!resolve_explicit_type_argument(element_expressions[i], element_argument, r_failure_reason)) {
 				return false;
 			}
 			apply_nested_nullable_marker(i, element_argument);
@@ -14248,7 +14362,7 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 		return true;
 	}
 
-	return false;
+	return fail("it is not a type spelling.");
 }
 
 void FSAnalyzer::reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::SubscriptNode *p_callee) {
@@ -14284,8 +14398,11 @@ void FSAnalyzer::reduce_call_create_proxy(FSParser::CallNode *p_call, FSParser::
 	// Resolve the `[T]` type argument. This also reduces a class-name index as a value,
 	// which the compiler later compiles into T's script reference.
 	FSParser::DataType type_argument;
-	if (!resolve_explicit_type_argument(argument_expressions[0], type_argument)) {
-		push_error(R"*(Could not resolve the type argument for "create_proxy[T]()".)*", argument_expressions[0]);
+	String type_argument_failure_reason;
+	if (!resolve_explicit_type_argument(argument_expressions[0], type_argument, &type_argument_failure_reason)) {
+		if (!type_argument_failure_reason.is_empty()) {
+			push_error(vformat(R"*(The type argument for "create_proxy[T]()" is not a valid type: %s)*", type_argument_failure_reason), argument_expressions[0]);
+		}
 		p_call->set_datatype(error_type);
 		mark_node_unsafe(p_call);
 		return;

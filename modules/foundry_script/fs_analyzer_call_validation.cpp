@@ -266,14 +266,17 @@ void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::
 			for (int argument_index = 0; argument_index < argument_expressions.size(); argument_index++) {
 				FSParser::ExpressionNode *argument_expression = argument_expressions[argument_index];
 				FSParser::DataType type_argument;
-				if (analyzer->resolve_explicit_type_argument(argument_expression, type_argument)) {
+				String failure_reason;
+				if (analyzer->resolve_explicit_type_argument(argument_expression, type_argument, &failure_reason)) {
 					if (argument_index < subscript->type_argument_is_nullable.size()) {
 						analyzer->apply_use_site_nullable_type_argument_marker(type_argument, subscript->type_argument_is_nullable[argument_index]);
 					}
 					explicit_arguments.push_back(type_argument);
 					explicit_argument_failed.push_back(false);
 				} else {
-					analyzer->push_error(vformat(R"*(Could not resolve the explicit type argument for generic method "%s()".)*", p_function->identifier->name), argument_expression);
+					if (!failure_reason.is_empty()) {
+						analyzer->push_error(vformat(R"*(Type argument %d for generic method "%s()" is not a valid type: %s)*", argument_index + 1, p_function->identifier->name, failure_reason), argument_expression);
+					}
 					explicit_arguments.push_back(unresolved_fallback);
 					explicit_argument_failed.push_back(true);
 				}

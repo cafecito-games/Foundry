@@ -1,0 +1,7 @@
+FS_TEST_OK
+box 7
+box hello
+5
+ok 42
+case err bad
+qualified type position ok
