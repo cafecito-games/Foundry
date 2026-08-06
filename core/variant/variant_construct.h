@@ -854,6 +854,50 @@ public:
 	}
 };
 
+// `uint`'s full 64-bit range is representable as a `double` up to `2^53`; above that the round trip
+// loses precision the same way a `long`/`ulong` -> `float` widening already does through
+// `VariantConstructor<double, int64_t>`. That existing conversion is likewise unconditional at this
+// layer, so this constructor mirrors it instead of range-checking: the analyzer is what keeps the
+// implicit path limited to the 32-bit `uint` width (design section 6.1) while still letting an
+// explicit `float(some_ulong)` cast or a runtime `Variant` conversion reach every unsigned value.
+class VariantConstructorFloatFromUInt {
+public:
+	static void construct(Variant &r_ret, const Variant **p_args, Callable::CallError &r_error) {
+		if (p_args[0]->get_type() != Variant::UINT) {
+			r_error.error = Callable::CallError::CALL_ERROR_INVALID_ARGUMENT;
+			r_error.argument = 0;
+			r_error.expected = Variant::FLOAT;
+			return;
+		}
+
+		r_error.error = Callable::CallError::CALL_OK;
+		validated_construct(&r_ret, p_args);
+	}
+
+	static inline void validated_construct(Variant *r_ret, const Variant **p_args) {
+		// The destination can alias the source, so read the payload before re-tagging it.
+		const uint64_t value = *VariantInternal::get_uint(p_args[0]);
+		VariantInternal::initialize(r_ret, Variant::FLOAT);
+		*VariantInternal::get_float(r_ret) = double(value);
+	}
+	static void ptr_construct(void *base, const void **p_args) {
+		const uint64_t value = PtrToArg<uint64_t>::convert(p_args[0]);
+		PtrConstruct<double>::construct(double(value), base);
+	}
+
+	static int get_argument_count() {
+		return 1;
+	}
+
+	static Variant::Type get_argument_type(int p_arg) {
+		return Variant::UINT;
+	}
+
+	static Variant::Type get_base_type() {
+		return Variant::FLOAT;
+	}
+};
+
 class VariantConstructorNil {
 public:
 	static void construct(Variant &r_ret, const Variant **p_args, Callable::CallError &r_error) {

@@ -18,9 +18,5 @@ func test():
 	var lossy_float: float = l
 	var lossy_unsigned_float: float = ul
 
-	# The unsigned narrow width does not reach the floating side implicitly today, even though every
-	# uint value is exactly representable as a float.
-	var unsigned_narrow_float: float = u
-
 	# A constant is only accepted when its exact value fits.
 	var too_large: uint = 5000000000UL

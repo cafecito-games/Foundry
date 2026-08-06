@@ -7,6 +7,5 @@ FS_TEST_ANALYZER_ERROR
 >> ERROR at line 17: Cannot assign a value of type long to variable "crossed" with specified type uint.
 >> ERROR at line 18: Cannot assign a value of type long to variable "lossy_float" with specified type float.
 >> ERROR at line 19: Cannot assign a value of type ulong to variable "lossy_unsigned_float" with specified type float.
->> ERROR at line 23: Cannot assign a value of type uint to variable "unsigned_narrow_float" with specified type float.
->> ERROR at line 26: Cannot assign a value of type "ulong" as "uint".
->> ERROR at line 26: Cannot assign a value of type ulong to variable "too_large" with specified type uint.
+>> ERROR at line 22: Cannot assign a value of type "ulong" as "uint".
+>> ERROR at line 22: Cannot assign a value of type ulong to variable "too_large" with specified type uint.
