@@ -85,6 +85,13 @@ static String _get_element_type(const ContainerType &p_type) {
 	if (p_type.class_name != StringName()) {
 		return p_type.class_name.operator String();
 	}
+	// The carrier alone cannot tell a declared `uint` from a declared `ulong`: both are stored as
+	// `Variant::UINT`. `ContainerType::numeric_type` is where the declared width survives, so a
+	// script-facing message must consult it instead of falling through to the carrier's name, mirroring
+	// `ContainerTypeValidate::_get_value_type_name()` in core/variant/container_type_validate.cpp.
+	if (p_type.numeric_type != NumericType::NONE && numeric_type_is_carrier_consistent(p_type.numeric_type, p_type.builtin_type)) {
+		return numeric_type_has_public_name(p_type.numeric_type) ? numeric_type_public_name(p_type.numeric_type) : numeric_type_name(p_type.numeric_type);
+	}
 	return Variant::get_type_name(p_type.builtin_type);
 }
 
@@ -229,12 +236,19 @@ static RuntimeSpecializationEvidence _class_handle_specialization_evidence(Objec
 // value's reified arguments are the target's, for the target's base.
 //
 // A specialized target demands positive evidence. The value's own arguments are projected onto the
-// tested base through the leaf's inheritance binding table, so a subclass that fixes or forwards a base
+// tested base through the leaf's per-ancestor binding table, so a subclass that fixes or forwards a base
 // argument proves that base's specialization; every projected position must then be completely known
 // and invariantly equal to the target's argument, recursively. Anything short of that -- a raw
 // instance, a bare script handle, a partially resolved chain, a differing arity -- fails. This is
 // deliberately stricter than the gradual rule assignment uses, because a successful test narrows the
 // value to the specialization and the branch body then reads it at that type.
+//
+// A trait target uses the very same relation: the binding table records a `uses Trait[args]` clause
+// alongside the `extends` chain, so a conforming class, a subclass of one, and a class reaching the
+// trait through a supertrait all project onto the trait's parameters. A value that conforms only
+// through the conformance registry (a retroactively conformed native class or builtin) has no leaf
+// script to project from and therefore fails a specialized trait target, since the registry records
+// conformances by trait identity alone.
 static bool _specialization_matches(const Vector<ContainerType> &p_expected_arguments,
 		const Ref<Script> &p_expected_script, const RuntimeSpecializationEvidence &p_actual) {
 	if (p_expected_arguments.is_empty()) {
@@ -2225,6 +2239,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						} else if (value->get_type() != Variant::NIL && value->get_type() != Variant::OBJECT) {
 							result = FSConformanceRegistry::get_singleton()->builtin_type_conforms(value->get_type(), trait_name, true);
 						}
+						// A specialized trait target asks the same second, invariant question a specialized
+						// class target does, against the arguments the value's implementer conformed with.
+						if (result && !expected_type_arguments.is_empty()) {
+							result = _specialization_matches(expected_type_arguments, Ref<Script>(script_type),
+									_instance_specialization_evidence(object));
+						}
 					} else if (object && object->get_script_instance()) {
 						Ref<Script> script_ref = object->get_script_instance()->get_script();
 						Script *script_ptr = script_ref.ptr();
@@ -3263,6 +3283,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						}
 					} else if (src->get_type() != Variant::NIL) {
 						valid = FSConformanceRegistry::get_singleton()->builtin_type_conforms(src->get_type(), trait_name, true);
+					}
+					// A trait cast succeeds exactly when the matching `is` would, so a specialized trait
+					// target requires the same invariant argument evidence.
+					if (valid && !expected_type_arguments.is_empty()) {
+						valid = _specialization_matches(expected_type_arguments, Ref<Script>(base_type),
+								_instance_specialization_evidence(src->get_validated_object()));
 					}
 				} else if (src->get_type() != Variant::NIL && src->operator Object *() != nullptr) {
 					Object *src_obj = src->operator Object *();

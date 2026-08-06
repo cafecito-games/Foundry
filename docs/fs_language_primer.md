@@ -280,6 +280,11 @@ var callback: Callable[[Node?], String]
 var renamed: Signal[[String]]
 ```
 
+- The integer types are `int` (signed 32-bit), `uint` (unsigned 32-bit), `long` (signed 64-bit), and `ulong`
+  (unsigned 64-bit). Literal suffixes are uppercase-only `U`, `L`, and `UL`; an unsuffixed integer is `int` when it
+  fits and `long` otherwise. Arithmetic and conversions are checked, and the only implicit conversions are the
+  value-preserving `int` -> `long`, `uint` -> `ulong`, and `int` -> `float`. Use `as` for every other
+  width or signedness change. See [Fixed-width integers](foundry_script/fixed_width_integers.md).
 - `T?` marks nullable object types. With strict null checks enabled, plain `T` is treated as non-nullable.
 - `Array[T]` and `Dictionary[K, V]` are typed containers. This fork supports nested typed containers.
 - `Callable[[ArgType, ...], ReturnType]` uses double brackets for the argument list.

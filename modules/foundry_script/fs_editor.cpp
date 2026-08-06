@@ -749,7 +749,20 @@ static String _trim_parent_class(const String &p_class, const String &p_base_cla
 	return p_class;
 }
 
-static String _get_visual_datatype(const PropertyInfo &p_info, bool p_is_arg, const String &p_base_class = "") {
+// The declared numeric width of a native boundary, using the same rule the analyzer applies in
+// `FSAnalyzer::type_from_property()`: binding metadata states the width the carrier lost, and a
+// boundary that carries none is genuinely width-erased, so only the wide descriptor covers every
+// value it can deliver.
+static NumericType _numeric_type_from_property(const PropertyInfo &p_info, FoundryTypeInfo::Metadata p_metadata) {
+	const NumericType declared = numeric_type_from_native_metadata(p_info.type, p_metadata);
+	if (declared != NumericType::NONE) {
+		return declared;
+	}
+	return numeric_type_wide_for_carrier(p_info.type);
+}
+
+static String _get_visual_datatype(const PropertyInfo &p_info, bool p_is_arg, const String &p_base_class = "",
+		FoundryTypeInfo::Metadata p_metadata = FoundryTypeInfo::METADATA_NONE) {
 	String class_name = p_info.class_name;
 	bool is_enum = p_info.type == Variant::INT && p_info.usage & PROPERTY_USAGE_CLASS_IS_ENUM;
 	// PROPERTY_USAGE_CLASS_IS_BITFIELD: BitField[T] isn't supported (yet?), use plain int.
@@ -773,7 +786,7 @@ static String _get_visual_datatype(const PropertyInfo &p_info, bool p_is_arg, co
 		}
 	}
 
-	return Variant::get_type_name(p_info.type);
+	return FSParser::get_builtin_type_source_name(p_info.type, _numeric_type_from_property(p_info, p_metadata));
 }
 
 static String _make_arguments_hint(const MethodInfo &p_info, int p_arg_idx, bool p_is_annotation = false) {
@@ -782,7 +795,7 @@ static String _make_arguments_hint(const MethodInfo &p_info, int p_arg_idx, bool
 		arghint += "async ";
 	}
 	if (!p_is_annotation) {
-		arghint += _get_visual_datatype(p_info.return_val, false) + " ";
+		arghint += _get_visual_datatype(p_info.return_val, false, "", FoundryTypeInfo::Metadata(p_info.get_argument_meta(-1))) + " ";
 	}
 	arghint += p_info.name + "(";
 
@@ -796,7 +809,7 @@ static String _make_arguments_hint(const MethodInfo &p_info, int p_arg_idx, bool
 		if (i == p_arg_idx) {
 			arghint += String::chr(0xFFFF);
 		}
-		arghint += E.name + ": " + _get_visual_datatype(E, true);
+		arghint += E.name + ": " + _get_visual_datatype(E, true, "", FoundryTypeInfo::Metadata(p_info.get_argument_meta(i)));
 
 		if (i - def_args >= 0) {
 			arghint += String(" = ") + p_info.default_arguments[i - def_args].get_construct_string();
@@ -1341,7 +1354,21 @@ static void _find_built_in_variants(HashMap<String, ScriptLanguage::CodeCompleti
 		if (Variant::Type(i) == Variant::Type::NIL) {
 			continue;
 		}
+		// The integer carriers are not source types: `int` and `long` both travel in `INT`, and
+		// `uint` and `ulong` both travel in `UINT`. Offering the carrier name would list two of the
+		// four spellings and hide the other two, so all four come from the numeric registry below.
+		if (Variant::Type(i) == Variant::INT || Variant::Type(i) == Variant::UINT) {
+			continue;
+		}
 		ScriptLanguage::CodeCompletionOption option(Variant::get_type_name(Variant::Type(i)), ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
+		r_result.insert(option.display, option);
+	}
+	for (uint8_t numeric_index = 0; numeric_index < uint8_t(NumericType::MAX); numeric_index++) {
+		const NumericType numeric_type = NumericType(numeric_index);
+		if (!numeric_type_has_public_name(numeric_type)) {
+			continue;
+		}
+		ScriptLanguage::CodeCompletionOption option(numeric_type_public_name(numeric_type), ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
 		r_result.insert(option.display, option);
 	}
 	// `AsyncCallable` is a FoundryScript-only spelling of `Callable` and isn't a Variant type.
@@ -2645,7 +2672,8 @@ static FSCompletionIdentifier _type_from_variant(const Variant &p_value, FSParse
 	return ci;
 }
 
-static FSCompletionIdentifier _type_from_property(const PropertyInfo &p_property) {
+static FSCompletionIdentifier _type_from_property(const PropertyInfo &p_property,
+		FoundryTypeInfo::Metadata p_metadata = FoundryTypeInfo::METADATA_NONE) {
 	FSCompletionIdentifier ci;
 
 	if (p_property.type == Variant::NIL) {
@@ -2684,6 +2712,12 @@ static FSCompletionIdentifier _type_from_property(const PropertyInfo &p_property
 		}
 	} else {
 		ci.type.kind = FSParser::DataType::BUILTIN;
+		// An enum-flagged integer names its constant set rather than a width, and the analyzer gives
+		// such a slot no descriptor at all. Stamping one here would make the guessed type claim a
+		// constraint the analyzed type never has.
+		if (ci.enumeration.is_empty()) {
+			ci.type.numeric_type = _numeric_type_from_property(p_property, p_metadata);
+		}
 	}
 	return ci;
 }
@@ -3874,7 +3908,7 @@ static bool _guess_identifier_type_from_base(FSParser::CompletionContext &p_cont
 					if (getter != StringName()) {
 						MethodBind *g = ClassDB::get_method(class_name, getter);
 						if (g) {
-							r_type = _type_from_property(g->get_return_info());
+							r_type = _type_from_property(g->get_return_info(), g->get_argument_meta(-1));
 							return true;
 						}
 					} else {
@@ -4044,7 +4078,7 @@ static bool _guess_method_return_type_from_base(FSParser::CompletionContext &p_c
 					scr->get_script_method_list(&methods);
 					for (const MethodInfo &mi : methods) {
 						if (mi.name == p_method) {
-							r_type = _type_from_property(mi.return_val);
+							r_type = _type_from_property(mi.return_val, FoundryTypeInfo::Metadata(mi.get_argument_meta(-1)));
 							return true;
 						}
 					}
@@ -4066,7 +4100,7 @@ static bool _guess_method_return_type_from_base(FSParser::CompletionContext &p_c
 				}
 				MethodBind *mb = ClassDB::get_method(base_type.native_type, p_method);
 				if (mb) {
-					r_type = _type_from_property(mb->get_return_info());
+					r_type = _type_from_property(mb->get_return_info(), mb->get_argument_meta(-1));
 					return true;
 				}
 				return false;
@@ -4092,7 +4126,7 @@ static bool _guess_method_return_type_from_base(FSParser::CompletionContext &p_c
 
 				for (const MethodInfo &mi : methods) {
 					if (mi.name == p_method) {
-						r_type = _type_from_property(mi.return_val);
+						r_type = _type_from_property(mi.return_val, FoundryTypeInfo::Metadata(mi.get_argument_meta(-1)));
 						return true;
 					}
 				}
@@ -5260,7 +5294,7 @@ static void _find_call_arguments(FSParser::CompletionContext &p_context, const F
 					}
 					method_hint += arg;
 					if (type_hints) {
-						method_hint += ": " + _get_visual_datatype(mi.arguments[i], true, class_name);
+						method_hint += ": " + _get_visual_datatype(mi.arguments[i], true, class_name, FoundryTypeInfo::Metadata(mi.get_argument_meta(int(i))));
 					}
 				}
 				if (mi.flags & METHOD_FLAG_VARARG) {
@@ -5274,7 +5308,7 @@ static void _find_call_arguments(FSParser::CompletionContext &p_context, const F
 				}
 				method_hint += ")";
 				if (type_hints) {
-					method_hint += " -> " + _get_visual_datatype(mi.return_val, false, class_name);
+					method_hint += " -> " + _get_visual_datatype(mi.return_val, false, class_name, FoundryTypeInfo::Metadata(mi.get_argument_meta(-1)));
 				}
 				method_hint += ":";
 
@@ -6046,6 +6080,16 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 	if (FSAnalyzer::class_exists(p_symbol)) {
 		r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
 		r_result.class_name = p_symbol;
+		return OK;
+	}
+
+	// A source-nameable integer width resolves to the class reference page of the carrier it travels
+	// in, because that is where the storage is documented; `long` and `ulong` have no page of their
+	// own and would otherwise fail to resolve at all.
+	const NumericType symbol_numeric_type = numeric_type_from_public_name(p_symbol);
+	if (symbol_numeric_type != NumericType::NONE) {
+		r_result.type = ScriptLanguage::LOOKUP_RESULT_CLASS;
+		r_result.class_name = Variant::get_type_name(numeric_type_carrier(symbol_numeric_type));
 		return OK;
 	}
 

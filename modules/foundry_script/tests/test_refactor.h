@@ -1160,6 +1160,43 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn 0\n"));
 	}
 
+	TEST_CASE("Override method returns an unsigned zero for unsigned return types") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func narrow() -> uint\n"
+				"\tabstract func wide() -> ulong\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+
+		const RefactorOverrideMethodCandidate *narrow = FSTests::find_override_candidate(result.candidates, "narrow");
+		REQUIRE(narrow != nullptr);
+		if (narrow == nullptr) {
+			return;
+		}
+		String narrow_out;
+		RefactorResult narrow_run = FSTests::run_override_method(source, 4, 1, narrow->id, narrow_out);
+		REQUIRE_MESSAGE(narrow_run.ok, narrow_run.error_message);
+		CHECK(narrow_out.contains("\tfunc narrow() -> uint:\n"));
+		CHECK(narrow_out.contains("\t\treturn 0U\n"));
+
+		const RefactorOverrideMethodCandidate *wide = FSTests::find_override_candidate(result.candidates, "wide");
+		REQUIRE(wide != nullptr);
+		if (wide == nullptr) {
+			return;
+		}
+		String wide_out;
+		RefactorResult wide_run = FSTests::run_override_method(source, 4, 1, wide->id, wide_out);
+		REQUIRE_MESSAGE(wide_run.ok, wide_run.error_message);
+		CHECK(wide_out.contains("\tfunc wide() -> ulong:\n"));
+		CHECK(wide_out.contains("\t\treturn 0UL\n"));
+	}
+
 	TEST_CASE("Override method includes abstract rest parameter methods") {
 		const String source =
 				"abstract class Base:\n"
@@ -2369,6 +2406,40 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			String rendered;
 			CHECK(FSRefactorTypes::render_annotatable_type(dt, rendered));
 			CHECK_EQ(rendered, "Type[Node]?");
+		}
+		SUBCASE("declared integer widths render their own source spelling") {
+			// A generated annotation has to name the width the slot declared: writing the carrier's
+			// spelling back into the script would silently retype a `long` slot as `int`.
+			struct WidthCase {
+				NumericType numeric_type;
+				Variant::Type carrier;
+				const char *expected;
+			};
+			const WidthCase width_cases[] = {
+				{ NumericType::INT32, Variant::INT, "int" },
+				{ NumericType::UINT32, Variant::UINT, "uint" },
+				{ NumericType::INT64, Variant::INT, "long" },
+				{ NumericType::UINT64, Variant::UINT, "ulong" },
+			};
+			for (const WidthCase &width_case : width_cases) {
+				FSParser::DataType dt;
+				dt.kind = FSParser::DataType::BUILTIN;
+				dt.builtin_type = width_case.carrier;
+				dt.numeric_type = width_case.numeric_type;
+				dt.type_source = FSParser::DataType::INFERRED;
+				String rendered;
+				CHECK(FSRefactorTypes::render_annotatable_type(dt, rendered));
+				CHECK_EQ(rendered, String(width_case.expected));
+
+				FSParser::DataType element_type;
+				element_type.kind = FSParser::DataType::BUILTIN;
+				element_type.builtin_type = Variant::ARRAY;
+				element_type.type_source = FSParser::DataType::INFERRED;
+				element_type.set_container_element_type(0, dt);
+				String nested_rendered;
+				CHECK(FSRefactorTypes::render_annotatable_type(element_type, nested_rendered));
+				CHECK_EQ(nested_rendered, vformat("Array[%s]", width_case.expected));
+			}
 		}
 	}
 
@@ -6203,6 +6274,44 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			String out;
 			CHECK_FALSE(annotate_local("res://refactor/namespace_annotation_toplevel_shadow.fs", out));
 		}
+
+		memdelete(protocol);
+		memdelete(editor_file_system);
+	}
+
+	TEST_CASE("Add type annotation names the declared integer width and preserves literal suffixes") {
+		EditorFileSystem *editor_file_system = memnew(EditorFileSystem);
+		FSLanguageProtocol *protocol = FSTests::initialize(FSTests::root);
+		REQUIRE(protocol);
+
+		const String path = "res://refactor/numeric_width_annotation.fs";
+		FSTests::assert_no_errors_in(path);
+		RefactorContext ctx;
+		ctx.path = path;
+		ctx.source = FileAccess::get_file_as_string(path);
+		const RefactorCandidatesResult result = FSRefactoring::find_candidates(ctx, RefactorKind::ADD_TYPE_ANNOTATION);
+		REQUIRE(result.ok);
+
+		// Every candidate is applied to the original source on its own, so the four annotations are
+		// checked independently of the order candidates are reported in.
+		String applied_sources;
+		int applied_count = 0;
+		for (const RefactorCandidate &candidate : result.candidates) {
+			if (!candidate.enabled || candidate.declaration_kind != "variable") {
+				continue;
+			}
+			String applied;
+			REQUIRE(FSRefactorEdits::apply(ctx.source, candidate.edits, applied));
+			applied_sources += applied;
+			applied_count++;
+		}
+		CHECK(applied_count == 4);
+		// The annotation states the inferred width, and the initializer (suffix included) is copied
+		// through untouched.
+		CHECK(applied_sources.contains("var plain: int = 5\n"));
+		CHECK(applied_sources.contains("var unsigned: uint = 5U\n"));
+		CHECK(applied_sources.contains("var wide: long = 5L\n"));
+		CHECK(applied_sources.contains("var unsigned_wide: ulong = 18446744073709551615UL\n"));
 
 		memdelete(protocol);
 		memdelete(editor_file_system);

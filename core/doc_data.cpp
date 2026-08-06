@@ -31,6 +31,7 @@
 #include "doc_data.h"
 
 #include "core/core_constants.h"
+#include "core/variant/numeric_type.h"
 
 String DocData::get_default_value_string(const Variant &p_value, const PropertyInfo &p_info) {
 	const Variant::Type type = p_value.get_type();
@@ -198,6 +199,13 @@ String DocData::get_type_link_target(const String &p_type) {
 	// resolves to a real page.
 	if (p_type == "AsyncCallable") {
 		return "Callable";
+	}
+	// The four source-nameable integer types share two carriers, and only the carriers have class
+	// help pages. Link a declared width to the page documenting its storage so the rendered text
+	// keeps the width the declaration stated while the hyperlink still resolves.
+	const NumericType numeric_type = numeric_type_from_public_name(p_type);
+	if (numeric_type != NumericType::NONE) {
+		return Variant::get_type_name(numeric_type_carrier(numeric_type));
 	}
 	return p_type;
 }

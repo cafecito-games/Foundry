@@ -898,6 +898,15 @@ static MethodInfo info_from_bind(MethodBind *p_method) {
 	minfo.return_val = p_method->get_return_info();
 	minfo.flags = p_method->get_hint_flags();
 
+	// A `PropertyInfo` transports only the integer carrier, so the declared width of a bound
+	// argument or result lives exclusively in the binding metadata. Carrying it on the `MethodInfo`
+	// keeps introspection consumers (notably FoundryScript signature and hover rendering) able to
+	// name the exact declared type instead of falling back to the carrier.
+	minfo.return_val_metadata = p_method->get_argument_meta(-1);
+	for (int i = 0; i < p_method->get_argument_count(); i++) {
+		minfo.arguments_metadata.push_back(p_method->get_argument_meta(i));
+	}
+
 	for (int i = 0; i < p_method->get_argument_count(); i++) {
 		if (p_method->has_default_argument(i)) {
 			minfo.default_arguments.push_back(p_method->get_default_argument(i));

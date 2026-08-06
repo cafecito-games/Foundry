@@ -90,6 +90,13 @@ FSParser::BuiltinDataType FSParser::get_builtin_data_type(const StringName &p_ty
 	return result;
 }
 
+String FSParser::get_builtin_type_source_name(Variant::Type p_builtin_type, NumericType p_numeric_type) {
+	if (numeric_type_has_public_name(p_numeric_type) && numeric_type_is_carrier_consistent(p_numeric_type, p_builtin_type)) {
+		return numeric_type_public_name(p_numeric_type);
+	}
+	return Variant::get_type_name(p_builtin_type);
+}
+
 static String _datatype_signature_type_to_string(const FSParser::DataType &p_type, bool p_nil_is_void = false) {
 	if (p_nil_is_void && p_type.kind == FSParser::DataType::BUILTIN && p_type.builtin_type == Variant::NIL) {
 		return "void";
@@ -181,11 +188,7 @@ String FSParser::DataType::to_string() const {
 			// into a script, so every name it produces has to be one the built-in registry can resolve.
 			// A declared width now has such a name, so render it; a slot that declared none still falls
 			// back to the carrier's name, which is all the evidence it has.
-			if (numeric_type_has_public_name(numeric_type) && numeric_type_is_carrier_consistent(numeric_type, builtin_type)) {
-				result = numeric_type_public_name(numeric_type);
-			} else {
-				result = Variant::get_type_name(builtin_type);
-			}
+			result = get_builtin_type_source_name(builtin_type, numeric_type);
 			break;
 		case NATIVE:
 			if (is_meta_type) {

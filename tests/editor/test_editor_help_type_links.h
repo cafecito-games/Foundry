@@ -156,6 +156,21 @@ TEST_CASE("[Editor][EditorHelp] Leaf and synthetic-alias types keep their existi
 	CHECK(rendered_text("AsyncCallable") == "AsyncCallable");
 }
 
+TEST_CASE("[Editor][EditorHelp] Declared integer widths render as written and link to their carrier") {
+	CHECK(class_link_targets("long") == Vector<String>({ "int" }));
+	CHECK(rendered_text("long") == "long");
+
+	CHECK(class_link_targets("ulong") == Vector<String>({ "uint" }));
+	CHECK(rendered_text("ulong") == "ulong");
+
+	CHECK(class_link_targets("uint") == Vector<String>({ "uint" }));
+	CHECK(rendered_text("uint") == "uint");
+
+	// A width nested in a container still links per leaf.
+	CHECK(class_link_targets("Dictionary[long, ulong]") == Vector<String>({ "Dictionary", "int", "uint" }));
+	CHECK(rendered_text("Dictionary[long, ulong]") == "Dictionary[long, ulong]");
+}
+
 } // namespace TestEditorHelpTypeLinks
 
 #endif // TOOLS_ENABLED

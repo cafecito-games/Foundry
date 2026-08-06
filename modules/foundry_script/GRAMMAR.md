@@ -1012,6 +1012,17 @@ container contents, so an empty `Crate[int]` and a full one answer alike.
 - `Self` resolves to the frame's exact receiver before the rules above apply, at every nesting depth,
   so a method reached through `Crate[int]` accepts a `Crate[int]` for `is Self` and rejects a
   `Crate[String]` and a raw `Crate`.
+- A generic **trait** target follows the same two questions. The nominal one is conformance rather
+  than inheritance; the argument one reads the arguments the value's class conformed with. So with
+  `trait Holder[T]` and `class StringHolder: uses Holder[String]`, a `StringHolder` satisfies
+  `Holder` and `Holder[String]` but not `Holder[int]`. Conformance arguments project the same way
+  inheritance does: a subclass of a conforming class, a supertrait reached through
+  `trait Relayed[U]: uses Holder[U]`, and a generic implementer `class Forwarder[W]: uses Holder[W]`
+  all answer from the argument that reaches the tested trait. A raw `Forwarder` proves nothing and
+  fails a specialized target.
+- A **retroactive** conformance (`extend Target uses Trait[arg]`) records the trait's identity only,
+  so a value that conforms solely through it carries no argument evidence: it satisfies the raw trait
+  target and fails every specialized one.
 - `null` is never an instance or a class handle, so it fails every such test.
 
 #### `await`

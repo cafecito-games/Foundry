@@ -35,6 +35,7 @@
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
 
+#include "core/error/error_macros.h"
 #include "core/variant/array.h"
 #include "core/variant/container_type_validate.h"
 #include "core/variant/dictionary.h"
@@ -98,6 +99,41 @@ static Variant call_typed_container_width_method(const Ref<FoundryScript> &p_scr
 	instance.callp(p_method, nullptr, 0, result, error);
 	REQUIRE(error.error == Callable::CallError::CALL_OK);
 	return result;
+}
+
+// Captures every engine error raised during a call so a rejected container write can be asserted on
+// by the declared container spelling it names rather than by the mere fact that it was rejected.
+struct TypedContainerWidthErrorRecorder {
+	TypedContainerWidthErrorRecorder() {
+		handler.errfunc = _record;
+		handler.userdata = this;
+		add_error_handler(&handler);
+	}
+
+	~TypedContainerWidthErrorRecorder() {
+		remove_error_handler(&handler);
+	}
+
+	static void _record(void *p_self, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
+		TypedContainerWidthErrorRecorder *self = static_cast<TypedContainerWidthErrorRecorder *>(p_self);
+		self->messages += String::utf8(p_explanation != nullptr && p_explanation[0] != '\0' ? p_explanation : p_error) + "\n";
+	}
+
+	ErrorHandlerList handler;
+	String messages;
+};
+
+// Calls a zero-argument method expected to end in a runtime error, with the diagnostic silenced.
+static void call_typed_container_width_method_expecting_error(const Ref<FoundryScript> &p_script, const StringName &p_method) {
+	Callable::CallError error;
+	Variant instance = p_script->_new(nullptr, -1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+
+	Variant result;
+	ERR_PRINT_OFF;
+	instance.callp(p_method, nullptr, 0, result, error);
+	ERR_PRINT_ON;
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericType] A declared width on a dictionary value slot reaches the runtime container") {
@@ -266,6 +302,102 @@ TEST_CASE("[Modules][FoundryScript][NumericType] An element slot that declared n
 	REQUIRE(floats.is_typed());
 	CHECK(floats.get_element_type().builtin_type == Variant::FLOAT);
 	CHECK(floats.get_element_type().numeric_type == NumericType::NONE);
+}
+
+// A container type name renders its declared width, not its carrier: `Array[ulong]` and `Array[uint]`
+// share the `Variant::UINT` carrier, and `Array[long]` and `Array[int]` share `Variant::INT`, so a
+// script-facing rejection message that fell through to the carrier's name would mislabel either pair.
+TEST_CASE("[Modules][FoundryScript][NumericType] A container type name renders its declared width") {
+	ScopedTypedContainerWidthLanguage language;
+
+	const char *source =
+			"func get_bad() -> Variant:\n"
+			"\treturn \"bad\"\n"
+			"\n"
+			"func differently_typed() -> Variant:\n"
+			"\treturn [1.0] as Array[float]\n"
+			"\n"
+			"func reject_array_uint():\n"
+			"\tvar _typed: Array[uint] = differently_typed()\n"
+			"\n"
+			"func reject_array_ulong():\n"
+			"\tvar _typed: Array[ulong] = differently_typed()\n"
+			"\n"
+			"func reject_array_int():\n"
+			"\tvar _typed: Array[int] = differently_typed()\n"
+			"\n"
+			"func reject_array_long():\n"
+			"\tvar _typed: Array[long] = differently_typed()\n"
+			"\n"
+			"func reject_dictionary_ulong_value():\n"
+			"\tvar values: Dictionary[String, ulong] = {}\n"
+			"\tvalues[\"k\"] = get_bad()\n"
+			"\n"
+			"func reject_dictionary_long_value():\n"
+			"\tvar values: Dictionary[String, long] = {}\n"
+			"\tvalues[\"k\"] = get_bad()\n";
+
+	Ref<FoundryScript> script = compile_typed_container_width_source(source);
+
+	struct Expectation {
+		const char *method;
+		const char *rendered_type;
+	};
+	const Expectation expectations[] = {
+		{ "reject_array_uint", "Array[uint]" },
+		{ "reject_array_ulong", "Array[ulong]" },
+		{ "reject_array_int", "Array[int]" },
+		{ "reject_array_long", "Array[long]" },
+		{ "reject_dictionary_ulong_value", "Dictionary[String, ulong]" },
+		{ "reject_dictionary_long_value", "Dictionary[String, long]" },
+	};
+
+	for (const Expectation &expectation : expectations) {
+		TypedContainerWidthErrorRecorder recorder;
+		call_typed_container_width_method_expecting_error(script, StringName(expectation.method));
+		CHECK_MESSAGE(recorder.messages.contains(expectation.rendered_type),
+				vformat("%s message: %s", expectation.method, recorder.messages));
+	}
+}
+
+// A container slot with `NumericType::NONE` renders exactly as it did before widths existed, unrelated
+// to whether a sibling slot on the same carrier has a declared width.
+TEST_CASE("[Modules][FoundryScript][NumericType] An unconstrained container type name is unaffected by numeric width rendering") {
+	ScopedTypedContainerWidthLanguage language;
+
+	const char *source =
+			"func get_bad_key() -> Variant:\n"
+			"\treturn []\n"
+			"\n"
+			"func differently_typed() -> Variant:\n"
+			"\treturn [1.0] as Array[float]\n"
+			"\n"
+			"func reject_array_string():\n"
+			"\tvar _typed: Array[String] = differently_typed()\n"
+			"\n"
+			"func reject_dictionary_variant_key() -> Dictionary:\n"
+			"\tvar values: Dictionary[String, Variant] = {}\n"
+			"\tvalues[get_bad_key()] = 1\n"
+			"\treturn values\n";
+
+	Ref<FoundryScript> script = compile_typed_container_width_source(source);
+
+	{
+		TypedContainerWidthErrorRecorder recorder;
+		call_typed_container_width_method_expecting_error(script, StringName("reject_array_string"));
+		CHECK(recorder.messages.contains("Array[String]"));
+	}
+
+	{
+		// The key slot is `String`, an unrelated `NONE`-carrier type unaffected by this fix: it keeps
+		// naming itself correctly regardless of what the value slot's rendering does. The value slot's
+		// own rendering for an unconstrained `Variant` element (`"Nil"` rather than `"Variant"`) is a
+		// pre-existing, separate gap in this same fallthrough that predates numeric widths entirely and
+		// is out of scope here; only the numeric-width regression this fix introduces is asserted on.
+		TypedContainerWidthErrorRecorder recorder;
+		call_typed_container_width_method_expecting_error(script, StringName("reject_dictionary_variant_key"));
+		CHECK_MESSAGE(recorder.messages.contains("TypedDictionary.Key of type 'String'"), vformat("messages: %s", recorder.messages));
+	}
 }
 
 } // namespace FSTests

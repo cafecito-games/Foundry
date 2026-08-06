@@ -599,6 +599,156 @@ TEST_CASE("[Modules][FoundryScript][GenericRuntime] Specialized generic is/as us
 	script->clear();
 }
 
+// The trait counterpart of `check_specialized_generic_is_as`. A trait target's nominal answer is a
+// conformance lookup rather than an inheritance walk, so this pins that the specialized answer still
+// comes from the implementer's recorded trait argument bindings, through direct `uses`, an inherited
+// one, a supertrait, and a forwarded class parameter.
+static void check_specialized_generic_trait_is_as(const Ref<FoundryScript> &p_script) {
+	const Ref<FoundryScript> holder_trait = get_generic_subclass(p_script, SNAME("Holder"));
+	const Ref<FoundryScript> int_holder = get_generic_subclass(p_script, SNAME("IntHolder"));
+	const Ref<FoundryScript> string_holder = get_generic_subclass(p_script, SNAME("StringHolder"));
+	const Ref<FoundryScript> derived_holder = get_generic_subclass(p_script, SNAME("DerivedIntHolder"));
+	const Ref<FoundryScript> relay_holder = get_generic_subclass(p_script, SNAME("RelayHolder"));
+	const Ref<FoundryScript> forwarder = get_generic_subclass(p_script, SNAME("Forwarder"));
+	const Ref<FoundryScript> plain = get_generic_subclass(p_script, SNAME("Plain"));
+	REQUIRE(holder_trait.is_valid());
+	REQUIRE(int_holder.is_valid());
+	REQUIRE(string_holder.is_valid());
+	REQUIRE(derived_holder.is_valid());
+	REQUIRE(relay_holder.is_valid());
+	REQUIRE(forwarder.is_valid());
+	REQUIRE(plain.is_valid());
+
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	ContainerType string_argument;
+	string_argument.builtin_type = Variant::STRING;
+	Vector<ContainerType> int_arguments;
+	int_arguments.push_back(int_argument);
+	Vector<ContainerType> string_arguments;
+	string_arguments.push_back(string_argument);
+
+	const Variant int_value = new_generic_runtime_instance(int_holder, Vector<ContainerType>());
+	const Variant string_value = new_generic_runtime_instance(string_holder, Vector<ContainerType>());
+	const Variant derived_value = new_generic_runtime_instance(derived_holder, Vector<ContainerType>());
+	const Variant relay_value = new_generic_runtime_instance(relay_holder, Vector<ContainerType>());
+	const Variant forwarded_value = new_generic_runtime_instance(forwarder, int_arguments);
+	const Variant raw_forwarder_value = new_generic_runtime_instance(forwarder, Vector<ContainerType>());
+	const Variant plain_value = new_generic_runtime_instance(plain, Vector<ContainerType>());
+
+	// The evidence a conforming implementer carries is its own leaf script plus its own reified vector;
+	// the trait argument lives in the leaf's per-ancestor binding table, not in the instance.
+	FSInstance *int_instance = fs_instance_of(int_value);
+	REQUIRE(int_instance != nullptr);
+	CHECK(int_instance->get_script() == int_holder);
+	CHECK(int_instance->get_type_arguments().is_empty());
+
+	Vector<ProjectedContainerType> projected;
+	REQUIRE(int_holder->project_type_arguments_onto_base(holder_trait, Vector<ContainerType>(), projected));
+	REQUIRE(projected.size() == 1);
+	CHECK(projected[0].state == ProjectedContainerType::EXACT);
+	CHECK(projected[0].outer.builtin_type == Variant::INT);
+
+	// Raw trait targets stay nominal, including for an implementer that supplied no argument at all.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_holder"), { int_value })));
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_holder"), { string_value })));
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_holder"), { raw_forwarder_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_holder"), { plain_value })));
+
+	// A direct `uses Holder[arg]` answers invariantly.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_holder"), { int_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_holder"), { int_value })));
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_string_holder"), { string_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_holder"), { string_value })));
+
+	// A subclass inherits its base's conformance evidence.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_holder"), { derived_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_holder"), { derived_value })));
+
+	// A supertrait's argument projects through the intermediate trait.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_relayed"), { relay_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_relayed"), { relay_value })));
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_holder"), { relay_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_holder"), { relay_value })));
+
+	// A generic implementer forwards its own reified argument to the trait.
+	CHECK(bool(call_generic_runtime_static(p_script, SNAME("is_int_holder"), { forwarded_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_string_holder"), { forwarded_value })));
+
+	// A raw generic implementer proves nothing, so the specialized target rejects it.
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_holder"), { raw_forwarder_value })));
+
+	// A non-implementer and null fail both questions.
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_holder"), { plain_value })));
+	CHECK_FALSE(bool(call_generic_runtime_static(p_script, SNAME("is_int_holder"), { Variant() })));
+
+	// `as` agrees with `is` for trait targets too.
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_int_holder"), { int_value }) == int_value);
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_int_holder"), { derived_value }) == derived_value);
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_int_holder"), { string_value }).get_type() == Variant::NIL);
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_int_holder"), { raw_forwarder_value }).get_type() == Variant::NIL);
+	CHECK(call_generic_runtime_static(p_script, SNAME("as_holder"), { string_value }) == string_value);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericRuntime] Specialized generic trait is/as uses conformance arguments") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"trait Holder[T]:\n"
+			"\tvar item: T\n"
+			"\n"
+			"trait Relayed[U]:\n"
+			"\tuses Holder[U]\n"
+			"\n"
+			"class IntHolder:\n"
+			"\tuses Holder[int]\n"
+			"\n"
+			"class StringHolder:\n"
+			"\tuses Holder[String]\n"
+			"\n"
+			"class DerivedIntHolder extends IntHolder:\n"
+			"\tvar extra: int = 0\n"
+			"\n"
+			"class RelayHolder:\n"
+			"\tuses Relayed[int]\n"
+			"\n"
+			"class Forwarder[W]:\n"
+			"\tuses Holder[W]\n"
+			"\n"
+			"class Plain:\n"
+			"\tvar value: int = 0\n"
+			"\n"
+			"static func is_holder(value: Variant) -> bool:\n"
+			"\treturn value is Holder\n"
+			"\n"
+			"static func is_int_holder(value: Variant) -> bool:\n"
+			"\treturn value is Holder[int]\n"
+			"\n"
+			"static func is_string_holder(value: Variant) -> bool:\n"
+			"\treturn value is Holder[String]\n"
+			"\n"
+			"static func is_int_relayed(value: Variant) -> bool:\n"
+			"\treturn value is Relayed[int]\n"
+			"\n"
+			"static func is_string_relayed(value: Variant) -> bool:\n"
+			"\treturn value is Relayed[String]\n"
+			"\n"
+			"static func as_int_holder(value: Variant) -> Variant:\n"
+			"\treturn value as Holder[int]\n"
+			"\n"
+			"static func as_holder(value: Variant) -> Variant:\n"
+			"\treturn value as Holder\n");
+
+	check_specialized_generic_trait_is_as(script);
+
+	// The per-ancestor trait binding table must survive export and load, or the compiled form would
+	// fall back to the nominal answer.
+	BytecodeTestResolver resolver;
+	const Ref<FoundryScript> restored = bytecode_round_trip_script(script, &resolver);
+	check_specialized_generic_trait_is_as(restored);
+
+	restored->clear();
+	script->clear();
+}
+
 #endif // TOOLS_ENABLED
 
 } // namespace FSTests

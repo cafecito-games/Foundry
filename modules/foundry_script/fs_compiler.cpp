@@ -778,6 +778,30 @@ FSCodeGenerator::Address FSCompiler::_emit_global_class_value(CodeGen &codegen, 
 	return codegen.add_constant(res);
 }
 
+// A local or parameter slot's address carries the declared type, but a type test (`is uint`) can
+// narrow what the analyzer knows the value holds at a given read without changing the slot's
+// declaration. Code generation checks integer operations against the operand address's width
+// (`_has_static_integer_carrier` in fs_byte_codegen.cpp), so a narrowed read must present that
+// narrower width or the check runs at the declared carrier's widest range instead of the value's
+// actual one. The storage location is unchanged: only the type used to pick opcodes for this one
+// read is overlaid from the analyzer's resolved type for the expression node.
+FSCodeGenerator::Address FSCompiler::_apply_flow_narrowed_integer_width(
+		FSCodeGenerator::Address p_address, const FSParser::DataType &p_narrowed_datatype, FoundryScript *p_owner) {
+	if (p_narrowed_datatype.kind != FSParser::DataType::BUILTIN || p_narrowed_datatype.is_nullable) {
+		return p_address;
+	}
+	if (p_narrowed_datatype.builtin_type != Variant::INT && p_narrowed_datatype.builtin_type != Variant::UINT) {
+		return p_address;
+	}
+	if (p_address.type.kind == FSDataType::BUILTIN && !p_address.type.is_nullable &&
+			p_address.type.builtin_type == p_narrowed_datatype.builtin_type &&
+			p_address.type.numeric_type == p_narrowed_datatype.numeric_type) {
+		return p_address;
+	}
+	p_address.type = _gdtype_from_datatype(p_narrowed_datatype, p_owner);
+	return p_address;
+}
+
 FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
 	// A namespaced global script class used as a value (`Foo` from the current or an
 	// imported namespace, or a qualified `ns.Foo`). The analyzer resolved the dotted
@@ -828,12 +852,14 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 				case FSParser::IdentifierNode::LOCAL_BIND: {
 					// Try function parameters.
 					if (codegen.parameters.has(identifier)) {
-						return codegen.parameters[identifier];
+						return _apply_flow_narrowed_integer_width(
+								codegen.parameters[identifier], p_expression->get_datatype(), codegen.script);
 					}
 
 					// Try local variables and constants.
 					if (!p_initializer && codegen.locals.has(identifier)) {
-						return codegen.locals[identifier];
+						return _apply_flow_narrowed_integer_width(
+								codegen.locals[identifier], p_expression->get_datatype(), codegen.script);
 					}
 				} break;
 
