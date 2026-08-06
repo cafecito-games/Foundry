@@ -36,7 +36,7 @@
 		<member name="line_width" type="float" setter="set_line_width" getter="get_line_width" default="1.0">
 			The line width to use when drawing lines (in pixels). Thick lines may not be supported on all hardware.
 		</member>
-		<member name="patch_control_points" type="int" setter="set_patch_control_points" getter="get_patch_control_points" default="1">
+		<member name="patch_control_points" type="uint" setter="set_patch_control_points" getter="get_patch_control_points" default="1UL">
 			The number of control points to use when drawing a patch with tessellation enabled. Higher values result in higher quality at the cost of performance.
 		</member>
 		<member name="wireframe" type="bool" setter="set_wireframe" getter="get_wireframe" default="false">

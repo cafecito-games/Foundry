@@ -66,7 +66,7 @@
 		<member name="light_color" type="Color" setter="set_color" getter="get_color" default="Color(1, 1, 1, 1)">
 			The light's color in nonlinear sRGB encoding. An [i]overbright[/i] color can be used to achieve a result equivalent to increasing the light's [member light_energy].
 		</member>
-		<member name="light_cull_mask" type="int" setter="set_cull_mask" getter="get_cull_mask" default="4294967295">
+		<member name="light_cull_mask" type="uint" setter="set_cull_mask" getter="get_cull_mask" default="4294967295UL">
 			The light will affect objects in the selected layers.
 			[b]Note:[/b] The light cull mask is ignored by [VoxelGI], SDFGI, [LightmapGI], and volumetric fog. These will always render lights in a way that ignores the cull mask. See also [member VisualInstance3D.layers].
 		</member>
@@ -116,7 +116,7 @@
 		<member name="shadow_blur" type="float" setter="set_param" getter="get_param" default="1.0">
 			Blurs the edges of the shadow. Can be used to hide pixel artifacts in low-resolution shadow maps. A high value can impact performance, make shadows appear grainy and can cause other unwanted artifacts. Try to keep as near default as possible.
 		</member>
-		<member name="shadow_caster_mask" type="int" setter="set_shadow_caster_mask" getter="get_shadow_caster_mask" default="4294967295">
+		<member name="shadow_caster_mask" type="uint" setter="set_shadow_caster_mask" getter="get_shadow_caster_mask" default="4294967295UL">
 			The light will only cast shadows using objects in the selected layers.
 		</member>
 		<member name="shadow_enabled" type="bool" setter="set_shadow" getter="has_shadow" default="false">

@@ -28,7 +28,7 @@
 		<member name="bounds_size" type="Vector2" setter="set_bounds_size" getter="get_bounds_size" default="Vector2(0, 0)">
 			The bounds size for this marker.
 		</member>
-		<member name="marker_id" type="int" setter="set_marker_id" getter="get_marker_id" default="0">
+		<member name="marker_id" type="uint" setter="set_marker_id" getter="get_marker_id" default="0UL">
 			The marker ID for this marker, this is only returned for Aruco and April Tag markers. Call [method get_marker_data] for QRCode markers.
 		</member>
 		<member name="marker_type" type="int" setter="set_marker_type" getter="get_marker_type" enum="OpenXRSpatialComponentMarkerList.MarkerType" default="MARKER_TYPE_UNKNOWN">

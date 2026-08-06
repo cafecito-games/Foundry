@@ -28,15 +28,15 @@
 			[TextServer] RID of the font used to render glyph, this value can be used with [code]TextServer.font_*[/code] methods to retrieve font information.
 			[b]Note:[/b] Read-only. Setting this property won't affect drawing.
 		</member>
-		<member name="glyph_count" type="int" setter="set_glyph_count" getter="get_glyph_count" default="0">
+		<member name="glyph_count" type="uint" setter="set_glyph_count" getter="get_glyph_count" default="0UL">
 			Number of glyphs in the grapheme cluster. This value is set in the first glyph of a cluster.
 			[b]Note:[/b] Read-only. Setting this property won't affect drawing.
 		</member>
-		<member name="glyph_flags" type="int" setter="set_glyph_flags" getter="get_glyph_flags" default="0">
+		<member name="glyph_flags" type="uint" setter="set_glyph_flags" getter="get_glyph_flags" default="0UL">
 			Glyph flags. See [enum TextServer.GraphemeFlag] for more info.
 			[b]Note:[/b] Read-only. Setting this property won't affect drawing.
 		</member>
-		<member name="glyph_index" type="int" setter="set_glyph_index" getter="get_glyph_index" default="0">
+		<member name="glyph_index" type="uint" setter="set_glyph_index" getter="get_glyph_index" default="0UL">
 			Glyph index specific to the [member font]. If you want to replace this glyph, use [method TextServer.font_get_glyph_index] with [member font] to get a new glyph index for a single character.
 		</member>
 		<member name="offset" type="Vector2" setter="set_offset" getter="get_offset" default="Vector2(0, 0)">

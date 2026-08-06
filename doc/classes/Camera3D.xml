@@ -163,7 +163,7 @@
 		<member name="compositor" type="Compositor" setter="set_compositor" getter="get_compositor">
 			The [Compositor] to use for this camera.
 		</member>
-		<member name="cull_mask" type="int" setter="set_cull_mask" getter="get_cull_mask" default="1048575">
+		<member name="cull_mask" type="uint" setter="set_cull_mask" getter="get_cull_mask" default="1048575UL">
 			The culling mask that describes which [member VisualInstance3D.layers] are rendered by this camera. By default, all 20 user-visible layers are rendered.
 			[b]Note:[/b] Since the [member cull_mask] allows for 32 layers to be stored in total, there are an additional 12 layers that are only used internally by the engine and aren't exposed in the editor. Setting [member cull_mask] using a script allows you to toggle those reserved layers, which can be useful for editor plugins.
 			To adjust [member cull_mask] more easily using a script, use [method get_cull_mask_value] and [method set_cull_mask_value].

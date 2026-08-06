@@ -150,10 +150,10 @@
 		<member name="avoidance_enabled" type="bool" setter="set_avoidance_enabled" getter="get_avoidance_enabled" default="false">
 			If [code]true[/code] the agent is registered for an RVO avoidance callback on the [NavigationServer2D]. When [member velocity] is used and the processing is completed a [code]safe_velocity[/code] Vector2 is received with a signal connection to [signal velocity_computed]. Avoidance processing with many registered agents has a significant performance cost and should only be enabled on agents that currently require it.
 		</member>
-		<member name="avoidance_layers" type="int" setter="set_avoidance_layers" getter="get_avoidance_layers" default="1">
+		<member name="avoidance_layers" type="uint" setter="set_avoidance_layers" getter="get_avoidance_layers" default="1UL">
 			A bitfield determining the avoidance layers for this NavigationAgent. Other agents with a matching bit on the [member avoidance_mask] will avoid this agent.
 		</member>
-		<member name="avoidance_mask" type="int" setter="set_avoidance_mask" getter="get_avoidance_mask" default="1">
+		<member name="avoidance_mask" type="uint" setter="set_avoidance_mask" getter="get_avoidance_mask" default="1UL">
 			A bitfield determining what other avoidance agents and obstacles this NavigationAgent will avoid when a bit matches at least one of their [member avoidance_layers].
 		</member>
 		<member name="avoidance_priority" type="float" setter="set_avoidance_priority" getter="get_avoidance_priority" default="1.0">
@@ -180,7 +180,7 @@
 		<member name="max_speed" type="float" setter="set_max_speed" getter="get_max_speed" default="100.0">
 			The maximum speed that an agent can move.
 		</member>
-		<member name="navigation_layers" type="int" setter="set_navigation_layers" getter="get_navigation_layers" default="1">
+		<member name="navigation_layers" type="uint" setter="set_navigation_layers" getter="get_navigation_layers" default="1UL">
 			A bitfield determining which navigation layers of navigation regions this agent will use to calculate a path. Changing it during runtime will clear the current navigation path and generate a new one, according to the new navigation layers.
 		</member>
 		<member name="neighbor_distance" type="float" setter="set_neighbor_distance" getter="get_neighbor_distance" default="500.0">

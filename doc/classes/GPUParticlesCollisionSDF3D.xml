@@ -31,7 +31,7 @@
 		</method>
 	</methods>
 	<members>
-		<member name="bake_mask" type="int" setter="set_bake_mask" getter="get_bake_mask" default="4294967295">
+		<member name="bake_mask" type="uint" setter="set_bake_mask" getter="get_bake_mask" default="4294967295UL">
 			The visual layers to account for when baking the particle collision SDF. Only [MeshInstance3D]s whose [member VisualInstance3D.layers] match with this [member bake_mask] will be included in the generated particle collision SDF. By default, all objects are taken into account for the particle collision SDF baking.
 		</member>
 		<member name="resolution" type="int" setter="set_resolution" getter="get_resolution" enum="GPUParticlesCollisionSDF3D.Resolution" default="RESOLUTION_64">

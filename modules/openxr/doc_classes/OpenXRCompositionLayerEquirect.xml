@@ -12,7 +12,7 @@
 		<member name="central_horizontal_angle" type="float" setter="set_central_horizontal_angle" getter="get_central_horizontal_angle" default="1.5707964">
 			The central horizontal angle of the sphere. Used to set the width.
 		</member>
-		<member name="fallback_segments" type="int" setter="set_fallback_segments" getter="get_fallback_segments" default="10">
+		<member name="fallback_segments" type="uint" setter="set_fallback_segments" getter="get_fallback_segments" default="10UL">
 			The number of segments to use in the fallback mesh.
 		</member>
 		<member name="lower_vertical_angle" type="float" setter="set_lower_vertical_angle" getter="get_lower_vertical_angle" default="0.7853982">

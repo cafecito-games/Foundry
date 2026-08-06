@@ -15,7 +15,7 @@
 		<member name="central_angle" type="float" setter="set_central_angle" getter="get_central_angle" default="1.5707964">
 			The central angle of the cylinder. Used to set the width.
 		</member>
-		<member name="fallback_segments" type="int" setter="set_fallback_segments" getter="get_fallback_segments" default="10">
+		<member name="fallback_segments" type="uint" setter="set_fallback_segments" getter="get_fallback_segments" default="10UL">
 			The number of segments to use in the fallback mesh.
 		</member>
 		<member name="radius" type="float" setter="set_radius" getter="get_radius" default="1.0">

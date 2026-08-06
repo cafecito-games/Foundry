@@ -18,10 +18,10 @@
 		<member name="hit_sbt_range" type="int" setter="set_hit_sbt_range" getter="get_hit_sbt_range" default="0">
 			Hit shader binding table range used for this instance, allocated using the [method RenderingDevice.hit_sbt_range_alloc] method.
 		</member>
-		<member name="id" type="int" setter="set_id" getter="get_id" default="0">
+		<member name="id" type="uint" setter="set_id" getter="get_id" default="0UL">
 			Custom instance ID that can be accessed in GLSL using [code]gl_InstanceCustomIndexEXT[/code].
 		</member>
-		<member name="mask" type="int" setter="set_mask" getter="get_mask" default="255">
+		<member name="mask" type="uint" setter="set_mask" getter="get_mask" default="255UL">
 			Visibility mask used to control which rays can intersect this instance.
 		</member>
 		<member name="transform" type="Transform3D" setter="set_transform" getter="get_transform" default="Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0)">
