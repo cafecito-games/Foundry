@@ -89,13 +89,13 @@ static String native_integer_analysis_errors(const String &p_source) {
 	return messages;
 }
 
-#define CHECK_NATIVE_INTEGER_ANALYSIS_SUCCEEDS(m_source)                              \
-	do {                                                                              \
-		const String _analysis_errors = native_integer_analysis_errors(m_source);     \
-		CHECK_MESSAGE(_analysis_errors.is_empty(), _analysis_errors);                 \
+#define CHECK_NATIVE_INTEGER_ANALYSIS_SUCCEEDS(m_source)                          \
+	do {                                                                          \
+		const String _analysis_errors = native_integer_analysis_errors(m_source); \
+		CHECK_MESSAGE(_analysis_errors.is_empty(), _analysis_errors);             \
 	} while (false)
 
-#define CHECK_NATIVE_INTEGER_ANALYSIS_FAILS(m_source)                                 \
+#define CHECK_NATIVE_INTEGER_ANALYSIS_FAILS(m_source) \
 	CHECK_FALSE(native_integer_analysis_errors(m_source).is_empty())
 
 static Ref<FoundryScript> compile_native_integer_source(const String &p_source) {
