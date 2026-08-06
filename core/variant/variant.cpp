@@ -2375,6 +2375,20 @@ Variant::Variant(Math::int_alt_t p_int_alt) :
 	_data._int = p_int_alt;
 }
 
+// `char32_t`/`char16_t` hold Unicode code points and declare the signed carrier through
+// `GetTypeInfo` despite being unsigned character types, so they get their own exact-match
+// constructors rather than falling back to the unsigned overloads below through a standard
+// conversion.
+Variant::Variant(char32_t p_char32) :
+		type(INT) {
+	_data._int = p_char32;
+}
+
+Variant::Variant(char16_t p_char16) :
+		type(INT) {
+	_data._int = p_char16;
+}
+
 // Unsigned C++ integers select the unsigned carrier. Boundaries that declare their Variant type
 // through `GetTypeInfo<T>` — bound method results, property values, and the FoundryExtension ABI —
 // declare the same carrier plus their exact width as metadata, so a value built here agrees with the

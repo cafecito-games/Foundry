@@ -536,6 +536,13 @@ public:
 	Variant(int16_t p_int16);
 	Variant(int8_t p_int8);
 	Variant(Math::int_alt_t p_int_alt);
+	// `char32_t`/`char16_t` declare the signed carrier through `GetTypeInfo` (see
+	// `METADATA_INT_IS_CHAR32`/`METADATA_INT_IS_CHAR16`) even though they are unsigned character
+	// types, because they hold Unicode code points rather than arbitrary bit patterns. Without an
+	// exact-match overload here, a bare `Variant(v)` prefers the standard conversion to `uint32_t`/
+	// `uint16_t`, building the unsigned carrier and contradicting the declared one.
+	Variant(char32_t p_char32);
+	Variant(char16_t p_char16);
 	Variant(uint64_t p_uint64);
 	Variant(uint32_t p_uint32);
 	Variant(uint16_t p_uint16);
