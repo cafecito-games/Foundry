@@ -242,6 +242,22 @@ uint64_t get_init_language_count() {
 	return init_language_count;
 }
 
+// Walk up from `p_dir` to the nearest ancestor containing `project.foundry`,
+// falling back to `p_dir` itself if none is found.
+static String find_test_project_root(const String &p_dir) {
+	String current = p_dir;
+	while (true) {
+		if (FileAccess::exists(current.path_join("project.foundry"))) {
+			return current;
+		}
+		const String parent = current.get_base_dir();
+		if (parent.is_empty() || parent == current) {
+			return p_dir;
+		}
+		current = parent;
+	}
+}
+
 StringName FSTestRunner::test_function_name;
 
 FSTestRunner::FSTestRunner(const String &p_source_dir, bool p_init_language, bool p_print_filenames, bool p_use_binary_tokens, bool p_use_compiled_bytecode) {
@@ -252,12 +268,26 @@ FSTestRunner::FSTestRunner(const String &p_source_dir, bool p_init_language, boo
 	compiled_bytecode = p_use_compiled_bytecode;
 
 	source_dir = p_source_dir;
+	Error open_error = OK;
+	Ref<DirAccess> requested_dir(DirAccess::open(source_dir, &open_error));
+	if (open_error == OK) {
+		source_dir = requested_dir->get_current_dir(); // Make it an absolute path.
+	}
 	if (!source_dir.ends_with("/")) {
 		source_dir += "/";
 	}
 
+	// The corpus is one project: a fixture in any subdirectory may reference a global
+	// class declared elsewhere, and every expected-output path is recorded relative to
+	// the corpus root. Both therefore have to be anchored at the project root even when
+	// only one subdirectory was requested.
+	corpus_root = find_test_project_root(source_dir.trim_suffix("/"));
+	if (!corpus_root.ends_with("/")) {
+		corpus_root += "/";
+	}
+
 	if (do_init_languages) {
-		init_language(p_source_dir);
+		init_language(corpus_root.trim_suffix("/"));
 	}
 
 #ifdef DEBUG_ENABLED
@@ -447,16 +477,16 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 
 				if (next.ends_with(".bin.fs")) {
 					// Test text mode first.
-					FSTest text_test(current_dir.path_join(next), current_dir.path_join(out_file), source_dir);
+					FSTest text_test(current_dir.path_join(next), current_dir.path_join(out_file), corpus_root);
 					text_test.set_use_compiled_bytecode(compiled_bytecode);
 					tests.push_back(text_test);
 					// Test binary mode even without `--use-binary-tokens`.
-					FSTest bin_test(current_dir.path_join(next), current_dir.path_join(out_file), source_dir);
+					FSTest bin_test(current_dir.path_join(next), current_dir.path_join(out_file), corpus_root);
 					bin_test.set_tokenizer_mode(FSTest::TOKENIZER_BUFFER);
 					bin_test.set_use_compiled_bytecode(compiled_bytecode);
 					tests.push_back(bin_test);
 				} else {
-					FSTest test(current_dir.path_join(next), current_dir.path_join(out_file), source_dir);
+					FSTest test(current_dir.path_join(next), current_dir.path_join(out_file), corpus_root);
 					if (binary_tokens) {
 						test.set_tokenizer_mode(FSTest::TOKENIZER_BUFFER);
 					}
@@ -480,7 +510,6 @@ bool FSTestRunner::make_tests() {
 
 	ERR_FAIL_COND_V_MSG(err != OK, false, "Could not open specified test directory.");
 
-	source_dir = dir->get_current_dir() + "/"; // Make it absolute path.
 	return make_tests_for_dir(dir->get_current_dir());
 }
 
@@ -540,36 +569,13 @@ static bool generate_class_index_recursive(const String &p_dir) {
 	return true;
 }
 
-// Walk up from `p_dir` to the nearest ancestor containing `project.foundry`,
-// falling back to `p_dir` itself if none is found.
-static String find_test_project_root(const String &p_dir) {
-	String current = p_dir;
-	while (true) {
-		if (FileAccess::exists(current.path_join("project.foundry"))) {
-			return current;
-		}
-		const String parent = current.get_base_dir();
-		if (parent.is_empty() || parent == current) {
-			return p_dir;
-		}
-		current = parent;
-	}
-}
-
 bool FSTestRunner::generate_class_index() {
-	Error err = OK;
-	Ref<DirAccess> dir(DirAccess::open(source_dir, &err));
-
-	ERR_FAIL_COND_V_MSG(err != OK, false, "Could not open specified test directory.");
-
-	source_dir = dir->get_current_dir() + "/"; // Make it absolute path.
-
 	// Global classes (`class_name`) are project-global: a fixture in any
 	// subdirectory may reference one declared elsewhere in the test project
 	// (e.g. `Utils` from `utils.notest.fs` at the scripts root). Index from the
-	// project root so generating a subdirectory's outputs still resolves classes
+	// corpus root so generating a subdirectory's outputs still resolves classes
 	// declared outside it.
-	return generate_class_index_recursive(find_test_project_root(dir->get_current_dir()));
+	return generate_class_index_recursive(corpus_root.trim_suffix("/"));
 }
 
 FSTest::FSTest(const String &p_source_path, const String &p_output_path, const String &p_base_dir) {

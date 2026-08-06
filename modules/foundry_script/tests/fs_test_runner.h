@@ -132,7 +132,13 @@ public:
 };
 
 class FSTestRunner {
+	// Directory the run was pointed at; only fixtures below it are collected.
 	String source_dir;
+	// Root of the corpus `source_dir` belongs to (the nearest ancestor holding
+	// `project.foundry`). Script paths in expected output are recorded relative to this
+	// root, and global classes are indexed from it, so running or generating a single
+	// subdirectory produces exactly what a full-corpus run does.
+	String corpus_root;
 	Vector<FSTest> tests;
 
 	bool is_generating = false;
