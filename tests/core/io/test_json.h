@@ -446,4 +446,53 @@ TEST_CASE("[JSON] Serialization") {
 		CHECK_EQ(json.stringify(dictionary, "", true, true), "{\"mask\":4000000000}");
 	}
 }
+
+TEST_CASE("[JSON][UInt] Untyped JSON numbers cannot recover 64-bit integer precision") {
+	// JSON has one numeric type and the parser produces a `double` for it, so every integer above
+	// 2^53 comes back rounded. This is a property of the untyped format, not a missing dispatch
+	// case: exact transports must use the Variant text or binary codecs instead.
+	const uint64_t exact = UINT64_MAX;
+	const Variant original = exact;
+	REQUIRE_EQ(original.get_type(), Variant::UINT);
+
+	const String serialized = JSON::stringify(original, "", true, true);
+	CHECK_EQ(serialized, "18446744073709551615");
+
+	JSON json;
+	REQUIRE_EQ(json.parse(serialized), OK);
+	const Variant parsed = json.get_data();
+
+	// The carrier is lost first: an untyped JSON number is always a float on the way back.
+	CHECK_EQ(parsed.get_type(), Variant::FLOAT);
+	// And the value is lost with it: the nearest double to `UINT64_MAX` is 2^64, one past the
+	// representable range, so no cast recovers the original.
+	CHECK_EQ(parsed.operator double(), 18446744073709551616.0);
+	CHECK_NE(JSON::stringify(parsed, "", true, true), serialized);
+
+	// The same limitation applies to the largest signed value.
+	const Variant signed_original = int64_t(INT64_MAX);
+	const String signed_serialized = JSON::stringify(signed_original, "", true, true);
+	CHECK_EQ(signed_serialized, "9223372036854775807");
+	REQUIRE_EQ(json.parse(signed_serialized), OK);
+	CHECK_EQ(json.get_data().get_type(), Variant::FLOAT);
+	CHECK_NE(JSON::stringify(json.get_data(), "", true, true), signed_serialized);
+}
+
+TEST_CASE("[JSON][UInt] The typed JSON encoding refuses the unsigned carrier") {
+	// `from_native()` is a generic endpoint: it deliberately carries no unsigned tag rather than
+	// silently degrading `Variant::UINT` to a signed integer that would wrap above `INT64_MAX`.
+	ERR_PRINT_OFF;
+	const Variant converted = JSON::from_native(Variant(UINT64_MAX));
+	ERR_PRINT_ON;
+	CHECK_EQ(converted.get_type(), Variant::NIL);
+
+	// The signed carrier keeps its exact tagged form, so the refusal is specific to the unsigned
+	// one rather than a general integer limitation of the typed encoding.
+	const Variant signed_converted = JSON::from_native(Variant(int64_t(INT64_MIN)));
+	REQUIRE_EQ(signed_converted.get_type(), Variant::STRING);
+	CHECK_EQ(signed_converted.operator String(), "i:-9223372036854775808");
+	const Variant signed_restored = JSON::to_native(signed_converted);
+	CHECK_EQ(signed_restored.get_type(), Variant::INT);
+	CHECK_EQ(signed_restored.operator int64_t(), INT64_MIN);
+}
 } // namespace TestJSON
