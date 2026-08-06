@@ -6369,9 +6369,19 @@ FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_for
 	while (match(FSTokenizer::Token::PERIOD)) {
 		// A name after an argument list is a tagged-union case, so it is only a type where the caller
 		// asked for one. Everywhere else the arguments were written on the wrong chain element.
-		if (parsed_type_arguments && !p_allow_enum_case && !reported_suffix_position) {
-			push_error(R"(A type-argument list must be written after the last name of a qualified type.)", type);
-			reported_suffix_position = true;
+		if (parsed_type_arguments && !p_allow_enum_case) {
+			if (!reported_suffix_position) {
+				push_error(R"(A type-argument list must be written after the last name of a qualified type.)", type);
+				reported_suffix_position = true;
+			}
+			// Consume the misplaced tail so parsing stays aligned, but keep it out of the chain: the
+			// applied head is the type the author meant, and resolving the tail against it would only
+			// add a derived "not a nested type" complaint after the real error.
+			if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected inner type name after ".".)")) {
+				break;
+			}
+			parse_identifier();
+			continue;
 		}
 		make_completion_context(COMPLETION_TYPE_ATTRIBUTE, type, chain_index++);
 		if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected inner type name after ".".)")) {

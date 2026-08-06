@@ -1656,6 +1656,12 @@ func take(v: Outer[int].Box) -> void:
 )";
 	CHECK(parser.parse(source, "res://test.fs", false) != OK);
 	CHECK(generic_has_error_containing(parser, "A type-argument list must be written after the last name of a qualified type."));
+
+	// Tooling analyzes despite parse errors. The applied head is what the author meant, so the
+	// misplaced tail must not add a derived lookup complaint on top of the parse error.
+	FSAnalyzer analyzer(&parser);
+	analyzer.analyze();
+	CHECK_FALSE(generic_has_error_containing(parser, R"(Could not find type "Box")"));
 }
 
 TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] Qualified arity violations report the unqualified diagnostic") {
