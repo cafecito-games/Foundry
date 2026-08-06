@@ -1165,7 +1165,10 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Handler return coercion and validatio
 	// A correctly-typed container passes through.
 	{
 		Array typed_tags;
-		typed_tags.set_typed(Variant::INT, StringName(), Variant());
+		ContainerType typed_tags_element_type;
+		typed_tags_element_type.builtin_type = Variant::INT;
+		typed_tags_element_type.numeric_type = NumericType::INT32;
+		typed_tags.set_typed(typed_tags_element_type);
 		typed_tags.push_back(1);
 		typed_tags.push_back(2);
 		recorder->set("stub_return", typed_tags);
@@ -1212,7 +1215,12 @@ TEST_CASE("[Modules][FoundryScript][Proxy] Handler return coercion and validatio
 	// A correctly-typed Dictionary passes through; a wrong-typed one defaults.
 	{
 		Dictionary typed_scores;
-		typed_scores.set_typed(Variant::STRING, StringName(), Variant(), Variant::INT, StringName(), Variant());
+		ContainerType typed_scores_key_type;
+		typed_scores_key_type.builtin_type = Variant::STRING;
+		ContainerType typed_scores_value_type;
+		typed_scores_value_type.builtin_type = Variant::INT;
+		typed_scores_value_type.numeric_type = NumericType::INT32;
+		typed_scores.set_typed(typed_scores_key_type, typed_scores_value_type);
 		typed_scores["a"] = 1;
 		recorder->set("stub_return", typed_scores);
 		Variant result = call("get_scores");

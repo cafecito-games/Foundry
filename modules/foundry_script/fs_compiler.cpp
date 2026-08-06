@@ -167,10 +167,11 @@ static bool _constant_type_argument_from_expression(const FSParser::ExpressionNo
 	}
 	if (p_expression->type == FSParser::Node::IDENTIFIER) {
 		const FSParser::IdentifierNode *identifier = static_cast<const FSParser::IdentifierNode *>(p_expression);
-		const Variant::Type builtin_type = FSParser::get_builtin_type(identifier->name);
-		if (builtin_type < Variant::VARIANT_MAX) {
+		const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(identifier->name);
+		if (builtin_data_type.is_valid()) {
 			r_type_argument.kind = FSParser::DataType::BUILTIN;
-			r_type_argument.builtin_type = builtin_type;
+			r_type_argument.builtin_type = builtin_data_type.builtin_type;
+			r_type_argument.numeric_type = builtin_data_type.numeric_type;
 			r_type_argument.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 			return true;
 		}

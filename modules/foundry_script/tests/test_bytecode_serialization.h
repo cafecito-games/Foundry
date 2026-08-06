@@ -2027,7 +2027,7 @@ TEST_CASE("[FoundryScript][BytecodeFunction] Store-global operands are rebaked b
 
 TEST_CASE("[FoundryScript][BytecodeFunction] Tampered fixup keys fail the load without crashing") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func measure(text: String) -> int:\n"
+			"static func measure(text: String) -> long:\n"
 			"\treturn text.length()\n");
 	const HashMap<StringName, FSFunction *>::ConstIterator original_element = script->get_member_functions().find(SNAME("measure"));
 	REQUIRE(original_element);
@@ -2101,10 +2101,10 @@ TEST_CASE("[FoundryScript][BytecodeFunction] Corrupted argument counts fail the 
 
 TEST_CASE("[FoundryScript][BytecodeFunction] Failed loads roll back the lambda metadata output") {
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"static func two_lambdas(base: int) -> int:\n"
+			"static func two_lambdas(base: int) -> long:\n"
 			"\tvar first := func(value: int) -> int:\n"
 			"\t\treturn value + base\n"
-			"\tvar second := func(text: String) -> int:\n"
+			"\tvar second := func(text: String) -> long:\n"
 			"\t\treturn text.length() * base\n"
 			"\treturn first.call(1) + second.call(\"ab\")\n");
 	const HashMap<StringName, FSFunction *>::ConstIterator original_element = script->get_member_functions().find(SNAME("two_lambdas"));

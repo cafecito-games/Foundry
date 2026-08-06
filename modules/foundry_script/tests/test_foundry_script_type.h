@@ -1265,11 +1265,11 @@ TEST_CASE("[Modules][FoundryScript] Docgen displays nested typed container value
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Docgen names and types the rest argument") {
 	FSParser parser;
 	Error err = parser.parse(
-			"func collect(prefix: String, ...values: Array[int]) -> int:\n"
+			"func collect(prefix: String, ...values: Array[int]) -> long:\n"
 			"\treturn values.size()\n"
-			"func nested(...groups: Array[Array[int]]) -> int:\n"
+			"func nested(...groups: Array[Array[int]]) -> long:\n"
 			"\treturn groups.size()\n"
-			"func gradual(...args: Array) -> int:\n"
+			"func gradual(...args: Array) -> long:\n"
 			"\treturn args.size()\n",
 			"user://typed_rest_docgen.fs", false);
 	REQUIRE(err == OK);
@@ -2604,7 +2604,7 @@ TEST_CASE("[Modules][FoundryScript] Analyzer can reject dynamic source assignmen
 }
 
 TEST_CASE("[Modules][FoundryScript] Analyzer checks custom Object hash/equality signatures") {
-	const String valid_source = "extends RefCounted\nfunc _equals(other: Variant) -> bool:\n\treturn false\nfunc _hash_code() -> int:\n\treturn 0\n";
+	const String valid_source = "extends RefCounted\nfunc _equals(other: Variant) -> bool:\n\treturn false\nfunc _hash_code() -> long:\n\treturn 0\n";
 	const String invalid_equals_source = "extends RefCounted\nfunc _equals(other: Variant) -> int:\n\treturn 0\nfunc _hash_code() -> int:\n\treturn 0\n";
 	const String invalid_hash_source = "extends RefCounted\nfunc _equals(other: Variant) -> bool:\n\treturn false\nfunc _hash_code(value: int) -> int:\n\treturn value\n";
 
@@ -3210,10 +3210,10 @@ TEST_CASE("[Modules][FoundryScript] Callable/Signal enum signature leaves encode
 
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Analyzer accepts concrete typed rest arrays") {
 	CHECK_EQ(analyze_source(
-					 "func collect(prefix: String, ...values: Array[int]) -> int:\n"
+					 "func collect(prefix: String, ...values: Array[int]) -> long:\n"
 					 "\tprint(prefix)\n"
 					 "\treturn values.size()\n"
-					 "func test() -> int:\n"
+					 "func test() -> long:\n"
 					 "\treturn collect(\"n\", 1, 2, 3)\n"),
 			OK);
 }
@@ -3260,11 +3260,11 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] Callable DataType copies
 
 TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A gradual rest tail stays untyped") {
 	CHECK_EQ(analyze_source(
-					 "func collect(...values: Array) -> int:\n"
+					 "func collect(...values: Array) -> long:\n"
 					 "\treturn values.size()\n"
-					 "func collect_variant(...values: Array[Variant]) -> int:\n"
+					 "func collect_variant(...values: Array[Variant]) -> long:\n"
 					 "\treturn values.size()\n"
-					 "func test() -> int:\n"
+					 "func test() -> long:\n"
 					 "\treturn collect(1, \"two\", null) + collect_variant(1, \"two\", null)\n"),
 			OK);
 }

@@ -83,8 +83,7 @@ func test():
 	print(identity[ulong](ulong_box.value))
 
 	# Variant erases the width but not the carrier. A type test against a width-declaring spelling is a
-	# range test as well as a carrier test. The legacy `int` spelling declares no width yet, so it
-	# still accepts the whole signed carrier and its two rows below read `true`.
+	# range test as well as a carrier test, `int` included.
 	var erased_uint: Variant = 4294967296UL
 	var erased_int: Variant = 2147483648L
 	var below_int: Variant = -2147483649L

@@ -1,7 +1,7 @@
-func collect(prefix: String, ...values: Array[int]) -> int:
+func collect(prefix: String, ...values: Array[int]) -> long:
 	return values.size()
 
-func gather(...args: Array) -> int:
+func gather(...args: Array) -> long:
 	return args.size()
 
 func use() -> void:

@@ -1326,7 +1326,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Destructor restores after ser
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
 			"var private_marker_failure_member: int = 40\n"
 			"static var private_marker_failure_static: int = 1\n"
-			"func private_marker_failure_method(text: String) -> int:\n"
+			"func private_marker_failure_method(text: String) -> long:\n"
 			"\treturn private_marker_failure_member + text.length()\n");
 	TestFSNameManglerApplicationAccessor::seed_cache_state(
 			script, member, static_member);
@@ -1439,7 +1439,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Renames only safe argument na
 			"\n"
 			"func private_marker_vararg("
 			"@private_marker_parameter private_marker_fixed: int, "
-			"...@private_marker_parameter private_marker_rest: Array) -> int:\n"
+			"...@private_marker_parameter private_marker_rest: Array) -> long:\n"
 			"\treturn private_marker_fixed + private_marker_rest.size()\n"
 			"\n"
 			"@keep_name\n"
@@ -1576,7 +1576,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Rejects protected mapped name
 			"@rpc func rpc_method(rpc_parameter_marker: int) -> void:\n"
 			"\tpass\n"
 			"\n"
-			"func private_marker_method(text: String) -> int:\n"
+			"func private_marker_method(text: String) -> long:\n"
 			"\tqueue_free()\n"
 			"\tprint(text)\n"
 			"\treturn text.length()\n");
@@ -3551,7 +3551,7 @@ TEST_CASE("[FoundryScript][NameManglerApplication] Protects every pointer-fixup 
 			"\tpass\n"
 			"func len() -> void:\n"
 			"\tpass\n"
-			"func get_instance_id() -> int:\n"
+			"func get_instance_id() -> long:\n"
 			"\treturn 0\n"
 			"func PrivateMarkerFixupAutoload() -> void:\n"
 			"\tpass\n"

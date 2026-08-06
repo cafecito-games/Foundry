@@ -14,5 +14,5 @@ func _equals(other: Variant) -> bool:
 	return other is CustomHashKey and id == other.id and label == other.label
 
 
-func _hash_code() -> int:
+func _hash_code() -> long:
 	return hash("%s:%s" % [id, label])

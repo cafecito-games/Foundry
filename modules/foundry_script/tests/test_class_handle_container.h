@@ -236,6 +236,7 @@ TEST_CASE("[Modules][FoundryScript][ClassHandle] A specialized handle slot is in
 
 	ContainerType int_argument;
 	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
 	ContainerType string_argument;
 	string_argument.builtin_type = Variant::STRING;
 

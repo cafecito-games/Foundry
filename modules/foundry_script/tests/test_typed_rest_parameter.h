@@ -46,7 +46,7 @@ TEST_CASE("[Modules][FoundryScript][TypedRestParameter] A rejected rest argument
 	// surplus argument must unwind it. Otherwise every reference-counted value already placed in a
 	// fixed argument slot is retained for the lifetime of the process.
 	const Ref<FoundryScript> script = compile_bytecode_test_source(
-			"func take(first: RefCounted, ...values: Array[int]) -> int:\n"
+			"func take(first: RefCounted, ...values: Array[int]) -> long:\n"
 			"\tprint(first)\n"
 			"\treturn values.size()\n");
 

@@ -6,15 +6,15 @@ func first_element[T](items: Array[T]) -> T:
 	return items[0]
 
 
-func key_count[K, V](dict: Dictionary[K, V]) -> int:
+func key_count[K, V](dict: Dictionary[K, V]) -> long:
 	return dict.size()
 
 
-func value_count[K](dict: Dictionary[K, int]) -> int:
+func value_count[K](dict: Dictionary[K, int]) -> long:
 	return dict.size()
 
 
-func first_row[T](rows: Array[Array[T]]) -> int:
+func first_row[T](rows: Array[Array[T]]) -> long:
 	return rows[0].size()
 
 

@@ -1809,7 +1809,7 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionBytecode] Compiled descrip
 	CHECK(argument.container_element_types.is_empty());
 	REQUIRE_EQ(argument.type_arguments.size(), 2);
 	CHECK_EQ(argument.type_arguments[0].builtin_type, Variant::INT);
-	CHECK_EQ(argument.type_arguments[0].numeric_type, NumericType::NONE);
+	CHECK_EQ(argument.type_arguments[0].numeric_type, NumericType::INT32);
 	CHECK_EQ(argument.type_arguments[1].builtin_type, Variant::STRING);
 
 	// Two specializations of one declaration stay distinct in the same compiled function.
@@ -1826,7 +1826,7 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionBytecode] Compiled descrip
 	CHECK_EQ(argument_container.builtin_type, Variant::ARRAY);
 	REQUIRE_EQ(argument_container.type_arguments.size(), 2);
 	CHECK_EQ(argument_container.type_arguments[0].builtin_type, Variant::INT);
-	CHECK_EQ(argument_container.type_arguments[0].numeric_type, NumericType::NONE);
+	CHECK_EQ(argument_container.type_arguments[0].numeric_type, NumericType::INT32);
 	CHECK_EQ(argument_container.type_arguments[1].builtin_type, Variant::STRING);
 	CHECK(argument_container != returned.to_container_type());
 }
@@ -1839,10 +1839,10 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionBytecode] Nested descripto
 			"\tOk(value: T)\n"
 			"\tErr(error: E)\n"
 			"\n"
-			"func count_array(values: Array[Result[int, String]]) -> int:\n"
+			"func count_array(values: Array[Result[int, String]]) -> long:\n"
 			"\treturn values.size()\n"
 			"\n"
-			"func count_dictionary(values: Dictionary[String, Result[int, String]]) -> int:\n"
+			"func count_dictionary(values: Dictionary[String, Result[int, String]]) -> long:\n"
 			"\treturn values.size()\n");
 
 	FSFunction *count_array = script->get_member_functions()[SNAME("count_array")];

@@ -310,10 +310,10 @@ TEST_CASE("[Modules][FoundryScript][SymbolicSelf] A rest parameter makes a signa
 	// counts the same as a declared parameter.
 	const Ref<FoundryScript> script = compile_symbolic_self_source(
 			"class Base:\n"
-			"\tstatic func collect(...values: Array[Self]) -> int:\n"
+			"\tstatic func collect(...values: Array[Self]) -> long:\n"
 			"\t\treturn values.size()\n"
 			"\n"
-			"\tstatic func count(...values: Array[int]) -> int:\n"
+			"\tstatic func count(...values: Array[int]) -> long:\n"
 			"\t\treturn values.size()\n");
 
 	const FSFunction *collect = symbolic_self_member_function(script, SNAME("Base"), SNAME("collect"));

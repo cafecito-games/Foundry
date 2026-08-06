@@ -15,11 +15,11 @@ class Dog:
 
 
 trait Collects:
-	abstract func collect(...pets: Array[Dog]) -> int
+	abstract func collect(...pets: Array[Dog]) -> long
 
 
 class Base:
-	func collect(...pets: Array[Dog]) -> int:
+	func collect(...pets: Array[Dog]) -> long:
 		return pets.size()
 
 
@@ -27,18 +27,18 @@ class Broadened:
 	extends Base
 
 	# Rest elements are contravariant, so an override may accept a broader element type.
-	func collect(...pets: Array[Animal]) -> int:
+	func collect(...pets: Array[Animal]) -> long:
 		return 100 + pets.size()
 
 
 class Witness:
 	uses Collects
 
-	func collect(...pets: Array[Dog]) -> int:
+	func collect(...pets: Array[Dog]) -> long:
 		return 200 + pets.size()
 
 
-func tally(prefix: String, scale: int = 2, ...values: Array[int]) -> int:
+func tally(prefix: String, scale: int = 2, ...values: Array[int]) -> long:
 	Utils.check(values.is_typed())
 	Utils.check(values.get_typed_builtin() == TYPE_INT)
 	var total := prefix.length()
@@ -47,7 +47,7 @@ func tally(prefix: String, scale: int = 2, ...values: Array[int]) -> int:
 	return total
 
 
-func generic_tally[T](...values: Array[T]) -> int:
+func generic_tally[T](...values: Array[T]) -> long:
 	# Method type arguments are not reified in the call frame, so a method-dependent rest element is
 	# erased at runtime even though the call site statically sees a concrete element type.
 	Utils.check(not values.is_typed())
@@ -64,7 +64,7 @@ func test() -> void:
 	Utils.check(tally("ab", scale = 5) == 2)
 
 	# A typed variadic Callable carries the rich signature through a value.
-	var callback: Callable[[String, int, ...Array[int]], int] = tally
+	var callback: Callable[[String, int, ...Array[int]], long] = tally
 	Utils.check(callback.call("ab", 3, 1, 2) == 11)
 	Utils.check(callback.callv(["ab", 3, 4]) == 14)
 

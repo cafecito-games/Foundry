@@ -161,6 +161,7 @@ TEST_CASE("[Modules][FoundryScript][Generics] An unresolved argument leaves its 
 	expected_pair.script = pair;
 	ContainerType int_argument;
 	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
 	ContainerType float_argument;
 	float_argument.builtin_type = Variant::FLOAT;
 	ContainerType string_argument;

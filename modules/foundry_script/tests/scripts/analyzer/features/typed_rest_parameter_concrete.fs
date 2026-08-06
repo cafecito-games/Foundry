@@ -1,25 +1,25 @@
 class Marker:
 	var id := 0
 
-func ints(...values: Array[int]) -> int:
+func ints(...values: Array[int]) -> long:
 	return values.size()
 
 func labelled(prefix: String, ...values: Array[String]) -> String:
 	return prefix + str(values.size())
 
-func markers(...values: Array[Marker]) -> int:
+func markers(...values: Array[Marker]) -> long:
 	return values.size()
 
-func nullable_markers(...values: Array[Marker?]) -> int:
+func nullable_markers(...values: Array[Marker?]) -> long:
 	return values.size()
 
-func nested(...values: Array[Array[int]]) -> int:
+func nested(...values: Array[Array[int]]) -> long:
 	return values.size()
 
-func gradual(...values: Array) -> int:
+func gradual(...values: Array) -> long:
 	return values.size()
 
-func explicit_variant(...values: Array[Variant]) -> int:
+func explicit_variant(...values: Array[Variant]) -> long:
 	return values.size()
 
 func test() -> void:

@@ -1286,7 +1286,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 	TEST_CASE("Override method preserves a typed rest tail from a concrete script base") {
 		const String source =
 				"class Base:\n"
-				"\tfunc collect(prefix: String, ...values: Array[int]) -> int:\n"
+				"\tfunc collect(prefix: String, ...values: Array[int]) -> long:\n"
 				"\t\treturn values.size()\n"
 				"class Child extends Base:\n"
 				"\tvar marker := 0\n";
@@ -1295,12 +1295,12 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		REQUIRE_MESSAGE(result.ok, result.error_message);
 		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "collect");
 		REQUIRE(candidate != nullptr);
-		CHECK(candidate->signature.contains("func collect(prefix: String, ...values: Array[int]) -> int"));
+		CHECK(candidate->signature.contains("func collect(prefix: String, ...values: Array[int]) -> long"));
 
 		String out;
 		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
 		REQUIRE_MESSAGE(r.ok, r.error_message);
-		CHECK(out.contains("\tfunc collect(prefix: String, ...values: Array[int]) -> int:\n"));
+		CHECK(out.contains("\tfunc collect(prefix: String, ...values: Array[int]) -> long:\n"));
 		// The parser forbids a default on a rest parameter, so none is ever rendered.
 		CHECK_FALSE(out.contains("...values: Array[int] ="));
 		CHECK(out.contains("\t\treturn 0\n"));
@@ -1335,7 +1335,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 	TEST_CASE("Override method substitutes a generic rest tail into the concrete override") {
 		const String source =
 				"class Base[T]:\n"
-				"\tfunc collect(...values: Array[T]) -> int:\n"
+				"\tfunc collect(...values: Array[T]) -> long:\n"
 				"\t\treturn values.size()\n"
 				"class Child extends Base[Node]:\n"
 				"\tvar marker := 0\n";
@@ -1344,12 +1344,12 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		REQUIRE_MESSAGE(result.ok, result.error_message);
 		const RefactorOverrideMethodCandidate *candidate = FSTests::find_override_candidate(result.candidates, "collect");
 		REQUIRE(candidate != nullptr);
-		CHECK(candidate->signature.contains("func collect(...values: Array[Node]) -> int"));
+		CHECK(candidate->signature.contains("func collect(...values: Array[Node]) -> long"));
 
 		String out;
 		RefactorResult r = FSTests::run_override_method(source, 4, 1, candidate->id, out);
 		REQUIRE_MESSAGE(r.ok, r.error_message);
-		CHECK(out.contains("\tfunc collect(...values: Array[Node]) -> int:\n"));
+		CHECK(out.contains("\tfunc collect(...values: Array[Node]) -> long:\n"));
 		CHECK_EQ(FSTests::analyze_refactored_source(out), OK);
 	}
 

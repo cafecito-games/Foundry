@@ -544,15 +544,10 @@ int FSAnalyzer::test_get_external_parser_cache_size(const FSAnalyzer *p_analyzer
 }
 #endif // TESTS_ENABLED
 
-// The width a resolved built-in type name constrains its slot to today.
-//
-// `int` keeps an unconstrained width for now: every native integer boundary still decodes wide (see
-// `type_from_property()`), so pinning the 32-bit constraint before the promotion classifier and the
-// native metadata mapping exist would reject correct code rather than narrow it. The three new
-// spellings have no such history and carry their exact width immediately. The registry itself keeps
-// the accurate descriptor, so this is the only place the distinction is made.
+// The width a resolved built-in type name constrains its slot to. The registry keeps the accurate
+// descriptor for every integer spelling, `int` included, so this is a direct pass-through.
 static NumericType _applied_numeric_type(NumericType p_registry_numeric_type) {
-	return p_registry_numeric_type == NumericType::INT32 ? NumericType::NONE : p_registry_numeric_type;
+	return p_registry_numeric_type;
 }
 
 // The declared width an operand contributes to a promotion. Only a built-in slot carries one: an
@@ -6481,6 +6476,12 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			call_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
 			call_type.kind = FSParser::DataType::BUILTIN;
 			call_type.builtin_type = builtin_type;
+			// `get_builtin_type()` only recognizes the base spelling of each carrier (see its own
+			// comment), so a constructor call reaching this point by name is always `int(...)`, never
+			// `long(...)`. Its result carries that exact width.
+			if (builtin_type == Variant::INT) {
+				call_type.numeric_type = NumericType::INT32;
+			}
 
 			bool safe_to_fold = true;
 			switch (builtin_type) {
@@ -6636,6 +6637,13 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 						}
 						match = true;
 						call_type = type_from_property(info.return_val);
+						// The engine's own constructor list carries no FoundryScript-specific width
+						// metadata, so its return value decodes wide (see `type_from_property()`). This
+						// call path is only ever reached by the `int` spelling (see the comment above),
+						// so the width it lost is known here.
+						if (builtin_type == Variant::INT) {
+							call_type.numeric_type = NumericType::INT32;
+						}
 						break;
 					}
 				}

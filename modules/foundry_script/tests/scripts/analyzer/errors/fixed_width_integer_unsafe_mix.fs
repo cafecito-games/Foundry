@@ -4,9 +4,7 @@ func test():
 	var l: long = 3L
 	var ul: ulong = 4UL
 
-	# No integer type holds every value of both operands, in either order. The two rows that name the
-	# legacy `int` spelling still report the generic operand diagnostic instead of the carrier-crossing
-	# one, because `int` declares no width yet.
+	# No integer type holds every value of both operands, in either order.
 	var long_ulong: ulong = l + ul
 	var ulong_long: ulong = ul + l
 	var int_ulong: ulong = i + ul

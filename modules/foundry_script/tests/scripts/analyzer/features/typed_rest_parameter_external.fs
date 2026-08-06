@@ -5,5 +5,5 @@ func test() -> void:
 	print(provider.collect("ab", 1, 2, 3))
 	print(provider.collect("ab"))
 
-	var handler: Callable[[String, ...Array[int]], int] = provider.callback()
+	var handler: Callable[[String, ...Array[int]], long] = provider.callback()
 	print(handler.call("abc", 4, 5))

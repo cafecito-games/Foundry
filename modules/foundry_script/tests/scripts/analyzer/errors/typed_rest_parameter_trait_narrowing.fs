@@ -13,24 +13,24 @@ class Dog:
 
 
 trait AcceptsAnimals:
-	abstract func accept(...pets: Array[Animal]) -> int
+	abstract func accept(...pets: Array[Animal]) -> long
 
 
 trait AcceptsBounded:
-	abstract func accept_bounded[T: Animal](...pets: Array[T]) -> int
+	abstract func accept_bounded[T: Animal](...pets: Array[T]) -> long
 
 
 class Narrower:
 	uses AcceptsAnimals
 
-	func accept(...pets: Array[Dog]) -> int:
+	func accept(...pets: Array[Dog]) -> long:
 		return pets.size()
 
 
 class Concrete:
 	uses AcceptsBounded
 
-	func accept_bounded[U: Animal](...pets: Array[Dog]) -> int:
+	func accept_bounded[U: Animal](...pets: Array[Dog]) -> long:
 		return pets.size()
 
 

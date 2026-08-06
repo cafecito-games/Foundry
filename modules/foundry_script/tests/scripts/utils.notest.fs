@@ -86,8 +86,8 @@ static func get_human_readable_hint_string(property: Dictionary) -> String:
 			var elem_type_hint: String = hint_string.get_slice(":", 0)
 			hint_string = hint_string.substr(elem_type_hint.length() + 1)
 
-			var elem_type: int
-			var elem_hint: int
+			var elem_type: long
+			var elem_hint: long
 
 			if elem_type_hint.is_valid_int():
 				elem_type = elem_type_hint.to_int()
@@ -136,8 +136,8 @@ static func get_method_signature(method: Dictionary, is_signal: bool = false) ->
 
 	var args: Array[Dictionary] = method.args
 	var default_args: Array = method.default_args
-	var mandatory_argc: int = args.size() - default_args.size()
-	for i: int in args.size():
+	var mandatory_argc: long = args.size() - default_args.size()
+	for i: long in args.size():
 		if i > 0:
 			result += ", "
 		var arg: Dictionary = args[i]

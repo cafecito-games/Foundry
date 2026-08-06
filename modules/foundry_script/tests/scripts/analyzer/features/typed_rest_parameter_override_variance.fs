@@ -14,39 +14,39 @@ class Dog:
 
 
 class Base:
-	func visit(...pets: Array[Dog]) -> int:
+	func visit(...pets: Array[Dog]) -> long:
 		return pets.size()
 
 
 class SameElement:
 	extends Base
 
-	func visit(...pets: Array[Dog]) -> int:
+	func visit(...pets: Array[Dog]) -> long:
 		return 10 + pets.size()
 
 
 class BroaderElement:
 	extends Base
 
-	func visit(...pets: Array[Animal]) -> int:
+	func visit(...pets: Array[Animal]) -> long:
 		return 20 + pets.size()
 
 
 class GradualTail:
 	extends Base
 
-	func visit(...pets: Array) -> int:
+	func visit(...pets: Array) -> long:
 		return 30 + pets.size()
 
 
 abstract class AbstractSink:
-	abstract func absorb(...pets: Array[Dog]) -> int
+	abstract func absorb(...pets: Array[Dog]) -> long
 
 
 class BroaderSink:
 	extends AbstractSink
 
-	func absorb(...pets: Array[Animal]) -> int:
+	func absorb(...pets: Array[Animal]) -> long:
 		return 40 + pets.size()
 
 

@@ -1379,7 +1379,7 @@ func f():
 
 			const LSP::DocumentSymbol *collect = parser->get_member_symbol("collect");
 			REQUIRE(collect);
-			CHECK_EQ(collect->detail, "func collect(prefix: String, ...values: Array[int]) -> int");
+			CHECK_EQ(collect->detail, "func collect(prefix: String, ...values: Array[int]) -> long");
 			REQUIRE(collect->children.size() == 2);
 			CHECK_EQ(collect->children[0].detail, "var prefix: String");
 			CHECK_FALSE(collect->children[0].rest_parameter);
@@ -1389,13 +1389,13 @@ func f():
 			// A rest tail without a narrowing element type stays gradual and renders as `Array`.
 			const LSP::DocumentSymbol *gather = parser->get_member_symbol("gather");
 			REQUIRE(gather);
-			CHECK_EQ(gather->detail, "func gather(...args: Array) -> int");
+			CHECK_EQ(gather->detail, "func gather(...args: Array) -> long");
 
 			Variant hover_variant = text_document->hover(pos_in(uri, collect->selectionRange.start).to_json());
 			REQUIRE(hover_variant.get_type() == Variant::DICTIONARY);
 			Dictionary hover = hover_variant;
 			Dictionary hover_contents = hover["contents"];
-			CHECK(String(hover_contents["value"]).contains("func collect(prefix: String, ...values: Array[int]) -> int"));
+			CHECK(String(hover_contents["value"]).contains("func collect(prefix: String, ...values: Array[int]) -> long"));
 
 			// `collect("n", 1, 2, 3)` on line 7: the fixed argument selects slot 0, and every
 			// surplus argument clamps onto the rest slot instead of running past the parameter list.
@@ -1409,7 +1409,7 @@ func f():
 				CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(7, probe.character)), signature_help), OK);
 				REQUIRE(signature_help.signatures.size() == 1);
 				const LSP::SignatureInformation &signature = signature_help.signatures[0];
-				CHECK_EQ(signature.label, "func collect(prefix: String, ...values: Array[int]) -> int");
+				CHECK_EQ(signature.label, "func collect(prefix: String, ...values: Array[int]) -> long");
 				REQUIRE(signature.parameters.size() == 2);
 				CHECK_EQ(signature.parameters[0].label, "prefix: String");
 				CHECK_EQ(signature.parameters[1].label, "...values: Array[int]");

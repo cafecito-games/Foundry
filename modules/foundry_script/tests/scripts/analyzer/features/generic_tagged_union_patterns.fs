@@ -9,7 +9,7 @@ enum Result[T, E]:
 enum Pair[A, B]:
 	Both(first: A, second: B)
 
-func inspect(value: Result[int, String]) -> int:
+func inspect(value: Result[int, String]) -> long:
 	if value is Result[int, String].Ok(number):
 		return number + 1
 	match value:
@@ -20,7 +20,7 @@ func inspect(value: Result[int, String]) -> int:
 
 # The mirrored application of the same declaration binds the parameters the other way round, in the
 # same analyzed source.
-func inspect_flipped(value: Result[String, int]) -> int:
+func inspect_flipped(value: Result[String, int]) -> long:
 	match value:
 		Result[String, int].Ok(var text):
 			return text.length()
