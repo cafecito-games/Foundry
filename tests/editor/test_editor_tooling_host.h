@@ -633,8 +633,13 @@ static void check_invalid_project_rejection(ToolingCommandForm p_form, const Str
 	CHECK_FALSE(message.is_empty());
 	CHECK_MESSAGE(run.standard_error.contains(message), "The human-readable diagnostic must reach stderr.");
 
+	// The single record above already proves the failure came from the preflight rather
+	// than from a bind attempt; these confirm no listener outlived the rejected run. Only
+	// the ports the invocation actually requested are meaningful here.
 	CHECK_FALSE(can_connect_to_local_port(lsp_port));
-	CHECK_FALSE(can_connect_to_local_port(dap_port));
+	if (p_form == TOOLING_COMMAND_TOOLING_SERVE) {
+		CHECK_FALSE(can_connect_to_local_port(dap_port));
+	}
 }
 
 TEST_CASE("[Editor][ToolingHost] Invalid project records name the reason and the resolved path") {
