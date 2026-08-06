@@ -147,7 +147,8 @@ struct ProjectedContainerType {
 	ContainerType to_container_type() const;
 	// Names the evidence. An unresolved subtree renders as `?` (`Box[int, ?]`) rather than as the
 	// unconstrained slot it materializes to, so a diagnostic keeps saying "this part is not known"
-	// instead of "the author wrote `Variant` here". Arity is preserved, and a fully known tree renders
+	// instead of "the author wrote `Variant` here". Arity is preserved, and a tree without unresolved
+	// subtrees (including the ones `exact()` degrades past `Variant::MAX_RECURSION_DEPTH`) renders
 	// exactly like its materialized type.
 	String get_type_name() const;
 
