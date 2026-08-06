@@ -167,6 +167,23 @@ TEST_CASE("[Animation] cast_to_blendwise and cast_from_blendwise round-trip uint
 	CHECK(uint64_t(round_tripped) == 100);
 }
 
+TEST_CASE("[Animation] cast_from_blendwise clamps a negative uint result instead of wrapping") {
+	// A negative double (from cubic overshoot or a subtraction fallback) must clamp to 0
+	// rather than wrap around when rounded and cast to uint64_t.
+	const Variant negative = Animation::cast_from_blendwise(Variant(-6.0), Variant::UINT);
+	CHECK(negative.get_type() == Variant::UINT);
+	CHECK(uint64_t(negative) == 0);
+}
+
+TEST_CASE("[Animation] subtract_variant clamps a uint underflow instead of wrapping") {
+	const Variant uint_a = Variant(uint64_t(4));
+	const Variant uint_b = Variant(uint64_t(10));
+
+	const Variant difference = Animation::subtract_variant(uint_a, uint_b);
+	CHECK(difference.get_type() == Variant::UINT);
+	CHECK(uint64_t(difference) == 0);
+}
+
 TEST_CASE("[Animation] add_variant, subtract_variant, and blend_variant treat uint like int") {
 	const Variant uint_a = Variant(uint64_t(10));
 	const Variant uint_b = Variant(uint64_t(4));

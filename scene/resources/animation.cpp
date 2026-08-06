@@ -5779,7 +5779,9 @@ Variant Animation::cast_from_blendwise(const Variant p_value, const Variant::Typ
 			return (int64_t)Math::round(p_value.operator double());
 		} break;
 		case Variant::UINT: {
-			return (uint64_t)Math::round(p_value.operator double());
+			// Cubic overshoot or a subtraction fallback can round to a negative double; clamp
+			// instead of letting the negative-to-uint64_t cast wrap around to a huge value.
+			return (uint64_t)MAX(Math::round(p_value.operator double()), 0.0);
 		} break;
 		case Variant::STRING: {
 			return array_to_string(p_value);
