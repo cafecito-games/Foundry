@@ -179,7 +179,7 @@ void VisualInstance3D::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_sorting_use_aabb_center"), &VisualInstance3D::is_sorting_use_aabb_center);
 
 	FOUNDRY_VIRTUAL_BIND(_get_aabb);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "layers", PROPERTY_HINT_LAYERS_3D_RENDER), "set_layer_mask", "get_layer_mask");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "layers", PROPERTY_HINT_LAYERS_3D_RENDER), "set_layer_mask", "get_layer_mask");
 
 	ADD_GROUP("Sorting", "sorting_");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "sorting_offset", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NONE), "set_sorting_offset", "get_sorting_offset");

@@ -45,7 +45,7 @@ void RenderSceneBuffersConfiguration::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("get_view_count"), &RenderSceneBuffersConfiguration::get_view_count);
 	ClassDB::bind_method(D_METHOD("set_view_count", "view_count"), &RenderSceneBuffersConfiguration::set_view_count);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "view_count"), "set_view_count", "get_view_count");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "view_count"), "set_view_count", "get_view_count");
 
 	ClassDB::bind_method(D_METHOD("get_scaling_3d_mode"), &RenderSceneBuffersConfiguration::get_scaling_3d_mode);
 	ClassDB::bind_method(D_METHOD("set_scaling_3d_mode", "scaling_3d_mode"), &RenderSceneBuffersConfiguration::set_scaling_3d_mode);

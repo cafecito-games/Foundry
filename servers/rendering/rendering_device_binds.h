@@ -85,11 +85,11 @@ public:
 protected:
 	static void _bind_methods() {
 		RD_BIND(Variant::INT, RDTextureFormat, format);
-		RD_BIND(Variant::INT, RDTextureFormat, width);
-		RD_BIND(Variant::INT, RDTextureFormat, height);
-		RD_BIND(Variant::INT, RDTextureFormat, depth);
-		RD_BIND(Variant::INT, RDTextureFormat, array_layers);
-		RD_BIND(Variant::INT, RDTextureFormat, mipmaps);
+		RD_BIND(Variant::UINT, RDTextureFormat, width);
+		RD_BIND(Variant::UINT, RDTextureFormat, height);
+		RD_BIND(Variant::UINT, RDTextureFormat, depth);
+		RD_BIND(Variant::UINT, RDTextureFormat, array_layers);
+		RD_BIND(Variant::UINT, RDTextureFormat, mipmaps);
 		RD_BIND(Variant::INT, RDTextureFormat, texture_type);
 		RD_BIND(Variant::INT, RDTextureFormat, samples);
 		RD_BIND(Variant::INT, RDTextureFormat, usage_bits);
@@ -139,7 +139,7 @@ protected:
 	static void _bind_methods() {
 		RD_BIND(Variant::INT, RDAttachmentFormat, format);
 		RD_BIND(Variant::INT, RDAttachmentFormat, samples);
-		RD_BIND(Variant::INT, RDAttachmentFormat, usage_flags);
+		RD_BIND(Variant::UINT, RDAttachmentFormat, usage_flags);
 	}
 };
 
@@ -230,11 +230,11 @@ public:
 
 protected:
 	static void _bind_methods() {
-		RD_BIND(Variant::INT, RDVertexAttribute, binding);
-		RD_BIND(Variant::INT, RDVertexAttribute, location);
-		RD_BIND(Variant::INT, RDVertexAttribute, offset);
+		RD_BIND(Variant::UINT, RDVertexAttribute, binding);
+		RD_BIND(Variant::UINT, RDVertexAttribute, location);
+		RD_BIND(Variant::UINT, RDVertexAttribute, offset);
 		RD_BIND(Variant::INT, RDVertexAttribute, format);
-		RD_BIND(Variant::INT, RDVertexAttribute, stride);
+		RD_BIND(Variant::UINT, RDVertexAttribute, stride);
 		RD_BIND(Variant::INT, RDVertexAttribute, frequency);
 	}
 };
@@ -538,7 +538,7 @@ protected:
 		ClassDB::bind_method(D_METHOD("get_constant_id"), &RDPipelineSpecializationConstant::get_constant_id);
 
 		ADD_PROPERTY(PropertyInfo(Variant::NIL, "value", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_NIL_IS_VARIANT), "set_value", "get_value");
-		ADD_PROPERTY(PropertyInfo(Variant::INT, "constant_id", PROPERTY_HINT_RANGE, "0,65535,0"), "set_constant_id", "get_constant_id");
+		ADD_PROPERTY(PropertyInfo(Variant::UINT, "constant_id", PROPERTY_HINT_RANGE, "0,65535,0"), "set_constant_id", "get_constant_id");
 	}
 };
 
@@ -573,7 +573,7 @@ protected:
 		RD_BIND(Variant::FLOAT, RDPipelineRasterizationState, depth_bias_clamp);
 		RD_BIND(Variant::FLOAT, RDPipelineRasterizationState, depth_bias_slope_factor);
 		RD_BIND(Variant::FLOAT, RDPipelineRasterizationState, line_width);
-		RD_BIND(Variant::INT, RDPipelineRasterizationState, patch_control_points);
+		RD_BIND(Variant::UINT, RDPipelineRasterizationState, patch_control_points);
 	}
 };
 
@@ -653,17 +653,17 @@ protected:
 		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, front_op, pass);
 		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, front_op, depth_fail);
 		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, front_op, compare);
-		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, front_op, compare_mask);
-		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, front_op, write_mask);
-		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, front_op, reference);
+		RD_BIND_SUB(Variant::UINT, RDPipelineDepthStencilState, front_op, compare_mask);
+		RD_BIND_SUB(Variant::UINT, RDPipelineDepthStencilState, front_op, write_mask);
+		RD_BIND_SUB(Variant::UINT, RDPipelineDepthStencilState, front_op, reference);
 
 		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, back_op, fail);
 		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, back_op, pass);
 		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, back_op, depth_fail);
 		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, back_op, compare);
-		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, back_op, compare_mask);
-		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, back_op, write_mask);
-		RD_BIND_SUB(Variant::INT, RDPipelineDepthStencilState, back_op, reference);
+		RD_BIND_SUB(Variant::UINT, RDPipelineDepthStencilState, back_op, compare_mask);
+		RD_BIND_SUB(Variant::UINT, RDPipelineDepthStencilState, back_op, write_mask);
+		RD_BIND_SUB(Variant::UINT, RDPipelineDepthStencilState, back_op, reference);
 	}
 };
 
@@ -764,13 +764,13 @@ protected:
 	static void _bind_methods() {
 		RD_BIND(Variant::INT, RDAccelerationStructureGeometry, flags);
 		RD_BIND(Variant::RID, RDAccelerationStructureGeometry, vertex_buffer);
-		RD_BIND(Variant::INT, RDAccelerationStructureGeometry, vertex_offset);
-		RD_BIND(Variant::INT, RDAccelerationStructureGeometry, vertex_stride);
-		RD_BIND(Variant::INT, RDAccelerationStructureGeometry, vertex_count);
+		RD_BIND(Variant::UINT, RDAccelerationStructureGeometry, vertex_offset);
+		RD_BIND(Variant::UINT, RDAccelerationStructureGeometry, vertex_stride);
+		RD_BIND(Variant::UINT, RDAccelerationStructureGeometry, vertex_count);
 		RD_BIND(Variant::INT, RDAccelerationStructureGeometry, vertex_format);
 		RD_BIND(Variant::RID, RDAccelerationStructureGeometry, index_buffer);
-		RD_BIND(Variant::INT, RDAccelerationStructureGeometry, index_offset);
-		RD_BIND(Variant::INT, RDAccelerationStructureGeometry, index_count);
+		RD_BIND(Variant::UINT, RDAccelerationStructureGeometry, index_offset);
+		RD_BIND(Variant::UINT, RDAccelerationStructureGeometry, index_count);
 	}
 };
 
@@ -790,8 +790,8 @@ public:
 protected:
 	static void _bind_methods() {
 		RD_BIND(Variant::TRANSFORM3D, RDAccelerationStructureInstance, transform);
-		RD_BIND(Variant::INT, RDAccelerationStructureInstance, id);
-		RD_BIND(Variant::INT, RDAccelerationStructureInstance, mask);
+		RD_BIND(Variant::UINT, RDAccelerationStructureInstance, id);
+		RD_BIND(Variant::UINT, RDAccelerationStructureInstance, mask);
 		RD_BIND(Variant::INT, RDAccelerationStructureInstance, hit_sbt_range);
 		RD_BIND(Variant::INT, RDAccelerationStructureInstance, flags);
 		RD_BIND(Variant::RID, RDAccelerationStructureInstance, blas);
