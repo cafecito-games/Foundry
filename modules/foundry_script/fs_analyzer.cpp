@@ -745,7 +745,18 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 static FSParser::DataType type_handle_represented_type(const FSParser::DataType &p_type);
 static bool _type_handle_source_is_handle(const FSParser::DataType &p_type);
 
-static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSParser::DataType &p_type) {
+// Substitutes a `@Self` type parameter with its declared bound (the class the declaration was
+// lowered against). `p_mark_substituted_self` keeps the result recognizable as having come from
+// `Self` so the compiler re-arms the `is_self_type` marker on the lowered descriptor; a frame then
+// re-binds the position to its actual receiver (instance leaf or static receiver). The marker is
+// preserved only for literal element/return positions and member-variable materialization, where the
+// substitution result becomes a runtime descriptor a frame re-binds to its receiver. It is not
+// preserved for the local copies the parameter/return contract checks build, nor for the
+// `resolved_parameter_types` used for `Type[…]` argument coercion: both feed comparison or coercion
+// paths rather than runtime `Self` resolution, so carrying the marker there would re-bind positions
+// the author did not write as `Self`.
+static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSParser::DataType &p_type,
+		bool p_mark_substituted_self = false) {
 	if (_is_self_type_parameter(p_type)) {
 		if (p_type.type_parameter_bound.is_empty()) {
 			return p_type;
@@ -758,23 +769,26 @@ static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSPa
 			result.is_constant = p_type.is_constant;
 		}
 		result.is_nullable = result.is_nullable || p_type.is_nullable;
+		if (p_mark_substituted_self) {
+			result.is_substituted_self = true;
+		}
 		return result;
 	}
 
 	FSParser::DataType result = p_type;
 	for (int i = 0; i < result.container_element_types.size(); i++) {
 		result.container_element_types.write[i] =
-				_substitute_self_type_parameter_with_bounds(result.container_element_types[i]);
+				_substitute_self_type_parameter_with_bounds(result.container_element_types[i], p_mark_substituted_self);
 	}
 	for (int i = 0; i < result.type_arguments.size(); i++) {
-		result.type_arguments.write[i] = _substitute_self_type_parameter_with_bounds(result.type_arguments[i]);
+		result.type_arguments.write[i] = _substitute_self_type_parameter_with_bounds(result.type_arguments[i], p_mark_substituted_self);
 	}
 	for (int i = 0; i < result.method_parameter_types.size(); i++) {
 		result.method_parameter_types.write[i] =
-				_substitute_self_type_parameter_with_bounds(result.method_parameter_types[i]);
+				_substitute_self_type_parameter_with_bounds(result.method_parameter_types[i], p_mark_substituted_self);
 	}
 	for (int i = 0; i < result.method_return_type.size(); i++) {
-		result.method_return_type.write[i] = _substitute_self_type_parameter_with_bounds(result.method_return_type[i]);
+		result.method_return_type.write[i] = _substitute_self_type_parameter_with_bounds(result.method_return_type[i], p_mark_substituted_self);
 	}
 	return result;
 }
@@ -2048,16 +2062,16 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			return finalize_datatype(enum_type);
 		}
 
-		const bool receiver_relative_self = resolving_function_signature_type || parser->current_function != nullptr || parser->current_class->is_trait;
-		FSParser::DataType self_type;
-		if (receiver_relative_self) {
-			if (parser->current_function != nullptr) {
-				parser->current_function->uses_receiver_relative_self = true;
-			}
-			self_type = _self_type_parameter_for_class(parser->current_class);
-		} else {
-			self_type = _self_type_for_class(parser->current_class);
-			self_type.is_meta_type = true;
+		// A `Self` written in a type specifier is always the receiver's own type, never the declaring
+		// class: a function signature binds it per-receiver, a trait binds it to the implementer, and a
+		// member variable's declared type (`var entries: Array[Self]`) is resolved at class-body scope
+		// where the receiver is the as-yet-unbound instance. Lowering it to the `@Self` type parameter
+		// (bound to the declaring class) carries the marker the runtime needs to re-bind each position
+		// to the running instance's leaf script; collapsing it to the class directly would drop that
+		// marker. The `uses_receiver_relative_self` flag is only meaningful inside a function body.
+		FSParser::DataType self_type = _self_type_parameter_for_class(parser->current_class);
+		if (parser->current_function != nullptr) {
+			parser->current_function->uses_receiver_relative_self = true;
 		}
 		return finalize_datatype(self_type);
 	}
@@ -5724,7 +5738,7 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 
 	FSParser::DataType array_type = p_array->get_datatype();
 	array_type.set_container_element_type(0,
-			(p_self_parameter_contract || p_substitute_self_runtime_type) ? _substitute_self_type_parameter_with_bounds(expected_type) : expected_type);
+			(p_self_parameter_contract || p_substitute_self_runtime_type) ? _substitute_self_type_parameter_with_bounds(expected_type, true) : expected_type);
 	p_array->set_datatype(array_type);
 }
 
@@ -5865,9 +5879,9 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 
 	FSParser::DataType dictionary_type = p_dictionary->get_datatype();
 	dictionary_type.set_container_element_type(0,
-			(p_self_parameter_contract || p_substitute_self_runtime_type) ? _substitute_self_type_parameter_with_bounds(expected_key_type) : expected_key_type);
+			(p_self_parameter_contract || p_substitute_self_runtime_type) ? _substitute_self_type_parameter_with_bounds(expected_key_type, true) : expected_key_type);
 	dictionary_type.set_container_element_type(1,
-			(p_self_parameter_contract || p_substitute_self_runtime_type) ? _substitute_self_type_parameter_with_bounds(expected_value_type) : expected_value_type);
+			(p_self_parameter_contract || p_substitute_self_runtime_type) ? _substitute_self_type_parameter_with_bounds(expected_value_type, true) : expected_value_type);
 	p_dictionary->set_datatype(dictionary_type);
 }
 
@@ -7056,7 +7070,30 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			// `_method_signature_accepts_argument_count`.
 			constexpr int callable_rpc_id_peer_id_argument_count = 1;
 			const int extra_allowed_argument_offset = (base_type.builtin_type == Variant::CALLABLE && p_call->function_name == SNAME("rpc_id")) ? callable_rpc_id_peer_id_argument_count : 0;
-			call_site_validation.validate_call_arg(par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count, rest_type, extra_allowed_argument_offset);
+			// Resolve a `Self`-typed parameter against the call's receiver where the receiver is
+			// statically known, so the argument is validated -- and any diagnostic rendered -- against
+			// the receiver's leaf script rather than the literal "Self" token. Self-dispatch and static
+			// calls are left alone: the receiver-relative contract and the static receiver already
+			// handle those, and `self`'s leaf is not known at the call site. A receiver typed as the
+			// class that *declares* the method is also left alone: its runtime leaf could be any
+			// subclass, so the parameter stays "Self" and the receiver-relative contract governs it.
+			// Only a receiver typed as a class that *inherits* the method resolves `Self` to its leaf.
+			List<FSParser::DataType> validate_par_types = par_types;
+			if (!is_self && !p_call->is_static && base_type.kind == FSParser::DataType::CLASS &&
+					base_type.class_type != nullptr && !base_type.is_meta_type &&
+					!base_type.class_type->has_function(p_call->function_name)) {
+				HashMap<StringName, FSParser::DataType> self_bindings;
+				FSParser::DataType receiver_self = base_type;
+				receiver_self.is_meta_type = false;
+				self_bindings.insert(SNAME("@Self"), receiver_self);
+				validate_par_types.clear();
+				for (const FSParser::DataType &par_type : par_types) {
+					validate_par_types.push_back(_datatype_contains_self_type_parameter(par_type)
+									? FSParser::DataType::substitute(par_type, self_bindings, false)
+									: par_type);
+				}
+			}
+			call_site_validation.validate_call_arg(validate_par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count, rest_type, extra_allowed_argument_offset);
 		}
 		call_site_validation.validate_signal_connect_arg(base_type, p_call);
 		call_site_validation.validate_local_object_signal_callable_arg(p_call, is_self);

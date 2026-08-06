@@ -457,4 +457,49 @@ TEST_CASE("[Modules][FoundryScript][SymbolicSelf] Declaration-time witness valid
 	CHECK_FALSE(parser.get_errors().is_empty());
 }
 
+// The cases above pin the marker for static members and conformance witnesses. An inherited instance
+// member has no compiled-in receiver either, so its signature and body positions have to keep the
+// marker through analysis and lowering too -- the running frame re-binds them to the instance the
+// method was invoked on. This is the investigation the instance-receiver issue depends on: if the
+// marker were substituted to the declaring class during materialization, the fix would belong in
+// lowering; the marker surviving intact means the fix is confined to supplying a receiver at call
+// time.
+TEST_CASE("[Modules][FoundryScript][SymbolicSelf] An inherited instance member keeps the marker") {
+	SymbolicSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_symbolic_self_source(
+			"class Base:\n"
+			"\tfunc consume(value: Self) -> Self:\n"
+			"\t\treturn value\n"
+			"\n"
+			"\tfunc elements() -> Array[Self]:\n"
+			"\t\tvar out: Array[Self] = []\n"
+			"\t\treturn out\n"
+			"\n"
+			"\tfunc mapping() -> Dictionary[String, Self]:\n"
+			"\t\treturn {}\n"
+			"\n"
+			"class Derived extends Base:\n"
+			"\t\tpass\n");
+
+	const FSFunction *consume = symbolic_self_member_function(script, SNAME("Base"), SNAME("consume"));
+	REQUIRE(consume != nullptr);
+	const FSDataType *parameter = symbolic_self_argument_type(consume, 0);
+	REQUIRE(parameter != nullptr);
+	CHECK(parameter->is_self_type);
+	CHECK(consume->get_return_type().is_self_type);
+	CHECK(consume->has_self_referencing_signature());
+
+	const FSFunction *elements = symbolic_self_member_function(script, SNAME("Base"), SNAME("elements"));
+	REQUIRE(elements != nullptr);
+	REQUIRE_EQ(elements->get_return_type().container_element_types.size(), 1);
+	CHECK(elements->get_return_type().container_element_types[0].is_self_type);
+
+	const FSFunction *mapping = symbolic_self_member_function(script, SNAME("Base"), SNAME("mapping"));
+	REQUIRE(mapping != nullptr);
+	REQUIRE_EQ(mapping->get_return_type().container_element_types.size(), 2);
+	CHECK_FALSE(mapping->get_return_type().container_element_types[0].is_self_type);
+	CHECK(mapping->get_return_type().container_element_types[1].is_self_type);
+}
+
 } // namespace FSTests

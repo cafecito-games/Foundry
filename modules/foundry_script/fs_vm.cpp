@@ -377,6 +377,30 @@ static bool _frame_self_class_handle(const FrameSelfBinding &p_frame_self, const
 	return false;
 }
 
+// The receiver an instance frame resolves `Self` against when no explicit receiver was supplied: the
+// leaf script of the running instance, including its reified generic arguments, or the class of a
+// retroactive-conformance witness dispatched on a receiver with no `FSInstance`. Mirrors the instance
+// and override legs of `_frame_self_class_handle` so the container and signature positions -- which
+// read the receiver off `FrameSelfBinding` rather than reconstructing it -- agree with the expression
+// positions on the exact specialization. Returns `NONE` when there is nothing to derive from.
+static FSStaticSelfContext _instance_frame_self_context(const FSInstance *p_instance, const Variant *p_self_override) {
+	if (p_instance != nullptr) {
+		return FSStaticSelfContext::for_specialized_script(p_instance->get_script(), p_instance->get_type_arguments());
+	}
+	if (p_self_override != nullptr) {
+		Object *receiver = p_self_override->get_validated_object();
+		if (receiver != nullptr) {
+			const Ref<Script> receiver_script = receiver->get_script_instance() != nullptr
+					? receiver->get_script_instance()->get_script()
+					: Ref<Script>();
+			return receiver_script.is_valid()
+					? FSStaticSelfContext::for_script(receiver_script)
+					: FSStaticSelfContext::for_native_class(receiver->get_class_name());
+		}
+	}
+	return FSStaticSelfContext();
+}
+
 // Reading an unqualified static function inside a static frame targets the class slot, which holds
 // the class that declares the running function. An unqualified *call* in the same position keeps the
 // receiver the call began on while still selecting the declaring class's implementation, so the
@@ -1202,6 +1226,17 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	int ip = 0;
 	int line = _initial_line;
 
+	// An instance frame has no compiled-in receiver, but the running instance is its receiver. The
+	// descriptor is built once for the frame and borrowed by the signature validation below and by
+	// `FrameSelfBinding` further down, so it has to outlive both; declaring it here keeps it alive
+	// until the call returns. It is derived on both entry paths: the initial call resolves the
+	// signature through it, and a resumed instance frame (whose instance is restored but which never
+	// carried a compiled-in receiver) needs it so container and return positions read through
+	// `FrameSelfBinding` rebind to the receiver's leaf on resume exactly as they do on the initial
+	// call. An explicitly supplied `p_static_self` (extracted callable, coroutine resumption) always
+	// wins, so the instance form is only derived when none was given.
+	FSStaticSelfContext instance_self_context;
+
 	if (p_state) {
 		// Use existing (supplied) state (awaited).
 		stack = (Variant *)p_state->stack.ptr();
@@ -1220,6 +1255,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 			// different specialization.
 			p_static_self = &p_state->static_self;
 		}
+		// A resumed instance frame restored its instance above but, like the initial call, carries no
+		// compiled-in receiver; derive the same leaf-script context so container and return positions
+		// read through `FrameSelfBinding` rebind to the receiver's leaf on resume. Without this, a
+		// `Self`-typed container built after an `await` would resolve against the declaring class
+		// instead of the receiver's leaf, splitting the frame's behavior across the suspension.
+		if (p_static_self == nullptr && !_static) {
+			instance_self_context = _instance_frame_self_context(p_instance, p_self_override);
+		}
 
 		// Responsibility for the stack is moved from `FSFunctionState` to this method. Reset
 		// `stack_size` so `_clear_stack()` does not destroy the same slots again after this call
@@ -1232,26 +1275,48 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 		// unresolved types would check arguments against whichever class the declaration was lowered
 		// against -- the declaring class, or a conformance target that may be several levels above the
 		// receiver -- and silently accept values the caller's specialization forbids.
+		//
+		// A static frame carries its receiver as `p_static_self`. An instance frame carries none, so
+		// its receiver is the leaf script of the running instance, derived here. The two reach the
+		// same resolver, so an inherited instance method validates its `Self` parameter against the
+		// receiver's leaf rather than the class the member was lowered against.
+		const FSStaticSelfContext *signature_self = p_static_self;
+		if (signature_self == nullptr && !_static) {
+			instance_self_context = _instance_frame_self_context(p_instance, p_self_override);
+			if (instance_self_context.is_valid()) {
+				signature_self = &instance_self_context;
+			}
+		}
 		LocalVector<FSDataType> resolved_argument_types;
 		FSDataType resolved_rest_parameter_type;
-		const bool resolve_signature_self = _references_self_types && _static;
+		const bool resolve_signature_self = _references_self_types && (_static || signature_self != nullptr);
 		if (unlikely(resolve_signature_self)) {
-			bool resolved = p_static_self != nullptr;
+			bool resolved = signature_self != nullptr;
 			if (resolved) {
 				resolved_argument_types.resize(argument_types.size());
 				for (int i = 0; i < argument_types.size() && resolved; i++) {
-					resolved = FSStaticSelfContext::resolve_self(argument_types[i], p_static_self, resolved_argument_types[i]);
+					resolved = FSStaticSelfContext::resolve_self(argument_types[i], signature_self, resolved_argument_types[i]);
 				}
-				resolved = resolved && FSStaticSelfContext::resolve_self(rest_parameter_type, p_static_self, resolved_rest_parameter_type);
+				resolved = resolved && FSStaticSelfContext::resolve_self(rest_parameter_type, signature_self, resolved_rest_parameter_type);
 			}
 			if (!resolved) {
-				// No fallback: continuing against the declaration target would hide a broken dispatch
-				// path behind a call that appears to succeed.
-				ERR_PRINT(vformat(R"(Cannot call "%s": its signature references "Self", but the call supplied no static receiver to resolve it against.)",
-						String(name)));
-				r_err.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
-				call_depth--;
-				return Variant();
+				if (_static) {
+					// No fallback for a static frame: a signature that references `Self` with no
+					// receiver to resolve it against is a broken dispatch path, and continuing
+					// against the declaration target would hide it behind a call that appears to
+					// succeed.
+					ERR_PRINT(vformat(R"(Cannot call "%s": its signature references "Self", but the call supplied no static receiver to resolve it against.)",
+							String(name)));
+					r_err.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+					call_depth--;
+					return Variant();
+				}
+				// An instance frame always has an instance, so a receiver-derived resolution only fails
+				// when the receiver's script or a nested type-argument script has been freed mid-call.
+				// Aborting would hard-fail a frame that by definition has a `self`, so the call falls
+				// back to the unresolved signature rather than substituting another class.
+				resolved_argument_types.clear();
+				resolved_rest_parameter_type = FSDataType();
 			}
 		}
 		const FSDataType *effective_argument_types = resolve_signature_self && !resolved_argument_types.is_empty()
@@ -1364,8 +1429,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	memnew_placement(&stack[ADDR_STACK_NIL], Variant);
 
 	// Built after the resume path has restored the receiver a suspended call was made with, so a
-	// resumed frame cannot come back resolving `Self` against nothing.
-	const FrameSelfBinding frame_self{ p_static_self, _static };
+	// resumed frame cannot come back resolving `Self` against nothing. An instance frame has no
+	// compiled-in receiver, so the leaf script of its running instance (derived above for signature
+	// validation) stands in for it here; every container and return position marked as having come
+	// from `Self` then re-binds to the receiver's leaf through the one resolver. An explicitly
+	// supplied `p_static_self` (extracted callable, coroutine resumption) still wins.
+	const FSStaticSelfContext *frame_self_receiver = p_static_self;
+	if (frame_self_receiver == nullptr && !_static && instance_self_context.is_valid()) {
+		frame_self_receiver = &instance_self_context;
+	}
+	const FrameSelfBinding frame_self{ frame_self_receiver, _static };
 
 	// The receiver descriptor belongs to this frame alone. The guard restores the caller's descriptor
 	// on every exit path, including the one that suspends this frame into an `FSFunctionState`.
