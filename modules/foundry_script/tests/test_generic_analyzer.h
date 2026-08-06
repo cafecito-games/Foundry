@@ -1409,4 +1409,77 @@ func test() -> void:
 	CHECK(found_inference_error);
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] A trait-applied member specializes against the applying class's arguments") {
+	FSParser parser;
+	const String source = R"(
+trait Holder[T]:
+	var value: T
+
+class IntBox uses Holder[int]:
+	pass
+
+func test() -> void:
+	var box: IntBox
+	var got := box.value
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+
+	const FSParser::DataType type = got->get_datatype();
+	CHECK(type.kind == FSParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Two applications of one generic trait specialize independently") {
+	FSParser parser;
+	const String source = R"(
+trait Holder[T]:
+	var value: T
+
+class IntBox uses Holder[int]:
+	pass
+
+class StringBox uses Holder[String]:
+	pass
+
+func test() -> void:
+	var int_box: IntBox
+	var number := int_box.value
+	var string_box: StringBox
+	var text := string_box.value
+)";
+	REQUIRE(parser.parse(source, "res://test.fs", false) == OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+
+	const FSParser::VariableNode *number = generic_find_local_variable(test, "number");
+	REQUIRE(number != nullptr);
+	CHECK(number->get_datatype().kind == FSParser::DataType::BUILTIN);
+	CHECK(number->get_datatype().builtin_type == Variant::INT);
+
+	const FSParser::VariableNode *text = generic_find_local_variable(test, "text");
+	REQUIRE(text != nullptr);
+	CHECK(text->get_datatype().kind == FSParser::DataType::BUILTIN);
+	CHECK(text->get_datatype().builtin_type == Variant::STRING);
+
+	// The trait declaration itself must not have been rewritten by either application.
+	const FSParser::ClassNode *holder = generic_find_inner_class(parser.get_tree(), "Holder");
+	REQUIRE(holder != nullptr);
+	const FSParser::VariableNode *declared_value = generic_find_member_variable(holder, "value");
+	REQUIRE(declared_value != nullptr);
+	CHECK(declared_value->get_datatype().kind == FSParser::DataType::TYPE_PARAMETER);
+	CHECK(declared_value->get_datatype().type_parameter_name == StringName("T"));
+}
+
 } // namespace FSTests

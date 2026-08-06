@@ -500,6 +500,7 @@ private:
 	bool bind_class_type_arguments(FSParser::DataType &r_type, const Vector<FSParser::DataType> &p_arguments, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources, bool p_check_bounds = true);
 	bool check_class_type_argument_bounds(FSParser::DataType &r_type, const Vector<bool> &p_argument_failed, const Vector<const FSParser::Node *> &p_argument_sources);
 	FSParser::DataType specialize_ancestor_type(const FSParser::DataType &p_base, const FSParser::ClassNode *p_target);
+	bool specialize_applied_trait_type(FSParser::ClassNode *p_owner, const FSParser::ClassNode *p_target, const HashMap<StringName, FSParser::DataType> &p_owner_bindings, FSParser::DataType &r_specialized);
 
 	void decide_suite_type(FSParser::Node *p_suite, FSParser::Node *p_statement);
 

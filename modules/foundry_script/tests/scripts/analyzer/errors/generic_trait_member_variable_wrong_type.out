@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 13: Cannot assign a value of type "String" as "int".
+>> ERROR at line 13: Value of type "String" cannot be assigned to a variable of type "int".

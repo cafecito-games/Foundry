@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 13: Cannot connect signal "Signal[[int]]" to callable "Callable[[String], void]": signal argument 1 of type "int" cannot be passed to callable parameter of type "String".
