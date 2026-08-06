@@ -143,4 +143,42 @@ TEST_CASE("[Variant] Unsigned typed containers declare unsigned elements") {
 	CHECK_EQ(ids.get_typed_builtin(), int64_t(Variant::INT));
 }
 
+TEST_CASE("[Variant] Indexed set accepts the unsigned carrier wherever the signed carrier is accepted") {
+	// `INDEXED_SETGET_STRUCT_BUILTIN_NUMERIC` (e.g. Vector2i[0]) must accept Variant::UINT
+	// input the same way it already accepts Variant::INT.
+	Variant vector = Vector2i(0, 0);
+	bool valid = false;
+	bool oob = false;
+	vector.set_indexed(0, Variant(uint64_t(7)), valid, oob);
+	CHECK(valid);
+	CHECK_FALSE(oob);
+	CHECK(vector.operator Vector2i().x == 7);
+
+	// `INDEXED_SETGET_STRUCT_TYPED_NUMERIC` (e.g. PackedInt32Array[i]) must accept it too.
+	Variant packed = PackedInt32Array({ 0, 0 });
+	valid = false;
+	oob = false;
+	packed.set_indexed(1, Variant(uint64_t(42)), valid, oob);
+	CHECK(valid);
+	CHECK_FALSE(oob);
+	CHECK(packed.operator PackedInt32Array()[1] == 42);
+}
+
+TEST_CASE("[Variant] Named struct member set accepts the unsigned carrier wherever the signed carrier is accepted") {
+	// `SETGET_NUMBER_STRUCT` (e.g. Vector2i.x) must accept Variant::UINT input the same way
+	// it already accepts Variant::INT.
+	Variant vector = Vector2i(0, 0);
+	bool valid = false;
+	vector.set_named(StringName("x"), Variant(uint64_t(9)), valid);
+	CHECK(valid);
+	CHECK(vector.operator Vector2i().x == 9);
+
+	// `SETGET_NUMBER_STRUCT_FUNC` (e.g. Color.r8) must accept it too.
+	Variant color = Color(0, 0, 0, 0);
+	valid = false;
+	color.set_named(StringName("r8"), Variant(uint64_t(200)), valid);
+	CHECK(valid);
+	CHECK(color.operator Color().get_r8() == 200);
+}
+
 } // namespace TestVariantUnsignedCarrier
