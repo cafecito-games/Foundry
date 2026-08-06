@@ -36,8 +36,6 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/tooling/editor_tooling_host.h"
 
-int FSLanguageServer::port_override = -1;
-
 FSLanguageServer::FSLanguageServer() {
 	// TODO: Move to editor_settings.cpp
 	_EDITOR_DEF("network/language_server/remote_host", host);
@@ -86,7 +84,7 @@ void FSLanguageServer::_notification(int p_what) {
 			}
 
 			String remote_host = String(_EDITOR_GET("network/language_server/remote_host"));
-			int remote_port = (FSLanguageServer::port_override > -1) ? FSLanguageServer::port_override : (int)_EDITOR_GET("network/language_server/remote_port");
+			int remote_port = (int)_EDITOR_GET("network/language_server/remote_port");
 			bool remote_use_thread = (bool)_EDITOR_GET("network/language_server/use_thread");
 			int remote_poll_limit = (int)_EDITOR_GET("network/language_server/poll_limit_usec");
 			if (remote_host != host || remote_port != port || remote_use_thread != use_thread || remote_poll_limit != poll_limit_usec) {
@@ -118,7 +116,7 @@ void FSLanguageServer::start() {
 		use_thread = false;
 	} else {
 		host = String(_EDITOR_GET("network/language_server/remote_host"));
-		port = (FSLanguageServer::port_override > -1) ? FSLanguageServer::port_override : (int)_EDITOR_GET("network/language_server/remote_port");
+		port = (int)_EDITOR_GET("network/language_server/remote_port");
 		use_thread = (bool)_EDITOR_GET("network/language_server/use_thread");
 	}
 	poll_limit_usec = (int)_EDITOR_GET("network/language_server/poll_limit_usec");

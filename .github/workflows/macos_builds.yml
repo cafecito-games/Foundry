@@ -123,7 +123,7 @@ jobs:
         # Export templates are built without unit-test support (tests=no), so
         # the test runner is only available on the editor build.
         if: matrix.target == 'editor'
-        run: ${{ matrix.bin }} test run --force-colors
+        run: ${{ matrix.bin }} --headless test run --force-colors
 
       # A bundled editor launches GUI instances through Launch Services rather than
       # `fork()`, which is the only configuration where the bundled process-status and

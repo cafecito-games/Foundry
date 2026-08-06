@@ -1139,7 +1139,10 @@ TEST_CASE("[FoundryCLIParser] Removed legacy workflow flags are rejected") {
 	expect_removed({ "foundry", "--foundry_script-lint" }, "--foundry_script-lint");
 	expect_removed({ "foundry", "--foundry_script-generate-tests" }, "--foundry_script-generate-tests");
 	expect_removed({ "foundry", "--doctool" }, "--doctool");
+	// The tooling listeners are configured through `tooling serve`; the global
+	// pre-command spellings carry no startup behavior at all.
 	expect_removed({ "foundry", "--lsp-port", "6005" }, "--lsp-port");
+	expect_removed({ "foundry", "--dap-port", "6006" }, "--dap-port");
 }
 
 TEST_CASE("[FoundryCLIParser] Removed project-manager flags are unknown options") {

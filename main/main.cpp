@@ -118,7 +118,6 @@
 
 #ifdef TOOLS_ENABLED
 #include "editor/automation/editor_automation_server.h"
-#include "editor/debugger/debug_adapter/debug_adapter_server.h"
 #include "editor/debugger/editor_debugger_node.h"
 #include "editor/doc/doc_data_class_path.gen.h"
 #include "editor/doc/doc_tools.h"
@@ -160,9 +159,6 @@
 #include "modules/foundry_script/fs_lint.h"
 #include "modules/foundry_script/tests/fs_test_runner.h"
 #endif // TOOLS_ENABLED
-#if defined(TOOLS_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
-#include "modules/foundry_script/language_server/fs_language_server.h"
-#endif // TOOLS_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
 
 /* Static members */
@@ -1188,6 +1184,15 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	}
 
 #ifdef TOOLS_ENABLED
+	// The tooling host answers to a supervisor that waits for one terminal record, so an
+	// unusable project has to be rejected here: before the working directory changes,
+	// before the project loads, and before either listener is configured.
+	if ((cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::TOOLING_SERVE ||
+				cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::LSP_SERVE) &&
+			!EditorToolingHost::preflight_project(cli_parse.invocation.project_path)) {
+		exit_err = ERR_INVALID_PARAMETER;
+		goto error;
+	}
 	apply_foundry_cli_invocation(cli_parse, project_path, audio_driver, args, test_rd_support, test_rd_creation);
 	if (cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_FORMAT ||
 			cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::SCRIPT_LINT) {
@@ -2101,36 +2106,6 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing <path> argument for --benchmark-file <path>.\n");
 				goto error;
 			}
-#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
-		} else if (arg == "--lsp-port") {
-			if (N) {
-				int port_override = N->get().to_int();
-				if (port_override < 0 || port_override > 65535) {
-					OS::get_singleton()->print("<port> argument for --lsp-port <port> must be between 0 and 65535.\n");
-					goto error;
-				}
-				FSLanguageServer::port_override = port_override;
-				N = N->next();
-			} else {
-				OS::get_singleton()->print("Missing <port> argument for --lsp-port <port>.\n");
-				goto error;
-			}
-#endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED && !FOUNDRY_SCRIPT_NO_LSP
-#if defined(TOOLS_ENABLED)
-		} else if (arg == "--dap-port") {
-			if (N) {
-				int port_override = N->get().to_int();
-				if (port_override < 0 || port_override > 65535) {
-					OS::get_singleton()->print("<port> argument for --dap-port <port> must be between 0 and 65535.\n");
-					goto error;
-				}
-				DebugAdapterServer::port_override = port_override;
-				N = N->next();
-			} else {
-				OS::get_singleton()->print("Missing <port> argument for --dap-port <port>.\n");
-				goto error;
-			}
-#endif // TOOLS_ENABLED
 		} else if (arg == "--wid") {
 			if (N) {
 				init_embed_parent_window_id = N->get().to_int();

@@ -31,6 +31,8 @@
 #include "editor_tooling_host.h"
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/os/os.h"
 #include "editor/run/editor_run.h"
@@ -74,6 +76,85 @@ void emit_record(FILE *p_stream, const char *p_marker, const String &p_payload) 
 }
 
 } // namespace
+
+String EditorToolingHost::resolve_project_candidate(const String &p_project_path) {
+	String candidate = p_project_path;
+	if (candidate.is_relative_path()) {
+		Ref<DirAccess> working_directory = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (working_directory.is_valid()) {
+			candidate = working_directory->get_current_dir().path_join(candidate);
+		}
+	}
+	return candidate.simplify_path();
+}
+
+EditorToolingHost::InvalidProjectReason EditorToolingHost::classify_project_candidate(const String &p_project_path) {
+	if (!DirAccess::dir_exists_absolute(p_project_path)) {
+		// Anything that exists but is not a directory (a regular file, a socket) cannot
+		// hold a project file, and is reported as the more specific failure.
+		return FileAccess::exists(p_project_path) ? INVALID_PROJECT_NOT_DIRECTORY : INVALID_PROJECT_MISSING_DIRECTORY;
+	}
+	// Only a direct child counts: neither an ancestor's nor a descendant's project file
+	// makes this directory the project a tooling client asked for.
+	if (!FileAccess::exists(p_project_path.path_join("project.foundry"))) {
+		return INVALID_PROJECT_MISSING_PROJECT_FILE;
+	}
+	return INVALID_PROJECT_NONE;
+}
+
+String EditorToolingHost::get_invalid_project_reason_name(InvalidProjectReason p_reason) {
+	switch (p_reason) {
+		case INVALID_PROJECT_MISSING_DIRECTORY:
+			return "missing_directory";
+		case INVALID_PROJECT_NOT_DIRECTORY:
+			return "not_directory";
+		case INVALID_PROJECT_MISSING_PROJECT_FILE:
+			return "missing_project_file";
+		default:
+			return "none";
+	}
+}
+
+String EditorToolingHost::get_invalid_project_message(InvalidProjectReason p_reason, const String &p_project) {
+	switch (p_reason) {
+		case INVALID_PROJECT_MISSING_DIRECTORY:
+			return "Project directory does not exist: " + p_project;
+		case INVALID_PROJECT_NOT_DIRECTORY:
+			return "Project path is not a directory: " + p_project;
+		case INVALID_PROJECT_MISSING_PROJECT_FILE:
+			return "Project directory does not contain project.foundry: " + p_project;
+		default:
+			return String();
+	}
+}
+
+String EditorToolingHost::build_invalid_project_record(InvalidProjectReason p_reason, const String &p_project, const String &p_message) {
+	Dictionary record;
+	record["error"] = "invalid_project";
+	record["reason"] = get_invalid_project_reason_name(p_reason);
+	record["project"] = p_project;
+	record["message"] = p_message;
+	return JSON::stringify(record, "", false);
+}
+
+bool EditorToolingHost::preflight_project(const String &p_project_path) {
+	if (p_project_path.is_empty()) {
+		// The command parser already requires `--project`, so there is nothing to check.
+		return true;
+	}
+	const String candidate = resolve_project_candidate(p_project_path);
+	const InvalidProjectReason reason = classify_project_candidate(candidate);
+	if (reason == INVALID_PROJECT_NONE) {
+		return true;
+	}
+
+	const String message = get_invalid_project_message(reason, candidate);
+	const CharString detail = (message + "\n").utf8();
+	fwrite(detail.get_data(), 1, detail.length(), stderr);
+	fflush(stderr);
+	emit_record(stdout, "FOUNDRY_TOOLING_ERROR", build_invalid_project_record(reason, candidate, message));
+	return false;
+}
 
 void EditorToolingHost::configure(int p_lsp_port, int p_dap_port) {
 	ToolingHostState &tooling_state = state();

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  debug_adapter_server.h                                                */
+/*  test_fixture_generation_paths.h                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -30,25 +30,46 @@
 
 #pragma once
 
-#include "editor/debugger/debug_adapter/debug_adapter_protocol.h"
-#include "editor/plugins/editor_plugin.h"
+#include "fs_temporary_project_tree.h"
+#include "fs_test_runner.h"
 
-class DebugAdapterServer : public EditorPlugin {
-	FOUNDRY_CLASS(DebugAdapterServer, EditorPlugin);
+#include "core/io/file_access.h"
 
-	DebugAdapterProtocol protocol;
+#include "tests/test_macros.h"
 
-	int remote_port = 6006;
-	bool started = false;
-	bool polling = false;
-	static void thread_func(void *p_userdata);
+namespace FSTests {
 
-private:
-	void _notification(int p_what);
+#ifdef TOOLS_ENABLED
 
-public:
-	DebugAdapterServer();
-	~DebugAdapterServer();
-	void start();
-	void stop();
-};
+// `foundry test generate-fixtures` accepts any directory inside the corpus, but the
+// runner that consumes the generated `.out` files always walks from the corpus root.
+// Expected output therefore has to record script paths relative to that root no matter
+// which directory generation was pointed at, or generating a subdirectory would rewrite
+// tracked fixtures into paths a later full run can never reproduce.
+TEST_SUITE("[Modules][FoundryScript][FixtureGeneration]") {
+	TEST_CASE("Generating a corpus subdirectory keeps corpus-root-relative script paths") {
+		TemporaryProjectTree tree("fixture_generation_subdirectory");
+		tree.write_file("project.foundry",
+				"config_version=5\n\n[application]\n\nconfig/name=\"Fixture Generation Corpus\"\n");
+		tree.write_file("runtime/features/out_of_bounds.fs",
+				"func test():\n\tvar array := [1, 2, 3]\n\tvar _value = array[4]\n");
+
+		const String generated_path = tree.root.path_join("runtime/features/out_of_bounds.out");
+
+		FSTestRunner runner(tree.root.path_join("runtime/features"), true, false);
+		REQUIRE_MESSAGE(runner.generate_outputs(), "Generating a subdirectory's fixtures must succeed.");
+
+		Error read_error = OK;
+		const String generated = FileAccess::get_file_as_string(generated_path, &read_error);
+		REQUIRE_MESSAGE(read_error == OK, "The subdirectory's expected-output file must be written.");
+		INFO("Generated output:\n", generated);
+		CHECK_MESSAGE(generated.contains("runtime/features/out_of_bounds.fs:"),
+				"Script paths must stay relative to the corpus root, not the invocation directory.");
+		CHECK_MESSAGE(!generated.contains(" at out_of_bounds.fs:"),
+				"A truncated script path would fail every later `test run`.");
+	}
+}
+
+#endif // TOOLS_ENABLED
+
+} // namespace FSTests
