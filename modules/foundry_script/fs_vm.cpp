@@ -748,13 +748,16 @@ static _FORCE_INLINE_ bool _container_type_accepts_specialized_handle_erasure(co
 	return FoundryScript::container_type_accepts_specialized_handle_erasure(p_expected_type);
 }
 
-static _FORCE_INLINE_ bool _erase_specialized_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value) {
-	return FoundryScript::erase_specialized_class_handles_for_container_type(p_expected_type, r_value);
+static _FORCE_INLINE_ bool _erase_specialized_handles_for_container_type(const ContainerType &p_expected_type, Variant &r_value, String *r_error = nullptr) {
+	return FoundryScript::erase_specialized_class_handles_for_container_type(p_expected_type, r_value, r_error);
 }
 
-static bool _erase_specialized_handles_for_native_array_elements(const ContainerType &p_element_type, Variant &r_value) {
-	if (_erase_specialized_handles_for_container_type(p_element_type, r_value)) {
+static bool _erase_specialized_handles_for_native_array_elements(const ContainerType &p_element_type, Variant &r_value, String *r_error = nullptr) {
+	if (_erase_specialized_handles_for_container_type(p_element_type, r_value, r_error)) {
 		return true;
+	}
+	if (r_error != nullptr && !r_error->is_empty()) {
+		return false;
 	}
 
 	if (r_value.get_type() != Variant::ARRAY) {
@@ -768,7 +771,10 @@ static bool _erase_specialized_handles_for_native_array_elements(const Container
 	bool changed = false;
 	for (int i = 0; i < source.size(); i++) {
 		Variant value = source[i];
-		changed = _erase_specialized_handles_for_container_type(p_element_type, value) || changed;
+		changed = _erase_specialized_handles_for_container_type(p_element_type, value, r_error) || changed;
+		if (r_error != nullptr && !r_error->is_empty()) {
+			return false;
+		}
 		erased[i] = value;
 	}
 
@@ -780,34 +786,24 @@ static bool _erase_specialized_handles_for_native_array_elements(const Container
 	return true;
 }
 
+// Delegates the whole rebuild, including the collision check that rejects a write erasing two distinct
+// source keys onto the same identity-hashed destination key, to `FoundryScript`'s shared dictionary
+// helper so this copy (used by `assign()` / `merge()` / `merged()`) cannot drift from the member-write
+// copy in foundry_script.cpp.
 static bool _erase_specialized_handles_for_native_dictionary_entries(const ContainerType &p_key_type,
-		const ContainerType &p_value_type, Variant &r_value) {
+		const ContainerType &p_value_type, Variant &r_value, String *r_error = nullptr) {
 	if (r_value.get_type() != Variant::DICTIONARY) {
 		return false;
 	}
 
-	const Dictionary source = r_value;
-	Dictionary erased;
-	erased.reserve(source.size());
-
-	bool changed = false;
-	for (const KeyValue<Variant, Variant> &E : source) {
-		Variant key = E.key;
-		Variant value = E.value;
-		changed = _erase_specialized_handles_for_container_type(p_key_type, key) || changed;
-		changed = _erase_specialized_handles_for_container_type(p_value_type, value) || changed;
-		erased[key] = value;
-	}
-
-	if (!changed) {
-		return false;
-	}
-
-	r_value = erased;
-	return true;
+	ContainerType dictionary_type;
+	dictionary_type.builtin_type = Variant::DICTIONARY;
+	dictionary_type.element_types.push_back(p_key_type);
+	dictionary_type.element_types.push_back(p_value_type);
+	return _erase_specialized_handles_for_container_type(dictionary_type, r_value, r_error);
 }
 
-static bool _erase_specialized_handles_for_typed_array_argument(Variant *p_base, Variant &r_value) {
+static bool _erase_specialized_handles_for_typed_array_argument(Variant *p_base, Variant &r_value, String *r_error = nullptr) {
 	if (p_base->get_type() != Variant::ARRAY) {
 		return false;
 	}
@@ -817,10 +813,10 @@ static bool _erase_specialized_handles_for_typed_array_argument(Variant *p_base,
 		return false;
 	}
 
-	return _erase_specialized_handles_for_native_array_elements(array->get_element_type(), r_value);
+	return _erase_specialized_handles_for_native_array_elements(array->get_element_type(), r_value, r_error);
 }
 
-static bool _erase_specialized_handles_for_typed_dictionary_arguments(Variant *p_base, Variant &r_key, Variant &r_value) {
+static bool _erase_specialized_handles_for_typed_dictionary_arguments(Variant *p_base, Variant &r_key, Variant &r_value, String *r_error = nullptr) {
 	if (p_base->get_type() != Variant::DICTIONARY) {
 		return false;
 	}
@@ -832,62 +828,66 @@ static bool _erase_specialized_handles_for_typed_dictionary_arguments(Variant *p
 
 	const ContainerType key_type = dictionary->get_key_type();
 	const ContainerType value_type = dictionary->get_value_type();
-	bool changed = _erase_specialized_handles_for_container_type(key_type, r_key);
-	changed = _erase_specialized_handles_for_container_type(value_type, r_value) || changed;
+	// The key erasure is destination-aware: `dst[key] = value` writes one key into an already-live
+	// dictionary, so a colliding erasure has to be checked against what the destination already holds,
+	// not against other entries in the same write.
+	bool changed = FoundryScript::erase_specialized_class_handle_for_dictionary_set_key(key_type, *dictionary, r_key, r_error);
+	if (r_error != nullptr && !r_error->is_empty()) {
+		return false;
+	}
+	changed = _erase_specialized_handles_for_container_type(value_type, r_value, r_error) || changed;
+	if (r_error != nullptr && !r_error->is_empty()) {
+		return false;
+	}
 	return changed;
 }
 
-static bool _erase_specialized_handles_for_typed_container_set(Variant *p_base, Variant &r_key, Variant &r_value) {
+static bool _erase_specialized_handles_for_typed_container_set(Variant *p_base, Variant &r_key, Variant &r_value, String *r_error = nullptr) {
 	if (p_base->get_type() == Variant::ARRAY) {
-		return _erase_specialized_handles_for_typed_array_argument(p_base, r_value);
+		return _erase_specialized_handles_for_typed_array_argument(p_base, r_value, r_error);
 	}
 
-	return _erase_specialized_handles_for_typed_dictionary_arguments(p_base, r_key, r_value);
+	return _erase_specialized_handles_for_typed_dictionary_arguments(p_base, r_key, r_value, r_error);
 }
 
 static bool _erase_specialized_handles_for_dictionary_call_argument(const StringName &p_method, int p_arg_index,
-		const ContainerType &p_key_type, const ContainerType &p_value_type, Variant &r_arg) {
-	if (p_method == SNAME("set")) {
+		const ContainerType &p_key_type, const ContainerType &p_value_type, const Dictionary &p_destination,
+		Variant &r_arg, String *r_error) {
+	if (p_method == SNAME("set") || p_method == SNAME("get_or_add")) {
 		if (p_arg_index == 0) {
-			return _erase_specialized_handles_for_container_type(p_key_type, r_arg);
+			// `set()` / `get_or_add()` write one key into an already-live dictionary, so the key erasure is
+			// checked against what the destination already holds, exactly like the subscript-assignment
+			// path above.
+			return FoundryScript::erase_specialized_class_handle_for_dictionary_set_key(p_key_type, p_destination, r_arg, r_error);
 		}
 		if (p_arg_index == 1) {
-			return _erase_specialized_handles_for_container_type(p_value_type, r_arg);
-		}
-		return false;
-	}
-
-	if (p_method == SNAME("get_or_add")) {
-		if (p_arg_index == 0) {
-			return _erase_specialized_handles_for_container_type(p_key_type, r_arg);
-		}
-		if (p_arg_index == 1) {
-			return _erase_specialized_handles_for_container_type(p_value_type, r_arg);
+			return _erase_specialized_handles_for_container_type(p_value_type, r_arg, r_error);
 		}
 		return false;
 	}
 
 	if (p_method == SNAME("has") || p_method == SNAME("erase") || p_method == SNAME("get")) {
-		return p_arg_index == 0 && _erase_specialized_handles_for_container_type(p_key_type, r_arg);
+		return p_arg_index == 0 && _erase_specialized_handles_for_container_type(p_key_type, r_arg, r_error);
 	}
 
 	if (p_method == SNAME("has_all")) {
-		return p_arg_index == 0 && _erase_specialized_handles_for_native_array_elements(p_key_type, r_arg);
+		return p_arg_index == 0 && _erase_specialized_handles_for_native_array_elements(p_key_type, r_arg, r_error);
 	}
 
 	if (p_method == SNAME("find_key")) {
-		return p_arg_index == 0 && _erase_specialized_handles_for_container_type(p_value_type, r_arg);
+		return p_arg_index == 0 && _erase_specialized_handles_for_container_type(p_value_type, r_arg, r_error);
 	}
 
 	if (p_method == SNAME("assign") || p_method == SNAME("merge") || p_method == SNAME("merged")) {
-		return p_arg_index == 0 && _erase_specialized_handles_for_native_dictionary_entries(p_key_type, p_value_type, r_arg);
+		return p_arg_index == 0 && _erase_specialized_handles_for_native_dictionary_entries(p_key_type, p_value_type, r_arg, r_error);
 	}
 
 	return false;
 }
 
 static const Variant **_erase_specialized_handles_for_typed_container_call(Variant *p_base, const StringName &p_method,
-		Variant **p_args, int p_argcount, Vector<Variant> &r_arg_storage, Vector<const Variant *> &r_argptr_storage) {
+		Variant **p_args, int p_argcount, Vector<Variant> &r_arg_storage, Vector<const Variant *> &r_argptr_storage,
+		String *r_error = nullptr) {
 	if (p_argcount == 0 || (p_base->get_type() != Variant::ARRAY && p_base->get_type() != Variant::DICTIONARY)) {
 		return (const Variant **)p_args;
 	}
@@ -909,8 +909,11 @@ static const Variant **_erase_specialized_handles_for_typed_container_call(Varia
 		const Variant **argptrs = r_argptr_storage.ptrw();
 		for (int i = 0; i < p_argcount; i++) {
 			args[i] = *p_args[i];
-			changed = _erase_specialized_handles_for_native_array_elements(element_type, args[i]) || changed;
+			changed = _erase_specialized_handles_for_native_array_elements(element_type, args[i], r_error) || changed;
 			argptrs[i] = &args[i];
+			if (r_error != nullptr && !r_error->is_empty()) {
+				return argptrs;
+			}
 		}
 	} else {
 		Dictionary *dictionary = VariantInternal::get_dictionary(p_base);
@@ -929,8 +932,11 @@ static const Variant **_erase_specialized_handles_for_typed_container_call(Varia
 		const Variant **argptrs = r_argptr_storage.ptrw();
 		for (int i = 0; i < p_argcount; i++) {
 			args[i] = *p_args[i];
-			changed = _erase_specialized_handles_for_dictionary_call_argument(p_method, i, key_type, value_type, args[i]) || changed;
+			changed = _erase_specialized_handles_for_dictionary_call_argument(p_method, i, key_type, value_type, *dictionary, args[i], r_error) || changed;
 			argptrs[i] = &args[i];
+			if (r_error != nullptr && !r_error->is_empty()) {
+				return argptrs;
+			}
 		}
 	}
 
@@ -2352,7 +2358,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				Variant erased_index = *index;
 				Variant erased_value = *value;
-				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value);
+				// Collision rejection is a data-loss guard, not a debug-only type-safety nicety, so it runs
+				// in every build configuration: a release build must not silently commit an emptied-out
+				// dictionary just because the DEBUG_ENABLED-only validation below it is skipped.
+				String erasure_error;
+				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value, &erasure_error);
+				if (!erasure_error.is_empty()) {
+					err_text = erasure_error;
+					OPCODE_BREAK;
+				}
 				const Variant *index_arg = erased ? &erased_index : index;
 				const Variant *value_arg = erased ? &erased_value : value;
 
@@ -2404,7 +2418,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 
 				Variant erased_index = *index;
 				Variant erased_value = *value;
-				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value);
+				// Same reasoning as OPCODE_SET_KEYED: this rejects data loss, not a type mismatch, so it
+				// must run in release builds too.
+				String erasure_error;
+				const bool erased = _erase_specialized_handles_for_typed_container_set(dst, erased_index, erased_value, &erasure_error);
+				if (!erasure_error.is_empty()) {
+					err_text = erasure_error;
+					OPCODE_BREAK;
+				}
 				const Variant *index_arg = erased ? &erased_index : index;
 				const Variant *value_arg = erased ? &erased_value : value;
 
@@ -3496,7 +3517,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				array.resize(argc);
 				for (int i = 0; i < argc; i++) {
 					Variant value = *(instruction_args[i]);
-					_erase_specialized_handles_for_container_type(element_type, value);
+					// An element can itself be a typed dictionary whose keys collide under erasure (e.g.
+					// `Array[Dictionary[Script, int]]`); route through the same error channel as the
+					// dictionary-literal path instead of silently emptying it.
+					String erasure_error;
+					_erase_specialized_handles_for_container_type(element_type, value, &erasure_error);
+					if (!erasure_error.is_empty()) {
+						err_text = erasure_error;
+						OPCODE_BREAK;
+					}
 					// Use .set instead of operator[] to handle type conversion / validation.
 					array.set(i, value);
 				}
@@ -3603,8 +3632,20 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					GET_INSTRUCTION_ARG(v, i * 2 + 1);
 					Variant key = *k;
 					Variant value = *v;
-					_erase_specialized_handles_for_container_type(key_type, key);
-					_erase_specialized_handles_for_container_type(value_type, value);
+					// A dictionary literal builds one entry at a time, so two specializations that erase to
+					// the same key are checked against the dictionary as constructed so far, same as `set()`.
+					String erasure_error;
+					FoundryScript::erase_specialized_class_handle_for_dictionary_set_key(key_type, dict, key, &erasure_error);
+					if (erasure_error.is_empty()) {
+						// The value can itself be a typed dictionary whose own keys collide under erasure
+						// (e.g. `Dictionary[Script, Dictionary[Script, int]]`); route through the same error
+						// channel instead of silently emptying it.
+						_erase_specialized_handles_for_container_type(value_type, value, &erasure_error);
+					}
+					if (!erasure_error.is_empty()) {
+						err_text = erasure_error;
+						OPCODE_BREAK;
+					}
 					// Use .set instead of operator[] to handle type conversion / validation.
 					dict.set(key, value);
 				}
@@ -3709,8 +3750,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_INSTRUCTION_ARG(base, argc);
 				Vector<Variant> erased_arg_storage;
 				Vector<const Variant *> erased_argptr_storage;
+				// Collision rejection is a data-loss guard, not a debug-only type-safety nicety (see
+				// OPCODE_SET_KEYED above), so it runs in every build configuration.
+				String erasure_error;
 				const Variant **argptrs = _erase_specialized_handles_for_typed_container_call(
-						base, *methodname, instruction_args, argc, erased_arg_storage, erased_argptr_storage);
+						base, *methodname, instruction_args, argc, erased_arg_storage, erased_argptr_storage, &erasure_error);
+				if (!erasure_error.is_empty()) {
+					err_text = erasure_error;
+					OPCODE_BREAK;
+				}
 
 #ifdef DEBUG_ENABLED
 				uint64_t call_time = 0;
@@ -4355,8 +4403,15 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				const StringName method_name = method_idx < builtin_method_names.size() ? builtin_method_names[method_idx] : StringName();
 				Vector<Variant> erased_arg_storage;
 				Vector<const Variant *> erased_argptr_storage;
+				// Collision rejection is a data-loss guard, not a debug-only type-safety nicety (see
+				// OPCODE_SET_KEYED above), so it runs in every build configuration.
+				String erasure_error;
 				const Variant **argptrs = _erase_specialized_handles_for_typed_container_call(
-						base, method_name, instruction_args, argc, erased_arg_storage, erased_argptr_storage);
+						base, method_name, instruction_args, argc, erased_arg_storage, erased_argptr_storage, &erasure_error);
+				if (!erasure_error.is_empty()) {
+					err_text = erasure_error;
+					OPCODE_BREAK;
+				}
 
 				GET_INSTRUCTION_ARG(ret, argc + 1);
 				method(base, argptrs, argc, ret);

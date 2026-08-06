@@ -1,0 +1,3 @@
+FS_TEST_RUNTIME_ERROR
+source size 2
+>> SCRIPT ERROR at runtime/errors/specialized_handle_dictionary_key_collision_merge.fs:14 on test(): Erasing specialized class handles collapses distinct dictionary keys 'RefCounted[int]' and 'RefCounted[String]' into the same 'Script' key; the write was rejected instead of silently dropping an entry.
