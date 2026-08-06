@@ -9,3 +9,8 @@ func test():
 	print(with_null is (RefCounted, int))
 	print(with_null is (RefCounted?, int))
 	print(with_null is (Variant, int))
+
+	# A nullable element slot only widens the slot by null: a non-null value still has to be of the
+	# declared element type, so the slot must not degrade into an untyped one.
+	var wrong_element: Variant = [1, 1]
+	print(wrong_element is (RefCounted?, int))
