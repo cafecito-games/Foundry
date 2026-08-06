@@ -5591,7 +5591,15 @@ bool default_return_literal(const FSParser::DataType &p_type, String &r_literal)
 			r_literal = "false";
 			return true;
 		case Variant::INT:
+			// `0` is an `int` constant, which reaches a `long` slot by value-preserving promotion.
 			r_literal = "0";
+			return true;
+		case Variant::UINT:
+			// An unsigned zero needs a suffix: an unsuffixed constant stays on the signed carrier and
+			// would not enter the slot at all. `0U` is a `uint`, which promotes into `ulong`, but the
+			// stub spells the declared width when it knows it so the generated source reads as the
+			// author's own type.
+			r_literal = p_type.numeric_type == NumericType::UINT64 ? "0UL" : "0U";
 			return true;
 		case Variant::FLOAT:
 			r_literal = "0.0";

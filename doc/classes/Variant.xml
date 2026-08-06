@@ -15,7 +15,7 @@
 		[/foundry_script]
 		[csharp]
 		// C# is statically typed. Once a variable has a type it cannot be changed. You can use the `var` keyword to let the compiler infer the type automatically.
-		var foo = 2; // Foo is a 32-bit integer (int). Be cautious, integers in FoundryScript are 64-bit and the direct C# equivalent is `long`.
+		var foo = 2; // Foo is a 32-bit integer (int), which matches FoundryScript's `int`. FoundryScript's `long` is the 64-bit signed type, and `uint`/`ulong` are the unsigned ones.
 		// foo = "foo was and will always be an integer. It cannot be turned into a string!";
 		var boo = "Boo is a string!";
 		var ref = new RefCounted(); // var is especially useful when used together with a constructor.
@@ -76,6 +76,7 @@
 		- Can be serialized to text and use it for printing values and editable settings.
 		- Can work as an exported property, so the editor can edit it universally.
 		- Can be used for dictionaries, arrays, parsers, etc.
+		[b]Integers:[/b] A Variant has two integer carriers. [constant TYPE_INT] holds a signed 64-bit value and carries FoundryScript's [code skip-lint]int[/code] and [code skip-lint]long[/code]; [constant TYPE_UINT] holds an unsigned 64-bit value and carries [code skip-lint]uint[/code] and [code skip-lint]ulong[/code]. Storing a value in a Variant erases its static width but never its signedness, so an integer read back out of an untyped Variant is the widest type its carrier can hold. Two values of equal mathematical magnitude compare equal and hash equally across the two carriers, so they are interchangeable as [Dictionary] keys.
 		[b]Containers (Array and Dictionary):[/b] Both are implemented using variants. A [Dictionary] can match any datatype used as key to any other datatype. An [Array] just holds an array of Variants. Of course, a Variant can also hold a [Dictionary] and an [Array] inside, making it even more flexible.
 		Modifications to a container will modify all references to it. A [Mutex] should be created to lock it if multi-threaded access is desired.
 	</description>
