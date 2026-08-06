@@ -33,13 +33,17 @@
 #ifndef FOUNDRY_SCRIPT_NO_FRONTEND
 
 #include "../foundry_script.h"
+#include "../fs_analyzer.h"
 #include "../fs_cache.h"
+#include "../fs_compiler.h"
+#include "../fs_parser.h"
 #include "../fs_project_scripts.h"
 #include "../fs_reflection.h"
 #include "fs_temporary_project_tree.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/object/script_language.h"
 #include "core/string/print_string.h"
 #include "tests/core/config/test_project_settings.h"
@@ -204,7 +208,7 @@ TEST_CASE("[Modules][FoundryScript][ProjectScripts] get_methods populates signat
 	REQUIRE(descriptor->get_indexed_ok());
 
 	const TypedArray<FSMethodDescriptor> methods = descriptor->get_methods();
-	REQUIRE_EQ(methods.size(), 2);
+	REQUIRE_EQ(methods.size(), 5);
 
 	Ref<FSMethodDescriptor> measure;
 	Ref<FSMethodDescriptor> announce;
@@ -230,11 +234,81 @@ TEST_CASE("[Modules][FoundryScript][ProjectScripts] get_methods populates signat
 
 	REQUIRE(announce.is_valid());
 	CHECK(announce->get_argument_type_names().is_empty());
-	// The parser spells an explicit `void` return as the `null` builtin type, so this surface names it
-	// "null" rather than "Variant" (which is what the compiled `FSReflection` surface names the same
-	// declaration, since `void` collapses to the `VARIANT` kind once compiled). Pinned here so a future
-	// change to either surface has to touch this assertion deliberately instead of silently drifting.
-	CHECK_EQ(announce->get_return_type_name(), "null");
+	// A return the author declared `-> void` is named the way the language spells it. The parser's own
+	// printer renders the underlying NIL builtin as "null", which is the spelling of the null literal
+	// and not a type anyone can write in a signature, so the reflection surfaces substitute the source
+	// keyword. The compiled `FSReflection` surface names the same declaration identically; the
+	// cross-surface test below asserts that directly.
+	CHECK_EQ(announce->get_return_type_name(), "void");
+}
+
+// The two reflection surfaces read different data: the discovery surface names types off the parsed
+// declaration, while `FSReflection` names them off the compiled function descriptors. They describe
+// the same source, so the names they produce for it have to agree.
+TEST_CASE("[Modules][FoundryScript][ProjectScripts] Indexed and compiled reflection agree on signature type names") {
+	ScopedDiscoveryProject project;
+	Ref<FSProjectScripts> discovery;
+	discovery.instantiate();
+
+	const String fixture = project.fixture_path("signature_type_names.notest.fs");
+	const Ref<FSScriptDescriptor> descriptor = discovery->get_script_descriptor(fixture);
+	REQUIRE(descriptor.is_valid());
+	REQUIRE(descriptor->get_indexed_ok());
+
+	HashMap<StringName, Ref<FSMethodDescriptor>> indexed_methods;
+	const TypedArray<FSMethodDescriptor> methods = descriptor->get_methods();
+	for (int i = 0; i < methods.size(); i++) {
+		Ref<FSMethodDescriptor> method = methods[i];
+		REQUIRE(method.is_valid());
+		indexed_methods[method->get_method_name()] = method;
+	}
+
+	Error open_error = OK;
+	const String source = FileAccess::get_file_as_string(fixture, &open_error);
+	REQUIRE_EQ(open_error, OK);
+
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(source, "user://signature_type_names_cross_surface.fs", false), OK);
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+
+	FSCompiler compiler;
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path("user://signature_type_names_cross_surface.fs");
+	INFO(compiler.get_error());
+	REQUIRE_EQ(compiler.compile(&parser, script.ptr(), false), OK);
+
+	const HashMap<StringName, Ref<FoundryScript>> &subclasses = script->get_subclasses();
+	REQUIRE(subclasses.has(SNAME("SignatureSuite")));
+	Ref<FoundryScript> suite = subclasses[SNAME("SignatureSuite")];
+
+	Ref<FSReflection> reflection;
+	reflection.instantiate();
+
+	// Every declaration in the fixture, with the one name both surfaces are expected to produce.
+	const HashMap<StringName, String> expected_return_type_names = {
+		{ SNAME("measure"), "Dictionary[String, int?]" },
+		// Declared `-> void` with no `return` statement, and with one: the same declared type either way.
+		{ SNAME("announce"), "void" },
+		{ SNAME("finish"), "void" },
+		// Undeclared return with a `return` statement: still the untyped spelling, never "void".
+		{ SNAME("relay"), "Variant" },
+		// Undeclared return that cannot return a value. The compiled descriptor keeps no record of the
+		// missing annotation, only of the void result, so both surfaces name what the function actually
+		// returns rather than inventing a distinction the compiled form cannot carry.
+		{ SNAME("tick"), "void" },
+	};
+
+	for (const KeyValue<StringName, String> &expected : expected_return_type_names) {
+		REQUIRE(indexed_methods.has(expected.key));
+		const Ref<FSMethodDescriptor> compiled = reflection->get_method_descriptor(suite, expected.key);
+		REQUIRE(compiled.is_valid());
+
+		CHECK_EQ(indexed_methods[expected.key]->get_return_type_name(), expected.value);
+		CHECK_EQ(compiled->get_return_type_name(), expected.value);
+		CHECK_EQ(indexed_methods[expected.key]->get_argument_type_names(), compiled->get_argument_type_names());
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript][ProjectScripts] implements_trait matches qualified trait identity and inherited traits") {

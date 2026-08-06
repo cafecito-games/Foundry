@@ -6,3 +6,12 @@ class SignatureSuite extends RefCounted:
 
 	func announce() -> void:
 		pass
+
+	func finish() -> void:
+		return
+
+	func relay(value):
+		return value
+
+	func tick():
+		pass

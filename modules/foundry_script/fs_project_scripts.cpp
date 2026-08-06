@@ -64,6 +64,27 @@ HashMap<StringName, TypedArray<FSAnnotation>> parameter_usages_to_descriptors(co
 	return result;
 }
 
+// Names the return type of a parsed function the way the compiled `FSReflection` surface names the
+// same declaration, so the two never spell one signature differently.
+//
+// Two rules are not visible in the parser's `DataType` printer alone. A function whose body cannot
+// return a value returns void, which is exactly what `FSCompiler` stores in the compiled descriptor
+// for it; and the NIL builtin an explicit `-> void` resolves to prints as "null", the spelling of the
+// null literal rather than of a type any signature can be written with.
+String parsed_return_type_name(const FSParser::FunctionNode *p_function) {
+	const bool returns_value = (p_function->is_abstract && p_function->return_type != nullptr) ||
+			(p_function->body != nullptr && p_function->body->has_return);
+	if (!returns_value) {
+		return "void";
+	}
+
+	const FSParser::DataType return_type = p_function->get_datatype();
+	if (return_type.is_hard_type() && return_type.kind == FSParser::DataType::BUILTIN && return_type.builtin_type == Variant::NIL) {
+		return "void";
+	}
+	return return_type.to_string_strict();
+}
+
 // Copies the declared signature type names off the parsed function node. This surface only indexes a
 // script rather than compiling it, so there is no `FSFunction` to read the exact names from the way
 // `FSReflection::apply_signature_type_names` does; the parser's own resolved `DataType`s are the same
@@ -83,7 +104,7 @@ void apply_parsed_signature_type_names(const Ref<FSMethodDescriptor> &p_descript
 	for (int i = 0; i < listed_count; i++) {
 		argument_type_names_write[i] = i < declared_count ? p_function->parameters[i]->get_datatype().to_string_strict() : String("Variant");
 	}
-	p_descriptor->set_signature_type_names(argument_type_names, p_function->get_datatype().to_string_strict());
+	p_descriptor->set_signature_type_names(argument_type_names, parsed_return_type_name(p_function));
 }
 
 TypedArray<Dictionary> collect_index_diagnostics(const FSParser *p_parser) {

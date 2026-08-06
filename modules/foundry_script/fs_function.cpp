@@ -147,6 +147,14 @@ String FSDataType::get_source_type_name() const {
 			name = "(" + elements + ")";
 		} break;
 		case BUILTIN: {
+			if (builtin_type == Variant::NIL) {
+				// `void` is the only declaration that lowers to the NIL builtin; the grammar allows the
+				// type nowhere else. Name it the way the source spells it instead of letting
+				// `ContainerType` fall through to `Variant`, which is the spelling of an *untyped* slot
+				// and would erase the difference between a function that returns nothing and one whose
+				// return value can be anything. `void?` is not a type, so the nullable suffix is skipped.
+				return "void";
+			}
 			if (builtin_type == Variant::INT || builtin_type == Variant::UINT) {
 				// A slot that stored no width, or one whose stored width disagrees with its carrier, is
 				// only constrained by that carrier, which spans the full 64-bit range. Naming it
