@@ -406,11 +406,13 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A flow-narrowed operand is c
 
 // `FSAnalyzer::reduce_assignment()` used to clear the assignee's flow-narrowed type before typing the
 // assignee node, so a compound assignment's implicit old-value read (`value += x` reading `value`)
-// always saw the declared width instead of a prior type test's narrower one. `uint` and `int` are the
-// widths whose narrowed range is strictly inside their carrier's widest range, so `binary_uint` and
-// `binary_int` are the cases that only pass once the narrowed width reaches the compound op.
-// `binary_long`/`binary_ulong` confirm the same mechanism handles every declared width uniformly, even
-// though `long`/`ulong` already coincide with their carrier's widest range.
+// always saw the declared width instead of a prior type test's narrower one. `uint` is the width whose
+// narrowed range is strictly inside its carrier's widest range, so `binary_uint` is the case that only
+// passes once the narrowed width reaches the compound op. `binary_long`/`binary_ulong` confirm the same
+// mechanism handles every declared width uniformly, even though `long`/`ulong` already coincide with
+// their carrier's widest range. `is int` is excluded for the same reason it is excluded from the
+// ordinary-read coverage above: the int carve-out (#1684) declares no width yet, so it still runs the
+// checked op at the carrier's widest range regardless of this fix.
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A compound assignment on a flow-narrowed value is checked at its narrowed width") {
 	ScopedCheckedNumericLanguage language;
 
@@ -418,11 +420,6 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A compound assignment on a f
 			"func binary_uint(value):\n"
 			"\tif value is uint:\n"
 			"\t\tvalue += 4294967295U\n"
-			"\treturn null\n"
-			"\n"
-			"func binary_int(value):\n"
-			"\tif value is int:\n"
-			"\t\tvalue += 2147483647\n"
 			"\treturn null\n"
 			"\n"
 			"func binary_long(value):\n"
@@ -449,18 +446,6 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A compound assignment on a f
 		ERR_PRINT_ON;
 		REQUIRE(error.error == Callable::CallError::CALL_OK);
 		CHECK(recorder.messages.contains("overflows \"uint\""));
-	}
-
-	{
-		FlowNarrowedWidthErrorRecorder recorder;
-		const Variant argument = int64_t(1);
-		const Variant *arguments[] = { &argument };
-		Callable::CallError error;
-		ERR_PRINT_OFF;
-		object->callp(SNAME("binary_int"), arguments, 1, error);
-		ERR_PRINT_ON;
-		REQUIRE(error.error == Callable::CallError::CALL_OK);
-		CHECK(recorder.messages.contains("overflows \"int\""));
 	}
 
 	{
