@@ -2435,6 +2435,12 @@ public:
 	};
 	static BuiltinDataType get_builtin_data_type(const StringName &p_type);
 
+	// The FoundryScript source spelling of a built-in slot. This is the inverse of
+	// `get_builtin_data_type()` and the single spelling policy every source-facing surface uses:
+	// a declared width names itself, and a slot whose width the carrier erased falls back to the
+	// carrier's own name, which is all the evidence it has.
+	static String get_builtin_type_source_name(Variant::Type p_builtin_type, NumericType p_numeric_type);
+
 	CompletionContext get_completion_context() const { return completion_context; }
 	void get_annotation_list(List<MethodInfo> *r_annotations) const;
 	bool annotation_exists(const String &p_annotation_name) const;

@@ -190,6 +190,22 @@ _FORCE_INLINE_ String numeric_type_public_name(NumericType p_numeric_type) {
 	return String(row.public_name);
 }
 
+// The descriptor a FoundryScript source spelling names, or `NONE` when the name is not one of the
+// source-nameable numeric types. This is the inverse of `numeric_type_public_name()` and the single
+// place tooling turns a rendered type name back into the width it stands for.
+_FORCE_INLINE_ NumericType numeric_type_from_public_name(const String &p_name) {
+	if (p_name.is_empty()) {
+		return NumericType::NONE;
+	}
+	for (uint8_t index = 0; index < uint8_t(NumericType::MAX); index++) {
+		const NumericTypeInternal::Row &row = NumericTypeInternal::ROWS[index];
+		if (row.public_name[0] != '\0' && p_name == row.public_name) {
+			return NumericType(index);
+		}
+	}
+	return NumericType::NONE;
+}
+
 // Symmetric agreement rule, for the places that compare two descriptions of the same slot: equality,
 // invariant identity, and assignment compatibility.
 //
