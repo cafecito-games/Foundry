@@ -111,9 +111,9 @@ void CharFXTransform::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2, "offset"), "set_offset", "get_offset");
 	ADD_PROPERTY(PropertyInfo(Variant::COLOR, "color"), "set_color", "get_color");
 	ADD_PROPERTY(PropertyInfo(Variant::DICTIONARY, "env"), "set_environment", "get_environment");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "glyph_index"), "set_glyph_index", "get_glyph_index");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "glyph_count"), "set_glyph_count", "get_glyph_count");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "glyph_flags"), "set_glyph_flags", "get_glyph_flags");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "glyph_index"), "set_glyph_index", "get_glyph_index");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "glyph_count"), "set_glyph_count", "get_glyph_count");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "glyph_flags"), "set_glyph_flags", "get_glyph_flags");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "relative_index"), "set_relative_index", "get_relative_index");
 	ADD_PROPERTY(PropertyInfo(Variant::RID, "font"), "set_font", "get_font");
 }

@@ -829,7 +829,7 @@ void GPUParticles3D::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "explosiveness", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_explosiveness_ratio", "get_explosiveness_ratio");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "randomness", PROPERTY_HINT_RANGE, "0,1,0.01"), "set_randomness_ratio", "get_randomness_ratio");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_fixed_seed"), "set_use_fixed_seed", "get_use_fixed_seed");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "seed", PROPERTY_HINT_RANGE, "0," + itos(UINT32_MAX) + ",1"), "set_seed", "get_seed");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "seed", PROPERTY_HINT_RANGE, "0," + itos(UINT32_MAX) + ",1"), "set_seed", "get_seed");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "fixed_fps", PROPERTY_HINT_RANGE, "0,1000,1,suffix:FPS"), "set_fixed_fps", "get_fixed_fps");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "interpolate"), "set_interpolate", "get_interpolate");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "fract_delta"), "set_fractional_delta", "get_fractional_delta");

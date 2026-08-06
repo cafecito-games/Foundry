@@ -72,7 +72,7 @@ void OpenXRCompositionLayerCylinder::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "radius", PROPERTY_HINT_NONE, ""), "set_radius", "get_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "aspect_ratio", PROPERTY_HINT_RANGE, "0,100"), "set_aspect_ratio", "get_aspect_ratio");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "central_angle", PROPERTY_HINT_RANGE, "0,360,0.1,or_less,or_greater,radians_as_degrees"), "set_central_angle", "get_central_angle");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "fallback_segments", PROPERTY_HINT_NONE, ""), "set_fallback_segments", "get_fallback_segments");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "fallback_segments", PROPERTY_HINT_NONE, ""), "set_fallback_segments", "get_fallback_segments");
 }
 
 Ref<Mesh> OpenXRCompositionLayerCylinder::_create_fallback_mesh() {

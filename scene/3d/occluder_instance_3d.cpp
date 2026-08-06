@@ -743,7 +743,7 @@ void OccluderInstance3D::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "occluder", PROPERTY_HINT_RESOURCE_TYPE, "Occluder3D"), "set_occluder", "get_occluder");
 	ADD_GROUP("Bake", "bake_");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "bake_mask", PROPERTY_HINT_LAYERS_3D_RENDER), "set_bake_mask", "get_bake_mask");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "bake_mask", PROPERTY_HINT_LAYERS_3D_RENDER), "set_bake_mask", "get_bake_mask");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "bake_simplification_distance", PROPERTY_HINT_RANGE, "0.0,2.0,0.01,suffix:m"), "set_bake_simplification_distance", "get_bake_simplification_distance");
 }
 

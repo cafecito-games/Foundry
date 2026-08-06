@@ -77,7 +77,7 @@ void OpenXRCompositionLayerEquirect::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "central_horizontal_angle", PROPERTY_HINT_RANGE, "0,360,0.1,or_less,or_greater,radians_as_degrees"), "set_central_horizontal_angle", "get_central_horizontal_angle");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "upper_vertical_angle", PROPERTY_HINT_RANGE, "0,90,0.1,or_less,or_greater,radians_as_degrees"), "set_upper_vertical_angle", "get_upper_vertical_angle");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lower_vertical_angle", PROPERTY_HINT_RANGE, "0,90,0.1,or_less,or_greater,radians_as_degrees"), "set_lower_vertical_angle", "get_lower_vertical_angle");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "fallback_segments", PROPERTY_HINT_NONE, ""), "set_fallback_segments", "get_fallback_segments");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "fallback_segments", PROPERTY_HINT_NONE, ""), "set_fallback_segments", "get_fallback_segments");
 }
 
 Ref<Mesh> OpenXRCompositionLayerEquirect::_create_fallback_mesh() {

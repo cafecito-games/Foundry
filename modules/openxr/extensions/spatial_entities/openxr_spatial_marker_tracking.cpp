@@ -381,7 +381,7 @@ void OpenXRMarkerTracker::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_marker_id", "marker_id"), &OpenXRMarkerTracker::set_marker_id);
 	ClassDB::bind_method(D_METHOD("get_marker_id"), &OpenXRMarkerTracker::get_marker_id);
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "marker_id"), "set_marker_id", "get_marker_id");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "marker_id"), "set_marker_id", "get_marker_id");
 
 	// As the type of marker data can vary, we can't make this a property.
 	ClassDB::bind_method(D_METHOD("set_marker_data", "marker_data"), &OpenXRMarkerTracker::set_marker_data);

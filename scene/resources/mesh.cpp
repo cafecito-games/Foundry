@@ -187,14 +187,14 @@ void MeshConvexDecompositionSettings::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "symmetry_planes_clipping_bias", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), "set_symmetry_planes_clipping_bias", "get_symmetry_planes_clipping_bias");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "revolution_axes_clipping_bias", PROPERTY_HINT_RANGE, "0.0,1.0,0.01"), "set_revolution_axes_clipping_bias", "get_revolution_axes_clipping_bias");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "min_volume_per_convex_hull", PROPERTY_HINT_RANGE, "0.0001,0.01,0.0001"), "set_min_volume_per_convex_hull", "get_min_volume_per_convex_hull");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "resolution"), "set_resolution", "get_resolution");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_num_vertices_per_convex_hull"), "set_max_num_vertices_per_convex_hull", "get_max_num_vertices_per_convex_hull");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "plane_downsampling", PROPERTY_HINT_RANGE, "1,16,1"), "set_plane_downsampling", "get_plane_downsampling");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "convex_hull_downsampling", PROPERTY_HINT_RANGE, "1,16,1"), "set_convex_hull_downsampling", "get_convex_hull_downsampling");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "resolution"), "set_resolution", "get_resolution");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "max_num_vertices_per_convex_hull"), "set_max_num_vertices_per_convex_hull", "get_max_num_vertices_per_convex_hull");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "plane_downsampling", PROPERTY_HINT_RANGE, "1,16,1"), "set_plane_downsampling", "get_plane_downsampling");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "convex_hull_downsampling", PROPERTY_HINT_RANGE, "1,16,1"), "set_convex_hull_downsampling", "get_convex_hull_downsampling");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "normalize_mesh"), "set_normalize_mesh", "get_normalize_mesh");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "mode", PROPERTY_HINT_ENUM, "Voxel,Tetrahedron"), "set_mode", "get_mode");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "convex_hull_approximation"), "set_convex_hull_approximation", "get_convex_hull_approximation");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_convex_hulls"), "set_max_convex_hulls", "get_max_convex_hulls");
+	ADD_PROPERTY(PropertyInfo(Variant::UINT, "max_convex_hulls"), "set_max_convex_hulls", "get_max_convex_hulls");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "project_hull_vertices"), "set_project_hull_vertices", "get_project_hull_vertices");
 
 	BIND_ENUM_CONSTANT(CONVEX_DECOMPOSITION_MODE_VOXEL);
