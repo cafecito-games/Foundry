@@ -4448,6 +4448,12 @@ FSParser::PatternNode *FSParser::parse_match_pattern(PatternNode *p_root_pattern
 				break;
 			}
 
+			// A leading `.` names a case of the subject's union without naming the union itself.
+			if (check(FSTokenizer::Token::PERIOD) && peek().is_identifier()) {
+				parse_match_pattern_dotted_head(pattern, p_root_pattern);
+				break;
+			}
+
 			// Expression.
 			ExpressionNode *expression = parse_expression(false);
 			if (expression == nullptr) {
@@ -4471,19 +4477,34 @@ FSParser::PatternNode *FSParser::parse_match_pattern(PatternNode *p_root_pattern
 }
 
 void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNode *p_root_pattern) {
-	// The head is a dotted name, `A.B` or longer. It is a case reference only when `(` follows it
-	// immediately; otherwise it is the start of an ordinary value pattern such as `Vector2.ZERO`.
-	advance();
-	ExpressionNode *head_expression = parse_identifier(nullptr, false);
-#ifdef TOOLS_ENABLED
-	if (head_expression != nullptr) {
-		make_completion_context(COMPLETION_IDENTIFIER, head_expression);
-	}
-#endif
+	// The head is a dotted name, `A.B` or longer, or the leading-`.` contextual case shorthand
+	// (`.Ok`), which names a single case of the subject's union. Either is a case reference only
+	// when `(` follows it immediately; otherwise it is the start of an ordinary value pattern such
+	// as `Vector2.ZERO`.
+	const bool is_contextual_case = check(FSTokenizer::Token::PERIOD);
 
+	ExpressionNode *head_expression = nullptr;
 	Vector<IdentifierNode *> case_chain;
-	if (head_expression != nullptr && head_expression->type == Node::IDENTIFIER) {
-		case_chain.push_back(static_cast<IdentifierNode *>(head_expression));
+	if (is_contextual_case) {
+		advance(); // Consume ".", so `parse_contextual_enum_case()` sees the same tokenizer state as the Pratt driver.
+		head_expression = parse_contextual_enum_case(nullptr, false);
+		const SubscriptNode *contextual_case = head_expression != nullptr && head_expression->type == Node::SUBSCRIPT
+				? static_cast<const SubscriptNode *>(head_expression)
+				: nullptr;
+		if (contextual_case != nullptr && contextual_case->is_attribute && contextual_case->attribute != nullptr) {
+			case_chain.push_back(contextual_case->attribute);
+		}
+	} else {
+		advance();
+		head_expression = parse_identifier(nullptr, false);
+#ifdef TOOLS_ENABLED
+		if (head_expression != nullptr) {
+			make_completion_context(COMPLETION_IDENTIFIER, head_expression);
+		}
+#endif
+		if (head_expression != nullptr && head_expression->type == Node::IDENTIFIER) {
+			case_chain.push_back(static_cast<IdentifierNode *>(head_expression));
+		}
 	}
 
 	// Type arguments applied to a generic tagged union before its case name. Only the trailing `(`
@@ -4519,11 +4540,14 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 		parsed_type_arguments = true;
 	};
 
-	if (head_expression != nullptr && check(FSTokenizer::Token::BRACKET_OPEN)) {
+	// The contextual shorthand names exactly one case and never spells its union, so it takes
+	// neither a type-argument list nor a longer dotted chain. Anything following it is left to the
+	// expression path below, which keeps the leading `.` in the tree.
+	if (!is_contextual_case && head_expression != nullptr && check(FSTokenizer::Token::BRACKET_OPEN)) {
 		parse_head_type_arguments();
 	}
 
-	while (head_expression != nullptr && check(FSTokenizer::Token::PERIOD) && peek().is_identifier()) {
+	while (!is_contextual_case && head_expression != nullptr && check(FSTokenizer::Token::PERIOD) && peek().is_identifier()) {
 		advance(); // Consume ".", so `parse_attribute()` sees the same tokenizer state as the Pratt driver.
 		head_expression = parse_attribute(head_expression, false);
 		if (head_expression == nullptr || head_expression->type != Node::SUBSCRIPT) {
@@ -4543,7 +4567,8 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 		}
 	}
 
-	if (head_expression != nullptr && case_chain.size() >= 2 && check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
+	const int minimum_case_chain_size = is_contextual_case ? 1 : 2;
+	if (head_expression != nullptr && case_chain.size() >= minimum_case_chain_size && check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
 		// The case reference is resolved as a type, exactly like the right-hand side of `is`, so a
 		// payload case is never reduced as a value.
 		TypeNode *case_type = alloc_node<TypeNode>();
@@ -4558,6 +4583,7 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 
 		p_pattern->pattern_type = PatternNode::PT_ENUM_CASE;
 		p_pattern->case_type = case_type;
+		p_pattern->is_contextual_enum_case = is_contextual_case;
 
 		PatternNode *root_pattern = p_root_pattern != nullptr ? p_root_pattern : p_pattern;
 
@@ -5465,6 +5491,34 @@ FSParser::ExpressionNode *FSParser::parse_attribute(ExpressionNode *p_previous_o
 	return attribute;
 }
 
+// Prefix rule for a leading "." (`.None`, and the callee of `.Ok(1)`): a tagged-union case named
+// without its union. The union is supplied by the expected type at the consumer site, so the node
+// deliberately has no base for the analyzer to qualify later.
+//
+// The tokenizer never routes a leading-dot number here: `.5` in expression position lexes as a
+// single float `LITERAL`, and a `.` after a value lexes as an infix `PERIOD` (tuple index `t.0`).
+FSParser::ExpressionNode *FSParser::parse_contextual_enum_case(ExpressionNode *p_previous_operand, bool p_can_assign) {
+	SubscriptNode *contextual_case = alloc_node<SubscriptNode>();
+	reset_extents(contextual_case, previous);
+	update_extents(contextual_case);
+
+	contextual_case->is_contextual_enum_case = true;
+
+	if (current.is_node_name()) {
+		current.type = FSTokenizer::Token::IDENTIFIER;
+	}
+	if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected a tagged-union case name after ".".)")) {
+		complete_extents(contextual_case);
+		return contextual_case;
+	}
+
+	contextual_case->is_attribute = true;
+	contextual_case->attribute = parse_identifier();
+
+	complete_extents(contextual_case);
+	return contextual_case;
+}
+
 FSParser::ExpressionNode *FSParser::parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign) {
 	SubscriptNode *subscript = alloc_node<SubscriptNode>();
 	reset_extents(subscript, p_previous_operand);
@@ -5585,7 +5639,13 @@ FSParser::ExpressionNode *FSParser::parse_call(ExpressionNode *p_previous_operan
 				if (attribute->attribute) {
 					call->function_name = attribute->attribute->name;
 				}
-				make_completion_context(COMPLETION_ATTRIBUTE_METHOD, call->callee);
+				// `.Ok(1)`: the payload form of the contextual case shorthand is the leading-`.`
+				// case reference with the ordinary call suffix applied to it. It has no base to
+				// complete members against, so it stays out of the attribute completion context.
+				call->is_contextual_enum_case = attribute->is_contextual_enum_case;
+				if (!attribute->is_contextual_enum_case) {
+					make_completion_context(COMPLETION_ATTRIBUTE_METHOD, call->callee);
+				}
 			} else {
 				// `expr[...](...)`: either a generic method application (`name[TypeArgs](...)` or
 				// `receiver.method[TypeArgs](...)`, where the brackets are a use-site type-argument
@@ -6821,7 +6881,7 @@ FSParser::ParseRule *FSParser::get_rule(FSTokenizer::Token::Type p_token_type) {
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PARENTHESIS_CLOSE,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // COMMA,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // SEMICOLON,
-		{ nullptr,                                          &FSParser::parse_attribute,            	PREC_ATTRIBUTE }, // PERIOD,
+		{ &FSParser::parse_contextual_enum_case,	&FSParser::parse_attribute,            	PREC_ATTRIBUTE }, // PERIOD,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PERIOD_PERIOD,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // PERIOD_PERIOD_PERIOD,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // COLON,

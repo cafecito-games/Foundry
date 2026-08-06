@@ -2431,6 +2431,11 @@ void FSPrinter::print_pattern(const FSParser::PatternNode *p_pattern) {
 					[&](int p_index) { return p_pattern->array[p_index]->end_line; });
 			break;
 		case FSParser::PatternNode::PT_ENUM_CASE:
+			if (p_pattern->is_contextual_enum_case) {
+				// `.Ok(value)`: the case type names only the case, the leading `.` stands in for
+				// the union the subject supplies.
+				write(".");
+			}
 			print_type(p_pattern->case_type);
 			print_delimited_items(
 					"(", ")", p_pattern->array.size(), node_was_authored_multiline(p_pattern),

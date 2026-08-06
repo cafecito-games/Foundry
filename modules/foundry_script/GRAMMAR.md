@@ -885,8 +885,15 @@ primary =
     | "await", expression
     | "preload", "(", expression, [ "," ], ")"
     | get_node
+    | contextual_enum_case
     | "super", super_tail                            (* only as call base *)
     ;
+
+contextual_enum_case = ".", identifier ;
+                                                     (* names a case of a tagged union without
+                                                        naming the union; the payload form
+                                                        `.Case(a, b)` is this primary followed by
+                                                        the ordinary call suffix of section 5.4 *)
 
 tuple_literal = "(", expression, ",", expression, { ",", expression }, [ "," ], ")" ;
                                                       (* arity >= 2; see §9 for `(a)` vs `(a,)` *)
@@ -913,8 +920,23 @@ The token → prefix-rule mapping (`get_rule`):
 | `PRELOAD`          | preload expression                              |
 | `DOLLAR`           | get-node (`$`)                                  |
 | `PERCENT`          | get-node unique-name shorthand (`%`)            |
+| `PERIOD`           | contextual tagged-union case (`.Case`)          |
 | `SUPER`            | super call/access                               |
 | `YIELD`            | error (removed)                                 |
+
+`PERIOD` is the one token with both a prefix and an infix rule: in prefix position it starts a
+contextual tagged-union case, in infix position it is attribute access. The two never compete,
+because a prefix rule is only consulted where an expression may start. Note also that `.` followed
+by a digit never reaches the prefix rule: in expression-start position the tokenizer produces a
+single float `LITERAL` (`.5` is `0.5`), and after a value it produces the infix `PERIOD` of a tuple
+index (§2.6.1).
+
+A contextual case is accepted syntactically wherever an expression is, but it is only *valid* where
+the surrounding consumer supplies a complete specialized tagged-union expected type (a variable or
+constant initializer with a declared type, a return, an assignment, an argument, a typed container
+element, an `as` cast, or a conditional-expression branch). Inferred, untyped, and `Variant` targets
+are rejected. This is a semantic requirement, not a syntactic one, so a re-implementation resolves
+it after parsing.
 
 ### 5.4 Infix (left-denotation) forms
 
@@ -1269,8 +1291,13 @@ tuple_pattern = "(", pattern, ",", [ pattern, { ",", pattern } ], [ "," ], ")" ;
 case_pattern = case_reference,
                "(", case_payload_pattern, { ",", case_payload_pattern }, [ "," ], ")" ;
 
-case_reference = identifier, { ".", identifier }, [ case_type_arguments ],
-                 ".", identifier, { ".", identifier } ;
+case_reference = qualified_case_reference | contextual_enum_case ;
+
+qualified_case_reference = identifier, { ".", identifier }, [ case_type_arguments ],
+                           ".", identifier, { ".", identifier } ;
+                                                    (* the contextual form names a single case of
+                                                       the subject's union and takes neither a
+                                                       type-argument list nor a longer chain *)
 
 case_type_arguments = "[", type_arg, { ",", type_arg }, "]" ;
                                                     (* generic tagged union application;
@@ -1299,6 +1326,9 @@ Rules:
 - A case pattern is a dotted name **immediately** followed by `(`, and names a tagged-union case;
   its sub-pattern count must equal the case's payload arity. A payload-less case is matched as
   the ordinary value it is (`Message.Quit`), without parentheses.
+- The head may also be the contextual shorthand (`.Ok(value)`), which names a case of the union
+  the match subject already has. A payload-less contextual case (`.None`) is likewise matched as
+  the ordinary value expression it is, without parentheses.
 - A **generic** tagged union's case pattern applies the union's full type-argument vector on the
   head, before the case name: `Result[int, String].Ok(value)`. The payload binds then take the
   specialized field types, and a pattern from a different specialization than the subject is

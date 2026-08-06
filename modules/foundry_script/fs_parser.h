@@ -804,6 +804,11 @@ public:
 		// `[tag, payload...]` instead of dispatching a call. `enum_case_tag` is the case's ordinal tag.
 		bool is_enum_case_construction = false;
 		int64_t enum_case_tag = 0;
+		// Set by the parser when the callee is the leading-`.` contextual case shorthand
+		// (`.Ok(1)`), whose tagged union is supplied by the expected type at the consumer site
+		// rather than written at the call site. The callee is the contextual `SubscriptNode`,
+		// which has no base until the analyzer qualifies it.
+		bool is_contextual_enum_case = false;
 		// Set by the analyzer when this calls a method whose typed-container return needs retyping at the
 		// assignment target. Generic method elements (`-> Array[T]`) are erased at runtime; inherited
 		// `Self` container returns are compiled against the declaring class while the static call type is
@@ -1584,6 +1589,10 @@ public:
 		// every value of its case and therefore covers it for exhaustiveness.
 		bool case_payload_is_irrefutable = false;
 
+		// For PT_ENUM_CASE: whether the head was written with the leading-`.` contextual shorthand
+		// (`.Ok(value)`), so `case_type` names only the case and the union comes from the subject.
+		bool is_contextual_enum_case = false;
+
 		// For PT_ENUM_CASE: the dotted case reference (`Message.Move`) and its resolved case type.
 		TypeNode *case_type = nullptr;
 		DataType case_datatype;
@@ -1657,6 +1666,10 @@ public:
 		// Set for a tuple-index access (`t.0`), distinguishing it from an ordinary subscript
 		// (`arr[0]`). `is_attribute` is false and `index` holds the integer-literal index node.
 		bool is_tuple_index = false;
+		// Set for the leading-`.` contextual tagged-union case shorthand (`.None`, and the callee
+		// of `.Ok(1)`). `is_attribute` is true and `attribute` holds the case name, but `base` is
+		// null: the union it belongs to comes from the expected type at the consumer site.
+		bool is_contextual_enum_case = false;
 
 		// Use-site type-argument list for generics, e.g. `Pair[int, String]` or `id[Node?]`.
 		// Populated only when the subscript brackets carry more than one comma-separated argument
@@ -2346,6 +2359,7 @@ private:
 	ExpressionNode *parse_cast(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_await(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_attribute(ExpressionNode *p_previous_operand, bool p_can_assign);
+	ExpressionNode *parse_contextual_enum_case(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_type_test(ExpressionNode *p_previous_operand, bool p_can_assign);

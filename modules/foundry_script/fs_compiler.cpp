@@ -803,7 +803,30 @@ FSCodeGenerator::Address FSCompiler::_apply_flow_narrowed_integer_width(
 	return p_address;
 }
 
+// True for the leading-`.` contextual tagged-union case shorthand (`.Ok(1)`, `.None`) as it comes
+// out of the parser, with no union in front of the case name.
+static bool is_unqualified_contextual_enum_case(const FSParser::ExpressionNode *p_expression) {
+	switch (p_expression->type) {
+		case FSParser::Node::CALL:
+			return static_cast<const FSParser::CallNode *>(p_expression)->is_contextual_enum_case;
+		case FSParser::Node::SUBSCRIPT:
+			return static_cast<const FSParser::SubscriptNode *>(p_expression)->is_contextual_enum_case;
+		default:
+			return false;
+	}
+}
+
 FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &r_error, const FSParser::ExpressionNode *p_expression, bool p_root, bool p_initializer) {
+	// The contextual case shorthand only means something once it has been qualified with the union
+	// taken from the expected type at the consumer site. Reaching code generation unqualified means
+	// no complete expected tagged-union type was available, so refuse rather than emit an access on
+	// the case reference's missing base.
+	if (is_unqualified_contextual_enum_case(p_expression)) {
+		_set_error("A contextual tagged-union case needs a complete expected tagged-union type.", p_expression);
+		r_error = ERR_COMPILATION_FAILED;
+		return FSCodeGenerator::Address();
+	}
+
 	// A namespaced global script class used as a value (`Foo` from the current or an
 	// imported namespace, or a qualified `ns.Foo`). The analyzer resolved the dotted
 	// identity, which a bare-name lookup in the identifier/subscript paths below cannot
