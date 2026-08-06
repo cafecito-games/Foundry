@@ -144,7 +144,7 @@ void EditorDebuggerInspector::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
-			variables->remote_object_ids.append(0);
+			variables->remote_object_ids.append(uint64_t(0));
 			edit(variables);
 		} break;
 	}
@@ -167,9 +167,7 @@ EditorDebuggerRemoteObjects *EditorDebuggerInspector::set_objects(const Array &p
 		SceneDebuggerObject obj;
 		obj.deserialize(arr);
 		if (obj.id.is_valid()) {
-			// The element type of a `TypedArray<uint64_t>` is declared `Variant::INT`, so the
-			// instance id is carried nominally rather than in the unsigned carrier.
-			ids.push_back((int64_t)(uint64_t)obj.id);
+			ids.push_back((uint64_t)obj.id);
 			objects.push_back(obj);
 		}
 	}
@@ -216,7 +214,7 @@ EditorDebuggerRemoteObjects *EditorDebuggerInspector::set_objects(const Array &p
 				UsageData usage_dt;
 				usage_dt.prop = prop;
 				usage_dt.prop.first.name = pinfo.name;
-				usage_dt.values[obj.id] = prop.second;
+				usage_dt.values[(uint64_t)obj.id] = prop.second;
 				usage[pinfo.name] = usage_dt;
 			}
 
@@ -242,7 +240,7 @@ EditorDebuggerRemoteObjects *EditorDebuggerInspector::set_objects(const Array &p
 				}
 
 				usage[pinfo.name].qty++;
-				usage[pinfo.name].values[obj.id] = prop.second;
+				usage[pinfo.name].values[(uint64_t)obj.id] = prop.second;
 			}
 		}
 
@@ -464,7 +462,7 @@ void EditorDebuggerInspector::add_stack_variable(const Array &p_array, int p_off
 		}
 		variables->prop_list.insert_before(current, pinfo);
 	}
-	variables->prop_values[pinfo.name][0] = v;
+	variables->prop_values[pinfo.name][uint64_t(0)] = v;
 	variables->update();
 	edit(variables);
 }

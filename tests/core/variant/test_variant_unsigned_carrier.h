@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/math/random_number_generator.h"
 #include "core/object/object.h"
 #include "core/os/time.h"
 #include "core/variant/typed_array.h"
@@ -73,18 +74,33 @@ TEST_CASE("[Variant] Nominal unsigned wrappers keep the signed carrier") {
 	CHECK(bit_field.operator int64_t() == int64_t(PROPERTY_USAGE_STORAGE));
 }
 
-TEST_CASE("[Variant] Bound results with unsigned C++ types keep the signed carrier") {
-	// `String::hash()` returns `uint32_t`, but the binding declares `Variant::INT`.
+TEST_CASE("[Variant] Bound results with unsigned C++ types carry the unsigned carrier") {
+	// `String::hash()` returns `uint32_t`, and the binding declares the carrier that matches it.
 	Variant text = String("foundry");
 	Callable::CallError error;
 	Variant hashed;
 	text.callp("hash", nullptr, 0, hashed, error);
 	CHECK(error.error == Callable::CallError::CALL_OK);
-	CHECK(hashed.get_type() == Variant::INT);
+	CHECK(hashed.get_type() == Variant::UINT);
 
 	// `Time::get_ticks_msec()` returns `uint64_t` through an object method bind.
 	const Variant ticks = Time::get_singleton()->call("get_ticks_msec");
-	CHECK(ticks.get_type() == Variant::INT);
+	CHECK(ticks.get_type() == Variant::UINT);
+}
+
+TEST_CASE("[Variant] A bound unsigned parameter accepts either integer carrier") {
+	Ref<RandomNumberGenerator> generator;
+	generator.instantiate();
+
+	// `set_seed()` takes `uint64_t`, so it declares the unsigned carrier while still accepting the
+	// signed one from callers that never chose a carrier.
+	generator->call("set_seed", Variant(int64_t(11)));
+	CHECK(generator->get_seed() == 11);
+
+	generator->call("set_seed", Variant(uint64_t(UINT64_MAX)));
+	const Variant seed = generator->call("get_seed");
+	CHECK(seed.get_type() == Variant::UINT);
+	CHECK(seed.operator uint64_t() == UINT64_MAX);
 }
 
 TEST_CASE("[Variant] Native reflection masks compose with int operands") {
@@ -111,16 +127,20 @@ TEST_CASE("[Variant] Native reflection masks compose with int operands") {
 	memdelete(object);
 }
 
-TEST_CASE("[Variant] Unsigned typed containers declare signed elements") {
-	// `GetTypeInfo<uint64_t>` declares `Variant::INT`, so a `TypedArray<uint64_t>` validates its
-	// elements against the signed carrier and callers filling one carry ids nominally.
-	TypedArray<uint64_t> ids;
-	CHECK_EQ(ids.get_typed_builtin(), int64_t(Variant::INT));
+TEST_CASE("[Variant] Unsigned typed containers declare unsigned elements") {
+	// `GetTypeInfo<uint64_t>` declares `Variant::UINT`, so a `TypedArray<uint64_t>` validates its
+	// elements against the unsigned carrier and holds the whole unsigned range.
+	TypedArray<uint64_t> values;
+	CHECK_EQ(values.get_typed_builtin(), int64_t(Variant::UINT));
 
-	ids.push_back(int64_t(4242));
-	REQUIRE_EQ(ids.size(), 1);
-	CHECK_EQ(ids[0].get_type(), Variant::INT);
-	CHECK(ids.has(ObjectID(uint64_t(4242))));
+	values.push_back(uint64_t(UINT64_MAX));
+	REQUIRE_EQ(values.size(), 1);
+	CHECK_EQ(values[0].get_type(), Variant::UINT);
+	CHECK(values[0].operator uint64_t() == UINT64_MAX);
+
+	// A nominal wrapper keeps the signed carrier it declares.
+	TypedArray<ObjectID> ids;
+	CHECK_EQ(ids.get_typed_builtin(), int64_t(Variant::INT));
 }
 
 } // namespace TestVariantUnsignedCarrier

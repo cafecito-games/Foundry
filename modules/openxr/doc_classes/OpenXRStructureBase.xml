@@ -10,13 +10,13 @@
 	</tutorials>
 	<methods>
 		<method name="_get_header" qualifiers="virtual">
-			<return type="int" />
-			<param index="0" name="next" type="int" />
+			<return type="uint" />
+			<param index="0" name="next" type="uint" />
 			<description>
 			</description>
 		</method>
 		<method name="get_structure_type">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the structure type (OpenXR [code]XrStructureType[/code]) used for this structure.
 			</description>

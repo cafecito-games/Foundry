@@ -31,21 +31,21 @@
 			</description>
 		</method>
 		<method name="get_view_count" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the number of views being rendered.
 			</description>
 		</method>
 		<method name="get_view_eye_offset" qualifiers="const">
 			<return type="Vector3" />
-			<param index="0" name="view" type="int" />
+			<param index="0" name="view" type="uint" />
 			<description>
 				Returns the eye offset per view used to render this frame. This is the offset between our camera transform and the eye transform.
 			</description>
 		</method>
 		<method name="get_view_projection" qualifiers="const">
 			<return type="Projection" />
-			<param index="0" name="view" type="int" />
+			<param index="0" name="view" type="uint" />
 			<description>
 				Returns the view projection per view used to render this frame.
 				[b]Note:[/b] If a single view is rendered, this returns the camera projection. If more than one view is rendered, this will return a projection for the given view including the eye offset.

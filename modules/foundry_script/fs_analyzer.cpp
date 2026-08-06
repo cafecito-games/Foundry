@@ -10046,7 +10046,8 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 			MethodBind *getter = ClassDB::get_method(native, getter_name);
 			if (getter != nullptr) {
 				bool has_setter = ClassDB::get_property_setter(native, name) != StringName();
-				p_identifier->set_datatype(type_from_property(getter->get_return_info(), false, !has_setter));
+				p_identifier->set_datatype(type_from_property(getter->get_return_info(), false, !has_setter,
+						native_property_metadata(native, name)));
 				p_identifier->source = FSParser::IdentifierNode::INHERITED_VARIABLE;
 			}
 			return;
@@ -12340,7 +12341,36 @@ FSParser::DataType FSAnalyzer::type_from_metatype(const FSParser::DataType &p_me
 	return result;
 }
 
-FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property, bool p_is_arg, bool p_is_readonly) const {
+FoundryTypeInfo::Metadata FSAnalyzer::native_argument_metadata(const MethodBind *p_method_bind, int p_argument) {
+	if (p_method_bind == nullptr || p_argument < -1 || p_argument >= p_method_bind->get_argument_count()) {
+		return FoundryTypeInfo::METADATA_NONE;
+	}
+	return p_method_bind->get_argument_meta(p_argument);
+}
+
+FoundryTypeInfo::Metadata FSAnalyzer::native_property_metadata(const StringName &p_native_type, const StringName &p_property_name) {
+	const StringName getter_name = ClassDB::get_property_getter(p_native_type, p_property_name);
+	const StringName setter_name = ClassDB::get_property_setter(p_native_type, p_property_name);
+	const MethodBind *getter = getter_name == StringName() ? nullptr : ClassDB::get_method(p_native_type, getter_name);
+	const MethodBind *setter = setter_name == StringName() ? nullptr : ClassDB::get_method(p_native_type, setter_name);
+
+	const FoundryTypeInfo::Metadata getter_metadata = native_argument_metadata(getter, -1);
+	// An indexed property's setter takes the index first, so the value is always its last argument.
+	const FoundryTypeInfo::Metadata setter_metadata = setter == nullptr
+			? FoundryTypeInfo::METADATA_NONE
+			: native_argument_metadata(setter, setter->get_argument_count() - 1);
+
+	if (getter == nullptr) {
+		return setter_metadata;
+	}
+	if (setter == nullptr) {
+		return getter_metadata;
+	}
+	return getter_metadata == setter_metadata ? getter_metadata : FoundryTypeInfo::METADATA_NONE;
+}
+
+FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property, bool p_is_arg, bool p_is_readonly,
+		FoundryTypeInfo::Metadata p_metadata) const {
 	FSParser::DataType result;
 	result.is_read_only = p_is_readonly;
 	result.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
@@ -12405,8 +12435,17 @@ FSParser::DataType FSAnalyzer::type_from_property(const PropertyInfo &p_property
 		// The wide descriptor describes this property's own value slot. It is flagged as erasure-derived
 		// so it cannot be copied on into a constraint slot, where it would make an inferred element
 		// differ from an identically declared one under strict container equality.
-		result.numeric_type = numeric_type_wide_for_carrier(p_property.type);
-		result.numeric_type_is_carrier_erased = result.numeric_type != NumericType::NONE;
+		//
+		// Native argument metadata is the exception: it states the declared width the carrier lost, so
+		// a slot that arrives with metadata is exactly described rather than erasure-derived.
+		const NumericType declared_numeric_type = numeric_type_from_native_metadata(p_property.type, p_metadata);
+		if (declared_numeric_type != NumericType::NONE) {
+			result.numeric_type = declared_numeric_type;
+			result.numeric_type_is_carrier_erased = false;
+		} else {
+			result.numeric_type = numeric_type_wide_for_carrier(p_property.type);
+			result.numeric_type_is_carrier_erased = result.numeric_type != NumericType::NONE;
+		}
 		if ((p_property.type == Variant::CALLABLE || p_property.type == Variant::SIGNAL) &&
 				p_property.hint == PROPERTY_HINT_CALLABLE_TYPE && !p_property.hint_string.is_empty()) {
 			// The hint string is only the signature suffix; the leading type name is implied by the
@@ -13536,7 +13575,8 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		StringName script_class = p_base_type.kind == FSParser::DataType::SCRIPT ? p_base_type.script_type->get_class_name() : StringName(FoundryScript::get_class_static());
 
 		if (ClassDB::get_method_info(script_class, function_name, &info)) {
-			return function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
+			return function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags,
+					ClassDB::get_method(script_class, function_name));
 		}
 	}
 
@@ -13733,7 +13773,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	if (ClassDB::get_method_info(base_native, function_name, &info)) {
 		MethodBind *native_method = ClassDB::get_method(base_native, function_name);
 		const StringName native_method_owner = native_method != nullptr ? native_method->get_instance_class() : base_native;
-		bool valid = function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
+		bool valid = function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags, native_method);
 		if (valid) {
 			valid = apply_builtin_native_return_type_hint(native_method_owner, function_name, p_source, r_return_type);
 		}
@@ -13837,8 +13877,8 @@ bool FSAnalyzer::apply_builtin_native_return_type_hint(
 	return true;
 }
 
-bool FSAnalyzer::function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags) {
-	r_return_type = type_from_property(p_info.return_val);
+bool FSAnalyzer::function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, const MethodBind *p_method_bind) {
+	r_return_type = type_from_property(p_info.return_val, false, false, native_argument_metadata(p_method_bind, -1));
 	// METHOD_FLAG_ASYNC wraps the declared return type into Coroutine[T]. MethodInfo stores the declared
 	// return type in return_val, so this wraps unconditionally to mirror the in-memory async call-site
 	// path: an async method declared `-> Coroutine[T]` yields Coroutine[Coroutine[T]], same as locally.
@@ -13848,8 +13888,8 @@ bool FSAnalyzer::function_signature_from_info(const MethodInfo &p_info, FSParser
 	r_default_arg_count = p_info.default_arguments.size();
 	r_method_flags = p_info.flags;
 
-	for (const PropertyInfo &E : p_info.arguments) {
-		r_par_types.push_back(type_from_property(E, true));
+	for (int i = 0; i < p_info.arguments.size(); i++) {
+		r_par_types.push_back(type_from_property(p_info.arguments[i], true, false, native_argument_metadata(p_method_bind, i)));
 	}
 	return true;
 }
@@ -14362,7 +14402,8 @@ bool FSAnalyzer::property_type_from_native(const StringName &p_native_type, cons
 	MethodBind *getter = getter_name == StringName() ? nullptr : ClassDB::get_method(p_native_type, getter_name);
 	if (getter != nullptr) {
 		const bool is_read_only = ClassDB::get_property_setter(p_native_type, p_property_name) == StringName();
-		r_property_type = type_from_property(getter->get_return_info(), false, is_read_only);
+		r_property_type = type_from_property(getter->get_return_info(), false, is_read_only,
+				native_property_metadata(p_native_type, p_property_name));
 		return true;
 	}
 

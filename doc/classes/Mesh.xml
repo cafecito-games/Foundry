@@ -75,7 +75,7 @@
 			</description>
 		</method>
 		<method name="_surface_get_format" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="index" type="int" />
 			<description>
 				Virtual method to override the surface format for a custom class extending [Mesh].
@@ -96,7 +96,7 @@
 			</description>
 		</method>
 		<method name="_surface_get_primitive_type" qualifiers="virtual required const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="index" type="int" />
 			<description>
 				Virtual method to override the surface primitive type for a custom class extending [Mesh].

@@ -160,7 +160,7 @@
 			</description>
 		</method>
 		<method name="get_navigation_layer_layers" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="layer_index" type="int" />
 			<description>
 				Returns the navigation layers (as in the Navigation server) of the given TileSet navigation layer.
@@ -212,14 +212,14 @@
 			</description>
 		</method>
 		<method name="get_physics_layer_collision_layer" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="layer_index" type="int" />
 			<description>
 				Returns the collision layer (as in the physics server) bodies on the given TileSet's physics layer are in.
 			</description>
 		</method>
 		<method name="get_physics_layer_collision_mask" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="layer_index" type="int" />
 			<description>
 				Returns the collision mask of bodies on the given TileSet's physics layer.
@@ -540,7 +540,7 @@
 		<method name="set_navigation_layer_layers">
 			<return type="void" />
 			<param index="0" name="layer_index" type="int" />
-			<param index="1" name="layers" type="int" />
+			<param index="1" name="layers" type="uint" />
 			<description>
 				Sets the navigation layers (as in the navigation server) for navigation regions in the given TileSet navigation layer.
 			</description>
@@ -564,7 +564,7 @@
 		<method name="set_physics_layer_collision_layer">
 			<return type="void" />
 			<param index="0" name="layer_index" type="int" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 				Sets the collision layer (as in the physics server) for bodies in the given TileSet physics layer.
 			</description>
@@ -572,7 +572,7 @@
 		<method name="set_physics_layer_collision_mask">
 			<return type="void" />
 			<param index="0" name="layer_index" type="int" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the collision mask for bodies in the given TileSet physics layer.
 			</description>

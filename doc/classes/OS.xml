@@ -350,7 +350,7 @@
 			</description>
 		</method>
 		<method name="get_main_thread_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the ID of the main thread. See [method get_thread_caller_id].
 				[b]Note:[/b] Thread IDs are not deterministic and may be reused across application restarts.
@@ -470,13 +470,13 @@
 			</description>
 		</method>
 		<method name="get_static_memory_peak_usage" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the maximum amount of static memory used. Only works in debug builds.
 			</description>
 		</method>
 		<method name="get_static_memory_usage" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the amount of static memory being used by the program in bytes. Only works in debug builds.
 			</description>
@@ -563,7 +563,7 @@
 			</description>
 		</method>
 		<method name="get_thread_caller_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the ID of the current thread. This can be used in logs to ease debugging of multi-threaded applications.
 				[b]Note:[/b] Thread IDs are not deterministic and may be reused across application restarts.

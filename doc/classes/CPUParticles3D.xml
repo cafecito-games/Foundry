@@ -311,7 +311,7 @@
 		<member name="scale_curve_z" type="Curve" setter="set_scale_curve_z" getter="get_scale_curve_z">
 			Curve for the scale over life, along the z axis.
 		</member>
-		<member name="seed" type="int" setter="set_seed" getter="get_seed" default="0">
+		<member name="seed" type="uint" setter="set_seed" getter="get_seed" default="0">
 			Sets the random seed used by the particle system. Only effective if [member use_fixed_seed] is [code]true[/code].
 		</member>
 		<member name="speed_scale" type="float" setter="set_speed_scale" getter="get_speed_scale" default="1.0">

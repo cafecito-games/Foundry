@@ -27,7 +27,7 @@
 			</description>
 		</method>
 		<method name="generate_unique_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns a randomly generated integer that can be used as a network unique ID.
 			</description>

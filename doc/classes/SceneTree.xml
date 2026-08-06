@@ -185,7 +185,7 @@
 		</method>
 		<method name="notify_group_flags">
 			<return type="void" />
-			<param index="0" name="call_flags" type="int" />
+			<param index="0" name="call_flags" type="uint" />
 			<param index="1" name="group" type="StringName" />
 			<param index="2" name="notification" type="int" />
 			<description>
@@ -228,7 +228,7 @@
 		</method>
 		<method name="set_group_flags">
 			<return type="void" />
-			<param index="0" name="call_flags" type="int" />
+			<param index="0" name="call_flags" type="uint" />
 			<param index="1" name="group" type="StringName" />
 			<param index="2" name="property" type="String" />
 			<param index="3" name="value" type="Variant" />

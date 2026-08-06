@@ -544,7 +544,7 @@
 		</method>
 		<method name="get_visibility_layer_bit" qualifiers="const">
 			<return type="bool" />
-			<param index="0" name="layer" type="int" />
+			<param index="0" name="layer" type="uint" />
 			<description>
 				Returns [code]true[/code] if the layer at the given index is set in [member visibility_layer].
 			</description>
@@ -640,7 +640,7 @@
 		</method>
 		<method name="set_visibility_layer_bit">
 			<return type="void" />
-			<param index="0" name="layer" type="int" />
+			<param index="0" name="layer" type="uint" />
 			<param index="1" name="enabled" type="bool" />
 			<description>
 				Set/clear individual bits on the rendering visibility layer. This simplifies editing this [CanvasItem]'s visibility layer.

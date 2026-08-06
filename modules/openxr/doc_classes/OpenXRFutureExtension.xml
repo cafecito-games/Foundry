@@ -11,7 +11,7 @@
 	<methods>
 		<method name="cancel_future">
 			<return type="void" />
-			<param index="0" name="future" type="int" />
+			<param index="0" name="future" type="uint" />
 			<description>
 				Cancels an in-progress future. [param future] must be an [code]XrFutureEXT[/code] value previously returned by an API that started an asynchronous function.
 			</description>
@@ -24,7 +24,7 @@
 		</method>
 		<method name="register_future">
 			<return type="OpenXRFutureResult" />
-			<param index="0" name="future" type="int" />
+			<param index="0" name="future" type="uint" />
 			<param index="1" name="on_success" type="Callable" default="Callable()" />
 			<description>
 				Register an OpenXR Future object so we monitor for completion. [param future] must be an [code]XrFutureEXT[/code] value previously returned by an API that started an asynchronous function.

@@ -16,7 +16,7 @@
 		var peers = []
 
 		func _ready():
-			server.listen(4242)
+			server.listen(4242U)
 			var key = load("key.key") # Your private key.
 			var cert = load("cert.crt") # Your X509 certificate.
 			dtls.setup(TlsOptions.server(key, cert))

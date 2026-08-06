@@ -83,7 +83,7 @@
 			</description>
 		</method>
 		<method name="get_physics_frames" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the total number of frames passed since the engine started. This number is increased every [b]physics frame[/b]. See also [method get_process_frames].
 				This method can be used to run expensive logic less often without relying on a [Timer]:
@@ -114,7 +114,7 @@
 			</description>
 		</method>
 		<method name="get_process_frames" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the total number of frames passed since the engine started. This number is increased every [b]process frame[/b], regardless of whether the render loop is enabled. See also [method get_frames_drawn] and [method get_physics_frames].
 				This method can be used to run expensive logic less often without relying on a [Timer]:

@@ -178,7 +178,7 @@
 		<method name="connect">
 			<return type="int" />
 			<param index="0" name="callable" type="Callable" />
-			<param index="1" name="flags" type="int" default="0" />
+			<param index="1" name="flags" type="uint" default="0" />
 			<description>
 				Connects this signal to the specified [param callable]. Optional [param flags] can be also added to configure the connection's behavior (see [enum Object.ConnectFlags] constants). You can provide additional arguments to the connected [param callable] by using [method Callable.bind].
 				A signal can only be connected once to the same [Callable]. If the signal is already connected, this method returns [constant ERR_INVALID_PARAMETER] and generates an error, unless the signal is connected with [constant Object.CONNECT_REFERENCE_COUNTED]. To prevent this, use [method is_connected] first to check for existing connections.

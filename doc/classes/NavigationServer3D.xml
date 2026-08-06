@@ -32,14 +32,14 @@
 			</description>
 		</method>
 		<method name="agent_get_avoidance_layers" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="agent" type="RID" />
 			<description>
 				Returns the [code]avoidance_layers[/code] bitmask of the specified [param agent].
 			</description>
 		</method>
 		<method name="agent_get_avoidance_mask" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="agent" type="RID" />
 			<description>
 				Returns the [code]avoidance_mask[/code] bitmask of the specified [param agent].
@@ -170,7 +170,7 @@
 		<method name="agent_set_avoidance_layers">
 			<return type="void" />
 			<param index="0" name="agent" type="RID" />
-			<param index="1" name="layers" type="int" />
+			<param index="1" name="layers" type="uint" />
 			<description>
 				Set the agent's [code]avoidance_layers[/code] bitmask.
 			</description>
@@ -178,7 +178,7 @@
 		<method name="agent_set_avoidance_mask">
 			<return type="void" />
 			<param index="0" name="agent" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Set the agent's [code]avoidance_mask[/code] bitmask.
 			</description>
@@ -377,7 +377,7 @@
 			</description>
 		</method>
 		<method name="link_get_iteration_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="link" type="RID" />
 			<description>
 				Returns the current iteration ID of the navigation link. Every time the navigation link changes and synchronizes, the iteration ID increases. An iteration ID of [code]0[/code] means the navigation link has never synchronized.
@@ -392,7 +392,7 @@
 			</description>
 		</method>
 		<method name="link_get_navigation_layers" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="link" type="RID" />
 			<description>
 				Returns the navigation layers for this [param link].
@@ -469,7 +469,7 @@
 		<method name="link_set_navigation_layers">
 			<return type="void" />
 			<param index="0" name="link" type="RID" />
-			<param index="1" name="navigation_layers" type="int" />
+			<param index="1" name="navigation_layers" type="uint" />
 			<description>
 				Set the links's navigation layers. This allows selecting links from a path request (when using [method NavigationServer3D.map_get_path]).
 			</description>
@@ -578,7 +578,7 @@
 			</description>
 		</method>
 		<method name="map_get_iteration_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="map" type="RID" />
 			<description>
 				Returns the current iteration id of the navigation map. Every time the navigation map changes and synchronizes the iteration id increases. An iteration id of 0 means the navigation map has never synchronized.
@@ -627,7 +627,7 @@
 		<method name="map_get_random_point" qualifiers="const">
 			<return type="Vector3" />
 			<param index="0" name="map" type="RID" />
-			<param index="1" name="navigation_layers" type="int" />
+			<param index="1" name="navigation_layers" type="uint" />
 			<param index="2" name="uniformly" type="bool" />
 			<description>
 				Returns a random position picked from all map region polygons with matching [param navigation_layers].
@@ -756,7 +756,7 @@
 			</description>
 		</method>
 		<method name="obstacle_get_avoidance_layers" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="obstacle" type="RID" />
 			<description>
 				Returns the [code]avoidance_layers[/code] bitmask of the specified [param obstacle].
@@ -829,7 +829,7 @@
 		<method name="obstacle_set_avoidance_layers">
 			<return type="void" />
 			<param index="0" name="obstacle" type="RID" />
-			<param index="1" name="layers" type="int" />
+			<param index="1" name="layers" type="uint" />
 			<description>
 				Set the obstacles's [code]avoidance_layers[/code] bitmask.
 			</description>
@@ -997,7 +997,7 @@
 			</description>
 		</method>
 		<method name="region_get_iteration_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="region" type="RID" />
 			<description>
 				Returns the current iteration ID of the navigation region. Every time the navigation region changes and synchronizes, the iteration ID increases. An iteration ID of [code]0[/code] means the navigation region has never synchronized.
@@ -1012,7 +1012,7 @@
 			</description>
 		</method>
 		<method name="region_get_navigation_layers" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="region" type="RID" />
 			<description>
 				Returns the region's navigation layers.
@@ -1028,7 +1028,7 @@
 		<method name="region_get_random_point" qualifiers="const">
 			<return type="Vector3" />
 			<param index="0" name="region" type="RID" />
-			<param index="1" name="navigation_layers" type="int" />
+			<param index="1" name="navigation_layers" type="uint" />
 			<param index="2" name="uniformly" type="bool" />
 			<description>
 				Returns a random position picked from all region polygons with matching [param navigation_layers].
@@ -1101,7 +1101,7 @@
 		<method name="region_set_navigation_layers">
 			<return type="void" />
 			<param index="0" name="region" type="RID" />
-			<param index="1" name="navigation_layers" type="int" />
+			<param index="1" name="navigation_layers" type="uint" />
 			<description>
 				Set the region's navigation layers. This allows selecting regions from a path request (when using [method NavigationServer3D.map_get_path]).
 			</description>

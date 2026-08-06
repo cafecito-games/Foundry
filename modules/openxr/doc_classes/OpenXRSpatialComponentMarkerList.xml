@@ -18,7 +18,7 @@
 			</description>
 		</method>
 		<method name="get_marker_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="index" type="int" />
 			<description>
 				Returns the marker ID for the marker at this [param index]. Only applicable for Aruco or April Tag markers.

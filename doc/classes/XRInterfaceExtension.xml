@@ -35,7 +35,7 @@
 			</description>
 		</method>
 		<method name="_get_capabilities" qualifiers="virtual const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the capabilities of this interface.
 			</description>
@@ -72,7 +72,7 @@
 		</method>
 		<method name="_get_projection_for_view" qualifiers="virtual">
 			<return type="PackedFloat64Array" />
-			<param index="0" name="view" type="int" />
+			<param index="0" name="view" type="uint" />
 			<param index="1" name="aspect" type="float" />
 			<param index="2" name="z_near" type="float" />
 			<param index="3" name="z_far" type="float" />
@@ -113,7 +113,7 @@
 		</method>
 		<method name="_get_transform_for_view" qualifiers="virtual">
 			<return type="Transform3D" />
-			<param index="0" name="view" type="int" />
+			<param index="0" name="view" type="uint" />
 			<param index="1" name="cam_transform" type="Transform3D" />
 			<description>
 				Returns a [Transform3D] for a given view.
@@ -126,7 +126,7 @@
 			</description>
 		</method>
 		<method name="_get_view_count" qualifiers="virtual">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the number of views this interface requires, 1 for mono, 2 for stereoscopic.
 			</description>
@@ -226,7 +226,7 @@
 			<param index="1" name="src_rect" type="Rect2" />
 			<param index="2" name="dst_rect" type="Rect2i" />
 			<param index="3" name="use_layer" type="bool" />
-			<param index="4" name="layer" type="int" />
+			<param index="4" name="layer" type="uint" />
 			<param index="5" name="apply_lens_distortion" type="bool" />
 			<param index="6" name="eye_center" type="Vector2" />
 			<param index="7" name="k1" type="float" />

@@ -64,14 +64,14 @@
 			</description>
 		</method>
 		<method name="area_get_collision_layer" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="area" type="RID" />
 			<description>
 				Returns the physics layer or layers the area belongs to, as a bitmask.
 			</description>
 		</method>
 		<method name="area_get_collision_mask" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="area" type="RID" />
 			<description>
 				Returns the physics layer or layers the area can contact with, as a bitmask.
@@ -154,7 +154,7 @@
 		<method name="area_set_collision_layer">
 			<return type="void" />
 			<param index="0" name="area" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 				Assigns the area to one or many physics layers, via a bitmask.
 			</description>
@@ -162,7 +162,7 @@
 		<method name="area_set_collision_mask">
 			<return type="void" />
 			<param index="0" name="area" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets which physics layers the area will monitor, via a bitmask.
 			</description>
@@ -382,14 +382,14 @@
 			</description>
 		</method>
 		<method name="body_get_collision_layer" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 				Returns the physics layer or layers the body belongs to, as a bitmask.
 			</description>
 		</method>
 		<method name="body_get_collision_mask" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="body" type="RID" />
 			<description>
 				Returns the physics layer or layers the body can collide with, as a bitmask.
@@ -540,7 +540,7 @@
 		<method name="body_set_collision_layer">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="layer" type="int" />
+			<param index="1" name="layer" type="uint" />
 			<description>
 				Sets the physics layer or layers the body belongs to, via a bitmask.
 			</description>
@@ -548,7 +548,7 @@
 		<method name="body_set_collision_mask">
 			<return type="void" />
 			<param index="0" name="body" type="RID" />
-			<param index="1" name="mask" type="int" />
+			<param index="1" name="mask" type="uint" />
 			<description>
 				Sets the physics layer or layers the body can collide with, via a bitmask.
 			</description>

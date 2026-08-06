@@ -12,7 +12,7 @@
 		<method name="get_cache" qualifiers="static">
 			<return type="RID" />
 			<param index="0" name="shader" type="RID" />
-			<param index="1" name="set" type="int" />
+			<param index="1" name="set" type="uint" />
 			<param index="2" name="uniforms" type="RDUniform[]" />
 			<description>
 				Creates/returns a cached uniform set based on the provided uniforms for a given shader.

@@ -108,7 +108,7 @@
 			</description>
 		</method>
 		<method name="get_monitor_modification_time">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the last tick in which custom monitor was added/removed (in microseconds since the engine started). This is set to [method Time.get_ticks_usec] when the monitor is updated.
 			</description>

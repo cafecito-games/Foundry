@@ -167,7 +167,7 @@
 			</description>
 		</method>
 		<method name="get_version" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the number of times the bone hierarchy has changed within this skeleton, including renames.
 				The Skeleton version is not serialized: only use within a single instance of Skeleton3D.

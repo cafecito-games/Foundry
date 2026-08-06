@@ -18,7 +18,7 @@
 	</tutorials>
 	<methods>
 		<method name="action_get_handle">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="action" type="RID" />
 			<description>
 				Returns the corresponding [code]XrAction[/code] OpenXR handle for the given action RID.
@@ -53,26 +53,26 @@
 		</method>
 		<method name="get_error_string">
 			<return type="String" />
-			<param index="0" name="result" type="int" />
+			<param index="0" name="result" type="uint" />
 			<description>
 				Returns an error string for the given [url=https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrResult.html]XrResult[/url].
 			</description>
 		</method>
 		<method name="get_hand_tracker">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="hand_index" type="int" />
 			<description>
 				Returns the corresponding [code]XRHandTrackerEXT[/code] handle for the given hand index value.
 			</description>
 		</method>
 		<method name="get_instance">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the [url=https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrInstance.html]XrInstance[/url] created during the initialization of the OpenXR API.
 			</description>
 		</method>
 		<method name="get_instance_proc_addr">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="name" type="String" />
 			<description>
 				Returns the function pointer of the OpenXR function with the specified name, cast to an integer. If the function with the given name does not exist, the method returns [code]0[/code].
@@ -86,13 +86,13 @@
 			</description>
 		</method>
 		<method name="get_openxr_version">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the version of OpenXR that was initialized. Only valid after the OpenXR instance has been created. See [url=https://registry.khronos.org/OpenXR/specs/1.1/html/xrspec.html#XR_MAKE_VERSION]XR_MAKE_VERSION[/url] for how the version is calculated.
 			</description>
 		</method>
 		<method name="get_play_space">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the play space, which is an [url=https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrSpace.html]XrSpace[/url] cast to an integer.
 			</description>
@@ -104,7 +104,7 @@
 			</description>
 		</method>
 		<method name="get_projection_layer">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns a pointer to the render state's [code]XrCompositionLayerProjection[/code] struct.
 				[b]Note:[/b] This method should only be called from the rendering thread.
@@ -125,7 +125,7 @@
 			</description>
 		</method>
 		<method name="get_session">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the OpenXR session, which is an [url=https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrSession.html]XrSession[/url] cast to an integer.
 			</description>
@@ -144,19 +144,19 @@
 			</description>
 		</method>
 		<method name="get_system_id">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the ID of the system, which is an [url=https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrSystemId.html]XrSystemId[/url] cast to an integer.
 			</description>
 		</method>
 		<method name="get_view_configuration" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the view configuration type, which is an [url=https://registry.khronos.org/OpenXR/specs/1.0/man/html/XrViewConfigurationType.html]XrViewConfigurationType[/url] cast to an integer.
 			</description>
 		</method>
 		<method name="get_view_count" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the number of views. It is usually two, one for each eye, but may differ with different view configurations.
 			</description>
@@ -195,48 +195,48 @@
 		</method>
 		<method name="openxr_swapchain_acquire">
 			<return type="void" />
-			<param index="0" name="swapchain" type="int" />
+			<param index="0" name="swapchain" type="uint" />
 			<description>
 				Acquires the image of the provided swapchain.
 			</description>
 		</method>
 		<method name="openxr_swapchain_create">
-			<return type="int" />
-			<param index="0" name="create_flags" type="int" />
-			<param index="1" name="usage_flags" type="int" />
+			<return type="uint" />
+			<param index="0" name="create_flags" type="uint" />
+			<param index="1" name="usage_flags" type="uint" />
 			<param index="2" name="swapchain_format" type="int" />
-			<param index="3" name="width" type="int" />
-			<param index="4" name="height" type="int" />
-			<param index="5" name="sample_count" type="int" />
-			<param index="6" name="array_size" type="int" />
+			<param index="3" name="width" type="uint" />
+			<param index="4" name="height" type="uint" />
+			<param index="5" name="sample_count" type="uint" />
+			<param index="6" name="array_size" type="uint" />
 			<description>
 				Returns a pointer to a new swapchain created using the provided parameters.
 			</description>
 		</method>
 		<method name="openxr_swapchain_free">
 			<return type="void" />
-			<param index="0" name="swapchain" type="int" />
+			<param index="0" name="swapchain" type="uint" />
 			<description>
 				Destroys the provided swapchain and frees it from memory.
 			</description>
 		</method>
 		<method name="openxr_swapchain_get_image">
 			<return type="RID" />
-			<param index="0" name="swapchain" type="int" />
+			<param index="0" name="swapchain" type="uint" />
 			<description>
 				Returns the RID of the provided swapchain's image.
 			</description>
 		</method>
 		<method name="openxr_swapchain_get_swapchain">
-			<return type="int" />
-			<param index="0" name="swapchain" type="int" />
+			<return type="uint" />
+			<param index="0" name="swapchain" type="uint" />
 			<description>
 				Returns the [code]XrSwapchain[/code] handle of the provided swapchain.
 			</description>
 		</method>
 		<method name="openxr_swapchain_release">
 			<return type="void" />
-			<param index="0" name="swapchain" type="int" />
+			<param index="0" name="swapchain" type="uint" />
 			<description>
 				Releases the image of the provided swapchain.
 			</description>
@@ -282,7 +282,7 @@
 		<method name="set_object_name">
 			<return type="void" />
 			<param index="0" name="object_type" type="int" />
-			<param index="1" name="object_handle" type="int" />
+			<param index="1" name="object_handle" type="uint" />
 			<param index="2" name="object_name" type="String" />
 			<description>
 				Set the object name of an OpenXR object, used for debug output. [param object_type] must be a valid OpenXR [code]XrObjectType[/code] enum and [param object_handle] must be a valid OpenXR object handle.
@@ -355,7 +355,7 @@
 		</method>
 		<method name="xr_result">
 			<return type="bool" />
-			<param index="0" name="result" type="int" />
+			<param index="0" name="result" type="uint" />
 			<param index="1" name="format" type="String" />
 			<param index="2" name="args" type="Array" />
 			<description>

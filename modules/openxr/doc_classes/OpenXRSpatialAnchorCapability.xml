@@ -34,7 +34,7 @@
 			</description>
 		</method>
 		<method name="get_persistence_context_handle" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="persistence_context" type="RID" />
 			<description>
 				Returns the internal handle for this persistence context.

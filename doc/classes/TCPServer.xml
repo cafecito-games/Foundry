@@ -18,7 +18,7 @@
 		</method>
 		<method name="listen">
 			<return type="int" enum="Error" />
-			<param index="0" name="port" type="int" />
+			<param index="0" name="port" type="uint" />
 			<param index="1" name="bind_address" type="String" default="&quot;*&quot;" />
 			<description>
 				Listen on the [param port] binding to [param bind_address].

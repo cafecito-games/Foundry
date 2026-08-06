@@ -554,7 +554,7 @@
 			</description>
 		</method>
 		<method name="get_saved_version" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the last tagged saved version from [method tag_saved_version].
 			</description>
@@ -666,7 +666,7 @@
 			</description>
 		</method>
 		<method name="get_version" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the current version of the [TextEdit]. The version is a count of recorded operations by the undo/redo history.
 			</description>
@@ -930,7 +930,7 @@
 		<method name="search" qualifiers="const">
 			<return type="Vector2i" />
 			<param index="0" name="text" type="String" />
-			<param index="1" name="flags" type="int" />
+			<param index="1" name="flags" type="uint" />
 			<param index="2" name="from_line" type="int" />
 			<param index="3" name="from_column" type="int" />
 			<description>
@@ -1160,7 +1160,7 @@
 		</method>
 		<method name="set_search_flags">
 			<return type="void" />
-			<param index="0" name="flags" type="int" />
+			<param index="0" name="flags" type="uint" />
 			<description>
 				Sets the search [param flags]. This is used with [method set_search_text] to highlight occurrences of the searched text. Search flags can be specified from the [enum SearchFlags] enum.
 			</description>

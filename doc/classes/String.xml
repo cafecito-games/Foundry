@@ -361,7 +361,7 @@
 			</description>
 		</method>
 		<method name="hash" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the 32-bit hash value representing the string's contents.
 				[b]Note:[/b] Strings with equal hash values are [i]not[/i] guaranteed to be the same, as a result of hash collisions. On the contrary, strings with different hash values are guaranteed to be different.
@@ -403,7 +403,7 @@
 		</method>
 		<method name="humanize_size" qualifiers="static">
 			<return type="String" />
-			<param index="0" name="size" type="int" />
+			<param index="0" name="size" type="uint" />
 			<description>
 				Converts [param size] which represents a number of bytes into a human-readable form.
 				The result is in [url=https://en.wikipedia.org/wiki/Binary_prefix#IEC_prefixes]IEC prefix format[/url], which may end in either [code]"B"[/code], [code]"KiB"[/code], [code]"MiB"[/code], [code]"GiB"[/code], [code]"TiB"[/code], [code]"PiB"[/code], or [code]"EiB"[/code].
@@ -740,7 +740,7 @@
 		</method>
 		<method name="num_uint64" qualifiers="static">
 			<return type="String" />
-			<param index="0" name="number" type="int" />
+			<param index="0" name="number" type="uint" />
 			<param index="1" name="base" type="int" default="10" />
 			<param index="2" name="capitalize_hex" type="bool" default="false" />
 			<description>

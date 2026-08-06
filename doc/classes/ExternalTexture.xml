@@ -12,7 +12,7 @@
 	</tutorials>
 	<methods>
 		<method name="get_external_texture_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the external texture ID.
 				Depending on your use case, you may need to pass this to platform APIs, for example, when creating an [code]android.graphics.SurfaceTexture[/code] on Android.
@@ -20,7 +20,7 @@
 		</method>
 		<method name="set_external_buffer_id">
 			<return type="void" />
-			<param index="0" name="external_buffer_id" type="int" />
+			<param index="0" name="external_buffer_id" type="uint" />
 			<description>
 				Sets the external buffer ID.
 				Depending on your use case, you may need to call this with data received from a platform API, for example, [code]SurfaceTexture.getHardwareBuffer()[/code] on Android.

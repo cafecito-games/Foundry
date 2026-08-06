@@ -1162,7 +1162,7 @@
 		</method>
 		<method name="is_valid_letter" qualifiers="const">
 			<return type="bool" />
-			<param index="0" name="unicode" type="int" />
+			<param index="0" name="unicode" type="uint" />
 			<description>
 				Returns [code]true[/code] if the given code point is a valid letter, i.e. it belongs to the Unicode category "L".
 			</description>

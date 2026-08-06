@@ -436,7 +436,7 @@ TEST_CASE("[SceneTree][PackedScene] Unsigned native property round-trips through
 	MeshInstance3D *source = memnew(MeshInstance3D);
 	source->set_name("UnsignedCarrier");
 	source->set_layer_mask(layer_mask);
-	CHECK(source->get("layers").get_type() == Variant::INT);
+	CHECK(source->get("layers").get_type() == Variant::UINT);
 
 	Ref<PackedScene> packed;
 	packed.instantiate();
@@ -455,8 +455,8 @@ TEST_CASE("[SceneTree][PackedScene] Unsigned native property round-trips through
 	MeshInstance3D *restored = Object::cast_to<MeshInstance3D>(instance);
 	REQUIRE(restored != nullptr);
 	CHECK(restored->get_layer_mask() == layer_mask);
-	CHECK(restored->get("layers").get_type() == Variant::INT);
-	CHECK(restored->get("layers").operator int64_t() == int64_t(layer_mask));
+	CHECK(restored->get("layers").get_type() == Variant::UINT);
+	CHECK(restored->get("layers").operator uint64_t() == uint64_t(layer_mask));
 
 	memdelete(instance);
 	memdelete(source);

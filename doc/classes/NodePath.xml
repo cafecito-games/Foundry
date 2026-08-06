@@ -182,7 +182,7 @@
 			</description>
 		</method>
 		<method name="hash" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the 32-bit hash value representing the node path's contents.
 				[b]Note:[/b] Node paths with equal hash values are [i]not[/i] guaranteed to be the same, as a result of hash collisions. Node paths with different hash values are guaranteed to be different.

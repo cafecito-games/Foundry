@@ -602,10 +602,12 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				result.uses_implicit_conversion = false;
 			}
 		}
-		if (!result.compatible && p_target.builtin_type == Variant::INT && p_source.kind == FSParser::DataType::ENUM &&
-				!p_source.is_meta_type && !p_source.is_tagged_union) {
-			// An int-backed enum value is also an integer. A tagged-union value is a read-only
-			// `[tag, payload...]` Array, so it is deliberately not int-compatible.
+		if (!result.compatible && (p_target.builtin_type == Variant::INT || p_target.builtin_type == Variant::UINT) &&
+				p_source.kind == FSParser::DataType::ENUM && !p_source.is_meta_type && !p_source.is_tagged_union) {
+			// An int-backed enum value is also an integer, on either carrier: native flag parameters are
+			// routinely unsigned while the flag enum that names their values is int-backed, and the
+			// binding layer reads both carriers for an integer parameter. A tagged-union value is a
+			// read-only `[tag, payload...]` Array, so it is deliberately not integer-compatible.
 			result.compatible = true;
 		}
 		if (result.compatible && p_source.kind == FSParser::DataType::BUILTIN && p_target.builtin_type == p_source.builtin_type && _is_signature_builtin_type(p_target.builtin_type)) {

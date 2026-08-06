@@ -96,7 +96,7 @@
 			</description>
 		</method>
 		<method name="get_node_offset" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the byte offset of the currently parsed node since the beginning of the file or buffer. This is usually equivalent to the number of characters before the read position.
 			</description>
@@ -142,7 +142,7 @@
 		</method>
 		<method name="seek">
 			<return type="int" enum="Error" />
-			<param index="0" name="position" type="int" />
+			<param index="0" name="position" type="uint" />
 			<description>
 				Moves the buffer cursor to a certain offset (since the beginning) and reads the next node there. This method returns an error code.
 			</description>

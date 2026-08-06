@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="uint" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A built-in type for unsigned integers.
+	</brief_description>
+	<description>
+		Unsigned 64-bit integer type. It holds values from [code]0[/code] to [code]2^64 - 1[/code], that is from [code]0[/code] to [code]18446744073709551615[/code], so it represents every value above [code]9223372036854775807[/code] that [int] cannot.
+		[uint] is the storage the [code skip-lint]uint[/code] and [code]ulong[/code] source types share; the exact width a value was declared with is part of its static type rather than of this carrier.
+		Values on the two integer carriers compare and hash by their mathematical value, so an [int] and a [uint] holding the same number are equal and interchangeable as [Dictionary] keys. Arithmetic, however, needs a common type: mixing an [int] and a [uint] operand requires converting one of them explicitly, because no 64-bit integer type holds every value of both.
+		Arithmetic is range-checked. An operation whose mathematical result does not fit the operand type fails instead of wrapping around, and subtracting a larger value from a smaller one has no unsigned result at all.
+		[codeblock]
+		var count: uint = 4294967295U
+		var total: ulong = 18446744073709551615UL
+		var mixed: ulong = total - ulong(count)
+		[/codeblock]
+		Write an unsigned literal with the [code]U[/code] suffix for [code skip-lint]uint[/code] and the [code]UL[/code] suffix for [code]ulong[/code]. An unsuffixed literal is an [int], and converting one to an unsigned type is an explicit, checked conversion.
+		[b]Note:[/b] In a boolean context, a [uint] evaluates to [code]false[/code] if it equals [code]0[/code], and to [code]true[/code] otherwise.
+	</description>
+	<tutorials>
+	</tutorials>
+	<constructors>
+		<constructor name="uint">
+			<return type="uint" />
+			<description>
+				Constructs a [uint] set to [code]0[/code].
+			</description>
+		</constructor>
+		<constructor name="uint">
+			<return type="uint" />
+			<param index="0" name="from" type="uint" />
+			<description>
+				Constructs a copy of the given [uint].
+			</description>
+		</constructor>
+		<constructor name="uint">
+			<return type="uint" />
+			<param index="0" name="from" type="int" />
+			<description>
+				Constructs a [uint] from an [int]. A negative value has no unsigned representation and fails instead of being reinterpreted.
+			</description>
+		</constructor>
+	</constructors>
+	<operators>
+		<operator name="operator !=">
+			<return type="bool" />
+			<param index="0" name="right" type="int" />
+			<description>
+				Returns [code]true[/code] if the two values are mathematically different. The comparison is exact across both integer carriers.
+			</description>
+		</operator>
+		<operator name="operator !=">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the two unsigned values are different.
+			</description>
+		</operator>
+		<operator name="operator %">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns the remainder of dividing the two unsigned values. A zero divisor fails instead of producing a value.
+			</description>
+		</operator>
+		<operator name="operator &amp;">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Performs the bitwise [code]AND[/code] of the two unsigned values.
+			</description>
+		</operator>
+		<operator name="operator *">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Multiplies the two unsigned values. A product above the type's range fails instead of wrapping around.
+			</description>
+		</operator>
+		<operator name="operator **">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Raises the left operand to the power of the right one. A result above the type's range fails instead of wrapping around.
+			</description>
+		</operator>
+		<operator name="operator +">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Adds the two unsigned values. A sum above the type's range fails instead of wrapping around.
+			</description>
+		</operator>
+		<operator name="operator -">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Subtracts the right operand from the left one. A negative difference has no unsigned result and fails.
+			</description>
+		</operator>
+		<operator name="operator /">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Divides the left operand by the right one, discarding the remainder. A zero divisor fails instead of producing a value.
+			</description>
+		</operator>
+		<operator name="operator &lt;">
+			<return type="bool" />
+			<param index="0" name="right" type="int" />
+			<description>
+				Returns [code]true[/code] if the unsigned value is mathematically less than the signed one.
+			</description>
+		</operator>
+		<operator name="operator &lt;">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the left unsigned value is less than the right one.
+			</description>
+		</operator>
+		<operator name="operator &lt;&lt;">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Shifts the value left by the given number of bits. A shift count at or above the type's width, or a result the type cannot hold, fails.
+			</description>
+		</operator>
+		<operator name="operator &lt;=">
+			<return type="bool" />
+			<param index="0" name="right" type="int" />
+			<description>
+				Returns [code]true[/code] if the unsigned value is mathematically less than or equal to the signed one.
+			</description>
+		</operator>
+		<operator name="operator &lt;=">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the left unsigned value is less than or equal to the right one.
+			</description>
+		</operator>
+		<operator name="operator ==">
+			<return type="bool" />
+			<param index="0" name="right" type="int" />
+			<description>
+				Returns [code]true[/code] if the two values are mathematically equal. The comparison is exact across both integer carriers.
+			</description>
+		</operator>
+		<operator name="operator ==">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the two unsigned values are equal.
+			</description>
+		</operator>
+		<operator name="operator &gt;">
+			<return type="bool" />
+			<param index="0" name="right" type="int" />
+			<description>
+				Returns [code]true[/code] if the unsigned value is mathematically greater than the signed one.
+			</description>
+		</operator>
+		<operator name="operator &gt;">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the left unsigned value is greater than the right one.
+			</description>
+		</operator>
+		<operator name="operator &gt;=">
+			<return type="bool" />
+			<param index="0" name="right" type="int" />
+			<description>
+				Returns [code]true[/code] if the unsigned value is mathematically greater than or equal to the signed one.
+			</description>
+		</operator>
+		<operator name="operator &gt;=">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the left unsigned value is greater than or equal to the right one.
+			</description>
+		</operator>
+		<operator name="operator &gt;&gt;">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Shifts the value right by the given number of bits, filling with zeroes. A shift count at or above the type's width fails.
+			</description>
+		</operator>
+		<operator name="operator ^">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Performs the bitwise [code]XOR[/code] of the two unsigned values.
+			</description>
+		</operator>
+		<operator name="operator unary+">
+			<return type="uint" />
+			<description>
+				Returns the value unchanged. Unary [code]-[/code] is deliberately absent, since an unsigned type holds no negative value.
+			</description>
+		</operator>
+		<operator name="operator |">
+			<return type="uint" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Performs the bitwise [code]OR[/code] of the two unsigned values.
+			</description>
+		</operator>
+		<operator name="operator ~">
+			<return type="uint" />
+			<description>
+				Inverts every bit of the value, at the width its type declares.
+			</description>
+		</operator>
+	</operators>
+</class>

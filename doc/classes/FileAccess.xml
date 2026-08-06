@@ -101,31 +101,31 @@
 			</description>
 		</method>
 		<method name="get_8" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the next 8 bits from the file as an integer. This advances the file cursor by 1 byte. See [method store_8] for details on what values can be stored and retrieved this way.
 			</description>
 		</method>
 		<method name="get_16" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the next 16 bits from the file as an integer. This advances the file cursor by 2 bytes. See [method store_16] for details on what values can be stored and retrieved this way.
 			</description>
 		</method>
 		<method name="get_32" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the next 32 bits from the file as an integer. This advances the file cursor by 4 bytes. See [method store_32] for details on what values can be stored and retrieved this way.
 			</description>
 		</method>
 		<method name="get_64" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the next 64 bits from the file as an integer. This advances the file cursor by 8 bytes. See [method store_64] for details on what values can be stored and retrieved this way.
 			</description>
 		</method>
 		<method name="get_access_time" qualifiers="static">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="file" type="String" />
 			<description>
 				Returns the last time the [param file] was accessed in Unix timestamp format, or [code]0[/code] on error. This Unix timestamp can be converted to another format using the [Time] singleton.
@@ -243,7 +243,7 @@
 			</description>
 		</method>
 		<method name="get_length" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the size of the file in bytes. For a pipe, returns the number of bytes available for reading from the pipe.
 			</description>
@@ -263,7 +263,7 @@
 			</description>
 		</method>
 		<method name="get_modified_time" qualifiers="static">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="file" type="String" />
 			<description>
 				Returns the last time the [param file] was modified in Unix timestamp format, or [code]0[/code] on error. This Unix timestamp can be converted to another format using the [Time] singleton.
@@ -295,7 +295,7 @@
 			</description>
 		</method>
 		<method name="get_position" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the file cursor's position in bytes from the beginning of the file. This is the file reading/writing cursor set by [method seek] or [method seek_end] and advanced by read/write operations.
 			</description>
@@ -415,7 +415,7 @@
 		</method>
 		<method name="seek">
 			<return type="void" />
-			<param index="0" name="position" type="int" />
+			<param index="0" name="position" type="uint" />
 			<description>
 				Sets the file cursor to the specified position in bytes, from the beginning of the file. This changes the value returned by [method get_position].
 			</description>
@@ -483,22 +483,22 @@
 		</method>
 		<method name="store_8">
 			<return type="bool" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Stores an integer as 8 bits in the file. This advances the file cursor by 1 byte. Returns [code]true[/code] if the operation is successful.
 				[b]Note:[/b] The [param value] should lie in the interval [code][0, 255][/code]. Any other value will overflow and wrap around.
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
-				To store a signed integer, use [method store_64], or convert it manually (see [method store_16] for an example).
+				To store a signed integer, convert it to its unsigned representation first (see [method store_16] for an example).
 			</description>
 		</method>
 		<method name="store_16">
 			<return type="bool" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Stores an integer as 16 bits in the file. This advances the file cursor by 2 bytes. Returns [code]true[/code] if the operation is successful.
 				[b]Note:[/b] The [param value] should lie in the interval [code][0, 2^16 - 1][/code]. Any other value will overflow and wrap around.
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
-				To store a signed integer, use [method store_64] or store a signed integer from the interval [code][-2^15, 2^15 - 1][/code] (i.e. keeping one bit for the signedness) and compute its sign manually when reading. For example:
+				To store a signed integer, convert the value to its 16-bit unsigned representation before storing it and compute its sign manually when reading. For example:
 				[codeblocks]
 				[foundry_script]
 				const MAX_15B = 1 &lt;&lt; 15
@@ -509,9 +509,9 @@
 
 				func _ready():
 					var f = FileAccess.open("user://file.dat", FileAccess.WRITE_READ)
-					f.store_16(-42) # This wraps around and stores 65494 (2^16 - 42).
-					f.store_16(121) # In bounds, will store 121.
-					f.seek(0) # Go back to start to read the stored value.
+					f.store_16(65494U) # The 16-bit unsigned representation of -42 (2^16 - 42).
+					f.store_16(121U) # In bounds, will store 121.
+					f.seek(0U) # Go back to start to read the stored value.
 					var read1 = f.get_16() # 65494
 					var read2 = f.get_16() # 121
 					var converted1 = unsigned16_to_signed(read1) # -42
@@ -535,20 +535,20 @@
 		</method>
 		<method name="store_32">
 			<return type="bool" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Stores an integer as 32 bits in the file. This advances the file cursor by 4 bytes. Returns [code]true[/code] if the operation is successful.
 				[b]Note:[/b] The [param value] should lie in the interval [code][0, 2^32 - 1][/code]. Any other value will overflow and wrap around.
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
-				To store a signed integer, use [method store_64], or convert it manually (see [method store_16] for an example).
+				To store a signed integer, convert it to its unsigned representation first (see [method store_16] for an example).
 			</description>
 		</method>
 		<method name="store_64">
 			<return type="bool" />
-			<param index="0" name="value" type="int" />
+			<param index="0" name="value" type="uint" />
 			<description>
 				Stores an integer as 64 bits in the file. This advances the file cursor by 8 bytes. Returns [code]true[/code] if the operation is successful.
-				[b]Note:[/b] The [param value] must lie in the interval [code][-2^63, 2^63 - 1][/code] (i.e. be a valid [int] value).
+				[b]Note:[/b] The [param value] covers the whole interval [code][0, 2^64 - 1][/code]. To store a signed integer, convert it to its 64-bit unsigned representation first and compute its sign manually when reading.
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
 			</description>
 		</method>

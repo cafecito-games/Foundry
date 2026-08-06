@@ -18,7 +18,7 @@
 			</description>
 		</method>
 		<method name="get_capabilities" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns a combination of [enum Capabilities] flags providing information about the capabilities of this interface.
 			</description>
@@ -37,7 +37,7 @@
 		</method>
 		<method name="get_projection_for_view">
 			<return type="Projection" />
-			<param index="0" name="view" type="int" />
+			<param index="0" name="view" type="uint" />
 			<param index="1" name="aspect" type="float" />
 			<param index="2" name="near" type="float" />
 			<param index="3" name="far" type="float" />
@@ -72,7 +72,7 @@
 		</method>
 		<method name="get_transform_for_view">
 			<return type="Transform3D" />
-			<param index="0" name="view" type="int" />
+			<param index="0" name="view" type="uint" />
 			<param index="1" name="cam_transform" type="Transform3D" />
 			<description>
 				Returns the transform for a view/eye.
@@ -81,7 +81,7 @@
 			</description>
 		</method>
 		<method name="get_view_count">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the number of views that need to be rendered for this device. 1 for Monoscopic, 2 for Stereoscopic.
 			</description>

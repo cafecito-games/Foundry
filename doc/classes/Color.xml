@@ -197,7 +197,7 @@
 		</method>
 		<method name="from_rgbe9995" qualifiers="static">
 			<return type="Color" />
-			<param index="0" name="rgbe" type="int" />
+			<param index="0" name="rgbe" type="uint" />
 			<description>
 				Decodes a [Color] from an RGBE9995 format integer. See [constant Image.FORMAT_RGBE9995].
 			</description>
@@ -220,15 +220,15 @@
 		</method>
 		<method name="hex" qualifiers="static" keywords="from_rgba32">
 			<return type="Color" />
-			<param index="0" name="hex" type="int" />
+			<param index="0" name="hex" type="uint" />
 			<description>
 				Returns the [Color] associated with the provided [param hex] integer in 32-bit RGBA format (8 bits per channel). This method is the inverse of [method to_rgba32].
-				In FoundryScript and C#, the [int] is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRGGBBAA"[/code]).
+				In FoundryScript and C#, the value is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRGGBBAA"[/code]). In FoundryScript, suffix the literal with [code]U[/code] so it is unsigned, as the parameter is.
 				[codeblocks]
 				[foundry_script]
-				var red = Color.hex(0xff0000ff)
-				var dark_cyan = Color.hex(0x008b8bff)
-				var my_color = Color.hex(0xbbefd2a4)
+				var red = Color.hex(0xff0000ffU)
+				var dark_cyan = Color.hex(0x008b8bffU)
+				var my_color = Color.hex(0xbbefd2a4U)
 				[/foundry_script]
 				[csharp]
 				var red = new Color(0xff0000ff);
@@ -241,10 +241,10 @@
 		</method>
 		<method name="hex64" qualifiers="static" keywords="from_rgba64">
 			<return type="Color" />
-			<param index="0" name="hex" type="int" />
+			<param index="0" name="hex" type="uint" />
 			<description>
 				Returns the [Color] associated with the provided [param hex] integer in 64-bit RGBA format (16 bits per channel). This method is the inverse of [method to_rgba64].
-				In FoundryScript and C#, the [int] is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRRRGGGGBBBBAAAA"[/code]).
+				In FoundryScript and C#, the value is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRRRGGGGBBBBAAAA"[/code]). In FoundryScript, suffix the literal with [code]UL[/code] so it is unsigned, as the parameter is.
 			</description>
 		</method>
 		<method name="html" qualifiers="static">
@@ -377,7 +377,7 @@
 			</description>
 		</method>
 		<method name="to_abgr32" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the color converted to a 32-bit integer in ABGR format (each component is 8 bits). ABGR is the reversed version of the default RGBA format.
 				[codeblocks]
@@ -393,23 +393,23 @@
 			</description>
 		</method>
 		<method name="to_abgr64" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the color converted to a 64-bit integer in ABGR format (each component is 16 bits). ABGR is the reversed version of the default RGBA format.
 				[codeblocks]
 				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
-				print(color.to_abgr64()) # Prints -225178692812801
+				print(color.to_abgr64()) # Prints 18446518895016738815
 				[/foundry_script]
 				[csharp]
 				var color = new Color(1.0f, 0.5f, 0.2f);
-				GD.Print(color.ToAbgr64()); // Prints -225178692812801
+				GD.Print(color.ToAbgr64()); // Prints 18446518895016738815
 				[/csharp]
 				[/codeblocks]
 			</description>
 		</method>
 		<method name="to_argb32" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the color converted to a 32-bit integer in ARGB format (each component is 8 bits). ARGB is more compatible with DirectX.
 				[codeblocks]
@@ -425,17 +425,17 @@
 			</description>
 		</method>
 		<method name="to_argb64" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the color converted to a 64-bit integer in ARGB format (each component is 16 bits). ARGB is more compatible with DirectX.
 				[codeblocks]
 				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
-				print(color.to_argb64()) # Prints -2147470541
+				print(color.to_argb64()) # Prints 18446744071562081075
 				[/foundry_script]
 				[csharp]
 				var color = new Color(1.0f, 0.5f, 0.2f);
-				GD.Print(color.ToArgb64()); // Prints -2147470541
+				GD.Print(color.ToArgb64()); // Prints 18446744071562081075
 				[/csharp]
 				[/codeblocks]
 			</description>
@@ -461,7 +461,7 @@
 			</description>
 		</method>
 		<method name="to_rgba32" qualifiers="const" keywords="to_hex">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the color converted to a 32-bit integer in RGBA format (each component is 8 bits). RGBA is Godot's default format. This method is the inverse of [method hex].
 				[codeblocks]
@@ -477,17 +477,17 @@
 			</description>
 		</method>
 		<method name="to_rgba64" qualifiers="const" keywords="to_hex64">
-			<return type="int" />
+			<return type="uint" />
 			<description>
 				Returns the color converted to a 64-bit integer in RGBA format (each component is 16 bits). RGBA is Godot's default format. This method is the inverse of [method hex64].
 				[codeblocks]
 				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
-				print(color.to_rgba64()) # Prints -140736629309441
+				print(color.to_rgba64()) # Prints 18446603337080242175
 				[/foundry_script]
 				[csharp]
 				var color = new Color(1, 0.5f, 0.2f);
-				GD.Print(color.ToRgba64()); // Prints -140736629309441
+				GD.Print(color.ToRgba64()); // Prints 18446603337080242175
 				[/csharp]
 				[/codeblocks]
 			</description>

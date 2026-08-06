@@ -118,7 +118,7 @@
 			</description>
 		</method>
 		<method name="get_surface_format" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="surface_idx" type="int" />
 			<description>
 				Returns the format of the surface that the mesh holds.

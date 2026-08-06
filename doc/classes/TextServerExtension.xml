@@ -1116,7 +1116,7 @@
 		</method>
 		<method name="_is_valid_letter" qualifiers="virtual const">
 			<return type="bool" />
-			<param index="0" name="unicode" type="int" />
+			<param index="0" name="unicode" type="uint" />
 			<description>
 			</description>
 		</method>

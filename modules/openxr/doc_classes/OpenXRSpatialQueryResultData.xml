@@ -16,7 +16,7 @@
 			</description>
 		</method>
 		<method name="get_entity_id" qualifiers="const">
-			<return type="int" />
+			<return type="uint" />
 			<param index="0" name="index" type="int" />
 			<description>
 				Returns the entity id ([code]XrSpatialEntityIdEXT[/code]) for the entity at this [param index].
