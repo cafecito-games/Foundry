@@ -35,6 +35,8 @@
 #include "../fs_compiler.h"
 #include "../fs_parser.h"
 
+#include "core/error/error_macros.h"
+
 #include "tests/test_macros.h"
 
 // Runtime coverage for the checked numeric opcodes. The value tables themselves live in the script
@@ -95,6 +97,28 @@ static void call_expecting_runtime_error(Object *p_object, const StringName &p_m
 	ERR_PRINT_ON;
 	CHECK(error.error == Callable::CallError::CALL_OK);
 }
+
+// Captures every engine error raised during a call so a runtime error can be asserted on by the
+// range it names rather than by the mere fact that the call failed.
+struct FlowNarrowedWidthErrorRecorder {
+	FlowNarrowedWidthErrorRecorder() {
+		handler.errfunc = _record;
+		handler.userdata = this;
+		add_error_handler(&handler);
+	}
+
+	~FlowNarrowedWidthErrorRecorder() {
+		remove_error_handler(&handler);
+	}
+
+	static void _record(void *p_self, const char *p_function, const char *p_file, int p_line, const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
+		FlowNarrowedWidthErrorRecorder *self = static_cast<FlowNarrowedWidthErrorRecorder *>(p_self);
+		self->messages += String::utf8(p_explanation != nullptr && p_explanation[0] != '\0' ? p_explanation : p_error) + "\n";
+	}
+
+	ErrorHandlerList handler;
+	String messages;
+};
 
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A failed compound assignment leaves its destination alone") {
 	ScopedCheckedNumericLanguage language;
@@ -235,8 +259,8 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Nullable integer arithmetic 
 
 // A nullable slot narrowed by a null guard keeps its declared width, so the addition below is checked
 // at `uint` and not at the wide carrier the value travels in. Narrowing a `Variant` through a type
-// test instead reaches the operator on the dynamic path, which is pinned by the script fixture
-// `runtime/features/fixed_width_integer_flow_narrowed_type_test.fs`.
+// test is checked at that same narrowed width, which is pinned by the script fixture
+// `runtime/errors/fixed_width_integer_flow_narrowed_type_test.fs`.
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A null-guarded nullable keeps its declared width") {
 	ScopedCheckedNumericLanguage language;
 
@@ -285,6 +309,71 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Dynamic shifts require match
 	const Variant matching_result = object->callp(SNAME("shift"), matching_arguments, 2, error);
 	REQUIRE(error.error == Callable::CallError::CALL_OK);
 	CHECK(matching_result == Variant(uint64_t(2)));
+}
+
+// A value narrowed by a type test presents its narrowed width to every checked-op shape, not just a
+// plain binary addition: the unary and compound-assignment paths read the same overlaid address type.
+// `is int` is excluded because the int carve-out (#1684) declares no width yet, so it still runs the
+// checked op at the carrier's widest range, exactly as it did before this fix.
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A flow-narrowed operand is checked at its narrowed width") {
+	ScopedCheckedNumericLanguage language;
+
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func binary_uint(value):\n"
+			"\tif value is uint:\n"
+			"\t\treturn value + 4294967295U\n"
+			"\treturn null\n"
+			"\n"
+			"func unary_long(value):\n"
+			"\tif value is long:\n"
+			"\t\treturn -value\n"
+			"\treturn null\n"
+			"\n"
+			"func compound_ulong(value):\n"
+			"\tif value is ulong:\n"
+			"\t\tvalue += 18446744073709551615UL\n"
+			"\t\treturn value\n"
+			"\treturn null\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	{
+		FlowNarrowedWidthErrorRecorder recorder;
+		const Variant argument = uint64_t(2);
+		const Variant *arguments[] = { &argument };
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		object->callp(SNAME("binary_uint"), arguments, 1, error);
+		ERR_PRINT_ON;
+		REQUIRE(error.error == Callable::CallError::CALL_OK);
+		CHECK(recorder.messages.contains("overflows \"uint\""));
+	}
+
+	{
+		FlowNarrowedWidthErrorRecorder recorder;
+		const Variant argument = int64_t(INT64_MIN);
+		const Variant *arguments[] = { &argument };
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		object->callp(SNAME("unary_long"), arguments, 1, error);
+		ERR_PRINT_ON;
+		REQUIRE(error.error == Callable::CallError::CALL_OK);
+		CHECK(recorder.messages.contains("overflows \"long\""));
+	}
+
+	{
+		FlowNarrowedWidthErrorRecorder recorder;
+		const Variant argument = uint64_t(1);
+		const Variant *arguments[] = { &argument };
+		Callable::CallError error;
+		ERR_PRINT_OFF;
+		object->callp(SNAME("compound_ulong"), arguments, 1, error);
+		ERR_PRINT_ON;
+		REQUIRE(error.error == Callable::CallError::CALL_OK);
+		CHECK(recorder.messages.contains("overflows \"ulong\""));
+	}
 }
 
 } // namespace FSTests
