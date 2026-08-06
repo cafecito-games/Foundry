@@ -253,6 +253,39 @@ TEST_CASE("[SceneTree][Editor] Exact integer editor rejects invalid, negative-un
 	memdelete(unsigned_editor);
 }
 
+TEST_CASE("[SceneTree][Editor] Exact integer editor does not emit a redundant change when the committed value is unchanged") {
+	ensure_fixture_registered();
+	Ref<ExactIntegerPropertyFixtureObject> object = memnew(ExactIntegerPropertyFixtureObject);
+	object->set_signed_value(42);
+
+	EditorPropertyInteger *editor = memnew(EditorPropertyInteger);
+	editor->setup(EditorPropertyRangeHint());
+	editor->set_object_and_property(object.ptr(), "signed_value");
+	editor->update_property();
+
+	PropertyChangeCapture capture;
+	editor->connect("property_changed", callable_mp(&capture, &PropertyChangeCapture::on_property_changed));
+
+	// Re-submitting the already-committed value (e.g. clicking into the field and away again, or
+	// pressing enter without editing) must not emit a property change or trigger a spurious undo step.
+	EditorPropertyIntegerTestAccess::submit_text(editor, "42");
+	CHECK(capture.count == 0);
+	CHECK(EditorPropertyIntegerTestAccess::get_value_edit(editor)->get_text() == "42");
+
+	// A non-canonical spelling of the same value (leading zeros) is still a no-op for the property,
+	// but the field is reformatted back to the canonical form.
+	EditorPropertyIntegerTestAccess::submit_text(editor, "042");
+	CHECK(capture.count == 0);
+	CHECK(EditorPropertyIntegerTestAccess::get_value_edit(editor)->get_text() == "42");
+
+	// A genuinely different value still emits exactly once.
+	EditorPropertyIntegerTestAccess::submit_text(editor, "43");
+	CHECK(capture.count == 1);
+	CHECK(int64_t(capture.value) == 43);
+
+	memdelete(editor);
+}
+
 TEST_CASE("[SceneTree][Editor] Integer range hint bounds and step parse exactly without a double round-trip") {
 	EditorProperty *editor = EditorInspectorDefaultPlugin::get_editor_for_property(
 			nullptr, Variant::UINT, "unsigned_value", PROPERTY_HINT_RANGE, "0,18446744073709551615,1", PROPERTY_USAGE_DEFAULT, false);

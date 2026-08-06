@@ -1689,13 +1689,23 @@ void EditorPropertyInteger::_try_commit(const String &p_text) {
 	if (is_unsigned) {
 		uint64_t parsed = 0;
 		if (_parse_exact_unsigned_int64(p_text, parsed) && parsed >= unsigned_min && parsed <= unsigned_max) {
-			emit_changed(get_edited_property(), Variant(parsed));
+			if (parsed != unsigned_value) {
+				emit_changed(get_edited_property(), Variant(parsed));
+			} else {
+				// Same value, possibly in a non-canonical form (leading zeros, stray whitespace):
+				// reformat the field without emitting a redundant property change.
+				update_property();
+			}
 			return;
 		}
 	} else {
 		int64_t parsed = 0;
 		if (_parse_exact_signed_int64(p_text, parsed) && parsed >= signed_min && parsed <= signed_max) {
-			emit_changed(get_edited_property(), Variant(parsed));
+			if (parsed != signed_value) {
+				emit_changed(get_edited_property(), Variant(parsed));
+			} else {
+				update_property();
+			}
 			return;
 		}
 	}
