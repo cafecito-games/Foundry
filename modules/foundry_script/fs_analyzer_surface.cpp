@@ -1395,6 +1395,10 @@ bool FSAnalyzer::specialize_applied_trait_type(FSParser::ClassNode *p_owner, con
 	if (p_owner->resolving_trait_uses || p_owner->failed_trait_uses) {
 		return false;
 	}
+	// The surface phase normally resolves every `uses` clause before any member type is queried, so
+	// this is a fallback for a dependency class raised lazily. It can report a genuine trait-use error
+	// from inside what is otherwise a read-only type query; the result is memoized on the class, so a
+	// later query short-circuits instead of diagnosing twice.
 	if (!p_owner->resolved_trait_uses && resolve_trait_uses(p_owner) != OK) {
 		return false;
 	}
