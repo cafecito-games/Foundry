@@ -42,17 +42,19 @@ static bool is_integer_carrier(Variant::Type p_type) {
 }
 
 struct AccessorCarriers {
-	// `Variant::NIL` when the corresponding accessor is missing or exchanges a non-integer value.
+	// The carrier each accessor exchanges, or `Variant::NIL` when that accessor is not bound. A bound
+	// accessor that exchanges something other than an integer keeps its own non-integer carrier, so a
+	// half-integer property is reported rather than silently skipped.
 	Variant::Type getter = Variant::NIL;
 	Variant::Type setter = Variant::NIL;
 };
 
-static AccessorCarriers integer_accessor_carriers(const StringName &p_class, const StringName &p_property) {
+static AccessorCarriers accessor_carriers(const StringName &p_class, const StringName &p_property) {
 	AccessorCarriers result;
 
 	const StringName getter_name = ClassDB::get_property_getter(p_class, p_property);
 	MethodBind *getter = getter_name == StringName() ? nullptr : ClassDB::get_method(p_class, getter_name);
-	if (getter != nullptr && is_integer_carrier(getter->get_return_info().type)) {
+	if (getter != nullptr) {
 		result.getter = getter->get_return_info().type;
 	}
 
@@ -60,13 +62,17 @@ static AccessorCarriers integer_accessor_carriers(const StringName &p_class, con
 	MethodBind *setter = setter_name == StringName() ? nullptr : ClassDB::get_method(p_class, setter_name);
 	if (setter != nullptr && setter->get_argument_count() >= 1) {
 		// An indexed property's setter takes the index first, so the value is always its last argument.
-		const Variant::Type carrier = setter->get_argument_info(setter->get_argument_count() - 1).type;
-		if (is_integer_carrier(carrier)) {
-			result.setter = carrier;
-		}
+		result.setter = setter->get_argument_info(setter->get_argument_count() - 1).type;
 	}
 
 	return result;
+}
+
+// Whether a property's carriers are all integers, so that the two invariants below have something
+// to compare. A property that exchanges no integer anywhere is outside their scope.
+static bool involves_integer_carrier(const PropertyInfo &p_property, const AccessorCarriers &p_carriers) {
+	return is_integer_carrier(p_property.type) || is_integer_carrier(p_carriers.getter) ||
+			is_integer_carrier(p_carriers.setter);
 }
 
 static bool is_layout_only(const PropertyInfo &p_property) {
@@ -88,16 +94,17 @@ TEST_CASE("[PropertyCarrier] Registered carrier agrees with the accessor carrier
 			if (is_layout_only(property) || !is_integer_carrier(property.type)) {
 				continue;
 			}
-			const AccessorCarriers carriers = integer_accessor_carriers(class_name, property.name);
-			if (carriers.getter == Variant::NIL || carriers.getter != carriers.setter) {
-				continue;
+			const AccessorCarriers carriers = accessor_carriers(class_name, property.name);
+			if (carriers.getter != Variant::NIL && carriers.getter != property.type) {
+				mismatches.push_back(vformat("%s.%s registered as %s but its getter returns %s", class_name,
+						property.name, Variant::get_type_name(property.type),
+						Variant::get_type_name(carriers.getter)));
 			}
-			if (carriers.getter == property.type) {
-				continue;
+			if (carriers.setter != Variant::NIL && carriers.setter != property.type) {
+				mismatches.push_back(vformat("%s.%s registered as %s but its setter takes %s", class_name,
+						property.name, Variant::get_type_name(property.type),
+						Variant::get_type_name(carriers.setter)));
 			}
-			mismatches.push_back(vformat("%s.%s registered as %s but its accessors exchange %s",
-					class_name, property.name, Variant::get_type_name(property.type),
-					Variant::get_type_name(carriers.getter)));
 		}
 	}
 
@@ -105,8 +112,10 @@ TEST_CASE("[PropertyCarrier] Registered carrier agrees with the accessor carrier
 	CHECK(mismatches.is_empty());
 }
 
-// A property whose getter and setter disagree on the integer carrier cannot round-trip its own
-// value, and leaves the analyzer with no width to pin, so no registration could reconcile the two.
+// A property whose accessors disagree about integers cannot round-trip its own value, and leaves
+// the analyzer with no width to pin, so no registration could reconcile the two. This also closes
+// the blind spot in the invariant above, which compares each accessor against the registration and
+// would accept two accessors that both contradict each other by matching it in turn.
 TEST_CASE("[PropertyCarrier] Property accessors agree with each other") {
 	LocalVector<StringName> classes;
 	ClassDB::get_class_list(classes);
@@ -119,7 +128,10 @@ TEST_CASE("[PropertyCarrier] Property accessors agree with each other") {
 			if (is_layout_only(property)) {
 				continue;
 			}
-			const AccessorCarriers carriers = integer_accessor_carriers(class_name, property.name);
+			const AccessorCarriers carriers = accessor_carriers(class_name, property.name);
+			if (!involves_integer_carrier(property, carriers)) {
+				continue;
+			}
 			if (carriers.getter == Variant::NIL || carriers.setter == Variant::NIL) {
 				continue;
 			}
