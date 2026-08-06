@@ -2419,6 +2419,14 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 					// Perform operation.
 					FSCodeGenerator::Address op_result = codegen.add_temporary(_gdtype_from_datatype(assignment->get_datatype(), codegen.script));
 					FSCodeGenerator::Address og_value = _parse_expression(codegen, r_error, assignment->assignee);
+					// The assignee's own address always carries its declaration's type, never a
+					// narrower one a prior type test may have proven: the analyzer typed the
+					// destination against the declaration on purpose, since the narrowing does not
+					// survive this assignment. The analyzer's resolved type for the whole compound
+					// expression, by contrast, was computed from whatever narrower width the implicit
+					// old-value read is entitled to, so overlaying it here reaches the checked-op
+					// selection below with that width instead of the declaration's.
+					og_value = _apply_flow_narrowed_integer_width(og_value, assignment->get_datatype(), codegen.script);
 					gen->write_binary_operator(op_result, assignment->variant_op, og_value, assigned_value);
 					to_assign = op_result;
 

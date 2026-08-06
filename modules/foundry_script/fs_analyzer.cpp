@@ -5899,8 +5899,54 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 	}
 #endif // DEBUG_ENABLED
 
-	flow_finality.clear_flow_narrowing(p_assignment->assignee);
+	// A compound assignment (`value += x`) implicitly reads the assignee's current value before
+	// writing the result back, so that read must be checked at whatever width a prior type test
+	// narrowed it to (`is uint`), not the declaration's. The assignee's flow-narrowing key (the
+	// underlying variable/parameter) is not known until the assignee is typed, so type it first with
+	// the narrowing still active. `reduce_expression()` overlays the full narrowed type onto the
+	// assignee node itself when it finds one, which is exactly what a plain read wants but is wrong
+	// for both the destination-compatibility checks below and for code generation's write address
+	// (built from this same node): restore the node's declared type immediately below so only the
+	// captured `compound_assignment_narrowed_read_type` — used solely to type the compound op's old
+	// value — ever sees the narrowing. The narrowing itself does not survive past this assignment
+	// either way, since the new value may not satisfy whatever condition produced it.
 	reduce_expression(p_assignment->assignee);
+
+	FSParser::DataType compound_assignment_narrowed_read_type;
+	bool has_compound_assignment_narrowed_read_type = false;
+	if (p_assignment->assignee->type == FSParser::Node::IDENTIFIER) {
+		FSParser::IdentifierNode *assignee_identifier = static_cast<FSParser::IdentifierNode *>(p_assignment->assignee);
+		const FSParser::Node *flow_key = flow_finality.flow_narrowing_key_from_identifier(assignee_identifier);
+		if (const FSParser::DataType *narrowed_type = flow_finality.lookup_flow_narrowed_type(flow_key)) {
+			FSParser::DataType declared_type;
+			bool found_declared_type = true;
+			switch (assignee_identifier->source) {
+				case FSParser::IdentifierNode::FUNCTION_PARAMETER:
+					declared_type = assignee_identifier->parameter_source->get_datatype();
+					break;
+				case FSParser::IdentifierNode::LOCAL_VARIABLE:
+				case FSParser::IdentifierNode::STATIC_VARIABLE:
+					declared_type = assignee_identifier->variable_source->get_datatype();
+					break;
+				case FSParser::IdentifierNode::LOCAL_ITERATOR:
+				case FSParser::IdentifierNode::LOCAL_BIND:
+					declared_type = assignee_identifier->bind_source->get_datatype();
+					break;
+				default:
+					found_declared_type = false;
+					break;
+			}
+			if (found_declared_type) {
+				if (p_assignment->operation != FSParser::AssignmentNode::OP_NONE) {
+					compound_assignment_narrowed_read_type = *narrowed_type;
+					has_compound_assignment_narrowed_read_type = true;
+				}
+				assignee_identifier->set_datatype(declared_type);
+			}
+		}
+	}
+
+	flow_finality.clear_flow_narrowing(p_assignment->assignee);
 
 #ifdef DEBUG_ENABLED
 	{
@@ -6045,7 +6091,8 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 	bool downgrades_assigned = false;
 	FSParser::DataType op_type = assigned_value_type;
 	if (p_assignment->operation != FSParser::AssignmentNode::OP_NONE && !op_type.is_variant()) {
-		op_type = get_operation_type(p_assignment->variant_op, assignee_type, assigned_value_type, compatible, p_assignment->assigned_value);
+		const FSParser::DataType &compound_operand_type = has_compound_assignment_narrowed_read_type ? compound_assignment_narrowed_read_type : assignee_type;
+		op_type = get_operation_type(p_assignment->variant_op, compound_operand_type, assigned_value_type, compatible, p_assignment->assigned_value);
 
 		if (assignee_is_variant) {
 			// variant assignee
