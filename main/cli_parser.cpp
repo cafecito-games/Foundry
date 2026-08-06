@@ -1422,8 +1422,8 @@ static bool is_legacy_workflow_flag(const String &p_arg, String &r_replacement) 
 		r_replacement = "`foundry diagnostics render-device-create`";
 		return true;
 	}
-	if (p_arg == "--lsp-port") {
-		r_replacement = "`foundry tooling serve --project <dir> --lsp-port <port>`";
+	if (p_arg == "--lsp-port" || p_arg == "--dap-port") {
+		r_replacement = "`foundry tooling serve --project <dir> --lsp-port <port> --dap-port <port>`";
 		return true;
 	}
 	return false;

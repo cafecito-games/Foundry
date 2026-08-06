@@ -47,7 +47,6 @@ private:
 	void _notification(int p_what);
 
 public:
-	static int port_override;
 	DebugAdapterServer();
 	~DebugAdapterServer();
 	void start();

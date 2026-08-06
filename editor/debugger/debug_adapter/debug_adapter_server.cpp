@@ -35,8 +35,6 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/tooling/editor_tooling_host.h"
 
-int DebugAdapterServer::port_override = -1;
-
 DebugAdapterServer::DebugAdapterServer() {
 	// TODO: Move to editor_settings.cpp
 	_EDITOR_DEF("network/debug_adapter/remote_port", remote_port);
@@ -83,7 +81,7 @@ void DebugAdapterServer::_notification(int p_what) {
 			}
 			protocol._request_timeout = EDITOR_GET("network/debug_adapter/request_timeout");
 			protocol._sync_breakpoints = EDITOR_GET("network/debug_adapter/sync_breakpoints");
-			int port = (DebugAdapterServer::port_override > -1) ? DebugAdapterServer::port_override : (int)_EDITOR_GET("network/debug_adapter/remote_port");
+			int port = (int)_EDITOR_GET("network/debug_adapter/remote_port");
 			if (port != remote_port) {
 				stop();
 				start();
@@ -96,7 +94,7 @@ void DebugAdapterServer::start() {
 	const bool tooling_host = EditorToolingHost::is_enabled();
 	remote_port = tooling_host
 			? EditorToolingHost::get_requested_port(EditorToolingHost::SERVICE_DAP)
-			: ((DebugAdapterServer::port_override > -1) ? DebugAdapterServer::port_override : (int)_EDITOR_GET("network/debug_adapter/remote_port"));
+			: (int)_EDITOR_GET("network/debug_adapter/remote_port");
 
 	const Error err = protocol.start(remote_port, IPAddress("127.0.0.1"));
 	if (err != OK) {
