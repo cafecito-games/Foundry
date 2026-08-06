@@ -9003,7 +9003,15 @@ bool FSAnalyzer::validate_trait_method_info_signature(FSParser::ClassNode *p_tra
 	if (p_required_function->return_type != nullptr) {
 		const FSParser::DataType required_return_type = _substitute_type_parameters_and_self(
 				p_required_function->get_datatype(), p_trait_substitution, implementation_self_type);
-		FSParser::DataType implementation_return_type = type_from_property(p_implementation.method_info.return_val);
+		// `get_argument_meta(-1)` recovers the declared width whenever the implementation's `MethodInfo`
+		// actually carries it (a class-bound native method or a builtin method); a script-authored
+		// implementation carries none, so this is `METADATA_NONE` and the property decodes to the wide
+		// carrier, flagged as erasure-derived. `as_container_slot_type()` then turns that erasure flag
+		// into an unconstrained width rather than a fabricated one, so a genuinely matching declared
+		// `int` on both sides is not rejected just because this boundary could not see its width.
+		const FSParser::DataType implementation_return_type = FSParser::DataType::as_container_slot_type(
+				type_from_property(p_implementation.method_info.return_val, false, false,
+						(FoundryTypeInfo::Metadata)p_implementation.method_info.get_argument_meta(-1)));
 		if (implementation_return_type.is_variant()) {
 			valid = valid && required_return_type.is_variant();
 		} else if (required_return_type.is_set() && implementation_return_type.is_set()) {
@@ -9021,8 +9029,10 @@ bool FSAnalyzer::validate_trait_method_info_signature(FSParser::ClassNode *p_tra
 		for (int i = 0; i < p_required_function->parameters.size() && i < p_implementation.method_info.arguments.size(); i++) {
 			const FSParser::DataType required_parameter_type = _substitute_type_parameters_and_self(
 					p_required_function->parameters[i]->datatype, p_trait_substitution, implementation_self_type);
-			const FSParser::DataType implementation_parameter_type = type_from_property(
-					p_implementation.method_info.arguments[i], true);
+			// Same recover-if-known, wildcard-if-erased treatment as the return type above.
+			const FSParser::DataType implementation_parameter_type = FSParser::DataType::as_container_slot_type(
+					type_from_property(p_implementation.method_info.arguments[i], true, false,
+							(FoundryTypeInfo::Metadata)p_implementation.method_info.get_argument_meta(i)));
 			if (required_parameter_type.is_variant() && required_parameter_type.is_hard_type()) {
 				valid = valid && implementation_parameter_type.is_variant();
 			} else if (implementation_parameter_type.is_set() && required_parameter_type.is_set()) {
