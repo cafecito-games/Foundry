@@ -37,6 +37,7 @@
 #include "fs_script_test_guard.h"
 #include "fs_static_self_callable.h"
 
+#include "core/object/class_handle.h"
 #include "core/object/script_function_state.h"
 #include "core/os/os.h"
 #include "core/profiling/profiling.h"
@@ -182,6 +183,128 @@ static bool _type_handle_test_matches(const FSDataType &p_expected_type, const V
 		}
 	}
 	return p_expected_type.is_type(p_value);
+}
+
+// What a runtime value knows about its own specialization. `script` is the value's actual leaf script
+// and `type_arguments` are the arguments reified against THAT leaf's parameters, which is the form the
+// inheritance projection table consumes. Both value kinds a script `is`/`as` can see -- an instance and
+// a class handle -- reduce to this, so the relation below never has to know which one it was given.
+struct RuntimeSpecializationEvidence {
+	Ref<Script> script;
+	Vector<ContainerType> type_arguments;
+};
+
+// The evidence an object carries as a script instance. A raw `Crate.new()` reports its script with an
+// empty argument vector, which is an absence of evidence rather than a claim of anything.
+static RuntimeSpecializationEvidence _instance_specialization_evidence(Object *p_object) {
+	RuntimeSpecializationEvidence evidence;
+	if (p_object == nullptr) {
+		return evidence;
+	}
+	ScriptInstance *script_instance = p_object->get_script_instance();
+	if (script_instance == nullptr) {
+		return evidence;
+	}
+	evidence.script = script_instance->get_script();
+	script_instance->get_reified_type_arguments(evidence.type_arguments);
+	return evidence;
+}
+
+// The evidence a value carries as a class handle. A specialized handle reports the arguments it was
+// created with; a bare `Script` resource denotes the class it defines and is always unspecialized, so
+// it reports none.
+static RuntimeSpecializationEvidence _class_handle_specialization_evidence(Object *p_object) {
+	RuntimeSpecializationEvidence evidence;
+	if (ClassHandle *class_handle = Object::cast_to<ClassHandle>(p_object)) {
+		evidence.script = class_handle->get_represented_script();
+		class_handle->get_represented_type_arguments(evidence.type_arguments);
+	} else if (Script *script = Object::cast_to<Script>(p_object)) {
+		evidence.script = Ref<Script>(script);
+	}
+	return evidence;
+}
+
+// The one invariant specialization relation behind every script `is` and `as`, for instances and class
+// handles alike. The caller has already answered the nominal question; this answers only whether the
+// value's reified arguments are the target's, for the target's base.
+//
+// A specialized target demands positive evidence. The value's own arguments are projected onto the
+// tested base through the leaf's inheritance binding table, so a subclass that fixes or forwards a base
+// argument proves that base's specialization; every projected position must then be completely known
+// and invariantly equal to the target's argument, recursively. Anything short of that -- a raw
+// instance, a bare script handle, a partially resolved chain, a differing arity -- fails. This is
+// deliberately stricter than the gradual rule assignment uses, because a successful test narrows the
+// value to the specialization and the branch body then reads it at that type.
+static bool _specialization_matches(const Vector<ContainerType> &p_expected_arguments,
+		const Ref<Script> &p_expected_script, const RuntimeSpecializationEvidence &p_actual) {
+	if (p_expected_arguments.is_empty()) {
+		return true;
+	}
+	if (p_expected_script.is_null() || p_actual.script.is_null()) {
+		return false;
+	}
+
+	Vector<ProjectedContainerType> projected;
+	if (!p_actual.script->project_type_arguments_onto_base(p_expected_script, p_actual.type_arguments, projected)) {
+		// A leaf with no binding table entry for the base can still answer for itself: its own reified
+		// vector is already expressed against that base's parameters.
+		if (p_actual.script.ptr() != p_expected_script.ptr()) {
+			return false;
+		}
+		for (const ContainerType &argument : p_actual.type_arguments) {
+			projected.push_back(ProjectedContainerType::exact(argument));
+		}
+	}
+
+	if (projected.size() != p_expected_arguments.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_expected_arguments.size(); i++) {
+		// `PARTIAL` evidence leaves some subtree unproven, which a narrowing test cannot accept.
+		if (projected[i].state != ProjectedContainerType::EXACT) {
+			return false;
+		}
+		if (projected[i].conflicts_with_expected(p_expected_arguments[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// A script-typed `is`/`as` whose target is a class handle (`Type[Crate[int]]`). The nominal answer
+// comes from the descriptor layer with the arguments stripped, and the arguments then go through the
+// same relation an instance test uses, so the two runtime forms cannot disagree.
+static bool _script_type_handle_matches(const FSDataType &p_expected_type,
+		const Vector<ContainerType> &p_expected_arguments, const Variant &p_value) {
+	FSDataType nominal_type = p_expected_type;
+	nominal_type.type_arguments.clear();
+	if (!nominal_type.is_type(p_value)) {
+		return false;
+	}
+	if (p_expected_arguments.is_empty()) {
+		return true;
+	}
+	const Ref<Script> expected_script = p_expected_type.script_type_ref.is_valid()
+			? p_expected_type.script_type_ref
+			: Ref<Script>(p_expected_type.script_type);
+	return _specialization_matches(p_expected_arguments, expected_script,
+			_class_handle_specialization_evidence(p_value.get_validated_object()));
+}
+
+// The `is` form of the above: null and a freed handle are answered before any specialization work.
+static bool _script_type_handle_test_matches(const FSDataType &p_expected_type,
+		const Vector<ContainerType> &p_expected_arguments, const Variant &p_value, bool &r_was_freed) {
+	r_was_freed = false;
+	if (p_value.get_type() == Variant::NIL) {
+		return false;
+	}
+	if (p_value.get_type() == Variant::OBJECT) {
+		Object *object = p_value.get_validated_object_with_check(r_was_freed);
+		if (r_was_freed || object == nullptr) {
+			return false;
+		}
+	}
+	return _script_type_handle_matches(p_expected_type, p_expected_arguments, p_value);
 }
 
 static bool _is_container_type_descriptor(const Variant &p_type_info) {
@@ -441,8 +564,11 @@ static String _missing_static_self_error(const StringName &p_function_name) {
 	return "Type[" + FoundryScript::debug_get_script_name(Ref<Script>(p_base_type)) + "]";
 }
 
+// Resolves the type operand of a script-lowered type test or cast. `r_type_arguments` receives the
+// target's reified arguments, which only a descriptor operand can carry: the bare script constant an
+// unspecialized target lowers to describes a raw type and leaves the vector empty.
 static bool _script_type_from_type_info(const Variant &p_type_info, const FrameSelfBinding &p_frame_self,
-		Script *&r_script, FSDataType *r_type_handle = nullptr) {
+		Script *&r_script, FSDataType *r_type_handle = nullptr, Vector<ContainerType> *r_type_arguments = nullptr) {
 	if (_is_container_type_descriptor(p_type_info)) {
 		ContainerType type;
 		if (!_container_type_from_descriptor(p_type_info, p_frame_self, type)) {
@@ -450,6 +576,9 @@ static bool _script_type_from_type_info(const Variant &p_type_info, const FrameS
 		}
 		if (r_type_handle != nullptr) {
 			*r_type_handle = FSDataType::from_type_handle_container_type(type);
+		}
+		if (r_type_arguments != nullptr) {
+			*r_type_arguments = type.type_arguments;
 		}
 		r_script = type.script.ptr();
 		return true;
@@ -2046,13 +2175,14 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					bool was_freed = false;
 					{
 						FSDataType expected_handle_type;
+						Vector<ContainerType> expected_type_arguments;
 						[[maybe_unused]] Script *script_type = nullptr;
-						if (unlikely(!_script_type_from_type_info(*type, frame_self, script_type, &expected_handle_type))) {
+						if (unlikely(!_script_type_from_type_info(*type, frame_self, script_type, &expected_handle_type, &expected_type_arguments))) {
 							err_text = _missing_static_self_error(name);
 							OPCODE_BREAK;
 						}
 						GD_ERR_BREAK(!script_type);
-						result = _type_handle_test_matches(expected_handle_type, *value, was_freed);
+						result = _script_type_handle_test_matches(expected_handle_type, expected_type_arguments, *value, was_freed);
 					}
 					if (was_freed) {
 						err_text = "Left operand of 'is' is a previously freed instance.";
@@ -2060,7 +2190,8 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					}
 				} else {
 					Script *script_type = nullptr;
-					if (unlikely(!_script_type_from_type_info(*type, frame_self, script_type))) {
+					Vector<ContainerType> expected_type_arguments;
+					if (unlikely(!_script_type_from_type_info(*type, frame_self, script_type, nullptr, &expected_type_arguments))) {
 						err_text = _missing_static_self_error(name);
 						OPCODE_BREAK;
 					}
@@ -2103,6 +2234,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 								break;
 							}
 							script_ptr = script_ptr->get_base_script().ptr();
+						}
+						// A specialized target asks a second, invariant question about the arguments the
+						// instance was actually created with; a raw target asks only the nominal one above.
+						if (result && !expected_type_arguments.is_empty()) {
+							result = _specialization_matches(expected_type_arguments, Ref<Script>(script_type),
+									_instance_specialization_evidence(object));
 						}
 					}
 				}
@@ -3081,8 +3218,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(to_type, 2);
 
 				FSDataType expected_handle_type;
+				Vector<ContainerType> expected_type_arguments;
 				Script *base_type = nullptr;
-				if (unlikely(!_script_type_from_type_info(*to_type, frame_self, base_type, &expected_handle_type))) {
+				if (unlikely(!_script_type_from_type_info(*to_type, frame_self, base_type, &expected_handle_type, &expected_type_arguments))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}
@@ -3108,7 +3246,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				bool valid = false;
 
 				if (is_type_handle) {
-					valid = expected_handle_type.is_type(*src);
+					valid = _script_type_handle_matches(expected_handle_type, expected_type_arguments, *src);
 				} else if (is_trait_type) {
 					const StringName trait_name = fs_base_type->get_trait_type_name();
 					if (src->get_type() == Variant::OBJECT && src->operator Object *() != nullptr) {
@@ -3139,6 +3277,12 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 							}
 							src_type = src_type->get_base_script().ptr();
 						}
+					}
+					// A cast succeeds exactly when the matching `is` would, so a mismatched or unproven
+					// specialization yields null rather than relabelling the object.
+					if (valid && !expected_type_arguments.is_empty()) {
+						valid = _specialization_matches(expected_type_arguments, Ref<Script>(base_type),
+								_instance_specialization_evidence(src_obj));
 					}
 				}
 

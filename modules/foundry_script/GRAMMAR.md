@@ -988,6 +988,32 @@ the case tag, and `msg is Message` tests membership in the enum.
 Because the binds of an `assert` outlive the assertion, a bind-carrying `assert` condition is still
 evaluated in builds where assertions are stripped; only the failure check is removed.
 
+##### Generic type tests and casts
+
+Type arguments are reified and invariant, and `is`/`as` observe them. `as` succeeds exactly when the
+corresponding `is` holds: on success it yields the original value unchanged, and on failure it yields
+`null`. Both forms are shallow — they compare runtime type descriptors and never read members or walk
+container contents, so an empty `Crate[int]` and a full one answer alike.
+
+- A raw target asks only the nominal question. `Crate[int].new() is Crate` is true, and so is
+  `Crate.new() is Crate`.
+- A specialized target additionally requires runtime evidence: the value must be nominally a `Crate`,
+  and its effective arguments for that `Crate` must be known and equal to the target's, argument by
+  argument, recursively, in order. Arguments are invariant, so `Crate[int]` and `Crate[String]` are
+  unrelated in both directions.
+- Missing evidence fails rather than being accepted gradually. `Crate.new() is Crate[int]` is false,
+  and so is a raw `Crate` class handle against `Type[Crate[int]]`. An explicitly written `Variant`
+  argument is evidence for `Variant` and is not the same as an absent argument.
+- Inheritance projects the value's specialization onto the tested base through the declared bindings,
+  not by argument position. `class IntCrate extends Crate[int]` satisfies `Crate[int]`, and
+  `class Derived[U] extends Crate[U]` specialized as `Derived[int]` satisfies `Crate[int]`.
+- Instance tests (`value is Crate[int]`) and class-handle tests (`handle is Type[Crate[int]]`) apply
+  the same nominal and argument rules to their respective runtime values.
+- `Self` resolves to the frame's exact receiver before the rules above apply, at every nesting depth,
+  so a method reached through `Crate[int]` accepts a `Crate[int]` for `is Self` and rejects a
+  `Crate[String]` and a raw `Crate`.
+- `null` is never an instance or a class handle, so it fails every such test.
+
 #### `await`
 
 ```ebnf
