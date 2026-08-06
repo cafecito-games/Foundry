@@ -1160,6 +1160,43 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK(out.contains("\t\treturn 0\n"));
 	}
 
+	TEST_CASE("Override method returns an unsigned zero for unsigned return types") {
+		const String source =
+				"abstract class Base:\n"
+				"\tabstract func narrow() -> uint\n"
+				"\tabstract func wide() -> ulong\n"
+				"class Child extends Base:\n"
+				"\tvar marker := 0\n";
+
+		RefactorOverrideMethodsResult result = FSTests::override_method_candidates(source, 4, 1);
+		REQUIRE_MESSAGE(result.ok, result.error_message);
+		if (!result.ok) {
+			return;
+		}
+
+		const RefactorOverrideMethodCandidate *narrow = FSTests::find_override_candidate(result.candidates, "narrow");
+		REQUIRE(narrow != nullptr);
+		if (narrow == nullptr) {
+			return;
+		}
+		String narrow_out;
+		RefactorResult narrow_run = FSTests::run_override_method(source, 4, 1, narrow->id, narrow_out);
+		REQUIRE_MESSAGE(narrow_run.ok, narrow_run.error_message);
+		CHECK(narrow_out.contains("\tfunc narrow() -> uint:\n"));
+		CHECK(narrow_out.contains("\t\treturn 0U\n"));
+
+		const RefactorOverrideMethodCandidate *wide = FSTests::find_override_candidate(result.candidates, "wide");
+		REQUIRE(wide != nullptr);
+		if (wide == nullptr) {
+			return;
+		}
+		String wide_out;
+		RefactorResult wide_run = FSTests::run_override_method(source, 4, 1, wide->id, wide_out);
+		REQUIRE_MESSAGE(wide_run.ok, wide_run.error_message);
+		CHECK(wide_out.contains("\tfunc wide() -> ulong:\n"));
+		CHECK(wide_out.contains("\t\treturn 0UL\n"));
+	}
+
 	TEST_CASE("Override method includes abstract rest parameter methods") {
 		const String source =
 				"abstract class Base:\n"
