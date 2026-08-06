@@ -62,7 +62,7 @@ Ref<MultiplayerAPI> MultiplayerAPI::create_default_interface() {
 #define ENCODE_32 2 << 6
 #define ENCODE_64 3 << 6
 Error MultiplayerAPI::encode_and_compress_variant(const Variant &p_variant, uint8_t *r_buffer, int &r_len, bool p_allow_object_decoding) {
-	// Unreachable because `VARIANT_MAX` == 38 and `ENCODE_VARIANT_MASK` == 77
+	// Unreachable because `VARIANT_MAX` == 40 and `VARIANT_META_TYPE_MASK` == 63.
 	CRASH_COND(p_variant.get_type() > VARIANT_META_TYPE_MASK);
 
 	uint8_t *buf = r_buffer;
@@ -104,6 +104,48 @@ Error MultiplayerAPI::encode_and_compress_variant(const Variant &p_variant, uint
 				encode_mode = ENCODE_32;
 				if (buf) {
 					encode_uint32(val, buf);
+				}
+				r_len += 4;
+			} else {
+				// Use 64 bit
+				encode_mode = ENCODE_64;
+				if (buf) {
+					encode_uint64(val, buf);
+				}
+				r_len += 8;
+			}
+			// Store the meta
+			if (buf) {
+				buf -= 1;
+				buf[0] = encode_mode | p_variant.get_type();
+			}
+		} break;
+		case Variant::UINT: {
+			if (buf) {
+				// Reserve the first byte for the meta.
+				buf += 1;
+			}
+			r_len += 1;
+			uint64_t val = p_variant;
+			if (val <= (uint64_t)UINT8_MAX) {
+				// Use 8 bit
+				encode_mode = ENCODE_8;
+				if (buf) {
+					buf[0] = (uint8_t)val;
+				}
+				r_len += 1;
+			} else if (val <= (uint64_t)UINT16_MAX) {
+				// Use 16 bit
+				encode_mode = ENCODE_16;
+				if (buf) {
+					encode_uint16((uint16_t)val, buf);
+				}
+				r_len += 2;
+			} else if (val <= (uint64_t)UINT32_MAX) {
+				// Use 32 bit
+				encode_mode = ENCODE_32;
+				if (buf) {
+					encode_uint32((uint32_t)val, buf);
 				}
 				r_len += 4;
 			} else {
@@ -189,6 +231,42 @@ Error MultiplayerAPI::decode_and_decompress_variant(Variant &r_variant, const ui
 				ERR_FAIL_COND_V(len < 8, ERR_INVALID_DATA);
 				int64_t val = decode_uint64(buf);
 				r_variant = val;
+				if (r_len) {
+					(*r_len) += 8;
+				}
+			}
+		} break;
+		case Variant::UINT: {
+			buf += 1;
+			len -= 1;
+			if (r_len) {
+				*r_len = 1;
+			}
+			if (encode_mode == ENCODE_8) {
+				// 8 bits.
+				ERR_FAIL_COND_V(len < 1, ERR_INVALID_DATA);
+				r_variant = (uint64_t)buf[0];
+				if (r_len) {
+					(*r_len) += 1;
+				}
+			} else if (encode_mode == ENCODE_16) {
+				// 16 bits.
+				ERR_FAIL_COND_V(len < 2, ERR_INVALID_DATA);
+				r_variant = (uint64_t)decode_uint16(buf);
+				if (r_len) {
+					(*r_len) += 2;
+				}
+			} else if (encode_mode == ENCODE_32) {
+				// 32 bits.
+				ERR_FAIL_COND_V(len < 4, ERR_INVALID_DATA);
+				r_variant = (uint64_t)decode_uint32(buf);
+				if (r_len) {
+					(*r_len) += 4;
+				}
+			} else {
+				// 64 bits.
+				ERR_FAIL_COND_V(len < 8, ERR_INVALID_DATA);
+				r_variant = decode_uint64(buf);
 				if (r_len) {
 					(*r_len) += 8;
 				}

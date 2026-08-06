@@ -35,6 +35,7 @@
 #include "core/io/resource_uid.h"
 #include "core/variant/variant.h"
 #include "tests/test_macros.h"
+#include "tests/test_utils.h"
 
 class TestProjectSettingsInternalsAccessor {
 public:
@@ -48,6 +49,18 @@ public:
 
 	static bool &project_loaded() {
 		return ProjectSettings::get_singleton()->project_loaded;
+	}
+
+	static uint64_t &last_save_time() {
+		return ProjectSettings::get_singleton()->last_save_time;
+	}
+
+	static Error load_settings_text(const String &p_path) {
+		return ProjectSettings::get_singleton()->_load_settings_text(p_path);
+	}
+
+	static Error load_settings_binary(const String &p_path) {
+		return ProjectSettings::get_singleton()->_load_settings_binary(p_path);
 	}
 };
 
@@ -300,6 +313,92 @@ TEST_CASE("[ProjectSettings][Autoload] path-plus-UID values use a path fallback 
 
 	settings->set_setting(setting, Variant());
 	ResourceUID::get_singleton()->remove_id(uid);
+}
+
+// Saving and reloading project settings mutates global state: `save_custom()` refreshes the stored
+// feature list, and the loaders install every parsed key and refresh the last-save timestamp. This
+// guard removes the keys the round-trip introduces and restores the rest on every exit path,
+// including a partial parse that only installed some of them.
+class TestProjectSettingsRoundTripScope {
+	Vector<String> introduced_keys;
+	Variant saved_features;
+	uint64_t saved_last_save_time = 0;
+
+public:
+	explicit TestProjectSettingsRoundTripScope(const Vector<String> &p_introduced_keys) :
+			introduced_keys(p_introduced_keys) {
+		saved_features = ProjectSettings::get_singleton()->get_setting("application/config/features");
+		saved_last_save_time = TestProjectSettingsInternalsAccessor::last_save_time();
+	}
+
+	~TestProjectSettingsRoundTripScope() {
+		for (const String &key : introduced_keys) {
+			ProjectSettings::get_singleton()->set_setting(key, Variant());
+		}
+		ProjectSettings::get_singleton()->set_setting("application/config/features", saved_features);
+		TestProjectSettingsInternalsAccessor::last_save_time() = saved_last_save_time;
+	}
+};
+
+// Writes unsigned and signed settings to a project file in the requested format, reloads them
+// through the loader the engine uses at startup, and checks carrier and exact value.
+static void check_project_settings_round_trip(const String &p_file_name, bool p_binary) {
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+
+	struct ExpectedUnsigned {
+		const char *key;
+		uint64_t value;
+	};
+	const ExpectedUnsigned expectations[] = {
+		{ "fixed_width_integers/unsigned_zero", 0 },
+		{ "fixed_width_integers/unsigned_above_signed_max", uint64_t(INT64_MAX) + 1 },
+		{ "fixed_width_integers/unsigned_maximum", UINT64_MAX },
+	};
+	const char *signed_key = "fixed_width_integers/signed_minimum";
+
+	ProjectSettings::CustomMap custom;
+	Vector<String> introduced_keys;
+	for (const ExpectedUnsigned &expectation : expectations) {
+		custom[expectation.key] = Variant(expectation.value);
+		introduced_keys.push_back(expectation.key);
+	}
+	custom[signed_key] = Variant(int64_t(INT64_MIN));
+	introduced_keys.push_back(signed_key);
+
+	const TestProjectSettingsRoundTripScope restore_scope(introduced_keys);
+
+	const String save_path = TestUtils::get_temp_path(p_file_name);
+	const Error save_error = settings->save_custom(save_path, custom, Vector<String>(), false);
+	CHECK_EQ(save_error, OK);
+	if (save_error != OK) {
+		return;
+	}
+
+	const Error load_error = p_binary
+			? TestProjectSettingsInternalsAccessor::load_settings_binary(save_path)
+			: TestProjectSettingsInternalsAccessor::load_settings_text(save_path);
+	CHECK_EQ(load_error, OK);
+	if (load_error != OK) {
+		return;
+	}
+
+	for (const ExpectedUnsigned &expectation : expectations) {
+		const Variant loaded = settings->get_setting(expectation.key);
+		CHECK_MESSAGE(loaded.get_type() == Variant::UINT, expectation.key);
+		CHECK_MESSAGE(loaded.operator uint64_t() == expectation.value, expectation.key);
+	}
+
+	const Variant loaded_signed = settings->get_setting(signed_key);
+	CHECK_EQ(loaded_signed.get_type(), Variant::INT);
+	CHECK_EQ(loaded_signed.operator int64_t(), INT64_MIN);
+}
+
+TEST_CASE("[ProjectSettings][UInt] Text project settings round-trip unsigned values") {
+	check_project_settings_round_trip("uint_project_settings.foundry", false);
+}
+
+TEST_CASE("[ProjectSettings][UInt] Binary project settings round-trip unsigned values") {
+	check_project_settings_round_trip("uint_project_settings.binary", true);
 }
 
 } // namespace TestProjectSettings
