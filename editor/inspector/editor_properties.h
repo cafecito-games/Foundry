@@ -57,6 +57,16 @@ struct EditorPropertyRangeHint {
 	bool prefer_slider = false;
 	bool hide_control = true;
 	bool radians_as_degrees = false;
+
+	// Exact signed/unsigned 64-bit bounds for integer properties, parsed without a double round-trip.
+	// Only the member matching `is_unsigned_integer` is meaningful.
+	bool is_unsigned_integer = false;
+	int64_t exact_int_min = INT64_MIN;
+	int64_t exact_int_max = INT64_MAX;
+	int64_t exact_int_step = 1;
+	uint64_t exact_uint_min = 0;
+	uint64_t exact_uint_max = UINT64_MAX;
+	uint64_t exact_uint_step = 1;
 };
 
 class EditorPropertyNil : public EditorProperty {
@@ -396,10 +406,35 @@ public:
 	EditorPropertyLayers();
 };
 
+// Exact signed/unsigned 64-bit integer property editor. A decimal `LineEdit` is always the source of
+// truth; an `EditorSpinSlider` is shown alongside it only when the current value, bounds, and step are
+// all exactly representable as a double, so the slider can never silently round a 64-bit value.
 class EditorPropertyInteger : public EditorProperty {
 	FOUNDRY_CLASS(EditorPropertyInteger, EditorProperty);
+	friend class EditorPropertyIntegerTestAccess;
+
+	LineEdit *value_edit = nullptr;
 	EditorSpinSlider *spin = nullptr;
-	void _value_changed(int64_t p_val);
+
+	bool is_unsigned = false;
+	int64_t signed_value = 0;
+	uint64_t unsigned_value = 0;
+
+	int64_t signed_min = INT64_MIN;
+	int64_t signed_max = INT64_MAX;
+	int64_t signed_step = 1;
+	uint64_t unsigned_min = 0;
+	uint64_t unsigned_max = UINT64_MAX;
+	uint64_t unsigned_step = 1;
+
+	bool slider_bounds_exact = false;
+	bool updating = false;
+
+	void _update_slider_visibility();
+	void _try_commit(const String &p_text);
+	void _text_submitted(const String &p_text);
+	void _focus_exited();
+	void _spin_value_changed(double p_value);
 
 protected:
 	virtual void _set_read_only(bool p_read_only) override;
