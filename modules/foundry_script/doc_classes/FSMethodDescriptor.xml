@@ -39,6 +39,7 @@
 		</member>
 		<member name="return_type_name" type="String" setter="" getter="get_return_type_name">
 			The exact FoundryScript type the return value was declared with, following the same rules as [member arg_type_names]. Empty for a native method.
+			A method that returns no value is named [code]void[/code], matching the return type keyword. This covers a method declared [code]-&gt; void[/code] as well as one with no declared return type whose body has no [code]return[/code] statement, since both return nothing. A method with no declared return type that does return a value is named [code skip-lint]Variant[/code].
 		</member>
 		<member name="return_value" type="Dictionary" setter="" getter="get_return_value">
 			The method's return value descriptor, in the same [Dictionary] shape as an [method Object.get_method_list] return value.
