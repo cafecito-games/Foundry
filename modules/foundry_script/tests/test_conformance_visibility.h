@@ -496,6 +496,37 @@ class FsnBoundBox[T: FsnBoundWidget]:
 		CHECK(NamespacedConformanceFixture::any_error_contains(errors, R"(the bound "FsnBoundWidget" is a final class)"));
 	}
 
+	SUBCASE("a type parameter bounded by a builtin is not answered as that builtin") {
+		// A builtin receiver is closed and does get the hidden-witness diagnostic, but a parameter
+		// merely bounded by one is not that receiver: its members are resolved by the bound's own
+		// surface, which already reports what it cannot find. Answering the witness question as if the
+		// receiver were the builtin would add a second, unrelated diagnosis on that path.
+		const String builtin_conformance_path = fixture.write("fsn_builtin_conformance.fs", R"(namespace fsn
+
+extend int uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "int gadget"
+)");
+		FSLanguage::get_singleton()->add_conformance_file(builtin_conformance_path, "fsn");
+		REQUIRE(fixture.analysis_errors(builtin_conformance_path).is_empty());
+
+		const String consumer_path = fixture.write("fsn_consumer_builtin_bound_call.fs", R"(extends RefCounted
+
+
+class FsnBuiltinBox[T: int]:
+	var value: T
+
+	func probe() -> String:
+		return value.fsn_gadget()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		FSLanguage::get_singleton()->remove_conformance_file(builtin_conformance_path);
+
+		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, "which this file does not load"));
+		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, "so no subtype can supply it"));
+	}
+
 	SUBCASE("a type parameter bounded by an open class keeps its unsafe-but-legal call") {
 		// The bound is what closes the receiver, so an open bound leaves the subtype bet intact.
 		const String open_widget_path = fixture.write("fsn_open_bound_widget.fs", R"(class_name FsnOpenBoundWidget extends RefCounted

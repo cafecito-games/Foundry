@@ -405,9 +405,13 @@ void FSAnalyzer::ensure_indexed_conformance_files_registered() {
 // A type parameter stands for whatever satisfies its bound, and a conformance declared on the bound
 // is reachable through every such value, so both witness questions are answered against the bound.
 // The substitution is a single step, matching what member resolution itself does: a parameter bounded
-// by another parameter is left alone rather than chased to the chain's root.
+// by another parameter is left alone rather than chased to the chain's root. Only a class bound is
+// substituted — a builtin bound would otherwise reach the builtin arm of the hidden-witness gate,
+// which answers for a receiver that really is that builtin, and would newly diagnose calls the
+// builtin's own member resolution already handles.
 static FSParser::DataType _conformance_target_through_type_parameter(const FSParser::DataType &p_type) {
-	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER && !p_type.type_parameter_bound.is_empty()) {
+	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER && !p_type.type_parameter_bound.is_empty() &&
+			p_type.type_parameter_bound[0].kind == FSParser::DataType::CLASS) {
 		return p_type.type_parameter_bound[0];
 	}
 	return p_type;
