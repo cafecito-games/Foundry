@@ -546,4 +546,72 @@ TEST_CASE("[Modules][FoundryScript][RuntimeSelf] An instance frame resolves Self
 	CHECK(leaf_accept_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
 }
 
+// The instance-frame fallback fires when a non-null receiver descriptor can no longer be resolved --
+// the receiver's script was freed while the call was setting up. Positional arguments fall back to
+// their declared types, and the rest tail must fall back to its declared element type too, so a
+// vararg element of the wrong type is still rejected instead of slipping through a default-
+// constructed empty rest type. A `Self` positional parameter forces the signature through receiver
+// resolution; a freed receiver descriptor deterministically drives the fallback here without the
+// freed-mid-call race that triggers it in production.
+TEST_CASE("[Modules][FoundryScript][RuntimeSelf] An instance frame still validates varargs when the receiver is freed mid-call") {
+	RuntimeSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_runtime_self_source(
+			"class Base:\n"
+			"\tfunc gather(first: Self, ...rest: Array[int]) -> int:\n"
+			"\t\treturn rest.size()\n");
+	const Ref<FoundryScript> base = runtime_self_subclass(script, SNAME("Base"));
+	REQUIRE(base.is_valid());
+
+	Callable::CallError instantiate_error;
+	const Variant base_instance_variant = base->_new(nullptr, -1, instantiate_error);
+	REQUIRE(instantiate_error.error == Callable::CallError::CALL_OK);
+	Object *base_instance = base_instance_variant;
+	REQUIRE(base_instance != nullptr);
+	FSInstance *base_frame = static_cast<FSInstance *>(base_instance->get_script_instance());
+	REQUIRE(base_frame != nullptr);
+
+	const HashMap<StringName, FSFunction *>::ConstIterator gather_element = base->get_member_functions().find(SNAME("gather"));
+	REQUIRE(gather_element != base->get_member_functions().end());
+	FSFunction *gather = gather_element->value;
+	REQUIRE(gather != nullptr);
+
+	// A freshly instantiated, never-registered script released before the call stands in for a
+	// receiver script freed mid-call: a valid-looking descriptor whose backing script no longer
+	// resolves, so `resolve_self` fails and the instance-frame fallback is taken.
+	FSStaticSelfContext freed_receiver;
+	{
+		Ref<FoundryScript> transient;
+		transient.instantiate();
+		REQUIRE(transient.is_valid());
+		freed_receiver = FSStaticSelfContext::for_script(transient);
+	}
+	REQUIRE(freed_receiver.is_valid());
+	REQUIRE(freed_receiver.get_script().is_null());
+
+	const Variant first_argument = base_instance_variant;
+
+	// A correctly typed `int` vararg is accepted on the fallback path: the positional `Self` falls
+	// back to the declaring class and the rest tail keeps its declared `int` element type.
+	const Variant good_rest = 7;
+	const Variant *good_args[2] = { &first_argument, &good_rest };
+	Callable::CallError good_error;
+	ERR_PRINT_OFF;
+	const Variant good_result = gather->call(base_frame, good_args, 2, good_error, nullptr, nullptr, &freed_receiver);
+	ERR_PRINT_ON;
+	CHECK(good_error.error == Callable::CallError::CALL_OK);
+	CHECK((int)good_result == 1);
+
+	// The regression: a `String` vararg is rejected because the rest tail falls back to its declared
+	// `Array[int]` element type. Before the fix the fallback reset the rest type to an empty default,
+	// so this element was silently accepted.
+	const Variant bad_rest = String("not an int");
+	const Variant *bad_args[2] = { &first_argument, &bad_rest };
+	Callable::CallError bad_error;
+	ERR_PRINT_OFF;
+	gather->call(base_frame, bad_args, 2, bad_error, nullptr, nullptr, &freed_receiver);
+	ERR_PRINT_ON;
+	CHECK(bad_error.error == Callable::CallError::CALL_ERROR_INVALID_ARGUMENT);
+}
+
 } //namespace FSTests

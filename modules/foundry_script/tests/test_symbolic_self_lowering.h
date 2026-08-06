@@ -458,12 +458,10 @@ TEST_CASE("[Modules][FoundryScript][SymbolicSelf] Declaration-time witness valid
 }
 
 // The cases above pin the marker for static members and conformance witnesses. An inherited instance
-// member has no compiled-in receiver either, so its signature and body positions have to keep the
-// marker through analysis and lowering too -- the running frame re-binds them to the instance the
-// method was invoked on. This is the investigation the instance-receiver issue depends on: if the
-// marker were substituted to the declaring class during materialization, the fix would belong in
-// lowering; the marker surviving intact means the fix is confined to supplying a receiver at call
-// time.
+// member has no compiled-in receiver either, so its signature and body positions keep the marker
+// through analysis and lowering; the running frame re-binds every marked position to the instance
+// the method was invoked on. Substitution never happens here. Resolving the marker against the
+// call-frame receiver is a separate concern, covered by the runtime-resolution tests.
 TEST_CASE("[Modules][FoundryScript][SymbolicSelf] An inherited instance member keeps the marker") {
 	SymbolicSelfLanguageScope language;
 

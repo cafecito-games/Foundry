@@ -7070,30 +7070,54 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			// `_method_signature_accepts_argument_count`.
 			constexpr int callable_rpc_id_peer_id_argument_count = 1;
 			const int extra_allowed_argument_offset = (base_type.builtin_type == Variant::CALLABLE && p_call->function_name == SNAME("rpc_id")) ? callable_rpc_id_peer_id_argument_count : 0;
-			// Resolve a `Self`-typed parameter against the call's receiver where the receiver is
-			// statically known, so the argument is validated -- and any diagnostic rendered -- against
-			// the receiver's leaf script rather than the literal "Self" token. Self-dispatch and static
-			// calls are left alone: the receiver-relative contract and the static receiver already
-			// handle those, and `self`'s leaf is not known at the call site. A receiver typed as the
-			// class that *declares* the method is also left alone: its runtime leaf could be any
-			// subclass, so the parameter stays "Self" and the receiver-relative contract governs it.
-			// Only a receiver typed as a class that *inherits* the method resolves `Self` to its leaf.
-			List<FSParser::DataType> validate_par_types = par_types;
+			// Resolve a `Self`-typed parameter against the call's receiver only when the receiver is
+			// statically typed as a class that *inherits* the method without overriding it. The
+			// substitution then validates the argument (and renders any diagnostic) against the
+			// receiver's static class instead of the literal "Self" token. Other receiver shapes keep
+			// the literal "Self" parameter and are governed by the receiver-relative contract instead:
+			// self-dispatch (the leaf is not known at the call site), static calls (the static receiver
+			// already carries the leaf), and a receiver typed as the declaring class or an overriding
+			// subclass. A declaring-class or override-typed receiver's runtime leaf can be any further
+			// subclass, and an override can narrow what the call dispatches to, so substituting the
+			// static type there would accept arguments the runtime then rejects; the conservative
+			// literal-"Self" leg rejects them up front instead.
+			//
+			// Where substitution does fire it resolves `Self` to the receiver's *static* class while the
+			// runtime resolves to the *leaf*, so the analyzer accepts a static-class argument the runtime
+			// rejects when the actual receiver is a more-derived instance. That is the standard
+			// `Self`-typing tradeoff (static at the call site, leaf at run time) and is accepted only for
+			// the non-overriding inherit leg, where no override can narrow the dispatched signature.
+			//
+			// This runs on every analyzed call and every LSP pass, so the overwhelmingly common case --
+			// no parameter mentions `Self` -- must not allocate. A cheap pre-pass checks for any `Self`
+			// mention and only then builds the substituted list, so the hot path skips the per-parameter
+			// deep copy and the binding map entirely.
+			const List<FSParser::DataType> *validate_par_types = &par_types;
+			List<FSParser::DataType> substituted_par_types;
 			if (!is_self && !p_call->is_static && base_type.kind == FSParser::DataType::CLASS &&
 					base_type.class_type != nullptr && !base_type.is_meta_type &&
 					!base_type.class_type->has_function(p_call->function_name)) {
-				HashMap<StringName, FSParser::DataType> self_bindings;
-				FSParser::DataType receiver_self = base_type;
-				receiver_self.is_meta_type = false;
-				self_bindings.insert(SNAME("@Self"), receiver_self);
-				validate_par_types.clear();
+				bool mentions_self_type = false;
 				for (const FSParser::DataType &par_type : par_types) {
-					validate_par_types.push_back(_datatype_contains_self_type_parameter(par_type)
-									? FSParser::DataType::substitute(par_type, self_bindings, false)
-									: par_type);
+					if (_datatype_contains_self_type_parameter(par_type)) {
+						mentions_self_type = true;
+						break;
+					}
+				}
+				if (mentions_self_type) {
+					HashMap<StringName, FSParser::DataType> self_bindings;
+					FSParser::DataType receiver_self = base_type;
+					receiver_self.is_meta_type = false;
+					self_bindings.insert(SNAME("@Self"), receiver_self);
+					for (const FSParser::DataType &par_type : par_types) {
+						substituted_par_types.push_back(_datatype_contains_self_type_parameter(par_type)
+										? FSParser::DataType::substitute(par_type, self_bindings, false)
+										: par_type);
+					}
+					validate_par_types = &substituted_par_types;
 				}
 			}
-			call_site_validation.validate_call_arg(validate_par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count, rest_type, extra_allowed_argument_offset);
+			call_site_validation.validate_call_arg(*validate_par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count, rest_type, extra_allowed_argument_offset);
 		}
 		call_site_validation.validate_signal_connect_arg(base_type, p_call);
 		call_site_validation.validate_local_object_signal_callable_arg(p_call, is_self);
