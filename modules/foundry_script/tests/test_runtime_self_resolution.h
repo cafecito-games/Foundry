@@ -366,6 +366,83 @@ TEST_CASE("[Modules][FoundryScript][RuntimeSelf] A static lambda with no capture
 	CHECK(result.get_type() == Variant::NIL);
 }
 
+// A freshly instantiated FoundryScript whose only strong reference is the caller's. Unlike a compiled
+// script (cached by path) or a nested class (held by its parent's subclass map), dropping this
+// reference actually frees it, which is what the freed-receiver diagnostic below depends on.
+static Ref<FoundryScript> runtime_self_uncached_receiver() {
+	Ref<FoundryScript> script;
+	script.instantiate();
+	return script;
+}
+
+TEST_CASE("[Modules][FoundryScript][RuntimeSelf] A static lambda whose signature references Self is refused when the captured receiver is freed") {
+	RuntimeSelfLanguageScope language;
+
+	const Ref<FoundryScript> script = compile_runtime_self_source(
+			"static func make_echo() -> Callable:\n"
+			"\treturn func(value: Self) -> Self:\n"
+			"\t\treturn value\n");
+	REQUIRE_FALSE(script->get_lambda_info().is_empty());
+	FSFunction *echo_lambda = script->get_lambda_info().begin()->key;
+	REQUIRE(echo_lambda != nullptr);
+
+	Ref<FoundryScript> receiver_script = runtime_self_uncached_receiver();
+	REQUIRE(receiver_script.is_valid());
+	FSStaticSelfContext receiver = FSStaticSelfContext::for_script(receiver_script);
+	REQUIRE(receiver.is_fully_live());
+
+	FSLambdaCallable callable(script, echo_lambda, {}, &receiver);
+
+	// Dropping the last strong reference frees the receiver script before the lambda is ever invoked.
+	receiver_script = Ref<FoundryScript>();
+	REQUIRE_FALSE(receiver.is_fully_live());
+
+	Variant argument = Variant();
+	const Variant *arguments[] = { &argument };
+	Variant result;
+	Callable::CallError error;
+	ERR_PRINT_OFF;
+	callable.call(arguments, 1, result, error);
+	ERR_PRINT_ON;
+	CHECK(error.error == Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL);
+	CHECK(result.get_type() == Variant::NIL);
+}
+
+TEST_CASE("[Modules][FoundryScript][RuntimeSelf] A static lambda whose body only references Self is refused when the captured receiver is freed") {
+	RuntimeSelfLanguageScope language;
+
+	// The signature (`-> RefCounted`) never mentions `Self`; only the body does, through `Self.new()`.
+	// Before this fix, `resolve_signature_self` had nothing to fail fast on and the freed receiver was
+	// only diagnosed deep inside `OPCODE_LOAD_STATIC_SELF_CLASS`, which sets `err_text` but never
+	// `r_call_error.error`, so the call silently reported success with a NIL result.
+	const Ref<FoundryScript> script = compile_runtime_self_source(
+			"static func make_factory() -> Callable:\n"
+			"\treturn func() -> RefCounted:\n"
+			"\t\treturn Self.new()\n");
+	REQUIRE_FALSE(script->get_lambda_info().is_empty());
+	FSFunction *factory_lambda = script->get_lambda_info().begin()->key;
+	REQUIRE(factory_lambda != nullptr);
+
+	Ref<FoundryScript> receiver_script = runtime_self_uncached_receiver();
+	REQUIRE(receiver_script.is_valid());
+	FSStaticSelfContext receiver = FSStaticSelfContext::for_script(receiver_script);
+	REQUIRE(receiver.is_fully_live());
+
+	FSLambdaCallable callable(script, factory_lambda, {}, &receiver);
+
+	// Dropping the last strong reference frees the receiver script before the lambda is ever invoked.
+	receiver_script = Ref<FoundryScript>();
+	REQUIRE_FALSE(receiver.is_fully_live());
+
+	Variant result;
+	Callable::CallError error;
+	ERR_PRINT_OFF;
+	callable.call(nullptr, 0, result, error);
+	ERR_PRINT_ON;
+	CHECK(error.error == Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL);
+	CHECK(result.get_type() == Variant::NIL);
+}
+
 // The instance counterpart of the static-frame cases above. An inherited instance method has no
 // compiled-in receiver either, so the running instance is its receiver: the leaf script the instance
 // was created from, including its reified generic arguments. A `Self`-typed parameter is validated

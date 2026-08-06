@@ -105,6 +105,17 @@ void FSLambdaCallable::call(const Variant **p_arguments, int p_argcount, Variant
 		return;
 	}
 
+	// A captured receiver that is no longer fully live (its script, or one of its type arguments, was
+	// freed) must fail the same way `FSStaticSelfCallable::call` fails, regardless of whether `Self`
+	// appears in the lambda's signature or only in its body. Without this guard, a body-only reference
+	// to `Self` reaches `OPCODE_LOAD_STATIC_SELF_CLASS`, which reports the failure through `err_text`
+	// but never sets `r_call_error.error`, so the caller observes a silent NIL success.
+	if (static_self_context.is_valid() && !static_self_context.is_fully_live()) {
+		r_call_error.error = Callable::CallError::CALL_ERROR_INSTANCE_IS_NULL;
+		r_return_value = Variant();
+		return;
+	}
+
 	// The captured receiver is the callable's own lexical context, not whatever static receiver the
 	// caller happens to be running under. Passing it here -- rather than reading the thread-local
 	// current context -- is what makes the closure result independent of where it is invoked.
