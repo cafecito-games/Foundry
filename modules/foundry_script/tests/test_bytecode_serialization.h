@@ -88,6 +88,31 @@ public:
 	}
 };
 
+// Captures every engine error raised while it is alive, so a refused export can be asserted on by
+// the reason it reports rather than by the error code alone.
+struct BytecodeErrorRecorder {
+	BytecodeErrorRecorder() {
+		handler.errfunc = _record;
+		handler.userdata = this;
+		add_error_handler(&handler);
+	}
+
+	~BytecodeErrorRecorder() {
+		remove_error_handler(&handler);
+	}
+
+	static void _record(void *p_self, const char *p_function, const char *p_file, int p_line,
+			const char *p_error, const char *p_explanation, bool p_editor_notify, ErrorHandlerType p_type) {
+		BytecodeErrorRecorder *self = static_cast<BytecodeErrorRecorder *>(p_self);
+		self->messages += String::utf8(p_explanation != nullptr && p_explanation[0] != '\0' ? p_explanation : p_error) + "\n";
+	}
+
+	void clear() { messages = String(); }
+
+	ErrorHandlerList handler;
+	String messages;
+};
+
 static Error bytecode_encode_variant(FSBytecodeExporter &r_exporter, const Variant &p_value, Vector<uint8_t> &r_payload) {
 	Ref<StreamPeerBuffer> stream;
 	stream.instantiate();
@@ -1458,18 +1483,35 @@ TEST_CASE("[FoundryScript][BytecodeCodec] A specialized handle with a freed type
 
 	FSBytecodeExporter exporter;
 	Vector<uint8_t> payload;
+	BytecodeErrorRecorder recorder;
 	ERR_PRINT_OFF;
 	CHECK(bytecode_encode_variant(exporter, handle, payload) == ERR_INVALID_PARAMETER);
 	ERR_PRINT_ON;
 	// The refusal precedes the handle tag, so no specialized-handle record with a degraded argument
 	// slot reaches the stream at all.
 	CHECK(payload.is_empty());
+	// The diagnostic names the stale slot rather than the class name the freed script captured.
+	CHECK(recorder.messages.contains("type argument 0 (<freed type argument>)"));
+	CHECK_FALSE(recorder.messages.contains("type argument 0 (RefCounted)"));
 
+	// A freed script nested inside a live argument is named at the depth it went stale, not through
+	// the live ancestor that contains it.
+	recorder.clear();
 	Vector<uint8_t> nested_payload;
 	ERR_PRINT_OFF;
 	CHECK(bytecode_encode_variant(exporter, nested_handle, nested_payload) == ERR_INVALID_PARAMETER);
 	ERR_PRINT_ON;
 	CHECK(nested_payload.is_empty());
+	CHECK(recorder.messages.contains("type argument 0 (<freed type argument>)"));
+
+	// A stale handle reached through an enclosing container fails the whole export, so no artifact is
+	// produced with the degraded argument either.
+	Array holder;
+	holder.push_back(handle);
+	Vector<uint8_t> holder_payload;
+	ERR_PRINT_OFF;
+	CHECK(bytecode_encode_variant(exporter, holder, holder_payload) == ERR_INVALID_PARAMETER);
+	ERR_PRINT_ON;
 }
 
 TEST_CASE("[FoundryScript][BytecodeCodec] Unresolvable external references fail the decode") {
