@@ -73,6 +73,7 @@
 #include "tests/editor/test_editor_automation_workflow.h"
 #include "tests/editor/test_editor_automation_workspace.h"
 #include "tests/editor/test_editor_data.h"
+#include "tests/editor/test_editor_exact_integer_property.h"
 #include "tests/editor/test_editor_export_manifest.h"
 #include "tests/editor/test_editor_export_name_mangling.h"
 #include "tests/editor/test_editor_export_platform_android.h"

@@ -1585,46 +1585,238 @@ EditorPropertyLayers::EditorPropertyLayers() {
 
 ///////////////////// INT /////////////////////////
 
+// The largest magnitude that round-trips exactly through a double (2^53). Slider controls are
+// double-backed, so an integer value, bound, or step outside this range can silently lose precision.
+static constexpr int64_t EDITOR_INTEGER_EXACT_DOUBLE_LIMIT = int64_t(1) << 53;
+
+// Parses a strict base-10 signed 64-bit integer without any floating-point round-trip. Rejects empty
+// text, non-digit characters, and out-of-range magnitudes (including the asymmetric INT64_MIN case).
+static bool _parse_exact_signed_int64(const String &p_text, int64_t &r_value) {
+	String text = p_text.strip_edges();
+	if (text.is_empty()) {
+		return false;
+	}
+
+	int index = 0;
+	bool negative = false;
+	if (text[0] == '-') {
+		negative = true;
+		index = 1;
+	}
+	if (index >= text.length()) {
+		return false;
+	}
+
+	const uint64_t limit = negative ? (uint64_t(INT64_MAX) + 1) : uint64_t(INT64_MAX);
+	uint64_t magnitude = 0;
+	for (; index < text.length(); index++) {
+		char32_t c = text[index];
+		if (c < '0' || c > '9') {
+			return false;
+		}
+		uint64_t digit = uint64_t(c - '0');
+		if (magnitude > (limit - digit) / 10) {
+			return false;
+		}
+		magnitude = magnitude * 10 + digit;
+	}
+
+	if (negative) {
+		r_value = (magnitude == uint64_t(INT64_MAX) + 1) ? INT64_MIN : -int64_t(magnitude);
+	} else {
+		r_value = int64_t(magnitude);
+	}
+	return true;
+}
+
+// Parses a strict base-10 unsigned 64-bit integer without any floating-point round-trip. Rejects
+// empty text, a leading sign, non-digit characters, and magnitudes past UINT64_MAX.
+static bool _parse_exact_unsigned_int64(const String &p_text, uint64_t &r_value) {
+	String text = p_text.strip_edges();
+	if (text.is_empty() || text[0] == '-' || text[0] == '+') {
+		return false;
+	}
+
+	uint64_t magnitude = 0;
+	for (int index = 0; index < text.length(); index++) {
+		char32_t c = text[index];
+		if (c < '0' || c > '9') {
+			return false;
+		}
+		uint64_t digit = uint64_t(c - '0');
+		if (magnitude > (UINT64_MAX - digit) / 10) {
+			return false;
+		}
+		magnitude = magnitude * 10 + digit;
+	}
+
+	r_value = magnitude;
+	return true;
+}
+
 void EditorPropertyInteger::_set_read_only(bool p_read_only) {
+	value_edit->set_editable(!p_read_only);
 	spin->set_read_only(p_read_only);
 }
 
-void EditorPropertyInteger::_value_changed(int64_t val) {
-	emit_changed(get_edited_property(), val);
+void EditorPropertyInteger::_update_slider_visibility() {
+	if (!slider_bounds_exact) {
+		spin->set_visible(false);
+		return;
+	}
+
+	bool value_exact;
+	double display_value;
+	if (is_unsigned) {
+		value_exact = unsigned_value <= uint64_t(EDITOR_INTEGER_EXACT_DOUBLE_LIMIT);
+		display_value = double(unsigned_value);
+	} else {
+		value_exact = signed_value >= -EDITOR_INTEGER_EXACT_DOUBLE_LIMIT && signed_value <= EDITOR_INTEGER_EXACT_DOUBLE_LIMIT;
+		display_value = double(signed_value);
+	}
+
+	spin->set_visible(value_exact);
+	if (value_exact) {
+		spin->set_value_no_signal(display_value);
+	}
+}
+
+void EditorPropertyInteger::_try_commit(const String &p_text) {
+	if (updating) {
+		return;
+	}
+
+	if (is_unsigned) {
+		uint64_t parsed = 0;
+		if (_parse_exact_unsigned_int64(p_text, parsed) && parsed >= unsigned_min && parsed <= unsigned_max) {
+			emit_changed(get_edited_property(), Variant(parsed));
+			return;
+		}
+	} else {
+		int64_t parsed = 0;
+		if (_parse_exact_signed_int64(p_text, parsed) && parsed >= signed_min && parsed <= signed_max) {
+			emit_changed(get_edited_property(), Variant(parsed));
+			return;
+		}
+	}
+
+	// Invalid, negative-for-unsigned, or out-of-range input: restore the last committed value
+	// atomically, without emitting a property change.
+	update_property();
+}
+
+void EditorPropertyInteger::_text_submitted(const String &p_text) {
+	_try_commit(p_text);
+}
+
+void EditorPropertyInteger::_focus_exited() {
+	_try_commit(value_edit->get_text());
+}
+
+void EditorPropertyInteger::_spin_value_changed(double p_value) {
+	if (updating) {
+		return;
+	}
+
+	// The slider is only visible when the current value, bounds, and step are exactly representable
+	// in a double, so this conversion cannot lose precision.
+	if (is_unsigned) {
+		uint64_t value = uint64_t(p_value);
+		if (p_value < 0.0 || value < unsigned_min || value > unsigned_max) {
+			return;
+		}
+		emit_changed(get_edited_property(), Variant(value));
+	} else {
+		int64_t value = int64_t(p_value);
+		if (value < signed_min || value > signed_max) {
+			return;
+		}
+		emit_changed(get_edited_property(), Variant(value));
+	}
 }
 
 void EditorPropertyInteger::update_property() {
-	int64_t val = get_edited_property_display_value();
-	spin->set_value_no_signal(val);
-#ifdef DEBUG_ENABLED
-	// If spin (currently EditorSplinSlider : Range) is changed so that it can use int64_t, then the below warning wouldn't be a problem.
-	if (val != (int64_t)(double)(val)) {
-		WARN_PRINT("Cannot reliably represent '" + itos(val) + "' in the inspector, value is too large.");
+	Variant v = get_edited_property_display_value();
+	updating = true;
+
+	String formatted;
+	if (is_unsigned) {
+		unsigned_value = uint64_t(v);
+		formatted = String::num_uint64(unsigned_value);
+	} else {
+		signed_value = int64_t(v);
+		formatted = String::num_int64(signed_value);
 	}
-#endif
+
+	if (value_edit->get_text() != formatted) {
+		int caret = value_edit->get_caret_column();
+		value_edit->set_text(formatted);
+		value_edit->set_caret_column(caret);
+	}
+	value_edit->set_editable(!is_read_only());
+
+	_update_slider_visibility();
+
+	updating = false;
 }
 
 void EditorPropertyInteger::setup(const EditorPropertyRangeHint &p_range_hint) {
-	spin->set_min(p_range_hint.min);
-	spin->set_max(p_range_hint.max);
-	spin->set_step(Math::round(p_range_hint.step));
-	if (p_range_hint.hide_control) {
-		spin->set_control_state(EditorSpinSlider::CONTROL_STATE_HIDE);
+	is_unsigned = p_range_hint.is_unsigned_integer;
+	if (is_unsigned) {
+		unsigned_min = p_range_hint.exact_uint_min;
+		unsigned_max = p_range_hint.exact_uint_max;
+		unsigned_step = p_range_hint.exact_uint_step;
 	} else {
-		spin->set_control_state(p_range_hint.prefer_slider ? EditorSpinSlider::CONTROL_STATE_PREFER_SLIDER : EditorSpinSlider::CONTROL_STATE_DEFAULT);
+		signed_min = p_range_hint.exact_int_min;
+		signed_max = p_range_hint.exact_int_max;
+		signed_step = p_range_hint.exact_int_step;
 	}
-	spin->set_allow_greater(p_range_hint.or_greater);
-	spin->set_allow_lesser(p_range_hint.or_less);
+
+	bool bounds_representable;
+	if (is_unsigned) {
+		bounds_representable = unsigned_min <= uint64_t(EDITOR_INTEGER_EXACT_DOUBLE_LIMIT) &&
+				unsigned_max <= uint64_t(EDITOR_INTEGER_EXACT_DOUBLE_LIMIT) &&
+				unsigned_step <= uint64_t(EDITOR_INTEGER_EXACT_DOUBLE_LIMIT);
+	} else {
+		bounds_representable = signed_min >= -EDITOR_INTEGER_EXACT_DOUBLE_LIMIT && signed_min <= EDITOR_INTEGER_EXACT_DOUBLE_LIMIT &&
+				signed_max >= -EDITOR_INTEGER_EXACT_DOUBLE_LIMIT && signed_max <= EDITOR_INTEGER_EXACT_DOUBLE_LIMIT &&
+				signed_step >= -EDITOR_INTEGER_EXACT_DOUBLE_LIMIT && signed_step <= EDITOR_INTEGER_EXACT_DOUBLE_LIMIT;
+	}
+	slider_bounds_exact = !p_range_hint.hide_control && bounds_representable;
+
+	if (slider_bounds_exact) {
+		spin->set_min(is_unsigned ? double(unsigned_min) : double(signed_min));
+		spin->set_max(is_unsigned ? double(unsigned_max) : double(signed_max));
+		spin->set_step(Math::round(is_unsigned ? double(unsigned_step) : double(signed_step)));
+		spin->set_control_state(p_range_hint.prefer_slider ? EditorSpinSlider::CONTROL_STATE_PREFER_SLIDER : EditorSpinSlider::CONTROL_STATE_DEFAULT);
+		spin->set_allow_greater(p_range_hint.or_greater);
+		spin->set_allow_lesser(p_range_hint.or_less);
+	} else {
+		spin->set_control_state(EditorSpinSlider::CONTROL_STATE_HIDE);
+	}
 	spin->set_suffix(p_range_hint.suffix);
 }
 
 EditorPropertyInteger::EditorPropertyInteger() {
+	HBoxContainer *hb = memnew(HBoxContainer);
+	add_child(hb);
+
+	value_edit = memnew(LineEdit);
+	value_edit->set_h_size_flags(SIZE_EXPAND_FILL);
+	value_edit->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
+	hb->add_child(value_edit);
+	add_focusable(value_edit);
+	value_edit->connect(SceneStringName(text_submitted), callable_mp(this, &EditorPropertyInteger::_text_submitted));
+	value_edit->connect(SceneStringName(focus_exited), callable_mp(this, &EditorPropertyInteger::_focus_exited));
+
 	spin = memnew(EditorSpinSlider);
 	spin->set_flat(true);
 	spin->set_editing_integer(true);
-	add_child(spin);
+	spin->set_h_size_flags(SIZE_EXPAND_FILL);
+	spin->set_visible(false);
+	hb->add_child(spin);
 	add_focusable(spin);
-	spin->connect(SceneStringName(value_changed), callable_mp(this, &EditorPropertyInteger::_value_changed));
+	spin->connect(SceneStringName(value_changed), callable_mp(this, &EditorPropertyInteger::_spin_value_changed));
 }
 
 ///////////////////// OBJECT ID /////////////////////////
@@ -3813,11 +4005,21 @@ bool EditorInspectorDefaultPlugin::parse_property(Object *p_object, const Varian
 	return false;
 }
 
-static EditorPropertyRangeHint _parse_range_hint(PropertyHint p_hint, const String &p_hint_text, double p_default_step, bool is_int = false) {
+static EditorPropertyRangeHint _parse_range_hint(PropertyHint p_hint, const String &p_hint_text, double p_default_step, bool is_int = false, bool p_is_unsigned = false) {
 	EditorPropertyRangeHint hint;
 	hint.step = p_default_step;
+	hint.is_unsigned_integer = p_is_unsigned;
 	if (is_int) {
 		hint.hide_control = false; // Always show controls for ints, unless specified in hint range.
+		if (p_is_unsigned) {
+			hint.exact_uint_min = 0;
+			hint.exact_uint_max = UINT64_MAX;
+			hint.exact_uint_step = 1;
+		} else {
+			hint.exact_int_min = INT64_MIN;
+			hint.exact_int_max = INT64_MAX;
+			hint.exact_int_step = 1;
+		}
 	}
 	Vector<String> slices = p_hint_text.split(",");
 	if (p_hint == PROPERTY_HINT_RANGE) {
@@ -3830,9 +4032,32 @@ static EditorPropertyRangeHint _parse_range_hint(PropertyHint p_hint, const Stri
 		hint.min = slices[0].to_float();
 		hint.max = slices[1].to_float();
 
+		if (is_int) {
+			if (p_is_unsigned) {
+				ERR_FAIL_COND_V_MSG(!_parse_exact_unsigned_int64(slices[0], hint.exact_uint_min), hint,
+						vformat("Invalid PROPERTY_HINT_RANGE with hint \"%s\": min is not a valid unsigned 64-bit integer.", p_hint_text));
+				ERR_FAIL_COND_V_MSG(!_parse_exact_unsigned_int64(slices[1], hint.exact_uint_max), hint,
+						vformat("Invalid PROPERTY_HINT_RANGE with hint \"%s\": max is not a valid unsigned 64-bit integer.", p_hint_text));
+			} else {
+				ERR_FAIL_COND_V_MSG(!_parse_exact_signed_int64(slices[0], hint.exact_int_min), hint,
+						vformat("Invalid PROPERTY_HINT_RANGE with hint \"%s\": min is not a valid signed 64-bit integer.", p_hint_text));
+				ERR_FAIL_COND_V_MSG(!_parse_exact_signed_int64(slices[1], hint.exact_int_max), hint,
+						vformat("Invalid PROPERTY_HINT_RANGE with hint \"%s\": max is not a valid signed 64-bit integer.", p_hint_text));
+			}
+		}
+
 		if (slices.size() >= 3 && slices[2].is_valid_float()) {
 			// Step is optional, could be something else if not a number.
 			hint.step = slices[2].to_float();
+			if (is_int) {
+				if (p_is_unsigned) {
+					ERR_FAIL_COND_V_MSG(!_parse_exact_unsigned_int64(slices[2], hint.exact_uint_step), hint,
+							vformat("Invalid PROPERTY_HINT_RANGE with hint \"%s\": step is not a valid unsigned 64-bit integer.", p_hint_text));
+				} else {
+					ERR_FAIL_COND_V_MSG(!_parse_exact_signed_int64(slices[2], hint.exact_int_step), hint,
+							vformat("Invalid PROPERTY_HINT_RANGE with hint \"%s\": step is not a valid signed 64-bit integer.", p_hint_text));
+				}
+			}
 		}
 		hint.hide_control = false;
 		for (int i = 2; i < slices.size(); i++) {
@@ -3870,6 +4095,70 @@ static EditorPropertyRangeHint _parse_range_hint(PropertyHint p_hint, const Stri
 			vformat("Invalid PROPERTY_HINT_RANGE with hint \"%s\": Step cannot be 0.", p_hint_text));
 
 	return hint;
+}
+
+// Shared routing for `Variant::INT` and `Variant::UINT` properties. Enum, flags, layers, and
+// object-ID hints are carrier-agnostic special editors; anything else gets the exact signed or
+// unsigned integer editor, selected by `p_is_unsigned`.
+static EditorProperty *_get_default_integer_editor(PropertyHint p_hint, const String &p_hint_text, bool p_is_unsigned) {
+	if (p_hint == PROPERTY_HINT_ENUM) {
+		EditorPropertyEnum *editor = memnew(EditorPropertyEnum);
+		Vector<String> options = p_hint_text.split(",");
+		editor->setup(options);
+		return editor;
+
+	} else if (p_hint == PROPERTY_HINT_FLAGS) {
+		EditorPropertyFlags *editor = memnew(EditorPropertyFlags);
+		Vector<String> options = p_hint_text.split(",");
+		editor->setup(options);
+		return editor;
+
+	} else if (p_hint == PROPERTY_HINT_LAYERS_2D_PHYSICS ||
+			p_hint == PROPERTY_HINT_LAYERS_2D_RENDER ||
+			p_hint == PROPERTY_HINT_LAYERS_2D_NAVIGATION ||
+			p_hint == PROPERTY_HINT_LAYERS_3D_PHYSICS ||
+			p_hint == PROPERTY_HINT_LAYERS_3D_RENDER ||
+			p_hint == PROPERTY_HINT_LAYERS_3D_NAVIGATION ||
+			p_hint == PROPERTY_HINT_LAYERS_AVOIDANCE) {
+		EditorPropertyLayers::LayerType lt = EditorPropertyLayers::LAYER_RENDER_2D;
+		switch (p_hint) {
+			case PROPERTY_HINT_LAYERS_2D_RENDER:
+				lt = EditorPropertyLayers::LAYER_RENDER_2D;
+				break;
+			case PROPERTY_HINT_LAYERS_2D_PHYSICS:
+				lt = EditorPropertyLayers::LAYER_PHYSICS_2D;
+				break;
+			case PROPERTY_HINT_LAYERS_2D_NAVIGATION:
+				lt = EditorPropertyLayers::LAYER_NAVIGATION_2D;
+				break;
+			case PROPERTY_HINT_LAYERS_3D_RENDER:
+				lt = EditorPropertyLayers::LAYER_RENDER_3D;
+				break;
+			case PROPERTY_HINT_LAYERS_3D_PHYSICS:
+				lt = EditorPropertyLayers::LAYER_PHYSICS_3D;
+				break;
+			case PROPERTY_HINT_LAYERS_3D_NAVIGATION:
+				lt = EditorPropertyLayers::LAYER_NAVIGATION_3D;
+				break;
+			case PROPERTY_HINT_LAYERS_AVOIDANCE:
+				lt = EditorPropertyLayers::LAYER_AVOIDANCE;
+				break;
+			default: {
+			} //compiler could be smarter here and realize this can't happen
+		}
+		EditorPropertyLayers *editor = memnew(EditorPropertyLayers);
+		editor->setup(lt);
+		return editor;
+	} else if (p_hint == PROPERTY_HINT_OBJECT_ID) {
+		EditorPropertyObjectID *editor = memnew(EditorPropertyObjectID);
+		editor->setup(p_hint_text);
+		return editor;
+
+	} else {
+		EditorPropertyInteger *editor = memnew(EditorPropertyInteger);
+		editor->setup(_parse_range_hint(p_hint, p_hint_text, 1, true, p_is_unsigned));
+		return editor;
+	}
 }
 
 static EditorProperty *get_input_action_editor(const String &p_hint_text, bool is_string_name) {
@@ -3921,64 +4210,10 @@ EditorProperty *EditorInspectorDefaultPlugin::get_editor_for_property(Object *p_
 			return editor;
 		} break;
 		case Variant::INT: {
-			if (p_hint == PROPERTY_HINT_ENUM) {
-				EditorPropertyEnum *editor = memnew(EditorPropertyEnum);
-				Vector<String> options = p_hint_text.split(",");
-				editor->setup(options);
-				return editor;
-
-			} else if (p_hint == PROPERTY_HINT_FLAGS) {
-				EditorPropertyFlags *editor = memnew(EditorPropertyFlags);
-				Vector<String> options = p_hint_text.split(",");
-				editor->setup(options);
-				return editor;
-
-			} else if (p_hint == PROPERTY_HINT_LAYERS_2D_PHYSICS ||
-					p_hint == PROPERTY_HINT_LAYERS_2D_RENDER ||
-					p_hint == PROPERTY_HINT_LAYERS_2D_NAVIGATION ||
-					p_hint == PROPERTY_HINT_LAYERS_3D_PHYSICS ||
-					p_hint == PROPERTY_HINT_LAYERS_3D_RENDER ||
-					p_hint == PROPERTY_HINT_LAYERS_3D_NAVIGATION ||
-					p_hint == PROPERTY_HINT_LAYERS_AVOIDANCE) {
-				EditorPropertyLayers::LayerType lt = EditorPropertyLayers::LAYER_RENDER_2D;
-				switch (p_hint) {
-					case PROPERTY_HINT_LAYERS_2D_RENDER:
-						lt = EditorPropertyLayers::LAYER_RENDER_2D;
-						break;
-					case PROPERTY_HINT_LAYERS_2D_PHYSICS:
-						lt = EditorPropertyLayers::LAYER_PHYSICS_2D;
-						break;
-					case PROPERTY_HINT_LAYERS_2D_NAVIGATION:
-						lt = EditorPropertyLayers::LAYER_NAVIGATION_2D;
-						break;
-					case PROPERTY_HINT_LAYERS_3D_RENDER:
-						lt = EditorPropertyLayers::LAYER_RENDER_3D;
-						break;
-					case PROPERTY_HINT_LAYERS_3D_PHYSICS:
-						lt = EditorPropertyLayers::LAYER_PHYSICS_3D;
-						break;
-					case PROPERTY_HINT_LAYERS_3D_NAVIGATION:
-						lt = EditorPropertyLayers::LAYER_NAVIGATION_3D;
-						break;
-					case PROPERTY_HINT_LAYERS_AVOIDANCE:
-						lt = EditorPropertyLayers::LAYER_AVOIDANCE;
-						break;
-					default: {
-					} //compiler could be smarter here and realize this can't happen
-				}
-				EditorPropertyLayers *editor = memnew(EditorPropertyLayers);
-				editor->setup(lt);
-				return editor;
-			} else if (p_hint == PROPERTY_HINT_OBJECT_ID) {
-				EditorPropertyObjectID *editor = memnew(EditorPropertyObjectID);
-				editor->setup(p_hint_text);
-				return editor;
-
-			} else {
-				EditorPropertyInteger *editor = memnew(EditorPropertyInteger);
-				editor->setup(_parse_range_hint(p_hint, p_hint_text, 1, true));
-				return editor;
-			}
+			return _get_default_integer_editor(p_hint, p_hint_text, false);
+		} break;
+		case Variant::UINT: {
+			return _get_default_integer_editor(p_hint, p_hint_text, true);
 		} break;
 		case Variant::FLOAT: {
 			if (p_hint == PROPERTY_HINT_EXP_EASING) {
