@@ -168,6 +168,55 @@ TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A final receiver's unres
 	CHECK_FALSE(analyzer_reports_substring(parser, "in strict dynamic mode"));
 }
 
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] A final-bounded type parameter keeps its own message in strict dynamic mode") {
+	// A type parameter bounded by a `final` class is as closed as the bound, so it gets the same
+	// unconditional rejection and strict mode must not shadow it either.
+	FSParser parser;
+	const Error error = parser.parse(
+			"final class Worker:\n"
+			"\tfunc work() -> void:\n"
+			"\t\tpass\n"
+			"class Box[T: Worker]:\n"
+			"\tvar value: T\n"
+			"\tfunc run() -> void:\n"
+			"\t\tvalue.perform()\n"
+			"func test() -> void:\n"
+			"\tpass\n",
+			"user://strict_final_bound_receiver.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.set_strict_dynamic_checks(true);
+	analyzer.analyze();
+
+	CHECK(analyzer_reports_substring(parser, R"(the bound "Worker" is a final class, so no subtype can supply it)"));
+	CHECK_FALSE(analyzer_reports_substring(parser, "in strict dynamic mode"));
+}
+
+TEST_CASE("[Modules][FoundryScript][CallSiteValidation] Strict dynamic mode still rejects an open-bounded type parameter's unresolved call") {
+	// An open bound leaves a real subtype possible, so the rejection stays strict mode's policy call
+	// rather than a fact about the receiver.
+	FSParser parser;
+	const Error error = parser.parse(
+			"class Box[T: RefCounted]:\n"
+			"\tvar value: T\n"
+			"\tfunc run() -> void:\n"
+			"\t\tvalue.perform()\n"
+			"func test() -> void:\n"
+			"\tpass\n",
+			"user://strict_open_bound_receiver.fs",
+			false);
+	CHECK(error == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.set_strict_dynamic_checks(true);
+	analyzer.analyze();
+
+	CHECK(analyzer_reports_substring(parser, "in strict dynamic mode"));
+	CHECK_FALSE(analyzer_reports_substring(parser, "so no subtype can supply it"));
+}
+
 TEST_CASE("[Modules][FoundryScript][CallSiteValidation] Strict dynamic mode still rejects an open receiver's unresolved call") {
 	// An open class keeps the strict-mode diagnosis: a subtype really could declare the method, so the
 	// rejection is a policy choice rather than a fact about the type.

@@ -735,6 +735,17 @@ static bool _datatype_represents_final_class(const FSParser::DataType &p_type) {
 	return p_type.kind == FSParser::DataType::CLASS && p_type.class_type != nullptr && p_type.class_type->is_final;
 }
 
+// A type parameter bounded by a `final` class has exactly the bound's value set — no subtype of the
+// bound can exist — so a receiver typed as the parameter is as closed as one typed as the bound.
+// Only the *direct* bound counts: member resolution substitutes a bound exactly one step, so a
+// parameter bounded by another parameter is never resolved against the chain's root and even valid
+// calls through it are unresolved. Treating those as closed would reject working code, so the gate
+// may only fire where resolution actually looked and missed.
+static bool _datatype_is_type_parameter_bounded_by_final_class(const FSParser::DataType &p_type) {
+	return p_type.kind == FSParser::DataType::TYPE_PARAMETER && !p_type.type_parameter_bound.is_empty() &&
+			_datatype_represents_final_class(p_type.type_parameter_bound[0]);
+}
+
 static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
 static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
 static FSParser::DataType type_handle_represented_type(const FSParser::DataType &p_type);
@@ -7375,10 +7386,12 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		// subtype that cannot exist, so such receivers skip it and are rejected outright. The carve-out
 		// is what keeps the rule true: an instance witness is deliberately not resolved statically, so
 		// a call a reachable conformance supplies is legal and dispatches at run time even though
-		// nothing here types it.
+		// nothing here types it. A type parameter whose direct bound is such a class is closed for the
+		// same reason and is rejected the same way, with a message naming the bound.
+		const bool receiver_is_final_bounded_parameter = _datatype_is_type_parameter_bounded_by_final_class(base_type);
 		const bool receiver_is_closed_final = !found && !is_self && !p_call->is_super &&
 				base_type.is_hard_type() && !base_type.is_meta_type &&
-				_datatype_represents_final_class(base_type) &&
+				(_datatype_represents_final_class(base_type) || receiver_is_final_bounded_parameter) &&
 				!reachable_conformance_supplies_method(base_type, p_call->function_name);
 
 		if (!found && base_type.kind == FSParser::DataType::ENUM) {
@@ -7430,9 +7443,20 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		} else if (!found && (!p_call->is_super && base_type.is_hard_type() && base_type.is_meta_type)) {
 			push_error(vformat(R"*(Static function "%s()" not found in base "%s".)*", p_call->function_name, base_type.to_string()), p_call);
 		} else if (!found && receiver_is_closed_final) {
-			push_error(vformat(R"*(Cannot call "%s()" on "%s": the method does not exist, and the class is final, so no subtype can supply it.)*",
-							   p_call->function_name, base_type.to_string()),
-					p_call->callee != nullptr ? p_call->callee : p_call);
+			if (receiver_is_final_bounded_parameter) {
+				// The bound is what closes the receiver, so it is what the message has to name — the
+				// parameter's own name says nothing about why nothing can supply the method. The bound
+				// is printed without its nullability, because it is the class that is final.
+				FSParser::DataType bound_type = base_type.type_parameter_bound[0];
+				bound_type.is_nullable = false;
+				push_error(vformat(R"*(Cannot call "%s()" on "%s": the method does not exist, and the bound "%s" is a final class, so no subtype can supply it.)*",
+								   p_call->function_name, base_type.to_string(), bound_type.to_string()),
+						p_call->callee != nullptr ? p_call->callee : p_call);
+			} else {
+				push_error(vformat(R"*(Cannot call "%s()" on "%s": the method does not exist, and the class is final, so no subtype can supply it.)*",
+								   p_call->function_name, base_type.to_string()),
+						p_call->callee != nullptr ? p_call->callee : p_call);
+			}
 		}
 	}
 
