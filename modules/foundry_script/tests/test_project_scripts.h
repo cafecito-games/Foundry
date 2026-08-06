@@ -230,6 +230,11 @@ TEST_CASE("[Modules][FoundryScript][ProjectScripts] get_methods populates signat
 
 	REQUIRE(announce.is_valid());
 	CHECK(announce->get_argument_type_names().is_empty());
+	// The parser spells an explicit `void` return as the `null` builtin type, so this surface names it
+	// "null" rather than "Variant" (which is what the compiled `FSReflection` surface names the same
+	// declaration, since `void` collapses to the `VARIANT` kind once compiled). Pinned here so a future
+	// change to either surface has to touch this assertion deliberately instead of silently drifting.
+	CHECK_EQ(announce->get_return_type_name(), "null");
 }
 
 TEST_CASE("[Modules][FoundryScript][ProjectScripts] implements_trait matches qualified trait identity and inherited traits") {

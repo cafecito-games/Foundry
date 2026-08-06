@@ -26,7 +26,7 @@
 		<method name="get_methods" qualifiers="const">
 			<return type="FSMethodDescriptor[]" />
 			<description>
-				Returns method descriptors for functions declared in the script, including method and parameter annotations. Empty when [member indexed_ok] is [code]false[/code].
+				Returns method descriptors for functions declared in the script, including method and parameter annotations. Each descriptor's [member FSMethodDescriptor.arg_type_names] and [member FSMethodDescriptor.return_type_name] are populated from the parsed declaration, before the script is compiled. Empty when [member indexed_ok] is [code]false[/code].
 			</description>
 		</method>
 		<method name="implements_trait" qualifiers="const">
