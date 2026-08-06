@@ -193,6 +193,33 @@ TEST_CASE("[Modules][FoundryScript][NativeIntegerMetadata] A bound method report
 	CHECK(get_instance_id->get_return_info().type == Variant::INT);
 }
 
+TEST_CASE("[Modules][FoundryScript][NativeIntegerMetadata] A default argument advertises its parameter's carrier") {
+	// `Animation::compress()` declares `uint32_t` parameters and gives them plain signed C++
+	// defaults, which is the ordinary way a binding is written. The advertised default has to agree
+	// with the advertised parameter, or a caller that fills the parameter from the default would
+	// hand the call a value of the other carrier.
+	const MethodBind *compress = ClassDB::get_method(SNAME("Animation"), SNAME("compress"));
+	REQUIRE(compress != nullptr);
+	REQUIRE(compress->get_default_argument_count() == 3);
+
+	const Variant page_size = compress->get_default_argument(0);
+	CHECK(page_size.get_type() == Variant::UINT);
+	CHECK(page_size.operator uint64_t() == 8192);
+
+	const Variant fps = compress->get_default_argument(1);
+	CHECK(fps.get_type() == Variant::UINT);
+	CHECK(fps.operator uint64_t() == 120);
+
+	// A signed parameter keeps a signed default, and a non-integer default is untouched.
+	const MethodBind *randfn = ClassDB::get_method(SNAME("RandomNumberGenerator"), SNAME("randfn"));
+	REQUIRE(randfn != nullptr);
+	CHECK(randfn->get_default_argument(0).get_type() == Variant::FLOAT);
+
+	const MethodBind *seek = ClassDB::get_method(SNAME("FileAccess"), SNAME("seek_end"));
+	REQUIRE(seek != nullptr);
+	CHECK(seek->get_default_argument(0).get_type() == Variant::INT);
+}
+
 TEST_CASE("[Modules][FoundryScript][NativeIntegerMetadata] Native signatures type-check at their declared width") {
 	ScopedNativeIntegerMetadataLanguage language;
 

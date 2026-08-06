@@ -488,7 +488,7 @@
 				Stores an integer as 8 bits in the file. This advances the file cursor by 1 byte. Returns [code]true[/code] if the operation is successful.
 				[b]Note:[/b] The [param value] should lie in the interval [code][0, 255][/code]. Any other value will overflow and wrap around.
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
-				To store a signed integer, use [method store_64], or convert it manually (see [method store_16] for an example).
+				To store a signed integer, convert it to its unsigned representation first (see [method store_16] for an example).
 			</description>
 		</method>
 		<method name="store_16">
@@ -498,7 +498,7 @@
 				Stores an integer as 16 bits in the file. This advances the file cursor by 2 bytes. Returns [code]true[/code] if the operation is successful.
 				[b]Note:[/b] The [param value] should lie in the interval [code][0, 2^16 - 1][/code]. Any other value will overflow and wrap around.
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
-				To store a signed integer, use [method store_64] or store a signed integer from the interval [code][-2^15, 2^15 - 1][/code] (i.e. keeping one bit for the signedness) and compute its sign manually when reading. For example:
+				To store a signed integer, convert the value to its 16-bit unsigned representation before storing it and compute its sign manually when reading. For example:
 				[codeblocks]
 				[foundry_script]
 				const MAX_15B = 1 &lt;&lt; 15
@@ -509,8 +509,8 @@
 
 				func _ready():
 					var f = FileAccess.open("user://file.dat", FileAccess.WRITE_READ)
-					f.store_16(-42) # This wraps around and stores 65494 (2^16 - 42).
-					f.store_16(121) # In bounds, will store 121.
+					f.store_16(65494U) # The 16-bit unsigned representation of -42 (2^16 - 42).
+					f.store_16(121U) # In bounds, will store 121.
 					f.seek(0) # Go back to start to read the stored value.
 					var read1 = f.get_16() # 65494
 					var read2 = f.get_16() # 121
@@ -540,7 +540,7 @@
 				Stores an integer as 32 bits in the file. This advances the file cursor by 4 bytes. Returns [code]true[/code] if the operation is successful.
 				[b]Note:[/b] The [param value] should lie in the interval [code][0, 2^32 - 1][/code]. Any other value will overflow and wrap around.
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
-				To store a signed integer, use [method store_64], or convert it manually (see [method store_16] for an example).
+				To store a signed integer, convert it to its unsigned representation first (see [method store_16] for an example).
 			</description>
 		</method>
 		<method name="store_64">
@@ -548,7 +548,7 @@
 			<param index="0" name="value" type="uint" />
 			<description>
 				Stores an integer as 64 bits in the file. This advances the file cursor by 8 bytes. Returns [code]true[/code] if the operation is successful.
-				[b]Note:[/b] The [param value] must lie in the interval [code][-2^63, 2^63 - 1][/code] (i.e. be a valid [int] value).
+				[b]Note:[/b] The [param value] covers the whole interval [code][0, 2^64 - 1][/code]. To store a signed integer, convert it to its 64-bit unsigned representation first and compute its sign manually when reading.
 				[b]Note:[/b] If an error occurs, the resulting value of the file position indicator is indeterminate.
 			</description>
 		</method>
