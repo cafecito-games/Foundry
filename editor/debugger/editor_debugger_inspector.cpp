@@ -214,7 +214,7 @@ EditorDebuggerRemoteObjects *EditorDebuggerInspector::set_objects(const Array &p
 				UsageData usage_dt;
 				usage_dt.prop = prop;
 				usage_dt.prop.first.name = pinfo.name;
-				usage_dt.values[obj.id] = prop.second;
+				usage_dt.values[(uint64_t)obj.id] = prop.second;
 				usage[pinfo.name] = usage_dt;
 			}
 
@@ -240,7 +240,7 @@ EditorDebuggerRemoteObjects *EditorDebuggerInspector::set_objects(const Array &p
 				}
 
 				usage[pinfo.name].qty++;
-				usage[pinfo.name].values[obj.id] = prop.second;
+				usage[pinfo.name].values[(uint64_t)obj.id] = prop.second;
 			}
 		}
 
@@ -462,7 +462,7 @@ void EditorDebuggerInspector::add_stack_variable(const Array &p_array, int p_off
 		}
 		variables->prop_list.insert_before(current, pinfo);
 	}
-	variables->prop_values[pinfo.name][0] = v;
+	variables->prop_values[pinfo.name][uint64_t(0)] = v;
 	variables->update();
 	edit(variables);
 }

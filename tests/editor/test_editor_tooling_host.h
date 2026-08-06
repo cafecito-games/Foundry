@@ -2048,9 +2048,10 @@ TEST_CASE("[Editor][ToolingHost] A structured project_test restart preserves the
 	continue_arguments["threadId"] = 1;
 	const Dictionary continue_response = session.client.await_response(
 			session.client.send_request("continue", continue_arguments), 30000);
-	REQUIRE_MESSAGE(bool(continue_response.get("success", false)), "continue did not succeed.");
+	REQUIRE_MESSAGE(bool(continue_response.get("success", false)),
+			("continue did not succeed.\n" + tooling_host_and_dap_diagnostic(session.host, session.client)));
 	REQUIRE_MESSAGE(!session.client.await_event("terminated", 120000).is_empty(),
-			"The replacement runner never terminated.");
+			("The replacement runner never terminated.\n" + tooling_host_and_dap_diagnostic(session.host, session.client)));
 
 	CHECK_EQ(session.client.lifecycle_events(), expected_known_result_lifecycle());
 	CHECK_EQ(session.client.exit_code_of_first_exited(), 0);
