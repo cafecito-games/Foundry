@@ -238,7 +238,7 @@ static bool found_project = false;
 // Set for a genuine interactive editor launch (bare launch or `editor open`) that is
 // eligible for projectless startup routing (#1135). Gates recording a successful open
 // into the global known-project store so background editor-mode services like
-// `lsp serve` do not rewrite the GUI auto-open candidate/recents.
+// `tooling serve` do not rewrite the GUI auto-open candidate/recents.
 static bool interactive_editor_launch = false;
 static bool recovery_mode = false;
 static bool auto_build_solutions = false;
@@ -804,10 +804,8 @@ static void apply_foundry_cli_invocation(
 		case Kind::TEST_GENERATE_FIXTURES:
 		case Kind::TEST_GENERATE_FORMAT_FIXTURES:
 			break;
-		case Kind::LSP_SERVE:
 		case Kind::TOOLING_SERVE:
-			// One combined host owns both tooling listeners. `lsp serve` is a deprecated
-			// alias that starts the very same host, so both kinds share this setup.
+			// One combined host owns both tooling listeners.
 			editor = true;
 			cmdline_tool = true;
 			r_audio_driver = NULL_AUDIO_DRIVER;
@@ -1187,8 +1185,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	// The tooling host answers to a supervisor that waits for one terminal record, so an
 	// unusable project has to be rejected here: before the working directory changes,
 	// before the project loads, and before either listener is configured.
-	if ((cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::TOOLING_SERVE ||
-				cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::LSP_SERVE) &&
+	if (cli_parse.invocation.kind == FoundryCLIParser::CLIInvocation::TOOLING_SERVE &&
 			!EditorToolingHost::preflight_project(cli_parse.invocation.project_path)) {
 		exit_err = ERR_INVALID_PARAMETER;
 		goto error;
@@ -3264,7 +3261,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		// (#1135) so the next launch can auto-open it and the projectless recents list
 		// reflects it. Requires an eligible editor launch, an actual editor session
 		// (`editor`), and no explicit-path error: command-line editor tools (export/import)
-		// and background editor-mode services (`lsp serve`) must not reorder the user's GUI
+		// and background editor-mode services (`tooling serve`) must not reorder the user's GUI
 		// recents; a bare launch that runs the working-directory project as a game
 		// (editor == false) must not either; and an invalid `--project` that still resolved
 		// an ambient cwd project via upward search must not record that unintended project.

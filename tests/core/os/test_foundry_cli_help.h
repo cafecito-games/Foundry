@@ -68,6 +68,41 @@ TEST_CASE("[FoundryCLIHelp] Editor help omits the removed project-manager comman
 }
 #endif
 
+TEST_CASE("[FoundryCLIHelp] The removed lsp noun is absent from every help surface") {
+	CHECK_FALSE(FoundryCLIHelp::has_noun("lsp"));
+	CHECK_FALSE(FoundryCLIHelp::get_top_help_text("foundry").contains("lsp"));
+	CHECK(FoundryCLIHelp::get_command_help_text("lsp", "serve").is_empty());
+
+	// Scoped routing no longer resolves the retired noun, so nothing advertises it.
+	PackedStringArray scope;
+	scope.push_back("lsp");
+	bool valid = true;
+	(void)FoundryCLIHelp::get_scoped_help_text("foundry", scope, valid);
+	CHECK_FALSE(valid);
+
+	int noun_count = 0;
+	const FoundryCLIHelp::NounSpec *nouns = FoundryCLIHelp::get_nouns(noun_count);
+	for (int i = 0; i < noun_count; i++) {
+		CHECK_NE(String(nouns[i].name), "lsp");
+	}
+
+	int command_count = 0;
+	const FoundryCLIHelp::CommandSpec *commands = FoundryCLIHelp::get_commands(command_count);
+	for (int i = 0; i < command_count; i++) {
+		CHECK_NE(String(commands[i].noun), "lsp");
+	}
+
+	JSON json;
+	REQUIRE_EQ(json.parse(FoundryCLIHelp::get_help_json(PackedStringArray())), OK);
+	const Dictionary root = json.get_data();
+	const Array json_commands = root["commands"];
+	for (int i = 0; i < json_commands.size(); i++) {
+		const Dictionary command = json_commands[i];
+		CHECK_NE(String(command["path"]), "lsp serve");
+		CHECK_FALSE(String(command["path"]).begins_with("lsp "));
+	}
+}
+
 TEST_CASE("[FoundryCLIHelp] Noun help lists its subcommands") {
 	const String text = FoundryCLIHelp::get_noun_help_text("script");
 	CHECK(text.contains("format"));
@@ -234,7 +269,7 @@ TEST_CASE("[FoundryCLIHelp] JSON help distinguishes option value styles") {
 TEST_CASE("[FoundryCLIHelp] Release builds hide editor-only commands from top help") {
 	const String text = FoundryCLIHelp::get_top_help_text("foundry");
 	CHECK_FALSE(text.contains("editor"));
-	CHECK_FALSE(text.contains("lsp"));
+	CHECK_FALSE(text.contains("tooling"));
 	CHECK_FALSE(text.contains("docs"));
 	CHECK_FALSE(text.contains("extension"));
 	CHECK(text.contains("project"));
@@ -294,7 +329,7 @@ TEST_CASE("[FoundryCLIHelp] Registry nouns match the parser") {
 	int noun_count = 0;
 	const FoundryCLIHelp::NounSpec *nouns = FoundryCLIHelp::get_nouns(noun_count);
 	// Catches registry-side noun removal; additions must update this pin deliberately.
-	CHECK_EQ(noun_count, 9);
+	CHECK_EQ(noun_count, 8);
 	for (int i = 0; i < noun_count; i++) {
 		CHECK_MESSAGE(FoundryCLIParser::is_new_cli_command(nouns[i].name), nouns[i].name);
 	}

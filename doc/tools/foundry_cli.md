@@ -81,7 +81,7 @@ foundry test run --project . --case "*FoundryScript*"
 foundry test run --project . --case "*FoundryScript*" --case "*FoundryCLI*"
 foundry test generate-fixtures modules/foundry_script/tests/scripts
 foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format
-foundry lsp serve --project . --port 6005
+foundry tooling serve --project . --lsp-port 6005 --dap-port 6006
 
 foundry docs generate-api --include-docs
 foundry docs generate-engine --output doc-out

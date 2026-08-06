@@ -1001,8 +1001,8 @@ static bool validate_tooling_port(CLIParseState &r_state, const String &p_option
 	return true;
 }
 
-// Shared tail for `tooling serve` and its deprecated `lsp serve` alias: both start the
-// same combined host, so both require a project and validated ports.
+// Shared tail for `tooling serve`: the combined host requires a project and validated
+// ports before anything is bound.
 static void finish_tooling_host_command(CLIParseState &r_state, const String &p_command_label) {
 	if (r_state.project_path.is_empty()) {
 		fail(r_state.result, p_command_label + " requires --project <dir>.");
@@ -1027,51 +1027,6 @@ static void finish_tooling_host_command(CLIParseState &r_state, const String &p_
 
 	r_state.result.invocation.project_path = r_state.project_path;
 	finalize_global_args(r_state);
-}
-
-static void parse_lsp(CLIParseState &r_state) {
-	if (r_state.index >= r_state.args.size()) {
-		fail(r_state.result, "lsp requires a command.");
-		return;
-	}
-	const String command = r_state.args[r_state.index++];
-	if (is_help_flag(command)) {
-		request_help(r_state);
-		return;
-	}
-	if (command != "serve") {
-		fail(r_state.result, "Unknown lsp command: " + command + ".");
-		return;
-	}
-	set_command_path(r_state.result, "lsp", command);
-	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::LSP_SERVE;
-
-	while (r_state.index < r_state.args.size()) {
-		const String arg = r_state.args[r_state.index];
-		if (is_help_flag(arg)) {
-			request_help(r_state);
-			return;
-		}
-		if (consume_common_global_option(r_state, arg)) {
-			if (parse_stopped(r_state)) {
-				return;
-			}
-			continue;
-		}
-		if (arg == "--port") {
-			if (!require_value(r_state, arg, r_state.result.invocation.lsp_port)) {
-				return;
-			}
-			if (!validate_tooling_port(r_state, arg, r_state.result.invocation.lsp_port)) {
-				return;
-			}
-		} else {
-			fail(r_state.result, "Unknown option for lsp serve: " + arg + ".");
-			return;
-		}
-	}
-
-	finish_tooling_host_command(r_state, "lsp serve");
 }
 
 static void parse_tooling(CLIParseState &r_state) {
@@ -1429,11 +1384,27 @@ static bool is_legacy_workflow_flag(const String &p_arg, String &r_replacement) 
 	return false;
 }
 
+// `lsp serve` was removed with a clean break; `tooling serve` is the only supported
+// editor-integration entry point. The retired noun is still recognized where a command
+// is expected so the invocation fails with a migration diagnostic instead of falling
+// through to legacy engine argument parsing.
+static bool is_removed_command_noun(const String &p_arg) {
+	return p_arg == "lsp";
+}
+
+static bool reject_removed_command(CLIParseState &r_state, const String &p_arg) {
+	if (!is_removed_command_noun(p_arg)) {
+		return false;
+	}
+	fail(r_state.result, "`foundry lsp serve` has been removed. Use `foundry tooling serve --project <dir> --lsp-port <port> --dap-port <port>`.");
+	return true;
+}
+
 static bool reject_legacy_workflow_flags(CLIParseState &r_state, int p_start_index) {
 	bool inside_command = false;
 	for (int i = p_start_index; i < r_state.args.size(); i++) {
 		const String &arg = r_state.args[i];
-		if (!inside_command && FoundryCLIParser::is_new_cli_command(arg)) {
+		if (!inside_command && (FoundryCLIParser::is_new_cli_command(arg) || is_removed_command_noun(arg))) {
 			inside_command = true;
 			continue;
 		}
@@ -1482,7 +1453,6 @@ bool FoundryCLIParser::is_new_cli_command(const String &p_arg) {
 			p_arg == "project" ||
 			p_arg == "script" ||
 			p_arg == "test" ||
-			p_arg == "lsp" ||
 			p_arg == "tooling" ||
 			p_arg == "docs" ||
 			p_arg == "extension" ||
@@ -1503,7 +1473,10 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 	}
 
 	const String first_arg = state.args[0];
-	state.has_executable_arg = !is_new_cli_command(first_arg) && first_arg != "help" && !is_help_flag(first_arg) && !first_arg.begins_with("-");
+	// A retired command noun must never be mistaken for the executable path, or the
+	// removed invocation would silently reach legacy engine argument parsing.
+	state.has_executable_arg = !is_new_cli_command(first_arg) && !is_removed_command_noun(first_arg) &&
+			first_arg != "help" && !is_help_flag(first_arg) && !first_arg.begins_with("-");
 	const int start_index = state.has_executable_arg ? 1 : 0;
 
 	if (reject_legacy_workflow_flags(state, start_index)) {
@@ -1546,6 +1519,9 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 			}
 			return state.result;
 		}
+		if (reject_removed_command(state, arg)) {
+			return state.result;
+		}
 		if (is_new_cli_command(arg)) {
 			state.result.used_new_cli = true;
 			state.index++;
@@ -1559,8 +1535,6 @@ FoundryCLIParser::ParseResult FoundryCLIParser::parse(const PackedStringArray &p
 				parse_test(state);
 			} else if (arg == "editor") {
 				parse_editor(state);
-			} else if (arg == "lsp") {
-				parse_lsp(state);
 			} else if (arg == "tooling") {
 				parse_tooling(state);
 			} else if (arg == "docs") {

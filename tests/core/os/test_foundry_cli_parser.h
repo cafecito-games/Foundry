@@ -460,8 +460,10 @@ TEST_CASE("[FoundryCLIParser] Test fixture generators record paths") {
 	CHECK_EQ(format_fixtures.invocation.command_args, make_args({ "modules/foundry_script/tests/scripts/format" }));
 }
 
-TEST_CASE("[FoundryCLIParser] LSP serve records port") {
-	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+TEST_CASE("[FoundryCLIParser] Removed lsp serve reports the tooling serve replacement") {
+	const String expected_error = "`foundry lsp serve` has been removed. Use `foundry tooling serve --project <dir> --lsp-port <port> --dap-port <port>`.";
+
+	FoundryCLIParser::ParseResult legacy = FoundryCLIParser::parse(make_args({
 			"foundry",
 			"lsp",
 			"serve",
@@ -470,11 +472,31 @@ TEST_CASE("[FoundryCLIParser] LSP serve records port") {
 			"--port",
 			"6005",
 	}));
+	CHECK_FALSE(legacy.ok);
+	CHECK_EQ(legacy.error, expected_error);
+	// The removal must not degrade into legacy engine argument parsing.
+	CHECK(legacy.global_args.is_empty());
+	CHECK_EQ(legacy.invocation.kind, Kind::NONE);
+	CHECK(legacy.invocation.project_path.is_empty());
+	CHECK_FALSE(legacy.help_requested);
 
-	REQUIRE_MESSAGE(result.ok, result.error);
-	CHECK_EQ(result.invocation.kind, Kind::LSP_SERVE);
-	CHECK_EQ(result.invocation.project_path, "demo");
-	CHECK_EQ(result.invocation.lsp_port, "6005");
+	// The bare noun, a help request on it, and an unknown verb all report the removal
+	// rather than advertising a command that no longer exists.
+	for (const std::initializer_list<String> &input : {
+				 std::initializer_list<String>{ "foundry", "lsp" },
+				 std::initializer_list<String>{ "foundry", "lsp", "--help" },
+				 std::initializer_list<String>{ "foundry", "lsp", "bogus" },
+				 std::initializer_list<String>{ "foundry", "--headless", "lsp", "serve", "--project", "demo" },
+				 // The engine receives arguments without the executable, so the retired noun
+				 // also has to be caught in the leading position.
+				 std::initializer_list<String>{ "lsp", "serve", "--project", "demo", "--port", "6005" },
+				 std::initializer_list<String>{ "lsp", "serve", "--project", "demo", "--lsp-port", "6005" },
+		 }) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args(input));
+		CHECK_FALSE(result.ok);
+		CHECK_EQ(result.error, expected_error);
+		CHECK_FALSE(result.help_requested);
+	}
 }
 
 TEST_CASE("[FoundryCLIParser] Tooling serve records both ports") {
@@ -623,17 +645,6 @@ TEST_CASE("[FoundryCLIParser] Tooling serve rejects recovery mode") {
 	}));
 	CHECK_FALSE(result.ok);
 	CHECK(result.error.contains("--recovery-mode"));
-
-	FoundryCLIParser::ParseResult alias = FoundryCLIParser::parse(make_args({
-			"foundry",
-			"lsp",
-			"serve",
-			"--project",
-			"demo",
-			"--recovery-mode",
-	}));
-	CHECK_FALSE(alias.ok);
-	CHECK(alias.error.contains("--recovery-mode"));
 }
 
 TEST_CASE("[FoundryCLIParser] Tooling serve requires a project") {
@@ -670,30 +681,6 @@ TEST_CASE("[FoundryCLIParser] Tooling serve rejects unknown options") {
 	}));
 	CHECK_FALSE(result.ok);
 	CHECK(result.error.contains("Unknown option"));
-}
-
-TEST_CASE("[FoundryCLIParser] LSP serve is a deprecated alias with the same strictness") {
-	FoundryCLIParser::ParseResult missing_project = FoundryCLIParser::parse(make_args({
-			"foundry",
-			"lsp",
-			"serve",
-			"--port",
-			"6005",
-	}));
-	CHECK_FALSE(missing_project.ok);
-	CHECK(missing_project.error.contains("--project"));
-
-	FoundryCLIParser::ParseResult bad_port = FoundryCLIParser::parse(make_args({
-			"foundry",
-			"lsp",
-			"serve",
-			"--project",
-			"demo",
-			"--port",
-			"not-a-port",
-	}));
-	CHECK_FALSE(bad_port.ok);
-	CHECK(bad_port.error.contains("--port"));
 }
 
 TEST_CASE("[FoundryCLIParser] Docs and extension commands record generator options") {
@@ -897,7 +884,7 @@ TEST_CASE("[FoundryCLIParser] Help flag as an option value requests help") {
 }
 
 TEST_CASE("[FoundryCLIParser] Unknown verb scope is the noun for every dispatcher") {
-	for (const String &noun : { String("editor"), String("lsp"), String("tooling"), String("docs"), String("extension"), String("diagnostics") }) {
+	for (const String &noun : { String("editor"), String("tooling"), String("docs"), String("extension"), String("diagnostics") }) {
 		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({ "foundry", noun, "bogus" }));
 		CHECK_FALSE(result.ok);
 		CHECK_EQ(result.command_path, make_args({ noun }));
