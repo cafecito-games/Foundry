@@ -4,4 +4,4 @@ trait_name RtcBuiltinCounter
 
 abstract func doubled() -> int
 
-abstract func size() -> long
+abstract func size() -> int
