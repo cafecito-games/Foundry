@@ -28,14 +28,16 @@ carrier can hold — and `Variant.get_type_name()` reports `int` or `uint` for t
 Runtime `is` tests are therefore range refinements over the carrier:
 
 ```foundry
-value is int    # carrier is INT   and the value fits signed 32-bit
+value is int    # carrier is INT   (see below: not yet range-checked)
 value is long   # carrier is INT
 value is uint   # carrier is UINT  and the value fits unsigned 32-bit
 value is ulong  # carrier is UINT
 ```
 
 `value is long` and `value is int` can both be true for the same value. That overlap is intentional:
-after width has erased, the narrow type is a refinement of its carrier's wide type.
+after width has erased, the narrow type is a refinement of its carrier's wide type. `is uint`
+performs that refinement today; `is int` does not yet, because `int` applies no width constraint
+internally ([#1684]), so `is int` currently answers for the whole signed carrier.
 
 ## Literals and suffixes
 
@@ -73,19 +75,22 @@ hexadecimal, binary, and underscore-separated literals.
 The value-preserving implicit conversions are:
 
 - `int` -> `long`
-- `uint` -> `long`
 - `uint` -> `ulong`
 - `int` -> `float`
 
-Every other integer assignment needs an explicit conversion, including `int` -> `uint`,
-`long` -> `uint`, `ulong` -> `long`, and all narrowing. A **constant** may additionally narrow within
-its own carrier when its exact value fits the destination:
+Every other integer assignment of a non-constant value needs an explicit conversion, including
+`int` -> `uint`, `uint` -> `long`, `long` -> `uint`, `ulong` -> `long`, and all narrowing. A
+**constant** may additionally narrow within its own carrier when its exact value fits the
+destination, and a signed constant of either width reaches `float` when it is exactly representable:
 
 ```foundry
 var narrowed: uint = 4000000000UL   # accepted: the value fits uint
 var too_large: uint = 5000000000UL  # error: the value does not fit uint
 var wide: ulong = 4UL
 var narrowed_value: uint = wide     # error: a non-constant never narrows implicitly
+
+var exact: float = 4000000000L      # accepted: the constant is exactly representable
+var lossy: float = wide             # error: a non-constant long/ulong needs an explicit cast
 ```
 
 Binary operands promote to a common type:
@@ -150,7 +155,8 @@ truncates toward zero and is refused when it is not finite or when the truncated
 range:
 
 ```
-Cannot convert 1e+30 to "long": the value is outside its range ... .
+Cannot convert 1000000000000000019884624838656.0 to "long": the value is outside its range
+-9223372036854775808 to 9223372036854775807.
 Cannot convert nan to "long": it is not a finite number.
 ```
 
@@ -238,8 +244,9 @@ These are tracked defects in the shipped surface, not intended behavior. Each on
 - **An unsuffixed constant does not cross carriers** ([#1759]). `var count: uint = 42` is rejected;
   write `42U`. A constant narrows within its own carrier (`var count: uint = 42UL` is accepted), but
   it will not move between the signed and unsigned carrier.
-- **`uint` mixed with `long` is rejected** rather than promoting to `long`, even though `uint` -> `long`
-  is a value-preserving implicit conversion in an assignment. Convert explicitly.
+- **`uint` does not reach `long` at all**, in an assignment or in a mixed expression, even though
+  every `uint` value is a `long` value. The design lists `uint` -> `long` as a value-preserving
+  implicit conversion; it is not implemented. Convert explicitly.
 - **`uint` does not reach `float` implicitly**, even though every `uint` value is exactly
   representable as a double. `int` does.
 - **Conversion-call syntax is missing** ([#1763]). `uint()`, `long()`, and `ulong()` do not exist, and

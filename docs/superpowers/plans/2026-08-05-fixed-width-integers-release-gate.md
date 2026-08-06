@@ -13,8 +13,8 @@ repository-wide unsigned-carrier audit, and lists the gaps that are tracked rath
 - Arithmetic, shifts, division, and conversions are checked. Constant folding and the virtual machine
   answer through one implementation (`modules/foundry_script/fs_numeric_ops.{h,cpp}`), so they agree
   by construction, and a failed compound assignment does not modify its destination.
-- Implicit conversion is value-preserving: `int` -> `long`, `uint` -> `long`, `uint` -> `ulong`, and
-  `int` -> `float`. Everything else needs `as`.
+- Implicit conversion is value-preserving: `int` -> `long`, `uint` -> `ulong`, and `int` -> `float`.
+  Everything else needs `as`.
 - Width erases at an untyped Variant boundary; signedness does not.
 
 User-facing documentation is `docs/foundry_script/fixed_width_integers.md` and
@@ -103,7 +103,7 @@ The epic ships with these open, documented in
 - #1758 — `ADD_PROPERTY(Variant::INT)` with unsigned accessors disagrees with generic reflection.
 - #1763 — compound assignment on a flow-narrowed value, missing `int()`/`uint()`/`long()`/`ulong()`
   conversion-call syntax, and `TypedArray` hint strings erasing element widths.
-- `uint` mixed with `long` is rejected instead of promoting to `long`, and `uint` does not reach
-  `float` implicitly, although both conversions are value-preserving.
+- `uint` does not reach `long` implicitly, and `uint` does not reach `float` implicitly, although
+  both conversions are value-preserving.
 - Global numeric utilities, `JsonNode.of()`, and the web/Android Variant bridges do not accept the
   unsigned carrier.

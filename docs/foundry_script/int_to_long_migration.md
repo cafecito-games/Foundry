@@ -126,7 +126,7 @@ var narrow := wide_value as long
 | `Invalid operand of type "uint" for unary operator "unary-".` | Negation of an unsigned value. | Convert to a signed type first. |
 | `Invalid shift count for the "<<" operator on "uint": it must be from 0 to 31.` | A shift count at or beyond the result width. | Use a count inside the width, or widen the type. |
 | `Cannot convert nan to "long": it is not a finite number.` | A non-finite float cast to an integer. | Guard the value before converting. |
-| `Invalid integer suffix "ul"; use "UL".` | Lowercase or misordered suffix. | Use the canonical uppercase spelling. |
+| `Invalid integer suffix "ul". Integer suffixes are uppercase "U", "L", or "UL"; write "1UL".` | Lowercase or misordered suffix. | Use the canonical uppercase spelling. |
 
 ## Search targets
 
