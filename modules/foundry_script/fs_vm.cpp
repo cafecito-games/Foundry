@@ -1457,9 +1457,13 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				// An instance frame always has an instance, so a receiver-derived resolution only fails
 				// when the receiver's script or a nested type-argument script has been freed mid-call.
 				// Aborting would hard-fail a frame that by definition has a `self`, so the call falls
-				// back to the unresolved signature rather than substituting another class.
+				// back to the unresolved signature rather than substituting another class. Positional
+				// arguments and the rest tail both fall back to the declared types: `rest_parameter_type`
+				// (not a default-constructed empty type) so vararg elements are still validated against
+				// their declared element type, matching how the positional leg falls back to
+				// `argument_types.ptr()`.
 				resolved_argument_types.clear();
-				resolved_rest_parameter_type = FSDataType();
+				resolved_rest_parameter_type = rest_parameter_type;
 			}
 		}
 		const FSDataType *effective_argument_types = resolve_signature_self && !resolved_argument_types.is_empty()
