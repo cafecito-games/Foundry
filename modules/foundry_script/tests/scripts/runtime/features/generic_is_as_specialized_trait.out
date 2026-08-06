@@ -1,9 +1,9 @@
 FS_TEST_OK
-~~ WARNING at line 85: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
-~~ WARNING at line 87: (UNSAFE_CAST) Casting "Variant" to "Holder[String]" is unsafe.
-~~ WARNING at line 89: (UNSAFE_CAST) Casting "Variant" to "Holder" is unsafe.
-~~ WARNING at line 91: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
-~~ WARNING at line 93: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
+~~ WARNING at line 107: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
+~~ WARNING at line 109: (UNSAFE_CAST) Casting "Variant" to "Holder[String]" is unsafe.
+~~ WARNING at line 111: (UNSAFE_CAST) Casting "Variant" to "Holder" is unsafe.
+~~ WARNING at line 113: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
+~~ WARNING at line 115: (UNSAFE_CAST) Casting "Variant" to "Holder[int]" is unsafe.
 int holder is Holder: true
 string holder is Holder: true
 raw forwarder is Holder: true
@@ -24,6 +24,10 @@ relay holder is Holder[String]: false
 derived holder is Holder: true
 derived holder is Holder[int]: true
 derived holder is Holder[String]: false
+fixed pair is Paired[int, String]: true
+fixed pair is Paired[String, int]: false
+swapped pair is Paired[String, int]: true
+swapped pair is Paired[int, String]: false
 plain is Holder[int]: false
 null is Holder[int]: false
 matched cast keeps identity: true

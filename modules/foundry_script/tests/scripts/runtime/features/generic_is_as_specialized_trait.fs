@@ -39,6 +39,19 @@ class DerivedIntHolder extends IntHolder:
 	var extra: int = 0
 
 
+trait Paired[A, B]:
+	var first: A
+	var second: B
+
+
+class FixedPair:
+	uses Paired[int, String]
+
+
+class SwappedPair[X, Y]:
+	uses Paired[Y, X]
+
+
 class Plain:
 	var value: int = 0
 
@@ -51,6 +64,8 @@ func test() -> void:
 	var forwarded_int: Variant = Forwarder[int].new()
 	var raw_forwarder: Variant = Forwarder.new()
 	var derived_holder: Variant = DerivedIntHolder.new()
+	var fixed_pair: Variant = FixedPair.new()
+	var swapped_pair: Variant = SwappedPair[int, String].new()
 	var plain: Variant = Plain.new()
 	var absent: Variant = null
 
@@ -78,6 +93,13 @@ func test() -> void:
 	print("derived holder is Holder: ", derived_holder is Holder)
 	print("derived holder is Holder[int]: ", derived_holder is Holder[int])
 	print("derived holder is Holder[String]: ", derived_holder is Holder[String])
+
+	# A multi-parameter trait matches position by position, and an implementer that reorders the
+	# arguments it forwards is answered against the trait's order, not its own.
+	print("fixed pair is Paired[int, String]: ", fixed_pair is Paired[int, String])
+	print("fixed pair is Paired[String, int]: ", fixed_pair is Paired[String, int])
+	print("swapped pair is Paired[String, int]: ", swapped_pair is Paired[String, int])
+	print("swapped pair is Paired[int, String]: ", swapped_pair is Paired[int, String])
 
 	print("plain is Holder[int]: ", plain is Holder[int])
 	print("null is Holder[int]: ", absent is Holder[int])
