@@ -261,8 +261,19 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] An exactly representable const
 	CHECK(classify_constant(int32_type, int64_type, int64_t(INT32_MAX) + 1) == Conversion::EXPLICIT_REQUIRED);
 	CHECK(classify_constant(int32_type, int64_type, int64_t(INT32_MIN) - 1) == Conversion::EXPLICIT_REQUIRED);
 
-	// A constant on the other carrier proves nothing: the descriptor rejects the crossing outright.
-	CHECK(classify_constant(uint32_type, int64_type, int64_t(7)) == Conversion::EXPLICIT_REQUIRED);
+	// A constant on the other carrier still proves its exact value, so a representable one may cross
+	// signedness: design section 6.1 permits an unsuffixed positive constant to enter an unsigned slot.
+	CHECK(classify_constant(uint32_type, int64_type, int64_t(7)) == Conversion::CONSTANT_CHECKED);
+	CHECK(classify_constant(uint32_type, int64_type, int64_t(UINT32_MAX)) == Conversion::CONSTANT_CHECKED);
+	// A negative constant has no unsigned representation, so the crossing is still rejected.
+	CHECK(classify_constant(uint32_type, int64_type, int64_t(-1)) == Conversion::EXPLICIT_REQUIRED);
+	// A magnitude the destination cannot hold is rejected even though the sign would cross fine.
+	CHECK(classify_constant(uint32_type, int64_type, int64_t(UINT32_MAX) + 1) == Conversion::EXPLICIT_REQUIRED);
+
+	// The crossing is symmetric: a `uint` constant within the signed range may enter a signed slot.
+	CHECK(classify_constant(int32_type, uint32_type, uint64_t(7)) == Conversion::CONSTANT_CHECKED);
+	CHECK(classify_constant(int32_type, uint32_type, uint64_t(INT32_MAX)) == Conversion::CONSTANT_CHECKED);
+	CHECK(classify_constant(int32_type, uint32_type, uint64_t(INT32_MAX) + 1) == Conversion::EXPLICIT_REQUIRED);
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] A slot that declares no width keeps its prior behavior") {
@@ -435,6 +446,62 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] A folded constant keeps the wi
 	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
 
 	check_initializer_type(snippet, "in_range", Variant::UINT, NumericType::UINT32);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] An unsuffixed constant crosses signedness when representable") {
+	using namespace TestIntegerPromotion;
+
+	// Design section 6.1: a representable constant may cross signedness without a suffix or explicit
+	// cast, so `var x: ulong = 12` must not force the caller to spell `12U`. The crossing is symmetric,
+	// so a `uint` constant that fits the signed range enters `int`/`long` the same way.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar as_uint: uint = 12\n"
+			"\tvar as_ulong: ulong = 12\n"
+			"\tvar as_int: int = 12U\n"
+			"\tvar as_long: long = 12U\n"
+			"\tprint(as_uint, as_ulong, as_int, as_long)\n");
+	REQUIRE(snippet.parse_error == OK);
+	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
+
+	check_initializer_type(snippet, "as_uint", Variant::UINT, NumericType::UINT32);
+	check_initializer_type(snippet, "as_ulong", Variant::UINT, NumericType::UINT64);
+	check_initializer_type(snippet, "as_int", Variant::INT, NumericType::INT32);
+	check_initializer_type(snippet, "as_long", Variant::INT, NumericType::INT64);
+
+	// A negative constant still has no unsigned representation.
+	const AnalyzedSnippet negative(
+			"func test():\n"
+			"\tvar as_uint: uint = -1\n"
+			"\tprint(as_uint)\n");
+	CHECK(negative.parse_error == OK);
+	CHECK(negative.first_error().contains(R"(Cannot assign a value of type "int" as "uint".)"));
+
+	// An out-of-range constant still needs an explicit conversion even though its sign would cross fine.
+	const AnalyzedSnippet out_of_range(
+			"func test():\n"
+			"\tvar as_uint: uint = 4294967296\n"
+			"\tprint(as_uint)\n");
+	CHECK(out_of_range.parse_error == OK);
+	CHECK(out_of_range.first_error().contains(R"(Cannot assign a value of type "int" as "uint".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] The signedness-crossing fix does not reach `uint`/`ulong` -> float") {
+	using namespace TestIntegerPromotion;
+
+	// `classify()` can prove a `ulong` constant exactly representable as `float` (design section 6.1's
+	// floating-side carve-out), but `Variant::construct()` -- the fallback the caller uses once
+	// compatibility is granted -- has no registered `UINT` -> `FLOAT` conversion. `check()` therefore
+	// keeps this pairing exactly as unsupported as it already was rather than trading a clear type
+	// error for a confusing conversion failure; implementing that carve-out for the `uint` carrier is
+	// its own change. `int`/`long` constants already promote to `float` through
+	// `Variant::can_convert_strict()` and are unaffected.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar from_ulong: float = 5UL\n"
+			"\tprint(from_ulong)\n");
+	CHECK(snippet.parse_error == OK);
+	CHECK(snippet.first_error().contains(R"(Cannot assign a value of type "ulong" as "float".)"));
 }
 
 TEST_CASE("[Modules][FoundryScript][NumericTypes] A sum that leaves the promoted range is refused") {
