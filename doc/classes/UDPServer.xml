@@ -17,7 +17,7 @@
 		var peers = []
 
 		func _ready():
-			server.listen(4242)
+			server.listen(4242U)
 
 		func _process(delta):
 			server.poll() # Important!

@@ -136,12 +136,12 @@
 				var compute_list = rd.compute_list_begin()
 
 				rd.compute_list_bind_compute_pipeline(compute_list, compute_shader_dilate_pipeline)
-				rd.compute_list_bind_uniform_set(compute_list, compute_base_uniform_set, 0)
-				rd.compute_list_bind_uniform_set(compute_list, dilate_uniform_set, 1)
+				rd.compute_list_bind_uniform_set(compute_list, compute_base_uniform_set, 0U)
+				rd.compute_list_bind_uniform_set(compute_list, dilate_uniform_set, 1U)
 
 				for i in atlas_slices:
 					rd.compute_list_set_push_constant(compute_list, push_constant, push_constant.size())
-					rd.compute_list_dispatch(compute_list, group_size.x, group_size.y, group_size.z)
+					rd.compute_list_dispatch(compute_list, group_size.x as uint, group_size.y as uint, group_size.z as uint)
 					# No barrier, let them run all together.
 
 				rd.compute_list_end()
@@ -257,12 +257,12 @@
 
 				# Draw opaque.
 				rd.draw_list_bind_render_pipeline(draw_list, raster_pipeline)
-				rd.draw_list_bind_uniform_set(draw_list, raster_base_uniform, 0)
+				rd.draw_list_bind_uniform_set(draw_list, raster_base_uniform, 0U)
 				rd.draw_list_set_push_constant(draw_list, raster_push_constant, raster_push_constant.size())
 				rd.draw_list_draw(draw_list, false, 1, slice_triangle_count[i] * 3)
 				# Draw wire.
 				rd.draw_list_bind_render_pipeline(draw_list, raster_pipeline_wire)
-				rd.draw_list_bind_uniform_set(draw_list, raster_base_uniform, 0)
+				rd.draw_list_bind_uniform_set(draw_list, raster_base_uniform, 0U)
 				rd.draw_list_set_push_constant(draw_list, raster_push_constant, raster_push_constant.size())
 				rd.draw_list_draw(draw_list, false, 1, slice_triangle_count[i] * 3)
 
@@ -787,7 +787,7 @@
 				blas = rd.blas_create([geometry], 0)
 
 				# Create TLAS.
-				tlas = rd.tlas_create(1, 0)
+				tlas = rd.tlas_create(1U, 0)
 
 				# Build acceleration structures.
 				rd.blas_build(blas)
@@ -795,8 +795,8 @@
 				var instance = RDAccelerationStructureInstance.new()
 				instance.blas = blas
 
-				instance.hit_sbt_range = rd.hit_sbt_range_alloc(hit_sbt, 1)
-				rd.hit_sbt_range_update(hit_sbt, instance.hit_sbt_range, 0, [0])
+				instance.hit_sbt_range = rd.hit_sbt_range_alloc(hit_sbt, 1U)
+				rd.hit_sbt_range_update(hit_sbt, instance.hit_sbt_range, 0U, [0])
 
 				rd.tlas_build(tlas, [instance])
 
@@ -804,12 +804,12 @@
 
 				# Bind pipeline and uniforms.
 				rd.raytracing_list_bind_raytracing_pipeline(raylist, raytracing_pipeline)
-				rd.raytracing_list_bind_uniform_set(raylist, uniform_set, 0)
+				rd.raytracing_list_bind_uniform_set(raylist, uniform_set, 0U)
 
 				# Trace rays.
 				var width = get_viewport().size.x
 				var height = get_viewport().size.y
-				rd.raytracing_list_trace_rays(raylist, 0, hit_sbt, width, height, 1)
+				rd.raytracing_list_trace_rays(raylist, 0U, hit_sbt, width as uint, height as uint, 1U)
 
 				rd.raytracing_list_end()
 				[/foundry_script]
@@ -1157,7 +1157,7 @@
 
 				...
 
-				rd.texture_get_data_async(texture, 0, _texture_get_data_callback)
+				rd.texture_get_data_async(texture, 0U, _texture_get_data_callback)
 				[/codeblock]
 			</description>
 		</method>

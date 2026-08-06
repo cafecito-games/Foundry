@@ -223,12 +223,12 @@
 			<param index="0" name="hex" type="uint" />
 			<description>
 				Returns the [Color] associated with the provided [param hex] integer in 32-bit RGBA format (8 bits per channel). This method is the inverse of [method to_rgba32].
-				In FoundryScript and C#, the [int] is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRGGBBAA"[/code]).
+				In FoundryScript and C#, the value is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRGGBBAA"[/code]). In FoundryScript, suffix the literal with [code]U[/code] so it is unsigned, as the parameter is.
 				[codeblocks]
 				[foundry_script]
-				var red = Color.hex(0xff0000ff)
-				var dark_cyan = Color.hex(0x008b8bff)
-				var my_color = Color.hex(0xbbefd2a4)
+				var red = Color.hex(0xff0000ffU)
+				var dark_cyan = Color.hex(0x008b8bffU)
+				var my_color = Color.hex(0xbbefd2a4U)
 				[/foundry_script]
 				[csharp]
 				var red = new Color(0xff0000ff);
@@ -244,7 +244,7 @@
 			<param index="0" name="hex" type="uint" />
 			<description>
 				Returns the [Color] associated with the provided [param hex] integer in 64-bit RGBA format (16 bits per channel). This method is the inverse of [method to_rgba64].
-				In FoundryScript and C#, the [int] is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRRRGGGGBBBBAAAA"[/code]).
+				In FoundryScript and C#, the value is best visualized with hexadecimal notation ([code]"0x"[/code] prefix, making it [code]"0xRRRRGGGGBBBBAAAA"[/code]). In FoundryScript, suffix the literal with [code]UL[/code] so it is unsigned, as the parameter is.
 			</description>
 		</method>
 		<method name="html" qualifiers="static">
@@ -399,11 +399,11 @@
 				[codeblocks]
 				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
-				print(color.to_abgr64()) # Prints -225178692812801
+				print(color.to_abgr64()) # Prints 18446518895016738815
 				[/foundry_script]
 				[csharp]
 				var color = new Color(1.0f, 0.5f, 0.2f);
-				GD.Print(color.ToAbgr64()); // Prints -225178692812801
+				GD.Print(color.ToAbgr64()); // Prints 18446518895016738815
 				[/csharp]
 				[/codeblocks]
 			</description>
@@ -431,11 +431,11 @@
 				[codeblocks]
 				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
-				print(color.to_argb64()) # Prints -2147470541
+				print(color.to_argb64()) # Prints 18446744071562081075
 				[/foundry_script]
 				[csharp]
 				var color = new Color(1.0f, 0.5f, 0.2f);
-				GD.Print(color.ToArgb64()); // Prints -2147470541
+				GD.Print(color.ToArgb64()); // Prints 18446744071562081075
 				[/csharp]
 				[/codeblocks]
 			</description>
@@ -483,11 +483,11 @@
 				[codeblocks]
 				[foundry_script]
 				var color = Color(1, 0.5, 0.2)
-				print(color.to_rgba64()) # Prints -140736629309441
+				print(color.to_rgba64()) # Prints 18446603337080242175
 				[/foundry_script]
 				[csharp]
 				var color = new Color(1, 0.5f, 0.2f);
-				GD.Print(color.ToRgba64()); // Prints -140736629309441
+				GD.Print(color.ToRgba64()); // Prints 18446603337080242175
 				[/csharp]
 				[/codeblocks]
 			</description>

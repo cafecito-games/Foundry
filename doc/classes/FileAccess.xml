@@ -511,7 +511,7 @@
 					var f = FileAccess.open("user://file.dat", FileAccess.WRITE_READ)
 					f.store_16(65494U) # The 16-bit unsigned representation of -42 (2^16 - 42).
 					f.store_16(121U) # In bounds, will store 121.
-					f.seek(0) # Go back to start to read the stored value.
+					f.seek(0U) # Go back to start to read the stored value.
 					var read1 = f.get_16() # 65494
 					var read2 = f.get_16() # 121
 					var converted1 = unsigned16_to_signed(read1) # -42
