@@ -236,6 +236,56 @@ TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A failed checked cast leaves
 	CHECK(object->get("converted") == Variant(uint64_t(9)));
 }
 
+// `int(source)` compiles to `Variant::construct()` against `VariantConstructorIntFromUInt`, whose
+// range precondition the compiler cannot prove from the `ulong` carrier alone: the value is only
+// known at run time. That constructor's validated fast path only asserts the precondition instead of
+// checking it, so an out-of-range value used to trip a `DEV_ASSERT` in dev builds and silently keep
+// whatever bit pattern the carrier held in release. The constructor call is routed through the same
+// checked-numeric machinery `as` casts use, so the failure is a stable runtime error in every build.
+//
+// `int(...)` also declares the narrower 32-bit width, not its 64-bit `INT` carrier's full range (see
+// the builtin-constructor typing in `FSAnalyzer::reduce_call`), so a value above `INT32_MAX` and
+// at or below `INT64_MAX` must still be refused even though it fits the carrier: checking only the
+// carrier's widest range here would silently accept a value `int` cannot hold, exactly the failure
+// mode a plain `as int` cast on the same value already rejects.
+TEST_CASE("[Modules][FoundryScript][CheckedNumeric] A signedness-crossing constructor call is checked") {
+	ScopedCheckedNumericLanguage language;
+
+	const Ref<FoundryScript> script = compile_checked_numeric_source(
+			"func cast_to_int(source: ulong):\n"
+			"\treturn int(source)\n");
+
+	const Variant instance = instantiate_checked_numeric_script(script);
+	Object *object = instance;
+	REQUIRE(object != nullptr);
+
+	const Variant out_of_range = uint64_t(UINT64_MAX);
+	const Variant *out_of_range_arguments[] = { &out_of_range };
+	Callable::CallError error;
+	ERR_PRINT_OFF;
+	const Variant failed_result = object->callp(SNAME("cast_to_int"), out_of_range_arguments, 1, error);
+	ERR_PRINT_ON;
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(failed_result.get_type() == Variant::NIL);
+
+	// This value fits `int`'s 64-bit carrier but not its declared 32-bit width, and used to be
+	// accepted when the checked cast validated at the carrier's widest range instead of `int`'s
+	// declared width.
+	const Variant beyond_declared_width = uint64_t(int64_t(INT32_MAX) + 1);
+	const Variant *beyond_declared_width_arguments[] = { &beyond_declared_width };
+	ERR_PRINT_OFF;
+	const Variant beyond_declared_width_result = object->callp(SNAME("cast_to_int"), beyond_declared_width_arguments, 1, error);
+	ERR_PRINT_ON;
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(beyond_declared_width_result.get_type() == Variant::NIL);
+
+	const Variant in_range = uint64_t(9);
+	const Variant *in_range_arguments[] = { &in_range };
+	const Variant succeeded_result = object->callp(SNAME("cast_to_int"), in_range_arguments, 1, error);
+	REQUIRE(error.error == Callable::CallError::CALL_OK);
+	CHECK(succeeded_result == Variant(int64_t(9)));
+}
+
 TEST_CASE("[Modules][FoundryScript][CheckedNumeric] Nullable integer arithmetic keeps its declared width") {
 	ScopedCheckedNumericLanguage language;
 
