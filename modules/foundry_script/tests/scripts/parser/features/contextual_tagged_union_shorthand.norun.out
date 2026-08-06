@@ -1,0 +1,2 @@
+FS_TEST_COMPILER_ERROR
+A contextual tagged-union case needs a complete expected tagged-union type.
