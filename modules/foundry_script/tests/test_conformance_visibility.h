@@ -466,6 +466,88 @@ func probe() -> String:
 
 		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_missing()", "so no subtype can supply it"));
 	}
+
+	SUBCASE("a final-bounded type parameter with no witness anywhere is a hard error") {
+		// A parameter bounded by a `final` class has exactly the bound's value set, so the receiver is
+		// as closed as the bound and the same rejection applies. The diagnostic names the bound, since
+		// that — not the parameter — is what makes the call impossible.
+		const String closed_widget_path = fixture.write("fsn_bound_widget.fs", R"(final class_name FsnBoundWidget extends RefCounted
+
+
+func fsn_present() -> String:
+	return "present"
+)");
+		ConformanceVisibilityFixture::register_global_class("FsnBoundWidget", closed_widget_path, "RefCounted", false);
+
+		const String consumer_path = fixture.write("fsn_consumer_bound_call.fs", R"(extends RefCounted
+
+
+class FsnBoundBox[T: FsnBoundWidget]:
+	var value: T
+
+	func probe() -> String:
+		return value.fsn_missing()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsnBoundWidget");
+
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_missing()", "so no subtype can supply it"));
+		CHECK(NamespacedConformanceFixture::any_error_contains(errors, R"(the bound "FsnBoundWidget" is a final class)"));
+	}
+
+	SUBCASE("a type parameter bounded by a builtin is not answered as that builtin") {
+		// A builtin receiver is closed and does get the hidden-witness diagnostic, but a parameter
+		// merely bounded by one is not that receiver: its members are resolved by the bound's own
+		// surface, which already reports what it cannot find. Answering the witness question as if the
+		// receiver were the builtin would add a second, unrelated diagnosis on that path.
+		const String builtin_conformance_path = fixture.write("fsn_builtin_conformance.fs", R"(namespace fsn
+
+extend int uses FsnGadgetlike:
+	func fsn_gadget() -> String:
+		return "int gadget"
+)");
+		FSLanguage::get_singleton()->add_conformance_file(builtin_conformance_path, "fsn");
+		REQUIRE(fixture.analysis_errors(builtin_conformance_path).is_empty());
+
+		const String consumer_path = fixture.write("fsn_consumer_builtin_bound_call.fs", R"(extends RefCounted
+
+
+class FsnBuiltinBox[T: int]:
+	var value: T
+
+	func probe() -> String:
+		return value.fsn_gadget()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		FSLanguage::get_singleton()->remove_conformance_file(builtin_conformance_path);
+
+		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, "which this file does not load"));
+		CHECK_FALSE(NamespacedConformanceFixture::any_error_contains(errors, "so no subtype can supply it"));
+	}
+
+	SUBCASE("a type parameter bounded by an open class keeps its unsafe-but-legal call") {
+		// The bound is what closes the receiver, so an open bound leaves the subtype bet intact.
+		const String open_widget_path = fixture.write("fsn_open_bound_widget.fs", R"(class_name FsnOpenBoundWidget extends RefCounted
+)");
+		ConformanceVisibilityFixture::register_global_class("FsnOpenBoundWidget", open_widget_path, "RefCounted", false);
+
+		const String consumer_path = fixture.write("fsn_consumer_open_bound_call.fs", R"(extends RefCounted
+
+
+class FsnOpenBoundBox[T: FsnOpenBoundWidget]:
+	var value: T
+
+	func probe() -> String:
+		return str(value.fsn_missing())
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+
+		ScriptServer::remove_global_class("FsnOpenBoundWidget");
+
+		CHECK(errors.is_empty());
+	}
 }
 
 // The registry is filled as a side effect of analyzing files, so before this the hidden-witness
@@ -484,6 +566,23 @@ TEST_CASE("[Modules][FoundryScript][Conformance] the hidden-witness diagnostic d
 func probe() -> String:
 	var widget := FsnWidget.new()
 	return widget.fsn_gadget()
+)");
+		const Vector<String> errors = fixture.analysis_errors(consumer_path);
+		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path));
+	}
+
+	SUBCASE("a cold registry still rejects a bounded-type-parameter call on an unreachable conformance") {
+		// The receiver reaches the hidden-witness gate as a type parameter rather than as the class, so
+		// this pins that the widened gate is answered from the index too, not just from whatever a
+		// previous analysis in this process happened to register.
+		const String consumer_path = fixture.write("fsn_consumer_cold_bound_call.fs", R"(extends RefCounted
+
+
+class FsnColdBox[T: FsnWidget]:
+	var value: T
+
+	func probe() -> String:
+		return value.fsn_gadget()
 )");
 		const Vector<String> errors = fixture.analysis_errors(consumer_path);
 		CHECK(NamespacedConformanceFixture::any_error_contains_both(errors, "fsn_gadget()", fixture.conformance_path));

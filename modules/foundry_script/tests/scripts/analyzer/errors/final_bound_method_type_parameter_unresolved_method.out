@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Cannot call "deliver()" on "T": the method does not exist, and the bound "FrmMessage" is a final class, so no subtype can supply it.

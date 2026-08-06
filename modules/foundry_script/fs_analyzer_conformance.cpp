@@ -402,7 +402,23 @@ void FSAnalyzer::ensure_indexed_conformance_files_registered() {
 	indexed_conformance_probe_in_progress = false;
 }
 
+// A type parameter stands for whatever satisfies its bound, and a conformance declared on the bound
+// is reachable through every such value, so both witness questions are answered against the bound.
+// The substitution is a single step, matching what member resolution itself does: a parameter bounded
+// by another parameter is left alone rather than chased to the chain's root. Only a class bound is
+// substituted — a builtin bound would otherwise reach the builtin arm of the hidden-witness gate,
+// which answers for a receiver that really is that builtin, and would newly diagnose calls the
+// builtin's own member resolution already handles.
+static FSParser::DataType _conformance_target_through_type_parameter(const FSParser::DataType &p_type) {
+	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER && !p_type.type_parameter_bound.is_empty() &&
+			p_type.type_parameter_bound[0].kind == FSParser::DataType::CLASS) {
+		return p_type.type_parameter_bound[0];
+	}
+	return p_type;
+}
+
 bool FSAnalyzer::reachable_conformance_supplies_method(const FSParser::DataType &p_target_type, const StringName &p_method) {
+	const FSParser::DataType target_type = _conformance_target_through_type_parameter(p_target_type);
 	if (p_method == StringName()) {
 		return false;
 	}
@@ -419,7 +435,7 @@ bool FSAnalyzer::reachable_conformance_supplies_method(const FSParser::DataType 
 
 	// The base chain is walked because a conformance declared on a base stays reachable through the
 	// derived type, matching `find_static_conformance_witness` and the runtime's witness lookup.
-	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
+	for (const FSParser::ClassNode *cursor = target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
 		String witness_source;
 		int witness_conformance_index = -1;
 		if (registry->find_witness_location(cursor->fqcn, p_method, witness_source, witness_conformance_index)) {
@@ -431,6 +447,7 @@ bool FSAnalyzer::reachable_conformance_supplies_method(const FSParser::DataType 
 
 bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method,
 		String &r_source_file, StringName &r_trait_name) {
+	const FSParser::DataType target_type = _conformance_target_through_type_parameter(p_target_type);
 	r_source_file = String();
 	r_trait_name = StringName();
 	if (p_method == StringName()) {
@@ -445,9 +462,11 @@ bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_tar
 	// on an open type is legal and merely unsafe: the value may be a subtype that declares the method
 	// normally, and the runtime resolves it. Turning that into an error on the strength of a
 	// same-named hidden witness would reject working code. A builtin has no subtypes, and neither does
-	// a `final` class, so for those the hidden witness is the only thing the call could have meant.
-	const bool is_builtin_receiver = p_target_type.kind == FSParser::DataType::BUILTIN;
-	if (!is_builtin_receiver && (p_target_type.class_type == nullptr || !p_target_type.class_type->is_final)) {
+	// a `final` class, so for those the hidden witness is the only thing the call could have meant. A
+	// type parameter is judged by the bound it was normalized to above, which is closed exactly when
+	// the bound class is.
+	const bool is_builtin_receiver = target_type.kind == FSParser::DataType::BUILTIN;
+	if (!is_builtin_receiver && (target_type.class_type == nullptr || !target_type.class_type->is_final)) {
 		return false;
 	}
 
@@ -456,7 +475,7 @@ bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_tar
 	ensure_indexed_conformance_files_registered();
 
 	if (is_builtin_receiver) {
-		return registry->find_hidden_witness_declaration(String(Variant::get_type_name(p_target_type.builtin_type)),
+		return registry->find_hidden_witness_declaration(String(Variant::get_type_name(target_type.builtin_type)),
 				p_method, r_source_file, r_trait_name);
 	}
 
@@ -464,10 +483,10 @@ bool FSAnalyzer::find_hidden_conformance_witness(const FSParser::DataType &p_tar
 	// is left alone — whether it sits below the hidden one (shadowing it) or above (the level the call
 	// falls through to). Only a name that no reachable conformance supplies at all is reported, so the
 	// diagnostic can never take away a call that works.
-	if (reachable_conformance_supplies_method(p_target_type, p_method)) {
+	if (reachable_conformance_supplies_method(target_type, p_method)) {
 		return false;
 	}
-	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
+	for (const FSParser::ClassNode *cursor = target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
 		if (registry->find_hidden_witness_declaration(cursor->fqcn, p_method, r_source_file, r_trait_name)) {
 			return true;
 		}
