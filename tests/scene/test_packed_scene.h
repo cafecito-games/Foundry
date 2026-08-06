@@ -463,4 +463,60 @@ TEST_CASE("[SceneTree][PackedScene] Unsigned native property round-trips through
 }
 #endif // _3D_DISABLED
 
+// Saves a scene holding unsigned and signed node metadata, reloads it from disk, and checks that
+// both carriers and both exact values survived the chosen scene format.
+static void check_scene_metadata_round_trip(const String &p_extension) {
+	Node *source = memnew(Node);
+	source->set_name("UnsignedMetadata");
+	source->set_meta("unsigned_zero", Variant(uint64_t(0)));
+	source->set_meta("unsigned_above_signed_max", Variant(uint64_t(INT64_MAX) + 1));
+	source->set_meta("unsigned_maximum", Variant(UINT64_MAX));
+	source->set_meta("signed_minimum", Variant(int64_t(INT64_MIN)));
+
+	Ref<PackedScene> packed;
+	packed.instantiate();
+	REQUIRE_EQ(packed->pack(source), OK);
+
+	const String scene_path = TestUtils::get_temp_path("packed_scene_unsigned_metadata." + p_extension);
+	REQUIRE_EQ(ResourceSaver::save(packed, scene_path), OK);
+
+	Error error = FAILED;
+	Ref<PackedScene> loaded = ResourceLoader::load(scene_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(loaded.is_valid());
+
+	Node *instance = loaded->instantiate();
+	REQUIRE_NE(instance, nullptr);
+
+	struct ExpectedUnsigned {
+		const char *key;
+		uint64_t value;
+	};
+	const ExpectedUnsigned expectations[] = {
+		{ "unsigned_zero", 0 },
+		{ "unsigned_above_signed_max", uint64_t(INT64_MAX) + 1 },
+		{ "unsigned_maximum", UINT64_MAX },
+	};
+	for (const ExpectedUnsigned &expectation : expectations) {
+		const Variant restored = instance->get_meta(expectation.key);
+		CHECK_MESSAGE(restored.get_type() == Variant::UINT, expectation.key);
+		CHECK_MESSAGE(restored.operator uint64_t() == expectation.value, expectation.key);
+	}
+
+	const Variant restored_signed = instance->get_meta("signed_minimum");
+	CHECK_EQ(restored_signed.get_type(), Variant::INT);
+	CHECK_EQ(restored_signed.operator int64_t(), INT64_MIN);
+
+	memdelete(instance);
+	memdelete(source);
+}
+
+TEST_CASE("[SceneTree][PackedScene][UInt] Text scenes round-trip unsigned node metadata") {
+	check_scene_metadata_round_trip("tscn");
+}
+
+TEST_CASE("[SceneTree][PackedScene][UInt] Binary scenes round-trip unsigned node metadata") {
+	check_scene_metadata_round_trip("scn");
+}
+
 } // namespace TestPackedScene

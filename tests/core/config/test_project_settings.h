@@ -35,6 +35,7 @@
 #include "core/io/resource_uid.h"
 #include "core/variant/variant.h"
 #include "tests/test_macros.h"
+#include "tests/test_utils.h"
 
 class TestProjectSettingsInternalsAccessor {
 public:
@@ -48,6 +49,14 @@ public:
 
 	static bool &project_loaded() {
 		return ProjectSettings::get_singleton()->project_loaded;
+	}
+
+	static Error load_settings_text(const String &p_path) {
+		return ProjectSettings::get_singleton()->_load_settings_text(p_path);
+	}
+
+	static Error load_settings_binary(const String &p_path) {
+		return ProjectSettings::get_singleton()->_load_settings_binary(p_path);
 	}
 };
 
@@ -300,6 +309,72 @@ TEST_CASE("[ProjectSettings][Autoload] path-plus-UID values use a path fallback 
 
 	settings->set_setting(setting, Variant());
 	ResourceUID::get_singleton()->remove_id(uid);
+}
+
+// Writes unsigned and signed settings to a project file in the requested format, reloads them
+// through the loader the engine uses at startup, and checks carrier and exact value.
+static void check_project_settings_round_trip(const String &p_file_name, bool p_binary) {
+	ProjectSettings *settings = ProjectSettings::get_singleton();
+
+	struct ExpectedUnsigned {
+		const char *key;
+		uint64_t value;
+	};
+	const ExpectedUnsigned expectations[] = {
+		{ "fixed_width_integers/unsigned_zero", 0 },
+		{ "fixed_width_integers/unsigned_above_signed_max", uint64_t(INT64_MAX) + 1 },
+		{ "fixed_width_integers/unsigned_maximum", UINT64_MAX },
+	};
+	const char *signed_key = "fixed_width_integers/signed_minimum";
+
+	ProjectSettings::CustomMap custom;
+	for (const ExpectedUnsigned &expectation : expectations) {
+		custom[expectation.key] = Variant(expectation.value);
+	}
+	custom[signed_key] = Variant(int64_t(INT64_MIN));
+
+	// `save_custom()` refreshes the stored feature list as a side effect, so restore it afterwards
+	// along with the settings this case introduces.
+	const Variant saved_features = settings->get_setting("application/config/features");
+
+	const String save_path = TestUtils::get_temp_path(p_file_name);
+	const Error save_error = settings->save_custom(save_path, custom, Vector<String>(), false);
+	CHECK_EQ(save_error, OK);
+	if (save_error != OK) {
+		settings->set_setting("application/config/features", saved_features);
+		return;
+	}
+
+	const Error load_error = p_binary
+			? TestProjectSettingsInternalsAccessor::load_settings_binary(save_path)
+			: TestProjectSettingsInternalsAccessor::load_settings_text(save_path);
+	CHECK_EQ(load_error, OK);
+	if (load_error != OK) {
+		settings->set_setting("application/config/features", saved_features);
+		return;
+	}
+
+	for (const ExpectedUnsigned &expectation : expectations) {
+		const Variant loaded = settings->get_setting(expectation.key);
+		CHECK_MESSAGE(loaded.get_type() == Variant::UINT, expectation.key);
+		CHECK_MESSAGE(loaded.operator uint64_t() == expectation.value, expectation.key);
+		settings->set_setting(expectation.key, Variant());
+	}
+
+	const Variant loaded_signed = settings->get_setting(signed_key);
+	CHECK_EQ(loaded_signed.get_type(), Variant::INT);
+	CHECK_EQ(loaded_signed.operator int64_t(), INT64_MIN);
+	settings->set_setting(signed_key, Variant());
+
+	settings->set_setting("application/config/features", saved_features);
+}
+
+TEST_CASE("[ProjectSettings][UInt] Text project settings round-trip unsigned values") {
+	check_project_settings_round_trip("uint_project_settings.foundry", false);
+}
+
+TEST_CASE("[ProjectSettings][UInt] Binary project settings round-trip unsigned values") {
+	check_project_settings_round_trip("uint_project_settings.binary", true);
 }
 
 } // namespace TestProjectSettings
