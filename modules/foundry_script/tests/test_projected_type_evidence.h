@@ -110,6 +110,27 @@ static const char *projected_evidence_source =
 		"class RawLeafHeir[W] extends RawLeaf:\n"
 		"\tpass\n";
 
+// The same shape with a nullable dependent argument. `ContainerType` cannot express "this type or
+// null", so only the nullable node itself may lose its evidence.
+static const char *projected_evidence_nullable_source =
+		"class Pair[A, B]:\n"
+		"\tpass\n"
+		"\n"
+		"class Payload:\n"
+		"\tpass\n"
+		"\n"
+		"class Base[X]:\n"
+		"\tvar value: X\n"
+		"\n"
+		"class NullableMid[U] extends Base[Pair[int, U?]]:\n"
+		"\tpass\n"
+		"\n"
+		"class NullableLeaf extends NullableMid[String]:\n"
+		"\tpass\n"
+		"\n"
+		"class NullableWhole extends Base[Payload?]:\n"
+		"\tpass\n";
+
 static ProjectedContainerType project_onto_base(const Ref<FoundryScript> &p_leaf, const Ref<FoundryScript> &p_base,
 		const Vector<ContainerType> &p_leaf_type_arguments) {
 	Vector<ProjectedContainerType> projected;
@@ -229,6 +250,61 @@ TEST_CASE("[Modules][FoundryScript][Generics] A raw extends step cannot collide 
 	REQUIRE_EQ(heir.type_arguments.size(), 2);
 	CHECK_EQ(heir.type_arguments[0].to_container_type().builtin_type, Variant::INT);
 	CHECK_FALSE(heir.type_arguments[1].is_known());
+}
+
+TEST_CASE("[Modules][FoundryScript][Generics] A nullable binding leaves only its own slot gradual") {
+	ScopedProjectedEvidenceLanguage language;
+	const Ref<FoundryScript> script = compile_projected_evidence_source(projected_evidence_nullable_source);
+	const Ref<FoundryScript> base = projected_evidence_subclass(script, "Base");
+	const Ref<FoundryScript> pair = projected_evidence_subclass(script, "Pair");
+	const Ref<FoundryScript> nullable_mid = projected_evidence_subclass(script, "NullableMid");
+	const Ref<FoundryScript> nullable_leaf = projected_evidence_subclass(script, "NullableLeaf");
+	const Ref<FoundryScript> nullable_whole = projected_evidence_subclass(script, "NullableWhole");
+	REQUIRE(base.is_valid());
+	REQUIRE(pair.is_valid());
+	REQUIRE(nullable_mid.is_valid());
+	REQUIRE(nullable_leaf.is_valid());
+	REQUIRE(nullable_whole.is_valid());
+
+	// `extends Base[Pair[int, U?]]`: the nullable argument carries no runtime evidence, but the outer
+	// `Pair` and the sibling `int` stay known and keep validating.
+	const ProjectedContainerType raw = project_onto_base(nullable_mid, base, Vector<ContainerType>());
+	CHECK_EQ(raw.state, ProjectedContainerType::PARTIAL);
+	CHECK_EQ(raw.outer.script, Ref<Script>(pair));
+	REQUIRE_EQ(raw.type_arguments.size(), 2);
+	CHECK_EQ(raw.type_arguments[0].state, ProjectedContainerType::EXACT);
+	CHECK_EQ(raw.type_arguments[0].to_container_type().builtin_type, Variant::INT);
+	CHECK_FALSE(raw.type_arguments[1].is_known());
+
+	ContainerType expected_pair;
+	expected_pair.builtin_type = Variant::OBJECT;
+	expected_pair.class_name = pair->get_instance_base_type();
+	expected_pair.script = pair;
+	ContainerType int_argument;
+	int_argument.builtin_type = Variant::INT;
+	int_argument.numeric_type = NumericType::INT32;
+	ContainerType float_argument;
+	float_argument.builtin_type = Variant::FLOAT;
+	ContainerType string_argument;
+	string_argument.builtin_type = Variant::STRING;
+
+	expected_pair.type_arguments = { int_argument, string_argument };
+	CHECK_FALSE(raw.conflicts_with_expected(expected_pair));
+	expected_pair.type_arguments = { float_argument, string_argument };
+	CHECK(raw.conflicts_with_expected(expected_pair));
+
+	// Supplying `U` at the leaf settles the slot before projection sees it: a reified argument is a plain
+	// container type, which carries no nullability, so `NullableMid[String]` resolves to `Pair[int,
+	// String]` and the sibling keeps its own evidence either way.
+	const ProjectedContainerType reified = project_onto_base(nullable_leaf, base, Vector<ContainerType>());
+	REQUIRE_EQ(reified.type_arguments.size(), 2);
+	CHECK_EQ(reified.type_arguments[0].to_container_type().builtin_type, Variant::INT);
+	CHECK_EQ(reified.type_arguments[1].to_container_type().builtin_type, Variant::STRING);
+
+	// A nullable binding with nothing beside it leaves the whole slot gradual: the documented limit of
+	// a descriptor that cannot say "this type or null".
+	const ProjectedContainerType whole = project_onto_base(nullable_whole, base, Vector<ContainerType>());
+	CHECK_FALSE(whole.is_known());
 }
 
 TEST_CASE("[Modules][FoundryScript][Generics] Class-handle erasure keeps a typed container typed") {

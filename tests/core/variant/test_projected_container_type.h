@@ -117,6 +117,45 @@ TEST_CASE("[ProjectedContainerType] Explicit Variant is exact evidence, not an u
 	CHECK_FALSE(unknown.conflicts_with_expected(make_builtin(Variant::INT)));
 }
 
+TEST_CASE("[ProjectedContainerType] An unresolved slot renders distinctly from an explicit Variant") {
+	const ProjectedContainerType unresolved_slot = make_partial_pair(make_builtin(Variant::INT));
+
+	ProjectedContainerType variant_slot = unresolved_slot;
+	variant_slot.state = ProjectedContainerType::EXACT;
+	variant_slot.type_arguments.write[1] = ProjectedContainerType::exact(ContainerType());
+
+	const String unresolved_name = unresolved_slot.get_type_name();
+	const String variant_name = variant_slot.get_type_name();
+
+	CHECK_NE(unresolved_name, variant_name);
+	CHECK(unresolved_name.contains("?"));
+	CHECK_FALSE(unresolved_name.contains("Variant"));
+	CHECK(variant_name.contains("Variant"));
+	CHECK_FALSE(variant_name.contains("?"));
+
+	// The arity is preserved either way, so the reader can tell which slot is unresolved.
+	CHECK_EQ(unresolved_name, "RefCounted[int, ?]");
+	CHECK_EQ(variant_name, "RefCounted[int, Variant]");
+}
+
+TEST_CASE("[ProjectedContainerType] A fully exact tree renders no unresolved marker") {
+	const ContainerType exact_type = make_object(SNAME("RefCounted"),
+			{ make_builtin(Variant::INT), make_array_of(make_builtin(Variant::STRING)), ContainerType() });
+	const ProjectedContainerType projected = ProjectedContainerType::exact(exact_type);
+	REQUIRE_EQ(projected.state, ProjectedContainerType::EXACT);
+
+	// Nothing about a fully known tree changes: it renders byte-identically to its materialized type.
+	CHECK_EQ(projected.get_type_name(), projected.to_container_type().get_type_name());
+	CHECK_EQ(projected.get_type_name(), exact_type.get_type_name());
+	CHECK_FALSE(projected.get_type_name().contains("?"));
+
+	// The same holds for a class-handle tree, whose renderer wraps the value type last.
+	const ContainerType exact_handle = make_object(SNAME("RefCounted"), { make_builtin(Variant::INT) }, true);
+	const ProjectedContainerType projected_handle = ProjectedContainerType::exact(exact_handle);
+	CHECK_EQ(projected_handle.get_type_name(), projected_handle.to_container_type().get_type_name());
+	CHECK_FALSE(projected_handle.get_type_name().contains("?"));
+}
+
 TEST_CASE("[ProjectedContainerType] Numeric width and handle shape reject with unknown descendants") {
 	ProjectedContainerType projected = make_partial_pair(make_builtin(Variant::INT));
 

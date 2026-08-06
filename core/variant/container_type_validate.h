@@ -145,6 +145,10 @@ struct ProjectedContainerType {
 	// Materializes the described type. Unknown subtrees become unconstrained slots, so the result is
 	// only equivalent to the evidence when `state == EXACT`.
 	ContainerType to_container_type() const;
+	// Names the evidence. An unresolved subtree renders as `?` (`Box[int, ?]`) rather than as the
+	// unconstrained slot it materializes to, so a diagnostic keeps saying "this part is not known"
+	// instead of "the author wrote `Variant` here". Arity is preserved, and a fully known tree renders
+	// exactly like its materialized type.
 	String get_type_name() const;
 
 	// True when this evidence contradicts the fully known type `p_expected`. Unknown subtrees never
@@ -163,7 +167,14 @@ struct ProjectedContainerType {
 	bool validate_value(Variant &r_value, const char *p_where, const char *p_operation) const;
 
 private:
+	// Rendered in place of an unresolved subtree. Not spellable as a type name, so it can never be read
+	// back as a type the author wrote.
+	static constexpr const char *UNRESOLVED_SLOT_NAME = "?";
+
 	static ProjectedContainerType _exact(const ContainerType &p_type, int p_depth);
+	// `to_container_type()` for naming purposes: unresolved subtrees become the placeholder above instead
+	// of collapsing into unconstrained slots. Never used for validation.
+	ContainerType _to_named_container_type() const;
 	bool _validate_known_descendants(Variant &p_value, const char *p_where, const char *p_operation) const;
 };
 
