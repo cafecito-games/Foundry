@@ -678,6 +678,11 @@ public:
 	static MethodInfo get_builtin_method_info(Variant::Type p_type, const StringName &p_method);
 	static int get_builtin_method_argument_count(Variant::Type p_type, const StringName &p_method);
 	static Variant::Type get_builtin_method_argument_type(Variant::Type p_type, const StringName &p_method, int p_argument);
+	// The declared integer width of a builtin method argument/return value, as a `FoundryTypeInfo::Metadata`
+	// value. Returned as `int` (like `MethodInfo::arguments_metadata`/`return_val_metadata`) because
+	// `type_info.h` cannot be included here without a circular dependency on this header.
+	static int get_builtin_method_argument_metadata(Variant::Type p_type, const StringName &p_method, int p_argument);
+	static int get_builtin_method_return_metadata(Variant::Type p_type, const StringName &p_method);
 	static String get_builtin_method_argument_name(Variant::Type p_type, const StringName &p_method, int p_argument);
 	static Vector<Variant> get_builtin_method_default_arguments(Variant::Type p_type, const StringName &p_method);
 	static bool has_builtin_method_return_value(Variant::Type p_type, const StringName &p_method);

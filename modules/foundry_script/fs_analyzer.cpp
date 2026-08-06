@@ -13575,8 +13575,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		StringName script_class = p_base_type.kind == FSParser::DataType::SCRIPT ? p_base_type.script_type->get_class_name() : StringName(FoundryScript::get_class_static());
 
 		if (ClassDB::get_method_info(script_class, function_name, &info)) {
-			return function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags,
-					ClassDB::get_method(script_class, function_name));
+			return function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
 		}
 	}
 
@@ -13773,7 +13772,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	if (ClassDB::get_method_info(base_native, function_name, &info)) {
 		MethodBind *native_method = ClassDB::get_method(base_native, function_name);
 		const StringName native_method_owner = native_method != nullptr ? native_method->get_instance_class() : base_native;
-		bool valid = function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags, native_method);
+		bool valid = function_signature_from_info(info, r_return_type, r_par_types, r_default_arg_count, r_method_flags);
 		if (valid) {
 			valid = apply_builtin_native_return_type_hint(native_method_owner, function_name, p_source, r_return_type);
 		}
@@ -13877,8 +13876,8 @@ bool FSAnalyzer::apply_builtin_native_return_type_hint(
 	return true;
 }
 
-bool FSAnalyzer::function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags, const MethodBind *p_method_bind) {
-	r_return_type = type_from_property(p_info.return_val, false, false, native_argument_metadata(p_method_bind, -1));
+bool FSAnalyzer::function_signature_from_info(const MethodInfo &p_info, FSParser::DataType &r_return_type, List<FSParser::DataType> &r_par_types, int &r_default_arg_count, BitField<MethodFlags> &r_method_flags) {
+	r_return_type = type_from_property(p_info.return_val, false, false, static_cast<FoundryTypeInfo::Metadata>(p_info.get_argument_meta(-1)));
 	// METHOD_FLAG_ASYNC wraps the declared return type into Coroutine[T]. MethodInfo stores the declared
 	// return type in return_val, so this wraps unconditionally to mirror the in-memory async call-site
 	// path: an async method declared `-> Coroutine[T]` yields Coroutine[Coroutine[T]], same as locally.
@@ -13889,7 +13888,7 @@ bool FSAnalyzer::function_signature_from_info(const MethodInfo &p_info, FSParser
 	r_method_flags = p_info.flags;
 
 	for (int i = 0; i < p_info.arguments.size(); i++) {
-		r_par_types.push_back(type_from_property(p_info.arguments[i], true, false, native_argument_metadata(p_method_bind, i)));
+		r_par_types.push_back(type_from_property(p_info.arguments[i], true, false, static_cast<FoundryTypeInfo::Metadata>(p_info.get_argument_meta(i))));
 	}
 	return true;
 }
