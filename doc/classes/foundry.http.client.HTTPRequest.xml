@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="HTTPRequest" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="HTTPRequest" namespace="foundry.http.client" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		A node with the ability to send HTTP(S) requests.
 	</brief_description>
@@ -80,7 +80,7 @@
 		}
 		[/csharp]
 		[/codeblocks]
-		[b]Example:[/b] Load an image using [HTTPRequest] and display it:
+		[b]Example:[/b] Load an image using [foundry.http.client.HTTPRequest] and display it:
 		[codeblocks]
 		[foundry_script]
 		func _ready():
@@ -150,7 +150,7 @@
 		}
 		[/csharp]
 		[/codeblocks]
-		[b]Note:[/b] [HTTPRequest] nodes will automatically handle decompression of response bodies. An [code]Accept-Encoding[/code] header will be automatically added to each of your requests, unless one is already specified. Any response with a [code]Content-Encoding: gzip[/code] header will automatically be decompressed and delivered to you as uncompressed bytes.
+		[b]Note:[/b] [foundry.http.client.HTTPRequest] nodes will automatically handle decompression of response bodies. An [code]Accept-Encoding[/code] header will be automatically added to each of your requests, unless one is already specified. Any response with a [code]Content-Encoding: gzip[/code] header will automatically be decompressed and delivered to you as uncompressed bytes.
 	</description>
 	<tutorials>
 		<link title="Making HTTP requests">$DOCS_URL/tutorials/networking/http_request_class.html</link>

@@ -441,6 +441,7 @@ void register_scene_types() {
 	FOUNDRY_REGISTER_CLASS(MultiplayerAPIExtension);
 
 	FOUNDRY_REGISTER_CLASS(HTTPRequest);
+	FOUNDRY_REGISTER_NAMESPACE(HTTPRequest, "foundry.http.client");
 	FOUNDRY_REGISTER_CLASS(HTTPServer);
 	FOUNDRY_REGISTER_NAMESPACE(HTTPServer, "foundry.http.server");
 	FOUNDRY_REGISTER_CLASS(Timer);
