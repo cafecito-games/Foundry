@@ -32,6 +32,25 @@ func both(subject: Result[int, String]) -> String:
 	return "small"
 
 
+# Without a bind list the shorthand is an ordinary tag test, valid anywhere a bool is.
+func is_ok(subject: Result[int, String]) -> bool:
+	return subject is .Ok
+
+
+# Binds are allowed in a "while" condition and in an "assert", where they outlive the assertion.
+func drain(values: Array[Result[int, String]]) -> int:
+	var total := 0
+	while not values.is_empty() and values[0] is .Ok(value):
+		total += value
+		values.remove_at(0)
+	return total
+
+
+func asserted(subject: Result[int, String]) -> int:
+	assert(subject is .Ok(value))
+	return value
+
+
 func test():
 	print(describe(.Ok(1)))
 	print(describe(.Err("bad")))
@@ -40,3 +59,9 @@ func test():
 	print(not_empty(.None))
 	print(both(.Ok(2)))
 	print(both(.Ok(0)))
+	print(is_ok(.Ok(1)))
+	print(is_ok(.Err("bad")))
+
+	var values: Array[Result[int, String]] = [Result[int, String].Ok(1), Result[int, String].Ok(2), Result[int, String].Err("stop")]
+	print(drain(values))
+	print(asserted(.Ok(7)))
