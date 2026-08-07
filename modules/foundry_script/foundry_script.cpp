@@ -3579,7 +3579,7 @@ void FSLanguage::init() {
 	LocalVector<StringName> class_list;
 	ClassDB::get_class_list(class_list);
 	for (const StringName &class_name : class_list) {
-		if (globals.has(class_name)) {
+		if (globals.has(class_name) || native_class_by_qualified.has(class_name)) {
 			continue;
 		}
 		// `class_name` is the canonical registry key, which is the qualified name for a
@@ -3642,6 +3642,8 @@ void FSLanguage::init() {
 #ifdef TOOLS_ENABLED
 void FSLanguage::_extension_loaded(const Ref<FoundryExtension> &p_extension) {
 	List<StringName> class_list;
+	// Canonical registry keys, so a namespaced extension class arrives qualified and both the
+	// insert here and the erase in `_extension_unloading` use the same key.
 	ClassDB::get_extension_class_list(p_extension, &class_list);
 	for (const StringName &n : class_list) {
 		if (globals.has(n) || native_class_by_qualified.has(n)) {
