@@ -288,6 +288,11 @@ public:
 		_FORCE_INLINE_ bool is_hard_type() const { return type_source > INFERRED; }
 
 		String to_string() const;
+		// Like `to_string()`, but names width-only integer descriptors (`uint8`/`int16`/...) by their
+		// stable diagnostic name instead of falling back to the carrier spelling. Diagnostics that
+		// contrast two types must not render distinct widths identically; source-writing callers must
+		// keep using `to_string()`.
+		String to_string_diagnostic() const;
 		_FORCE_INLINE_ String to_string_strict() const { return is_hard_type() ? to_string() : "Variant"; }
 		PropertyInfo to_property_info(const String &p_name) const;
 

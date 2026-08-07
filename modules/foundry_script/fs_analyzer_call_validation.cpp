@@ -882,14 +882,14 @@ String FSAnalyzer::CallSiteValidationContext::make_invalid_argument_error(
 		return vformat(R"*(Cannot pass Variant value as argument %d of "%s()" in strict dynamic mode; expected "%s".)*",
 				p_argument_number,
 				p_function,
-				p_expected_type.to_string());
+				p_expected_type.to_string_diagnostic());
 	}
 	if (p_strict_nullable_mismatch) {
 		return vformat(R"*(Cannot pass nullable value of type "%s" as argument %d of "%s()"; expected non-nullable "%s".)*",
-				p_actual_type.to_string(),
+				p_actual_type.to_string_diagnostic(),
 				p_argument_number,
 				p_function,
-				p_expected_type.to_string());
+				p_expected_type.to_string_diagnostic());
 	}
 	const String type_handle_error = analyzer->make_type_handle_argument_error(
 			p_function,
@@ -903,8 +903,8 @@ String FSAnalyzer::CallSiteValidationContext::make_invalid_argument_error(
 	return vformat(R"*(Invalid argument for "%s()" function: argument %d should be "%s" but is "%s".)*",
 			p_function,
 			p_argument_number,
-			p_expected_type.to_string(),
-			p_actual_type.to_string());
+			p_expected_type.to_string_diagnostic(),
+			p_actual_type.to_string_diagnostic());
 }
 
 const FSParser::DataType *FSAnalyzer::CallSiteValidationContext::rest_element_type(const FSParser::DataType *p_rest_parameter_type) {
