@@ -137,6 +137,14 @@ static bool _datatype_contains_erased_type_parameter(const FSParser::DataType &p
 	if (p_datatype.kind == FSParser::DataType::TYPE_PARAMETER) {
 		return p_datatype.type_parameter_name != SNAME("@Self");
 	}
+	// A position substituted from `Self` is re-bound to the call frame's exact receiver before any
+	// argument is accepted, so the declaring class's own type parameters -- which substitution leaves
+	// as this type's arguments -- are never the types a value is validated against. Letting them erase
+	// the container would drop the element metadata for `Array[Self]` on a generic class only, giving
+	// the same declaration two different runtime shapes depending on whether its class is generic.
+	if (p_datatype.is_substituted_self) {
+		return false;
+	}
 	for (const FSParser::DataType &element : p_datatype.container_element_types) {
 		if (_datatype_contains_erased_type_parameter(element)) {
 			return true;
@@ -4077,7 +4085,12 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 		}
 
 		if (p_func->is_vararg()) {
-			compiled_rest_type = _gdtype_from_datatype(p_func->rest_parameter->get_datatype(), codegen.script);
+			// Lowered through the same substitution as declared parameters so the rest tail's `Self`
+			// carries the substituted-`Self` provenance and, on a generic class, the reified type
+			// arguments the class handle needs. One lowering path for `Self`, not two.
+			const FSParser::DataType rest_datatype = _substitute_self_type_parameter_for_class(
+					p_func->rest_parameter->get_datatype(), p_class);
+			compiled_rest_type = _gdtype_from_datatype(rest_datatype, codegen.script);
 			vararg_addr = codegen.add_local(p_func->rest_parameter->identifier->name, compiled_rest_type);
 			method_info.flags |= METHOD_FLAG_VARARG;
 		}
@@ -4282,6 +4295,13 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 			gd_function->_vararg_index = vararg_addr.address;
 			gd_function->rest_parameter_type = compiled_rest_type;
 		}
+
+		// `write_end()` already ran `setup_runtime_pointers()`, but the return type and the rest tail are
+		// only installed here. The cached receiver dependence the VM consults would otherwise describe an
+		// empty rest type, so a function whose only `Self` sits in the rest tail would never resolve
+		// `Self` against its frame's receiver. Recomputing keeps `has_self_referencing_signature()` the
+		// single authority, matching the order the compiled-bytecode loader already populates functions in.
+		gd_function->setup_runtime_pointers();
 	}
 
 	gd_function->method_info = method_info;

@@ -1,0 +1,9 @@
+FS_TEST_OK
+~~ WARNING at line 30: (UNSAFE_METHOD_ACCESS) The method "take()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 32: (UNSAFE_METHOD_ACCESS) The method "take_items()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 34: (UNSAFE_METHOD_ACCESS) The method "take()" is not present on the inferred type "Variant" (but may be present on a subtype).
+~~ WARNING at line 36: (UNSAFE_METHOD_ACCESS) The method "take_items()" is not present on the inferred type "Variant" (but may be present on a subtype).
+generic rest is Child: true
+generic declared is Child: true
+plain rest is PlainChild: true
+plain declared is PlainChild: true

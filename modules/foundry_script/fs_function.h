@@ -1088,6 +1088,11 @@ public:
 		return false;
 	}
 
+	// The cached mirror of `has_self_referencing_signature()` that the call path actually consults. It
+	// is only meaningful once the function is fully populated, so it is the value a test must assert on
+	// to prove a compiled function is receiver-dependent at call time.
+	_FORCE_INLINE_ bool is_receiver_dependent_at_call_time() const { return _references_self_types; }
+
 	// The static receiver descriptor of the innermost script frame executing on this thread, or
 	// `nullptr` when the innermost frame is not a static call (or no frame is running). Each frame
 	// owns its own descriptor, so nested and concurrent calls never observe each other's.
