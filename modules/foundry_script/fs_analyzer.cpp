@@ -5194,6 +5194,13 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 		case FSParser::PatternNode::PT_EXPRESSION:
 			if (p_match_pattern->expression) {
 				FSParser::ExpressionNode *expr = p_match_pattern->expression;
+				// `.None`: a payload-less contextual case is matched as the value it is, so it arrives
+				// as an expression pattern. It names a case of the subject's union, which the ordinary
+				// expression path below has no way to consult.
+				if (resolve_contextual_case_value_pattern(expr, has_match_test_type ? &match_test_type : nullptr)) {
+					result = expr->get_datatype();
+					break;
+				}
 				reduce_expression(expr);
 				result = expr->get_datatype();
 				if (!expr->is_constant) {
@@ -5314,14 +5321,32 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 }
 
 // Resolves `Message.Move(x, _)`: the case reference is resolved like the right-hand side of `is`, then
-// each payload field type is propagated into the matching sub-pattern.
+// each payload field type is propagated into the matching sub-pattern. The contextual shorthand
+// (`.Move(x, _)`) names only the case and takes its union from the subject instead.
 void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern, const FSParser::DataType *p_match_test_type) {
-	const int errors_before_case_type = parser->get_errors().size();
-	FSParser::DataType case_type = type_from_metatype(resolve_datatype(p_match_pattern->case_type));
+	FSParser::DataType case_type;
+	bool case_type_failed = false;
+	if (p_match_pattern->is_contextual_enum_case) {
+		const StringName case_name = p_match_pattern->case_type != nullptr && !p_match_pattern->case_type->type_chain.is_empty()
+				? p_match_pattern->case_type->type_chain[0]->name
+				: StringName();
+		FSParser::DataType case_meta_type;
+		case_type_failed = case_name == StringName() ||
+				!resolve_contextual_case_pattern_type(case_name, p_match_test_type, "match subject", p_match_pattern, case_meta_type);
+		if (!case_type_failed) {
+			// The head names a case of a union it does not spell, so the union the subject supplied is
+			// published on the head, exactly as resolving the qualified spelling publishes it.
+			p_match_pattern->case_type->set_datatype(case_meta_type);
+			case_type = type_from_metatype(case_meta_type);
+		}
+	} else {
+		const int errors_before_case_type = parser->get_errors().size();
+		case_type = type_from_metatype(resolve_datatype(p_match_pattern->case_type));
+		// A case reference that failed to resolve already reported why; the Variant fallback it leaves
+		// behind would otherwise be reported a second time as "not a case".
+		case_type_failed = parser->get_errors().size() > errors_before_case_type;
+	}
 	p_match_pattern->case_datatype = case_type;
-	// A case reference that failed to resolve already reported why; the Variant fallback it leaves
-	// behind would otherwise be reported a second time as "not a case".
-	const bool case_type_failed = parser->get_errors().size() > errors_before_case_type;
 
 	const FSParser::DataType::EnumCasePayload *payload = nullptr;
 	if (case_type.is_set() && !case_type_failed) {
@@ -11439,6 +11464,78 @@ bool FSAnalyzer::resolve_contextual_enum_case(FSParser::ExpressionNode *p_expres
 	return true;
 }
 
+bool FSAnalyzer::resolve_contextual_case_pattern_type(const StringName &p_case_name, const FSParser::DataType *p_subject_type,
+		const char *p_subject_description, const FSParser::Node *p_source, FSParser::DataType &r_case_meta_type) {
+	FSParser::DataType enum_meta_type;
+	if (p_subject_type == nullptr || !tagged_union_metatype_from_expected_type(*p_subject_type, p_source, enum_meta_type)) {
+		const String subject_type_name = p_subject_type != nullptr && p_subject_type->is_set()
+				? p_subject_type->to_string()
+				: String("Variant");
+		push_error(vformat(R"*(Contextual shorthand ".%s" needs a tagged-union %s, but it is of type "%s".)*",
+						   p_case_name, p_subject_description, subject_type_name),
+				p_source);
+		return false;
+	}
+
+	if (!enum_meta_type.enum_values.has(p_case_name)) {
+		push_error(vformat(R"(Tagged union "%s" has no case "%s".)", enum_meta_type.enum_type, p_case_name), p_source);
+		return false;
+	}
+
+	// The union is the subject's own, so the resolved case keeps the subject's `enum_type` and payload
+	// schema. Exhaustiveness counts a case only when those match the subject, which is what makes the
+	// shorthand and the qualified spelling cover a `match` identically.
+	enum_meta_type.enum_case_name = p_case_name;
+	r_case_meta_type = enum_meta_type;
+	return true;
+}
+
+bool FSAnalyzer::resolve_contextual_case_value_pattern(FSParser::ExpressionNode *p_expression, const FSParser::DataType *p_match_test_type) {
+	if (p_expression == nullptr || p_expression->type != FSParser::Node::SUBSCRIPT) {
+		return false;
+	}
+	FSParser::SubscriptNode *reference = static_cast<FSParser::SubscriptNode *>(p_expression);
+	if (!reference->is_contextual_enum_case) {
+		return false;
+	}
+
+	// A shorthand that could not be qualified is still given a type, so the pattern's own checks do not
+	// pile a second "must be a constant expression" error on top of the one reported here.
+	FSParser::DataType unqualified_type;
+	unqualified_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	unqualified_type.kind = FSParser::DataType::VARIANT;
+
+	if (reference->attribute == nullptr) {
+		// The case name failed to parse; the parser already reported it.
+		p_expression->set_datatype(unqualified_type);
+		return true;
+	}
+	const StringName case_name = reference->attribute->name;
+
+	FSParser::DataType case_meta_type;
+	if (!resolve_contextual_case_pattern_type(case_name, p_match_test_type, "match subject", p_expression, case_meta_type)) {
+		p_expression->set_datatype(unqualified_type);
+		return true;
+	}
+
+	const FSParser::DataType case_value_type = type_from_metatype(case_meta_type);
+	if (case_meta_type.get_enum_case_payload(case_name) != nullptr) {
+		push_error(vformat(R"*(Case "%s" carries a payload, so it is matched with payload patterns, e.g. ".%s(...)".)*",
+						   case_name, case_name),
+				p_expression);
+		p_expression->set_datatype(case_value_type);
+		return true;
+	}
+
+	// A payload-less case has a single value, so it folds to the read-only `[tag]` singleton its case
+	// erases to, which is the constant the coverage check counts and the compiler compares against.
+	reference->attribute->set_datatype(case_value_type);
+	reference->set_datatype(case_value_type);
+	reference->is_constant = true;
+	reference->reduced_value = fs_tagged_union_case_singleton(case_meta_type.enum_values[case_name]);
+	return true;
+}
+
 void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_enum_meta_type) {
 	call_site_validation.reject_named_call_arguments(p_call);
 
@@ -12204,7 +12301,23 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 
 	reduce_expression(p_type_test->operand);
 	FSParser::DataType operand_type = p_type_test->operand->get_datatype();
-	FSParser::DataType test_type = type_from_metatype(resolve_datatype(p_type_test->test_type));
+	FSParser::DataType test_type;
+	if (p_type_test->test_type->is_contextual_enum_case) {
+		// `x is .Ok(value)`: the shorthand names a case of the operand's own union, so it is qualified
+		// against the operand's type instead of being resolved as a written-out type. An operand whose
+		// type is unknown already reported why, and the unset test type below keeps that single error.
+		const StringName case_name = p_type_test->test_type->type_chain.is_empty()
+				? StringName()
+				: p_type_test->test_type->type_chain[0]->name;
+		FSParser::DataType case_meta_type;
+		if (case_name != StringName() && operand_type.is_set() &&
+				resolve_contextual_case_pattern_type(case_name, &operand_type, R"("is" operand)", p_type_test->test_type, case_meta_type)) {
+			p_type_test->test_type->set_datatype(case_meta_type);
+			test_type = type_from_metatype(case_meta_type);
+		}
+	} else {
+		test_type = type_from_metatype(resolve_datatype(p_type_test->test_type));
+	}
 	p_type_test->test_datatype = test_type;
 
 	if (!operand_type.is_set() || !test_type.is_set()) {

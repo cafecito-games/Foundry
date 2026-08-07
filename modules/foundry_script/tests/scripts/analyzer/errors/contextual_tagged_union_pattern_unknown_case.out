@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Tagged union "Result" has no case "Nope".
+>> ERROR at line 11: Tagged union "Result" has no case "Missing".

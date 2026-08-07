@@ -1,0 +1,6 @@
+FS_TEST_OK
+ok 2
+big 12
+err bad
+none
+some 3

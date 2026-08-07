@@ -365,6 +365,217 @@ TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A target that names n
 			String(R"*(Contextual shorthand ".Ok" needs an expected tagged-union type; annotate the target, e.g. "var x: Result[int, String] = .Ok(...)".)*"));
 }
 
+static const FSParser::MatchNode *find_match(const FSParser::FunctionNode *p_function) {
+	if (p_function == nullptr || p_function->body == nullptr) {
+		return nullptr;
+	}
+	for (int i = 0; i < p_function->body->statements.size(); i++) {
+		if (p_function->body->statements[i]->type == FSParser::Node::MATCH) {
+			return static_cast<const FSParser::MatchNode *>(p_function->body->statements[i]);
+		}
+	}
+	return nullptr;
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A match case pattern takes its union from the subject") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run(subject: Result[int, String]) -> void:\n"
+			"\tmatch subject:\n"
+			"\t\t.Ok(value):\n"
+			"\t\t\tprint(value)\n"
+			"\t\tResult[int, String].Err(error):\n"
+			"\t\t\tprint(error)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::MatchNode *match = find_match(fixture.function(SNAME("run")));
+	REQUIRE(match != nullptr);
+	REQUIRE_EQ(match->branches.size(), 2);
+
+	const FSParser::PatternNode *shorthand = match->branches[0]->patterns[0];
+	const FSParser::PatternNode *qualified = match->branches[1]->patterns[0];
+	REQUIRE(shorthand != nullptr);
+	REQUIRE(qualified != nullptr);
+	REQUIRE_EQ(shorthand->pattern_type, FSParser::PatternNode::PT_ENUM_CASE);
+	CHECK(shorthand->is_contextual_enum_case);
+
+	// The subject's own union is what the shorthand resolves against, so the two spellings differ only
+	// in the case they name.
+	CHECK(shorthand->case_datatype.is_tagged_union_type());
+	CHECK_EQ(shorthand->case_datatype.enum_type, qualified->case_datatype.enum_type);
+	CHECK_EQ(shorthand->case_datatype.enum_case_name, StringName("Ok"));
+	CHECK(shorthand->case_payload_is_irrefutable);
+
+	// The bind takes the specialization's field type, not the declared type parameter.
+	REQUIRE_EQ(shorthand->array.size(), 1);
+	REQUIRE_EQ(shorthand->array[0]->pattern_type, FSParser::PatternNode::PT_BIND);
+	REQUIRE(shorthand->array[0]->bind != nullptr);
+	const FSParser::DataType bind_type = shorthand->array[0]->bind->get_datatype();
+	CHECK_EQ(bind_type.kind, FSParser::DataType::BUILTIN);
+	CHECK_EQ(bind_type.builtin_type, Variant::INT);
+
+	// Every case is covered by an unguarded irrefutable pattern, so the match terminates control flow.
+	CHECK(match->covers_subject_domain);
+	CHECK(match->uncovered_domain_values.is_empty());
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] An all-shorthand match over every case is exhaustive") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func unwrap(subject: Result[int, String]) -> int:\n"
+			"\tmatch subject:\n"
+			"\t\t.Ok(value):\n"
+			"\t\t\treturn value\n"
+			"\t\t.Err(_):\n"
+			"\t\t\treturn 0\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	// No trailing `return` is needed, which is only true when the match is proven to cover the domain.
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::MatchNode *match = find_match(fixture.function(SNAME("unwrap")));
+	REQUIRE(match != nullptr);
+	CHECK(match->covers_subject_domain);
+	CHECK_EQ(match->subject_domain_name, String("Result"));
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A shorthand match missing a case names the uncovered one") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run(subject: Result[int, String]) -> void:\n"
+			"\tmatch subject:\n"
+			"\t\t.Ok(value):\n"
+			"\t\t\tprint(value)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::MatchNode *match = find_match(fixture.function(SNAME("run")));
+	REQUIRE(match != nullptr);
+	CHECK_FALSE(match->covers_subject_domain);
+	CHECK_EQ(match->uncovered_domain_values, String("Err"));
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A payload-less shorthand pattern folds to its case singleton") {
+	ContextualCaseFixture fixture(
+			"enum Option[T]:\n"
+			"\tNone\n"
+			"\tSome(value: T)\n"
+			"\n"
+			"\n"
+			"func run(subject: Option[int]) -> int:\n"
+			"\tmatch subject:\n"
+			"\t\t.None:\n"
+			"\t\t\treturn 0\n"
+			"\t\t.Some(value):\n"
+			"\t\t\treturn value\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::MatchNode *match = find_match(fixture.function(SNAME("run")));
+	REQUIRE(match != nullptr);
+	REQUIRE_EQ(match->branches.size(), 2);
+
+	// A payload-less case is matched as the value it is, so it stays an expression pattern.
+	const FSParser::PatternNode *payloadless = match->branches[0]->patterns[0];
+	REQUIRE_EQ(payloadless->pattern_type, FSParser::PatternNode::PT_EXPRESSION);
+	REQUIRE(payloadless->expression != nullptr);
+	REQUIRE(payloadless->expression->is_constant);
+	const Array folded = payloadless->expression->reduced_value;
+	CHECK(folded.is_read_only());
+	REQUIRE_EQ(folded.size(), 1);
+	CHECK_EQ(folded[0], Variant(0));
+
+	CHECK(match->covers_subject_domain);
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] An is test takes its union from the operand") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run(subject: Result[int, String]) -> void:\n"
+			"\tif subject is .Ok(value):\n"
+			"\t\tprint(value + 1)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::FunctionNode *function = fixture.function(SNAME("run"));
+	REQUIRE(function != nullptr);
+	REQUIRE(function->body != nullptr);
+	REQUIRE_EQ(function->body->statements.size(), 1);
+	REQUIRE_EQ(function->body->statements[0]->type, FSParser::Node::IF);
+	const FSParser::IfNode *if_node = static_cast<const FSParser::IfNode *>(function->body->statements[0]);
+	REQUIRE(if_node->condition != nullptr);
+	REQUIRE_EQ(if_node->condition->type, FSParser::Node::TYPE_TEST);
+	const FSParser::TypeTestNode *type_test = static_cast<const FSParser::TypeTestNode *>(if_node->condition);
+
+	REQUIRE(type_test->test_type != nullptr);
+	CHECK(type_test->test_type->is_contextual_enum_case);
+	REQUIRE_EQ(type_test->test_type->type_chain.size(), 1);
+	CHECK_EQ(type_test->test_type->type_chain[0]->name, StringName("Ok"));
+
+	CHECK(type_test->test_datatype.is_tagged_union_type());
+	CHECK_EQ(type_test->test_datatype.enum_type, StringName("Result"));
+	CHECK_EQ(type_test->test_datatype.enum_case_name, StringName("Ok"));
+
+	REQUIRE_EQ(type_test->case_binds.size(), 1);
+	REQUIRE(type_test->case_binds[0] != nullptr);
+	const FSParser::DataType bind_type = type_test->case_binds[0]->get_datatype();
+	CHECK_EQ(bind_type.kind, FSParser::DataType::BUILTIN);
+	CHECK_EQ(bind_type.builtin_type, Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A subject that names no union rejects a pattern shorthand") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run(subject: int) -> void:\n"
+			"\tmatch subject:\n"
+			"\t\t.Ok(value):\n"
+			"\t\t\tprint(value)\n"
+			"\t\t_:\n"
+			"\t\t\tpass\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	CHECK_NE(fixture.analyze_error, OK);
+
+	REQUIRE_FALSE(fixture.parser.get_errors().is_empty());
+	CHECK_EQ(fixture.parser.get_errors().front()->get().message,
+			String(R"*(Contextual shorthand ".Ok" needs a tagged-union match subject, but it is of type "int".)*"));
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] An operand that names no union rejects an is shorthand") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run(subject: int) -> void:\n"
+			"\tif subject is .Ok(value):\n"
+			"\t\tprint(value)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	CHECK_NE(fixture.analyze_error, OK);
+
+	REQUIRE_FALSE(fixture.parser.get_errors().is_empty());
+	CHECK_EQ(fixture.parser.get_errors().front()->get().message,
+			String(R"*(Contextual shorthand ".Ok" needs a tagged-union "is" operand, but it is of type "int".)*"));
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A case the subject union does not declare is rejected") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run(subject: Result[int, String]) -> void:\n"
+			"\tmatch subject:\n"
+			"\t\t.Nope(value):\n"
+			"\t\t\tprint(value)\n"
+			"\t\t_:\n"
+			"\t\t\tpass\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	CHECK_NE(fixture.analyze_error, OK);
+
+	REQUIRE_FALSE(fixture.parser.get_errors().is_empty());
+	CHECK_EQ(fixture.parser.get_errors().front()->get().message,
+			String(R"(Tagged union "Result" has no case "Nope".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] The formatter round-trips a shorthand is test") {
+	const String source =
+			"func run(subject: int) -> void:\n"
+			"\tif subject is .Ok(bound):\n"
+			"\t\tprint(bound)\n";
+
+	FSFormatter formatter;
+	FSFormatter::Result result;
+	REQUIRE_EQ(formatter.format(source, "contextual_tagged_union.fs", result), OK);
+	CHECK_EQ(result.formatted, source);
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED
