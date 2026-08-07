@@ -34,6 +34,7 @@
 #include "editor/gui/create_dialog.h"
 
 #include "core/object/class_db.h"
+#include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
 
@@ -66,6 +67,35 @@ TEST_CASE("[Editor][ClassDBNamespace] A registered class name never resolves to 
 	CHECK(EditorNode::get_class_icon_script_path("Node").is_empty());
 	// An unregistered name that is not an existing resource yields no script path either.
 	CHECK(EditorNode::get_class_icon_script_path("res://does_not_exist.fs").is_empty());
+}
+
+TEST_CASE("[Editor][ClassDBNamespace] The canonical key a create-node entry carries reaches the scene as a qualified type") {
+	// A dialog entry is labelled with the simple name but carries the canonical registry key, and
+	// that key is what the scene dock hands to `ClassDB`. Driving the dialog itself needs a live
+	// editor window, so this asserts the contract on the seam instead: a key that a listed entry
+	// carries is offered as instantiable, is labelled by its simple name, and produces a node whose
+	// serialized type is the qualified name.
+	const StringName carried_type = "foundry.http.server.HTTPServer";
+
+	REQUIRE(ClassDB::class_exists(carried_type));
+	// `CreateDialog` marks an entry instantiable from exactly these two answers.
+	CHECK(ClassDB::can_instantiate(carried_type));
+	CHECK_FALSE(ClassDB::is_virtual(carried_type));
+	CHECK(CreateDialog::get_class_display_name(carried_type) == "HTTPServer");
+
+	Node *created = Object::cast_to<Node>(ClassDB::instantiate(carried_type));
+	REQUIRE_NE(created, nullptr);
+	created->set_name("Server");
+
+	Ref<PackedScene> packed;
+	packed.instantiate();
+	REQUIRE_EQ(packed->pack(created), OK);
+	memdelete(created);
+
+	Ref<SceneState> state = packed->get_state();
+	REQUIRE(state.is_valid());
+	REQUIRE_GE(state->get_node_count(), 1);
+	CHECK_EQ(state->get_node_type(0), carried_type);
 }
 
 } // namespace TestEditorNamespacedClassDisplay

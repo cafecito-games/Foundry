@@ -237,6 +237,7 @@
 #include "tests/scene/test_instance_placeholder.h"
 #include "tests/scene/test_mobile_text_context_menu.h"
 #include "tests/scene/test_multiplayer_api.h"
+#include "tests/scene/test_namespaced_native_integration.h"
 #include "tests/scene/test_node.h"
 #include "tests/scene/test_node_2d.h"
 #include "tests/scene/test_packed_scene.h"

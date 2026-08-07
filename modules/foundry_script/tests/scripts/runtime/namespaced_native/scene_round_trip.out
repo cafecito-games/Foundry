@@ -1,0 +1,6 @@
+FS_TEST_OK
+true
+foundry.http.server.HTTPServer
+Server
+true
+9000
