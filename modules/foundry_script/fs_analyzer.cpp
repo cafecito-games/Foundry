@@ -892,6 +892,59 @@ static FSParser::DataType _substitute_self_type_parameter_with_bounds(const FSPa
 	return result;
 }
 
+// Structural comparison of the `is_substituted_self` markers two otherwise strictly identical types
+// carry. Sizes are guaranteed equal by the strict-identity check that gates every call, so this only
+// walks the same slots that check walks.
+static bool _datatype_substituted_self_markers_match(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
+	if (p_a.is_substituted_self != p_b.is_substituted_self) {
+		return false;
+	}
+	for (int i = 0; i < p_a.container_element_types.size(); i++) {
+		if (!_datatype_substituted_self_markers_match(p_a.container_element_types[i], p_b.container_element_types[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.type_arguments.size(); i++) {
+		if (!_datatype_substituted_self_markers_match(p_a.type_arguments[i], p_b.type_arguments[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.method_parameter_types.size(); i++) {
+		if (!_datatype_substituted_self_markers_match(p_a.method_parameter_types[i], p_b.method_parameter_types[i])) {
+			return false;
+		}
+	}
+	for (int i = 0; i < p_a.method_return_type.size(); i++) {
+		if (!_datatype_substituted_self_markers_match(p_a.method_return_type[i], p_b.method_return_type[i])) {
+			return false;
+		}
+	}
+	return true;
+}
+
+// A container literal nested inside another container literal is typed by the same patcher as its
+// parent, and comes back carrying the substituted `Self` bound marked `is_substituted_self` so the
+// compiler can re-arm the runtime `Self` marker on the lowered descriptor. The enclosing literal then
+// compares that already-substituted type against a declaration that still reads `Array[Array[Self]]`,
+// which would reject the very element this analyzer just produced. Such an element is recognized here
+// by rebuilding the expectation's own substituted form and requiring the markers to line up: only
+// positions the analyzer substituted itself may differ from the declaration, so a hand-written value
+// of the bound type is still rejected, because nothing sets the marker on a type the author wrote.
+//
+// Only an expectation that holds `Self` inside a container element takes this path, because only a
+// container expectation can be met by a literal the patcher typed. A bare `Self` expectation stays
+// governed by the receiver-relative rules unchanged, so this cannot widen what `Self` alone accepts.
+static bool _datatype_matches_analyzer_substituted_self(
+		const FSParser::DataType &p_expected_type,
+		const FSParser::DataType &p_actual_type) {
+	if (!_datatype_container_element_contains_self_type_parameter(p_expected_type)) {
+		return false;
+	}
+	const FSParser::DataType marked_expected_type = _substitute_self_type_parameter_with_bounds(p_expected_type, true);
+	return _datatype_strict_identity_equal(marked_expected_type, p_actual_type) &&
+			_datatype_substituted_self_markers_match(marked_expected_type, p_actual_type);
+}
+
 static bool _datatype_self_bindings_are_final(const FSParser::DataType &p_type) {
 	if (_is_self_type_parameter(p_type)) {
 		return !p_type.type_parameter_bound.is_empty() && _datatype_represents_final_class(p_type.type_parameter_bound[0]);
@@ -946,6 +999,9 @@ static bool _datatype_matches_self_return_contract(
 	if (_datatype_alpha_equal(p_result_type, p_expected_type)) {
 		return true;
 	}
+	if (_datatype_matches_analyzer_substituted_self(p_expected_type, p_result_type)) {
+		return true;
+	}
 	if (p_expected_type.is_nullable) {
 		FSParser::DataType non_nullable_expected = p_expected_type;
 		non_nullable_expected.is_nullable = false;
@@ -970,6 +1026,9 @@ static bool _datatype_matches_self_parameter_contract(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_argument_type) {
 	if (_datatype_strict_identity_equal(p_expected_type, p_argument_type)) {
+		return true;
+	}
+	if (_datatype_matches_analyzer_substituted_self(p_expected_type, p_argument_type)) {
 		return true;
 	}
 	if (p_expected_type.is_nullable) {
@@ -7398,16 +7457,23 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 			// `Self`-typing tradeoff (static at the call site, leaf at run time) and is accepted only for
 			// the non-overriding inherit leg, where no override can narrow the dispatched signature.
 			//
+			// A rest tail is part of the same signature, so it resolves against the same receiver. Leaving
+			// it symbolic while the fixed parameters resolve would reject a leaf-typed surplus argument
+			// with a diagnostic naming the literal "Self" token, which is exactly the argument the runtime
+			// then accepts.
+			//
 			// This runs on every analyzed call and every LSP pass, so the overwhelmingly common case --
 			// no parameter mentions `Self` -- must not allocate. A cheap pre-pass checks for any `Self`
 			// mention and only then builds the substituted list, so the hot path skips the per-parameter
 			// deep copy and the binding map entirely.
 			const List<FSParser::DataType> *validate_par_types = &par_types;
 			List<FSParser::DataType> substituted_par_types;
+			FSParser::DataType substituted_rest_parameter_type;
 			if (!is_self && !p_call->is_static && base_type.kind == FSParser::DataType::CLASS &&
 					base_type.class_type != nullptr && !base_type.is_meta_type &&
 					!base_type.class_type->has_function(p_call->function_name)) {
-				bool mentions_self_type = false;
+				const bool rest_mentions_self_type = rest_type != nullptr && _datatype_contains_self_type_parameter(*rest_type);
+				bool mentions_self_type = rest_mentions_self_type;
 				for (const FSParser::DataType &par_type : par_types) {
 					if (_datatype_contains_self_type_parameter(par_type)) {
 						mentions_self_type = true;
@@ -7425,6 +7491,10 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 										: par_type);
 					}
 					validate_par_types = &substituted_par_types;
+					if (rest_mentions_self_type) {
+						substituted_rest_parameter_type = FSParser::DataType::substitute(*rest_type, self_bindings, false);
+						rest_type = &substituted_rest_parameter_type;
+					}
 				}
 			}
 			call_site_validation.validate_call_arg(*validate_par_types, default_arg_count, method_flags.has_flag(METHOD_FLAG_VARARG), p_call, base_type.method_extra_allowed_argument_counts, base_type.method_unbound_argument_count, rest_type, extra_allowed_argument_offset);
