@@ -1,6 +1,7 @@
 # The leading-`.` contextual case shorthand parses in every expression position, with and
-# without a payload. Resolving it against the expected type is not implemented yet, so the
-# shorthand still reaches code generation unqualified and is refused there.
+# without a payload. None of the declarations below supplies a union, so the two the resolver
+# reaches are reported as missing their expected tagged-union type; container elements and
+# conditional-expression branches do not propagate an expected type into the shorthand yet.
 enum Result[T, E]:
 	Ok(value: int)
 	Err(error: String)

@@ -1003,6 +1003,11 @@ void FSAnalyzer::CallSiteValidationContext::validate_call_arg(const List<FSParse
 		if (expected_type == nullptr) {
 			continue;
 		}
+		// A contextual case shorthand in argument position takes its union from the parameter type of
+		// the callee that was already selected, so this hook sits after callee selection and threads
+		// the right type per call site. FoundryScript has no user-level overloading, so there is
+		// exactly one candidate signature to resolve against.
+		analyzer->resolve_contextual_enum_case(p_call->arguments[i], *expected_type);
 		validate_argument_against_type(*expected_type, p_call->arguments[i], i + 1, p_call->function_name, p_call);
 	}
 }

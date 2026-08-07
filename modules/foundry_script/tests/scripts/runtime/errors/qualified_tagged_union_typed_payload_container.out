@@ -1,0 +1,2 @@
+FS_TEST_RUNTIME_ERROR
+>> SCRIPT ERROR at runtime/errors/qualified_tagged_union_typed_payload_container.fs:11 on test(): Trying to assign an array of type "Array" to a variable of type "Array[int]".

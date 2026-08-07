@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 8: Invalid argument 1 for enum case "Result.Ok": should be "int" but is "String".

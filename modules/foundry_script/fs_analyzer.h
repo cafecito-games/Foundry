@@ -612,6 +612,14 @@ private:
 			const FSParser::Node *p_source, FSParser::DataType &r_tuple_meta_type);
 	void reduce_call_tuple_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_tuple_meta_type);
 	void reduce_call_enum_case_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_enum_meta_type);
+	// Resolves the leading-`.` contextual tagged-union case shorthand (`.Ok(1)`, `.None`) against the
+	// union the consumer expects. Returns false when the expression is not a contextual case, so a
+	// consumer can call it unconditionally right after its own standalone reduce step. Returns true
+	// once the shorthand has been typed or diagnosed, including when `p_expected_type` names no
+	// complete tagged-union specialization.
+	bool resolve_contextual_enum_case(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_expected_type);
+	bool tagged_union_metatype_from_expected_type(const FSParser::DataType &p_expected_type,
+			const FSParser::Node *p_source, FSParser::DataType &r_enum_meta_type);
 	void reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(FSParser::TypeTestNode *p_type_test);
 	void resolve_type_test_case_binds(FSParser::TypeTestNode *p_type_test, const FSParser::DataType &p_test_type);
