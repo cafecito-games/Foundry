@@ -51,6 +51,15 @@ class HTTPServer : public Node {
 		Callable callable;
 	};
 
+	struct FileMount {
+		// The matched prefix without its trailing separator, so a mount at `/` carries an empty
+		// prefix and claims every path.
+		String prefix;
+		// An absolute directory with every symbolic link already followed, which is what a
+		// requested path is checked against.
+		String root;
+	};
+
 	int port = 8080;
 	String bind_address = "127.0.0.1";
 	bool emit_for_all = false;
@@ -58,6 +67,7 @@ class HTTPServer : public Node {
 	Ref<TCPServer> tcp_server;
 	LocalVector<Ref<HTTPServerConnection>> connections;
 	LocalVector<Route> routes;
+	LocalVector<FileMount> mounts;
 
 	void _dispatch(const Ref<HTTPServerConnection> &p_connection);
 
@@ -91,6 +101,15 @@ public:
 	// Registers an exact `method` + `path` handler, invoked with `(request, response)`. The first
 	// registration for a given pair wins.
 	void route(const String &p_method, const String &p_path, const Callable &p_callable);
+
+	// Serves the files under `root_dir` for every request path starting with `url_prefix`. A mount
+	// answers before any route, so a route can never shadow a file; a path the mount holds no file
+	// for is left to the rest of the resolution ladder. A path that resolves outside `root_dir` —
+	// through `..`, an escaping symbolic link, or anything else — is refused and never served.
+	void mount_files(const String &p_url_prefix, const String &p_root_dir);
+
+	// The number of registered mounts. Native inspection only.
+	int get_mount_count() const;
 
 	// Accepts, parses, dispatches and writes for one pass. Called automatically while the node is in
 	// the tree.

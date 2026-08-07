@@ -4,7 +4,7 @@
 		A node that hosts an HTTP server.
 	</brief_description>
 	<description>
-		Listens for plain HTTP requests, parses them, and resolves each one in a fixed order: a handler registered with [method route] is tried first, then the [signal request_received] signal, and a request nothing answered is finally served [code]404 Not Found[/code]. Handlers and receivers alike are given a [code skip-lint]foundry.http.server.HTTPRequest[/code] describing the request and a [code skip-lint]foundry.http.server.HTTPResponse[/code] to complete.
+		Listens for plain HTTP requests, parses them, and resolves each one in a fixed order: a directory mounted with [method mount_files] is tried first, then a handler registered with [method route], then the [signal request_received] signal, and a request nothing answered is finally served [code]404 Not Found[/code]. Handlers and receivers alike are given a [code skip-lint]foundry.http.server.HTTPRequest[/code] describing the request and a [code skip-lint]foundry.http.server.HTTPResponse[/code] to complete.
 		All work happens on the thread that drives the server. While the node is inside the scene tree it polls itself every frame; a headless caller can call [method poll] directly instead. Each connection currently serves exactly one request and is then closed.
 		[b]Note:[/b] The default bind address is the loopback interface, so the server is reachable only from the local machine unless another address is passed to [method listen].
 		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPServer[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPServer[/code]. Without that import the bare name does not resolve.
@@ -29,6 +29,18 @@
 			<description>
 				Opens a listening socket on [member port] at [member bind_address] and returns [constant @GlobalScope.OK] on success. Set [member port] to [code]0[/code] to let the operating system pick a free port, then read it back with [method get_listening_port].
 				Returns [constant @GlobalScope.ERR_ALREADY_IN_USE] if the server is already listening, and [constant @GlobalScope.ERR_INVALID_PARAMETER] if [member bind_address] cannot be parsed.
+			</description>
+		</method>
+		<method name="mount_files">
+			<return type="void" />
+			<param index="0" name="url_prefix" type="String" />
+			<param index="1" name="root_dir" type="String" />
+			<description>
+				Serves the files under [param root_dir] for every request path that starts with [param url_prefix]. [param url_prefix] must start with [code]/[/code], and a trailing [code]/[/code] on it is ignored, so [code]"/app"[/code] and [code]"/app/"[/code] mount the same way. The prefix only matches whole path segments, so [code]"/app"[/code] claims [code]/app/index.html[/code] but not [code]/application/index.html[/code]. [param root_dir] must name a readable directory; [code]res://[/code] and [code]user://[/code] paths are resolved to their location on disk. A registration that does not meet these conditions is rejected and no mount is added.
+				A mount is resolved before any route, so a route can never shadow a file the mount holds. A path the mount holds no file for — including a directory — is left to the rest of the resolution: routes, then [signal request_received], then [code]404 Not Found[/code].
+				Only [code]GET[/code] and [code]HEAD[/code] are answered; any other method is refused with [code]405 Method Not Allowed[/code]. Responses carry a content type derived from the file extension, an [code]ETag[/code] and a [code]Last-Modified[/code] field. A request repeating either validator through [code]If-None-Match[/code] or [code]If-Modified-Since[/code] is answered with [code]304 Not Modified[/code], and a single [code skip-lint]Range[/code] request is answered with [code]206 Partial Content[/code], or [code]416 Range Not Satisfiable[/code] when the range lies past the end of the file.
+				A request whose path resolves outside [param root_dir], whether through [code]..[/code], percent-escapes, an empty path segment, or a symbolic link leaving the directory, is answered with [code]403 Forbidden[/code] and the file is never opened. Such a request is refused whether or not anything exists at the escaping path, so a mount cannot be used to probe the rest of the filesystem, and the refusal is final: it never falls through to a route or to [signal request_received].
+				If several mounts match a path, the first one registered claims it.
 			</description>
 		</method>
 		<method name="poll">

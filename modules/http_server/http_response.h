@@ -48,6 +48,10 @@ public:
 		BODY_SOURCE_FILE,
 	};
 
+	// A file body that runs to the end of the file, whatever its length turns out to be when the
+	// transport opens it.
+	static constexpr uint64_t FILE_LENGTH_TO_END = UINT64_MAX;
+
 private:
 	int status = 200;
 	Dictionary headers;
@@ -56,6 +60,8 @@ private:
 	HashMap<String, String> header_index;
 	PackedByteArray body;
 	String file_path;
+	uint64_t file_offset = 0;
+	uint64_t file_length = FILE_LENGTH_TO_END;
 	BodySource body_source = BODY_SOURCE_NONE;
 	bool sent = false;
 
@@ -83,12 +89,18 @@ public:
 	void send_string(const String &p_body);
 	void redirect(const String &p_location, int p_status);
 	void send_file(const String &p_path);
+	// Commits part of a file instead of all of it, which is what a range request is answered with.
+	// Native only: a script asks for a file by path and lets the mount decide about ranges.
+	void send_file_range(const String &p_path, uint64_t p_offset, uint64_t p_length);
 
 	bool is_sent() const;
 	BodySource get_body_source() const;
 	PackedByteArray get_body() const;
 	String get_body_string() const;
 	String get_file_path() const;
+	// Both are meaningful only for a file body, and the length may be `FILE_LENGTH_TO_END`.
+	uint64_t get_file_offset() const;
+	uint64_t get_file_length() const;
 };
 
 VARIANT_ENUM_CAST(HTTPResponse::BodySource);
