@@ -1,0 +1,4 @@
+FS_TEST_OK
+~~ WARNING at line 30: (UNSAFE_METHOD_ACCESS) The method "missing_method()" is not present on the inferred type "V" (but may be present on a subtype).
+<null>
+dependent type parameter bound chain ok
