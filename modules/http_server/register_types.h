@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  http_server.cpp                                                       */
+/*  register_types.h                                                      */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,30 +28,9 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "scene/main/http_server.h"
+#pragma once
 
-void HTTPServer::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("start"), &HTTPServer::start);
-	ClassDB::bind_method(D_METHOD("stop"), &HTTPServer::stop);
-	ClassDB::bind_method(D_METHOD("set_port", "port"), &HTTPServer::set_port);
-	ClassDB::bind_method(D_METHOD("get_port"), &HTTPServer::get_port);
+#include "modules/register_module_types.h"
 
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "port", PROPERTY_HINT_RANGE, "0,65535,1"), "set_port", "get_port");
-}
-
-void HTTPServer::set_port(int p_port) {
-	ERR_FAIL_COND_MSG(p_port < 0 || p_port > 65535, "Port must be between 0 and 65535.");
-	port = p_port;
-}
-
-int HTTPServer::get_port() const {
-	return port;
-}
-
-bool HTTPServer::start() {
-	// Pilot stub: reports success so scripts and fixtures have an observable result.
-	return true;
-}
-
-void HTTPServer::stop() {
-}
+void initialize_http_server_module(ModuleInitializationLevel p_level);
+void uninitialize_http_server_module(ModuleInitializationLevel p_level);
