@@ -32,6 +32,7 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "../fs_analyzer.h"
 #include "../fs_format.h"
 #include "../fs_parser.h"
 
@@ -243,6 +244,125 @@ TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] The formatter round-t
 	FSFormatter::Result reformatted;
 	REQUIRE_EQ(formatter.format(result.formatted, "contextual_tagged_union.fs", reformatted), OK);
 	CHECK_EQ(reformatted.formatted, result.formatted);
+}
+
+// Parses and analyzes a whole script so resolved types and folded constants can be read back.
+class ContextualCaseFixture {
+public:
+	FSParser parser;
+	FSAnalyzer analyzer;
+	Error parse_error = ERR_PARSE_ERROR;
+	Error analyze_error = ERR_PARSE_ERROR;
+
+	explicit ContextualCaseFixture(const String &p_source) :
+			analyzer(&parser) {
+		parse_error = parse_contextual_case_source(parser, p_source);
+		if (parse_error == OK) {
+			analyze_error = analyzer.analyze();
+		}
+	}
+
+	const FSParser::FunctionNode *function(const StringName &p_name) const {
+		const FSParser::ClassNode *tree = parser.get_tree();
+		if (tree == nullptr || !tree->has_function(p_name)) {
+			return nullptr;
+		}
+		return tree->get_member(p_name).function;
+	}
+
+	const FSParser::ExpressionNode *initializer(const StringName &p_function_name, const StringName &p_variable_name) const {
+		return find_initializer(parser, p_function_name, p_variable_name);
+	}
+};
+
+static const String RESULT_DECLARATION =
+		"enum Result[T, E]:\n"
+		"\tOk(value: T)\n"
+		"\tErr(error: E)\n"
+		"\n"
+		"\n";
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A var initializer resolves the shorthand like the explicit form") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run() -> void:\n"
+			"\tvar shorthand: Result[int, String] = .Ok(1)\n"
+			"\tvar explicit: Result[int, String] = Result[int, String].Ok(1)\n"
+			"\tprint(shorthand, explicit)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::ExpressionNode *shorthand = fixture.initializer(SNAME("run"), SNAME("shorthand"));
+	const FSParser::ExpressionNode *explicit_form = fixture.initializer(SNAME("run"), SNAME("explicit"));
+	REQUIRE(shorthand != nullptr);
+	REQUIRE(explicit_form != nullptr);
+	CHECK_EQ(shorthand->get_datatype(), explicit_form->get_datatype());
+	CHECK(shorthand->get_datatype().is_tagged_union_type());
+	CHECK_FALSE(shorthand->get_datatype().is_meta_type);
+	CHECK(shorthand->get_datatype().to_string().ends_with("Result[int, String]"));
+
+	// Both spellings fold to the same read-only `[tag, payload...]` Array.
+	REQUIRE(shorthand->is_constant);
+	REQUIRE(explicit_form->is_constant);
+	CHECK_EQ(shorthand->reduced_value, explicit_form->reduced_value);
+	const Array folded = shorthand->reduced_value;
+	CHECK(folded.is_read_only());
+	REQUIRE_EQ(folded.size(), 2);
+	CHECK_EQ(folded[0], Variant(0));
+	CHECK_EQ(folded[1], Variant(1));
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] Shorthand parameter defaults constant-fold like the explicit form") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"enum Option[T]:\n"
+			"\tNone\n"
+			"\tSome(value: T)\n"
+			"\n"
+			"\n"
+			"func shorthand_default(value: Result[int, String] = .Ok(1)) -> void:\n"
+			"\tprint(value)\n"
+			"\n"
+			"\n"
+			"func explicit_default(value: Result[int, String] = Result[int, String].Ok(1)) -> void:\n"
+			"\tprint(value)\n"
+			"\n"
+			"\n"
+			"func payloadless_default(value: Option[int] = .None) -> void:\n"
+			"\tprint(value)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::FunctionNode *shorthand = fixture.function(SNAME("shorthand_default"));
+	const FSParser::FunctionNode *explicit_form = fixture.function(SNAME("explicit_default"));
+	const FSParser::FunctionNode *payloadless = fixture.function(SNAME("payloadless_default"));
+	REQUIRE(shorthand != nullptr);
+	REQUIRE(explicit_form != nullptr);
+	REQUIRE(payloadless != nullptr);
+	REQUIRE_EQ(shorthand->default_arg_values.size(), 1);
+	REQUIRE_EQ(explicit_form->default_arg_values.size(), 1);
+	REQUIRE_EQ(payloadless->default_arg_values.size(), 1);
+
+	Array expected_payload;
+	expected_payload.push_back(0);
+	expected_payload.push_back(1);
+	CHECK_EQ(shorthand->default_arg_values[0], Variant(expected_payload));
+	CHECK_EQ(shorthand->default_arg_values[0], explicit_form->default_arg_values[0]);
+
+	Array expected_payloadless;
+	expected_payloadless.push_back(0);
+	CHECK_EQ(payloadless->default_arg_values[0], Variant(expected_payloadless));
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A target that names no union rejects the shorthand") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run() -> void:\n"
+			"\tvar untyped = .Ok(1)\n"
+			"\tprint(untyped)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	CHECK_NE(fixture.analyze_error, OK);
+
+	REQUIRE_FALSE(fixture.parser.get_errors().is_empty());
+	CHECK_EQ(fixture.parser.get_errors().front()->get().message,
+			String(R"*(Contextual shorthand ".Ok" needs an expected tagged-union type; annotate the target, e.g. "var x: Result[int, String] = .Ok(...)".)*"));
 }
 
 } // namespace FSTests

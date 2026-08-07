@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Enum case "Result.Ok" expects 1 argument(s), but 2 were given.

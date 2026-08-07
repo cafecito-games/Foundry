@@ -4472,6 +4472,11 @@ void FSAnalyzer::resolve_assignable(FSParser::AssignableNode *p_assignable, cons
 	if (p_assignable->initializer != nullptr) {
 		reduce_expression(p_assignable->initializer);
 
+		// A contextual case shorthand takes its union from the declared type. This covers `var` and
+		// `const` declarations and, through `resolve_parameter()`, parameter defaults. An unannotated
+		// or inferred declaration supplies no union, which the resolver reports.
+		resolve_contextual_enum_case(p_assignable->initializer, specified_type);
+
 		if (p_assignable->initializer->type == FSParser::Node::ARRAY) {
 			FSParser::ArrayNode *array = static_cast<FSParser::ArrayNode *>(p_assignable->initializer);
 			if (has_specified_type && specified_type.has_container_element_type(0)) {
@@ -5386,6 +5391,10 @@ void FSAnalyzer::resolve_return(FSParser::ReturnNode *p_return) {
 		} else {
 			reduce_expression(p_return->return_value);
 		}
+		// A contextual case shorthand takes its union from the enclosing function's declared return
+		// type. A lambda's last expression arrives here with its own function current, so a lambda
+		// return resolves against the lambda's return type rather than the outer function's.
+		resolve_contextual_enum_case(p_return->return_value, compatibility_expected_type);
 		if (is_void_function) {
 			p_return->void_return = true;
 			const FSParser::DataType &return_type = p_return->return_value->datatype;
@@ -6083,6 +6092,11 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 	}
 
 	FSParser::DataType assignee_type = p_assignment->assignee->get_datatype();
+
+	// A contextual case shorthand on the right of an assignment takes its union from the assignee,
+	// which is only typed above, so this runs after the assignee is reduced rather than beside the
+	// assigned value's own reduce at the top of this function.
+	resolve_contextual_enum_case(p_assignment->assigned_value, assignee_type);
 
 	mark_coroutine_handle_capture(p_assignment->assigned_value, assignee_type);
 
@@ -6922,6 +6936,14 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 	} else if (callee_type == FSParser::Node::SUBSCRIPT) {
 		FSParser::SubscriptNode *subscript = static_cast<FSParser::SubscriptNode *>(p_call->callee);
 		if (subscript->base == nullptr) {
+			if (subscript->is_contextual_enum_case) {
+				// The contextual case shorthand deliberately has no base: its union comes from the
+				// consumer's expected type, which is only known after this standalone reduce. The
+				// arguments above are reduced either way; `resolve_contextual_enum_case()` types the
+				// call once the consumer supplies the union.
+				p_call->set_datatype(call_type);
+				return;
+			}
 			// Invalid syntax, error already set on parser.
 			p_call->set_datatype(call_type);
 			mark_node_unsafe(p_call);
@@ -11244,6 +11266,171 @@ void FSAnalyzer::reduce_call_tuple_construction(FSParser::CallNode *p_call, cons
 	p_call->set_datatype(tuple_type);
 }
 
+// The leading-`.` contextual case shorthand as the parser leaves it: `.None` is the bare case
+// reference, and `.Ok(1)` is that same reference with an ordinary call suffix applied. Returns the
+// reference for both forms and reports the call through `r_call` for the payload-bearing one.
+static FSParser::SubscriptNode *contextual_enum_case_reference(FSParser::ExpressionNode *p_expression, FSParser::CallNode **r_call) {
+	*r_call = nullptr;
+	if (p_expression == nullptr) {
+		return nullptr;
+	}
+	if (p_expression->type == FSParser::Node::CALL) {
+		FSParser::CallNode *call = static_cast<FSParser::CallNode *>(p_expression);
+		if (!call->is_contextual_enum_case || call->callee == nullptr || call->callee->type != FSParser::Node::SUBSCRIPT) {
+			return nullptr;
+		}
+		*r_call = call;
+		return static_cast<FSParser::SubscriptNode *>(call->callee);
+	}
+	if (p_expression->type == FSParser::Node::SUBSCRIPT) {
+		FSParser::SubscriptNode *reference = static_cast<FSParser::SubscriptNode *>(p_expression);
+		return reference->is_contextual_enum_case ? reference : nullptr;
+	}
+	return nullptr;
+}
+
+// A payload built entirely from constants may be baked into the script's constant pool instead of
+// being constructed at every evaluation, but only when doing so cannot change what the value is.
+// Values stored by reference would be shared between evaluations, and a typed collection slot needs
+// the runtime conversion that types the container, which a baked literal would not carry.
+static bool can_bake_enum_case_payload_field(const FSParser::DataType &p_field_type, const Variant &p_value) {
+	switch (p_value.get_type()) {
+		case Variant::OBJECT:
+			return false;
+		case Variant::ARRAY:
+			// A case's own value is a read-only Array, so a nested case is immutable and bakeable.
+			return static_cast<Array>(p_value).is_read_only();
+		case Variant::DICTIONARY:
+			return static_cast<Dictionary>(p_value).is_read_only();
+		case Variant::PACKED_BYTE_ARRAY:
+		case Variant::PACKED_INT32_ARRAY:
+		case Variant::PACKED_INT64_ARRAY:
+		case Variant::PACKED_FLOAT32_ARRAY:
+		case Variant::PACKED_FLOAT64_ARRAY:
+		case Variant::PACKED_STRING_ARRAY:
+		case Variant::PACKED_VECTOR2_ARRAY:
+		case Variant::PACKED_VECTOR3_ARRAY:
+		case Variant::PACKED_COLOR_ARRAY:
+		case Variant::PACKED_VECTOR4_ARRAY:
+			return false;
+		default:
+			break;
+	}
+
+	switch (p_field_type.kind) {
+		case FSParser::DataType::VARIANT:
+		case FSParser::DataType::ENUM:
+			return true;
+		case FSParser::DataType::BUILTIN:
+			return !p_field_type.has_container_element_types();
+		default:
+			return false;
+	}
+}
+
+bool FSAnalyzer::tagged_union_metatype_from_expected_type(const FSParser::DataType &p_expected_type,
+		const FSParser::Node *p_source, FSParser::DataType &r_enum_meta_type) {
+	if (!p_expected_type.is_set() || p_expected_type.has_no_type() || p_expected_type.is_meta_type ||
+			p_expected_type.kind != FSParser::DataType::ENUM || !p_expected_type.is_tagged_union) {
+		return false;
+	}
+
+	// The inverse of `type_from_metatype()` for a tagged union: the case names, tags, and the payload
+	// schema of this specialization are all already carried by the value type, so the construction
+	// site only needs that same type spelled as the union itself.
+	FSParser::DataType enum_meta_type = p_expected_type;
+	enum_meta_type.is_meta_type = true;
+	enum_meta_type.is_pseudo_type = false;
+	enum_meta_type.is_constant = false;
+	enum_meta_type.is_read_only = false;
+	enum_meta_type.is_nullable = false;
+	enum_meta_type.enum_case_name = StringName();
+	enum_meta_type.builtin_type = Variant::DICTIONARY;
+
+	// A generic union names a construction site only once every parameter is bound. An arity mismatch
+	// means the target was never a complete specialization, so it cannot type a payload.
+	const FSParser::EnumNode *declaration = resolve_enum_declaration(enum_meta_type, p_source);
+	if (declaration != nullptr && declaration->type_parameters.size() != enum_meta_type.type_arguments.size()) {
+		return false;
+	}
+
+	r_enum_meta_type = enum_meta_type;
+	return true;
+}
+
+bool FSAnalyzer::resolve_contextual_enum_case(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_expected_type) {
+	FSParser::CallNode *call = nullptr;
+	FSParser::SubscriptNode *reference = contextual_enum_case_reference(p_expression, &call);
+	if (reference == nullptr) {
+		return false;
+	}
+
+	// A shorthand that could not be qualified is still given a type, so the consumer's own checks do
+	// not pile a second "could not resolve" error on top of the one reported here.
+	FSParser::DataType unqualified_type;
+	unqualified_type.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	unqualified_type.kind = FSParser::DataType::VARIANT;
+
+	if (reference->attribute == nullptr) {
+		// The case name failed to parse; the parser already reported it.
+		p_expression->set_datatype(unqualified_type);
+		return true;
+	}
+	const StringName case_name = reference->attribute->name;
+
+	FSParser::DataType enum_meta_type;
+	if (!tagged_union_metatype_from_expected_type(p_expected_type, p_expression, enum_meta_type)) {
+		const String annotated_example = vformat(R"(var x: Result[int, String] = .%s%s)",
+				case_name, call != nullptr ? "(...)" : "");
+		push_error(vformat(R"*(Contextual shorthand ".%s" needs an expected tagged-union type; annotate the target, e.g. "%s".)*",
+						   case_name, annotated_example),
+				p_expression);
+		p_expression->set_datatype(unqualified_type);
+		return true;
+	}
+
+	if (!enum_meta_type.enum_values.has(case_name)) {
+		push_error(vformat(R"(Tagged union "%s" has no case "%s".)", enum_meta_type.enum_type, case_name), p_expression);
+		p_expression->set_datatype(unqualified_type);
+		return true;
+	}
+
+	const FSParser::DataType case_value_type = type_from_metatype(enum_meta_type);
+	const bool carries_payload = enum_meta_type.get_enum_case_payload(case_name) != nullptr;
+
+	if (call == nullptr) {
+		if (carries_payload) {
+			push_error(vformat(R"*(Enum case "%s.%s" carries a payload and must be constructed, e.g. ".%s(...)".)*",
+							   enum_meta_type.enum_type, case_name, case_name),
+					p_expression);
+			p_expression->set_datatype(case_value_type);
+			return true;
+		}
+		// A payload-less case has no construction site, so it folds to the read-only `[tag]` singleton
+		// its case erases to, exactly as the qualified spelling folds it.
+		reference->attribute->set_datatype(case_value_type);
+		reference->set_datatype(case_value_type);
+		reference->is_constant = true;
+		reference->reduced_value = fs_tagged_union_case_singleton(enum_meta_type.enum_values[case_name]);
+		return true;
+	}
+
+	if (!carries_payload) {
+		push_error(vformat(R"*(Enum case "%s.%s" carries no payload, so it is written as a value, e.g. ".%s".)*",
+						   enum_meta_type.enum_type, case_name, case_name),
+				p_expression);
+		p_expression->set_datatype(case_value_type);
+		return true;
+	}
+
+	// The union is supplied by the expected type rather than spelled in front of the case, so it is
+	// published on the case reference itself; from here the payload form is an ordinary construction.
+	reference->attribute->set_datatype(case_value_type);
+	reference->set_datatype(enum_meta_type);
+	reduce_call_enum_case_construction(call, enum_meta_type);
+	return true;
+}
+
 void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, const FSParser::DataType &p_enum_meta_type) {
 	call_site_validation.reject_named_call_arguments(p_call);
 
@@ -11265,17 +11452,24 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 		return;
 	}
 
+	bool payload_is_bakeable = true;
 	for (int i = 0; i < expected_count; i++) {
 		const FSParser::DataType field_type = complete_self_referential_enum_type(payload->field_types[i]);
 		FSParser::ExpressionNode *argument = p_call->arguments[i];
+		// A shorthand in payload position takes its union from the field type, which is only known
+		// here, so it is qualified before the field's own check reads the argument's type. This is what
+		// makes a nested shorthand such as `.Ok(.Ok(1))` resolve.
+		resolve_contextual_enum_case(argument, field_type);
 		const FSParser::DataType argument_type = argument->get_datatype();
 		if (!argument_type.is_set()) {
+			payload_is_bakeable = false;
 			continue;
 		}
 		if (!is_type_compatible(field_type, argument_type, true, nullptr, argument)) {
 			push_error(vformat(R"*(Invalid argument %d for enum case "%s.%s": should be "%s" but is "%s".)*",
 							   i + 1, p_enum_meta_type.enum_type, case_name, field_type.to_string(), argument_type.to_string()),
 					argument);
+			payload_is_bakeable = false;
 			continue;
 		}
 		if (argument->is_constant) {
@@ -11299,6 +11493,30 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 					field_type.get_container_element_type_or_variant(0),
 					field_type.get_container_element_type_or_variant(1));
 		}
+	}
+
+	// A case built entirely from constants is itself a constant: its value is the same read-only
+	// `[tag, payload...]` Array the construction opcode would build, and read-only means one shared
+	// instance behaves exactly like a freshly built one. This is what lets a case stand as a parameter
+	// default or a `const` initializer, and it applies equally to the qualified spelling and to the
+	// contextual shorthand, so the two stay at parity.
+	if (payload_is_bakeable) {
+		for (int i = 0; i < expected_count && payload_is_bakeable; i++) {
+			const FSParser::ExpressionNode *argument = p_call->arguments[i];
+			payload_is_bakeable = argument->is_constant &&
+					can_bake_enum_case_payload_field(complete_self_referential_enum_type(payload->field_types[i]),
+							argument->reduced_value);
+		}
+	}
+	if (payload_is_bakeable) {
+		Array case_value;
+		case_value.push_back(p_call->enum_case_tag);
+		for (int i = 0; i < expected_count; i++) {
+			case_value.push_back(p_call->arguments[i]->reduced_value);
+		}
+		case_value.make_read_only();
+		p_call->is_constant = true;
+		p_call->reduced_value = case_value;
 	}
 
 	p_call->set_datatype(case_value_type);

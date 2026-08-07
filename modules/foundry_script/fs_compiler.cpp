@@ -803,14 +803,21 @@ FSCodeGenerator::Address FSCompiler::_apply_flow_narrowed_integer_width(
 	return p_address;
 }
 
-// True for the leading-`.` contextual tagged-union case shorthand (`.Ok(1)`, `.None`) as it comes
-// out of the parser, with no union in front of the case name.
+// True for a leading-`.` contextual tagged-union case shorthand (`.Ok(1)`, `.None`) the analyzer
+// never qualified with a union. Resolving the shorthand against the consumer's expected type turns
+// the payload form into an ordinary case construction and folds the payload-less form to the case's
+// read-only `[tag]` singleton, so either mark means the union was supplied. Anything reaching code
+// generation without one is an invariant violation, not a user error the analyzer failed to report.
 static bool is_unqualified_contextual_enum_case(const FSParser::ExpressionNode *p_expression) {
 	switch (p_expression->type) {
-		case FSParser::Node::CALL:
-			return static_cast<const FSParser::CallNode *>(p_expression)->is_contextual_enum_case;
-		case FSParser::Node::SUBSCRIPT:
-			return static_cast<const FSParser::SubscriptNode *>(p_expression)->is_contextual_enum_case;
+		case FSParser::Node::CALL: {
+			const FSParser::CallNode *call = static_cast<const FSParser::CallNode *>(p_expression);
+			return call->is_contextual_enum_case && !call->is_enum_case_construction;
+		}
+		case FSParser::Node::SUBSCRIPT: {
+			const FSParser::SubscriptNode *reference = static_cast<const FSParser::SubscriptNode *>(p_expression);
+			return reference->is_contextual_enum_case && !reference->is_constant;
+		}
 		default:
 			return false;
 	}

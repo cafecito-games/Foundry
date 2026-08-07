@@ -1,0 +1,7 @@
+FS_TEST_OK
+[0, 1]
+[1, "bad"]
+true
+[0, 7]
+[1, "waiting"]
+[0, "one"]
