@@ -1,12 +1,11 @@
-# The shorthand also heads a match case pattern, where the union comes from the subject.
-# Resolving the case against the subject's union is not implemented yet, so the analyzer error
-# below is the expected interim state.
+# The shorthand also heads a match case pattern and the right-hand side of `is`, where the union
+# comes from the subject rather than from the source text.
 enum Result[T, E]:
-	Ok(value: int)
-	Err(error: String)
+	Ok(value: T)
+	Err(error: E)
 
 
-func run(subject: int) -> void:
+func run(subject: Result[int, String]) -> void:
 	match subject:
 		.Ok(payload):
 			print(payload)
@@ -14,3 +13,6 @@ func run(subject: int) -> void:
 			print(reason)
 		_:
 			pass
+
+	if subject is .Ok(payload):
+		print(payload)

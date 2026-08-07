@@ -938,6 +938,9 @@ element, an `as` cast, or a conditional-expression branch). Inferred, untyped, a
 are rejected. This is a semantic requirement, not a syntactic one, so a re-implementation resolves
 it after parsing.
 
+In a `match` case pattern (§6.1) and on the right of `is` (§5.5), the union is supplied by the
+subject being matched or tested rather than by an expected type.
+
 ### 5.4 Infix (left-denotation) forms
 
 | Token(s)                              | Infix rule          | Precedence            |
@@ -991,7 +994,8 @@ expressions (`can_assign` is false there).
 
 ```ebnf
 cast          = expression, "as", type ;
-type_test     = expression, "is", [ "not" ], type, [ case_bind_list ] ;
+type_test     = expression, "is", [ "not" ], type_test_type, [ case_bind_list ] ;
+type_test_type = type | contextual_enum_case ;
 case_bind_list = "(", case_bind, { ",", case_bind }, ")" ;
 case_bind     = identifier | "_" ;
 ```
@@ -1006,6 +1010,11 @@ valid as the condition of `if`, `elif`, `while`, or `assert`, either directly or
 `and` within that condition; the binds become locals of the guarded suite (of the enclosing suite for
 `assert`). Without a bind list, `msg is Message.Move` is an ordinary boolean expression that tests
 the case tag, and `msg is Message` tests membership in the enum.
+
+The tested type may also be the contextual case shorthand (`msg is .Move(x, y)`, `opt is .None`),
+which names a case of the union the tested operand already has. It is only valid where that operand's
+type is a complete tagged-union specialization; the shorthand names exactly one case and therefore
+takes neither a type-argument list nor a longer dotted chain.
 
 Because the binds of an `assert` outlive the assertion, a bind-carrying `assert` condition is still
 evaluated in builds where assertions are stripped; only the failure check is removed.

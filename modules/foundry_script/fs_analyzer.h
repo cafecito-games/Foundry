@@ -620,6 +620,18 @@ private:
 	bool resolve_contextual_enum_case(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_expected_type);
 	bool tagged_union_metatype_from_expected_type(const FSParser::DataType &p_expected_type,
 			const FSParser::Node *p_source, FSParser::DataType &r_enum_meta_type);
+	// The same rule as `resolve_contextual_enum_case()` for a pattern head, which is a pattern or a
+	// type node rather than an expression: `.Ok(value)` as a `match` case pattern and as the type on
+	// the right of `is` both name a case of the union the subject already has. Writes the union spelled
+	// as a metatype with the case name applied, which is what the qualified spelling resolves to.
+	// Returns false and reports why when the subject names no complete tagged-union specialization or
+	// does not declare the case. `p_subject_description` names the subject in that diagnostic.
+	bool resolve_contextual_case_pattern_type(const StringName &p_case_name, const FSParser::DataType *p_subject_type,
+			const char *p_subject_description, const FSParser::Node *p_source, FSParser::DataType &r_case_meta_type);
+	// A payload-less contextual case as a `match` pattern (`.None`). It is matched as the value it is,
+	// so the parser leaves it an expression pattern; the union still comes from the subject, which the
+	// ordinary expression path cannot see. Returns false when the expression is not a contextual case.
+	bool resolve_contextual_case_value_pattern(FSParser::ExpressionNode *p_expression, const FSParser::DataType *p_match_test_type);
 	void reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(FSParser::TypeTestNode *p_type_test);
 	void resolve_type_test_case_binds(FSParser::TypeTestNode *p_type_test, const FSParser::DataType &p_test_type);

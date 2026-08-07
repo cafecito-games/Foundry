@@ -1,3 +1,1 @@
-FS_TEST_ANALYZER_ERROR
->> ERROR at line 11: Could not find type "Ok" in the current scope.
->> ERROR at line 13: Could not find type "Err" in the current scope.
+FS_TEST_OK

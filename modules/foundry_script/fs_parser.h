@@ -1826,6 +1826,10 @@ public:
 		// tagged-union case (`Message.Move`) instead of a type. Type annotations keep rejecting
 		// case names, since a case is not a type.
 		bool allows_enum_case = false;
+		// Set for the leading-`.` contextual case shorthand on the right of an `is` test (`x is
+		// .Ok(value)`). `type_chain` holds only the case name: the union it belongs to comes from the
+		// tested operand's own type, so the node is never resolved as a written-out type.
+		bool is_contextual_enum_case = false;
 		// Type arguments written in expression form, produced only by a `match` case-pattern head such
 		// as `Result[int, String].Ok(value)`. Only the trailing `(` tells a case reference apart from
 		// an ordinary indexed value pattern (`TABLE[KEY]`), so the brackets are parsed as a subscript
@@ -2368,6 +2372,7 @@ private:
 	ExpressionNode *parse_await(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_attribute(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_contextual_enum_case(ExpressionNode *p_previous_operand, bool p_can_assign);
+	TypeNode *parse_contextual_enum_case_type();
 	ExpressionNode *parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_lambda(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_type_test(ExpressionNode *p_previous_operand, bool p_can_assign);
