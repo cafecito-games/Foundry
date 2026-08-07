@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="HTTPResponse" namespace="foundry.http.server" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		The outbound half of one HTTP exchange.
+	</brief_description>
+	<description>
+		A handler sets [member status] and any header fields it needs, then commits the body exactly once with [method send], [method send_string], [method redirect] or [method send_file]. A second commit is an error and leaves the first one intact.
+		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPResponse[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPResponse[/code]. Without that import the bare name does not resolve.
+		[b]Note:[/b] Committing does not write to a socket yet. It records what will be written, so the result is only observable through the getters on this class.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_body" qualifiers="const">
+			<return type="PackedByteArray" />
+			<description>
+				Returns the committed body bytes. Empty when nothing was committed, or when the body is a file.
+			</description>
+		</method>
+		<method name="get_body_source" qualifiers="const">
+			<return type="int" enum="foundry.http.server.HTTPResponse.BodySource" />
+			<description>
+				Returns where the body comes from: nothing committed yet, bytes held in memory, or a file on disk.
+			</description>
+		</method>
+		<method name="get_body_string" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the committed body bytes decoded as UTF-8.
+			</description>
+		</method>
+		<method name="get_file_path" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the path passed to [method send_file], or an empty string when the body does not come from a file.
+			</description>
+		</method>
+		<method name="get_header" qualifiers="const">
+			<return type="String" />
+			<param index="0" name="name" type="String" />
+			<description>
+				Returns the value set for the [param name] header field, or an empty string when it is not set. The lookup is case-insensitive.
+			</description>
+		</method>
+		<method name="get_headers" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns a copy of the header fields that will be written, keyed by the name as it was first spelled. Mutating the returned dictionary does not change the response.
+			</description>
+		</method>
+		<method name="has_header" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="String" />
+			<description>
+				Returns [code]true[/code] when the [param name] header field is set. The lookup is case-insensitive.
+			</description>
+		</method>
+		<method name="is_sent" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] once the body has been committed.
+			</description>
+		</method>
+		<method name="redirect">
+			<return type="void" />
+			<param index="0" name="location" type="String" />
+			<param index="1" name="status" type="int" default="302" />
+			<description>
+				Commits an empty body, sets [member status] to [param status] and sets the [code]Location[/code] header field to [param location].
+				[param status] must be a redirection status between [code]300[/code] and [code]399[/code], and [param location] must not be empty; otherwise nothing is committed and the response is left unchanged.
+			</description>
+		</method>
+		<method name="send">
+			<return type="void" />
+			<param index="0" name="body" type="PackedByteArray" />
+			<description>
+				Commits [param body] as the response body, byte for byte.
+			</description>
+		</method>
+		<method name="send_file">
+			<return type="void" />
+			<param index="0" name="path" type="String" />
+			<description>
+				Commits the file at [param path] as the response body. The path is recorded rather than read, so a missing file is not reported here. An empty path is rejected and commits nothing.
+			</description>
+		</method>
+		<method name="send_string">
+			<return type="void" />
+			<param index="0" name="body" type="String" />
+			<description>
+				Commits the UTF-8 encoding of [param body] as the response body.
+			</description>
+		</method>
+		<method name="set_header">
+			<return type="void" />
+			<param index="0" name="name" type="String" />
+			<param index="1" name="value" type="String" />
+			<description>
+				Sets the [param name] header field to [param value], replacing any value set earlier under a different casing of the same name. An empty name is rejected.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="status" type="int" setter="set_status" getter="get_status" default="200">
+			The HTTP status code of the response. Must be between [code]100[/code] and [code]599[/code]; values outside that range are rejected and leave the property unchanged.
+		</member>
+	</members>
+	<constants>
+		<constant name="BODY_SOURCE_NONE" value="0" enum="BodySource">
+			Nothing has been committed yet.
+		</constant>
+		<constant name="BODY_SOURCE_BYTES" value="1" enum="BodySource">
+			The body is the byte buffer returned by [method get_body].
+		</constant>
+		<constant name="BODY_SOURCE_FILE" value="2" enum="BodySource">
+			The body is the file at [method get_file_path].
+		</constant>
+	</constants>
+</class>

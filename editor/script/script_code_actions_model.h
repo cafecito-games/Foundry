@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  script_code_actions_model.h                                           */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,33 +28,42 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "http_response.h"
-#include "http_server.h"
-#include "http_server_request.h"
+#ifdef TOOLS_ENABLED
 
-#include "core/object/class_db.h"
+#include "modules/foundry_script/editor/fs_refactoring.h"
 
-void initialize_http_server_module(ModuleInitializationLevel p_level) {
-	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
-		return;
-	}
+// One row of a code-action menu surface. The context menu's Refactor submenu and
+// the caret-anchored code-actions popup are both built from these entries so the
+// two surfaces cannot drift apart.
+struct ScriptCodeActionEntry {
+	bool is_separator = false;
+	int id = -1;
+	// Localized label, used when `shortcut_name` is empty.
+	String title;
+	// Editor shortcut path (`ED_GET_SHORTCUT`) when the entry should render its
+	// accelerator; empty for plain items.
+	String shortcut_name;
+	bool enabled = true;
+	// Shown as the item tooltip when the entry is disabled.
+	String tooltip;
+};
 
-	FOUNDRY_REGISTER_CLASS(HTTPServer);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPServer, "foundry.http.server");
+// Maps refactor availabilities onto menu entries. `p_refactor_id_base` is the
+// menu option id that corresponds to `RefactorKind(0)`; each entry takes the id
+// `p_refactor_id_base + (int)kind`, matching the dispatch in `_run_refactor`.
+Vector<ScriptCodeActionEntry> build_refactor_menu_entries(const Vector<RefactorAvailability> &p_available, int p_refactor_id_base);
 
-	// The C++ token stays `HTTPServerRequest` so it does not collide with the global client node,
-	// but scripts see it as `foundry.http.server.HTTPRequest`.
-	FOUNDRY_REGISTER_CLASS(HTTPServerRequest);
-	FOUNDRY_REGISTER_NAMESPACE_AS(HTTPServerRequest, "foundry.http.server", "HTTPRequest");
+// Entries for the caret-anchored code-actions popup: the refactor entries plus a
+// separator and Format Document. Returns an empty list for buffers that are not
+// Foundry Script, since both refactoring and formatting are Foundry-Script-only.
+Vector<ScriptCodeActionEntry> build_code_action_menu_entries(
+		const Vector<RefactorAvailability> &p_available,
+		int p_refactor_id_base,
+		bool p_is_foundry_script,
+		int p_format_document_id,
+		const String &p_format_document_shortcut_name,
+		const String &p_format_document_title);
 
-	FOUNDRY_REGISTER_CLASS(HTTPResponse);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPResponse, "foundry.http.server");
-}
-
-void uninitialize_http_server_module(ModuleInitializationLevel p_level) {
-	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
-		return;
-	}
-}
+#endif // TOOLS_ENABLED

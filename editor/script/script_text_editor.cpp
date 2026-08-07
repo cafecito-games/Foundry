@@ -2165,6 +2165,9 @@ void ScriptTextEditor::_edit_option(int p_op) {
 		case EDIT_EMOJI_AND_SYMBOL: {
 			code_editor->get_text_editor()->show_emoji_and_symbol_picker();
 		} break;
+		case EDIT_SHOW_CODE_ACTIONS: {
+			_show_code_actions_popup();
+		} break;
 		case EDIT_REFACTOR_RENAME:
 		case EDIT_REFACTOR_EXTRACT_VARIABLE:
 		case EDIT_REFACTOR_EXTRACT_METHOD:
@@ -2260,6 +2263,26 @@ void ScriptTextEditor::_notification(int p_what) {
 			inline_color_options->add_theme_font_override("font", code_font);
 			inline_color_options->get_popup()->add_theme_font_override("font", code_font);
 		} break;
+	}
+}
+
+void ScriptTextEditor::shortcut_input(const Ref<InputEvent> &p_event) {
+	// A real Alt+Enter key press is consumed by `_text_edit_gui_input()` before it
+	// reaches this phase. This handler exists for the command palette, which pushes
+	// an `InputEventShortcut` that never reaches `gui_input`. The focus check keeps
+	// the command scoped to the code editor the user is actually working in.
+	if (!editor_enabled || !is_visible_in_tree()) {
+		return;
+	}
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	if (!text_editor->has_focus()) {
+		return;
+	}
+	if (ED_IS_SHORTCUT("script_text_editor/show_code_actions", p_event)) {
+		if (!inline_rename_active) {
+			_show_code_actions_popup();
+		}
+		accept_event();
 	}
 }
 
@@ -2763,8 +2786,20 @@ void ScriptTextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {
 	bool create_menu = false;
 
 	CodeEdit *tx = code_editor->get_text_editor();
+
+	// Checked before the inline-rename Enter interception below so that Alt+Enter
+	// never reaches it: an active rename must survive opening the code actions.
+	if (k.is_valid() && k->is_pressed() && !k->is_echo() && ED_IS_SHORTCUT("script_text_editor/show_code_actions", ev)) {
+		if (!inline_rename_active) {
+			_show_code_actions_popup();
+		}
+		tx->accept_event();
+		return;
+	}
+
 	if (inline_rename_active && k.is_valid() && k->is_pressed() && !k->is_echo()) {
-		if (k->get_keycode() == Key::ENTER || k->get_keycode() == Key::KP_ENTER) {
+		// Only an unmodified Enter commits the rename; Alt+Enter is the code-actions shortcut.
+		if ((k->get_keycode() == Key::ENTER || k->get_keycode() == Key::KP_ENTER) && !k->is_alt_pressed()) {
 			_commit_inline_rename();
 			tx->accept_event();
 			return;
@@ -2964,21 +2999,68 @@ RefactorLocation ScriptTextEditor::_make_refactor_location() const {
 	return loc;
 }
 
+bool ScriptTextEditor::_is_foundry_script() const {
+	return script.is_valid() && script->get_language() && script->get_language()->get_name() == "FoundryScript";
+}
+
+void ScriptTextEditor::_fill_menu_from_code_action_entries(PopupMenu *p_menu, const Vector<ScriptCodeActionEntry> &p_entries) {
+	ERR_FAIL_NULL(p_menu);
+	p_menu->clear();
+	for (const ScriptCodeActionEntry &entry : p_entries) {
+		if (entry.is_separator) {
+			p_menu->add_separator();
+			continue;
+		}
+		if (entry.shortcut_name.is_empty()) {
+			p_menu->add_item(entry.title, entry.id);
+		} else {
+			p_menu->add_shortcut(ED_GET_SHORTCUT(entry.shortcut_name), entry.id);
+		}
+		if (!entry.enabled) {
+			const int index = p_menu->get_item_index(entry.id);
+			p_menu->set_item_disabled(index, true);
+			p_menu->set_item_tooltip(index, entry.tooltip);
+		}
+	}
+}
+
 void ScriptTextEditor::_populate_refactor_submenu(PopupMenu *p_refactor_submenu) {
 	ERR_FAIL_NULL(p_refactor_submenu);
-	p_refactor_submenu->clear();
 	const RefactorContext ctx = _make_refactor_context();
 	const RefactorLocation loc = _make_refactor_location();
 	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, loc);
-	for (const RefactorAvailability &availability : available) {
-		const int id = EDIT_REFACTOR_RENAME + (int)availability.kind;
-		p_refactor_submenu->add_item(availability.title, id);
-		const int index = p_refactor_submenu->get_item_index(id);
-		if (!availability.enabled) {
-			p_refactor_submenu->set_item_disabled(index, true);
-			p_refactor_submenu->set_item_tooltip(index, availability.disabled_reason);
-		}
+	_fill_menu_from_code_action_entries(p_refactor_submenu, build_refactor_menu_entries(available, EDIT_REFACTOR_RENAME));
+}
+
+void ScriptTextEditor::_show_code_actions_popup() {
+	ERR_FAIL_NULL(code_actions_menu);
+
+	const bool is_foundry_script = _is_foundry_script();
+	Vector<RefactorAvailability> available;
+	if (is_foundry_script) {
+		available = FSRefactoring::get_available_refactors(_make_refactor_context(), _make_refactor_location());
 	}
+	const Vector<ScriptCodeActionEntry> entries = build_code_action_menu_entries(
+			available,
+			EDIT_REFACTOR_RENAME,
+			is_foundry_script,
+			EDIT_FORMAT_DOCUMENT,
+			"script_text_editor/format_document",
+			TTR("Format Document"));
+
+	_fill_menu_from_code_action_entries(code_actions_menu, entries);
+	if (code_actions_menu->get_item_count() == 0) {
+		return;
+	}
+
+	CodeEdit *text_editor = code_editor->get_text_editor();
+	text_editor->apply_ime();
+	text_editor->cancel_code_completion();
+	text_editor->adjust_viewport_to_caret(0);
+
+	code_actions_menu->set_position(text_editor->get_screen_position() + text_editor->get_caret_draw_pos(0));
+	code_actions_menu->reset_size();
+	code_actions_menu->popup();
 }
 
 bool ScriptTextEditor::_collect_refactor_sources(const Vector<RefactorFileEdit> &p_file_edits, Vector<ScriptRefactorSource> &r_sources, String &r_error_message) const {
@@ -3706,15 +3788,17 @@ void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p
 	const PackedStringArray paths = { String(code_editor->get_text_editor()->get_path()) };
 	EditorContextMenuPluginManager::get_singleton()->add_options_from_plugins(context_menu, EditorContextMenuPlugin::CONTEXT_SLOT_SCRIPT_EDITOR_CODE, paths);
 
-	// Refactors are FoundryScript-specific; only offer them when editing a FoundryScript file.
-	if (script.is_valid() && script->get_language() && script->get_language()->get_name() == "FoundryScript") {
+	// Formatting and refactors are FoundryScript-specific; only offer them when editing a FoundryScript file.
+	if (_is_foundry_script()) {
+		context_menu->add_separator();
+		context_menu->add_shortcut(ED_GET_SHORTCUT("script_text_editor/format_document"), EDIT_FORMAT_DOCUMENT);
+
 		// Ownership is transferred to context_menu when this becomes a submenu;
 		// the context_menu->clear() call above frees the previous submenu.
 		PopupMenu *refactor_submenu = memnew(PopupMenu);
 		refactor_submenu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
 		_populate_refactor_submenu(refactor_submenu);
 		if (refactor_submenu->get_item_count() > 0) {
-			context_menu->add_separator();
 			context_menu->add_submenu_node_item(TTRC("Refactor"), refactor_submenu);
 		} else {
 			memdelete(refactor_submenu);
@@ -3765,6 +3849,9 @@ void ScriptTextEditor::_enable_code_editor() {
 
 	add_child(context_menu);
 	context_menu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
+
+	add_child(code_actions_menu);
+	code_actions_menu->connect(SceneStringName(id_pressed), callable_mp(this, &ScriptTextEditor::_edit_option));
 
 	rename_dialog = memnew(ConfirmationDialog);
 	rename_dialog->set_title(TTRC("Rename Symbol"));
@@ -3990,6 +4077,7 @@ ScriptTextEditor::ScriptTextEditor() {
 	code_editor->get_text_editor()->set_context_menu_enabled(false);
 
 	context_menu = memnew(PopupMenu);
+	code_actions_menu = memnew(PopupMenu);
 
 	color_panel = memnew(PopupPanel);
 
@@ -4050,6 +4138,9 @@ ScriptTextEditor::ScriptTextEditor() {
 	connection_info_dialog = memnew(ConnectionInfoDialog);
 
 	SET_DRAG_FORWARDING_GCD(code_editor->get_text_editor(), ScriptTextEditor);
+
+	// Needed for the "Code Actions" command-palette entry; see `shortcut_input()`.
+	set_process_shortcut_input(true);
 }
 
 ScriptTextEditor::~ScriptTextEditor() {
@@ -4060,6 +4151,7 @@ ScriptTextEditor::~ScriptTextEditor() {
 		memdelete(warnings_panel);
 		memdelete(errors_panel);
 		memdelete(context_menu);
+		memdelete(code_actions_menu);
 		memdelete(color_panel);
 		memdelete(edit_hb);
 		memdelete(edit_menu);
@@ -4109,6 +4201,8 @@ void ScriptTextEditor::register_editor() {
 	ED_SHORTCUT("script_text_editor/auto_indent", TTRC("Auto Indent"), KeyModifierMask::CMD_OR_CTRL | Key::I);
 
 	ED_SHORTCUT("script_text_editor/refactor_rename", TTRC("Rename Symbol"), Key::F2);
+	// Option+Return on macOS maps to ALT | ENTER, so no platform override is needed.
+	ED_SHORTCUT_AND_COMMAND("script_text_editor/show_code_actions", TTRC("Code Actions"), KeyModifierMask::ALT | Key::ENTER);
 
 	ED_SHORTCUT_AND_COMMAND("script_text_editor/find", TTRC("Find..."), KeyModifierMask::CMD_OR_CTRL | Key::F);
 

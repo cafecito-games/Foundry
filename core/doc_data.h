@@ -1181,6 +1181,9 @@ public:
 	static String get_type_link_target(const String &p_type);
 	static String get_method_qualifiers_from_methodinfo(const MethodInfo &p_methodinfo);
 
+	// Rewrites the owning class of an `<owner>.<enum>` reference to its qualified name. A bound enum
+	// records the C++ token of its owner, which is not the registry key for a namespaced class.
+	static String qualify_enum_owner(const String &p_enumeration);
 	static void return_doc_from_retinfo(DocData::MethodDoc &p_method, const PropertyInfo &p_retinfo);
 	static void argument_doc_from_arginfo(DocData::ArgumentDoc &p_argument, const PropertyInfo &p_arginfo);
 	static void method_doc_from_methodinfo(DocData::MethodDoc &p_method, const MethodInfo &p_methodinfo, const String &p_desc);

@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  script_code_actions_model.cpp                                         */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,33 +28,53 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#include "editor/script/script_code_actions_model.h"
 
-#include "http_response.h"
-#include "http_server.h"
-#include "http_server_request.h"
+#ifdef TOOLS_ENABLED
 
-#include "core/object/class_db.h"
-
-void initialize_http_server_module(ModuleInitializationLevel p_level) {
-	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
-		return;
+Vector<ScriptCodeActionEntry> build_refactor_menu_entries(const Vector<RefactorAvailability> &p_available, int p_refactor_id_base) {
+	Vector<ScriptCodeActionEntry> entries;
+	entries.resize(p_available.size());
+	ScriptCodeActionEntry *entries_write = entries.ptrw();
+	for (int i = 0; i < p_available.size(); i++) {
+		const RefactorAvailability &availability = p_available[i];
+		ScriptCodeActionEntry &entry = entries_write[i];
+		entry.id = p_refactor_id_base + (int)availability.kind;
+		entry.title = availability.title;
+		entry.enabled = availability.enabled;
+		if (!availability.enabled) {
+			entry.tooltip = availability.disabled_reason;
+		}
 	}
-
-	FOUNDRY_REGISTER_CLASS(HTTPServer);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPServer, "foundry.http.server");
-
-	// The C++ token stays `HTTPServerRequest` so it does not collide with the global client node,
-	// but scripts see it as `foundry.http.server.HTTPRequest`.
-	FOUNDRY_REGISTER_CLASS(HTTPServerRequest);
-	FOUNDRY_REGISTER_NAMESPACE_AS(HTTPServerRequest, "foundry.http.server", "HTTPRequest");
-
-	FOUNDRY_REGISTER_CLASS(HTTPResponse);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPResponse, "foundry.http.server");
+	return entries;
 }
 
-void uninitialize_http_server_module(ModuleInitializationLevel p_level) {
-	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
-		return;
+Vector<ScriptCodeActionEntry> build_code_action_menu_entries(
+		const Vector<RefactorAvailability> &p_available,
+		int p_refactor_id_base,
+		bool p_is_foundry_script,
+		int p_format_document_id,
+		const String &p_format_document_shortcut_name,
+		const String &p_format_document_title) {
+	if (!p_is_foundry_script) {
+		return Vector<ScriptCodeActionEntry>();
 	}
+
+	Vector<ScriptCodeActionEntry> entries = build_refactor_menu_entries(p_available, p_refactor_id_base);
+
+	if (!entries.is_empty()) {
+		ScriptCodeActionEntry separator;
+		separator.is_separator = true;
+		entries.push_back(separator);
+	}
+
+	ScriptCodeActionEntry format_entry;
+	format_entry.id = p_format_document_id;
+	format_entry.title = p_format_document_title;
+	format_entry.shortcut_name = p_format_document_shortcut_name;
+	entries.push_back(format_entry);
+
+	return entries;
 }
+
+#endif // TOOLS_ENABLED
