@@ -1,7 +1,7 @@
-# A parameter bounded by another parameter keeps the soft treatment. Member resolution substitutes a
-# bound exactly one step, so `U` is resolved against `T` and never against `FrmMessage`: even the
-# valid `send()` call below is unresolved today. Rejecting these would reject working programs, so
-# only a directly final-bounded parameter is closed.
+# Member resolution follows the bound chain, so the valid `send()` call resolves against `FrmMessage`
+# even though `U`'s own bound is `T`. The hard final-bound rejection is narrower: only a directly
+# final-bounded parameter is treated as closed, so the missing `deliver()` keeps the soft treatment
+# instead of being rejected the way it would be on an `FrmMessage`-typed receiver.
 final class FrmMessage:
 	func send() -> void:
 		pass

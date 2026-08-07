@@ -744,13 +744,42 @@ static bool _datatype_represents_final_class(const FSParser::DataType &p_type) {
 
 // A type parameter bounded by a `final` class has exactly the bound's value set — no subtype of the
 // bound can exist — so a receiver typed as the parameter is as closed as one typed as the bound.
-// Only the *direct* bound counts: member resolution substitutes a bound exactly one step, so a
-// parameter bounded by another parameter is never resolved against the chain's root and even valid
-// calls through it are unresolved. Treating those as closed would reject working code, so the gate
-// may only fire where resolution actually looked and missed.
+// Only the *direct* bound counts. A parameter reached through a chain of parameter bounds is closed
+// by the same argument, but whether the hard rejection should extend that far is a separate decision
+// from resolving members through the chain, so a chained receiver keeps the soft treatment.
 static bool _datatype_is_type_parameter_bounded_by_final_class(const FSParser::DataType &p_type) {
 	return p_type.kind == FSParser::DataType::TYPE_PARAMETER && !p_type.type_parameter_bound.is_empty() &&
 			_datatype_represents_final_class(p_type.type_parameter_bound[0]);
+}
+
+// A value of a constrained type parameter `[T: Bound]` exposes the members of its bound, and a bound
+// may itself name another parameter (`class Box[T: FrmMessage, U: T]`). Member resolution therefore
+// follows the whole bound chain to its first non-parameter link, so a `U`-typed receiver is resolved
+// against `FrmMessage` instead of stopping at `T`, where even members the bound really has would be
+// missed. Mutually dependent bounds are rejected earlier as a cyclic reference, but the walk still
+// carries a visited set so any cycle that reaches here terminates on the parameter it started from
+// rather than looping. Meta-ness describes the receiver rather than the bound, so it is carried over.
+static FSParser::DataType _resolve_type_parameter_bound_chain(const FSParser::DataType &p_type) {
+	if (p_type.kind != FSParser::DataType::TYPE_PARAMETER || p_type.type_parameter_bound.is_empty()) {
+		return p_type;
+	}
+
+	LocalVector<FSParser::DataType> visited;
+	FSParser::DataType current = p_type;
+	while (current.kind == FSParser::DataType::TYPE_PARAMETER && !current.type_parameter_bound.is_empty()) {
+		for (const FSParser::DataType &seen : visited) {
+			if (seen.type_parameter_name == current.type_parameter_name &&
+					seen.type_parameter_scope == current.type_parameter_scope &&
+					seen.type_parameter_index == current.type_parameter_index) {
+				return p_type;
+			}
+		}
+		visited.push_back(current);
+		current = current.type_parameter_bound[0];
+	}
+
+	current.is_meta_type = p_type.is_meta_type;
+	return current;
 }
 
 static bool _datatype_alpha_equal(const FSParser::DataType &p_a, const FSParser::DataType &p_b);
@@ -9839,13 +9868,10 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 	}
 	FSParser::DataType self_type = type_handle_represented_type(base);
 
-	// A value of a constrained type parameter `[T: Bound]` exposes the members of its bound,
-	// so member access on `T` is resolved against `Bound`.
-	if (base.kind == FSParser::DataType::TYPE_PARAMETER && !base.type_parameter_bound.is_empty()) {
-		const bool was_meta_type = base.is_meta_type;
-		base = base.type_parameter_bound[0];
-		base.is_meta_type = was_meta_type;
-	}
+	// A value of a constrained type parameter `[T: Bound]` exposes the members of its bound, so member
+	// access on `T` is resolved against `Bound`, following the bound chain when `Bound` is itself a
+	// type parameter.
+	base = _resolve_type_parameter_bound_chain(base);
 
 	if (base.is_coroutine) {
 		// Coroutine[T] is opaque: its only source operation is await, so it exposes no members. Leave
@@ -13268,12 +13294,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	FSParser::DataType self_type = p_self_type_override != nullptr ? *p_self_type_override : type_handle_represented_type(p_base_type);
 
 	// A constrained type parameter `[T: Bound]` exposes the methods of its bound, so calls on a
-	// `T`-typed value are resolved against `Bound`.
-	if (p_base_type.kind == FSParser::DataType::TYPE_PARAMETER && !p_base_type.type_parameter_bound.is_empty()) {
-		const bool was_meta_type = p_base_type.is_meta_type;
-		p_base_type = p_base_type.type_parameter_bound[0];
-		p_base_type.is_meta_type = was_meta_type;
-	}
+	// `T`-typed value are resolved against `Bound`, following the bound chain when `Bound` is itself a
+	// type parameter.
+	p_base_type = _resolve_type_parameter_bound_chain(p_base_type);
 
 	// A retroactive conformance (`extend Target uses Trait: ...`) supplies its witnesses from outside the
 	// target's own definition, so they are absent from the target's member surface. An instance witness
