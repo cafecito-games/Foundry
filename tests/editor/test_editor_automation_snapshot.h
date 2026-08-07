@@ -1309,4 +1309,49 @@ TEST_CASE("[Editor][Automation] caret and selection metadata is captured for Tex
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation] set_caret is advertised for TextEdit-backed roles and not for LineEdit") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	CodeEdit *code_edit = memnew(CodeEdit);
+	code_edit->set_name("CodeField");
+	code_edit->set_text("alpha\nbravo");
+	setup_visible_control(code_edit, Size2(300, 120));
+	root->add_child(code_edit);
+
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_name("PlainArea");
+	text_edit->set_text("alpha\nbravo");
+	setup_visible_control(text_edit, Size2(300, 120));
+	root->add_child(text_edit);
+
+	LineEdit *line_edit = memnew(LineEdit);
+	line_edit->set_name("SingleField");
+	line_edit->set_text("alpha");
+	setup_visible_control(line_edit);
+	root->add_child(line_edit);
+
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	const EditorAutomationElement *code_field = find_element_by_role_and_name(snapshot, "code_editor", "CodeField");
+	REQUIRE(code_field != nullptr);
+	CHECK(code_field->actions.has("set_text"));
+	CHECK(code_field->actions.has("set_caret"));
+
+	const EditorAutomationElement *text_area = find_element_by_role_and_name(snapshot, "text_area", "PlainArea");
+	REQUIRE(text_area != nullptr);
+	CHECK(text_area->actions.has("set_text"));
+	CHECK(text_area->actions.has("set_caret"));
+
+	const EditorAutomationElement *text_field = find_element_by_role_and_name(snapshot, "text_field", "SingleField");
+	REQUIRE(text_field != nullptr);
+	CHECK(text_field->actions.has("set_text"));
+	CHECK_FALSE(text_field->actions.has("set_caret"));
+
+	memdelete(root);
+}
+
 } // namespace TestEditorAutomationSnapshot

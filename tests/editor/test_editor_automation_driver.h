@@ -2100,6 +2100,57 @@ TEST_CASE("[Editor][Automation] set_caret places the caret and selects a range i
 		CHECK(code_edit->get_selection_to_column() == 3);
 		CHECK(code_edit->get_caret_line() == 1);
 		CHECK(code_edit->get_caret_column() == 3);
+		CHECK(code_edit->has_focus());
+	}
+
+	SUBCASE("supplying only to_line fails and leaves the caret and selection unchanged") {
+		code_edit->set_caret_line(0);
+		code_edit->set_caret_column(1);
+		code_edit->deselect();
+		MessageQueue::get_singleton()->flush();
+
+		Dictionary options;
+		options["line"] = 1;
+		options["column"] = 2;
+		options["to_line"] = 1;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		CHECK_FALSE(result.ok);
+		CHECK(result.kind == "invalid_parameter");
+		CHECK(code_edit->get_caret_line() == 0);
+		CHECK(code_edit->get_caret_column() == 1);
+		CHECK_FALSE(code_edit->has_selection());
+	}
+
+	SUBCASE("supplying only to_column fails and leaves the caret and selection unchanged") {
+		code_edit->set_caret_line(0);
+		code_edit->set_caret_column(1);
+		code_edit->deselect();
+		MessageQueue::get_singleton()->flush();
+
+		Dictionary options;
+		options["line"] = 1;
+		options["column"] = 2;
+		options["to_column"] = 2;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		CHECK_FALSE(result.ok);
+		CHECK(result.kind == "invalid_parameter");
+		CHECK(code_edit->get_caret_line() == 0);
+		CHECK(code_edit->get_caret_column() == 1);
+		CHECK_FALSE(code_edit->has_selection());
+	}
+
+	SUBCASE("equal selection endpoints place the caret without an active selection") {
+		Dictionary options;
+		options["line"] = 1;
+		options["column"] = 2;
+		options["to_line"] = 1;
+		options["to_column"] = 2;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		MessageQueue::get_singleton()->flush();
+		CHECK(result.ok);
+		CHECK(code_edit->get_caret_line() == 1);
+		CHECK(code_edit->get_caret_column() == 2);
+		CHECK_FALSE(code_edit->has_selection());
 	}
 
 	SUBCASE("out-of-range line fails and leaves the caret unchanged") {
