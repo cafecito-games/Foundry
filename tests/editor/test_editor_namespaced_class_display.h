@@ -61,8 +61,8 @@ TEST_CASE("[Editor][ClassDBNamespace] Theme icons for a namespaced class resolve
 
 TEST_CASE("[Editor][ClassDBNamespace] The first namespaced class with an icon resolves it by simple name") {
 	// HTTPRequest is the first namespaced native that ships an editor icon (editor/icons/HTTPRequest.svg,
-	// keyed under the simple name). The lookup must collapse the qualified name to that simple name so
-	// the icon theme key is reached.
+	// keyed under the simple name). The lookup collapses the qualified name to that simple name, so the
+	// resolved icon name is "HTTPRequest" and the create dialog labels it the same way.
 	CHECK(EditorNode::get_class_theme_icon_name("foundry.http.client.HTTPRequest") == StringName("HTTPRequest"));
 	CHECK(CreateDialog::get_class_display_name("foundry.http.client.HTTPRequest") == "HTTPRequest");
 }

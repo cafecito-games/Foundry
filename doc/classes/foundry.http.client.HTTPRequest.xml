@@ -11,6 +11,8 @@
 		[b]Example:[/b] Contact a REST API and print one of its returned fields:
 		[codeblocks]
 		[foundry_script]
+		import foundry.http.client
+
 		func _ready():
 			# Create an HTTP request node and connect its completion signal.
 			var http_request = HTTPRequest.new()
@@ -83,6 +85,8 @@
 		[b]Example:[/b] Load an image using [foundry.http.client.HTTPRequest] and display it:
 		[codeblocks]
 		[foundry_script]
+		import foundry.http.client
+
 		func _ready():
 			# Create an HTTP request node and connect its completion signal.
 			var http_request = HTTPRequest.new()
@@ -151,6 +155,7 @@
 		[/csharp]
 		[/codeblocks]
 		[b]Note:[/b] [foundry.http.client.HTTPRequest] nodes will automatically handle decompression of response bodies. An [code]Accept-Encoding[/code] header will be automatically added to each of your requests, unless one is already specified. Any response with a [code]Content-Encoding: gzip[/code] header will automatically be decompressed and delivered to you as uncompressed bytes.
+		[b]Note:[/b] This class lives in the [code]foundry.http.client[/code] namespace. It is reached either by its fully qualified name [code skip-lint]foundry.http.client.HTTPRequest[/code] or, after [code]import foundry.http.client[/code], by the bare name [code]HTTPRequest[/code]. Without that import the bare name does not resolve.
 	</description>
 	<tutorials>
 		<link title="Making HTTP requests">$DOCS_URL/tutorials/networking/http_request_class.html</link>

@@ -461,6 +461,33 @@ TEST_CASE("[ClassDBNamespace] The HTTPRequest client instantiates with a qualifi
 	CHECK(instance->is_class("Object"));
 	CHECK_FALSE(instance->is_class("HTTPRequest"));
 
+	// Defaults read back through the property path.
+	CHECK(double(instance->get("timeout")) == 0.0);
+	CHECK(int(instance->get("body_size_limit")) == -1);
+
+	bool valid = false;
+	instance->set("timeout", 5.0, &valid);
+	CHECK(valid);
+	CHECK(double(instance->get("timeout")) == 5.0);
+	CHECK(double(instance->call("get_timeout")) == 5.0);
+
+	instance->set("body_size_limit", 4096, &valid);
+	CHECK(valid);
+	CHECK(int(instance->get("body_size_limit")) == 4096);
+	CHECK(int(instance->call("get_body_size_limit")) == 4096);
+
+	// A negative timeout is rejected and leaves the previous value untouched, through both the
+	// bound method and the property path.
+	ERR_PRINT_OFF;
+	instance->call("set_timeout", -1.0);
+	instance->set("timeout", -1.0, &valid);
+	ERR_PRINT_ON;
+	CHECK(double(instance->call("get_timeout")) == 5.0);
+	CHECK(double(instance->get("timeout")) == 5.0);
+
+	// A bound getter with no live request answers through the qualified identity.
+	CHECK(int(instance->call("get_body_size")) == 0);
+
 	memdelete(instance);
 }
 
