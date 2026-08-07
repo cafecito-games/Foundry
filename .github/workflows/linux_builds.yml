@@ -69,6 +69,9 @@ jobs:
           # runner's vCPU count; oversubscribing slows every shard down.
           FOUNDRY_SHARDS: 3
         run: |
+          # No X server is provisioned on this runner, so DISPLAY stays unset and the
+          # GUI-subprocess tests self-skip, exactly as they did before sharding. Setting
+          # DISPLAY here would make them run against a display that does not exist.
           set -uo pipefail
           ./bin/foundry.linuxbsd.editor.dev.x86_64 --version
           ./bin/foundry.linuxbsd.editor.dev.x86_64 --help
@@ -76,7 +79,17 @@ jobs:
           mkdir -p shard-logs
           pids=()
           for i in $(seq 1 "$FOUNDRY_SHARDS"); do
-            DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run \
+            # Shards run concurrently, so each one needs its own `user://` tree. Without
+            # this, every shard reads and rewrites the same editor settings, caches, and
+            # script-test project config, and one shard can observe another's half-written
+            # file. The XDG variables are the platform's own user-data seam, so unsharded
+            # runs are unaffected.
+            shard_home="${RUNNER_TEMP:-/tmp}/foundry-shard-home-$i"
+            mkdir -p "$shard_home/config" "$shard_home/data" "$shard_home/cache"
+            XDG_CONFIG_HOME="$shard_home/config" \
+            XDG_DATA_HOME="$shard_home/data" \
+            XDG_CACHE_HOME="$shard_home/cache" \
+            ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run \
               --shard "$i/$FOUNDRY_SHARDS" \
               --progress-format=jsonl --progress-file "shard-logs/shard-$i.jsonl" \
               --force-colors > "shard-logs/shard-$i.log" 2>&1 &
