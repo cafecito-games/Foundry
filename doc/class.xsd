@@ -332,6 +332,7 @@
 				</xs:element>
 			</xs:sequence>
 			<xs:attribute type="xs:string" name="name" />
+			<xs:attribute type="xs:string" name="namespace" use="optional" />
 			<xs:attribute type="xs:string" name="inherits" />
 			<!-- deprecated -->
 			<xs:attribute type="xs:float" name="version" use="optional" />

@@ -2585,7 +2585,7 @@ void EditorFileSystem::_reindex_script_documentation(const Ref<Script> &p_script
 			// Refresh an already-open workspace help page so it reflects the updated
 			// documentation.
 			if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
-				workspace->refresh_help_tab(cd.name);
+				workspace->refresh_help_tab(cd.qualified_name());
 			}
 		}
 	}

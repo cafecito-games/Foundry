@@ -870,7 +870,7 @@ void ScriptEditorController::update_docs_from_script(const Ref<Script> &p_script
 	if (p_script.is_valid()) {
 		if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
 			for (const DocData::ClassDoc &cd : p_script->get_documentation()) {
-				workspace->refresh_help_tab(cd.name);
+				workspace->refresh_help_tab(cd.qualified_name());
 			}
 		}
 	}

@@ -837,7 +837,10 @@ public:
 	};
 
 	struct ClassDoc {
+		// The simple class name, e.g. `HTTPServer`. Never includes the namespace.
 		String name;
+		// Dotted namespace path, e.g. `foundry.http.server`. Empty means the global namespace.
+		String namespace_path;
 		String inherits;
 		String brief_description;
 		String description;
@@ -862,14 +865,23 @@ public:
 		bool is_enum = false;
 		Vector<String> used_traits;
 		String script_path;
+		// The key every documentation lookup uses: the namespace and the simple name joined by a
+		// dot, matching the `ClassDB` registry key.
+		String qualified_name() const {
+			return namespace_path.is_empty() ? name : namespace_path + "." + name;
+		}
 		bool operator<(const ClassDoc &p_class) const {
-			return name < p_class.name;
+			return qualified_name() < p_class.qualified_name();
 		}
 		static ClassDoc from_dict(const Dictionary &p_dict) {
 			ClassDoc doc;
 
 			if (p_dict.has("name")) {
 				doc.name = p_dict["name"];
+			}
+
+			if (p_dict.has("namespace")) {
+				doc.namespace_path = p_dict["namespace"];
 			}
 
 			if (p_dict.has("inherits")) {
@@ -1017,6 +1029,10 @@ public:
 
 			if (!p_doc.name.is_empty()) {
 				dict["name"] = p_doc.name;
+			}
+
+			if (!p_doc.namespace_path.is_empty()) {
+				dict["namespace"] = p_doc.namespace_path;
 			}
 
 			if (!p_doc.inherits.is_empty()) {

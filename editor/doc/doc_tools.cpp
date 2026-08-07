@@ -307,11 +307,12 @@ void DocTools::merge_from(const DocTools &p_data) {
 	for (KeyValue<String, DocData::ClassDoc> &E : class_list) {
 		DocData::ClassDoc &c = E.value;
 
-		if (!p_data.class_list.has(c.name)) {
+		const String qualified_name = c.qualified_name();
+		if (!p_data.class_list.has(qualified_name)) {
 			continue;
 		}
 
-		const DocData::ClassDoc &cf = p_data.class_list[c.name];
+		const DocData::ClassDoc &cf = p_data.class_list[qualified_name];
 
 		c.is_deprecated = cf.is_deprecated;
 		c.deprecated_message = cf.deprecated_message;
@@ -343,8 +344,9 @@ void DocTools::merge_from(const DocTools &p_data) {
 
 void DocTools::add_doc(const DocData::ClassDoc &p_class_doc) {
 	ERR_FAIL_COND(p_class_doc.name.is_empty());
-	class_list[p_class_doc.name] = p_class_doc;
-	inheriting[p_class_doc.inherits].insert(p_class_doc.name);
+	const String qualified_name = p_class_doc.qualified_name();
+	class_list[qualified_name] = p_class_doc;
+	inheriting[p_class_doc.inherits].insert(qualified_name);
 }
 
 void DocTools::remove_doc(const String &p_class_name) {
@@ -436,13 +438,20 @@ void DocTools::generate(BitField<GenerateFlags> p_flags) {
 				continue;
 			}
 
+			// `name` is the `ClassDB` registry key, which is already the qualified name.
 			const String &cname = name;
 			// Property setters and getters do not get exposed as individual methods.
 			HashSet<StringName> setters_getters;
 
 			class_list[cname] = DocData::ClassDoc();
 			DocData::ClassDoc &c = class_list[cname];
-			c.name = cname;
+			StringName simple_name;
+			if (ClassDB::class_get_by_qualified_name(name, simple_name)) {
+				c.name = simple_name;
+				c.namespace_path = ClassDB::class_get_namespace(name);
+			} else {
+				c.name = cname;
+			}
 			c.inherits = ClassDB::get_parent_class(name);
 
 			inheriting[c.inherits].insert(cname);
@@ -523,7 +532,7 @@ void DocTools::generate(BitField<GenerateFlags> p_flags) {
 				prop.overridden = inherited;
 
 				if (inherited) {
-					String parent = ClassDB::get_parent_class(c.name);
+					String parent = ClassDB::get_parent_class(cname);
 					while (!ClassDB::has_property(parent, prop.name, true)) {
 						parent = ClassDB::get_parent_class(parent);
 					}
@@ -1271,15 +1280,22 @@ Error DocTools::_load(Ref<XMLParser> parser) {
 
 		ERR_FAIL_COND_V(!parser->has_attribute("name"), ERR_FILE_CORRUPT);
 		String name = parser->get_named_attribute_value("name");
-		class_list[name] = DocData::ClassDoc();
-		DocData::ClassDoc &c = class_list[name];
+		String namespace_path;
+		if (parser->has_attribute("namespace")) {
+			namespace_path = parser->get_named_attribute_value("namespace");
+		}
+		// Documentation is keyed by the qualified name so every lookup can pass a `ClassDB` key.
+		const String qualified_name = namespace_path.is_empty() ? name : namespace_path + "." + name;
+		class_list[qualified_name] = DocData::ClassDoc();
+		DocData::ClassDoc &c = class_list[qualified_name];
 
 		c.name = name;
+		c.namespace_path = namespace_path;
 		if (parser->has_attribute("inherits")) {
 			c.inherits = parser->get_named_attribute_value("inherits");
 		}
 
-		inheriting[c.inherits].insert(name);
+		inheriting[c.inherits].insert(qualified_name);
 
 		if (parser->has_attribute("deprecated")) {
 			c.is_deprecated = true;
@@ -1630,15 +1646,19 @@ Error DocTools::save_classes(const String &p_default_path, const HashMap<String,
 	for (KeyValue<String, DocData::ClassDoc> &E : class_list) {
 		DocData::ClassDoc &c = E.value;
 
+		// Namespaced classes are documented in a file named after their qualified name, which is
+		// also the key every documentation lookup uses.
+		const String qualified_name = c.qualified_name();
+
 		String save_path;
-		if (p_class_path.has(c.name)) {
-			save_path = p_class_path[c.name];
+		if (p_class_path.has(qualified_name)) {
+			save_path = p_class_path[qualified_name];
 		} else {
 			save_path = p_default_path;
 		}
 
 		Error err;
-		String save_file = save_path.path_join(c.name.remove_char('\"').replace("/", "--") + ".xml");
+		String save_file = save_path.path_join(qualified_name.remove_char('\"').replace("/", "--") + ".xml");
 		Ref<FileAccess> f = FileAccess::open(save_file, FileAccess::WRITE, &err);
 
 		ERR_CONTINUE_MSG(err != OK, "Can't write doc file: " + save_file + ".");
@@ -1646,6 +1666,9 @@ Error DocTools::save_classes(const String &p_default_path, const HashMap<String,
 		_write_string(f, 0, "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>");
 
 		String header = "<class name=\"" + c.name.xml_escape(true) + "\"";
+		if (!c.namespace_path.is_empty()) {
+			header += " namespace=\"" + c.namespace_path.xml_escape(true) + "\"";
+		}
 		if (!c.inherits.is_empty()) {
 			header += " inherits=\"" + c.inherits.xml_escape(true) + "\"";
 			if (c.is_deprecated) {

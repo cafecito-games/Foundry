@@ -2816,8 +2816,10 @@ void ScriptEditorView::clear_docs_from_script(const Ref<Script> &p_script) {
 	ERR_FAIL_COND(p_script.is_null());
 
 	for (const DocData::ClassDoc &cd : p_script->get_documentation()) {
-		if (EditorHelp::get_doc_data()->has_doc(cd.name)) {
-			EditorHelp::get_doc_data()->remove_doc(cd.name);
+		// Documentation is keyed by the qualified name, the same key `add_doc()` inserts under.
+		const String qualified_name = cd.qualified_name();
+		if (EditorHelp::get_doc_data()->has_doc(qualified_name)) {
+			EditorHelp::get_doc_data()->remove_doc(qualified_name);
 		}
 	}
 }
