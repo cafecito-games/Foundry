@@ -1107,4 +1107,156 @@ TEST_CASE("[Editor][Automation] scene dock icon-only controls are addressable by
 	memdelete(selection);
 }
 
+TEST_CASE("[Editor][Automation] exclusive modal dialog is published as a top-level snapshot root") {
+	// A dialog opened from a dock is a scene-tree descendant of that dock, which
+	// sits far deeper than the depth a client-rendered tree walks. The editor
+	// root collection therefore forces the exclusive-modal chain to the top
+	// level, without walking the dialog twice.
+	Window *main_window = memnew(Window);
+	main_window->set_title("Editor Main");
+	main_window->set_size(Size2i(800, 600));
+	SceneTree::get_singleton()->get_root()->add_child(main_window);
+	main_window->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	PanelContainer *gui_base = memnew(PanelContainer);
+	gui_base->set_name("GuiBase");
+	setup_visible_control(gui_base, Size2(800, 600));
+	main_window->add_child(gui_base);
+
+	Control *deepest = gui_base;
+	for (int level = 0; level < 10; level++) {
+		PanelContainer *nested = memnew(PanelContainer);
+		nested->set_name(vformat("Level%d", level));
+		setup_visible_control(nested, Size2(600, 400));
+		deepest->add_child(nested);
+		deepest = nested;
+	}
+
+	AcceptDialog *dialog = memnew(AcceptDialog);
+	dialog->set_title("Create New Node");
+	dialog->set_ok_button_text("Create");
+	deepest->add_child(dialog);
+	// Editor dialogs stay children of the dock that owns them and become the
+	// window's exclusive child when shown.
+	dialog->popup_centered();
+	MessageQueue::get_singleton()->flush();
+	REQUIRE(main_window->get_exclusive_child() == dialog);
+
+	const EditorAutomationSnapshotRoots root_set = EditorAutomationSnapshot::collect_editor_roots(gui_base, main_window, nullptr, nullptr, nullptr);
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_root_set(root_set);
+	const EditorAutomationSnapshotData &data = snapshot.get_data();
+
+	bool dialog_is_root = false;
+	for (int root_index : data.root_indices) {
+		if (data.elements[root_index].object_id == (uint64_t)dialog->get_instance_id()) {
+			dialog_is_root = true;
+		}
+	}
+	CHECK(dialog_is_root);
+
+	// Publishing the dialog as a root must not duplicate it: a second walk would
+	// emit every element inside the dialog twice and turn each of its selectors
+	// into a false ambiguous match.
+	int dialog_occurrences = 0;
+	for (int i = 0; i < snapshot.get_element_count(); i++) {
+		if (snapshot.get_element(i).object_id == (uint64_t)dialog->get_instance_id()) {
+			dialog_occurrences++;
+		}
+	}
+	CHECK(dialog_occurrences == 1);
+
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Create";
+	const EditorAutomationSelectorResult result = EditorAutomationSelector::resolve(snapshot, selector);
+	CHECK(result.status == EditorAutomationSelectorStatus::OK);
+	CHECK(result.match_indices.size() == 1);
+
+	memdelete(main_window);
+}
+
+TEST_CASE("[Editor][Automation] a root already reached from an earlier root is not walked twice") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_name("Root");
+	setup_visible_control(root, Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	PanelContainer *nested = memnew(PanelContainer);
+	nested->set_name("Nested");
+	setup_visible_control(nested, Size2(200, 150));
+	root->add_child(nested);
+
+	Button *button = memnew(Button);
+	button->set_text("Only Once");
+	setup_visible_control(button);
+	nested->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	LocalVector<Node *> roots;
+	roots.push_back(root);
+	roots.push_back(nested);
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_roots(roots);
+
+	int button_occurrences = 0;
+	for (int i = 0; i < snapshot.get_element_count(); i++) {
+		if (snapshot.get_element(i).object_id == (uint64_t)button->get_instance_id()) {
+			button_occurrences++;
+		}
+	}
+	CHECK(button_occurrences == 1);
+	CHECK(snapshot.get_data().root_indices.size() == 1);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] element bounds are local to the owning window") {
+	// Bounds are window-local by contract; the owning window is recorded on each
+	// element so a client can compose the two. This is the only description that
+	// holds for both embedded and native (non-embedded) subwindows.
+	Window *main_window = memnew(Window);
+	main_window->set_title("Bounds Main");
+	main_window->set_size(Size2i(800, 600));
+	SceneTree::get_singleton()->get_root()->add_child(main_window);
+	main_window->set_visible(true);
+	MessageQueue::get_singleton()->flush();
+
+	Window *dialog = memnew(Window);
+	dialog->set_title("Detached Dialog");
+	dialog->set_position(Point2i(300, 200));
+	dialog->set_size(Size2i(400, 300));
+	main_window->add_child(dialog);
+	dialog->set_visible(true);
+
+	Button *button = memnew(Button);
+	button->set_accessibility_name("DialogButton");
+	button->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	button->set_position(Point2(20, 40));
+	button->set_size(Size2(100, 30));
+	button->set_visible(true);
+	dialog->add_child(button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(main_window);
+
+	const EditorAutomationElement *button_element = snapshot.find_by_object_id(button->get_instance_id());
+	REQUIRE(button_element != nullptr);
+	CHECK(button_element->bounds.position == Vector2i(20, 40));
+	CHECK(button_element->bounds.size == Vector2i(100, 30));
+	REQUIRE(button_element->metadata.has("window_object_id"));
+	CHECK(String(button_element->metadata["window_object_id"]) == String::num_uint64(dialog->get_instance_id()));
+	CHECK(String(button_element->metadata["window_title"]) == "Detached Dialog");
+
+	const EditorAutomationElement *dialog_element = snapshot.find_by_object_id(dialog->get_instance_id());
+	REQUIRE(dialog_element != nullptr);
+	CHECK(dialog_element->bounds.position == Vector2i(300, 200));
+	CHECK(dialog_element->bounds.size == Vector2i(400, 300));
+
+	// Composing the window position with the window-local rect yields the
+	// button's position in the main window.
+	CHECK(dialog_element->bounds.position + button_element->bounds.position == Vector2i(320, 240));
+
+	memdelete(main_window);
+}
+
 } // namespace TestEditorAutomationSnapshot

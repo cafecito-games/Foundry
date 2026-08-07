@@ -69,6 +69,11 @@ struct EditorAutomationSnapshotData {
 	HashMap<String, int> id_to_index;
 	HashMap<String, int> handle_to_index;
 	HashMap<uint64_t, int> object_id_to_index;
+	// Top-level elements, in capture order. An element published here may still
+	// have a parent_index: a modal dialog is captured in its real place in the
+	// scene tree and additionally published as a root so depth-limited clients
+	// reach it. Tree renderers must emit such an element from its root entry
+	// only, never a second time under its parent.
 	Vector<int> root_indices;
 	String focused_element_id;
 };

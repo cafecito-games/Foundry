@@ -393,9 +393,38 @@ TreeItem *CreateDialog::_namespace_group_item(TreeItem *p_parent, const StringNa
 	group->set_collapsed(false);
 	group->set_metadata(0, Array());
 	group->set_meta(SNAME("__instantiable"), false);
+	group->set_meta(SNAME("__namespace_group"), true);
 
 	namespace_group_items[key] = group;
 	return group;
+}
+
+bool CreateDialog::should_collapse_search_option(TreeItem *p_parent_item, const String &p_type, const String &p_base_type, bool p_can_instantiate) {
+	if (p_type == p_base_type) {
+		// The base type is the tree root and always stays expanded.
+		return false;
+	}
+
+	// Namespace group headers are a grouping affordance rather than a type, so
+	// the "first tree level" test looks through them: a namespaced class must
+	// behave exactly like the ungrouped class it would otherwise have been.
+	TreeItem *parent = p_parent_item;
+	while (parent != nullptr && bool(parent->get_meta(SNAME("__namespace_group"), false))) {
+		parent = parent->get_parent();
+	}
+	if (parent == nullptr) {
+		return true;
+	}
+
+	// An item's identifier lives in metadata; its label only carries the display
+	// name, which differs from the qualified type for namespaced classes.
+	const String parent_type = parent->has_meta(SNAME("__type_name"))
+			? String(parent->get_meta(SNAME("__type_name")))
+			: parent->get_text(0);
+
+	// Keep an abstract type on the first tree level expanded, since collapsing it
+	// would hide every type a user can actually pick.
+	return parent_type != p_base_type || p_can_instantiate;
 }
 
 void CreateDialog::_configure_search_option_item(TreeItem *r_item, const StringName &p_type, TypeCategory p_type_category, const String &p_match_keyword) {
@@ -477,8 +506,7 @@ void CreateDialog::_configure_search_option_item(TreeItem *r_item, const StringN
 	if (!search_box->get_text().is_empty()) {
 		r_item->set_collapsed(false);
 	} else {
-		// Don't collapse the root node or an abstract node on the first tree level.
-		bool should_collapse = p_type != base_type && (r_item->get_parent()->get_text(0) != base_type || can_instantiate);
+		bool should_collapse = should_collapse_search_option(r_item->get_parent(), p_type, base_type, can_instantiate);
 
 		if (should_collapse && bool(EDITOR_GET("docks/scene_tree/start_create_dialog_fully_expanded"))) {
 			should_collapse = false; // Collapse all nodes anyway.

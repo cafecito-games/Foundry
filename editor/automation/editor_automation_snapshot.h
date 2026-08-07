@@ -34,6 +34,7 @@
 
 class Control;
 class Node;
+class Window;
 
 // Internal-child snapshot policy:
 //
@@ -56,6 +57,27 @@ struct EditorAutomationSnapshotOptions {
 	bool relaxed_visibility_roots = false;
 };
 
+// The set of nodes a snapshot is captured from, plus the per-root modifiers the
+// walk applies to them.
+//
+// A node can be reachable from more than one root: an open modal dialog is both
+// a descendant of the dock that popped it up and the exclusive child of the main
+// window. Such a node is walked once (a second walk would duplicate every
+// element and turn every selector inside the dialog into an ambiguous match),
+// but a root listed in `forced` is still published in the snapshot's root list,
+// so clients that render a depth-limited tree (observe_ui) always reach it at
+// depth 0 instead of only at its deep in-dock position.
+struct EditorAutomationSnapshotRoots {
+	LocalVector<Node *> roots;
+	// Roots that must appear as top-level roots even when an earlier root
+	// already captured them.
+	LocalVector<Node *> forced;
+	// Roots walked even when they are not visible in tree, used for focused
+	// docks whose layout parents are still settling during startup. Requires
+	// EditorAutomationSnapshotOptions::relaxed_visibility_roots.
+	LocalVector<Node *> relaxed_visibility;
+};
+
 class EditorAutomationSnapshot {
 	EditorAutomationSnapshotData data;
 
@@ -63,6 +85,22 @@ public:
 	static EditorAutomationSnapshot capture_from_editor(const EditorAutomationSnapshotOptions &p_options = EditorAutomationSnapshotOptions());
 	static EditorAutomationSnapshot capture_from_node(Node *p_root, const EditorAutomationSnapshotOptions &p_options = EditorAutomationSnapshotOptions());
 	static EditorAutomationSnapshot capture_from_roots(const LocalVector<Node *> &p_roots, const EditorAutomationSnapshotOptions &p_options = EditorAutomationSnapshotOptions());
+	static EditorAutomationSnapshot capture_from_root_set(const EditorAutomationSnapshotRoots &p_roots, const EditorAutomationSnapshotOptions &p_options = EditorAutomationSnapshotOptions());
+
+	// Root collection for the live editor, split out from capture_from_editor so
+	// it can be exercised without an EditorNode. The dock arguments are the
+	// focused workspace docks (any of them may be null); p_root_window supplies
+	// the exclusive-modal chain.
+	static EditorAutomationSnapshotRoots collect_editor_roots(
+			Control *p_gui_base,
+			Window *p_root_window,
+			Node *p_scene_tree_dock,
+			Node *p_inspector_dock,
+			Node *p_inspector);
+
+	// The exclusive-modal window chain rooted at p_window, in outermost-first
+	// order. Mirrors the chain read_editor_state reports as `modal_stack`.
+	static void collect_exclusive_modal_chain(Window *p_window, LocalVector<Node *> &r_chain);
 
 	uint64_t get_generation() const { return data.generation; }
 	int get_element_count() const { return data.elements.size(); }

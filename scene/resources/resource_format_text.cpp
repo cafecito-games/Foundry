@@ -565,6 +565,16 @@ Error ResourceLoaderText::load() {
 		String type = next_tag.fields["type"];
 		String id = next_tag.fields["id"];
 
+		// The saved type is an arbitrary string: a qualified namespaced key, a bare name re-exported
+		// by a unique global alias, or a flat class name. Mapping it to a canonical registry key is
+		// the loader's own contract, so it goes through the resolver here rather than relying on the
+		// resolution `instantiate()` happens to perform internally. On a miss - unknown, or an
+		// ambiguous alias - the raw string is passed through so the renamed-class fallback and the
+		// error messages that name the on-disk type keep working, and `MissingResource` below records
+		// it verbatim.
+		const StringName resolved_type_name = ClassDB::resolve_type_name(type);
+		const String resolved_type = resolved_type_name == StringName() ? type : String(resolved_type_name);
+
 		String path = local_path + "::" + id;
 
 		//bool exists=ResourceCache::has(path);
@@ -575,7 +585,7 @@ Error ResourceLoaderText::load() {
 		if (cache_mode == ResourceFormatLoader::CACHE_MODE_REPLACE && ResourceCache::has(path)) {
 			//reuse existing
 			Ref<Resource> cache = ResourceCache::get_ref(path);
-			if (cache.is_valid() && cache->get_class() == type) {
+			if (cache.is_valid() && cache->get_class() == resolved_type) {
 				res = cache;
 				res->reset_state();
 				do_assign = true;
@@ -592,7 +602,7 @@ Error ResourceLoaderText::load() {
 			} else {
 				//create
 
-				Object *obj = ClassDB::instantiate(type);
+				Object *obj = ClassDB::instantiate(resolved_type);
 				if (!obj) {
 					if (ResourceLoader::is_creating_missing_resources_if_class_unavailable_enabled()) {
 						missing_resource = memnew(MissingResource);
@@ -729,16 +739,21 @@ Error ResourceLoaderText::load() {
 
 		MissingResource *missing_resource = nullptr;
 
+		// Same contract as the sub-resource path above: resolve the on-disk type once, fall back to
+		// the raw string on a miss, and keep recording the raw string in `MissingResource`.
+		const StringName resolved_res_type_name = ClassDB::resolve_type_name(res_type);
+		const String resolved_res_type = resolved_res_type_name == StringName() ? res_type : String(resolved_res_type_name);
+
 		resource = ResourceLoader::get_resource_ref_override(local_path);
 		if (resource.is_null()) {
 			Ref<Resource> cache = ResourceCache::get_ref(local_path);
-			if (cache_mode == ResourceFormatLoader::CACHE_MODE_REPLACE && cache.is_valid() && cache->get_class() == res_type) {
+			if (cache_mode == ResourceFormatLoader::CACHE_MODE_REPLACE && cache.is_valid() && cache->get_class() == resolved_res_type) {
 				cache->reset_state();
 				resource = cache;
 			}
 
 			if (resource.is_null()) {
-				Object *obj = ClassDB::instantiate(res_type);
+				Object *obj = ClassDB::instantiate(resolved_res_type);
 				if (!obj) {
 					if (ResourceLoader::is_creating_missing_resources_if_class_unavailable_enabled()) {
 						missing_resource = memnew(MissingResource);

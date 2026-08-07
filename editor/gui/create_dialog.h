@@ -126,6 +126,11 @@ public:
 	// stays in the item metadata.
 	static String get_class_display_name(const StringName &p_class);
 
+	// Whether a type item is collapsed in the unfiltered tree. Namespace group
+	// headers are skipped when locating the item's real parent type, so a
+	// namespaced class collapses exactly like the ungrouped class it stands for.
+	static bool should_collapse_search_option(TreeItem *p_parent_item, const String &p_type, const String &p_base_type, bool p_can_instantiate);
+
 	Variant instantiate_selected();
 	String get_selected_type();
 	String get_selected_type_name();
