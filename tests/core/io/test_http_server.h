@@ -429,6 +429,50 @@ public:
 	}
 };
 
+// Receives the `request_received` signal. It records what it saw and, when asked to, answers the
+// request itself, which is how the catch-all step of the resolution ladder is meant to be used.
+class RecordingSignalObserver : public Object {
+	FOUNDRY_SOFTCLASS(RecordingSignalObserver, Object);
+
+public:
+	int call_count = 0;
+	String seen_path;
+	bool seen_response_already_sent = false;
+
+	bool answer = false;
+	bool amend_status = true;
+	int reply_status = 200;
+	String reply_body = "from signal";
+
+	void on_request_received(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		call_count++;
+		seen_path = p_request->get_path();
+		seen_response_already_sent = p_response->is_sent();
+
+		if (answer) {
+			if (amend_status) {
+				p_response->set_status(reply_status);
+			}
+			p_response->send_string(reply_body);
+		}
+	}
+};
+
+// A signal receiver is script code just like a route handler, so it may also close the connection
+// out from under the dispatch that is running.
+class StoppingSignalObserver : public Object {
+	FOUNDRY_SOFTCLASS(StoppingSignalObserver, Object);
+
+public:
+	HTTPServer *server = nullptr;
+	int call_count = 0;
+
+	void on_request_received(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		call_count++;
+		server->stop();
+	}
+};
+
 struct ClientResult {
 	Error error = FAILED;
 	int status = 0;
@@ -672,6 +716,117 @@ TEST_CASE("[HTTPServer] A handler may mutate the server from inside dispatch") {
 	}
 
 	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] The resolution ladder runs routes, then the signal, then 404") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	CHECK_FALSE(server->is_emitting_for_all());
+	CHECK_FALSE(bool(server->get("emit_for_all")));
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	RecordingSignalObserver *observer = memnew(RecordingSignalObserver);
+	const Callable receiver = callable_mp(observer, &RecordingSignalObserver::on_request_received);
+
+	SUBCASE("A routed request does not reach the signal while emit_for_all is off") {
+		REQUIRE(server->connect("request_received", receiver) == OK);
+
+		const ClientResult result = http_get(server, port, "/hello");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "hi");
+		CHECK(handler->call_count == 1);
+		CHECK(observer->call_count == 0);
+	}
+
+	SUBCASE("A routed request also reaches the signal once emit_for_all is on") {
+		server->set_emit_for_all(true);
+		CHECK(server->is_emitting_for_all());
+		REQUIRE(server->connect("request_received", receiver) == OK);
+
+		// The observer tries to answer too, which must not overwrite the body the route committed.
+		observer->answer = true;
+		observer->amend_status = false;
+		observer->reply_body = "observer";
+
+		ERR_PRINT_OFF;
+		const ClientResult result = http_get(server, port, "/hello");
+		ERR_PRINT_ON;
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "hi");
+		CHECK(handler->call_count == 1);
+		CHECK(observer->call_count == 1);
+		CHECK(observer->seen_path == "/hello");
+		// The route committed first, so the observer sees a response that is already sent.
+		CHECK(observer->seen_response_already_sent);
+	}
+
+	SUBCASE("An unrouted request reaches the signal, which may answer it") {
+		REQUIRE(server->connect("request_received", receiver) == OK);
+		observer->answer = true;
+		observer->reply_status = 201;
+		observer->reply_body = "catch-all";
+
+		const ClientResult result = http_get(server, port, "/missing");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 201);
+		CHECK(result.body == "catch-all");
+		CHECK(handler->call_count == 0);
+		CHECK(observer->call_count == 1);
+		CHECK(observer->seen_path == "/missing");
+		CHECK_FALSE(observer->seen_response_already_sent);
+	}
+
+	SUBCASE("An unrouted request a receiver leaves alone falls through to 404") {
+		REQUIRE(server->connect("request_received", receiver) == OK);
+		observer->answer = false;
+
+		const ClientResult result = http_get(server, port, "/missing");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 404);
+		CHECK(result.body == "Not Found");
+		CHECK(observer->call_count == 1);
+	}
+
+	SUBCASE("An unrouted request with nothing connected answers 404") {
+		const ClientResult result = http_get(server, port, "/missing");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 404);
+		CHECK(result.body == "Not Found");
+		CHECK(handler->call_count == 0);
+		CHECK(observer->call_count == 0);
+	}
+
+	SUBCASE("A receiver may stop the server instead of answering") {
+		StoppingSignalObserver *stopper = memnew(StoppingSignalObserver);
+		stopper->server = server;
+		REQUIRE(server->connect("request_received", callable_mp(stopper, &StoppingSignalObserver::on_request_received)) == OK);
+
+		const ClientResult result = http_get(server, port, "/missing");
+
+		CHECK(result.error != OK);
+		CHECK(stopper->call_count == 1);
+		CHECK_FALSE(server->is_listening());
+		CHECK(server->get_connection_count() == 0);
+		memdelete(stopper);
+	}
+
+	server->stop();
+	memdelete(observer);
 	memdelete(handler);
 	memdelete(server);
 }

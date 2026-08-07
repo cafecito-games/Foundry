@@ -4,7 +4,7 @@
 		A node that hosts an HTTP server.
 	</brief_description>
 	<description>
-		Listens for plain HTTP requests, parses them, and dispatches each one to a handler registered with [method route]. The handler receives a [code skip-lint]foundry.http.server.HTTPRequest[/code] describing the request and a [code skip-lint]foundry.http.server.HTTPResponse[/code] to complete. A request that matches no route is answered with [code]404 Not Found[/code].
+		Listens for plain HTTP requests, parses them, and resolves each one in a fixed order: a handler registered with [method route] is tried first, then the [signal request_received] signal, and a request nothing answered is finally served [code]404 Not Found[/code]. Handlers and receivers alike are given a [code skip-lint]foundry.http.server.HTTPRequest[/code] describing the request and a [code skip-lint]foundry.http.server.HTTPResponse[/code] to complete.
 		All work happens on the thread that drives the server. While the node is inside the scene tree it polls itself every frame; a headless caller can call [method poll] directly instead. Each connection currently serves exactly one request and is then closed.
 		[b]Note:[/b] The default bind address is the loopback interface, so the server is reachable only from the local machine unless another address is passed to [method listen].
 		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPServer[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPServer[/code]. Without that import the bare name does not resolve.
@@ -44,7 +44,7 @@
 			<param index="2" name="handler" type="Callable" />
 			<description>
 				Registers [param handler] for requests whose method equals [param method] and whose path equals [param path] exactly, with the query string excluded. [param method] is matched case-insensitively; [param path] must start with [code]/[/code].
-				The handler is called with the request and the response as its two arguments. If several handlers are registered for the same method and path, the first registration wins.
+				The handler is called with the request and the response as its two arguments. If several handlers are registered for the same method and path, the first registration wins. A routed request does not reach [signal request_received] unless [member emit_for_all] is enabled.
 			</description>
 		</method>
 		<method name="stop">
@@ -58,8 +58,21 @@
 		<member name="bind_address" type="String" setter="set_bind_address" getter="get_bind_address" default="&quot;127.0.0.1&quot;">
 			The address [method listen] binds to. Defaults to the loopback interface, so the server is reachable only from the local machine. Use [code]"*"[/code] to accept connections on every interface. An empty value is rejected and leaves the property unchanged.
 		</member>
+		<member name="emit_for_all" type="bool" setter="set_emit_for_all" getter="is_emitting_for_all" default="false">
+			If [code]true[/code], [signal request_received] is emitted for every request, including the ones a route already handled. Receivers then run after the route handler, so the response is usually already completed and can only be observed.
+			If [code]false[/code], the signal is emitted only for requests no route claimed, which keeps routed traffic off the signal.
+		</member>
 		<member name="port" type="int" setter="set_port" getter="get_port" default="8080">
 			The TCP port [method listen] binds to. Must be between [code]0[/code] and [code]65535[/code]; values outside that range are rejected and leave the property unchanged. [code]0[/code] asks the operating system for a free port.
 		</member>
 	</members>
+	<signals>
+		<signal name="request_received">
+			<param index="0" name="request" type="foundry.http.server.HTTPRequest" />
+			<param index="1" name="response" type="foundry.http.server.HTTPResponse" />
+			<description>
+				Emitted for a request no route claimed, and for every request once [member emit_for_all] is enabled. A receiver completes [param response] the same way a route handler does; if none of them does, the request is answered with [code]404 Not Found[/code].
+			</description>
+		</signal>
+	</signals>
 </class>
