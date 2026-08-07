@@ -34,6 +34,7 @@
 #include "editor/gui/create_dialog.h"
 
 #include "core/object/class_db.h"
+#include "scene/gui/tree.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
@@ -70,10 +71,10 @@ TEST_CASE("[Editor][ClassDBNamespace] A registered class name never resolves to 
 }
 
 TEST_CASE("[Editor][ClassDBNamespace] The canonical key a create-node entry carries reaches the scene as a qualified type") {
-	// A dialog entry is labelled with the simple name but carries the canonical registry key, and
+	// A dialog entry is labeled with the simple name but carries the canonical registry key, and
 	// that key is what the scene dock hands to `ClassDB`. Driving the dialog itself needs a live
 	// editor window, so this asserts the contract on the seam instead: a key that a listed entry
-	// carries is offered as instantiable, is labelled by its simple name, and produces a node whose
+	// carries is offered as instantiable, is labeled by its simple name, and produces a node whose
 	// serialized type is the qualified name.
 	const StringName carried_type = "foundry.http.server.HTTPServer";
 
@@ -96,6 +97,52 @@ TEST_CASE("[Editor][ClassDBNamespace] The canonical key a create-node entry carr
 	REQUIRE(state.is_valid());
 	REQUIRE_GE(state->get_node_count(), 1);
 	CHECK_EQ(state->get_node_type(0), carried_type);
+}
+
+TEST_CASE("[Editor][ClassDBNamespace] A namespaced first-level type collapses like its ungrouped peer") {
+	// The unfiltered create-node tree keeps an abstract type on the first level
+	// expanded so the types a user can pick stay visible. A namespaced type sits
+	// under a namespace group header instead of directly under the base type, so
+	// the predicate must look through that header.
+	Tree *tree = memnew(Tree);
+	TreeItem *base_item = tree->create_item();
+	base_item->set_text(0, "Node");
+	base_item->set_meta(SNAME("__type_name"), String("Node"));
+
+	TreeItem *flat_item = tree->create_item(base_item);
+	flat_item->set_text(0, "AbstractPeer");
+	flat_item->set_meta(SNAME("__type_name"), String("AbstractPeer"));
+
+	TreeItem *group_item = tree->create_item(base_item);
+	group_item->set_text(0, "http");
+	group_item->set_meta(SNAME("__instantiable"), false);
+	group_item->set_meta(SNAME("__namespace_group"), true);
+
+	TreeItem *namespaced_item = tree->create_item(group_item);
+	namespaced_item->set_text(0, "HTTPServer");
+	namespaced_item->set_meta(SNAME("__type_name"), String("foundry.http.server.HTTPServer"));
+
+	// An abstract first-level type stays expanded whether or not a group header
+	// stands between it and the base type.
+	CHECK_FALSE(CreateDialog::should_collapse_search_option(flat_item->get_parent(), "AbstractPeer", "Node", false));
+	CHECK_FALSE(CreateDialog::should_collapse_search_option(namespaced_item->get_parent(), "foundry.http.server.HTTPServer", "Node", false));
+
+	// An instantiable type still collapses on either path.
+	CHECK(CreateDialog::should_collapse_search_option(flat_item->get_parent(), "AbstractPeer", "Node", true));
+	CHECK(CreateDialog::should_collapse_search_option(namespaced_item->get_parent(), "foundry.http.server.HTTPServer", "Node", true));
+
+	// Deeper levels collapse regardless, and the base type itself never does.
+	CHECK(CreateDialog::should_collapse_search_option(namespaced_item, "Deeper", "Node", false));
+	CHECK_FALSE(CreateDialog::should_collapse_search_option(nullptr, "Node", "Node", false));
+
+	// The base type is matched by the identifier an item carries, not by the
+	// display label, which drops the namespace for a qualified name.
+	TreeItem *qualified_base = tree->create_item();
+	qualified_base->set_text(0, "HTTPServer");
+	qualified_base->set_meta(SNAME("__type_name"), String("foundry.http.server.HTTPServer"));
+	CHECK_FALSE(CreateDialog::should_collapse_search_option(qualified_base, "Child", "foundry.http.server.HTTPServer", false));
+
+	memdelete(tree);
 }
 
 } // namespace TestEditorNamespacedClassDisplay

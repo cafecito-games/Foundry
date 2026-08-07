@@ -213,6 +213,12 @@ Dictionary _element_tree(
 		if (!p_include_hidden && !child.visible) {
 			continue;
 		}
+		// A child that is also published as a top-level root (an open modal
+		// dialog) is emitted from its root entry, so skipping it here keeps the
+		// tree free of a second copy of its whole subtree.
+		if (p_data.root_indices.has(child_index)) {
+			continue;
+		}
 		visible_children.push_back(child_index);
 	}
 
