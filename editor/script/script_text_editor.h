@@ -43,6 +43,7 @@
 #include "scene/gui/option_button.h"
 #include "scene/gui/tree.h"
 
+#include "editor/script/script_code_actions_model.h"
 #include "modules/foundry_script/editor/fs_refactoring.h"
 
 class RichTextLabel;
@@ -91,6 +92,7 @@ class ScriptTextEditor : public ScriptEditorBase {
 	PopupMenu *breakpoints_menu = nullptr;
 	PopupMenu *highlighter_menu = nullptr;
 	PopupMenu *context_menu = nullptr;
+	PopupMenu *code_actions_menu = nullptr;
 	ConfirmationDialog *rename_dialog = nullptr;
 	LineEdit *rename_line_edit = nullptr;
 	Label *rename_error_label = nullptr;
@@ -211,6 +213,7 @@ class ScriptTextEditor : public ScriptEditorBase {
 		HELP_CONTEXTUAL,
 		LOOKUP_SYMBOL,
 		EDIT_EMOJI_AND_SYMBOL,
+		EDIT_SHOW_CODE_ACTIONS,
 		// These must stay in the same order as RefactorKind: the dispatch maps
 		// the option id back to a RefactorKind via (id - EDIT_REFACTOR_RENAME).
 		EDIT_REFACTOR_RENAME,
@@ -283,6 +286,7 @@ protected:
 	void _update_color_text();
 
 	void _notification(int p_what);
+	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
 
 	HashMap<String, Ref<EditorSyntaxHighlighter>> highlighters;
 	void _change_syntax_highlighter(int p_idx);
@@ -291,7 +295,10 @@ protected:
 	void _edit_option_toggle_inline_comment();
 	void _make_context_menu(bool p_selection, bool p_color, bool p_foldable, bool p_open_docs, bool p_goto_definition, Vector2 p_pos);
 
+	bool _is_foundry_script() const;
+	void _fill_menu_from_code_action_entries(PopupMenu *p_menu, const Vector<ScriptCodeActionEntry> &p_entries);
 	void _populate_refactor_submenu(PopupMenu *p_refactor_submenu);
+	void _show_code_actions_popup();
 	void _run_refactor(int p_kind);
 	bool _collect_refactor_sources(const Vector<RefactorFileEdit> &p_file_edits, Vector<ScriptRefactorSource> &r_sources, String &r_error_message) const;
 	void _apply_refactor_result(const RefactorResult &p_result, const String &p_source);
