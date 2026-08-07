@@ -2881,6 +2881,9 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		FSParser *other_parser = parser_ref->get_parser();
 
 		int error_count = other_parser->errors.size();
+		// Raising a dependency member by member bypasses `run_phase_body_expression_callable_signal`, so
+		// the end-of-phase sweep that reports contextual shorthands in no-expected-type positions does not
+		// run for it here. Those shorthands are swept when the dependency is analyzed as its own file.
 		other_analyzer->resolve_class_body(p_class);
 		if (other_parser->errors.size() > error_count) {
 			String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
@@ -5083,10 +5086,15 @@ void FSAnalyzer::resolve_assert(FSParser::AssertNode *p_assert) {
 }
 
 void FSAnalyzer::resolve_match(FSParser::MatchNode *p_match) {
+	// A subject that failed to resolve still carries the Variant fallback its reduction left behind,
+	// which reads exactly like a written-out `Variant`. The error delta is what tells the two apart, so
+	// a contextual shorthand arm does not report the subject's failure a second time per arm.
+	const int errors_before_subject = parser->get_errors().size();
 	reduce_expression(p_match->test);
+	const bool subject_errored = parser->get_errors().size() > errors_before_subject;
 
 	for (int i = 0; i < p_match->branches.size(); i++) {
-		resolve_match_branch(p_match->branches[i], p_match->test);
+		resolve_match_branch(p_match->branches[i], p_match->test, subject_errored);
 
 		decide_suite_type(p_match, p_match->branches[i]);
 	}
@@ -5304,7 +5312,7 @@ bool FSAnalyzer::collect_uncovered_tagged_union_cases(const FSParser::MatchNode 
 	return true;
 }
 
-void FSAnalyzer::resolve_match_branch(FSParser::MatchBranchNode *p_match_branch, FSParser::ExpressionNode *p_match_test) {
+void FSAnalyzer::resolve_match_branch(FSParser::MatchBranchNode *p_match_branch, FSParser::ExpressionNode *p_match_test, bool p_subject_errored) {
 	// Apply annotations.
 	for (FSParser::AnnotationNode *&E : p_match_branch->annotations) {
 		resolve_annotation(E);
@@ -5312,7 +5320,7 @@ void FSAnalyzer::resolve_match_branch(FSParser::MatchBranchNode *p_match_branch,
 	}
 
 	for (int i = 0; i < p_match_branch->patterns.size(); i++) {
-		resolve_match_pattern(p_match_branch->patterns[i], p_match_test);
+		resolve_match_pattern(p_match_branch->patterns[i], p_match_test, nullptr, p_subject_errored);
 	}
 
 	HashMap<const FSParser::Node *, FSParser::DataType> previous_flow_narrowed_types = flow_finality.get_flow_narrowed_types();
@@ -5328,7 +5336,7 @@ void FSAnalyzer::resolve_match_branch(FSParser::MatchBranchNode *p_match_branch,
 	decide_suite_type(p_match_branch, p_match_branch->block);
 }
 
-void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, FSParser::ExpressionNode *p_match_test, const FSParser::DataType *p_match_test_type) {
+void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, FSParser::ExpressionNode *p_match_test, const FSParser::DataType *p_match_test_type, bool p_subject_errored) {
 	if (p_match_pattern == nullptr) {
 		return;
 	}
@@ -5357,7 +5365,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 				// `.None`: a payload-less contextual case is matched as the value it is, so it arrives
 				// as an expression pattern. It names a case of the subject's union, which the ordinary
 				// expression path below has no way to consult.
-				if (resolve_contextual_case_value_pattern(expr, has_match_test_type ? &match_test_type : nullptr)) {
+				if (resolve_contextual_case_value_pattern(expr, has_match_test_type ? &match_test_type : nullptr, p_subject_errored)) {
 					result = expr->get_datatype();
 					break;
 				}
@@ -5412,7 +5420,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 					element_type = match_test_type.get_container_element_type(0);
 					element_type_ptr = &element_type;
 				}
-				resolve_match_pattern(p_match_pattern->array[i], nullptr, element_type_ptr);
+				resolve_match_pattern(p_match_pattern->array[i], nullptr, element_type_ptr, p_subject_errored);
 				decide_suite_type(p_match_pattern, p_match_pattern->array[i]);
 			}
 			result = p_match_pattern->get_datatype();
@@ -5433,7 +5441,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 						value_type = match_test_type.get_container_element_type(1);
 						value_type_ptr = &value_type;
 					}
-					resolve_match_pattern(p_match_pattern->dictionary[i].value_pattern, nullptr, value_type_ptr);
+					resolve_match_pattern(p_match_pattern->dictionary[i].value_pattern, nullptr, value_type_ptr, p_subject_errored);
 					decide_suite_type(p_match_pattern, p_match_pattern->dictionary[i].value_pattern);
 				}
 			}
@@ -5453,7 +5461,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 					element_type = match_test_type.get_container_element_type(i);
 					element_type_ptr = &element_type;
 				}
-				resolve_match_pattern(p_match_pattern->array[i], nullptr, element_type_ptr);
+				resolve_match_pattern(p_match_pattern->array[i], nullptr, element_type_ptr, p_subject_errored);
 				all_irrefutable = all_irrefutable && p_match_pattern->array[i] != nullptr && p_match_pattern->array[i]->is_irrefutable;
 				decide_suite_type(p_match_pattern, p_match_pattern->array[i]);
 			}
@@ -5465,7 +5473,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 			result = p_match_pattern->get_datatype();
 		} break;
 		case FSParser::PatternNode::PT_ENUM_CASE:
-			resolve_match_case_pattern(p_match_pattern, has_match_test_type ? &match_test_type : nullptr);
+			resolve_match_case_pattern(p_match_pattern, has_match_test_type ? &match_test_type : nullptr, p_subject_errored);
 			result = p_match_pattern->case_datatype;
 			break;
 		case FSParser::PatternNode::PT_WILDCARD:
@@ -5483,7 +5491,7 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 // Resolves `Message.Move(x, _)`: the case reference is resolved like the right-hand side of `is`, then
 // each payload field type is propagated into the matching sub-pattern. The contextual shorthand
 // (`.Move(x, _)`) names only the case and takes its union from the subject instead.
-void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern, const FSParser::DataType *p_match_test_type) {
+void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern, const FSParser::DataType *p_match_test_type, bool p_subject_errored) {
 	FSParser::DataType case_type;
 	bool case_type_failed = false;
 	if (p_match_pattern->is_contextual_enum_case) {
@@ -5492,7 +5500,7 @@ void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_patte
 				: StringName();
 		FSParser::DataType case_meta_type;
 		case_type_failed = case_name == StringName() ||
-				!resolve_contextual_case_pattern_type(case_name, p_match_test_type, "match subject", p_match_pattern, case_meta_type);
+				!resolve_contextual_case_pattern_type(case_name, p_match_test_type, "match subject", p_match_pattern, case_meta_type, p_subject_errored);
 		if (!case_type_failed) {
 			// The head names a case of a union it does not spell, so the union the subject supplied is
 			// published on the head, exactly as resolving the qualified spelling publishes it.
@@ -5540,7 +5548,7 @@ void FSAnalyzer::resolve_match_case_pattern(FSParser::PatternNode *p_match_patte
 			field_type = complete_self_referential_enum_type(payload->field_types[i]);
 			field_type_ptr = &field_type;
 		}
-		resolve_match_pattern(p_match_pattern->array[i], nullptr, field_type_ptr);
+		resolve_match_pattern(p_match_pattern->array[i], nullptr, field_type_ptr, p_subject_errored);
 		all_irrefutable = all_irrefutable && p_match_pattern->array[i] != nullptr && p_match_pattern->array[i]->is_irrefutable;
 	}
 	// The case pattern itself is refutable (it tests the tag), but knowing that its payload patterns
@@ -11798,9 +11806,15 @@ bool FSAnalyzer::resolve_contextual_enum_case(FSParser::ExpressionNode *p_expres
 }
 
 bool FSAnalyzer::resolve_contextual_case_pattern_type(const StringName &p_case_name, const FSParser::DataType *p_subject_type,
-		const char *p_subject_description, const FSParser::Node *p_source, FSParser::DataType &r_case_meta_type) {
+		const char *p_subject_description, const FSParser::Node *p_source, FSParser::DataType &r_case_meta_type,
+		bool p_subject_errored) {
 	FSParser::DataType enum_meta_type;
 	if (p_subject_type == nullptr || !tagged_union_metatype_from_expected_type(*p_subject_type, p_source, enum_meta_type)) {
+		if (p_subject_errored) {
+			// The subject reported why its type is unknown; the fallback it left behind is what fails the
+			// lookup above, so repeating that failure once per shorthand would only bury the real error.
+			return false;
+		}
 		const String subject_type_name = p_subject_type != nullptr && p_subject_type->is_set()
 				? p_subject_type->to_string()
 				: String("Variant");
@@ -11823,7 +11837,7 @@ bool FSAnalyzer::resolve_contextual_case_pattern_type(const StringName &p_case_n
 	return true;
 }
 
-bool FSAnalyzer::resolve_contextual_case_value_pattern(FSParser::ExpressionNode *p_expression, const FSParser::DataType *p_match_test_type) {
+bool FSAnalyzer::resolve_contextual_case_value_pattern(FSParser::ExpressionNode *p_expression, const FSParser::DataType *p_match_test_type, bool p_subject_errored) {
 	if (p_expression == nullptr || p_expression->type != FSParser::Node::SUBSCRIPT) {
 		return false;
 	}
@@ -11848,7 +11862,7 @@ bool FSAnalyzer::resolve_contextual_case_value_pattern(FSParser::ExpressionNode 
 	const StringName case_name = reference->attribute->name;
 
 	FSParser::DataType case_meta_type;
-	if (!resolve_contextual_case_pattern_type(case_name, p_match_test_type, "match subject", p_expression, case_meta_type)) {
+	if (!resolve_contextual_case_pattern_type(case_name, p_match_test_type, "match subject", p_expression, case_meta_type, p_subject_errored)) {
 		p_expression->set_datatype(unqualified_type);
 		return true;
 	}
@@ -12646,7 +12660,9 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 		return;
 	}
 
+	const int errors_before_operand = parser->get_errors().size();
 	reduce_expression(p_type_test->operand);
+	const bool operand_errored = parser->get_errors().size() > errors_before_operand;
 	FSParser::DataType operand_type = p_type_test->operand->get_datatype();
 	FSParser::DataType test_type;
 	if (p_type_test->test_type->is_contextual_enum_case) {
@@ -12657,8 +12673,12 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 				? StringName()
 				: p_type_test->test_type->type_chain[0]->name;
 		FSParser::DataType case_meta_type;
-		if (case_name != StringName() && operand_type.is_set() &&
-				resolve_contextual_case_pattern_type(case_name, &operand_type, R"("is" operand)", p_type_test->test_type, case_meta_type)) {
+		if (case_name == StringName()) {
+			// The case name failed to parse; the parser already reported it. The operand's union is still
+			// what names the candidate cases, so completion keeps it on the shorthand type node.
+			publish_expected_union_for_completion(p_type_test->test_type, &operand_type);
+		} else if (operand_type.is_set() &&
+				resolve_contextual_case_pattern_type(case_name, &operand_type, R"("is" operand)", p_type_test->test_type, case_meta_type, operand_errored)) {
 			p_type_test->test_type->set_datatype(case_meta_type);
 			test_type = type_from_metatype(case_meta_type);
 		}

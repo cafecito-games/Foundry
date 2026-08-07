@@ -2022,12 +2022,28 @@ func f():
 		CHECK_EQ(signature_help.signatures.size(), 1);
 		if (signature_help.signatures.size() == 1) {
 			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			// The construction site binds the union's type parameters, so the payload is named with the
+			// specialization the user is filling in rather than with the declaration's `T`.
+			CHECK_EQ(signature.label, "Ok(value: int)");
+			CHECK_EQ(signature.parameters.size(), 1);
+			if (signature.parameters.size() == 1) {
+				CHECK_EQ(signature.parameters[0].label, "value: int");
+			}
+			CHECK_EQ(signature_help.activeParameter, 0);
+		}
+
+		// Inside the declaration's own payload list there is no construction to specialize against, so
+		// the declared spelling stands.
+		LSP::SignatureHelp declaration_signature_help;
+		CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(3, 5)), declaration_signature_help), OK);
+		CHECK_EQ(declaration_signature_help.signatures.size(), 1);
+		if (declaration_signature_help.signatures.size() == 1) {
+			const LSP::SignatureInformation &signature = declaration_signature_help.signatures[0];
 			CHECK_EQ(signature.label, "Ok(value: T)");
 			CHECK_EQ(signature.parameters.size(), 1);
 			if (signature.parameters.size() == 1) {
 				CHECK_EQ(signature.parameters[0].label, "value: T");
 			}
-			CHECK_EQ(signature_help.activeParameter, 0);
 		}
 
 		// A payload-less case is not a construction, so it reports no signature.

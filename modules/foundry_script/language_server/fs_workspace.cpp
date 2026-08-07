@@ -1064,6 +1064,35 @@ Dictionary FSWorkspace::generate_script_api(const String &p_path) {
 	return api;
 }
 
+// Renders a case payload exactly as completion renders it, so the signature help and the completion
+// entry for the same construction agree: `Ok(value: int)` rather than the declared `Ok(value: T)`.
+static bool specialized_case_signature(const FSParser::DataType &p_union_type, const StringName &p_case_name,
+		String &r_label, Vector<String> &r_parameter_labels) {
+	const FSParser::DataType::EnumCasePayload *payload = p_union_type.get_enum_case_payload(p_case_name);
+	if (payload == nullptr) {
+		return false;
+	}
+
+	r_label = String(p_case_name) + "(";
+	for (int i = 0; i < payload->field_types.size(); i++) {
+		if (i > 0) {
+			r_label += ", ";
+		}
+		String parameter_label;
+		if (i < payload->field_names.size() && payload->field_names[i] != StringName()) {
+			parameter_label = String(payload->field_names[i]);
+		}
+		// A field whose type is not resolved here contributes no spelling rather than a misleading one.
+		if (payload->field_types[i].is_hard_type()) {
+			parameter_label += ": " + payload->field_types[i].to_string();
+		}
+		r_label += parameter_label;
+		r_parameter_labels.push_back(parameter_label);
+	}
+	r_label += ")";
+	return true;
+}
+
 Error FSWorkspace::resolve_signature(const LSP::TextDocumentPositionParams &p_doc_pos, LSP::SignatureHelp &r_signature) {
 	const ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(get_file_path(p_doc_pos.textDocument.uri));
 	if (parser) {
@@ -1088,6 +1117,26 @@ Error FSWorkspace::resolve_signature(const LSP::TextDocumentPositionParams &p_do
 					LSP::SignatureInformation signature_info;
 					signature_info.label = symbol->detail;
 					signature_info.documentation = symbol->render();
+
+					if (is_case_construction) {
+						// The declaration spells the payload with the union's own type parameters, so the
+						// construction site is the only place the specialization is known. Where none is
+						// recoverable (a declaration-only context), the declared spelling stands.
+						FSParser::DataType union_type;
+						String specialized_label;
+						Vector<String> specialized_parameters;
+						if (parser->find_specialized_enum_case_type(text_pos.position.line + 1, symbol->name, union_type) &&
+								specialized_case_signature(union_type, symbol->name, specialized_label, specialized_parameters)) {
+							signature_info.label = specialized_label;
+							for (const String &parameter_label : specialized_parameters) {
+								LSP::ParameterInformation parameter_info;
+								parameter_info.label = parameter_label;
+								signature_info.parameters.push_back(parameter_info);
+							}
+							r_signature.signatures.push_back(signature_info);
+							break;
+						}
+					}
 
 					int rest_parameter_index = -1;
 					for (int i = 0; i < symbol->children.size(); i++) {

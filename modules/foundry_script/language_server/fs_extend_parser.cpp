@@ -92,17 +92,16 @@ FoundryRange FoundryRange::from_lsp(const LSP::Range &p_range, const Vector<Stri
 void ExtendFSParser::update_diagnostics() {
 	diagnostics.clear();
 
-	const List<ParserError> &parser_errors = get_errors();
-	for (const ParserError &error : parser_errors) {
+	for (const ParserError *error : get_errors_in_source_order()) {
 		LSP::Diagnostic diagnostic;
 		diagnostic.severity = LSP::DiagnosticSeverity::Error;
-		diagnostic.message = error.message;
+		diagnostic.message = error->message;
 		diagnostic.source = "foundry_script";
 		diagnostic.code = -1;
 		LSP::Range range;
 		LSP::Position pos;
 		const PackedStringArray line_array = get_lines();
-		int line = CLAMP(LINE_NUMBER_TO_INDEX(error.line), 0, line_array.size() - 1);
+		int line = CLAMP(LINE_NUMBER_TO_INDEX(error->line), 0, line_array.size() - 1);
 		const String &line_text = line_array[line];
 		pos.line = line;
 		pos.character = line_text.length() - line_text.strip_edges(true, false).length();
@@ -1086,6 +1085,29 @@ Error ExtendFSParser::get_left_function_call(const LSP::Position &p_position, LS
 	}
 
 	return ERR_METHOD_NOT_FOUND;
+}
+
+bool ExtendFSParser::find_specialized_enum_case_type(int p_line, const StringName &p_case_name, FSParser::DataType &r_union_type) const {
+	for (const FSParser::Node *node = get_allocated_nodes(); node != nullptr; node = node->next) {
+		if (node->type != FSParser::Node::SUBSCRIPT || node->start_line != p_line) {
+			continue;
+		}
+		const FSParser::SubscriptNode *reference = static_cast<const FSParser::SubscriptNode *>(node);
+		if (!reference->is_attribute || reference->attribute == nullptr || reference->attribute->name != p_case_name) {
+			continue;
+		}
+		// Both spellings publish the union on the case reference: the contextual shorthand publishes the
+		// union the position expects, the qualified form the union it names. Either one carries the
+		// payload schema with its type arguments already applied.
+		const FSParser::DataType resolved = reference->get_datatype();
+		if (resolved.kind != FSParser::DataType::ENUM || !resolved.is_tagged_union ||
+				resolved.get_enum_case_payload(p_case_name) == nullptr) {
+			continue;
+		}
+		r_union_type = resolved;
+		return true;
+	}
+	return false;
 }
 
 const LSP::DocumentSymbol *ExtendFSParser::get_symbol_defined_at_line(int p_line, const String &p_symbol_name) const {
