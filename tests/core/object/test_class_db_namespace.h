@@ -518,8 +518,9 @@ TEST_CASE("[ClassDBNamespace] The HTTPRequest client instantiates with a qualifi
 	CHECK(double(instance->call("get_timeout")) == 5.0);
 	CHECK(double(instance->get("timeout")) == 5.0);
 
-	// A bound getter with no live request answers through the qualified identity.
-	CHECK(int(instance->call("get_body_size")) == 0);
+	// A bound getter with no live request answers through the qualified identity;
+	// get_body_size reports an unknown body size (-1) when no request is live.
+	CHECK(int(instance->call("get_body_size")) == -1);
 
 	memdelete(instance);
 }
