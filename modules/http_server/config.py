@@ -8,6 +8,8 @@ def configure(env):
 
 def get_doc_classes():
     return [
+        "foundry.http.server.HTTPRequest",
+        "foundry.http.server.HTTPResponse",
         "foundry.http.server.HTTPServer",
     ]
 

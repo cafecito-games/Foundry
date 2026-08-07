@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  http_server_request.h                                                 */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,33 +28,59 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "http_response.h"
-#include "http_server.h"
-#include "http_server_request.h"
+#include "core/object/ref_counted.h"
+#include "core/templates/hash_map.h"
+#include "core/variant/dictionary.h"
 
-#include "core/object/class_db.h"
+// One inbound HTTP request, exposed to scripts as `foundry.http.server.HTTPRequest`. The C++ token
+// stays `HTTPServerRequest` because the global-scope client node already owns `HTTPRequest`; the
+// exposed simple name is supplied at namespace registration time.
+//
+// Scripts see a read-only view: the mutators below are for the native code that parses the wire
+// format and are deliberately not bound.
+class HTTPServerRequest : public RefCounted {
+	FOUNDRY_CLASS(HTTPServerRequest, RefCounted);
 
-void initialize_http_server_module(ModuleInitializationLevel p_level) {
-	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
-		return;
-	}
+	String method;
+	String raw_path;
+	String path;
+	Dictionary query;
+	Dictionary headers;
+	// Lower-cased field name -> the key it is stored under in `headers`, so lookup is
+	// case-insensitive as HTTP requires while the dictionary keeps the casing the client sent.
+	HashMap<String, String> header_index;
+	PackedByteArray body;
+	String peer;
 
-	FOUNDRY_REGISTER_CLASS(HTTPServer);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPServer, "foundry.http.server");
+protected:
+	static void _bind_methods();
 
-	// The C++ token stays `HTTPServerRequest` so it does not collide with the global client node,
-	// but scripts see it as `foundry.http.server.HTTPRequest`.
-	FOUNDRY_REGISTER_CLASS(HTTPServerRequest);
-	FOUNDRY_REGISTER_NAMESPACE_AS(HTTPServerRequest, "foundry.http.server", "HTTPRequest");
+public:
+	void set_method(const String &p_method);
+	String get_method() const;
 
-	FOUNDRY_REGISTER_CLASS(HTTPResponse);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPResponse, "foundry.http.server");
-}
+	// Sets the request target as received on the wire; splits off and parses the query string and
+	// percent-decodes the path component.
+	void set_raw_path(const String &p_raw_path);
+	String get_raw_path() const;
+	String get_path() const;
+	// Returns a copy, so a caller cannot mutate the parsed request through the returned handle.
+	Dictionary get_query() const;
 
-void uninitialize_http_server_module(ModuleInitializationLevel p_level) {
-	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
-		return;
-	}
-}
+	// Appends a header field. A repeated field name is folded into a comma-separated value, per the
+	// HTTP field-order rules.
+	void add_header(const String &p_name, const String &p_value);
+	String get_header(const String &p_name) const;
+	bool has_header(const String &p_name) const;
+	// Returns a copy, for the same reason as `get_query()`.
+	Dictionary get_headers() const;
+
+	void set_body(const PackedByteArray &p_body);
+	PackedByteArray get_body() const;
+	String get_body_string() const;
+
+	void set_peer(const String &p_peer);
+	String get_peer() const;
+};

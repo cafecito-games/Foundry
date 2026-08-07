@@ -583,7 +583,7 @@ void DocTools::generate(BitField<GenerateFlags> p_flags) {
 
 						found_type = true;
 						if (retinfo.type == Variant::INT && retinfo.usage & (PROPERTY_USAGE_CLASS_IS_ENUM | PROPERTY_USAGE_CLASS_IS_BITFIELD)) {
-							prop.enumeration = retinfo.class_name;
+							prop.enumeration = DocData::qualify_enum_owner(retinfo.class_name);
 							prop.is_bitfield = retinfo.usage & PROPERTY_USAGE_CLASS_IS_BITFIELD;
 							prop.type = "int";
 						} else if (retinfo.class_name != StringName()) {

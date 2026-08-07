@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="HTTPRequest" namespace="foundry.http.server" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		One inbound HTTP request received by a server.
+	</brief_description>
+	<description>
+		A read-only view of a single inbound HTTP request: the method, the request target with its query string, the header fields, the body, and the address of the remote peer. Instances are created by the server; scripts never construct one themselves.
+		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPRequest[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPRequest[/code]. Without that import the bare name does not resolve.
+		[b]Note:[/b] The server does not open a listening socket yet, so no request is delivered to a handler at runtime.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="get_body" qualifiers="const">
+			<return type="PackedByteArray" />
+			<description>
+				Returns the request body exactly as it arrived on the wire.
+			</description>
+		</method>
+		<method name="get_body_string" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the request body decoded as UTF-8. Returns an empty string when there is no body.
+			</description>
+		</method>
+		<method name="get_header" qualifiers="const">
+			<return type="String" />
+			<param index="0" name="name" type="String" />
+			<description>
+				Returns the value of the [param name] header field, or an empty string when the request does not carry it. The lookup is case-insensitive. A field the client repeated is returned as a single comma-separated value.
+			</description>
+		</method>
+		<method name="get_headers" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns a copy of all header fields, keyed by the name exactly as the client spelled it. Mutating the returned dictionary does not change the request.
+			</description>
+		</method>
+		<method name="get_method" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the request method in upper case, for example [code]GET[/code] or [code]POST[/code].
+			</description>
+		</method>
+		<method name="get_path" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the percent-decoded path of the request target, without the query string.
+			</description>
+		</method>
+		<method name="get_peer" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the address of the remote peer that sent the request, or an empty string when it is unknown.
+			</description>
+		</method>
+		<method name="get_query" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns a copy of the parsed query string as string keys mapped to string values. Keys and values are form-decoded, so [code]+[/code] stands for a space. A key that appears without a value maps to an empty string. Mutating the returned dictionary does not change the request.
+			</description>
+		</method>
+		<method name="get_raw_path" qualifiers="const">
+			<return type="String" />
+			<description>
+				Returns the request target exactly as it arrived, still percent-encoded and including the query string.
+			</description>
+		</method>
+		<method name="has_header" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="name" type="String" />
+			<description>
+				Returns [code]true[/code] when the request carries the [param name] header field. The lookup is case-insensitive.
+			</description>
+		</method>
+	</methods>
+</class>

@@ -31,6 +31,7 @@
 #include "doc_data.h"
 
 #include "core/core_constants.h"
+#include "core/object/class_db.h"
 #include "core/variant/numeric_type.h"
 
 String DocData::get_default_value_string(const Variant &p_value, const PropertyInfo &p_info) {
@@ -120,6 +121,18 @@ String DocData::get_default_value_string(const Variant &p_value, const PropertyI
 	}
 }
 
+String DocData::qualify_enum_owner(const String &p_enumeration) {
+	const int separator = p_enumeration.rfind_char('.');
+	if (separator < 0) {
+		return p_enumeration;
+	}
+	const StringName qualified_owner = ClassDB::class_get_qualified_name(p_enumeration.substr(0, separator));
+	if (qualified_owner == StringName()) {
+		return p_enumeration;
+	}
+	return String(qualified_owner) + p_enumeration.substr(separator);
+}
+
 void DocData::return_doc_from_retinfo(DocData::MethodDoc &p_method, const PropertyInfo &p_retinfo) {
 	if (p_retinfo.type == Variant::INT && p_retinfo.hint == PROPERTY_HINT_INT_IS_POINTER) {
 		p_method.return_type = p_retinfo.hint_string;
@@ -133,6 +146,7 @@ void DocData::return_doc_from_retinfo(DocData::MethodDoc &p_method, const Proper
 		if (p_method.return_enum.begins_with("_")) { //proxy class
 			p_method.return_enum = p_method.return_enum.substr(1);
 		}
+		p_method.return_enum = qualify_enum_owner(p_method.return_enum);
 		p_method.return_is_bitfield = p_retinfo.usage & PROPERTY_USAGE_CLASS_IS_BITFIELD;
 		p_method.return_type = "int";
 	} else if (p_retinfo.class_name != StringName()) {
@@ -167,6 +181,7 @@ void DocData::argument_doc_from_arginfo(DocData::ArgumentDoc &p_argument, const 
 		if (p_argument.enumeration.begins_with("_")) { //proxy class
 			p_argument.enumeration = p_argument.enumeration.substr(1);
 		}
+		p_argument.enumeration = qualify_enum_owner(p_argument.enumeration);
 		p_argument.is_bitfield = p_arginfo.usage & PROPERTY_USAGE_CLASS_IS_BITFIELD;
 		p_argument.type = "int";
 	} else if (p_arginfo.class_name != StringName()) {

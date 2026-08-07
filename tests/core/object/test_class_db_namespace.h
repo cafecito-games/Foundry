@@ -97,6 +97,14 @@ class _NamespaceTestVersioned : public Object {
 	FOUNDRY_CLASS(_NamespaceTestVersioned, Object);
 };
 
+class _NamespaceTestExposedToken : public Object {
+	FOUNDRY_CLASS(_NamespaceTestExposedToken, Object);
+};
+
+class _NamespaceTestExposedClash : public Object {
+	FOUNDRY_CLASS(_NamespaceTestExposedClash, Object);
+};
+
 namespace TestClassDBNamespace {
 
 TEST_CASE("[ClassDBNamespace] Classes without a namespace keep their bare identity") {
@@ -390,6 +398,72 @@ TEST_CASE("[ClassDBNamespace] Registry mutations bump the registry version") {
 	// Re-registering the same alias for the same owner changes nothing, so the token stays put.
 	ClassDB::class_register_global_alias(qualified_name, "_NamespaceTestVersionedAlias");
 	CHECK(ClassDB::get_registry_version() == after_alias);
+}
+
+TEST_CASE("[ClassDBNamespace] A class can be exposed under a simple name other than its C++ token") {
+	const StringName qualified_name = "foundry.test.exposed._NamespaceTestExposed";
+
+	// The rekey is irreversible, so the shape is built once and the subcases only observe it.
+	static bool exposed_registered = false;
+	if (!exposed_registered) {
+		exposed_registered = true;
+		FOUNDRY_REGISTER_CLASS(_NamespaceTestExposedToken);
+		FOUNDRY_REGISTER_NAMESPACE_AS(_NamespaceTestExposedToken, "foundry.test.exposed", "_NamespaceTestExposed");
+	}
+
+	SUBCASE("The qualified name built from the exposed name is the canonical key") {
+		CHECK(ClassDB::class_exists(qualified_name));
+		CHECK(ClassDB::resolve_type_name(qualified_name) == qualified_name);
+		CHECK(ClassDB::class_get_namespace(qualified_name) == StringName("foundry.test.exposed"));
+		CHECK(ClassDB::class_get_in_namespace("foundry.test.exposed", "_NamespaceTestExposed") == qualified_name);
+		// The C++ token is not the exposed simple name, so it is not a lookup key inside the namespace.
+		CHECK(ClassDB::class_get_in_namespace("foundry.test.exposed", "_NamespaceTestExposedToken") == StringName());
+		CHECK(_NamespaceTestExposedToken::get_class_static() == qualified_name);
+
+		StringName simple_name;
+		CHECK(ClassDB::class_get_by_qualified_name(qualified_name, simple_name));
+		CHECK(simple_name == StringName("_NamespaceTestExposed"));
+	}
+
+	SUBCASE("The C++ token still maps to the qualified name for tooling") {
+		CHECK(ClassDB::class_get_qualified_name("_NamespaceTestExposedToken") == qualified_name);
+		CHECK(ClassDB::class_get_namespace("_NamespaceTestExposedToken") == StringName("foundry.test.exposed"));
+		// It is introspection plumbing, not a resolution path, so data-driven lookups still miss.
+		CHECK(ClassDB::resolve_type_name("_NamespaceTestExposedToken") == StringName());
+		CHECK_FALSE(ClassDB::class_exists("_NamespaceTestExposedToken"));
+	}
+
+	SUBCASE("The bare exposed name does not resolve") {
+		CHECK_FALSE(ClassDB::class_exists("_NamespaceTestExposed"));
+		CHECK(ClassDB::resolve_type_name("_NamespaceTestExposed") == StringName());
+		CHECK(ClassDB::class_get_qualified_name("_NamespaceTestExposed") == StringName());
+	}
+
+	SUBCASE("The class instantiates under the qualified name and carries it at runtime") {
+		Object *instance = ClassDB::instantiate(qualified_name);
+		REQUIRE(instance != nullptr);
+		CHECK(instance->get_class() == String(qualified_name));
+		CHECK(instance->is_class("Object"));
+		CHECK_FALSE(instance->is_class("_NamespaceTestExposed"));
+		CHECK_FALSE(instance->is_class("_NamespaceTestExposedToken"));
+		memdelete(instance);
+	}
+
+	SUBCASE("A second class cannot claim the same qualified name") {
+		FOUNDRY_REGISTER_CLASS(_NamespaceTestExposedClash);
+		ERR_PRINT_OFF;
+		ClassDB::register_namespace("_NamespaceTestExposedClash", "foundry.test.exposed", "_NamespaceTestExposed");
+		ERR_PRINT_ON;
+
+		// The rejected rekey leaves the clashing class flat and the incumbent untouched.
+		CHECK(ClassDB::class_exists("_NamespaceTestExposedClash"));
+		CHECK(ClassDB::class_get_namespace("_NamespaceTestExposedClash") == StringName());
+		CHECK(ClassDB::class_get_qualified_name("_NamespaceTestExposedToken") == qualified_name);
+
+		StringName simple_name;
+		CHECK(ClassDB::class_get_by_qualified_name(qualified_name, simple_name));
+		CHECK(simple_name == StringName("_NamespaceTestExposed"));
+	}
 }
 
 TEST_CASE("[ClassDBNamespace] The HTTPServer pilot is reachable only through its namespace") {
