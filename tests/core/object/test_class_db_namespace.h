@@ -270,6 +270,7 @@ TEST_CASE("[ClassDBNamespace] The HTTPServer pilot is reachable only through its
 	CHECK(ClassDB::class_exists(qualified_name));
 	CHECK_FALSE(ClassDB::class_exists("HTTPServer"));
 	CHECK(ClassDB::class_get_namespace(qualified_name) == StringName("foundry.http.server"));
+	CHECK(ClassDB::class_get_namespace("HTTPServer") == StringName("foundry.http.server"));
 	CHECK(ClassDB::class_get_qualified_name("HTTPServer") == qualified_name);
 	CHECK(ClassDB::class_get_in_namespace("foundry.http.server", "HTTPServer") == qualified_name);
 	CHECK(ClassDB::resolve_type_name(qualified_name) == qualified_name);
@@ -302,11 +303,14 @@ TEST_CASE("[ClassDBNamespace] The HTTPServer pilot instantiates with a qualified
 	CHECK(int(instance->get("port")) == 9000);
 	CHECK(int(instance->call("get_port")) == 9000);
 
-	// Out-of-range ports are rejected and leave the previous value untouched.
+	// Out-of-range ports are rejected and leave the previous value untouched, through both the
+	// bound method and the property path.
 	ERR_PRINT_OFF;
 	instance->call("set_port", 70000);
+	instance->set("port", -1, &valid);
 	ERR_PRINT_ON;
 	CHECK(int(instance->call("get_port")) == 9000);
+	CHECK(int(instance->get("port")) == 9000);
 
 	CHECK(bool(instance->call("start")));
 	instance->call("stop");
