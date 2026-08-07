@@ -525,8 +525,15 @@ TEST_CASE("[ClassDBNamespace] The HTTPServer pilot instantiates with a qualified
 	CHECK(int(instance->call("get_port")) == 9000);
 	CHECK(int(instance->get("port")) == 9000);
 
-	CHECK(bool(instance->call("start")));
+	// The bound listener control is reachable through the namespaced class. Port 0 lets the
+	// operating system pick a free port, so this cannot collide with a concurrent run.
+	instance->set("port", 0, &valid);
+	CHECK(valid);
+	CHECK(int(instance->call("listen")) == int(OK));
+	CHECK(bool(instance->call("is_listening")));
+	CHECK(int(instance->call("get_listening_port")) > 0);
 	instance->call("stop");
+	CHECK_FALSE(bool(instance->call("is_listening")));
 
 	memdelete(instance);
 }
