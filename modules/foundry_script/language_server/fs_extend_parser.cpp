@@ -1087,13 +1087,17 @@ Error ExtendFSParser::get_left_function_call(const LSP::Position &p_position, LS
 	return ERR_METHOD_NOT_FOUND;
 }
 
-bool ExtendFSParser::find_specialized_enum_case_type(int p_line, int p_column, const StringName &p_case_name, FSParser::DataType &r_union_type) const {
+bool ExtendFSParser::find_specialized_enum_case_type(const LSP::Position &p_position, const StringName &p_case_name, FSParser::DataType &r_union_type) const {
+	// Node extents are the parser's own coordinates (1-based, tabs widened); the request arrives in LSP
+	// coordinates, so it is converted through the same channel every other position lookup here uses.
+	const FoundryPosition position = FoundryPosition::from_lsp(p_position, lines);
+
 	// A line can hold several constructions of the same case, so the one that starts closest before the
 	// requested column is the one under the cursor.
 	int best_column = 0;
 	bool found = false;
 	for (const FSParser::Node *node = get_allocated_nodes(); node != nullptr; node = node->next) {
-		if (node->type != FSParser::Node::SUBSCRIPT || node->start_line != p_line) {
+		if (node->type != FSParser::Node::SUBSCRIPT || node->start_line != position.line) {
 			continue;
 		}
 		const FSParser::SubscriptNode *reference = static_cast<const FSParser::SubscriptNode *>(node);
@@ -1101,7 +1105,7 @@ bool ExtendFSParser::find_specialized_enum_case_type(int p_line, int p_column, c
 			continue;
 		}
 		const int case_column = reference->attribute->start_column;
-		if (case_column > p_column || (found && case_column < best_column)) {
+		if (case_column > position.column || (found && case_column < best_column)) {
 			continue;
 		}
 		// Both spellings publish the union on the case reference: the contextual shorthand publishes the
