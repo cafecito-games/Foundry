@@ -1008,7 +1008,9 @@ case_bind_list = "(", case_bind, { ",", case_bind }, ")" ;
 case_bind     = identifier | "_" ;
 ```
 
-`x is not int` is parsed as `not (x is int)`.
+`x is not int` is parsed as `not (x is int)`. The negation node records that it came from this
+sugar, so the formatter reprints the source form `x is not int`; an author-written `not (x is int)`
+keeps its own spelling. Nothing in the semantics distinguishes the two.
 
 A `case_bind_list` may only follow a type that names a tagged-union case, `msg is Message.Move(x, y)`;
 a case name is accepted in this position only, never as a type annotation. The list is rejected

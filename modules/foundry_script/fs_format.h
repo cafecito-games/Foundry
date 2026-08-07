@@ -356,7 +356,7 @@ private:
 	void print_lambda(const FSParser::LambdaNode *p_lambda);
 	void print_preload(const FSParser::PreloadNode *p_preload);
 	void print_get_node(const FSParser::GetNodeNode *p_get_node);
-	void print_type_test(const FSParser::TypeTestNode *p_test);
+	void print_type_test(const FSParser::TypeTestNode *p_test, bool p_negated = false);
 };
 
 // Headless command driving FSFormatter over files, directories, and stdin

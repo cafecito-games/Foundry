@@ -591,9 +591,12 @@ private:
 	bool collect_uncovered_tagged_union_cases(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, Vector<String> &r_uncovered) const;
 	bool collect_uncovered_finite_domain_values(const FSParser::MatchNode *p_match, const FSParser::DataType &p_match_type, const HashMap<StringName, int64_t> &p_domain_values, Vector<String> &r_uncovered) const;
 	const FSParser::MatchNode *find_non_covering_match_cause(const FSParser::SuiteNode *p_suite) const;
-	void resolve_match_branch(FSParser::MatchBranchNode *p_match_branch, FSParser::ExpressionNode *p_match_test);
-	void resolve_match_pattern(FSParser::PatternNode *p_match_pattern, FSParser::ExpressionNode *p_match_test, const FSParser::DataType *p_match_test_type = nullptr);
-	void resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern, const FSParser::DataType *p_match_test_type);
+	// `p_subject_errored` says the subject expression's own reduction already reported why its type is
+	// unknown. The fallback type it left behind is indistinguishable from a written-out `Variant`, so
+	// the flag is what keeps a contextual shorthand from reporting that same failure once per arm.
+	void resolve_match_branch(FSParser::MatchBranchNode *p_match_branch, FSParser::ExpressionNode *p_match_test, bool p_subject_errored = false);
+	void resolve_match_pattern(FSParser::PatternNode *p_match_pattern, FSParser::ExpressionNode *p_match_test, const FSParser::DataType *p_match_test_type = nullptr, bool p_subject_errored = false);
+	void resolve_match_case_pattern(FSParser::PatternNode *p_match_pattern, const FSParser::DataType *p_match_test_type, bool p_subject_errored = false);
 	void resolve_return(FSParser::ReturnNode *p_return);
 
 	// Reduction functions.
@@ -643,13 +646,15 @@ private:
 	// the right of `is` both name a case of the union the subject already has. Writes the union spelled
 	// as a metatype with the case name applied, which is what the qualified spelling resolves to.
 	// Returns false and reports why when the subject names no complete tagged-union specialization or
-	// does not declare the case. `p_subject_description` names the subject in that diagnostic.
+	// does not declare the case. `p_subject_description` names the subject in that diagnostic, and
+	// `p_subject_errored` suppresses it because the subject already reported its own failure.
 	bool resolve_contextual_case_pattern_type(const StringName &p_case_name, const FSParser::DataType *p_subject_type,
-			const char *p_subject_description, const FSParser::Node *p_source, FSParser::DataType &r_case_meta_type);
+			const char *p_subject_description, const FSParser::Node *p_source, FSParser::DataType &r_case_meta_type,
+			bool p_subject_errored = false);
 	// A payload-less contextual case as a `match` pattern (`.None`). It is matched as the value it is,
 	// so the parser leaves it an expression pattern; the union still comes from the subject, which the
 	// ordinary expression path cannot see. Returns false when the expression is not a contextual case.
-	bool resolve_contextual_case_value_pattern(FSParser::ExpressionNode *p_expression, const FSParser::DataType *p_match_test_type);
+	bool resolve_contextual_case_value_pattern(FSParser::ExpressionNode *p_expression, const FSParser::DataType *p_match_test_type, bool p_subject_errored = false);
 	// Records the union a half-typed shorthand's position expects on the shorthand itself, so the editor
 	// can list that union's cases for a leading `.` whose case name has not been typed yet. Only runs
 	// while parsing for completion, because outside it the missing case name is a parse error and a

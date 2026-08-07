@@ -267,6 +267,40 @@ void FSParser::push_error(const String &p_message, const Node *p_origin) {
 	}
 }
 
+Vector<const FSParser::ParserError *> FSParser::get_errors_in_source_order() const {
+	// The emission index is the final tiebreaker, so two diagnostics at the same position keep the
+	// order they were reported in.
+	struct OrderedError {
+		const ParserError *error = nullptr;
+		int index = 0;
+		bool operator<(const OrderedError &p_other) const {
+			if (error->line != p_other.error->line) {
+				return error->line < p_other.error->line;
+			}
+			if (error->column != p_other.error->column) {
+				return error->column < p_other.error->column;
+			}
+			return index < p_other.index;
+		}
+	};
+
+	LocalVector<OrderedError> ordered;
+	ordered.resize(errors.size());
+	int index = 0;
+	for (const ParserError &error : errors) {
+		ordered[index] = { &error, index };
+		index++;
+	}
+	ordered.sort();
+
+	Vector<const ParserError *> result;
+	result.resize(ordered.size());
+	for (uint32_t i = 0; i < ordered.size(); i++) {
+		result.write[i] = ordered[i].error;
+	}
+	return result;
+}
+
 #ifdef DEBUG_ENABLED
 void FSParser::push_warning(const Node *p_source, FSWarning::Code p_code, const Vector<String> &p_symbols) {
 	ERR_FAIL_NULL(p_source);
@@ -6029,6 +6063,7 @@ FSParser::ExpressionNode *FSParser::parse_type_test(ExpressionNode *p_previous_o
 		not_node = alloc_node<UnaryOpNode>();
 		not_node->operation = UnaryOpNode::OP_LOGIC_NOT;
 		not_node->variant_op = Variant::OP_NOT;
+		not_node->source_is_not = true;
 		reset_extents(not_node, p_previous_operand);
 		update_extents(not_node);
 	}
@@ -6040,7 +6075,9 @@ FSParser::ExpressionNode *FSParser::parse_type_test(ExpressionNode *p_previous_o
 	type_test->operand = p_previous_operand;
 	// `x is .Ok(value)`: the contextual shorthand names a case of the operand's own union, so the
 	// test type is the case name alone and the union is supplied by the analyzer.
-	if (check(FSTokenizer::Token::PERIOD) && peek().is_identifier()) {
+	// A bare `.` with no name yet is still the shorthand: routing it here keeps the case-completion
+	// context and reports the missing name once, instead of falling back to a written-out type.
+	if (check(FSTokenizer::Token::PERIOD)) {
 		type_test->test_type = parse_contextual_enum_case_type();
 	} else {
 		type_test->test_type = parse_type(false, COMPLETION_NONE, true);
