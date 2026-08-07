@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  http_server.h                                                         */
+/*  http_server.cpp                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,26 +28,30 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#pragma once
+#include "http_server.h"
 
-#include "scene/main/node.h"
+void HTTPServer::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("start"), &HTTPServer::start);
+	ClassDB::bind_method(D_METHOD("stop"), &HTTPServer::stop);
+	ClassDB::bind_method(D_METHOD("set_port", "port"), &HTTPServer::set_port);
+	ClassDB::bind_method(D_METHOD("get_port"), &HTTPServer::get_port);
 
-// Pilot class for namespaced native classes: registered under `foundry.http.server`, so it is
-// reachable only through its qualified name. The surface is deliberately minimal — enough to
-// exercise script import, scene instantiation, and inheritance resolution. Real listening
-// sockets and request handling are tracked separately.
-class HTTPServer : public Node {
-	FOUNDRY_CLASS(HTTPServer, Node);
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "port", PROPERTY_HINT_RANGE, "0,65535,1"), "set_port", "get_port");
+}
 
-	int port = 8080;
+void HTTPServer::set_port(int p_port) {
+	ERR_FAIL_COND_MSG(p_port < 0 || p_port > 65535, "Port must be between 0 and 65535.");
+	port = p_port;
+}
 
-protected:
-	static void _bind_methods();
+int HTTPServer::get_port() const {
+	return port;
+}
 
-public:
-	void set_port(int p_port);
-	int get_port() const;
+bool HTTPServer::start() {
+	// Pilot stub: reports success so scripts and fixtures have an observable result.
+	return true;
+}
 
-	bool start();
-	void stop();
-};
+void HTTPServer::stop() {
+}

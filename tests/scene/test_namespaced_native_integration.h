@@ -34,11 +34,13 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/object/class_db.h"
-#include "scene/main/http_server.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
+
+#ifdef MODULE_HTTP_SERVER_ENABLED
+#include "modules/http_server/http_server.h"
 
 // End-to-end coverage for namespaced native classes: the `ClassDB` identity stamp, the scene
 // serializer, and the scene loader have to agree on one canonical qualified name from the moment a
@@ -208,3 +210,4 @@ TEST_CASE("[SceneTree][ClassDBNamespace] An instantiated scene is reusable as a 
 }
 
 } // namespace TestNamespacedNativeIntegration
+#endif // MODULE_HTTP_SERVER_ENABLED
