@@ -7831,25 +7831,54 @@ bool FSAnalyzer::is_bootstrap_dependency_path_allowed(const String &p_path) cons
 	return _bootstrap_path_is_within_root(p_path, bootstrap_allowed_dependency_root);
 }
 
+// Every native namespace that holds at least one exposed class, directly or in a child namespace.
+// The registry is stable for the whole of an analysis pass, so the snapshot is rebuilt only when
+// ClassDB's version token moves; without it each distinct unresolved import re-copied and re-sorted
+// the entire class list.
+struct NativeNamespaceCache {
+	uint64_t registry_version = uint64_t(-1);
+	HashSet<String> namespaces;
+};
+
+static thread_local NativeNamespaceCache native_namespace_cache;
+
+static void _update_native_namespace_cache() {
+	const uint64_t registry_version = ClassDB::get_registry_version();
+	if (native_namespace_cache.registry_version == registry_version) {
+		return;
+	}
+
+	native_namespace_cache.registry_version = registry_version;
+	native_namespace_cache.namespaces.clear();
+
+	LocalVector<StringName> class_list;
+	ClassDB::get_class_list(class_list);
+	for (const StringName &class_name : class_list) {
+		if (!ClassDB::is_class_exposed(class_name)) {
+			continue;
+		}
+
+		// A namespaced native's canonical registry key is `<namespace>.<SimpleName>`, and a flat
+		// native's key never contains a dot, so every dotted prefix of the key is a namespace that
+		// contains this class: `foundry.http.server.HTTPServer` populates `foundry`, `foundry.http`
+		// and `foundry.http.server`.
+		const String qualified_name = class_name;
+		for (int separator = qualified_name.find_char('.'); separator != -1;
+				separator = qualified_name.find_char('.', separator + 1)) {
+			native_namespace_cache.namespaces.insert(qualified_name.substr(0, separator));
+		}
+	}
+}
+
 // True when any exposed native class lives in `p_namespace` or under one of its child namespaces.
-// A namespaced native's canonical registry key is `<namespace>.<SimpleName>`, and a flat native's
-// key never contains a dot, so a prefix test over the class list is exact. This mirrors the
-// prefix semantics `_namespace_exists_in_global_classes` applies to script classes.
+// This mirrors the prefix semantics `_namespace_exists_in_global_classes` applies to script classes.
 static bool _native_namespace_exists(const String &p_namespace) {
 	if (p_namespace.is_empty()) {
 		return false;
 	}
 
-	const String namespace_prefix = p_namespace + ".";
-	LocalVector<StringName> class_list;
-	ClassDB::get_class_list(class_list);
-	for (const StringName &class_name : class_list) {
-		if (String(class_name).begins_with(namespace_prefix) && ClassDB::is_class_exposed(class_name)) {
-			return true;
-		}
-	}
-
-	return false;
+	_update_native_namespace_cache();
+	return native_namespace_cache.namespaces.has(p_namespace);
 }
 
 bool FSAnalyzer::validate_bootstrap_namespace_import(
