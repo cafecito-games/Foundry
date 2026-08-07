@@ -312,8 +312,15 @@ Node *SceneState::instantiate(GenEditState p_edit_state) const {
 #endif
 			}
 		} else {
-			// Node belongs to this scene and must be created.
-			Object *obj = ClassDB::instantiate(snames[n.type]);
+			// Node belongs to this scene and must be created. The saved type is an arbitrary string:
+			// a qualified namespaced key, a bare name re-exported by a unique global alias, or a flat
+			// class name. Mapping it to a canonical registry key is the scene loader's own contract,
+			// so it goes through the resolver here rather than relying on the resolution `instantiate`
+			// happens to perform internally. On a miss - unknown or an ambiguous alias - the raw
+			// string is passed through so the renamed-class fallback and the error message that names
+			// the on-disk type keep working, and the `MissingNode` path below records it verbatim.
+			const StringName resolved_type = ClassDB::resolve_type_name(snames[n.type]);
+			Object *obj = ClassDB::instantiate(resolved_type != StringName() ? resolved_type : snames[n.type]);
 
 			node = Object::cast_to<Node>(obj);
 

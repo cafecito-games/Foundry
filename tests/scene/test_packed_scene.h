@@ -30,9 +30,12 @@
 
 #pragma once
 
+#include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
+#include "core/object/class_db.h"
 #include "core/object/script_language.h"
+#include "scene/main/missing_node.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
@@ -41,6 +44,16 @@
 #ifndef _3D_DISABLED
 #include "scene/3d/mesh_instance_3d.h"
 #endif // _3D_DISABLED
+
+// Declared in the global namespace because of the `FOUNDRY_CLASS` friend-declaration warning on
+// Windows when the macro is expanded inside a namespace.
+class _PackedSceneNamespacedNode : public Node {
+	FOUNDRY_CLASS(_PackedSceneNamespacedNode, Node);
+};
+
+class _PackedSceneOtherNamespacedNode : public Node {
+	FOUNDRY_CLASS(_PackedSceneOtherNamespacedNode, Node);
+};
 
 namespace TestPackedScene {
 
@@ -517,6 +530,160 @@ TEST_CASE("[SceneTree][PackedScene][UInt] Text scenes round-trip unsigned node m
 
 TEST_CASE("[SceneTree][PackedScene][UInt] Binary scenes round-trip unsigned node metadata") {
 	check_scene_metadata_round_trip("scn");
+}
+
+// Writes a one-node text scene whose root carries `p_root_type` verbatim and loads it back through
+// the resource loader.
+static Ref<PackedScene> load_text_scene_with_root_type(const String &p_root_type, const String &p_file_name) {
+	const String scene_path = TestUtils::get_temp_path(p_file_name);
+	{
+		Ref<FileAccess> file = FileAccess::open(scene_path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_string("[gd_scene format=3]\n\n[node name=\"Root\" type=\"" + p_root_type + "\"]\n");
+	}
+
+	Error error = FAILED;
+	Ref<PackedScene> loaded = ResourceLoader::load(scene_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(loaded.is_valid());
+	return loaded;
+}
+
+// Repacks `p_root` and reports the type string that would be written back to disk for it.
+static StringName repacked_root_type(Node *p_root) {
+	Ref<PackedScene> packed;
+	packed.instantiate();
+	REQUIRE_EQ(packed->pack(p_root), OK);
+	Ref<SceneState> state = packed->get_state();
+	REQUIRE(state.is_valid());
+	REQUIRE_GE(state->get_node_count(), 1);
+	return state->get_node_type(0);
+}
+
+// Turns unresolvable node types into a recording `MissingNode` for the lifetime of the scope, which
+// is how the tests below observe the on-disk type string the loader could not resolve.
+class MissingNodeRecordingScope {
+	bool previous = false;
+
+public:
+	MissingNodeRecordingScope() :
+			previous(ResourceLoader::is_creating_missing_resources_if_class_unavailable_enabled()) {
+		ResourceLoader::set_create_missing_resources_if_class_unavailable(true);
+	}
+	~MissingNodeRecordingScope() {
+		ResourceLoader::set_create_missing_resources_if_class_unavailable(previous);
+	}
+};
+
+// Loads a scene whose root type cannot be resolved and returns the `MissingNode` standing in for it.
+// Instantiation reports the unresolvable type through the error macros, so only that call is
+// silenced; the load itself stays loud so a genuine parse failure is still visible.
+static MissingNode *instantiate_unresolvable_root(const String &p_root_type, const String &p_file_name) {
+	Ref<PackedScene> scene = load_text_scene_with_root_type(p_root_type, p_file_name);
+	ERR_PRINT_OFF;
+	Node *root = scene->instantiate();
+	ERR_PRINT_ON;
+	REQUIRE_NE(root, nullptr);
+	return Object::cast_to<MissingNode>(root);
+}
+
+TEST_CASE("[SceneTree][PackedScene][ClassDBNamespace] A text scene loads a qualified namespaced native type") {
+	const String qualified_name = "foundry.http.server.HTTPServer";
+
+	Ref<PackedScene> scene = load_text_scene_with_root_type(qualified_name, "packed_scene_namespaced_root.tscn");
+	Node *root = scene->instantiate();
+	REQUIRE_NE(root, nullptr);
+
+	CHECK(Object::cast_to<MissingNode>(root) == nullptr);
+	CHECK_EQ(root->get_class(), qualified_name);
+	CHECK(root->is_class("Node"));
+	// Re-saving writes the same qualified string back.
+	CHECK_EQ(repacked_root_type(root), StringName(qualified_name));
+
+	memdelete(root);
+}
+
+TEST_CASE("[SceneTree][PackedScene][ClassDBNamespace] An unknown qualified type becomes a MissingNode keeping its namespace") {
+	const String unknown_qualified_name = "foundry.test.absent.DoesNotExist";
+	const MissingNodeRecordingScope recording_scope;
+
+	MissingNode *missing = instantiate_unresolvable_root(unknown_qualified_name, "packed_scene_unknown_qualified.tscn");
+	REQUIRE_NE(missing, nullptr);
+
+	CHECK_EQ(missing->get_original_class(), unknown_qualified_name);
+	CHECK_EQ(repacked_root_type(missing), StringName(unknown_qualified_name));
+
+	memdelete(missing);
+}
+
+TEST_CASE("[SceneTree][PackedScene][ClassDBNamespace] The bare name of a namespaced class does not resolve without an alias") {
+	// `HTTPServer` lives in `foundry.http.server` and registers no global alias, so a scene saved with
+	// the bare name must not silently pick the namespaced class up.
+	REQUIRE_EQ(ClassDB::resolve_type_name("HTTPServer"), StringName());
+
+	const MissingNodeRecordingScope recording_scope;
+
+	MissingNode *missing = instantiate_unresolvable_root("HTTPServer", "packed_scene_bare_namespaced_root.tscn");
+	REQUIRE_NE(missing, nullptr);
+
+	CHECK_EQ(missing->get_original_class(), String("HTTPServer"));
+	CHECK_EQ(repacked_root_type(missing), StringName("HTTPServer"));
+
+	memdelete(missing);
+}
+
+// `ClassDB` has no way to undo a namespace rekey or an alias registration, so the two scene test
+// classes get their permanent registry shape once and every case below only reads it. The unique and
+// the ambiguous alias are separate names so no case can poison another, in any execution order.
+static void ensure_scene_alias_registrations() {
+	static bool registered = false;
+	if (registered) {
+		return;
+	}
+	registered = true;
+
+	FOUNDRY_REGISTER_CLASS(_PackedSceneNamespacedNode);
+	FOUNDRY_REGISTER_CLASS(_PackedSceneOtherNamespacedNode);
+	FOUNDRY_REGISTER_NAMESPACE(_PackedSceneNamespacedNode, "foundry.test.scene");
+	FOUNDRY_REGISTER_NAMESPACE(_PackedSceneOtherNamespacedNode, "foundry.test.scene.other");
+
+	ClassDB::class_register_global_alias("foundry.test.scene._PackedSceneNamespacedNode", "_PackedSceneUniqueAlias");
+	ClassDB::class_register_global_alias("foundry.test.scene._PackedSceneNamespacedNode", "_PackedSceneAmbiguousAlias");
+	ClassDB::class_register_global_alias("foundry.test.scene.other._PackedSceneOtherNamespacedNode", "_PackedSceneAmbiguousAlias");
+}
+
+TEST_CASE("[SceneTree][PackedScene][ClassDBNamespace] A scene type resolves through a unique global alias") {
+	ensure_scene_alias_registrations();
+
+	const StringName qualified_name = "foundry.test.scene._PackedSceneNamespacedNode";
+	REQUIRE_EQ(ClassDB::resolve_type_name("_PackedSceneUniqueAlias"), qualified_name);
+
+	Ref<PackedScene> scene = load_text_scene_with_root_type("_PackedSceneUniqueAlias", "packed_scene_aliased_root.tscn");
+	Node *root = scene->instantiate();
+	REQUIRE_NE(root, nullptr);
+
+	CHECK(Object::cast_to<MissingNode>(root) == nullptr);
+	CHECK_EQ(root->get_class(), String(qualified_name));
+	// The alias is a load-time re-export only; saving normalizes to the canonical key.
+	CHECK_EQ(repacked_root_type(root), qualified_name);
+
+	memdelete(root);
+}
+
+TEST_CASE("[SceneTree][PackedScene][ClassDBNamespace] A scene type claimed by two classes is ambiguous and does not resolve") {
+	ensure_scene_alias_registrations();
+
+	REQUIRE_EQ(ClassDB::resolve_type_name("_PackedSceneAmbiguousAlias"), StringName());
+
+	const MissingNodeRecordingScope recording_scope;
+
+	MissingNode *missing = instantiate_unresolvable_root("_PackedSceneAmbiguousAlias", "packed_scene_ambiguous_alias_root.tscn");
+	REQUIRE_NE(missing, nullptr);
+
+	CHECK_EQ(missing->get_original_class(), String("_PackedSceneAmbiguousAlias"));
+	CHECK_EQ(repacked_root_type(missing), StringName("_PackedSceneAmbiguousAlias"));
+
+	memdelete(missing);
 }
 
 } // namespace TestPackedScene
