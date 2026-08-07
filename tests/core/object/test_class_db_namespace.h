@@ -457,4 +457,72 @@ TEST_CASE("[ClassDBNamespace] The HTTPServer pilot instantiates with a qualified
 	memdelete(instance);
 }
 
+TEST_CASE("[ClassDBNamespace] The HTTPRequest client is reachable only through its namespace") {
+	const StringName qualified_name = "foundry.http.client.HTTPRequest";
+
+	CHECK(ClassDB::class_exists(qualified_name));
+	CHECK_FALSE(ClassDB::class_exists("HTTPRequest"));
+	CHECK(ClassDB::class_get_namespace(qualified_name) == StringName("foundry.http.client"));
+	CHECK(ClassDB::class_get_namespace("HTTPRequest") == StringName("foundry.http.client"));
+	CHECK(ClassDB::class_get_qualified_name("HTTPRequest") == qualified_name);
+	CHECK(ClassDB::class_get_in_namespace("foundry.http.client", "HTTPRequest") == qualified_name);
+	CHECK(ClassDB::resolve_type_name(qualified_name) == qualified_name);
+	// No global alias is registered for the client, so the bare name stays unresolvable.
+	CHECK(ClassDB::resolve_type_name("HTTPRequest") == StringName());
+
+	StringName simple_name;
+	CHECK(ClassDB::class_get_by_qualified_name(qualified_name, simple_name));
+	CHECK(simple_name == StringName("HTTPRequest"));
+
+	// Inheritance queries answer on canonical keys: a class is its own ancestor under its qualified
+	// name, inherited flat ancestors keep matching, and the bare name is not an identity.
+	CHECK(ClassDB::is_parent_class(qualified_name, qualified_name));
+	CHECK(ClassDB::is_parent_class(qualified_name, "Node"));
+	CHECK(ClassDB::is_parent_class(qualified_name, "Object"));
+	CHECK_FALSE(ClassDB::is_parent_class(qualified_name, "HTTPRequest"));
+	CHECK_FALSE(ClassDB::is_parent_class(qualified_name, "Node2D"));
+}
+
+TEST_CASE("[ClassDBNamespace] The HTTPRequest client instantiates with a qualified runtime identity") {
+	const StringName qualified_name = "foundry.http.client.HTTPRequest";
+
+	Object *instance = ClassDB::instantiate(qualified_name);
+	REQUIRE(instance != nullptr);
+
+	CHECK(instance->get_class() == String(qualified_name));
+	CHECK(instance->is_class("Node"));
+	CHECK(instance->is_class("Object"));
+	CHECK_FALSE(instance->is_class("HTTPRequest"));
+
+	// Defaults read back through the property path.
+	CHECK(double(instance->get("timeout")) == 0.0);
+	CHECK(int(instance->get("body_size_limit")) == -1);
+
+	bool valid = false;
+	instance->set("timeout", 5.0, &valid);
+	CHECK(valid);
+	CHECK(double(instance->get("timeout")) == 5.0);
+	CHECK(double(instance->call("get_timeout")) == 5.0);
+
+	instance->set("body_size_limit", 4096, &valid);
+	CHECK(valid);
+	CHECK(int(instance->get("body_size_limit")) == 4096);
+	CHECK(int(instance->call("get_body_size_limit")) == 4096);
+
+	// A negative timeout is rejected and leaves the previous value untouched, through both the
+	// bound method and the property path.
+	ERR_PRINT_OFF;
+	instance->call("set_timeout", -1.0);
+	instance->set("timeout", -1.0, &valid);
+	ERR_PRINT_ON;
+	CHECK(double(instance->call("get_timeout")) == 5.0);
+	CHECK(double(instance->get("timeout")) == 5.0);
+
+	// A bound getter with no live request answers through the qualified identity;
+	// get_body_size reports an unknown body size (-1) when no request is live.
+	CHECK(int(instance->call("get_body_size")) == -1);
+
+	memdelete(instance);
+}
+
 } // namespace TestClassDBNamespace

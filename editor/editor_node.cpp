@@ -5596,10 +5596,12 @@ void EditorNode::setup_built_in_resource(const Ref<Resource> &p_resource, const 
 		resource_class = p_resource->get_class();
 	}
 
+	const String id_prefix = Resource::derive_scene_unique_id_prefix(resource_class);
+
 	String unique_id;
 	String final_path;
 	while (true) {
-		unique_id = resource_class + "_" + Resource::generate_scene_unique_id();
+		unique_id = id_prefix + "_" + Resource::generate_scene_unique_id();
 		final_path = p_owner_path + "::" + unique_id;
 
 		if (!ResourceCache::has(final_path)) {

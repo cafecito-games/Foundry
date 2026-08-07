@@ -149,6 +149,8 @@ public:
 
 	static void seed_scene_unique_id(uint32_t p_seed);
 	static String generate_scene_unique_id();
+	// Scene unique ids only accept identifier characters, so a namespaced class contributes its simple name.
+	static String derive_scene_unique_id_prefix(const String &p_class_name);
 	void set_scene_unique_id(const String &p_id);
 	String get_scene_unique_id() const;
 
