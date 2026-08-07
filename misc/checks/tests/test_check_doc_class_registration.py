@@ -4,10 +4,10 @@
 
 """Unit tests for misc/checks/check_doc_class_registration.py.
 
-The pure comparison lives in `find_mismatches`; the directory walk is exercised
-against synthetic module trees so the guard is proven to fire without depending
-on the real `modules/` layout. One test runs the check over the real repository
-to keep the checked-in tree honest.
+The pure comparison lives in `find_mismatches`; the tree walk is exercised against
+synthetic `modules/` and `platform/` trees so the guard is proven to fire without
+depending on the real repository layout. One test runs the check over the real
+repository to keep the checked-in tree honest.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import check_doc_class_registration  # noqa: E402
 
 CHECK_SCRIPT = REPO_ROOT / "misc/checks/check_doc_class_registration.py"
 
-CONFIG_TEMPLATE = """\
+REGISTRATION_TEMPLATE = """\
 def get_doc_classes():
     return {classes!r}
 
@@ -35,12 +35,19 @@ def get_doc_path():
 """
 
 
-def write_module(modules_root: Path, name: str, config_source: str, doc_files: list[str]) -> None:
-    module_directory = modules_root / name
-    module_directory.mkdir(parents=True)
-    (module_directory / "config.py").write_text(config_source)
+def write_component(
+    repository_root: Path,
+    tree: str,
+    name: str,
+    source: str,
+    doc_files: list[str],
+) -> None:
+    source_name = "config.py" if tree == "modules" else "detect.py"
+    directory = repository_root / tree / name
+    directory.mkdir(parents=True)
+    (directory / source_name).write_text(source)
     if doc_files:
-        doc_directory = module_directory / "doc_classes"
+        doc_directory = directory / "doc_classes"
         doc_directory.mkdir()
         for doc_file in doc_files:
             (doc_directory / f"{doc_file}.xml").write_text("<class/>\n")
@@ -72,50 +79,91 @@ class FindMismatchesTests(unittest.TestCase):
         self.assertEqual(len(messages), 2)
 
 
+class ReadReturnedLiteralTests(unittest.TestCase):
+    def test_reads_a_literal_list(self):
+        source = 'def get_doc_classes():\n    return ["A", "B"]\n'
+        self.assertEqual(check_doc_class_registration.read_returned_literal(source, "get_doc_classes"), ["A", "B"])
+
+    def test_undefined_function_reads_as_none(self):
+        self.assertIsNone(check_doc_class_registration.read_returned_literal("x = 1\n", "get_doc_classes"))
+
+    def test_computed_return_is_rejected_rather_than_ignored(self):
+        source = "def get_doc_classes():\n    return sorted(NAMES)\n"
+        with self.assertRaises(check_doc_class_registration.UnreadableRegistration):
+            check_doc_class_registration.read_returned_literal(source, "get_doc_classes")
+
+    def test_conditional_returns_are_rejected(self):
+        source = 'def get_doc_classes():\n    if True:\n        return ["A"]\n    return ["B"]\n'
+        with self.assertRaises(check_doc_class_registration.UnreadableRegistration):
+            check_doc_class_registration.read_returned_literal(source, "get_doc_classes")
+
+    def test_nested_function_of_the_same_name_is_not_confused_for_a_top_level_one(self):
+        source = "def outer():\n    def get_doc_classes():\n        return NAMES\n"
+        self.assertIsNone(check_doc_class_registration.read_returned_literal(source, "get_doc_classes"))
+
+
 class CheckRepositoryTests(unittest.TestCase):
     def test_clean_tree_has_no_mismatches(self):
         with tempfile.TemporaryDirectory() as scratch:
-            modules_root = Path(scratch)
-            write_module(modules_root, "clean", CONFIG_TEMPLATE.format(classes=["A", "B"]), ["A", "B"])
-            self.assertEqual(check_doc_class_registration.check_repository(modules_root), [])
+            root = Path(scratch)
+            write_component(root, "modules", "clean", REGISTRATION_TEMPLATE.format(classes=["A", "B"]), ["A", "B"])
+            self.assertEqual(check_doc_class_registration.check_repository(root), [])
 
-    def test_module_without_doc_classes_is_skipped(self):
+    def test_platform_drift_is_reported_too(self):
         with tempfile.TemporaryDirectory() as scratch:
-            modules_root = Path(scratch)
-            write_module(modules_root, "plain", "def can_build(env, platform):\n    return True\n", [])
-            self.assertEqual(check_doc_class_registration.check_repository(modules_root), [])
+            root = Path(scratch)
+            write_component(root, "platform", "demo", REGISTRATION_TEMPLATE.format(classes=["A"]), ["A", "B"])
+            messages = check_doc_class_registration.check_repository(root)
+            self.assertEqual(len(messages), 1)
+            self.assertIn("platform/demo", messages[0])
+            self.assertIn("'B'", messages[0])
+
+    def test_component_without_doc_classes_is_skipped(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            write_component(root, "modules", "plain", "def can_build(env, platform):\n    return True\n", [])
+            self.assertEqual(check_doc_class_registration.check_repository(root), [])
 
     def test_doc_files_without_get_doc_classes_are_reported(self):
         with tempfile.TemporaryDirectory() as scratch:
-            modules_root = Path(scratch)
-            write_module(modules_root, "orphan", "def can_build(env, platform):\n    return True\n", ["A"])
-            messages = check_doc_class_registration.check_repository(modules_root)
+            root = Path(scratch)
+            write_component(root, "modules", "orphan", "def can_build(env, platform):\n    return True\n", ["A"])
+            messages = check_doc_class_registration.check_repository(root)
             self.assertEqual(len(messages), 1)
             self.assertIn("no get_doc_classes()", messages[0])
 
     def test_missing_get_doc_path_is_reported(self):
         with tempfile.TemporaryDirectory() as scratch:
-            modules_root = Path(scratch)
-            write_module(modules_root, "nopath", 'def get_doc_classes():\n    return ["A"]\n', ["A"])
-            messages = check_doc_class_registration.check_repository(modules_root)
+            root = Path(scratch)
+            write_component(root, "modules", "nopath", 'def get_doc_classes():\n    return ["A"]\n', ["A"])
+            messages = check_doc_class_registration.check_repository(root)
             self.assertEqual(len(messages), 1)
             self.assertIn("no get_doc_path()", messages[0])
 
-    def test_unimportable_config_is_reported_and_other_modules_still_checked(self):
+    def test_unconventional_doc_path_is_reported(self):
         with tempfile.TemporaryDirectory() as scratch:
-            modules_root = Path(scratch)
-            write_module(modules_root, "broken", "raise RuntimeError('boom')\n", ["A"])
-            write_module(modules_root, "drifted", CONFIG_TEMPLATE.format(classes=["A"]), ["A", "B"])
-            messages = check_doc_class_registration.check_repository(modules_root)
+            root = Path(scratch)
+            source = 'def get_doc_classes():\n    return ["A"]\n\n\ndef get_doc_path():\n    return "docs"\n'
+            write_component(root, "modules", "elsewhere", source, ["A"])
+            messages = check_doc_class_registration.check_repository(root)
+            self.assertEqual(len(messages), 1)
+            self.assertIn("'docs'", messages[0])
+
+    def test_unreadable_source_is_reported_and_other_components_still_checked(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            root = Path(scratch)
+            write_component(root, "modules", "broken", "def get_doc_classes(:\n", ["A"])
+            write_component(root, "modules", "drifted", REGISTRATION_TEMPLATE.format(classes=["A"]), ["A", "B"])
+            messages = check_doc_class_registration.check_repository(root)
             self.assertEqual(len(messages), 2)
-            self.assertTrue(any("cannot import config.py" in message for message in messages))
+            self.assertTrue(any("cannot read doc class registration" in message for message in messages))
             self.assertTrue(any("'B'" in message for message in messages))
 
 
 class CommandLineTests(unittest.TestCase):
-    def run_check(self, modules_root: Path) -> subprocess.CompletedProcess[str]:
+    def run_check(self, repository_root: Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(CHECK_SCRIPT), "--modules-root", str(modules_root)],
+            [sys.executable, str(CHECK_SCRIPT), "--repository-root", str(repository_root)],
             capture_output=True,
             text=True,
             check=False,
@@ -123,22 +171,22 @@ class CommandLineTests(unittest.TestCase):
 
     def test_exits_zero_on_a_clean_tree(self):
         with tempfile.TemporaryDirectory() as scratch:
-            modules_root = Path(scratch)
-            write_module(modules_root, "clean", CONFIG_TEMPLATE.format(classes=["A"]), ["A"])
-            result = self.run_check(modules_root)
+            root = Path(scratch)
+            write_component(root, "modules", "clean", REGISTRATION_TEMPLATE.format(classes=["A"]), ["A"])
+            result = self.run_check(root)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
 
     def test_exits_non_zero_and_reports_on_drift(self):
         with tempfile.TemporaryDirectory() as scratch:
-            modules_root = Path(scratch)
-            write_module(modules_root, "drifted", CONFIG_TEMPLATE.format(classes=["A"]), ["A", "B"])
-            result = self.run_check(modules_root)
+            root = Path(scratch)
+            write_component(root, "modules", "drifted", REGISTRATION_TEMPLATE.format(classes=["A"]), ["A", "B"])
+            result = self.run_check(root)
             self.assertEqual(result.returncode, 1)
             self.assertIn("'B'", result.stderr)
             self.assertIn("1 doc class registration mismatch(es) found.", result.stderr)
 
-    def test_repository_modules_are_registered_consistently(self):
+    def test_repository_is_registered_consistently(self):
         result = subprocess.run(
             [sys.executable, str(CHECK_SCRIPT)],
             capture_output=True,

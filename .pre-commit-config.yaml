@@ -231,14 +231,17 @@ repos:
         language: python
         entry: python misc/checks/check_doc_class_registration.py
         pass_filenames: false
-        # A module doc XML that is missing from its `get_doc_classes()` is silently
-        # relocated to `doc/classes/` by the next full documentation regeneration, so
-        # the two sides must stay in sync. Only the two inputs of that comparison
-        # trigger the check: the lists themselves and the doc XML directories.
+        # A module or platform doc XML that is missing from its `get_doc_classes()` is
+        # silently relocated to `doc/classes/` by the next full documentation
+        # regeneration, so the two sides must stay in sync. Only the inputs of that
+        # comparison trigger the check: the lists themselves (`modules/*/config.py`,
+        # `platform/*/detect.py`) and the doc XML directories they describe.
         files: |
           (?x)^(
             modules/[^/]+/config\.py|
-            modules/[^/]+/doc_classes/.*\.xml
+            modules/[^/]+/doc_classes/.*\.xml|
+            platform/[^/]+/detect\.py|
+            platform/[^/]+/doc_classes/.*\.xml
           )$
 
       - id: foundry-test-adapter
