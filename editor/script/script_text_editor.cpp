@@ -2938,7 +2938,7 @@ void ScriptTextEditor::_text_edit_gui_input(const Ref<InputEvent> &ev) {
 					break;
 			}
 			if (has_color) {
-				color_panel->set_position(get_screen_position() + local_pos);
+				color_panel->set_position(tx->get_screen_position() + local_pos);
 				color_position.y = begin;
 				color_position.z = end;
 			}
