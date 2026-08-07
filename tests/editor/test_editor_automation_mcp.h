@@ -46,6 +46,7 @@
 #endif
 
 #include "scene/gui/button.h"
+#include "scene/gui/code_edit.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
@@ -1934,6 +1935,69 @@ TEST_CASE("[Editor][Automation][MCP] initialize/list/call/read compatibility reg
 	state_call["name"] = "read_editor_state";
 	state_call["arguments"] = Dictionary();
 	CHECK(dispatcher.handle_message(make_request(95, "tools/call", state_call)).has("result"));
+}
+
+TEST_CASE("[Editor][Automation][MCP] act set_caret routes through the dispatcher and the schema advertises caret arguments") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	CodeEdit *code_edit = memnew(CodeEdit);
+	code_edit->set_name("CodeField");
+	code_edit->set_text("alpha\nbravo");
+	code_edit->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+	code_edit->set_size(Size2(300, 120));
+	root->add_child(code_edit);
+	mcp_flush_frames();
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary selector;
+	selector["role"] = "code_editor";
+	selector["name"] = "CodeField";
+	Dictionary args;
+	args["line"] = 1;
+	args["column"] = 2;
+	Dictionary arguments;
+	arguments["selector"] = selector;
+	arguments["action"] = "set_caret";
+	arguments["args"] = args;
+	Dictionary params;
+	params["name"] = "act";
+	params["arguments"] = arguments;
+
+	const Dictionary response = dispatcher.handle_message(make_request(38, "tools/call", params));
+	const Dictionary result = response["result"];
+	CHECK_FALSE((bool)result["isError"]);
+	const Dictionary structured = result["structuredContent"];
+	CHECK((bool)structured["ok"]);
+	mcp_flush_frames();
+	CHECK(code_edit->get_caret_line() == 1);
+	CHECK(code_edit->get_caret_column() == 2);
+
+	// The published act schema lists set_caret among actions and exposes the
+	// four caret integer arguments in the args contract.
+	const Array tools = EditorAutomationMCPContracts::build_tools_list();
+	const Dictionary act = tool_named(tools, "act");
+	REQUIRE_FALSE(act.is_empty());
+	const Dictionary act_input = act["inputSchema"];
+	const Dictionary act_props = act_input["properties"];
+	const Dictionary action_schema = act_props["action"];
+	CHECK(action_schema.has("enum"));
+	const Array action_enum = action_schema["enum"];
+	CHECK(action_enum.has(Variant(String("set_caret"))));
+
+	const Dictionary args_schema = act_props["args"];
+	const Dictionary args_props = args_schema["properties"];
+	CHECK(args_props.has("line"));
+	CHECK(args_props.has("column"));
+	CHECK(args_props.has("to_line"));
+	CHECK(args_props.has("to_column"));
+
+	memdelete(root);
 }
 
 } // namespace TestEditorAutomationMCP

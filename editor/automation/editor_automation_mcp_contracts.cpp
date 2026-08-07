@@ -753,6 +753,10 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActionArgs::schema() {
 	schema->add_property("target_tile_id", EditorAutomationMCPJsonSchema::integer("Target workspace tile id for dock/drag_to_region actions."));
 	schema->add_property("target_tile", EditorAutomationMCPJsonSchema::object("Tile container selector for dock/drag_to_region actions."));
 	schema->add_property("region", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::tile_drop_region_enum_values(), "Tile drop region for dock/drag_to_region actions."));
+	schema->add_property("line", EditorAutomationMCPJsonSchema::integer("0-based caret line for set_caret on TextEdit-backed elements."));
+	schema->add_property("column", EditorAutomationMCPJsonSchema::integer("0-based caret column for set_caret on TextEdit-backed elements."));
+	schema->add_property("to_line", EditorAutomationMCPJsonSchema::integer("0-based selection end line for set_caret. Selects a range when both to_line and to_column are present."));
+	schema->add_property("to_column", EditorAutomationMCPJsonSchema::integer("0-based selection end column for set_caret. Selects a range when both to_line and to_column are present."));
 	return schema;
 }
 
@@ -857,6 +861,18 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs> EditorAutomationMC
 		args.values["target_tile"] = target_tile.value.to_dictionary();
 	}
 	if (!_read_optional_string(dict, "region", args.values, error, EditorAutomationMCPContracts::tile_drop_region_enum_values())) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_int(dict, "line", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_int(dict, "column", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_int(dict, "to_line", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_int(dict, "to_column", args.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
 	return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::success(args);
@@ -1484,6 +1500,7 @@ PackedStringArray EditorAutomationMCPContracts::action_names() {
 	actions.push_back("open_context_menu");
 	actions.push_back("right_click");
 	actions.push_back("set_value");
+	actions.push_back("set_caret");
 	return actions;
 }
 

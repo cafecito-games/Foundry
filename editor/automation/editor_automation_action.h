@@ -42,6 +42,7 @@ struct EditorAutomationActionRouteNames {
 	static inline const char *SEMANTIC_SUBMIT = "semantic_submit";
 	static inline const char *SEMANTIC_SCROLL = "semantic_scroll";
 	static inline const char *SEMANTIC_SET_VALUE = "semantic_set_value";
+	static inline const char *SEMANTIC_SET_CARET = "semantic_set_caret";
 	static inline const char *INPUT_MOUSE_CLICK = "input_mouse_click";
 	static inline const char *INPUT_DOUBLE_CLICK = "input_double_click";
 	static inline const char *INPUT_SCROLL = "input_scroll";
@@ -76,6 +77,7 @@ enum class EditorAutomationActionKind {
 	CHOOSE_MENU_ITEM,
 	OPEN_CONTEXT_MENU,
 	SET_VALUE,
+	SET_CARET,
 	INCREMENT,
 	DECREMENT,
 	DRAG,

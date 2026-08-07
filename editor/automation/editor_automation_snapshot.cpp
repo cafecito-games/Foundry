@@ -292,6 +292,9 @@ class EditorAutomationSnapshotBuilder {
 			add_unique("set_text");
 			add_unique("type_text");
 			add_unique("submit");
+			if (p_role == "text_area" || p_role == "code_editor") {
+				add_unique("set_caret");
+			}
 		} else if (p_role == "tree" || p_role == "list") {
 			add_unique("scroll");
 		} else if (p_role == "spinbox" || p_role == "slider") {
@@ -678,6 +681,20 @@ class EditorAutomationSnapshotBuilder {
 			element.metadata["window_object_id"] = String::num_uint64(owner_window->get_instance_id());
 			element.metadata["window_title"] = owner_window->get_title();
 			element.metadata["window_focused"] = owner_window->has_focus();
+		}
+		// Main caret and selection readback for TextEdit-backed controls
+		// (code_editor/text_area). LineEdit caret control is out of scope.
+		if (const TextEdit *text_edit = Object::cast_to<const TextEdit>(p_node)) {
+			element.metadata["caret_line"] = text_edit->get_caret_line();
+			element.metadata["caret_column"] = text_edit->get_caret_column();
+			const bool has_selection = text_edit->has_selection();
+			element.metadata["selection_active"] = has_selection;
+			if (has_selection) {
+				element.metadata["selection_from_line"] = text_edit->get_selection_from_line();
+				element.metadata["selection_from_column"] = text_edit->get_selection_from_column();
+				element.metadata["selection_to_line"] = text_edit->get_selection_to_line();
+				element.metadata["selection_to_column"] = text_edit->get_selection_to_column();
+			}
 		}
 		_append_actions(p_node, element.role, element.actions);
 

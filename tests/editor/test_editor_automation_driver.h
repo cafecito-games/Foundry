@@ -2051,4 +2051,142 @@ TEST_CASE("[Editor][Automation] visible MenuButton popup is captured as a menu n
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation] set_caret places the caret and selects a range in CodeEdit") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	CodeEdit *code_edit = memnew(CodeEdit);
+	code_edit->set_name("CodeField");
+	code_edit->set_text("alpha\nbravo\ncharlie");
+	setup_visible_control(code_edit, Size2(300, 120));
+	root->add_child(code_edit);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *code_field = find_element_by_role_and_name(snapshot, "code_editor", "CodeField");
+	REQUIRE(code_field != nullptr);
+
+	Dictionary target;
+	target["id"] = code_field->id;
+
+	SUBCASE("set_caret places the caret without a selection") {
+		Dictionary options;
+		options["line"] = 1;
+		options["column"] = 2;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		MessageQueue::get_singleton()->flush();
+		CHECK(result.ok);
+		CHECK(result.route == "semantic_set_caret");
+		CHECK(code_edit->get_caret_line() == 1);
+		CHECK(code_edit->get_caret_column() == 2);
+		CHECK_FALSE(code_edit->has_selection());
+		CHECK(code_edit->has_focus());
+	}
+
+	SUBCASE("set_caret selects a range with the caret at the to_ end") {
+		Dictionary options;
+		options["line"] = 0;
+		options["column"] = 0;
+		options["to_line"] = 1;
+		options["to_column"] = 3;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		MessageQueue::get_singleton()->flush();
+		CHECK(result.ok);
+		REQUIRE(code_edit->has_selection());
+		CHECK(code_edit->get_selection_from_line() == 0);
+		CHECK(code_edit->get_selection_from_column() == 0);
+		CHECK(code_edit->get_selection_to_line() == 1);
+		CHECK(code_edit->get_selection_to_column() == 3);
+		CHECK(code_edit->get_caret_line() == 1);
+		CHECK(code_edit->get_caret_column() == 3);
+		CHECK(code_edit->has_focus());
+	}
+
+	SUBCASE("supplying only to_line fails and leaves the caret and selection unchanged") {
+		code_edit->set_caret_line(0);
+		code_edit->set_caret_column(1);
+		code_edit->deselect();
+		MessageQueue::get_singleton()->flush();
+
+		Dictionary options;
+		options["line"] = 1;
+		options["column"] = 2;
+		options["to_line"] = 1;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		CHECK_FALSE(result.ok);
+		CHECK(result.kind == "invalid_parameter");
+		CHECK(code_edit->get_caret_line() == 0);
+		CHECK(code_edit->get_caret_column() == 1);
+		CHECK_FALSE(code_edit->has_selection());
+	}
+
+	SUBCASE("supplying only to_column fails and leaves the caret and selection unchanged") {
+		code_edit->set_caret_line(0);
+		code_edit->set_caret_column(1);
+		code_edit->deselect();
+		MessageQueue::get_singleton()->flush();
+
+		Dictionary options;
+		options["line"] = 1;
+		options["column"] = 2;
+		options["to_column"] = 2;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		CHECK_FALSE(result.ok);
+		CHECK(result.kind == "invalid_parameter");
+		CHECK(code_edit->get_caret_line() == 0);
+		CHECK(code_edit->get_caret_column() == 1);
+		CHECK_FALSE(code_edit->has_selection());
+	}
+
+	SUBCASE("equal selection endpoints place the caret without an active selection") {
+		Dictionary options;
+		options["line"] = 1;
+		options["column"] = 2;
+		options["to_line"] = 1;
+		options["to_column"] = 2;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		MessageQueue::get_singleton()->flush();
+		CHECK(result.ok);
+		CHECK(code_edit->get_caret_line() == 1);
+		CHECK(code_edit->get_caret_column() == 2);
+		CHECK_FALSE(code_edit->has_selection());
+	}
+
+	SUBCASE("out-of-range line fails and leaves the caret unchanged") {
+		code_edit->set_caret_line(2);
+		code_edit->set_caret_column(2);
+		code_edit->deselect();
+		MessageQueue::get_singleton()->flush();
+
+		Dictionary options;
+		options["line"] = 99;
+		options["column"] = 0;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		CHECK_FALSE(result.ok);
+		CHECK(result.kind == "invalid_parameter");
+		CHECK(code_edit->get_caret_line() == 2);
+		CHECK(code_edit->get_caret_column() == 2);
+		CHECK_FALSE(code_edit->has_selection());
+	}
+
+	SUBCASE("out-of-range column fails and leaves the caret unchanged") {
+		code_edit->set_caret_line(0);
+		code_edit->set_caret_column(1);
+		code_edit->deselect();
+		MessageQueue::get_singleton()->flush();
+
+		Dictionary options;
+		options["line"] = 0;
+		options["column"] = 9999;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "set_caret", target, options);
+		CHECK_FALSE(result.ok);
+		CHECK(result.kind == "invalid_parameter");
+		CHECK(code_edit->get_caret_line() == 0);
+		CHECK(code_edit->get_caret_column() == 1);
+	}
+
+	memdelete(root);
+}
+
 } // namespace TestEditorAutomationDriver
