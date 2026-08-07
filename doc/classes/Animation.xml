@@ -255,8 +255,8 @@
 		</method>
 		<method name="compress">
 			<return type="void" />
-			<param index="0" name="page_size" type="int" default="8192" />
-			<param index="1" name="fps" type="int" default="120" />
+			<param index="0" name="page_size" type="uint" default="8192UL" />
+			<param index="1" name="fps" type="uint" default="120UL" />
 			<param index="2" name="split_tolerance" type="float" default="4.0" />
 			<description>
 				Compress the animation and all its tracks in-place. This will make [method track_is_compressed] return [code]true[/code] once called on this [Animation]. Compressed tracks require less memory to be played, and are designed to be used for complex 3D animations (such as cutscenes) imported from external 3D software. Compression is lossy, but the difference is usually not noticeable in real world conditions.

@@ -78,6 +78,13 @@
 				Constructs a new [int] from a [float]. This will truncate the [float], discarding anything after the floating point.
 			</description>
 		</constructor>
+		<constructor name="int">
+			<return type="int" />
+			<param index="0" name="from" type="uint" />
+			<description>
+				Constructs a new [int] from a [uint]. Fails if the value is larger than the largest representable [int].
+			</description>
+		</constructor>
 	</constructors>
 	<operators>
 		<operator name="operator !=">
@@ -92,6 +99,13 @@
 			<param index="0" name="right" type="int" />
 			<description>
 				Returns [code]true[/code] if the [int]s are not equal.
+			</description>
+		</operator>
+		<operator name="operator !=">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the [int] is not equal to the [uint].
 			</description>
 		</operator>
 		<operator name="operator %">
@@ -279,6 +293,13 @@
 				Returns [code]true[/code] if the left [int] is less than the right [int].
 			</description>
 		</operator>
+		<operator name="operator &lt;">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the [int] is less than the [uint].
+			</description>
+		</operator>
 		<operator name="operator &lt;&lt;">
 			<return type="int" />
 			<param index="0" name="right" type="int" />
@@ -304,6 +325,13 @@
 				Returns [code]true[/code] if the left [int] is less than or equal to the right [int].
 			</description>
 		</operator>
+		<operator name="operator &lt;=">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the [int] is less than or equal to the [uint].
+			</description>
+		</operator>
 		<operator name="operator ==">
 			<return type="bool" />
 			<param index="0" name="right" type="float" />
@@ -316,6 +344,13 @@
 			<param index="0" name="right" type="int" />
 			<description>
 				Returns [code]true[/code] if the two [int]s are equal.
+			</description>
+		</operator>
+		<operator name="operator ==">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the [int] is equal to the [uint].
 			</description>
 		</operator>
 		<operator name="operator &gt;">
@@ -332,6 +367,13 @@
 				Returns [code]true[/code] if the left [int] is greater than the right [int].
 			</description>
 		</operator>
+		<operator name="operator &gt;">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the [int] is greater than the [uint].
+			</description>
+		</operator>
 		<operator name="operator &gt;=">
 			<return type="bool" />
 			<param index="0" name="right" type="float" />
@@ -344,6 +386,13 @@
 			<param index="0" name="right" type="int" />
 			<description>
 				Returns [code]true[/code] if the left [int] is greater than or equal to the right [int].
+			</description>
+		</operator>
+		<operator name="operator &gt;=">
+			<return type="bool" />
+			<param index="0" name="right" type="uint" />
+			<description>
+				Returns [code]true[/code] if the [int] is greater than or equal to the [uint].
 			</description>
 		</operator>
 		<operator name="operator &gt;&gt;">
