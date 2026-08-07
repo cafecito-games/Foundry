@@ -97,7 +97,6 @@
 #include "scene/main/canvas_item.h"
 #include "scene/main/canvas_layer.h"
 #include "scene/main/http_request.h"
-#include "scene/main/http_server.h"
 #include "scene/main/instance_placeholder.h"
 #include "scene/main/missing_node.h"
 #include "scene/main/multiplayer_api.h"
@@ -442,8 +441,6 @@ void register_scene_types() {
 
 	FOUNDRY_REGISTER_CLASS(HTTPRequest);
 	FOUNDRY_REGISTER_NAMESPACE(HTTPRequest, "foundry.http.client");
-	FOUNDRY_REGISTER_CLASS(HTTPServer);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPServer, "foundry.http.server");
 	FOUNDRY_REGISTER_CLASS(Timer);
 	FOUNDRY_REGISTER_CLASS(CanvasLayer);
 	FOUNDRY_REGISTER_CLASS(ResourcePreloader);

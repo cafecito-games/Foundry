@@ -69,6 +69,7 @@ HashMap<StringName, StringName> ClassDB::resource_base_extensions;
 HashMap<StringName, StringName> ClassDB::compat_classes;
 HashMap<StringName, LocalVector<StringName>> ClassDB::bare_aliases;
 HashMap<StringName, StringName> ClassDB::qualified_by_simple_name;
+std::atomic<uint64_t> ClassDB::registry_version = 0;
 
 #ifdef TOOLS_ENABLED
 HashMap<StringName, ObjectFoundryExtension> ClassDB::placeholder_extensions;
@@ -623,6 +624,8 @@ void ClassDB::register_namespace(const StringName &p_class, const StringName &p_
 
 	// Stamp the runtime identity so `get_class()`, `is_class()` and scene packing all follow.
 	const_cast<GDType *>(classes[class_info.qualified_name].gdtype)->apply_namespace(class_info.qualified_name);
+
+	registry_version.fetch_add(1, std::memory_order_release);
 }
 
 void ClassDB::class_register_global_alias(const StringName &p_qualified_name, const StringName &p_alias) {
@@ -638,6 +641,8 @@ void ClassDB::class_register_global_alias(const StringName &p_qualified_name, co
 		return;
 	}
 	owners.push_back(p_qualified_name);
+
+	registry_version.fetch_add(1, std::memory_order_release);
 }
 
 StringName ClassDB::_resolve_for_introspection(const StringName &p_class) {
@@ -695,6 +700,10 @@ StringName ClassDB::class_get_in_namespace(const StringName &p_namespace, const 
 StringName ClassDB::resolve_type_name(const StringName &p_name) {
 	Locker::Lock lock(Locker::STATE_READ);
 	return _resolve_by_any_name(p_name);
+}
+
+uint64_t ClassDB::get_registry_version() {
+	return registry_version.load(std::memory_order_acquire);
 }
 
 void ClassDB::add_compatibility_class(const StringName &p_class, const StringName &p_fallback) {
@@ -1024,6 +1033,8 @@ void ClassDB::_add_class(const GDType &p_class, const GDType *p_inherits) {
 	} else {
 		ti.inherits_ptr = nullptr;
 	}
+
+	registry_version.fetch_add(1, std::memory_order_release);
 }
 
 static MethodInfo info_from_bind(MethodBind *p_method) {
@@ -2511,6 +2522,8 @@ void ClassDB::register_extension_class(ObjectFoundryExtension *p_extension) {
 	c.gdtype = p_extension->gdtype;
 
 	classes[p_extension->class_name] = c;
+
+	registry_version.fetch_add(1, std::memory_order_release);
 }
 
 void ClassDB::unregister_extension_class(const StringName &p_class, bool p_free_method_binds) {
@@ -2546,6 +2559,8 @@ void ClassDB::unregister_extension_class(const StringName &p_class, bool p_free_
 #ifdef TOOLS_ENABLED
 	placeholder_extensions.erase(p_class);
 #endif
+
+	registry_version.fetch_add(1, std::memory_order_release);
 }
 
 HashMap<StringName, ClassDB::NativeStruct> ClassDB::native_structs;
@@ -2615,6 +2630,8 @@ void ClassDB::cleanup() {
 		*type = nullptr;
 	}
 	gdtype_autorelease_pool.clear();
+
+	registry_version.fetch_add(1, std::memory_order_release);
 }
 
 // Array to use in optional parameters on methods and the DEFVAL_ARRAY macro.

@@ -922,6 +922,19 @@ Files extracted from upstream source:
 - `AUTHORS.md` and `LICENCE.md`
 
 
+## picohttpparser
+
+- Upstream: https://github.com/h2o/picohttpparser
+- Version: git (f4d94b48b31e0abae029ebeafcfd9ca0680ede58, 2026)
+- License: MIT
+
+Files extracted from upstream source:
+
+- `picohttpparser.c`
+- `picohttpparser.h`
+- `LICENSE` (extracted from the license block in `picohttpparser.h`; upstream ships no separate license file)
+
+
 ## recastnavigation
 
 - Upstream: https://github.com/recastnavigation/recastnavigation

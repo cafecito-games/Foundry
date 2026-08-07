@@ -540,6 +540,11 @@ Copyright: 1997-2024, University of Cambridge
  2009-2024, Zoltan Herczeg
 License: BSD-3-clause
 
+Files: thirdparty/picohttpparser/*
+Comment: picohttpparser
+Copyright: 2009-2014, Kazuho Oku, Tokuhiro Matsuno, Daisuke Murase, Shigeo Mitsunari
+License: Expat
+
 Files: thirdparty/recastnavigation/*
 Comment: Recast
 Copyright: 2009, Mikko Mononen
