@@ -46,6 +46,7 @@
 #endif
 
 #include "scene/gui/button.h"
+#include "scene/gui/dialogs.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/spin_box.h"
@@ -250,6 +251,86 @@ TEST_CASE("[Editor][Automation][MCP] observe_ui delegates to the snapshot core")
 	const Array content = result["content"];
 	const Dictionary first = content[0];
 	CHECK(String(first["text"]).contains("Add Child Node"));
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation][MCP] observe_ui reaches an exclusive modal dialog at the default depth") {
+	// Regression: a dialog opened from a dock hangs many levels below the UI
+	// root, past observe_ui's default max_depth, so it used to be listed in
+	// modal_stack while its subtree was truncated out of the tree. It must be
+	// published as a top-level root and stay resolvable by find_elements.
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_name("GuiBase");
+	root->set_size(Size2(600, 400));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	Control *deepest = root;
+	for (int level = 0; level < 10; level++) {
+		PanelContainer *nested = memnew(PanelContainer);
+		nested->set_name(vformat("Level%d", level));
+		nested->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT);
+		nested->set_size(Size2(400, 300));
+		deepest->add_child(nested);
+		deepest = nested;
+	}
+
+	AcceptDialog *dialog = memnew(AcceptDialog);
+	dialog->set_title("Create New Node");
+	dialog->set_ok_button_text("Create");
+	deepest->add_child(dialog);
+	// Editor dialogs stay children of the dock that owns them and become the
+	// window's exclusive child when shown.
+	dialog->popup_centered();
+	mcp_flush_frames();
+	REQUIRE(SceneTree::get_singleton()->get_root()->get_exclusive_child() == dialog);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary params;
+	params["name"] = "observe_ui";
+	params["arguments"] = Dictionary();
+	const Dictionary response = dispatcher.handle_message(make_request(31, "tools/call", params));
+	const Dictionary result = response["result"];
+	CHECK_FALSE((bool)result["isError"]);
+	const Dictionary structured = result["structuredContent"];
+
+	const Array modal_stack = structured["modal_stack"];
+	REQUIRE(modal_stack.size() == 1);
+	CHECK(String(Dictionary(modal_stack[0])["title"]) == "Create New Node");
+
+	const Array tree = structured["tree"];
+	bool dialog_is_top_level = false;
+	for (int i = 0; i < tree.size(); i++) {
+		const Dictionary node = tree[i];
+		if (String(node.get("name", String())) == "Create New Node") {
+			dialog_is_top_level = true;
+			CHECK(String(node.get("role", String())) == "dialog");
+			CHECK(Array(node.get("children", Array())).size() > 0);
+		}
+	}
+	CHECK(dialog_is_top_level);
+
+	// The dialog's own controls resolve to exactly one element: publishing the
+	// dialog as a root must not duplicate the subtree it already had.
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Create";
+
+	Dictionary find_arguments;
+	find_arguments["selector"] = selector;
+	Dictionary find_params;
+	find_params["name"] = "find_elements";
+	find_params["arguments"] = find_arguments;
+	const Dictionary find_response = dispatcher.handle_message(make_request(32, "tools/call", find_params));
+	const Dictionary find_result = find_response["result"];
+	CHECK_FALSE((bool)find_result["isError"]);
+	const Dictionary find_structured = find_result["structuredContent"];
+	const Array elements = find_structured["elements"];
+	CHECK(elements.size() == 1);
 
 	memdelete(root);
 }

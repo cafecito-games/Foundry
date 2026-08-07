@@ -75,9 +75,16 @@ class EditorAutomationSnapshotBuilder {
 	Node *path_root = nullptr;
 	Control *focused_control = nullptr;
 	HashSet<Node *> relaxed_visibility_roots;
+	HashSet<Node *> forced_roots;
 
-	static Rect2i _node_bounds_global(const Node *p_node) {
-		// Bounds are expressed in global/screen coordinates for automation clients.
+	// Bounds are local to the element's owning window: a Control rect is in its
+	// window's canvas space and a Window rect is its position/size in the parent
+	// window's space. Composing across windows is the consumer's job, and every
+	// element records its owning window in `window_object_id` metadata. This is
+	// the only contract that holds for both embedded and native (non-embedded)
+	// subwindows, and it is what capture_screenshot crops against after
+	// resolving the element's own window viewport.
+	static Rect2i _node_bounds_in_owning_window(const Node *p_node) {
 		if (const Control *control = Object::cast_to<const Control>(p_node)) {
 			const Rect2 rect = control->get_global_rect();
 			return Rect2i(rect.position.floor(), rect.size.floor());
@@ -657,7 +664,7 @@ class EditorAutomationSnapshotBuilder {
 		element.visible = _node_is_visible(p_node);
 		element.enabled = _node_is_enabled(p_node);
 		element.focused = _node_is_focused(p_node);
-		element.bounds = _node_bounds_global(p_node);
+		element.bounds = _node_bounds_in_owning_window(p_node);
 		element.parent_index = p_parent_index;
 		element.metadata = EditorAutomationWorkflow::metadata_for_node(p_node);
 		int active_tile_id = p_active_tile_id;
@@ -758,8 +765,21 @@ class EditorAutomationSnapshotBuilder {
 		// its owning dock). Skip re-walking a root already captured from an earlier
 		// root so it is emitted once instead of tripping a false ambiguous-selector
 		// error. Relaxed roots still re-walk to expose otherwise-hidden descendants.
-		if (!relax_visibility && data.object_id_to_index.has(p_root->get_instance_id())) {
-			return;
+		if (!relax_visibility) {
+			const int *captured_index = data.object_id_to_index.getptr(p_root->get_instance_id());
+			if (captured_index != nullptr) {
+				// The node is already in the element table, but a forced root must
+				// still be reachable as a top-level root: an exclusive modal dialog
+				// lives many levels below gui_base, far past the depth a
+				// depth-limited tree renders, so without this it is invisible to
+				// clients even though it is the only interactive surface. Publish
+				// the existing element instead of walking it again, which would
+				// duplicate its whole subtree.
+				if (forced_roots.has(p_root) && !data.root_indices.has(*captured_index)) {
+					data.root_indices.push_back(*captured_index);
+				}
+				return;
+			}
 		}
 		_add_node(p_root, -1, true, false, relax_visibility);
 	}
@@ -775,6 +795,11 @@ public:
 	void add_relaxed_visibility_root(Node *p_root) {
 		if (p_root != nullptr) {
 			relaxed_visibility_roots.insert(p_root);
+		}
+	}
+	void add_forced_root(Node *p_root) {
+		if (p_root != nullptr) {
+			forced_roots.insert(p_root);
 		}
 	}
 
@@ -883,77 +908,121 @@ bool EditorAutomationSnapshot::is_virtual_durable_kind(const String &p_kind) {
 	return p_kind == "tree_item" || p_kind == "list_item" || p_kind == "menu_item" || p_kind == "tab";
 }
 
-EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_node(Node *p_root, const EditorAutomationSnapshotOptions &p_options) {
-	LocalVector<Node *> roots;
-	if (p_root != nullptr) {
-		roots.push_back(p_root);
+void EditorAutomationSnapshot::collect_exclusive_modal_chain(Window *p_window, LocalVector<Node *> &r_chain) {
+	if (p_window == nullptr) {
+		return;
 	}
-	return capture_from_roots(roots, p_options);
+	for (Window *exclusive = p_window->get_exclusive_child(); exclusive != nullptr; exclusive = exclusive->get_exclusive_child()) {
+		r_chain.push_back(exclusive);
+	}
+}
+
+EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_node(Node *p_root, const EditorAutomationSnapshotOptions &p_options) {
+	EditorAutomationSnapshotRoots root_set;
+	if (p_root != nullptr) {
+		root_set.roots.push_back(p_root);
+		// A modal dialog opened from this subtree is the only interactive surface
+		// while it is up, and on platforms that do not embed subwindows it is a
+		// separate OS window. Whether or not it is also a descendant of p_root, it
+		// must be reachable as a top-level root.
+		if (p_root->is_inside_tree()) {
+			LocalVector<Node *> modal_chain;
+			collect_exclusive_modal_chain(p_root->get_window(), modal_chain);
+			for (Node *modal : modal_chain) {
+				root_set.roots.push_back(modal);
+				root_set.forced.push_back(modal);
+			}
+		}
+	}
+	return capture_from_root_set(root_set, p_options);
 }
 
 EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_roots(const LocalVector<Node *> &p_roots, const EditorAutomationSnapshotOptions &p_options) {
+	EditorAutomationSnapshotRoots root_set;
+	root_set.roots = p_roots;
+	return capture_from_root_set(root_set, p_options);
+}
+
+EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_root_set(const EditorAutomationSnapshotRoots &p_roots, const EditorAutomationSnapshotOptions &p_options) {
 	EditorAutomationSnapshot snapshot;
 	EditorAutomationSnapshotBuilder builder(snapshot.data, p_options);
-	builder.build_from_roots(p_roots);
+	for (Node *root : p_roots.forced) {
+		builder.add_forced_root(root);
+	}
+	for (Node *root : p_roots.relaxed_visibility) {
+		builder.add_relaxed_visibility_root(root);
+	}
+	builder.build_from_roots(p_roots.roots);
 	return snapshot;
 }
 
-EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_editor(const EditorAutomationSnapshotOptions &p_options) {
-	LocalVector<Node *> roots;
-	EditorNode *editor_node = EditorNode::get_singleton();
-	if (editor_node != nullptr && editor_node->is_editor_ready() && editor_node->is_inside_tree()) {
-		// EditorNode is a plain Node, so it is not itself a visible element and
-		// the snapshot walk does not descend through non-Control/non-Window
-		// nodes. Capture from the editor's GUI base Control, which is the root of
-		// the visible editor UI (docks, toolbars, dialogs, popups).
-		Control *gui_base = editor_node->get_gui_base();
-		if (gui_base != nullptr) {
-			roots.push_back(gui_base);
-		} else {
-			Window *root_window = editor_node->get_window();
-			if (root_window != nullptr) {
-				roots.push_back(root_window);
-			}
-		}
+EditorAutomationSnapshotRoots EditorAutomationSnapshot::collect_editor_roots(
+		Control *p_gui_base,
+		Window *p_root_window,
+		Node *p_scene_tree_dock,
+		Node *p_inspector_dock,
+		Node *p_inspector) {
+	EditorAutomationSnapshotRoots root_set;
 
-		// Exclusive modal windows (CreateDialog, AcceptDialog, etc.) are not
-		// reachable from gui_base, but agents must be able to act inside them.
-		if (Window *root_window = editor_node->get_window()) {
-			for (Window *exclusive = root_window->get_exclusive_child(); exclusive != nullptr; exclusive = exclusive->get_exclusive_child()) {
-				roots.push_back(exclusive);
-			}
-		}
-
-		LocalVector<Node *> relaxed_roots;
-		if (SceneTreeDock *scene_tree_dock = EditorNode::get_singleton()->get_focused_scene_tree_dock()) {
-			if (scene_tree_dock->is_inside_tree()) {
-				roots.push_back(scene_tree_dock);
-			}
-		}
-		if (InspectorDock *inspector_dock = EditorNode::get_singleton()->get_focused_inspector_dock()) {
-			if (inspector_dock->is_inside_tree()) {
-				roots.push_back(inspector_dock);
-				relaxed_roots.push_back(inspector_dock);
-				if (EditorInspector *inspector = inspector_dock->get_inspector()) {
-					if (inspector->is_inside_tree()) {
-						roots.push_back(inspector);
-						relaxed_roots.push_back(inspector);
-					}
-				}
-			}
-		}
-
-		EditorAutomationSnapshotOptions options = p_options;
-		options.relaxed_visibility_roots = !relaxed_roots.is_empty();
-		EditorAutomationSnapshot snapshot;
-		EditorAutomationSnapshotBuilder builder(snapshot.data, options);
-		for (Node *root : relaxed_roots) {
-			builder.add_relaxed_visibility_root(root);
-		}
-		builder.build_from_roots(roots);
-		return snapshot;
+	// EditorNode is a plain Node, so it is not itself a visible element and the
+	// snapshot walk does not descend through non-Control/non-Window nodes.
+	// Capture from the editor's GUI base Control, which is the root of the
+	// visible editor UI (docks, toolbars, dialogs, popups).
+	if (p_gui_base != nullptr) {
+		root_set.roots.push_back(p_gui_base);
+	} else if (p_root_window != nullptr) {
+		root_set.roots.push_back(p_root_window);
 	}
-	return capture_from_roots(roots, p_options);
+
+	// Exclusive modal windows (CreateDialog, AcceptDialog, etc.) live under the
+	// dock that opened them, which is far below the depth a depth-limited tree
+	// renders, so they are forced to the top level.
+	LocalVector<Node *> modal_chain;
+	collect_exclusive_modal_chain(p_root_window, modal_chain);
+	for (Node *modal : modal_chain) {
+		root_set.roots.push_back(modal);
+		root_set.forced.push_back(modal);
+	}
+
+	// The focused workspace docks are the active editing surface; they are also
+	// nested deep inside the workspace tile layout, so they are forced too.
+	if (p_scene_tree_dock != nullptr && p_scene_tree_dock->is_inside_tree()) {
+		root_set.roots.push_back(p_scene_tree_dock);
+		root_set.forced.push_back(p_scene_tree_dock);
+	}
+	if (p_inspector_dock != nullptr && p_inspector_dock->is_inside_tree()) {
+		root_set.roots.push_back(p_inspector_dock);
+		root_set.forced.push_back(p_inspector_dock);
+		root_set.relaxed_visibility.push_back(p_inspector_dock);
+		if (p_inspector != nullptr && p_inspector->is_inside_tree()) {
+			root_set.roots.push_back(p_inspector);
+			root_set.forced.push_back(p_inspector);
+			root_set.relaxed_visibility.push_back(p_inspector);
+		}
+	}
+
+	return root_set;
+}
+
+EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_editor(const EditorAutomationSnapshotOptions &p_options) {
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready() || !editor_node->is_inside_tree()) {
+		return capture_from_root_set(EditorAutomationSnapshotRoots(), p_options);
+	}
+
+	SceneTreeDock *scene_tree_dock = editor_node->get_focused_scene_tree_dock();
+	InspectorDock *inspector_dock = editor_node->get_focused_inspector_dock();
+	EditorInspector *inspector = inspector_dock != nullptr ? inspector_dock->get_inspector() : nullptr;
+	const EditorAutomationSnapshotRoots root_set = collect_editor_roots(
+			editor_node->get_gui_base(),
+			editor_node->get_window(),
+			scene_tree_dock,
+			inspector_dock,
+			inspector);
+
+	EditorAutomationSnapshotOptions options = p_options;
+	options.relaxed_visibility_roots = !root_set.relaxed_visibility.is_empty();
+	return capture_from_root_set(root_set, options);
 }
 
 const EditorAutomationElement *EditorAutomationSnapshot::find_by_id(const String &p_id) const {
