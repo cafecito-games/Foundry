@@ -232,9 +232,18 @@ bool CreateDialog::_should_hide_type(const StringName &p_type) const {
 	return false;
 }
 
+String CreateDialog::get_class_display_name(const StringName &p_class) {
+	StringName simple_name;
+	if (ClassDB::class_get_by_qualified_name(p_class, simple_name)) {
+		return simple_name;
+	}
+	return p_class;
+}
+
 void CreateDialog::_update_search() {
 	search_options->clear();
 	search_options_types.clear();
+	namespace_group_items.clear();
 
 	TreeItem *root = search_options->create_item();
 	root->set_text(0, base_type);
@@ -345,9 +354,39 @@ void CreateDialog::_add_type(const StringName &p_type, TypeCategory p_type_categ
 
 	_add_type(inherits, inherited_type, "");
 
-	TreeItem *item = search_options->create_item(search_options_types[inherits]);
+	TreeItem *parent_item = search_options_types[inherits];
+	if (p_type_category == TypeCategory::CPP_TYPE) {
+		const StringName type_namespace = ClassDB::class_get_namespace(p_type);
+		if (type_namespace != StringName()) {
+			parent_item = _namespace_group_item(parent_item, inherits, type_namespace);
+		}
+	}
+
+	TreeItem *item = search_options->create_item(parent_item);
 	search_options_types[p_type] = item;
 	_configure_search_option_item(item, p_type, p_type_category, p_match_keyword);
+}
+
+TreeItem *CreateDialog::_namespace_group_item(TreeItem *p_parent, const StringName &p_parent_type, const StringName &p_namespace) {
+	const String key = String(p_parent_type) + "|" + String(p_namespace);
+	TreeItem **existing = namespace_group_items.getptr(key);
+	if (existing) {
+		return *existing;
+	}
+
+	TreeItem *group = search_options->create_item(p_parent);
+	group->set_text(0, p_namespace);
+	group->set_icon(0, search_options->get_editor_theme_icon(SNAME("Folder")));
+	// The header is a grouping affordance, not a type: it must never become the selection that
+	// `get_selected_type_name()` or `instantiate_selected()` reads from. It also stays expanded so
+	// the classes it groups are visible wherever an ungrouped class would have been.
+	group->set_selectable(0, false);
+	group->set_collapsed(false);
+	group->set_metadata(0, Array());
+	group->set_meta(SNAME("__instantiable"), false);
+
+	namespace_group_items[key] = group;
+	return group;
 }
 
 void CreateDialog::_configure_search_option_item(TreeItem *r_item, const StringName &p_type, TypeCategory p_type_category, const String &p_match_keyword) {
@@ -358,7 +397,7 @@ void CreateDialog::_configure_search_option_item(TreeItem *r_item, const StringN
 	String text;
 	if (p_type_category == TypeCategory::CPP_TYPE) {
 		type_name = p_type;
-		text = p_type;
+		text = get_class_display_name(p_type);
 	} else if (p_type_category == TypeCategory::PATH_TYPE) {
 		type_name = "\"" + p_type + "\"";
 		text = "\"" + p_type + "\"";
@@ -398,6 +437,11 @@ void CreateDialog::_configure_search_option_item(TreeItem *r_item, const StringN
 	meta.append(is_custom_type);
 	meta.append(type_name);
 	r_item->set_metadata(0, meta);
+
+	// The identifier this item stands for, kept out of the display text so callers never have to
+	// recover it by slicing a label. For a namespaced native class this is the qualified name,
+	// while the label only shows the simple name.
+	r_item->set_meta(SNAME("__type_name"), String(p_type));
 
 	bool can_instantiate = (p_type_category == TypeCategory::CPP_TYPE && ClassDB::can_instantiate(p_type)) ||
 			(p_type_category == TypeCategory::OTHER_TYPE && !(!allow_abstract_scripts && is_abstract));
@@ -612,6 +656,21 @@ void CreateDialog::select_base() {
 	select_type(base_type, false);
 }
 
+String CreateDialog::_item_type_name(TreeItem *p_item) {
+	if (!p_item) {
+		return String();
+	}
+
+	const Variant stored = p_item->get_meta(SNAME("__type_name"), Variant());
+	if (stored.get_type() == Variant::STRING) {
+		return stored.operator String();
+	}
+
+	// Group headers and any item that was not configured through `_configure_search_option_item()`
+	// carry no type identity.
+	return String();
+}
+
 String CreateDialog::get_selected_type() {
 	TreeItem *selected = search_options->get_selected();
 
@@ -619,7 +678,7 @@ String CreateDialog::get_selected_type() {
 		return String();
 	}
 
-	String type = selected->get_text(0).get_slicec(' ', 0);
+	String type = _item_type_name(selected);
 	if (ClassDB::class_exists(type)) {
 		return type; // CPP type - from the core or FoundryExtensions
 	}
@@ -633,11 +692,7 @@ String CreateDialog::get_selected_type() {
 }
 
 String CreateDialog::get_selected_type_name() {
-	TreeItem *selected = search_options->get_selected();
-	if (!selected) {
-		return String();
-	}
-	return selected->get_text(0).get_slicec(' ', 0);
+	return _item_type_name(search_options->get_selected());
 }
 
 void CreateDialog::set_base_type(const String &p_base) {
@@ -666,7 +721,7 @@ Variant CreateDialog::instantiate_selected() {
 				n->set_name(type_name);
 			}
 		} else {
-			obj = EditorNode::get_editor_data().instantiate_custom_type(selected->get_text(0), type_name);
+			obj = EditorNode::get_editor_data().instantiate_custom_type(_item_type_name(selected), type_name);
 		}
 	} else {
 		obj = ClassDB::instantiate(type_name);

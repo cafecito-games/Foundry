@@ -1141,6 +1141,12 @@ public:
 	StringName get_object_custom_type_name(const Object *p_object) const;
 	Ref<Texture2D> get_object_icon(const Object *p_object, const String &p_fallback = "");
 	Ref<Texture2D> get_class_icon(const String &p_class, const String &p_fallback = "");
+	// Editor theme icon key for a class name: the simple name for a namespaced native class, the
+	// class name itself otherwise.
+	static StringName get_class_theme_icon_name(const String &p_class);
+	// Script resource path a class name stands for, or an empty string when the name belongs to a
+	// registered native class or to no script at all.
+	static String get_class_icon_script_path(const String &p_class);
 
 	bool is_object_of_custom_type(const Object *p_object, const StringName &p_class);
 

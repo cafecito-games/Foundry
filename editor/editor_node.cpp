@@ -6639,8 +6639,9 @@ Ref<Texture2D> EditorNode::_get_class_or_script_icon(const String &p_class, cons
 	// Look up the class name or the fallback name in the editor theme.
 	// This is only relevant for built-in classes.
 	if (theme.is_valid()) {
-		if (theme->has_icon(p_class, EditorStringName(EditorIcons))) {
-			return theme->get_icon(p_class, EditorStringName(EditorIcons));
+		const StringName theme_icon_name = get_class_theme_icon_name(p_class);
+		if (theme->has_icon(theme_icon_name, EditorStringName(EditorIcons))) {
+			return theme->get_icon(theme_icon_name, EditorStringName(EditorIcons));
 		}
 
 		if (!p_fallback.is_empty() && theme->has_icon(p_fallback, EditorStringName(EditorIcons))) {
@@ -6705,6 +6706,36 @@ Ref<Texture2D> EditorNode::get_object_icon(const Object *p_object, const String 
 	}
 }
 
+StringName EditorNode::get_class_theme_icon_name(const String &p_class) {
+	// Namespaced native classes are registered under their qualified name, while editor theme
+	// icons are keyed by the simple class name.
+	StringName simple_name;
+	if (ClassDB::class_get_by_qualified_name(p_class, simple_name)) {
+		return simple_name;
+	}
+	return p_class;
+}
+
+String EditorNode::get_class_icon_script_path(const String &p_class) {
+	if (ScriptServer::is_global_class(p_class)) {
+		return ScriptServer::get_global_class_path(p_class);
+	}
+
+	// A registered class name is never a resource path. Checking this first also keeps a qualified
+	// class name, whose last dotted segment parses as a file extension, out of the filesystem probe
+	// below.
+	if (ClassDB::class_exists(p_class)) {
+		return String();
+	}
+
+	// If the class is not a `class_name`, it may be the path of a script resource.
+	if (!p_class.get_extension().is_empty() && ResourceLoader::exists(p_class)) {
+		return p_class;
+	}
+
+	return String();
+}
+
 Ref<Texture2D> EditorNode::get_class_icon(const String &p_class, const String &p_fallback) {
 	ERR_FAIL_COND_V_MSG(p_class.is_empty(), nullptr, "Class name cannot be empty.");
 	const Pair<String, String> key(p_class, p_fallback);
@@ -6717,12 +6748,7 @@ Ref<Texture2D> EditorNode::get_class_icon(const String &p_class, const String &p
 		}
 	}
 
-	String script_path;
-	if (ScriptServer::is_global_class(p_class)) {
-		script_path = ScriptServer::get_global_class_path(p_class);
-	} else if (!p_class.get_extension().is_empty() && ResourceLoader::exists(p_class)) { // If the script is not a class_name we check if the script resource exists.
-		script_path = p_class;
-	}
+	const String script_path = get_class_icon_script_path(p_class);
 
 	Ref<Texture2D> icon = _get_class_or_script_icon(p_class, script_path, p_fallback, true);
 	class_icon_cache[key] = icon;
