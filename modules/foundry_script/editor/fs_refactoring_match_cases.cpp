@@ -242,8 +242,11 @@ FSRefactorMatchCases::FillMatchCasesCandidate disabled_candidate(const String &p
 
 FSRefactorMatchCases::FillMatchCasesCandidate find_candidate_in_tree(
 		const RefactorLocation &p_location,
+		const String &p_path,
 		const Vector<String> &p_lines,
-		const FSParser::ClassNode *p_tree) {
+		const FSParser::ClassNode *p_tree,
+		bool &r_depends_on_external_declarations) {
+	r_depends_on_external_declarations = false;
 	if (p_tree == nullptr) {
 		return disabled_candidate(CANNOT_ANALYZE_REASON);
 	}
@@ -261,6 +264,10 @@ FSRefactorMatchCases::FillMatchCasesCandidate find_candidate_in_tree(
 	if (!match_type.is_set() || !match_type.is_tagged_union_type()) {
 		return disabled_candidate(NO_MATCH_REASON);
 	}
+	// The case set and its payload field names come from the union's declaration. When that lives in
+	// another script, an edit there changes the generated arms without changing this buffer, so the
+	// candidate must not be memoized against this file's source alone.
+	r_depends_on_external_declarations = !match_type.script_path.is_empty() && match_type.script_path != p_path;
 	if (match_node->covers_subject_domain) {
 		return disabled_candidate(ALREADY_COVERED_REASON);
 	}
@@ -275,13 +282,19 @@ FSRefactorMatchCases::FillMatchCasesCandidate find_candidate_in_tree(
 		return disabled_candidate(CANNOT_ANALYZE_REASON);
 	}
 
+	const String header_indent = FSRefactorShared::get_leading_whitespace(p_lines[header_line]);
 	const FSParser::MatchBranchNode *last_branch = match_node->branches.is_empty()
 			? nullptr
 			: match_node->branches[match_node->branches.size() - 1];
 	const String branch_indent = last_branch != nullptr && last_branch->start_line - 1 >= 0 && last_branch->start_line - 1 < p_lines.size()
 			? FSRefactorShared::get_leading_whitespace(p_lines[last_branch->start_line - 1])
-			: FSRefactorShared::get_leading_whitespace(p_lines[header_line]) + "\t";
-	const String body_indent = branch_indent + "\t";
+			: header_indent + "\t";
+	// The step from the header to a branch is the file's own indentation unit, so a space-indented
+	// buffer keeps its spacing instead of gaining a stray tab. Tabs are the fallback.
+	const String indent_unit = branch_indent.begins_with(header_indent) && branch_indent.length() > header_indent.length()
+			? branch_indent.substr(header_indent.length())
+			: String("\t");
+	const String body_indent = branch_indent + indent_unit;
 	const String block = render_uncovered_arms(match_node, match_type, search.scope_names, branch_indent, body_indent);
 
 	FSRefactorMatchCases::FillMatchCasesCandidate candidate;
@@ -386,8 +399,11 @@ FillMatchCasesCandidate find_candidate(
 				}
 			}
 			if (same_source) {
-				candidate = find_candidate_in_tree(p_location, lines, lsp_parser->get_tree());
-				cache_candidate(p_context, p_location, candidate);
+				bool depends_on_external_declarations = false;
+				candidate = find_candidate_in_tree(p_location, p_context.path, lines, lsp_parser->get_tree(), depends_on_external_declarations);
+				if (!depends_on_external_declarations) {
+					cache_candidate(p_context, p_location, candidate);
+				}
 				return candidate;
 			}
 		}
@@ -406,8 +422,11 @@ FillMatchCasesCandidate find_candidate(
 	FSAnalyzer analyzer(&parser);
 	analyzer.analyze();
 
-	candidate = find_candidate_in_tree(p_location, lines, parser.get_tree());
-	cache_candidate(p_context, p_location, candidate);
+	bool depends_on_external_declarations = false;
+	candidate = find_candidate_in_tree(p_location, p_context.path, lines, parser.get_tree(), depends_on_external_declarations);
+	if (!depends_on_external_declarations) {
+		cache_candidate(p_context, p_location, candidate);
+	}
 	return candidate;
 }
 
