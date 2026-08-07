@@ -1839,8 +1839,9 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-open") {
 	REQUIRE_FALSE(player_path.is_empty());
 	REQUIRE_FALSE(enemy_path.is_empty());
 
-	// Opening a script from the scene tile creates a script workspace tab beside it.
-	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, player_path);
+	// Explicitly opening a script in a new pane creates a script workspace tab beside
+	// the scene tile.
+	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, player_path, true);
 	h.pump();
 	REQUIRE(script_leaf_node != nullptr);
 	CHECK(script_leaf_node != scene_leaf);
@@ -1930,6 +1931,88 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] open-script-creates-workspace-tab
 		CHECK(pane->get_tab(0).get_resource_key() == script_path);
 	}
 	CHECK(count_workspace_tabs_of_type(h.workspace, StringName("script")) == 1);
+
+	h.unmount();
+	memdelete(controller);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] open-script-tabs-into-focused-pane") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ScriptEditorController *controller = memnew(ScriptEditorController);
+	controller->init_global_services(h.host);
+
+	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
+	REQUIRE(scene_leaf != nullptr);
+	WorkspacePane *pane = get_leaf_pane(scene_leaf);
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	REQUIRE(scene_type != nullptr);
+	pane->add_tab(scene_type->make_tab("res://alpha.tscn", registry.allocate_stable_id()));
+	h.pump();
+	REQUIRE(pane->get_tab_count() == 1);
+
+	const String script_path = write_temp_workspace_text_file("focused_pane_script.txt", "func run(): pass\n");
+	const String other_path = write_temp_workspace_text_file("focused_pane_other.txt", "func walk(): pass\n");
+	REQUIRE_FALSE(script_path.is_empty());
+	REQUIRE_FALSE(other_path.is_empty());
+
+	// With no pane hosting scripts yet, the script joins the focused pane's tab strip
+	// next to the scene tab instead of splitting the workspace.
+	WorkspaceLeafNode *host = h.workspace->open_script_leaf(scene_leaf, script_path);
+	h.pump();
+	CHECK(host == scene_leaf);
+	CHECK(h.workspace->get_leaf_count() == 1);
+	REQUIRE(pane->get_tab_count() == 2);
+	CHECK(pane->get_tab(0).get_type_id() == StringName("scene"));
+	CHECK(pane->get_tab(1).get_type_id() == StringName("script"));
+	CHECK(pane->get_tab(1).get_resource_key() == script_path);
+	CHECK(pane->get_active_tab_index() == 1);
+
+	// An explicit new-pane open still splits.
+	WorkspaceLeafNode *forced = h.workspace->open_script_leaf(scene_leaf, other_path, true);
+	h.pump();
+	REQUIRE(forced != nullptr);
+	CHECK(forced != scene_leaf);
+	CHECK(h.workspace->get_leaf_count() == 2);
+	REQUIRE(get_leaf_pane(forced) != nullptr);
+	REQUIRE(get_leaf_pane(forced)->get_tab_count() == 1);
+	CHECK(get_leaf_pane(forced)->get_tab(0).get_resource_key() == other_path);
+
+	h.unmount();
+	memdelete(controller);
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] open-builtin-script-uses-script-pane") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ScriptEditorController *controller = memnew(ScriptEditorController);
+	controller->init_global_services(h.host);
+
+	WorkspaceLeafNode *scene_leaf = h.workspace->get_focused_leaf();
+	REQUIRE(scene_leaf != nullptr);
+	CHECK(h.workspace->get_leaf_count() == 1);
+
+	// A built-in script needs the legacy script bridge, which only a script pane
+	// provides, so it still resolves to a dedicated script leaf.
+	WorkspaceLeafNode *host = h.workspace->open_script_leaf(scene_leaf, "res://builtin_host.tscn::1");
+	h.pump();
+	REQUIRE(host != nullptr);
+	CHECK(host != scene_leaf);
+	CHECK(h.workspace->get_leaf_count() == 2);
+	REQUIRE(get_leaf_pane(host) != nullptr);
+	CHECK(get_leaf_pane(host)->is_script_pane());
+	CHECK(count_workspace_tabs_of_type(h.workspace, StringName("script")) == 0);
 
 	h.unmount();
 	memdelete(controller);
@@ -2037,7 +2120,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-collapse-keeps-scene-
 	WorkspaceLeafNode *scene_b = h.workspace->split(scene_a, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 	h.pump();
 	REQUIRE(scene_b != nullptr);
-	WorkspaceLeafNode *script_leaf = h.workspace->open_script_leaf(scene_b, "res://a.fs");
+	WorkspaceLeafNode *script_leaf = h.workspace->open_script_leaf(scene_b, "res://a.fs", true);
 	h.pump();
 	REQUIRE(script_leaf != nullptr);
 	CHECK(script_leaf->get_pane_tile() == nullptr);
@@ -2770,7 +2853,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-tab-mount-hides-legacy-bri
 	// script resource tab into it must not also show that bridge: the tab type owns
 	// its own surface, so showing the bridge would stack two script surfaces for
 	// one active tab.
-	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, "res://player.fs");
+	WorkspaceLeafNode *script_leaf_node = h.workspace->open_script_leaf(scene_leaf, "res://player.fs", true);
 	h.pump();
 	REQUIRE(script_leaf_node != nullptr);
 	WorkspacePane *pane = get_leaf_pane(script_leaf_node);

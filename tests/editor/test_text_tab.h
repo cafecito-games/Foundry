@@ -331,6 +331,49 @@ TEST_CASE("[text-tab][SceneTree][Editor] text-tab-open-reveal") {
 	h.unmount();
 }
 
+TEST_CASE("[text-tab][SceneTree][Editor] text-tab-opens-in-focused-pane") {
+	using namespace TestSceneWorkspace;
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	const String path = write_text_file("focused_pane.md", "# Focused\n");
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *source = h.workspace->get_focused_leaf();
+	REQUIRE(source != nullptr);
+	WorkspacePane *pane = source->get_workspace_pane();
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	REQUIRE(scene_type != nullptr);
+	pane->add_tab(scene_type->make_tab("res://alpha.tscn", registry.allocate_stable_id()));
+	h.pump();
+	REQUIRE(pane->get_tab_count() == 1);
+
+	// With no pane hosting text tabs yet, the file joins the focused pane's tab strip
+	// instead of splitting the workspace.
+	WorkspaceLeafNode *host = h.workspace->open_text_tab(source, path);
+	h.pump();
+	CHECK(host == source);
+	CHECK(h.workspace->get_leaf_count() == 1);
+	REQUIRE(pane->get_tab_count() == 2);
+	CHECK(pane->get_tab(1).get_type_id() == StringName("text"));
+	CHECK(pane->get_active_tab_index() == 1);
+
+	// An explicit new-pane open still splits.
+	const String forced_path = write_text_file("focused_pane_forced.md", "# Forced\n");
+	WorkspaceLeafNode *forced = h.workspace->open_text_tab(source, forced_path, true);
+	h.pump();
+	REQUIRE(forced != nullptr);
+	CHECK(forced != source);
+	CHECK(h.workspace->get_leaf_count() == 2);
+
+	h.unmount();
+}
+
 TEST_CASE("[text-tab][SceneTree][Editor] text-tab-per-file-distinct") {
 	using namespace TestSceneWorkspace;
 	WorkspacePane::get_shared_tab_registry().clear_canonical_index();

@@ -726,9 +726,21 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_script_leaf(WorkspaceLeafNode *p_s
 		}
 	}
 
+	// Pick a target pane: reuse a pane already hosting script tabs so scripts stack
+	// together, else tab into the focused (or source) pane like every other tab type.
+	// Only an explicit "open in a new pane" request splits the workspace.
+	// Built-in scripts (`res://scene.tscn::id`) still need the legacy script bridge,
+	// which only a script pane provides, so that path keeps splitting when no script
+	// pane is focused.
 	WorkspaceLeafNode *target = nullptr;
 	if (!p_force_new_leaf) {
 		target = can_create_workspace_tab ? _find_leaf_hosting_type(script_type_id) : get_focused_script_leaf();
+		if (!target && can_create_workspace_tab) {
+			target = get_focused_leaf();
+			if (!target || !leaves.has(target) || !target->get_workspace_pane()) {
+				target = p_source_leaf;
+			}
+		}
 	}
 	if (!target) {
 		target = split_with_content(p_source_leaf, false, SPLIT_SIDE_SECOND, StringName("script"));
@@ -955,7 +967,8 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_sour
 	}
 
 	// Choose a target pane: reuse one that already hosts text tabs (so multiple
-	// files stack in one strip), else split beside the source leaf for a new one.
+	// files stack in one strip), else tab into the focused (or source) pane. Only an
+	// explicit "open in a new pane" request splits the workspace.
 	WorkspaceLeafNode *target = nullptr;
 	if (!p_force_new_leaf) {
 		for (WorkspaceLeafNode *leaf : leaves) {
@@ -973,6 +986,12 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_sour
 			if (hosts_text) {
 				target = leaf;
 				break;
+			}
+		}
+		if (!target) {
+			target = get_focused_leaf();
+			if (!target || !leaves.has(target) || !target->get_workspace_pane()) {
+				target = p_source_leaf;
 			}
 		}
 	}
