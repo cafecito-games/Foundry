@@ -875,8 +875,9 @@ static bool _datatype_substituted_self_markers_match(const FSParser::DataType &p
 // positions the analyzer substituted itself may differ from the declaration, so a hand-written value
 // of the bound type is still rejected, because nothing sets the marker on a type the author wrote.
 //
-// Only `Self` positions *nested* inside a container take this path. A top-level `Self` expectation is
-// governed by the receiver-relative rules unchanged, so this cannot widen what a bare `Self` accepts.
+// Only an expectation that holds `Self` inside a container element takes this path, because only a
+// container expectation can be met by a literal the patcher typed. A bare `Self` expectation stays
+// governed by the receiver-relative rules unchanged, so this cannot widen what `Self` alone accepts.
 static bool _datatype_matches_analyzer_substituted_self(
 		const FSParser::DataType &p_expected_type,
 		const FSParser::DataType &p_actual_type) {
