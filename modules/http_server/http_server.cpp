@@ -30,12 +30,15 @@
 
 #include "http_server.h"
 
+#include "http_file_serve.h"
+
 void HTTPServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("listen"), &HTTPServer::listen);
 	ClassDB::bind_method(D_METHOD("stop"), &HTTPServer::stop);
 	ClassDB::bind_method(D_METHOD("is_listening"), &HTTPServer::is_listening);
 	ClassDB::bind_method(D_METHOD("get_listening_port"), &HTTPServer::get_listening_port);
 	ClassDB::bind_method(D_METHOD("route", "method", "path", "handler"), &HTTPServer::route);
+	ClassDB::bind_method(D_METHOD("mount_files", "url_prefix", "root_dir"), &HTTPServer::mount_files);
 	ClassDB::bind_method(D_METHOD("poll"), &HTTPServer::poll);
 	ClassDB::bind_method(D_METHOD("set_port", "port"), &HTTPServer::set_port);
 	ClassDB::bind_method(D_METHOD("get_port"), &HTTPServer::get_port);
@@ -139,6 +142,25 @@ void HTTPServer::route(const String &p_method, const String &p_path, const Calla
 	routes.push_back(new_route);
 }
 
+void HTTPServer::mount_files(const String &p_url_prefix, const String &p_root_dir) {
+	ERR_FAIL_COND_MSG(!p_url_prefix.begins_with("/"), "A mount prefix must start with \"/\".");
+
+	const String root = HTTPFileServe::canonicalize_directory(p_root_dir);
+	ERR_FAIL_COND_MSG(root.is_empty(), vformat("\"%s\" is not a directory that can be served.", p_root_dir));
+
+	FileMount mount;
+	mount.prefix = p_url_prefix;
+	while (mount.prefix.ends_with("/")) {
+		mount.prefix = mount.prefix.left(-1);
+	}
+	mount.root = root;
+	mounts.push_back(mount);
+}
+
+int HTTPServer::get_mount_count() const {
+	return static_cast<int>(mounts.size());
+}
+
 int HTTPServer::get_connection_count() const {
 	return static_cast<int>(connections.size());
 }
@@ -191,20 +213,38 @@ void HTTPServer::_dispatch(const Ref<HTTPServerConnection> &p_connection) {
 	response.instantiate();
 
 	// Resolution ladder: static-file mount, then route, then the `request_received` signal, then a
-	// default `404`. Mounts sit ahead of routes, so a mount can never be shadowed by a route; the
-	// static-file work fills that step in and nothing resolves there yet.
+	// default `404`. Mounts sit ahead of routes, so a mount can never be shadowed by a route.
+	//
+	// The first mount whose prefix matches claims the path; when it holds no file there the request
+	// carries on down the ladder with the response still uncommitted, and a refusal ends here.
+	bool resolved_by_mount = false;
+	for (const FileMount &mount : mounts) {
+		String relative;
+		if (request->get_path() == mount.prefix) {
+			relative = "/";
+		} else if (request->get_path().begins_with(mount.prefix + "/")) {
+			relative = request->get_path().substr(mount.prefix.length());
+		} else {
+			continue;
+		}
+
+		resolved_by_mount = HTTPFileServe::serve(mount.root, relative, request, response) == HTTPFileServe::RESULT_RESOLVED;
+		break;
+	}
 
 	// The match is copied out before the handler runs, because a handler is free to register more
 	// routes and reallocate the route storage under an iterator.
 	Callable handler;
 	String matched_method;
 	String matched_path;
-	for (const Route &candidate : routes) {
-		if (candidate.method == request->get_method() && candidate.path == request->get_path()) {
-			handler = candidate.callable;
-			matched_method = candidate.method;
-			matched_path = candidate.path;
-			break;
+	if (!resolved_by_mount) {
+		for (const Route &candidate : routes) {
+			if (candidate.method == request->get_method() && candidate.path == request->get_path()) {
+				handler = candidate.callable;
+				matched_method = candidate.method;
+				matched_path = candidate.path;
+				break;
+			}
 		}
 	}
 
@@ -228,10 +268,10 @@ void HTTPServer::_dispatch(const Ref<HTTPServerConnection> &p_connection) {
 		}
 	}
 
-	if (!matched_route || emit_for_all) {
+	if ((!resolved_by_mount && !matched_route) || emit_for_all) {
 		// The catch-all step. Connected scripts see every unclaimed request, and every request at all
-		// once `emit_for_all` is set, which is the observer case: a routed response has already
-		// committed its body by then, so a receiver's own send is refused.
+		// once `emit_for_all` is set, which is the observer case: a routed or mounted response has
+		// already committed its body by then, so a receiver's own send is refused.
 		emit_signal(SNAME("request_received"), request, response);
 
 		if (p_connection->is_closed()) {

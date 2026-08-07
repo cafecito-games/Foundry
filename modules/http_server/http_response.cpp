@@ -131,11 +131,17 @@ void HTTPResponse::redirect(const String &p_location, int p_status) {
 }
 
 void HTTPResponse::send_file(const String &p_path) {
+	send_file_range(p_path, 0, FILE_LENGTH_TO_END);
+}
+
+void HTTPResponse::send_file_range(const String &p_path, uint64_t p_offset, uint64_t p_length) {
 	ERR_FAIL_COND_MSG(p_path.is_empty(), "File path cannot be empty.");
 	if (!_begin_send()) {
 		return;
 	}
 	file_path = p_path;
+	file_offset = p_offset;
+	file_length = p_length;
 	body = PackedByteArray();
 	body_source = BODY_SOURCE_FILE;
 }
@@ -161,4 +167,12 @@ String HTTPResponse::get_body_string() const {
 
 String HTTPResponse::get_file_path() const {
 	return file_path;
+}
+
+uint64_t HTTPResponse::get_file_offset() const {
+	return file_offset;
+}
+
+uint64_t HTTPResponse::get_file_length() const {
+	return file_length;
 }

@@ -41,10 +41,15 @@
 #include "modules/http_server/http_server.h"
 #include "modules/http_server/http_server_request.h"
 
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/http_client.h"
 #include "core/io/stream_peer_tcp.h"
+#include "core/os/os.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/list.h"
+
+#include "tests/test_utils.h"
 
 namespace TestHTTPServer {
 
@@ -1315,6 +1320,512 @@ TEST_CASE("[HTTPServer] stop closes the listener and every open connection") {
 
 	// Polling a stopped server is a no-op rather than an error.
 	server->poll();
+
+	memdelete(server);
+}
+
+namespace {
+
+// The shared scratch space the agent build exports, so a generated tree never lands in the
+// repository. Without it the per-process temporary directory the other tests use is good enough.
+String file_serve_scratch_root() {
+	String base;
+	if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+		base = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH").simplify_path();
+	}
+	if (base.is_empty()) {
+		base = TestUtils::get_temp_path("http_server");
+	}
+	return base.path_join("http_file_serve");
+}
+
+// Removes a generated tree without ever descending through a symbolic link, so the traversal
+// fixtures cannot delete anything outside the tree they created.
+void remove_tree(const String &p_path) {
+	Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+	if (filesystem.is_null()) {
+		return;
+	}
+	if (filesystem->is_link(p_path) || !filesystem->dir_exists(p_path)) {
+		DirAccess::remove_absolute(p_path);
+		return;
+	}
+
+	Ref<DirAccess> listing = DirAccess::open(p_path);
+	if (listing.is_valid()) {
+		listing->list_dir_begin();
+		for (String name = listing->get_next(); !name.is_empty(); name = listing->get_next()) {
+			if (name == "." || name == "..") {
+				continue;
+			}
+			remove_tree(p_path.path_join(name));
+		}
+		listing->list_dir_end();
+	}
+	DirAccess::remove_absolute(p_path);
+}
+
+void write_text_file(const String &p_path, const String &p_contents) {
+	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::WRITE);
+	REQUIRE(file.is_valid());
+	file->store_string(p_contents);
+}
+
+// A mount root holding one file per behavior under test, next to a file that lives outside the
+// root and that every traversal vector is trying to reach. The tree is rebuilt from scratch and
+// removed again, so an interrupted run leaves nothing behind that a later run would read.
+struct MountTree {
+	String base;
+	String root;
+
+	explicit MountTree(const String &p_case_name) {
+		base = file_serve_scratch_root().path_join(p_case_name + "_" + itos(OS::get_singleton()->get_process_id()));
+		root = base.path_join("public");
+
+		remove_tree(base);
+		REQUIRE(DirAccess::make_dir_recursive_absolute(root.path_join("data")) == OK);
+
+		write_text_file(root.path_join("index.html"), "<h1>hi</h1>");
+		write_text_file(root.path_join("data").path_join("app.js"), "console.log(1);");
+		write_text_file(root.path_join("ten.txt"), "0123456789");
+		write_text_file(base.path_join("secret.txt"), "top secret");
+	}
+
+	// Both shapes of symbolic-link escape: a link to a file outside the root, and a link to the
+	// directory that contains it.
+	void link_out_of_root() {
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		REQUIRE(filesystem.is_valid());
+		REQUIRE(filesystem->create_link(base.path_join("secret.txt"), root.path_join("escape.txt")) == OK);
+		REQUIRE(filesystem->create_link(base, root.path_join("up")) == OK);
+	}
+
+	~MountTree() { remove_tree(base); }
+};
+
+// Brings up a listening server with `p_tree` mounted under `/app`, which is the fixture every
+// static-file case starts from.
+HTTPServer *mounted_server(const MountTree &p_tree, int &r_port) {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	server->mount_files("/app", p_tree.root);
+	REQUIRE(server->listen() == OK);
+	r_port = server->get_listening_port();
+	REQUIRE(r_port > 0);
+	return server;
+}
+
+} // namespace
+
+TEST_CASE("[HTTPServer] A mount serves files from its root") {
+	MountTree tree("serves");
+	int port = 0;
+	HTTPServer *server = mounted_server(tree, port);
+
+	SUBCASE("A file is served with its content type and validators") {
+		const ClientResult result = http_get(server, port, "/app/index.html");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "<h1>hi</h1>");
+		CHECK(result.get_header("content-type") == "text/html");
+		CHECK(result.get_header("content-length") == "11");
+		CHECK(result.get_header("accept-ranges") == "bytes");
+		CHECK_FALSE(result.get_header("etag").is_empty());
+		CHECK(result.get_header("last-modified").ends_with("GMT"));
+	}
+
+	SUBCASE("A nested file keeps the content type of its own extension") {
+		const ClientResult result = http_get(server, port, "/app/data/app.js");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "console.log(1);");
+		CHECK(result.get_header("content-type") == "application/javascript");
+	}
+
+	SUBCASE("An unknown extension falls back to an opaque content type") {
+		write_text_file(tree.root.path_join("blob.unknownext"), "xx");
+		const ClientResult result = http_get(server, port, "/app/blob.unknownext");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.get_header("content-type") == "application/octet-stream");
+	}
+
+	SUBCASE("A percent-escaped file name resolves to the file it names") {
+		write_text_file(tree.root.path_join("a b.txt"), "spaced");
+		const ClientResult result = http_get(server, port, "/app/a%20b.txt");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "spaced");
+	}
+
+	SUBCASE("A file larger than one write chunk is streamed whole") {
+		// The writer copies a file body into its buffer a piece at a time, so a body has to be
+		// bigger than one piece for the refill path to run at all.
+		String contents;
+		while (contents.length() < 200000) {
+			contents += "0123456789abcdef";
+		}
+		write_text_file(tree.root.path_join("large.txt"), contents);
+
+		const ClientResult result = http_get(server, port, "/app/large.txt");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.get_header("content-length") == itos(contents.length()));
+		CHECK(result.body.length() == contents.length());
+		CHECK(result.body == contents);
+	}
+
+	SUBCASE("A range spanning several write chunks is streamed whole") {
+		String contents;
+		while (contents.length() < 200000) {
+			contents += "0123456789abcdef";
+		}
+		write_text_file(tree.root.path_join("large.txt"), contents);
+
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/large.txt", String(),
+				{ "Range: bytes=1000-150999" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 206);
+		CHECK(result.get_header("content-length") == "150000");
+		CHECK(result.body.length() == 150000);
+		CHECK(result.body == contents.substr(1000, 150000));
+	}
+
+	SUBCASE("A missing file inside the root is a plain 404") {
+		const ClientResult result = http_get(server, port, "/app/missing.html");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 404);
+	}
+
+	SUBCASE("A directory is never served as a body") {
+		const ClientResult data = http_get(server, port, "/app/data");
+		REQUIRE(data.error == OK);
+		CHECK(data.status == 404);
+
+		const ClientResult mount_root = http_get(server, port, "/app");
+		REQUIRE(mount_root.error == OK);
+		CHECK(mount_root.status == 404);
+	}
+
+	SUBCASE("A path outside the mount prefix is untouched by the mount") {
+		const ClientResult result = http_get(server, port, "/elsewhere/index.html");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 404);
+	}
+
+	SUBCASE("HEAD answers with the framing of the file and no body") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_HEAD, "/app/index.html");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.get_header("content-length") == "11");
+		CHECK(result.body.is_empty());
+	}
+
+	SUBCASE("A method a mount cannot answer is refused with the ones it can") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_POST, "/app/index.html", "payload");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 405);
+		CHECK(result.get_header("allow") == "GET, HEAD");
+	}
+
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A mount refuses every path that leaves its root") {
+	MountTree tree("traversal");
+	tree.link_out_of_root();
+	int port = 0;
+	HTTPServer *server = mounted_server(tree, port);
+
+	// Every one of these resolves outside the mount root, either literally or through a link. The
+	// file they reach exists and is readable, so a leak would show up as its contents.
+	const Vector<String> vectors = {
+		"/app/../secret.txt",
+		"/app/%2e%2e/secret.txt",
+		"/app/%2E%2E/secret.txt",
+		"/app/data/../../secret.txt",
+		"/app/..%2fsecret.txt",
+		"/app//etc/passwd",
+		"/app/./../secret.txt",
+		"/app/up/secret.txt",
+		"/app/escape.txt",
+		// A separator only some platforms honor, which is how a path that is safe on one platform
+		// becomes an escape on another.
+		"/app/..%5Csecret.txt",
+		"/app/sub%5C..%5C..%5Csecret.txt",
+		// A control character, which is what a truncation attack is built out of.
+		"/app/index.html%00.txt",
+		"/app/index%0d%0a.html",
+	};
+
+	for (const String &vector : vectors) {
+		CAPTURE(vector);
+		const ClientResult result = http_get(server, port, vector);
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 403);
+		CHECK_FALSE(result.body.contains("top secret"));
+	}
+
+	// A refusal says nothing about what does or does not exist outside the root: an escaping path
+	// that names nothing is refused exactly like one that names a real file.
+	const ClientResult absent = http_get(server, port, "/app/../no_such_file.txt");
+	REQUIRE(absent.error == OK);
+	CHECK(absent.status == 403);
+
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A mount answers a byte range") {
+	MountTree tree("range");
+	int port = 0;
+	HTTPServer *server = mounted_server(tree, port);
+
+	SUBCASE("A leading range is answered with 206 and the requested bytes") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=0-3" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 206);
+		CHECK(result.body == "0123");
+		CHECK(result.get_header("content-range") == "bytes 0-3/10");
+		CHECK(result.get_header("content-length") == "4");
+	}
+
+	SUBCASE("An open-ended range runs to the end of the file") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=7-" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 206);
+		CHECK(result.body == "789");
+		CHECK(result.get_header("content-range") == "bytes 7-9/10");
+	}
+
+	SUBCASE("A suffix range counts back from the end") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=-4" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 206);
+		CHECK(result.body == "6789");
+		CHECK(result.get_header("content-range") == "bytes 6-9/10");
+	}
+
+	SUBCASE("A range that runs past the end is clamped to the last byte") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=8-99" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 206);
+		CHECK(result.body == "89");
+		CHECK(result.get_header("content-range") == "bytes 8-9/10");
+	}
+
+	SUBCASE("A suffix longer than the file is the whole file") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=-999" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 206);
+		CHECK(result.body == "0123456789");
+		CHECK(result.get_header("content-range") == "bytes 0-9/10");
+	}
+
+	SUBCASE("A range that ends before it starts is ignored") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=5-2" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "0123456789");
+	}
+
+	SUBCASE("A range that starts past the end is unsatisfiable") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=10-12" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 416);
+		CHECK(result.get_header("content-range") == "bytes */10");
+	}
+
+	SUBCASE("A range this layer cannot act on falls back to the whole file") {
+		const ClientResult multiple = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=0-1,4-5" });
+		REQUIRE(multiple.error == OK);
+		CHECK(multiple.status == 200);
+		CHECK(multiple.body == "0123456789");
+
+		const ClientResult other_unit = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: items=0-1" });
+		REQUIRE(other_unit.error == OK);
+		CHECK(other_unit.status == 200);
+		CHECK(other_unit.body == "0123456789");
+	}
+
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A mount answers a conditional request with 304") {
+	MountTree tree("conditional");
+	int port = 0;
+	HTTPServer *server = mounted_server(tree, port);
+
+	const ClientResult first = http_get(server, port, "/app/index.html");
+	REQUIRE(first.error == OK);
+	REQUIRE(first.status == 200);
+	const String etag = first.get_header("etag");
+	const String last_modified = first.get_header("last-modified");
+	REQUIRE_FALSE(etag.is_empty());
+	REQUIRE_FALSE(last_modified.is_empty());
+
+	SUBCASE("A matching entity tag skips the body") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/index.html", String(),
+				{ "If-None-Match: " + etag });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 304);
+		CHECK(result.body.is_empty());
+		CHECK(result.get_header("etag") == etag);
+		CHECK_FALSE(result.has_header("content-length"));
+	}
+
+	SUBCASE("A tag list is matched entry by entry, and the wildcard always matches") {
+		const ClientResult listed = http_request(server, port, HTTPClient::METHOD_GET, "/app/index.html", String(),
+				{ "If-None-Match: \"other\", " + etag });
+		REQUIRE(listed.error == OK);
+		CHECK(listed.status == 304);
+
+		const ClientResult wildcard = http_request(server, port, HTTPClient::METHOD_GET, "/app/index.html", String(),
+				{ "If-None-Match: *" });
+		REQUIRE(wildcard.error == OK);
+		CHECK(wildcard.status == 304);
+	}
+
+	SUBCASE("A stale entity tag is answered with the body") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/index.html", String(),
+				{ "If-None-Match: \"stale\"" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "<h1>hi</h1>");
+	}
+
+	SUBCASE("A modification date that is not older than the file skips the body") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/index.html", String(),
+				{ "If-Modified-Since: " + last_modified });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 304);
+		CHECK(result.body.is_empty());
+	}
+
+	SUBCASE("An older modification date is answered with the body") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/index.html", String(),
+				{ "If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "<h1>hi</h1>");
+	}
+
+	SUBCASE("An entity tag decides on its own when both conditions are sent") {
+		// The date says the file changed, but the tag says it did not, and the tag wins.
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/index.html", String(),
+				{ "If-None-Match: " + etag, "If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 304);
+	}
+
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A mount resolves ahead of routes but yields when it holds no file") {
+	MountTree tree("ladder");
+	int port = 0;
+	HTTPServer *server = mounted_server(tree, port);
+
+	RecordingRouteHandler handler;
+	handler.reply_body = "from route";
+	server->route("GET", "/app/index.html", callable_mp(&handler, &RecordingRouteHandler::handle));
+	server->route("GET", "/app/generated.html", callable_mp(&handler, &RecordingRouteHandler::handle));
+
+	SUBCASE("A file the mount holds is served instead of the route that shadows it") {
+		const ClientResult result = http_get(server, port, "/app/index.html");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "<h1>hi</h1>");
+		CHECK(handler.call_count == 0);
+	}
+
+	SUBCASE("A path the mount holds no file for is left to the route") {
+		const ClientResult result = http_get(server, port, "/app/generated.html");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "from route");
+		CHECK(handler.call_count == 1);
+	}
+
+	SUBCASE("A refusal is final and never reaches a route") {
+		server->route("GET", "/app/../secret.txt", callable_mp(&handler, &RecordingRouteHandler::handle));
+		const ClientResult result = http_get(server, port, "/app/../secret.txt");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 403);
+		CHECK(handler.call_count == 0);
+	}
+
+	SUBCASE("A served file does not announce itself on the signal") {
+		RecordingSignalObserver observer;
+		server->connect("request_received", callable_mp(&observer, &RecordingSignalObserver::on_request_received));
+
+		const ClientResult served = http_get(server, port, "/app/index.html");
+		REQUIRE(served.error == OK);
+		CHECK(served.status == 200);
+		CHECK(observer.call_count == 0);
+
+		// A path no mount and no route claimed still reaches the catch-all.
+		const ClientResult unclaimed = http_get(server, port, "/app/missing.html");
+		REQUIRE(unclaimed.error == OK);
+		CHECK(unclaimed.status == 404);
+		CHECK(observer.call_count == 1);
+	}
+
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] Mounting validates its prefix and its root") {
+	MountTree tree("registration");
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+
+	ERR_PRINT_OFF;
+	server->mount_files("app", tree.root);
+	server->mount_files("", tree.root);
+	server->mount_files("/app", tree.base.path_join("no_such_directory"));
+	server->mount_files("/app", tree.root.path_join("index.html"));
+	server->mount_files("/app", "");
+	ERR_PRINT_ON;
+	CHECK(server->get_mount_count() == 0);
+
+	server->mount_files("/app/", tree.root);
+	CHECK(server->get_mount_count() == 1);
+
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	SUBCASE("A trailing slash on the prefix does not change what the prefix matches") {
+		const ClientResult result = http_get(server, port, "/app/index.html");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "<h1>hi</h1>");
+	}
+
+	SUBCASE("A prefix only matches on a whole path segment") {
+		const ClientResult result = http_get(server, port, "/application/index.html");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 404);
+	}
+
+	SUBCASE("The first mount that matches answers, in registration order") {
+		server->mount_files("/app", tree.base);
+		CHECK(server->get_mount_count() == 2);
+
+		// The second mount holds `secret.txt`, but the first one claims the path and has no such
+		// file, so the request never reaches the second.
+		const ClientResult result = http_get(server, port, "/app/secret.txt");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 404);
+	}
 
 	memdelete(server);
 }

@@ -33,6 +33,7 @@
 #include "http_response.h"
 #include "http_server_request.h"
 
+#include "core/io/file_access.h"
 #include "core/io/stream_peer_tcp.h"
 #include "core/object/ref_counted.h"
 #include "core/templates/vector.h"
@@ -76,8 +77,17 @@ private:
 	bool header_parsed = false;
 	int header_length = 0;
 	int body_length = 0;
+	// How much of a file body is copied into the write buffer at a time. A file body is streamed in
+	// pieces this size rather than read into memory, so serving a large file costs a fixed amount
+	// of memory per connection.
+	static constexpr int FILE_CHUNK_BYTES = 64 * 1024;
+
 	Vector<uint8_t> write_buffer;
 	int write_offset = 0;
+	// The open file a file-backed body is streaming from, and how many of its bytes are still to
+	// be written. Null for every other kind of body.
+	Ref<FileAccess> body_file;
+	uint64_t body_file_remaining = 0;
 	State state = STATE_READING;
 	Ref<HTTPServerRequest> request;
 
@@ -88,6 +98,9 @@ private:
 	// Returns false while the header block is still incomplete, or once the connection is closed.
 	bool _parse_header_block();
 	void _flush_write();
+	// Refills the drained write buffer with the next piece of a file body. Returns false once the
+	// body is complete, or when the file stops delivering the bytes it promised.
+	bool _refill_from_file();
 
 public:
 	void accept(const Ref<StreamPeerTCP> &p_stream);

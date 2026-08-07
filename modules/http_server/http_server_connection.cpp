@@ -263,9 +263,17 @@ void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 	int status = p_response->get_status();
 	PackedByteArray body;
 	if (p_response->get_body_source() == HTTPResponse::BODY_SOURCE_FILE) {
-		// File-backed bodies have no writer yet, so a handler that asks for one gets a server
-		// error rather than an empty `200`.
-		status = 500;
+		body_file = FileAccess::open(p_response->get_file_path(), FileAccess::READ);
+		if (body_file.is_null()) {
+			// The file was readable when the response was built, so losing it in between is a
+			// server-side failure rather than anything the client did wrong.
+			status = 500;
+		} else {
+			const uint64_t length = body_file->get_length();
+			const uint64_t offset = MIN(p_response->get_file_offset(), length);
+			body_file_remaining = MIN(p_response->get_file_length(), length - offset);
+			body_file->seek(offset);
+		}
 	} else {
 		body = p_response->get_body();
 	}
@@ -273,8 +281,14 @@ void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 	// RFC 9110 forbids a content length on these statuses, and neither carries a body, so whatever a
 	// handler committed is dropped rather than written without a frame the client can read.
 	const bool body_forbidden = status == 204 || status == 304;
-	if (body_forbidden) {
+	// A `HEAD` asks for the header block a `GET` would produce, so the framing is written and the
+	// body bytes are not.
+	const bool head_request = request.is_valid() && request->get_method() == "HEAD";
+	const uint64_t content_length = body_file.is_valid() ? body_file_remaining : uint64_t(body.size());
+	if (body_forbidden || head_request) {
 		body = PackedByteArray();
+		body_file.unref();
+		body_file_remaining = 0;
 	}
 
 	String head = "HTTP/1.1 " + itos(status) + " " + String(status_reason(status)) + "\r\n";
@@ -290,7 +304,7 @@ void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 		head += name + ": " + String(headers[header_names[i]]) + "\r\n";
 	}
 	if (!body_forbidden) {
-		head += "Content-Length: " + itos(body.size()) + "\r\n";
+		head += "Content-Length: " + String::num_uint64(content_length) + "\r\n";
 	}
 	// One request per connection; persistent connections are a separate concern.
 	head += "Connection: close\r\n\r\n";
@@ -313,26 +327,53 @@ void HTTPServerConnection::_flush_write() {
 		return;
 	}
 
-	while (write_offset < write_buffer.size()) {
-		int sent = 0;
-		const Error err = stream->put_partial_data(write_buffer.ptr() + write_offset, write_buffer.size() - write_offset, sent);
-		if (err != OK) {
-			close();
-			return;
+	do {
+		while (write_offset < write_buffer.size()) {
+			int sent = 0;
+			const Error err = stream->put_partial_data(write_buffer.ptr() + write_offset, write_buffer.size() - write_offset, sent);
+			if (err != OK) {
+				close();
+				return;
+			}
+			if (sent == 0) {
+				// The send buffer is full; the rest drains on a later poll.
+				return;
+			}
+			write_offset += sent;
 		}
-		if (sent == 0) {
-			// The send buffer is full; the rest drains on a later poll.
-			return;
-		}
-		write_offset += sent;
-	}
+	} while (_refill_from_file());
 
 	close();
+}
+
+bool HTTPServerConnection::_refill_from_file() {
+	if (body_file.is_null() || body_file_remaining == 0) {
+		return false;
+	}
+
+	const int wanted = int(MIN(body_file_remaining, uint64_t(FILE_CHUNK_BYTES)));
+	write_buffer.resize_uninitialized(wanted);
+	const uint64_t read = body_file->get_buffer(write_buffer.ptrw(), wanted);
+	write_offset = 0;
+	if (read == 0) {
+		// The file promised more bytes than it delivered, so the framing is already wrong and the
+		// only honest thing left is to close instead of writing a short body forever.
+		write_buffer.clear();
+		body_file.unref();
+		body_file_remaining = 0;
+		return false;
+	}
+
+	write_buffer.resize(int(read));
+	body_file_remaining -= read;
+	return true;
 }
 
 void HTTPServerConnection::close() {
 	if (stream.is_valid()) {
 		stream->disconnect_from_host();
 	}
+	body_file.unref();
+	body_file_remaining = 0;
 	state = STATE_CLOSED;
 }
