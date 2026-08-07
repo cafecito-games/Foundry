@@ -405,6 +405,30 @@ public:
 	}
 };
 
+// Calls back into the server from inside a handler, which is the re-entrancy the poll pass has to
+// survive: registering routes reallocates the route storage, and stopping closes the very
+// connection being dispatched.
+class ReentrantRouteHandler : public Object {
+	FOUNDRY_SOFTCLASS(ReentrantRouteHandler, Object);
+
+public:
+	HTTPServer *server = nullptr;
+	bool stop_server = false;
+	int extra_routes = 0;
+	int call_count = 0;
+
+	void handle(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		call_count++;
+		for (int i = 0; i < extra_routes; i++) {
+			server->route("GET", "/extra" + itos(i), callable_mp(this, &ReentrantRouteHandler::handle));
+		}
+		if (stop_server) {
+			server->stop();
+		}
+		p_response->send_string("done");
+	}
+};
+
 struct ClientResult {
 	Error error = FAILED;
 	int status = 0;
@@ -608,6 +632,42 @@ TEST_CASE("[HTTPServer] GET round-trip through a registered route") {
 		CHECK(http_get(server, port, "/hello").body == "hi");
 		CHECK(http_get(server, port, "/hello").body == "hi");
 		CHECK(handler->call_count == 2);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A handler may mutate the server from inside dispatch") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	ReentrantRouteHandler *handler = memnew(ReentrantRouteHandler);
+	handler->server = server;
+	server->route("GET", "/reentrant", callable_mp(handler, &ReentrantRouteHandler::handle));
+
+	SUBCASE("Registering more routes during dispatch still answers the running request") {
+		handler->extra_routes = 16;
+
+		const ClientResult result = http_get(server, port, "/reentrant");
+		CHECK(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "done");
+		CHECK(handler->call_count == 1);
+	}
+
+	SUBCASE("Stopping the server during dispatch closes the connection instead of writing") {
+		handler->stop_server = true;
+
+		const ClientResult result = http_get(server, port, "/reentrant");
+		CHECK(result.error != OK);
+		CHECK(handler->call_count == 1);
+		CHECK_FALSE(server->is_listening());
 		CHECK(server->get_connection_count() == 0);
 	}
 

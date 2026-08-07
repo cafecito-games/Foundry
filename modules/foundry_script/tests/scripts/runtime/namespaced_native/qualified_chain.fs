@@ -3,5 +3,5 @@ func test() -> void:
 	var typed: foundry.http.server.HTTPServer = server
 	typed.port = 9000
 	print(typed.port)
-	print(typed.start())
+	print(typed.is_listening())
 	server.free()

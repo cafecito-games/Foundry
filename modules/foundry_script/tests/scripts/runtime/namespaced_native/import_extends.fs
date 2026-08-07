@@ -5,4 +5,4 @@ extends HTTPServer
 func test() -> void:
 	set_port(9000)
 	print(get_port())
-	print(start())
+	print(is_listening())
