@@ -3811,7 +3811,7 @@ void ScriptTextEditor::_make_context_menu(bool p_selection, bool p_color, bool p
 	context_menu->set_item_disabled(context_menu->get_item_index(EDIT_UNDO), !tx->has_undo() && !can_undo_refactor);
 	context_menu->set_item_disabled(context_menu->get_item_index(EDIT_REDO), !tx->has_redo() && !can_redo_refactor);
 
-	context_menu->set_position(get_screen_position() + p_pos);
+	context_menu->set_position(tx->get_screen_position() + p_pos);
 	context_menu->reset_size();
 	context_menu->popup();
 }
