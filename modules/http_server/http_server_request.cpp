@@ -32,10 +32,11 @@
 
 namespace {
 
-// `application/x-www-form-urlencoded` decoding: `+` stands for a space, everything else is plain
-// percent-encoding.
-String decode_form_component(const String &p_value) {
-	return p_value.replace("+", " ").uri_decode();
+// `String::uri_decode()` also maps `+` to a space, which is what a query component wants because
+// query strings are `application/x-www-form-urlencoded`. In a path a `+` is a literal character, so
+// it is pre-escaped to survive the decode.
+String decode_path_component(const String &p_path) {
+	return p_path.replace("+", "%2B").uri_decode();
 }
 
 } // namespace
@@ -67,20 +68,22 @@ void HTTPServerRequest::set_raw_path(const String &p_raw_path) {
 
 	const int query_start = p_raw_path.find_char('?');
 	if (query_start < 0) {
-		path = p_raw_path.uri_decode();
+		path = decode_path_component(p_raw_path);
 		return;
 	}
 
-	path = p_raw_path.substr(0, query_start).uri_decode();
+	path = decode_path_component(p_raw_path.substr(0, query_start));
 
+	// A repeated key keeps the value that appears last, so the dictionary always maps a key to one
+	// string. Callers that need every occurrence read `get_raw_path()`.
 	const String query_string = p_raw_path.substr(query_start + 1);
 	for (const String &pair : query_string.split("&", false)) {
 		const int separator = pair.find_char('=');
 		if (separator < 0) {
 			// A bare key with no `=` is present with an empty value.
-			query[decode_form_component(pair)] = String();
+			query[pair.uri_decode()] = String();
 		} else {
-			query[decode_form_component(pair.substr(0, separator))] = decode_form_component(pair.substr(separator + 1));
+			query[pair.substr(0, separator).uri_decode()] = pair.substr(separator + 1).uri_decode();
 		}
 	}
 }

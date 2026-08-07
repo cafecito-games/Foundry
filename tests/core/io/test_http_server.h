@@ -125,6 +125,23 @@ TEST_CASE("[HTTPServer] HTTPRequest exposes the parsed request line") {
 		CHECK(Dictionary(request->call("get_query")).size() == 4);
 	}
 
+	SUBCASE("A repeated query key keeps its last value") {
+		request->set_raw_path("/search?tag=a&tag=b");
+		const Dictionary query = request->get_query();
+		CHECK(query.size() == 1);
+		CHECK(String(query["tag"]) == "b");
+	}
+
+	SUBCASE("A plus sign in the path stays literal") {
+		// Only the query string is form-encoded, where `+` stands for a space.
+		request->set_raw_path("/c++/notes?lang=c%2B%2B");
+		CHECK(request->get_path() == "/c++/notes");
+		CHECK(String(request->get_query()["lang"]) == "c++");
+
+		request->set_raw_path("/notes?title=a+b");
+		CHECK(String(request->get_query()["title"]) == "a b");
+	}
+
 	SUBCASE("Re-parsing a target replaces the previous query") {
 		request->set_raw_path("/first?a=1");
 		request->set_raw_path("/second");

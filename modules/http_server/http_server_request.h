@@ -62,7 +62,7 @@ public:
 	String get_method() const;
 
 	// Sets the request target as received on the wire; splits off and parses the query string and
-	// percent-decodes the path component.
+	// percent-decodes the path component. A repeated query key keeps its last value.
 	void set_raw_path(const String &p_raw_path);
 	String get_raw_path() const;
 	String get_path() const;

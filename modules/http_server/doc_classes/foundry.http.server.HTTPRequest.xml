@@ -45,7 +45,7 @@
 		<method name="get_path" qualifiers="const">
 			<return type="String" />
 			<description>
-				Returns the percent-decoded path of the request target, without the query string.
+				Returns the percent-decoded path of the request target, without the query string. A [code]+[/code] in the path is a literal character, unlike in the query string.
 			</description>
 		</method>
 		<method name="get_peer" qualifiers="const">
@@ -57,7 +57,7 @@
 		<method name="get_query" qualifiers="const">
 			<return type="Dictionary" />
 			<description>
-				Returns a copy of the parsed query string as string keys mapped to string values. Keys and values are form-decoded, so [code]+[/code] stands for a space. A key that appears without a value maps to an empty string. Mutating the returned dictionary does not change the request.
+				Returns a copy of the parsed query string as string keys mapped to string values. Keys and values are form-decoded, so [code]+[/code] stands for a space. A key that appears without a value maps to an empty string, and a key that appears more than once keeps the value that came last; read [method get_raw_path] to recover every occurrence. Mutating the returned dictionary does not change the request.
 			</description>
 		</method>
 		<method name="get_raw_path" qualifiers="const">
