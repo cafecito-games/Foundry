@@ -6,7 +6,7 @@
 	<description>
 		A read-only view of a single inbound HTTP request: the method, the request target with its query string, the header fields, the body, and the address of the remote peer. Instances are created by the server; scripts never construct one themselves.
 		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPRequest[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPRequest[/code]. Without that import the bare name does not resolve.
-		[b]Note:[/b] The server does not open a listening socket yet, so no request is delivered to a handler at runtime.
+		[b]Note:[/b] The body is framed by the [code]Content-Length[/code] header field. A request that carries no such field has an empty body, and a request whose framing cannot be read is dropped without reaching a handler.
 	</description>
 	<tutorials>
 	</tutorials>
@@ -14,7 +14,7 @@
 		<method name="get_body" qualifiers="const">
 			<return type="PackedByteArray" />
 			<description>
-				Returns the request body exactly as it arrived on the wire.
+				Returns the request body exactly as it arrived on the wire. The body is empty when the request carried no [code]Content-Length[/code] header field.
 			</description>
 		</method>
 		<method name="get_body_string" qualifiers="const">

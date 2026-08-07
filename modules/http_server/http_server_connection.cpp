@@ -90,6 +90,34 @@ const char *status_reason(int p_status) {
 	}
 }
 
+// A body is framed by `Content-Length`. An absent field means no body, and anything that is not a
+// plain run of digits within `p_limit` — a signed value, or the "5, 5" a repeated field folds into —
+// is not a frame this layer can act on, so the request counts as malformed.
+bool parse_content_length(const String &p_value, int p_limit, int &r_length) {
+	const String value = p_value.strip_edges();
+	if (value.is_empty()) {
+		r_length = 0;
+		return true;
+	}
+	// Bounded before the conversion, so a length far past the buffer bound cannot wrap on its way to
+	// a small number.
+	if (value.length() > 9) {
+		return false;
+	}
+	for (int i = 0; i < value.length(); i++) {
+		if (!is_digit(value[i])) {
+			return false;
+		}
+	}
+
+	const int length = static_cast<int>(value.to_int());
+	if (length > p_limit) {
+		return false;
+	}
+	r_length = length;
+	return true;
+}
+
 } // namespace
 
 void HTTPServerConnection::accept(const Ref<StreamPeerTCP> &p_stream) {
@@ -127,7 +155,7 @@ bool HTTPServerConnection::_read_available() {
 	int available = stream->get_available_bytes();
 	while (available > 0) {
 		const int previous_size = read_buffer.size();
-		if (previous_size + available > MAX_HEADER_BYTES) {
+		if (previous_size + available > MAX_REQUEST_BYTES) {
 			close();
 			return false;
 		}
@@ -155,6 +183,31 @@ void HTTPServerConnection::_parse() {
 		return;
 	}
 
+	if (!_parse_header_block()) {
+		return;
+	}
+
+	// The header block ends where the body begins; the request is only complete once every framed
+	// body byte has arrived.
+	if (read_buffer.size() - header_length < body_length) {
+		return;
+	}
+
+	if (body_length > 0) {
+		PackedByteArray body;
+		body.resize(body_length);
+		memcpy(body.ptrw(), read_buffer.ptr() + header_length, body_length);
+		request->set_body(body);
+	}
+
+	state = STATE_READY;
+}
+
+bool HTTPServerConnection::_parse_header_block() {
+	if (header_parsed) {
+		return true;
+	}
+
 	const char *method = nullptr;
 	size_t method_length = 0;
 	const char *raw_path = nullptr;
@@ -170,13 +223,13 @@ void HTTPServerConnection::_parse() {
 	if (parsed == -2) {
 		// Incomplete: remember how far the parser got so the next pass does not rescan the prefix.
 		scanned_length = read_buffer.size();
-		return;
+		return false;
 	}
 	if (parsed < 0) {
 		// Malformed request line or header block. Dropping the connection is the whole error
 		// handling this layer does; status-coded rejections belong with the request-limit work.
 		close();
-		return;
+		return false;
 	}
 
 	request.instantiate();
@@ -188,7 +241,19 @@ void HTTPServerConnection::_parse() {
 	}
 	request->set_peer(String(stream->get_connected_host()) + ":" + itos(stream->get_connected_port()));
 
-	state = STATE_READY;
+	// A transfer coding would have to be decoded before a handler could read the body, and pairing
+	// one with a content length is ambiguous framing besides, so such a request is malformed here
+	// exactly like a content length this layer cannot act on.
+	if (request->has_header("Transfer-Encoding") ||
+			!parse_content_length(request->get_header("Content-Length"), MAX_REQUEST_BYTES - parsed, body_length)) {
+		request.unref();
+		close();
+		return false;
+	}
+
+	header_length = parsed;
+	header_parsed = true;
+	return true;
 }
 
 void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
@@ -205,6 +270,13 @@ void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 		body = p_response->get_body();
 	}
 
+	// RFC 9110 forbids a content length on these statuses, and neither carries a body, so whatever a
+	// handler committed is dropped rather than written without a frame the client can read.
+	const bool body_forbidden = status == 204 || status == 304;
+	if (body_forbidden) {
+		body = PackedByteArray();
+	}
+
 	String head = "HTTP/1.1 " + itos(status) + " " + String(status_reason(status)) + "\r\n";
 	const Dictionary headers = p_response->get_headers();
 	const Array header_names = headers.keys();
@@ -217,7 +289,9 @@ void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 		}
 		head += name + ": " + String(headers[header_names[i]]) + "\r\n";
 	}
-	head += "Content-Length: " + itos(body.size()) + "\r\n";
+	if (!body_forbidden) {
+		head += "Content-Length: " + itos(body.size()) + "\r\n";
+	}
 	// One request per connection; persistent connections are a separate concern.
 	head += "Connection: close\r\n\r\n";
 

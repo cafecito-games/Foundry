@@ -60,7 +60,19 @@ bool HTTPResponse::_begin_send() {
 	return true;
 }
 
+void HTTPResponse::_put_header(const String &p_name, const String &p_value) {
+	const String lower_name = p_name.to_lower();
+	HashMap<String, String>::ConstIterator existing = header_index.find(lower_name);
+	if (existing) {
+		headers[existing->value] = p_value;
+		return;
+	}
+	header_index.insert(lower_name, p_name);
+	headers[p_name] = p_value;
+}
+
 void HTTPResponse::set_status(int p_status) {
+	ERR_FAIL_COND_MSG(sent, "This response has already been sent; its status can no longer change.");
 	ERR_FAIL_COND_MSG(p_status < 100 || p_status > 599, "HTTP status must be between 100 and 599.");
 	status = p_status;
 }
@@ -70,16 +82,9 @@ int HTTPResponse::get_status() const {
 }
 
 void HTTPResponse::set_header(const String &p_name, const String &p_value) {
+	ERR_FAIL_COND_MSG(sent, "This response has already been sent; its header fields can no longer change.");
 	ERR_FAIL_COND_MSG(p_name.is_empty(), "Header name cannot be empty.");
-
-	const String lower_name = p_name.to_lower();
-	HashMap<String, String>::ConstIterator existing = header_index.find(lower_name);
-	if (existing) {
-		headers[existing->value] = p_value;
-		return;
-	}
-	header_index.insert(lower_name, p_name);
-	headers[p_name] = p_value;
+	_put_header(p_name, p_value);
 }
 
 String HTTPResponse::get_header(const String &p_name) const {
@@ -117,8 +122,10 @@ void HTTPResponse::redirect(const String &p_location, int p_status) {
 	if (!_begin_send()) {
 		return;
 	}
+	// The status and the field are part of committing here, so they bypass the gate that closes both
+	// to callers once the response is sent.
 	status = p_status;
-	set_header("Location", p_location);
+	_put_header("Location", p_location);
 	body = PackedByteArray();
 	body_source = BODY_SOURCE_BYTES;
 }

@@ -59,9 +59,9 @@ public:
 	};
 
 private:
-	// A header block larger than this is dropped rather than buffered without bound. Configurable
-	// request limits are a separate concern and are not exposed here.
-	static constexpr int MAX_HEADER_BYTES = 32 * 1024;
+	// A request larger than this, header block and body together, is dropped rather than buffered
+	// without bound. Configurable request limits are a separate concern and are not exposed here.
+	static constexpr int MAX_REQUEST_BYTES = 32 * 1024;
 	// picohttpparser writes one entry per header field, and reports a request carrying more fields
 	// than this as malformed.
 	static constexpr int MAX_HEADER_FIELDS = 64;
@@ -71,6 +71,11 @@ private:
 	// How many buffered bytes the parser has already scanned without finding the end of the header
 	// block. picohttpparser takes this as its `last_len` so a re-parse skips that prefix.
 	size_t scanned_length = 0;
+	// How many bytes the header block occupies, and how many body bytes are expected after it. Both
+	// are meaningful only once `header_parsed` is set; the header block is parsed exactly once.
+	bool header_parsed = false;
+	int header_length = 0;
+	int body_length = 0;
 	Vector<uint8_t> write_buffer;
 	int write_offset = 0;
 	State state = STATE_READING;
@@ -79,6 +84,9 @@ private:
 	// Appends everything the socket has available. Returns false once the connection is closed.
 	bool _read_available();
 	void _parse();
+	// Parses the request line and the header fields once, and records how the body is framed.
+	// Returns false while the header block is still incomplete, or once the connection is closed.
+	bool _parse_header_block();
 	void _flush_write();
 
 public:
