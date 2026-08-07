@@ -208,6 +208,37 @@ bool is_inside_root(const String &p_canonical_root, const String &p_canonical_pa
 	return p_canonical_path.begins_with(root);
 }
 
+// The value of one hexadecimal digit. Only called for a character `is_hex_digit()` accepted.
+int hex_value(char32_t p_character) {
+	if (is_digit(p_character)) {
+		return int(p_character - '0');
+	}
+	if (p_character >= 'a') {
+		return int(p_character - 'a') + 10;
+	}
+	return int(p_character - 'A') + 10;
+}
+
+// True when the target carries a percent-escaped control character. Decoding does not always keep
+// one — a `%00` truncates the decoded path at the NUL, which would otherwise turn a request for
+// `index.html%00.txt` into a request for `index.html` — so the escape is caught on the target as it
+// arrived rather than on what it decoded to. Only the path is inspected; a query string is not part
+// of what a file mount resolves.
+bool has_escaped_control_character(const String &p_raw_path) {
+	const int query_start = p_raw_path.find_char('?');
+	const int length = query_start < 0 ? p_raw_path.length() : query_start;
+	for (int i = 0; i + 2 < length; i++) {
+		if (p_raw_path[i] != '%' || !is_hex_digit(p_raw_path[i + 1]) || !is_hex_digit(p_raw_path[i + 2])) {
+			continue;
+		}
+		const int decoded = hex_value(p_raw_path[i + 1]) * 16 + hex_value(p_raw_path[i + 2]);
+		if (decoded < 0x20 || decoded == 0x7f) {
+			return true;
+		}
+	}
+	return false;
+}
+
 // The shapes a request path may never have, checked before anything is resolved. The request has
 // already percent-decoded the path, so `%2e%2e` arrives here as `..` and is caught with it.
 bool is_servable_request_path(const String &p_relative_path) {
@@ -427,7 +458,7 @@ HTTPFileServe::Result HTTPFileServe::serve(const String &p_canonical_root, const
 		return RESULT_RESOLVED;
 	}
 
-	if (!is_servable_request_path(p_relative_path)) {
+	if (!is_servable_request_path(p_relative_path) || has_escaped_control_character(p_request->get_raw_path())) {
 		return refuse(p_response);
 	}
 

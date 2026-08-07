@@ -1458,6 +1458,39 @@ TEST_CASE("[HTTPServer] A mount serves files from its root") {
 		CHECK(result.body == "spaced");
 	}
 
+	SUBCASE("A file larger than one write chunk is streamed whole") {
+		// The writer copies a file body into its buffer a piece at a time, so a body has to be
+		// bigger than one piece for the refill path to run at all.
+		String contents;
+		while (contents.length() < 200000) {
+			contents += "0123456789abcdef";
+		}
+		write_text_file(tree.root.path_join("large.txt"), contents);
+
+		const ClientResult result = http_get(server, port, "/app/large.txt");
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.get_header("content-length") == itos(contents.length()));
+		CHECK(result.body.length() == contents.length());
+		CHECK(result.body == contents);
+	}
+
+	SUBCASE("A range spanning several write chunks is streamed whole") {
+		String contents;
+		while (contents.length() < 200000) {
+			contents += "0123456789abcdef";
+		}
+		write_text_file(tree.root.path_join("large.txt"), contents);
+
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/large.txt", String(),
+				{ "Range: bytes=1000-150999" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 206);
+		CHECK(result.get_header("content-length") == "150000");
+		CHECK(result.body.length() == 150000);
+		CHECK(result.body == contents.substr(1000, 150000));
+	}
+
 	SUBCASE("A missing file inside the root is a plain 404") {
 		const ClientResult result = http_get(server, port, "/app/missing.html");
 		REQUIRE(result.error == OK);
@@ -1516,6 +1549,13 @@ TEST_CASE("[HTTPServer] A mount refuses every path that leaves its root") {
 		"/app/./../secret.txt",
 		"/app/up/secret.txt",
 		"/app/escape.txt",
+		// A separator only some platforms honor, which is how a path that is safe on one platform
+		// becomes an escape on another.
+		"/app/..%5Csecret.txt",
+		"/app/sub%5C..%5C..%5Csecret.txt",
+		// A control character, which is what a truncation attack is built out of.
+		"/app/index.html%00.txt",
+		"/app/index%0d%0a.html",
 	};
 
 	for (const String &vector : vectors) {
@@ -1575,6 +1615,23 @@ TEST_CASE("[HTTPServer] A mount answers a byte range") {
 		CHECK(result.status == 206);
 		CHECK(result.body == "89");
 		CHECK(result.get_header("content-range") == "bytes 8-9/10");
+	}
+
+	SUBCASE("A suffix longer than the file is the whole file") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=-999" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 206);
+		CHECK(result.body == "0123456789");
+		CHECK(result.get_header("content-range") == "bytes 0-9/10");
+	}
+
+	SUBCASE("A range that ends before it starts is ignored") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/app/ten.txt", String(),
+				{ "Range: bytes=5-2" });
+		REQUIRE(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "0123456789");
 	}
 
 	SUBCASE("A range that starts past the end is unsatisfiable") {
