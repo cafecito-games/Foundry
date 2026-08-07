@@ -14344,8 +14344,10 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		}
 
 		// A builtin value type is a supported retroactive-conformance target, so a static witness on it
-		// is reachable through the type name once its own static surface has missed.
-		if (!p_is_constructor && p_base_type.is_meta_type && apply_static_conformance_witness(nullptr)) {
+		// is reachable once its own surface has missed. An instance receiver names the same class the
+		// type name does, so both forms resolve here; `apply_static_conformance_witness` substitutes
+		// `Self` against the receiver either way.
+		if (!p_is_constructor && apply_static_conformance_witness(nullptr)) {
 			return true;
 		}
 
@@ -14733,7 +14735,12 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	// resolves in — `FSNativeClass::callp` tries the `MethodBind` first, and codegen only routes a call
 	// to the witness path for a name ClassDB does not know. Resolving a witness any earlier would give
 	// the analyzer one signature and the runtime a different function.
-	if (!p_is_constructor && p_base_type.is_meta_type && apply_static_conformance_witness(original_base_class)) {
+	//
+	// An instance receiver reaches the same witness: `FSInstance::callp` falls back to the conformance
+	// registry after its own member functions miss, so naming a static witness through a value of the
+	// target type dispatches exactly as naming it through the type does. The call is still reported as
+	// a static call on an instance; it is simply no longer an unresolved one.
+	if (!p_is_constructor && apply_static_conformance_witness(original_base_class)) {
 		return true;
 	}
 

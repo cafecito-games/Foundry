@@ -1007,6 +1007,21 @@ Variant FoundryScript::_new_specialized(const Variant **p_args, int p_argcount, 
 		return Variant();
 	}
 
+	// Analysis rejects naming an abstract class as a constructor's base, but a construction whose
+	// receiver is only known at runtime escapes that gate: `Self.new()` inside a static frame types as
+	// the concrete declaring class while the receiver it actually resolves against may be an abstract
+	// subclass. Every `new` funnels through here — the bound vararg `new` and
+	// `FSSpecializedClassHandle`'s interception of it both land on this function — so the check belongs
+	// here rather than at each caller. Attaching a script to an already-built object is a separate path
+	// and stays unaffected.
+	if (_is_abstract) {
+		r_error.error = Callable::CallError::CALL_ERROR_INVALID_METHOD;
+		const String abstract_class_name = local_name != StringName() ? String(local_name) : fully_qualified_name;
+		// A string return alongside CALL_ERROR_INVALID_METHOD is the runtime's way of supplying the
+		// reason, which the caller folds into its own "invalid call" diagnostic.
+		return vformat(R"(Cannot construct abstract class "%s".)", abstract_class_name);
+	}
+
 	r_error.error = Callable::CallError::CALL_OK;
 	Ref<RefCounted> ref;
 	Object *owner = nullptr;
