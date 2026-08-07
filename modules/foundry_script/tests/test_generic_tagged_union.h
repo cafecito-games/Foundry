@@ -2012,5 +2012,226 @@ TEST_CASE("[Modules][FoundryScript][GenericApplicationReach] A qualified head ta
 	CHECK_EQ(bound.get_container_element_type(1).builtin_type, Variant::STRING);
 }
 
+// The declared type of an enum function's single parameter, or an unset type when either is missing.
+static FSParser::DataType enum_function_parameter_type(const FSParser::EnumNode *p_enum, const StringName &p_function) {
+	const FSParser::FunctionNode *function = find_enum_function(p_enum, p_function);
+	if (function == nullptr || function->parameters.size() != 1 || function->parameters[0] == nullptr) {
+		return FSParser::DataType();
+	}
+	return function->parameters[0]->get_datatype();
+}
+
+// Whether `p_type` is the union's own open self type: every argument is the declaration's own
+// parameter handle, in declaration order.
+static bool is_open_self_union_type(const FSParser::DataType &p_type, const FSParser::EnumNode *p_declaration) {
+	if (p_type.kind != FSParser::DataType::ENUM || !p_type.is_tagged_union || p_declaration == nullptr) {
+		return false;
+	}
+	if (p_type.type_arguments.size() != p_declaration->type_parameters.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_type.type_arguments.size(); i++) {
+		const FSParser::TypeParameterNode *parameter = p_declaration->type_parameters[i];
+		if (parameter == nullptr || parameter->identifier == nullptr) {
+			return false;
+		}
+		if (!is_type_parameter(p_type.type_arguments[i], parameter->identifier->name,
+					FSParser::DataType::TYPE_PARAMETER_ENUM, i)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] The self exemption is decided lexically") {
+	// A bare reference written inside the declaration is the open self type, and each of its arguments
+	// is the declaration's own parameter handle rather than an inferred or erased stand-in.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T, U]:\n"
+					   "\tValue(first: T, second: U)\n"
+					   "\n"
+					   "\tstatic func take(other: Holder) -> void:\n"
+					   "\t\tprint(other)\n",
+					   "user://generic_tagged_union_lexical_self.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	REQUIRE_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::EnumNode *holder = find_enum(parser, SNAME("Holder"));
+	REQUIRE(holder != nullptr);
+	REQUIRE_EQ(holder->type_parameters.size(), 2);
+	const FSParser::DataType self_type = enum_function_parameter_type(holder, SNAME("take"));
+	CHECK(is_open_self_union_type(self_type, holder));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] The exemption does not follow analyzer state into an unrelated class") {
+	// The payload pulls `Helper` in while the union is still the analyzer's active enum. Every bare
+	// spelling written in that class is outside the declaration and must be rejected, whichever surface
+	// it reaches: a member type, a local annotation, and a bare identifier alias.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T]:\n"
+					   "\tValue(box: Helper)\n"
+					   "\n"
+					   "class Helper:\n"
+					   "\tconst ALIAS = Holder\n"
+					   "\tvar held: Holder\n"
+					   "\n"
+					   "\tfunc borrow() -> void:\n"
+					   "\t\tvar local: Holder = null\n"
+					   "\t\tprint(local)\n",
+					   "user://generic_tagged_union_state_does_not_follow.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_NE(analyzer.analyze(), OK);
+	CHECK(has_error_containing(parser, R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+
+	const FSParser::ClassNode *helper = find_inner_class(parser.get_tree(), SNAME("Helper"));
+	REQUIRE(helper != nullptr);
+	REQUIRE(helper->has_member(SNAME("held")));
+	// The rejected member falls back to Variant instead of capturing the union's open parameters.
+	const FSParser::DataType held = helper->get_member(SNAME("held")).variable->get_datatype();
+	CHECK_FALSE(held.is_tagged_union);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Every publication surface applies the lexical exemption") {
+	SUBCASE("identifier publication") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "\tstatic func alias() -> Variant:\n"
+						   "\t\tvar mirror = Holder\n"
+						   "\t\treturn mirror\n",
+						   "user://generic_tagged_union_surface_identifier.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		REQUIRE_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		const FSParser::EnumNode *holder = find_enum(parser, SNAME("Holder"));
+		REQUIRE(holder != nullptr);
+		const FSParser::FunctionNode *alias = find_enum_function(holder, SNAME("alias"));
+		REQUIRE(alias != nullptr);
+		const FSParser::DataType mirror = find_bound_local_type(alias->body, SNAME("mirror"));
+		CHECK(mirror.is_meta_type);
+		CHECK(is_open_self_union_type(mirror, holder));
+	}
+
+	SUBCASE("identifier publication outside the declaration") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "func leak() -> Variant:\n"
+						   "\tvar mirror = Holder\n"
+						   "\treturn mirror\n",
+						   "user://generic_tagged_union_surface_identifier_outside.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+	}
+
+	SUBCASE("type-position application") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "\tstatic func take(other: Holder) -> void:\n"
+						   "\t\tprint(other)\n",
+						   "user://generic_tagged_union_surface_type.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		REQUIRE_EQ(analyzer.analyze(), OK);
+
+		const FSParser::EnumNode *holder = find_enum(parser, SNAME("Holder"));
+		REQUIRE(holder != nullptr);
+		CHECK(is_open_self_union_type(enum_function_parameter_type(holder, SNAME("take")), holder));
+	}
+
+	SUBCASE("type-position application outside the declaration") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "func take(other: Holder) -> void:\n"
+						   "\tprint(other)\n",
+						   "user://generic_tagged_union_surface_type_outside.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser),
+				String(R"(Generic tagged union "Holder" expects 1 type argument(s), but 0 were given.)"));
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] The exemption predicate reads no analyzer state") {
+	// No analyzer is constructed at all here: the containment answer must come from the parsed tree
+	// alone, so nothing about when members resolve can change it.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T]:\n"
+					   "\tValue(value: T)\n"
+					   "\n"
+					   "\tstatic func inside(other: Holder) -> void:\n"
+					   "\t\tprint(other)\n"
+					   "\n"
+					   "class Outside:\n"
+					   "\tvar held: Holder\n",
+					   "user://generic_tagged_union_predicate_state_free.fs", false),
+			OK);
+
+	const FSParser::ClassNode *root = parser.get_tree();
+	REQUIRE(root != nullptr);
+	const FSParser::EnumNode *holder = find_enum(parser, SNAME("Holder"));
+	REQUIRE(holder != nullptr);
+
+	const FSParser::FunctionNode *inside = find_enum_function(holder, SNAME("inside"));
+	REQUIRE(inside != nullptr);
+	REQUIRE_EQ(inside->parameters.size(), 1);
+	const FSParser::Node *in_declaration = inside->parameters[0]->datatype_specifier;
+	REQUIRE(in_declaration != nullptr);
+	CHECK(FSAnalyzer::is_reference_within_enum_declaration(root, in_declaration, holder));
+
+	const FSParser::ClassNode *outside = find_inner_class(root, SNAME("Outside"));
+	REQUIRE(outside != nullptr);
+	REQUIRE(outside->has_member(SNAME("held")));
+	const FSParser::Node *out_of_declaration = outside->get_member(SNAME("held")).variable->datatype_specifier;
+	REQUIRE(out_of_declaration != nullptr);
+	CHECK_FALSE(FSAnalyzer::is_reference_within_enum_declaration(root, out_of_declaration, holder));
+
+	// A missing reference, a missing declaration, or a missing file root proves nothing and never
+	// grants the exemption.
+	CHECK_FALSE(FSAnalyzer::is_reference_within_enum_declaration(root, nullptr, holder));
+	CHECK_FALSE(FSAnalyzer::is_reference_within_enum_declaration(root, in_declaration, nullptr));
+	CHECK_FALSE(FSAnalyzer::is_reference_within_enum_declaration(nullptr, in_declaration, holder));
+
+	SUBCASE("a declaration in another file never contains a local reference") {
+		// Both files place the union on the same lines, so extents alone would report containment. File
+		// identity is what keeps a qualified cross-file reference — the third publication surface — from
+		// being read as a self reference.
+		FSParser other;
+		REQUIRE_EQ(other.parse(
+						   "enum Holder[T]:\n"
+						   "\tValue(value: T)\n"
+						   "\n"
+						   "\tstatic func inside(other: Holder) -> void:\n"
+						   "\t\tprint(other)\n",
+						   "user://generic_tagged_union_predicate_other_file.fs", false),
+				OK);
+		const FSParser::EnumNode *other_holder = find_enum(other, SNAME("Holder"));
+		REQUIRE(other_holder != nullptr);
+		CHECK_FALSE(FSAnalyzer::is_reference_within_enum_declaration(root, in_declaration, other_holder));
+	}
+}
+
 } // namespace GenericTaggedUnion
 } // namespace FSTests

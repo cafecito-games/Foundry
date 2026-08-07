@@ -863,6 +863,12 @@ public:
 	static FSParser::DataType specialize_enum_type(const FSParser::DataType &p_type,
 			const FSParser::EnumNode *p_declaration,
 			const HashMap<StringName, FSParser::DataType> &p_bindings);
+	// Whether `p_reference` is written inside `p_declaration`'s own declaration. The answer is a pure
+	// function of the parsed tree: it reads no analyzer scope, so it cannot be changed by when members
+	// happen to resolve or by which declaration is still active. `p_reference_root` is the root class
+	// of the file `p_reference` belongs to, and is what makes source extents comparable at all.
+	static bool is_reference_within_enum_declaration(const FSParser::ClassNode *p_reference_root,
+			const FSParser::Node *p_reference, const FSParser::EnumNode *p_declaration);
 	static bool class_exists(const StringName &p_class);
 	static void set_bootstrap_allowed_dependency_root(const String &p_root);
 	static String get_bootstrap_allowed_dependency_root();
