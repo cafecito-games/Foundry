@@ -1892,6 +1892,10 @@ public:
 		OpType operation = OP_POSITIVE;
 		Variant::Operator variant_op = Variant::OP_MAX;
 		ExpressionNode *operand = nullptr;
+		// `x is not T` desugars to a logical negation of a type test, so the negation the author wrote
+		// after `is` is not recoverable from the tree alone. Recording it lets the formatter reprint the
+		// surface form; nothing in parsing or semantics reads it.
+		bool source_is_not = false;
 
 		UnaryOpNode() {
 			type = UNARY_OPERATOR;
@@ -2047,6 +2051,12 @@ private:
 	Node *list = nullptr;
 	List<ParserError> errors;
 
+protected:
+	// Every node the parse allocated, newest first. Tooling subclasses use it to find the analyzed node
+	// at a source position without re-walking the tree shape; nothing may mutate the chain.
+	Node *get_allocated_nodes() const { return list; }
+
+private:
 #if defined(DEBUG_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_FRONTEND)
 public:
 	struct WarningDirectoryRule {
@@ -2441,6 +2451,11 @@ public:
 	bool annotation_exists(const String &p_annotation_name) const;
 
 	const List<ParserError> &get_errors() const { return errors; }
+	// Errors are appended in the order the front-end discovers them, which is not source order: the
+	// end-of-phase sweeps report positions that precede diagnostics already recorded. Surfaces that
+	// show diagnostics to a human present them in source order through this view; `errors` itself keeps
+	// emission order, which the compiler and the tests rely on.
+	Vector<const ParserError *> get_errors_in_source_order() const;
 	List<String> get_dependencies() const;
 	// The files this one loads solely because they declare retroactive conformances in its own
 	// namespace or in a namespace it imports. Included in `get_dependencies()`; reported separately

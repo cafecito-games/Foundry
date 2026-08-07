@@ -975,6 +975,42 @@ static String _make_arguments_hint(const FSParser::FunctionNode *p_function, int
 	return arghint;
 }
 
+// A payload-bearing tagged-union case is constructed like a call, so it gets the same argument hint a
+// function does. `p_union_meta_type` is the union metatype at the construction site, so the payload
+// field types it carries are the specialized ones the user is about to fill in. Returns an empty hint
+// for a case that carries no payload, which has no argument list to describe.
+static String _make_arguments_hint(const FSParser::DataType &p_union_meta_type, const StringName &p_case_name, int p_arg_idx) {
+	const FSParser::DataType::EnumCasePayload *payload = p_union_meta_type.get_enum_case_payload(p_case_name);
+	if (payload == nullptr) {
+		return String();
+	}
+
+	// The union is not spelled: the contextual shorthand never names it, and even the qualified form
+	// renders it as a fully qualified path, which would bury the payload the hint exists to show.
+	String arghint = String(p_case_name) + "(";
+	for (int i = 0; i < payload->field_types.size(); i++) {
+		if (i > 0) {
+			arghint += ", ";
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+		if (i < payload->field_names.size() && payload->field_names[i] != StringName()) {
+			arghint += String(payload->field_names[i]);
+		}
+		// A field whose type is not resolved here contributes no spelling rather than a misleading one.
+		if (payload->field_types[i].is_hard_type()) {
+			arghint += ": " + payload->field_types[i].to_string();
+		}
+		if (i == p_arg_idx) {
+			arghint += String::chr(0xFFFF);
+		}
+	}
+	arghint += ")";
+
+	return arghint;
+}
+
 static void _get_directory_contents(EditorFileSystemDirectory *p_dir, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_list, const StringName &p_required_type = StringName()) {
 	const String quote_style = EDITOR_GET("text_editor/completion/use_single_quotes") ? "'" : "\"";
 	const bool requires_type = !p_required_type.is_empty();
@@ -4617,6 +4653,17 @@ static void _list_call_arguments(FSParser::CompletionContext &p_context, const F
 
 				base_type.kind = FSParser::DataType::UNRESOLVED;
 			} break;
+			case FSParser::DataType::ENUM: {
+				// A payload-bearing tagged-union case is constructed like a call, so it describes an
+				// argument list. The metatype carries the payload with its type arguments applied, which
+				// is what makes the hint name the specialization the construction site builds.
+				if (base_type.is_tagged_union && base_type.is_meta_type) {
+					r_arghint = _make_arguments_hint(base_type, method, p_argidx);
+					return;
+				}
+
+				base_type.kind = FSParser::DataType::UNRESOLVED;
+			} break;
 			default: {
 				base_type.kind = FSParser::DataType::UNRESOLVED;
 			} break;
@@ -4766,7 +4813,17 @@ static void _find_call_arguments(FSParser::CompletionContext &p_context, const F
 			}
 		}
 
-		if (subscript->is_attribute) {
+		if (subscript->is_contextual_enum_case) {
+			// `.Ok(`: the shorthand never spells its union, so there is no base to type. The analyzer
+			// published the union the position expects on the shorthand itself, and that union is what
+			// names the case and carries its specialized payload.
+			FSParser::DataType union_meta_type;
+			if (!_contextual_union_meta_type_from_node(subscript, union_meta_type)) {
+				return;
+			}
+			base_type = union_meta_type;
+			_static = true;
+		} else if (subscript->is_attribute) {
 			bool found_type = _get_subscript_type(p_context, subscript, base_type, &base);
 
 			if (!found_type) {

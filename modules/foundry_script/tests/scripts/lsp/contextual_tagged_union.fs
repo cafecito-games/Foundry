@@ -20,3 +20,7 @@ func classify(subject: Outcome[int, String]) -> int:
 			return -1
 		.Pending:
 			return 0
+
+func pair() -> void:
+	var first: Outcome[int, String] = .Ok(1); var second: Outcome[String, int] = .Ok("x")
+	print(first, second)

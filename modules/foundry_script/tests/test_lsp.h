@@ -2022,12 +2022,43 @@ func f():
 		CHECK_EQ(signature_help.signatures.size(), 1);
 		if (signature_help.signatures.size() == 1) {
 			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			// The construction site binds the union's type parameters, so the payload is named with the
+			// specialization the user is filling in rather than with the declaration's `T`.
+			CHECK_EQ(signature.label, "Ok(value: int)");
+			CHECK_EQ(signature.parameters.size(), 1);
+			if (signature.parameters.size() == 1) {
+				CHECK_EQ(signature.parameters[0].label, "value: int");
+			}
+			CHECK_EQ(signature_help.activeParameter, 0);
+		}
+
+		// Inside the declaration's own payload list there is no construction to specialize against, so
+		// the declared spelling stands.
+		LSP::SignatureHelp declaration_signature_help;
+		CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(3, 5)), declaration_signature_help), OK);
+		CHECK_EQ(declaration_signature_help.signatures.size(), 1);
+		if (declaration_signature_help.signatures.size() == 1) {
+			const LSP::SignatureInformation &signature = declaration_signature_help.signatures[0];
 			CHECK_EQ(signature.label, "Ok(value: T)");
 			CHECK_EQ(signature.parameters.size(), 1);
 			if (signature.parameters.size() == 1) {
 				CHECK_EQ(signature.parameters[0].label, "value: T");
 			}
-			CHECK_EQ(signature_help.activeParameter, 0);
+		}
+
+		// Two constructions of the same case on one line: each resolves against its own specialization.
+		LSP::SignatureHelp first_of_line_signature_help;
+		CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(24, 39)), first_of_line_signature_help), OK);
+		CHECK_EQ(first_of_line_signature_help.signatures.size(), 1);
+		if (first_of_line_signature_help.signatures.size() == 1) {
+			CHECK_EQ(first_of_line_signature_help.signatures[0].label, "Ok(value: int)");
+		}
+
+		LSP::SignatureHelp second_of_line_signature_help;
+		CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(24, 82)), second_of_line_signature_help), OK);
+		CHECK_EQ(second_of_line_signature_help.signatures.size(), 1);
+		if (second_of_line_signature_help.signatures.size() == 1) {
+			CHECK_EQ(second_of_line_signature_help.signatures[0].label, "Ok(value: String)");
 		}
 
 		// A payload-less case is not a construction, so it reports no signature.

@@ -305,6 +305,12 @@ static int unary_operator_precedence(FSParser::UnaryOpNode::OpType p_operation) 
 	return FPREC_PRIMARY;
 }
 
+// True for the negation node `x is not T` desugars to, which the printer reprints as one `is not`
+// test rather than as a prefix `not`. An author-written `not (x is T)` never sets the flag.
+static bool is_source_is_not(const FSParser::UnaryOpNode *p_op) {
+	return p_op->source_is_not && p_op->operand != nullptr && p_op->operand->type == FSParser::Node::TYPE_TEST;
+}
+
 // Precedence of an expression node as seen by its parent. Atoms (literals,
 // identifiers, calls, subscripts, collections, ...) never need wrapping, so they
 // report the maximum precedence.
@@ -318,8 +324,14 @@ int FSPrinter::expression_precedence(const FSParser::ExpressionNode *p_expressio
 			return FPREC_TERNARY;
 		case FSParser::Node::BINARY_OPERATOR:
 			return binary_operator_precedence(static_cast<const FSParser::BinaryOpNode *>(p_expression)->operation);
-		case FSParser::Node::UNARY_OPERATOR:
-			return unary_operator_precedence(static_cast<const FSParser::UnaryOpNode *>(p_expression)->operation);
+		case FSParser::Node::UNARY_OPERATOR: {
+			const FSParser::UnaryOpNode *unary = static_cast<const FSParser::UnaryOpNode *>(p_expression);
+			// Reprinted as `is not`, the node binds where a type test binds, not where a prefix `not` does.
+			if (is_source_is_not(unary)) {
+				return FPREC_TYPE_TEST;
+			}
+			return unary_operator_precedence(unary->operation);
+		}
 		case FSParser::Node::TYPE_TEST:
 			return FPREC_TYPE_TEST;
 		case FSParser::Node::AWAIT:
@@ -2671,6 +2683,12 @@ void FSPrinter::print_binary_op(const FSParser::BinaryOpNode *p_op) {
 }
 
 void FSPrinter::print_unary_op(const FSParser::UnaryOpNode *p_op) {
+	if (is_source_is_not(p_op)) {
+		// `x is not T` parses as a negation wrapping the test, but the author wrote one operator; the
+		// prefix `not` spelling would be a different surface form of the same tree.
+		print_type_test(static_cast<const FSParser::TypeTestNode *>(p_op->operand), true);
+		return;
+	}
 	const String operator_text = unary_operator_text(p_op->operation);
 	write(operator_text);
 	if (p_op->operation == FSParser::UnaryOpNode::OP_LOGIC_NOT) {
@@ -2913,9 +2931,9 @@ void FSPrinter::print_get_node(const FSParser::GetNodeNode *p_get_node) {
 	write(path);
 }
 
-void FSPrinter::print_type_test(const FSParser::TypeTestNode *p_test) {
+void FSPrinter::print_type_test(const FSParser::TypeTestNode *p_test, bool p_negated) {
 	print_operand(FPREC_TYPE_TEST, p_test->operand);
-	write(" is ");
+	write(p_negated ? " is not " : " is ");
 	print_type(p_test->test_type);
 	if (p_test->case_binds.is_empty()) {
 		return;
