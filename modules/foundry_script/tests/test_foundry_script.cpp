@@ -3805,6 +3805,95 @@ func implemented() -> void:
 	CHECK_FALSE((implemented_info.flags & METHOD_FLAG_VIRTUAL_REQUIRED) != 0);
 }
 
+TEST_CASE("[Modules][FoundryScript] Abstract scripts refuse instantiation and attachment") {
+	ScopedFSNativeGlobals native_globals;
+	FSParser parser;
+	Error err = parser.parse(R"(
+extends RefCounted
+
+abstract class AbstractShape extends RefCounted:
+	func area() -> int:
+		return 0
+
+class ConcreteShape extends AbstractShape:
+	func area() -> int:
+		return 4
+)",
+			"user://abstract_instantiation_guard.fs", false);
+
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSAnalyzer analyzer(&parser);
+	err = analyzer.analyze();
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	FSCompiler compiler;
+	Ref<FoundryScript> script;
+	script.instantiate();
+	script->set_path("user://abstract_instantiation_guard.fs");
+
+	err = compiler.compile(&parser, script.ptr(), false);
+	INFO(compiler.get_error());
+	CHECK_EQ(err, OK);
+	if (err != OK) {
+		return;
+	}
+
+	const Ref<FoundryScript> *abstract_ptr = script->get_subclasses().getptr(SNAME("AbstractShape"));
+	const Ref<FoundryScript> *concrete_ptr = script->get_subclasses().getptr(SNAME("ConcreteShape"));
+	CHECK(abstract_ptr != nullptr);
+	CHECK(concrete_ptr != nullptr);
+	if (abstract_ptr == nullptr || concrete_ptr == nullptr) {
+		return;
+	}
+
+	Ref<FoundryScript> abstract_script = *abstract_ptr;
+	Ref<FoundryScript> concrete_script = *concrete_ptr;
+	CHECK(abstract_script.is_valid());
+	CHECK(concrete_script.is_valid());
+	if (abstract_script.is_null() || concrete_script.is_null()) {
+		return;
+	}
+
+	CHECK(abstract_script->is_abstract());
+	CHECK_FALSE(abstract_script->can_instantiate());
+
+	CHECK_FALSE(concrete_script->is_abstract());
+	CHECK(concrete_script->can_instantiate());
+
+	Ref<RefCounted> abstract_target;
+	abstract_target.instantiate();
+
+	{
+		ERR_PRINT_OFF;
+		abstract_target->set_script(abstract_script);
+		ERR_PRINT_ON;
+	}
+	CHECK(abstract_target->get_script_instance() == nullptr);
+	CHECK(Ref<Script>(abstract_target->get_script()).is_null());
+
+	ScriptInstance *refused_instance = nullptr;
+	{
+		ERR_PRINT_OFF;
+		refused_instance = abstract_script->instance_create(abstract_target.ptr());
+		ERR_PRINT_ON;
+	}
+	CHECK(refused_instance == nullptr);
+
+	Ref<RefCounted> concrete_target;
+	concrete_target.instantiate();
+	concrete_target->set_script(concrete_script);
+	CHECK(concrete_target->get_script_instance() != nullptr);
+	CHECK(Ref<Script>(concrete_target->get_script()) == concrete_script);
+	CHECK_EQ(int(concrete_target->call(SNAME("area"))), 4);
+}
+
 TEST_CASE("[Modules][FoundryScript] Scripts reflect trait identities") {
 	Ref<FoundryScript> base;
 	base.instantiate();

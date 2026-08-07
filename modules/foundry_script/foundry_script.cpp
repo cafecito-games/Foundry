@@ -1062,9 +1062,9 @@ Variant FoundryScript::_new_specialized(const Variant **p_args, int p_argcount, 
 
 bool FoundryScript::can_instantiate() const {
 #ifdef TOOLS_ENABLED
-	return valid && (tool || ScriptServer::is_scripting_enabled()) && !Engine::get_singleton()->is_recovery_mode_hint();
+	return valid && !_is_abstract && (tool || ScriptServer::is_scripting_enabled()) && !Engine::get_singleton()->is_recovery_mode_hint();
 #else
-	return valid;
+	return valid && !_is_abstract;
 #endif
 }
 
@@ -1222,6 +1222,10 @@ bool FoundryScript::get_property_default_value(const StringName &p_property, Var
 
 ScriptInstance *FoundryScript::instance_create(Object *p_this) {
 	ERR_FAIL_COND_V_MSG(!valid, nullptr, "Script is invalid!");
+
+	// `Object::set_script()` already refuses abstract scripts, but this entry point is reachable
+	// directly by any native caller holding the script, so the language layer refuses here too.
+	ERR_FAIL_COND_V_MSG(_is_abstract, nullptr, vformat(R"(Cannot construct abstract class "%s".)", local_name != StringName() ? String(local_name) : fully_qualified_name));
 
 	FoundryScript *top = this;
 	while (top->base.ptr()) {
