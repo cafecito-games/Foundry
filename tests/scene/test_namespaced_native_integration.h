@@ -34,6 +34,7 @@
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
 #include "core/object/class_db.h"
+#include "scene/main/http_request.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
@@ -207,6 +208,37 @@ TEST_CASE("[SceneTree][ClassDBNamespace] An instantiated scene is reusable as a 
 	REQUIRE_NE(outer_instance, nullptr);
 	check_pilot_identity(outer_instance->get_node_or_null(NodePath("Server")), 9300);
 	memdelete(outer_instance);
+}
+
+TEST_CASE("[SceneTree][ClassDBNamespace] A saved text scene stores the namespaced HTTPRequest client type") {
+	HTTPRequest *client = memnew(HTTPRequest);
+	client->set_name("Client");
+
+	Ref<PackedScene> packed = pack_scene(client);
+	memdelete(client);
+
+	CHECK_EQ(stored_node_type(packed, 0), StringName("foundry.http.client.HTTPRequest"));
+
+	const String scene_path = TestUtils::get_temp_path("namespaced_native_http_request.tscn");
+	REQUIRE_EQ(ResourceSaver::save(packed, scene_path), OK);
+
+	// The on-disk contract other tools re-implement: the qualified name verbatim, never the bare one.
+	const String scene_text = FileAccess::get_file_as_string(scene_path);
+	CHECK(scene_text.contains("type=\"foundry.http.client.HTTPRequest\""));
+	CHECK_FALSE(scene_text.contains("type=\"HTTPRequest\""));
+
+	Error error = FAILED;
+	Ref<PackedScene> loaded = ResourceLoader::load(scene_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(loaded.is_valid());
+	CHECK_EQ(stored_node_type(loaded, 0), StringName("foundry.http.client.HTTPRequest"));
+
+	Node *instance = loaded->instantiate();
+	REQUIRE_NE(instance, nullptr);
+	CHECK_EQ(instance->get_class(), String("foundry.http.client.HTTPRequest"));
+	CHECK(instance->is_class("Node"));
+	CHECK_FALSE(instance->is_class("HTTPRequest"));
+	memdelete(instance);
 }
 
 } // namespace TestNamespacedNativeIntegration
