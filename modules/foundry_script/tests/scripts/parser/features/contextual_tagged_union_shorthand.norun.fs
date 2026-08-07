@@ -1,7 +1,8 @@
-# The leading-`.` contextual case shorthand parses in every expression position, with and
-# without a payload. None of the declarations below supplies a union, so the two the resolver
-# reaches are reported as missing their expected tagged-union type; container elements and
-# conditional-expression branches do not propagate an expected type into the shorthand yet.
+# The leading-`.` contextual case shorthand parses in every expression position, with and without a
+# payload. No declaration below supplies a union, so every shorthand is reported as missing its
+# expected tagged-union type, including the ones nested in a container literal or in the branches of
+# a conditional expression. A shorthand in a position that supplies no type at all is reported once
+# every body is resolved, which is why the container elements are reported after the conditional.
 enum Result[T, E]:
 	Ok(value: int)
 	Err(error: String)

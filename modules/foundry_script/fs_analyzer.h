@@ -440,6 +440,13 @@ private:
 	bool strict_dynamic_checks = false;
 	bool resolving_function_signature_type = false;
 
+	// Every contextual case shorthand reduced in this file, in source order, and the ones a consumer
+	// has already qualified or reported. A shorthand is reduced before the consumer that supplies its
+	// union is reached, so the two are tracked separately: whatever is still unqualified once the
+	// bodies are resolved sat in a position that supplies no expected type at all.
+	LocalVector<FSParser::ExpressionNode *> reduced_contextual_enum_cases;
+	HashSet<const FSParser::ExpressionNode *> resolved_contextual_enum_cases;
+
 	struct SuiteExitState {
 		bool always_terminates = false;
 		bool has_return = false;
@@ -620,6 +627,15 @@ private:
 	bool resolve_contextual_enum_case(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_expected_type);
 	bool tagged_union_metatype_from_expected_type(const FSParser::DataType &p_expected_type,
 			const FSParser::Node *p_source, FSParser::DataType &r_enum_meta_type);
+	// True while a contextual case shorthand is still waiting for a consumer to supply its union. A
+	// conditional expression is unresolved while either of its branches is.
+	bool contextual_enum_case_awaits_expected_type(FSParser::ExpressionNode *p_expression);
+	void register_contextual_enum_case(FSParser::ExpressionNode *p_expression);
+	void report_unqualified_contextual_enum_cases();
+	// Combines the branch types of a conditional expression into its own type and folds it when every
+	// operand is constant. Run again after a branch has been qualified, because the branch types the
+	// first run combined were the untyped ones a contextual shorthand carries before its union is known.
+	void finalize_ternary_op_type(FSParser::TernaryOpNode *p_ternary_op);
 	void reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(FSParser::TypeTestNode *p_type_test);
 	void resolve_type_test_case_binds(FSParser::TypeTestNode *p_type_test, const FSParser::DataType &p_test_type);

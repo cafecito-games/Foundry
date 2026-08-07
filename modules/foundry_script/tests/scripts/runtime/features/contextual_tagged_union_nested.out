@@ -1,0 +1,10 @@
+FS_TEST_OK
+[[0, 1], [1, "x"]]
+true
+true
+[[[0, 1]], [[1, "x"]]]
+true
+true
+true
+true
+true

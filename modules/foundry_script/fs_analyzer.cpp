@@ -456,6 +456,10 @@ Error FSAnalyzer::run_phase_trait_conformance_registration() {
 Error FSAnalyzer::run_phase_body_expression_callable_signal() {
 	ensure_autoload_index_current();
 	resolve_class_body(parser->head, true);
+	// Every body in this file is resolved, so a contextual case shorthand no consumer qualified sat in
+	// a position that supplies no expected type at all. Reporting it here keeps it an analyzer
+	// diagnostic pointing at the shorthand instead of a code-generation refusal.
+	report_unqualified_contextual_enum_cases();
 	mark_analyzer_phase_completed(AnalyzerPhase::BODY_EXPRESSION_CALLABLE_SIGNAL);
 	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
 }
@@ -483,6 +487,9 @@ void FSAnalyzer::run_phase_flow_finality_invariants(FSParser::ClassNode *p_class
 Error FSAnalyzer::run_phase_conformance_witness_body() {
 	AnalyzerPhaseScope phase_scope(this, AnalyzerPhase::CONFORMANCE_WITNESS_BODY);
 	resolve_conformance_bodies(parser->head);
+	// A witness body is resolved after the body phase already swept, so it needs its own sweep for the
+	// shorthands it reduced.
+	report_unqualified_contextual_enum_cases();
 	return parser->errors.is_empty() ? OK : ERR_PARSE_ERROR;
 }
 
@@ -5759,6 +5766,10 @@ void FSAnalyzer::update_array_literal_element_type(FSParser::ArrayNode *p_array,
 
 	for (int i = 0; i < p_array->elements.size(); i++) {
 		FSParser::ExpressionNode *element_node = p_array->elements[i];
+		// An element stands where the container's element type says it stands, so that type is what
+		// qualifies a contextual case shorthand written there. This patcher runs after the consumer has
+		// supplied the element type, which is exactly when the union becomes known.
+		resolve_contextual_enum_case(element_node, expected_type);
 		if (expected_type.kind == FSParser::DataType::BUILTIN && expected_type.builtin_type == Variant::ARRAY && expected_type.has_container_element_type(0) && element_node->type == FSParser::Node::ARRAY) {
 			update_array_literal_element_type(
 					static_cast<FSParser::ArrayNode *>(element_node),
@@ -5847,6 +5858,9 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 
 	for (int i = 0; i < p_dictionary->elements.size(); i++) {
 		FSParser::ExpressionNode *key_element_node = p_dictionary->elements[i].key;
+		// A key stands where the dictionary's key type says it stands, so that type qualifies a
+		// contextual case shorthand written as a key.
+		resolve_contextual_enum_case(key_element_node, expected_key_type);
 		if (expected_key_type.kind == FSParser::DataType::BUILTIN && expected_key_type.builtin_type == Variant::ARRAY && expected_key_type.has_container_element_type(0) && key_element_node->type == FSParser::Node::ARRAY) {
 			update_array_literal_element_type(
 					static_cast<FSParser::ArrayNode *>(key_element_node),
@@ -5909,6 +5923,8 @@ void FSAnalyzer::update_dictionary_literal_element_type(FSParser::DictionaryNode
 		}
 
 		FSParser::ExpressionNode *value_element_node = p_dictionary->elements[i].value;
+		// Likewise for a value: the dictionary's value type is the type expected of the entry.
+		resolve_contextual_enum_case(value_element_node, expected_value_type);
 		if (expected_value_type.kind == FSParser::DataType::BUILTIN && expected_value_type.builtin_type == Variant::ARRAY && expected_value_type.has_container_element_type(0) && value_element_node->type == FSParser::Node::ARRAY) {
 			update_array_literal_element_type(
 					static_cast<FSParser::ArrayNode *>(value_element_node),
@@ -6941,6 +6957,7 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 				// consumer's expected type, which is only known after this standalone reduce. The
 				// arguments above are reduced either way; `resolve_contextual_enum_case()` types the
 				// call once the consumer supplies the union.
+				register_contextual_enum_case(p_call);
 				p_call->set_datatype(call_type);
 				return;
 			}
@@ -7502,6 +7519,12 @@ void FSAnalyzer::reduce_cast(FSParser::CastNode *p_cast) {
 		mark_node_unsafe(p_cast);
 		return;
 	}
+
+	// A cast names the type its operand is expected to have, so it qualifies a contextual case
+	// shorthand in operand position. A cast type that is no complete tagged-union specialization
+	// supplies no union, which the resolver reports; the operand then carries the type the rest of
+	// this function checks, so the cast itself needs no separate handling for the shorthand.
+	resolve_contextual_enum_case(p_cast->operand, cast_type);
 
 	p_cast->set_datatype(cast_type);
 	if (p_cast->operand->is_constant) {
@@ -11366,12 +11389,68 @@ bool FSAnalyzer::tagged_union_metatype_from_expected_type(const FSParser::DataTy
 	return true;
 }
 
+void FSAnalyzer::register_contextual_enum_case(FSParser::ExpressionNode *p_expression) {
+	reduced_contextual_enum_cases.push_back(p_expression);
+}
+
+bool FSAnalyzer::contextual_enum_case_awaits_expected_type(FSParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr) {
+		return false;
+	}
+	if (p_expression->type == FSParser::Node::TERNARY_OPERATOR) {
+		FSParser::TernaryOpNode *ternary = static_cast<FSParser::TernaryOpNode *>(p_expression);
+		return contextual_enum_case_awaits_expected_type(ternary->true_expr) ||
+				contextual_enum_case_awaits_expected_type(ternary->false_expr);
+	}
+	FSParser::CallNode *call = nullptr;
+	return contextual_enum_case_reference(p_expression, &call) != nullptr &&
+			!resolved_contextual_enum_cases.has(p_expression);
+}
+
+void FSAnalyzer::report_unqualified_contextual_enum_cases() {
+	for (FSParser::ExpressionNode *expression : reduced_contextual_enum_cases) {
+		// An unset expected type is what produces the standard "needs an expected tagged-union type"
+		// diagnostic, so the position that supplies no union at all reports it through the same resolver
+		// every other position uses.
+		resolve_contextual_enum_case(expression, FSParser::DataType());
+	}
+	reduced_contextual_enum_cases.clear();
+}
+
 bool FSAnalyzer::resolve_contextual_enum_case(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_expected_type) {
+	if (p_expression != nullptr && p_expression->type == FSParser::Node::TERNARY_OPERATOR) {
+		// A conditional expression is not a case itself, but both of its branches stand where the
+		// conditional stands, so the type expected of the conditional is the type expected of each
+		// branch. A branch that is itself a conditional recurses through the same path.
+		FSParser::TernaryOpNode *ternary = static_cast<FSParser::TernaryOpNode *>(p_expression);
+		const bool true_awaits = contextual_enum_case_awaits_expected_type(ternary->true_expr);
+		const bool false_awaits = contextual_enum_case_awaits_expected_type(ternary->false_expr);
+		if (!true_awaits && !false_awaits) {
+			return false;
+		}
+		if (true_awaits) {
+			resolve_contextual_enum_case(ternary->true_expr, p_expected_type);
+		}
+		if (false_awaits) {
+			resolve_contextual_enum_case(ternary->false_expr, p_expected_type);
+		}
+		finalize_ternary_op_type(ternary);
+		return true;
+	}
+
 	FSParser::CallNode *call = nullptr;
 	FSParser::SubscriptNode *reference = contextual_enum_case_reference(p_expression, &call);
 	if (reference == nullptr) {
 		return false;
 	}
+
+	// Exactly one consumer qualifies a shorthand: the first one to reach it. A patcher that runs over
+	// the same literal twice, or the end-of-analysis sweep over a shorthand a consumer already
+	// reported, must not construct or diagnose it a second time.
+	if (resolved_contextual_enum_cases.has(p_expression)) {
+		return true;
+	}
+	resolved_contextual_enum_cases.insert(p_expression);
 
 	// A shorthand that could not be qualified is still given a type, so the consumer's own checks do
 	// not pile a second "could not resolve" error on top of the one reported here.
@@ -11532,6 +11611,11 @@ void FSAnalyzer::reduce_call_enum_case_construction(FSParser::CallNode *p_call, 
 
 void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_can_be_pseudo_type) {
 	if (p_subscript->base == nullptr) {
+		if (p_subscript->is_contextual_enum_case) {
+			// A payload-less shorthand has no base to reduce either: it is typed by
+			// `resolve_contextual_enum_case()` once a consumer supplies the union.
+			register_contextual_enum_case(p_subscript);
+		}
 		return;
 	}
 	if (p_subscript->is_attribute && p_subscript->attribute != nullptr) {
@@ -12142,6 +12226,10 @@ void FSAnalyzer::reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p
 	reduce_expression(p_ternary_op->true_expr, p_is_root);
 	reduce_expression(p_ternary_op->false_expr, p_is_root);
 
+	finalize_ternary_op_type(p_ternary_op);
+}
+
+void FSAnalyzer::finalize_ternary_op_type(FSParser::TernaryOpNode *p_ternary_op) {
 	FSParser::DataType result;
 
 	if (p_ternary_op->condition && p_ternary_op->condition->is_constant && p_ternary_op->true_expr->is_constant && p_ternary_op->false_expr && p_ternary_op->false_expr->is_constant) {
