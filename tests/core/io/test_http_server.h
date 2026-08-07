@@ -38,7 +38,11 @@
 #ifdef MODULE_HTTP_SERVER_ENABLED
 
 #include "modules/http_server/http_response.h"
+#include "modules/http_server/http_server.h"
 #include "modules/http_server/http_server_request.h"
+
+#include "core/io/http_client.h"
+#include "core/io/stream_peer_tcp.h"
 
 namespace TestHTTPServer {
 
@@ -363,6 +367,363 @@ TEST_CASE("[HTTPServer] A bound enum documents its owner by qualified name") {
 	CHECK(DocData::qualify_enum_owner("Object.ConnectFlags") == "Object.ConnectFlags");
 	CHECK(DocData::qualify_enum_owner("Variant.Type") == "Variant.Type");
 	CHECK(DocData::qualify_enum_owner("BodySource") == "BodySource");
+}
+
+namespace {
+
+constexpr uint64_t ROUND_TRIP_TIMEOUT_USEC = 5000000;
+constexpr uint32_t POLL_SLEEP_USEC = 1000;
+const char *LOOPBACK = "127.0.0.1";
+
+// Records what a route handler saw and answers with a fixed body, so a test can assert both the
+// handler's view of the request and the bytes the client reads back.
+class RecordingRouteHandler : public Object {
+	FOUNDRY_SOFTCLASS(RecordingRouteHandler, Object);
+
+public:
+	int call_count = 0;
+	String seen_method;
+	String seen_path;
+	String seen_query_value;
+	String seen_peer;
+	String seen_user_agent;
+
+	int reply_status = 200;
+	String reply_body = "hi";
+
+	void handle(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		call_count++;
+		seen_method = p_request->get_method();
+		seen_path = p_request->get_path();
+		seen_query_value = p_request->get_query().get("q", String());
+		seen_peer = p_request->get_peer();
+		seen_user_agent = p_request->get_header("user-agent");
+
+		p_response->set_status(reply_status);
+		p_response->set_header("Content-Type", "text/plain");
+		p_response->send_string(reply_body);
+	}
+};
+
+// Calls back into the server from inside a handler, which is the re-entrancy the poll pass has to
+// survive: registering routes reallocates the route storage, and stopping closes the very
+// connection being dispatched.
+class ReentrantRouteHandler : public Object {
+	FOUNDRY_SOFTCLASS(ReentrantRouteHandler, Object);
+
+public:
+	HTTPServer *server = nullptr;
+	bool stop_server = false;
+	int extra_routes = 0;
+	int call_count = 0;
+
+	void handle(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		call_count++;
+		for (int i = 0; i < extra_routes; i++) {
+			server->route("GET", "/extra" + itos(i), callable_mp(this, &ReentrantRouteHandler::handle));
+		}
+		if (stop_server) {
+			server->stop();
+		}
+		p_response->send_string("done");
+	}
+};
+
+struct ClientResult {
+	Error error = FAILED;
+	int status = 0;
+	String body;
+};
+
+// Performs one GET against `p_server` while driving the server's poll loop, so the whole exchange
+// runs on this thread without a scene tree.
+ClientResult http_get(HTTPServer *p_server, int p_port, const String &p_path) {
+	ClientResult result;
+
+	Ref<HTTPClient> client = HTTPClient::create();
+	if (client.is_null()) {
+		return result;
+	}
+	result.error = client->connect_to_host(LOOPBACK, p_port);
+	if (result.error != OK) {
+		return result;
+	}
+
+	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+	bool requested = false;
+	PackedByteArray body;
+
+	while (OS::get_singleton()->get_ticks_usec() < deadline) {
+		p_server->poll();
+
+		// The server closes the socket as soon as the response is written, and polling a client
+		// that is reading a body treats that close as a connection error. So once the body starts
+		// arriving, drain it instead of polling.
+		if (client->get_status() == HTTPClient::STATUS_BODY) {
+			body.append_array(client->read_response_body_chunk());
+		} else {
+			client->poll();
+		}
+
+		if (client->has_response() && result.status == 0) {
+			result.status = client->get_response_code();
+		}
+
+		const HTTPClient::Status status = client->get_status();
+		if (result.status == 0 &&
+				(status == HTTPClient::STATUS_CANT_RESOLVE || status == HTTPClient::STATUS_CANT_CONNECT ||
+						status == HTTPClient::STATUS_CONNECTION_ERROR || status == HTTPClient::STATUS_TLS_HANDSHAKE_ERROR)) {
+			result.error = ERR_CONNECTION_ERROR;
+			return result;
+		}
+
+		if (!requested) {
+			if (status == HTTPClient::STATUS_CONNECTED) {
+				result.error = client->request(HTTPClient::METHOD_GET, p_path, Vector<String>(), nullptr, 0);
+				if (result.error != OK) {
+					return result;
+				}
+				requested = true;
+			}
+			continue;
+		}
+
+		if (result.status != 0 && status != HTTPClient::STATUS_REQUESTING && status != HTTPClient::STATUS_BODY) {
+			result.body = body.is_empty() ? String() : String::utf8((const char *)body.ptr(), body.size());
+			result.error = OK;
+			return result;
+		}
+
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
+
+	result.error = ERR_TIMEOUT;
+	return result;
+}
+
+} // namespace
+
+TEST_CASE("[HTTPServer] Listening binds an OS-assigned port and stop releases it") {
+	HTTPServer *server = memnew(HTTPServer);
+
+	CHECK_FALSE(server->is_listening());
+	CHECK(server->get_listening_port() == -1);
+
+	CHECK(server->get_port() == 8080);
+	CHECK(server->get_bind_address() == LOOPBACK);
+
+	// Port 0 asks the OS for a free port, so concurrent test runs cannot collide.
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	CHECK(server->is_listening());
+	const int port = server->get_listening_port();
+	CHECK(port > 0);
+
+	SUBCASE("The bound port is reported back while the configured port stays 0") {
+		CHECK(server->get_port() == 0);
+	}
+
+	SUBCASE("Listening twice is refused and leaves the first listener alone") {
+		ERR_PRINT_OFF;
+		CHECK(server->listen() == ERR_ALREADY_IN_USE);
+		ERR_PRINT_ON;
+		CHECK(server->get_listening_port() == port);
+	}
+
+	SUBCASE("An out-of-range port is rejected and leaves the property unchanged") {
+		HTTPServer *other = memnew(HTTPServer);
+		ERR_PRINT_OFF;
+		other->set_port(70000);
+		other->set_bind_address("");
+		ERR_PRINT_ON;
+		CHECK(other->get_port() == 8080);
+		CHECK(other->get_bind_address() == LOOPBACK);
+		memdelete(other);
+	}
+
+	SUBCASE("An unparsable bind address fails instead of binding a wildcard") {
+		HTTPServer *other = memnew(HTTPServer);
+		other->set_port(0);
+		other->set_bind_address("not-an-address");
+		ERR_PRINT_OFF;
+		CHECK(other->listen() == ERR_INVALID_PARAMETER);
+		ERR_PRINT_ON;
+		CHECK_FALSE(other->is_listening());
+		memdelete(other);
+	}
+
+	server->stop();
+	CHECK_FALSE(server->is_listening());
+	CHECK(server->get_listening_port() == -1);
+
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] GET round-trip through a registered route") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	SUBCASE("A matching request reaches the handler and its body reaches the client") {
+		const ClientResult result = http_get(server, port, "/hello?q=world");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "hi");
+
+		CHECK(handler->call_count == 1);
+		CHECK(handler->seen_method == "GET");
+		CHECK(handler->seen_path == "/hello");
+		CHECK(handler->seen_query_value == "world");
+		CHECK(handler->seen_peer.begins_with("127.0.0.1:"));
+		CHECK_FALSE(handler->seen_user_agent.is_empty());
+	}
+
+	SUBCASE("A handler-chosen status and body are written verbatim") {
+		handler->reply_status = 201;
+		handler->reply_body = "created";
+
+		const ClientResult result = http_get(server, port, "/hello");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 201);
+		CHECK(result.body == "created");
+	}
+
+	SUBCASE("A path with no route answers 404 without reaching the handler") {
+		const ClientResult result = http_get(server, port, "/missing");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 404);
+		CHECK(handler->call_count == 0);
+	}
+
+	SUBCASE("A route only matches its own method") {
+		const ClientResult result = http_get(server, port, "/hello");
+		CHECK(result.status == 200);
+
+		// The same path registered for another method must not shadow the GET route.
+		RecordingRouteHandler *post_handler = memnew(RecordingRouteHandler);
+		server->route("POST", "/hello", callable_mp(post_handler, &RecordingRouteHandler::handle));
+
+		const ClientResult second = http_get(server, port, "/hello");
+		CHECK(second.status == 200);
+		CHECK(post_handler->call_count == 0);
+		memdelete(post_handler);
+	}
+
+	SUBCASE("The first registered route for a method and path wins") {
+		RecordingRouteHandler *later = memnew(RecordingRouteHandler);
+		later->reply_body = "later";
+		server->route("GET", "/hello", callable_mp(later, &RecordingRouteHandler::handle));
+
+		const ClientResult result = http_get(server, port, "/hello");
+		CHECK(result.body == "hi");
+		CHECK(later->call_count == 0);
+		memdelete(later);
+	}
+
+	SUBCASE("Consecutive requests are each served on their own connection") {
+		CHECK(http_get(server, port, "/hello").body == "hi");
+		CHECK(http_get(server, port, "/hello").body == "hi");
+		CHECK(handler->call_count == 2);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A handler may mutate the server from inside dispatch") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	ReentrantRouteHandler *handler = memnew(ReentrantRouteHandler);
+	handler->server = server;
+	server->route("GET", "/reentrant", callable_mp(handler, &ReentrantRouteHandler::handle));
+
+	SUBCASE("Registering more routes during dispatch still answers the running request") {
+		handler->extra_routes = 16;
+
+		const ClientResult result = http_get(server, port, "/reentrant");
+		CHECK(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "done");
+		CHECK(handler->call_count == 1);
+	}
+
+	SUBCASE("Stopping the server during dispatch closes the connection instead of writing") {
+		handler->stop_server = true;
+
+		const ClientResult result = http_get(server, port, "/reentrant");
+		CHECK(result.error != OK);
+		CHECK(handler->call_count == 1);
+		CHECK_FALSE(server->is_listening());
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] stop closes the listener and every open connection") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	Ref<StreamPeerTCP> client;
+	client.instantiate();
+	REQUIRE(client->connect_to_host(IPAddress(LOOPBACK), port) == OK);
+
+	// Drive the accept loop until the server owns the connection.
+	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+	while (server->get_connection_count() == 0 && OS::get_singleton()->get_ticks_usec() < deadline) {
+		server->poll();
+		client->poll();
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
+	REQUIRE(server->get_connection_count() == 1);
+
+	server->stop();
+
+	CHECK_FALSE(server->is_listening());
+	CHECK(server->get_connection_count() == 0);
+
+	// The peer observes the close, and the released port no longer accepts connections.
+	const uint64_t close_deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+	while (client->get_status() == StreamPeerTCP::STATUS_CONNECTED && OS::get_singleton()->get_ticks_usec() < close_deadline) {
+		client->poll();
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
+	CHECK(client->get_status() != StreamPeerTCP::STATUS_CONNECTED);
+
+	Ref<StreamPeerTCP> rejected;
+	rejected.instantiate();
+	if (rejected->connect_to_host(IPAddress(LOOPBACK), port) == OK) {
+		const uint64_t reject_deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+		while (rejected->get_status() == StreamPeerTCP::STATUS_CONNECTING && OS::get_singleton()->get_ticks_usec() < reject_deadline) {
+			rejected->poll();
+			OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+		}
+		CHECK(rejected->get_status() != StreamPeerTCP::STATUS_CONNECTED);
+	}
+
+	// Polling a stopped server is a no-op rather than an error.
+	server->poll();
+
+	memdelete(server);
 }
 
 } // namespace TestHTTPServer
