@@ -2173,6 +2173,32 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Every publication s
 	}
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] A parameter bound may name the union that declares it") {
+	// A type parameter's bound is resolved in its own pass, apart from the value, signature, and body
+	// passes, so it is the in-declaration position where a lexical exemption could most plausibly
+	// disagree with whichever union happens to be active. The bare spelling is the open self type here
+	// exactly as it is anywhere else inside the declaration.
+	FSParser parser;
+	REQUIRE_EQ(parser.parse(
+					   "enum Holder[T: Holder]:\n"
+					   "\tValue(value: T)\n",
+					   "user://generic_tagged_union_self_bound.fs", false),
+			OK);
+	FSAnalyzer analyzer(&parser);
+	CHECK_EQ(analyzer.analyze(), OK);
+	CHECK_EQ(first_error_message(parser), String());
+
+	const FSParser::EnumNode *holder = find_enum(parser, SNAME("Holder"));
+	REQUIRE(holder != nullptr);
+	const FSParser::DataType value_type = payload_field_type(holder, SNAME("Value"), 0);
+	CHECK(is_type_parameter(value_type, SNAME("T"), FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
+	REQUIRE_EQ(value_type.type_parameter_bound.size(), 1);
+	const FSParser::DataType bound = value_type.type_parameter_bound[0];
+	CHECK_EQ(bound.kind, FSParser::DataType::ENUM);
+	CHECK(bound.is_tagged_union);
+	CHECK_FALSE(bound.is_meta_type);
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] The exemption predicate reads no analyzer state") {
 	// No analyzer is constructed at all here: the containment answer must come from the parsed tree
 	// alone, so nothing about when members resolve can change it.

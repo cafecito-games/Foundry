@@ -275,17 +275,19 @@ bool FSAnalyzer::is_reference_within_enum_declaration(const FSParser::ClassNode 
 			p_declaration->end_line < p_declaration->start_line) {
 		return false;
 	}
-	if (!enum_is_declared_in_file(p_reference_root, p_declaration)) {
-		return false;
-	}
 	// Every node in progress has its end advanced with each consumed token, so a declaration's extents
 	// span its whole body: its type parameters, its cases and their payload types, and its functions.
+	// Positions are compared before file identity because they reject almost every candidate, leaving
+	// the walk over the file's declarations for the few references that do line up.
 	if (source_position_precedes(p_reference->start_line, p_reference->start_column,
 				p_declaration->start_line, p_declaration->start_column)) {
 		return false;
 	}
-	return !source_position_precedes(p_declaration->end_line, p_declaration->end_column,
-			p_reference->end_line, p_reference->end_column);
+	if (source_position_precedes(p_declaration->end_line, p_declaration->end_column,
+				p_reference->end_line, p_reference->end_column)) {
+		return false;
+	}
+	return enum_is_declared_in_file(p_reference_root, p_declaration);
 }
 
 bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source,
