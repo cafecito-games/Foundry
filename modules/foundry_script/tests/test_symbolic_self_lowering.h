@@ -327,6 +327,52 @@ TEST_CASE("[Modules][FoundryScript][SymbolicSelf] A rest parameter makes a signa
 	CHECK_FALSE(count->has_self_referencing_signature());
 }
 
+TEST_CASE("[Modules][FoundryScript][SymbolicSelf] A rest-only Self signature is receiver-dependent at call time") {
+	SymbolicSelfLanguageScope language;
+
+	// The call path reads the cached mirror, not `has_self_referencing_signature()` recomputed on
+	// demand, so the cache has to be refreshed after the rest tail is installed on the compiled
+	// function. A stale cache silently skips `Self` resolution for the whole frame.
+	const Ref<FoundryScript> script = compile_symbolic_self_source(
+			"class Base:\n"
+			"\tstatic func collect(...values: Array[Self]) -> long:\n"
+			"\t\treturn values.size()\n"
+			"\n"
+			"\tstatic func count(...values: Array[int]) -> long:\n"
+			"\t\treturn values.size()\n");
+
+	const FSFunction *collect = symbolic_self_member_function(script, SNAME("Base"), SNAME("collect"));
+	REQUIRE(collect != nullptr);
+	CHECK(collect->is_receiver_dependent_at_call_time());
+
+	const FSFunction *count = symbolic_self_member_function(script, SNAME("Base"), SNAME("count"));
+	REQUIRE(count != nullptr);
+	CHECK_FALSE(count->is_receiver_dependent_at_call_time());
+}
+
+TEST_CASE("[Modules][FoundryScript][SymbolicSelf] A return-only Self signature is receiver-dependent at call time") {
+	SymbolicSelfLanguageScope language;
+
+	// `return_type` is installed in the same post-`write_end()` block as the rest tail and feeds the
+	// same cache, so it would go stale in exactly the same way.
+	const Ref<FoundryScript> script = compile_symbolic_self_source(
+			"class Base:\n"
+			"\tstatic func make() -> Self:\n"
+			"\t\treturn Self.new()\n"
+			"\n"
+			"\tstatic func plain() -> long:\n"
+			"\t\treturn 0\n");
+
+	const FSFunction *make = symbolic_self_member_function(script, SNAME("Base"), SNAME("make"));
+	REQUIRE(make != nullptr);
+	CHECK(make->get_return_type().is_self_type);
+	CHECK(make->is_receiver_dependent_at_call_time());
+
+	const FSFunction *plain = symbolic_self_member_function(script, SNAME("Base"), SNAME("plain"));
+	REQUIRE(plain != nullptr);
+	CHECK_FALSE(plain->is_receiver_dependent_at_call_time());
+}
+
 TEST_CASE("[Modules][FoundryScript][SymbolicSelf] A witness class handle keeps the marker") {
 	SymbolicSelfLanguageScope language;
 
