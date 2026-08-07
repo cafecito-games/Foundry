@@ -385,6 +385,13 @@ tuple type rather than a script: it has no base class, and the declared name is 
 as a global type (qualified by `namespace` when present) that other files reference by name
 or through `import`.
 
+A native (engine) class is reachable under the same conditions as a script class: a flat
+(non-namespaced) native class is a global name; a namespaced native class is reachable
+through `import` of its namespace or by its fully qualified dotted chain. Native namespaces
+are sourced from the engine class registry, not the script registry. A namespaced native
+class is not reachable by its bare name unless an explicit global alias is registered.
+Native namespacing introduces no new tokens or keywords.
+
 ### 3.3 Extends and uses
 
 ```ebnf

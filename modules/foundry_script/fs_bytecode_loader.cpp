@@ -1479,6 +1479,15 @@ Error FSBytecodeLoader::_read_function_body(StreamPeerBuffer *p_stream, FoundryS
 			return error;
 		}
 		MethodBind *method_bind = ClassDB::get_method(StringName(class_name), StringName(method_name));
+		if (method_bind == nullptr) {
+			// A method bind records the declaring class's C++ simple name, which for a namespaced
+			// class is not its canonical registry key. Map it back through the introspection
+			// accessor; this is a serialization concern, not a language reachability path.
+			const StringName qualified_class_name = ClassDB::class_get_qualified_name(StringName(class_name));
+			if (qualified_class_name != StringName()) {
+				method_bind = ClassDB::get_method(qualified_class_name, StringName(method_name));
+			}
+		}
 		FSB_LINK_CHECK(method_bind == nullptr, "native method", vformat("%s.%s", class_name, method_name));
 		p_function->methods.push_back(method_bind);
 #ifdef TOOLS_ENABLED
@@ -1717,12 +1726,17 @@ Error FSBytecodeLoader::_read_skeleton_class(StreamPeerBuffer *p_stream, const R
 
 	// The native base is the shared handle in the language's global array, exactly as the compiler
 	// links it, so name-dispatched native identity behaves identically.
-	const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
-	const int *native_index = global_map.getptr(StringName(native_class_name));
-	ERR_FAIL_NULL_V_MSG(native_index, ERR_CANT_RESOLVE,
-			vformat("Cannot load compiled script '%s': native base class '%s' is not registered in this build.",
-					p_root_path, native_class_name));
-	p_class->native = FSLanguage::get_singleton()->get_global_array()[*native_index];
+	// A namespaced native is deliberately absent from the flat global map, so the canonical
+	// qualified lookup comes first; for a flat native both keys are the same name.
+	p_class->native = FSLanguage::get_singleton()->get_native_class_by_qualified(StringName(native_class_name));
+	if (p_class->native.is_null()) {
+		const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
+		const int *native_index = global_map.getptr(StringName(native_class_name));
+		ERR_FAIL_NULL_V_MSG(native_index, ERR_CANT_RESOLVE,
+				vformat("Cannot load compiled script '%s': native base class '%s' is not registered in this build.",
+						p_root_path, native_class_name));
+		p_class->native = FSLanguage::get_singleton()->get_global_array()[*native_index];
+	}
 	ERR_FAIL_COND_V_MSG(p_class->native.is_null(), ERR_CANT_RESOLVE,
 			vformat("Cannot load compiled script '%s': global '%s' is not a native class in this build.",
 					p_root_path, native_class_name));

@@ -521,6 +521,14 @@ static bool _static_self_class_handle(const FSStaticSelfContext &p_context, Vari
 		case FSStaticSelfContext::BUILTIN_TYPE:
 			return false;
 		case FSStaticSelfContext::NATIVE_CLASS: {
+			// A namespaced native is reachable only by its canonical qualified name; flat natives
+			// are in both tables under the same name.
+			const Ref<FSNativeClass> native_class =
+					FSLanguage::get_singleton()->get_native_class_by_qualified(p_context.get_native_class());
+			if (native_class.is_valid()) {
+				r_handle = native_class;
+				return true;
+			}
 			const HashMap<StringName, int> &global_map = FSLanguage::get_singleton()->get_global_map();
 			const HashMap<StringName, int>::ConstIterator element = global_map.find(p_context.get_native_class());
 			if (!element) {

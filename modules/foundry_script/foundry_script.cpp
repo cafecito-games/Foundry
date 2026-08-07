@@ -3532,6 +3532,14 @@ Variant FSLanguage::get_any_global_constant(const StringName &p_name) {
 	ERR_FAIL_V_MSG(Variant(), vformat("Could not find any global constant with name: %s.", p_name));
 }
 
+Ref<FSNativeClass> FSLanguage::get_native_class_by_qualified(const StringName &p_qualified_name) const {
+	const HashMap<StringName, Ref<FSNativeClass>>::ConstIterator native_class = native_class_by_qualified.find(p_qualified_name);
+	if (!native_class) {
+		return Ref<FSNativeClass>();
+	}
+	return native_class->value;
+}
+
 Ref<FSReflection> FSLanguage::get_reflection_singleton() const {
 	return reflection_singleton;
 }
@@ -3571,11 +3579,18 @@ void FSLanguage::init() {
 	LocalVector<StringName> class_list;
 	ClassDB::get_class_list(class_list);
 	for (const StringName &class_name : class_list) {
-		if (globals.has(class_name)) {
+		if (globals.has(class_name) || native_class_by_qualified.has(class_name)) {
 			continue;
 		}
+		// `class_name` is the canonical registry key, which is the qualified name for a
+		// namespaced class.
 		Ref<FSNativeClass> nc = memnew(FSNativeClass(class_name));
-		_add_global(class_name, nc);
+		native_class_by_qualified.insert(class_name, nc);
+		if (ClassDB::class_get_namespace(class_name) == StringName()) {
+			// Only flat natives are reachable as bare global names; a namespaced native must be
+			// reached through an import of its namespace or its fully qualified chain.
+			_add_global(class_name, nc);
+		}
 	}
 
 	//populate singletons
@@ -3627,13 +3642,18 @@ void FSLanguage::init() {
 #ifdef TOOLS_ENABLED
 void FSLanguage::_extension_loaded(const Ref<FoundryExtension> &p_extension) {
 	List<StringName> class_list;
+	// Canonical registry keys, so a namespaced extension class arrives qualified and both the
+	// insert here and the erase in `_extension_unloading` use the same key.
 	ClassDB::get_extension_class_list(p_extension, &class_list);
 	for (const StringName &n : class_list) {
-		if (globals.has(n)) {
+		if (globals.has(n) || native_class_by_qualified.has(n)) {
 			continue;
 		}
 		Ref<FSNativeClass> nc = memnew(FSNativeClass(n));
-		_add_global(n, nc);
+		native_class_by_qualified.insert(n, nc);
+		if (ClassDB::class_get_namespace(n) == StringName()) {
+			_add_global(n, nc);
+		}
 	}
 }
 
@@ -3641,6 +3661,7 @@ void FSLanguage::_extension_unloading(const Ref<FoundryExtension> &p_extension) 
 	List<StringName> class_list;
 	ClassDB::get_extension_class_list(p_extension, &class_list);
 	for (const StringName &n : class_list) {
+		native_class_by_qualified.erase(n);
 		_remove_global(n);
 	}
 }

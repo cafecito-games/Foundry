@@ -369,7 +369,10 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 			result.native_type = p_datatype.native_type;
 
 #ifdef DEBUG_ENABLED
-			if (unlikely(!FSLanguage::get_singleton()->get_global_map().has(result.native_type))) {
+			// A namespaced native is absent from the flat global map on purpose, so the qualified
+			// lookup is what proves it exists.
+			if (unlikely(!FSLanguage::get_singleton()->get_global_map().has(result.native_type) &&
+						FSLanguage::get_singleton()->get_native_class_by_qualified(result.native_type).is_null())) {
 				_set_error(vformat(R"(FoundryScript bug (please report): Native class "%s" not found.)", result.native_type), nullptr);
 				return FSDataType();
 			}
@@ -742,7 +745,25 @@ static bool _can_use_validate_call(const MethodBind *p_method, const Vector<FSCo
 	return true;
 }
 
+// The canonical ClassDB name behind an identifier the analyzer resolved to a native class. For a
+// namespaced native the identifier text is the bare simple name, which ClassDB does not answer to;
+// the analyzer records the qualified name in the identifier's native type.
+static StringName _native_class_name_of(const FSParser::IdentifierNode *p_identifier) {
+	const FSParser::DataType identifier_type = p_identifier->get_datatype();
+	if (identifier_type.kind == FSParser::DataType::NATIVE && identifier_type.native_type != StringName()) {
+		return identifier_type.native_type;
+	}
+	return p_identifier->name;
+}
+
 FSCodeGenerator::Address FSCompiler::_emit_global_class_value(CodeGen &codegen, Error &r_error, const StringName &p_global_class, const FSParser::ExpressionNode *p_source) {
+	// A namespaced native class resolves to its class handle, which is reachable only by the
+	// canonical qualified name: it is deliberately not registered as a bare global.
+	const Ref<FSNativeClass> native_class = FSLanguage::get_singleton()->get_native_class_by_qualified(p_global_class);
+	if (native_class.is_valid()) {
+		return codegen.add_constant(native_class);
+	}
+
 	const FSParser::ClassNode *class_node = codegen.class_node;
 	while (class_node->outer) {
 		class_node = class_node->outer;
@@ -1634,14 +1655,14 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 								// May be static built-in method call.
 								gen->write_call_builtin_type_static(result, FSParser::get_builtin_type(static_cast<FSParser::IdentifierNode *>(subscript->base)->name), subscript->attribute->name, arguments);
 							} else if (!call->is_super && subscript->base->type == FSParser::Node::IDENTIFIER && call->function_name != SNAME("new") &&
-									static_cast<FSParser::IdentifierNode *>(subscript->base)->source == FSParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(static_cast<FSParser::IdentifierNode *>(subscript->base)->name) &&
-									ClassDB::get_method(static_cast<FSParser::IdentifierNode *>(subscript->base)->name, subscript->attribute->name) != nullptr) {
+									static_cast<FSParser::IdentifierNode *>(subscript->base)->source == FSParser::IdentifierNode::NATIVE_CLASS && !Engine::get_singleton()->has_singleton(_native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base))) &&
+									ClassDB::get_method(_native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base)), subscript->attribute->name) != nullptr) {
 								// It's a static native method call. A name ClassDB does not know is not one —
 								// it is a `static` witness from a retroactive conformance on this engine class,
 								// which has no `MethodBind` to encode. That falls through to the generic call
 								// below, where the class evaluates to its `FSNativeClass` and dispatches the
 								// witness. (Encoding a null `MethodBind` here would crash the VM.)
-								StringName class_name = static_cast<FSParser::IdentifierNode *>(subscript->base)->name;
+								StringName class_name = _native_class_name_of(static_cast<FSParser::IdentifierNode *>(subscript->base));
 								MethodBind *method = ClassDB::get_method(class_name, subscript->attribute->name);
 								if (_can_use_validate_call(method, arguments)) {
 									// Exact arguments, use validated call.
@@ -4844,9 +4865,13 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 		return ERR_BUG;
 	}
 
-	int native_idx = FSLanguage::get_singleton()->get_global_map()[base_type.native_type];
-
-	p_script->native = FSLanguage::get_singleton()->get_global_array()[native_idx];
+	// A namespaced native base is only reachable by its canonical qualified name; flat natives are
+	// in both maps under the same name, so the qualified lookup is tried first for everything.
+	p_script->native = FSLanguage::get_singleton()->get_native_class_by_qualified(base_type.native_type);
+	if (p_script->native.is_null()) {
+		int native_idx = FSLanguage::get_singleton()->get_global_map()[base_type.native_type];
+		p_script->native = FSLanguage::get_singleton()->get_global_array()[native_idx];
+	}
 	if (p_script->native.is_null()) {
 		_set_error("Compiler bug (please report): script native type is null.", nullptr);
 		return ERR_BUG;
