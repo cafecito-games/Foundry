@@ -1,0 +1,118 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-06-namespaced-native-classes.md",
+  "specPath": "docs/superpowers/specs/2026-08-06-namespaced-native-classes-design.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: ClassInfo namespace fields + canonical qualified keying",
+      "status": "pending",
+      "description": "**Goal:** Store namespace on ClassInfo, derive qualified_name, key _add_class by qualified name (no-op for empty namespace).\n\n**Files:** core/object/class_db.h (ClassInfo), core/object/class_db.cpp (_add_class)\n\n**Verify:** `python3 scripts/agent_build.py --backend ninja --test --case \"*ClassDB*\"`\n\n```json:metadata\n{\"files\": [\"core/object/class_db.h\", \"core/object/class_db.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja --test --case \\\"*ClassDB*\\\"\", \"acceptanceCriteria\": [\"ClassInfo has namespace_path + qualified_name\", \"_add_class keys by qualified_name\", \"existing classes register unchanged\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: FOUNDRY_REGISTER_NAMESPACE macro + register_namespace rekey",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "**Goal:** Registration-site seam declaring a class's namespace; rekeys map entry from simple to qualified name.\n\n**Files:** core/object/class_db.h, core/object/class_db.cpp\n\n```json:metadata\n{\"files\": [\"core/object/class_db.h\", \"core/object/class_db.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja\", \"acceptanceCriteria\": [\"FOUNDRY_REGISTER_NAMESPACE macro\", \"register_namespace rekeys\", \"rekey copies full ClassInfo\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Bare-name alias map + global re-export + lookup order",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "**Goal:** Optional bare-name re-export with ambiguity detection; canonical-first lookup order.\n\n**Files:** core/object/class_db.h, core/object/class_db.cpp\n\n```json:metadata\n{\"files\": [\"core/object/class_db.h\", \"core/object/class_db.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja\", \"acceptanceCriteria\": [\"class_register_global_alias\", \"_resolve_by_any_name canonical-first\", \"ambiguous bare name fails\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: ClassDB accessors + resolve_type_name + class_get_in_namespace",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "**Goal:** Expose namespace data; central type-name resolver for the scene loader.\n\n**Files:** core/object/class_db.h, core/object/class_db.cpp\n\n```json:metadata\n{\"files\": [\"core/object/class_db.h\", \"core/object/class_db.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja\", \"acceptanceCriteria\": [\"class_get_qualified_name/namespace/by_qualified_name\", \"class_get_in_namespace\", \"resolve_type_name\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: ClassDB namespacing doctest",
+      "status": "pending",
+      "blockedBy": [1, 2, 3],
+      "description": "**Goal:** Prove ClassDB layer: keying regression, rekey, alias ambiguity, resolve_type_name.\n\n**Files:** tests/test_class_db_namespace.h (create), tests/test_main.cpp\n\n**Verify:** `python3 scripts/agent_build.py --backend ninja --test --case \"*ClassDBNamespace*\"`\n\n```json:metadata\n{\"files\": [\"tests/test_class_db_namespace.h\", \"tests/test_main.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja --test --case \\\"*ClassDBNamespace*\\\"\", \"acceptanceCriteria\": [\"rekey to qualified\", \"empty-namespace keying regression\", \"ambiguous alias rejected\", \"resolve_type_name resolves\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 6: Pilot HTTPServer native class + namespace registration",
+      "status": "pending",
+      "blockedBy": [1],
+      "description": "**Goal:** Minimal HTTPServer : Node registered under foundry.http.server.\n\n**Files:** scene/main/http_server.h (create), scene/main/http_server.cpp (create), scene/register_scene_types.cpp\n\n```json:metadata\n{\"files\": [\"scene/main/http_server.h\", \"scene/main/http_server.cpp\", \"scene/register_scene_types.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja --test --case \\\"*HTTPServer*\\\"\", \"acceptanceCriteria\": [\"HTTPServer is a Node subclass\", \"registered with namespace\", \"qualified lookup succeeds; bare does not\"]}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 7: FS exclude namespaced natives from globals + qualified FSNativeClass map",
+      "status": "pending",
+      "blockedBy": [3, 5],
+      "description": "**Goal:** Stop exposing namespaced natives as bare globals; hold them in a qualified-name map.\n\n**Files:** modules/foundry_script/foundry_script.h, modules/foundry_script/foundry_script.cpp\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/foundry_script.h\", \"modules/foundry_script/foundry_script.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja --test --case \\\"*FoundryScript*\\\"\", \"acceptanceCriteria\": [\"namespaced natives excluded from flat globals\", \"native_class_by_qualified populated\", \"empty-namespace unchanged\"]}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 8: FS analyzer consults ClassDB + qualified identity",
+      "status": "pending",
+      "blockedBy": [6],
+      "description": "**Goal:** Resolve namespaced natives through import/namespace machinery via ClassDB; carry qualified identity.\n\n**Files:** modules/foundry_script/fs_analyzer.cpp\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_analyzer.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja\", \"acceptanceCriteria\": [\"3 resolution helpers consult ClassDB\", \"qualified native_type in reduction\", \"bare-without-import still fails\"]}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 9: FS compiler resolves qualified native_type",
+      "status": "pending",
+      "blockedBy": [6],
+      "description": "**Goal:** Compiler pulls the right FSNativeClass from the qualified map for a qualified native_type.\n\n**Files:** modules/foundry_script/fs_compiler.cpp\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_compiler.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja\", \"acceptanceCriteria\": [\"qualified native base resolves from qualified map\", \"flat natives unchanged\"]}\n```"
+    },
+    {
+      "id": 9,
+      "subject": "Task 10: FS completion + GRAMMAR.md reachability",
+      "status": "pending",
+      "blockedBy": [7],
+      "description": "**Goal:** Native namespaces discoverable in completion; document reachability rule.\n\n**Files:** modules/foundry_script/fs_editor.cpp, modules/foundry_script/GRAMMAR.md\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/fs_editor.cpp\", \"modules/foundry_script/GRAMMAR.md\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja\", \"acceptanceCriteria\": [\"native namespaces in importable completion\", \"member completion offers namespaced classes\", \"GRAMMAR §4.2 updated, no token changes\"]}\n```"
+    },
+    {
+      "id": 10,
+      "subject": "Task 11: Foundry Script fixtures",
+      "status": "pending",
+      "blockedBy": [7, 8],
+      "description": "**Goal:** End-to-end FS fixtures: import extends, qualified chain, bare-without-import negative.\n\n**Files:** modules/foundry_script/tests/scripts/namespaced_native/*.fs + .out\n\n**Verify:** `./bin/foundry.* --headless test run --case \"*namespaced_native*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/tests/scripts/namespaced_native/\"], \"verifyCommand\": \"./bin/foundry.* --headless test run --case \\\"*namespaced_native*\\\" --force-colors\", \"acceptanceCriteria\": [\"import_extends passes\", \"qualified_chain passes\", \"bare_without_import negative fixture matches error\"]}\n```"
+    },
+    {
+      "id": 11,
+      "subject": "Task 12: Scene qualified type + resolve_type_name choke point + MissingNode",
+      "status": "pending",
+      "blockedBy": [3],
+      "description": "**Goal:** Scenes store/load namespaced native types; resolve at instantiation; preserve qualified on MissingNode.\n\n**Files:** scene/resources/packed_scene.cpp, scene/resources/packed_scene.h\n\n```json:metadata\n{\"files\": [\"scene/resources/packed_scene.cpp\", \"scene/resources/packed_scene.h\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja --test --case \\\"*PackedScene*\\\"\", \"acceptanceCriteria\": [\"packer writes qualified name\", \"resolve_type_name at choke point\", \"MissingNode preserves qualified name\"]}\n```"
+    },
+    {
+      "id": 12,
+      "subject": "Task 13: Runtime identity — get_class() returns qualified name",
+      "status": "pending",
+      "blockedBy": [5],
+      "description": "**Goal:** Runtime identity of a namespaced native is its qualified name; inheritance matching intact.\n\n**Files:** core/object/object.cpp, core/object/class_db.cpp\n\n```json:metadata\n{\"files\": [\"core/object/object.cpp\", \"core/object/class_db.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja --test --case \\\"*ClassDBNamespace*\\\"\", \"acceptanceCriteria\": [\"get_class() returns qualified for namespaced\", \"is_class resolves qualified + inherited\", \"flat classes unchanged\"]}\n```"
+    },
+    {
+      "id": 13,
+      "subject": "Task 14: Editor Create Node dialog namespace grouping + qualified instantiation",
+      "status": "pending",
+      "blockedBy": [12, 5],
+      "description": "**Goal:** Add namespaced native nodes through the Create Node dialog, grouped by namespace.\n\n**Files:** editor/gui/create_dialog.cpp\n\n```json:metadata\n{\"files\": [\"editor/gui/create_dialog.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --backend ninja\", \"acceptanceCriteria\": [\"namespaced classes grouped under namespace header\", \"confirm writes qualified type\", \"filtering works\"]}\n```"
+    },
+    {
+      "id": 14,
+      "subject": "Task 15: Docs namespace attribute + HTTPServer doc page",
+      "status": "pending",
+      "blockedBy": [5],
+      "description": "**Goal:** Document namespace on class reference; help resolves qualified names.\n\n**Files:** doc/class.xsd, doc/classes/HTTPServer.xml\n\n```json:metadata\n{\"files\": [\"doc/class.xsd\", \"doc/classes/HTTPServer.xml\"], \"verifyCommand\": \"pre-commit run --all-files\", \"acceptanceCriteria\": [\"schema permits namespace attribute\", \"HTTPServer doc carries namespace\", \"F1 resolves qualified name\"]}\n```"
+    },
+    {
+      "id": 15,
+      "subject": "Task 16: End-to-end integration + final validation build",
+      "status": "pending",
+      "blockedBy": [4, 10, 11, 13, 14],
+      "description": "**Goal:** Prove the whole pipeline together; run the strict validation build.\n\n**Files:** tests/ (scene round-trip doctest)\n\n**Verify:** `python3 scripts/agent_build.py`\n\n```json:metadata\n{\"files\": [\"tests/\"], \"verifyCommand\": \"python3 scripts/agent_build.py\", \"acceptanceCriteria\": [\"namespaced node round-trips through scene\", \"unknown qualified type -> MissingNode\", \"full strict build SUCCESS\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-08-06"
+}
