@@ -230,8 +230,8 @@ void HTTPServer::_dispatch(const Ref<HTTPServerConnection> &p_connection) {
 
 	if (!matched_route || emit_for_all) {
 		// The catch-all step. Connected scripts see every unclaimed request, and every request at all
-		// once `emit_for_all` is set, which is the observer case: a routed response is already
-		// committed by then and further writes are refused.
+		// once `emit_for_all` is set, which is the observer case: a routed response has already
+		// committed its body by then, so a receiver's own send is refused.
 		emit_signal(SNAME("request_received"), request, response);
 
 		if (p_connection->is_closed()) {

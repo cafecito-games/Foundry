@@ -772,6 +772,25 @@ TEST_CASE("[HTTPServer] The resolution ladder runs routes, then the signal, then
 		CHECK(observer->seen_response_already_sent);
 	}
 
+	SUBCASE("A receiver may still amend the status of a response a route committed") {
+		server->set_emit_for_all(true);
+		REQUIRE(server->connect("request_received", receiver) == OK);
+
+		// Only the body is locked once a response is committed, so a receiver running behind a route
+		// can still change the status line.
+		observer->answer = true;
+		observer->amend_status = true;
+		observer->reply_status = 503;
+
+		ERR_PRINT_OFF;
+		const ClientResult result = http_get(server, port, "/hello");
+		ERR_PRINT_ON;
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 503);
+		CHECK(result.body == "hi");
+	}
+
 	SUBCASE("An unrouted request reaches the signal, which may answer it") {
 		REQUIRE(server->connect("request_received", receiver) == OK);
 		observer->answer = true;

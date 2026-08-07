@@ -59,7 +59,7 @@
 			The address [method listen] binds to. Defaults to the loopback interface, so the server is reachable only from the local machine. Use [code]"*"[/code] to accept connections on every interface. An empty value is rejected and leaves the property unchanged.
 		</member>
 		<member name="emit_for_all" type="bool" setter="set_emit_for_all" getter="is_emitting_for_all" default="false">
-			If [code]true[/code], [signal request_received] is emitted for every request, including the ones a route already handled. Receivers then run after the route handler, so the response is usually already completed and can only be observed.
+			If [code]true[/code], [signal request_received] is emitted for every request, including the ones a route already handled. Receivers then run after the route handler, so the response body is usually already committed and a receiver's own [code]send[/code] call is refused. The status and the header fields are still writable at that point, so a receiver can amend them.
 			If [code]false[/code], the signal is emitted only for requests no route claimed, which keeps routed traffic off the signal.
 		</member>
 		<member name="port" type="int" setter="set_port" getter="get_port" default="8080">
