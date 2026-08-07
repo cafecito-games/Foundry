@@ -2006,6 +2006,39 @@ func f():
 		memdelete(efs);
 	}
 
+	TEST_CASE("[textDocument][signatureHelp] describes a contextual tagged-union case construction") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		const String uri = workspace->get_file_uri("res://lsp/contextual_tagged_union.fs");
+
+		assert_no_errors_in("res://lsp/contextual_tagged_union.fs");
+
+		// Inside the argument list of `.Ok(1)`, where the union is supplied by the annotated target.
+		LSP::SignatureHelp signature_help;
+		CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(8, 40)), signature_help), OK);
+		CHECK_EQ(signature_help.signatures.size(), 1);
+		if (signature_help.signatures.size() == 1) {
+			const LSP::SignatureInformation &signature = signature_help.signatures[0];
+			CHECK_EQ(signature.label, "Ok(value: T)");
+			CHECK_EQ(signature.parameters.size(), 1);
+			if (signature.parameters.size() == 1) {
+				CHECK_EQ(signature.parameters[0].label, "value: T");
+			}
+			CHECK_EQ(signature_help.activeParameter, 0);
+		}
+
+		// A payload-less case is not a construction, so it reports no signature.
+		LSP::SignatureHelp payload_less_signature_help;
+		CHECK_NE(workspace->resolve_signature(pos_in(uri, pos(9, 40)), payload_less_signature_help), OK);
+		CHECK(payload_less_signature_help.signatures.is_empty());
+
+		memdelete(proto);
+		memdelete(efs);
+	}
+
 	TEST_CASE("[textDocument][definition] resolves custom annotation references") {
 		EditorFileSystem *efs = memnew(EditorFileSystem);
 		FSLanguageProtocol *proto = initialize(root);

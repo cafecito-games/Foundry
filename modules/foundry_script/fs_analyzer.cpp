@@ -11524,6 +11524,20 @@ bool FSAnalyzer::tagged_union_metatype_from_expected_type(const FSParser::DataTy
 	return true;
 }
 
+bool FSAnalyzer::publish_expected_union_for_completion(FSParser::Node *p_shorthand, const FSParser::DataType *p_expected_type) {
+	if (p_shorthand == nullptr || p_expected_type == nullptr || !parser->for_completion) {
+		return false;
+	}
+
+	FSParser::DataType enum_meta_type;
+	if (!tagged_union_metatype_from_expected_type(*p_expected_type, p_shorthand, enum_meta_type)) {
+		return false;
+	}
+
+	p_shorthand->set_datatype(enum_meta_type);
+	return true;
+}
+
 void FSAnalyzer::register_contextual_enum_case(FSParser::ExpressionNode *p_expression) {
 	reduced_contextual_enum_cases.push_back(p_expression);
 }
@@ -11594,8 +11608,10 @@ bool FSAnalyzer::resolve_contextual_enum_case(FSParser::ExpressionNode *p_expres
 	unqualified_type.kind = FSParser::DataType::VARIANT;
 
 	if (reference->attribute == nullptr) {
-		// The case name failed to parse; the parser already reported it.
+		// The case name failed to parse; the parser already reported it. The union this position expects
+		// is still what names the candidate cases, so completion keeps it on the shorthand.
 		p_expression->set_datatype(unqualified_type);
+		publish_expected_union_for_completion(reference, &p_expected_type);
 		return true;
 	}
 	const StringName case_name = reference->attribute->name;
@@ -11695,8 +11711,10 @@ bool FSAnalyzer::resolve_contextual_case_value_pattern(FSParser::ExpressionNode 
 	unqualified_type.kind = FSParser::DataType::VARIANT;
 
 	if (reference->attribute == nullptr) {
-		// The case name failed to parse; the parser already reported it.
+		// The case name failed to parse; the parser already reported it. The subject's union is still what
+		// names the candidate cases, so completion keeps it on the shorthand.
 		p_expression->set_datatype(unqualified_type);
+		publish_expected_union_for_completion(reference, p_match_test_type);
 		return true;
 	}
 	const StringName case_name = reference->attribute->name;

@@ -648,6 +648,12 @@ private:
 	// so the parser leaves it an expression pattern; the union still comes from the subject, which the
 	// ordinary expression path cannot see. Returns false when the expression is not a contextual case.
 	bool resolve_contextual_case_value_pattern(FSParser::ExpressionNode *p_expression, const FSParser::DataType *p_match_test_type);
+	// Records the union a half-typed shorthand's position expects on the shorthand itself, so the editor
+	// can list that union's cases for a leading `.` whose case name has not been typed yet. Only runs
+	// while parsing for completion, because outside it the missing case name is a parse error and a
+	// union-typed node would only add a second, misleading diagnostic. Returns false when the position
+	// expects no complete tagged-union specialization.
+	bool publish_expected_union_for_completion(FSParser::Node *p_shorthand, const FSParser::DataType *p_expected_type);
 	void reduce_ternary_op(FSParser::TernaryOpNode *p_ternary_op, bool p_is_root = false);
 	void reduce_type_test(FSParser::TypeTestNode *p_type_test);
 	void resolve_type_test_case_binds(FSParser::TypeTestNode *p_type_test, const FSParser::DataType &p_test_type);

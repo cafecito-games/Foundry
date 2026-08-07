@@ -130,6 +130,7 @@ class ExtendFSParser : public FSParser {
 	void parse_function_symbol(const FSParser::FunctionNode *p_func, LSP::DocumentSymbol &r_symbol, const FSParser::ClassNode *p_owner_class = nullptr);
 	static String format_type_parameters_detail(const Vector<FSParser::TypeParameterNode *> &p_type_parameters);
 	void append_type_parameter_symbol_children(const Vector<FSParser::TypeParameterNode *> &p_type_parameters, LSP::DocumentSymbol &r_symbol);
+	static String enum_payload_field_detail(const FSParser::EnumNode::PayloadField &p_field);
 	static String enum_case_detail(const FSParser::EnumNode::Value &p_value);
 	void append_enum_symbol_children(const FSParser::EnumNode *p_enum, LSP::DocumentSymbol &r_symbol);
 	void append_tuple_symbol_fields(const FSParser::TupleNode *p_tuple, LSP::DocumentSymbol &r_symbol);
