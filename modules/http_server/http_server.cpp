@@ -46,10 +46,28 @@ void HTTPServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_bind_address"), &HTTPServer::get_bind_address);
 	ClassDB::bind_method(D_METHOD("set_emit_for_all", "emit_for_all"), &HTTPServer::set_emit_for_all);
 	ClassDB::bind_method(D_METHOD("is_emitting_for_all"), &HTTPServer::is_emitting_for_all);
+	ClassDB::bind_method(D_METHOD("set_max_connections", "max_connections"), &HTTPServer::set_max_connections);
+	ClassDB::bind_method(D_METHOD("get_max_connections"), &HTTPServer::get_max_connections);
+	ClassDB::bind_method(D_METHOD("set_max_request_body_bytes", "max_request_body_bytes"), &HTTPServer::set_max_request_body_bytes);
+	ClassDB::bind_method(D_METHOD("get_max_request_body_bytes"), &HTTPServer::get_max_request_body_bytes);
+	ClassDB::bind_method(D_METHOD("set_max_header_count", "max_header_count"), &HTTPServer::set_max_header_count);
+	ClassDB::bind_method(D_METHOD("get_max_header_count"), &HTTPServer::get_max_header_count);
+	ClassDB::bind_method(D_METHOD("set_max_header_line_bytes", "max_header_line_bytes"), &HTTPServer::set_max_header_line_bytes);
+	ClassDB::bind_method(D_METHOD("get_max_header_line_bytes"), &HTTPServer::get_max_header_line_bytes);
+	ClassDB::bind_method(D_METHOD("set_max_header_block_bytes", "max_header_block_bytes"), &HTTPServer::set_max_header_block_bytes);
+	ClassDB::bind_method(D_METHOD("get_max_header_block_bytes"), &HTTPServer::get_max_header_block_bytes);
+	ClassDB::bind_method(D_METHOD("set_connection_timeout_seconds", "connection_timeout_seconds"), &HTTPServer::set_connection_timeout_seconds);
+	ClassDB::bind_method(D_METHOD("get_connection_timeout_seconds"), &HTTPServer::get_connection_timeout_seconds);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "port", PROPERTY_HINT_RANGE, "0,65535,1"), "set_port", "get_port");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "bind_address"), "set_bind_address", "get_bind_address");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "emit_for_all"), "set_emit_for_all", "is_emitting_for_all");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_connections", PROPERTY_HINT_RANGE, "1,4096,1,or_greater"), "set_max_connections", "get_max_connections");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_request_body_bytes", PROPERTY_HINT_RANGE, "1,67108864,1,or_greater"), "set_max_request_body_bytes", "get_max_request_body_bytes");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_header_count", PROPERTY_HINT_RANGE, "1,255,1"), "set_max_header_count", "get_max_header_count");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_header_line_bytes", PROPERTY_HINT_RANGE, "1,65536,1,or_greater"), "set_max_header_line_bytes", "get_max_header_line_bytes");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_header_block_bytes", PROPERTY_HINT_RANGE, "1,1048576,1,or_greater"), "set_max_header_block_bytes", "get_max_header_block_bytes");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "connection_timeout_seconds", PROPERTY_HINT_RANGE, "0,600,0.1,or_greater"), "set_connection_timeout_seconds", "get_connection_timeout_seconds");
 
 	ADD_SIGNAL(MethodInfo("request_received",
 			PropertyInfo(Variant::OBJECT, "request", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "foundry.http.server.HTTPRequest"),
@@ -93,6 +111,61 @@ void HTTPServer::set_emit_for_all(bool p_emit_for_all) {
 
 bool HTTPServer::is_emitting_for_all() const {
 	return emit_for_all;
+}
+
+void HTTPServer::set_max_connections(int p_max_connections) {
+	ERR_FAIL_COND_MSG(p_max_connections < 1, "The connection cap must be at least 1.");
+	max_connections = p_max_connections;
+}
+
+int HTTPServer::get_max_connections() const {
+	return max_connections;
+}
+
+void HTTPServer::set_max_request_body_bytes(int p_max_request_body_bytes) {
+	ERR_FAIL_COND_MSG(p_max_request_body_bytes < 1, "The request body cap must be at least 1 byte.");
+	limits.max_request_body_bytes = p_max_request_body_bytes;
+}
+
+int HTTPServer::get_max_request_body_bytes() const {
+	return limits.max_request_body_bytes;
+}
+
+void HTTPServer::set_max_header_count(int p_max_header_count) {
+	ERR_FAIL_COND_MSG(p_max_header_count < 1 || p_max_header_count > HTTPServerConnection::MAX_HEADER_FIELD_CEILING,
+			vformat("The header field cap must be between 1 and %d.", HTTPServerConnection::MAX_HEADER_FIELD_CEILING));
+	limits.max_header_count = p_max_header_count;
+}
+
+int HTTPServer::get_max_header_count() const {
+	return limits.max_header_count;
+}
+
+void HTTPServer::set_max_header_line_bytes(int p_max_header_line_bytes) {
+	ERR_FAIL_COND_MSG(p_max_header_line_bytes < 1, "The header line cap must be at least 1 byte.");
+	limits.max_header_line_bytes = p_max_header_line_bytes;
+}
+
+int HTTPServer::get_max_header_line_bytes() const {
+	return limits.max_header_line_bytes;
+}
+
+void HTTPServer::set_max_header_block_bytes(int p_max_header_block_bytes) {
+	ERR_FAIL_COND_MSG(p_max_header_block_bytes < 1, "The header block cap must be at least 1 byte.");
+	limits.max_header_block_bytes = p_max_header_block_bytes;
+}
+
+int HTTPServer::get_max_header_block_bytes() const {
+	return limits.max_header_block_bytes;
+}
+
+void HTTPServer::set_connection_timeout_seconds(double p_connection_timeout_seconds) {
+	ERR_FAIL_COND_MSG(p_connection_timeout_seconds < 0.0, "The connection timeout cannot be negative.");
+	limits.timeout_seconds = p_connection_timeout_seconds;
+}
+
+double HTTPServer::get_connection_timeout_seconds() const {
+	return limits.timeout_seconds;
 }
 
 Error HTTPServer::listen() {
@@ -170,7 +243,10 @@ void HTTPServer::poll() {
 		return;
 	}
 
-	while (tcp_server->is_connection_available()) {
+	// A connection past the cap is deliberately left in the listen queue rather than taken and
+	// refused: it then costs nothing here, and it is served as soon as a slot frees, which the
+	// connection timeout guarantees will happen.
+	while (connections.size() < uint32_t(max_connections) && tcp_server->is_connection_available()) {
 		Ref<StreamPeerTCP> peer = tcp_server->take_connection();
 		if (peer.is_null()) {
 			break;
@@ -179,7 +255,7 @@ void HTTPServer::poll() {
 
 		Ref<HTTPServerConnection> connection;
 		connection.instantiate();
-		connection->accept(peer);
+		connection->accept(peer, limits);
 		connections.push_back(connection);
 	}
 

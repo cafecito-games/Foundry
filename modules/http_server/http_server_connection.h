@@ -59,13 +59,43 @@ public:
 		STATE_CLOSED,
 	};
 
+	// The parse table is a stack array, so a connection can never be asked to hold more header
+	// fields than one pass can address.
+	static constexpr int MAX_HEADER_FIELD_CEILING = 255;
+
+	// The bounds one connection is held to. The server owns the values and copies them in at accept
+	// time, so a limit changed later applies to connections accepted after the change.
+	struct Limits {
+		// The largest body, in bytes, that is read into memory before dispatch.
+		int max_request_body_bytes = 1024 * 1024;
+		// The largest number of header fields one request may carry.
+		int max_header_count = 100;
+		// The largest single header field line, counting its name, its colon, its value and the
+		// terminating CRLF.
+		int max_header_line_bytes = 8 * 1024;
+		// The largest header block, request line and every field together. A block that has not
+		// ended by this point never will, because nothing more is read into it.
+		int max_header_block_bytes = 32 * 1024;
+		// Seconds without progress — bytes read while a request arrives, bytes drained while a
+		// response leaves, or no request at all on a reused socket — after which the connection is
+		// dropped. Zero disables the drop.
+		double timeout_seconds = 30.0;
+	};
+
 private:
-	// A request larger than this, header block and body together, is dropped rather than buffered
-	// without bound. Configurable request limits are a separate concern and are not exposed here.
-	static constexpr int MAX_REQUEST_BYTES = 32 * 1024;
-	// picohttpparser writes one entry per header field, and reports a request carrying more fields
-	// than this as malformed.
-	static constexpr int MAX_HEADER_FIELDS = 64;
+	// How many bytes are read and discarded before closing a connection that was refused, so the
+	// operating system does not answer the peer's unread bytes with a reset that would destroy the
+	// status this layer just wrote.
+	static constexpr int MAX_LINGER_BYTES = 64 * 1024;
+
+	Limits limits;
+	// When the connection last moved a byte in either direction. The timeout is measured against
+	// progress rather than age, so a long download is never cut off for taking a long time.
+	uint64_t last_progress_usec = 0;
+	// Whether the socket carries another request once the current response has drained. Decided
+	// from the request's HTTP version and its `Connection` field, and cleared by anything that
+	// makes the framing of what follows unknowable.
+	bool keep_alive = false;
 
 	Ref<StreamPeerTCP> stream;
 	Vector<uint8_t> read_buffer;
@@ -91,19 +121,29 @@ private:
 	State state = STATE_READING;
 	Ref<HTTPServerRequest> request;
 
-	// Appends everything the socket has available. Returns false once the connection is closed.
+	// Appends what the socket has available, never reading past the end of the request being
+	// assembled. Returns false once the connection has stopped reading.
 	bool _read_available();
 	void _parse();
 	// Parses the request line and the header fields once, and records how the body is framed.
-	// Returns false while the header block is still incomplete, or once the connection is closed.
+	// Returns false while the header block is still incomplete, or once the request was refused.
 	bool _parse_header_block();
+	// Answers a request this layer refused with a bare status, and closes once it has drained. Every
+	// refusal goes through here, so no rejection leaves the peer guessing at a silent close.
+	void _reject(int p_status);
+	// Clears every per-request field so the socket can carry the next request.
+	void _begin_next_request();
+	void _note_progress();
+	bool _has_stalled() const;
+	// Reads and discards what the peer already sent, bounded, before the socket is closed.
+	void _linger();
 	void _flush_write();
 	// Refills the drained write buffer with the next piece of a file body. Returns false once the
 	// body is complete, or when the file stops delivering the bytes it promised.
 	bool _refill_from_file();
 
 public:
-	void accept(const Ref<StreamPeerTCP> &p_stream);
+	void accept(const Ref<StreamPeerTCP> &p_stream, const Limits &p_limits);
 
 	void poll();
 
@@ -114,7 +154,8 @@ public:
 	Ref<HTTPServerRequest> get_request() const { return request; }
 
 	// Serializes a committed response and moves to `STATE_WRITING`. The bytes drain over later
-	// polls, and the connection closes once the last byte is written.
+	// polls; once the last one is written the socket either carries the next request or closes,
+	// depending on what the request asked for.
 	void begin_response(const Ref<HTTPResponse> &p_response);
 
 	void close();

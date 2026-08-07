@@ -63,6 +63,10 @@ class HTTPServer : public Node {
 	int port = 8080;
 	String bind_address = "127.0.0.1";
 	bool emit_for_all = false;
+	int max_connections = 64;
+	// Copied into every connection as it is accepted, so a limit changed while the server runs
+	// applies to connections taken after the change and never rewrites one already in flight.
+	HTTPServerConnection::Limits limits;
 
 	Ref<TCPServer> tcp_server;
 	LocalVector<Ref<HTTPServerConnection>> connections;
@@ -89,6 +93,31 @@ public:
 	// routed traffic off the signal. When true every request is announced, routed or not.
 	void set_emit_for_all(bool p_emit_for_all);
 	bool is_emitting_for_all() const;
+
+	// How many sockets the server owns at once. A connection arriving while the cap is reached is
+	// left waiting in the listen queue and is taken once a slot frees, so it costs nothing here.
+	void set_max_connections(int p_max_connections);
+	int get_max_connections() const;
+
+	// A request whose body is larger than this is refused with `413` before any of it is buffered.
+	void set_max_request_body_bytes(int p_max_request_body_bytes);
+	int get_max_request_body_bytes() const;
+
+	// A request carrying more header fields than this is refused with `431`.
+	void set_max_header_count(int p_max_header_count);
+	int get_max_header_count() const;
+
+	// A request carrying a header line longer than this is refused with `431`.
+	void set_max_header_line_bytes(int p_max_header_line_bytes);
+	int get_max_header_line_bytes() const;
+
+	// A request whose header block does not end within this many bytes is refused with `431`.
+	void set_max_header_block_bytes(int p_max_header_block_bytes);
+	int get_max_header_block_bytes() const;
+
+	// Seconds a connection may go without moving a byte before it is dropped. Zero disables it.
+	void set_connection_timeout_seconds(double p_connection_timeout_seconds);
+	double get_connection_timeout_seconds() const;
 
 	// Binds `bind_address` on `port`.
 	Error listen();
