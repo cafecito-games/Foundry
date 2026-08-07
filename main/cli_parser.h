@@ -92,6 +92,11 @@ public:
 		// occurrences are additive: a test matching any retained pattern is selected.
 		PackedStringArray test_cases;
 
+		// 1-based shard selector for `test run --shard i/n`. Both stay at -1 when the
+		// option is absent, which means "run everything in this process".
+		int test_shard_index = -1;
+		int test_shard_total = -1;
+
 		bool test_progress = false;
 		String test_progress_format;
 		String test_progress_file;

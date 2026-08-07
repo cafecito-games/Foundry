@@ -128,6 +128,13 @@ TEST_CASE("[FoundryCLIHelp] Command help documents options and example") {
 	CHECK(text.contains("foundry script format --project . --check scripts"));
 }
 
+TEST_CASE("[FoundryCLIHelp] Test run help documents the shard selector") {
+	const String text = FoundryCLIHelp::get_command_help_text("test", "run");
+	CHECK(text.contains("--shard"));
+	CHECK(text.contains("i/n"));
+	CHECK(text.contains("--case"));
+}
+
 TEST_CASE("[FoundryCLIHelp] Scoped routing validates nouns and verbs") {
 	bool valid = false;
 

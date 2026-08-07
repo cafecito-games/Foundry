@@ -43,6 +43,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/object/script_language.h"
+#include "core/templates/hash_set.h"
 #include "core/variant/dictionary.h"
 #include "core/variant/variant.h"
 #include "editor/settings/editor_settings.h"
@@ -186,7 +187,57 @@ static bool parse_completion_type_name(const String &p_name, FSParser::Completio
 	return true;
 }
 
-static void test_directory(const String &p_dir) {
+// Every completion fixture under `p_dir`, recursively. Mirrors the selection rules of the
+// runner below so the two always agree on what a fixture is.
+static void collect_completion_fixtures(const String &p_dir, Vector<String> &r_fixtures) {
+	Error err = OK;
+	Ref<DirAccess> dir = DirAccess::open(p_dir, &err);
+
+	if (err != OK) {
+		FAIL("Invalid test directory.");
+		return;
+	}
+
+	String path = dir->get_current_dir();
+
+	dir->list_dir_begin();
+	String next = dir->get_next();
+
+	while (!next.is_empty()) {
+		if (dir->current_is_dir()) {
+			if (next != "." && next != "..") {
+				collect_completion_fixtures(path.path_join(next), r_fixtures);
+			}
+		} else if (next.ends_with(".fs") && !next.ends_with(".notest.fs")) {
+			r_fixtures.push_back(path.path_join(next));
+		}
+		next = dir->get_next();
+	}
+	dir->list_dir_end();
+}
+
+// The completion corpus is looped inside a single doctest case, so `test run --shard`
+// partitions it at the fixture level instead: this case runs on every shard and each shard
+// takes its own slice. Sorting first is what makes the slice reproducible across platforms
+// whose directory traversal order differs.
+static Vector<String> select_completion_fixtures(const String &p_dir, int p_shard_index, int p_shard_total) {
+	Vector<String> fixtures;
+	collect_completion_fixtures(p_dir, fixtures);
+	fixtures.sort();
+	if (p_shard_total < 2) {
+		return fixtures;
+	}
+
+	Vector<String> shard_fixtures;
+	for (int i = 0; i < fixtures.size(); i++) {
+		if (fs_test_shard_selects(i, p_shard_index, p_shard_total)) {
+			shard_fixtures.push_back(fixtures[i]);
+		}
+	}
+	return shard_fixtures;
+}
+
+static void test_directory(const String &p_dir, const HashSet<String> &p_selected_fixtures) {
 	Error err = OK;
 	Ref<DirAccess> dir = DirAccess::open(p_dir, &err);
 
@@ -206,8 +257,13 @@ static void test_directory(const String &p_dir) {
 				next = dir->get_next();
 				continue;
 			}
-			test_directory(path.path_join(next));
+			test_directory(path.path_join(next), p_selected_fixtures);
 		} else if (next.ends_with(".fs") && !next.ends_with(".notest.fs")) {
+			if (!p_selected_fixtures.has(path.path_join(next))) {
+				next = dir->get_next();
+				continue;
+			}
+
 			Ref<FileAccess> acc = FileAccess::open(path.path_join(next), FileAccess::READ, &err);
 
 			if (err != OK) {
@@ -427,7 +483,15 @@ TEST_SUITE("[Modules][FoundryScript][Completion]") {
 
 		setup_global_classes("modules/foundry_script/tests/scripts/completion");
 		setup_global_annotations("modules/foundry_script/tests/scripts/completion");
-		test_directory("modules/foundry_script/tests/scripts/completion");
+
+		int shard_index = -1;
+		int shard_total = -1;
+		fs_test_shard_from_cmdline(shard_index, shard_total);
+		HashSet<String> selected_fixtures;
+		for (const String &fixture : select_completion_fixtures("modules/foundry_script/tests/scripts/completion", shard_index, shard_total)) {
+			selected_fixtures.insert(fixture);
+		}
+		test_directory("modules/foundry_script/tests/scripts/completion", selected_fixtures);
 
 		FSLanguage::get_singleton()->clear_global_annotations();
 		finish_language();
