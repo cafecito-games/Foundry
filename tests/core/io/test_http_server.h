@@ -482,12 +482,16 @@ class EchoRouteHandler : public Object {
 	FOUNDRY_SOFTCLASS(EchoRouteHandler, Object);
 
 public:
+	int call_count = 0;
 	int seen_body_size = -1;
+	String seen_body;
 	String seen_content_type;
 	String seen_custom_header;
 
 	void handle(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		call_count++;
 		seen_body_size = p_request->get_body().size();
+		seen_body = p_request->get_body_string();
 		seen_content_type = p_request->get_header("content-type");
 		seen_custom_header = p_request->get_header("x-request-id");
 
@@ -622,6 +626,39 @@ ClientResult http_request(HTTPServer *p_server, int p_port, HTTPClient::Method p
 
 ClientResult http_get(HTTPServer *p_server, int p_port, const String &p_path) {
 	return http_request(p_server, p_port, HTTPClient::METHOD_GET, p_path);
+}
+
+// Connects a raw socket and drives the server until it owns the connection, so a test can place the
+// boundaries between reads itself instead of relying on how the network stack packs the bytes.
+Ref<StreamPeerTCP> connect_raw(HTTPServer *p_server, int p_port) {
+	Ref<StreamPeerTCP> client;
+	client.instantiate();
+	if (client->connect_to_host(IPAddress(LOOPBACK), p_port) != OK) {
+		return Ref<StreamPeerTCP>();
+	}
+
+	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+	while (p_server->get_connection_count() == 0 && OS::get_singleton()->get_ticks_usec() < deadline) {
+		p_server->poll();
+		client->poll();
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
+	return client;
+}
+
+void send_raw(const Ref<StreamPeerTCP> &p_client, const String &p_bytes) {
+	const CharString bytes = p_bytes.utf8();
+	p_client->put_data((const uint8_t *)bytes.get_data(), bytes.length());
+}
+
+// Runs a fixed number of poll passes, which is what "the server saw everything sent so far" means
+// when no response is expected yet.
+void pump(HTTPServer *p_server, const Ref<StreamPeerTCP> &p_client, int p_rounds) {
+	for (int i = 0; i < p_rounds; i++) {
+		p_server->poll();
+		p_client->poll();
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
 }
 
 } // namespace
@@ -1025,6 +1062,88 @@ TEST_CASE("[HTTPServer] The request and response surface survives a round trip")
 	}
 
 	server->stop();
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A body that arrives after its header block is assembled before dispatch") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	EchoRouteHandler *handler = memnew(EchoRouteHandler);
+	server->route("POST", "/echo", callable_mp(handler, &EchoRouteHandler::handle));
+
+	SUBCASE("A request split between its header block and its body waits for the rest") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 11\r\n\r\n");
+		pump(server, client, 8);
+
+		// The header block is complete but the body is not, so nothing has been dispatched.
+		CHECK(handler->call_count == 0);
+		CHECK(server->get_connection_count() == 1);
+
+		send_raw(client, "hello");
+		pump(server, client, 8);
+		CHECK(handler->call_count == 0);
+
+		send_raw(client, " world");
+		const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+		while (handler->call_count == 0 && OS::get_singleton()->get_ticks_usec() < deadline) {
+			pump(server, client, 1);
+		}
+
+		CHECK(handler->call_count == 1);
+		CHECK(handler->seen_body_size == 11);
+		CHECK(handler->seen_body == "hello world");
+	}
+
+	SUBCASE("A request framed by both a content length and a transfer coding is dropped") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		// Ambiguous framing: the two fields disagree about where the body ends, so no handler may be
+		// given a body assembled from a guess.
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n"
+						 "Transfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n");
+		pump(server, client, 16);
+
+		CHECK(handler->call_count == 0);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	SUBCASE("A content length that is not a plain number is dropped") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		// A repeated field folds into "5, 5", which is not a length this layer can act on.
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello");
+		pump(server, client, 16);
+
+		CHECK(handler->call_count == 0);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	SUBCASE("A content length past the buffer bound is dropped without buffering it") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 99999999\r\n\r\n");
+		pump(server, client, 16);
+
+		CHECK(handler->call_count == 0);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	server->stop();
+	memdelete(handler);
 	memdelete(server);
 }
 

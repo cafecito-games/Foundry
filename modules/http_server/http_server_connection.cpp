@@ -241,7 +241,11 @@ bool HTTPServerConnection::_parse_header_block() {
 	}
 	request->set_peer(String(stream->get_connected_host()) + ":" + itos(stream->get_connected_port()));
 
-	if (!parse_content_length(request->get_header("Content-Length"), MAX_REQUEST_BYTES - parsed, body_length)) {
+	// A transfer coding would have to be decoded before a handler could read the body, and pairing
+	// one with a content length is ambiguous framing besides, so such a request is malformed here
+	// exactly like a content length this layer cannot act on.
+	if (request->has_header("Transfer-Encoding") ||
+			!parse_content_length(request->get_header("Content-Length"), MAX_REQUEST_BYTES - parsed, body_length)) {
 		request.unref();
 		close();
 		return false;
