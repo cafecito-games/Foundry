@@ -573,9 +573,8 @@ ClientResult http_request(HTTPServer *p_server, int p_port, HTTPClient::Method p
 	while (OS::get_singleton()->get_ticks_usec() < deadline) {
 		p_server->poll();
 
-		// The server closes the socket as soon as the response is written, and polling a client
-		// that is reading a body treats that close as a connection error. So once the body starts
-		// arriving, drain it instead of polling.
+		// Polling a client that is reading a body treats a close by the peer as a connection error,
+		// so once the body starts arriving, drain it instead of polling.
 		if (client->get_status() == HTTPClient::STATUS_BODY) {
 			body.append_array(client->read_response_body_chunk());
 		} else {
@@ -664,6 +663,76 @@ void pump(HTTPServer *p_server, const Ref<StreamPeerTCP> &p_client, int p_rounds
 		p_client->poll();
 		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
 	}
+}
+
+// Runs poll passes without a client attached, which is how a test observes what the server does to
+// a connection nobody is feeding.
+void pump_server(HTTPServer *p_server, int p_rounds) {
+	for (int i = 0; i < p_rounds; i++) {
+		p_server->poll();
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
+}
+
+// One response decoded off a raw socket, which is what a test reads when it needs the status line
+// the server wrote rather than what an HTTP client made of it.
+struct RawResponse {
+	int status = 0;
+	HashMap<String, String> headers;
+	String body;
+
+	bool has_header(const String &p_name) const { return headers.has(p_name.to_lower()); }
+	String get_header(const String &p_name) const {
+		HashMap<String, String>::ConstIterator found = headers.find(p_name.to_lower());
+		return found ? found->value : String();
+	}
+};
+
+// Drives the server until one complete response has been read off `p_client`, and removes the bytes
+// it consumed from `r_pending`, so a reused socket reads its next response from where this one
+// stopped. Returns false if no complete response arrived before the timeout.
+bool read_raw_response(HTTPServer *p_server, const Ref<StreamPeerTCP> &p_client, String &r_pending, RawResponse &r_response) {
+	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+	while (OS::get_singleton()->get_ticks_usec() < deadline) {
+		p_server->poll();
+		p_client->poll();
+
+		const int available = p_client->get_available_bytes();
+		if (available > 0) {
+			Vector<uint8_t> chunk;
+			chunk.resize(available);
+			int received = 0;
+			if (p_client->get_partial_data(chunk.ptrw(), available, received) == OK && received > 0) {
+				r_pending += String::utf8((const char *)chunk.ptr(), received);
+			}
+		}
+
+		const int head_end = r_pending.find("\r\n\r\n");
+		if (head_end >= 0) {
+			const Vector<String> lines = r_pending.substr(0, head_end).split("\r\n");
+			const Vector<String> status_parts = lines[0].split(" ");
+			r_response.status = status_parts.size() > 1 ? status_parts[1].to_int() : 0;
+			r_response.headers.clear();
+			for (int i = 1; i < lines.size(); i++) {
+				const int separator = lines[i].find_char(':');
+				if (separator < 0) {
+					continue;
+				}
+				r_response.headers[lines[i].substr(0, separator).strip_edges().to_lower()] = lines[i].substr(separator + 1).strip_edges();
+			}
+
+			const int content_length = r_response.get_header("content-length").to_int();
+			const int body_start = head_end + 4;
+			if (r_pending.length() - body_start >= content_length) {
+				r_response.body = r_pending.substr(body_start, content_length);
+				r_pending = r_pending.substr(body_start + content_length);
+				return true;
+			}
+		}
+
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
+	return false;
 }
 
 } // namespace
@@ -793,10 +862,13 @@ TEST_CASE("[HTTPServer] GET round-trip through a registered route") {
 		memdelete(later);
 	}
 
-	SUBCASE("Consecutive requests are each served on their own connection") {
+	SUBCASE("Consecutive requests from separate clients are each served") {
 		CHECK(http_get(server, port, "/hello").body == "hi");
 		CHECK(http_get(server, port, "/hello").body == "hi");
 		CHECK(handler->call_count == 2);
+
+		// Each client is gone by now, so the sockets it left behind are dropped on the next passes.
+		pump_server(server, 16);
 		CHECK(server->get_connection_count() == 0);
 	}
 
@@ -1107,44 +1179,105 @@ TEST_CASE("[HTTPServer] A body that arrives after its header block is assembled 
 		CHECK(handler->seen_body == "hello world");
 	}
 
-	SUBCASE("A request framed by both a content length and a transfer coding is dropped") {
+	SUBCASE("A request framed by both a content length and a transfer coding is refused with 400") {
 		Ref<StreamPeerTCP> client = connect_raw(server, port);
 		REQUIRE(client.is_valid());
 		REQUIRE(server->get_connection_count() == 1);
 
 		// Ambiguous framing: the two fields disagree about where the body ends, so no handler may be
-		// given a body assembled from a guess.
+		// given a body assembled from a guess. This is the shape a request-smuggling attempt takes.
 		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n"
 						 "Transfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n");
-		pump(server, client, 16);
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 400);
+		CHECK(response.get_header("connection") == "close");
 
 		CHECK(handler->call_count == 0);
+		pump(server, client, 4);
 		CHECK(server->get_connection_count() == 0);
 	}
 
-	SUBCASE("A content length that is not a plain number is dropped") {
+	SUBCASE("A content length that is not a plain number is refused with 400") {
 		Ref<StreamPeerTCP> client = connect_raw(server, port);
 		REQUIRE(client.is_valid());
 		REQUIRE(server->get_connection_count() == 1);
 
-		// A repeated field folds into "5, 5", which is not a length this layer can act on.
+		// A repeated field folds into "5, 5", which is not a length this layer can act on, and which
+		// is the other way a smuggled request tries to make two parties disagree on the framing.
 		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello");
-		pump(server, client, 16);
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 400);
 
 		CHECK(handler->call_count == 0);
+		pump(server, client, 4);
 		CHECK(server->get_connection_count() == 0);
 	}
 
-	SUBCASE("A content length past the buffer bound is dropped without buffering it") {
+	SUBCASE("A content length past the body cap is refused with 413 without buffering it") {
 		Ref<StreamPeerTCP> client = connect_raw(server, port);
 		REQUIRE(client.is_valid());
 		REQUIRE(server->get_connection_count() == 1);
 
 		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 99999999\r\n\r\n");
-		pump(server, client, 16);
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 413);
 
 		CHECK(handler->call_count == 0);
+		pump(server, client, 4);
 		CHECK(server->get_connection_count() == 0);
+	}
+
+	SUBCASE("A transfer coding on its own is refused with 501") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		// Nothing here decodes a transfer coding, so a body framed by one cannot be handed to a
+		// handler at all.
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 501);
+		CHECK(handler->call_count == 0);
+	}
+
+	SUBCASE("A header line folded onto the previous one is refused with 400") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		// A recipient that honors the deprecated fold reads a length of 5 here and one that ignores
+		// it reads nothing, so answering at all means answering a request two parties frame
+		// differently.
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length:\r\n 5\r\n\r\nhello");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 400);
+		CHECK(handler->call_count == 0);
+	}
+
+	SUBCASE("A malformed request line is refused with 400") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		send_raw(client, "not a request line\r\n\r\n");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 400);
+		CHECK(handler->call_count == 0);
 	}
 
 	server->stop();
@@ -1827,6 +1960,469 @@ TEST_CASE("[HTTPServer] Mounting validates its prefix and its root") {
 		CHECK(result.status == 404);
 	}
 
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] The request limits carry the documented defaults") {
+	HTTPServer *server = memnew(HTTPServer);
+
+	CHECK(server->get_max_request_body_bytes() == 1048576);
+	CHECK(server->get_max_header_count() == 100);
+	CHECK(server->get_max_header_line_bytes() == 8192);
+	CHECK(server->get_max_header_block_bytes() == 32768);
+	CHECK(server->get_max_connections() == 64);
+	CHECK(server->get_connection_timeout_seconds() == doctest::Approx(30.0));
+
+	SUBCASE("A limit that cannot bound anything is rejected and leaves the property unchanged") {
+		ERR_PRINT_OFF;
+		server->set_max_request_body_bytes(0);
+		server->set_max_header_count(0);
+		server->set_max_header_line_bytes(0);
+		server->set_max_header_block_bytes(0);
+		server->set_max_connections(0);
+		server->set_connection_timeout_seconds(-1.0);
+		ERR_PRINT_ON;
+
+		CHECK(server->get_max_request_body_bytes() == 1048576);
+		CHECK(server->get_max_header_count() == 100);
+		CHECK(server->get_max_header_line_bytes() == 8192);
+		CHECK(server->get_max_header_block_bytes() == 32768);
+		CHECK(server->get_max_connections() == 64);
+		CHECK(server->get_connection_timeout_seconds() == doctest::Approx(30.0));
+	}
+
+	SUBCASE("A header count past what one parse pass can hold is rejected") {
+		ERR_PRINT_OFF;
+		server->set_max_header_count(100000);
+		ERR_PRINT_ON;
+		CHECK(server->get_max_header_count() == 100);
+	}
+
+	SUBCASE("A zero timeout is accepted and disables the drop") {
+		server->set_connection_timeout_seconds(0.0);
+		CHECK(server->get_connection_timeout_seconds() == doctest::Approx(0.0));
+	}
+
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A request past a limit is answered with a status") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	EchoRouteHandler *handler = memnew(EchoRouteHandler);
+	server->route("POST", "/echo", callable_mp(handler, &EchoRouteHandler::handle));
+	server->route("GET", "/echo", callable_mp(handler, &EchoRouteHandler::handle));
+
+	SUBCASE("A body larger than the cap is refused with 413 before it is buffered") {
+		server->set_max_request_body_bytes(16);
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 17\r\n\r\n");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 413);
+		CHECK(handler->call_count == 0);
+	}
+
+	SUBCASE("A body exactly at the cap is served") {
+		server->set_max_request_body_bytes(16);
+
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_POST, "/echo", "0123456789abcdef");
+		CHECK(result.status == 200);
+		CHECK(handler->seen_body_size == 16);
+	}
+
+	SUBCASE("More header fields than the cap allows are refused with 431") {
+		server->set_max_header_count(8);
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		String request = "GET /echo HTTP/1.1\r\nHost: localhost\r\n";
+		for (int i = 0; i < 8; i++) {
+			request += "X-Field-" + itos(i) + ": v\r\n";
+		}
+		send_raw(client, request + "\r\n");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 431);
+		CHECK(handler->call_count == 0);
+	}
+
+	SUBCASE("Far more header fields than one parse pass can hold are still refused with 431") {
+		server->set_max_header_count(8);
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		String request = "GET /echo HTTP/1.1\r\nHost: localhost\r\n";
+		for (int i = 0; i < 64; i++) {
+			request += "X-Field-" + itos(i) + ": v\r\n";
+		}
+		send_raw(client, request + "\r\n");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 431);
+		CHECK(handler->call_count == 0);
+	}
+
+	SUBCASE("Exactly as many header fields as the cap allows are served") {
+		server->set_max_header_count(8);
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		String request = "GET /echo HTTP/1.1\r\nHost: localhost\r\n";
+		for (int i = 0; i < 7; i++) {
+			request += "X-Field-" + itos(i) + ": v\r\n";
+		}
+		send_raw(client, request + "\r\n");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 200);
+		CHECK(handler->call_count == 1);
+	}
+
+	SUBCASE("A header line longer than the cap is refused with 431") {
+		// The default line cap is 8 KiB, and the default block cap is large enough that the block
+		// still completes, so the refusal is the line bound and nothing else.
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		String value;
+		for (int i = 0; i < 9000; i++) {
+			value += "a";
+		}
+		send_raw(client, "GET /echo HTTP/1.1\r\nHost: localhost\r\nX-Long: " + value + "\r\n\r\n");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 431);
+		CHECK(handler->call_count == 0);
+	}
+
+	SUBCASE("A header block that never ends within the cap is refused with 431") {
+		server->set_max_header_block_bytes(1024);
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		String request = "GET /echo HTTP/1.1\r\n";
+		for (int i = 0; i < 40; i++) {
+			request += "X-Field-" + itos(i) + ": 0123456789012345678901234567890123456789\r\n";
+		}
+		// Deliberately never terminated: the block can only grow past the cap from here.
+		send_raw(client, request);
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 431);
+		CHECK(handler->call_count == 0);
+	}
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] Keep-alive serves more than one request on one socket") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+	EchoRouteHandler *echo = memnew(EchoRouteHandler);
+	server->route("POST", "/echo", callable_mp(echo, &EchoRouteHandler::handle));
+
+	SUBCASE("Two requests on one socket are both answered and the socket stays open") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		String pending;
+
+		send_raw(client, "GET /hello?q=first HTTP/1.1\r\nHost: localhost\r\n\r\n");
+		RawResponse first;
+		REQUIRE(read_raw_response(server, client, pending, first));
+		CHECK(first.status == 200);
+		CHECK(first.body == "hi");
+		CHECK(first.get_header("connection") == "keep-alive");
+		CHECK(handler->seen_query_value == "first");
+		CHECK(server->get_connection_count() == 1);
+
+		send_raw(client, "GET /hello?q=second HTTP/1.1\r\nHost: localhost\r\n\r\n");
+		RawResponse second;
+		REQUIRE(read_raw_response(server, client, pending, second));
+		CHECK(second.status == 200);
+		CHECK(second.body == "hi");
+		CHECK(handler->seen_query_value == "second");
+		CHECK(handler->call_count == 2);
+		CHECK(server->get_connection_count() == 1);
+	}
+
+	SUBCASE("A body on the first request does not bleed into the second") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		String pending;
+
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello");
+		RawResponse first;
+		REQUIRE(read_raw_response(server, client, pending, first));
+		CHECK(first.status == 200);
+		CHECK(first.body == "hello");
+		CHECK(echo->seen_body_size == 5);
+
+		// A second request with no body at all: anything left over from the first would show up here
+		// as a body the client never sent.
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n");
+		RawResponse second;
+		REQUIRE(read_raw_response(server, client, pending, second));
+		CHECK(second.status == 200);
+		CHECK(second.get_header("content-length") == "0");
+		CHECK(second.body.is_empty());
+		CHECK(echo->seen_body_size == 0);
+		CHECK(echo->call_count == 2);
+	}
+
+	SUBCASE("Header fields from the first request do not bleed into the second") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		String pending;
+
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nX-Request-Id: first\r\nContent-Length: 0\r\n\r\n");
+		RawResponse first;
+		REQUIRE(read_raw_response(server, client, pending, first));
+		CHECK(first.status == 200);
+		CHECK(echo->seen_custom_header == "first");
+
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n");
+		RawResponse second;
+		REQUIRE(read_raw_response(server, client, pending, second));
+		CHECK(second.status == 200);
+		CHECK(echo->seen_custom_header.is_empty());
+	}
+
+	SUBCASE("A request asking to close is answered and then closed") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		String pending;
+		send_raw(client, "GET /hello HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 200);
+		CHECK(response.get_header("connection") == "close");
+
+		pump(server, client, 8);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	SUBCASE("An HTTP/1.0 request is closed unless it asks to stay open") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		String pending;
+		send_raw(client, "GET /hello HTTP/1.0\r\nHost: localhost\r\n\r\n");
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 200);
+		CHECK(response.get_header("connection") == "close");
+
+		pump(server, client, 8);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	SUBCASE("An HTTP/1.0 request that asks to stay open is kept") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		String pending;
+		send_raw(client, "GET /hello HTTP/1.0\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n");
+		RawResponse first;
+		REQUIRE(read_raw_response(server, client, pending, first));
+		CHECK(first.status == 200);
+		CHECK(first.get_header("connection") == "keep-alive");
+
+		send_raw(client, "GET /hello HTTP/1.0\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n");
+		RawResponse second;
+		REQUIRE(read_raw_response(server, client, pending, second));
+		CHECK(second.status == 200);
+		CHECK(handler->call_count == 2);
+	}
+
+	SUBCASE("Two requests sent as one write are both answered in order") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		// Pipelined: the second request is already in the socket, and may already be in the read
+		// buffer, while the first is still being answered. Neither may be lost, and neither may be
+		// read as part of the other.
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello"
+						 "GET /hello?q=second HTTP/1.1\r\nHost: localhost\r\n\r\n");
+
+		String pending;
+		RawResponse first;
+		REQUIRE(read_raw_response(server, client, pending, first));
+		CHECK(first.status == 200);
+		CHECK(first.body == "hello");
+		CHECK(echo->seen_body_size == 5);
+
+		RawResponse second;
+		REQUIRE(read_raw_response(server, client, pending, second));
+		CHECK(second.status == 200);
+		CHECK(second.body == "hi");
+		CHECK(handler->seen_query_value == "second");
+	}
+
+	SUBCASE("A refused request is not followed by a second one on the same socket") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		String pending;
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n");
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 400);
+		CHECK(response.get_header("connection") == "close");
+
+		pump(server, client, 8);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	server->stop();
+	memdelete(echo);
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] The connection cap bounds how many sockets the server owns") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	server->set_max_connections(2);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	Ref<StreamPeerTCP> first = connect_raw(server, port);
+	REQUIRE(first.is_valid());
+	Ref<StreamPeerTCP> second;
+	second.instantiate();
+	REQUIRE(second->connect_to_host(IPAddress(LOOPBACK), port) == OK);
+	Ref<StreamPeerTCP> third;
+	third.instantiate();
+	REQUIRE(third->connect_to_host(IPAddress(LOOPBACK), port) == OK);
+
+	for (int i = 0; i < 24; i++) {
+		server->poll();
+		first->poll();
+		second->poll();
+		third->poll();
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
+
+	// The third socket is connected as far as the operating system is concerned, but the server has
+	// not taken it, so it cannot consume a slot or any memory here.
+	CHECK(server->get_connection_count() == 2);
+
+	SUBCASE("A pending connection is taken once a slot frees") {
+		first->disconnect_from_host();
+		pump_server(server, 16);
+
+		String pending;
+		send_raw(third, "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n");
+		RawResponse response;
+		REQUIRE(read_raw_response(server, third, pending, response));
+		CHECK(response.status == 200);
+		CHECK(server->get_connection_count() <= 2);
+	}
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A connection that stops making progress is dropped") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	server->set_connection_timeout_seconds(0.05);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	SUBCASE("A socket that never sends anything is dropped") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		OS::get_singleton()->delay_usec(120000);
+		pump(server, client, 4);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	SUBCASE("A request that announces a body and then stalls is dropped") {
+		// The slow-loris shape: the framing is valid, so the connection would otherwise wait for the
+		// promised bytes for as long as the process runs.
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		send_raw(client, "POST /hello HTTP/1.1\r\nHost: localhost\r\nContent-Length: 4096\r\n\r\nab");
+		pump(server, client, 4);
+		REQUIRE(server->get_connection_count() == 1);
+
+		OS::get_singleton()->delay_usec(120000);
+		pump(server, client, 4);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	SUBCASE("A kept-alive socket that goes idle is dropped") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		String pending;
+		send_raw(client, "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n");
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 200);
+
+		OS::get_singleton()->delay_usec(120000);
+		pump(server, client, 4);
+		CHECK(server->get_connection_count() == 0);
+	}
+
+	SUBCASE("A zero timeout leaves an idle socket alone") {
+		server->set_connection_timeout_seconds(0.0);
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		OS::get_singleton()->delay_usec(120000);
+		pump(server, client, 4);
+		CHECK(server->get_connection_count() == 1);
+	}
+
+	server->stop();
+	memdelete(handler);
 	memdelete(server);
 }
 

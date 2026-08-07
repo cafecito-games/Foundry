@@ -32,6 +32,8 @@
 
 #include "picohttpparser.h"
 
+#include "core/os/os.h"
+
 namespace {
 
 // The reason phrase is advisory for clients but part of a well-formed status line, so the common
@@ -68,6 +70,10 @@ const char *status_reason(int p_status) {
 			return "Not Found";
 		case 405:
 			return "Method Not Allowed";
+		case 413:
+			return "Content Too Large";
+		case 431:
+			return "Request Header Fields Too Large";
 		case 500:
 			return "Internal Server Error";
 		case 501:
@@ -90,42 +96,77 @@ const char *status_reason(int p_status) {
 	}
 }
 
-// A body is framed by `Content-Length`. An absent field means no body, and anything that is not a
-// plain run of digits within `p_limit` — a signed value, or the "5, 5" a repeated field folds into —
-// is not a frame this layer can act on, so the request counts as malformed.
-bool parse_content_length(const String &p_value, int p_limit, int &r_length) {
+enum ContentLengthResult {
+	CONTENT_LENGTH_OK,
+	// Not a frame this layer can act on: a signed value, a non-numeric one, or the "5, 5" a repeated
+	// field folds into, which is how a smuggled request tries to make two parties disagree on where
+	// the body ends.
+	CONTENT_LENGTH_MALFORMED,
+	CONTENT_LENGTH_TOO_LARGE,
+};
+
+// A body is framed by `Content-Length`. An absent field means no body.
+ContentLengthResult parse_content_length(const String &p_value, int p_limit, int &r_length) {
 	const String value = p_value.strip_edges();
 	if (value.is_empty()) {
 		r_length = 0;
-		return true;
-	}
-	// Bounded before the conversion, so a length far past the buffer bound cannot wrap on its way to
-	// a small number.
-	if (value.length() > 9) {
-		return false;
+		return CONTENT_LENGTH_OK;
 	}
 	for (int i = 0; i < value.length(); i++) {
 		if (!is_digit(value[i])) {
-			return false;
+			return CONTENT_LENGTH_MALFORMED;
 		}
+	}
+	// Bounded before the conversion, so a length far past any cap cannot wrap on its way to a small
+	// number. Ten digits already exceed every allowed cap, so the value is only ever too large.
+	if (value.length() > 9) {
+		return CONTENT_LENGTH_TOO_LARGE;
 	}
 
 	const int length = static_cast<int>(value.to_int());
 	if (length > p_limit) {
-		return false;
+		return CONTENT_LENGTH_TOO_LARGE;
 	}
 	r_length = length;
-	return true;
+	return CONTENT_LENGTH_OK;
+}
+
+// A connection is persistent by default from HTTP/1.1 on, and only on request before that. Either
+// way `Connection: close` ends it.
+bool wants_keep_alive(const String &p_connection_field, int p_minor_version) {
+	const String field = p_connection_field.to_lower();
+	if (field.contains("close")) {
+		return false;
+	}
+	if (p_minor_version >= 1) {
+		return true;
+	}
+	return field.contains("keep-alive");
 }
 
 } // namespace
 
-void HTTPServerConnection::accept(const Ref<StreamPeerTCP> &p_stream) {
+void HTTPServerConnection::accept(const Ref<StreamPeerTCP> &p_stream, const Limits &p_limits) {
 	stream = p_stream;
+	limits = p_limits;
+	limits.max_header_count = CLAMP(limits.max_header_count, 1, MAX_HEADER_FIELD_CEILING);
 	state = stream.is_valid() ? STATE_READING : STATE_CLOSED;
+	_note_progress();
 }
 
 void HTTPServerConnection::poll() {
+	if (state == STATE_CLOSED) {
+		return;
+	}
+
+	if (_has_stalled()) {
+		// A connection that stops moving bytes — a request that never finishes arriving, a peer that
+		// stopped reading, or a reused socket nobody sent anything on — is dropped so its slot comes
+		// back. Nothing is written first: the peer is by definition not reading.
+		close();
+		return;
+	}
+
 	switch (state) {
 		case STATE_READING: {
 			if (_read_available()) {
@@ -138,6 +179,18 @@ void HTTPServerConnection::poll() {
 		default:
 			break;
 	}
+}
+
+void HTTPServerConnection::_note_progress() {
+	last_progress_usec = OS::get_singleton()->get_ticks_usec();
+}
+
+bool HTTPServerConnection::_has_stalled() const {
+	if (limits.timeout_seconds <= 0.0) {
+		return false;
+	}
+	const uint64_t budget_usec = uint64_t(limits.timeout_seconds * 1000000.0);
+	return OS::get_singleton()->get_ticks_usec() - last_progress_usec > budget_usec;
 }
 
 bool HTTPServerConnection::_read_available() {
@@ -155,14 +208,30 @@ bool HTTPServerConnection::_read_available() {
 	int available = stream->get_available_bytes();
 	while (available > 0) {
 		const int previous_size = read_buffer.size();
-		if (previous_size + available > MAX_REQUEST_BYTES) {
-			close();
-			return false;
+
+		// Once the framing is known, never read past the end of the request being assembled, so a
+		// pipelined request behind it waits in the socket rather than growing this buffer. Before
+		// that the end is not known yet, and the header block may grow only up to its own bound;
+		// whatever lands past the frame in that window is carried forward at the request boundary.
+		int wanted = available;
+		if (header_parsed) {
+			const int needed = header_length + body_length - previous_size;
+			if (needed <= 0) {
+				break;
+			}
+			wanted = MIN(available, needed);
+		} else {
+			wanted = MIN(available, limits.max_header_block_bytes - previous_size);
+			if (wanted <= 0) {
+				// The block already fills its bound without ending, so it never will.
+				_reject(431);
+				return false;
+			}
 		}
 
-		read_buffer.resize_uninitialized(previous_size + available);
+		read_buffer.resize_uninitialized(previous_size + wanted);
 		int received = 0;
-		const Error err = stream->get_partial_data(read_buffer.ptrw() + previous_size, available, received);
+		const Error err = stream->get_partial_data(read_buffer.ptrw() + previous_size, wanted, received);
 		read_buffer.resize(previous_size + received);
 		if (err != OK) {
 			close();
@@ -171,6 +240,7 @@ bool HTTPServerConnection::_read_available() {
 		if (received == 0) {
 			break;
 		}
+		_note_progress();
 
 		available = stream->get_available_bytes();
 	}
@@ -213,23 +283,51 @@ bool HTTPServerConnection::_parse_header_block() {
 	const char *raw_path = nullptr;
 	size_t raw_path_length = 0;
 	int minor_version = 0;
-	phr_header header_fields[MAX_HEADER_FIELDS];
-	size_t header_field_count = MAX_HEADER_FIELDS;
+	// One slot past the cap, so a request carrying exactly one field too many is still parsed and
+	// can be refused for the reason it was actually refused for.
+	const size_t field_capacity = size_t(limits.max_header_count) + 1;
+	phr_header header_fields[MAX_HEADER_FIELD_CEILING + 1];
+	size_t header_field_count = field_capacity;
 
 	const int parsed = phr_parse_request(reinterpret_cast<const char *>(read_buffer.ptr()), read_buffer.size(),
 			&method, &method_length, &raw_path, &raw_path_length, &minor_version,
 			header_fields, &header_field_count, scanned_length);
 
 	if (parsed == -2) {
+		if (read_buffer.size() >= limits.max_header_block_bytes) {
+			// Nothing more is read into a block this size, so it can never end.
+			_reject(431);
+			return false;
+		}
 		// Incomplete: remember how far the parser got so the next pass does not rescan the prefix.
 		scanned_length = read_buffer.size();
 		return false;
 	}
 	if (parsed < 0) {
-		// Malformed request line or header block. Dropping the connection is the whole error
-		// handling this layer does; status-coded rejections belong with the request-limit work.
-		close();
+		// A filled field table and a syntax error are reported the same way, and are told apart by
+		// whether every slot was used.
+		_reject(header_field_count >= field_capacity ? 431 : 400);
 		return false;
+	}
+	if (header_field_count > size_t(limits.max_header_count)) {
+		_reject(431);
+		return false;
+	}
+	for (size_t i = 0; i < header_field_count; i++) {
+		if (header_fields[i].name == nullptr) {
+			// A line folded onto the previous field, which RFC 9110 deprecates and allows a recipient
+			// to refuse. Refusing is the only safe reading: dropping the continuation, or keeping only
+			// the part before it, would give this server a different value than a proxy that honors
+			// the fold, and a `Content-Length` those two disagree on is a smuggled request.
+			_reject(400);
+			return false;
+		}
+		// The colon, the separating space and the CRLF are all part of the line the client sent, so
+		// they count against its bound.
+		if (header_fields[i].name_len + header_fields[i].value_len + 4 > size_t(limits.max_header_line_bytes)) {
+			_reject(431);
+			return false;
+		}
 	}
 
 	request.instantiate();
@@ -241,19 +339,102 @@ bool HTTPServerConnection::_parse_header_block() {
 	}
 	request->set_peer(String(stream->get_connected_host()) + ":" + itos(stream->get_connected_port()));
 
-	// A transfer coding would have to be decoded before a handler could read the body, and pairing
-	// one with a content length is ambiguous framing besides, so such a request is malformed here
-	// exactly like a content length this layer cannot act on.
-	if (request->has_header("Transfer-Encoding") ||
-			!parse_content_length(request->get_header("Content-Length"), MAX_REQUEST_BYTES - parsed, body_length)) {
-		request.unref();
-		close();
+	const bool has_content_length = request->has_header("Content-Length");
+	const bool has_transfer_encoding = request->has_header("Transfer-Encoding");
+	const String content_length_field = request->get_header("Content-Length");
+	const String connection_field = request->get_header("Connection");
+
+	if (has_content_length && has_transfer_encoding) {
+		// Ambiguous framing: the two fields disagree about where the body ends. Guessing between them
+		// is exactly what request smuggling relies on, so the request is refused and the socket is
+		// not reused for whatever follows it.
+		_reject(400);
+		return false;
+	}
+	if (has_transfer_encoding) {
+		// A transfer coding would have to be decoded before a handler could read the body, and this
+		// layer decodes none.
+		_reject(501);
 		return false;
 	}
 
+	int content_length = 0;
+	switch (parse_content_length(content_length_field, limits.max_request_body_bytes, content_length)) {
+		case CONTENT_LENGTH_MALFORMED: {
+			_reject(400);
+			return false;
+		}
+		case CONTENT_LENGTH_TOO_LARGE: {
+			_reject(413);
+			return false;
+		}
+		case CONTENT_LENGTH_OK:
+			break;
+	}
+
+	body_length = content_length;
 	header_length = parsed;
 	header_parsed = true;
+	keep_alive = wants_keep_alive(connection_field, minor_version);
 	return true;
+}
+
+void HTTPServerConnection::_reject(int p_status) {
+	// Whatever was parsed so far describes a request no handler may see, so none of it survives into
+	// the response and none of it survives the socket either: a refusal always ends the connection.
+	request.unref();
+	read_buffer.clear();
+	scanned_length = 0;
+	header_parsed = false;
+	header_length = 0;
+	body_length = 0;
+	body_file.unref();
+	body_file_remaining = 0;
+	keep_alive = false;
+
+	const String reason = String(status_reason(p_status));
+	const CharString body_bytes = reason.utf8();
+	String head = "HTTP/1.1 " + itos(p_status) + " " + reason + "\r\n";
+	head += "Content-Type: text/plain; charset=utf-8\r\n";
+	head += "Content-Length: " + itos(body_bytes.length()) + "\r\n";
+	head += "Connection: close\r\n\r\n";
+
+	const CharString head_bytes = head.utf8();
+	write_buffer.resize_uninitialized(head_bytes.length() + body_bytes.length());
+	memcpy(write_buffer.ptrw(), head_bytes.get_data(), head_bytes.length());
+	memcpy(write_buffer.ptrw() + head_bytes.length(), body_bytes.get_data(), body_bytes.length());
+	write_offset = 0;
+	state = STATE_WRITING;
+	_note_progress();
+
+	_flush_write();
+}
+
+void HTTPServerConnection::_begin_next_request() {
+	// The socket is reused, so everything the finished exchange left behind has to go: a field, a
+	// body byte or a parse offset that survived would be read as part of the next request.
+	//
+	// The one exception is what a client pipelined behind the finished request. Those bytes are past
+	// its frame, so they are not part of it and are never mistaken for it, but they are the start of
+	// the next request and dropping them would lose it.
+	const int consumed = header_length + body_length;
+	if (consumed > 0 && read_buffer.size() > consumed) {
+		read_buffer = read_buffer.slice(consumed);
+	} else {
+		read_buffer.clear();
+	}
+	request.unref();
+	scanned_length = 0;
+	header_parsed = false;
+	header_length = 0;
+	body_length = 0;
+	write_buffer.clear();
+	write_offset = 0;
+	body_file.unref();
+	body_file_remaining = 0;
+	keep_alive = false;
+	state = STATE_READING;
+	_note_progress();
 }
 
 void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
@@ -306,8 +487,9 @@ void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 	if (!body_forbidden) {
 		head += "Content-Length: " + String::num_uint64(content_length) + "\r\n";
 	}
-	// One request per connection; persistent connections are a separate concern.
-	head += "Connection: close\r\n\r\n";
+	// Every response written here is framed by a length the client can count, so the socket is safe
+	// to reuse whenever the request asked for it.
+	head += keep_alive ? "Connection: keep-alive\r\n\r\n" : "Connection: close\r\n\r\n";
 
 	const CharString head_bytes = head.utf8();
 	write_buffer.resize_uninitialized(head_bytes.length() + body.size());
@@ -317,6 +499,7 @@ void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 	}
 	write_offset = 0;
 	state = STATE_WRITING;
+	_note_progress();
 
 	_flush_write();
 }
@@ -340,9 +523,16 @@ void HTTPServerConnection::_flush_write() {
 				return;
 			}
 			write_offset += sent;
+			// Progress is counted as bytes leave, not against the age of the response, so a body of
+			// any size is never cut off for taking many polls to deliver.
+			_note_progress();
 		}
 	} while (_refill_from_file());
 
+	if (keep_alive) {
+		_begin_next_request();
+		return;
+	}
 	close();
 }
 
@@ -357,10 +547,12 @@ bool HTTPServerConnection::_refill_from_file() {
 	write_offset = 0;
 	if (read == 0) {
 		// The file promised more bytes than it delivered, so the framing is already wrong and the
-		// only honest thing left is to close instead of writing a short body forever.
+		// only honest thing left is to close instead of writing a short body forever. The socket
+		// cannot be reused either: the client is still counting bytes that will never arrive.
 		write_buffer.clear();
 		body_file.unref();
 		body_file_remaining = 0;
+		keep_alive = false;
 		return false;
 	}
 
@@ -369,11 +561,42 @@ bool HTTPServerConnection::_refill_from_file() {
 	return true;
 }
 
+void HTTPServerConnection::_linger() {
+	if (stream.is_null()) {
+		return;
+	}
+
+	uint8_t discard[4096];
+	int drained = 0;
+	while (drained < MAX_LINGER_BYTES) {
+		if (stream->get_status() != StreamPeerTCP::STATUS_CONNECTED) {
+			return;
+		}
+		const int available = stream->get_available_bytes();
+		if (available <= 0) {
+			return;
+		}
+		int received = 0;
+		if (stream->get_partial_data(discard, MIN(available, int(sizeof(discard))), received) != OK || received == 0) {
+			return;
+		}
+		drained += received;
+	}
+}
+
 void HTTPServerConnection::close() {
 	if (stream.is_valid()) {
+		// Closing a socket that still holds unread bytes makes the operating system answer the peer
+		// with a reset, which would destroy a status this layer just wrote. Reading them first,
+		// bounded, is what lets a refused client actually see why it was refused.
+		_linger();
 		stream->disconnect_from_host();
 	}
+	request.unref();
+	read_buffer.clear();
+	write_buffer.clear();
 	body_file.unref();
 	body_file_remaining = 0;
+	keep_alive = false;
 	state = STATE_CLOSED;
 }
