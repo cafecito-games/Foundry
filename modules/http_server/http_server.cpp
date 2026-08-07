@@ -32,8 +32,10 @@
 
 #include "http_file_serve.h"
 
+#include "core/io/stream_peer_tls.h"
+
 void HTTPServer::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("listen"), &HTTPServer::listen);
+	ClassDB::bind_method(D_METHOD("listen", "tls_options"), &HTTPServer::listen, DEFVAL(Ref<TLSOptions>()));
 	ClassDB::bind_method(D_METHOD("stop"), &HTTPServer::stop);
 	ClassDB::bind_method(D_METHOD("is_listening"), &HTTPServer::is_listening);
 	ClassDB::bind_method(D_METHOD("get_listening_port"), &HTTPServer::get_listening_port);
@@ -168,8 +170,15 @@ double HTTPServer::get_connection_timeout_seconds() const {
 	return limits.timeout_seconds;
 }
 
-Error HTTPServer::listen() {
+Error HTTPServer::listen(const Ref<TLSOptions> &p_tls_options) {
 	ERR_FAIL_COND_V_MSG(tcp_server->is_listening(), ERR_ALREADY_IN_USE, "The server is already listening.");
+
+	if (p_tls_options.is_valid()) {
+		ERR_FAIL_COND_V_MSG(!p_tls_options->is_server(), ERR_INVALID_PARAMETER,
+				"HTTPS needs server-side TLS options; build them with TLSOptions.server().");
+		ERR_FAIL_COND_V_MSG(!StreamPeerTLS::is_available(), ERR_UNAVAILABLE,
+				"HTTPS is not available in this build.");
+	}
 
 	// `"*"` is the wildcard address rather than a parsed one, so it is accepted even though
 	// `IPAddress::is_valid()` reports false for it.
@@ -182,6 +191,10 @@ Error HTTPServer::listen() {
 		return err;
 	}
 
+	// Assigned only once the listener is up, so a failed bind never leaves a stale mode behind and a
+	// plaintext `listen()` always clears any options a previous HTTPS run set.
+	tls_options = p_tls_options;
+
 	set_process_internal(true);
 	return OK;
 }
@@ -192,6 +205,7 @@ void HTTPServer::stop() {
 	}
 	connections.clear();
 	tcp_server->stop();
+	tls_options.unref();
 	set_process_internal(false);
 }
 
@@ -255,7 +269,7 @@ void HTTPServer::poll() {
 
 		Ref<HTTPServerConnection> connection;
 		connection.instantiate();
-		connection->accept(peer, limits);
+		connection->accept(peer, limits, tls_options);
 		connections.push_back(connection);
 	}
 
