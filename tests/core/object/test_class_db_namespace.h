@@ -67,6 +67,14 @@ class _NamespaceTestSubclass : public _NamespaceTestBase {
 	FOUNDRY_CLASS(_NamespaceTestSubclass, _NamespaceTestBase);
 };
 
+class _NamespaceTestParent : public Object {
+	FOUNDRY_CLASS(_NamespaceTestParent, Object);
+};
+
+class _NamespaceTestChild : public _NamespaceTestParent {
+	FOUNDRY_CLASS(_NamespaceTestChild, _NamespaceTestParent);
+};
+
 namespace TestClassDBNamespace {
 
 TEST_CASE("[ClassDBNamespace] Classes without a namespace keep their bare identity") {
@@ -124,6 +132,12 @@ TEST_CASE("[ClassDBNamespace] Namespacing rekeys the registry and stamps runtime
 		CHECK(ClassDB::class_get_namespace("_NamespaceTestHttp") == StringName("foundry.test.http"));
 	}
 
+	SUBCASE("The static class name follows the stamp") {
+		// `FOUNDRY_CLASS` resolves property lists through `get_class_static()`, so it has to be the
+		// registry key rather than the stringified class token.
+		CHECK(_NamespaceTestHttp::get_class_static() == http_qualified);
+	}
+
 	SUBCASE("A namespaced class instantiates and carries the qualified runtime identity") {
 		Object *instance = ClassDB::instantiate(http_qualified);
 		REQUIRE(instance != nullptr);
@@ -178,6 +192,35 @@ TEST_CASE("[ClassDBNamespace] Namespacing rekeys the registry and stamps runtime
 	}
 }
 
+TEST_CASE("[ClassDBNamespace] A subclass registered after its parent is namespaced inherits through the qualified name") {
+	const StringName parent_qualified = "foundry.test.parent._NamespaceTestParent";
+
+	static bool parent_registered = false;
+	if (!parent_registered) {
+		parent_registered = true;
+		FOUNDRY_REGISTER_CLASS(_NamespaceTestParent);
+		FOUNDRY_REGISTER_NAMESPACE(_NamespaceTestParent, "foundry.test.parent");
+		FOUNDRY_REGISTER_CLASS(_NamespaceTestChild);
+	}
+
+	// The child itself is not namespaced, so it keeps a bare canonical key.
+	CHECK(ClassDB::class_exists("_NamespaceTestChild"));
+	CHECK(ClassDB::class_get_qualified_name("_NamespaceTestChild") == StringName("_NamespaceTestChild"));
+	CHECK(ClassDB::get_parent_class("_NamespaceTestChild") == parent_qualified);
+	CHECK(ClassDB::is_parent_class("_NamespaceTestChild", parent_qualified));
+	// The namespaced ancestor must not be reachable by its bare name.
+	CHECK_FALSE(ClassDB::is_parent_class("_NamespaceTestChild", "_NamespaceTestParent"));
+	CHECK(ClassDB::is_parent_class("_NamespaceTestChild", "Object"));
+
+	Object *instance = ClassDB::instantiate("_NamespaceTestChild");
+	REQUIRE(instance != nullptr);
+	CHECK(instance->get_class() == String("_NamespaceTestChild"));
+	CHECK(instance->is_class(String(parent_qualified)));
+	CHECK_FALSE(instance->is_class("_NamespaceTestParent"));
+	CHECK(instance->is_class("Object"));
+	memdelete(instance);
+}
+
 TEST_CASE("[ClassDBNamespace] Invalid namespace registrations are rejected") {
 	FOUNDRY_REGISTER_CLASS(_NamespaceTestBase);
 	FOUNDRY_REGISTER_CLASS(_NamespaceTestSubclass);
@@ -210,6 +253,14 @@ TEST_CASE("[ClassDBNamespace] Invalid namespace registrations are rejected") {
 		ClassDB::class_register_global_alias("foundry.test.unknown._NamespaceTestNotAClass", "_NamespaceTestUnknownAlias");
 		ERR_PRINT_ON;
 		CHECK_FALSE(ClassDB::class_exists("_NamespaceTestUnknownAlias"));
+	}
+
+	SUBCASE("An alias shadowed by a canonical class key is rejected") {
+		// It could never resolve, since a canonical class always wins over a re-export.
+		ERR_PRINT_OFF;
+		ClassDB::class_register_global_alias("Object", "_NamespaceTestBase");
+		ERR_PRINT_ON;
+		CHECK(ClassDB::resolve_type_name("_NamespaceTestBase") == StringName("_NamespaceTestBase"));
 	}
 }
 

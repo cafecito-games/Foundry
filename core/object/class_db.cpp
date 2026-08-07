@@ -230,7 +230,9 @@ public:
 bool ClassDB::_is_parent_class(const StringName &p_class, const StringName &p_inherits) {
 	ClassInfo *c = classes.getptr(p_class);
 	while (c) {
-		if (c->name == p_inherits) {
+		// Compared against the qualified name so a namespaced ancestor is not matched by its bare
+		// name. Identical to comparing `name` for classes without a namespace.
+		if (c->qualified_name == p_inherits) {
 			return true;
 		}
 		c = c->inherits_ptr;
@@ -612,6 +614,8 @@ void ClassDB::class_register_global_alias(const StringName &p_qualified_name, co
 
 	ERR_FAIL_COND_MSG(p_alias == StringName(), vformat("Empty global alias for class '%s'.", p_qualified_name));
 	ERR_FAIL_COND_MSG(!classes.has(p_qualified_name), vformat("Cannot register a global alias for unknown class '%s'.", p_qualified_name));
+	// A canonical class key always wins over a re-export, so such an alias could never resolve.
+	ERR_FAIL_COND_MSG(classes.has(p_alias), vformat("Cannot use '%s' as a global alias for class '%s': a class is already registered under that name.", p_alias, p_qualified_name));
 
 	LocalVector<StringName> &owners = bare_aliases[p_alias];
 	if (owners.has(p_qualified_name)) {
