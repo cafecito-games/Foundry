@@ -33,3 +33,11 @@ func test(condition: bool = true):
 	var assigned: Result[int, String] = Result[int, String].Ok(0)
 	assigned = .Ok(5) if condition else .Err("no")
 	print(assigned)
+
+	# A branch that is itself a conditional is qualified by the same expected type, at any depth.
+	var deep: Result[int, String] = .Ok(6) if condition else (.Err("no") if condition else .Ok(7))
+	print(deep)
+
+	# A cast names the type expected of the whole conditional, so it reaches both branches.
+	var labeled = (.Ok(8) if condition else .Err("no")) as Result[int, String]
+	print(labeled)
