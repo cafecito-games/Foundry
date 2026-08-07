@@ -31,3 +31,7 @@
 #pragma once
 
 int test_main(int argc, char *argv[]);
+
+// Restricts the run to shard `p_shard_index` of `p_shard_total`, both 1-based. Must be
+// called before `test_main()`. A total below 2 leaves the run unpartitioned.
+void test_configure_case_shard(int p_shard_index, int p_shard_total);

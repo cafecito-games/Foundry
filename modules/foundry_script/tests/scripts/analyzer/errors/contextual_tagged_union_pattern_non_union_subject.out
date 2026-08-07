@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 9: Contextual shorthand ".Ok" needs a tagged-union match subject, but it is of type "int".

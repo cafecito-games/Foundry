@@ -1971,6 +1971,10 @@ void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 	if (p_type->type_chain.is_empty()) {
 		write("void");
 	} else {
+		if (p_type->is_contextual_enum_case) {
+			// `x is .Ok(value)`: the leading `.` stands in for the union the tested operand supplies.
+			write(".");
+		}
 		write(p_type->type_chain[0]->name);
 		for (int i = 1; i <= suffix_chain_index; i++) {
 			write(".");

@@ -5519,6 +5519,33 @@ FSParser::ExpressionNode *FSParser::parse_contextual_enum_case(ExpressionNode *p
 	return contextual_case;
 }
 
+// The same shorthand on the right of an `is` test (`x is .Ok(value)`). A test type is a `TypeNode`
+// rather than an expression, so it gets its own construction; the node carries only the case name,
+// because the union comes from the tested operand's type.
+FSParser::TypeNode *FSParser::parse_contextual_enum_case_type() {
+	advance(); // Consume ".".
+
+	TypeNode *type = alloc_node<TypeNode>();
+	reset_extents(type, previous);
+	update_extents(type);
+
+	type->allows_enum_case = true;
+	type->is_contextual_enum_case = true;
+
+	if (current.is_node_name()) {
+		current.type = FSTokenizer::Token::IDENTIFIER;
+	}
+	if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected a tagged-union case name after ".".)")) {
+		complete_extents(type);
+		return type;
+	}
+
+	type->type_chain.push_back(parse_identifier());
+
+	complete_extents(type);
+	return type;
+}
+
 FSParser::ExpressionNode *FSParser::parse_subscript(ExpressionNode *p_previous_operand, bool p_can_assign) {
 	SubscriptNode *subscript = alloc_node<SubscriptNode>();
 	reset_extents(subscript, p_previous_operand);
@@ -5998,7 +6025,13 @@ FSParser::ExpressionNode *FSParser::parse_type_test(ExpressionNode *p_previous_o
 	update_extents(type_test);
 
 	type_test->operand = p_previous_operand;
-	type_test->test_type = parse_type(false, COMPLETION_NONE, true);
+	// `x is .Ok(value)`: the contextual shorthand names a case of the operand's own union, so the
+	// test type is the case name alone and the union is supplied by the analyzer.
+	if (check(FSTokenizer::Token::PERIOD) && peek().is_identifier()) {
+		type_test->test_type = parse_contextual_enum_case_type();
+	} else {
+		type_test->test_type = parse_type(false, COMPLETION_NONE, true);
+	}
 	if (type_test->test_type != nullptr) {
 		if (check(FSTokenizer::Token::PARENTHESIS_OPEN)) {
 			parse_type_test_case_binds(type_test);

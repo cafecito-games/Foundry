@@ -932,6 +932,14 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		if (!cli_parse.invocation.test_cases.is_empty()) {
 			push_test_arg("--test-case=" + FoundryCLIParser::build_doctest_case_filter(cli_parse.invocation.test_cases));
 		}
+		if (cli_parse.invocation.test_shard_total > 1) {
+			// Two layers, one flag. Ordinary doctest cases are partitioned in the registry;
+			// the suites that loop over a fixture corpus inside a single case run everywhere
+			// and slice their own fixture list off the `--fs-shard` token. `--shard 1/1` stays
+			// a strict no-op so an unsharded run and a single-shard run are the same run.
+			test_configure_case_shard(cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total);
+			push_test_arg(vformat("--fs-shard=%d/%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total));
+		}
 		for (int i = 0; i < cli_parse.invocation.passthrough_args.size(); i++) {
 			push_test_arg(cli_parse.invocation.passthrough_args[i]);
 		}

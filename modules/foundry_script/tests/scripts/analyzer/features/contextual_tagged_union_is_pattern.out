@@ -1,0 +1,12 @@
+FS_TEST_OK
+ok 2
+err BAD
+true
+false
+false
+big 2
+small
+true
+false
+3
+7

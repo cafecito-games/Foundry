@@ -10,3 +10,5 @@ func run(condition: bool, subject: int) -> void:
 			pass
 		_:
 			pass
+	if subject is .Ok(bound):
+		print(bound)

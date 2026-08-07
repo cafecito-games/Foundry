@@ -57,6 +57,41 @@
 
 namespace FSTests {
 
+bool fs_test_shard_selects(int p_sorted_index, int p_shard_index, int p_shard_total) {
+	if (p_shard_total < 2) {
+		return true;
+	}
+	return (p_sorted_index % p_shard_total) == (p_shard_index - 1);
+}
+
+void fs_test_shard_from_cmdline(int &r_shard_index, int &r_shard_total) {
+	r_shard_index = -1;
+	r_shard_total = -1;
+	for (const String &argument : OS::get_singleton()->get_cmdline_args()) {
+		if (!argument.begins_with("--fs-shard=")) {
+			continue;
+		}
+		const String selector = argument.trim_prefix("--fs-shard=");
+		const int separator = selector.find_char('/');
+		if (separator < 0) {
+			continue;
+		}
+		const String index_text = selector.substr(0, separator);
+		const String total_text = selector.substr(separator + 1);
+		if (!index_text.is_valid_int() || !total_text.is_valid_int()) {
+			continue;
+		}
+		const int shard_index = index_text.to_int();
+		const int shard_total = total_text.to_int();
+		if (shard_total < 1 || shard_index < 1 || shard_index > shard_total) {
+			continue;
+		}
+		r_shard_index = shard_index;
+		r_shard_total = shard_total;
+		return;
+	}
+}
+
 void init_autoloads() {
 	FSAutoloadIndex autoload_index;
 	autoload_index.rebuild_from_project_settings();
@@ -504,13 +539,76 @@ bool FSTestRunner::make_tests_for_dir(const String &p_dir) {
 	return true;
 }
 
+// A fixture's position in a sorted view of the corpus, which is what decides shard
+// membership. A `.bin.fs` fixture contributes one entry per tokenizer mode, so the source
+// path alone is not a unique key.
+struct FSTestCorpusRank {
+	String key;
+	int index = 0;
+
+	bool operator<(const FSTestCorpusRank &p_other) const { return key < p_other.key; }
+};
+
 bool FSTestRunner::make_tests() {
 	Error err = OK;
 	Ref<DirAccess> dir(DirAccess::open(source_dir, &err));
 
 	ERR_FAIL_COND_V_MSG(err != OK, false, "Could not open specified test directory.");
 
-	return make_tests_for_dir(dir->get_current_dir());
+	if (!make_tests_for_dir(dir->get_current_dir())) {
+		return false;
+	}
+
+	// Fixture regeneration always walks the whole corpus; only a run is partitioned.
+	if (is_generating || shard_total < 2) {
+		return true;
+	}
+
+	// `DirAccess` traversal order is not guaranteed to agree across platforms or file
+	// systems, so shard membership is decided by each fixture's rank in a sorted view of the
+	// corpus rather than by its traversal position. The traversal order itself is preserved:
+	// some fixtures observe state a sibling left behind, so reordering the run changes
+	// results.
+	Vector<FSTestCorpusRank> ranks;
+	ranks.resize(tests.size());
+	for (int i = 0; i < tests.size(); i++) {
+		ranks.write[i].key = vformat("%s|%d", tests[i].get_source_file(), (int)tests[i].get_tokenizer_mode());
+		ranks.write[i].index = i;
+	}
+	ranks.sort();
+
+	Vector<bool> selected;
+	selected.resize(tests.size());
+	selected.fill(false);
+	for (int rank = 0; rank < ranks.size(); rank++) {
+		selected.write[ranks[rank].index] = fs_test_shard_selects(rank, shard_index, shard_total);
+	}
+
+	Vector<FSTest> shard_tests;
+	for (int i = 0; i < tests.size(); i++) {
+		if (selected[i]) {
+			shard_tests.push_back(tests[i]);
+		}
+	}
+	tests = shard_tests;
+
+	return true;
+}
+
+void FSTestRunner::set_shard(int p_shard_index, int p_shard_total) {
+	shard_index = p_shard_index;
+	shard_total = p_shard_total;
+}
+
+Vector<String> FSTestRunner::collect_fixture_keys() {
+	Vector<String> keys;
+	if (!make_tests()) {
+		return keys;
+	}
+	for (int i = 0; i < tests.size(); i++) {
+		keys.push_back(vformat("%s|%d", tests[i].get_source_relative_filepath(), (int)tests[i].get_tokenizer_mode()));
+	}
+	return keys;
 }
 
 static bool generate_class_index_recursive(const String &p_dir) {

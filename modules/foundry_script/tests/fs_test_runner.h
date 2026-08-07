@@ -60,6 +60,20 @@ bool is_language_initialized();
 // instrumentation used to assert the per-suite hoist holds.
 uint64_t get_init_language_count();
 
+// Fixture-level half of the `test run --shard i/n` partition, shared by every suite that
+// loops over a corpus inside a single doctest case. Those cases execute on all shards (see
+// the run-everywhere allowlist in `tests/test_case_shard.cpp`) and each shard runs only the
+// slice selected here.
+//
+// With the units sorted by a stable key, unit `p_sorted_index` belongs to shard
+// `p_shard_index` of `p_shard_total`, both 1-based. A total below 2 selects every unit.
+bool fs_test_shard_selects(int p_sorted_index, int p_shard_index, int p_shard_total);
+
+// Reads the `--fs-shard=i/n` token that `test run --shard` pushes onto the test command
+// line. Both outputs stay at -1 when the token is absent or malformed, meaning "run the
+// whole corpus".
+void fs_test_shard_from_cmdline(int &r_shard_index, int &r_shard_total);
+
 // Single test instance in a suite.
 class FSTest {
 public:
@@ -146,6 +160,10 @@ class FSTestRunner {
 	bool print_filenames; // Whether filenames should be printed when generated/running tests
 	bool binary_tokens; // Test with buffer tokenizer.
 	bool compiled_bytecode; // Round-trip compiled scripts through the `.fsb` serializer before running.
+	// 1-based `--shard` selector; -1 means the runner executes the whole corpus. Only a run
+	// is ever partitioned: fixture regeneration always walks everything.
+	int shard_index = -1;
+	int shard_total = -1;
 
 	bool make_tests();
 	bool make_tests_for_dir(const String &p_dir);
@@ -159,6 +177,12 @@ public:
 	static void generate_outputs_for_cmdline();
 	int run_tests();
 	bool generate_outputs();
+
+	void set_shard(int p_shard_index, int p_shard_total);
+
+	// Keys of the fixtures this runner would execute, in run order. Backs the coverage that
+	// proves the fixture-level partition covers the corpus and never repeats a fixture.
+	Vector<String> collect_fixture_keys();
 
 	FSTestRunner(const String &p_source_dir, bool p_init_language, bool p_print_filenames = false, bool p_use_binary_tokens = false, bool p_use_compiled_bytecode = false);
 	~FSTestRunner();

@@ -63,11 +63,54 @@ jobs:
           cache-name: linux-editor-tests
         continue-on-error: true
 
-      - name: Unit tests
+      - name: Unit tests (sharded)
+        env:
+          # One single-threaded doctest process per shard. Keep this at or below the
+          # runner's vCPU count; oversubscribing slows every shard down.
+          FOUNDRY_SHARDS: 3
         run: |
+          # No X server is provisioned on this runner, so DISPLAY stays unset and the
+          # GUI-subprocess tests self-skip, exactly as they did before sharding. Setting
+          # DISPLAY here would make them run against a display that does not exist.
+          set -uo pipefail
           ./bin/foundry.linuxbsd.editor.dev.x86_64 --version
           ./bin/foundry.linuxbsd.editor.dev.x86_64 --help
-          ./bin/foundry.linuxbsd.editor.dev.x86_64 test run --force-colors
+
+          mkdir -p shard-logs
+          pids=()
+          for i in $(seq 1 "$FOUNDRY_SHARDS"); do
+            # Shards run concurrently, so each one needs its own `user://` tree. Without
+            # this, every shard reads and rewrites the same editor settings, caches, and
+            # script-test project config, and one shard can observe another's half-written
+            # file. The XDG variables are the platform's own user-data seam, so unsharded
+            # runs are unaffected.
+            shard_home="${RUNNER_TEMP:-/tmp}/foundry-shard-home-$i"
+            mkdir -p "$shard_home/config" "$shard_home/data" "$shard_home/cache"
+            XDG_CONFIG_HOME="$shard_home/config" \
+            XDG_DATA_HOME="$shard_home/data" \
+            XDG_CACHE_HOME="$shard_home/cache" \
+            ./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run \
+              --shard "$i/$FOUNDRY_SHARDS" \
+              --progress-format=jsonl --progress-file "shard-logs/shard-$i.jsonl" \
+              --force-colors > "shard-logs/shard-$i.log" 2>&1 &
+            pids+=("$!")
+          done
+
+          for pid in "${pids[@]}"; do wait "$pid" || true; done
+
+          # The verdict comes from each shard's run_end event, not from the exit code: a
+          # green run can still exit non-zero while reporting leaks during cleanup.
+          # `--expected-shards` matters because the loop above ignores each shard's exit
+          # code: without it, a shard killed before it opened its progress file would just
+          # disappear and the survivors would report a green run over part of the suite.
+          python3 .github/scripts/aggregate_test_shards.py shard-logs --expected-shards "$FOUNDRY_SHARDS"
+
+      - name: Upload shard logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-shards
+          path: shard-logs/
 
   release-vm-error-tests:
     runs-on: ubuntu-22.04
