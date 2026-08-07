@@ -59,11 +59,14 @@ A new `HashMap<StringName, LocalVector<StringName>> bare_aliases` maps a flat na
 
 This is what makes conflict coexistence real: `foundry.http.Server` and `foundry.ftp.Server` register under distinct canonical keys; if both also alias to bare `Server`, bare lookup is forced to disambiguate.
 
+**Bare-name lookup order.** A bare-name lookup checks the canonical `classes` map first, then the alias map. So an explicitly flat class (`foundry.Server` with no namespace, canonical key `Server`) always wins over a re-exported alias of the same bare name — explicit registration beats a re-export. Only namespaced classes (not themselves canonical keys) rely on the alias map for bare access.
+
 ### New ClassDB API (additive only)
 
 - `register_namespace(p_class, p_namespace)` — sets the fields (called by the macro).
 - `class_get_qualified_name(p_class)` / `class_get_namespace(p_class)`.
 - `class_get_by_qualified_name(p_qualified)` — exact canonical lookup.
+- `class_get_in_namespace(p_namespace, p_class_name)` — find a native class by namespace + simple name (used by the script analyzer).
 - `class_register_global_alias(p_class, p_alias)` — explicit re-export of a class to a bare name; how a class opts into the global namespace.
 - `resolve_type_name(StringName)` — central resolver used by the scene loader (see Section 3): qualified → canonical hit; bare-unique → resolves; bare-ambiguous → fails; flat → passthrough.
 
