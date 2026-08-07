@@ -281,7 +281,18 @@ TEST_CASE("[ClassDBNamespace] The HTTPServer pilot is reachable only through its
 	CHECK(ClassDB::class_get_by_qualified_name(qualified_name, simple_name));
 	CHECK(simple_name == StringName("HTTPServer"));
 
+	// Inheritance queries answer on canonical keys: a class is its own ancestor under its qualified
+	// name, inherited flat ancestors keep matching, and the bare name is not an identity.
+	CHECK(ClassDB::is_parent_class(qualified_name, qualified_name));
 	CHECK(ClassDB::is_parent_class(qualified_name, "Node"));
+	CHECK(ClassDB::is_parent_class(qualified_name, "Object"));
+	CHECK_FALSE(ClassDB::is_parent_class(qualified_name, "HTTPServer"));
+	CHECK_FALSE(ClassDB::is_parent_class(qualified_name, "Node2D"));
+	// Flat classes are unaffected by the qualified-name comparison.
+	CHECK(ClassDB::is_parent_class("Node2D", "Node2D"));
+	CHECK(ClassDB::is_parent_class("Node2D", "Node"));
+	CHECK_FALSE(ClassDB::is_parent_class("Node", "Node2D"));
+	CHECK_FALSE(ClassDB::is_parent_class("Node", qualified_name));
 }
 
 TEST_CASE("[ClassDBNamespace] The HTTPServer pilot instantiates with a qualified runtime identity") {

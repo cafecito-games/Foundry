@@ -67,6 +67,9 @@ class CreateDialog : public ConfirmationDialog {
 	EditorHelpBit *help_bit = nullptr;
 
 	HashMap<String, TreeItem *> search_options_types;
+	// Synthetic, unselectable headers grouping the namespaced native classes that share both an
+	// inheritance parent and a namespace. Keyed by "<parent type>|<namespace>".
+	HashMap<String, TreeItem *> namespace_group_items;
 	HashMap<String, String> custom_type_parents;
 	HashMap<String, int> custom_type_indices;
 	List<TypeInfo> type_info_list;
@@ -76,6 +79,9 @@ class CreateDialog : public ConfirmationDialog {
 	void _update_search();
 	bool _should_hide_type(const StringName &p_type) const;
 	void _add_type(const StringName &p_type, TypeCategory p_type_category, const String &p_match_keyword);
+	TreeItem *_namespace_group_item(TreeItem *p_parent, const StringName &p_parent_type, const StringName &p_namespace);
+	static String _item_type_name(TreeItem *p_item);
+	String _recent_type_name(int p_index) const;
 	void _configure_search_option_item(TreeItem *r_item, const StringName &p_type, TypeCategory p_type_category, const String &p_match_keyword);
 	float _score_type(const String &p_type, const String &p_search) const;
 	bool _is_type_preferred(const String &p_type) const;
@@ -115,6 +121,11 @@ protected:
 	void _save_and_update_favorite_list();
 
 public:
+	// Text a native class is listed under. Namespaced classes are listed by their simple name
+	// because the namespace is carried by the enclosing group header; the canonical qualified name
+	// stays in the item metadata.
+	static String get_class_display_name(const StringName &p_class);
+
 	Variant instantiate_selected();
 	String get_selected_type();
 	String get_selected_type_name();
