@@ -1914,6 +1914,15 @@ TEST_CASE("[String] uri_decode percent-escape hex digit case") {
 
 	CHECK(String("%2b").uri_file_decode() == "+");
 	CHECK(String("%zz").uri_file_decode() == "%zz");
+
+	// A half-valid escape (one valid hex digit, one invalid) stays fully literal.
+	CHECK(String("%2z").uri_decode() == "%2z");
+	CHECK(String("%2z").uri_file_decode() == "%2z");
+	CHECK(String("%2Z").uri_decode() == "%2Z");
+	CHECK(String("a%2zb").uri_decode() == "a%2zb");
+	CHECK(String("%2+").uri_decode() == "%2 ");
+	CHECK(String("%2+").uri_file_decode() == "%2+");
+	CHECK(String("%z2").uri_decode() == "%z2");
 }
 
 TEST_CASE("[String] xml_escape/unescape") {

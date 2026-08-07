@@ -4424,6 +4424,8 @@ String String::uri_decode() const {
 					char bytes[3] = { (char)ord1, (char)ord2, 0 };
 					res += (char)strtol(bytes, nullptr, 16);
 					i += 2;
+				} else {
+					res += src[i];
 				}
 			} else {
 				res += src[i];
@@ -4449,6 +4451,8 @@ String String::uri_file_decode() const {
 					char bytes[3] = { (char)ord1, (char)ord2, 0 };
 					res += (char)strtol(bytes, nullptr, 16);
 					i += 2;
+				} else {
+					res += src[i];
 				}
 			} else {
 				res += src[i];
