@@ -40,6 +40,7 @@
 #include "core/object/callable_method_pointer.h"
 #include "core/templates/a_hash_map.h"
 #include "core/templates/hash_set.h"
+#include "core/templates/local_vector.h"
 
 #include <type_traits>
 
@@ -158,7 +159,13 @@ public:
 		HashMap<StringName, Vector<uint32_t>> virtual_methods_compat;
 
 		StringName inherits;
+		// The simple (C++) class name, e.g. `HTTPServer`. Never includes the namespace.
 		StringName name;
+		// Dotted namespace path, e.g. `foundry.http.server`. Empty means the global namespace.
+		StringName namespace_path;
+		// `namespace_path.is_empty() ? name : namespace_path + "." + name`. This is the key
+		// under which the class is registered in `ClassDB::classes`.
+		StringName qualified_name;
 		bool disabled = false;
 		bool exposed = false;
 		bool reloadable = false;
@@ -205,6 +212,12 @@ public:
 	static HashMap<StringName, ClassInfo> classes;
 	static HashMap<StringName, StringName> resource_base_extensions;
 	static HashMap<StringName, StringName> compat_classes;
+	// Global re-export layer: bare alias -> the qualified names that expose it. An alias with two
+	// or more owners is ambiguous and does not resolve.
+	static HashMap<StringName, LocalVector<StringName>> bare_aliases;
+	// C++ simple name -> qualified name, for namespaced classes only. Internal plumbing for the
+	// namespace accessors; deliberately not a public bare-name resolution path.
+	static HashMap<StringName, StringName> qualified_by_simple_name;
 
 #ifdef TOOLS_ENABLED
 	static HashMap<StringName, ObjectFoundryExtension> placeholder_extensions;
@@ -247,6 +260,14 @@ private:
 	static void _bind_method_custom(const StringName &p_class, MethodBind *p_method, bool p_compatibility);
 
 	static Object *_instantiate_internal(const StringName &p_class, bool p_require_real_class = false, bool p_notify_postinitialize = true, bool p_exposed_only = true);
+
+	// Maps an arbitrary lookup name to a canonical registry key: a canonical hit wins, then a
+	// unique bare alias. Returns an empty name on a miss or on an ambiguous alias.
+	// Does not lock; every caller already holds a `Locker::Lock`.
+	static StringName _resolve_by_any_name(const StringName &p_name);
+	// As above, but additionally accepts a namespaced class's C++ simple name. Only for
+	// introspection accessors, never for reachability decisions. Does not lock.
+	static StringName _resolve_for_introspection(const StringName &p_class);
 
 	static bool _can_instantiate(ClassInfo *p_class_info, bool p_exposed_only = true);
 
@@ -348,6 +369,27 @@ public:
 	static StringName get_parent_class(const StringName &p_class);
 	static StringName get_compatibility_remapped_class(const StringName &p_class);
 	static bool class_exists(const StringName &p_class);
+
+	// Declares that an already registered class lives in `p_namespace`. Rekeys the registry entry
+	// to the qualified name and stamps the class's `GDType`, so `get_class()` returns the qualified
+	// name and `is_class(<bare name>)` becomes false. Must run right after the class registration
+	// and before any subclass of it is registered.
+	static void register_namespace(const StringName &p_class, const StringName &p_namespace);
+	// Re-exports a namespaced class under a bare global name. An alias claimed by two or more
+	// classes is ambiguous and stops resolving for all of them.
+	static void class_register_global_alias(const StringName &p_qualified_name, const StringName &p_alias);
+	// Accept a qualified name, a bare canonical name, a namespaced class's C++ simple name, or a
+	// unique alias. Return an empty name when nothing matches.
+	static StringName class_get_qualified_name(const StringName &p_class);
+	static StringName class_get_namespace(const StringName &p_class);
+	// Exact canonical lookup by qualified name; outputs the class's simple (C++) name.
+	static bool class_get_by_qualified_name(const StringName &p_qualified_name, StringName &r_simple_name);
+	// Exact canonical lookup by namespace plus simple name. An empty namespace means global.
+	static StringName class_get_in_namespace(const StringName &p_namespace, const StringName &p_simple_name);
+	// Central name resolver for consumers that read type names from data (e.g. the scene loader).
+	// Returns the canonical registry key, or an empty name for a miss or an ambiguous alias.
+	static StringName resolve_type_name(const StringName &p_name);
+
 	static bool is_parent_class(const StringName &p_class, const StringName &p_inherits);
 	static bool can_instantiate(const StringName &p_class);
 	static bool is_abstract(const StringName &p_class);
@@ -594,6 +636,14 @@ public:
 #define FOUNDRY_REGISTER_RUNTIME_CLASS(m_class)       \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {     \
 		::ClassDB::register_runtime_class<m_class>(); \
+	}
+
+// Companion to the `FOUNDRY_REGISTER_*_CLASS` macros: declares the namespace a native class lives
+// in. Must directly follow the class registration, before any subclass is registered.
+// `get_class_static()` is evaluated before the stamp, so it still yields the bare name here.
+#define FOUNDRY_REGISTER_NAMESPACE(m_class, m_namespace)                         \
+	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {                                \
+		::ClassDB::register_namespace(m_class::get_class_static(), m_namespace); \
 	}
 
 #define FOUNDRY_REGISTER_NATIVE_STRUCT(m_class, m_code) ClassDB::register_native_struct(#m_class, m_code, sizeof(m_class))

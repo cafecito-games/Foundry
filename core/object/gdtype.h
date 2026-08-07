@@ -41,6 +41,17 @@ class GDType {
 	/// `name` is the first element and `Object` is the last.
 	Vector<StringName> name_hierarchy;
 
+	/// Replaces this type's own name with its namespace-qualified form. Ancestor entries in
+	/// `name_hierarchy` are untouched, so inheritance checks against base classes keep working.
+	/// Only `ClassDB::register_namespace()` may call this, and only before any subclass of this
+	/// type has been registered (a subclass snapshots this hierarchy when its own type is built).
+	void apply_namespace(const StringName &p_qualified_name) {
+		name = p_qualified_name;
+		name_hierarchy.write[0] = p_qualified_name;
+	}
+
+	friend class ClassDB;
+
 public:
 	GDType(const GDType *p_super_type, StringName p_name);
 
