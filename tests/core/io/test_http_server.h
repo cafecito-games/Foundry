@@ -43,6 +43,8 @@
 
 #include "core/io/http_client.h"
 #include "core/io/stream_peer_tcp.h"
+#include "core/templates/hash_map.h"
+#include "core/templates/list.h"
 
 namespace TestHTTPServer {
 
@@ -458,6 +460,57 @@ public:
 	}
 };
 
+// Answers the way an OAuth callback endpoint does: it reads a query parameter off the request and
+// redirects the browser somewhere else.
+class RedirectingRouteHandler : public Object {
+	FOUNDRY_SOFTCLASS(RedirectingRouteHandler, Object);
+
+public:
+	String seen_code;
+	String location = "/done";
+	int reply_status = 302;
+
+	void handle(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		seen_code = p_request->get_query().get("code", String());
+		p_response->redirect(location + "?code=" + seen_code.uri_encode(), reply_status);
+	}
+};
+
+// Echoes the request body back, which is the round trip a POST endpoint has to survive: the body
+// bytes only exist if the connection kept reading past the header block.
+class EchoRouteHandler : public Object {
+	FOUNDRY_SOFTCLASS(EchoRouteHandler, Object);
+
+public:
+	int seen_body_size = -1;
+	String seen_content_type;
+	String seen_custom_header;
+
+	void handle(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		seen_body_size = p_request->get_body().size();
+		seen_content_type = p_request->get_header("content-type");
+		seen_custom_header = p_request->get_header("x-request-id");
+
+		p_response->set_header("X-Echo", "1");
+		p_response->send(p_request->get_body());
+	}
+};
+
+// Answers with a status whose semantics forbid a body, and still hands the response a body, so the
+// writer's framing decision is what the client observes.
+class BodylessStatusRouteHandler : public Object {
+	FOUNDRY_SOFTCLASS(BodylessStatusRouteHandler, Object);
+
+public:
+	int reply_status = 204;
+	String reply_body;
+
+	void handle(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		p_response->set_status(reply_status);
+		p_response->send_string(reply_body);
+	}
+};
+
 // A signal receiver is script code just like a route handler, so it may also close the connection
 // out from under the dispatch that is running.
 class StoppingSignalObserver : public Object {
@@ -477,11 +530,20 @@ struct ClientResult {
 	Error error = FAILED;
 	int status = 0;
 	String body;
+	// Lower-cased field name -> value, as read back from the status line's header block.
+	HashMap<String, String> headers;
+
+	bool has_header(const String &p_name) const { return headers.has(p_name.to_lower()); }
+	String get_header(const String &p_name) const {
+		HashMap<String, String>::ConstIterator found = headers.find(p_name.to_lower());
+		return found ? found->value : String();
+	}
 };
 
-// Performs one GET against `p_server` while driving the server's poll loop, so the whole exchange
-// runs on this thread without a scene tree.
-ClientResult http_get(HTTPServer *p_server, int p_port, const String &p_path) {
+// Performs one request against `p_server` while driving the server's poll loop, so the whole
+// exchange runs on this thread without a scene tree.
+ClientResult http_request(HTTPServer *p_server, int p_port, HTTPClient::Method p_method, const String &p_path,
+		const String &p_body = String(), const Vector<String> &p_headers = Vector<String>()) {
 	ClientResult result;
 
 	Ref<HTTPClient> client = HTTPClient::create();
@@ -492,6 +554,8 @@ ClientResult http_get(HTTPServer *p_server, int p_port, const String &p_path) {
 	if (result.error != OK) {
 		return result;
 	}
+
+	const CharString request_body = p_body.utf8();
 
 	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
 	bool requested = false;
@@ -511,6 +575,16 @@ ClientResult http_get(HTTPServer *p_server, int p_port, const String &p_path) {
 
 		if (client->has_response() && result.status == 0) {
 			result.status = client->get_response_code();
+			// `get_response_headers()` drains the list, so this is the one chance to read it.
+			List<String> header_lines;
+			client->get_response_headers(&header_lines);
+			for (const String &line : header_lines) {
+				const int separator = line.find_char(':');
+				if (separator < 0) {
+					continue;
+				}
+				result.headers[line.substr(0, separator).strip_edges().to_lower()] = line.substr(separator + 1).strip_edges();
+			}
 		}
 
 		const HTTPClient::Status status = client->get_status();
@@ -523,7 +597,8 @@ ClientResult http_get(HTTPServer *p_server, int p_port, const String &p_path) {
 
 		if (!requested) {
 			if (status == HTTPClient::STATUS_CONNECTED) {
-				result.error = client->request(HTTPClient::METHOD_GET, p_path, Vector<String>(), nullptr, 0);
+				result.error = client->request(p_method, p_path, p_headers,
+						request_body.length() > 0 ? (const uint8_t *)request_body.get_data() : nullptr, request_body.length());
 				if (result.error != OK) {
 					return result;
 				}
@@ -543,6 +618,10 @@ ClientResult http_get(HTTPServer *p_server, int p_port, const String &p_path) {
 
 	result.error = ERR_TIMEOUT;
 	return result;
+}
+
+ClientResult http_get(HTTPServer *p_server, int p_port, const String &p_path) {
+	return http_request(p_server, p_port, HTTPClient::METHOD_GET, p_path);
 }
 
 } // namespace
@@ -772,12 +851,12 @@ TEST_CASE("[HTTPServer] The resolution ladder runs routes, then the signal, then
 		CHECK(observer->seen_response_already_sent);
 	}
 
-	SUBCASE("A receiver may still amend the status of a response a route committed") {
+	SUBCASE("A receiver may no longer amend the status of a response a route committed") {
 		server->set_emit_for_all(true);
 		REQUIRE(server->connect("request_received", receiver) == OK);
 
-		// Only the body is locked once a response is committed, so a receiver running behind a route
-		// can still change the status line.
+		// Committing locks the whole response, status line included, so a receiver running behind a
+		// route cannot rewrite what the client is about to read.
 		observer->answer = true;
 		observer->amend_status = true;
 		observer->reply_status = 503;
@@ -787,7 +866,7 @@ TEST_CASE("[HTTPServer] The resolution ladder runs routes, then the signal, then
 		ERR_PRINT_ON;
 
 		CHECK(result.error == OK);
-		CHECK(result.status == 503);
+		CHECK(result.status == 200);
 		CHECK(result.body == "hi");
 	}
 
@@ -848,6 +927,227 @@ TEST_CASE("[HTTPServer] The resolution ladder runs routes, then the signal, then
 	memdelete(observer);
 	memdelete(handler);
 	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] The request and response surface survives a round trip") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	SUBCASE("A query parameter is readable and the redirect it drives reaches the client") {
+		RedirectingRouteHandler *handler = memnew(RedirectingRouteHandler);
+		server->route("GET", "/cb", callable_mp(handler, &RedirectingRouteHandler::handle));
+
+		const ClientResult result = http_get(server, port, "/cb?code=abc&state=xyz");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 302);
+		CHECK(result.get_header("Location") == "/done?code=abc");
+		CHECK(handler->seen_code == "abc");
+		CHECK(result.body.is_empty());
+		CHECK(result.get_header("content-length") == "0");
+
+		memdelete(handler);
+	}
+
+	SUBCASE("A redirect may name another status in the redirection range") {
+		RedirectingRouteHandler *handler = memnew(RedirectingRouteHandler);
+		handler->reply_status = 303;
+		handler->location = "/elsewhere";
+		server->route("GET", "/cb", callable_mp(handler, &RedirectingRouteHandler::handle));
+
+		const ClientResult result = http_get(server, port, "/cb?code=a%20b");
+
+		CHECK(result.status == 303);
+		CHECK(handler->seen_code == "a b");
+		CHECK(result.get_header("Location") == "/elsewhere?code=a%20b");
+
+		memdelete(handler);
+	}
+
+	SUBCASE("A POST body is read past the header block and echoed back") {
+		EchoRouteHandler *handler = memnew(EchoRouteHandler);
+		server->route("POST", "/echo", callable_mp(handler, &EchoRouteHandler::handle));
+
+		Vector<String> headers;
+		headers.push_back("Content-Type: application/json");
+		headers.push_back("X-Request-Id: 42");
+		const String payload = "{\"name\":\"Ana\",\"note\":\"café\"}";
+
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_POST, "/echo", payload, headers);
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == payload);
+		CHECK(result.get_header("x-echo") == "1");
+		// The multi-byte character makes the byte count differ from the character count, so this also
+		// pins that framing counts bytes.
+		CHECK(handler->seen_body_size == payload.utf8().length());
+		CHECK(result.get_header("content-length") == itos(payload.utf8().length()));
+		CHECK(handler->seen_content_type == "application/json");
+		CHECK(handler->seen_custom_header == "42");
+
+		memdelete(handler);
+	}
+
+	SUBCASE("A POST with no body reaches the handler with an empty body") {
+		EchoRouteHandler *handler = memnew(EchoRouteHandler);
+		server->route("POST", "/echo", callable_mp(handler, &EchoRouteHandler::handle));
+
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_POST, "/echo");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(handler->seen_body_size == 0);
+		CHECK(result.body.is_empty());
+
+		memdelete(handler);
+	}
+
+	SUBCASE("A body larger than one read is assembled before the handler runs") {
+		EchoRouteHandler *handler = memnew(EchoRouteHandler);
+		server->route("POST", "/echo", callable_mp(handler, &EchoRouteHandler::handle));
+
+		String payload;
+		for (int i = 0; i < 512; i++) {
+			payload += "0123456789abcdef";
+		}
+
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_POST, "/echo", payload);
+
+		CHECK(result.error == OK);
+		CHECK(handler->seen_body_size == payload.length());
+		CHECK(result.body == payload);
+
+		memdelete(handler);
+	}
+
+	server->stop();
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A status that forbids a body is framed without one") {
+	// RFC 9110 forbids Content-Length on 204 and 304, and both statuses carry no body at all.
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	BodylessStatusRouteHandler *handler = memnew(BodylessStatusRouteHandler);
+	server->route("GET", "/none", callable_mp(handler, &BodylessStatusRouteHandler::handle));
+
+	SUBCASE("A 204 carries no Content-Length and no body") {
+		handler->reply_status = 204;
+
+		const ClientResult result = http_get(server, port, "/none");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 204);
+		CHECK_FALSE(result.has_header("content-length"));
+		CHECK(result.body.is_empty());
+	}
+
+	SUBCASE("A 304 carries no Content-Length even when the handler committed a body") {
+		handler->reply_status = 304;
+		handler->reply_body = "ignored";
+
+		const ClientResult result = http_get(server, port, "/none");
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 304);
+		CHECK_FALSE(result.has_header("content-length"));
+		CHECK(result.body.is_empty());
+	}
+
+	SUBCASE("A status that allows a body still carries Content-Length") {
+		handler->reply_status = 200;
+		handler->reply_body = "body";
+
+		const ClientResult result = http_get(server, port, "/none");
+
+		CHECK(result.status == 200);
+		CHECK(result.get_header("content-length") == "4");
+		CHECK(result.body == "body");
+	}
+
+	SUBCASE("An empty 200 body still carries a zero Content-Length") {
+		handler->reply_status = 200;
+
+		const ClientResult result = http_get(server, port, "/none");
+
+		CHECK(result.status == 200);
+		CHECK(result.get_header("content-length") == "0");
+	}
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] Committing a response closes it to further changes") {
+	Ref<HTTPResponse> response;
+	response.instantiate();
+	response->set_status(201);
+	response->set_header("Content-Type", "text/plain");
+	response->send_string("created");
+
+	SUBCASE("The status can no longer be changed") {
+		ERR_PRINT_OFF;
+		response->set_status(503);
+		ERR_PRINT_ON;
+
+		CHECK(response->get_status() == 201);
+	}
+
+	SUBCASE("The status property is gated the same way as the method") {
+		ERR_PRINT_OFF;
+		response->set("status", 503);
+		ERR_PRINT_ON;
+
+		CHECK(int(response->get("status")) == 201);
+	}
+
+	SUBCASE("A header field can no longer be added or replaced") {
+		ERR_PRINT_OFF;
+		response->set_header("Content-Type", "text/html");
+		response->set_header("X-Late", "1");
+		ERR_PRINT_ON;
+
+		CHECK(response->get_header("content-type") == "text/plain");
+		CHECK_FALSE(response->has_header("x-late"));
+	}
+
+	SUBCASE("The body is untouched by the refused changes") {
+		ERR_PRINT_OFF;
+		response->set_status(503);
+		response->set_header("X-Late", "1");
+		response->send_string("late");
+		ERR_PRINT_ON;
+
+		CHECK(response->get_body_string() == "created");
+		CHECK(response->get_status() == 201);
+	}
+
+	SUBCASE("redirect still sets its own status and Location before committing") {
+		Ref<HTTPResponse> fresh;
+		fresh.instantiate();
+		fresh->redirect("/next", 307);
+
+		CHECK(fresh->is_sent());
+		CHECK(fresh->get_status() == 307);
+		CHECK(fresh->get_header("location") == "/next");
+
+		// And a redirect on top of a commit changes nothing at all.
+		ERR_PRINT_OFF;
+		fresh->redirect("/other", 302);
+		ERR_PRINT_ON;
+
+		CHECK(fresh->get_status() == 307);
+		CHECK(fresh->get_header("location") == "/next");
+	}
 }
 
 TEST_CASE("[HTTPServer] stop closes the listener and every open connection") {

@@ -4,7 +4,7 @@
 		The outbound half of one HTTP exchange.
 	</brief_description>
 	<description>
-		A handler sets [member status] and any header fields it needs, then commits the body exactly once with [method send], [method send_string], [method redirect] or [method send_file]. A second commit is an error and leaves the first one intact.
+		A handler sets [member status] and any header fields it needs, then commits the body exactly once with [method send], [method send_string], [method redirect] or [method send_file]. Committing closes the response: a second commit, a later [member status] change and a later [method set_header] call are all refused and leave the committed response intact.
 		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPResponse[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPResponse[/code]. Without that import the bare name does not resolve.
 		[b]Note:[/b] Committing does not write to a socket yet. It records what will be written, so the result is only observable through the getters on this class.
 	</description>
@@ -66,7 +66,7 @@
 			<param index="0" name="location" type="String" />
 			<param index="1" name="status" type="int" default="302" />
 			<description>
-				Commits an empty body, sets [member status] to [param status] and sets the [code]Location[/code] header field to [param location].
+				Commits an empty body, sets [member status] to [param status] and sets the [code]Location[/code] header field to [param location]. This is the whole redirect: because it commits, the status and the field it writes are the ones the client reads.
 				[param status] must be a redirection status between [code]300[/code] and [code]399[/code], and [param location] must not be empty; otherwise nothing is committed and the response is left unchanged.
 			</description>
 		</method>
@@ -96,13 +96,14 @@
 			<param index="0" name="name" type="String" />
 			<param index="1" name="value" type="String" />
 			<description>
-				Sets the [param name] header field to [param value], replacing any value set earlier under a different casing of the same name. An empty name is rejected.
+				Sets the [param name] header field to [param value], replacing any value set earlier under a different casing of the same name. An empty name is rejected, and so is any call made after the response was committed.
 			</description>
 		</method>
 	</methods>
 	<members>
 		<member name="status" type="int" setter="set_status" getter="get_status" default="200">
-			The HTTP status code of the response. Must be between [code]100[/code] and [code]599[/code]; values outside that range are rejected and leave the property unchanged.
+			The HTTP status code of the response. Must be between [code]100[/code] and [code]599[/code]; values outside that range are rejected and leave the property unchanged. Once the response has been committed the status is fixed, and a further assignment is rejected the same way.
+			[b]Note:[/b] A [code]204[/code] or [code]304[/code] response is written without a body and without a [code]Content-Length[/code] header field, as the HTTP specification requires, even if a body was committed.
 		</member>
 	</members>
 	<constants>

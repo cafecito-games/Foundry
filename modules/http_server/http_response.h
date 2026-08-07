@@ -60,11 +60,15 @@ private:
 	bool sent = false;
 
 	bool _begin_send();
+	// Writes a field without the commit gate, for the fields the commit itself contributes.
+	void _put_header(const String &p_name, const String &p_value);
 
 protected:
 	static void _bind_methods();
 
 public:
+	// Committing closes the whole response: the status line and the header fields stop accepting
+	// changes along with the body, so what a later caller observes is what the client will read.
 	void set_status(int p_status);
 	int get_status() const;
 
