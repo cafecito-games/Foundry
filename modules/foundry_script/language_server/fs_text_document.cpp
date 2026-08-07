@@ -58,6 +58,7 @@ String refactor_kind_to_lsp_kind(RefactorKind p_kind) {
 		case RefactorKind::INSERT_EXPLICIT_CAST:
 		case RefactorKind::WIDEN_TO_NULLABLE:
 		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
+		case RefactorKind::FILL_MATCH_CASES:
 			return "refactor.rewrite";
 		case RefactorKind::INLINE_VARIABLE:
 			return "refactor.inline";
@@ -88,6 +89,7 @@ bool is_resolvable_code_action_kind(RefactorKind p_kind) {
 		case RefactorKind::INSERT_EXPLICIT_CAST:
 		case RefactorKind::WIDEN_TO_NULLABLE:
 		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
+		case RefactorKind::FILL_MATCH_CASES:
 			return true;
 		case RefactorKind::OVERRIDE_METHOD:
 		case RefactorKind::RENAME:

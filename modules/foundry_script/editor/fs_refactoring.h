@@ -71,6 +71,7 @@ enum class RefactorKind {
 	INSERT_EXPLICIT_CAST,
 	WIDEN_TO_NULLABLE,
 	SORT_MEMBERS_BY_STYLE_GUIDE,
+	FILL_MATCH_CASES,
 };
 
 struct RefactorAvailability {

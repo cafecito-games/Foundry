@@ -34,6 +34,7 @@
 
 #include "fs_container_inference.h"
 #include "fs_refactoring_edits.h"
+#include "fs_refactoring_match_cases.h"
 #include "fs_refactoring_names.h"
 #include "fs_refactoring_shared.h"
 #include "fs_refactoring_types.h"
@@ -8385,6 +8386,17 @@ Vector<RefactorAvailability> FSRefactoring::get_available_refactors(const Refact
 	}
 	result.push_back(sort_members);
 
+	RefactorAvailability fill_match_cases;
+	fill_match_cases.kind = RefactorKind::FILL_MATCH_CASES;
+	fill_match_cases.title = "Fill Missing Match Cases";
+	const FSRefactorMatchCases::FillMatchCasesCandidate fill_match_cases_candidate =
+			FSRefactorMatchCases::find_candidate(p_context, p_location, parse_result_provider);
+	fill_match_cases.enabled = fill_match_cases_candidate.enabled;
+	if (!fill_match_cases.enabled) {
+		fill_match_cases.disabled_reason = fill_match_cases_candidate.disabled_reason;
+	}
+	result.push_back(fill_match_cases);
+
 	return result;
 }
 
@@ -8427,6 +8439,9 @@ RefactorResult FSRefactoring::prepare(const RefactorContext &p_context, const Re
 			break;
 		case RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE:
 			result = prepare_sort_members_by_style_guide(p_context);
+			break;
+		case RefactorKind::FILL_MATCH_CASES:
+			result = FSRefactorMatchCases::prepare(p_context, p_location, parse_result_provider);
 			break;
 		default:
 			result.ok = false;

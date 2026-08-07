@@ -452,6 +452,16 @@ Dictionary first_code_action_with_kind(const Array &p_actions, const String &p_k
 	return Dictionary();
 }
 
+Dictionary first_code_action_with_title(const Array &p_actions, const String &p_title) {
+	for (int i = 0; i < p_actions.size(); i++) {
+		Dictionary action = p_actions[i];
+		if (String(action.get("title", "")) == p_title) {
+			return action;
+		}
+	}
+	return Dictionary();
+}
+
 const LSP::DocumentSymbol *test_resolve_symbol_at(const String &p_uri, const LSP::Position p_pos, const String &p_expected_uri, const String &p_expected_name, const LSP::Range &p_expected_range) {
 	Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
 
@@ -2186,6 +2196,31 @@ func f():
 
 			Dictionary resolved_data = resolved["data"];
 			CHECK_EQ(String(resolved_data["clientPayload"]), "keep-me");
+		}
+
+		SUBCASE("returns Fill Missing Match Cases and resolves its workspace edit") {
+			const String source =
+					"enum Status:\n"
+					"\tPending\n"
+					"\tActive(id: int)\n"
+					"\n"
+					"func handle(s: Status) -> void:\n"
+					"\tmatch s:\n"
+					"\t\tpass\n";
+			const String uri = workspace->get_file_uri("res://lsp/code_action_fill_match_cases.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Array actions = text_document->codeAction(make_code_action_params(uri, range(pos(5, 2), pos(5, 2))));
+			Dictionary action = first_code_action_with_title(actions, "Fill Missing Match Cases");
+			REQUIRE_FALSE(action.is_empty());
+			CHECK_EQ(String(action["kind"]), "refactor.rewrite");
+			CHECK_FALSE(action.has("edit"));
+
+			Dictionary resolved = text_document->resolveCodeAction(action);
+			REQUIRE(resolved.has("edit"));
+			Dictionary edit = resolved["edit"];
+			CHECK_EQ(first_workspace_edit_text(edit, uri),
+					"\t\t.Pending:\n\t\t\tpass\n\t\t.Active(id):\n\t\t\tpass");
 		}
 
 		SUBCASE("notifies when a stale code action cannot resolve") {
