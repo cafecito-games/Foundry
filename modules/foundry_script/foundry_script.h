@@ -950,6 +950,12 @@ class FSLanguage : public ScriptLanguage {
 	HashMap<StringName, Variant> named_globals;
 	Vector<int> global_array_empty_indexes;
 
+	// Every exposed native class, keyed by its canonical (qualified) registry name. Namespaced
+	// natives are deliberately absent from `globals`, so this is the only way to reach them; flat
+	// natives are present in both, with the same handle, because their qualified name is their
+	// bare name.
+	HashMap<StringName, Ref<FSNativeClass>> native_class_by_qualified;
+
 	// Read-only reflection singletons exposed as the `foundry` namespace surface.
 	// Held by `named_globals`; these member refs keep them addressable and are
 	// cleared in finish().
@@ -1199,6 +1205,10 @@ public:
 	_FORCE_INLINE_ Variant *get_global_array() { return _global_array; }
 	_FORCE_INLINE_ const HashMap<StringName, int> &get_global_map() const { return globals; }
 	_FORCE_INLINE_ const HashMap<StringName, Variant> &get_named_globals_map() const { return named_globals; }
+	// Resolve a native class handle by its canonical (qualified) registry name. Returns null for a
+	// name that is not an exposed native class. This is the lookup path for namespaced natives,
+	// which are not global-by-default.
+	Ref<FSNativeClass> get_native_class_by_qualified(const StringName &p_qualified_name) const;
 	// These two functions should be used when behavior needs to be consistent between in-editor and running the scene
 	bool has_any_global_constant(const StringName &p_name) { return named_globals.has(p_name) || globals.has(p_name); }
 	Variant get_any_global_constant(const StringName &p_name);

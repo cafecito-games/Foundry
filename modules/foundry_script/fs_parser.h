@@ -540,11 +540,12 @@ public:
 		bool reduced = false;
 		bool is_constant = false;
 		Variant reduced_value;
-		// When the analyzer resolves this expression to a namespaced global script
-		// class used as a value (e.g. `Foo` from the current/imported namespace, or a
-		// qualified `ns.Foo`), it records the canonical global class name here so the
-		// compiler can emit the class object directly. The registered name is dotted
-		// (`ns.Foo`), which a bare-identifier lookup cannot match. Empty otherwise.
+		// When the analyzer resolves this expression to a namespaced global class used as a
+		// value (e.g. `Foo` from the current/imported namespace, or a qualified `ns.Foo`), it
+		// records the canonical class name here so the compiler can emit the class object
+		// directly. The registered name is dotted (`ns.Foo`), which a bare-identifier lookup
+		// cannot match. This covers namespaced script classes and namespaced native classes
+		// alike. Empty otherwise.
 		StringName resolved_global_class;
 		// One entry per redundant parenthesized grouping this expression was the
 		// sole content of, outermost last, e.g. `(  # note\n  1 + 2\n)` records one

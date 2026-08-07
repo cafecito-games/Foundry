@@ -2286,21 +2286,30 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 					if (namespace_error) {
 						return bad_type;
 					}
-					if (reject_bootstrap_global_class_dependency(namespace_global_class, p_type, "global type")) {
-						return bad_type;
-					}
-					if (ScriptServer::is_global_class_enum(namespace_global_class)) {
-						const String path = ScriptServer::get_global_class_path(namespace_global_class);
-						result = make_global_enum_type_from_path(namespace_global_class, path, p_type);
+					if (class_exists(namespace_global_class)) {
+						// A namespaced native class, reached through an import or a fully qualified
+						// chain. Its canonical (qualified) name is the native type.
+						result.kind = FSParser::DataType::NATIVE;
+						result.builtin_type = Variant::OBJECT;
+						result.native_type = namespace_global_class;
+						resolved_type_chain_size = namespace_type_chain_size;
 					} else {
-						result = make_global_class_meta_type(namespace_global_class, p_type);
+						if (reject_bootstrap_global_class_dependency(namespace_global_class, p_type, "global type")) {
+							return bad_type;
+						}
+						if (ScriptServer::is_global_class_enum(namespace_global_class)) {
+							const String path = ScriptServer::get_global_class_path(namespace_global_class);
+							result = make_global_enum_type_from_path(namespace_global_class, path, p_type);
+						} else {
+							result = make_global_class_meta_type(namespace_global_class, p_type);
+						}
+						// Failed dependency raises leave a Variant/UNDETECTED fallback; stop here so a
+						// dotted nested type does not cascade into "under base Variant".
+						if (result.has_no_type()) {
+							return bad_type;
+						}
+						resolved_type_chain_size = namespace_type_chain_size;
 					}
-					// Failed dependency raises leave a Variant/UNDETECTED fallback; stop here so a
-					// dotted nested type does not cascade into "under base Variant".
-					if (result.has_no_type()) {
-						return bad_type;
-					}
-					resolved_type_chain_size = namespace_type_chain_size;
 				}
 			}
 		}
@@ -7697,6 +7706,27 @@ bool FSAnalyzer::is_bootstrap_dependency_path_allowed(const String &p_path) cons
 	return _bootstrap_path_is_within_root(p_path, bootstrap_allowed_dependency_root);
 }
 
+// True when any exposed native class lives in `p_namespace` or under one of its child namespaces.
+// A namespaced native's canonical registry key is `<namespace>.<SimpleName>`, and a flat native's
+// key never contains a dot, so a prefix test over the class list is exact. This mirrors the
+// prefix semantics `_namespace_exists_in_global_classes` applies to script classes.
+static bool _native_namespace_exists(const String &p_namespace) {
+	if (p_namespace.is_empty()) {
+		return false;
+	}
+
+	const String namespace_prefix = p_namespace + ".";
+	LocalVector<StringName> class_list;
+	ClassDB::get_class_list(class_list);
+	for (const StringName &class_name : class_list) {
+		if (String(class_name).begins_with(namespace_prefix) && ClassDB::is_class_exposed(class_name)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 bool FSAnalyzer::validate_bootstrap_namespace_import(
 		const String &p_import, const LocalVector<StringName> &p_global_classes) {
 	if (bootstrap_allowed_dependency_root.is_empty()) {
@@ -7752,6 +7782,12 @@ bool FSAnalyzer::validate_bootstrap_namespace_import(
 				return false;
 			}
 		}
+	}
+
+	// A native (engine) class carries no script path, so it satisfies the namespace-exists rule
+	// without participating in the bootstrap root rule.
+	if (!found_namespace_member && _native_namespace_exists(p_import)) {
+		found_namespace_member = true;
 	}
 
 	if (!found_namespace_member) {
@@ -8118,18 +8154,36 @@ static void _update_mixed_namespace_directory_cache() {
 }
 #endif // DEBUG_ENABLED
 
+// Exact canonical lookup of a native (engine) class by namespace plus simple name. A namespaced
+// native is never reachable by its bare name, so this is the only way the language sees one.
+static bool _get_native_class_in_namespace(const String &p_namespace, const StringName &p_class_name, StringName &r_native_class_name) {
+	if (p_namespace.is_empty()) {
+		return false;
+	}
+
+	const StringName qualified_name = ClassDB::class_get_in_namespace(p_namespace, p_class_name);
+	if (qualified_name == StringName() || !ClassDB::is_class_exposed(qualified_name)) {
+		return false;
+	}
+
+	r_native_class_name = qualified_name;
+	return true;
+}
+
 bool FSAnalyzer::get_global_class_in_namespace(const String &p_namespace, const StringName &p_class_name, StringName &r_global_class_name) const {
 	if (p_namespace.is_empty()) {
 		return false;
 	}
 
 	const String global_class_name = p_namespace + "." + String(p_class_name);
-	if (!ScriptServer::is_global_class(global_class_name)) {
-		return false;
+	if (ScriptServer::is_global_class(global_class_name)) {
+		r_global_class_name = global_class_name;
+		return true;
 	}
 
-	r_global_class_name = global_class_name;
-	return true;
+	// Native classes participate in the same namespace/import machinery as script classes, so the
+	// single choke point resolves both. Callers tell them apart with `FSAnalyzer::class_exists()`.
+	return _get_native_class_in_namespace(p_namespace, p_class_name, r_global_class_name);
 }
 
 bool FSAnalyzer::get_imported_global_class(const StringName &p_class_name, const FSParser::Node *p_source, StringName &r_global_class_name, bool &r_error, const String &p_symbol_kind) {
@@ -8175,6 +8229,17 @@ bool FSAnalyzer::get_namespace_global_class_from_type_chain(const Vector<FSParse
 			r_global_class_name = class_prefix;
 			r_type_chain_size = prefix_size;
 			return true;
+		}
+
+		if (prefix_size > 1) {
+			// A fully qualified chain names a native class without any import.
+			const String native_namespace = _join_identifier_chain(p_type_chain, 0, prefix_size - 1);
+			StringName native_candidate;
+			if (_get_native_class_in_namespace(native_namespace, p_type_chain[prefix_size - 1]->name, native_candidate)) {
+				r_global_class_name = native_candidate;
+				r_type_chain_size = prefix_size;
+				return true;
+			}
 		}
 
 		StringName namespace_candidate;
@@ -8415,6 +8480,12 @@ FSParser::ClassNode *FSAnalyzer::resolve_trait_reference(FSParser::ClassNode *p_
 	if (get_namespace_global_class_from_type_chain(r_trait_use.name, p_source, namespace_global_class,
 				namespace_type_chain_size, namespace_error, "trait")) {
 		if (namespace_error) {
+			return nullptr;
+		}
+		if (class_exists(namespace_global_class)) {
+			// Native classes are never traits, so report that directly instead of reporting the
+			// name as unresolved.
+			push_error(vformat(R"(Class "%s" cannot be used as a trait.)", namespace_global_class), p_source);
 			return nullptr;
 		}
 		trait = resolve_global_trait_reference(namespace_global_class, p_source);
@@ -9608,9 +9679,12 @@ Error FSAnalyzer::validate_imports() {
 		// annotation declaration, or any retroactive conformance. Annotation-only and
 		// conformance-only libraries declare no `class_name`, so they would otherwise be invisible
 		// to import validation — and importing the namespace is the only way to reach them.
+		// Native (engine) classes live in the engine class registry rather than the script
+		// registry, so their namespaces are checked separately.
 		if (!_namespace_exists_in_global_classes(global_classes, import) &&
 				!FSLanguage::get_singleton()->namespace_has_annotations(import) &&
-				FSLanguage::get_singleton()->get_conformance_files_in_namespace(import).is_empty()) {
+				FSLanguage::get_singleton()->get_conformance_files_in_namespace(import).is_empty() &&
+				!_native_namespace_exists(import)) {
 			push_error(vformat(R"(Could not find imported namespace "%s".)", import), parser->head);
 		}
 	}
@@ -10761,6 +10835,15 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 			p_identifier->set_datatype(dummy);
 			return;
 		}
+		if (class_exists(namespace_global_class)) {
+			// A namespaced native class reached through an import; its qualified name is the
+			// native type. The bare identifier text is not a global, so the canonical name is
+			// recorded for the compiler exactly as it is for a namespaced script class.
+			p_identifier->source = FSParser::IdentifierNode::NATIVE_CLASS;
+			p_identifier->set_datatype(make_native_meta_type(namespace_global_class));
+			p_identifier->resolved_global_class = namespace_global_class;
+			return;
+		}
 		if (reject_bootstrap_global_class_dependency(namespace_global_class, p_identifier, "global class")) {
 			FSParser::DataType dummy;
 			dummy.kind = FSParser::DataType::VARIANT;
@@ -11789,8 +11872,11 @@ void FSAnalyzer::reduce_subscript(FSParser::SubscriptNode *p_subscript, bool p_c
 					}
 
 					FSParser::DataType namespace_class_type;
-					const bool namespace_class_is_enum = ScriptServer::is_global_class_enum(namespace_global_class);
-					if (namespace_class_is_enum) {
+					const bool namespace_class_is_native = class_exists(namespace_global_class);
+					const bool namespace_class_is_enum = !namespace_class_is_native && ScriptServer::is_global_class_enum(namespace_global_class);
+					if (namespace_class_is_native) {
+						namespace_class_type = make_native_meta_type(namespace_global_class);
+					} else if (namespace_class_is_enum) {
 						const String path = ScriptServer::get_global_class_path(namespace_global_class);
 						namespace_class_type = make_global_enum_type_from_path(namespace_global_class, path, p_subscript);
 					} else {
