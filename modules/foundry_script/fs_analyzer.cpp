@@ -5108,6 +5108,8 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	p_match->covers_subject_domain = false;
 	p_match->subject_domain_name = String();
 	p_match->uncovered_domain_values = String();
+	p_match->uncovered_case_names.clear();
+	p_match->uncovered_includes_null = false;
 
 	if (p_match->test == nullptr) {
 		return; // Parse error: `match` with no test expression.
@@ -5174,6 +5176,18 @@ void FSAnalyzer::check_match_exhaustiveness(FSParser::MatchNode *p_match) {
 	p_match->covers_subject_domain = unhandled.is_empty();
 	if (unhandled.is_empty()) {
 		return;
+	}
+
+	// Structured coverage is published for tagged unions only, where each uncovered entry is a case
+	// name (or the `null` value of a nullable subject) that tooling can turn back into a pattern.
+	if (is_tagged_union) {
+		for (const String &value : unhandled) {
+			if (match_type.is_nullable && value == "null") {
+				p_match->uncovered_includes_null = true;
+			} else {
+				p_match->uncovered_case_names.push_back(StringName(value));
+			}
+		}
 	}
 
 	p_match->uncovered_domain_values = String(", ").join(unhandled);

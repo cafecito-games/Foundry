@@ -3043,6 +3043,7 @@ void ScriptTextEditor::_run_refactor(int p_kind) {
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::INSERT_EXPLICIT_CAST == EDIT_REFACTOR_INSERT_EXPLICIT_CAST, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::WIDEN_TO_NULLABLE == EDIT_REFACTOR_WIDEN_TO_NULLABLE, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE == EDIT_REFACTOR_SORT_MEMBERS_BY_STYLE_GUIDE, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
+	static_assert(EDIT_REFACTOR_RENAME + (int)RefactorKind::FILL_MATCH_CASES == EDIT_REFACTOR_FILL_MATCH_CASES, "RefactorKind/EDIT_REFACTOR_* mapping mismatch");
 
 	if (!(script.is_valid() && script->get_language() && script->get_language()->get_name() == "FoundryScript")) {
 		return;

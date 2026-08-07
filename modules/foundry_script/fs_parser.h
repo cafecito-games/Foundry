@@ -1535,6 +1535,14 @@ public:
 		// populated for the finite domains coverage is computed over; used by diagnostics.
 		String subject_domain_name;
 		String uncovered_domain_values;
+		// Structured companion to `uncovered_domain_values` for a tagged-union subject: the cases no
+		// branch provably covers, in declaration order, and whether the subject's `null` value is
+		// among them. Tooling (code generation, completion filtering) must read these instead of
+		// parsing the display string. Only populated for tagged-union subjects; an empty
+		// `uncovered_case_names` with `covers_subject_domain` false and `uncovered_includes_null`
+		// false means coverage could not be proven.
+		Vector<StringName> uncovered_case_names;
+		bool uncovered_includes_null = false;
 
 		MatchNode() {
 			type = MATCH;
