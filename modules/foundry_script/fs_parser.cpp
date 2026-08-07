@@ -5513,9 +5513,7 @@ FSParser::ExpressionNode *FSParser::parse_contextual_enum_case(ExpressionNode *p
 
 	// The shorthand names a case of a union it never spells, so the receiver a plain attribute would
 	// offer is absent. Tooling gets its own context and takes the union from the analyzed shorthand.
-	if (for_completion) {
-		make_completion_context(COMPLETION_CONTEXTUAL_UNION_CASE, contextual_case, -1);
-	}
+	make_completion_context(COMPLETION_CONTEXTUAL_UNION_CASE, contextual_case, -1);
 
 	if (current.is_node_name()) {
 		current.type = FSTokenizer::Token::IDENTIFIER;
@@ -5545,9 +5543,7 @@ FSParser::TypeNode *FSParser::parse_contextual_enum_case_type() {
 	type->allows_enum_case = true;
 	type->is_contextual_enum_case = true;
 
-	if (for_completion) {
-		make_completion_context(COMPLETION_CONTEXTUAL_UNION_CASE, type, -1);
-	}
+	make_completion_context(COMPLETION_CONTEXTUAL_UNION_CASE, type, -1);
 
 	if (current.is_node_name()) {
 		current.type = FSTokenizer::Token::IDENTIFIER;

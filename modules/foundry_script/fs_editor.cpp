@@ -5036,8 +5036,8 @@ static void _find_call_arguments(FSParser::CompletionContext &p_context, const F
 			if (!_contextual_union_meta_type_from_node(completion_context.node, base.type)) {
 				break;
 			}
-			_find_identifiers_in_base(base, false, false, false, options, 0);
-			r_forced = options.size() > 0;
+			_find_identifiers_in_base(base, false, false, !_guess_expecting_callable(completion_context), options, 0);
+			r_forced = true;
 		} break;
 		case FSParser::COMPLETION_DECLARATION: {
 			_find_identifiers(completion_context, false, !_guess_expecting_callable(completion_context), options, 0);
