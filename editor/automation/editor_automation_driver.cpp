@@ -525,6 +525,88 @@ EditorAutomationActionResult _action_set_text(
 	return EditorAutomationActionResult::failure("unsupported_action", "Text setting is unavailable for the selected control.");
 }
 
+// Reads a 0-based integer caret argument. Returns false when the key is absent
+// or not an integer so the caller can surface an invalid_parameter failure.
+static bool _read_caret_argument(const Dictionary &p_options, const char *p_key, int &r_value) {
+	if (!p_options.has(p_key)) {
+		return false;
+	}
+	const Variant value = p_options.get(p_key, Variant());
+	if (value.get_type() != Variant::INT) {
+		return false;
+	}
+	r_value = (int)value;
+	return true;
+}
+
+EditorAutomationActionResult _action_set_caret(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		const Dictionary &p_options,
+		EditorAutomationRoutePreference p_route_preference) {
+	(void)p_snapshot;
+	if (p_route_preference == EditorAutomationRoutePreference::INPUT) {
+		return EditorAutomationActionResult::failure("unsupported_route", "set_caret requires semantic control APIs.");
+	}
+
+	Node *node = _resolve_node_from_object_id(p_element.object_id);
+	TextEdit *text_edit = Object::cast_to<TextEdit>(node);
+	if (!text_edit) {
+		return EditorAutomationActionResult::failure("unsupported_action", "Caret control is unavailable for the selected element.");
+	}
+
+	int line = 0;
+	int column = 0;
+	if (!_read_caret_argument(p_options, "line", line) || !_read_caret_argument(p_options, "column", column)) {
+		return EditorAutomationActionResult::failure("invalid_parameter", "set_caret requires integer `line` and `column` arguments (0-based).");
+	}
+
+	const bool has_selection_target = p_options.has("to_line") || p_options.has("to_column");
+	int to_line = 0;
+	int to_column = 0;
+	if (has_selection_target) {
+		if (!_read_caret_argument(p_options, "to_line", to_line) || !_read_caret_argument(p_options, "to_column", to_column)) {
+			return EditorAutomationActionResult::failure("invalid_parameter", "set_caret requires both `to_line` and `to_column` (0-based) to select a range.");
+		}
+	}
+
+	// Validate every coordinate against the live buffer before mutating so a
+	// rejected call leaves the caret and selection untouched.
+	const int line_count = text_edit->get_line_count();
+	if (line < 0 || line >= line_count) {
+		return EditorAutomationActionResult::failure("invalid_parameter", vformat("set_caret `line` %d is out of range [0, %d].", line, line_count - 1));
+	}
+	const int line_length = text_edit->get_line(line).length();
+	if (column < 0 || column > line_length) {
+		return EditorAutomationActionResult::failure("invalid_parameter", vformat("set_caret `column` %d is out of range [0, %d] for line %d.", column, line_length, line));
+	}
+	if (has_selection_target) {
+		if (to_line < 0 || to_line >= line_count) {
+			return EditorAutomationActionResult::failure("invalid_parameter", vformat("set_caret `to_line` %d is out of range [0, %d].", to_line, line_count - 1));
+		}
+		const int to_line_length = text_edit->get_line(to_line).length();
+		if (to_column < 0 || to_column > to_line_length) {
+			return EditorAutomationActionResult::failure("invalid_parameter", vformat("set_caret `to_column` %d is out of range [0, %d] for line %d.", to_column, to_line_length, to_line));
+		}
+	}
+
+	text_edit->grab_focus();
+
+	if (has_selection_target) {
+		// select() places the caret at the to_ endpoint, which is exactly the
+		// contract a following press_key relies on.
+		text_edit->select(line, column, to_line, to_column);
+	} else {
+		text_edit->deselect();
+		text_edit->set_caret_line(line);
+		text_edit->set_caret_column(column);
+	}
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SET_CARET, p_element.id);
+	result.focus = p_element.id;
+	return result;
+}
+
 EditorAutomationActionResult _action_type_text(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_element,
@@ -1516,6 +1598,9 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 		}
 		case EditorAutomationActionKind::SET_VALUE:
 			result = _action_set_value(p_snapshot, element, _read_variant_option(p_options, "value"), route_preference);
+			break;
+		case EditorAutomationActionKind::SET_CARET:
+			result = _action_set_caret(p_snapshot, element, p_options, route_preference);
 			break;
 		case EditorAutomationActionKind::INCREMENT:
 			result = _action_adjust_value(p_snapshot, element, true, route_preference);

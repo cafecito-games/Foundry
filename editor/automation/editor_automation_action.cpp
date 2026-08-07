@@ -121,6 +121,9 @@ EditorAutomationActionKind editor_automation_action_kind_from_string(const Strin
 	if (action == "set_value") {
 		return EditorAutomationActionKind::SET_VALUE;
 	}
+	if (action == "set_caret") {
+		return EditorAutomationActionKind::SET_CARET;
+	}
 	if (action == "increment") {
 		return EditorAutomationActionKind::INCREMENT;
 	}

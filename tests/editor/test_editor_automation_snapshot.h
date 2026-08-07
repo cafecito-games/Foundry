@@ -39,6 +39,7 @@
 
 #include "scene/gui/button.h"
 #include "scene/gui/check_box.h"
+#include "scene/gui/code_edit.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/item_list.h"
 #include "scene/gui/label.h"
@@ -46,6 +47,7 @@
 #include "scene/gui/panel_container.h"
 #include "scene/gui/spin_box.h"
 #include "scene/gui/tab_container.h"
+#include "scene/gui/text_edit.h"
 #include "scene/gui/tree.h"
 #include "scene/main/window.h"
 
@@ -1257,6 +1259,54 @@ TEST_CASE("[Editor][Automation] element bounds are local to the owning window") 
 	CHECK(dialog_element->bounds.position + button_element->bounds.position == Vector2i(320, 240));
 
 	memdelete(main_window);
+}
+
+TEST_CASE("[Editor][Automation] caret and selection metadata is captured for TextEdit-backed elements") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	CodeEdit *code_edit = memnew(CodeEdit);
+	code_edit->set_name("CodeField");
+	code_edit->set_text("alpha\nbravo\ncharlie");
+	setup_visible_control(code_edit, Size2(300, 120));
+	root->add_child(code_edit);
+	MessageQueue::get_singleton()->flush();
+
+	SUBCASE("caret position is reported and no selection keys appear when nothing is selected") {
+		code_edit->set_caret_line(1);
+		code_edit->set_caret_column(2);
+		code_edit->deselect();
+		MessageQueue::get_singleton()->flush();
+
+		const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+		const EditorAutomationElement *code_field = find_element_by_role_and_name(snapshot, "code_editor", "CodeField");
+		REQUIRE(code_field != nullptr);
+		REQUIRE(code_field->metadata.has("caret_line"));
+		CHECK((int)code_field->metadata["caret_line"] == 1);
+		CHECK((int)code_field->metadata["caret_column"] == 2);
+		CHECK_FALSE((bool)code_field->metadata["selection_active"]);
+		CHECK_FALSE(code_field->metadata.has("selection_from_line"));
+		CHECK_FALSE(code_field->metadata.has("selection_from_column"));
+		CHECK_FALSE(code_field->metadata.has("selection_to_line"));
+		CHECK_FALSE(code_field->metadata.has("selection_to_column"));
+	}
+
+	SUBCASE("selection keys are reported when a range is selected") {
+		code_edit->select(0, 0, 1, 3);
+		MessageQueue::get_singleton()->flush();
+
+		const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+		const EditorAutomationElement *code_field = find_element_by_role_and_name(snapshot, "code_editor", "CodeField");
+		REQUIRE(code_field != nullptr);
+		CHECK((bool)code_field->metadata["selection_active"]);
+		CHECK((int)code_field->metadata["selection_from_line"] == 0);
+		CHECK((int)code_field->metadata["selection_from_column"] == 0);
+		CHECK((int)code_field->metadata["selection_to_line"] == 1);
+		CHECK((int)code_field->metadata["selection_to_column"] == 3);
+	}
+
+	memdelete(root);
 }
 
 } // namespace TestEditorAutomationSnapshot

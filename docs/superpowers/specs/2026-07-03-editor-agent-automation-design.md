@@ -78,7 +78,7 @@ The MCP server exposes a small set of generic tools:
 
 - `observe_ui`: returns windows, focused element, modal stack, and the visible semantic tree.
 - `find_elements`: resolves selectors by role, name, text, class, path, state, and containment.
-- `act`: performs actions such as `click`, `focus`, `type_text`, `set_text`, `press_key`, `select`, `expand`, `collapse`, `drag`, and `choose_menu_item`.
+- `act`: performs actions such as `click`, `focus`, `type_text`, `set_text`, `press_key`, `select`, `expand`, `collapse`, `drag`, `choose_menu_item`, and `set_caret` (places the caret or selects a range on `code_editor`/`text_area` elements).
 - `wait_for`: waits for selectors, focus changes, text changes, modal transitions, idle frames, filesystem/import/script-analysis idle states, or new log entries.
 - `read_editor_state`: returns selected nodes, open scenes, active scene, current script, playing state, and unsaved state.
 - `read_editor_log`: returns editor log entries, warnings, errors, and recent action-related messages.
