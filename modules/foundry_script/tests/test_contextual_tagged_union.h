@@ -86,6 +86,22 @@ static const FSParser::CallNode *as_call(const FSParser::ExpressionNode *p_expre
 	return static_cast<const FSParser::CallNode *>(p_expression);
 }
 
+static const FSParser::ExpressionNode *first_array_element(const FSParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr || p_expression->type != FSParser::Node::ARRAY) {
+		return nullptr;
+	}
+	const FSParser::ArrayNode *array = static_cast<const FSParser::ArrayNode *>(p_expression);
+	return array->elements.is_empty() ? nullptr : array->elements[0];
+}
+
+static const FSParser::ExpressionNode *first_dictionary_value(const FSParser::ExpressionNode *p_expression) {
+	if (p_expression == nullptr || p_expression->type != FSParser::Node::DICTIONARY) {
+		return nullptr;
+	}
+	const FSParser::DictionaryNode *dictionary = static_cast<const FSParser::DictionaryNode *>(p_expression);
+	return dictionary->elements.is_empty() ? nullptr : dictionary->elements[0].value;
+}
+
 TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] Payload shorthand parses as a contextual case call") {
 	FSParser parser;
 	REQUIRE_EQ(parse_contextual_case_source(parser,
@@ -350,6 +366,102 @@ TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] Shorthand parameter d
 	Array expected_payloadless;
 	expected_payloadless.push_back(0);
 	CHECK_EQ(payloadless->default_arg_values[0], Variant(expected_payloadless));
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] Container elements resolve the shorthand like the explicit form") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run() -> void:\n"
+			"\tvar shorthand: Array[Result[int, String]] = [.Ok(1)]\n"
+			"\tvar explicit: Array[Result[int, String]] = [Result[int, String].Ok(1)]\n"
+			"\tvar entries: Dictionary[int, Result[int, String]] = {1: .Ok(1)}\n"
+			"\tvar nested: Array[Array[Result[int, String]]] = [[.Ok(1)]]\n"
+			"\tprint(shorthand, explicit, entries, nested)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::ExpressionNode *shorthand_element = first_array_element(fixture.initializer(SNAME("run"), SNAME("shorthand")));
+	const FSParser::ExpressionNode *explicit_element = first_array_element(fixture.initializer(SNAME("run"), SNAME("explicit")));
+	REQUIRE(shorthand_element != nullptr);
+	REQUIRE(explicit_element != nullptr);
+	CHECK_EQ(shorthand_element->get_datatype(), explicit_element->get_datatype());
+	CHECK(shorthand_element->get_datatype().is_tagged_union_type());
+	CHECK_EQ(shorthand_element->reduced_value, explicit_element->reduced_value);
+
+	const FSParser::ExpressionNode *entry_value = first_dictionary_value(fixture.initializer(SNAME("run"), SNAME("entries")));
+	REQUIRE(entry_value != nullptr);
+	CHECK_EQ(entry_value->get_datatype(), explicit_element->get_datatype());
+
+	// The inner literal is patched recursively, so the innermost element carries the same union the
+	// outermost declaration specializes.
+	const FSParser::ExpressionNode *inner_element = first_array_element(first_array_element(fixture.initializer(SNAME("run"), SNAME("nested"))));
+	REQUIRE(inner_element != nullptr);
+	CHECK_EQ(inner_element->get_datatype(), explicit_element->get_datatype());
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A cast qualifies the shorthand it applies to") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run() -> void:\n"
+			"\tvar labeled = .Ok(1) as Result[int, String]\n"
+			"\tvar explicit = Result[int, String].Ok(1) as Result[int, String]\n"
+			"\tprint(labeled, explicit)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::ExpressionNode *labeled = fixture.initializer(SNAME("run"), SNAME("labeled"));
+	const FSParser::ExpressionNode *explicit_form = fixture.initializer(SNAME("run"), SNAME("explicit"));
+	REQUIRE(labeled != nullptr);
+	REQUIRE(explicit_form != nullptr);
+	REQUIRE_EQ(labeled->type, FSParser::Node::CAST);
+	CHECK(labeled->get_datatype().is_tagged_union_type());
+
+	const FSParser::ExpressionNode *operand = static_cast<const FSParser::CastNode *>(labeled)->operand;
+	REQUIRE(operand != nullptr);
+	CHECK_EQ(operand->get_datatype(), labeled->get_datatype());
+	CHECK_EQ(operand->reduced_value, static_cast<const FSParser::CastNode *>(explicit_form)->operand->reduced_value);
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] Both conditional branches take the expected union") {
+	ContextualCaseFixture fixture(RESULT_DECLARATION +
+			"func run(condition: bool) -> void:\n"
+			"\tvar chosen: Result[int, String] = .Ok(1) if condition else .Err(\"no\")\n"
+			"\tprint(chosen)\n");
+	REQUIRE_EQ(fixture.parse_error, OK);
+	REQUIRE_EQ(fixture.analyze_error, OK);
+
+	const FSParser::ExpressionNode *chosen = fixture.initializer(SNAME("run"), SNAME("chosen"));
+	REQUIRE(chosen != nullptr);
+	REQUIRE_EQ(chosen->type, FSParser::Node::TERNARY_OPERATOR);
+	const FSParser::TernaryOpNode *ternary = static_cast<const FSParser::TernaryOpNode *>(chosen);
+	REQUIRE(ternary->true_expr != nullptr);
+	REQUIRE(ternary->false_expr != nullptr);
+	CHECK(ternary->true_expr->get_datatype().is_tagged_union_type());
+	CHECK_EQ(ternary->true_expr->get_datatype(), ternary->false_expr->get_datatype());
+
+	// The conditional itself is re-typed once both branches carry the union, so it is no longer the
+	// Variant the untyped branches combined to.
+	CHECK(chosen->get_datatype().is_tagged_union_type());
+}
+
+TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A position that supplies no union is reported by the analyzer") {
+	ContextualCaseFixture untyped_element(RESULT_DECLARATION +
+			"func run() -> void:\n"
+			"\tvar values = [.Ok(1)]\n"
+			"\tprint(values)\n");
+	REQUIRE_EQ(untyped_element.parse_error, OK);
+	CHECK_NE(untyped_element.analyze_error, OK);
+	REQUIRE_FALSE(untyped_element.parser.get_errors().is_empty());
+	CHECK_EQ(untyped_element.parser.get_errors().front()->get().message,
+			String(R"*(Contextual shorthand ".Ok" needs an expected tagged-union type; annotate the target, e.g. "var x: Result[int, String] = .Ok(...)".)*"));
+
+	// A surplus argument of a vararg call occupies no declared parameter, so it names no union either.
+	ContextualCaseFixture vararg_argument(RESULT_DECLARATION +
+			"func run() -> void:\n"
+			"\tprint(.Ok(1))\n");
+	REQUIRE_EQ(vararg_argument.parse_error, OK);
+	CHECK_NE(vararg_argument.analyze_error, OK);
+	REQUIRE_FALSE(vararg_argument.parser.get_errors().is_empty());
+	CHECK_EQ(vararg_argument.parser.get_errors().front()->get().message,
+			String(R"*(Contextual shorthand ".Ok" needs an expected tagged-union type; annotate the target, e.g. "var x: Result[int, String] = .Ok(...)".)*"));
 }
 
 TEST_CASE("[Modules][FoundryScript][ContextualTaggedUnion] A target that names no union rejects the shorthand") {
