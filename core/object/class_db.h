@@ -42,6 +42,7 @@
 #include "core/templates/hash_set.h"
 #include "core/templates/local_vector.h"
 
+#include <atomic>
 #include <type_traits>
 
 template <typename T, typename = void>
@@ -218,6 +219,9 @@ public:
 	// C++ simple name -> qualified name, for namespaced classes only. Internal plumbing for the
 	// namespace accessors; deliberately not a public bare-name resolution path.
 	static HashMap<StringName, StringName> qualified_by_simple_name;
+	// Monotonic token bumped whenever the set of registered class names, namespaces or aliases
+	// changes. Consumers that cache derived views of the registry compare it to detect staleness.
+	static std::atomic<uint64_t> registry_version;
 
 #ifdef TOOLS_ENABLED
 	static HashMap<StringName, ObjectFoundryExtension> placeholder_extensions;
@@ -389,6 +393,9 @@ public:
 	// Central name resolver for consumers that read type names from data (e.g. the scene loader).
 	// Returns the canonical registry key, or an empty name for a miss or an ambiguous alias.
 	static StringName resolve_type_name(const StringName &p_name);
+	// Invalidation token for caches derived from the registry's name space: it increases whenever a
+	// class is added or removed, put in a namespace, or re-exported under a global alias.
+	static uint64_t get_registry_version();
 
 	static bool is_parent_class(const StringName &p_class, const StringName &p_inherits);
 	static bool can_instantiate(const StringName &p_class);

@@ -93,6 +93,10 @@ class _NamespaceTestInstantiableB : public Object {
 	FOUNDRY_CLASS(_NamespaceTestInstantiableB, Object);
 };
 
+class _NamespaceTestVersioned : public Object {
+	FOUNDRY_CLASS(_NamespaceTestVersioned, Object);
+};
+
 namespace TestClassDBNamespace {
 
 TEST_CASE("[ClassDBNamespace] Classes without a namespace keep their bare identity") {
@@ -357,6 +361,35 @@ TEST_CASE("[ClassDBNamespace] can_instantiate answers for exactly the names inst
 		CHECK_FALSE(ClassDB::can_instantiate("_NamespaceTestNotAClass"));
 		ERR_PRINT_ON;
 	}
+}
+
+TEST_CASE("[ClassDBNamespace] Registry mutations bump the registry version") {
+	const StringName qualified_name = "foundry.test.version._NamespaceTestVersioned";
+
+	// Class registration and the rekey are both irreversible, so they happen once.
+	static bool versioned_registered = false;
+	if (!versioned_registered) {
+		versioned_registered = true;
+
+		const uint64_t before_registration = ClassDB::get_registry_version();
+		FOUNDRY_REGISTER_CLASS(_NamespaceTestVersioned);
+		const uint64_t after_registration = ClassDB::get_registry_version();
+		CHECK(after_registration > before_registration);
+
+		FOUNDRY_REGISTER_NAMESPACE(_NamespaceTestVersioned, "foundry.test.version");
+		CHECK(ClassDB::get_registry_version() > after_registration);
+	}
+	REQUIRE(ClassDB::class_exists(qualified_name));
+
+	const uint64_t before_alias = ClassDB::get_registry_version();
+	ClassDB::class_register_global_alias(qualified_name, "_NamespaceTestVersionedAlias");
+	const uint64_t after_alias = ClassDB::get_registry_version();
+	CHECK(after_alias > before_alias);
+	CHECK(ClassDB::resolve_type_name("_NamespaceTestVersionedAlias") == qualified_name);
+
+	// Re-registering the same alias for the same owner changes nothing, so the token stays put.
+	ClassDB::class_register_global_alias(qualified_name, "_NamespaceTestVersionedAlias");
+	CHECK(ClassDB::get_registry_version() == after_alias);
 }
 
 TEST_CASE("[ClassDBNamespace] The HTTPServer pilot is reachable only through its namespace") {

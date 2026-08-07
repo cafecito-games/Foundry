@@ -658,9 +658,9 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 				}
 
 				if (!found) {
-					// A namespaced native class, named either by an imported bare name or by its
-					// fully qualified chain. It is not a global name, so none of the lookups above
-					// can see it.
+					// A namespaced class, native or script, named either by an imported bare name or
+					// by its fully qualified chain. It is not a global name, so none of the lookups
+					// above can see it.
 					StringName namespace_class;
 					bool namespace_error = false;
 					int namespace_chain_size = 0;
@@ -677,6 +677,41 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 							base.kind = FSParser::DataType::NATIVE;
 							base.builtin_type = Variant::OBJECT;
 							base.native_type = namespace_class;
+							extends_index = namespace_chain_size;
+							found = true;
+						} else if (ScriptServer::is_global_class(namespace_class)) {
+							// Qualified script classes live in the global class table under their
+							// dotted name, so inheriting one follows the same path as a bare global.
+							if (reject_bootstrap_global_class_dependency(namespace_class, id, "global superclass")) {
+								return ERR_PARSE_ERROR;
+							}
+
+							String base_path = ScriptServer::get_global_class_path(namespace_class);
+
+							if (FoundryScript::is_canonically_equal_paths(base_path, parser->script_path)) {
+								base = parser->head->get_datatype();
+							} else {
+								Ref<FSParserRef> base_parser;
+								Error err = dependency_parser_access.raise_depended_parser_for(base_path, FSParserRef::INHERITANCE_SOLVED, base_parser);
+								if (base_parser.is_null()) {
+									push_error(vformat(R"(Could not resolve super class "%s".)", namespace_class), id);
+									return ERR_PARSE_ERROR;
+								}
+
+								if (err != OK) {
+									push_error(vformat(R"(Could not resolve super class inheritance from "%s".)", namespace_class), id);
+									return err;
+								}
+
+#ifdef DEBUG_ENABLED
+								if (!parser->_is_tool && base_parser->get_parser()->_is_tool) {
+									parser->push_warning(p_class, FSWarning::MISSING_TOOL);
+								}
+#endif // DEBUG_ENABLED
+
+								base = base_parser->get_parser()->head->get_datatype();
+							}
+
 							extends_index = namespace_chain_size;
 							found = true;
 						}
