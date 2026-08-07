@@ -162,11 +162,19 @@ public:
 		StringName inherits;
 		// The simple (C++) class name, e.g. `HTTPServer`. Never includes the namespace.
 		StringName name;
+		// The simple name the class is exposed under, when it differs from the C++ token (e.g. C++
+		// `HTTPServerRequest` exposed as `foundry.http.server.HTTPRequest`). Empty means `name`.
+		StringName exposed_name;
 		// Dotted namespace path, e.g. `foundry.http.server`. Empty means the global namespace.
 		StringName namespace_path;
-		// `namespace_path.is_empty() ? name : namespace_path + "." + name`. This is the key
-		// under which the class is registered in `ClassDB::classes`.
+		// `namespace_path.is_empty() ? exposed simple name : namespace_path + "." + exposed simple
+		// name`. This is the key under which the class is registered in `ClassDB::classes`.
 		StringName qualified_name;
+
+		// The user-visible simple name: the exposed override when there is one, the C++ token
+		// otherwise.
+		const StringName &get_exposed_name() const { return exposed_name == StringName() ? name : exposed_name; }
+
 		bool disabled = false;
 		bool exposed = false;
 		bool reloadable = false;
@@ -378,7 +386,12 @@ public:
 	// to the qualified name and stamps the class's `GDType`, so `get_class()` returns the qualified
 	// name and `is_class(<bare name>)` becomes false. Must run right after the class registration
 	// and before any subclass of it is registered.
-	static void register_namespace(const StringName &p_class, const StringName &p_namespace);
+	// `p_exposed_name` overrides the simple name the class is exposed under; an empty value keeps
+	// the C++ token. The override exists so a C++ token that must stay unique program-wide (e.g.
+	// `HTTPServerRequest`) can still present the natural simple name inside its namespace. The
+	// C++ token remains the key of the internal simple-name map, since that is what method binds
+	// and bytecode record.
+	static void register_namespace(const StringName &p_class, const StringName &p_namespace, const StringName &p_exposed_name = StringName());
 	// Re-exports a namespaced class under a bare global name. An alias claimed by two or more
 	// classes is ambiguous and stops resolving for all of them.
 	static void class_register_global_alias(const StringName &p_qualified_name, const StringName &p_alias);
@@ -386,7 +399,8 @@ public:
 	// unique alias. Return an empty name when nothing matches.
 	static StringName class_get_qualified_name(const StringName &p_class);
 	static StringName class_get_namespace(const StringName &p_class);
-	// Exact canonical lookup by qualified name; outputs the class's simple (C++) name.
+	// Exact canonical lookup by qualified name; outputs the class's exposed simple name, which is
+	// the C++ token unless the class was registered with an exposed-name override.
 	static bool class_get_by_qualified_name(const StringName &p_qualified_name, StringName &r_simple_name);
 	// Exact canonical lookup by namespace plus simple name. An empty namespace means global.
 	static StringName class_get_in_namespace(const StringName &p_namespace, const StringName &p_simple_name);
@@ -651,6 +665,13 @@ public:
 #define FOUNDRY_REGISTER_NAMESPACE(m_class, m_namespace)                         \
 	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {                                \
 		::ClassDB::register_namespace(m_class::get_class_static(), m_namespace); \
+	}
+
+// Same as `FOUNDRY_REGISTER_NAMESPACE`, but exposes the class under `m_exposed_name` instead of its
+// C++ token. Use it when the natural simple name is already taken by another global-scope C++ class.
+#define FOUNDRY_REGISTER_NAMESPACE_AS(m_class, m_namespace, m_exposed_name)                      \
+	if constexpr (GD_IS_CLASS_ENABLED(m_class)) {                                                \
+		::ClassDB::register_namespace(m_class::get_class_static(), m_namespace, m_exposed_name); \
 	}
 
 #define FOUNDRY_REGISTER_NATIVE_STRUCT(m_class, m_code) ClassDB::register_native_struct(#m_class, m_code, sizeof(m_class))

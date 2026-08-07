@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  register_types.cpp                                                    */
+/*  http_response.h                                                       */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                              GODOT ENGINE                              */
@@ -28,33 +28,63 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#include "register_types.h"
+#pragma once
 
-#include "http_response.h"
-#include "http_server.h"
-#include "http_server_request.h"
+#include "core/object/ref_counted.h"
+#include "core/templates/hash_map.h"
+#include "core/variant/dictionary.h"
 
-#include "core/object/class_db.h"
+// The outbound half of one HTTP exchange, exposed as `foundry.http.server.HTTPResponse`. Handlers
+// build the status line and headers, then commit the body exactly once through one of the `send`
+// methods. Committing does not write to a socket yet; it records what will be written, which the
+// transport layer reads back.
+class HTTPResponse : public RefCounted {
+	FOUNDRY_CLASS(HTTPResponse, RefCounted);
 
-void initialize_http_server_module(ModuleInitializationLevel p_level) {
-	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
-		return;
-	}
+public:
+	enum BodySource {
+		BODY_SOURCE_NONE,
+		BODY_SOURCE_BYTES,
+		BODY_SOURCE_FILE,
+	};
 
-	FOUNDRY_REGISTER_CLASS(HTTPServer);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPServer, "foundry.http.server");
+private:
+	int status = 200;
+	Dictionary headers;
+	// Lower-cased field name -> the key it is stored under in `headers`, so a re-set replaces the
+	// value rather than adding a second spelling of the same field.
+	HashMap<String, String> header_index;
+	PackedByteArray body;
+	String file_path;
+	BodySource body_source = BODY_SOURCE_NONE;
+	bool sent = false;
 
-	// The C++ token stays `HTTPServerRequest` so it does not collide with the global client node,
-	// but scripts see it as `foundry.http.server.HTTPRequest`.
-	FOUNDRY_REGISTER_CLASS(HTTPServerRequest);
-	FOUNDRY_REGISTER_NAMESPACE_AS(HTTPServerRequest, "foundry.http.server", "HTTPRequest");
+	bool _begin_send();
 
-	FOUNDRY_REGISTER_CLASS(HTTPResponse);
-	FOUNDRY_REGISTER_NAMESPACE(HTTPResponse, "foundry.http.server");
-}
+protected:
+	static void _bind_methods();
 
-void uninitialize_http_server_module(ModuleInitializationLevel p_level) {
-	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
-		return;
-	}
-}
+public:
+	void set_status(int p_status);
+	int get_status() const;
+
+	void set_header(const String &p_name, const String &p_value);
+	String get_header(const String &p_name) const;
+	bool has_header(const String &p_name) const;
+	// Returns a copy; `set_header()` is the only way to change the fields that will be written.
+	Dictionary get_headers() const;
+
+	// Each of these commits the response. A second commit is an error and leaves the first intact.
+	void send(const PackedByteArray &p_body);
+	void send_string(const String &p_body);
+	void redirect(const String &p_location, int p_status);
+	void send_file(const String &p_path);
+
+	bool is_sent() const;
+	BodySource get_body_source() const;
+	PackedByteArray get_body() const;
+	String get_body_string() const;
+	String get_file_path() const;
+};
+
+VARIANT_ENUM_CAST(HTTPResponse::BodySource);

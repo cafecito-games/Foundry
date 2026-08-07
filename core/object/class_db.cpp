@@ -582,7 +582,7 @@ bool ClassDB::class_exists(const StringName &p_class) {
 	return _resolve_by_any_name(p_class) != StringName();
 }
 
-void ClassDB::register_namespace(const StringName &p_class, const StringName &p_namespace) {
+void ClassDB::register_namespace(const StringName &p_class, const StringName &p_namespace, const StringName &p_exposed_name) {
 	Locker::Lock lock(Locker::STATE_WRITE);
 
 	ERR_FAIL_COND_MSG(p_namespace == StringName(), vformat("Empty namespace for class '%s'.", p_class));
@@ -616,10 +616,17 @@ void ClassDB::register_namespace(const StringName &p_class, const StringName &p_
 	// Full copy so every bound method, property, signal and constant survives the rekey.
 	ClassInfo class_info = it->value;
 	class_info.namespace_path = p_namespace;
-	class_info.qualified_name = StringName(String(p_namespace) + "." + String(class_info.name));
+	if (p_exposed_name != StringName() && p_exposed_name != class_info.name) {
+		class_info.exposed_name = p_exposed_name;
+	}
+	class_info.qualified_name = StringName(String(p_namespace) + "." + String(class_info.get_exposed_name()));
+
+	ERR_FAIL_COND_MSG(classes.has(class_info.qualified_name), vformat("Cannot expose class '%s' as '%s': that qualified name is already registered.", p_class, class_info.qualified_name));
 
 	classes.remove(it);
 	classes.insert(class_info.qualified_name, class_info);
+	// Keyed by the C++ token, not the exposed name: that is what method binds and bytecode record,
+	// and it is unique program-wide, so the map stays unambiguous.
 	qualified_by_simple_name.insert(class_info.name, class_info.qualified_name);
 
 	// Stamp the runtime identity so `get_class()`, `is_class()` and scene packing all follow.
@@ -682,7 +689,7 @@ bool ClassDB::class_get_by_qualified_name(const StringName &p_qualified_name, St
 	if (!class_info) {
 		return false;
 	}
-	r_simple_name = class_info->name;
+	r_simple_name = class_info->get_exposed_name();
 	return true;
 }
 
