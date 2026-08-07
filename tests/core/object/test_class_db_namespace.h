@@ -264,4 +264,58 @@ TEST_CASE("[ClassDBNamespace] Invalid namespace registrations are rejected") {
 	}
 }
 
+TEST_CASE("[ClassDBNamespace] The HTTPServer pilot is reachable only through its namespace") {
+	const StringName qualified_name = "foundry.http.server.HTTPServer";
+
+	CHECK(ClassDB::class_exists(qualified_name));
+	CHECK_FALSE(ClassDB::class_exists("HTTPServer"));
+	CHECK(ClassDB::class_get_namespace(qualified_name) == StringName("foundry.http.server"));
+	CHECK(ClassDB::class_get_namespace("HTTPServer") == StringName("foundry.http.server"));
+	CHECK(ClassDB::class_get_qualified_name("HTTPServer") == qualified_name);
+	CHECK(ClassDB::class_get_in_namespace("foundry.http.server", "HTTPServer") == qualified_name);
+	CHECK(ClassDB::resolve_type_name(qualified_name) == qualified_name);
+	// No global alias is registered for the pilot, so the bare name stays unresolvable.
+	CHECK(ClassDB::resolve_type_name("HTTPServer") == StringName());
+
+	StringName simple_name;
+	CHECK(ClassDB::class_get_by_qualified_name(qualified_name, simple_name));
+	CHECK(simple_name == StringName("HTTPServer"));
+
+	CHECK(ClassDB::is_parent_class(qualified_name, "Node"));
+}
+
+TEST_CASE("[ClassDBNamespace] The HTTPServer pilot instantiates with a qualified runtime identity") {
+	const StringName qualified_name = "foundry.http.server.HTTPServer";
+
+	Object *instance = ClassDB::instantiate(qualified_name);
+	REQUIRE(instance != nullptr);
+
+	CHECK(instance->get_class() == String(qualified_name));
+	CHECK(instance->is_class("Node"));
+	CHECK(instance->is_class("Object"));
+	CHECK_FALSE(instance->is_class("HTTPServer"));
+
+	CHECK(int(instance->get("port")) == 8080);
+
+	bool valid = false;
+	instance->set("port", 9000, &valid);
+	CHECK(valid);
+	CHECK(int(instance->get("port")) == 9000);
+	CHECK(int(instance->call("get_port")) == 9000);
+
+	// Out-of-range ports are rejected and leave the previous value untouched, through both the
+	// bound method and the property path.
+	ERR_PRINT_OFF;
+	instance->call("set_port", 70000);
+	instance->set("port", -1, &valid);
+	ERR_PRINT_ON;
+	CHECK(int(instance->call("get_port")) == 9000);
+	CHECK(int(instance->get("port")) == 9000);
+
+	CHECK(bool(instance->call("start")));
+	instance->call("stop");
+
+	memdelete(instance);
+}
+
 } // namespace TestClassDBNamespace

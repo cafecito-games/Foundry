@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="foundry.http.server.HTTPServer" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+	<brief_description>
+		A node that hosts an HTTP server.
+	</brief_description>
+	<description>
+		[b]Note:[/b] This class is a placeholder. It exposes the configuration surface of an HTTP server, but does not open a listening socket yet, so [method start] never serves requests.
+		This class lives in the [code]foundry.http.server[/code] namespace, so it is only reachable through its fully qualified name; the bare name [code]HTTPServer[/code] does not resolve.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="start">
+			<return type="bool" />
+			<description>
+				Starts the server on [member port] and returns [code]true[/code] on success.
+				[b]Note:[/b] No socket is opened yet, so this always returns [code]true[/code].
+			</description>
+		</method>
+		<method name="stop">
+			<return type="void" />
+			<description>
+				Stops the server. Does nothing if the server is not running.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="port" type="int" setter="set_port" getter="get_port" default="8080">
+			The TCP port the server listens on. Must be between [code]0[/code] and [code]65535[/code]; values outside that range are rejected and leave the property unchanged.
+		</member>
+	</members>
+</class>
