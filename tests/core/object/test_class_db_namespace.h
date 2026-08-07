@@ -71,8 +71,26 @@ class _NamespaceTestParent : public Object {
 	FOUNDRY_CLASS(_NamespaceTestParent, Object);
 };
 
+#ifdef DEV_ENABLED
+class _NamespaceTestEagerParent : public Object {
+	FOUNDRY_CLASS(_NamespaceTestEagerParent, Object);
+};
+
+class _NamespaceTestEagerChild : public _NamespaceTestEagerParent {
+	FOUNDRY_CLASS(_NamespaceTestEagerChild, _NamespaceTestEagerParent);
+};
+#endif // DEV_ENABLED
+
 class _NamespaceTestChild : public _NamespaceTestParent {
 	FOUNDRY_CLASS(_NamespaceTestChild, _NamespaceTestParent);
+};
+
+class _NamespaceTestInstantiableA : public Object {
+	FOUNDRY_CLASS(_NamespaceTestInstantiableA, Object);
+};
+
+class _NamespaceTestInstantiableB : public Object {
+	FOUNDRY_CLASS(_NamespaceTestInstantiableB, Object);
 };
 
 namespace TestClassDBNamespace {
@@ -261,6 +279,83 @@ TEST_CASE("[ClassDBNamespace] Invalid namespace registrations are rejected") {
 		ClassDB::class_register_global_alias("Object", "_NamespaceTestBase");
 		ERR_PRINT_ON;
 		CHECK(ClassDB::resolve_type_name("_NamespaceTestBase") == StringName("_NamespaceTestBase"));
+	}
+}
+
+#ifdef DEV_ENABLED
+TEST_CASE("[ClassDBNamespace] A class whose subclass type is already materialized cannot be namespaced") {
+	// Registration of the parent and the materialization of the child type are both permanent, so
+	// they happen once; the rejected rekey below leaves no state and can repeat.
+	static bool eager_types_prepared = false;
+	if (!eager_types_prepared) {
+		eager_types_prepared = true;
+		FOUNDRY_REGISTER_CLASS(_NamespaceTestEagerParent);
+		// Building the child's type snapshots the parent's unqualified name hierarchy. The child is
+		// deliberately left unregistered, so the registry-membership guard cannot see it.
+		CHECK(_NamespaceTestEagerChild::get_class_static() == StringName("_NamespaceTestEagerChild"));
+	}
+
+	ERR_PRINT_OFF;
+	ClassDB::register_namespace("_NamespaceTestEagerParent", "foundry.test.eager");
+	ERR_PRINT_ON;
+
+	// The rekey was refused, so the class keeps its flat identity rather than acquiring a namespace
+	// the child's hierarchy could never see.
+	CHECK(ClassDB::class_exists("_NamespaceTestEagerParent"));
+	CHECK_FALSE(ClassDB::class_exists("foundry.test.eager._NamespaceTestEagerParent"));
+	CHECK(ClassDB::class_get_namespace("_NamespaceTestEagerParent") == StringName());
+	CHECK(_NamespaceTestEagerParent::get_class_static() == StringName("_NamespaceTestEagerParent"));
+}
+#endif // DEV_ENABLED
+
+TEST_CASE("[ClassDBNamespace] can_instantiate answers for exactly the names instantiate accepts") {
+	const StringName qualified_a = "foundry.test.instantiable._NamespaceTestInstantiableA";
+	const StringName qualified_b = "foundry.test.instantiable.other._NamespaceTestInstantiableB";
+
+	// The rekey and the alias registrations are irreversible, so the shape is built once.
+	static bool instantiable_registered = false;
+	if (!instantiable_registered) {
+		instantiable_registered = true;
+		FOUNDRY_REGISTER_CLASS(_NamespaceTestInstantiableA);
+		FOUNDRY_REGISTER_CLASS(_NamespaceTestInstantiableB);
+		FOUNDRY_REGISTER_NAMESPACE(_NamespaceTestInstantiableA, "foundry.test.instantiable");
+		FOUNDRY_REGISTER_NAMESPACE(_NamespaceTestInstantiableB, "foundry.test.instantiable.other");
+		ClassDB::class_register_global_alias(qualified_a, "_NamespaceTestInstantiableUniqueAlias");
+		ClassDB::class_register_global_alias(qualified_a, "_NamespaceTestInstantiableAmbiguousAlias");
+		ClassDB::class_register_global_alias(qualified_b, "_NamespaceTestInstantiableAmbiguousAlias");
+	}
+
+	SUBCASE("The canonical key and a unique alias both instantiate") {
+		CHECK(ClassDB::can_instantiate(qualified_a));
+		CHECK(ClassDB::can_instantiate("_NamespaceTestInstantiableUniqueAlias"));
+
+		Object *instance = ClassDB::instantiate("_NamespaceTestInstantiableUniqueAlias");
+		REQUIRE(instance != nullptr);
+		CHECK(instance->get_class() == String(qualified_a));
+		memdelete(instance);
+	}
+
+	SUBCASE("The bare name of a namespaced class does not") {
+		ERR_PRINT_OFF;
+		CHECK_FALSE(ClassDB::can_instantiate("_NamespaceTestInstantiableA"));
+		Object *instance = ClassDB::instantiate("_NamespaceTestInstantiableA");
+		ERR_PRINT_ON;
+		CHECK(instance == nullptr);
+	}
+
+	SUBCASE("An ambiguous alias does not") {
+		ERR_PRINT_OFF;
+		CHECK_FALSE(ClassDB::can_instantiate("_NamespaceTestInstantiableAmbiguousAlias"));
+		Object *instance = ClassDB::instantiate("_NamespaceTestInstantiableAmbiguousAlias");
+		ERR_PRINT_ON;
+		CHECK(instance == nullptr);
+	}
+
+	SUBCASE("Flat classes are unaffected") {
+		CHECK(ClassDB::can_instantiate("Object"));
+		ERR_PRINT_OFF;
+		CHECK_FALSE(ClassDB::can_instantiate("_NamespaceTestNotAClass"));
+		ERR_PRINT_ON;
 	}
 }
 
