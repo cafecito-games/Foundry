@@ -3324,6 +3324,19 @@ Variant FSInstance::callp(const StringName &p_method, const Variant **p_args, in
 		if (likely(sptr->valid)) {
 			HashMap<StringName, FSFunction *>::Iterator E = sptr->member_functions.find(p_method);
 			if (E) {
+				if (unlikely(E->value->is_static())) {
+					// Calling a static function through an instance receiver is legal, and the receiver
+					// names a class just as precisely as a class handle does. Dispatch it exactly the way
+					// `FoundryScript::callp` dispatches the handle form -- no instance, and the receiver
+					// as the frame's static self -- so a signature or body written in terms of `Self`
+					// resolves against the receiver's class instead of failing for want of a receiver.
+					//
+					// `Self` binds to the receiver's runtime class, matching what an instance method
+					// reached through the same receiver resolves it to. Analysis substitutes the
+					// receiver's static type, which is always a base of that runtime class.
+					const FSStaticSelfContext static_self = FSStaticSelfContext::for_specialized_script(script, type_arguments);
+					return E->value->call(nullptr, p_args, p_argcount, r_error, nullptr, nullptr, &static_self);
+				}
 				return E->value->call(this, p_args, p_argcount, r_error);
 			}
 		}
