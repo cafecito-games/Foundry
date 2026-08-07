@@ -818,7 +818,7 @@ public:
 	}
 };
 
-Dictionary _element_to_dictionary(const EditorAutomationElement &p_element, const Vector<EditorAutomationElement> &p_elements) {
+Dictionary _element_to_dictionary(const EditorAutomationElement &p_element, const EditorAutomationSnapshotData &p_data) {
 	Dictionary dict;
 	dict["id"] = p_element.id;
 	dict["handle"] = p_element.handle;
@@ -849,7 +849,12 @@ Dictionary _element_to_dictionary(const EditorAutomationElement &p_element, cons
 
 	Array children;
 	for (int child_index : p_element.children) {
-		children.push_back(_element_to_dictionary(p_elements[child_index], p_elements));
+		// A child published as a top-level root (an open modal dialog) is
+		// serialized from its root entry instead of a second time here.
+		if (p_data.root_indices.has(child_index)) {
+			continue;
+		}
+		children.push_back(_element_to_dictionary(p_data.elements[child_index], p_data));
 	}
 	dict["children"] = children;
 	return dict;
@@ -921,10 +926,11 @@ EditorAutomationSnapshot EditorAutomationSnapshot::capture_from_node(Node *p_roo
 	EditorAutomationSnapshotRoots root_set;
 	if (p_root != nullptr) {
 		root_set.roots.push_back(p_root);
-		// A modal dialog opened from this subtree is the only interactive surface
-		// while it is up, and on platforms that do not embed subwindows it is a
-		// separate OS window. Whether or not it is also a descendant of p_root, it
-		// must be reachable as a top-level root.
+		// A modal on p_root's window is the only interactive surface while it is
+		// up, and on platforms that do not embed subwindows it is a separate OS
+		// window. Whether or not it is a descendant of p_root, it must be
+		// reachable as a top-level root. This is the same chain read_editor_state
+		// reports as `modal_stack` for the same node.
 		if (p_root->is_inside_tree()) {
 			LocalVector<Node *> modal_chain;
 			collect_exclusive_modal_chain(p_root->get_window(), modal_chain);
@@ -984,19 +990,18 @@ EditorAutomationSnapshotRoots EditorAutomationSnapshot::collect_editor_roots(
 		root_set.forced.push_back(modal);
 	}
 
-	// The focused workspace docks are the active editing surface; they are also
-	// nested deep inside the workspace tile layout, so they are forced too.
+	// The focused workspace docks are the active editing surface. They are not
+	// forced: they are reached from the UI root in their real place in the
+	// layout, and only matter as roots when that walk cannot see them (a dock
+	// whose layout parents are still settling, which relaxed visibility covers).
 	if (p_scene_tree_dock != nullptr && p_scene_tree_dock->is_inside_tree()) {
 		root_set.roots.push_back(p_scene_tree_dock);
-		root_set.forced.push_back(p_scene_tree_dock);
 	}
 	if (p_inspector_dock != nullptr && p_inspector_dock->is_inside_tree()) {
 		root_set.roots.push_back(p_inspector_dock);
-		root_set.forced.push_back(p_inspector_dock);
 		root_set.relaxed_visibility.push_back(p_inspector_dock);
 		if (p_inspector != nullptr && p_inspector->is_inside_tree()) {
 			root_set.roots.push_back(p_inspector);
-			root_set.forced.push_back(p_inspector);
 			root_set.relaxed_visibility.push_back(p_inspector);
 		}
 	}
@@ -1056,7 +1061,7 @@ const EditorAutomationElement *EditorAutomationSnapshot::find_by_object_id(uint6
 Array EditorAutomationSnapshot::get_root_elements() const {
 	Array roots;
 	for (int root_index : data.root_indices) {
-		roots.push_back(_element_to_dictionary(data.elements[root_index], data.elements));
+		roots.push_back(_element_to_dictionary(data.elements[root_index], data));
 	}
 	return roots;
 }

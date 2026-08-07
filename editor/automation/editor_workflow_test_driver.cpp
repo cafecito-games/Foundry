@@ -82,6 +82,11 @@ Dictionary _element_tree(const EditorAutomationSnapshotData &p_data, int p_index
 		if (!p_include_hidden && !child.visible) {
 			continue;
 		}
+		// A child published as a top-level root (an open modal dialog) is emitted
+		// from its root entry instead of a second time here.
+		if (p_data.root_indices.has(child_index)) {
+			continue;
+		}
 		total_children++;
 		if (p_depth + 1 > p_max_depth) {
 			r_truncated = true;

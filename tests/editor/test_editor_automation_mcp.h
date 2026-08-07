@@ -335,6 +335,56 @@ TEST_CASE("[Editor][Automation][MCP] observe_ui reaches an exclusive modal dialo
 	memdelete(root);
 }
 
+TEST_CASE("[Editor][Automation][MCP] a modal dialog is emitted once even when its nested position is in range") {
+	// A shallow dialog is reachable both as a published root and under its real
+	// parent. The tree must emit it from the root entry only, or a client sees
+	// the same dialog (and its whole subtree) twice.
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_name("Dock");
+	root->set_size(Size2(600, 400));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	AcceptDialog *dialog = memnew(AcceptDialog);
+	dialog->set_title("Shallow Dialog");
+	dialog->set_ok_button_text("Confirm Shallow");
+	root->add_child(dialog);
+	dialog->popup_centered();
+	mcp_flush_frames();
+	REQUIRE(SceneTree::get_singleton()->get_root()->get_exclusive_child() == dialog);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	EditorAutomationMCPDispatcher::Options options;
+	options.snapshot_root = root;
+	dispatcher.set_options(options);
+
+	Dictionary params;
+	params["name"] = "observe_ui";
+	params["arguments"] = Dictionary();
+	const Dictionary response = dispatcher.handle_message(make_request(33, "tools/call", params));
+	const Dictionary structured = Dictionary(response["result"])["structuredContent"];
+
+	const Array tree = structured["tree"];
+	int dialog_nodes = 0;
+	List<Dictionary> pending;
+	for (int i = 0; i < tree.size(); i++) {
+		pending.push_back(tree[i]);
+	}
+	while (!pending.is_empty()) {
+		const Dictionary node = pending.front()->get();
+		pending.pop_front();
+		if (String(node.get("name", String())) == "Shallow Dialog") {
+			dialog_nodes++;
+		}
+		const Array children = node.get("children", Array());
+		for (int i = 0; i < children.size(); i++) {
+			pending.push_back(children[i]);
+		}
+	}
+	CHECK(dialog_nodes == 1);
+
+	memdelete(root);
+}
+
 TEST_CASE("[Editor][Automation][MCP] find_elements delegates to the selector core") {
 	PanelContainer *root = memnew(PanelContainer);
 	root->set_size(Size2(400, 300));
