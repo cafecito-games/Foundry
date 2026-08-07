@@ -20,6 +20,7 @@ import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 
 class ShardReportError(Exception):
@@ -40,7 +41,7 @@ class ShardReport:
         return self.status == "passed" and self.failed == 0
 
 
-def case_identity(event: dict) -> str:
+def case_identity(event: dict[str, Any]) -> str:
     """Stable identity of a doctest case across shards."""
     return "{}|{}|{}:{}".format(
         event.get("suite", ""),
@@ -78,10 +79,24 @@ def read_shard_report(path: Path) -> ShardReport:
     return report
 
 
-def collect_shard_reports(directory: Path) -> list[ShardReport]:
-    paths = sorted(directory.glob("shard-*.jsonl"))
-    if not paths:
-        raise ShardReportError(f"{directory}: no shard-*.jsonl progress files found")
+def collect_shard_reports(directory: Path, expected_shards: int | None = None) -> list[ShardReport]:
+    if expected_shards is not None:
+        # Discovery alone cannot tell a shard that never started from a shard that was never
+        # asked for. The workflow ignores the shard processes' exit codes on purpose, so a
+        # shard killed before it opened its progress file would otherwise just disappear and
+        # leave the surviving shards to report a green run over a fraction of the suite.
+        paths = [directory / f"shard-{index}.jsonl" for index in range(1, expected_shards + 1)]
+        missing = [path.name for path in paths if not path.is_file()]
+        if missing:
+            raise ShardReportError(
+                "{}: expected {} shard progress file(s), missing {}".format(
+                    directory, expected_shards, ", ".join(missing)
+                )
+            )
+    else:
+        paths = sorted(directory.glob("shard-*.jsonl"))
+        if not paths:
+            raise ShardReportError(f"{directory}: no shard-*.jsonl progress files found")
     return [read_shard_report(path) for path in paths]
 
 
@@ -112,10 +127,12 @@ def format_table(reports: list[ShardReport]) -> str:
     return "\n".join(lines)
 
 
-def aggregate(directory: Path, expected_case_count: int | None = None) -> tuple[int, str]:
+def aggregate(
+    directory: Path, expected_shards: int | None = None, expected_case_count: int | None = None
+) -> tuple[int, str]:
     """Returns the process exit code and the report to print."""
     try:
-        reports = collect_shard_reports(directory)
+        reports = collect_shard_reports(directory, expected_shards)
     except ShardReportError as error:
         return 1, str(error)
 
@@ -158,13 +175,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path, help="Directory holding shard-<i>.jsonl progress files.")
     parser.add_argument(
+        "--expected-shards",
+        type=int,
+        default=None,
+        help="Number of shards the run launched; fail unless every shard-<i>.jsonl is present.",
+    )
+    parser.add_argument(
         "--expected-case-count",
         type=int,
         default=None,
         help="Fail unless the shards together executed exactly this many distinct cases.",
     )
     arguments = parser.parse_args(argv)
-    exit_code, report = aggregate(arguments.directory, arguments.expected_case_count)
+    exit_code, report = aggregate(arguments.directory, arguments.expected_shards, arguments.expected_case_count)
     print(report)
     return exit_code
 

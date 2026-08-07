@@ -14,13 +14,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import aggregate_test_shards  # noqa: E402
 
 
-def test_end_event(name: str, suite: str = "[Core]", file: str = "tests/test_a.h", line: int = 10) -> dict:
+def test_end_event(name: str, suite: str = "[Core]", file: str = "tests/test_a.h", line: int = 10) -> dict[str, Any]:
     return {
         "version": 1,
         "event": "test_end",
@@ -32,7 +33,7 @@ def test_end_event(name: str, suite: str = "[Core]", file: str = "tests/test_a.h
     }
 
 
-def run_end_event(passed: int, failed: int = 0, skipped: int = 0, status: str = "passed") -> dict:
+def run_end_event(passed: int, failed: int = 0, skipped: int = 0, status: str = "passed") -> dict[str, Any]:
     return {
         "version": 1,
         "event": "run_end",
@@ -43,7 +44,7 @@ def run_end_event(passed: int, failed: int = 0, skipped: int = 0, status: str = 
     }
 
 
-def write_shard(directory: Path, index: int, events: list[dict]) -> None:
+def write_shard(directory: Path, index: int, events: list[dict[str, Any]]) -> None:
     path = directory / f"shard-{index}.jsonl"
     with path.open("w", encoding="utf-8") as stream:
         for event in events:
@@ -136,6 +137,36 @@ class AggregateTestShardsTests(unittest.TestCase):
         self.assertEqual(exit_code, 1)
         self.assertIn("ran on some shards but not all", report)
         self.assertIn("shared", report)
+
+    def test_missing_shard_file_fails_when_the_shard_count_is_known(self):
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            # Shard 2 died before it opened its progress file. The workflow ignores the shard
+            # processes' exit codes, so discovery by glob alone would report a green run over
+            # the two survivors and lose a third of the suite.
+            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1)])
+            write_shard(directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1)])
+
+            without_expectation, _ = aggregate_test_shards.aggregate(directory)
+            with_expectation, report = aggregate_test_shards.aggregate(directory, expected_shards=3)
+
+        self.assertEqual(without_expectation, 0)
+        self.assertEqual(with_expectation, 1)
+        self.assertIn("missing shard-2.jsonl", report)
+
+    def test_all_expected_shards_present_passes(self):
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            for index in (1, 2, 3):
+                write_shard(
+                    directory,
+                    index,
+                    [test_end_event(f"case {index}", line=index * 10), run_end_event(passed=1)],
+                )
+
+            exit_code, report = aggregate_test_shards.aggregate(directory, expected_shards=3)
+
+        self.assertEqual(exit_code, 0, report)
 
     def test_empty_shard_directory_fails(self):
         with tempfile.TemporaryDirectory() as raw_directory:

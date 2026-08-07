@@ -87,7 +87,10 @@ jobs:
 
           # The verdict comes from each shard's run_end event, not from the exit code: a
           # green run can still exit non-zero while reporting leaks during cleanup.
-          python3 .github/scripts/aggregate_test_shards.py shard-logs
+          # `--expected-shards` matters because the loop above ignores each shard's exit
+          # code: without it, a shard killed before it opened its progress file would just
+          # disappear and the survivors would report a green run over part of the suite.
+          python3 .github/scripts/aggregate_test_shards.py shard-logs --expected-shards "$FOUNDRY_SHARDS"
 
       - name: Upload shard logs
         if: always()
