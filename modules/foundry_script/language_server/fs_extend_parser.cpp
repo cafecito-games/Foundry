@@ -250,6 +250,20 @@ void ExtendFSParser::append_type_parameter_symbol_children(const Vector<FSParser
 	}
 }
 
+String ExtendFSParser::enum_payload_field_detail(const FSParser::EnumNode::PayloadField &p_field) {
+	String detail;
+	if (p_field.identifier != nullptr) {
+		detail += String(p_field.identifier->name);
+	}
+	if (p_field.type != nullptr) {
+		const FSParser::DataType field_type = FSAnalyzer::type_from_metatype(p_field.type->get_datatype());
+		if (field_type.is_hard_type()) {
+			detail += ": " + field_type.to_string();
+		}
+	}
+	return detail;
+}
+
 String ExtendFSParser::enum_case_detail(const FSParser::EnumNode::Value &p_value) {
 	const String name = p_value.identifier != nullptr ? String(p_value.identifier->name) : String();
 
@@ -268,16 +282,7 @@ String ExtendFSParser::enum_case_detail(const FSParser::EnumNode::Value &p_value
 		if (i > 0) {
 			detail += ", ";
 		}
-		const FSParser::EnumNode::PayloadField &field = p_value.payload_fields[i];
-		if (field.identifier != nullptr) {
-			detail += String(field.identifier->name);
-		}
-		if (field.type != nullptr) {
-			const FSParser::DataType field_type = FSAnalyzer::type_from_metatype(field.type->get_datatype());
-			if (field_type.is_hard_type()) {
-				detail += ": " + field_type.to_string();
-			}
-		}
+		detail += enum_payload_field_detail(p_value.payload_fields[i]);
 	}
 	return detail + ")";
 }
@@ -300,6 +305,30 @@ void ExtendFSParser::append_enum_symbol_children(const FSParser::EnumNode *p_enu
 		child.uri = uri;
 		child.script_path = path;
 		child.detail = enum_case_detail(value);
+
+		// A payload-bearing case is written like a call, so its fields are reported as the case's own
+		// children. That is the parameter list signature help reads, and it matches how a function
+		// symbol reports its parameters.
+		for (const FSParser::EnumNode::PayloadField &field : value.payload_fields) {
+			if (field.identifier == nullptr) {
+				continue;
+			}
+			LSP::DocumentSymbol field_symbol;
+			field_symbol.name = field.identifier->name;
+			field_symbol.kind = LSP::SymbolKind::Field;
+			field_symbol.deprecated = false;
+			field_symbol.range.start = FoundryPosition(field.line, field.start_column).to_lsp(lines);
+			field_symbol.range.end = FoundryPosition(field.line, field.end_column).to_lsp(lines);
+			field_symbol.selectionRange = range_of_node(field.identifier);
+			field_symbol.uri = uri;
+			field_symbol.script_path = path;
+			field_symbol.local = true;
+			field_symbol.detail = enum_payload_field_detail(field);
+#ifdef TOOLS_ENABLED
+			field_symbol.documentation = field.doc_data.description;
+#endif // TOOLS_ENABLED
+			child.children.push_back(field_symbol);
+		}
 
 		r_symbol.children.push_back(child);
 	}

@@ -5682,6 +5682,27 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			CHECK(out.contains("\tUser = 0"));
 			CHECK(out.contains("var kind: Kind = Kind.User"));
 		}
+		SUBCASE("tagged-union case renamed from a contextual shorthand reference") {
+			String out;
+			// Caret on the `Ok` of `.Ok(1)`, which names the case without spelling its union.
+			RefactorResult r = run_rename("res://refactor/rename_contextual_union_case.fs", 8, 37, "Done", out);
+			REQUIRE(r.ok);
+			CHECK_EQ(r.suggested_name, "Ok");
+			CHECK(out.contains("\tDone(value: T)"));
+			CHECK(out.contains("= .Done(1)"));
+			CHECK(out.contains("\t\t.Done(number):"));
+			CHECK_FALSE(out.contains("Ok"));
+		}
+		SUBCASE("tagged-union case renamed from its declaration updates contextual shorthands") {
+			String out;
+			// Caret on the `Ok` of the case declaration.
+			RefactorResult r = run_rename("res://refactor/rename_contextual_union_case.fs", 3, 1, "Done", out);
+			REQUIRE(r.ok);
+			CHECK(out.contains("\tDone(value: T)"));
+			CHECK(out.contains("= .Done(1)"));
+			CHECK(out.contains("\t\t.Done(number):"));
+			CHECK_FALSE(out.contains("Ok"));
+		}
 		SUBCASE("strings and comments untouched") {
 			String out;
 			RefactorResult r = run_rename("res://refactor/rename_strings_comments.fs", 3, 5, "sum", out); // caret on `total`

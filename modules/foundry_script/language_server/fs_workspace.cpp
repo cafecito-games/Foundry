@@ -1080,7 +1080,11 @@ Error FSWorkspace::resolve_signature(const LSP::TextDocumentPositionParams &p_do
 			}
 
 			for (const LSP::DocumentSymbol *const &symbol : symbols) {
-				if (symbol->kind == LSP::SymbolKind::Method || symbol->kind == LSP::SymbolKind::Function) {
+				// A payload-bearing tagged-union case is constructed like a call and reports its payload
+				// fields as its children, so it describes a signature exactly as a function does. A
+				// payload-less case has no argument list and is left out.
+				const bool is_case_construction = symbol->kind == LSP::SymbolKind::EnumMember && !symbol->children.is_empty();
+				if (symbol->kind == LSP::SymbolKind::Method || symbol->kind == LSP::SymbolKind::Function || is_case_construction) {
 					LSP::SignatureInformation signature_info;
 					signature_info.label = symbol->detail;
 					signature_info.documentation = symbol->render();

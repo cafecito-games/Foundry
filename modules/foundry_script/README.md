@@ -280,8 +280,10 @@ constructed, e.g. ".Ok(...)".` or its payload-less counterpart. The explicit spe
 and is the fallback whenever no expected type is available — for example in an inferred `var`.
 
 Editor tooling treats the shorthand as the case it names: go-to-definition and hover jump to the
-case declaration, semantic highlighting marks it as an enum member, and completion on a shorthand
-whose union is already known lists that union's cases with their specialized payload signatures.
+case declaration, semantic highlighting marks it as an enum member, and renaming a case rewrites its
+declaration and every shorthand that names it. Completion lists the expected union's cases with
+their specialized payload signatures, including on a bare `.` whose case name has not been typed
+yet, and signature help inside a payload case's argument list reports the case's declared fields.
 
 **Runtime erasure.** Values remain the existing read-only `[tag, payload...]` Array representation.
 Specialization is static only: once a value crosses a `Variant` boundary, runtime tests can validate
