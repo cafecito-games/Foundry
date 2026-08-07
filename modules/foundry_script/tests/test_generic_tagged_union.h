@@ -1560,6 +1560,111 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionGlobal] Global dependency 
 			FSParser::DataType::TYPE_PARAMETER_ENUM, 0));
 }
 
+// `ScriptServer`'s global-class registry is process-wide, so a provider registered for one case would
+// otherwise change what every later case resolves. Registering through this guard keeps the registry
+// exactly as it was found.
+struct ScopedGlobalEnumRegistration {
+	StringName global_name;
+	bool was_already_registered = false;
+
+	ScopedGlobalEnumRegistration(const StringName &p_global_name, const StringName &p_base, const String &p_path) :
+			global_name(p_global_name) {
+		was_already_registered = ScriptServer::is_global_class(p_global_name);
+		if (!was_already_registered) {
+			ScriptServer::add_global_class(p_global_name, p_base, FSLanguage::get_singleton()->get_name(), p_path,
+					false, false, false, true);
+		}
+	}
+
+	~ScopedGlobalEnumRegistration() {
+		if (!was_already_registered) {
+			ScriptServer::remove_global_class(global_name);
+		}
+	}
+};
+
+// The base of the call's callee subscript, i.e. the expression that spells the union itself in
+// `<chain>.Case(...)`. Yields null whenever the initializer is not that shape.
+static const FSParser::ExpressionNode *union_head_of_first_local_call(const FSParser &p_parser, const StringName &p_function) {
+	const FSParser::ExpressionNode *initializer = first_local_initializer(p_parser, p_function);
+	if (initializer == nullptr || initializer->type != FSParser::Node::CALL) {
+		return nullptr;
+	}
+	const FSParser::ExpressionNode *callee = static_cast<const FSParser::CallNode *>(initializer)->callee;
+	if (callee == nullptr || callee->type != FSParser::Node::SUBSCRIPT) {
+		return nullptr;
+	}
+	return static_cast<const FSParser::SubscriptNode *>(callee)->base;
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionGlobal] A namespaced chain publishes an applied union") {
+	// The third union-reference publication surface: `reduce_subscript`'s namespaced-global-enum branch
+	// reaching `make_global_enum_type_from_path`. The chain has to behave exactly like a bare identifier
+	// does -- applied it yields the specialized union, bare it is rejected for missing arguments.
+	const String provider_path = "modules/foundry_script/tests/scripts/analyzer/errors/generic_tagged_union_namespaced_library.notest.fs";
+
+	String base_type;
+	bool is_enum = false;
+	const String global_name = FSLanguage::get_singleton()->get_global_class_name(provider_path, &base_type,
+			nullptr, nullptr, nullptr, nullptr, &is_enum);
+	REQUIRE_EQ(global_name, "generic_union_demo.library.NamespacedHolder");
+	REQUIRE(is_enum);
+	ScopedGlobalEnumRegistration registration(global_name, base_type, provider_path);
+
+	SUBCASE("An applied chain resolves to the specialized union") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "namespace generic_union_demo.consumer\n"
+						   "import generic_union_demo.library\n"
+						   "\n"
+						   "func build() -> void:\n"
+						   "\tvar held = generic_union_demo.library.NamespacedHolder[int].Value(123)\n"
+						   "\tprint(held)\n",
+						   "user://generic_tagged_union_namespaced_chain_consumer.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		// The chain itself publishes the union's metatype through `make_global_enum_type_from_path`.
+		const FSParser::ExpressionNode *union_head = union_head_of_first_local_call(parser, SNAME("build"));
+		REQUIRE(union_head != nullptr);
+		const FSParser::DataType head_type = union_head->get_datatype();
+		CHECK(head_type.is_meta_type);
+		CHECK_EQ(head_type.kind, FSParser::DataType::ENUM);
+		CHECK(head_type.is_tagged_union);
+		REQUIRE_EQ(head_type.type_arguments.size(), 1);
+		CHECK_EQ(type_at(head_type.type_arguments, 0).builtin_type, Variant::INT);
+		CHECK_EQ(specialized_payload_field_type(head_type, SNAME("Value"), 0).builtin_type, Variant::INT);
+
+		// And the constructed value carries the same specialization, not the open declaration.
+		const FSParser::DataType constructed = first_local_initializer_type(parser, SNAME("build"));
+		CHECK_FALSE(constructed.is_meta_type);
+		CHECK_EQ(constructed.kind, FSParser::DataType::ENUM);
+		CHECK(constructed.is_tagged_union);
+		REQUIRE_EQ(constructed.type_arguments.size(), 1);
+		CHECK_EQ(type_at(constructed.type_arguments, 0).builtin_type, Variant::INT);
+		CHECK_EQ(specialized_payload_field_type(constructed, SNAME("Value"), 0).builtin_type, Variant::INT);
+	}
+
+	SUBCASE("A bare chain is still rejected for missing type arguments") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "namespace generic_union_demo.consumer\n"
+						   "import generic_union_demo.library\n"
+						   "\n"
+						   "func build() -> void:\n"
+						   "\tvar held = generic_union_demo.library.NamespacedHolder.Value(123)\n"
+						   "\tprint(held)\n",
+						   "user://generic_tagged_union_namespaced_bare_consumer.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_NE(analyzer.analyze(), OK);
+		CHECK(has_error_containing(parser,
+				R"(Generic tagged union "NamespacedHolder" expects 1 type argument(s), but 0 were given.)"));
+	}
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionCases] Reapplying a handle re-derives its schema") {
 	FSParser parser;
 	REQUIRE_EQ(parser.parse(
@@ -2094,6 +2199,79 @@ TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] The exemption does 
 	// The rejected member falls back to Variant instead of capturing the union's open parameters.
 	const FSParser::DataType held = helper->get_member(SNAME("held")).variable->get_datatype();
 	CHECK_FALSE(held.is_tagged_union);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Enum-member lookup is anchored to the declaring class") {
+	// `reduce_identifier` consults the active enum's cases so a case can name its siblings. That lookup
+	// belongs to the enum's own declaring class, so it stays available inside the declaration and never
+	// reaches a class analyzed while an unrelated enum happens to still be active.
+	SUBCASE("A sibling case is still visible inside a named enum") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Step:\n"
+						   "\tFIRST = 1\n"
+						   "\tSECOND = FIRST + 1\n",
+						   "user://generic_tagged_union_enum_sibling_named.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		const FSParser::EnumNode *step = find_enum(parser, SNAME("Step"));
+		REQUIRE(step != nullptr);
+		REQUIRE_EQ(step->values.size(), 2);
+		CHECK(step->values[1].resolved);
+		CHECK_EQ(step->values[1].value, 2);
+	}
+
+	SUBCASE("A sibling value is still visible inside an unnamed enum") {
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum:\n"
+						   "\tFIRST = 1\n"
+						   "\tSECOND = FIRST + 1\n",
+						   "user://generic_tagged_union_enum_sibling_unnamed.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		const FSParser::ClassNode *root_class = parser.get_tree();
+		REQUIRE(root_class != nullptr);
+		REQUIRE(root_class->has_member(SNAME("SECOND")));
+		const FSParser::ClassNode::Member &second = root_class->get_member(SNAME("SECOND"));
+		REQUIRE_EQ(second.type, FSParser::ClassNode::Member::ENUM_VALUE);
+		CHECK(second.enum_value.resolved);
+		CHECK_EQ(second.enum_value.value, 2);
+	}
+
+	SUBCASE("An unrelated class keeps its own constants") {
+		// The payload pulls `Helper` in while the union is still the analyzer's active enum, so
+		// `Helper`'s own constants must win over identically spelled case names.
+		FSParser parser;
+		REQUIRE_EQ(parser.parse(
+						   "enum Holder[T]:\n"
+						   "\tREADY(box: Helper)\n"
+						   "\n"
+						   "class Helper:\n"
+						   "\tconst READY = 7\n"
+						   "\tconst ALIAS = READY\n",
+						   "user://generic_tagged_union_enum_lookup_scope.fs", false),
+				OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK_EQ(analyzer.analyze(), OK);
+		CHECK_EQ(first_error_message(parser), String());
+
+		const FSParser::ClassNode *helper = find_inner_class(parser.get_tree(), SNAME("Helper"));
+		REQUIRE(helper != nullptr);
+		REQUIRE(helper->has_member(SNAME("ALIAS")));
+		const FSParser::ConstantNode *alias = helper->get_member(SNAME("ALIAS")).constant;
+		REQUIRE(alias != nullptr);
+		REQUIRE(alias->initializer != nullptr);
+		CHECK_EQ(alias->get_datatype().kind, FSParser::DataType::BUILTIN);
+		CHECK_EQ(alias->get_datatype().builtin_type, Variant::INT);
+		CHECK_EQ(alias->initializer->reduced_value, Variant(7));
+	}
 }
 
 TEST_CASE("[Modules][FoundryScript][GenericTaggedUnionScope] Every publication surface applies the lexical exemption") {

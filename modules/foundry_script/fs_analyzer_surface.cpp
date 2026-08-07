@@ -961,8 +961,7 @@ FSParser::DataType FSAnalyzer::resolve_enum_values(FSParser::EnumNode *p_enum,
 		return p_enum->get_datatype();
 	}
 
-	AnalysisScopeGuard scope(this, p_owner);
-	current_enum = p_enum;
+	AnalysisScopeGuard scope(this, p_owner, nullptr, p_enum);
 
 	FSParser::DataType enum_type = p_enum_type;
 	enum_type.is_tagged_union = p_enum->is_tagged_union;
@@ -1083,8 +1082,7 @@ void FSAnalyzer::resolve_enum_interface(FSParser::EnumNode *p_enum,
 	ERR_FAIL_NULL(p_owner);
 
 	const FSParser::DataType enum_type = resolve_enum_values(p_enum, p_enum_type, p_owner);
-	AnalysisScopeGuard scope(this, p_owner);
-	current_enum = p_enum;
+	AnalysisScopeGuard scope(this, p_owner, nullptr, p_enum);
 
 	HashSet<StringName> function_names;
 	for (FSParser::FunctionNode *function : p_enum->functions) {
@@ -1125,7 +1123,21 @@ bool FSAnalyzer::enum_declared_by(const FSParser::ClassNode *p_class, const FSPa
 	if (p_class->is_enum_file && p_class->enum_file_decl == p_enum) {
 		return true;
 	}
-	if (p_enum->identifier == nullptr || !p_class->has_member(p_enum->identifier->name)) {
+	if (p_enum->identifier == nullptr) {
+		// An unnamed enum is not a member of its own: its values are injected directly into the
+		// enclosing class, so ownership has to be read off one of them.
+		for (const FSParser::EnumNode::Value &value : p_enum->values) {
+			if (value.identifier == nullptr || !p_class->has_member(value.identifier->name)) {
+				continue;
+			}
+			const FSParser::ClassNode::Member &value_member = p_class->get_member(value.identifier->name);
+			if (value_member.type == FSParser::ClassNode::Member::ENUM_VALUE && value_member.enum_value.parent_enum == p_enum) {
+				return true;
+			}
+		}
+		return false;
+	}
+	if (!p_class->has_member(p_enum->identifier->name)) {
 		return false;
 	}
 	const FSParser::ClassNode::Member &member = p_class->get_member(p_enum->identifier->name);
@@ -1199,21 +1211,21 @@ bool FSAnalyzer::resolve_type_parameter(const StringName &p_name, FSParser::Data
 		// A type parameter's bound belongs to its declaring scope, not wherever the parameter is used.
 		// Resolve (and thus cache) it there so an enclosing method or enum parameter cannot shadow the
 		// bound name and poison the cached datatype for later uses.
-		FSParser::ClassNode *previous_class = parser->current_class;
-		FSParser::FunctionNode *previous_function = parser->current_function;
-		const FSParser::EnumNode *previous_enum = current_enum;
+		// A union's parameters stay visible through its declaring class, which `enum_declared_by` above
+		// already proved is the current one, so the enum branch keeps the use-site class.
+		FSParser::ClassNode *bound_class = parser->current_class;
+		FSParser::FunctionNode *bound_function = parser->current_function;
+		const FSParser::EnumNode *bound_enum = current_enum;
 		if (scope == FSParser::DataType::TYPE_PARAMETER_ENUM && declaring_enum != nullptr) {
-			current_enum = declaring_enum;
-			parser->current_function = nullptr;
+			bound_function = nullptr;
+			bound_enum = declaring_enum;
 		} else if (scope == FSParser::DataType::TYPE_PARAMETER_CLASS && declaring_class != nullptr) {
-			parser->current_class = declaring_class;
-			parser->current_function = nullptr;
-			current_enum = nullptr;
+			bound_class = declaring_class;
+			bound_function = nullptr;
+			bound_enum = nullptr;
 		}
+		AnalysisScopeGuard declaration_scope(this, bound_class, bound_function, bound_enum);
 		type.type_parameter_bound.push_back(type_from_metatype(resolve_datatype(parameter->bound)));
-		parser->current_class = previous_class;
-		parser->current_function = previous_function;
-		current_enum = previous_enum;
 	}
 
 	r_type = type;
@@ -1384,16 +1396,11 @@ bool FSAnalyzer::check_type_argument_bounds(FSParser::DataType &r_type, const Ge
 		// than at the (possibly unrelated) use site, where an enclosing class, enum, or method type
 		// parameter could otherwise shadow them. A union's bound also needs its own parameters visible,
 		// which is what the declaring enum provides.
-		FSParser::ClassNode *previous_class = parser->current_class;
-		FSParser::FunctionNode *previous_function = parser->current_function;
-		const FSParser::EnumNode *previous_enum = current_enum;
-		parser->current_class = p_declaration.declaring_class;
-		parser->current_function = nullptr;
-		current_enum = p_declaration.declaring_enum;
-		const FSParser::DataType bound = type_from_metatype(resolve_datatype(parameter->bound));
-		parser->current_class = previous_class;
-		parser->current_function = previous_function;
-		current_enum = previous_enum;
+		FSParser::DataType bound;
+		{
+			AnalysisScopeGuard declaration_scope(this, p_declaration.declaring_class, nullptr, p_declaration.declaring_enum);
+			bound = type_from_metatype(resolve_datatype(parameter->bound));
+		}
 
 		// An unresolved or unconstrained (`Variant`) bound imposes no requirement.
 		if (!bound.is_set() || bound.is_variant()) {
@@ -1916,20 +1923,12 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 		// when a parameter is never referenced inside the class body. A class parameter's bound is
 		// resolved in its declaring class scope, mirroring `resolve_type_parameter`.
 		if (!p_class->type_parameters.is_empty()) {
-			FSParser::ClassNode *previous_class = parser->current_class;
-			FSParser::FunctionNode *previous_function = parser->current_function;
-			const FSParser::EnumNode *previous_enum = current_enum;
-			parser->current_class = p_class;
-			parser->current_function = nullptr;
-			current_enum = nullptr;
+			AnalysisScopeGuard declaration_scope(this, p_class);
 			for (FSParser::TypeParameterNode *parameter : p_class->type_parameters) {
 				if (parameter != nullptr && parameter->bound != nullptr) {
 					parameter->resolved_bound = type_from_metatype(resolve_datatype(parameter->bound));
 				}
 			}
-			parser->current_class = previous_class;
-			parser->current_function = previous_function;
-			current_enum = previous_enum;
 		}
 
 		FSParser::DataType base_type = p_class->base_type;

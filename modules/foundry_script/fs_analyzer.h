@@ -100,8 +100,10 @@ private:
 		}
 	};
 
-	// Restores `parser->current_class`, `parser->current_function`, `current_enum`,
-	// `current_lambda`, and `static_context` at scope exit.
+	// Enters an analysis scope: assigns `parser->current_class`, `parser->current_function`, and
+	// `current_enum`, then restores those plus `current_lambda` and `static_context` at scope exit.
+	// Omitting the enum clears it, so a scope that is not inside an enum declaration can never read a
+	// value left behind by an unrelated one.
 	class AnalysisScopeGuard {
 		FSAnalyzer *analyzer = nullptr;
 		FSParser::ClassNode *previous_class = nullptr;
@@ -111,7 +113,7 @@ private:
 		bool previous_static_context = false;
 
 	public:
-		AnalysisScopeGuard(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_class, FSParser::FunctionNode *p_function = nullptr);
+		AnalysisScopeGuard(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_class, FSParser::FunctionNode *p_function = nullptr, const FSParser::EnumNode *p_enum = nullptr);
 		~AnalysisScopeGuard();
 	};
 

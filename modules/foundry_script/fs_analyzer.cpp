@@ -153,7 +153,7 @@ void FSAnalyzer::mark_analyzer_phase_completed(AnalyzerPhase p_phase) {
 	}
 }
 
-FSAnalyzer::AnalysisScopeGuard::AnalysisScopeGuard(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_class, FSParser::FunctionNode *p_function) {
+FSAnalyzer::AnalysisScopeGuard::AnalysisScopeGuard(FSAnalyzer *p_analyzer, FSParser::ClassNode *p_class, FSParser::FunctionNode *p_function, const FSParser::EnumNode *p_enum) {
 	analyzer = p_analyzer;
 	if (analyzer == nullptr || analyzer->parser == nullptr) {
 		return;
@@ -165,6 +165,7 @@ FSAnalyzer::AnalysisScopeGuard::AnalysisScopeGuard(FSAnalyzer *p_analyzer, FSPar
 	previous_static_context = analyzer->static_context;
 	analyzer->parser->current_class = p_class;
 	analyzer->parser->current_function = p_function;
+	analyzer->current_enum = p_enum;
 }
 
 FSAnalyzer::AnalysisScopeGuard::~AnalysisScopeGuard() {
@@ -3141,8 +3142,7 @@ void FSAnalyzer::resolve_enum_bodies(FSParser::EnumNode *p_enum, FSParser::Class
 	ERR_FAIL_NULL(p_enum);
 	ERR_FAIL_NULL(p_owner);
 
-	AnalysisScopeGuard scope(this, p_owner);
-	current_enum = p_enum;
+	AnalysisScopeGuard scope(this, p_owner, nullptr, p_enum);
 	for (FSParser::FunctionNode *function : p_enum->functions) {
 		if (function != nullptr) {
 			resolve_function_body(function);
@@ -10679,7 +10679,10 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 	// TODO: This is an opportunity to further infer types.
 
 	// Check if we are inside an enum. This allows enum values to access other elements of the same enum.
-	if (current_enum) {
+	// The active enum only counts when the class being analyzed is the one that declares it, so a class
+	// pulled in while an unrelated enum is active cannot have its own identifiers shadowed by that
+	// enum's case names.
+	if (enum_declared_by(parser->current_class, current_enum)) {
 		for (int i = 0; i < current_enum->values.size(); i++) {
 			const FSParser::EnumNode::Value &element = current_enum->values[i];
 			if (element.identifier->name == p_identifier->name) {
