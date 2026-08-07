@@ -108,6 +108,19 @@ overall_progress_description_weight = 10
 ################################################################################
 
 
+def qualified_class_name(class_root: ET.Element) -> str:
+    """Join the optional ``namespace`` attribute with the simple ``name`` attribute.
+
+    Namespaced classes are identified everywhere by their qualified name, which is also the
+    name of the XML file documenting them.
+    """
+    name = class_root.attrib["name"]
+    namespace = class_root.get("namespace")
+    if namespace:
+        return f"{namespace}.{name}"
+    return name
+
+
 def validate_tag(elem: ET.Element, tag: str) -> None:
     if elem.tag != tag:
         print('Tag mismatch, expected "' + tag + '", got ' + elem.tag)
@@ -257,7 +270,7 @@ class ClassStatus:
     @staticmethod
     def generate_for_class(c: ET.Element):
         status = ClassStatus()
-        status.name = c.attrib["name"]
+        status.name = qualified_class_name(c)
 
         for tag in list(c):
             len_tag_text = 0 if (tag.text is None) else len(tag.text.strip())
@@ -380,10 +393,11 @@ for file in input_file_list:
     tree = ET.parse(file)
     doc = tree.getroot()
 
-    if doc.attrib["name"] in class_names:
+    class_name = qualified_class_name(doc)
+    if class_name in class_names:
         continue
-    class_names.append(doc.attrib["name"])
-    classes[doc.attrib["name"]] = doc
+    class_names.append(class_name)
+    classes[class_name] = doc
 
 class_names.sort()
 

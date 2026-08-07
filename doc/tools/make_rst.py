@@ -173,7 +173,7 @@ class State:
         self.script_language_parity_check: ScriptLanguageParityCheck = ScriptLanguageParityCheck()
 
     def parse_class(self, class_root: ET.Element, filepath: str) -> None:
-        class_name = class_root.attrib["name"]
+        class_name = qualified_class_name(class_root)
         self.current_class = class_name
 
         class_def = ClassDef(class_name)
@@ -763,7 +763,7 @@ def main() -> None:
             continue
         doc = tree.getroot()
 
-        name = doc.attrib["name"]
+        name = qualified_class_name(doc)
         if name in classes:
             print_error(f'{cur_file}: Duplicate class "{name}".', state)
             continue
@@ -858,6 +858,19 @@ def main() -> None:
 
 
 # Common helpers.
+
+
+def qualified_class_name(class_root: ET.Element) -> str:
+    """Join the optional ``namespace`` attribute with the simple ``name`` attribute.
+
+    Namespaced classes are identified everywhere by their qualified name, which is also the
+    name of the XML file documenting them.
+    """
+    name = class_root.attrib["name"]
+    namespace = class_root.get("namespace")
+    if namespace:
+        return f"{namespace}.{name}"
+    return name
 
 
 def print_error(error: str, state: State) -> None:

@@ -1243,14 +1243,15 @@ void EditorHelp::_update_doc() {
 	}
 
 	// Descendants
-	if ((cd.is_script_doc || ClassDB::class_exists(cd.name)) && doc->inheriting.has(cd.name)) {
+	const String cd_qualified_name = cd.qualified_name();
+	if ((cd.is_script_doc || ClassDB::class_exists(cd_qualified_name)) && doc->inheriting.has(cd_qualified_name)) {
 		class_desc->add_newline();
 
 		_push_normal_font();
 		class_desc->push_color(theme_cache.title_color);
 		class_desc->add_text(TTR("Inherited by:") + " ");
 
-		for (RBSet<String, NaturalNoCaseComparator>::Element *itr = doc->inheriting[cd.name].front(); itr; itr = itr->next()) {
+		for (RBSet<String, NaturalNoCaseComparator>::Element *itr = doc->inheriting[cd_qualified_name].front(); itr; itr = itr->next()) {
 			if (itr->prev()) {
 				class_desc->add_text(" , ");
 			}
