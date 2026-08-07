@@ -53,6 +53,7 @@ class HTTPServer : public Node {
 
 	int port = 8080;
 	String bind_address = "127.0.0.1";
+	bool emit_for_all = false;
 
 	Ref<TCPServer> tcp_server;
 	LocalVector<Ref<HTTPServerConnection>> connections;
@@ -73,6 +74,11 @@ public:
 	// wider address is set on purpose.
 	void set_bind_address(const String &p_bind_address);
 	String get_bind_address() const;
+
+	// When false the `request_received` signal only fires for requests no route claimed, which keeps
+	// routed traffic off the signal. When true every request is announced, routed or not.
+	void set_emit_for_all(bool p_emit_for_all);
+	bool is_emitting_for_all() const;
 
 	// Binds `bind_address` on `port`.
 	Error listen();

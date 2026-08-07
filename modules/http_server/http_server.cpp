@@ -41,9 +41,16 @@ void HTTPServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_port"), &HTTPServer::get_port);
 	ClassDB::bind_method(D_METHOD("set_bind_address", "bind_address"), &HTTPServer::set_bind_address);
 	ClassDB::bind_method(D_METHOD("get_bind_address"), &HTTPServer::get_bind_address);
+	ClassDB::bind_method(D_METHOD("set_emit_for_all", "emit_for_all"), &HTTPServer::set_emit_for_all);
+	ClassDB::bind_method(D_METHOD("is_emitting_for_all"), &HTTPServer::is_emitting_for_all);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "port", PROPERTY_HINT_RANGE, "0,65535,1"), "set_port", "get_port");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "bind_address"), "set_bind_address", "get_bind_address");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "emit_for_all"), "set_emit_for_all", "is_emitting_for_all");
+
+	ADD_SIGNAL(MethodInfo("request_received",
+			PropertyInfo(Variant::OBJECT, "request", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "foundry.http.server.HTTPRequest"),
+			PropertyInfo(Variant::OBJECT, "response", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "foundry.http.server.HTTPResponse")));
 }
 
 void HTTPServer::_notification(int p_what) {
@@ -75,6 +82,14 @@ void HTTPServer::set_bind_address(const String &p_bind_address) {
 
 String HTTPServer::get_bind_address() const {
 	return bind_address;
+}
+
+void HTTPServer::set_emit_for_all(bool p_emit_for_all) {
+	emit_for_all = p_emit_for_all;
+}
+
+bool HTTPServer::is_emitting_for_all() const {
+	return emit_for_all;
 }
 
 Error HTTPServer::listen() {
@@ -175,6 +190,10 @@ void HTTPServer::_dispatch(const Ref<HTTPServerConnection> &p_connection) {
 	Ref<HTTPResponse> response;
 	response.instantiate();
 
+	// Resolution ladder: static-file mount, then route, then the `request_received` signal, then a
+	// default `404`. Mounts sit ahead of routes, so a mount can never be shadowed by a route; the
+	// static-file work fills that step in and nothing resolves there yet.
+
 	// The match is copied out before the handler runs, because a handler is free to register more
 	// routes and reallocate the route storage under an iterator.
 	Callable handler;
@@ -189,7 +208,8 @@ void HTTPServer::_dispatch(const Ref<HTTPServerConnection> &p_connection) {
 		}
 	}
 
-	if (handler.is_valid()) {
+	const bool matched_route = handler.is_valid();
+	if (matched_route) {
 		const Variant request_argument = request;
 		const Variant response_argument = response;
 		const Variant *arguments[2] = { &request_argument, &response_argument };
@@ -200,17 +220,28 @@ void HTTPServer::_dispatch(const Ref<HTTPServerConnection> &p_connection) {
 			ERR_PRINT(vformat("Route handler for \"%s %s\" failed: %s", matched_method, matched_path,
 					Variant::get_callable_error_text(handler, arguments, 2, call_error)));
 		}
+
+		if (p_connection->is_closed()) {
+			// The handler closed the server, and with it this connection. There is nothing left to
+			// write, and the poll pass drops the connection on its next prune.
+			return;
+		}
 	}
 
-	if (p_connection->is_closed()) {
-		// The handler closed the server, and with it this connection. There is nothing left to
-		// write, and the poll pass drops the connection on its next prune.
-		return;
+	if (!matched_route || emit_for_all) {
+		// The catch-all step. Connected scripts see every unclaimed request, and every request at all
+		// once `emit_for_all` is set, which is the observer case: a routed response has already
+		// committed its body by then, so a receiver's own send is refused.
+		emit_signal(SNAME("request_received"), request, response);
+
+		if (p_connection->is_closed()) {
+			// A receiver is script code just like a route handler, so it may have stopped the server.
+			return;
+		}
 	}
 
 	if (!response->is_sent()) {
-		// Nothing claimed the request, or a handler returned without committing a body. The rest of
-		// the resolution ladder is added by later work; an unclaimed request is a `404` for now.
+		// Nothing claimed the request, or a handler returned without committing a body.
 		response->set_status(404);
 		response->send_string("Not Found");
 	}
