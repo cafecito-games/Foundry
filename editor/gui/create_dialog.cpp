@@ -261,6 +261,15 @@ void CreateDialog::_update_search() {
 
 		// First check if the name matches. If it does not, try the search keywords.
 		float score = _score_type(candidate.type_name, search_text);
+		if (score >= 0.0f) {
+			// A namespaced class is listed under its simple name, so the search term is scored
+			// against that name too. Otherwise the qualified name's length and the exact-match
+			// bonus would rank a class below shorter siblings the user did not type.
+			const String display_name = get_class_display_name(candidate.type_name);
+			if (display_name != String(candidate.type_name)) {
+				score = MAX(score, _score_type(display_name, search_text));
+			}
+		}
 		if (score < 0.0f) {
 			for (const String &keyword : candidate.search_keywords) {
 				score = _score_type(keyword, search_text);
@@ -523,7 +532,7 @@ float CreateDialog::_score_type(const String &p_type, const String &p_search) co
 	bool in_recent = false;
 	constexpr int RECENT_COMPLETION_SIZE = 5;
 	for (int i = 0; i < MIN(RECENT_COMPLETION_SIZE - 1, recent->get_item_count()); i++) {
-		if (recent->get_item_text(i) == p_type) {
+		if (_recent_type_name(i) == p_type) {
 			in_recent = true;
 			break;
 		}
@@ -560,8 +569,9 @@ void CreateDialog::_confirmed() {
 
 			constexpr int RECENT_HISTORY_SIZE = 15;
 			for (int i = 0; i < MIN(RECENT_HISTORY_SIZE - 1, recent->get_item_count()); i++) {
-				if (recent->get_item_text(i) != selected_item) {
-					f->store_line(recent->get_item_text(i));
+				const String recent_type = _recent_type_name(i);
+				if (!recent_type.is_empty() && recent_type != selected_item) {
+					f->store_line(recent_type);
 				}
 			}
 		}
@@ -671,6 +681,14 @@ String CreateDialog::_item_type_name(TreeItem *p_item) {
 	return String();
 }
 
+String CreateDialog::_recent_type_name(int p_index) const {
+	const Variant stored = recent->get_item_metadata(p_index);
+	if (stored.get_type() == Variant::STRING) {
+		return stored.operator String();
+	}
+	return String();
+}
+
 String CreateDialog::get_selected_type() {
 	TreeItem *selected = search_options->get_selected();
 
@@ -763,7 +781,7 @@ void CreateDialog::_favorite_toggled() {
 }
 
 void CreateDialog::_history_selected(int p_idx) {
-	search_box->set_text(recent->get_item_text(p_idx));
+	search_box->set_text(_recent_type_name(p_idx));
 	favorites->deselect_all();
 	_update_search();
 }
@@ -774,7 +792,7 @@ void CreateDialog::_favorite_selected() {
 		return;
 	}
 
-	search_box->set_text(item->get_text(0));
+	search_box->set_text(_item_type_name(item));
 	recent->deselect_all();
 	_update_search();
 }
@@ -794,7 +812,7 @@ Variant CreateDialog::get_drag_data_fw(const Point2 &p_point, Control *p_from) {
 	if (ti) {
 		Dictionary d;
 		d["type"] = "create_favorite_drag";
-		d["class"] = ti->get_text(0);
+		d["class"] = _item_type_name(ti);
 
 		Button *tb = memnew(Button);
 		tb->set_flat(true);
@@ -827,7 +845,7 @@ void CreateDialog::drop_data_fw(const Point2 &p_point, const Variant &p_data, Co
 		return;
 	}
 
-	String drop_at = ti->get_text(0);
+	String drop_at = _item_type_name(ti);
 	int ds = (p_point == Vector2(Math::INF, Math::INF)) ? favorites->get_drop_section_at_position(favorites->get_item_rect(ti).position) : favorites->get_drop_section_at_position(p_point);
 
 	int drop_idx = favorite_list.find(drop_at);
@@ -881,7 +899,8 @@ void CreateDialog::_save_and_update_favorite_list() {
 				}
 
 				TreeItem *ti = favorites->create_item(root);
-				ti->set_text(0, name);
+				ti->set_text(0, get_class_display_name(name));
+				ti->set_meta(SNAME("__type_name"), name);
 				ti->set_icon(0, EditorNode::get_singleton()->get_class_icon(name));
 			}
 		}
@@ -898,7 +917,8 @@ void CreateDialog::_load_favorites_and_history() {
 			String name = f->get_line().strip_edges();
 
 			if (EditorNode::get_editor_data().is_type_recognized(name) && !_is_class_disabled_by_feature_profile(name)) {
-				recent->add_item(name, EditorNode::get_singleton()->get_class_icon(name));
+				const int index = recent->add_item(get_class_display_name(name), EditorNode::get_singleton()->get_class_icon(name));
+				recent->set_item_metadata(index, name);
 			}
 		}
 	}

@@ -81,6 +81,7 @@ class CreateDialog : public ConfirmationDialog {
 	void _add_type(const StringName &p_type, TypeCategory p_type_category, const String &p_match_keyword);
 	TreeItem *_namespace_group_item(TreeItem *p_parent, const StringName &p_parent_type, const StringName &p_namespace);
 	static String _item_type_name(TreeItem *p_item);
+	String _recent_type_name(int p_index) const;
 	void _configure_search_option_item(TreeItem *r_item, const StringName &p_type, TypeCategory p_type_category, const String &p_match_keyword);
 	float _score_type(const String &p_type, const String &p_search) const;
 	bool _is_type_preferred(const String &p_type) const;
