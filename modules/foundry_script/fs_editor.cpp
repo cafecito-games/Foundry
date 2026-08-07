@@ -1439,6 +1439,29 @@ struct FSNamespaceCompletionCache {
 
 			add_namespace(namespace_name);
 		}
+
+		// Namespaced native classes live in the engine class registry, not the script registry,
+		// and are reachable through exactly the same import/qualified-chain machinery.
+		LocalVector<StringName> native_classes;
+		ClassDB::get_class_list(native_classes);
+		for (const StringName &native_class : native_classes) {
+			const StringName namespace_name = ClassDB::class_get_namespace(native_class);
+			if (namespace_name == StringName() || !ClassDB::is_class_exposed(native_class)) {
+				continue;
+			}
+
+			StringName simple_name;
+			if (!ClassDB::class_get_by_qualified_name(native_class, simple_name)) {
+				continue;
+			}
+
+			LocalVector<StringName> &classes = direct_classes_by_namespace[namespace_name];
+			if (!classes.has(simple_name)) {
+				classes.push_back(simple_name);
+			}
+
+			add_namespace(namespace_name);
+		}
 	}
 
 	void add_namespace(const String &p_namespace) {
@@ -1769,7 +1792,10 @@ static void _list_type_completion_options(const FSParser::CompletionContext &p_c
 	if (p_options.include_native_classes) {
 		ClassDB::get_class_list(native_types);
 		for (const StringName &type : native_types) {
-			if (ClassDB::is_class_exposed(type) && !Engine::get_singleton()->has_singleton(type)) {
+			// A namespaced native is not a bare global name, so it is only offered through its
+			// namespace (see `FSNamespaceCompletionCache`).
+			if (ClassDB::is_class_exposed(type) && !Engine::get_singleton()->has_singleton(type) &&
+					ClassDB::class_get_namespace(type) == StringName()) {
 				ScriptLanguage::CodeCompletionOption option(type, ScriptLanguage::CODE_COMPLETION_KIND_CLASS);
 				r_result.insert(option.display, option);
 			}

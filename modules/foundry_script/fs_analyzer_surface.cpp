@@ -658,6 +658,32 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 				}
 
 				if (!found) {
+					// A namespaced native class, named either by an imported bare name or by its
+					// fully qualified chain. It is not a global name, so none of the lookups above
+					// can see it.
+					StringName namespace_class;
+					bool namespace_error = false;
+					int namespace_chain_size = 0;
+					if (get_namespace_global_class_from_type_chain(p_class->extends, id, namespace_class,
+								namespace_chain_size, namespace_error, "superclass")) {
+						if (namespace_error) {
+							return ERR_PARSE_ERROR;
+						}
+						if (class_exists(namespace_class)) {
+							if (Engine::get_singleton()->has_singleton(namespace_class)) {
+								push_error(vformat(R"(Cannot inherit native class "%s" because it is an engine singleton.)", namespace_class), id);
+								return ERR_PARSE_ERROR;
+							}
+							base.kind = FSParser::DataType::NATIVE;
+							base.builtin_type = Variant::OBJECT;
+							base.native_type = namespace_class;
+							extends_index = namespace_chain_size;
+							found = true;
+						}
+					}
+				}
+
+				if (!found) {
 					push_error(vformat(R"(Could not find base class "%s".)", name), id);
 					return ERR_PARSE_ERROR;
 				}

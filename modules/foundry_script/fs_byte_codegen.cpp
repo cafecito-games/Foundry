@@ -350,6 +350,12 @@ int FSByteCodeGenerator::get_native_type_pos(const FSDataType &p_type) {
 	if (p_type.references_self_type()) {
 		return get_constant_pos(make_container_type_descriptor(p_type));
 	}
+	// A namespaced native is deliberately absent from the flat global table, so the canonical
+	// qualified lookup comes first; for a flat native both keys are the same name.
+	const Ref<FSNativeClass> native_class = FSLanguage::get_singleton()->get_native_class_by_qualified(p_type.native_type);
+	if (native_class.is_valid()) {
+		return get_constant_pos(native_class);
+	}
 	const int class_index = FSLanguage::get_singleton()->get_global_map()[p_type.native_type];
 	return get_constant_pos(FSLanguage::get_singleton()->get_global_array()[class_index]);
 }

@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		[b]Note:[/b] This class is a placeholder. It exposes the configuration surface of an HTTP server, but does not open a listening socket yet, so [method start] never serves requests.
-		This class lives in the [code]foundry.http.server[/code] namespace, so it is only reachable through its fully qualified name; the bare name [code]HTTPServer[/code] does not resolve.
+		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPServer[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPServer[/code]. Without that import the bare name does not resolve.
 	</description>
 	<tutorials>
 	</tutorials>
