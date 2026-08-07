@@ -1251,6 +1251,22 @@ TEST_CASE("[HTTPServer] A body that arrives after its header block is assembled 
 		CHECK(handler->call_count == 0);
 	}
 
+	SUBCASE("A header line folded onto the previous one is refused with 400") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		// A recipient that honors the deprecated fold reads a length of 5 here and one that ignores
+		// it reads nothing, so answering at all means answering a request two parties frame
+		// differently.
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length:\r\n 5\r\n\r\nhello");
+
+		String pending;
+		RawResponse response;
+		REQUIRE(read_raw_response(server, client, pending, response));
+		CHECK(response.status == 400);
+		CHECK(handler->call_count == 0);
+	}
+
 	SUBCASE("A malformed request line is refused with 400") {
 		Ref<StreamPeerTCP> client = connect_raw(server, port);
 		REQUIRE(client.is_valid());
@@ -2247,6 +2263,30 @@ TEST_CASE("[HTTPServer] Keep-alive serves more than one request on one socket") 
 		REQUIRE(read_raw_response(server, client, pending, second));
 		CHECK(second.status == 200);
 		CHECK(handler->call_count == 2);
+	}
+
+	SUBCASE("Two requests sent as one write are both answered in order") {
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		// Pipelined: the second request is already in the socket, and may already be in the read
+		// buffer, while the first is still being answered. Neither may be lost, and neither may be
+		// read as part of the other.
+		send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\n\r\nhello"
+						 "GET /hello?q=second HTTP/1.1\r\nHost: localhost\r\n\r\n");
+
+		String pending;
+		RawResponse first;
+		REQUIRE(read_raw_response(server, client, pending, first));
+		CHECK(first.status == 200);
+		CHECK(first.body == "hello");
+		CHECK(echo->seen_body_size == 5);
+
+		RawResponse second;
+		REQUIRE(read_raw_response(server, client, pending, second));
+		CHECK(second.status == 200);
+		CHECK(second.body == "hi");
+		CHECK(handler->seen_query_value == "second");
 	}
 
 	SUBCASE("A refused request is not followed by a second one on the same socket") {

@@ -62,8 +62,6 @@ const char *status_reason(int p_status) {
 			return "Permanent Redirect";
 		case 400:
 			return "Bad Request";
-		case 408:
-			return "Request Timeout";
 		case 401:
 			return "Unauthorized";
 		case 403:
@@ -211,9 +209,10 @@ bool HTTPServerConnection::_read_available() {
 	while (available > 0) {
 		const int previous_size = read_buffer.size();
 
-		// Never read past the end of the request being assembled. Once the framing is known that end
-		// is exact, so anything a client pipelined behind it stays in the socket until the reset for
-		// the next request; until then the header block may grow only up to its own bound.
+		// Once the framing is known, never read past the end of the request being assembled, so a
+		// pipelined request behind it waits in the socket rather than growing this buffer. Before
+		// that the end is not known yet, and the header block may grow only up to its own bound;
+		// whatever lands past the frame in that window is carried forward at the request boundary.
 		int wanted = available;
 		if (header_parsed) {
 			const int needed = header_length + body_length - previous_size;
@@ -315,6 +314,14 @@ bool HTTPServerConnection::_parse_header_block() {
 		return false;
 	}
 	for (size_t i = 0; i < header_field_count; i++) {
+		if (header_fields[i].name == nullptr) {
+			// A line folded onto the previous field, which RFC 9110 deprecates and allows a recipient
+			// to refuse. Refusing is the only safe reading: dropping the continuation, or keeping only
+			// the part before it, would give this server a different value than a proxy that honors
+			// the fold, and a `Content-Length` those two disagree on is a smuggled request.
+			_reject(400);
+			return false;
+		}
 		// The colon, the separating space and the CRLF are all part of the line the client sent, so
 		// they count against its bound.
 		if (header_fields[i].name_len + header_fields[i].value_len + 4 > size_t(limits.max_header_line_bytes)) {
@@ -406,8 +413,17 @@ void HTTPServerConnection::_reject(int p_status) {
 void HTTPServerConnection::_begin_next_request() {
 	// The socket is reused, so everything the finished exchange left behind has to go: a field, a
 	// body byte or a parse offset that survived would be read as part of the next request.
+	//
+	// The one exception is what a client pipelined behind the finished request. Those bytes are past
+	// its frame, so they are not part of it and are never mistaken for it, but they are the start of
+	// the next request and dropping them would lose it.
+	const int consumed = header_length + body_length;
+	if (consumed > 0 && read_buffer.size() > consumed) {
+		read_buffer = read_buffer.slice(consumed);
+	} else {
+		read_buffer.clear();
+	}
 	request.unref();
-	read_buffer.clear();
 	scanned_length = 0;
 	header_parsed = false;
 	header_length = 0;
