@@ -41,6 +41,7 @@
 #include "../editor/fs_refactoring_types.h"
 #include "../fs_analyzer.h"
 #include "../fs_cache.h"
+#include "../fs_format.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
@@ -246,6 +247,40 @@ inline const RefactorAvailability *find_availability(const Vector<RefactorAvaila
 	}
 	return nullptr;
 }
+
+inline RefactorResult run_fill_match_cases(const String &p_source, int p_line, int p_column, String &r_out) {
+	RefactorContext ctx;
+	ctx.path = "user://fill_match_cases_refactor.fs";
+	ctx.source = p_source;
+	RefactorParams params;
+	RefactorResult r = FSRefactoring::prepare(ctx, caret(p_line, p_column), RefactorKind::FILL_MATCH_CASES, params);
+	require_edit_invariants(ctx, r);
+	if (r.ok) {
+		FSRefactorEdits::apply(ctx.source, r.edits, r_out);
+	}
+	return r;
+}
+
+inline RefactorAvailability fill_match_cases_availability(const String &p_source, int p_line, int p_column) {
+	RefactorContext ctx;
+	ctx.path = "user://fill_match_cases_refactor.fs";
+	ctx.source = p_source;
+	const Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(p_line, p_column));
+	const RefactorAvailability *entry = find_availability(available, RefactorKind::FILL_MATCH_CASES);
+	return entry != nullptr ? *entry : RefactorAvailability();
+}
+
+inline const char *RESULT_UNION_SOURCE =
+		"enum Result[T, E]:\n"
+		"\tOk(value: T)\n"
+		"\tErr(error: E)\n"
+		"\n";
+
+inline const char *STATUS_UNION_SOURCE =
+		"enum Status:\n"
+		"\tPending\n"
+		"\tActive(id: int)\n"
+		"\n";
 
 inline bool implement_abstract_enabled(const String &p_source, int p_line, int p_column) {
 	RefactorContext ctx;
@@ -545,8 +580,8 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 	TEST_CASE("Rename is reported but disabled at a trivial location") {
 		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 10);
-		if (available.size() < 10) {
+		CHECK_EQ(available.size(), 11);
+		if (available.size() < 11) {
 			return;
 		}
 		CHECK_EQ(available[0].kind, RefactorKind::RENAME);
@@ -579,13 +614,16 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		CHECK_EQ(available[9].kind, RefactorKind::SORT_MEMBERS_BY_STYLE_GUIDE);
 		CHECK_FALSE(available[9].enabled);
 		CHECK_FALSE(available[9].disabled_reason.is_empty());
+		CHECK_EQ(available[10].kind, RefactorKind::FILL_MATCH_CASES);
+		CHECK_FALSE(available[10].enabled);
+		CHECK_FALSE(available[10].disabled_reason.is_empty());
 	}
 
 	TEST_CASE("Override method is listed and disabled outside a class") {
 		RefactorContext ctx = make_context("modules/foundry_script/tests/scripts/refactor/empty.fs");
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(0, 0));
-		CHECK_EQ(available.size(), 10);
-		if (available.size() < 10) {
+		CHECK_EQ(available.size(), 11);
+		if (available.size() < 11) {
 			return;
 		}
 		CHECK_EQ(available[6].kind, RefactorKind::OVERRIDE_METHOD);
@@ -3374,7 +3412,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://extract_variable_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, selection(1, 8, 1, 16));
-		REQUIRE_EQ(available.size(), 10);
+		REQUIRE_EQ(available.size(), 11);
 		if (available.size() >= 2) {
 			CHECK_EQ(available[1].kind, RefactorKind::EXTRACT_VARIABLE);
 			CHECK(available[1].enabled);
@@ -3727,7 +3765,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://extract_method_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, selection(1, 0, 2, 0));
-		REQUIRE_EQ(available.size(), 10);
+		REQUIRE_EQ(available.size(), 11);
 		CHECK_EQ(available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(available[2].enabled);
 		CHECK(available[2].disabled_reason.is_empty());
@@ -3736,7 +3774,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		Vector<RefactorAvailability> text_selection_available = FSRefactoring::get_available_refactors(
 				ctx,
 				selection(1, 1, 1, lines[1].length()));
-		REQUIRE_EQ(text_selection_available.size(), 10);
+		REQUIRE_EQ(text_selection_available.size(), 11);
 		CHECK_EQ(text_selection_available[2].kind, RefactorKind::EXTRACT_METHOD);
 		CHECK(text_selection_available[2].enabled);
 		CHECK(text_selection_available[2].disabled_reason.is_empty());
@@ -4060,7 +4098,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		ctx.path = "user://inline_variable_availability.fs";
 		ctx.source = source;
 		Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(1, 6));
-		REQUIRE_EQ(available.size(), 10);
+		REQUIRE_EQ(available.size(), 11);
 		if (available.size() >= 5) {
 			CHECK_EQ(available[4].kind, RefactorKind::INLINE_VARIABLE);
 			CHECK(available[4].enabled);
@@ -5779,7 +5817,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.fs";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(3, 5));
-			REQUIRE_EQ(available.size(), 10);
+			REQUIRE_EQ(available.size(), 11);
 			CHECK_EQ(available[0].kind, RefactorKind::RENAME);
 			CHECK(available[0].enabled);
 		}
@@ -5807,7 +5845,7 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 			ctx.path = "res://refactor/rename_local.fs";
 			ctx.source = FileAccess::get_file_as_string(ctx.path);
 			Vector<RefactorAvailability> available = FSRefactoring::get_available_refactors(ctx, caret(1, 0)); // blank line
-			REQUIRE_EQ(available.size(), 10);
+			REQUIRE_EQ(available.size(), 11);
 			CHECK_FALSE(available[0].enabled);
 			CHECK_FALSE(available[0].disabled_reason.is_empty());
 		}
@@ -6541,6 +6579,222 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 		memdelete(editor_file_system);
 	}
 #endif // FOUNDRY_SCRIPT_NO_LSP
+}
+
+TEST_SUITE("[Modules][FoundryScript][Refactor] Fill Missing Match Cases") {
+	TEST_CASE("fill_match_cases_all_missing") {
+		const String source = String(RESULT_UNION_SOURCE) +
+				"func handle(r: Result[int, String]) -> void:\n"
+				"\tmatch r:\n"
+				"\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 5, 2, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, String(RESULT_UNION_SOURCE) + "func handle(r: Result[int, String]) -> void:\n"
+													"\tmatch r:\n"
+													"\t\t.Ok(value):\n"
+													"\t\t\tpass\n"
+													"\t\t.Err(error):\n"
+													"\t\t\tpass\n");
+		// The caret lands on the first generated body so the user can type it immediately.
+		CHECK_EQ(r.rename_anchor_line, 7);
+		CHECK_EQ(r.rename_anchor_column, 3);
+	}
+
+	TEST_CASE("fill_match_cases_partial") {
+		const String source = String(RESULT_UNION_SOURCE) +
+				"func handle(r: Result[int, String]) -> void:\n"
+				"\tmatch r:\n"
+				"\t\t.Ok(var v):\n"
+				"\t\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 5, 2, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, String(RESULT_UNION_SOURCE) + "func handle(r: Result[int, String]) -> void:\n"
+													"\tmatch r:\n"
+													"\t\t.Ok(var v):\n"
+													"\t\t\tpass\n"
+													"\t\t.Err(error):\n"
+													"\t\t\tpass\n");
+	}
+
+	TEST_CASE("fill_match_cases_payloadless_no_parens") {
+		const String source = String(STATUS_UNION_SOURCE) +
+				"func handle(s: Status) -> void:\n"
+				"\tmatch s:\n"
+				"\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 5, 2, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\t\t.Pending:\n\t\t\tpass\n"));
+		CHECK(out.contains("\t\t.Active(id):\n\t\t\tpass\n"));
+		CHECK_FALSE(out.contains(".Pending("));
+	}
+
+	TEST_CASE("fill_match_cases_generic_specialized") {
+		const String source = String(RESULT_UNION_SOURCE) +
+				"func handle(r: Result[int, String]) -> void:\n"
+				"\tmatch r:\n"
+				"\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 6, 0, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains(".Ok(value):"));
+		CHECK(out.contains(".Err(error):"));
+
+		// The declaration's field names bind the specialized payload types.
+		const String typed = String(RESULT_UNION_SOURCE) +
+				"func handle(r: Result[int, String]) -> void:\n"
+				"\tmatch r:\n"
+				"\t\t.Ok(value):\n"
+				"\t\t\tvar number: int = value\n"
+				"\t\t.Err(error):\n"
+				"\t\t\tvar text: String = error\n";
+		CHECK_EQ(analyze_refactored_source(typed), OK);
+	}
+
+	TEST_CASE("fill_match_cases_qualified_pattern_counts") {
+		const String source = String(STATUS_UNION_SOURCE) +
+				"func handle(s: Status) -> void:\n"
+				"\tmatch s:\n"
+				"\t\tStatus.Active(v):\n"
+				"\t\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 5, 2, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains(".Pending:"));
+		CHECK_FALSE(out.contains(".Active(id)"));
+	}
+
+	TEST_CASE("fill_match_cases_guarded_branch_not_counted") {
+		const String source = String(STATUS_UNION_SOURCE) +
+				"func handle(s: Status) -> void:\n"
+				"\tmatch s:\n"
+				"\t\t.Active(v) when v > 0:\n"
+				"\t\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 5, 2, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains(".Pending:"));
+		CHECK(out.contains(".Active(id):"));
+	}
+
+	TEST_CASE("fill_match_cases_refutable_payload_not_counted") {
+		const String source = String(STATUS_UNION_SOURCE) +
+				"func handle(s: Status) -> void:\n"
+				"\tmatch s:\n"
+				"\t\t.Active(0):\n"
+				"\t\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 5, 2, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains(".Pending:"));
+		CHECK(out.contains(".Active(id):"));
+	}
+
+	TEST_CASE("fill_match_cases_nullable_adds_null_arm") {
+		const String source = String(STATUS_UNION_SOURCE) +
+				"func handle(s: Status?) -> void:\n"
+				"\tmatch s:\n"
+				"\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 5, 2, out);
+		REQUIRE(r.ok);
+		CHECK_EQ(out, String(STATUS_UNION_SOURCE) + "func handle(s: Status?) -> void:\n"
+													"\tmatch s:\n"
+													"\t\t.Pending:\n"
+													"\t\t\tpass\n"
+													"\t\t.Active(id):\n"
+													"\t\t\tpass\n"
+													"\t\tnull:\n"
+													"\t\t\tpass\n");
+	}
+
+	TEST_CASE("fill_match_cases_bind_collision_suffix") {
+		const String source = String(STATUS_UNION_SOURCE) +
+				"func handle(s: Status) -> void:\n"
+				"\tvar id: int = 0\n"
+				"\tmatch s:\n"
+				"\t\tpass\n";
+		String out;
+		RefactorResult r = run_fill_match_cases(source, 6, 2, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains(".Active(id2):"));
+		CHECK_FALSE(out.contains(".Active(id):"));
+		CHECK_EQ(analyze_refactored_source(out), OK);
+	}
+
+	TEST_CASE("fill_match_cases_covered_disabled") {
+		const String source = String(STATUS_UNION_SOURCE) +
+				"func handle(s: Status) -> void:\n"
+				"\tmatch s:\n"
+				"\t\t_:\n"
+				"\t\t\tpass\n";
+		const RefactorAvailability availability = fill_match_cases_availability(source, 5, 2);
+		CHECK_EQ(availability.kind, RefactorKind::FILL_MATCH_CASES);
+		CHECK_FALSE(availability.enabled);
+		CHECK_EQ(availability.disabled_reason, "All cases are already handled.");
+	}
+
+	TEST_CASE("fill_match_cases_unprovable_disabled") {
+		const String source = String(STATUS_UNION_SOURCE) +
+				"func handle(s: Status, other: Status) -> void:\n"
+				"\tmatch s:\n"
+				"\t\tother:\n"
+				"\t\t\tpass\n";
+		const RefactorAvailability availability = fill_match_cases_availability(source, 5, 2);
+		CHECK_FALSE(availability.enabled);
+		CHECK_EQ(availability.disabled_reason, "Match coverage cannot be determined.");
+	}
+
+	TEST_CASE("fill_match_cases_unavailable_outside_a_tagged_union_match") {
+		const String source =
+				"func handle(value: int) -> void:\n"
+				"\tmatch value:\n"
+				"\t\t_:\n"
+				"\t\t\tpass\n";
+		const RefactorAvailability availability = fill_match_cases_availability(source, 1, 2);
+		CHECK_FALSE(availability.enabled);
+		CHECK_EQ(availability.disabled_reason, "Place the caret on a match over a tagged union.");
+	}
+
+	TEST_CASE("fill_match_cases_parse_after_apply") {
+		RefactorIgnoreWarningsScope ignore_warnings;
+		const String source =
+				"enum Result[T, E]:\n"
+				"\tOk(value: T)\n"
+				"\tErr(error: E)\n"
+				"\n"
+				"func handle(r: Result[int, String]) -> void:\n"
+				"\tmatch r:\n"
+				"\t\tpass\n";
+
+		// Start from formatter-canonical text so any post-apply difference is the generated arms.
+		FSFormatter formatter;
+		FSFormatter::Result canonical;
+		REQUIRE_EQ(formatter.format(source, "user://fill_match_cases_format.fs", canonical), OK);
+
+		const Vector<String> canonical_lines = canonical.formatted.split("\n");
+		int match_line = -1;
+		for (int i = 0; i < canonical_lines.size(); i++) {
+			if (canonical_lines[i].strip_edges() == "match r:") {
+				match_line = i;
+				break;
+			}
+		}
+		REQUIRE(match_line >= 0);
+
+		String out;
+		RefactorResult r = run_fill_match_cases(canonical.formatted, match_line, 2, out);
+		REQUIRE(r.ok);
+		CHECK(out.contains("\t\t.Ok(value):\n\t\t\tpass\n"));
+		CHECK(out.contains("\t\t.Err(error):\n\t\t\tpass\n"));
+		CHECK_EQ(analyze_refactored_source(out), OK);
+
+		FSFormatter::Result reformatted;
+		REQUIRE_EQ(formatter.format(out, "user://fill_match_cases_format.fs", reformatted), OK);
+		CHECK_EQ(reformatted.formatted, out);
+	}
 }
 
 } // namespace FSTests
