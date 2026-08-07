@@ -84,7 +84,7 @@
 		<method name="commit">
 			<return type="ArrayMesh" />
 			<param index="0" name="existing" type="ArrayMesh" default="null" />
-			<param index="1" name="flags" type="int" default="0" />
+			<param index="1" name="flags" type="uint" default="0UL" />
 			<description>
 				Returns a constructed [ArrayMesh] from current information passed in. If an existing [ArrayMesh] is passed in as an argument, will add an extra surface to the existing [ArrayMesh].
 				The [param flags] argument can be the bitwise OR of [constant Mesh.ARRAY_FLAG_USE_DYNAMIC_UPDATE], [constant Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS], or [constant Mesh.ARRAY_FLAG_USES_EMPTY_VERTEX_ARRAY].

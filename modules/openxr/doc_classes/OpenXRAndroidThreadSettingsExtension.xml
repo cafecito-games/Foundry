@@ -12,7 +12,7 @@
 		<method name="set_application_thread_type">
 			<return type="bool" />
 			<param index="0" name="thread_type" type="int" enum="OpenXRAndroidThreadSettingsExtension.ThreadType" />
-			<param index="1" name="thread_id" type="int" default="0" />
+			<param index="1" name="thread_id" type="uint" default="0UL" />
 			<description>
 				Sets the thread type of the given thread, so that the XR runtime can adjust its scheduling priority accordingly.
 				[param thread_id] refers to the OS thread id (ie from [code]gettid()[/code]). When [param thread_id] is [code]0[/code], it will set the thread type of the current thread.

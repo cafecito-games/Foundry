@@ -25,7 +25,7 @@
 			<param index="3" name="lods" type="Dictionary" default="{}" />
 			<param index="4" name="material" type="Material" default="null" />
 			<param index="5" name="name" type="String" default="&quot;&quot;" />
-			<param index="6" name="flags" type="int" default="0" />
+			<param index="6" name="flags" type="uint" default="0UL" />
 			<description>
 				Creates a new surface. [method Mesh.get_surface_count] will become the [code]surf_idx[/code] for this new surface.
 				Surfaces are created to be rendered using a [param primitive], which may be any of the values defined in [enum Mesh.PrimitiveType].

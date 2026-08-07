@@ -619,7 +619,7 @@
 			<param index="1" name="origin" type="Vector3" />
 			<param index="2" name="destination" type="Vector3" />
 			<param index="3" name="optimize" type="bool" />
-			<param index="4" name="navigation_layers" type="int" default="1" />
+			<param index="4" name="navigation_layers" type="uint" default="1UL" />
 			<description>
 				Returns the navigation path to reach the destination from the origin. [param navigation_layers] is a bitmask of all region navigation layers that are allowed to be in the path.
 			</description>

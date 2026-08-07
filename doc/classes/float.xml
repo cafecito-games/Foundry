@@ -47,6 +47,13 @@
 				Cast an [int] value to a floating-point value, [code]float(1)[/code] will be equal to [code]1.0[/code].
 			</description>
 		</constructor>
+		<constructor name="float">
+			<return type="float" />
+			<param index="0" name="from" type="uint" />
+			<description>
+				Cast a [uint] value to a floating-point value, [code]float(1)[/code] will be equal to [code]1.0[/code]. Values above [code]2^53[/code] lose precision, as with any other integer-to-float conversion.
+			</description>
+		</constructor>
 	</constructors>
 	<operators>
 		<operator name="operator !=">

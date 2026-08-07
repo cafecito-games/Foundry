@@ -27,8 +27,20 @@ def configure(env):
 def get_doc_classes():
     return [
         "@FoundryScript",
+        "FoundryBuildCommand",
+        "FoundryBuildContext",
+        "FoundryBuildResult",
+        "FoundryBuildTask",
+        "FoundryBuildTaskConfigSchema",
+        "FoundryCommandBuildTask",
         "FoundryScript",
         "FSAnnotation",
+        "FSMethodDescriptor",
+        "FSNamespace",
+        "FSProjectScripts",
+        "FSPropertyDescriptor",
+        "FSReflection",
+        "FSScriptDescriptor",
         "FSSyntaxHighlighter",
         "FSTypeParameter",
     ]

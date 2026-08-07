@@ -62,8 +62,8 @@
 		<method name="buffer_get_data">
 			<return type="PackedByteArray" />
 			<param index="0" name="buffer" type="RID" />
-			<param index="1" name="offset_bytes" type="int" default="0" />
-			<param index="2" name="size_bytes" type="int" default="0" />
+			<param index="1" name="offset_bytes" type="uint" default="0UL" />
+			<param index="2" name="size_bytes" type="uint" default="0UL" />
 			<description>
 				Returns a copy of the data of the specified [param buffer], optionally [param offset_bytes] and [param size_bytes] can be set to copy only a portion of the buffer.
 				[b]Note:[/b] This method will block the GPU from working until the data is retrieved. Refer to [method buffer_get_data_async] for an alternative that returns the data in more performant way.
@@ -73,8 +73,8 @@
 			<return type="int" enum="Error" />
 			<param index="0" name="buffer" type="RID" />
 			<param index="1" name="callback" type="Callable" />
-			<param index="2" name="offset_bytes" type="int" default="0" />
-			<param index="3" name="size_bytes" type="int" default="0" />
+			<param index="2" name="offset_bytes" type="uint" default="0UL" />
+			<param index="3" name="size_bytes" type="uint" default="0UL" />
 			<description>
 				Asynchronous version of [method buffer_get_data]. RenderingDevice will call [param callback] in a certain amount of frames with the data the buffer had at the time of the request.
 				[b]Note:[/b] At the moment, the delay corresponds to the amount of frames specified by [member ProjectSettings.rendering/rendering_device/vsync/frame_queue_size].
@@ -243,9 +243,9 @@
 			<param index="1" name="draw_flags" type="int" enum="RenderingDevice.DrawFlags" is_bitfield="true" default="0" />
 			<param index="2" name="clear_color_values" type="PackedColorArray" default="PackedColorArray()" />
 			<param index="3" name="clear_depth_value" type="float" default="1.0" />
-			<param index="4" name="clear_stencil_value" type="int" default="0" />
+			<param index="4" name="clear_stencil_value" type="uint" default="0UL" />
 			<param index="5" name="region" type="Rect2" default="Rect2(0, 0, 0, 0)" />
-			<param index="6" name="breadcrumb" type="int" default="0" />
+			<param index="6" name="breadcrumb" type="uint" default="0UL" />
 			<description>
 				Starts a list of raster drawing commands created with the [code]draw_*[/code] methods. The returned value should be passed to other [code]draw_list_*[/code] functions.
 				Multiple draw lists cannot be created at the same time; you must finish the previous draw list first using [method draw_list_end].
@@ -340,8 +340,8 @@
 			<return type="void" />
 			<param index="0" name="draw_list" type="int" />
 			<param index="1" name="use_indices" type="bool" />
-			<param index="2" name="instances" type="int" />
-			<param index="3" name="procedural_vertex_count" type="int" default="0" />
+			<param index="2" name="instances" type="uint" />
+			<param index="3" name="procedural_vertex_count" type="uint" default="0UL" />
 			<description>
 				Submits [param draw_list] for rendering on the GPU. This is the raster equivalent to [method compute_list_dispatch].
 			</description>
@@ -351,9 +351,9 @@
 			<param index="0" name="draw_list" type="int" />
 			<param index="1" name="use_indices" type="bool" />
 			<param index="2" name="buffer" type="RID" />
-			<param index="3" name="offset" type="int" default="0" />
-			<param index="4" name="draw_count" type="int" default="1" />
-			<param index="5" name="stride" type="int" default="0" />
+			<param index="3" name="offset" type="uint" default="0UL" />
+			<param index="4" name="draw_count" type="uint" default="1UL" />
+			<param index="5" name="stride" type="uint" default="0UL" />
 			<description>
 				Submits [param draw_list] for rendering on the GPU with the given parameters stored in the [param buffer] at [param offset]. Parameters being integers: vertex count, instance count, first vertex, first instance. And when using indices: index count, instance count, first index, vertex offset, first instance. Buffer must have been created with [constant STORAGE_BUFFER_USAGE_DISPATCH_INDIRECT] flag.
 			</description>
@@ -400,7 +400,7 @@
 			<return type="RID" />
 			<param index="0" name="textures" type="RID[]" />
 			<param index="1" name="validate_with_format" type="int" default="-1" />
-			<param index="2" name="view_count" type="int" default="1" />
+			<param index="2" name="view_count" type="uint" default="1UL" />
 			<description>
 				Creates a new framebuffer. It can be accessed with the RID that is returned.
 				Once finished with your RID, you will want to free the RID using the RenderingDevice's [method free_rid] method.
@@ -422,7 +422,7 @@
 			<param index="0" name="textures" type="RID[]" />
 			<param index="1" name="passes" type="RDFramebufferPass[]" />
 			<param index="2" name="validate_with_format" type="int" default="-1" />
-			<param index="3" name="view_count" type="int" default="1" />
+			<param index="3" name="view_count" type="uint" default="1UL" />
 			<description>
 				Creates a new multipass framebuffer. It can be accessed with the RID that is returned.
 				Once finished with your RID, you will want to free the RID using the RenderingDevice's [method free_rid] method.
@@ -432,7 +432,7 @@
 		<method name="framebuffer_format_create">
 			<return type="int" />
 			<param index="0" name="attachments" type="RDAttachmentFormat[]" />
-			<param index="1" name="view_count" type="int" default="1" />
+			<param index="1" name="view_count" type="uint" default="1UL" />
 			<description>
 				Creates a new framebuffer format with the specified [param attachments] and [param view_count]. Returns the new framebuffer's unique framebuffer format ID.
 				If [param view_count] is greater than or equal to [code]2[/code], enables multiview which is used for VR rendering. This requires support for the Vulkan multiview extension.
@@ -449,7 +449,7 @@
 			<return type="int" />
 			<param index="0" name="attachments" type="RDAttachmentFormat[]" />
 			<param index="1" name="passes" type="RDFramebufferPass[]" />
-			<param index="2" name="view_count" type="int" default="1" />
+			<param index="2" name="view_count" type="uint" default="1UL" />
 			<description>
 				Creates a multipass framebuffer format with the specified [param attachments], [param passes] and [param view_count] and returns its ID. If [param view_count] is greater than or equal to [code]2[/code], enables multiview which is used for VR rendering. This requires support for the Vulkan multiview extension.
 			</description>
@@ -457,7 +457,7 @@
 		<method name="framebuffer_format_get_texture_samples">
 			<return type="int" enum="RenderingDevice.TextureSamples" />
 			<param index="0" name="format" type="int" />
-			<param index="1" name="render_pass" type="int" default="0" />
+			<param index="1" name="render_pass" type="uint" default="0UL" />
 			<description>
 				Returns the number of texture samples used for the given framebuffer [param format] ID (returned by [method framebuffer_get_format]).
 			</description>
@@ -896,7 +896,7 @@
 			<param index="6" name="stencil_state" type="RDPipelineDepthStencilState" />
 			<param index="7" name="color_blend_state" type="RDPipelineColorBlendState" />
 			<param index="8" name="dynamic_state_flags" type="int" enum="RenderingDevice.PipelineDynamicStateFlags" is_bitfield="true" default="0" />
-			<param index="9" name="for_render_pass" type="int" default="0" />
+			<param index="9" name="for_render_pass" type="uint" default="0UL" />
 			<param index="10" name="specialization_constants" type="RDPipelineSpecializationConstant[]" default="[]" />
 			<description>
 				Creates a new render pipeline. It can be accessed with the RID that is returned.
@@ -1097,12 +1097,12 @@
 			<param index="1" name="format" type="int" enum="RenderingDevice.DataFormat" />
 			<param index="2" name="samples" type="int" enum="RenderingDevice.TextureSamples" />
 			<param index="3" name="usage_flags" type="int" enum="RenderingDevice.TextureUsageBits" is_bitfield="true" />
-			<param index="4" name="image" type="int" />
-			<param index="5" name="width" type="int" />
-			<param index="6" name="height" type="int" />
-			<param index="7" name="depth" type="int" />
-			<param index="8" name="layers" type="int" />
-			<param index="9" name="mipmaps" type="int" default="1" />
+			<param index="4" name="image" type="uint" />
+			<param index="5" name="width" type="uint" />
+			<param index="6" name="height" type="uint" />
+			<param index="7" name="depth" type="uint" />
+			<param index="8" name="layers" type="uint" />
+			<param index="9" name="mipmaps" type="uint" default="1UL" />
 			<description>
 				Returns an RID for an existing [param image] ([code]VkImage[/code]) with the given [param type], [param format], [param samples], [param usage_flags], [param width], [param height], [param depth], [param layers], and [param mipmaps]. This can be used to allow Godot to render onto foreign images.
 			</description>
@@ -1120,9 +1120,9 @@
 			<return type="RID" />
 			<param index="0" name="view" type="RDTextureView" />
 			<param index="1" name="with_texture" type="RID" />
-			<param index="2" name="layer" type="int" />
-			<param index="3" name="mipmap" type="int" />
-			<param index="4" name="mipmaps" type="int" default="1" />
+			<param index="2" name="layer" type="uint" />
+			<param index="3" name="mipmap" type="uint" />
+			<param index="4" name="mipmaps" type="uint" default="1UL" />
 			<param index="5" name="slice_type" type="int" enum="RenderingDevice.TextureSliceType" default="TEXTURE_SLICE_2D" />
 			<description>
 				Creates a shared texture using the specified [param view] and the texture information from [param with_texture]'s [param layer] and [param mipmap]. The number of included mipmaps from the original texture can be controlled using the [param mipmaps] parameter. Only relevant for textures with multiple layers, such as 3D textures, texture arrays and cubemaps. For single-layer textures, use [method texture_create_shared].
