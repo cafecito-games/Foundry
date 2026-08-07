@@ -4585,6 +4585,13 @@ void FSParser::parse_match_pattern_dotted_head(PatternNode *p_pattern, PatternNo
 		p_pattern->case_type = case_type;
 		p_pattern->is_contextual_enum_case = is_contextual_case;
 
+		// A payload pattern rebuilds its contextual head as this case type, and it is the case type the
+		// analyzer resolves. Point a context the head produced at the node that ends up carrying the union.
+		if (is_contextual_case && completion_context.type == COMPLETION_CONTEXTUAL_UNION_CASE &&
+				completion_context.node == head_expression) {
+			completion_context.node = case_type;
+		}
+
 		PatternNode *root_pattern = p_root_pattern != nullptr ? p_root_pattern : p_pattern;
 
 		push_multiline(true);
@@ -5504,6 +5511,12 @@ FSParser::ExpressionNode *FSParser::parse_contextual_enum_case(ExpressionNode *p
 
 	contextual_case->is_contextual_enum_case = true;
 
+	// The shorthand names a case of a union it never spells, so the receiver a plain attribute would
+	// offer is absent. Tooling gets its own context and takes the union from the analyzed shorthand.
+	if (for_completion) {
+		make_completion_context(COMPLETION_CONTEXTUAL_UNION_CASE, contextual_case, -1);
+	}
+
 	if (current.is_node_name()) {
 		current.type = FSTokenizer::Token::IDENTIFIER;
 	}
@@ -5531,6 +5544,10 @@ FSParser::TypeNode *FSParser::parse_contextual_enum_case_type() {
 
 	type->allows_enum_case = true;
 	type->is_contextual_enum_case = true;
+
+	if (for_completion) {
+		make_completion_context(COMPLETION_CONTEXTUAL_UNION_CASE, type, -1);
+	}
 
 	if (current.is_node_name()) {
 		current.type = FSTokenizer::Token::IDENTIFIER;

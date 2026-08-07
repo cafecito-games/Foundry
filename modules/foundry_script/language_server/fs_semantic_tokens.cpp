@@ -246,6 +246,7 @@ private:
 	void add_last_contextual_keyword(const String &p_text, const FSParser::Node *p_from, const FSParser::Node *p_to);
 
 	void classify_chain(const Vector<FSParser::IdentifierNode *> &p_chain, const FSParser::DataType &p_datatype, TokenType p_fallback, bool p_allow_enum_case);
+	void classify_contextual_enum_case_type(const FSParser::TypeNode *p_type);
 	// Returns whether the identifier resolved to something classifiable.
 	bool classify_identifier_reference(const FSParser::IdentifierNode *p_identifier);
 	DeclaredSymbol declared_symbol_from_member(const FSParser::ClassNode::Member &p_member) const;
@@ -647,6 +648,17 @@ void DocumentClassifier::classify_chain(const Vector<FSParser::IdentifierNode *>
 			add_identifier(p_chain[i], TokenType::CLASS, 0);
 		}
 	}
+}
+
+// `x is .Ok(value)` and the head of a contextual `match` pattern spell a case without its union, so
+// the single segment they carry names the case rather than a type.
+void DocumentClassifier::classify_contextual_enum_case_type(const FSParser::TypeNode *p_type) {
+	if (p_type == nullptr || p_type->type_chain.is_empty() || p_type->type_chain[0] == nullptr) {
+		return;
+	}
+	const TypeClassification classification = classify_datatype(p_type->get_datatype());
+	add_identifier(p_type->type_chain[0], TokenType::ENUM_MEMBER,
+			bit(TokenModifier::READONLY) | (classification.modifiers & bit(TokenModifier::DEFAULT_LIBRARY)));
 }
 
 bool DocumentClassifier::classify_identifier_reference(const FSParser::IdentifierNode *p_identifier) {
@@ -1287,7 +1299,13 @@ void DocumentClassifier::walk_pattern(const FSParser::PatternNode *p_pattern) {
 			}
 			break;
 		case FSParser::PatternNode::PT_ENUM_CASE:
-			walk_type(p_pattern->case_type);
+			// A contextual pattern head is rebuilt as a case type that carries only the case name, and
+			// the shorthand is recorded on the pattern rather than on that rebuilt type.
+			if (p_pattern->is_contextual_enum_case) {
+				classify_contextual_enum_case_type(p_pattern->case_type);
+			} else {
+				walk_type(p_pattern->case_type);
+			}
 			break;
 		default:
 			break;
@@ -1355,6 +1373,17 @@ void DocumentClassifier::walk_subscript(const FSParser::SubscriptNode *p_subscri
 
 	const FSParser::DataType base_type = p_subscript->base != nullptr ? p_subscript->base->get_datatype() : FSParser::DataType();
 	const FSParser::DataType attribute_type = p_subscript->attribute->get_datatype();
+
+	// `.Ok` names a case of a union supplied by the expected type, so it reads exactly like the
+	// qualified `Result.Ok` even though no receiver is spelled in front of it.
+	if (p_subscript->is_contextual_enum_case) {
+		uint32_t case_modifiers = bit(TokenModifier::READONLY);
+		if (attribute_type.kind == FSParser::DataType::ENUM && is_default_library_type(attribute_type)) {
+			case_modifiers |= bit(TokenModifier::DEFAULT_LIBRARY);
+		}
+		add_identifier(p_subscript->attribute, TokenType::ENUM_MEMBER, case_modifiers);
+		return;
+	}
 
 	uint32_t modifiers = 0;
 	// Variant attributes and Dictionary dot keys are dynamically supplied by user data. The
@@ -1460,6 +1489,10 @@ void DocumentClassifier::walk_type(const FSParser::TypeNode *p_type) {
 		add_identifier(p_type->type_chain[0], TokenType::ENUM, 0);
 		return;
 	}
+	if (p_type->is_contextual_enum_case) {
+		classify_contextual_enum_case_type(p_type);
+		return;
+	}
 	classify_chain(p_type->type_chain, p_type->get_datatype(), TokenType::TYPE, p_type->allows_enum_case);
 	for (const FSParser::TypeNode *element : p_type->tuple_element_types) {
 		walk_type(element);
@@ -1552,7 +1585,8 @@ void DocumentClassifier::walk_call(const FSParser::CallNode *p_call) {
 			const FSParser::DataType attribute_type = subscript->attribute->get_datatype();
 			// A tagged-union case constructor and a named-tuple constructor are called like
 			// functions but name a value shape, not a method.
-			if (p_call->is_enum_case_construction || (attribute_type.kind == FSParser::DataType::ENUM && attribute_type.enum_case_name != StringName())) {
+			if (p_call->is_enum_case_construction || p_call->is_contextual_enum_case ||
+					(attribute_type.kind == FSParser::DataType::ENUM && attribute_type.enum_case_name != StringName())) {
 				walk_subscript(subscript, false);
 				return;
 			}

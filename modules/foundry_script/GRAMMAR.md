@@ -932,11 +932,12 @@ single float `LITERAL` (`.5` is `0.5`), and after a value it produces the infix 
 index (§2.6.1).
 
 A contextual case is accepted syntactically wherever an expression is, but it is only *valid* where
-the surrounding consumer supplies a complete specialized tagged-union expected type (a variable or
-constant initializer with a declared type, a return, an assignment, an argument, a typed container
-element, an `as` cast, or a conditional-expression branch). Inferred, untyped, and `Variant` targets
-are rejected. This is a semantic requirement, not a syntactic one, so a re-implementation resolves
-it after parsing.
+the surrounding consumer supplies a complete specialized tagged-union expected type: a variable or
+constant initializer with a declared type, a `return`, an assignment, a call argument (including a
+variadic slot and a defaulted parameter), an element of a typed array literal, a key or a value of a
+typed dictionary literal, the operand of an `as` cast, or a branch of a conditional expression whose
+own expected type is a union. Inferred, untyped, and `Variant` targets are rejected. This is a
+semantic requirement, not a syntactic one, so a re-implementation resolves it after parsing.
 
 In a `match` case pattern (§6.1) and on the right of `is` (§5.5), the union is supplied by the
 subject being matched or tested rather than by an expected type.

@@ -1977,6 +1977,35 @@ func f():
 		memdelete(efs);
 	}
 
+	TEST_CASE("[textDocument][definition] resolves contextual tagged-union case references") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		const String uri = workspace->get_file_uri("res://lsp/contextual_tagged_union.fs");
+
+		assert_no_errors_in("res://lsp/contextual_tagged_union.fs");
+
+		const LSP::Range ok_selection = range(pos(3, 1), pos(3, 3));
+		const LSP::Range err_selection = range(pos(4, 1), pos(4, 4));
+		const LSP::Range pending_selection = range(pos(5, 1), pos(5, 8));
+
+		// A payload-bearing shorthand in an expression position.
+		test_resolve_symbol_at(uri, pos(8, 38), uri, "Ok", ok_selection);
+		// A payload-less shorthand in an expression position.
+		test_resolve_symbol_at(uri, pos(9, 39), uri, "Pending", pending_selection);
+		// The right-hand side of an `is` test.
+		test_resolve_symbol_at(uri, pos(10, 17), uri, "Pending", pending_selection);
+		// Payload and payload-less `match` pattern heads.
+		test_resolve_symbol_at(uri, pos(16, 4), uri, "Ok", ok_selection);
+		test_resolve_symbol_at(uri, pos(18, 4), uri, "Err", err_selection);
+		test_resolve_symbol_at(uri, pos(20, 5), uri, "Pending", pending_selection);
+
+		memdelete(proto);
+		memdelete(efs);
+	}
+
 	TEST_CASE("[textDocument][definition] resolves custom annotation references") {
 		EditorFileSystem *efs = memnew(EditorFileSystem);
 		FSLanguageProtocol *proto = initialize(root);
@@ -4247,6 +4276,26 @@ func f():
 			check_semantic_token_at(tokens, 6, 18, 4, LSP::SemanticTokenType::KEYWORD); // when
 			check_semantic_token_at(tokens, 9, 9, 7, LSP::SemanticTokenType::TYPE, default_library_modifier); // Vector2
 			check_semantic_token_at(tokens, 9, 17, 4, LSP::SemanticTokenType::PROPERTY, static_modifier | readonly_modifier | default_library_modifier); // ZERO
+		}
+
+		SUBCASE("contextual tagged-union case shorthands classify as enum members") {
+			const String uri = workspace->get_file_uri("res://lsp/contextual_tagged_union.fs");
+			text_document->didOpen(make_did_open_params(uri, FileAccess::get_file_as_string(ProjectSettings::get_singleton()->localize_path("res://lsp/contextual_tagged_union.fs"))));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			// Declarations.
+			check_semantic_token_at(tokens, 3, 1, 2, LSP::SemanticTokenType::ENUM_MEMBER, declaration_modifier | readonly_modifier); // Ok
+			check_semantic_token_at(tokens, 4, 1, 3, LSP::SemanticTokenType::ENUM_MEMBER, declaration_modifier | readonly_modifier); // Err
+			check_semantic_token_at(tokens, 5, 1, 7, LSP::SemanticTokenType::ENUM_MEMBER, declaration_modifier | readonly_modifier); // Pending
+			// Expression uses: payload-bearing and payload-less.
+			check_semantic_token_at(tokens, 8, 37, 2, LSP::SemanticTokenType::ENUM_MEMBER, readonly_modifier); // .Ok(1)
+			check_semantic_token_at(tokens, 9, 38, 7, LSP::SemanticTokenType::ENUM_MEMBER, readonly_modifier); // .Pending
+			// The right-hand side of an `is` test.
+			check_semantic_token_at(tokens, 10, 16, 7, LSP::SemanticTokenType::ENUM_MEMBER, readonly_modifier); // is .Pending
+			// Pattern uses.
+			check_semantic_token_at(tokens, 16, 3, 2, LSP::SemanticTokenType::ENUM_MEMBER, readonly_modifier); // .Ok(number)
+			check_semantic_token_at(tokens, 18, 3, 3, LSP::SemanticTokenType::ENUM_MEMBER, readonly_modifier); // .Err(_reason)
+			check_semantic_token_at(tokens, 20, 3, 7, LSP::SemanticTokenType::ENUM_MEMBER, readonly_modifier); // .Pending
 		}
 
 		SUBCASE("a whole-file enum or tuple keeps its own kind") {
