@@ -4,5 +4,5 @@ func test() -> void:
 	var server := HTTPServer.new()
 	server.port = 9000
 	print(server.port)
-	print(server.start())
+	print(server.is_listening())
 	server.free()

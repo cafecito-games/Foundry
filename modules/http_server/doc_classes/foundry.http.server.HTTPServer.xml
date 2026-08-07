@@ -4,29 +4,62 @@
 		A node that hosts an HTTP server.
 	</brief_description>
 	<description>
-		[b]Note:[/b] This class is a placeholder. It exposes the configuration surface of an HTTP server, but does not open a listening socket yet, so [method start] never serves requests.
+		Listens for plain HTTP requests, parses them, and dispatches each one to a handler registered with [method route]. The handler receives a [code skip-lint]foundry.http.server.HTTPRequest[/code] describing the request and a [code skip-lint]foundry.http.server.HTTPResponse[/code] to complete. A request that matches no route is answered with [code]404 Not Found[/code].
+		All work happens on the thread that drives the server. While the node is inside the scene tree it polls itself every frame; a headless caller can call [method poll] directly instead. Each connection currently serves exactly one request and is then closed.
+		[b]Note:[/b] The default bind address is the loopback interface, so the server is reachable only from the local machine unless another address is passed to [method listen].
 		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPServer[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPServer[/code]. Without that import the bare name does not resolve.
 	</description>
 	<tutorials>
 	</tutorials>
 	<methods>
-		<method name="start">
+		<method name="get_listening_port" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the port the server is bound to, or [code]-1[/code] if it is not listening. Use this to discover the port chosen by the operating system after calling [method listen] with port [code]0[/code].
+			</description>
+		</method>
+		<method name="is_listening" qualifiers="const">
 			<return type="bool" />
 			<description>
-				Starts the server on [member port] and returns [code]true[/code] on success.
-				[b]Note:[/b] No socket is opened yet, so this always returns [code]true[/code].
+				Returns [code]true[/code] while the server holds an open listening socket.
+			</description>
+		</method>
+		<method name="listen">
+			<return type="int" enum="Error" />
+			<description>
+				Opens a listening socket on [member port] at [member bind_address] and returns [constant @GlobalScope.OK] on success. Set [member port] to [code]0[/code] to let the operating system pick a free port, then read it back with [method get_listening_port].
+				Returns [constant @GlobalScope.ERR_ALREADY_IN_USE] if the server is already listening, and [constant @GlobalScope.ERR_INVALID_PARAMETER] if [member bind_address] cannot be parsed.
+			</description>
+		</method>
+		<method name="poll">
+			<return type="void" />
+			<description>
+				Accepts pending connections, parses whatever arrived, dispatches completed requests and writes pending responses. Called automatically once per frame while the node is inside the scene tree. Does nothing if the server is not listening.
+			</description>
+		</method>
+		<method name="route">
+			<return type="void" />
+			<param index="0" name="method" type="String" />
+			<param index="1" name="path" type="String" />
+			<param index="2" name="handler" type="Callable" />
+			<description>
+				Registers [param handler] for requests whose method equals [param method] and whose path equals [param path] exactly, with the query string excluded. [param method] is matched case-insensitively; [param path] must start with [code]/[/code].
+				The handler is called with the request and the response as its two arguments. If several handlers are registered for the same method and path, the first registration wins.
 			</description>
 		</method>
 		<method name="stop">
 			<return type="void" />
 			<description>
-				Stops the server. Does nothing if the server is not running.
+				Closes the listening socket and every open connection. Does nothing if the server is not listening.
 			</description>
 		</method>
 	</methods>
 	<members>
+		<member name="bind_address" type="String" setter="set_bind_address" getter="get_bind_address" default="&quot;127.0.0.1&quot;">
+			The address [method listen] binds to. Defaults to the loopback interface, so the server is reachable only from the local machine. Use [code]"*"[/code] to accept connections on every interface. An empty value is rejected and leaves the property unchanged.
+		</member>
 		<member name="port" type="int" setter="set_port" getter="get_port" default="8080">
-			The TCP port the server listens on. Must be between [code]0[/code] and [code]65535[/code]; values outside that range are rejected and leave the property unchanged.
+			The TCP port [method listen] binds to. Must be between [code]0[/code] and [code]65535[/code]; values outside that range are rejected and leave the property unchanged. [code]0[/code] asks the operating system for a free port.
 		</member>
 	</members>
 </class>
