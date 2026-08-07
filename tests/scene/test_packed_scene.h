@@ -30,9 +30,12 @@
 
 #pragma once
 
+#include "core/io/file_access.h"
 #include "core/io/resource_loader.h"
 #include "core/io/resource_saver.h"
+#include "core/object/class_db.h"
 #include "core/object/script_language.h"
+#include "scene/main/missing_node.h"
 #include "scene/resources/packed_scene.h"
 
 #include "tests/test_macros.h"
@@ -41,6 +44,16 @@
 #ifndef _3D_DISABLED
 #include "scene/3d/mesh_instance_3d.h"
 #endif // _3D_DISABLED
+
+// Declared in the global namespace because of the `FOUNDRY_CLASS` friend-declaration warning on
+// Windows when the macro is expanded inside a namespace.
+class _PackedSceneNamespacedNode : public Node {
+	FOUNDRY_CLASS(_PackedSceneNamespacedNode, Node);
+};
+
+class _PackedSceneOtherNamespacedNode : public Node {
+	FOUNDRY_CLASS(_PackedSceneOtherNamespacedNode, Node);
+};
 
 namespace TestPackedScene {
 
@@ -517,6 +530,143 @@ TEST_CASE("[SceneTree][PackedScene][UInt] Text scenes round-trip unsigned node m
 
 TEST_CASE("[SceneTree][PackedScene][UInt] Binary scenes round-trip unsigned node metadata") {
 	check_scene_metadata_round_trip("scn");
+}
+
+// Writes a one-node text scene whose root carries `p_root_type` verbatim, loads it back through the
+// resource loader and returns the instantiated root. The caller owns the returned node.
+static Node *instantiate_text_scene_with_root_type(const String &p_root_type, const String &p_file_name) {
+	const String scene_path = TestUtils::get_temp_path(p_file_name);
+	{
+		Ref<FileAccess> file = FileAccess::open(scene_path, FileAccess::WRITE);
+		REQUIRE(file.is_valid());
+		file->store_string("[gd_scene format=3]\n\n[node name=\"Root\" type=\"" + p_root_type + "\"]\n");
+	}
+
+	Error error = FAILED;
+	Ref<PackedScene> loaded = ResourceLoader::load(scene_path, "", ResourceFormatLoader::CACHE_MODE_IGNORE, &error);
+	REQUIRE_EQ(error, OK);
+	REQUIRE(loaded.is_valid());
+
+	return loaded->instantiate();
+}
+
+// Repacks `p_root` and reports the type string that would be written back to disk for it.
+static StringName repacked_root_type(Node *p_root) {
+	Ref<PackedScene> packed;
+	packed.instantiate();
+	REQUIRE_EQ(packed->pack(p_root), OK);
+	Ref<SceneState> state = packed->get_state();
+	REQUIRE(state.is_valid());
+	REQUIRE_GE(state->get_node_count(), 1);
+	return state->get_node_type(0);
+}
+
+TEST_CASE("[SceneTree][PackedScene][ClassDBNamespace] A text scene loads a qualified namespaced native type") {
+	const String qualified_name = "foundry.http.server.HTTPServer";
+
+	Node *root = instantiate_text_scene_with_root_type(qualified_name, "packed_scene_namespaced_root.tscn");
+	REQUIRE_NE(root, nullptr);
+
+	CHECK_EQ(Object::cast_to<MissingNode>(root), nullptr);
+	CHECK_EQ(root->get_class(), qualified_name);
+	CHECK(root->is_class("Node"));
+	// Re-saving writes the same qualified string back.
+	CHECK_EQ(repacked_root_type(root), StringName(qualified_name));
+
+	memdelete(root);
+}
+
+TEST_CASE("[SceneTree][PackedScene][ClassDBNamespace] Unresolvable types become a MissingNode preserving the on-disk string") {
+	const bool previous = ResourceLoader::is_creating_missing_resources_if_class_unavailable_enabled();
+	ResourceLoader::set_create_missing_resources_if_class_unavailable(true);
+
+	SUBCASE("An unknown qualified type keeps its namespace") {
+		const String unknown_qualified_name = "foundry.test.absent.DoesNotExist";
+
+		ERR_PRINT_OFF;
+		Node *root = instantiate_text_scene_with_root_type(unknown_qualified_name, "packed_scene_unknown_qualified.tscn");
+		ERR_PRINT_ON;
+		REQUIRE_NE(root, nullptr);
+
+		MissingNode *missing = Object::cast_to<MissingNode>(root);
+		REQUIRE_NE(missing, nullptr);
+		CHECK_EQ(missing->get_original_class(), unknown_qualified_name);
+		CHECK_EQ(repacked_root_type(root), StringName(unknown_qualified_name));
+
+		memdelete(root);
+	}
+
+	SUBCASE("The bare name of a namespaced class does not resolve without an alias") {
+		// `HTTPServer` lives in `foundry.http.server` and registers no global alias, so a scene saved
+		// with the bare name must not silently pick the namespaced class up.
+		REQUIRE_EQ(ClassDB::resolve_type_name("HTTPServer"), StringName());
+
+		ERR_PRINT_OFF;
+		Node *root = instantiate_text_scene_with_root_type("HTTPServer", "packed_scene_bare_namespaced_root.tscn");
+		ERR_PRINT_ON;
+		REQUIRE_NE(root, nullptr);
+
+		MissingNode *missing = Object::cast_to<MissingNode>(root);
+		REQUIRE_NE(missing, nullptr);
+		CHECK_EQ(missing->get_original_class(), String("HTTPServer"));
+		CHECK_EQ(repacked_root_type(root), StringName("HTTPServer"));
+
+		memdelete(root);
+	}
+
+	ResourceLoader::set_create_missing_resources_if_class_unavailable(previous);
+}
+
+TEST_CASE("[SceneTree][PackedScene][ClassDBNamespace] Scene types resolve through global aliases") {
+	const StringName qualified_name = "foundry.test.scene._PackedSceneNamespacedNode";
+	const StringName other_qualified_name = "foundry.test.scene.other._PackedSceneOtherNamespacedNode";
+	const StringName alias = "_PackedSceneAliasedNode";
+
+	// Namespacing rekeys the registry once, so the shared setup must not repeat per subcase.
+	static bool namespaces_registered = false;
+	if (!namespaces_registered) {
+		namespaces_registered = true;
+		FOUNDRY_REGISTER_CLASS(_PackedSceneNamespacedNode);
+		FOUNDRY_REGISTER_CLASS(_PackedSceneOtherNamespacedNode);
+		FOUNDRY_REGISTER_NAMESPACE(_PackedSceneNamespacedNode, "foundry.test.scene");
+		FOUNDRY_REGISTER_NAMESPACE(_PackedSceneOtherNamespacedNode, "foundry.test.scene.other");
+		ClassDB::class_register_global_alias(qualified_name, alias);
+	}
+
+	const bool previous = ResourceLoader::is_creating_missing_resources_if_class_unavailable_enabled();
+	ResourceLoader::set_create_missing_resources_if_class_unavailable(true);
+
+	SUBCASE("A unique alias instantiates the qualified class and re-saves qualified") {
+		REQUIRE_EQ(ClassDB::resolve_type_name(alias), qualified_name);
+
+		Node *root = instantiate_text_scene_with_root_type(alias, "packed_scene_aliased_root.tscn");
+		REQUIRE_NE(root, nullptr);
+
+		CHECK_EQ(Object::cast_to<MissingNode>(root), nullptr);
+		CHECK_EQ(root->get_class(), String(qualified_name));
+		// The alias is a load-time re-export only; saving normalizes to the canonical key.
+		CHECK_EQ(repacked_root_type(root), qualified_name);
+
+		memdelete(root);
+	}
+
+	SUBCASE("An alias claimed by two classes is ambiguous and yields a MissingNode") {
+		ClassDB::class_register_global_alias(other_qualified_name, alias);
+		REQUIRE_EQ(ClassDB::resolve_type_name(alias), StringName());
+
+		ERR_PRINT_OFF;
+		Node *root = instantiate_text_scene_with_root_type(alias, "packed_scene_ambiguous_alias_root.tscn");
+		ERR_PRINT_ON;
+		REQUIRE_NE(root, nullptr);
+
+		MissingNode *missing = Object::cast_to<MissingNode>(root);
+		REQUIRE_NE(missing, nullptr);
+		CHECK_EQ(missing->get_original_class(), String(alias));
+
+		memdelete(root);
+	}
+
+	ResourceLoader::set_create_missing_resources_if_class_unavailable(previous);
 }
 
 } // namespace TestPackedScene
