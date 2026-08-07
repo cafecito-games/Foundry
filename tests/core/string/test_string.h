@@ -1893,6 +1893,29 @@ TEST_CASE("[String] uri_encode/unescape") {
 	CHECK(x4.uri_decode() == U"file name");
 }
 
+TEST_CASE("[String] uri_decode percent-escape hex digit case") {
+	// RFC 3986 percent-escape hex digits are case-insensitive.
+	CHECK(String("%2B").uri_decode() == "+");
+	CHECK(String("%2b").uri_decode() == "+");
+	CHECK(String("a%3Db%26c%3dd").uri_decode() == "a=b&c=d"); // Mixed case within one string.
+	CHECK(String("%7e").uri_decode() == "~");
+	CHECK(String("%7E").uri_decode() == "~");
+
+	// Multi-byte UTF-8 sequences must decode with lowercase digits too.
+	CHECK(String("T%c4%93%c5%a1t").uri_decode() == U"Tēšt");
+	CHECK(String("T%C4%93%C5%A1t").uri_decode() == U"Tēšt");
+	CHECK(String("%e2%82%ac").uri_decode() == U"€");
+
+	// Non-hex escapes are left literal.
+	CHECK(String("%zz").uri_decode() == "%zz");
+	CHECK(String("%ZZ").uri_decode() == "%ZZ");
+	CHECK(String("100%").uri_decode() == "100%");
+	CHECK(String("%2").uri_decode() == "%2"); // Truncated escape at end of string.
+
+	CHECK(String("%2b").uri_file_decode() == "+");
+	CHECK(String("%zz").uri_file_decode() == "%zz");
+}
+
 TEST_CASE("[String] xml_escape/unescape") {
 	String s = "\"Test\" <test@test&'test'>";
 	CHECK(s.xml_escape(true).xml_unescape() == s);
