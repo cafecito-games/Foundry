@@ -4307,6 +4307,9 @@ static void _filter_match_handled_union_cases(const FSParser::CompletionContext 
 			removed_displays.push_back(E.key);
 		}
 	}
+	if (removed_displays.size() >= r_options.size()) {
+		return; // Nothing would be left to show, which is worse than repeating a handled case.
+	}
 	for (const String &display : removed_displays) {
 		r_options.erase(display);
 	}
