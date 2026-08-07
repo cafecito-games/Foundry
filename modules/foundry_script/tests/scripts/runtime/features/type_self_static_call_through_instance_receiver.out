@@ -4,6 +4,8 @@ rest tail is Child: true
 instance factory is Child: true
 parameter is Child: true
 base-typed receiver factory is Child: true
+three-level receiver factory is Leaf: true
+resumed parameter is Child: true
 parameter is Child: true
 class handle factory is Child: true
 parameter is Child: false

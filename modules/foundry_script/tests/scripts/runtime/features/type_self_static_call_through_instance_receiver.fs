@@ -10,6 +10,8 @@
 
 
 class Base:
+	signal done(value: Base)
+
 	static func take(value: Self) -> void:
 		print("parameter is Child: %s" % [value is Child])
 
@@ -19,8 +21,23 @@ class Base:
 	static func make() -> Self:
 		return Self.new()
 
+	# A static coroutine: it suspends before its `Self`-typed return is produced, so the receiver has
+	# to survive the suspension for the resumed frame to validate the value it comes back with.
+	static func wait_for(source: Self) -> Self:
+		var received: Variant = await source.done
+		print("resumed parameter is Child: %s" % [received is Child])
+		return source
+
 
 class Child extends Base:
+	pass
+
+
+class Middle extends Base:
+	pass
+
+
+class Leaf extends Middle:
 	pass
 
 
@@ -34,6 +51,16 @@ func test() -> void:
 	var as_base: Base = Child.new()
 	as_base.take(Child.new())
 	print("base-typed receiver factory is Child: %s" % [as_base.make() is Child])
+
+	# A receiver several levels below the declaring class resolves to its own leaf.
+	var leaf := Leaf.new()
+	print("three-level receiver factory is Leaf: %s" % [leaf.make() is Leaf])
+
+	# A suspended static frame keeps the receiver it was entered with across the resumption.
+	@warning_ignore("missing_await")
+	@warning_ignore("return_value_discarded")
+	child.wait_for(child)
+	child.done.emit(child)
 
 	# The class-handle form is unchanged.
 	Child.take(Child.new())

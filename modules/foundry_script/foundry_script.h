@@ -882,6 +882,15 @@ class FSInstance : public ScriptInstance {
 
 	void _call_implicit_ready_recursively(FoundryScript *p_script);
 
+	// The receiver a static function reached through this instance resolves `Self` against. Calling a
+	// static function on an instance is legal, and the instance names a class just as precisely as a
+	// class handle does, so a static frame entered this way is handed the same receiver the
+	// class-handle form would hand it (see `FoundryScript::call_static_with_context`) rather than none
+	// at all. `Self` therefore binds to the receiver's runtime class, matching what an instance method
+	// reached through the same receiver resolves it to; analysis substitutes the receiver's static
+	// type, which is always a base of that runtime class.
+	FSStaticSelfContext _static_receiver() const;
+
 public:
 	virtual Object *get_owner() { return owner; }
 
