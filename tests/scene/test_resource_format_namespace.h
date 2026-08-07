@@ -171,7 +171,7 @@ TEST_CASE("[ResourceFormatNamespace] A text sub-resource resolves its qualified 
 // The scene unique id a saver derives for a built-in resource must be a valid identifier, so a
 // namespaced class contributes only the segment after its last namespace separator.
 static void check_derived_scene_unique_id(const Ref<Resource> &p_resource, const String &p_qualified_class) {
-	const String simple_name = p_qualified_class.substr(p_qualified_class.rfind_char('.') + 1);
+	const String simple_name = Resource::derive_scene_unique_id_prefix(p_qualified_class);
 	const String id = p_resource->get_scene_unique_id();
 	CHECK(id.begins_with(simple_name + "_"));
 	CHECK_FALSE(id.contains("."));

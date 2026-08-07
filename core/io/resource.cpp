@@ -159,12 +159,18 @@ String Resource::generate_scene_unique_id() {
 	return id;
 }
 
+// Scene unique ids only accept identifier characters, so a namespaced class contributes its simple name.
+String Resource::derive_scene_unique_id_prefix(const String &p_class_name) {
+	return p_class_name.substr(p_class_name.rfind_char('.') + 1);
+}
+
 void Resource::set_scene_unique_id(const String &p_id) {
+	// Generated ids may start with a digit, so this stays a per-character check rather than a full
+	// identifier check. A rejected id must leave the current one untouched.
 	bool is_valid = true;
 	for (int i = 0; i < p_id.length(); i++) {
 		if (!is_ascii_identifier_char(p_id[i])) {
 			is_valid = false;
-			scene_unique_id = Resource::generate_scene_unique_id();
 			break;
 		}
 	}
