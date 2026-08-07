@@ -440,6 +440,7 @@ void register_scene_types() {
 	FOUNDRY_REGISTER_CLASS(MultiplayerAPIExtension);
 
 	FOUNDRY_REGISTER_CLASS(HTTPRequest);
+	FOUNDRY_REGISTER_NAMESPACE(HTTPRequest, "foundry.http.client");
 	FOUNDRY_REGISTER_CLASS(Timer);
 	FOUNDRY_REGISTER_CLASS(CanvasLayer);
 	FOUNDRY_REGISTER_CLASS(ResourcePreloader);
