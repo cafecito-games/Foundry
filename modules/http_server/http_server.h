@@ -32,6 +32,7 @@
 
 #include "http_server_connection.h"
 
+#include "core/crypto/crypto.h"
 #include "core/io/tcp_server.h"
 #include "core/templates/local_vector.h"
 #include "core/variant/callable.h"
@@ -67,6 +68,10 @@ class HTTPServer : public Node {
 	// Copied into every connection as it is accepted, so a limit changed while the server runs
 	// applies to connections taken after the change and never rewrites one already in flight.
 	HTTPServerConnection::Limits limits;
+	// The server-side TLS options this listener terminates HTTPS with, or null for a plaintext
+	// listener. Set from the `listen()` argument, so a plaintext `listen()` clears it and a socket is
+	// never left half in TLS across restarts.
+	Ref<TLSOptions> tls_options;
 
 	Ref<TCPServer> tcp_server;
 	LocalVector<Ref<HTTPServerConnection>> connections;
@@ -119,8 +124,10 @@ public:
 	void set_connection_timeout_seconds(double p_connection_timeout_seconds);
 	double get_connection_timeout_seconds() const;
 
-	// Binds `bind_address` on `port`.
-	Error listen();
+	// Binds `bind_address` on `port`. With no argument the listener is plaintext HTTP; passing
+	// server-side `TLSOptions` terminates HTTPS on every accepted connection through the engine's
+	// mbedTLS-backed `StreamPeerTLS`.
+	Error listen(const Ref<TLSOptions> &p_tls_options = Ref<TLSOptions>());
 	// Closes the listener and every open connection. Safe to call when not listening.
 	void stop();
 	bool is_listening() const;

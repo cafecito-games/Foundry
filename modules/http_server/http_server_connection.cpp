@@ -146,11 +146,34 @@ bool wants_keep_alive(const String &p_connection_field, int p_minor_version) {
 
 } // namespace
 
-void HTTPServerConnection::accept(const Ref<StreamPeerTCP> &p_stream, const Limits &p_limits) {
-	stream = p_stream;
+void HTTPServerConnection::accept(const Ref<StreamPeerTCP> &p_stream, const Limits &p_limits, const Ref<TLSOptions> &p_tls_options) {
+	tcp_stream = p_stream;
 	limits = p_limits;
 	limits.max_header_count = CLAMP(limits.max_header_count, 1, MAX_HEADER_FIELD_CEILING);
-	state = stream.is_valid() ? STATE_READING : STATE_CLOSED;
+
+	if (tcp_stream.is_null()) {
+		state = STATE_CLOSED;
+		return;
+	}
+
+	if (p_tls_options.is_valid()) {
+		tls_stream = Ref<StreamPeerTLS>(StreamPeerTLS::create());
+		if (tls_stream.is_null() || tls_stream->accept_stream(tcp_stream, p_tls_options) != OK) {
+			// TLS is either unavailable in this build or refused the socket outright. Nothing readable
+			// can come of the connection, so it is dropped instead of falling back to plaintext, which
+			// would answer an HTTPS client in the clear.
+			tls_stream.unref();
+			tcp_stream->disconnect_from_host();
+			state = STATE_CLOSED;
+			return;
+		}
+		// The handshake spans polls; until it completes no request byte exists to read. It is bounded
+		// by the same progress timeout as everything else, measured from here, so a peer that opens a
+		// socket and never finishes the handshake is dropped rather than held open.
+		state = STATE_HANDSHAKING;
+	} else {
+		state = STATE_READING;
+	}
 	_note_progress();
 }
 
@@ -168,6 +191,9 @@ void HTTPServerConnection::poll() {
 	}
 
 	switch (state) {
+		case STATE_HANDSHAKING: {
+			_drive_handshake();
+		} break;
 		case STATE_READING: {
 			if (_read_available()) {
 				_parse();
@@ -178,6 +204,44 @@ void HTTPServerConnection::poll() {
 		} break;
 		default:
 			break;
+	}
+}
+
+Ref<StreamPeer> HTTPServerConnection::_io_stream() const {
+	if (tls_stream.is_valid()) {
+		return tls_stream;
+	}
+	return tcp_stream;
+}
+
+void HTTPServerConnection::_drive_handshake() {
+	if (tcp_stream.is_null() || tls_stream.is_null()) {
+		close();
+		return;
+	}
+
+	tcp_stream->poll();
+	if (tcp_stream->get_status() != StreamPeerTCP::STATUS_CONNECTED) {
+		// The socket dropped before the handshake finished, so there is nothing to hand back.
+		close();
+		return;
+	}
+
+	tls_stream->poll();
+	switch (tls_stream->get_status()) {
+		case StreamPeerTLS::STATUS_HANDSHAKING:
+			// Still negotiating; the stall timeout checked at the top of `poll()` bounds how long the
+			// whole handshake may take, so no progress is noted for an in-flight one.
+			return;
+		case StreamPeerTLS::STATUS_CONNECTED:
+			// The encrypted channel is up. The request phase gets a fresh progress window.
+			state = STATE_READING;
+			_note_progress();
+			return;
+		default:
+			// An error, a hostname mismatch, or a disconnect: none of them yield a request.
+			close();
+			return;
 	}
 }
 
@@ -194,18 +258,29 @@ bool HTTPServerConnection::_has_stalled() const {
 }
 
 bool HTTPServerConnection::_read_available() {
-	if (stream.is_null()) {
+	if (tcp_stream.is_null()) {
 		close();
 		return false;
 	}
 
-	stream->poll();
-	if (stream->get_status() != StreamPeerTCP::STATUS_CONNECTED) {
-		close();
-		return false;
+	if (tls_stream.is_valid()) {
+		// Polling the TLS layer decrypts whatever record has arrived and surfaces its bytes through
+		// `get_available_bytes()`, exactly as polling the raw socket does for a plaintext connection.
+		tls_stream->poll();
+		if (tls_stream->get_status() != StreamPeerTLS::STATUS_CONNECTED) {
+			close();
+			return false;
+		}
+	} else {
+		tcp_stream->poll();
+		if (tcp_stream->get_status() != StreamPeerTCP::STATUS_CONNECTED) {
+			close();
+			return false;
+		}
 	}
 
-	int available = stream->get_available_bytes();
+	const Ref<StreamPeer> io = _io_stream();
+	int available = io->get_available_bytes();
 	while (available > 0) {
 		const int previous_size = read_buffer.size();
 
@@ -231,7 +306,7 @@ bool HTTPServerConnection::_read_available() {
 
 		read_buffer.resize_uninitialized(previous_size + wanted);
 		int received = 0;
-		const Error err = stream->get_partial_data(read_buffer.ptrw() + previous_size, wanted, received);
+		const Error err = io->get_partial_data(read_buffer.ptrw() + previous_size, wanted, received);
 		read_buffer.resize(previous_size + received);
 		if (err != OK) {
 			close();
@@ -242,7 +317,7 @@ bool HTTPServerConnection::_read_available() {
 		}
 		_note_progress();
 
-		available = stream->get_available_bytes();
+		available = io->get_available_bytes();
 	}
 
 	return true;
@@ -337,7 +412,9 @@ bool HTTPServerConnection::_parse_header_block() {
 		request->add_header(String::utf8(header_fields[i].name, header_fields[i].name_len),
 				String::utf8(header_fields[i].value, header_fields[i].value_len));
 	}
-	request->set_peer(String(stream->get_connected_host()) + ":" + itos(stream->get_connected_port()));
+	// The peer address is a property of the socket, so it comes from the underlying TCP stream even
+	// when the bytes themselves travel through the TLS layer.
+	request->set_peer(String(tcp_stream->get_connected_host()) + ":" + itos(tcp_stream->get_connected_port()));
 
 	const bool has_content_length = request->has_header("Content-Length");
 	const bool has_transfer_encoding = request->has_header("Transfer-Encoding");
@@ -505,15 +582,20 @@ void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 }
 
 void HTTPServerConnection::_flush_write() {
-	if (stream.is_null()) {
+	if (tcp_stream.is_null()) {
 		close();
 		return;
 	}
 
+	const Ref<StreamPeer> io = _io_stream();
 	do {
 		while (write_offset < write_buffer.size()) {
 			int sent = 0;
-			const Error err = stream->put_partial_data(write_buffer.ptr() + write_offset, write_buffer.size() - write_offset, sent);
+			// Over TLS a short write means only part of a record reached the socket; `put_partial_data`
+			// reports the plaintext bytes it accepted and buffers the rest of the record, so advancing
+			// by `sent` and retrying next poll is correct for both transports. Only a `sent` of zero
+			// means nothing moved.
+			const Error err = io->put_partial_data(write_buffer.ptr() + write_offset, write_buffer.size() - write_offset, sent);
 			if (err != OK) {
 				close();
 				return;
@@ -562,22 +644,30 @@ bool HTTPServerConnection::_refill_from_file() {
 }
 
 void HTTPServerConnection::_linger() {
-	if (stream.is_null()) {
+	if (tcp_stream.is_null()) {
 		return;
 	}
 
+	const Ref<StreamPeer> io = _io_stream();
 	uint8_t discard[4096];
 	int drained = 0;
 	while (drained < MAX_LINGER_BYTES) {
-		if (stream->get_status() != StreamPeerTCP::STATUS_CONNECTED) {
+		if (tls_stream.is_valid()) {
+			// The unread bytes are encrypted records, so they are drained through the TLS layer, which
+			// has to be polled to surface them, rather than off the raw socket.
+			tls_stream->poll();
+			if (tls_stream->get_status() != StreamPeerTLS::STATUS_CONNECTED) {
+				return;
+			}
+		} else if (tcp_stream->get_status() != StreamPeerTCP::STATUS_CONNECTED) {
 			return;
 		}
-		const int available = stream->get_available_bytes();
+		const int available = io->get_available_bytes();
 		if (available <= 0) {
 			return;
 		}
 		int received = 0;
-		if (stream->get_partial_data(discard, MIN(available, int(sizeof(discard))), received) != OK || received == 0) {
+		if (io->get_partial_data(discard, MIN(available, int(sizeof(discard))), received) != OK || received == 0) {
 			return;
 		}
 		drained += received;
@@ -585,13 +675,19 @@ void HTTPServerConnection::_linger() {
 }
 
 void HTTPServerConnection::close() {
-	if (stream.is_valid()) {
+	if (tcp_stream.is_valid()) {
 		// Closing a socket that still holds unread bytes makes the operating system answer the peer
 		// with a reset, which would destroy a status this layer just wrote. Reading them first,
 		// bounded, is what lets a refused client actually see why it was refused.
 		_linger();
-		stream->disconnect_from_host();
+		if (tls_stream.is_valid()) {
+			// Sends a TLS close-notify over the still-open socket before it is torn down, so the peer
+			// sees a clean shutdown rather than a truncated stream.
+			tls_stream->disconnect_from_stream();
+		}
+		tcp_stream->disconnect_from_host();
 	}
+	tls_stream.unref();
 	request.unref();
 	read_buffer.clear();
 	write_buffer.clear();

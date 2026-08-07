@@ -41,10 +41,12 @@
 #include "modules/http_server/http_server.h"
 #include "modules/http_server/http_server_request.h"
 
+#include "core/crypto/crypto.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/http_client.h"
 #include "core/io/stream_peer_tcp.h"
+#include "core/io/stream_peer_tls.h"
 #include "core/os/os.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/list.h"
@@ -552,14 +554,15 @@ struct ClientResult {
 // Performs one request against `p_server` while driving the server's poll loop, so the whole
 // exchange runs on this thread without a scene tree.
 ClientResult http_request(HTTPServer *p_server, int p_port, HTTPClient::Method p_method, const String &p_path,
-		const String &p_body = String(), const Vector<String> &p_headers = Vector<String>()) {
+		const String &p_body = String(), const Vector<String> &p_headers = Vector<String>(),
+		const Ref<TLSOptions> &p_tls_options = Ref<TLSOptions>()) {
 	ClientResult result;
 
 	Ref<HTTPClient> client = HTTPClient::create();
 	if (client.is_null()) {
 		return result;
 	}
-	result.error = client->connect_to_host(LOOPBACK, p_port);
+	result.error = client->connect_to_host(LOOPBACK, p_port, p_tls_options);
 	if (result.error != OK) {
 		return result;
 	}
@@ -870,6 +873,66 @@ TEST_CASE("[HTTPServer] GET round-trip through a registered route") {
 		// Each client is gone by now, so the sockets it left behind are dropped on the next passes.
 		pump_server(server, 16);
 		CHECK(server->get_connection_count() == 0);
+	}
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A GET round-trip terminates TLS for HTTPS") {
+	if (!StreamPeerTLS::is_available()) {
+		return;
+	}
+
+	Ref<Crypto> crypto = Crypto::create();
+	REQUIRE(crypto.is_valid());
+
+	// Generated in memory for the duration of the test, so no key material is ever written to disk.
+	Ref<CryptoKey> key = crypto->generate_rsa(2048);
+	REQUIRE(key.is_valid());
+	Ref<X509Certificate> certificate = crypto->generate_self_signed_certificate(key, "CN=foundry-http-test", "20140101000000", "20340101000000");
+	REQUIRE(certificate.is_valid());
+
+	const Ref<TLSOptions> server_options = TLSOptions::server(key, certificate);
+	REQUIRE(server_options.is_valid());
+	// The self-signed certificate is its own trust anchor, and the common name it was issued under is
+	// what the client verifies against rather than the loopback address it dialed.
+	const Ref<TLSOptions> client_options = TLSOptions::client(certificate, "foundry-http-test");
+	REQUIRE(client_options.is_valid());
+
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_port(0);
+	REQUIRE(server->listen(server_options) == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	handler->reply_body = "secure";
+	server->route("GET", "/secure", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	SUBCASE("A request over the TLS channel reaches the handler and its body reaches the client") {
+		const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/secure", String(), Vector<String>(), client_options);
+
+		CHECK(result.error == OK);
+		CHECK(result.status == 200);
+		CHECK(result.body == "secure");
+
+		CHECK(handler->call_count == 1);
+		CHECK(handler->seen_method == "GET");
+		CHECK(handler->seen_path == "/secure");
+		CHECK(handler->seen_peer.begins_with("127.0.0.1:"));
+	}
+
+	SUBCASE("A plaintext client cannot speak to the TLS listener") {
+		ERR_PRINT_OFF;
+		const ClientResult result = http_get(server, port, "/secure");
+		ERR_PRINT_ON;
+
+		// The plaintext request is not a TLS record, so the handshake never completes and no handler
+		// runs. It either fails to connect or times out; either way it is not a served 200.
+		CHECK(result.status != 200);
+		CHECK(handler->call_count == 0);
 	}
 
 	server->stop();

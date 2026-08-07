@@ -27,9 +27,11 @@
 		</method>
 		<method name="listen">
 			<return type="int" enum="Error" />
+			<param index="0" name="tls_options" type="TLSOptions" default="null" />
 			<description>
 				Opens a listening socket on [member port] at [member bind_address] and returns [constant @GlobalScope.OK] on success. Set [member port] to [code]0[/code] to let the operating system pick a free port, then read it back with [method get_listening_port].
-				Returns [constant @GlobalScope.ERR_ALREADY_IN_USE] if the server is already listening, and [constant @GlobalScope.ERR_INVALID_PARAMETER] if [member bind_address] cannot be parsed.
+				With no argument the listener speaks plaintext HTTP. Pass server-side [TLSOptions] built with [method TLSOptions.server] to terminate HTTPS: every accepted connection completes a TLS handshake before its first request is read, and all traffic on it is encrypted. Each call sets the mode, so a later plaintext [method listen] clears any options an earlier HTTPS run used.
+				Returns [constant @GlobalScope.ERR_ALREADY_IN_USE] if the server is already listening, [constant @GlobalScope.ERR_INVALID_PARAMETER] if [member bind_address] cannot be parsed or [param tls_options] is not server-side, and [constant @GlobalScope.ERR_UNAVAILABLE] if HTTPS is requested in a build without TLS support.
 			</description>
 		</method>
 		<method name="mount_files">

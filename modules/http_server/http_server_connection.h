@@ -35,6 +35,7 @@
 
 #include "core/io/file_access.h"
 #include "core/io/stream_peer_tcp.h"
+#include "core/io/stream_peer_tls.h"
 #include "core/object/ref_counted.h"
 #include "core/templates/vector.h"
 
@@ -49,6 +50,9 @@ class HTTPServerConnection : public RefCounted {
 
 public:
 	enum State {
+		// Completing the TLS handshake on an HTTPS connection before any request byte is read. A
+		// plaintext connection is never in this state.
+		STATE_HANDSHAKING,
 		// Reading bytes and feeding them to the parser; the request is not complete yet.
 		STATE_READING,
 		// A complete request header block was parsed and is waiting for the server to dispatch it.
@@ -97,7 +101,13 @@ private:
 	// makes the framing of what follows unknowable.
 	bool keep_alive = false;
 
-	Ref<StreamPeerTCP> stream;
+	// The accepted socket. It carries the bytes on the wire and is the source of the peer address
+	// whether or not the connection is encrypted.
+	Ref<StreamPeerTCP> tcp_stream;
+	// The TLS layer wrapping `tcp_stream` on an HTTPS connection, or null for a plaintext one. When
+	// set, every request and response byte moves through it and the raw socket is never read or
+	// written directly.
+	Ref<StreamPeerTLS> tls_stream;
 	Vector<uint8_t> read_buffer;
 	// How many buffered bytes the parser has already scanned without finding the end of the header
 	// block. picohttpparser takes this as its `last_len` so a re-parse skips that prefix.
@@ -133,6 +143,12 @@ private:
 	void _reject(int p_status);
 	// Clears every per-request field so the socket can carry the next request.
 	void _begin_next_request();
+	// The stream every read and write goes through: the TLS layer when the connection is encrypted,
+	// the raw socket otherwise. The peer address is never taken from here; it comes from `tcp_stream`.
+	Ref<StreamPeer> _io_stream() const;
+	// Drives the TLS handshake forward one poll. Moves to `STATE_READING` once it completes and closes
+	// the connection if it fails. Never called on a plaintext connection.
+	void _drive_handshake();
 	void _note_progress();
 	bool _has_stalled() const;
 	// Reads and discards what the peer already sent, bounded, before the socket is closed.
@@ -143,7 +159,9 @@ private:
 	bool _refill_from_file();
 
 public:
-	void accept(const Ref<StreamPeerTCP> &p_stream, const Limits &p_limits);
+	// Takes ownership of an accepted socket. With server-side `p_tls_options` the connection wraps the
+	// socket in a `StreamPeerTLS` and begins the handshake; with none it reads plaintext HTTP.
+	void accept(const Ref<StreamPeerTCP> &p_stream, const Limits &p_limits, const Ref<TLSOptions> &p_tls_options = Ref<TLSOptions>());
 
 	void poll();
 
