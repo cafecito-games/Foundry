@@ -4160,6 +4160,39 @@ static bool _guess_expecting_callable(FSParser::CompletionContext &p_context) {
 	return false;
 }
 
+// The union a contextual case shorthand (`.Ok`, `.None`) resolved to, spelled as that union's own
+// meta type so the ordinary enum lookup and member listing apply unchanged. The analyzer publishes
+// the specialization on the node the shorthand left behind: a payload-bearing case reference carries
+// the union meta type directly, a payload-less one carries the case value it folds to, and a pattern
+// head carries the case meta type. All three name the same union once the case name is dropped.
+static bool _contextual_union_meta_type(const FSParser::DataType &p_resolved_type, FSParser::DataType &r_union_meta_type) {
+	if (p_resolved_type.kind != FSParser::DataType::ENUM || !p_resolved_type.is_tagged_union) {
+		return false;
+	}
+	r_union_meta_type = p_resolved_type;
+	r_union_meta_type.is_meta_type = true;
+	r_union_meta_type.is_pseudo_type = false;
+	r_union_meta_type.is_constant = false;
+	r_union_meta_type.is_read_only = false;
+	r_union_meta_type.is_nullable = false;
+	r_union_meta_type.enum_case_name = StringName();
+	r_union_meta_type.builtin_type = Variant::DICTIONARY;
+	return true;
+}
+
+// The node a `COMPLETION_CONTEXTUAL_UNION_CASE` context points at is the shorthand itself: the case
+// reference for an expression or a payload-less pattern, and the case type for a payload pattern or
+// the right of an `is` test.
+static bool _contextual_union_meta_type_from_node(const FSParser::Node *p_node, FSParser::DataType &r_union_meta_type) {
+	if (p_node == nullptr) {
+		return false;
+	}
+	if (p_node->type != FSParser::Node::SUBSCRIPT && p_node->type != FSParser::Node::TYPE) {
+		return false;
+	}
+	return _contextual_union_meta_type(p_node->get_datatype(), r_union_meta_type);
+}
+
 static void _find_enumeration_candidates(FSParser::CompletionContext &p_context, const String &p_enum_hint, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
 	if (!p_enum_hint.contains_char('.')) {
 		// Global constant or in the current class.
@@ -4997,6 +5030,14 @@ static void _find_call_arguments(FSParser::CompletionContext &p_context, const F
 				_find_identifiers(completion_context, false, true, options, 0);
 				r_forced = true;
 			}
+		} break;
+		case FSParser::COMPLETION_CONTEXTUAL_UNION_CASE: {
+			FSCompletionIdentifier base;
+			if (!_contextual_union_meta_type_from_node(completion_context.node, base.type)) {
+				break;
+			}
+			_find_identifiers_in_base(base, false, false, !_guess_expecting_callable(completion_context), options, 0);
+			r_forced = true;
 		} break;
 		case FSParser::COMPLETION_DECLARATION: {
 			_find_identifiers(completion_context, false, !_guess_expecting_callable(completion_context), options, 0);
@@ -6338,6 +6379,15 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 					r_result.class_member = p_symbol;
 					return OK;
 				}
+			}
+		} break;
+		case FSParser::COMPLETION_CONTEXTUAL_UNION_CASE: {
+			FSParser::DataType union_type;
+			if (!_contextual_union_meta_type_from_node(context.node, union_type)) {
+				break;
+			}
+			if (_lookup_symbol_from_base(union_type, p_symbol, r_result) == OK) {
+				return OK;
 			}
 		} break;
 		case FSParser::COMPLETION_ATTRIBUTE_METHOD:

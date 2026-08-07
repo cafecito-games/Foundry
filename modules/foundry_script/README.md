@@ -244,10 +244,44 @@ are unrelated types in assignments, calls, returns, containers, comparisons, and
 generic union's own declaration, the bare union name denotes the open self-specialization
 (`Branch(children: Array[Tree])` means `Array[Tree[T]]`); explicit `Tree[T]` is equivalent.
 
-Construction is always explicit in v1: `Result[int, String].Ok(1)`, not `Result.Ok(1)`. Payload-less
-cases such as `None` remain valid. Match patterns and `is` binds substitute the specialized payload
-types. Enum functions on a generic union specialize with the receiver's type arguments; a function's
-own type parameters shadow union parameters with the same names.
+The qualified spelling names the specialization in full: `Result[int, String].Ok(1)`, never
+`Result.Ok(1)`. Payload-less cases such as `None` remain valid. Match patterns and `is` binds
+substitute the specialized payload types. Enum functions on a generic union specialize with the
+receiver's type arguments; a function's own type parameters shadow union parameters with the same
+names.
+
+**Contextual case shorthand.** Where the surrounding code already says which union is expected, a
+case may be named by a leading `.` alone:
+
+```foundry
+var parsed: Result[int, String] = .Ok(1)
+var missing: Option[int] = .None
+```
+
+The shorthand is valid only where a *complete specialized* tagged-union type is available, and the
+union is taken from that type rather than from the case name. The contexts that supply one are:
+
+- a variable or constant initializer with a declared type;
+- a `return` in a function with a declared return type;
+- an assignment to a target of a declared union type;
+- a call argument, including a variadic slot and a defaulted parameter;
+- an element of a typed array literal, and a key or value of a typed dictionary literal;
+- the operand of an `as` cast to a union type;
+- either branch of a conditional expression (`.Ok(1) if condition else .Err("no")`) whose own
+  expected type is a union;
+- a `match` case pattern and the right-hand side of `is`, where the union comes from the subject
+  being matched or tested rather than from an expected type.
+
+Anywhere else the shorthand is an error. An inferred, untyped, or `Variant` target produces
+`Contextual shorthand ".Ok" needs an expected tagged-union type; annotate the target, ...`; a name
+the union does not declare produces `Tagged union "Result[int, String]" has no case "Nope".`; and
+using the wrong form for the case produces `Enum case "Result.Ok" carries a payload and must be
+constructed, e.g. ".Ok(...)".` or its payload-less counterpart. The explicit spelling always works
+and is the fallback whenever no expected type is available — for example in an inferred `var`.
+
+Editor tooling treats the shorthand as the case it names: go-to-definition and hover jump to the
+case declaration, semantic highlighting marks it as an enum member, and completion on a shorthand
+whose union is already known lists that union's cases with their specialized payload signatures.
 
 **Runtime erasure.** Values remain the existing read-only `[tag, payload...]` Array representation.
 Specialization is static only: once a value crosses a `Variant` boundary, runtime tests can validate
