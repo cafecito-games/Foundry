@@ -183,9 +183,11 @@ public:
 	 * A case symbol's `detail` is built from the declaration, so it spells the payload with the union's
 	 * own type parameters (`Ok(value: T)`). The analyzed construction carries the specialization the
 	 * call site actually builds (`Outcome[int, String]`), which is what tooling should show.
-	 * Returns false when no analyzed construction of `p_case_name` starts on that line.
+	 * `p_line` and `p_column` are 1-based; the construction that starts closest before `p_column`
+	 * wins, so a line with several constructions of the same case resolves the one under the cursor.
+	 * Returns false when no analyzed construction of `p_case_name` precedes that position on the line.
 	 */
-	bool find_specialized_enum_case_type(int p_line, const StringName &p_case_name, FSParser::DataType &r_union_type) const;
+	bool find_specialized_enum_case_type(int p_line, int p_column, const StringName &p_case_name, FSParser::DataType &r_union_type) const;
 	const LSP::DocumentSymbol *get_member_symbol(const String &p_name, const String &p_subclass = "") const;
 	const List<LSP::DocumentLink> &get_document_links() const;
 

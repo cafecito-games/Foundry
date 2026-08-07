@@ -2046,6 +2046,21 @@ func f():
 			}
 		}
 
+		// Two constructions of the same case on one line: each resolves against its own specialization.
+		LSP::SignatureHelp first_of_line_signature_help;
+		CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(24, 39)), first_of_line_signature_help), OK);
+		CHECK_EQ(first_of_line_signature_help.signatures.size(), 1);
+		if (first_of_line_signature_help.signatures.size() == 1) {
+			CHECK_EQ(first_of_line_signature_help.signatures[0].label, "Ok(value: int)");
+		}
+
+		LSP::SignatureHelp second_of_line_signature_help;
+		CHECK_EQ(workspace->resolve_signature(pos_in(uri, pos(24, 82)), second_of_line_signature_help), OK);
+		CHECK_EQ(second_of_line_signature_help.signatures.size(), 1);
+		if (second_of_line_signature_help.signatures.size() == 1) {
+			CHECK_EQ(second_of_line_signature_help.signatures[0].label, "Ok(value: String)");
+		}
+
 		// A payload-less case is not a construction, so it reports no signature.
 		LSP::SignatureHelp payload_less_signature_help;
 		CHECK_NE(workspace->resolve_signature(pos_in(uri, pos(9, 40)), payload_less_signature_help), OK);

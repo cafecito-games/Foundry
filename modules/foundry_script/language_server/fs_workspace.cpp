@@ -1125,7 +1125,7 @@ Error FSWorkspace::resolve_signature(const LSP::TextDocumentPositionParams &p_do
 						FSParser::DataType union_type;
 						String specialized_label;
 						Vector<String> specialized_parameters;
-						if (parser->find_specialized_enum_case_type(text_pos.position.line + 1, symbol->name, union_type) &&
+						if (parser->find_specialized_enum_case_type(text_pos.position.line + 1, text_pos.position.character + 1, symbol->name, union_type) &&
 								specialized_case_signature(union_type, symbol->name, specialized_label, specialized_parameters)) {
 							signature_info.label = specialized_label;
 							for (const String &parameter_label : specialized_parameters) {

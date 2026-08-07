@@ -1087,13 +1087,21 @@ Error ExtendFSParser::get_left_function_call(const LSP::Position &p_position, LS
 	return ERR_METHOD_NOT_FOUND;
 }
 
-bool ExtendFSParser::find_specialized_enum_case_type(int p_line, const StringName &p_case_name, FSParser::DataType &r_union_type) const {
+bool ExtendFSParser::find_specialized_enum_case_type(int p_line, int p_column, const StringName &p_case_name, FSParser::DataType &r_union_type) const {
+	// A line can hold several constructions of the same case, so the one that starts closest before the
+	// requested column is the one under the cursor.
+	int best_column = 0;
+	bool found = false;
 	for (const FSParser::Node *node = get_allocated_nodes(); node != nullptr; node = node->next) {
 		if (node->type != FSParser::Node::SUBSCRIPT || node->start_line != p_line) {
 			continue;
 		}
 		const FSParser::SubscriptNode *reference = static_cast<const FSParser::SubscriptNode *>(node);
 		if (!reference->is_attribute || reference->attribute == nullptr || reference->attribute->name != p_case_name) {
+			continue;
+		}
+		const int case_column = reference->attribute->start_column;
+		if (case_column > p_column || (found && case_column < best_column)) {
 			continue;
 		}
 		// Both spellings publish the union on the case reference: the contextual shorthand publishes the
@@ -1105,9 +1113,10 @@ bool ExtendFSParser::find_specialized_enum_case_type(int p_line, const StringNam
 			continue;
 		}
 		r_union_type = resolved;
-		return true;
+		best_column = case_column;
+		found = true;
 	}
-	return false;
+	return found;
 }
 
 const LSP::DocumentSymbol *ExtendFSParser::get_symbol_defined_at_line(int p_line, const String &p_symbol_name) const {
