@@ -4255,6 +4255,63 @@ static bool _contextual_union_meta_type_from_node(const FSParser::Node *p_node, 
 	return _contextual_union_meta_type(p_node->get_datatype(), r_union_meta_type);
 }
 
+// Drop the cases the enclosing match already handles from a contextual shorthand completed in
+// match-pattern position. Deliberately more permissive than exhaustiveness checking: the buffer holds
+// an incomplete pattern at the cursor, so a pattern whose coverage cannot be proven is treated as
+// handling nothing. Over-offering a case is recoverable; hiding one the user needs is not. The branch
+// the cursor sits in never counts as handled, so editing an existing head keeps offering its own case.
+static void _filter_match_handled_union_cases(const FSParser::CompletionContext &p_context, const FSParser::DataType &p_union_meta_type, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_options) {
+	const FSParser::MatchNode *match_node = p_context.match;
+	if (match_node == nullptr || match_node->test == nullptr || p_union_meta_type.enum_values.is_empty()) {
+		return;
+	}
+	// The expected union must be the subject's own, or the offered cases have nothing to do with what
+	// the branches cover (a nested match narrows this to the innermost subject by construction).
+	const FSParser::DataType subject_type = match_node->test->get_datatype();
+	if (!subject_type.is_tagged_union_type() || subject_type.enum_type != p_union_meta_type.enum_type) {
+		return;
+	}
+
+	HashSet<int64_t> handled_tags;
+	for (const FSParser::MatchBranchNode *branch : match_node->branches) {
+		if (branch == nullptr || branch == p_context.match_branch || branch->guard_body != nullptr) {
+			continue;
+		}
+		for (const FSParser::PatternNode *pattern : branch->patterns) {
+			int64_t covered_tag = 0;
+			if (FSAnalyzer::tagged_union_pattern_coverage(pattern, p_union_meta_type, covered_tag) == FSAnalyzer::TAGGED_UNION_PATTERN_COVERS_CASE) {
+				handled_tags.insert(covered_tag);
+			}
+		}
+	}
+	if (handled_tags.is_empty()) {
+		return;
+	}
+
+	HashSet<StringName> handled_names;
+	for (const KeyValue<StringName, int64_t> &E : p_union_meta_type.enum_values) {
+		if (handled_tags.has(E.value)) {
+			handled_names.insert(E.key);
+		}
+	}
+	if (handled_names.size() >= p_union_meta_type.enum_values.size()) {
+		return; // Every case is handled; a dead popup is worse than offering the full list again.
+	}
+
+	Vector<String> removed_displays;
+	for (const KeyValue<String, ScriptLanguage::CodeCompletionOption> &E : r_options) {
+		// A payload case is inserted as `Ok(`, a payload-less one as its bare name.
+		const String &insert_text = E.value.insert_text;
+		const String case_name = insert_text.ends_with("(") ? insert_text.left(insert_text.length() - 1) : insert_text;
+		if (handled_names.has(StringName(case_name))) {
+			removed_displays.push_back(E.key);
+		}
+	}
+	for (const String &display : removed_displays) {
+		r_options.erase(display);
+	}
+}
+
 static void _find_enumeration_candidates(FSParser::CompletionContext &p_context, const String &p_enum_hint, HashMap<String, ScriptLanguage::CodeCompletionOption> &r_result) {
 	if (!p_enum_hint.contains_char('.')) {
 		// Global constant or in the current class.
@@ -5120,6 +5177,7 @@ static void _find_call_arguments(FSParser::CompletionContext &p_context, const F
 				break;
 			}
 			_find_identifiers_in_base(base, false, false, !_guess_expecting_callable(completion_context), options, 0);
+			_filter_match_handled_union_cases(completion_context, base.type, options);
 			r_forced = true;
 		} break;
 		case FSParser::COMPLETION_DECLARATION: {

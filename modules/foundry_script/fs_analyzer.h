@@ -73,6 +73,19 @@ public:
 		FINAL_DIAGNOSTICS_AND_DEPENDENCIES = 8,
 	};
 
+	// What one match pattern proves about a tagged-union subject's case set.
+	enum TaggedUnionPatternCoverage {
+		TAGGED_UNION_PATTERN_COVERS_NOTHING,
+		TAGGED_UNION_PATTERN_COVERS_CASE,
+		TAGGED_UNION_PATTERN_COVERS_NULL,
+		// The pattern is not statically decidable, so coverage of the match as a whole is unknown.
+		TAGGED_UNION_PATTERN_COVERAGE_UNPROVABLE,
+	};
+
+	// Single source of truth for "this pattern definitely handles that case", shared by match
+	// exhaustiveness checking and by editor completion so the two rule sets cannot drift.
+	static TaggedUnionPatternCoverage tagged_union_pattern_coverage(const FSParser::PatternNode *p_pattern, const FSParser::DataType &p_match_type, int64_t &r_covered_tag);
+
 private:
 	FSParser *parser = nullptr;
 	FSAutoloadIndex autoload_index;

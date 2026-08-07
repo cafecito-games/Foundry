@@ -4162,6 +4162,12 @@ FSParser::MatchNode *FSParser::parse_match() {
 			continue;
 		}
 
+		// The innermost match wins: a nested one has already claimed the context by the time its
+		// enclosing branch returns here.
+		if (completion_context.match == nullptr && completion_context.match_branch == branch) {
+			completion_context.match = match_node;
+		}
+
 		for (AnnotationNode *annotation : match_branch_annotation_stack) {
 			branch->annotations.push_back(annotation);
 		}
@@ -4199,6 +4205,12 @@ FSParser::MatchBranchNode *FSParser::parse_match_branch() {
 
 	bool has_bind = false;
 
+	// A contextual case shorthand completed in pattern position is filtered against the cases the
+	// enclosing match already handles, so the branch it sits in has to be recorded. The context is
+	// only this branch's when the pattern list is what produced it.
+	const CompletionType completion_type_before_patterns = completion_context.type;
+	const Node *completion_node_before_patterns = completion_context.node;
+
 	do {
 		PatternNode *pattern = parse_match_pattern();
 		if (pattern == nullptr) {
@@ -4217,6 +4229,11 @@ FSParser::MatchBranchNode *FSParser::parse_match_branch() {
 		}
 		branch->patterns.push_back(pattern);
 	} while (match(FSTokenizer::Token::COMMA));
+
+	if (completion_context.type == COMPLETION_CONTEXTUAL_UNION_CASE && completion_context.match_branch == nullptr &&
+			(completion_context.type != completion_type_before_patterns || completion_context.node != completion_node_before_patterns)) {
+		completion_context.match_branch = branch;
+	}
 
 	if (branch->patterns.is_empty()) {
 		push_error(R"(No pattern found for "match" branch.)");
