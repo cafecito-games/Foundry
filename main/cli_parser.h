@@ -92,6 +92,11 @@ public:
 		// occurrences are additive: a test matching any retained pattern is selected.
 		PackedStringArray test_cases;
 
+		// Every exact `--suite <pattern>` occurrence, retained in CLI order. Suite patterns
+		// match a test's doctest suite instead of its case name, and compose with
+		// `test_cases` as a union: a test is selected when it matches either field.
+		PackedStringArray test_suites;
+
 		// 1-based shard selector for `test run --shard i/n`. Both stay at -1 when the
 		// option is absent, which means "run everything in this process".
 		int test_shard_index = -1;
@@ -152,11 +157,4 @@ public:
 	static ParseResult parse(int p_argc, char *p_argv[]);
 	static bool can_run_without_main_scene(const CLIInvocation &p_invocation);
 	static bool is_new_cli_command(const String &p_arg);
-
-	// Combines every retained `--case` value into the single doctest `--test-case=`
-	// filter that selects the union of all supplied patterns. Doctest scans repeated
-	// occurrences of the same option from the end and keeps only the last one, so this
-	// merges Foundry's collection into doctest's own comma-separated filter grammar
-	// (honoring `\,` and `\\` escapes) instead of forwarding multiple raw options.
-	static String build_doctest_case_filter(const PackedStringArray &p_case_filters);
 };

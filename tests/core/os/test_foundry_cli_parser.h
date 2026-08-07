@@ -352,48 +352,88 @@ TEST_CASE("[FoundryCLIParser] Test run reports missing value for a repeated case
 	CHECK(result.error.contains("--case"));
 }
 
-TEST_CASE("[FoundryCLIParser] build_doctest_case_filter merges filters with a single value unchanged") {
-	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(PackedStringArray()), "");
+TEST_CASE("[FoundryCLIParser] Test run records suite filter") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--suite",
+			"*Completion*",
+	}));
 
-	PackedStringArray single;
-	single.push_back("*FoundryScript*");
-	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(single), "*FoundryScript*");
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK_EQ(result.invocation.kind, Kind::TEST_RUN);
+	CHECK(result.invocation.test_cases.is_empty());
+	REQUIRE_EQ(result.invocation.test_suites.size(), 1);
+	CHECK_EQ(result.invocation.test_suites[0], "*Completion*");
 }
 
-TEST_CASE("[FoundryCLIParser] build_doctest_case_filter joins repeated values as an OR set") {
-	PackedStringArray filters;
-	filters.push_back("*A*");
-	filters.push_back("*B*");
-	filters.push_back("*C*");
-	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(filters), "*A*,*B*,*C*");
+TEST_CASE("[FoundryCLIParser] Test run has no suite filters when option is absent") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	CHECK(result.invocation.test_suites.is_empty());
 }
 
-TEST_CASE("[FoundryCLIParser] build_doctest_case_filter preserves an escaped comma at a value boundary") {
-	// A pattern that legitimately contains a comma escapes it with a backslash; a
-	// second, unrelated filter is then appended. The escaped comma inside the first
-	// value must remain part of that value instead of becoming a separator, and the
-	// join between the two values must remain a real separator.
-	PackedStringArray filters;
-	filters.push_back("*[TextServer] Init\\, font loading and shaping*");
-	filters.push_back("*Second disjoint pattern*");
-	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(filters),
-			"*[TextServer] Init\\, font loading and shaping*,*Second disjoint pattern*");
+TEST_CASE("[FoundryCLIParser] Test run retains every repeated suite filter in order") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--suite",
+			"*First suite*",
+			"--suite",
+			"*Second suite*",
+			"--suite",
+			"*Third suite*",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	REQUIRE_EQ(result.invocation.test_suites.size(), 3);
+	CHECK_EQ(result.invocation.test_suites[0], "*First suite*");
+	CHECK_EQ(result.invocation.test_suites[1], "*Second suite*");
+	CHECK_EQ(result.invocation.test_suites[2], "*Third suite*");
 }
 
-TEST_CASE("[FoundryCLIParser] build_doctest_case_filter keeps a trailing escaped backslash literal at the boundary") {
-	// A value whose raw doctest encoding ends with an odd number of backslashes (here
-	// one) means "one literal trailing backslash" when it is the only filter, because
-	// doctest's parser emits that literal backslash once it reaches the end of the
-	// string. Naively appending a join comma right after that dangling backslash
-	// would have doctest read it as an escaped, literal comma, silently merging this
-	// pattern with the next one into a single filter. The merge must instead pad with
-	// an extra backslash so the trailing backslash keeps its original literal meaning
-	// and the join comma still acts as a real separator between the two patterns.
-	PackedStringArray filters;
-	filters.push_back("*trailing backslash*\\");
-	filters.push_back("*Second disjoint pattern*");
-	CHECK_EQ(FoundryCLIParser::build_doctest_case_filter(filters),
-			"*trailing backslash*\\\\,*Second disjoint pattern*");
+TEST_CASE("[FoundryCLIParser] Test run keeps case and suite filters in separate lists") {
+	// The two fields are unioned downstream, so they must stay distinguishable here: a
+	// suite pattern folded into the case list would silently be matched against names.
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--case",
+			"*a case*",
+			"--suite",
+			"*a suite*",
+			"--case",
+			"*another case*",
+	}));
+
+	REQUIRE_MESSAGE(result.ok, result.error);
+	REQUIRE_EQ(result.invocation.test_cases.size(), 2);
+	CHECK_EQ(result.invocation.test_cases[0], "*a case*");
+	CHECK_EQ(result.invocation.test_cases[1], "*another case*");
+	REQUIRE_EQ(result.invocation.test_suites.size(), 1);
+	CHECK_EQ(result.invocation.test_suites[0], "*a suite*");
+}
+
+TEST_CASE("[FoundryCLIParser] Test run reports missing value for a repeated suite filter") {
+	FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--suite",
+			"*A*",
+			"--suite",
+	}));
+
+	CHECK_FALSE(result.ok);
+	CHECK(result.error.contains("--suite"));
 }
 
 TEST_CASE("[FoundryCLIParser] Test run records progress options") {
