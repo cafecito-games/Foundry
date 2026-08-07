@@ -5,7 +5,7 @@
 	</brief_description>
 	<description>
 		Listens for plain HTTP requests, parses them, and resolves each one in a fixed order: a directory mounted with [method mount_files] is tried first, then a handler registered with [method route], then the [signal request_received] signal, and a request nothing answered is finally served [code]404 Not Found[/code]. Handlers and receivers alike are given a [code skip-lint]foundry.http.server.HTTPRequest[/code] describing the request and a [code skip-lint]foundry.http.server.HTTPResponse[/code] to complete.
-		All work happens on the thread that drives the server. While the node is inside the scene tree it polls itself every frame; a headless caller can call [method poll] directly instead. A connection is persistent by default: an HTTP/1.1 client may send another request on the same socket once the previous response has been written. The socket is closed when the client asks for it with [code]Connection: close[/code], when the request is HTTP/1.0 without [code]Connection: keep-alive[/code], when the request is refused, or when [member connection_timeout_seconds] passes without a byte moving in either direction.
+		By default all work happens on the thread that drives the server. While the node is inside the scene tree it polls itself every frame; a headless caller can call [method poll] directly instead. With [member use_threads] the accepting, reading and parsing of connections runs on a worker thread instead, while handlers, the [signal request_received] signal and every response are still run on the main thread from [method poll]; the observable behavior is identical either way. A connection is persistent by default: an HTTP/1.1 client may send another request on the same socket once the previous response has been written. The socket is closed when the client asks for it with [code]Connection: close[/code], when the request is HTTP/1.0 without [code]Connection: keep-alive[/code], when the request is refused, or when [member connection_timeout_seconds] passes without a byte moving in either direction.
 			A request is checked against the server's limits before it reaches any handler. A body larger than [member max_request_body_bytes] is answered [code]413 Content Too Large[/code] without being buffered; more header fields than [member max_header_count], a header line longer than [member max_header_line_bytes], or a header block that does not end within [member max_header_block_bytes] are each answered [code]431 Request Header Fields Too Large[/code]. A request carrying both [code skip-lint]Content-Length[/code] and [code skip-lint]Transfer-Encoding[/code], or repeating [code skip-lint]Content-Length[/code], frames its body ambiguously and is answered [code]400 Bad Request[/code], because acting on either reading of it is what request smuggling relies on. A header line folded onto the previous one is refused the same way, since a recipient that honors the deprecated fold and one that ignores it read different values from it. A transfer coding on its own is answered [code]501 Not Implemented[/code], since no coding is decoded here. Every one of these refusals is written to the client and then closes the socket.
 		[b]Note:[/b] The default bind address is the loopback interface, so the server is reachable only from the local machine unless another address is passed to [method listen].
 		This class lives in the [code]foundry.http.server[/code] namespace, so it is reached either by its fully qualified name [code skip-lint]foundry.http.server.HTTPServer[/code] or, after [code]import foundry.http.server[/code], by the bare name [code]HTTPServer[/code]. Without that import the bare name does not resolve.
@@ -23,6 +23,12 @@
 			<return type="bool" />
 			<description>
 				Returns [code]true[/code] while the server holds an open listening socket.
+			</description>
+		</method>
+		<method name="is_using_threads" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the server accepts and parses connections on a worker thread. See [member use_threads].
 			</description>
 		</method>
 		<method name="listen">
@@ -49,7 +55,7 @@
 		<method name="poll">
 			<return type="void" />
 			<description>
-				Accepts pending connections, parses whatever arrived, dispatches completed requests and writes pending responses. Called automatically once per frame while the node is inside the scene tree. Does nothing if the server is not listening.
+				Advances the server for one pass. In the default mode it accepts pending connections, parses whatever arrived, dispatches completed requests and writes pending responses. With [member use_threads] the worker thread already does the accepting, parsing and writing, so this only dispatches the requests the worker has finished parsing. Either way handlers and the [signal request_received] signal run here, on the calling thread. Called automatically once per frame while the node is inside the scene tree. Does nothing if the server is not listening in the default mode.
 			</description>
 		</method>
 		<method name="route">
@@ -62,10 +68,17 @@
 				The handler is called with the request and the response as its two arguments. If several handlers are registered for the same method and path, the first registration wins. A routed request does not reach [signal request_received] unless [member emit_for_all] is enabled.
 			</description>
 		</method>
+		<method name="set_use_threads">
+			<return type="void" />
+			<param index="0" name="use_threads" type="bool" />
+			<description>
+				Sets whether the server accepts and parses connections on a worker thread. See [member use_threads]. Calling this while the server is listening is rejected and leaves the property unchanged.
+			</description>
+		</method>
 		<method name="stop">
 			<return type="void" />
 			<description>
-				Closes the listening socket and every open connection. Does nothing if the server is not listening.
+				Closes the listening socket and every open connection. In threaded mode the worker thread is stopped and joined first, so no connection is being read while it is torn down. Does nothing if the server is not listening.
 			</description>
 		</method>
 	</methods>
@@ -97,6 +110,9 @@
 		</member>
 		<member name="port" type="int" setter="set_port" getter="get_port" default="8080">
 			The TCP port [method listen] binds to. Must be between [code]0[/code] and [code]65535[/code]; values outside that range are rejected and leave the property unchanged. [code]0[/code] asks the operating system for a free port.
+		</member>
+		<member name="use_threads" type="bool" setter="set_use_threads" getter="is_using_threads" default="false">
+			If [code]true[/code], [method listen] starts a worker thread that accepts connections and reads and parses their requests, off the main thread. Handlers, the [signal request_received] signal and every response are still run on the main thread when [method poll] drains the parsed requests, so nothing script sees changes; only where the socket reading happens does. Must be set before [method listen]; changing it while the server is listening is rejected. The default [code]false[/code] runs the whole loop on the polling thread.
 		</member>
 	</members>
 	<signals>

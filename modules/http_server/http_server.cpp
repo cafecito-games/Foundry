@@ -33,6 +33,7 @@
 #include "http_file_serve.h"
 
 #include "core/io/stream_peer_tls.h"
+#include "core/os/os.h"
 
 void HTTPServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("listen", "tls_options"), &HTTPServer::listen, DEFVAL(Ref<TLSOptions>()));
@@ -60,6 +61,8 @@ void HTTPServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_max_header_block_bytes"), &HTTPServer::get_max_header_block_bytes);
 	ClassDB::bind_method(D_METHOD("set_connection_timeout_seconds", "connection_timeout_seconds"), &HTTPServer::set_connection_timeout_seconds);
 	ClassDB::bind_method(D_METHOD("get_connection_timeout_seconds"), &HTTPServer::get_connection_timeout_seconds);
+	ClassDB::bind_method(D_METHOD("set_use_threads", "use_threads"), &HTTPServer::set_use_threads);
+	ClassDB::bind_method(D_METHOD("is_using_threads"), &HTTPServer::is_using_threads);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "port", PROPERTY_HINT_RANGE, "0,65535,1"), "set_port", "get_port");
 	ADD_PROPERTY(PropertyInfo(Variant::STRING, "bind_address"), "set_bind_address", "get_bind_address");
@@ -70,6 +73,7 @@ void HTTPServer::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_header_line_bytes", PROPERTY_HINT_RANGE, "1,65536,1,or_greater"), "set_max_header_line_bytes", "get_max_header_line_bytes");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_header_block_bytes", PROPERTY_HINT_RANGE, "1,1048576,1,or_greater"), "set_max_header_block_bytes", "get_max_header_block_bytes");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "connection_timeout_seconds", PROPERTY_HINT_RANGE, "0,600,0.1,or_greater"), "set_connection_timeout_seconds", "get_connection_timeout_seconds");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_threads"), "set_use_threads", "is_using_threads");
 
 	ADD_SIGNAL(MethodInfo("request_received",
 			PropertyInfo(Variant::OBJECT, "request", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_DEFAULT, "foundry.http.server.HTTPRequest"),
@@ -170,6 +174,15 @@ double HTTPServer::get_connection_timeout_seconds() const {
 	return limits.timeout_seconds;
 }
 
+void HTTPServer::set_use_threads(bool p_use_threads) {
+	ERR_FAIL_COND_MSG(is_listening(), "use_threads cannot change while the server is listening.");
+	use_threads = p_use_threads;
+}
+
+bool HTTPServer::is_using_threads() const {
+	return use_threads;
+}
+
 Error HTTPServer::listen(const Ref<TLSOptions> &p_tls_options) {
 	ERR_FAIL_COND_V_MSG(tcp_server->is_listening(), ERR_ALREADY_IN_USE, "The server is already listening.");
 
@@ -195,11 +208,31 @@ Error HTTPServer::listen(const Ref<TLSOptions> &p_tls_options) {
 	// plaintext `listen()` always clears any options a previous HTTPS run set.
 	tls_options = p_tls_options;
 
+	if (use_threads) {
+		// The worker owns accept/read/parse from here; the main thread only drains parsed requests.
+		worker_should_exit.clear();
+		worker_task = WorkerThreadPool::get_singleton()->add_native_task(&HTTPServer::_worker_thread_func, this, false, "HTTPServer connection worker");
+	}
+
+	// Internal processing drains parsed requests in threaded mode and drives the whole loop in
+	// frame-poll mode, so it is needed either way while the node is in the tree.
 	set_process_internal(true);
 	return OK;
 }
 
 void HTTPServer::stop() {
+	// Stop the worker before tearing anything down, so it is never reading or parsing a connection
+	// while the connections it owns are being closed.
+	if (worker_task != WorkerThreadPool::INVALID_TASK_ID) {
+		worker_should_exit.set();
+		WorkerThreadPool::get_singleton()->wait_for_task_completion(worker_task);
+		worker_task = WorkerThreadPool::INVALID_TASK_ID;
+	}
+
+	// The worker has been joined, so the server is single-threaded again; the lock only orders this
+	// against a concurrent const accessor on the main thread.
+	MutexLock lock(mutex);
+	pending.clear();
 	for (Ref<HTTPServerConnection> &connection : connections) {
 		connection->close();
 	}
@@ -210,10 +243,12 @@ void HTTPServer::stop() {
 }
 
 bool HTTPServer::is_listening() const {
+	MutexLock lock(mutex);
 	return tcp_server->is_listening();
 }
 
 int HTTPServer::get_listening_port() const {
+	MutexLock lock(mutex);
 	return tcp_server->is_listening() ? tcp_server->get_local_port() : -1;
 }
 
@@ -249,10 +284,20 @@ int HTTPServer::get_mount_count() const {
 }
 
 int HTTPServer::get_connection_count() const {
+	MutexLock lock(mutex);
 	return static_cast<int>(connections.size());
 }
 
 void HTTPServer::poll() {
+	if (use_threads) {
+		// The worker owns accept/read/parse/write; this only runs script for the requests it parked.
+		_drain_pending();
+		return;
+	}
+	_poll_connections();
+}
+
+void HTTPServer::_poll_connections() {
 	if (!tcp_server->is_listening()) {
 		return;
 	}
@@ -292,6 +337,103 @@ void HTTPServer::poll() {
 		if (connections[index]->is_closed()) {
 			connections.remove_at(index);
 		}
+	}
+}
+
+void HTTPServer::_worker_thread_func(void *p_server) {
+	static_cast<HTTPServer *>(p_server)->_run_worker();
+}
+
+void HTTPServer::_run_worker() {
+	// The worker owns every connection from accept until it reaches `STATE_READY`, at which point the
+	// connection is parked and ownership passes to the main thread. It never runs script, never
+	// invokes a `Callable` and never emits a signal.
+	while (!worker_should_exit.is_set()) {
+		_accept_connections();
+		_service_connections();
+		// A short idle keeps the accept/read loop responsive without spinning a core while the sockets
+		// are quiet. Progress deadlines are measured in seconds, so this granularity is immaterial.
+		OS::get_singleton()->delay_usec(200);
+	}
+}
+
+void HTTPServer::_accept_connections() {
+	MutexLock lock(mutex);
+	if (!tcp_server->is_listening()) {
+		return;
+	}
+
+	while (connections.size() < uint32_t(max_connections) && tcp_server->is_connection_available()) {
+		Ref<StreamPeerTCP> peer = tcp_server->take_connection();
+		if (peer.is_null()) {
+			break;
+		}
+		peer->set_no_delay(true);
+
+		Ref<HTTPServerConnection> connection;
+		connection.instantiate();
+		connection->accept(peer, limits, tls_options);
+		connections.push_back(connection);
+	}
+}
+
+void HTTPServer::_service_connections() {
+	// A connection parked for dispatch is owned by the main thread, so it is excluded here: the
+	// worker neither polls it nor reads its state until dispatch hands it back by clearing
+	// `awaiting_dispatch`. The snapshot keeps every serviced connection alive for this pass even if a
+	// concurrent prune would otherwise drop it.
+	LocalVector<Ref<HTTPServerConnection>> pass;
+	{
+		MutexLock lock(mutex);
+		for (const Ref<HTTPServerConnection> &connection : connections) {
+			if (!connection->awaiting_dispatch && !connection->is_closed()) {
+				pass.push_back(connection);
+			}
+		}
+	}
+
+	for (const Ref<HTTPServerConnection> &connection : pass) {
+		connection->poll();
+		if (connection->get_state() == HTTPServerConnection::STATE_READY) {
+			// Park the fully parsed request for the main thread and stop touching this connection.
+			MutexLock lock(mutex);
+			connection->awaiting_dispatch = true;
+			pending.push_back(connection);
+		}
+	}
+
+	MutexLock lock(mutex);
+	uint32_t index = connections.size();
+	while (index > 0) {
+		index--;
+		// A parked connection is owned by the main thread; its state must not be read here.
+		if (!connections[index]->awaiting_dispatch && connections[index]->is_closed()) {
+			connections.remove_at(index);
+		}
+	}
+}
+
+void HTTPServer::_drain_pending() {
+	// Dispatch runs script, so the mutex is released around each `_dispatch()` call: a handler may
+	// call `stop()`, which joins the worker, and holding the lock across that would deadlock.
+	while (true) {
+		Ref<HTTPServerConnection> connection;
+		{
+			MutexLock lock(mutex);
+			if (pending.is_empty()) {
+				break;
+			}
+			connection = pending[0];
+			pending.remove_at(0);
+		}
+
+		_dispatch(connection);
+
+		// Hand the connection back to the worker, which resumes writing the response and, on a
+		// kept-alive socket, reading the next request. If `_dispatch()` closed the connection the flag
+		// still clears harmlessly; the worker prunes it on its next pass.
+		MutexLock lock(mutex);
+		connection->awaiting_dispatch = false;
 	}
 }
 
