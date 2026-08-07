@@ -945,6 +945,16 @@ Error ResourceLoaderBinary::load() {
 
 		String t = get_unicode_string();
 
+		// The saved type is an arbitrary string: a qualified namespaced key, a bare name re-exported
+		// by a unique global alias, or a flat class name. Mapping it to a canonical registry key is
+		// the loader's own contract, so it goes through the resolver here rather than relying on the
+		// resolution `instantiate()` happens to perform internally. On a miss - unknown, or an
+		// ambiguous alias - the raw string is passed through so the renamed-class fallback and the
+		// error messages that name the on-disk type keep working, and `MissingResource` below records
+		// it verbatim.
+		const StringName resolved_type_name = ClassDB::resolve_type_name(t);
+		const String resolved_type = resolved_type_name == StringName() ? t : String(resolved_type_name);
+
 		Ref<Resource> res;
 		Resource *r = nullptr;
 
@@ -958,7 +968,7 @@ Error ResourceLoaderBinary::load() {
 			if (cache_mode == ResourceFormatLoader::CACHE_MODE_REPLACE && ResourceCache::has(path)) {
 				//use the existing one
 				Ref<Resource> cached = ResourceCache::get_ref(path);
-				if (cached->get_class() == t) {
+				if (cached->get_class() == resolved_type) {
 					cached->reset_state();
 					res = cached;
 				}
@@ -967,7 +977,7 @@ Error ResourceLoaderBinary::load() {
 			if (res.is_null()) {
 				//did not replace
 
-				Object *obj = ClassDB::instantiate(t);
+				Object *obj = ClassDB::instantiate(resolved_type);
 				if (!obj) {
 					if (ResourceLoader::is_creating_missing_resources_if_class_unavailable_enabled()) {
 						//create a missing resource

@@ -596,6 +596,22 @@ void ClassDB::register_namespace(const StringName &p_class, const StringName &p_
 		ERR_FAIL_COND_MSG(kv.value.inherits == p_class, vformat("Cannot put class '%s' in a namespace: subclass '%s' is already registered.", p_class, kv.key));
 	}
 
+#ifdef DEV_ENABLED
+	// A subclass snapshots the whole `name_hierarchy` of this class when its own `GDType` is built,
+	// and `apply_namespace()` only rewrites this class's own entry. A subclass whose type was already
+	// materialized would therefore keep the bare name forever, even if it is not registered yet, so
+	// reject the rekey outright while developing rather than shipping a silently stale identity.
+	const GDType *own_gdtype = it->value.gdtype;
+	for (GDType **pool_slot : gdtype_autorelease_pool) {
+		if (!pool_slot || !*pool_slot || *pool_slot == own_gdtype) {
+			continue;
+		}
+		for (const GDType *ancestor = (*pool_slot)->get_super_type(); ancestor; ancestor = ancestor->get_super_type()) {
+			ERR_FAIL_COND_MSG(ancestor == own_gdtype, vformat("Cannot put class '%s' in a namespace: subclass '%s' already materialized its type from the unqualified name. FOUNDRY_REGISTER_NAMESPACE must directly follow the class registration, before any subclass type is touched.", p_class, (*pool_slot)->get_name()));
+		}
+	}
+#endif // DEV_ENABLED
+
 	// Full copy so every bound method, property, signal and constant survives the rekey.
 	ClassInfo class_info = it->value;
 	class_info.namespace_path = p_namespace;
@@ -905,7 +921,10 @@ bool ClassDB::can_instantiate(const StringName &p_class) {
 	{
 		Locker::Lock lock(Locker::STATE_READ);
 
-		ClassInfo *ti = classes.getptr(p_class);
+		// Name resolution is a registry-wide invariant for name-taking queries, so this answers for
+		// exactly the names `instantiate()` accepts.
+		const StringName resolved = _resolve_by_any_name(p_class);
+		ClassInfo *ti = classes.getptr(resolved != StringName() ? resolved : p_class);
 		if (!ti) {
 			if (!ScriptServer::is_global_class(p_class)) {
 				ERR_FAIL_V_MSG(false, vformat("Cannot get class '%s'.", String(p_class)));
@@ -2457,6 +2476,10 @@ void ClassDB::register_extension_class(ObjectFoundryExtension *p_extension) {
 	c.api = p_extension->editor_class ? API_EDITOR_EXTENSION : API_EXTENSION;
 	c.foundry_extension = p_extension;
 	c.name = p_extension->class_name;
+	// Extension classes always enter the registry flat, exactly like `_add_class()`. Without this the
+	// entry has an empty canonical key and every name-taking query - `class_exists()`,
+	// `resolve_type_name()`, `is_parent_class()` - fails for the class.
+	c.qualified_name = p_extension->class_name;
 	c.is_virtual = p_extension->is_virtual;
 	if (!p_extension->is_abstract) {
 		// Find the closest ancestor which is either non-abstract or native (or both).
@@ -2500,6 +2523,23 @@ void ClassDB::unregister_extension_class(const StringName &p_class, bool p_free_
 			memdelete(F.value);
 		}
 	}
+	// Drop the name mappings this class owns so a reloaded extension does not inherit stale
+	// resolutions. Entries owned by other classes are left untouched.
+	HashMap<StringName, StringName>::Iterator by_simple_name = qualified_by_simple_name.find(c->name);
+	if (by_simple_name && by_simple_name->value == p_class) {
+		qualified_by_simple_name.remove(by_simple_name);
+	}
+	LocalVector<StringName> empty_aliases;
+	for (KeyValue<StringName, LocalVector<StringName>> &alias : bare_aliases) {
+		alias.value.erase(p_class);
+		if (alias.value.is_empty()) {
+			empty_aliases.push_back(alias.key);
+		}
+	}
+	for (const StringName &alias : empty_aliases) {
+		bare_aliases.erase(alias);
+	}
+
 	classes.erase(p_class);
 	default_values_cached.erase(p_class);
 	default_values.erase(p_class);
