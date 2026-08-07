@@ -1,6 +1,6 @@
-# Mutually dependent bounds have no concrete link to resolve against. Following the chain must
-# terminate on the cycle instead of looping forever, leaving the receiver typed as the parameter it
-# started as, which keeps member access on the soft path.
+# Mutually dependent bounds have no concrete link for member resolution to reach, and are rejected
+# where the bound itself is resolved, before any member access is analyzed. Following bound chains
+# during member resolution must not change that: the declaration is still reported, not walked.
 class Ring[T: U, U: T]:
 	var value: T
 

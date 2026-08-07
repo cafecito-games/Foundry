@@ -756,9 +756,10 @@ static bool _datatype_is_type_parameter_bounded_by_final_class(const FSParser::D
 // may itself name another parameter (`class Box[T: FrmMessage, U: T]`). Member resolution therefore
 // follows the whole bound chain to its first non-parameter link, so a `U`-typed receiver is resolved
 // against `FrmMessage` instead of stopping at `T`, where even members the bound really has would be
-// missed. Mutually dependent bounds are rejected earlier as a cyclic reference, but the walk still
-// carries a visited set so any cycle that reaches here terminates on the parameter it started from
-// rather than looping. Meta-ness describes the receiver rather than the bound, so it is carried over.
+// missed. Bound resolution rejects mutually dependent bounds before any member is looked up, so the
+// visited set below is a guard rather than a path this reaches today: it keeps the walk terminating
+// on the parameter it started from if a cycle ever survives that far, instead of looping forever.
+// Meta-ness describes the receiver rather than the bound, so it is carried over.
 static FSParser::DataType _resolve_type_parameter_bound_chain(const FSParser::DataType &p_type) {
 	if (p_type.kind != FSParser::DataType::TYPE_PARAMETER || p_type.type_parameter_bound.is_empty()) {
 		return p_type;
