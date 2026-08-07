@@ -5258,6 +5258,57 @@ bool FSAnalyzer::collect_uncovered_finite_domain_values(const FSParser::MatchNod
 	return true;
 }
 
+// What a single match pattern proves about the case set of `p_match_type`'s tagged union. The caller
+// decides what UNPROVABLE means: exhaustiveness checking gives up on the whole match, while editor
+// completion treats it as "proves nothing" so an incomplete pattern at the cursor cannot hide cases.
+// Guards are the branch's concern, not the pattern's, so they are handled by the callers.
+FSAnalyzer::TaggedUnionPatternCoverage FSAnalyzer::tagged_union_pattern_coverage(const FSParser::PatternNode *p_pattern, const FSParser::DataType &p_match_type, int64_t &r_covered_tag) {
+	if (p_pattern == nullptr) {
+		return TAGGED_UNION_PATTERN_COVERS_NOTHING;
+	}
+
+	if (p_pattern->pattern_type == FSParser::PatternNode::PT_ENUM_CASE) {
+		const FSParser::DataType &case_type = p_pattern->case_datatype;
+		if (!p_pattern->case_payload_is_irrefutable || case_type.enum_type != p_match_type.enum_type) {
+			return TAGGED_UNION_PATTERN_COVERS_NOTHING; // A refutable payload pattern proves nothing about the case.
+		}
+		const int64_t *tag = case_type.enum_values.getptr(case_type.enum_case_name);
+		if (tag == nullptr) {
+			return TAGGED_UNION_PATTERN_COVERS_NOTHING;
+		}
+		r_covered_tag = *tag;
+		return TAGGED_UNION_PATTERN_COVERS_CASE;
+	}
+
+	const FSParser::ExpressionNode *value_node = nullptr;
+	if (p_pattern->pattern_type == FSParser::PatternNode::PT_LITERAL) {
+		value_node = p_pattern->literal;
+	} else if (p_pattern->pattern_type == FSParser::PatternNode::PT_EXPRESSION) {
+		value_node = p_pattern->expression;
+	} else {
+		return TAGGED_UNION_PATTERN_COVERS_NOTHING; // Array, dictionary and tuple patterns cannot cover a whole case.
+	}
+
+	if (value_node == nullptr || !value_node->is_constant) {
+		return TAGGED_UNION_PATTERN_COVERAGE_UNPROVABLE;
+	}
+	if (value_node->reduced_value.get_type() == Variant::NIL) {
+		return TAGGED_UNION_PATTERN_COVERS_NULL;
+	}
+	// A payload-less case folds to its read-only `[tag]` singleton, which is the only constant
+	// that can cover a case at runtime.
+	const FSParser::DataType &value_type = value_node->get_datatype();
+	if (value_node->reduced_value.get_type() != Variant::ARRAY || !value_type.is_tagged_union_type() || value_type.enum_type != p_match_type.enum_type) {
+		return TAGGED_UNION_PATTERN_COVERS_NOTHING;
+	}
+	const Array value = value_node->reduced_value;
+	if (value.size() != 1 || value[0].get_type() != Variant::INT) {
+		return TAGGED_UNION_PATTERN_COVERS_NOTHING;
+	}
+	r_covered_tag = (int64_t)value[0];
+	return TAGGED_UNION_PATTERN_COVERS_CASE;
+}
+
 // The domain of a tagged union is its case set. A case is covered by a payload-less case value used as
 // a plain pattern, or by a case pattern whose payload patterns accept every value of the case.
 // Returns false when a pattern makes coverage unprovable.
@@ -5273,45 +5324,19 @@ bool FSAnalyzer::collect_uncovered_tagged_union_cases(const FSParser::MatchNode 
 			continue; // Guard may fail; does not guarantee coverage.
 		}
 		for (const FSParser::PatternNode *pattern : branch->patterns) {
-			if (pattern->pattern_type == FSParser::PatternNode::PT_ENUM_CASE) {
-				const FSParser::DataType &case_type = pattern->case_datatype;
-				if (!pattern->case_payload_is_irrefutable || case_type.enum_type != p_match_type.enum_type) {
-					continue; // A refutable payload pattern proves nothing about the case.
-				}
-				const int64_t *tag = case_type.enum_values.getptr(case_type.enum_case_name);
-				if (tag != nullptr) {
-					covered_tags.insert(*tag);
-				}
-				continue;
+			int64_t covered_tag = 0;
+			switch (tagged_union_pattern_coverage(pattern, p_match_type, covered_tag)) {
+				case TAGGED_UNION_PATTERN_COVERS_CASE:
+					covered_tags.insert(covered_tag);
+					break;
+				case TAGGED_UNION_PATTERN_COVERS_NULL:
+					null_covered = true;
+					break;
+				case TAGGED_UNION_PATTERN_COVERAGE_UNPROVABLE:
+					return false; // Non-constant pattern: cannot prove coverage; bail out.
+				case TAGGED_UNION_PATTERN_COVERS_NOTHING:
+					break;
 			}
-
-			const FSParser::ExpressionNode *value_node = nullptr;
-			if (pattern->pattern_type == FSParser::PatternNode::PT_LITERAL) {
-				value_node = pattern->literal;
-			} else if (pattern->pattern_type == FSParser::PatternNode::PT_EXPRESSION) {
-				value_node = pattern->expression;
-			} else {
-				continue; // Array, dictionary and tuple patterns cannot cover a whole case.
-			}
-
-			if (value_node == nullptr || !value_node->is_constant) {
-				return false; // Non-constant pattern: cannot prove coverage; bail out.
-			}
-			// A payload-less case folds to its read-only `[tag]` singleton, which is the only constant
-			// that can cover a case at runtime.
-			if (value_node->reduced_value.get_type() == Variant::NIL) {
-				null_covered = true;
-				continue;
-			}
-			const FSParser::DataType &value_type = value_node->get_datatype();
-			if (value_node->reduced_value.get_type() != Variant::ARRAY || !value_type.is_tagged_union_type() || value_type.enum_type != p_match_type.enum_type) {
-				continue;
-			}
-			const Array value = value_node->reduced_value;
-			if (value.size() != 1 || value[0].get_type() != Variant::INT) {
-				continue;
-			}
-			covered_tags.insert((int64_t)value[0]);
 		}
 	}
 

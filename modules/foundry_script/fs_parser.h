@@ -2018,6 +2018,12 @@ public:
 		Variant::Type builtin_type = Variant::VARIANT_MAX;
 		Node *node = nullptr;
 		Object *base = nullptr;
+		// The `match` whose pattern list holds the cursor, and the branch inside it, for a contextual
+		// case shorthand completed in match-pattern position. Null for every other completion, which is
+		// what keeps expression-position and `is`-position completion unfiltered. Raw pointers are safe
+		// for the same reason `node` and `current_suite` are: a context never outlives its parse tree.
+		MatchNode *match = nullptr;
+		MatchBranchNode *match_branch = nullptr;
 		FSParser *parser = nullptr;
 		CompletionCall call;
 		// Identifiers already typed before the cursor in a dotted clause (e.g. the
