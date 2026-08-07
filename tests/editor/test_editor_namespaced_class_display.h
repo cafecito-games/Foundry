@@ -69,13 +69,16 @@ TEST_CASE("[Editor][ClassDBNamespace] A registered class name never resolves to 
 	CHECK(EditorNode::get_class_icon_script_path("res://does_not_exist.fs").is_empty());
 }
 
-TEST_CASE("[Editor][ClassDBNamespace] The type a create-node entry stands for builds a qualified scene entry") {
-	// The dialog labels an entry with the simple name but carries the canonical registry key, and
-	// that key is what the scene dock instantiates. This walks the same chain headlessly: display
-	// name, instantiation from the carried key, and the type string a save would write.
+TEST_CASE("[Editor][ClassDBNamespace] The canonical key a create-node entry carries reaches the scene as a qualified type") {
+	// A dialog entry is labelled with the simple name but carries the canonical registry key, and
+	// that key is what the scene dock hands to `ClassDB`. Driving the dialog itself needs a live
+	// editor window, so this asserts the contract on the seam instead: a key that a listed entry
+	// carries is offered as instantiable, is labelled by its simple name, and produces a node whose
+	// serialized type is the qualified name.
 	const StringName carried_type = "foundry.http.server.HTTPServer";
 
 	REQUIRE(ClassDB::class_exists(carried_type));
+	// `CreateDialog` marks an entry instantiable from exactly these two answers.
 	CHECK(ClassDB::can_instantiate(carried_type));
 	CHECK_FALSE(ClassDB::is_virtual(carried_type));
 	CHECK(CreateDialog::get_class_display_name(carried_type) == "HTTPServer");
