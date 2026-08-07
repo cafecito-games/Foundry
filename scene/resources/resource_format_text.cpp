@@ -1949,8 +1949,13 @@ Error ResourceFormatSaverTextInstance::save(const String &p_path, const Ref<Reso
 			String line = "[sub_resource ";
 			if (res->get_scene_unique_id().is_empty()) {
 				String new_id;
+				// Scene unique ids only accept identifier characters, so a namespaced class contributes
+				// its simple name. The stored `type=` string keeps the qualified name.
+				String id_prefix = _resource_get_class(res);
+				id_prefix = id_prefix.substr(id_prefix.rfind_char('.') + 1);
+
 				while (true) {
-					new_id = _resource_get_class(res) + "_" + Resource::generate_scene_unique_id();
+					new_id = id_prefix + "_" + Resource::generate_scene_unique_id();
 
 					if (!used_unique_ids.has(new_id)) {
 						break;

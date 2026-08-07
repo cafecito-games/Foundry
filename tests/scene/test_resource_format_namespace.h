@@ -168,23 +168,102 @@ TEST_CASE("[ResourceFormatNamespace] A text sub-resource resolves its qualified 
 	CHECK_EQ(int(child->get("value")), 5);
 }
 
+// The scene unique id a saver derives for a built-in resource must be a valid identifier, so a
+// namespaced class contributes only the segment after its last namespace separator.
+static void check_derived_scene_unique_id(const Ref<Resource> &p_resource, const String &p_qualified_class) {
+	const String simple_name = p_qualified_class.substr(p_qualified_class.rfind_char('.') + 1);
+	const String id = p_resource->get_scene_unique_id();
+	CHECK(id.begins_with(simple_name + "_"));
+	CHECK_FALSE(id.contains("."));
+}
+
 TEST_CASE("[ResourceFormatNamespace] A binary resource round-trips its qualified type") {
 	ensure_resource_registrations();
 
 	Ref<Resource> source = Ref<Resource>(Object::cast_to<Resource>(ClassDB::instantiate(NAMESPACED_RESOURCE)));
 	REQUIRE(source.is_valid());
 	source->set("value", 23);
-	// Given explicitly so the saver does not derive one from the qualified class name, which is not a
-	// valid scene unique id and would only add noise unrelated to what this case covers.
-	source->set_scene_unique_id("NamespacedRoundTrip");
 
 	const String path = TestUtils::get_temp_path("resource_format_qualified.res");
 	REQUIRE_EQ(ResourceSaver::save(source, path), OK);
+	check_derived_scene_unique_id(source, NAMESPACED_RESOURCE);
 
 	Ref<Resource> loaded = load_uncached(path);
 	REQUIRE(loaded.is_valid());
 	CHECK_EQ(loaded->get_class(), String(NAMESPACED_RESOURCE));
 	CHECK_EQ(int(loaded->get("value")), 23);
+}
+
+TEST_CASE("[ResourceFormatNamespace] A saved text resource round-trips its qualified type") {
+	ensure_resource_registrations();
+
+	Ref<Resource> source = Ref<Resource>(Object::cast_to<Resource>(ClassDB::instantiate(NAMESPACED_RESOURCE)));
+	REQUIRE(source.is_valid());
+	source->set("value", 29);
+
+	const String path = TestUtils::get_temp_path("resource_format_qualified_saved.tres");
+	REQUIRE_EQ(ResourceSaver::save(source, path), OK);
+
+	Ref<Resource> loaded = load_uncached(path);
+	REQUIRE(loaded.is_valid());
+	CHECK_EQ(loaded->get_class(), String(NAMESPACED_RESOURCE));
+	CHECK_EQ(int(loaded->get("value")), 29);
+}
+
+TEST_CASE("[ResourceFormatNamespace] A namespaced sub-resource gets an identifier scene unique id") {
+	ensure_resource_registrations();
+
+	SUBCASE("text format") {
+		Ref<Resource> parent = Ref<Resource>(Object::cast_to<Resource>(ClassDB::instantiate(NAMESPACED_RESOURCE)));
+		Ref<Resource> child = Ref<Resource>(Object::cast_to<Resource>(ClassDB::instantiate(NAMESPACED_RESOURCE)));
+		REQUIRE(parent.is_valid());
+		REQUIRE(child.is_valid());
+		parent->set("value", 41);
+		child->set("value", 42);
+		parent->set("child", child);
+
+		const String path = TestUtils::get_temp_path("resource_format_qualified_sub_saved.tres");
+		REQUIRE_EQ(ResourceSaver::save(parent, path), OK);
+		check_derived_scene_unique_id(child, NAMESPACED_RESOURCE);
+
+		// The written sub-resource header keeps the qualified type but uses the derived identifier id.
+		Ref<FileAccess> saved = FileAccess::open(path, FileAccess::READ);
+		REQUIRE(saved.is_valid());
+		const String text = saved->get_as_text();
+		CHECK(text.contains(vformat("[sub_resource type=\"%s\" id=\"%s\"]",
+				NAMESPACED_RESOURCE, child->get_scene_unique_id())));
+
+		Ref<Resource> loaded = load_uncached(path);
+		REQUIRE(loaded.is_valid());
+		CHECK_EQ(int(loaded->get("value")), 41);
+		Ref<Resource> loaded_child = loaded->get("child");
+		REQUIRE(loaded_child.is_valid());
+		CHECK_EQ(loaded_child->get_class(), String(NAMESPACED_RESOURCE));
+		CHECK_EQ(int(loaded_child->get("value")), 42);
+	}
+
+	SUBCASE("binary format") {
+		Ref<Resource> parent = Ref<Resource>(Object::cast_to<Resource>(ClassDB::instantiate(NAMESPACED_RESOURCE)));
+		Ref<Resource> child = Ref<Resource>(Object::cast_to<Resource>(ClassDB::instantiate(NAMESPACED_RESOURCE)));
+		REQUIRE(parent.is_valid());
+		REQUIRE(child.is_valid());
+		parent->set("value", 51);
+		child->set("value", 52);
+		parent->set("child", child);
+
+		const String path = TestUtils::get_temp_path("resource_format_qualified_sub_saved.res");
+		REQUIRE_EQ(ResourceSaver::save(parent, path), OK);
+		check_derived_scene_unique_id(parent, NAMESPACED_RESOURCE);
+		check_derived_scene_unique_id(child, NAMESPACED_RESOURCE);
+
+		Ref<Resource> loaded = load_uncached(path);
+		REQUIRE(loaded.is_valid());
+		CHECK_EQ(int(loaded->get("value")), 51);
+		Ref<Resource> loaded_child = loaded->get("child");
+		REQUIRE(loaded_child.is_valid());
+		CHECK_EQ(loaded_child->get_class(), String(NAMESPACED_RESOURCE));
+		CHECK_EQ(int(loaded_child->get("value")), 52);
+	}
 }
 
 TEST_CASE("[ResourceFormatNamespace] A unique global alias loads and re-saves the canonical key") {
