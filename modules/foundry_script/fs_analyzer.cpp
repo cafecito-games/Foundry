@@ -235,6 +235,61 @@ static bool is_open_generic_union_metatype(const FSParser::DataType &p_type, con
 	return true;
 }
 
+// Whether `p_declaration` is one of the enums declared in the file rooted at `p_root`. Source extents
+// are only comparable within a single file, so lexical containment has to establish file identity
+// first: another file's declaration can span the very lines a local reference sits on.
+static bool enum_is_declared_in_file(const FSParser::ClassNode *p_root, const FSParser::EnumNode *p_declaration) {
+	if (p_root == nullptr || p_declaration == nullptr) {
+		return false;
+	}
+	if (p_root->is_enum_file && p_root->enum_file_decl == p_declaration) {
+		return true;
+	}
+	for (int i = 0; i < p_root->members.size(); i++) {
+		const FSParser::ClassNode::Member &member = p_root->members[i];
+		if (member.type == FSParser::ClassNode::Member::ENUM) {
+			if (member.m_enum == p_declaration) {
+				return true;
+			}
+		} else if (member.type == FSParser::ClassNode::Member::CLASS) {
+			if (enum_is_declared_in_file(member.m_class, p_declaration)) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+static bool source_position_precedes(int p_line, int p_column, int p_other_line, int p_other_column) {
+	return p_line < p_other_line || (p_line == p_other_line && p_column < p_other_column);
+}
+
+bool FSAnalyzer::is_reference_within_enum_declaration(const FSParser::ClassNode *p_reference_root,
+		const FSParser::Node *p_reference, const FSParser::EnumNode *p_declaration) {
+	if (p_reference == nullptr || p_declaration == nullptr) {
+		return false;
+	}
+	// Recovery nodes, and declarations whose parse aborted, carry no position at all. Nothing can be
+	// proven to sit inside them, so they never grant the exemption.
+	if (p_reference->start_line <= 0 || p_declaration->start_line <= 0 ||
+			p_declaration->end_line < p_declaration->start_line) {
+		return false;
+	}
+	// Every node in progress has its end advanced with each consumed token, so a declaration's extents
+	// span its whole body: its type parameters, its cases and their payload types, and its functions.
+	// Positions are compared before file identity because they reject almost every candidate, leaving
+	// the walk over the file's declarations for the few references that do line up.
+	if (source_position_precedes(p_reference->start_line, p_reference->start_column,
+				p_declaration->start_line, p_declaration->start_column)) {
+		return false;
+	}
+	if (source_position_precedes(p_declaration->end_line, p_declaration->end_column,
+				p_reference->end_line, p_reference->end_column)) {
+		return false;
+	}
+	return enum_is_declared_in_file(p_reference_root, p_declaration);
+}
+
 bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p_enum_meta_type, const FSParser::Node *p_source,
 		bool p_allow_open_script_handle_metatype) {
 	if (!p_enum_meta_type.is_tagged_union_type() || !p_enum_meta_type.is_meta_type) {
@@ -262,8 +317,9 @@ bool FSAnalyzer::reject_bare_generic_union_reference(const FSParser::DataType &p
 	// Inside its own declaration the bare spelling is the open self type, whose arguments are already
 	// published. Anywhere else it would hand the user the declaration's unbound parameters, so a
 	// declared bound would not hold for whatever is passed through it. Self reference is a property of
-	// the lexical position, not of whichever union the analyzer still has active.
-	if (declaration == current_enum && enum_declared_by(parser->current_class, current_enum)) {
+	// the lexical position, not of whichever union the analyzer still has active, so it is decided
+	// from where the reference is written rather than from what is currently being resolved.
+	if (is_reference_within_enum_declaration(parser->head, p_source, declaration)) {
 		return false;
 	}
 
@@ -2565,8 +2621,7 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			const int expected = declaration->type_parameters.size();
 			// Self reference is a property of the lexical position, not of whichever union the analyzer
 			// still has active: a class pulled in during payload resolution is outside the declaration.
-			const bool is_current_declaration = declaration == current_enum &&
-					enum_declared_by(parser->current_class, current_enum);
+			const bool is_current_declaration = is_reference_within_enum_declaration(parser->head, p_type, declaration);
 
 			// Bare self inside the declaration is the open type, whose arguments are already published.
 			// Bare use outside the declaration is not: it gives zero of the required arguments, which the
