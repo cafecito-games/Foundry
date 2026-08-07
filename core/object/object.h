@@ -537,7 +537,7 @@ protected:                                                                      
 			m_inherits::_get_property_listv(p_list, p_reversed);                                                                            \
 		}                                                                                                                                   \
 		p_list->push_back(PropertyInfo(Variant::NIL, get_class_static(), PROPERTY_HINT_NONE, get_class_static(), PROPERTY_USAGE_CATEGORY)); \
-		_get_property_list_from_classdb(#m_class, p_list, true, this);                                                                      \
+		_get_property_list_from_classdb(get_class_static(), p_list, true, this);                                                            \
 		if (m_class::_get_get_property_list() != m_inherits::_get_get_property_list()) {                                                    \
 			_get_property_list(p_list);                                                                                                     \
 		}                                                                                                                                   \

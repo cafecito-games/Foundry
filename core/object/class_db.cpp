@@ -67,6 +67,8 @@ ClassDB::APIType ClassDB::get_current_api() {
 HashMap<StringName, ClassDB::ClassInfo> ClassDB::classes;
 HashMap<StringName, StringName> ClassDB::resource_base_extensions;
 HashMap<StringName, StringName> ClassDB::compat_classes;
+HashMap<StringName, LocalVector<StringName>> ClassDB::bare_aliases;
+HashMap<StringName, StringName> ClassDB::qualified_by_simple_name;
 
 #ifdef TOOLS_ENABLED
 HashMap<StringName, ObjectFoundryExtension> ClassDB::placeholder_extensions;
@@ -558,9 +560,121 @@ uint32_t ClassDB::get_api_hash(APIType p_api) {
 #endif // DEBUG_ENABLED
 }
 
+StringName ClassDB::_resolve_by_any_name(const StringName &p_name) {
+	// An explicitly flat class whose key *is* the bare name always beats a re-export.
+	HashMap<StringName, ClassInfo>::ConstIterator canonical = classes.find(p_name);
+	if (canonical) {
+		return canonical->value.qualified_name;
+	}
+	HashMap<StringName, LocalVector<StringName>>::ConstIterator alias = bare_aliases.find(p_name);
+	if (alias && alias->value.size() == 1) {
+		return alias->value[0];
+	}
+	// Miss, or ambiguous (two or more owners), in which case the caller must qualify.
+	return StringName();
+}
+
 bool ClassDB::class_exists(const StringName &p_class) {
 	Locker::Lock lock(Locker::STATE_READ);
-	return classes.has(p_class);
+	return _resolve_by_any_name(p_class) != StringName();
+}
+
+void ClassDB::register_namespace(const StringName &p_class, const StringName &p_namespace) {
+	Locker::Lock lock(Locker::STATE_WRITE);
+
+	ERR_FAIL_COND_MSG(p_namespace == StringName(), vformat("Empty namespace for class '%s'.", p_class));
+
+	HashMap<StringName, ClassInfo>::Iterator it = classes.find(p_class);
+	ERR_FAIL_COND_MSG(!it, vformat("Cannot set namespace for unknown class '%s'. FOUNDRY_REGISTER_NAMESPACE must directly follow the class registration.", p_class));
+	ERR_FAIL_COND_MSG(!it->value.namespace_path.is_empty(), vformat("Class '%s' is already in namespace '%s'.", p_class, it->value.namespace_path));
+
+	// Rekeying erases the entry, so any subclass registered already would be left with a dangling
+	// `inherits_ptr`, and its GDType hierarchy would have snapshotted the bare name.
+	for (const KeyValue<StringName, ClassInfo> &kv : classes) {
+		ERR_FAIL_COND_MSG(kv.value.inherits == p_class, vformat("Cannot put class '%s' in a namespace: subclass '%s' is already registered.", p_class, kv.key));
+	}
+
+	// Full copy so every bound method, property, signal and constant survives the rekey.
+	ClassInfo class_info = it->value;
+	class_info.namespace_path = p_namespace;
+	class_info.qualified_name = StringName(String(p_namespace) + "." + String(class_info.name));
+
+	classes.remove(it);
+	classes.insert(class_info.qualified_name, class_info);
+	qualified_by_simple_name.insert(class_info.name, class_info.qualified_name);
+
+	// Stamp the runtime identity so `get_class()`, `is_class()` and scene packing all follow.
+	const_cast<GDType *>(classes[class_info.qualified_name].gdtype)->apply_namespace(class_info.qualified_name);
+}
+
+void ClassDB::class_register_global_alias(const StringName &p_qualified_name, const StringName &p_alias) {
+	Locker::Lock lock(Locker::STATE_WRITE);
+
+	ERR_FAIL_COND_MSG(p_alias == StringName(), vformat("Empty global alias for class '%s'.", p_qualified_name));
+	ERR_FAIL_COND_MSG(!classes.has(p_qualified_name), vformat("Cannot register a global alias for unknown class '%s'.", p_qualified_name));
+
+	LocalVector<StringName> &owners = bare_aliases[p_alias];
+	if (owners.has(p_qualified_name)) {
+		return;
+	}
+	owners.push_back(p_qualified_name);
+}
+
+StringName ClassDB::_resolve_for_introspection(const StringName &p_class) {
+	HashMap<StringName, ClassInfo>::ConstIterator canonical = classes.find(p_class);
+	if (canonical) {
+		return canonical->value.qualified_name;
+	}
+	// C++ simple names are unique per binary, so answering introspection queries with them is safe
+	// even though they are not a public resolution path.
+	HashMap<StringName, StringName>::ConstIterator by_simple_name = qualified_by_simple_name.find(p_class);
+	if (by_simple_name) {
+		return by_simple_name->value;
+	}
+	return _resolve_by_any_name(p_class);
+}
+
+StringName ClassDB::class_get_qualified_name(const StringName &p_class) {
+	Locker::Lock lock(Locker::STATE_READ);
+	return _resolve_for_introspection(p_class);
+}
+
+StringName ClassDB::class_get_namespace(const StringName &p_class) {
+	Locker::Lock lock(Locker::STATE_READ);
+
+	const StringName qualified_name = _resolve_for_introspection(p_class);
+	if (qualified_name == StringName()) {
+		return StringName();
+	}
+	const ClassInfo *class_info = classes.getptr(qualified_name);
+	return class_info ? class_info->namespace_path : StringName();
+}
+
+bool ClassDB::class_get_by_qualified_name(const StringName &p_qualified_name, StringName &r_simple_name) {
+	Locker::Lock lock(Locker::STATE_READ);
+
+	const ClassInfo *class_info = classes.getptr(p_qualified_name);
+	if (!class_info) {
+		return false;
+	}
+	r_simple_name = class_info->name;
+	return true;
+}
+
+StringName ClassDB::class_get_in_namespace(const StringName &p_namespace, const StringName &p_simple_name) {
+	Locker::Lock lock(Locker::STATE_READ);
+
+	const StringName qualified_name = p_namespace.is_empty() ? p_simple_name : StringName(String(p_namespace) + "." + String(p_simple_name));
+	const ClassInfo *class_info = classes.getptr(qualified_name);
+	if (!class_info || class_info->namespace_path != p_namespace) {
+		return StringName();
+	}
+	return class_info->qualified_name;
+}
+
+StringName ClassDB::resolve_type_name(const StringName &p_name) {
+	Locker::Lock lock(Locker::STATE_READ);
+	return _resolve_by_any_name(p_name);
 }
 
 void ClassDB::add_compatibility_class(const StringName &p_class, const StringName &p_fallback) {
@@ -579,7 +693,8 @@ Object *ClassDB::_instantiate_internal(const StringName &p_class, bool p_require
 	ClassInfo *ti;
 	{
 		Locker::Lock lock(Locker::STATE_READ);
-		ti = classes.getptr(p_class);
+		const StringName resolved = _resolve_by_any_name(p_class);
+		ti = classes.getptr(resolved != StringName() ? resolved : p_class);
 		if (!_can_instantiate(ti, p_exposed_only)) {
 			if (compat_classes.has(p_class)) {
 				ti = classes.getptr(compat_classes[p_class]);
@@ -871,6 +986,8 @@ void ClassDB::_add_class(const GDType &p_class, const GDType *p_inherits) {
 	classes[name] = ClassInfo();
 	ClassInfo &ti = classes[name];
 	ti.name = name;
+	// Classes always enter the registry flat; `register_namespace()` rekeys them afterwards.
+	ti.qualified_name = name;
 	ti.gdtype = &p_class;
 	if (p_inherits) {
 		ti.inherits = p_inherits->get_name();
@@ -2442,6 +2559,8 @@ void ClassDB::cleanup() {
 	classes.clear();
 	resource_base_extensions.clear();
 	compat_classes.clear();
+	bare_aliases.clear();
+	qualified_by_simple_name.clear();
 	native_structs.clear();
 
 	for (GDType **type : gdtype_autorelease_pool) {
