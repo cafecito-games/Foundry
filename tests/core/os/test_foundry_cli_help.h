@@ -135,6 +135,12 @@ TEST_CASE("[FoundryCLIHelp] Test run help documents the shard selector") {
 	CHECK(text.contains("--case"));
 }
 
+TEST_CASE("[FoundryCLIHelp] Test run help documents the suite filter") {
+	const String text = FoundryCLIHelp::get_command_help_text("test", "run");
+	CHECK(text.contains("--suite"));
+	CHECK(text.contains("Test suite name filter pattern"));
+}
+
 TEST_CASE("[FoundryCLIHelp] Scoped routing validates nouns and verbs") {
 	bool valid = false;
 

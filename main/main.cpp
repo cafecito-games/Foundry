@@ -929,9 +929,10 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			push_test_arg(cli_parse.global_args[i]);
 		}
 		push_test_arg("--test");
-		if (!cli_parse.invocation.test_cases.is_empty()) {
-			push_test_arg("--test-case=" + FoundryCLIParser::build_doctest_case_filter(cli_parse.invocation.test_cases));
-		}
+		// `--case` and `--suite` select the union of their matches, which doctest's own
+		// filters intersect rather than union, so the selection is resolved against the
+		// doctest registry instead of being forwarded as a doctest filter.
+		test_configure_case_filter(cli_parse.invocation.test_cases, cli_parse.invocation.test_suites);
 		if (cli_parse.invocation.test_shard_total > 1) {
 			// Two layers, one flag. Ordinary doctest cases are partitioned in the registry;
 			// the suites that loop over a fixture corpus inside a single case run everywhere

@@ -30,7 +30,16 @@
 
 #pragma once
 
+#include "core/string/ustring.h"
+#include "core/templates/vector.h"
+
 int test_main(int argc, char *argv[]);
+
+// Restricts the run to the union of the doctest cases whose name matches any `p_case_values`
+// pattern and those whose test suite matches any `p_suite_values` pattern. Each value is
+// comma-tokenized the way doctest tokenizes its own filter values. Must be called before
+// `test_main()`. Two empty lists leave the run unfiltered.
+void test_configure_case_filter(const Vector<String> &p_case_values, const Vector<String> &p_suite_values);
 
 // Restricts the run to shard `p_shard_index` of `p_shard_total`, both 1-based. Must be
 // called before `test_main()`. A total below 2 leaves the run unpartitioned.

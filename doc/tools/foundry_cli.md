@@ -79,6 +79,7 @@ foundry --headless script eval 'print(Engine.get_version_info()["string"])'
 
 foundry test run --project . --case "*FoundryScript*"
 foundry test run --project . --case "*FoundryScript*" --case "*FoundryCLI*"
+foundry test run --project . --suite "*[Modules][FoundryScript][Completion]*"
 foundry test generate-fixtures modules/foundry_script/tests/scripts
 foundry test generate-format-fixtures modules/foundry_script/tests/scripts/format
 foundry tooling serve --project . --lsp-port 6005 --dap-port 6006
@@ -91,9 +92,20 @@ foundry diagnostics render-device-support
 
 `test run --case <pattern>` is repeatable: a test runs when its name matches
 *any* supplied pattern (an OR set), and a single occurrence may itself contain
-a doctest comma-separated list (`--case "*A*,*B*"`). Repeated occurrences and
+a comma-separated list (`--case "*A*,*B*"`). Repeated occurrences and
 comma-separated patterns compose, so `--case "*A*,*B*" --case "*C*"` selects
 `*A*` OR `*B*` OR `*C*`.
+
+`test run --suite <pattern>` is the same option for test *suite* names, and is
+what a suite-styled pattern needs. `--case` never looks at suite names, so
+`--case "*Completion*"` does not select the cases inside the
+`[Modules][FoundryScript][Completion]` suite; `--suite "*Completion*"` does. The
+two options compose as a union: a test runs when its case name matches any
+`--case` pattern *or* its suite name matches any `--suite` pattern.
+
+A `--case`/`--suite` invocation that matches no registered test fails with
+`The --case/--suite filter matched no tests` and a non-zero exit code, so a
+mistyped or mis-targeted scope can never be mistaken for a passing run.
 
 ## Inline script evaluation
 

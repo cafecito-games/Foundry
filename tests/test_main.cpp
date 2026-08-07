@@ -30,6 +30,7 @@
 
 #include "test_main.h"
 
+#include "test_case_filter.h"
 #include "test_case_shard.h"
 
 #include "core/error/error_macros.h"
@@ -266,6 +267,7 @@
 #include "tests/servers/test_accessibility_server.h"
 #include "tests/servers/test_nav_heap.h"
 #include "tests/servers/test_text_server.h"
+#include "tests/test_doctest_case_filter.h"
 #include "tests/test_doctest_case_shard.h"
 #include "tests/test_validate_testing.h"
 
@@ -388,6 +390,10 @@ void test_configure_case_shard(int p_shard_index, int p_shard_total) {
 	FoundryTestCaseShard::configure(p_shard_index, p_shard_total);
 }
 
+void test_configure_case_filter(const Vector<String> &p_case_values, const Vector<String> &p_suite_values) {
+	FoundryTestCaseFilter::configure(p_case_values, p_suite_values);
+}
+
 int test_main(int argc, char *argv[]) {
 	bool run_tests = true;
 
@@ -439,6 +445,17 @@ int test_main(int argc, char *argv[]) {
 		if (arg == "--quiet" || arg == "-q") {
 			FoundryTestProgress::set_doctest_quiet(true);
 		}
+	}
+
+	// `--case`/`--suite` select the union of their matches, which doctest's own filters
+	// cannot express, so the selection is resolved against the registry here. A filter that
+	// matches nothing is a scoping mistake, not an empty success: reporting it as a passing
+	// run of zero cases is how a broken fixture can look verified.
+	const int cases_matching_filter = FoundryTestCaseFilter::apply_to_registry();
+	if (FoundryTestCaseFilter::is_active() && cases_matching_filter == 0) {
+		ERR_PRINT("The --case/--suite filter matched no tests; nothing was run.");
+		ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, EXIT_FAILURE, "Failed to clean test temp path");
+		return EXIT_FAILURE;
 	}
 
 	// Applied once, before the counting pass, so the progress stream's `test_count` also
