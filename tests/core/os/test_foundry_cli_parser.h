@@ -428,6 +428,66 @@ TEST_CASE("[FoundryCLIParser] Test run records progress options") {
 	CHECK_EQ(jsonl_file.invocation.test_progress_heartbeat_seconds, 0);
 }
 
+TEST_CASE("[FoundryCLIParser] Test run records the shard selector") {
+	FoundryCLIParser::ParseResult unsharded = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+	}));
+	REQUIRE_MESSAGE(unsharded.ok, unsharded.error);
+	CHECK_EQ(unsharded.invocation.test_shard_index, -1);
+	CHECK_EQ(unsharded.invocation.test_shard_total, -1);
+
+	FoundryCLIParser::ParseResult separate = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--shard",
+			"2/4",
+	}));
+	REQUIRE_MESSAGE(separate.ok, separate.error);
+	CHECK_EQ(separate.invocation.test_shard_index, 2);
+	CHECK_EQ(separate.invocation.test_shard_total, 4);
+
+	FoundryCLIParser::ParseResult inlined = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--shard=1/1",
+			"--case",
+			"*FoundryCLIParser*",
+	}));
+	REQUIRE_MESSAGE(inlined.ok, inlined.error);
+	CHECK_EQ(inlined.invocation.test_shard_index, 1);
+	CHECK_EQ(inlined.invocation.test_shard_total, 1);
+	CHECK_EQ(inlined.invocation.test_cases, make_args({ "*FoundryCLIParser*" }));
+}
+
+TEST_CASE("[FoundryCLIParser] A malformed shard selector is a hard error") {
+	// There is no fallback to an unsharded run: a bad selector must stop the process before
+	// any test executes, or a typo silently drops coverage.
+	for (const String selector : { "0/4", "6/5", "3/2", "x/4", "2/0", "2", "", "-1/4", "1/2/3", "2 / 4" }) {
+		FoundryCLIParser::ParseResult result = FoundryCLIParser::parse(make_args({
+				"foundry",
+				"test",
+				"run",
+				"--shard",
+				selector,
+		}));
+		const String context = "Selector '" + selector + "'.";
+		CHECK_MESSAGE(!result.ok, context);
+		CHECK_MESSAGE(result.error.contains("--shard"), context);
+	}
+
+	FoundryCLIParser::ParseResult missing_value = FoundryCLIParser::parse(make_args({
+			"foundry",
+			"test",
+			"run",
+			"--shard",
+	}));
+	CHECK_FALSE(missing_value.ok);
+}
+
 TEST_CASE("[FoundryCLIParser] Test fixture generators record paths") {
 	FoundryCLIParser::ParseResult fixtures = FoundryCLIParser::parse(make_args({
 			"foundry",

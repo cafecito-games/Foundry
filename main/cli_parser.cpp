@@ -765,6 +765,31 @@ static void parse_test_generate_format_fixtures(CLIParseState &r_state) {
 	finalize_global_args(r_state);
 }
 
+// Parses a `--shard` value of the form `i/n`. Both sides must be plain decimal integers
+// and `i` has to fall inside `[1, n]`. Anything else is a hard error at the CLI boundary:
+// there is no fallback to an unsharded run, so a typo can never silently drop tests.
+static bool parse_shard_selector(const String &p_value, int &r_shard_index, int &r_shard_total) {
+	const int separator = p_value.find_char('/');
+	if (separator < 0) {
+		return false;
+	}
+	const String index_text = p_value.substr(0, separator);
+	const String total_text = p_value.substr(separator + 1);
+	if (!index_text.is_valid_int() || !total_text.is_valid_int()) {
+		return false;
+	}
+	// `is_valid_int()` accepts a leading sign; the range check rejects the negatives and
+	// the zero it lets through.
+	const int64_t shard_index = index_text.to_int();
+	const int64_t shard_total = total_text.to_int();
+	if (shard_total < 1 || shard_index < 1 || shard_index > shard_total) {
+		return false;
+	}
+	r_shard_index = (int)shard_index;
+	r_shard_total = (int)shard_total;
+	return true;
+}
+
 static void parse_test_run(CLIParseState &r_state) {
 	set_command_path(r_state.result, "test", "run");
 	r_state.result.invocation.kind = FoundryCLIParser::CLIInvocation::TEST_RUN;
@@ -788,6 +813,24 @@ static void parse_test_run(CLIParseState &r_state) {
 				return;
 			}
 			append(r_state.result.invocation.test_cases, value);
+		} else if (arg == "--shard" || arg.begins_with("--shard=")) {
+			String selector;
+			if (arg == "--shard") {
+				if (!require_value(r_state, arg, selector)) {
+					return;
+				}
+			} else {
+				selector = arg.get_slice("=", 1);
+				r_state.index++;
+			}
+			int shard_index = -1;
+			int shard_total = -1;
+			if (!parse_shard_selector(selector, shard_index, shard_total)) {
+				fail(r_state.result, "Invalid value for --shard: " + selector + " (expected i/n with 1 <= i <= n).");
+				return;
+			}
+			r_state.result.invocation.test_shard_index = shard_index;
+			r_state.result.invocation.test_shard_total = shard_total;
 		} else if (arg == "--progress") {
 			r_state.result.invocation.test_progress = true;
 			r_state.index++;

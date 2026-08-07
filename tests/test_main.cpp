@@ -30,6 +30,8 @@
 
 #include "test_main.h"
 
+#include "test_case_shard.h"
+
 #include "core/error/error_macros.h"
 #include "core/io/dir_access.h"
 #include "modules/modules_enabled.gen.h"
@@ -254,6 +256,7 @@
 #include "tests/servers/test_accessibility_server.h"
 #include "tests/servers/test_nav_heap.h"
 #include "tests/servers/test_text_server.h"
+#include "tests/test_doctest_case_shard.h"
 #include "tests/test_validate_testing.h"
 
 #ifndef ADVANCED_GUI_DISABLED
@@ -371,6 +374,10 @@ static int run_doctest_context(const LocalVector<String> &p_args) {
 	return test_context.run();
 }
 
+void test_configure_case_shard(int p_shard_index, int p_shard_total) {
+	FoundryTestCaseShard::configure(p_shard_index, p_shard_total);
+}
+
 int test_main(int argc, char *argv[]) {
 	bool run_tests = true;
 
@@ -423,6 +430,10 @@ int test_main(int argc, char *argv[]) {
 			FoundryTestProgress::set_doctest_quiet(true);
 		}
 	}
+
+	// Applied once, before the counting pass, so the progress stream's `test_count` also
+	// describes this shard rather than the whole suite.
+	FoundryTestCaseShard::apply_to_registry();
 
 	int result = EXIT_SUCCESS;
 	if (FoundryTestProgress::is_enabled()) {

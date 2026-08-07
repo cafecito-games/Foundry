@@ -71,7 +71,11 @@ TEST_SUITE("[Modules][FoundryScript]") {
 	TEST_CASE("Script compilation and runtime") {
 		bool print_filenames = OS::get_singleton()->get_cmdline_args().find("--print-filenames") != nullptr;
 		bool use_binary_tokens = OS::get_singleton()->get_cmdline_args().find("--use-binary-tokens") != nullptr;
+		int shard_index = -1;
+		int shard_total = -1;
+		fs_test_shard_from_cmdline(shard_index, shard_total);
 		FSTestRunner runner("modules/foundry_script/tests/scripts", true, print_filenames, use_binary_tokens);
+		runner.set_shard(shard_index, shard_total);
 		int fail_count = runner.run_tests();
 		INFO("Make sure `*.out` files have expected results.");
 		REQUIRE_MESSAGE(fail_count == 0, "All FoundryScript tests should pass.");
@@ -79,7 +83,11 @@ TEST_SUITE("[Modules][FoundryScript]") {
 
 	TEST_CASE("Script compilation and runtime with compiled bytecode round-trip") {
 		bool print_filenames = OS::get_singleton()->get_cmdline_args().find("--print-filenames") != nullptr;
+		int shard_index = -1;
+		int shard_total = -1;
+		fs_test_shard_from_cmdline(shard_index, shard_total);
 		FSTestRunner runner("modules/foundry_script/tests/scripts", true, print_filenames, false, true);
+		runner.set_shard(shard_index, shard_total);
 		int fail_count = runner.run_tests();
 		INFO("Make sure `*.out` files have expected results.");
 		REQUIRE_MESSAGE(fail_count == 0, "All FoundryScript tests should pass when round-tripped through compiled bytecode.");
