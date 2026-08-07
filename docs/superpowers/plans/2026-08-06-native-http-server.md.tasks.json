@@ -1,0 +1,82 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-06-native-http-server.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Vendor picohttpparser and scaffold the module",
+      "status": "pending",
+      "description": "**Goal:** New modules/http_server/ that builds and registers a stub HTTPServer : Node (flat global).\n\n**Files:** thirdparty/picohttpparser/{picohttpparser.c,h,LICENSE}; modules/http_server/{config.py,SCsub,register_types.h,register_types.cpp,http_server.h,http_server.cpp}\n\n**Verify:** `python3 scripts/agent_build.py --compiler-cache ccache --jobs 4 && ./bin/foundry.<platform> --headless test run --case \"*HTTPServer*\" --force-colors`\n\n```json:metadata\n{\"files\": [\"thirdparty/picohttpparser/picohttpparser.c\", \"thirdparty/picohttpparser/picohttpparser.h\", \"modules/http_server/config.py\", \"modules/http_server/SCsub\", \"modules/http_server/register_types.cpp\", \"modules/http_server/http_server.h\", \"modules/http_server/http_server.cpp\"], \"verifyCommand\": \"python3 scripts/agent_build.py --compiler-cache ccache --jobs 4 && ./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"module builds and registers HTTPServer\", \"http_server appears in modules_enabled.gen.h\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: HTTPInboundRequest and HTTPResponse data objects",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "**Goal:** The two RefCounted data objects with full bound APIs, validated by C++ unit tests.\n\n**Files:** modules/http_server/http_inbound_request.{h,cpp}, http_response.{h,cpp}; tests/core/io/test_http_server.h; tests/test_main.cpp\n\n**Verify:** focused HTTPServer doctest run\n\n```json:metadata\n{\"files\": [\"modules/http_server/http_inbound_request.h\", \"modules/http_server/http_inbound_request.cpp\", \"modules/http_server/http_response.h\", \"modules/http_server/http_response.cpp\", \"tests/core/io/test_http_server.h\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"HTTPInboundRequest getters\", \"HTTPResponse set_status/set_header/send/send_string/redirect/send_file + readback\", \"all three classes in ClassDB\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Plain-HTTP listen, accept, parse, one round-trip",
+      "status": "pending",
+      "blockedBy": [1],
+      "description": "**Goal:** listen() starts TCPServer; frame-poll loop accepts/parses (picohttpparser)/dispatches a route; one GET round-trip via HTTPClient test client.\n\n**Files:** modules/http_server/http_server_connection.{h,cpp}; modules/http_server/http_server.{h,cpp}; tests/core/io/test_http_server.h\n\n```json:metadata\n{\"files\": [\"modules/http_server/http_server_connection.h\", \"modules/http_server/http_server_connection.cpp\", \"modules/http_server/http_server.h\", \"modules/http_server/http_server.cpp\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"GET round-trip through registered route\", \"stop() closes listener and connections\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Dispatch resolution order + request_received signal",
+      "status": "pending",
+      "blockedBy": [2],
+      "description": "**Goal:** Full resolution ladder (mount -> route -> signal -> 404) plus emit_for_all property.\n\n**Files:** modules/http_server/http_server.{h,cpp}; tests/core/io/test_http_server.h\n\n```json:metadata\n{\"files\": [\"modules/http_server/http_server.h\", \"modules/http_server/http_server.cpp\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"four dispatch branches covered\", \"emit_for_all property\"]}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Task 5: Query/body/headers + send_string + redirect",
+      "status": "pending",
+      "blockedBy": [3],
+      "description": "**Goal:** Full request/response surface over the wire incl. OAuth redirect primitive.\n\n**Files:** modules/http_server/http_server.{h,cpp}; tests/core/io/test_http_server.h\n\n```json:metadata\n{\"files\": [\"modules/http_server/http_server.cpp\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"query parsing\", \"POST body round-trip\", \"header read\", \"redirect 302 + Location\"]}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Task 6: Static file serving with path-traversal security",
+      "status": "pending",
+      "blockedBy": [4],
+      "description": "**Goal:** mount_files() with MIME, Range/416, conditional GET/304, and path-traversal blocked as central invariant.\n\n**Files:** modules/http_server/http_file_serve.{h,cpp}; modules/http_server/http_server.{h,cpp}; tests/core/io/test_http_server.h\n\n```json:metadata\n{\"files\": [\"modules/http_server/http_file_serve.h\", \"modules/http_server/http_file_serve.cpp\", \"modules/http_server/http_server.cpp\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"serve file with correct Content-Type\", \"all traversal vectors return 403 and stay in root\", \"Range 206/416\", \"conditional 304\"]}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Task 7: Limits, smuggling defense, keep-alive, max_connections, timeouts",
+      "status": "pending",
+      "blockedBy": [5],
+      "description": "**Goal:** Hard caps (413/431/400), CL+TE smuggling rejection, keep-alive, connection cap, idle timeouts.\n\n**Files:** modules/http_server/http_server.{h,cpp}, http_server_connection.{h,cpp}; tests/core/io/test_http_server.h\n\n```json:metadata\n{\"files\": [\"modules/http_server/http_server.cpp\", \"modules/http_server/http_server_connection.cpp\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"413/431/400 on oversized/ambiguous requests\", \"keep-alive second request\", \"max_connections enforced\", \"idle timeout drop\"]}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Task 8: HTTPS via StreamPeerTLS",
+      "status": "pending",
+      "blockedBy": [6],
+      "description": "**Goal:** listen(port, bind, tls_options) terminates TLS with mbedTLS-backed StreamPeerTLS::accept_stream.\n\n**Files:** modules/http_server/http_server.{h,cpp}, http_server_connection.{h,cpp}; tests/core/io/test_http_server.h\n\n```json:metadata\n{\"files\": [\"modules/http_server/http_server.cpp\", \"modules/http_server/http_server_connection.cpp\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"HTTPS GET round-trip\", \"plaintext path unchanged\"]}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Task 9: Threaded mode (use_threads)",
+      "status": "pending",
+      "blockedBy": [7],
+      "description": "**Goal:** Optional WorkerThreadPool accept+parse loop with main-thread dispatch via mutex queue; identical observable behavior.\n\n**Files:** modules/http_server/http_server.{h,cpp}, http_server_connection.{h,cpp}; tests/core/io/test_http_server.h\n\n```json:metadata\n{\"files\": [\"modules/http_server/http_server.cpp\", \"modules/http_server/http_server_connection.cpp\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"all cases pass with use_threads true and false\", \"dispatch only on main thread\", \"stop joins worker\"]}\n```"
+    },
+    {
+      "id": 9,
+      "subject": "Task 10: Foundry Script fixtures",
+      "status": "pending",
+      "blockedBy": [8],
+      "description": "**Goal:** .fs fixtures proving route + signal handling and OAuth-callback capture (flat-global spelling, guarded on #1828).\n\n**Files:** modules/foundry_script/tests/scripts/http_server/\n\n```json:metadata\n{\"files\": [\"modules/foundry_script/tests/scripts/http_server/\"], \"verifyCommand\": \"./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors\", \"acceptanceCriteria\": [\"route + signal fixture passes\", \"OAuth callback fixture captures code + emits 302\"]}\n```"
+    },
+    {
+      "id": 10,
+      "subject": "Task 11: Move classes under foundry.http.server (blocked by #1828)",
+      "status": "pending",
+      "blockedBy": [9],
+      "description": "**Goal:** Once #1828 lands, register HTTPServer/HTTPInboundRequest/HTTPResponse under foundry.http.server (no flat alias), update fixtures, add doc_classes XML.\n\n**Files:** modules/http_server/register_types.cpp; modules/http_server/doc_classes/*.xml; fixtures; tests/core/io/test_http_server.h\n\n**Verify:** build + full test suite + pre-commit\n\n```json:metadata\n{\"files\": [\"modules/http_server/register_types.cpp\", \"modules/http_server/doc_classes/HTTPServer.xml\"], \"verifyCommand\": \"python3 scripts/agent_build.py --compiler-cache ccache --jobs 4 && ./bin/foundry.<platform> --headless test run --case '*HTTPServer*' --force-colors && pre-commit run --all-files\", \"acceptanceCriteria\": [\"foundry.http.server.HTTPServer resolves in FS\", \"flat global removed\", \"doc_classes XML present\", \"pre-commit passes\"], \"blockedByExternal\": \"cafecito-games/Foundry#1828\"}\n```"
+    }
+  ],
+  "lastUpdated": "2026-08-06"
+}
