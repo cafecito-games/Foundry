@@ -32,7 +32,10 @@
 
 #ifdef TOOLS_ENABLED
 
+#include "core/input/input_event.h"
 #include "editor/script/script_code_actions_model.h"
+#include "editor/script/script_text_editor.h"
+#include "editor/settings/editor_settings.h"
 #include "tests/test_macros.h"
 
 namespace TestScriptCodeActionsModel {
@@ -127,6 +130,38 @@ TEST_CASE("[Editor][ScriptCodeActions] Popup is empty for non-Foundry-Script buf
 			"Format Document");
 
 	CHECK(entries.is_empty());
+}
+
+Ref<InputEventKey> enter_event(bool p_alt) {
+	Ref<InputEventKey> key;
+	key.instantiate();
+	key->set_keycode(Key::ENTER);
+	key->set_alt_pressed(p_alt);
+	key->set_pressed(true);
+	return key;
+}
+
+TEST_CASE("[Editor][ScriptCodeActions] Code Actions binds Alt+Enter without claiming plain Enter") {
+	// The gui-input handler matches with ED_IS_SHORTCUT, so a plain Enter must not
+	// match: it still has to reach the inline-rename commit path.
+	ScriptTextEditor::register_editor();
+
+	const Ref<Shortcut> shortcut = ED_GET_SHORTCUT("script_text_editor/show_code_actions");
+	REQUIRE(shortcut.is_valid());
+
+	CHECK(shortcut->matches_event(enter_event(true)));
+	CHECK_FALSE(shortcut->matches_event(enter_event(false)));
+
+	// The pre-existing Format Document binding must be untouched by the new shortcut.
+	const Ref<Shortcut> format_shortcut = ED_GET_SHORTCUT("script_text_editor/format_document");
+	REQUIRE(format_shortcut.is_valid());
+	const Array format_events = format_shortcut->get_events();
+	REQUIRE(format_events.size() >= 1);
+	const Ref<InputEventKey> format_key = format_events[0];
+	REQUIRE(format_key.is_valid());
+	CHECK_EQ(format_key->get_keycode(), Key::L);
+	CHECK(format_key->is_alt_pressed());
+	CHECK(format_key->is_command_or_control_pressed());
 }
 
 } // namespace TestScriptCodeActionsModel
