@@ -11298,10 +11298,18 @@ static bool can_bake_enum_case_payload_field(const FSParser::DataType &p_field_t
 		case Variant::OBJECT:
 			return false;
 		case Variant::ARRAY:
-			// A case's own value is a read-only Array, so a nested case is immutable and bakeable.
-			return static_cast<Array>(p_value).is_read_only();
+			// A case's own value is a read-only Array, so a nested case is immutable and bakeable; a
+			// mutable one would be shared between evaluations. The field type still has the last word
+			// below, because a constant collection carries no container typing of its own.
+			if (!static_cast<Array>(p_value).is_read_only()) {
+				return false;
+			}
+			break;
 		case Variant::DICTIONARY:
-			return static_cast<Dictionary>(p_value).is_read_only();
+			if (!static_cast<Dictionary>(p_value).is_read_only()) {
+				return false;
+			}
+			break;
 		case Variant::PACKED_BYTE_ARRAY:
 		case Variant::PACKED_INT32_ARRAY:
 		case Variant::PACKED_INT64_ARRAY:
