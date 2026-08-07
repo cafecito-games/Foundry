@@ -281,6 +281,23 @@ String FSParser::DataType::to_string() const {
 	return result;
 }
 
+String FSParser::DataType::to_string_diagnostic() const {
+	// The 8- and 16-bit integer descriptors are native-only constraints with no source spelling, so
+	// `to_string()` routes them through `get_builtin_type_source_name()`, which falls back to the
+	// carrier's name and renders `uint8`/`uint16` identically to `uint32` (and the signed widths
+	// identically to `int32`/`int64`). A contrastive diagnostic that pits an expected type against an
+	// actual one then reads nonsensically ("should be uint but is uint"), so name the descriptor by
+	// its stable diagnostic name when it carries no source spelling of its own. A slot with no width
+	// (`NONE`) has nothing to disambiguate and keeps its carrier spelling.
+	if (kind == BUILTIN && numeric_type != NumericType::NONE &&
+			numeric_type_is_carrier_consistent(numeric_type, builtin_type) &&
+			!numeric_type_has_public_name(numeric_type)) {
+		const String nullable_suffix = (is_nullable && builtin_type != Variant::NIL) ? "?" : "";
+		return numeric_type_name(numeric_type) + nullable_suffix;
+	}
+	return to_string();
+}
+
 FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const HashMap<StringName, DataType> &p_bindings,
 		bool p_mark_substituted_self) {
 	if (p_type.kind == TYPE_PARAMETER) {
