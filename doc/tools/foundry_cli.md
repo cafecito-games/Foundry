@@ -107,6 +107,10 @@ A `--case`/`--suite` invocation that matches no registered test fails with
 `The --case/--suite filter matched no tests` and a non-zero exit code, so a
 mistyped or mis-targeted scope can never be mistaken for a passing run.
 
+`--case`, `--suite`, and `--shard` all narrow the run by marking the tests they
+exclude as skipped, so passing the doctest `--no-skip` option alongside any of
+them is rejected instead of quietly widening the run to every registered test.
+
 ## Inline script evaluation
 
 `foundry script eval <source>` runs a short inline Foundry Script snippet without

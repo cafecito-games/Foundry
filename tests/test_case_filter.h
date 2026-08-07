@@ -46,10 +46,17 @@
 // Matching is case-insensitive, which is doctest's default; the doctest `--case-sensitive`
 // passthrough option does not affect `--case`/`--suite`.
 //
-// Selection is applied by marking rejected cases as skipped, so a passthrough `--no-skip`
-// defeats it exactly as it defeats `--shard`.
+// Selection is applied by marking rejected cases as skipped, which is also how `--shard`
+// expresses its partition. doctest's `--no-skip` makes its run loop ignore that mark, so
+// the runner rejects that combination outright rather than quietly running every
+// registered case under a scoped invocation.
 class FoundryTestCaseFilter {
 public:
+	// Whether one passthrough argument turns doctest's `no_skip` on, in any spelling
+	// doctest accepts for it (`--no-skip`, `-ns`, the `dt-` prefixed forms, and the
+	// `=<bool>` value forms).
+	static bool is_no_skip_argument(const String &p_argument);
+
 	// Splits one CLI filter value on unescaped commas, mirroring doctest's tokenizer so a
 	// single `--case "*A*,*B*"` value still means two patterns and `\,` stays literal.
 	static Vector<String> split_patterns(const String &p_value);

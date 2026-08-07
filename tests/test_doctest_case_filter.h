@@ -126,6 +126,29 @@ TEST_CASE("[TestCaseFilter] Repeated patterns of one kind select their union") {
 	CHECK_FALSE(FoundryTestCaseFilter::selects(case_patterns, Vector<String>(), "[Suite]", "the third case"));
 }
 
+TEST_CASE("[TestCaseFilter] Every doctest spelling of no-skip is recognized") {
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("--no-skip"));
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("-ns"));
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("--ns"));
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("--dt-no-skip"));
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("-dt-ns"));
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("--no-skip=true"));
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("--no-skip=1"));
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("--ns=YES"));
+	CHECK(FoundryTestCaseFilter::is_no_skip_argument("--dt-no-skip=on"));
+}
+
+TEST_CASE("[TestCaseFilter] Arguments that leave no-skip off are not recognized") {
+	CHECK_FALSE(FoundryTestCaseFilter::is_no_skip_argument("--no-skip=false"));
+	CHECK_FALSE(FoundryTestCaseFilter::is_no_skip_argument("--no-skip=0"));
+	// A different option that merely starts with the same characters.
+	CHECK_FALSE(FoundryTestCaseFilter::is_no_skip_argument("--no-skipped-summary"));
+	CHECK_FALSE(FoundryTestCaseFilter::is_no_skip_argument("--nss"));
+	CHECK_FALSE(FoundryTestCaseFilter::is_no_skip_argument("--no-colors"));
+	CHECK_FALSE(FoundryTestCaseFilter::is_no_skip_argument("no-skip"));
+	CHECK_FALSE(FoundryTestCaseFilter::is_no_skip_argument(""));
+}
+
 } // namespace TestDoctestCaseFilter
 
 // Two small suites whose only job is to give `--suite` a stable target that does not depend

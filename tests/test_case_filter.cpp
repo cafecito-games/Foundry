@@ -55,6 +55,34 @@ char lowered(char p_character) {
 
 } // namespace
 
+bool FoundryTestCaseFilter::is_no_skip_argument(const String &p_argument) {
+	if (!p_argument.begins_with("-")) {
+		return false;
+	}
+	int start = 0;
+	while (start < p_argument.length() && p_argument[start] == '-') {
+		start++;
+	}
+	String body = p_argument.substr(start);
+	if (body.begins_with("dt-")) {
+		body = body.substr(3);
+	}
+	if (body == "no-skip" || body == "ns") {
+		return true;
+	}
+	const int separator = body.find_char('=');
+	if (separator < 0) {
+		return false;
+	}
+	const String name = body.substr(0, separator);
+	if (name != "no-skip" && name != "ns") {
+		return false;
+	}
+	// The values doctest reads as true for a boolean option.
+	const String value = body.substr(separator + 1).to_lower();
+	return value == "1" || value == "true" || value == "on" || value == "yes";
+}
+
 Vector<String> FoundryTestCaseFilter::split_patterns(const String &p_value) {
 	Vector<String> patterns;
 	String current;

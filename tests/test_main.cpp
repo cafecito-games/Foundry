@@ -447,6 +447,19 @@ int test_main(int argc, char *argv[]) {
 		}
 	}
 
+	// Both the filter and the shard partition express their selection through doctest's
+	// per-case skip mark, which `--no-skip` tells doctest's run loop to ignore. Honoring
+	// both would run every registered case under an invocation that asked for a subset.
+	if (FoundryTestCaseFilter::is_active() || FoundryTestCaseShard::is_active()) {
+		for (const String &argument : test_args) {
+			if (FoundryTestCaseFilter::is_no_skip_argument(argument)) {
+				ERR_PRINT("--no-skip cannot be combined with --case, --suite, or --shard; it would run every registered test.");
+				ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, EXIT_FAILURE, "Failed to clean test temp path");
+				return EXIT_FAILURE;
+			}
+		}
+	}
+
 	// `--case`/`--suite` select the union of their matches, which doctest's own filters
 	// cannot express, so the selection is resolved against the registry here. A filter that
 	// matches nothing is a scoping mistake, not an empty success: reporting it as a passing

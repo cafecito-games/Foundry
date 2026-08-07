@@ -404,6 +404,44 @@ TEST_CASE("[FoundryCLI][TestRun] A suite filter matching nothing fails the run")
 	CHECK(output.contains("filter matched no tests"));
 }
 
+TEST_CASE("[FoundryCLI][TestRun] A scoped run refuses to honor a passthrough no-skip") {
+	// The selection is expressed through doctest's per-case skip mark, so honoring
+	// `--no-skip` would silently widen a scoped run to the whole registry.
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*filter fixture case*");
+	arguments.push_back("--no-skip");
+	arguments.push_back("--list-test-cases");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_NE(exit_code, 0);
+	CHECK(output.contains("--no-skip cannot be combined with --case, --suite, or --shard"));
+	CHECK_FALSE(output.contains("unskipped test cases passing the current filters"));
+}
+
+TEST_CASE("[FoundryCLI][TestRun] An unscoped run still honors a passthrough no-skip") {
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--no-skip");
+	arguments.push_back("--count");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK_FALSE(output.contains("--no-skip cannot be combined"));
+	CHECK(output.contains("unskipped test cases passing the current filters"));
+}
+
 TEST_CASE("[FoundryCLI][TestRun] JSONL progress accounts for the exact union of two repeated filters") {
 	const String scratch_root = foundry_test_scratch_root();
 	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
