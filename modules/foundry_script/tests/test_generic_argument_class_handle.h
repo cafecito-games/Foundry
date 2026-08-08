@@ -144,6 +144,56 @@ TEST_CASE("[Modules][FoundryScript][GenericArgumentHandle] A reified handle argu
 	ERR_PRINT_ON;
 }
 
+TEST_CASE("[Modules][FoundryScript][Analyzer] A Callable built from a class-handle constant is not folded") {
+	const Ref<FoundryScript> script = compile_bytecode_test_source(
+			"extends RefCounted\n"
+			"\n"
+			"class Base:\n"
+			"\tstatic func spawn() -> int:\n"
+			"\t\treturn 7\n"
+			"\n"
+			"func build() -> Callable:\n"
+			"\treturn Callable(Base, \"spawn\")\n"
+			"\n"
+			"func build_missing() -> Callable:\n"
+			"\treturn Callable(Base, \"does_not_exist\")\n");
+
+	REQUIRE(script->get_member_functions().has(SNAME("build")));
+	const FSFunction *build = script->get_member_functions()[SNAME("build")];
+	for (int i = 0; i < build->get_constants_count(); i++) {
+		CHECK_FALSE(build->get_constant(i).get_type() == Variant::CALLABLE);
+	}
+
+	Callable::CallError call_error;
+	const Variant instance = script->_new(nullptr, 0, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	Object *instance_object = instance;
+	REQUIRE(instance_object != nullptr);
+	const Variant callable_value = instance_object->callp(SNAME("build"), nullptr, 0, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(callable_value.get_type() == Variant::CALLABLE);
+	const Callable callable = callable_value;
+
+	REQUIRE(script->get_constants().has(SNAME("Base")));
+	const Ref<FoundryScript> base = script->get_constants()[SNAME("Base")];
+	REQUIRE(base.is_valid());
+	CHECK(callable.get_object_id() == base->get_instance_id());
+	CHECK(callable.get_method() == SNAME("spawn"));
+	Variant result;
+	callable.callp(nullptr, 0, result, call_error);
+	CHECK(call_error.error == Callable::CallError::CALL_OK);
+	CHECK(int(result) == 7);
+
+	const Variant missing_value = instance_object->callp(SNAME("build_missing"), nullptr, 0, call_error);
+	REQUIRE(call_error.error == Callable::CallError::CALL_OK);
+	REQUIRE(missing_value.get_type() == Variant::CALLABLE);
+	const Callable missing = missing_value;
+	ERR_PRINT_OFF;
+	missing.callp(nullptr, 0, result, call_error);
+	ERR_PRINT_ON;
+	CHECK(call_error.error == Callable::CallError::CALL_ERROR_INVALID_METHOD);
+}
+
 } // namespace FSTests
 
 #endif // TOOLS_ENABLED

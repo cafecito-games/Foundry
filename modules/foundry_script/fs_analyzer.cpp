@@ -6829,6 +6829,13 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 
 			bool safe_to_fold = true;
 			switch (builtin_type) {
+				case Variant::CALLABLE:
+				case Variant::SIGNAL:
+					safe_to_fold = p_call->arguments.is_empty();
+					if (all_is_constant && p_call->arguments.size() == 1) {
+						safe_to_fold = p_call->arguments[0]->reduced_value.get_type() == builtin_type;
+					}
+					break;
 				// Those are stored by reference so not suited for compile-time construction.
 				// Because in this case they would be the same reference in all constructed values.
 				case Variant::OBJECT:
