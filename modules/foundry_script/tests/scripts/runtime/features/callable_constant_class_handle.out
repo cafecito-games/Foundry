@@ -6,6 +6,7 @@ direct equals indirect: true
 missing method: does_not_exist
 missing valid: false
 empty is null: true
+empty signal is null: true
 instance result: 11
 Vector2 unchanged: true
 Color unchanged: true

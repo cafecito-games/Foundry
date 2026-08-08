@@ -8,6 +8,10 @@ class InstanceReceiver:
 		return 11
 
 
+const EMPTY_CALLABLE := Callable()
+const EMPTY_SIGNAL := Signal()
+
+
 func test() -> void:
 	var direct := Callable(Base, "spawn")
 	var handle: Type[Base] = Base
@@ -20,7 +24,8 @@ func test() -> void:
 	var missing := Callable(Base, "does_not_exist")
 	print("missing method: ", missing.get_method())
 	print("missing valid: ", missing.is_valid())
-	print("empty is null: ", Callable().is_null())
+	print("empty is null: ", EMPTY_CALLABLE.is_null())
+	print("empty signal is null: ", EMPTY_SIGNAL.is_null())
 	print("instance result: ", Callable(InstanceReceiver.new(), "method").call())
 
 	print("Vector2 unchanged: ", Vector2(1, 2) == Vector2(1, 2))
