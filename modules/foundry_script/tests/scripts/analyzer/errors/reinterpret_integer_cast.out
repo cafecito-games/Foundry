@@ -2,6 +2,7 @@ FS_TEST_ANALYZER_ERROR
 >> ERROR at line 6: The "as!" bit-reinterpret operator only converts between equal-width integer types; cannot reinterpret "long" (64-bit) as "uint" (32-bit).
 >> ERROR at line 7: The "as!" bit-reinterpret operator only converts between equal-width integer types; cannot reinterpret "long" (64-bit) as "int" (32-bit).
 >> ERROR at line 8: The "as!" bit-reinterpret operator only converts between equal-width integer types; cannot reinterpret "uint" (32-bit) as "ulong" (64-bit).
->> ERROR at line 11: The "as!" bit-reinterpret operator requires an integer operand, not "float".
->> ERROR at line 12: The "as!" bit-reinterpret operator requires an integer operand, not "bool".
->> ERROR at line 15: The "as!" bit-reinterpret operator requires an integer target type (int, uint, long, or ulong), not "float".
+>> ERROR at line 13: The "as!" bit-reinterpret operator only converts between equal-width integer types; cannot reinterpret "long" (64-bit) as "uint" (32-bit).
+>> ERROR at line 16: The "as!" bit-reinterpret operator requires an integer operand, not "float".
+>> ERROR at line 17: The "as!" bit-reinterpret operator requires an integer operand, not "bool".
+>> ERROR at line 20: The "as!" bit-reinterpret operator requires an integer target type (int, uint, long, or ulong), not "float".

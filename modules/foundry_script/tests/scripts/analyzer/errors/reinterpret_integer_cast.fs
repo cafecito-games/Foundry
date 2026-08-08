@@ -7,6 +7,11 @@ func test():
 	print(wide as! int)
 	print(narrow as! ulong)
 
+	# An unpinned integer counts as 64-bit, so it cannot silently narrow into a 32-bit target either,
+	# even though `wide` above committed its width explicitly.
+	var unpinned = 5000000000
+	print(unpinned as! uint)
+
 	# A non-integer operand has no equal-width integer pattern to reinterpret.
 	print(1.5 as! int)
 	print(true as! int)

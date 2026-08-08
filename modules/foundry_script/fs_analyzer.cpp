@@ -7839,26 +7839,30 @@ void FSAnalyzer::reduce_reinterpret_cast(FSParser::CastNode *p_cast, const FSPar
 		return;
 	}
 
+	// The operand only needs a statically known integer carrier, not a hard (annotated) type: a value
+	// inferred from a uint-returning call is a legitimate reinterpret source. A Variant or non-integer
+	// operand is refused, because its runtime type is not known to carry a reinterpretable pattern.
 	const FSParser::DataType op_type = p_cast->operand->get_datatype();
-	const bool operand_is_integer = op_type.is_set() && op_type.is_hard_type() && !op_type.is_variant() &&
+	const bool operand_is_integer = op_type.is_set() && !op_type.is_variant() &&
 			op_type.kind == FSParser::DataType::BUILTIN && is_integer_carrier(op_type.builtin_type);
 	if (!operand_is_integer) {
 		push_error(vformat(R"(The "as!" bit-reinterpret operator requires an integer operand, not "%s".)", op_type.to_string_diagnostic()), p_cast->operand);
 		return;
 	}
 
+	// Both widths are resolved through the shared rule that maps an unpinned integer to its carrier's
+	// full 64-bit width. A reinterpret only crosses between equal widths, so an unpinned (or already
+	// 64-bit) operand can never land in a 32-bit target: that would drop the high half, a silent
+	// narrowing, which stays an error. Reinterpreting into a 32-bit target therefore requires an
+	// explicitly 32-bit operand (an `int`/`uint` value, or an `as int`/`as uint` narrowing first).
+	const NumericType operand_numeric_type = FSNumericOps::operation_type(op_type.numeric_type, op_type.builtin_type);
+	const uint32_t operand_width = numeric_type_bit_width(operand_numeric_type);
 	const uint32_t target_width = numeric_type_bit_width(p_cast_type.numeric_type);
-	// A committed operand width must equal the target width exactly, so a genuine narrowing (for
-	// example ulong -> uint) stays an error. A flexible width -- an unsuffixed literal, or a value
-	// whose width was never pinned -- adopts the target width instead of being rejected.
-	if (op_type.numeric_type != NumericType::NONE) {
-		const uint32_t operand_width = numeric_type_bit_width(op_type.numeric_type);
-		if (operand_width != target_width) {
-			push_error(vformat(R"(The "as!" bit-reinterpret operator only converts between equal-width integer types; cannot reinterpret "%s" (%d-bit) as "%s" (%d-bit).)",
-							   op_type.to_string_diagnostic(), operand_width, p_cast_type.to_string_diagnostic(), target_width),
-					p_cast->cast_type);
-			return;
-		}
+	if (operand_width != target_width) {
+		push_error(vformat(R"(The "as!" bit-reinterpret operator only converts between equal-width integer types; cannot reinterpret "%s" (%d-bit) as "%s" (%d-bit).)",
+						   numeric_type_public_name(operand_numeric_type), operand_width, p_cast_type.to_string_diagnostic(), target_width),
+				p_cast->cast_type);
+		return;
 	}
 
 	// Constant folding must reproduce the runtime opcode's semantics byte for byte: mask the operand's

@@ -177,9 +177,12 @@ var back := signed as! uint       # 0xFFFFFFFF again, round-trips losslessly
 ```
 
 Every other use is an error, so `as!` cannot become a general escape hatch. The target must be `int`,
-`uint`, `long`, or `ulong`; the operand must be an integer; and a committed operand width must equal
-the target width, so a genuine narrowing such as `some_ulong as! uint` still fails. Use `as` for any
-width change. Constant folding, the runtime, and the analyzer all produce the identical pattern.
+`uint`, `long`, or `ulong`; the operand must be an integer; and the operand width must equal the
+target width, so a genuine narrowing such as `some_ulong as! uint` still fails. An unpinned integer
+(an unsuffixed literal, or a value whose width was never declared) counts as 64-bit, so it
+reinterprets only into a 64-bit target; narrow it explicitly first (`(-1 as int) as! uint`) to reach
+a 32-bit target. Use `as` for any width change. Constant folding, the runtime, and the analyzer all
+produce the identical pattern.
 
 Because a signed left shift is a checked multiply-by-2ⁿ, it overflows before it can set the sign bit:
 `(255 as long) << 56` is refused as out of range. Assemble the pattern on the unsigned carrier, where

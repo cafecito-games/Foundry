@@ -1024,9 +1024,11 @@ pattern on the target carrier. Every other use is an error, so `as!` cannot beco
 unchecked-cast escape hatch:
 
 - The target must be `int`, `uint`, `long`, or `ulong`; any other target type is rejected.
-- The operand must be an integer. A committed operand width must equal the target width, so a genuine
-  narrowing such as `some_ulong as! uint` stays an error. An unsuffixed literal (whose width is not
-  committed) adopts the target width.
+- The operand must be an integer, and its width must equal the target width, so a genuine narrowing
+  such as `some_ulong as! uint` stays an error. An unpinned integer (an unsuffixed literal, or a value
+  whose width was never declared) counts as 64-bit — its carrier's full width — so it reinterprets
+  only into a 64-bit target; reaching a 32-bit target requires an explicitly 32-bit operand (an
+  `int`/`uint` value, or an `as int`/`as uint` narrowing applied first).
 - Constant folding, the reinterpret opcode, and the analyzer all produce the identical masked pattern.
 
 A signed shift is a checked multiply-by-2ⁿ, so it overflows before it can set the sign bit

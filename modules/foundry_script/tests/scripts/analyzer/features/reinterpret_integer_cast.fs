@@ -4,9 +4,12 @@ func test():
 	print(-1 as! ulong)
 	print(0xFF00000000000000UL as! long)
 	print(4294967295U as! int)
-	print(-1 as! uint)
 
-	# An unsuffixed literal has no committed width, so it adopts the target width of the reinterpret.
+	# An unpinned integer counts as 64-bit, so reaching a 32-bit target means narrowing first with a
+	# checked `as int`, then reinterpreting at the now-explicit 32-bit width.
+	print((-1 as int) as! uint)
+
+	# An unpinned literal reinterprets directly into a 64-bit target, its natural width.
 	print(255 as! ulong)
 
 	# The sign-bit byte assembled with an unsigned shift, then reinterpreted as signed. The shift count
