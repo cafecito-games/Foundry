@@ -163,6 +163,32 @@ Cannot convert nan to "long": it is not a finite number.
 A cast whose operands are constants is decided at analysis time; otherwise it is a script runtime
 error that unwinds normally rather than producing a sentinel value.
 
+### Bit reinterpretation with `as!`
+
+`as!` is the unchecked counterpart of `as`, for the one case a checked conversion cannot express: a
+lossless signed/unsigned reinterpretation of the *same* bit pattern. It is restricted to a crossing
+between the source-nameable integer types of equal width — `int` ↔ `uint` and `long` ↔ `ulong` — and
+copies the raw N-bit pattern onto the target carrier instead of checking the value's magnitude.
+
+```foundry
+var wire: uint = 0xFFFFFFFFU
+var signed := wire as! int        # -1, the same 32 bits read as signed
+var back := signed as! uint       # 0xFFFFFFFF again, round-trips losslessly
+```
+
+Every other use is an error, so `as!` cannot become a general escape hatch. The target must be `int`,
+`uint`, `long`, or `ulong`; the operand must be an integer; and a committed operand width must equal
+the target width, so a genuine narrowing such as `some_ulong as! uint` still fails. Use `as` for any
+width change. Constant folding, the runtime, and the analyzer all produce the identical pattern.
+
+Because a signed left shift is a checked multiply-by-2ⁿ, it overflows before it can set the sign bit:
+`(255 as long) << 56` is refused as out of range. Assemble the pattern on the unsigned carrier, where
+the shift is well defined, and then reinterpret it:
+
+```foundry
+var high := (255 as ulong) << 56UL as! long   # 0xFF00000000000000 read back as a negative long
+```
+
 > **Known limitation.** `int(value)` still resolves to the legacy Variant constructor rather than to a
 > checked width conversion, and `uint()`, `long()`, and `ulong()` do not exist as conversion calls at
 > all. Use `as` for every width or signedness change. See "Known limitations" below.

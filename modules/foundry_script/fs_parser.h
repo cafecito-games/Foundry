@@ -874,6 +874,10 @@ public:
 	struct CastNode : public ExpressionNode {
 		ExpressionNode *operand = nullptr;
 		TypeNode *cast_type = nullptr;
+		// True for the `as!` bit-reinterpret operator, false for a checked `as` cast. A reinterpret is
+		// restricted to equal-width integer crossings and copies the raw bit pattern instead of range
+		// checking the value; the analyzer, constant folding, and the runtime all branch on this flag.
+		bool is_reinterpret = false;
 
 		CastNode() {
 			type = CAST;

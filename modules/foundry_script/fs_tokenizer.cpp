@@ -103,6 +103,7 @@ static const char *token_names[] = {
 	// Keywords
 	"abstract", // ABSTRACT,
 	"as", // AS,
+	"as!", // AS_BANG,
 	"assert", // ASSERT,
 	"await", // AWAIT,
 	"breakpoint", // BREAKPOINT,
@@ -695,6 +696,17 @@ FSTokenizer::Token FSTokenizerText::potential_identifier() {
 			kw.literal = name;                                                                                            \
 			return kw;                                                                                                    \
 		}                                                                                                                 \
+	}
+
+	// `as!` is the unchecked bit-reinterpret operator: the `as` keyword immediately followed by `!`,
+	// with no intervening whitespace, forms one compound operator token distinct from a checked `as`
+	// cast. The contiguity requirement mirrors the other punctuation operators (`!=`, `<<`), and `!`
+	// can never begin a type, so `as !` stays an ordinary "expected type after as" error.
+	if (len == 2 && name == "as" && _peek() == '!') {
+		_advance();
+		Token kw = make_token(Token::AS_BANG);
+		kw.literal = "as!";
+		return kw;
 	}
 
 	// Find if it's a keyword.

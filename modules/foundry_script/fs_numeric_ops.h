@@ -105,6 +105,16 @@ public:
 	// when it is not finite or when the truncated value lies outside the destination's range.
 	static bool convert(NumericType p_target, const Variant &p_value, Variant &r_result, FSNumericError &r_error);
 
+	// Reinterprets an integer's raw bit pattern as `p_target`, the unchecked counterpart of `convert`.
+	//
+	// This is the `as!` operator's semantics: it takes the value's N-bit pattern, masks it to the
+	// target width, and lays it back down on the target carrier without any range check. Masking
+	// happens before the carrier is chosen, so a 32-bit reinterpret keeps only the low 32 bits even
+	// though both integer carriers occupy 64-bit Variant storage. The caller (the analyzer's gate and
+	// the compiler) is responsible for restricting this to equal-width integer crossings; this helper
+	// only refuses a non-integer source or an invalid target so it can never silently produce garbage.
+	static bool reinterpret(NumericType p_target, const Variant &p_value, Variant &r_result);
+
 	// The inclusive range of a descriptor, rendered for a diagnostic.
 	static String describe_range(NumericType p_type);
 

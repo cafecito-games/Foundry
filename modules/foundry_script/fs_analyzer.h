@@ -621,6 +621,7 @@ private:
 	void reduce_binary_op(FSParser::BinaryOpNode *p_binary_op);
 	void reduce_call(FSParser::CallNode *p_call, bool p_is_await = false, bool p_is_root = false);
 	void reduce_cast(FSParser::CastNode *p_cast);
+	void reduce_reinterpret_cast(FSParser::CastNode *p_cast, const FSParser::DataType &p_cast_type);
 	void reduce_dictionary(FSParser::DictionaryNode *p_dictionary);
 	void reduce_get_node(FSParser::GetNodeNode *p_get_node);
 	void reduce_identifier(FSParser::IdentifierNode *p_identifier, bool can_be_builtin = false);

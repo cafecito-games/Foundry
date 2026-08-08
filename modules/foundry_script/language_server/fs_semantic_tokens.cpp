@@ -133,6 +133,7 @@ bool is_reserved_word(FSTokenizer::Token::Type p_type) {
 		case FSTokenizer::Token::RETURN:
 		case FSTokenizer::Token::ABSTRACT:
 		case FSTokenizer::Token::AS:
+		case FSTokenizer::Token::AS_BANG:
 		case FSTokenizer::Token::ASSERT:
 		case FSTokenizer::Token::AWAIT:
 		case FSTokenizer::Token::BREAKPOINT:

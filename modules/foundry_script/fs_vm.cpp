@@ -1094,6 +1094,7 @@ void (*type_init_function_table[])(Variant *) = {
 		&&OPCODE_NUMERIC_BINARY,                         \
 		&&OPCODE_NUMERIC_UNARY,                          \
 		&&OPCODE_NUMERIC_CAST,                           \
+		&&OPCODE_NUMERIC_REINTERPRET,                    \
 		&&OPCODE_TYPE_TEST_BUILTIN,                      \
 		&&OPCODE_TYPE_TEST_ARRAY,                        \
 		&&OPCODE_TYPE_TEST_DICTIONARY,                   \
@@ -2022,6 +2023,38 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						OPCODE_BREAK;
 					}
 					*dst = numeric_result;
+				}
+
+				ip += 5;
+			}
+			DISPATCH_OPCODE;
+
+			OPCODE(OPCODE_NUMERIC_REINTERPRET) {
+				CHECK_SPACE(5);
+
+				GET_VARIANT_PTR(src, 0);
+				GET_VARIANT_PTR(dst, 1);
+
+				const NumericType numeric_type = (NumericType)_code_ptr[ip + 3];
+				const bool is_nullable = _code_ptr[ip + 4] != 0;
+
+				if (is_nullable && src->get_type() == Variant::NIL) {
+					// Reinterpreting null to a nullable integer yields null, mirroring the checked cast.
+					*dst = *src;
+					ip += 5;
+					DISPATCH_OPCODE;
+				}
+
+				{
+					Variant reinterpreted;
+					if (unlikely(!FSNumericOps::reinterpret(numeric_type, *src, reinterpreted))) {
+						// The analyzer restricts `as!` to equal-width integer operands, so a non-integer
+						// source here means the value's runtime type disagrees with its static type.
+						err_text = "Invalid bit reinterpret: value of type '" +
+								Variant::get_type_name(src->get_type()) + "' is not an integer.";
+						OPCODE_BREAK;
+					}
+					*dst = reinterpreted;
 				}
 
 				ip += 5;

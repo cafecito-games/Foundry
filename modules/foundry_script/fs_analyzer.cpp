@@ -7756,6 +7756,11 @@ void FSAnalyzer::reduce_cast(FSParser::CastNode *p_cast) {
 		return;
 	}
 
+	if (p_cast->is_reinterpret) {
+		reduce_reinterpret_cast(p_cast, cast_type);
+		return;
+	}
+
 	// A cast names the type its operand is expected to have, so it qualifies a contextual case
 	// shorthand in operand position. A cast type that is no complete tagged-union specialization
 	// supplies no union, which the resolver reports; the operand then carries the type the rest of
@@ -7812,6 +7817,57 @@ void FSAnalyzer::reduce_cast(FSParser::CastNode *p_cast) {
 					push_error(vformat(R"(Invalid cast. Cannot convert from "%s" to "%s".)", op_type.to_string(), cast_type.to_string()), p_cast->cast_type);
 				}
 			}
+		}
+	}
+}
+
+void FSAnalyzer::reduce_reinterpret_cast(FSParser::CastNode *p_cast, const FSParser::DataType &p_cast_type) {
+	p_cast->set_datatype(p_cast_type);
+
+	auto is_integer_carrier = [](Variant::Type p_type) {
+		return p_type == Variant::INT || p_type == Variant::UINT;
+	};
+
+	// The target must be one of the source-nameable integer types: int, uint, long, or ulong. Anything
+	// else keeps `as!` from becoming a general unchecked-cast escape hatch.
+	const bool target_is_integer = p_cast_type.kind == FSParser::DataType::BUILTIN &&
+			is_integer_carrier(p_cast_type.builtin_type) &&
+			numeric_type_has_public_name(p_cast_type.numeric_type) &&
+			numeric_type_is_carrier_consistent(p_cast_type.numeric_type, p_cast_type.builtin_type);
+	if (!target_is_integer) {
+		push_error(vformat(R"(The "as!" bit-reinterpret operator requires an integer target type (int, uint, long, or ulong), not "%s".)", p_cast_type.to_string_diagnostic()), p_cast->cast_type);
+		return;
+	}
+
+	const FSParser::DataType op_type = p_cast->operand->get_datatype();
+	const bool operand_is_integer = op_type.is_set() && op_type.is_hard_type() && !op_type.is_variant() &&
+			op_type.kind == FSParser::DataType::BUILTIN && is_integer_carrier(op_type.builtin_type);
+	if (!operand_is_integer) {
+		push_error(vformat(R"(The "as!" bit-reinterpret operator requires an integer operand, not "%s".)", op_type.to_string_diagnostic()), p_cast->operand);
+		return;
+	}
+
+	const uint32_t target_width = numeric_type_bit_width(p_cast_type.numeric_type);
+	// A committed operand width must equal the target width exactly, so a genuine narrowing (for
+	// example ulong -> uint) stays an error. A flexible width -- an unsuffixed literal, or a value
+	// whose width was never pinned -- adopts the target width instead of being rejected.
+	if (op_type.numeric_type != NumericType::NONE) {
+		const uint32_t operand_width = numeric_type_bit_width(op_type.numeric_type);
+		if (operand_width != target_width) {
+			push_error(vformat(R"(The "as!" bit-reinterpret operator only converts between equal-width integer types; cannot reinterpret "%s" (%d-bit) as "%s" (%d-bit).)",
+							   op_type.to_string_diagnostic(), operand_width, p_cast_type.to_string_diagnostic(), target_width),
+					p_cast->cast_type);
+			return;
+		}
+	}
+
+	// Constant folding must reproduce the runtime opcode's semantics byte for byte: mask the operand's
+	// bit pattern to the target width and lay it on the target carrier, never through checked convert().
+	if (p_cast->operand->is_constant) {
+		Variant reinterpreted;
+		if (FSNumericOps::reinterpret(p_cast_type.numeric_type, p_cast->operand->reduced_value, reinterpreted)) {
+			p_cast->is_constant = true;
+			p_cast->reduced_value = reinterpreted;
 		}
 	}
 }

@@ -565,6 +565,44 @@ bool FSNumericOps::convert(NumericType p_target, const Variant &p_value, Variant
 	return true;
 }
 
+bool FSNumericOps::reinterpret(NumericType p_target, const Variant &p_value, Variant &r_result) {
+	if (!numeric_type_is_valid(p_target) || p_target == NumericType::NONE) {
+		return false;
+	}
+	const Variant::Type carrier = p_value.get_type();
+	if (!is_integer_carrier(carrier)) {
+		return false;
+	}
+
+	// The raw N-bit pattern the value occupies, read straight from whichever integer carrier it
+	// travels on. Both carriers store 64 bits, so the pattern is complete before any masking.
+	uint64_t bits = carrier == Variant::UINT ? p_value.operator uint64_t() : uint64_t(p_value.operator int64_t());
+
+	// Mask to the target width before choosing the destination carrier. A value stored in 64-bit
+	// Variant storage keeps only its low N bits, so `-1` reinterpreted at 32 bits becomes 0xFFFFFFFF
+	// rather than the all-ones 64-bit pattern.
+	const uint32_t width = numeric_type_bit_width(p_target);
+	if (width < 64) {
+		bits &= (uint64_t(1) << width) - 1;
+	}
+
+	if (numeric_type_is_unsigned(p_target)) {
+		r_result = bits;
+		return true;
+	}
+
+	// A signed destination stores its value sign-extended across the 64-bit carrier, so a masked
+	// pattern whose top bit at the target width is set becomes a negative int64_t.
+	if (width < 64) {
+		const uint64_t sign_bit = uint64_t(1) << (width - 1);
+		if (bits & sign_bit) {
+			bits |= ~((uint64_t(1) << width) - 1);
+		}
+	}
+	r_result = int64_t(bits);
+	return true;
+}
+
 String FSNumericOps::describe_range(NumericType p_type) {
 	if (!numeric_type_is_valid(p_type) || p_type == NumericType::NONE) {
 		return String();

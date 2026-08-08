@@ -2786,7 +2786,7 @@ void FSPrinter::print_subscript(const FSParser::SubscriptNode *p_subscript) {
 
 void FSPrinter::print_cast(const FSParser::CastNode *p_cast) {
 	print_operand(FPREC_CAST, p_cast->operand);
-	write(" as ");
+	write(p_cast->is_reinterpret ? " as! " : " as ");
 	print_type(p_cast->cast_type);
 }
 

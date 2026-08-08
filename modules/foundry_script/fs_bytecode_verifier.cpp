@@ -217,6 +217,13 @@ Error FSBytecodeVerifier::verify_function(const FSFunction *p_function, int p_me
 				CHECK_NUMERIC_TYPE(ip + 3, false);
 				ip += 5;
 			} break;
+			case FSFunction::OPCODE_NUMERIC_REINTERPRET: {
+				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
+				CHECK_ADDR(ip + 1);
+				CHECK_ADDR(ip + 2);
+				CHECK_NUMERIC_TYPE(ip + 3, false);
+				ip += 5;
+			} break;
 			case FSFunction::OPCODE_TYPE_TEST_BUILTIN: {
 				VERIFY_FAIL_COND(ip + 5 > code_size, "instruction overruns code");
 				CHECK_ADDR(ip + 1);
