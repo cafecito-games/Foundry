@@ -2810,6 +2810,14 @@ TEST_CASE("[HTTPServer] Threaded mode serves several connections at once") {
 	REQUIRE(first.is_valid());
 	Ref<StreamPeerTCP> second = connect_raw(server, port);
 	REQUIRE(second.is_valid());
+
+	// `connect_raw` only proves at least one connection is registered, so it returns for the second
+	// socket the moment the first is already owned. The worker accepts on its own thread, so wait for
+	// it to own both before asserting rather than assuming the second accept landed synchronously.
+	const uint64_t both_accepted_deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+	while (server->get_connection_count() < 2 && OS::get_singleton()->get_ticks_usec() < both_accepted_deadline) {
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
 	REQUIRE(server->get_connection_count() == 2);
 
 	send_raw(first, "GET /hello?q=one HTTP/1.1\r\nHost: localhost\r\n\r\n");
