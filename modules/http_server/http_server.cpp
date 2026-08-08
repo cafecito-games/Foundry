@@ -61,6 +61,8 @@ void HTTPServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_max_header_block_bytes"), &HTTPServer::get_max_header_block_bytes);
 	ClassDB::bind_method(D_METHOD("set_connection_timeout_seconds", "connection_timeout_seconds"), &HTTPServer::set_connection_timeout_seconds);
 	ClassDB::bind_method(D_METHOD("get_connection_timeout_seconds"), &HTTPServer::get_connection_timeout_seconds);
+	ClassDB::bind_method(D_METHOD("set_request_deadline_seconds", "request_deadline_seconds"), &HTTPServer::set_request_deadline_seconds);
+	ClassDB::bind_method(D_METHOD("get_request_deadline_seconds"), &HTTPServer::get_request_deadline_seconds);
 	ClassDB::bind_method(D_METHOD("set_use_threads", "use_threads"), &HTTPServer::set_use_threads);
 	ClassDB::bind_method(D_METHOD("is_using_threads"), &HTTPServer::is_using_threads);
 
@@ -73,6 +75,7 @@ void HTTPServer::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_header_line_bytes", PROPERTY_HINT_RANGE, "1,65536,1,or_greater"), "set_max_header_line_bytes", "get_max_header_line_bytes");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "max_header_block_bytes", PROPERTY_HINT_RANGE, "1,1048576,1,or_greater"), "set_max_header_block_bytes", "get_max_header_block_bytes");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "connection_timeout_seconds", PROPERTY_HINT_RANGE, "0,600,0.1,or_greater"), "set_connection_timeout_seconds", "get_connection_timeout_seconds");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "request_deadline_seconds", PROPERTY_HINT_RANGE, "0,600,0.1,or_greater"), "set_request_deadline_seconds", "get_request_deadline_seconds");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "use_threads"), "set_use_threads", "is_using_threads");
 
 	ADD_SIGNAL(MethodInfo("request_received",
@@ -172,6 +175,15 @@ void HTTPServer::set_connection_timeout_seconds(double p_connection_timeout_seco
 
 double HTTPServer::get_connection_timeout_seconds() const {
 	return limits.timeout_seconds;
+}
+
+void HTTPServer::set_request_deadline_seconds(double p_request_deadline_seconds) {
+	ERR_FAIL_COND_MSG(p_request_deadline_seconds < 0.0, "The request deadline cannot be negative.");
+	limits.request_deadline_seconds = p_request_deadline_seconds;
+}
+
+double HTTPServer::get_request_deadline_seconds() const {
+	return limits.request_deadline_seconds;
 }
 
 void HTTPServer::set_use_threads(bool p_use_threads) {
@@ -427,11 +439,19 @@ void HTTPServer::_drain_pending() {
 			pending.remove_at(0);
 		}
 
-		_dispatch(connection);
+		if (connection->has_exceeded_request_deadline()) {
+			// The worker cannot touch a parked connection, so a stalled main-thread drain would otherwise
+			// leave this slot held until the client disconnected. A request whose total deadline elapsed
+			// while it waited here is dropped without dispatch rather than answered to a client that has
+			// likely already given up; nothing is written since no response was ever committed.
+			connection->close();
+		} else {
+			_dispatch(connection);
+		}
 
 		// Hand the connection back to the worker, which resumes writing the response and, on a
-		// kept-alive socket, reading the next request. If `_dispatch()` closed the connection the flag
-		// still clears harmlessly; the worker prunes it on its next pass.
+		// kept-alive socket, reading the next request. If dispatch or the deadline closed the connection
+		// the flag still clears harmlessly; the worker prunes it on its next pass.
 		MutexLock lock(mutex);
 		connection->awaiting_dispatch = false;
 	}
