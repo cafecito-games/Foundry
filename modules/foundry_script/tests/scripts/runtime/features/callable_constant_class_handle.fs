@@ -12,6 +12,7 @@ const EMPTY_CALLABLE := Callable()
 const EMPTY_SIGNAL := Signal()
 const EMPTY_CALLABLE_COPY := Callable(EMPTY_CALLABLE)
 const EMPTY_SIGNAL_COPY := Signal(EMPTY_SIGNAL)
+const ABSF_COPY := Callable(absf)
 
 
 func test() -> void:
@@ -30,6 +31,7 @@ func test() -> void:
 	print("empty signal is null: ", EMPTY_SIGNAL.is_null())
 	print("empty copy is null: ", EMPTY_CALLABLE_COPY.is_null())
 	print("empty signal copy is null: ", EMPTY_SIGNAL_COPY.is_null())
+	print("utility copy result: ", ABSF_COPY.call(-2.5))
 	print("instance result: ", Callable(InstanceReceiver.new(), "method").call())
 
 	print("Vector2 unchanged: ", Vector2(1, 2) == Vector2(1, 2))

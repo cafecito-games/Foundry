@@ -9,6 +9,7 @@ empty is null: true
 empty signal is null: true
 empty copy is null: true
 empty signal copy is null: true
+utility copy result: 2.5
 instance result: 11
 Vector2 unchanged: true
 Color unchanged: true
