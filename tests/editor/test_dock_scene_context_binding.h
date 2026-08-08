@@ -91,6 +91,12 @@ public:
 		TreeItem *root = p_dock->tree->get_root();
 		return root ? root->get_child_count() : 0;
 	}
+	// The scene root the embedded ConnectDialog resolves its connect-to-script
+	// search against. Threaded in from the dock's bound EditorSceneContext so the
+	// dialog never reaches for the global edited scene root.
+	static Node *connect_dialog_scene_root(ConnectionsDock *p_dock) {
+		return p_dock->connect_dialog ? p_dock->connect_dialog->get_connect_scene_root() : nullptr;
+	}
 };
 
 class SceneTreeEditorTestAccess {
@@ -525,6 +531,46 @@ TEST_CASE("[SceneTree][Editor] perscene-docks-bind") {
 	memdelete(replacement);
 	memdelete(context_b);
 	memdelete(ur_manager);
+}
+
+TEST_CASE("[SceneTree][Editor] ConnectDialog resolves its script-search root from the bound scene context") {
+	Window *tree_root = SceneTree::get_singleton()->get_root();
+
+	EditorSceneContext *context_a = memnew(EditorSceneContext);
+	Node2D *root_a = memnew(Node2D);
+	root_a->set_name("SceneA");
+	context_a->set_scene_root_node(root_a);
+
+	EditorSceneContext *context_b = memnew(EditorSceneContext);
+	Node2D *root_b = memnew(Node2D);
+	root_b->set_name("SceneB");
+	context_b->set_scene_root_node(root_b);
+
+	ConnectionsDock *signals_dock = memnew(ConnectionsDock);
+	tree_root->add_child(signals_dock);
+	signals_dock->show();
+	MessageQueue::get_singleton()->flush();
+
+	// Unbound: the connect dialog has no scene root to search against.
+	CHECK(ConnectionsDockTestAccess::connect_dialog_scene_root(signals_dock) == nullptr);
+
+	// Binding a context threads its scene root into the connect dialog instead
+	// of the dialog reaching for the global edited scene root.
+	signals_dock->set_scene_context(context_a);
+	CHECK(ConnectionsDockTestAccess::connect_dialog_scene_root(signals_dock) == root_a);
+
+	// Rebinding switches the dialog's root to the new context's scene.
+	signals_dock->set_scene_context(context_b);
+	CHECK(ConnectionsDockTestAccess::connect_dialog_scene_root(signals_dock) == root_b);
+
+	// Detaching clears the dialog's root alongside the dock's binding.
+	signals_dock->set_scene_context(nullptr);
+	CHECK(ConnectionsDockTestAccess::connect_dialog_scene_root(signals_dock) == nullptr);
+
+	tree_root->remove_child(signals_dock);
+	memdelete(signals_dock);
+	memdelete(context_a);
+	memdelete(context_b);
 }
 
 } // namespace TestDockSceneContextBinding
