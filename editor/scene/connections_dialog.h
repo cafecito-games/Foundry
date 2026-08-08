@@ -147,6 +147,11 @@ private:
 	Label *warning_label = nullptr;
 	Label *error_label = nullptr;
 
+	// Scene root the connect-to-script search resolves against, threaded in by
+	// the owning ConnectionsDock from its bound EditorSceneContext so the dialog
+	// never reaches for the global edited scene root.
+	EditorSceneContext *scene_context = nullptr;
+
 	void ok_pressed() override;
 	void _cancel_pressed();
 	void _item_activated();
@@ -196,6 +201,10 @@ public:
 	void init(const ConnectionData &p_cd, const PackedStringArray &p_signal_args, bool p_edit = false);
 
 	void popup_dialog(const String &p_for_signal);
+
+	void set_scene_context(EditorSceneContext *p_context);
+	Node *get_connect_scene_root() const;
+
 	ConnectDialog();
 	~ConnectDialog();
 };

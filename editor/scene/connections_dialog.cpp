@@ -57,6 +57,9 @@
 #include "scene/gui/spin_box.h"
 
 static Node *_find_first_script(Node *p_root, Node *p_node) {
+	if (!p_node) {
+		return nullptr;
+	}
 	if (p_node != p_root && p_node->get_owner() != p_root) {
 		return nullptr;
 	}
@@ -721,7 +724,8 @@ void ConnectDialog::popup_dialog(const String &p_for_signal) {
 	filter_nodes->clear();
 
 	if (!advanced->is_pressed()) {
-		error_label->set_visible(!_find_first_script(get_tree()->get_edited_scene_root(), get_tree()->get_edited_scene_root()));
+		Node *connect_root = get_connect_scene_root();
+		error_label->set_visible(!_find_first_script(connect_root, connect_root));
 	}
 
 	if (first_popup) {
@@ -745,12 +749,21 @@ void ConnectDialog::_advanced_pressed() {
 		tree->set_connect_to_script_mode(true);
 
 		vbc_right->hide();
-		error_label->set_visible(!_find_first_script(get_tree()->get_edited_scene_root(), get_tree()->get_edited_scene_root()));
+		Node *connect_root = get_connect_scene_root();
+		error_label->set_visible(!_find_first_script(connect_root, connect_root));
 	}
 
 	EditorSettings::get_singleton()->set_project_metadata("editor_metadata", "use_advanced_connections", advanced->is_pressed());
 
 	popup_centered();
+}
+
+void ConnectDialog::set_scene_context(EditorSceneContext *p_context) {
+	scene_context = p_context;
+}
+
+Node *ConnectDialog::get_connect_scene_root() const {
+	return scene_context ? scene_context->get_scene_root_node() : nullptr;
 }
 
 ConnectDialog::ConnectDialog() {
@@ -1222,7 +1235,8 @@ void ConnectionsDock::_open_connection_dialog(TreeItem &p_item) {
 	Node *selected_node = Object::cast_to<Node>(selected_object);
 	Node *dst_node = selected_node->get_owner() ? selected_node->get_owner() : selected_node;
 	if (!dst_node || dst_node->get_script().is_null()) {
-		dst_node = _find_first_script(get_tree()->get_edited_scene_root(), get_tree()->get_edited_scene_root());
+		Node *connect_root = connect_dialog->get_connect_scene_root();
+		dst_node = _find_first_script(connect_root, connect_root);
 	}
 	cd.source = selected_object;
 	cd.target = dst_node;
@@ -1515,6 +1529,12 @@ void ConnectionsDock::set_scene_context(EditorSceneContext *p_context) {
 	scene_context = p_context;
 	if (scene_context) {
 		scene_context->register_connections_dock(this);
+	}
+	if (connect_dialog) {
+		// Keep the dialog in lock-step with the dock's binding. This is the
+		// dialog's only writer, so the early-return above never desyncs them,
+		// and the context's detach path clears the pointer before it is freed.
+		connect_dialog->set_scene_context(scene_context);
 	}
 }
 
