@@ -167,10 +167,13 @@ void HTTPServerConnection::accept(const Ref<StreamPeerTCP> &p_stream, const Limi
 			state = STATE_CLOSED;
 			return;
 		}
-		// The handshake spans polls; until it completes no request byte exists to read. It is bounded
-		// by the same progress timeout as everything else, measured from here, so a peer that opens a
-		// socket and never finishes the handshake is dropped rather than held open.
+		// The handshake spans polls; until it completes no request byte exists to read. The total-request
+		// deadline opens here so the handshake counts against it: a peer that finishes the handshake
+		// slowly, or never, is bounded from accept rather than held open. On a plaintext connection the
+		// deadline instead opens at the first request byte, so a socket that idles before sending is
+		// governed only by the progress timeout.
 		state = STATE_HANDSHAKING;
+		_open_request_deadline();
 	} else {
 		state = STATE_READING;
 	}
@@ -249,12 +252,34 @@ void HTTPServerConnection::_note_progress() {
 	last_progress_usec = OS::get_singleton()->get_ticks_usec();
 }
 
-bool HTTPServerConnection::_has_stalled() const {
-	if (limits.timeout_seconds <= 0.0) {
+void HTTPServerConnection::_open_request_deadline() {
+	request_deadline_running = true;
+	request_deadline_start_usec = OS::get_singleton()->get_ticks_usec();
+}
+
+void HTTPServerConnection::_close_request_deadline() {
+	request_deadline_running = false;
+}
+
+bool HTTPServerConnection::has_exceeded_request_deadline() const {
+	if (!request_deadline_running || limits.request_deadline_seconds <= 0.0) {
 		return false;
 	}
-	const uint64_t budget_usec = uint64_t(limits.timeout_seconds * 1000000.0);
-	return OS::get_singleton()->get_ticks_usec() - last_progress_usec > budget_usec;
+	const uint64_t budget_usec = uint64_t(limits.request_deadline_seconds * 1000000.0);
+	return OS::get_singleton()->get_ticks_usec() - request_deadline_start_usec > budget_usec;
+}
+
+bool HTTPServerConnection::_has_stalled() const {
+	if (limits.timeout_seconds > 0.0) {
+		const uint64_t budget_usec = uint64_t(limits.timeout_seconds * 1000000.0);
+		if (OS::get_singleton()->get_ticks_usec() - last_progress_usec > budget_usec) {
+			return true;
+		}
+	}
+	// The progress timeout above resets on every byte, so a peer that trickles one byte per window, or
+	// one that stalls a handshake, keeps it from ever firing. The total-request deadline is the ceiling
+	// that still reclaims that slot, measured from when the request began rather than from the last byte.
+	return has_exceeded_request_deadline();
 }
 
 bool HTTPServerConnection::_read_available() {
@@ -316,6 +341,12 @@ bool HTTPServerConnection::_read_available() {
 			break;
 		}
 		_note_progress();
+		if (!request_deadline_running) {
+			// The first byte of this request opens its deadline window. An encrypted connection opened
+			// the window at accept and does not re-open it here, so the first request's handshake and read
+			// share one budget.
+			_open_request_deadline();
+		}
 
 		available = io->get_available_bytes();
 	}
@@ -468,6 +499,8 @@ void HTTPServerConnection::_reject(int p_status) {
 	body_file.unref();
 	body_file_remaining = 0;
 	keep_alive = false;
+	// The read phase is over; the bare status now drains under the progress timeout alone.
+	_close_request_deadline();
 
 	const String reason = String(status_reason(p_status));
 	const CharString body_bytes = reason.utf8();
@@ -510,6 +543,9 @@ void HTTPServerConnection::_begin_next_request() {
 	body_file.unref();
 	body_file_remaining = 0;
 	keep_alive = false;
+	// The next request on this reused socket opens its own deadline window at its first byte, so a
+	// long-lived kept-alive connection is never dropped by the deadline of a request it already served.
+	_close_request_deadline();
 	state = STATE_READING;
 	_note_progress();
 }
@@ -517,6 +553,10 @@ void HTTPServerConnection::_begin_next_request() {
 void HTTPServerConnection::begin_response(const Ref<HTTPResponse> &p_response) {
 	ERR_FAIL_COND(p_response.is_null());
 	ERR_FAIL_COND(state != STATE_READY);
+
+	// The request is fully read and about to be answered; the response drains under the progress timeout
+	// alone, so a large body is never cut off by the total-request deadline.
+	_close_request_deadline();
 
 	int status = p_response->get_status();
 	PackedByteArray body;
@@ -694,5 +734,6 @@ void HTTPServerConnection::close() {
 	body_file.unref();
 	body_file_remaining = 0;
 	keep_alive = false;
+	_close_request_deadline();
 	state = STATE_CLOSED;
 }

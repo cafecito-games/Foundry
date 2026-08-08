@@ -164,6 +164,12 @@ public:
 	void set_connection_timeout_seconds(double p_connection_timeout_seconds);
 	double get_connection_timeout_seconds() const;
 
+	// Seconds one request has to finish arriving, from when it begins until its header block and body
+	// are read, regardless of how recently a byte moved. Bounds a trickling peer that would otherwise
+	// reset the progress timeout forever. Zero disables it.
+	void set_request_deadline_seconds(double p_request_deadline_seconds);
+	double get_request_deadline_seconds() const;
+
 	// Binds `bind_address` on `port`. With no argument the listener is plaintext HTTP; passing
 	// server-side `TLSOptions` terminates HTTPS on every accepted connection through the engine's
 	// mbedTLS-backed `StreamPeerTLS`.

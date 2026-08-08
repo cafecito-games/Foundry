@@ -84,6 +84,14 @@ public:
 		// response leaves, or no request at all on a reused socket — after which the connection is
 		// dropped. Zero disables the drop.
 		double timeout_seconds = 30.0;
+		// Seconds a single request has to finish arriving, measured from when it begins — the TLS
+		// handshake on the first request, or the first byte of any request on a plaintext or reused
+		// socket — until its header block and body are read, after which the connection is dropped no
+		// matter how recently a byte moved. Because `timeout_seconds` resets on every byte, a peer that
+		// trickles one byte per idle window or stalls a handshake keeps it from ever firing; this
+		// ceiling is what still reclaims that slot. It never bounds a response draining to the peer, so
+		// a long download is limited by progress, not by this. Zero disables the ceiling.
+		double request_deadline_seconds = 60.0;
 	};
 
 private:
@@ -96,6 +104,13 @@ private:
 	// When the connection last moved a byte in either direction. The timeout is measured against
 	// progress rather than age, so a long download is never cut off for taking a long time.
 	uint64_t last_progress_usec = 0;
+	// When the current request's arrival window opened, and whether that window is running. The window
+	// opens at accept for an encrypted connection (the handshake counts against it) and at the first
+	// byte of every request on a plaintext or reused socket; it closes once the request is handed off
+	// for a response, so a draining response is bounded by progress rather than by the deadline. It is
+	// measured independently of `last_progress_usec`, so trickled progress cannot refresh it.
+	uint64_t request_deadline_start_usec = 0;
+	bool request_deadline_running = false;
 	// Whether the socket carries another request once the current response has drained. Decided
 	// from the request's HTTP version and its `Connection` field, and cleared by anything that
 	// makes the framing of what follows unknowable.
@@ -150,6 +165,10 @@ private:
 	// the connection if it fails. Never called on a plaintext connection.
 	void _drive_handshake();
 	void _note_progress();
+	// Opens and closes the total-request deadline window. Opening stamps its start; closing stops it so
+	// a response phase is governed by progress alone.
+	void _open_request_deadline();
+	void _close_request_deadline();
 	bool _has_stalled() const;
 	// Reads and discards what the peer already sent, bounded, before the socket is closed.
 	void _linger();
@@ -167,6 +186,12 @@ public:
 
 	State get_state() const { return state; }
 	bool is_closed() const { return state == STATE_CLOSED; }
+
+	// True once the current request has run past the total-request deadline, measured from when it
+	// began rather than from the last byte. The worker checks this while reading or handshaking; the
+	// server checks it on a parked, main-thread-owned connection to drop a request whose client has
+	// likely given up before dispatch, so a stalled drain cannot strand parked slots.
+	bool has_exceeded_request_deadline() const;
 
 	// Ownership token for the server's threaded mode: set true while a `STATE_READY` connection is
 	// parked for main-thread dispatch, so the worker never polls or inspects it in that window. Only

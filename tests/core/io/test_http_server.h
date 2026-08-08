@@ -2043,6 +2043,7 @@ TEST_CASE("[HTTPServer] The request limits carry the documented defaults") {
 	CHECK(server->get_max_header_block_bytes() == 32768);
 	CHECK(server->get_max_connections() == 64);
 	CHECK(server->get_connection_timeout_seconds() == doctest::Approx(30.0));
+	CHECK(server->get_request_deadline_seconds() == doctest::Approx(60.0));
 
 	SUBCASE("A limit that cannot bound anything is rejected and leaves the property unchanged") {
 		ERR_PRINT_OFF;
@@ -2052,6 +2053,7 @@ TEST_CASE("[HTTPServer] The request limits carry the documented defaults") {
 		server->set_max_header_block_bytes(0);
 		server->set_max_connections(0);
 		server->set_connection_timeout_seconds(-1.0);
+		server->set_request_deadline_seconds(-1.0);
 		ERR_PRINT_ON;
 
 		CHECK(server->get_max_request_body_bytes() == 1048576);
@@ -2060,6 +2062,7 @@ TEST_CASE("[HTTPServer] The request limits carry the documented defaults") {
 		CHECK(server->get_max_header_block_bytes() == 32768);
 		CHECK(server->get_max_connections() == 64);
 		CHECK(server->get_connection_timeout_seconds() == doctest::Approx(30.0));
+		CHECK(server->get_request_deadline_seconds() == doctest::Approx(60.0));
 	}
 
 	SUBCASE("A header count past what one parse pass can hold is rejected") {
@@ -2072,6 +2075,11 @@ TEST_CASE("[HTTPServer] The request limits carry the documented defaults") {
 	SUBCASE("A zero timeout is accepted and disables the drop") {
 		server->set_connection_timeout_seconds(0.0);
 		CHECK(server->get_connection_timeout_seconds() == doctest::Approx(0.0));
+	}
+
+	SUBCASE("A zero request deadline is accepted and disables the ceiling") {
+		server->set_request_deadline_seconds(0.0);
+		CHECK(server->get_request_deadline_seconds() == doctest::Approx(0.0));
 	}
 
 	memdelete(server);
@@ -2495,6 +2503,168 @@ TEST_CASE("[HTTPServer] A connection that stops making progress is dropped") {
 	server->stop();
 	memdelete(handler);
 	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A total-request deadline bounds work the progress timeout cannot") {
+	SUBCASE("A client that trickles bytes under the idle timeout is still dropped at the deadline") {
+		HTTPServer *server = memnew(HTTPServer);
+		server->set_port(0);
+		// The progress timeout is set far past the test window, so it can never be what drops the
+		// connection: only the total-request deadline can.
+		server->set_connection_timeout_seconds(5.0);
+		server->set_request_deadline_seconds(0.1);
+		REQUIRE(server->listen() == OK);
+		const int port = server->get_listening_port();
+		REQUIRE(port > 0);
+
+		RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+		server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		// The request begins but never ends: the header value is extended one byte at a time, each write
+		// well inside the 5s idle window, so the progress timeout keeps resetting and would hold this
+		// slot for as long as the trickle continued.
+		send_raw(client, "GET /hello HTTP/1.1\r\nX-Pad: ");
+		pump(server, client, 1);
+
+		const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+		while (server->get_connection_count() > 0 && OS::get_singleton()->get_ticks_usec() < deadline) {
+			send_raw(client, "a");
+			pump(server, client, 1);
+			OS::get_singleton()->delay_usec(15000);
+		}
+
+		CHECK(server->get_connection_count() == 0);
+		CHECK(handler->call_count == 0);
+
+		server->stop();
+		memdelete(handler);
+		memdelete(server);
+	}
+
+	SUBCASE("A stalled TLS handshake is dropped by the deadline even with the idle timeout disabled") {
+		if (!StreamPeerTLS::is_available()) {
+			return;
+		}
+
+		Ref<Crypto> crypto = Crypto::create();
+		REQUIRE(crypto.is_valid());
+		Ref<CryptoKey> key = crypto->generate_rsa(2048);
+		REQUIRE(key.is_valid());
+		Ref<X509Certificate> certificate = crypto->generate_self_signed_certificate(key, "CN=foundry-http-test", "20140101000000", "20340101000000");
+		REQUIRE(certificate.is_valid());
+		const Ref<TLSOptions> server_options = TLSOptions::server(key, certificate);
+		REQUIRE(server_options.is_valid());
+
+		HTTPServer *server = memnew(HTTPServer);
+		server->set_port(0);
+		// With the idle timeout disabled, a handshake that never progresses would be held forever unless
+		// the total-request deadline covers the handshake phase too.
+		server->set_connection_timeout_seconds(0.0);
+		server->set_request_deadline_seconds(0.1);
+		REQUIRE(server->listen(server_options) == OK);
+		const int port = server->get_listening_port();
+		REQUIRE(port > 0);
+
+		// A plaintext socket to the TLS listener never sends a handshake record, so the server sits in
+		// its handshaking state with nothing to read.
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+		REQUIRE(server->get_connection_count() == 1);
+
+		const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+		while (server->get_connection_count() > 0 && OS::get_singleton()->get_ticks_usec() < deadline) {
+			pump(server, client, 1);
+			OS::get_singleton()->delay_usec(15000);
+		}
+
+		CHECK(server->get_connection_count() == 0);
+
+		server->stop();
+		memdelete(server);
+	}
+
+	SUBCASE("Each request on a kept-alive socket opens its own deadline window") {
+		HTTPServer *server = memnew(HTTPServer);
+		server->set_port(0);
+		server->set_connection_timeout_seconds(5.0);
+		// The deadline is short enough that the pause between the two requests outlasts it. A deadline
+		// measured from accept rather than from each request would wrongly drop the second request.
+		server->set_request_deadline_seconds(0.1);
+		REQUIRE(server->listen() == OK);
+		const int port = server->get_listening_port();
+		REQUIRE(port > 0);
+
+		RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+		server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		String pending;
+		send_raw(client, "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n");
+		RawResponse first;
+		REQUIRE(read_raw_response(server, client, pending, first));
+		CHECK(first.status == 200);
+
+		// Idle on the open socket well past the first request's deadline but inside the 5s progress
+		// timeout, so the connection is still alive when the second request begins.
+		const uint64_t idle_until = OS::get_singleton()->get_ticks_usec() + 250000;
+		while (OS::get_singleton()->get_ticks_usec() < idle_until) {
+			server->poll();
+			OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+		}
+		REQUIRE(server->get_connection_count() == 1);
+
+		send_raw(client, "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n");
+		RawResponse second;
+		REQUIRE(read_raw_response(server, client, pending, second));
+		CHECK(second.status == 200);
+		CHECK(handler->call_count == 2);
+
+		server->stop();
+		memdelete(handler);
+		memdelete(server);
+	}
+
+	SUBCASE("A parked request past its deadline is dropped instead of dispatched") {
+		HTTPServer *server = memnew(HTTPServer);
+		server->set_port(0);
+		server->set_use_threads(true);
+		server->set_connection_timeout_seconds(5.0);
+		server->set_request_deadline_seconds(0.1);
+		REQUIRE(server->listen() == OK);
+		const int port = server->get_listening_port();
+		REQUIRE(port > 0);
+
+		RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+		server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+		Ref<StreamPeerTCP> client = connect_raw(server, port);
+		REQUIRE(client.is_valid());
+
+		// The worker reads and parks this complete request for main-thread dispatch. The drain is then
+		// withheld past the deadline: without it draining, the worker cannot touch the parked slot, so
+		// the deadline is the only thing that can reclaim it.
+		send_raw(client, "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n");
+		OS::get_singleton()->delay_usec(250000);
+
+		const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+		while (server->get_connection_count() > 0 && OS::get_singleton()->get_ticks_usec() < deadline) {
+			server->poll();
+			OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+		}
+
+		CHECK(server->get_connection_count() == 0);
+		CHECK(handler->call_count == 0);
+
+		server->stop();
+		memdelete(handler);
+		memdelete(server);
+	}
 }
 
 namespace {
