@@ -565,7 +565,7 @@ public:
 	virtual void write_assign_default_parameter(const Address &p_dst, const Address &p_src, bool p_use_conversion) override;
 	virtual void write_store_global(const Address &p_dst, int p_global_index, const StringName &p_global_name) override;
 	virtual void write_store_named_global(const Address &p_dst, const StringName &p_global) override;
-	virtual void write_cast(const Address &p_target, const Address &p_source, const FSDataType &p_type) override;
+	virtual void write_cast(const Address &p_target, const Address &p_source, const FSDataType &p_type, bool p_reinterpret = false) override;
 	virtual void write_call(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) override;
 	virtual void write_super_call(const Address &p_target, const StringName &p_function_name, const Vector<Address> &p_arguments) override;
 	virtual void write_call_async(const Address &p_target, const Address &p_base, const StringName &p_function_name, const Vector<Address> &p_arguments) override;

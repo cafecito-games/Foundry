@@ -1602,7 +1602,7 @@ void FSByteCodeGenerator::write_store_named_global(const Address &p_dst, const S
 #endif
 }
 
-void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_source, const FSDataType &p_type) {
+void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_source, const FSDataType &p_type, bool p_reinterpret) {
 	int index = 0;
 
 	switch (p_type.kind) {
@@ -1615,7 +1615,9 @@ void FSByteCodeGenerator::write_cast(const Address &p_target, const Address &p_s
 			// conversions it does define (a numeric string, for instance).
 			if (_is_integer_carrier(p_type.builtin_type)) {
 				const NumericType target = FSNumericOps::operation_type(p_type.numeric_type, p_type.builtin_type);
-				append_opcode(FSFunction::OPCODE_NUMERIC_CAST);
+				// The `as!` reinterpret shares the checked cast's operand layout but copies the
+				// width-masked bit pattern onto the target carrier instead of range-checking the value.
+				append_opcode(p_reinterpret ? FSFunction::OPCODE_NUMERIC_REINTERPRET : FSFunction::OPCODE_NUMERIC_CAST);
 				append(p_source);
 				append(p_target);
 				append(int(target));

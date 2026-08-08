@@ -109,6 +109,7 @@ public:
 			// Keywords
 			ABSTRACT,
 			AS,
+			AS_BANG,
 			ASSERT,
 			AWAIT,
 			BREAKPOINT,

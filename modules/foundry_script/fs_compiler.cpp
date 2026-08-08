@@ -1303,7 +1303,7 @@ FSCodeGenerator::Address FSCompiler::_parse_expression(CodeGen &codegen, Error &
 
 				FSCodeGenerator::Address src = _parse_expression(codegen, r_error, cn->operand);
 
-				gen->write_cast(result, src, cast_type);
+				gen->write_cast(result, src, cast_type, cn->is_reinterpret);
 
 				if (src.mode == FSCodeGenerator::Address::TEMPORARY) {
 					gen->pop_temporary();

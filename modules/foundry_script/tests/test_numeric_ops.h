@@ -387,6 +387,38 @@ TEST_CASE("[FoundryScript][NumericOps] Float conversion truncates toward zero an
 	}
 }
 
+TEST_CASE("[FoundryScript][NumericOps] A reinterpret masks to the target width before switching carrier") {
+	Variant result;
+
+	// The 32-bit mask boundary: -1 reinterpreted as uint keeps only its low 32 bits (0xFFFFFFFF), not
+	// the all-ones 64-bit pattern its int carrier stores.
+	REQUIRE(FSNumericOps::reinterpret(NumericType::UINT32, Variant(int64_t(-1)), result));
+	CHECK(is_exactly(result, Variant(uint64_t(0xFFFFFFFF))));
+	CHECK_FALSE(is_exactly(result, Variant(uint64_t(0xFFFFFFFFFFFFFFFF))));
+
+	// The reverse crossing at 32 bits: the all-ones 32-bit unsigned pattern is signed -1 once it lands
+	// on the int carrier, sign-extended across the 64-bit storage.
+	REQUIRE(FSNumericOps::reinterpret(NumericType::INT32, Variant(uint64_t(0xFFFFFFFF)), result));
+	CHECK(is_exactly(result, Variant(int64_t(-1))));
+
+	// 64-bit crossings never mask: the full pattern survives, only the carrier changes.
+	REQUIRE(FSNumericOps::reinterpret(NumericType::UINT64, Variant(int64_t(-1)), result));
+	CHECK(is_exactly(result, Variant(uint64_t(0xFFFFFFFFFFFFFFFF))));
+
+	REQUIRE(FSNumericOps::reinterpret(NumericType::INT64, Variant(uint64_t(0xFF00000000000000ULL)), result));
+	CHECK(is_exactly(result, Variant(int64_t(0xFF00000000000000ULL))));
+
+	// A high 32-bit source is dropped, never carried through: reinterpreting at 32 bits keeps the low
+	// half only, which is what makes a genuine narrowing distinguishable from an equal-width crossing.
+	REQUIRE(FSNumericOps::reinterpret(NumericType::UINT32, Variant(uint64_t(0x1122334455667788ULL)), result));
+	CHECK(is_exactly(result, Variant(uint64_t(0x55667788))));
+
+	// A non-integer source has no bit pattern to reinterpret, and the carrier-neutral descriptor names
+	// no width, so both are refused rather than producing garbage.
+	CHECK_FALSE(FSNumericOps::reinterpret(NumericType::UINT32, Variant(1.5), result));
+	CHECK_FALSE(FSNumericOps::reinterpret(NumericType::NONE, Variant(int64_t(1)), result));
+}
+
 TEST_CASE("[FoundryScript][NumericOps] A type test checks the carrier and the declared range") {
 	// This is the `is int` / `is uint` / `is long` / `is ulong` rule: the narrow descriptors refine the
 	// carrier by range, and the wide ones are satisfied by the carrier alone.

@@ -549,6 +549,9 @@ public:
 		// Checked integer conversion, including the unsigned carrier that `Variant::construct()` has
 		// no constructor for.
 		OPCODE_NUMERIC_CAST,
+		// Unchecked bit reinterpret between equal-width integer types (the `as!` operator): masks the
+		// source pattern to the target width and lays it on the target carrier without a range check.
+		OPCODE_NUMERIC_REINTERPRET,
 		OPCODE_TYPE_TEST_BUILTIN,
 		OPCODE_TYPE_TEST_ARRAY,
 		OPCODE_TYPE_TEST_DICTIONARY,

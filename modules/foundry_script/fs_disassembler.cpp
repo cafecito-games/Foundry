@@ -268,6 +268,19 @@ void FSFunction::disassemble(const Vector<String> &p_code_lines) const {
 
 				incr += 5;
 			} break;
+			case OPCODE_NUMERIC_REINTERPRET: {
+				text += "reinterpret ";
+				text += DADDR(2);
+				text += " = ";
+				text += DADDR(1);
+				text += " as! ";
+				text += numeric_type_name(NumericType(_code_ptr[ip + 3]));
+				if (_code_ptr[ip + 4] != 0) {
+					text += "?";
+				}
+
+				incr += 5;
+			} break;
 			case OPCODE_TYPE_TEST_BUILTIN: {
 				text += "type test ";
 				text += DADDR(1);

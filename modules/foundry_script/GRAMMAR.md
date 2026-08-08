@@ -308,12 +308,18 @@ Bitwise:        &    |    ~    ^    <<   >>
 Arithmetic:     +    -    *    **   /    %
 Assignment:     =    +=   -=   *=   **=  /=   %=
                 <<=  >>=  &=   |=   ^=
+Cast:           as!
 Brackets:       (  )   [  ]   {  }
 Punctuation:    ,   ;   .   ..   ...   :   $   ->   _
 Other:          ?   `    (backtick)
 ```
 
 Notes:
+
+- `as!` is the `AS_BANG` token, the unchecked bit-reinterpret cast operator. It is lexed as the `as`
+  keyword immediately followed by `!` with no intervening whitespace, so `as !` is not this operator.
+  The checked cast keyword `as` remains a plain keyword token (§2.5); only the contiguous `as!` form
+  is this operator. See §5.5.
 
 - `..` is `PERIOD_PERIOD` (match rest / dictionary rest); `...` is `PERIOD_PERIOD_PERIOD`
   (rest/variadic parameter).
@@ -847,7 +853,7 @@ From lowest to highest (`FSParser::Precedence`). Higher binds tighter.
 | # | Level                       | Operators / forms (infix unless noted)             | Assoc. |
 |---|-----------------------------|----------------------------------------------------|--------|
 | 1 | `PREC_ASSIGNMENT`           | `=` `+=` `-=` `*=` `**=` `/=` `%=` `<<=` `>>=` `&=` `\|=` `^=` | right (stmt-level) |
-| 2 | `PREC_CAST`                 | `as` (and the invalid `?` handler)                 | left |
+| 2 | `PREC_CAST`                 | `as`, `as!` (and the invalid `?` handler)          | left |
 | 3 | `PREC_TERNARY`              | `value if cond else value`                         | right |
 | 4 | `PREC_LOGIC_OR`             | `or` `\|\|`                                        | left |
 | 5 | `PREC_LOGIC_AND`            | `and` `&&`                                         | left |
@@ -967,7 +973,8 @@ subject being matched or tested rather than by an expected type.
 | `**`                                  | power               | `PREC_POWER`          |
 | `=` and compound assignments          | assignment          | `PREC_ASSIGNMENT`     |
 | `if`                                  | ternary             | `PREC_TERNARY`        |
-| `as`                                  | cast                | `PREC_CAST`           |
+| `as`                                  | checked cast        | `PREC_CAST`           |
+| `as!`                                 | bit reinterpret     | `PREC_CAST`           |
 | `is`                                  | type test           | `PREC_TYPE_TEST`      |
 | `(`                                   | call                | `PREC_CALL`           |
 | `.`                                   | attribute access    | `PREC_ATTRIBUTE`      |
@@ -1001,12 +1008,33 @@ expressions (`can_assign` is false there).
 #### Cast and type test
 
 ```ebnf
-cast          = expression, "as", type ;
+cast          = expression, ( "as" | "as!" ), type ;
 type_test     = expression, "is", [ "not" ], type_test_type, [ case_bind_list ] ;
 type_test_type = type | contextual_enum_case ;
 case_bind_list = "(", case_bind, { ",", case_bind }, ")" ;
 case_bind     = identifier | "_" ;
 ```
+
+`as` is the checked cast. `as!` is the unchecked **bit-reinterpret** operator, tokenized as the
+single compound token `AS_BANG` (the `as` keyword immediately followed by `!`, with no intervening
+whitespace). It is restricted to a crossing between the source-nameable integer types of **equal
+width** — `int` ↔ `uint` (both 32-bit) and `long` ↔ `ulong` (both 64-bit). Unlike `as`, it never
+range-checks: it takes the operand's N-bit pattern, masks it to the target width, and lays that
+pattern on the target carrier. Every other use is an error, so `as!` cannot become a general
+unchecked-cast escape hatch:
+
+- The target must be `int`, `uint`, `long`, or `ulong`; any other target type is rejected.
+- The operand must be an integer, and its width must equal the target width, so a genuine narrowing
+  such as `some_ulong as! uint` stays an error. An unpinned integer (an unsuffixed literal, or a value
+  whose width was never declared) counts as 64-bit — its carrier's full width — so it reinterprets
+  only into a 64-bit target; reaching a 32-bit target requires an explicitly 32-bit operand (an
+  `int`/`uint` value, or an `as int`/`as uint` narrowing applied first).
+- Constant folding, the reinterpret opcode, and the analyzer all produce the identical masked pattern.
+
+A signed shift is a checked multiply-by-2ⁿ, so it overflows before it can set the sign bit
+(`(255 as long) << 56` is out of range). The idiom is to shift on the unsigned carrier and then
+reinterpret: `(255 as ulong) << 56UL as! long` assembles the high byte and reads it back as signed
+(the shift count shares the left operand's carrier, and `as!` binds looser than `<<`).
 
 `x is not int` is parsed as `not (x is int)`. The negation node records that it came from this
 sugar, so the formatter reprints the source form `x is not int`; an author-written `not (x is int)`

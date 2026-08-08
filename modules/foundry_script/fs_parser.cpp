@@ -5659,16 +5659,20 @@ FSParser::ExpressionNode *FSParser::parse_subscript(ExpressionNode *p_previous_o
 }
 
 FSParser::ExpressionNode *FSParser::parse_cast(ExpressionNode *p_previous_operand, bool p_can_assign) {
+	const bool is_reinterpret = previous.type == FSTokenizer::Token::AS_BANG;
+	const char *operator_name = is_reinterpret ? "as!" : "as";
+
 	CastNode *cast = alloc_node<CastNode>();
 	reset_extents(cast, p_previous_operand);
 	update_extents(cast);
 
 	cast->operand = p_previous_operand;
+	cast->is_reinterpret = is_reinterpret;
 	cast->cast_type = parse_type();
 	complete_extents(cast);
 
 	if (cast->cast_type == nullptr) {
-		push_error(R"(Expected type specifier after "as".)");
+		push_error(vformat(R"(Expected type specifier after "%s".)", operator_name));
 		return p_previous_operand;
 	}
 
@@ -6944,6 +6948,7 @@ FSParser::ParseRule *FSParser::get_rule(FSTokenizer::Token::Type p_token_type) {
 		// Keywords
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // ABSTRACT,
 		{ nullptr,                                          &FSParser::parse_cast,                 	PREC_CAST }, // AS,
+		{ nullptr,                                          &FSParser::parse_cast,                 	PREC_CAST }, // AS_BANG,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // ASSERT,
 		{ &FSParser::parse_await,                  	nullptr,                                        PREC_NONE }, // AWAIT,
 		{ nullptr,                                          nullptr,                                        PREC_NONE }, // BREAKPOINT,
@@ -8301,7 +8306,7 @@ void FSParser::TreePrinter::print_call(CallNode *p_call) {
 
 void FSParser::TreePrinter::print_cast(CastNode *p_cast) {
 	print_expression(p_cast->operand);
-	push_text(" AS ");
+	push_text(p_cast->is_reinterpret ? " AS! " : " AS ");
 	print_type(p_cast->cast_type);
 }
 
