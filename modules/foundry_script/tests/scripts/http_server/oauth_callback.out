@@ -1,0 +1,10 @@
+FS_TEST_OK
+true
+abc123
+xyz
+302
+/dashboard?code=abc123
+true
+302
+/dashboard?code=abc123
+true
