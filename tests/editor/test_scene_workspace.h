@@ -1618,6 +1618,165 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-sync-skips-rebuild-when
 	h.unmount();
 }
 
+// Regression coverage for issue #1917: a mixed pane (scene + non-scene tabs) must
+// not stomp an active non-scene tab (script/text) back to the scene tab when
+// sync_scene_tabs_from_editor_data runs (notably on editor/save_scene).
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-sync-preserves-active-non-scene-tab") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	CountingSceneTabType counting_scene;
+	registry.register_type(&counting_scene);
+	RecordingTabType non_scene;
+	registry.register_type(&non_scene);
+	pane->set_tab_registry(&registry);
+
+	const int tile_id = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://sync_preserve_a.tscn");
+	h.editor_data.set_tile_current_scene(tile_id, scene_a);
+
+	// Build the scene tab, then add a non-scene tab and make it active.
+	pane->sync_scene_tabs_from_editor_data(false);
+	REQUIRE(pane->get_tab_count() == 1);
+
+	WorkspaceTab non_scene_tab = non_scene.make_tab("res://active_script.fs", registry.allocate_stable_id());
+	pane->add_tab(non_scene_tab);
+	h.pump();
+	pane->set_active_tab(1, false);
+	REQUIRE(pane->get_active_tab_index() == 1);
+	REQUIRE(pane->get_tab(1).get_type_id() == StringName("recording"));
+	const int non_scene_mounts = non_scene.mount_count;
+	const int non_scene_unmounts = non_scene.unmount_count;
+	CHECK(non_scene_mounts >= 1);
+
+	// The save path syncs with membership unchanged; the active non-scene tab
+	// must stay active and its surface must not be unmounted/remounted.
+	pane->sync_scene_tabs_from_editor_data(true);
+	CHECK(pane->get_active_tab_index() == 1);
+	CHECK(pane->get_tab(pane->get_active_tab_index()).get_type_id() == StringName("recording"));
+	CHECK(non_scene.mount_count == non_scene_mounts);
+	CHECK(non_scene.unmount_count == non_scene_unmounts);
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-sync-retargets-when-scene-tab-active") {
+	// With a mixed pane whose active tab is a scene tab, changing the tile's
+	// current scene through EditorData still moves the active tab to the new
+	// current scene's tab; the non-scene tab's presence must not block that.
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	CountingSceneTabType counting_scene;
+	registry.register_type(&counting_scene);
+	RecordingTabType non_scene;
+	registry.register_type(&non_scene);
+	pane->set_tab_registry(&registry);
+
+	const int tile_id = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://retarget_a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_id, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://retarget_b.tscn");
+	h.editor_data.set_tile_current_scene(tile_id, scene_a);
+
+	pane->sync_scene_tabs_from_editor_data(false);
+	REQUIRE(pane->get_tab_count() == 2);
+	REQUIRE(pane->get_active_tab_index() == 0);
+
+	// Add a non-scene tab; the scene tab (current scene) stays active.
+	WorkspaceTab non_scene_tab = non_scene.make_tab("res://retarget_script.fs", registry.allocate_stable_id());
+	pane->add_tab(non_scene_tab);
+	h.pump();
+	REQUIRE(pane->get_tab_count() == 3);
+	REQUIRE(pane->get_active_tab_index() == 0);
+	REQUIRE(pane->get_tab(0).get_type_id() == StringName("scene"));
+
+	// Change the tile's current scene; the active tab must follow it.
+	h.editor_data.set_tile_current_scene(tile_id, scene_b);
+	pane->sync_scene_tabs_from_editor_data(true);
+	CHECK(pane->get_active_tab_index() == 1);
+	CHECK(pane->get_tab(pane->get_active_tab_index()).get_type_id() == StringName("scene"));
+
+	h.unmount();
+}
+
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] scene-tab-sync-rebuild-preserves-active-non-scene-tab") {
+	// The full-rebuild branch (scene membership changed while a non-scene tab is
+	// active, e.g. another scene opened into the pane) must also preserve the
+	// active non-scene tab instead of retargeting to the current scene.
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspacePane *pane = get_leaf_pane(h.workspace->get_focused_leaf());
+	REQUIRE(pane != nullptr);
+
+	WorkspaceTabRegistry registry;
+	registry.reset_stable_id_counter();
+	registry.clear_canonical_index();
+	CountingSceneTabType counting_scene;
+	registry.register_type(&counting_scene);
+	RecordingTabType non_scene;
+	registry.register_type(&non_scene);
+	pane->set_tab_registry(&registry);
+
+	const int tile_id = h.workspace->get_focused_leaf_id();
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = add_test_scene(h.editor_data, tile_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://rebuild_a.tscn");
+	h.editor_data.set_tile_current_scene(tile_id, scene_a);
+
+	pane->sync_scene_tabs_from_editor_data(false);
+	REQUIRE(pane->get_tab_count() == 1);
+
+	WorkspaceTab non_scene_tab = non_scene.make_tab("res://rebuild_script.fs", registry.allocate_stable_id());
+	pane->add_tab(non_scene_tab);
+	h.pump();
+	pane->set_active_tab(1, false);
+	REQUIRE(pane->get_active_tab_index() == 1);
+	REQUIRE(pane->get_tab(1).get_type_id() == StringName("recording"));
+	const int non_scene_stable_id = pane->get_tab(1).get_stable_id();
+
+	// Opening another scene into the tile changes membership, forcing the rebuild
+	// path. The active non-scene tab must survive the rebuild.
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = add_test_scene(h.editor_data, tile_id, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://rebuild_b.tscn");
+	h.editor_data.set_tile_current_scene(tile_id, scene_a);
+	pane->sync_scene_tabs_from_editor_data(true);
+	REQUIRE(pane->get_tab_count() == 3);
+	CHECK(pane->get_active_tab_index() >= 0);
+	CHECK(pane->get_tab(pane->get_active_tab_index()).get_type_id() == StringName("recording"));
+	CHECK(pane->get_tab(pane->get_active_tab_index()).get_stable_id() == non_scene_stable_id);
+
+	h.unmount();
+}
+
 class TileHistoryDockTestAccess {
 public:
 	static void refresh(HistoryDock *p_dock) { p_dock->refresh_history(); }

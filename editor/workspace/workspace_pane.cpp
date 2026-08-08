@@ -440,9 +440,15 @@ void WorkspacePane::sync_scene_tabs_from_editor_data(bool p_activate) {
 
 		if (membership_unchanged) {
 			const int previous_active = active_tab_index;
+			// Only retarget to the tile's current scene when the active tab was
+			// already a scene tab (e.g. the current scene changed identity). A mixed
+			// pane always has a current scene, so forcing it here would stomp an
+			// active non-scene tab (script, text, help) on every sync — notably on
+			// save, which unmounts/remounts the script surface. Preserve it instead.
+			const bool previous_active_was_non_scene = (previous_active >= 0 && previous_active < tabs.size() && tabs[previous_active].get_type_id() != StringName("scene"));
 			int desired_active = -1;
 			const int current_scene = editor_data->get_tile_current_scene(leaf_id);
-			if (current_scene >= 0) {
+			if (current_scene >= 0 && !previous_active_was_non_scene) {
 				desired_active = find_scene_tab_index(current_scene);
 			}
 			if (desired_active < 0 && previous_active >= 0 && previous_active < tabs.size()) {
@@ -483,6 +489,8 @@ void WorkspacePane::sync_scene_tabs_from_editor_data(bool p_activate) {
 		}
 	}
 
+	const bool previous_active_was_non_scene = (active_tab_index >= 0 && active_tab_index < tabs.size() && tabs[active_tab_index].get_type_id() != StringName("scene"));
+	const int previous_active_non_scene_stable_id = (previous_active_was_non_scene) ? tabs[active_tab_index].get_stable_id() : -1;
 	const int previous_active_history = (active_tab_index >= 0 && active_tab_index < tabs.size() && tabs[active_tab_index].get_type_id() == StringName("scene") && tabs[active_tab_index].get_payload().has("scene_history_id")) ? int(tabs[active_tab_index].get_payload()["scene_history_id"]) : -1;
 
 	HashMap<int, WorkspaceTab> existing_scene_tabs_by_history;
@@ -523,7 +531,7 @@ void WorkspacePane::sync_scene_tabs_from_editor_data(bool p_activate) {
 	tabs = rebuilt_tabs;
 
 	const int current_scene = editor_data->get_tile_current_scene(leaf_id);
-	if (current_scene >= 0) {
+	if (current_scene >= 0 && !previous_active_was_non_scene) {
 		const String current_key = SceneTabType::resource_key_for_scene(*editor_data, current_scene);
 		for (int i = 0; i < tabs.size(); i++) {
 			if (tabs[i].get_type_id() == StringName("scene") && tabs[i].get_resource_key() == current_key) {
@@ -535,6 +543,17 @@ void WorkspacePane::sync_scene_tabs_from_editor_data(bool p_activate) {
 	if (active_tab_index < 0 && previous_active_history >= 0) {
 		for (int i = 0; i < tabs.size(); i++) {
 			if (tabs[i].get_type_id() == StringName("scene") && tabs[i].get_payload().has("scene_history_id") && int(tabs[i].get_payload()["scene_history_id"]) == previous_active_history) {
+				active_tab_index = i;
+				break;
+			}
+		}
+	}
+	// A non-scene tab (script, text, help) that was active before the rebuild is
+	// carried over verbatim via non_scene_tabs, so restore it by stable id rather
+	// than letting the current-scene preference steal focus back to a scene tab.
+	if (active_tab_index < 0 && previous_active_non_scene_stable_id >= 0) {
+		for (int i = 0; i < tabs.size(); i++) {
+			if (tabs[i].get_stable_id() == previous_active_non_scene_stable_id) {
 				active_tab_index = i;
 				break;
 			}
