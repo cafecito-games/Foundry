@@ -2747,6 +2747,97 @@ TEST_CASE("[HTTPServer] A threaded handler may stop the server from inside dispa
 	memdelete(server);
 }
 
+TEST_CASE("[HTTPServer] Threaded mode terminates TLS for HTTPS") {
+	if (!StreamPeerTLS::is_available()) {
+		return;
+	}
+
+	Ref<Crypto> crypto = Crypto::create();
+	REQUIRE(crypto.is_valid());
+
+	Ref<CryptoKey> key = crypto->generate_rsa(2048);
+	REQUIRE(key.is_valid());
+	Ref<X509Certificate> certificate = crypto->generate_self_signed_certificate(key, "CN=foundry-http-test", "20140101000000", "20340101000000");
+	REQUIRE(certificate.is_valid());
+
+	const Ref<TLSOptions> server_options = TLSOptions::server(key, certificate);
+	REQUIRE(server_options.is_valid());
+	const Ref<TLSOptions> client_options = TLSOptions::client(certificate, "foundry-http-test");
+	REQUIRE(client_options.is_valid());
+
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_use_threads(true);
+	server->set_port(0);
+	REQUIRE(server->listen(server_options) == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	handler->reply_body = "secure";
+	server->route("GET", "/secure", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	// The TLS handshake, the encrypted read and the encrypted write all run on the worker (only the
+	// first write is on the polling thread inside begin_response), so this proves a single connection's
+	// StreamPeerTLS is safe to drive across the worker/main handoff.
+	const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/secure", String(), Vector<String>(), client_options);
+
+	CHECK(result.error == OK);
+	CHECK(result.status == 200);
+	CHECK(result.body == "secure");
+	CHECK(handler->call_count == 1);
+	CHECK(handler->seen_peer.begins_with("127.0.0.1:"));
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] Threaded mode serves several connections at once") {
+	// Two sockets are open together, so the worker owns and parses both while the main thread drains
+	// more than one parked request in a single pass. This is the contention the awaiting_dispatch
+	// handoff exists for, rather than the one-request-at-a-time path the other cases take.
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_use_threads(true);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	Ref<StreamPeerTCP> first = connect_raw(server, port);
+	REQUIRE(first.is_valid());
+	Ref<StreamPeerTCP> second = connect_raw(server, port);
+	REQUIRE(second.is_valid());
+	REQUIRE(server->get_connection_count() == 2);
+
+	send_raw(first, "GET /hello?q=one HTTP/1.1\r\nHost: localhost\r\n\r\n");
+	send_raw(second, "GET /hello?q=two HTTP/1.1\r\nHost: localhost\r\n\r\n");
+
+	String first_pending;
+	RawResponse first_response;
+	REQUIRE(read_raw_response(server, first, first_pending, first_response));
+	CHECK(first_response.status == 200);
+	CHECK(first_response.body == "hi");
+
+	String second_pending;
+	RawResponse second_response;
+	REQUIRE(read_raw_response(server, second, second_pending, second_response));
+	CHECK(second_response.status == 200);
+	CHECK(second_response.body == "hi");
+
+	CHECK(handler->call_count == 2);
+
+	first->disconnect_from_host();
+	second->disconnect_from_host();
+	server->stop();
+	CHECK(server->get_connection_count() == 0);
+
+	memdelete(handler);
+	memdelete(server);
+}
+
 } // namespace TestHTTPServer
 
 #endif // MODULE_HTTP_SERVER_ENABLED
