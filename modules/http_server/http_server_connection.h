@@ -168,6 +168,12 @@ public:
 	State get_state() const { return state; }
 	bool is_closed() const { return state == STATE_CLOSED; }
 
+	// Ownership token for the server's threaded mode: set true while a `STATE_READY` connection is
+	// parked for main-thread dispatch, so the worker never polls or inspects it in that window. Only
+	// the owning `HTTPServer` reads or writes this, always under its mutex; it is unused and stays
+	// false in frame-poll mode.
+	bool awaiting_dispatch = false;
+
 	// Valid only while the connection is in `STATE_READY`.
 	Ref<HTTPServerRequest> get_request() const { return request; }
 

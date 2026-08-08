@@ -48,6 +48,7 @@
 #include "core/io/stream_peer_tcp.h"
 #include "core/io/stream_peer_tls.h"
 #include "core/os/os.h"
+#include "core/os/thread.h"
 #include "core/templates/hash_map.h"
 #include "core/templates/list.h"
 
@@ -644,10 +645,17 @@ Ref<StreamPeerTCP> connect_raw(HTTPServer *p_server, int p_port) {
 		return Ref<StreamPeerTCP>();
 	}
 
+	// Waits for both ends to settle: the server must own the connection and the client socket must
+	// have finished connecting. In threaded mode the worker accepts on another thread, so the server
+	// side can register before this client has polled its own connect to completion; sending on a
+	// still-connecting socket would drop the bytes.
 	const uint64_t deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
-	while (p_server->get_connection_count() == 0 && OS::get_singleton()->get_ticks_usec() < deadline) {
+	while (OS::get_singleton()->get_ticks_usec() < deadline) {
 		p_server->poll();
 		client->poll();
+		if (p_server->get_connection_count() > 0 && client->get_status() == StreamPeerTCP::STATUS_CONNECTED) {
+			break;
+		}
 		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
 	}
 	return client;
@@ -2485,6 +2493,355 @@ TEST_CASE("[HTTPServer] A connection that stops making progress is dropped") {
 	}
 
 	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+namespace {
+
+// Records the thread a dispatch ran on, so a test can prove a route handler is invoked on the
+// polling thread even when the socket that carried the request was read on a worker thread.
+class ThreadRecordingRouteHandler : public Object {
+	FOUNDRY_SOFTCLASS(ThreadRecordingRouteHandler, Object);
+
+public:
+	int call_count = 0;
+	Thread::ID handler_thread = 0;
+
+	void handle(const Ref<HTTPServerRequest> &p_request, const Ref<HTTPResponse> &p_response) {
+		call_count++;
+		handler_thread = Thread::get_caller_id();
+		p_response->send_string("ok");
+	}
+};
+
+} // namespace
+
+TEST_CASE("[HTTPServer] use_threads cannot change while the server is listening") {
+	HTTPServer *server = memnew(HTTPServer);
+
+	CHECK_FALSE(server->is_using_threads());
+	CHECK_FALSE(bool(server->get("use_threads")));
+
+	server->set_use_threads(true);
+	CHECK(server->is_using_threads());
+
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+
+	// The mode is wired up at listen() time, so it cannot flip out from under a running worker.
+	ERR_PRINT_OFF;
+	server->set_use_threads(false);
+	ERR_PRINT_ON;
+	CHECK(server->is_using_threads());
+
+	server->stop();
+	server->set_use_threads(false);
+	CHECK_FALSE(server->is_using_threads());
+
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] The worker-thread mode serves identically to frame-poll mode") {
+	// Accept, read and parse run on a WorkerThreadPool task when use_threads is set, while dispatch
+	// stays on the polling thread. Every behavior below is asserted in both modes to prove the
+	// observable result does not depend on where the socket is read.
+	for (int mode = 0; mode < 2; mode++) {
+		const bool threaded = mode == 1;
+		CAPTURE(threaded);
+
+		HTTPServer *server = memnew(HTTPServer);
+		server->set_use_threads(threaded);
+		CHECK(server->is_using_threads() == threaded);
+		server->set_port(0);
+		// Configured before listen(), so the worker only ever reads a settled limit.
+		server->set_max_request_body_bytes(16);
+		REQUIRE(server->listen() == OK);
+		const int port = server->get_listening_port();
+		REQUIRE(port > 0);
+
+		RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+		server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+		EchoRouteHandler *echo = memnew(EchoRouteHandler);
+		server->route("POST", "/echo", callable_mp(echo, &EchoRouteHandler::handle));
+		RedirectingRouteHandler *redirect = memnew(RedirectingRouteHandler);
+		server->route("GET", "/cb", callable_mp(redirect, &RedirectingRouteHandler::handle));
+
+		// A GET reaches the handler and its body reaches the client.
+		{
+			const ClientResult result = http_get(server, port, "/hello?q=world");
+			CHECK(result.error == OK);
+			CHECK(result.status == 200);
+			CHECK(result.body == "hi");
+			CHECK(handler->seen_method == "GET");
+			CHECK(handler->seen_path == "/hello");
+			CHECK(handler->seen_query_value == "world");
+			CHECK(handler->seen_peer.begins_with("127.0.0.1:"));
+		}
+
+		// A path no route claims answers 404.
+		{
+			const ClientResult result = http_get(server, port, "/missing");
+			CHECK(result.error == OK);
+			CHECK(result.status == 404);
+			CHECK(result.body == "Not Found");
+		}
+
+		// A redirect driven off a query parameter reaches the client.
+		{
+			const ClientResult result = http_get(server, port, "/cb?code=abc");
+			CHECK(result.error == OK);
+			CHECK(result.status == 302);
+			CHECK(result.get_header("Location") == "/done?code=abc");
+			CHECK(redirect->seen_code == "abc");
+		}
+
+		// A POST body is read past the header block and echoed back.
+		{
+			Vector<String> headers;
+			headers.push_back("Content-Type: application/json");
+			const String payload = "{\"a\":\"b\"}";
+			const ClientResult result = http_request(server, port, HTTPClient::METHOD_POST, "/echo", payload, headers);
+			CHECK(result.error == OK);
+			CHECK(result.status == 200);
+			CHECK(result.body == payload);
+			CHECK(echo->seen_content_type == "application/json");
+			CHECK(echo->seen_body_size == payload.utf8().length());
+		}
+
+		server->stop();
+		CHECK_FALSE(server->is_listening());
+		CHECK(server->get_connection_count() == 0);
+
+		memdelete(redirect);
+		memdelete(echo);
+		memdelete(handler);
+		memdelete(server);
+
+		// The raw-socket checks each run on their own fresh server, so `connect_raw` always waits on
+		// the very connection it just opened rather than on one an earlier client left behind.
+
+		// Two requests on one kept-alive socket are both answered, with the worker reading both.
+		{
+			HTTPServer *ka_server = memnew(HTTPServer);
+			ka_server->set_use_threads(threaded);
+			ka_server->set_port(0);
+			REQUIRE(ka_server->listen() == OK);
+			const int ka_port = ka_server->get_listening_port();
+			REQUIRE(ka_port > 0);
+
+			RecordingRouteHandler *ka_handler = memnew(RecordingRouteHandler);
+			ka_server->route("GET", "/hello", callable_mp(ka_handler, &RecordingRouteHandler::handle));
+
+			Ref<StreamPeerTCP> client = connect_raw(ka_server, ka_port);
+			REQUIRE(client.is_valid());
+			String pending;
+
+			send_raw(client, "GET /hello?q=first HTTP/1.1\r\nHost: localhost\r\n\r\n");
+			RawResponse first;
+			REQUIRE(read_raw_response(ka_server, client, pending, first));
+			CHECK(first.status == 200);
+			CHECK(first.body == "hi");
+			CHECK(first.get_header("connection") == "keep-alive");
+			CHECK(ka_handler->seen_query_value == "first");
+
+			send_raw(client, "GET /hello?q=second HTTP/1.1\r\nHost: localhost\r\n\r\n");
+			RawResponse second;
+			REQUIRE(read_raw_response(ka_server, client, pending, second));
+			CHECK(second.status == 200);
+			CHECK(ka_handler->seen_query_value == "second");
+			CHECK(ka_handler->call_count == 2);
+
+			client->disconnect_from_host();
+			ka_server->stop();
+			memdelete(ka_handler);
+			memdelete(ka_server);
+		}
+
+		// A body past the cap is refused with 413 without ever reaching the handler.
+		{
+			HTTPServer *cap_server = memnew(HTTPServer);
+			cap_server->set_use_threads(threaded);
+			cap_server->set_port(0);
+			cap_server->set_max_request_body_bytes(16);
+			REQUIRE(cap_server->listen() == OK);
+			const int cap_port = cap_server->get_listening_port();
+			REQUIRE(cap_port > 0);
+
+			EchoRouteHandler *cap_handler = memnew(EchoRouteHandler);
+			cap_server->route("POST", "/echo", callable_mp(cap_handler, &EchoRouteHandler::handle));
+
+			Ref<StreamPeerTCP> client = connect_raw(cap_server, cap_port);
+			REQUIRE(client.is_valid());
+			send_raw(client, "POST /echo HTTP/1.1\r\nHost: localhost\r\nContent-Length: 17\r\n\r\n");
+
+			String pending;
+			RawResponse response;
+			REQUIRE(read_raw_response(cap_server, client, pending, response));
+			CHECK(response.status == 413);
+			CHECK(cap_handler->call_count == 0);
+
+			client->disconnect_from_host();
+			cap_server->stop();
+			memdelete(cap_handler);
+			memdelete(cap_server);
+		}
+	}
+}
+
+TEST_CASE("[HTTPServer] Threaded dispatch runs on the polling thread and stop joins the worker") {
+	const Thread::ID polling_thread = Thread::get_caller_id();
+
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_use_threads(true);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	ThreadRecordingRouteHandler *handler = memnew(ThreadRecordingRouteHandler);
+	server->route("GET", "/where", callable_mp(handler, &ThreadRecordingRouteHandler::handle));
+
+	const ClientResult result = http_get(server, port, "/where");
+	CHECK(result.error == OK);
+	CHECK(result.status == 200);
+	CHECK(result.body == "ok");
+	CHECK(handler->call_count == 1);
+	// The socket was accepted, read and parsed on the worker, yet the Callable ran where poll() was
+	// called: dispatch never leaves the polling thread.
+	CHECK(handler->handler_thread == polling_thread);
+
+	server->stop();
+	CHECK_FALSE(server->is_listening());
+	CHECK(server->get_connection_count() == 0);
+
+	// Polling a stopped threaded server is a no-op rather than an error.
+	server->poll();
+
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] A threaded handler may stop the server from inside dispatch") {
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_use_threads(true);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	ReentrantRouteHandler *handler = memnew(ReentrantRouteHandler);
+	handler->server = server;
+	handler->stop_server = true;
+	server->route("GET", "/reentrant", callable_mp(handler, &ReentrantRouteHandler::handle));
+
+	// stop() is called from inside dispatch, on the polling thread, and must join the worker without
+	// deadlocking against it and close the connection instead of writing.
+	const ClientResult result = http_get(server, port, "/reentrant");
+	CHECK(result.error != OK);
+	CHECK(handler->call_count == 1);
+	CHECK_FALSE(server->is_listening());
+	CHECK(server->get_connection_count() == 0);
+
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] Threaded mode terminates TLS for HTTPS") {
+	if (!StreamPeerTLS::is_available()) {
+		return;
+	}
+
+	Ref<Crypto> crypto = Crypto::create();
+	REQUIRE(crypto.is_valid());
+
+	Ref<CryptoKey> key = crypto->generate_rsa(2048);
+	REQUIRE(key.is_valid());
+	Ref<X509Certificate> certificate = crypto->generate_self_signed_certificate(key, "CN=foundry-http-test", "20140101000000", "20340101000000");
+	REQUIRE(certificate.is_valid());
+
+	const Ref<TLSOptions> server_options = TLSOptions::server(key, certificate);
+	REQUIRE(server_options.is_valid());
+	const Ref<TLSOptions> client_options = TLSOptions::client(certificate, "foundry-http-test");
+	REQUIRE(client_options.is_valid());
+
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_use_threads(true);
+	server->set_port(0);
+	REQUIRE(server->listen(server_options) == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	handler->reply_body = "secure";
+	server->route("GET", "/secure", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	// The TLS handshake, the encrypted read and the encrypted write all run on the worker (only the
+	// first write is on the polling thread inside begin_response), so this proves a single connection's
+	// StreamPeerTLS is safe to drive across the worker/main handoff.
+	const ClientResult result = http_request(server, port, HTTPClient::METHOD_GET, "/secure", String(), Vector<String>(), client_options);
+
+	CHECK(result.error == OK);
+	CHECK(result.status == 200);
+	CHECK(result.body == "secure");
+	CHECK(handler->call_count == 1);
+	CHECK(handler->seen_peer.begins_with("127.0.0.1:"));
+
+	server->stop();
+	memdelete(handler);
+	memdelete(server);
+}
+
+TEST_CASE("[HTTPServer] Threaded mode serves several connections at once") {
+	// Two sockets are open together, so the worker owns and parses both while the main thread drains
+	// more than one parked request in a single pass. This is the contention the awaiting_dispatch
+	// handoff exists for, rather than the one-request-at-a-time path the other cases take.
+	HTTPServer *server = memnew(HTTPServer);
+	server->set_use_threads(true);
+	server->set_port(0);
+	REQUIRE(server->listen() == OK);
+	const int port = server->get_listening_port();
+	REQUIRE(port > 0);
+
+	RecordingRouteHandler *handler = memnew(RecordingRouteHandler);
+	server->route("GET", "/hello", callable_mp(handler, &RecordingRouteHandler::handle));
+
+	Ref<StreamPeerTCP> first = connect_raw(server, port);
+	REQUIRE(first.is_valid());
+	Ref<StreamPeerTCP> second = connect_raw(server, port);
+	REQUIRE(second.is_valid());
+
+	// `connect_raw` only proves at least one connection is registered, so it returns for the second
+	// socket the moment the first is already owned. The worker accepts on its own thread, so wait for
+	// it to own both before asserting rather than assuming the second accept landed synchronously.
+	const uint64_t both_accepted_deadline = OS::get_singleton()->get_ticks_usec() + ROUND_TRIP_TIMEOUT_USEC;
+	while (server->get_connection_count() < 2 && OS::get_singleton()->get_ticks_usec() < both_accepted_deadline) {
+		OS::get_singleton()->delay_usec(POLL_SLEEP_USEC);
+	}
+	REQUIRE(server->get_connection_count() == 2);
+
+	send_raw(first, "GET /hello?q=one HTTP/1.1\r\nHost: localhost\r\n\r\n");
+	send_raw(second, "GET /hello?q=two HTTP/1.1\r\nHost: localhost\r\n\r\n");
+
+	String first_pending;
+	RawResponse first_response;
+	REQUIRE(read_raw_response(server, first, first_pending, first_response));
+	CHECK(first_response.status == 200);
+	CHECK(first_response.body == "hi");
+
+	String second_pending;
+	RawResponse second_response;
+	REQUIRE(read_raw_response(server, second, second_pending, second_response));
+	CHECK(second_response.status == 200);
+	CHECK(second_response.body == "hi");
+
+	CHECK(handler->call_count == 2);
+
+	first->disconnect_from_host();
+	second->disconnect_from_host();
+	server->stop();
+	CHECK(server->get_connection_count() == 0);
+
 	memdelete(handler);
 	memdelete(server);
 }

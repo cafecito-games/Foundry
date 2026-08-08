@@ -34,15 +34,25 @@
 
 #include "core/crypto/crypto.h"
 #include "core/io/tcp_server.h"
+#include "core/object/worker_thread_pool.h"
+#include "core/os/mutex.h"
 #include "core/templates/local_vector.h"
+#include "core/templates/safe_refcount.h"
 #include "core/variant/callable.h"
 #include "scene/main/node.h"
 
 // Registered under `foundry.http.server`, so it is reachable only through its qualified name.
 //
-// The server owns a listening `TCPServer` and one `HTTPServerConnection` per accepted socket. All
-// work happens on the thread that calls `poll()`: while the node is in the tree that is the main
-// thread through internal processing, and a headless caller can drive `poll()` itself.
+// The server owns a listening `TCPServer` and one `HTTPServerConnection` per accepted socket.
+//
+// In the default frame-poll mode all work happens on the thread that calls `poll()`: while the node
+// is in the tree that is the main thread through internal processing, and a headless caller can
+// drive `poll()` itself.
+//
+// With `use_threads` a `WorkerThreadPool` task owns accepting connections and reading and parsing
+// each one up to a complete request. It never runs script: a fully parsed request is handed to a
+// mutex-guarded queue that the main thread drains from `poll()`, where the route `Callable` and the
+// `request_received` signal are invoked. Observable behavior is identical to frame-poll mode.
 class HTTPServer : public Node {
 	FOUNDRY_CLASS(HTTPServer, Node);
 
@@ -65,6 +75,9 @@ class HTTPServer : public Node {
 	String bind_address = "127.0.0.1";
 	bool emit_for_all = false;
 	int max_connections = 64;
+	// When set, `listen()` starts a worker task that accepts and parses connections off the main
+	// thread; dispatch always stays on the main thread. Cannot change while the server is listening.
+	bool use_threads = false;
 	// Copied into every connection as it is accepted, so a limit changed while the server runs
 	// applies to connections taken after the change and never rewrites one already in flight.
 	HTTPServerConnection::Limits limits;
@@ -78,7 +91,28 @@ class HTTPServer : public Node {
 	LocalVector<Route> routes;
 	LocalVector<FileMount> mounts;
 
+	// Guards `connections`, `pending`, the `tcp_server` accept path, and each connection's
+	// `awaiting_dispatch` flag, and orders every handoff of a connection between the worker and the
+	// main thread. In frame-poll mode no worker runs and the mutex is uncontended.
+	mutable Mutex mutex;
+	WorkerThreadPool::TaskID worker_task = WorkerThreadPool::INVALID_TASK_ID;
+	SafeFlag worker_should_exit;
+	// Connections parked in `STATE_READY` by the worker, awaiting main-thread dispatch. Holding a
+	// `Ref` keeps each alive independently of the `connections` list the worker prunes.
+	LocalVector<Ref<HTTPServerConnection>> pending;
+
 	void _dispatch(const Ref<HTTPServerConnection> &p_connection);
+	// The frame-poll path: accept, drive every connection, dispatch the ready ones, prune the closed.
+	void _poll_connections();
+	// The threaded worker loop and its phases. The worker owns a connection until it reaches
+	// `STATE_READY`, at which point ownership passes to the main thread through `pending` until
+	// dispatch hands it back.
+	static void _worker_thread_func(void *p_server);
+	void _run_worker();
+	void _accept_connections();
+	void _service_connections();
+	// The main-thread half of threaded mode: dispatch every parked request.
+	void _drain_pending();
 
 protected:
 	void _notification(int p_what);
@@ -120,6 +154,12 @@ public:
 	void set_max_header_block_bytes(int p_max_header_block_bytes);
 	int get_max_header_block_bytes() const;
 
+	// When true, `listen()` runs accepting, reading and parsing on a `WorkerThreadPool` task while
+	// dispatch stays on the main thread. Refused while the server is listening, since the mode is
+	// wired up at `listen()` time.
+	void set_use_threads(bool p_use_threads);
+	bool is_using_threads() const;
+
 	// Seconds a connection may go without moving a byte before it is dropped. Zero disables it.
 	void set_connection_timeout_seconds(double p_connection_timeout_seconds);
 	double get_connection_timeout_seconds() const;
@@ -147,8 +187,9 @@ public:
 	// The number of registered mounts. Native inspection only.
 	int get_mount_count() const;
 
-	// Accepts, parses, dispatches and writes for one pass. Called automatically while the node is in
-	// the tree.
+	// Advances the server for one pass. In frame-poll mode this accepts, parses, dispatches and
+	// writes; in threaded mode the worker owns accept/parse/write and this only dispatches the
+	// requests it has parked. Called automatically while the node is in the tree.
 	void poll();
 
 	// The number of connections the server currently owns. Native inspection only.
