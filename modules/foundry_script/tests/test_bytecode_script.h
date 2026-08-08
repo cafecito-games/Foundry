@@ -3132,8 +3132,9 @@ static String bytecode_check_static_self_metadata(const Ref<FoundryScript> &p_sc
 	CHECK(array_argument.container_element_types[0].is_type_handle);
 	CHECK(array_argument.container_element_types[0].is_self_type);
 
-	REQUIRE_EQ(nested->get_method_info().arguments.size(), 4);
-	const PropertyInfo &callable_info = nested->get_method_info().arguments[3];
+	MethodInfo callable_method_info = nested->get_method_info();
+	REQUIRE_EQ(callable_method_info.arguments.size(), 4);
+	const PropertyInfo &callable_info = callable_method_info.arguments[3];
 	CHECK(callable_info.type == Variant::CALLABLE);
 	const FSDataType &callable = nested->get_argument_type(3);
 	CHECK(callable.kind == FSDataType::BUILTIN);
