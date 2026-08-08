@@ -1,0 +1,12 @@
+FS_TEST_OK
+direct object == Base: true
+direct method: spawn
+direct result: 7
+direct equals indirect: true
+missing method: does_not_exist
+missing valid: false
+empty is null: true
+instance result: 11
+Vector2 unchanged: true
+Color unchanged: true
+StringName unchanged: true

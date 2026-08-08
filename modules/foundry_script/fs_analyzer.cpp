@@ -6834,6 +6834,8 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 				case Variant::OBJECT:
 				case Variant::DICTIONARY:
 				case Variant::ARRAY:
+				case Variant::CALLABLE:
+				case Variant::SIGNAL:
 				case Variant::PACKED_BYTE_ARRAY:
 				case Variant::PACKED_INT32_ARRAY:
 				case Variant::PACKED_INT64_ARRAY:
