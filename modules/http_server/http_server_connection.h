@@ -84,13 +84,15 @@ public:
 		// response leaves, or no request at all on a reused socket — after which the connection is
 		// dropped. Zero disables the drop.
 		double timeout_seconds = 30.0;
-		// Seconds a single request has to finish arriving, measured from when it begins — the TLS
-		// handshake on the first request, or the first byte of any request on a plaintext or reused
-		// socket — until its header block and body are read, after which the connection is dropped no
-		// matter how recently a byte moved. Because `timeout_seconds` resets on every byte, a peer that
-		// trickles one byte per idle window or stalls a handshake keeps it from ever firing; this
-		// ceiling is what still reclaims that slot. It never bounds a response draining to the peer, so
-		// a long download is limited by progress, not by this. Zero disables the ceiling.
+		// Seconds a single request has to finish, measured from when it begins — the TLS handshake on
+		// the first request, or the first byte of any request on a plaintext or reused socket — until it
+		// is handed off for a response, after which the connection is dropped no matter how recently a
+		// byte moved. In threaded mode that window spans the wait for the main thread to dispatch the
+		// parsed request too, so a request stranded by a stalled drain still frees its slot. Because
+		// `timeout_seconds` resets on every byte, a peer that trickles one byte per idle window or stalls
+		// a handshake keeps it from ever firing; this ceiling is what still reclaims that slot. It never
+		// bounds a response draining to the peer, so a long download is limited by progress, not by this.
+		// Zero disables the ceiling.
 		double request_deadline_seconds = 60.0;
 	};
 

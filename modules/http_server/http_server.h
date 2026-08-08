@@ -164,9 +164,10 @@ public:
 	void set_connection_timeout_seconds(double p_connection_timeout_seconds);
 	double get_connection_timeout_seconds() const;
 
-	// Seconds one request has to finish arriving, from when it begins until its header block and body
-	// are read, regardless of how recently a byte moved. Bounds a trickling peer that would otherwise
-	// reset the progress timeout forever. Zero disables it.
+	// Seconds one request has to finish, from when it begins until it is handed off for a response,
+	// regardless of how recently a byte moved. Bounds a trickling peer that would otherwise reset the
+	// progress timeout forever, and in threaded mode also reclaims a request stranded in the dispatch
+	// queue by a stalled main-thread drain. Zero disables it.
 	void set_request_deadline_seconds(double p_request_deadline_seconds);
 	double get_request_deadline_seconds() const;
 
