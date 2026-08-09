@@ -66,6 +66,7 @@
 #include "tests/editor/test_debugger_breakpoint_gutter_sync.h"
 #include "tests/editor/test_doc_tools_namespace_xml.h"
 #include "tests/editor/test_doc_tools_tagged_union_xml.h"
+#include "tests/editor/test_doc_tools_xml.h"
 #include "tests/editor/test_dock_scene_context_binding.h"
 #include "tests/editor/test_editor_autoload_settings.h"
 #include "tests/editor/test_editor_automation_driver.h"
