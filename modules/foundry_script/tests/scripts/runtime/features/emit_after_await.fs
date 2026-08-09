@@ -3,11 +3,10 @@ extends Node
 
 signal my_signal
 
-func async_func():
+func async_func() -> void:
 	await my_signal
 	my_signal.emit()
 
 func test():
-	@warning_ignore("missing_await")
 	async_func()
 	my_signal.emit()

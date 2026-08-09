@@ -8,5 +8,4 @@ trait Fetcher:
 		return "data"
 
 func test():
-	@warning_ignore("return_value_discarded")
 	fetch()

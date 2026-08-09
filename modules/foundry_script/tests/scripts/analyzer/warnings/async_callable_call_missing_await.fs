@@ -6,5 +6,4 @@ async func _work(value: int) -> String:
 
 func test() -> void:
 	var handler: AsyncCallable[[int], String] = _work
-	@warning_ignore("return_value_discarded")
 	handler.call(7)

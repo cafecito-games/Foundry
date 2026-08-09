@@ -34,7 +34,6 @@ func test() -> void:
 	print("held handles: ", jobs.size())
 
 	for job: Coroutine[String] in jobs:
-		@warning_ignore("missing_await")
 		_drain(job)
 	print("before resume: ", _drained)
 

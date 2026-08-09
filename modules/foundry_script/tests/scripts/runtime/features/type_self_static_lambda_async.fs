@@ -27,7 +27,6 @@ async func run(factory: Callable, gate: Signal, label: String) -> void:
 
 
 func test() -> void:
-	@warning_ignore("missing_await")
 	run(Child.make_async_spawner(), go, "child")
 	print("before resume: '%s'" % outcome)
 	go.emit()
@@ -35,7 +34,6 @@ func test() -> void:
 
 	# The base receiver survives suspend/resume too: the same compiled lambda, created through the
 	# base handle, still means the base after it resumes.
-	@warning_ignore("missing_await")
 	run(Base.make_async_spawner(), go, "base")
 	go.emit()
 	print(outcome)

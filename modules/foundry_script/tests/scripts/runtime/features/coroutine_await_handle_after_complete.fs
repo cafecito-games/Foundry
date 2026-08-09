@@ -22,5 +22,4 @@ func test() -> void:
 
 	# The first (and only) await happens after the coroutine already finished, so it must resolve
 	# immediately rather than hang.
-	@warning_ignore("missing_await")
 	_await_after(handle)

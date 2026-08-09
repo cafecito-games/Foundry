@@ -36,21 +36,18 @@ async func drain(handle: Coroutine[Base], label: String) -> void:
 
 func test() -> void:
 	var suspended: Coroutine[Base] = Derived.spawn(go)
-	@warning_ignore("missing_await")
 	drain(suspended, "resumed")
 	print("before resume: '%s'" % outcome)
 	go.emit()
 	print(outcome)
 
 	var nested_handle: Coroutine[Base] = Derived.spawn_after_nested(go)
-	@warning_ignore("missing_await")
 	drain(nested_handle, "nested")
 	go.emit()
 	print(outcome)
 
 	# The same implementation, resumed through the base handle, still means the base.
 	var base_handle: Coroutine[Base] = Base.spawn(go)
-	@warning_ignore("missing_await")
 	drain(base_handle, "base")
 	go.emit()
 	print(outcome)
