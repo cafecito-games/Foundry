@@ -100,6 +100,8 @@
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/docks/signals_dock.h"
+#include "editor/editor_board.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_data.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_layout_store.h"
@@ -1680,7 +1682,7 @@ void EditorNode::_open_command_palette() {
 }
 
 bool EditorNode::_route_text_file_to_workspace(const String &p_path) {
-	if (!scene_workspace) {
+	if (!get_scene_workspace()) {
 		return false;
 	}
 
@@ -1716,9 +1718,9 @@ bool EditorNode::_route_text_file_to_workspace(const String &p_path) {
 		}
 	}
 
-	WorkspaceLeafNode *source = scene_workspace->get_focused_leaf();
+	WorkspaceLeafNode *source = get_scene_workspace()->get_focused_leaf();
 	if (!source) {
-		const Vector<WorkspaceLeafNode *> workspace_leaves = scene_workspace->get_leaves();
+		const Vector<WorkspaceLeafNode *> workspace_leaves = get_scene_workspace()->get_leaves();
 		if (!workspace_leaves.is_empty()) {
 			source = workspace_leaves[0];
 		}
@@ -1727,11 +1729,11 @@ bool EditorNode::_route_text_file_to_workspace(const String &p_path) {
 		return false;
 	}
 
-	WorkspaceLeafNode *leaf = scene_workspace->open_text_tab(source, p_path);
+	WorkspaceLeafNode *leaf = get_scene_workspace()->open_text_tab(source, p_path);
 	if (!leaf) {
 		return false;
 	}
-	scene_workspace->request_leaf_focus(leaf->get_leaf_id());
+	get_scene_workspace()->request_leaf_focus(leaf->get_leaf_id());
 	return true;
 }
 
@@ -4753,8 +4755,8 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	{
 		const Vector<int> closing_tile_scenes = editor_data.get_tile_scene_indices(tile_id);
 		const bool will_empty_tile = closing_tile_scenes.size() == 1 && closing_tile_scenes[0] == old_index;
-		if (p_allow_collapse && will_empty_tile && scene_workspace && scene_workspace->get_tile_count() > 1) {
-			for (ScenePaneTile *survivor : scene_workspace->get_tiles()) {
+		if (p_allow_collapse && will_empty_tile && get_scene_workspace() && get_scene_workspace()->get_tile_count() > 1) {
+			for (ScenePaneTile *survivor : get_scene_workspace()->get_tiles()) {
 				if (survivor->get_tile_id() != tile_id && !editor_data.get_tile_scene_indices(survivor->get_tile_id()).is_empty()) {
 					survivor_tile_id = survivor->get_tile_id();
 					break;
@@ -4771,14 +4773,14 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 	const bool tile_emptied = editor_data.get_tile_scene_indices(tile_id).is_empty();
 	// The pane may still host non-scene tabs (e.g. a script tab) after its last
 	// scene closes; collapsing then would destroy those tabs, so keep it alive.
-	WorkspaceLeafNode *closing_leaf = scene_workspace ? scene_workspace->get_leaf_by_id(tile_id) : nullptr;
+	WorkspaceLeafNode *closing_leaf = get_scene_workspace() ? get_scene_workspace()->get_leaf_by_id(tile_id) : nullptr;
 	WorkspacePane *closing_pane = closing_leaf ? closing_leaf->get_workspace_pane() : nullptr;
 	const bool pane_keeps_tabs = closing_pane && closing_pane->has_non_scene_tabs();
 	// Collapse the emptied scene tile when another scene tile remains (counting
 	// scene tiles, not total leaves, so an adjacent script leaf does not keep a
 	// dead tile alive). collapse() keeps focus on a scene tile if it merges into a
 	// script-leaf sibling.
-	if (p_allow_collapse && tile_emptied && !pane_keeps_tabs && scene_workspace && scene_workspace->get_tile_count() > 1) {
+	if (p_allow_collapse && tile_emptied && !pane_keeps_tabs && get_scene_workspace() && get_scene_workspace()->get_tile_count() > 1) {
 		WorkspaceLeafNode *leaf = closing_leaf;
 		if (leaf) {
 			// The focused tile transiently hosts shared singletons (the 2D/3D scene
@@ -4791,7 +4793,7 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 			// get_tile_count() > 1 check above guarantees one exists.
 			int relocation_tile_id = survivor_tile_id;
 			if (relocation_tile_id < 0) {
-				for (ScenePaneTile *other : scene_workspace->get_tiles()) {
+				for (ScenePaneTile *other : get_scene_workspace()->get_tiles()) {
 					if (other->get_tile_id() != tile_id) {
 						relocation_tile_id = other->get_tile_id();
 						break;
@@ -4801,7 +4803,7 @@ void EditorNode::_remove_edited_scene(bool p_change_tab, bool p_allow_collapse) 
 			if (relocation_tile_id >= 0) {
 				_focus_tile(relocation_tile_id);
 			}
-			scene_workspace->collapse(leaf);
+			get_scene_workspace()->collapse(leaf);
 			if (survivor_tile_id < 0) {
 				_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 			}
@@ -4832,15 +4834,15 @@ void EditorNode::_remove_scene(int index, bool p_change_tab, bool p_allow_collap
 	} else {
 		const int tile_id = editor_data.get_scene_tile(index);
 		editor_data.remove_scene(index);
-		WorkspaceLeafNode *leaf = scene_workspace ? scene_workspace->get_leaf_by_id(tile_id) : nullptr;
+		WorkspaceLeafNode *leaf = get_scene_workspace() ? get_scene_workspace()->get_leaf_by_id(tile_id) : nullptr;
 		WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
 		// Keep the tile if its pane still hosts non-scene tabs; collapsing would
 		// destroy them.
 		const bool pane_keeps_tabs = pane && pane->has_non_scene_tabs();
-		if (p_allow_collapse && !pane_keeps_tabs && scene_workspace && scene_workspace->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
+		if (p_allow_collapse && !pane_keeps_tabs && get_scene_workspace() && get_scene_workspace()->get_tile_count() > 1 && editor_data.get_tile_scene_indices(tile_id).is_empty()) {
 			// collapse() keeps focus on a scene tile even when merging into a script leaf.
 			if (leaf) {
-				scene_workspace->collapse(leaf);
+				get_scene_workspace()->collapse(leaf);
 				_update_all_scene_tabs();
 				_update_tile_display_attachments();
 			}
@@ -4860,9 +4862,9 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 	const bool already_tile_current = editor_data.get_tile_current_scene(p_tile_id) == p_scene_idx;
 	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id;
 	const bool already_edited = editor_data.get_edited_scene() == p_scene_idx && active_scene_context == editor_data.get_scene_context(p_scene_idx);
-	bool scene_mode_in_tile = !scene_workspace || !editor_main_screen;
-	if (scene_workspace && editor_main_screen) {
-		ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_tile_id);
+	bool scene_mode_in_tile = !get_scene_workspace() || !editor_main_screen;
+	if (get_scene_workspace() && editor_main_screen) {
+		ScenePaneTile *tile = get_scene_workspace()->get_tile_by_id(p_tile_id);
 		VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control();
 		Control *host = tile ? tile->get_content_host() : nullptr;
 		scene_mode_in_tile = scene_mode && host && scene_mode->get_parent() == host;
@@ -4881,8 +4883,8 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 		editor_data.set_focused_tile_id(p_tile_id);
 	}
 
-	if (scene_workspace) {
-		if (ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_tile_id)) {
+	if (get_scene_workspace()) {
+		if (ScenePaneTile *tile = get_scene_workspace()->get_tile_by_id(p_tile_id)) {
 			_sync_focused_tile_chrome(tile);
 			_reparent_scene_mode_into(tile);
 			_bind_all_leaf_docks();
@@ -5083,7 +5085,7 @@ void EditorNode::_set_current_scene_nocheck(int p_idx) {
 	// Attach the new context's viewport only after the SceneTree's
 	// edited-scene root points at its scene, so enter-tree handlers observe
 	// the correct edited root.
-	if (scene_workspace) {
+	if (get_scene_workspace()) {
 		_update_tile_display_attachments();
 	} else {
 		_attach_active_scene_context();
@@ -5166,10 +5168,10 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 	// scene in a tile that does not hold leaf focus (creating a root node in an
 	// unfocused tile, for example) would otherwise rebind the leaf-focused
 	// tile's docks to another tile's scene and leave them there.
-	if (scene_workspace) {
-		WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(_tile_id_for_scene_context(p_context));
+	if (get_scene_workspace()) {
+		WorkspaceLeafNode *leaf = get_scene_workspace()->get_leaf_by_id(_tile_id_for_scene_context(p_context));
 		if (!leaf) {
-			leaf = scene_workspace->get_focused_leaf();
+			leaf = get_scene_workspace()->get_focused_leaf();
 		}
 		if (leaf && leaf->get_pane_tile()) {
 			ScenePaneTile *tile = leaf->get_pane_tile();
@@ -5194,7 +5196,7 @@ void EditorNode::_activate_scene_context(EditorSceneContext *p_context) {
 void EditorNode::_attach_active_scene_context() {
 	// The no_scene_context has no scene to show, so its (empty) viewport is
 	// never attached to the display container.
-	if (scene_workspace) {
+	if (get_scene_workspace()) {
 		_update_tile_display_attachments();
 		return;
 	}
@@ -5261,28 +5263,33 @@ void EditorNode::_connect_script_leaf_sync() {
 }
 
 void EditorNode::_sync_script_leaf_path() {
-	if (!scene_workspace || !ScriptEditorController::get_singleton()) {
+	if (!board_strip || !ScriptEditorController::get_singleton()) {
 		return;
 	}
-	for (WorkspaceLeafNode *leaf : scene_workspace->get_script_leaves()) {
-		WorkspacePane *pane = leaf->get_workspace_pane();
-		ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
-		if (script_leaf && script_leaf->get_script_editor_view()) {
-			script_leaf->get_script_editor_view()->sync_script_leaf_path();
+	// Driven by the editor-global ScriptEditorController signals: a renamed, moved or
+	// closed script must re-sync every script leaf in the editor, not just the ones on
+	// the active board, or dormant boards keep showing a stale path.
+	for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+		for (WorkspaceLeafNode *leaf : workspace->get_script_leaves()) {
+			WorkspacePane *pane = leaf->get_workspace_pane();
+			ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
+			if (script_leaf && script_leaf->get_script_editor_view()) {
+				script_leaf->get_script_editor_view()->sync_script_leaf_path();
+			}
 		}
 	}
 }
 
 void EditorNode::_close_script_leaf() {
-	if (!scene_workspace) {
+	if (!get_scene_workspace()) {
 		return;
 	}
-	WorkspaceLeafNode *leaf = scene_workspace->get_script_leaf();
+	WorkspaceLeafNode *leaf = get_scene_workspace()->get_script_leaf();
 	if (!leaf) {
 		return;
 	}
-	if (scene_workspace->get_leaf_count() > 1) {
-		scene_workspace->collapse(leaf);
+	if (get_scene_workspace()->get_leaf_count() > 1) {
+		get_scene_workspace()->collapse(leaf);
 	}
 }
 
@@ -5298,7 +5305,7 @@ bool EditorNode::is_script_feature_enabled() const {
 }
 
 void EditorNode::reveal_script_leaf() {
-	if (!scene_workspace || !is_script_feature_enabled()) {
+	if (!get_scene_workspace() || !is_script_feature_enabled()) {
 		return;
 	}
 
@@ -5310,10 +5317,10 @@ void EditorNode::reveal_script_leaf() {
 		}
 	}
 
-	WorkspaceLeafNode *source = scene_workspace->get_focused_leaf();
+	WorkspaceLeafNode *source = get_scene_workspace()->get_focused_leaf();
 	if (!source || !source->get_pane_tile()) {
 		source = nullptr;
-		for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+		for (WorkspaceLeafNode *leaf : get_scene_workspace()->get_leaves()) {
 			if (leaf->get_pane_tile()) {
 				source = leaf;
 				break;
@@ -5331,15 +5338,15 @@ void EditorNode::reveal_script_leaf() {
 		controller->get_current_script_view_state(script_path, line, column);
 	}
 
-	WorkspaceLeafNode *leaf = scene_workspace->open_script_leaf(source, script_path);
+	WorkspaceLeafNode *leaf = get_scene_workspace()->open_script_leaf(source, script_path);
 	ERR_FAIL_NULL(leaf);
-	scene_workspace->request_leaf_focus(leaf->get_leaf_id());
+	get_scene_workspace()->request_leaf_focus(leaf->get_leaf_id());
 	_connect_script_leaf_sync();
 	_sync_script_leaf_path();
 }
 
 void EditorNode::_update_tile_display_attachments() {
-	if (!scene_workspace) {
+	if (!board_strip) {
 		_attach_active_scene_context();
 		return;
 	}
@@ -5347,7 +5354,10 @@ void EditorNode::_update_tile_display_attachments() {
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		EditorSceneContext *ctx = editor_data.get_scene_context(i);
 		const int tile_id = editor_data.get_scene_tile(i);
-		ScenePaneTile *tile = scene_workspace->get_tile_by_id(tile_id);
+		// EditorData is editor-wide, so this loop walks scenes owned by tiles on every
+		// board. Resolving the tile against the active board alone would miss those
+		// tiles and deactivate their scene contexts on every focus or scene switch.
+		ScenePaneTile *tile = board_strip->find_tile_by_id(tile_id);
 		const bool is_tile_current = tile && editor_data.get_tile_current_scene(tile_id) == i;
 
 		if (!is_tile_current) {
@@ -5489,8 +5499,8 @@ void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context
 	editor_selection = no_scene_context->get_selection();
 	editor_history = no_scene_context->get_history();
 	editor_selection->mark_changed();
-	if (scene_workspace) {
-		WorkspaceLeafNode *leaf = scene_workspace->get_focused_leaf();
+	if (get_scene_workspace()) {
+		WorkspaceLeafNode *leaf = get_scene_workspace()->get_focused_leaf();
 		if (leaf && leaf->get_pane_tile()) {
 			ScenePaneTile *tile = leaf->get_pane_tile();
 			tile->get_scene_tree_dock()->set_scene_context(no_scene_context);
@@ -5674,8 +5684,18 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 			if (editor_data.get_scene_path(i) == lpath) {
 				_set_current_scene(i);
-				if (scene_workspace) {
-					scene_workspace->focus_scene_tab(i);
+				// An already-open scene is revealed where it lives rather than reopened:
+				// its owning tile may sit on a dormant board, so activate that board
+				// before focusing the tab, or the current scene would point at a tile the
+				// user cannot see while the focus call no-ops.
+				if (board_strip) {
+					EditorBoard *owner = board_strip->find_board_for_leaf(editor_data.get_scene_tile(i));
+					if (owner) {
+						board_strip->set_active_board(owner);
+						owner->get_workspace()->focus_scene_tab(i);
+					} else if (EditorSceneWorkspace *workspace = board_strip->get_active_workspace()) {
+						workspace->focus_scene_tab(i);
+					}
 				}
 				return OK;
 			}
@@ -7146,8 +7166,8 @@ void EditorNode::_apply_projectless_shell_restrictions() {
 	// interactive surface, so no project workspace may render behind it. The scene
 	// workspace (including its scene tabs) and the bottom drawer stay constructed
 	// (D1) but hidden; `editor_main_screen` is left alone as a neutral backdrop.
-	if (scene_workspace != nullptr) {
-		scene_workspace->hide();
+	if (board_strip != nullptr) {
+		board_strip->hide();
 	}
 	if (bottom_panel != nullptr) {
 		// Collapse any open drawer tab (a persisted projectless layout may restore
@@ -7207,7 +7227,7 @@ void EditorNode::_reveal_workspace_from_projectless_shell() {
 		renderer->set_disabled(false);
 	}
 
-	// scene_workspace visibility is derived from projectless_shell (and the global
+	// Board strip visibility is derived from projectless_shell (and the global
 	// screen selection), so refresh it now that projectless_shell has been cleared.
 	update_global_screen_visibility();
 
@@ -7628,7 +7648,7 @@ void EditorNode::_load_editor_layout() {
 		ep.step(TTR("Editor layout ready."), 6, true);
 	}
 	load_editor_layout_done = true;
-	if (reconcile_empty_workspace_leaves && scene_workspace) {
+	if (reconcile_empty_workspace_leaves && get_scene_workspace()) {
 		callable_mp(this, &EditorNode::_reconcile_workspace_empty_leaves_after_restore).call_deferred();
 	}
 }
@@ -7678,10 +7698,22 @@ void EditorNode::_sync_focused_tile_chrome(ScenePaneTile *p_tile) {
 	}
 }
 
+EditorSceneWorkspace *EditorNode::get_scene_workspace() {
+	return singleton && singleton->board_strip ? singleton->board_strip->get_active_workspace() : nullptr;
+}
+
+void EditorNode::_connect_workspace_signals(EditorSceneWorkspace *p_workspace) {
+	ERR_FAIL_NULL(p_workspace);
+	p_workspace->connect("leaf_focus_requested", callable_mp(this, &EditorNode::_on_leaf_focus_requested));
+	p_workspace->connect("leaf_added", callable_mp(this, &EditorNode::_on_leaf_added));
+	p_workspace->connect("leaf_about_to_remove", callable_mp(this, &EditorNode::_on_leaf_about_to_remove));
+	p_workspace->connect("leaf_removed", callable_mp(this, &EditorNode::_on_leaf_removed));
+}
+
 ScenePaneTile *EditorNode::get_focused_tile() const {
 	// Resolve against the effective scene tile so the scene/inspector docks stay
 	// valid when a tile-less script leaf currently holds workspace focus.
-	return scene_workspace ? scene_workspace->get_effective_focused_tile() : nullptr;
+	return get_scene_workspace() ? get_scene_workspace()->get_effective_focused_tile() : nullptr;
 }
 
 SceneTreeDock *EditorNode::get_focused_scene_tree_dock() const {
@@ -7715,10 +7747,10 @@ HistoryDock *EditorNode::get_focused_history_dock() const {
 }
 
 void EditorNode::_bind_leaf_docks(int p_leaf_id) {
-	if (!scene_workspace) {
+	if (!get_scene_workspace()) {
 		return;
 	}
-	ScenePaneTile *tile = scene_workspace->get_tile_by_id(p_leaf_id);
+	ScenePaneTile *tile = get_scene_workspace()->get_tile_by_id(p_leaf_id);
 	if (!tile) {
 		return;
 	}
@@ -7732,23 +7764,23 @@ void EditorNode::_bind_leaf_docks(int p_leaf_id) {
 }
 
 void EditorNode::_bind_all_leaf_docks() {
-	if (!scene_workspace) {
+	if (!get_scene_workspace()) {
 		return;
 	}
-	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+	for (WorkspaceLeafNode *leaf : get_scene_workspace()->get_leaves()) {
 		_bind_leaf_docks(leaf->get_leaf_id());
 	}
 }
 
 void EditorNode::_update_all_scene_tabs() {
-	if (!scene_workspace) {
+	if (!get_scene_workspace()) {
 		if (scene_tabs) {
 			scene_tabs->update_scene_tabs();
 		}
 		return;
 	}
-	scene_workspace->sync_scene_tabs_from_editor_data();
-	for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+	get_scene_workspace()->sync_scene_tabs_from_editor_data();
+	for (ScenePaneTile *tile : get_scene_workspace()->get_tiles()) {
 		tile->get_scene_tabs()->update_scene_tabs();
 	}
 }
@@ -7776,9 +7808,9 @@ void EditorNode::_wire_leaf_tile(WorkspaceLeafNode *p_leaf) {
 }
 
 void EditorNode::_on_leaf_added(int p_leaf_id) {
-	ERR_FAIL_NULL(scene_workspace);
+	ERR_FAIL_NULL(get_scene_workspace());
 	editor_data.register_tile(p_leaf_id);
-	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	WorkspaceLeafNode *leaf = get_scene_workspace()->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
 	ScenePaneTile *tile = leaf->get_pane_tile();
 	if (!tile) {
@@ -7798,11 +7830,11 @@ void EditorNode::_on_leaf_added(int p_leaf_id) {
 }
 
 void EditorNode::_on_leaf_about_to_remove(int p_leaf_id) {
-	if (!scene_workspace || !editor_main_screen) {
+	if (!get_scene_workspace() || !editor_main_screen) {
 		return;
 	}
 
-	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	WorkspaceLeafNode *leaf = get_scene_workspace()->get_leaf_by_id(p_leaf_id);
 	VBoxContainer *scene_mode = editor_main_screen->get_scene_mode_control();
 	if (!leaf) {
 		return;
@@ -7846,8 +7878,8 @@ void EditorNode::_cancel_queued_focus_tile_activation() {
 }
 
 void EditorNode::_queue_focus_tile_activation(int p_tile_id) {
-	ERR_FAIL_NULL(scene_workspace);
-	ERR_FAIL_NULL(scene_workspace->get_leaf_by_id(p_tile_id));
+	ERR_FAIL_NULL(get_scene_workspace());
+	ERR_FAIL_NULL(get_scene_workspace()->get_leaf_by_id(p_tile_id));
 
 	pending_focus_tile_id = p_tile_id;
 	const uint64_t generation = ++pending_focus_tile_generation;
@@ -7866,15 +7898,15 @@ void EditorNode::_activate_queued_focus_tile(int p_tile_id, uint64_t p_generatio
 		return;
 	}
 	pending_focus_tile_id = -1;
-	if (!scene_workspace || !scene_workspace->get_leaf_by_id(p_tile_id)) {
+	if (!get_scene_workspace() || !get_scene_workspace()->get_leaf_by_id(p_tile_id)) {
 		return;
 	}
 	_focus_tile_internal(p_tile_id, true);
 }
 
 void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_already_focused) {
-	ERR_FAIL_NULL(scene_workspace);
-	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_tile_id);
+	ERR_FAIL_NULL(get_scene_workspace());
+	WorkspaceLeafNode *leaf = get_scene_workspace()->get_leaf_by_id(p_tile_id);
 	ERR_FAIL_NULL(leaf);
 
 	const bool profile_switch = OS::get_singleton()->has_environment("FOUNDRY_PROFILE_SCENE_SWITCH");
@@ -7885,11 +7917,11 @@ void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_
 
 	const int scene_idx = editor_data.get_tile_current_scene(p_tile_id);
 	EditorSceneContext *expected_context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : no_scene_context;
-	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id && scene_workspace->get_focused_leaf_id() == p_tile_id;
+	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id && get_scene_workspace()->get_focused_leaf_id() == p_tile_id;
 	const bool already_current = editor_data.get_edited_scene() == scene_idx && active_scene_context == expected_context;
-	const bool leaf_already_focused = scene_workspace->get_focused_leaf_id() == p_tile_id;
+	const bool leaf_already_focused = get_scene_workspace()->get_focused_leaf_id() == p_tile_id;
 
-	scene_workspace->set_focused_leaf(p_tile_id);
+	get_scene_workspace()->set_focused_leaf(p_tile_id);
 	if (p_activate_content_if_already_focused && leaf_already_focused) {
 		if (WorkspaceLeafContent *content = leaf->get_leaf_content()) {
 			content->on_focus_entered();
@@ -7938,26 +7970,26 @@ void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_
 }
 
 void EditorNode::_focus_tile(int p_tile_id) {
-	const bool should_activate_content = scene_workspace &&
+	const bool should_activate_content = get_scene_workspace() &&
 			pending_focus_tile_id == p_tile_id &&
-			scene_workspace->get_focused_leaf_id() == p_tile_id;
+			get_scene_workspace()->get_focused_leaf_id() == p_tile_id;
 	_cancel_queued_focus_tile_activation();
 	_focus_tile_internal(p_tile_id, should_activate_content);
 }
 
 void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
-	ERR_FAIL_NULL(scene_workspace);
-	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	ERR_FAIL_NULL(get_scene_workspace());
+	WorkspaceLeafNode *leaf = get_scene_workspace()->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
 	if (leaf->get_pane_tile()) {
-		scene_workspace->set_focused_leaf_without_content_activation(p_leaf_id);
+		get_scene_workspace()->set_focused_leaf_without_content_activation(p_leaf_id);
 		_queue_focus_tile_activation(p_leaf_id);
 		return;
 	}
 	if (WorkspacePane *pane = leaf->get_workspace_pane()) {
 		if (pane->is_script_pane()) {
 			_cancel_queued_focus_tile_activation();
-			scene_workspace->set_focused_leaf(p_leaf_id);
+			get_scene_workspace()->set_focused_leaf(p_leaf_id);
 			Viewport *editor_viewport = get_viewport();
 			if (editor_viewport && editor_viewport->gui_is_dragging()) {
 				// Workspace focus must land before the drop applies, but reparenting the
@@ -7971,15 +8003,15 @@ void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
 }
 
 void EditorNode::_focus_script_leaf(int p_leaf_id) {
-	ERR_FAIL_NULL(scene_workspace);
+	ERR_FAIL_NULL(get_scene_workspace());
 	_cancel_queued_focus_tile_activation();
-	scene_workspace->set_focused_leaf(p_leaf_id);
+	get_scene_workspace()->set_focused_leaf(p_leaf_id);
 	_complete_script_leaf_focus(p_leaf_id);
 }
 
 void EditorNode::_complete_script_leaf_focus(int p_leaf_id) {
-	ERR_FAIL_NULL(scene_workspace);
-	WorkspaceLeafNode *leaf = scene_workspace->get_leaf_by_id(p_leaf_id);
+	ERR_FAIL_NULL(get_scene_workspace());
+	WorkspaceLeafNode *leaf = get_scene_workspace()->get_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
 	WorkspacePane *pane = leaf->get_workspace_pane();
 	ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
@@ -8008,11 +8040,11 @@ void EditorNode::_on_tile_tab_closed(int p_tab, int p_tile_id) {
 }
 
 void EditorNode::handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_source_pane_id, int p_source_tab_index) {
-	ERR_FAIL_NULL(scene_workspace);
-	WorkspaceLeafNode *target_leaf = scene_workspace->get_leaf_by_id(p_target_pane_id);
+	ERR_FAIL_NULL(get_scene_workspace());
+	WorkspaceLeafNode *target_leaf = get_scene_workspace()->get_leaf_by_id(p_target_pane_id);
 	ERR_FAIL_NULL(target_leaf);
 
-	WorkspaceLeafNode *dest_leaf = scene_workspace->handle_tab_drop(p_source_pane_id, p_source_tab_index, target_leaf, (EditorSceneWorkspace::TileDropRegion)p_region);
+	WorkspaceLeafNode *dest_leaf = get_scene_workspace()->handle_tab_drop(p_source_pane_id, p_source_tab_index, target_leaf, (EditorSceneWorkspace::TileDropRegion)p_region);
 	if (!dest_leaf) {
 		return;
 	}
@@ -8023,7 +8055,7 @@ void EditorNode::handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_
 	if (dest_leaf->get_pane_tile()) {
 		_focus_tile(dest_leaf_id);
 	} else {
-		scene_workspace->request_leaf_focus(dest_leaf_id);
+		get_scene_workspace()->request_leaf_focus(dest_leaf_id);
 	}
 	_bind_all_leaf_docks();
 	_update_all_scene_tabs();
@@ -8032,9 +8064,9 @@ void EditorNode::handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_
 }
 
 void EditorNode::handle_tile_tab_strip_drop(int p_target_pane_id, int p_dest_index, int p_source_pane_id, int p_source_tab_index) {
-	ERR_FAIL_NULL(scene_workspace);
+	ERR_FAIL_NULL(get_scene_workspace());
 
-	WorkspaceLeafNode *dest_leaf = scene_workspace->handle_tab_strip_drop(p_source_pane_id, p_source_tab_index, p_target_pane_id, p_dest_index);
+	WorkspaceLeafNode *dest_leaf = get_scene_workspace()->handle_tab_strip_drop(p_source_pane_id, p_source_tab_index, p_target_pane_id, p_dest_index);
 	if (!dest_leaf) {
 		return;
 	}
@@ -8047,7 +8079,7 @@ void EditorNode::handle_tile_tab_strip_drop(int p_target_pane_id, int p_dest_ind
 	if (dest_leaf->get_pane_tile()) {
 		_focus_tile(dest_leaf_id);
 	} else {
-		scene_workspace->request_leaf_focus(dest_leaf_id);
+		get_scene_workspace()->request_leaf_focus(dest_leaf_id);
 	}
 	_bind_all_leaf_docks();
 	_update_all_scene_tabs();
@@ -8056,8 +8088,8 @@ void EditorNode::handle_tile_tab_strip_drop(int p_target_pane_id, int p_dest_ind
 }
 
 void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab) {
-	ERR_FAIL_NULL(scene_workspace);
-	WorkspaceLeafNode *target_leaf = scene_workspace->get_leaf_by_id(p_target_tile_id);
+	ERR_FAIL_NULL(get_scene_workspace());
+	WorkspaceLeafNode *target_leaf = get_scene_workspace()->get_leaf_by_id(p_target_tile_id);
 	ERR_FAIL_NULL(target_leaf);
 
 	const int scene_idx = editor_data.tile_tab_to_scene_index(p_source_tile_id, p_source_tab);
@@ -8065,7 +8097,7 @@ void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int 
 		return;
 	}
 
-	WorkspaceLeafNode *dest_leaf = scene_workspace->handle_scene_drop(scene_idx, target_leaf, (EditorSceneWorkspace::TileDropRegion)p_region);
+	WorkspaceLeafNode *dest_leaf = get_scene_workspace()->handle_scene_drop(scene_idx, target_leaf, (EditorSceneWorkspace::TileDropRegion)p_region);
 	if (!dest_leaf) {
 		return;
 	}
@@ -8080,8 +8112,8 @@ void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int 
 }
 
 void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Variant &p_data, const Point2 &p_point) {
-	ERR_FAIL_NULL(scene_workspace);
-	WorkspaceLeafNode *target_leaf = scene_workspace->get_leaf_by_id(p_target_tile_id);
+	ERR_FAIL_NULL(get_scene_workspace());
+	WorkspaceLeafNode *target_leaf = get_scene_workspace()->get_leaf_by_id(p_target_tile_id);
 	ERR_FAIL_NULL(target_leaf);
 
 	Dictionary d = p_data;
@@ -8111,7 +8143,7 @@ void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Vari
 		return;
 	}
 
-	WorkspaceLeafNode *dest_leaf = scene_workspace->handle_scene_drop(scene_idx, target_leaf, EditorSceneWorkspace::DROP_CENTER);
+	WorkspaceLeafNode *dest_leaf = get_scene_workspace()->handle_scene_drop(scene_idx, target_leaf, EditorSceneWorkspace::DROP_CENTER);
 	if (!dest_leaf) {
 		return;
 	}
@@ -8159,10 +8191,10 @@ void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Vari
 }
 
 void EditorNode::_focus_leaf_dock(EditorDock *p_dock) {
-	if (!p_dock || !scene_workspace) {
+	if (!p_dock || !get_scene_workspace()) {
 		return;
 	}
-	ScenePaneTile *tile = scene_workspace->get_focused_tile();
+	ScenePaneTile *tile = get_scene_workspace()->get_focused_tile();
 	if (tile) {
 		tile->get_dock_region()->focus_dock(p_dock);
 	}
@@ -8196,20 +8228,24 @@ void EditorNode::_focus_leaf_history_dock() {
 }
 
 void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
-	if (scene_workspace) {
-		EditorSceneWorkspace::save_to_config(p_config_file, scene_workspace);
+	// Layout persistence is per-workspace and currently writes a single section, so
+	// only the active board round-trips. Persisting every board is board-strip work
+	// and lands with multi-board persistence.
+	if (EditorSceneWorkspace *workspace = get_scene_workspace()) {
+		EditorSceneWorkspace::save_to_config(p_config_file, workspace);
 	}
 }
 
 void EditorNode::_resolve_restored_script_leaf_associated_scenes() {
-	if (!scene_workspace) {
+	if (!get_scene_workspace()) {
 		return;
 	}
-	scene_workspace->resolve_script_leaf_associated_scenes(editor_data);
+	get_scene_workspace()->resolve_script_leaf_associated_scenes(editor_data);
 }
 
 bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
-	if (!scene_workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file)) {
+	EditorSceneWorkspace *workspace = get_scene_workspace();
+	if (!workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file)) {
 		return false;
 	}
 
@@ -8226,9 +8262,9 @@ bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 		}
 	}
 
-	scene_workspace->restore_from_config(p_config_file);
+	workspace->restore_from_config(p_config_file);
 
-	for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+	for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
 		_on_leaf_added(leaf->get_leaf_id());
 	}
 
@@ -8236,37 +8272,37 @@ bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 	// existed, and only the focused pane claims ownership via activation. Restore each
 	// restored scene tab's tile ownership now -- decoupled from focus -- so the focused
 	// tile has a current scene and the tab sync below reads the correct scene->tile map.
-	scene_workspace->restore_scene_tile_ownership_from_tabs();
+	workspace->restore_scene_tile_ownership_from_tabs();
 
 	// The persisted focus can point at a script leaf, but the editor's focused tile
 	// must be a scene tile; fall back to the first scene tile when it is not.
-	WorkspaceLeafNode *restored_focus = scene_workspace->get_focused_leaf();
+	WorkspaceLeafNode *restored_focus = workspace->get_focused_leaf();
 	if (!restored_focus || !restored_focus->get_pane_tile()) {
-		for (WorkspaceLeafNode *leaf : scene_workspace->get_leaves()) {
+		for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
 			if (leaf->get_pane_tile()) {
-				scene_workspace->set_focused_leaf(leaf->get_leaf_id());
+				workspace->set_focused_leaf(leaf->get_leaf_id());
 				break;
 			}
 		}
 	}
-	editor_data.set_focused_tile_id(scene_workspace->get_focused_leaf_id());
+	editor_data.set_focused_tile_id(workspace->get_focused_leaf_id());
 	_bind_all_leaf_docks();
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
 		debugger->rebind_remote_scene_tree();
 	}
 
-	WorkspaceLeafNode *focused_leaf = scene_workspace->get_focused_leaf();
+	WorkspaceLeafNode *focused_leaf = workspace->get_focused_leaf();
 	if (focused_leaf && focused_leaf->get_pane_tile()) {
 		_sync_focused_tile_chrome(focused_leaf->get_pane_tile());
 	}
-	_reparent_scene_mode_into(scene_workspace->get_focused_tile());
+	_reparent_scene_mode_into(workspace->get_focused_tile());
 
 	// Re-host the script surface into a restored script leaf and reopen its script.
 	// A feature profile that disables scripts is applied before layout restore, so
 	// honor it by closing the restored script leaf instead of reopening it.
 	if (!is_script_feature_enabled()) {
-		for (WorkspaceLeafNode *script_leaf_node : scene_workspace->get_script_leaves()) {
-			scene_workspace->collapse(script_leaf_node);
+		for (WorkspaceLeafNode *script_leaf_node : workspace->get_script_leaves()) {
+			workspace->collapse(script_leaf_node);
 		}
 	} else {
 		_connect_script_leaf_sync();
@@ -8286,11 +8322,11 @@ bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 }
 
 void EditorNode::_reconcile_workspace_empty_leaves_after_restore() {
-	if (!scene_workspace) {
+	if (!get_scene_workspace()) {
 		return;
 	}
 
-	scene_workspace->reconcile_empty_leaves();
+	get_scene_workspace()->reconcile_empty_leaves();
 
 	ScenePaneTile *focused_tile = get_focused_tile();
 	if (focused_tile) {
@@ -8791,14 +8827,15 @@ void EditorNode::update_distraction_free_mode() {
 }
 
 void EditorNode::update_global_screen_visibility() {
-	if (!editor_main_screen || !global_screen_host || !scene_workspace) {
+	if (!editor_main_screen || !global_screen_host || !board_strip) {
 		return;
 	}
 	const bool show_global = editor_main_screen->is_global_screen_selected();
 	global_screen_host->set_visible(show_global);
 	// The projectless launcher keeps the scene workspace suppressed behind the
-	// startup dialog, so never reveal it here while no project is loaded.
-	scene_workspace->set_visible(!show_global && !projectless_shell);
+	// startup dialog, so never reveal it here while no project is loaded. Visibility
+	// is toggled on the strip so per-board dormancy is preserved across the toggle.
+	board_strip->set_visible(!show_global && !projectless_shell);
 	// The script surface (app_screen) is hosted inside a workspace ScriptLeaf, so it
 	// follows the workspace visibility above; it is not toggled separately here.
 }
@@ -10077,14 +10114,18 @@ void EditorNode::_feature_profile_changed() {
 		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), !fs_dock_disabled);
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), !fs_dock_disabled && !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_IMPORT_DOCK));
 
-		if (scene_workspace) {
+		if (board_strip) {
 			const bool signals_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SIGNALS_DOCK);
 			const bool groups_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GROUPS_DOCK);
 			const bool history_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_HISTORY_DOCK);
-			for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
-				tile->set_signals_dock_enabled(!signals_disabled);
-				tile->set_groups_dock_enabled(!groups_disabled);
-				tile->set_history_dock_enabled(!history_disabled);
+			// Feature profiles are editor-global: every tile on every board has to pick
+			// up the new dock-enabled state, not just the visible board's tiles.
+			for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+				for (ScenePaneTile *tile : workspace->get_tiles()) {
+					tile->set_signals_dock_enabled(!signals_disabled);
+					tile->set_groups_dock_enabled(!groups_disabled);
+					tile->set_history_dock_enabled(!history_disabled);
+				}
 			}
 		}
 
@@ -10096,11 +10137,14 @@ void EditorNode::_feature_profile_changed() {
 	} else {
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), true);
 		editor_dock_manager->set_dock_enabled(FileSystemDock::get_singleton(), true);
-		if (scene_workspace) {
-			for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
-				tile->set_signals_dock_enabled(true);
-				tile->set_groups_dock_enabled(true);
-				tile->set_history_dock_enabled(true);
+		if (board_strip) {
+			// Clearing a feature profile is editor-global for the same reason.
+			for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+				for (ScenePaneTile *tile : workspace->get_tiles()) {
+					tile->set_signals_dock_enabled(true);
+					tile->set_groups_dock_enabled(true);
+					tile->set_history_dock_enabled(true);
+				}
 			}
 		}
 		editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_3D, true);
@@ -10570,7 +10614,7 @@ bool EditorNode::is_startup_dialog_visible() const {
 }
 
 bool EditorNode::is_workspace_exposed() const {
-	return scene_workspace != nullptr && scene_workspace->is_visible();
+	return board_strip != nullptr && board_strip->is_visible();
 }
 
 void EditorNode::open_setting_override(const String &p_property) {
@@ -11037,13 +11081,10 @@ EditorNode::EditorNode() {
 	srt->add_theme_constant_override("separation", 0);
 	top_split->add_child(srt);
 
-	scene_workspace = EditorSceneWorkspace::create_single_leaf_workspace(editor_selection, &editor_data);
-	srt->add_child(scene_workspace);
-	scene_workspace->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	scene_workspace->connect("leaf_focus_requested", callable_mp(this, &EditorNode::_on_leaf_focus_requested));
-	scene_workspace->connect("leaf_added", callable_mp(this, &EditorNode::_on_leaf_added));
-	scene_workspace->connect("leaf_about_to_remove", callable_mp(this, &EditorNode::_on_leaf_about_to_remove));
-	scene_workspace->connect("leaf_removed", callable_mp(this, &EditorNode::_on_leaf_removed));
+	board_strip = EditorBoardStrip::create(editor_selection, &editor_data);
+	srt->add_child(board_strip);
+	board_strip->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	_connect_workspace_signals(board_strip->get_active_workspace());
 
 	editor_main_screen = memnew(EditorMainScreen);
 	editor_main_screen->hide();
@@ -11062,7 +11103,7 @@ EditorNode::EditorNode() {
 	global_screen->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	global_screen->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 
-	WorkspaceLeafNode *initial_leaf = scene_workspace->get_focused_leaf();
+	WorkspaceLeafNode *initial_leaf = get_scene_workspace()->get_focused_leaf();
 	ERR_FAIL_NULL(initial_leaf);
 	editor_data.register_tile(initial_leaf->get_leaf_id());
 	editor_data.set_focused_tile_id(initial_leaf->get_leaf_id());
@@ -11397,7 +11438,7 @@ EditorNode::EditorNode() {
 	get_project_settings()->connect_filesystem_dock_signals(filesystem_dock);
 	editor_dock_manager->add_dock(filesystem_dock);
 
-	for (ScenePaneTile *tile : scene_workspace->get_tiles()) {
+	for (ScenePaneTile *tile : get_scene_workspace()->get_tiles()) {
 		InspectorDock *tile_inspector = tile->get_inspector_dock();
 		if (!filesystem_dock->is_connected("files_moved", callable_mp(tile_inspector, &InspectorDock::_files_moved))) {
 			filesystem_dock->connect("files_moved", callable_mp(tile_inspector, &InspectorDock::_files_moved));
