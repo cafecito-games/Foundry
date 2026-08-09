@@ -98,4 +98,32 @@ TEST_CASE("[TestCaseShard] The fixture-looped suites are on the run-everywhere a
 	CHECK_FALSE(FoundryTestCaseShard::runs_on_every_shard("[Core]", "Script compilation and runtime"));
 }
 
+TEST_CASE("[TestCaseShard] count_selectable_cases is invariant under shard configuration pre-partition") {
+	// `full_suite_case_count` must be identical on every shard. It is derived from
+	// `count_selectable_cases()`, which counts non-skip-marked registered cases. `configure()`
+	// only records the shard identity; it never touches skip marks (only `apply_to_registry()`
+	// does). So, measured before the partition is applied, the count cannot depend on which
+	// shard is configured. That is what makes every shard self-report the same value.
+	const int baseline = FoundryTestCaseShard::count_selectable_cases();
+	CHECK_MESSAGE(baseline > 0, "The doctest registry should not be empty.");
+
+	const bool was_active = FoundryTestCaseShard::is_active();
+	const int saved_index = FoundryTestCaseShard::get_shard_index();
+	const int saved_total = FoundryTestCaseShard::get_shard_total();
+
+	for (int shard_total = 2; shard_total <= 4; shard_total++) {
+		for (int shard_index = 1; shard_index <= shard_total; shard_index++) {
+			FoundryTestCaseShard::configure(shard_index, shard_total);
+			CHECK_EQ(FoundryTestCaseShard::count_selectable_cases(), baseline);
+		}
+	}
+
+	// Restore the configured shard so this case leaves global state untouched.
+	if (was_active) {
+		FoundryTestCaseShard::configure(saved_index, saved_total);
+	} else {
+		FoundryTestCaseShard::configure(-1, -1);
+	}
+}
+
 } // namespace TestDoctestCaseShard

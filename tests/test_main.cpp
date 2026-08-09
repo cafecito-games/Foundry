@@ -189,6 +189,7 @@
 #include "tests/core/os/test_foundry_version_info.h"
 #include "tests/core/os/test_os.h"
 #include "tests/core/os/test_os_process.h"
+#include "tests/core/os/test_os_user_data_override.h"
 #include "tests/core/string/test_fuzzy_search.h"
 #include "tests/core/string/test_node_path.h"
 #include "tests/core/string/test_string.h"
@@ -472,6 +473,13 @@ int test_main(int argc, char *argv[]) {
 		ERR_FAIL_COND_V_MSG(cleanup_test_temp_path() != OK, EXIT_FAILURE, "Failed to clean test temp path");
 		return EXIT_FAILURE;
 	}
+
+	// Each shard self-reports the size of the whole filtered selection. Computed after the
+	// `--case`/`--suite` filter marks its non-matches but before the shard partition marks
+	// out-of-shard cases, so every shard reports the same value. The aggregator requires the
+	// cross-shard union of executed cases to equal it, which is the only way to catch a case
+	// that silently runs on zero shards.
+	FoundryTestProgress::set_full_suite_case_count(FoundryTestCaseShard::count_selectable_cases());
 
 	// Applied once, before the counting pass, so the progress stream's `test_count` also
 	// describes this shard rather than the whole suite.

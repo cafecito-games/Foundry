@@ -47,10 +47,12 @@ namespace FoundryTestProgress {
 static Config g_config;
 static bool g_counting_pass = false;
 static unsigned g_filtered_test_count = 0;
+static int g_full_suite_case_count = 0;
 
 void configure_from_invocation(const FoundryCLIParser::CLIInvocation &p_invocation) {
 	g_config = Config();
 	g_filtered_test_count = 0;
+	g_full_suite_case_count = 0;
 
 	const bool has_progress = p_invocation.test_progress;
 	const bool has_format = !p_invocation.test_progress_format.is_empty();
@@ -86,6 +88,10 @@ void configure_from_invocation(const FoundryCLIParser::CLIInvocation &p_invocati
 
 void set_doctest_quiet(bool p_quiet) {
 	g_config.doctest_quiet = p_quiet;
+}
+
+void set_full_suite_case_count(int p_count) {
+	g_full_suite_case_count = p_count;
 }
 
 bool is_enabled() {
@@ -163,6 +169,7 @@ struct FoundryTestProgressListener : public doctest::IReporter {
 
 	int current_index = 0;
 	int test_count = 0;
+	int full_suite_case_count = 0;
 	String current_name;
 	String current_suite;
 	String current_file;
@@ -206,7 +213,9 @@ struct FoundryTestProgressListener : public doctest::IReporter {
 
 	Dictionary make_base_event(const String &p_event) const {
 		Dictionary event;
-		event["version"] = 1;
+		// Version 2 adds `full_suite_case_count` to `run_start`/`run_end`. The aggregator
+		// requires the field on `run_end` and offers no version-1 compatibility (clean break).
+		event["version"] = 2;
 		event["event"] = p_event;
 		return event;
 	}
@@ -234,6 +243,11 @@ struct FoundryTestProgressListener : public doctest::IReporter {
 		if (test_count > 0) {
 			event["test_count"] = test_count;
 		}
+		// Snapshot the full-suite count into the instance so it survives even if a test case
+		// later in the run resets the file-static (the FoundryTestProgress self-tests call
+		// configure_from_invocation, which zeroes it). The same snapshot feeds run_end.
+		full_suite_case_count = g_full_suite_case_count;
+		event["full_suite_case_count"] = full_suite_case_count;
 		write_event(String(), event);
 	}
 
@@ -280,6 +294,9 @@ struct FoundryTestProgressListener : public doctest::IReporter {
 		event["failed"] = (int)p_stats.numTestCasesFailed;
 		event["skipped"] = (int)(p_stats.numTestCases - p_stats.numTestCasesPassingFilters);
 		event["assertions"] = p_stats.numAsserts;
+		// The aggregator requires this on every shard's run_end (missing = error). Every shard
+		// reports the same value; the cross-shard union of executed cases must equal it.
+		event["full_suite_case_count"] = full_suite_case_count;
 		write_event(String(), event);
 	}
 

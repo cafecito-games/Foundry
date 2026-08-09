@@ -349,6 +349,7 @@ String OS::get_user_data_dir(const String &p_user_dir) const {
 
 String OS::get_user_data_dir() const {
 	String appname = get_safe_dir_name(GLOBAL_GET("application/config/name"));
+	String sub_path;
 	if (!appname.is_empty()) {
 		bool use_custom_dir = GLOBAL_GET("application/config/use_custom_user_dir");
 		if (use_custom_dir) {
@@ -356,13 +357,22 @@ String OS::get_user_data_dir() const {
 			if (custom_dir.is_empty()) {
 				custom_dir = appname;
 			}
-			return get_user_data_dir(custom_dir);
+			sub_path = custom_dir;
 		} else {
-			return get_user_data_dir(get_godot_dir_name().path_join("app_userdata").path_join(appname));
+			sub_path = get_godot_dir_name().path_join("app_userdata").path_join(appname);
 		}
 	} else {
-		return get_user_data_dir(get_godot_dir_name().path_join("app_userdata").path_join("[unnamed project]"));
+		sub_path = get_godot_dir_name().path_join("app_userdata").path_join("[unnamed project]");
 	}
+
+	// A root override (set by the test entrypoint for per-shard `user://` isolation) replaces
+	// the platform data path. The per-project sub-path is preserved, so a mid-suite change to
+	// `application/config/name` still retargets the leaf directory — only the root moves. When
+	// the override is empty the platform virtual resolves the path exactly as before.
+	if (!user_data_root_override.is_empty()) {
+		return user_data_root_override.path_join(sub_path);
+	}
+	return get_user_data_dir(sub_path);
 }
 
 // Absolute path to res://

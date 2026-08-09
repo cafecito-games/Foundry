@@ -34,6 +34,7 @@ class ShardReport:
     failed: int = 0
     skipped: int = 0
     status: str = ""
+    full_suite_case_count: int | None = None
     case_identities: set[str] = field(default_factory=set)
 
     @property
@@ -74,6 +75,15 @@ def read_shard_report(path: Path) -> ShardReport:
                 report.passed = int(event.get("passed", 0))
                 report.failed = int(event.get("failed", 0))
                 report.skipped = int(event.get("skipped", 0))
+                # Each shard self-reports the full-suite case count (the size of the whole
+                # filtered selection, identical on every shard). A stream without it is a
+                # version-1 (or older) stream; the aggregator offers no compatibility with it.
+                if "full_suite_case_count" not in event:
+                    raise ShardReportError(
+                        f"{path}: run_end is missing 'full_suite_case_count'; the shard wrote a "
+                        "version-1 (or older) progress stream. Rebuild and rerun this shard."
+                    )
+                report.full_suite_case_count = int(event["full_suite_case_count"])
     if not run_end_seen:
         raise ShardReportError(f"{path}: no run_end event; the shard did not finish")
     return report
@@ -128,7 +138,7 @@ def format_table(reports: list[ShardReport]) -> str:
 
 
 def aggregate(
-    directory: Path, expected_shards: int | None = None, expected_case_count: int | None = None
+    directory: Path, expected_shards: int | None = None
 ) -> tuple[int, str]:
     """Returns the process exit code and the report to print."""
     try:
@@ -154,13 +164,31 @@ def aggregate(
             "case partition disagree:\n  {}".format(len(problems), "\n  ".join(problems[:20]))
         )
 
-    distinct_cases = set()
+    distinct_cases: set[str] = set()
     for report in reports:
         distinct_cases.update(report.case_identities)
     lines.append(f"distinct cases executed: {len(distinct_cases)}")
 
-    if expected_case_count is not None and len(distinct_cases) != expected_case_count:
-        failures.append(f"expected {expected_case_count} distinct case(s), the shards executed {len(distinct_cases)}")
+    # Every shard self-reports the size of the whole filtered selection. They must agree,
+    # and the cross-shard union of executed cases must equal that count. The union check is
+    # the only thing that catches a case selected by no shard (a partition regression or a
+    # suite silently dropped from registration); the partial-overlap check above cannot see
+    # a case on zero shards.
+    reported_counts = {report.full_suite_case_count for report in reports}
+    if len(reported_counts) == 1:
+        expected_count = next(iter(reported_counts))
+        if expected_count is not None and len(distinct_cases) != expected_count:
+            failures.append(
+                f"each shard reported {expected_count} case(s) in the full suite but the shards "
+                f"together executed {len(distinct_cases)} distinct case(s); a case ran on zero "
+                "shards (partition regression), a suite dropped out of registration, or a shard "
+                "died mid-run."
+            )
+    elif len(reported_counts) > 1:
+        failures.append(
+            "shards disagree on full_suite_case_count: "
+            + ", ".join(f"{r.name}={r.full_suite_case_count}" for r in reports)
+        )
 
     if failures:
         lines.append("")
@@ -180,14 +208,8 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Number of shards the run launched; fail unless every shard-<i>.jsonl is present.",
     )
-    parser.add_argument(
-        "--expected-case-count",
-        type=int,
-        default=None,
-        help="Fail unless the shards together executed exactly this many distinct cases.",
-    )
     arguments = parser.parse_args(argv)
-    exit_code, report = aggregate(arguments.directory, arguments.expected_shards, arguments.expected_case_count)
+    exit_code, report = aggregate(arguments.directory, arguments.expected_shards)
     print(report)
     return exit_code
 
