@@ -77,6 +77,7 @@
 #include "tests/editor/test_editor_automation_wait.h"
 #include "tests/editor/test_editor_automation_workflow.h"
 #include "tests/editor/test_editor_automation_workspace.h"
+#include "tests/editor/test_editor_board_strip.h"
 #include "tests/editor/test_editor_builtin_resource_setup.h"
 #include "tests/editor/test_editor_data.h"
 #include "tests/editor/test_editor_exact_integer_property.h"
