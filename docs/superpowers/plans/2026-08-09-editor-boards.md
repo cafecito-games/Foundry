@@ -421,10 +421,11 @@ public:
 	int get_remembered_focused_leaf_id() const { return focused_leaf_id; }
 	void remember_focused_leaf_id(int p_leaf_id) { focused_leaf_id = p_leaf_id; }
 
-	// Dormancy is implemented as hide() + PROCESS_MODE_DISABLED, not SubViewport
-	// update-mode gating: UPDATE_WHEN_VISIBLE keys off the visibility flag rather
-	// than on-screen position, so a board parked outside the viewport rect would
-	// otherwise keep rendering its previews at full cost forever.
+	// Dormancy is implemented as hide() + PROCESS_MODE_DISABLED. A hidden board's
+	// SubViewportContainers force their children to UPDATE_DISABLED, so rendering
+	// stops on its own. Do not gate SubViewport update modes directly instead:
+	// nothing keys off on-screen position, so a board scrolled outside the viewport
+	// rect while still visible would keep rendering its previews at full cost.
 	void set_dormant(bool p_dormant);
 	bool is_dormant() const { return dormant; }
 
@@ -1246,7 +1247,7 @@ git commit -m "feat(editor): add board view geometry"
 
 **Acceptance Criteria:**
 - [ ] Every board is awake and live in overview; no board shows a frozen image.
-- [ ] Preview `SubViewport`s are resized to their on-screen size on entering overview and restored on exit — verifiable by reading a preview viewport's size before, during, and after.
+- [ ] Entering overview lowers each preview container's render resolution via `set_stretch_shrink()` and exiting restores it exactly — verifiable by reading the resulting `SubViewport` size before, during, and after, and by asserting that no `Can't change the size of a SubViewport` warning is emitted.
 - [ ] Overview previews refresh on a throttled tick rather than every frame.
 - [ ] Captions render unscaled at full font size and are clickable.
 - [ ] While overview is active, clicking inside a board selects that board and does not retarget the main screen.
@@ -1256,20 +1257,29 @@ git commit -m "feat(editor): add board view geometry"
 
 **Steps:**
 
-- [ ] **Step 1: Add a preview-viewport resize seam to `ScenePaneTile`**
+- [ ] **Step 1: Add a preview render-resolution seam to `ScenePaneTile`**
 
 `preview_3d_viewport` is private with no setter (`editor/editor_scene_pane_tile.h:98`). Add:
 
 ```cpp
-	// Overview mode renders tiles at a fraction of their layout size; matching the
-	// preview viewport to its on-screen size is what keeps a live filmstrip
-	// affordable. Passing a zero size restores the layout-driven size.
-	void set_preview_render_scale(real_t p_scale);
+	// Overview mode draws tiles at a fraction of their layout size; matching the
+	// preview render resolution to that on-screen size is what keeps a live
+	// filmstrip affordable. Passing 1 restores full resolution.
+	void set_preview_render_shrink(int p_shrink);
 ```
+
+Implement it with `SubViewportContainer::set_stretch_shrink()`, **not**
+`SubViewport::set_size()`. The preview container enables stretch
+(`editor/editor_scene_pane_tile.cpp:273-282`), and `SubViewport::_internal_set_size`
+returns early with a `WARN_PRINT` when the parent container has stretch enabled
+(`scene/main/viewport.cpp:5442-5450`) — so `set_size` would silently no-op and
+leave every board rendering at full resolution, removing the bound that makes the
+overview affordable. `set_size_2d_override` is not an alternative: it changes only
+the 2D coordinate space and does not reduce 3D render cost.
 
 - [ ] **Step 2: Implement overview on the strip**
 
-`set_overview(bool)` wakes every board, calls `set_preview_render_scale()` on every tile of every board, tweens `EditorBoardView` to the overview scale and centring offset, and shows the caption overlay. Exiting reverses all four.
+`set_overview(bool)` wakes every board, calls `set_preview_render_shrink()` on every tile of every board, tweens `EditorBoardView` to the overview scale and centring offset, and shows the caption overlay. Exiting reverses all four.
 
 - [ ] **Step 3: Suppress focus retargeting**
 
