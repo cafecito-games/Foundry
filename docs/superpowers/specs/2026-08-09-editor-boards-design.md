@@ -217,17 +217,41 @@ The delta is therefore three changes, not a new subsystem:
 `EditorTileDropOverlay`, the rosette hit-testing, and `drop_region_at` need no
 changes: in overview mode the target board is a live, scaled `Control`
 receiving ordinary mouse events, and `Viewport::_gui_input_event` hit-tests
-through `get_global_transform_with_canvas()`. This is the specific
-reason the strip uses a canvas transform rather than per-board `SubViewport`s —
-drag-and-drop state lives on `Viewport`, so a viewport boundary between boards
-would make cross-board drag impossible without reimplementing drag-and-drop.
+through `get_global_transform_with_canvas()` (`scene/main/viewport.cpp:1816-1858`,
+`affine_invert` at `:1847-1850`).
+
+The strip uses a canvas transform rather than per-board `SubViewport`s, but
+**not** because a viewport boundary would break drag. An earlier draft of this
+document claimed that; it is wrong. Drag state is held on the *section root*
+viewport, and `SubViewport::get_section_root_viewport()`
+(`scene/main/viewport.cpp:5550-5556`) walks up through a `SubViewportContainer`
+parent, so an SVC-wrapped `SubViewport` shares drag state with the enclosing
+viewport — the engine documents this at `scene/main/viewport.h:392`. A drag
+could in fact cross per-board SubViewports.
+
+The reasons the canvas transform still wins are cost and constraint, not
+impossibility:
+
+- One always-on render target per board. A `SubViewportContainer` forces
+  `UPDATE_ALWAYS` on its children whenever it is visible
+  (`scene/gui/subviewport_container.cpp:117-132`), so there is no
+  render-on-demand middle ground.
+- Nesting. The 3D editor viewports are already `SubViewport`s; per-board
+  viewports would nest them one level deeper.
+- Sizing friction. `SubViewport::set_size` is rejected outright when the parent
+  container has `stretch` enabled (`scene/main/viewport.cpp:5442-5450`), which
+  complicates the resolution control the overview depends on.
+- `Control::set_scale()` is genuinely cheap — see
+  [The scale transform is free](#the-scale-transform-is-free) — so the
+  alternative costs very little.
 
 ### Overview
 
 `EditorBoardStrip::set_overview(true)`:
 
 1. Wakes every board.
-2. Resizes each board's preview `SubViewport`s to their on-screen size (see
+2. Reduces each board's preview render resolution to match its on-screen size,
+   via `SubViewportContainer::set_stretch_shrink()` (see
    [Performance](#performance)).
 3. Tweens `EditorBoardView::scale` down and `scroll_x` to centre the active
    board.
@@ -345,11 +369,21 @@ lag on a fully populated editor.
 `SubViewportContainer` beneath it stops rendering through the engine's existing
 visibility mechanism.
 
-The rejected alternative was gating `SubViewport::UPDATE_*` flags directly. That
-is a trap: `UPDATE_WHEN_VISIBLE` keys off the visibility *flag*, not off-screen
-position, so a board parked outside the viewport rect would keep rendering its
-3D previews indefinitely while the 2D renderer culled the result — paying full
-cost for nothing.
+The mechanism is worth stating precisely, because it is not the one an earlier
+draft of this document described. Rendering stops because
+`SubViewportContainer` overrides its children's update mode from
+`is_visible_in_tree()` on `NOTIFICATION_VISIBILITY_CHANGED`
+(`scene/gui/subviewport_container.cpp:117-132`): visible forces
+`UPDATE_ALWAYS`, hidden forces `UPDATE_DISABLED`. A `SubViewport` under a
+container therefore never runs in `UPDATE_WHEN_VISIBLE` at all.
+
+The trap the earlier draft was reaching for is real, and still applies: nothing
+keys off *on-screen position*. `UPDATE_WHEN_VISIBLE` checks whether the render
+target was used (`servers/rendering/renderer_viewport.cpp:806-819`), and
+`SubViewportContainer`'s draw is unclipped
+(`scene/gui/subviewport_container.cpp:134-147`), so a board scrolled outside
+the viewport rect while still `visible` keeps rendering at full cost. Dormancy
+must therefore be actual invisibility, not merely being off-screen.
 
 ### Steady-state cost is unchanged from today
 
@@ -367,11 +401,19 @@ board by construction. Cross-board iteration must be asked for by name through
 
 Overview is the only mode where every board is live, and it is bounded two ways:
 
-- **Resolution.** While in overview, each board's preview `SubViewport`s are
-  resized to their *on-screen* size rather than their layout size. A board drawn
-  at 1/4 scale renders its 3D previews at 1/16 the pixels, so five boards in
-  overview cost roughly one board's worth of fill rate. This is the main reason
-  a live filmstrip is affordable at all.
+- **Resolution.** While in overview, each board's preview render resolution is
+  reduced to match its on-screen size. A board drawn at 1/4 scale renders its 3D
+  previews at 1/16 the pixels, so five boards in overview cost roughly one
+  board's worth of fill rate. This is the main reason a live filmstrip is
+  affordable at all.
+
+  The lever is `SubViewportContainer::set_stretch_shrink()`, **not**
+  `SubViewport::set_size()`. The preview container enables stretch
+  (`editor/editor_scene_pane_tile.cpp:273-282`), and `set_size` returns early
+  with a warning under stretch (`scene/main/viewport.cpp:5442-5450`) — so the
+  obvious call would silently do nothing and leave every board rendering at full
+  resolution. `set_size_2d_override` is not an alternative: it changes only the
+  2D coordinate space and does not reduce 3D render cost.
 - **Cadence.** Overview previews refresh on a throttled tick (~15 Hz) rather
   than every frame. On a miniature this is invisible.
 
