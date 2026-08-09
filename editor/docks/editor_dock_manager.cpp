@@ -30,6 +30,8 @@
 
 #include "editor_dock_manager.h"
 
+#include "dock_split_layout.h"
+
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/check_button.h"
@@ -732,21 +734,27 @@ void EditorDockManager::save_docks_to_config(Ref<ConfigFile> p_layout, const Str
 	p_layout->set_value(p_section, "dock_closed", closed_docks_dump);
 
 	// Save SplitContainer offsets.
+	// SplitContainer builds its valid-children set -- and therefore the array
+	// returned by main_hsplit->get_split_offsets() -- from is_visible(), not
+	// is_visible_in_tree(). A parent-hidden-but-self-visible vsplit still occupies
+	// an offset entry, so the cursor that walks get_split_offsets() must advance on
+	// is_visible(); using is_visible_in_tree() here would desynchronise it. Both
+	// save loops therefore share this single visibility mask (see #1995).
+	Vector<bool> split_visible;
+	split_visible.resize(vsplits.size());
 	for (int i = 0; i < vsplits.size(); i++) {
-		if (vsplits[i]->is_visible_in_tree()) {
+		split_visible.write[i] = vsplits[i]->is_visible();
+		if (split_visible[i]) {
 			p_layout->set_value(p_section, "dock_split_" + itos(i + 1), vsplits[i]->get_split_offset());
 		}
 	}
 
+	// Only visible columns consume an hsplit entry, in order. Hidden columns are
+	// skipped entirely so the value the config already holds for them is kept
+	// rather than being zeroed.
 	PackedInt32Array split_offsets = main_hsplit->get_split_offsets();
-	int index = 0;
-	for (int i = 0; i < vsplits.size(); i++) {
-		int value = 0;
-		if (vsplits[i]->is_visible() && index < split_offsets.size()) {
-			value = split_offsets[index] / EDSCALE;
-			index++;
-		}
-		p_layout->set_value(p_section, "dock_hsplit_" + itos(i + 1), value);
+	for (const DockHSplitWrite &w : dock_split_layout_writes(split_visible, split_offsets)) {
+		p_layout->set_value(p_section, "dock_hsplit_" + itos(w.split_index + 1), w.offset / EDSCALE);
 	}
 }
 
@@ -827,19 +835,34 @@ void EditorDockManager::load_docks_from_config(Ref<ConfigFile> p_layout, const S
 	}
 
 	// Load SplitContainer offsets.
-	PackedInt32Array offsets;
-	for (int i = 0; i < vsplits.size(); i++) {
-		if (!p_layout->has_section_key(p_section, "dock_split_" + itos(i + 1))) {
-			continue;
-		}
-		int ofs = p_layout->get_value(p_section, "dock_split_" + itos(i + 1));
-		vsplits[i]->set_split_offset(ofs);
+	// The two reads are independent and must be decoupled: dock_split_N is applied
+	// to vsplits[i] only when its key is present, and the positional hsplit array is
+	// built with exactly one entry per visible column so entry k always lands on
+	// dragger k. A missing hsplit key contributes 0 in place rather than shifting
+	// later columns onto the wrong dragger (see #1995).
+	Vector<bool> split_visible;
+	Vector<DockHSplitStored> stored;
+	const int split_count = vsplits.size();
+	split_visible.resize(split_count);
+	stored.resize(split_count);
+	for (int i = 0; i < split_count; i++) {
+		split_visible.write[i] = vsplits[i]->is_visible();
 
-		// Only visible ones need a split offset for the main hsplit, even though they all have a value saved.
-		if (vsplits[i]->is_visible() && p_layout->has_section_key(p_section, "dock_hsplit_" + itos(i + 1))) {
-			int offset = p_layout->get_value(p_section, "dock_hsplit_" + itos(i + 1));
-			offsets.push_back(offset * EDSCALE);
+		const String split_key = "dock_split_" + itos(i + 1);
+		if (p_layout->has_section_key(p_section, split_key)) {
+			vsplits[i]->set_split_offset(p_layout->get_value(p_section, split_key));
 		}
+
+		const String hsplit_key = "dock_hsplit_" + itos(i + 1);
+		stored.write[i].present = p_layout->has_section_key(p_section, hsplit_key);
+		if (stored.write[i].present) {
+			stored.write[i].offset = p_layout->get_value(p_section, hsplit_key);
+		}
+	}
+
+	PackedInt32Array offsets = dock_split_layout_offsets(split_visible, stored);
+	for (int i = 0; i < offsets.size(); i++) {
+		offsets.write[i] = offsets[i] * EDSCALE;
 	}
 	main_hsplit->set_split_offsets(offsets);
 
