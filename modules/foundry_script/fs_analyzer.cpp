@@ -2904,13 +2904,45 @@ static FSParser::DataType _substitute_type_parameters_and_self(
 }
 
 void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser::Node *p_source) {
-	if (p_source == nullptr && parser->has_class(p_class)) {
+	const bool owns_class = parser->has_class(p_class);
+	if (p_source == nullptr && owns_class) {
 		p_source = p_class;
 	}
 
 	Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class body", p_source);
+	const int body_error_count = parser->errors.size();
+	Finally record_body_failure([&]() {
+		if (owns_class && parser->errors.size() > body_error_count) {
+			owner_resolution_failures.record_class(p_class, OwnerResolutionFailures::BODY, body_error_count);
+		}
+	});
+
+	auto push_external_body_failure = [&](int p_first_error_index) {
+		String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
+		String class_path = parser_ref->get_path();
+		if (class_path.is_empty()) {
+			class_path = p_class->get_datatype().script_path;
+		}
+		if (_localize_script_path(class_path) == p_class->fqcn) {
+			class_path = String();
+		}
+		const String suffix = _dependency_error_suffix(
+				"class", class_path, parser_ref->get_parser(), p_first_error_index);
+		if (!suffix.is_empty()) {
+			message += " " + suffix;
+		}
+		push_error(message, p_source);
+	};
 
 	if (p_class->resolved_body) {
+		if (!owns_class && parser_ref.is_valid()) {
+			FSAnalyzer *other_analyzer = parser_ref->get_analyzer();
+			if (other_analyzer->owner_resolution_failures.has_class(p_class, OwnerResolutionFailures::BODY)) {
+				push_external_body_failure(
+						other_analyzer->owner_resolution_failures.first_error_index(
+								p_class, OwnerResolutionFailures::BODY));
+			}
+		}
 		return;
 	}
 
@@ -2933,24 +2965,19 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		// Raising a dependency member by member bypasses `run_phase_body_expression_callable_signal`, so
 		// the end-of-phase sweep that reports contextual shorthands in no-expected-type positions does not
 		// run for it here. Those shorthands are swept when the dependency is analyzed as its own file.
+		ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 		other_analyzer->resolve_class_body(p_class);
-		if (other_parser->errors.size() > error_count) {
-			String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
-			// A `class_name` class reports its global name here rather than a path, so the
-			// declaring file still has to be named; it is only omitted when the name already is
-			// that path.
-			String class_path = parser_ref->get_path();
-			if (class_path.is_empty()) {
-				class_path = p_class->get_datatype().script_path;
+		if (other_parser->errors.size() > error_count ||
+				other_analyzer->owner_resolution_failures.has_class(p_class, OwnerResolutionFailures::BODY)) {
+			// A `class_name` class reports its global name rather than a path, so the shared
+			// formatter still names the declaring file and its first owner-local error.
+			int first_error_index = error_count;
+			if (other_analyzer->owner_resolution_failures.has_class(
+						p_class, OwnerResolutionFailures::BODY)) {
+				first_error_index = other_analyzer->owner_resolution_failures.first_error_index(
+						p_class, OwnerResolutionFailures::BODY);
 			}
-			if (_localize_script_path(class_path) == p_class->fqcn) {
-				class_path = String();
-			}
-			const String suffix = _dependency_error_suffix("class", class_path, other_parser, error_count);
-			if (!suffix.is_empty()) {
-				message += " " + suffix;
-			}
-			push_error(message, p_source);
+			push_external_body_failure(first_error_index);
 			return;
 		}
 
@@ -2963,6 +2990,10 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 	parser->current_class = p_class;
 
 	resolve_class_interface(p_class, p_source);
+	if (owner_resolution_failures.has_class(p_class, OwnerResolutionFailures::INTERFACE)) {
+		owner_resolution_failures.record_class(p_class, OwnerResolutionFailures::BODY,
+				owner_resolution_failures.first_error_index(p_class, OwnerResolutionFailures::INTERFACE));
+	}
 
 	// A class flattens its applied traits' members — including method bodies — into
 	// itself at compile time. Identifiers inside a trait body only get their source
@@ -2999,6 +3030,10 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 	if (base_type.kind == FSParser::DataType::CLASS) {
 		FSParser::ClassNode *base_class = base_type.class_type;
 		resolve_class_body(base_class, p_class);
+		if (owner_resolution_failures.has_class(base_class, OwnerResolutionFailures::BODY)) {
+			owner_resolution_failures.record_class(p_class, OwnerResolutionFailures::BODY,
+					owner_resolution_failures.first_error_index(base_class, OwnerResolutionFailures::BODY));
+		}
 	}
 
 	if (p_class == parser->head && p_class->is_enum_file && p_class->enum_file_decl != nullptr) {

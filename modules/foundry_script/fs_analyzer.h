@@ -189,6 +189,87 @@ private:
 
 	ConformanceVisibility conformance_visibility;
 
+	// Resolution flags and datatypes are shared through FSCache, so their owner-local failures must be
+	// memoized alongside them. This ledger records only errors added by the exact class phase/member;
+	// a later foreign caller never infers failure from unrelated errors already in the owner parser.
+	class OwnerResolutionFailures {
+	public:
+		enum ClassPhase : uint8_t {
+			INTERFACE = 1 << 0,
+			BODY = 1 << 1,
+		};
+
+	private:
+		struct ClassFailures {
+			uint8_t phases = 0;
+			int interface_first_error_index = -1;
+			int body_first_error_index = -1;
+			HashMap<int, int> member_first_error_indices;
+		};
+
+		HashMap<const FSParser::ClassNode *, ClassFailures> failures;
+
+	public:
+		void record_class(const FSParser::ClassNode *p_class, ClassPhase p_phase, int p_first_error_index) {
+			ClassFailures &class_failures = failures[p_class];
+			class_failures.phases |= p_phase;
+			int *first_error_index = &class_failures.body_first_error_index;
+			if (p_phase == INTERFACE) {
+				first_error_index = &class_failures.interface_first_error_index;
+			}
+			if (*first_error_index < 0 || p_first_error_index < *first_error_index) {
+				*first_error_index = p_first_error_index;
+			}
+		}
+
+		bool has_class(const FSParser::ClassNode *p_class, ClassPhase p_phase) const {
+			const ClassFailures *class_failures = failures.getptr(p_class);
+			return class_failures != nullptr && (class_failures->phases & p_phase) != 0;
+		}
+
+		int first_error_index(const FSParser::ClassNode *p_class, ClassPhase p_phase) const {
+			const ClassFailures *class_failures = failures.getptr(p_class);
+			if (class_failures == nullptr) {
+				return -1;
+			}
+			if (p_phase == INTERFACE) {
+				return class_failures->interface_first_error_index;
+			}
+			return class_failures->body_first_error_index;
+		}
+
+		void record_member(const FSParser::ClassNode *p_class, int p_index, int p_first_error_index) {
+			failures[p_class].member_first_error_indices.insert(p_index, p_first_error_index);
+		}
+
+		bool has_member(const FSParser::ClassNode *p_class, int p_index) const {
+			const ClassFailures *class_failures = failures.getptr(p_class);
+			return class_failures != nullptr && class_failures->member_first_error_indices.has(p_index);
+		}
+
+		int member_first_error_index(const FSParser::ClassNode *p_class, int p_index) const {
+			const ClassFailures *class_failures = failures.getptr(p_class);
+			if (class_failures == nullptr) {
+				return -1;
+			}
+			const int *first_error_index = class_failures->member_first_error_indices.getptr(p_index);
+			return first_error_index != nullptr ? *first_error_index : -1;
+		}
+	};
+
+	OwnerResolutionFailures owner_resolution_failures;
+
+	// A foreign node's memoized result must be defined by its owning file, independent of which caller
+	// first forces its resolution. Route the owner's visibility with every delegated analyzer call so
+	// the shared result remains order-independent.
+	class ForeignAnalyzerVisibilityScope {
+		FSConformanceRegistry::ScopedVisibility visibility_scope;
+
+	public:
+		explicit ForeignAnalyzerVisibilityScope(FSAnalyzer *p_owner) :
+				visibility_scope(&p_owner->conformance_visibility) {}
+	};
+
 	// Owns flow-sensitive narrowing state and definite-assignment analysis for `final` variables.
 	// Lifetime: `flow_narrowed_types` and `flow_narrowing_captured_sources` are active during body
 	// resolution (one function body at a time via `FlowNarrowingScope`); `flattened_trait_final_nodes`

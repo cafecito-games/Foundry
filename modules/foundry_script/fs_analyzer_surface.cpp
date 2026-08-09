@@ -476,6 +476,7 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 		FSParser *other_parser = parser_ref->get_parser();
 
 		int error_count = other_parser->errors.size();
+		ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 		other_analyzer->resolve_class_inheritance(p_class);
 		if (other_parser->errors.size() > error_count) {
 			push_error(vformat(R"(Could not resolve inheritance for class "%s".)", p_class->fqcn), p_source);
@@ -1639,6 +1640,12 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 	}
 
 	if (member.get_datatype().is_set()) {
+		if (!parser->has_class(p_class) && parser_ref.is_valid()) {
+			FSAnalyzer *other_analyzer = parser_ref->get_analyzer();
+			if (other_analyzer->owner_resolution_failures.has_member(p_class, p_index)) {
+				push_error(vformat(R"(Could not resolve external class member "%s".)", member.get_name()), p_source);
+			}
+		}
 		return;
 	}
 
@@ -1666,6 +1673,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 		FSParser *other_parser = parser_ref->get_parser();
 
 		int error_count = other_parser->errors.size();
+		ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 		other_analyzer->resolve_class_member(p_class, p_index);
 		if (other_parser->errors.size() > error_count) {
 			push_error(vformat(R"(Could not resolve external class member "%s".)", member.get_name()), p_source);
@@ -1680,6 +1688,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 
 	FSParser::DataType resolving_datatype;
 	resolving_datatype.kind = FSParser::DataType::RESOLVING;
+	const int member_error_count = parser->errors.size();
 
 	{
 #ifdef DEBUG_ENABLED
@@ -1941,16 +1950,33 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				break;
 		}
 	}
+	if (parser->errors.size() > member_error_count) {
+		owner_resolution_failures.record_member(p_class, p_index, member_error_count);
+	}
 
 	parser->current_class = previous_class;
 }
 
 void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSParser::Node *p_source) {
-	if (p_source == nullptr && parser->has_class(p_class)) {
+	const bool owns_class = parser->has_class(p_class);
+	if (p_source == nullptr && owns_class) {
 		p_source = p_class;
 	}
 
 	Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class interface", p_source);
+	const int interface_error_count = parser->errors.size();
+	Finally record_interface_failure([&]() {
+		if (owns_class && parser->errors.size() > interface_error_count) {
+			owner_resolution_failures.record_class(
+					p_class, OwnerResolutionFailures::INTERFACE, interface_error_count);
+		}
+	});
+
+	if (p_class->resolved_interface && !owns_class && parser_ref.is_valid() &&
+			parser_ref->get_analyzer()->owner_resolution_failures.has_class(
+					p_class, OwnerResolutionFailures::INTERFACE)) {
+		push_error(vformat(R"(Could not resolve class "%s".)", p_class->fqcn), p_source);
+	}
 
 	if (!p_class->resolved_interface) {
 #ifdef DEBUG_ENABLED
@@ -1973,8 +1999,11 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 			FSParser *other_parser = parser_ref->get_parser();
 
 			int error_count = other_parser->errors.size();
+			ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 			other_analyzer->resolve_class_interface(p_class);
-			if (other_parser->errors.size() > error_count) {
+			if (other_parser->errors.size() > error_count ||
+					other_analyzer->owner_resolution_failures.has_class(
+							p_class, OwnerResolutionFailures::INTERFACE)) {
 				push_error(vformat(R"(Could not resolve class "%s".)", p_class->fqcn), p_source);
 				return;
 			}
@@ -2024,10 +2053,19 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 		if (base_type.kind == FSParser::DataType::CLASS) {
 			FSParser::ClassNode *base_class = base_type.class_type;
 			resolve_class_interface(base_class, p_class);
+			if (owner_resolution_failures.has_class(base_class, OwnerResolutionFailures::INTERFACE)) {
+				owner_resolution_failures.record_class(p_class, OwnerResolutionFailures::INTERFACE,
+						owner_resolution_failures.first_error_index(
+								base_class, OwnerResolutionFailures::INTERFACE));
+			}
 		}
 
 		for (int i = 0; i < p_class->members.size(); i++) {
 			resolve_class_member(p_class, i);
+			if (owner_resolution_failures.has_member(p_class, i)) {
+				owner_resolution_failures.record_class(p_class, OwnerResolutionFailures::INTERFACE,
+						owner_resolution_failures.member_first_error_index(p_class, i));
+			}
 
 #ifdef DEBUG_ENABLED
 			if (!has_static_data) {
@@ -2094,6 +2132,7 @@ Error FSAnalyzer::resolve_trait_uses(FSParser::ClassNode *p_class, const FSParse
 		FSAnalyzer *other_analyzer = parser_ref->get_analyzer();
 		FSParser *other_parser = parser_ref->get_parser();
 		const int error_count = other_parser->errors.size();
+		ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 		err = other_analyzer->resolve_trait_uses(p_class);
 		if (err != OK || other_parser->errors.size() > error_count) {
 			push_error(vformat(R"(Could not resolve trait uses for class "%s".)", p_class->fqcn), p_source);
