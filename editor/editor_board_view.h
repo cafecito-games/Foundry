@@ -41,18 +41,19 @@
 // A single Transform2D cannot, on its own, open up gaps between boards that
 // are otherwise laid out edge-to-edge: get_transform() only ever supplies one
 // uniform scale and one origin for the whole board container. Producing the
-// OVERVIEW_GUTTER visible between boards in the overview additionally
-// requires whoever positions the board children (the strip, not this class,
-// which stays Control-free) to widen each board's local horizontal pitch to
-// `p_viewport.width + OVERVIEW_GUTTER / get_scale()` while is_overview_active()
-// is true, instead of the fixed `p_viewport.width` pitch used while switching.
-// get_transform()'s origin already accounts for the resulting wider content
-// block, so the two combine to produce exactly the layout index_at_point()
-// hit-tests against.
+// gutter visible between boards in the overview additionally requires whoever
+// positions the board children (the strip, not this class, which stays
+// Control-free) to widen each board's local horizontal pitch by
+// get_board_pitch_gutter(), instead of the fixed `p_viewport.width` pitch used
+// while switching. get_transform()'s origin already accounts for the
+// resulting wider content block, and get_board_pitch_gutter() itself ramps
+// from 0 to OVERVIEW_GUTTER (and back) in step with scale and origin, so the
+// three combine every frame to produce exactly the layout index_at_point()
+// hit-tests against, with no jump at the start or end of the transition.
 //
 // Every member is either a plain data field or a static/const function so
-// this class is testable headlessly: it never includes scene/gui or
-// scene/main headers and never touches a Control.
+// this class is testable headlessly: it never includes any scene-tree UI or
+// node headers and never touches a Control.
 class EditorBoardView {
 public:
 	// Horizontal gap, in pixels, between adjacent boards while in overview.
@@ -61,25 +62,35 @@ public:
 private:
 	// Time, in seconds, a switch or overview transition takes to complete.
 	static constexpr real_t TRANSITION_DURATION = 0.25;
+	// overview_scale_for() never returns less than this, so a board count large
+	// enough to make the fixed gutters exceed the viewport width still produces
+	// a finite, strictly positive pitch instead of dividing by zero.
+	static constexpr real_t MIN_OVERVIEW_SCALE = 0.05;
 
 	Point2 origin;
 	real_t scale = 1.0;
+	// Current on-screen gutter width in pixels, animated in step with origin
+	// and scale: 0 while switching, OVERVIEW_GUTTER once settled in overview.
+	real_t pitch_gutter = 0.0;
 	int active_index = 0;
 
 	Point2 transition_start_origin;
 	real_t transition_start_scale = 1.0;
+	real_t transition_start_pitch_gutter = 0.0;
 	Point2 target_origin;
 	real_t target_scale = 1.0;
+	real_t target_pitch_gutter = 0.0;
 
-	// Normalised transition progress in [0, 1]. 1 means idle: origin and
-	// scale already equal their targets.
+	// Normalised transition progress in [0, 1]. 1 means idle: origin, scale,
+	// and pitch_gutter already equal their targets.
 	real_t transition = 1.0;
 
 	bool overview = false;
 
-	// Captures the current origin/scale as the transition's starting point, so
-	// switching targets mid-flight retargets smoothly instead of jumping.
-	void _begin_transition(const Point2 &p_target_origin, real_t p_target_scale);
+	// Captures the current origin/scale/gutter as the transition's starting
+	// point, so switching targets mid-flight retargets smoothly instead of
+	// jumping.
+	void _begin_transition(const Point2 &p_target_origin, real_t p_target_scale, real_t p_target_pitch_gutter);
 	// The top-left corner, in screen pixels, at which board index 0 must be
 	// drawn so that p_board_count boards laid out at p_scale, separated by
 	// OVERVIEW_GUTTER, are centered inside p_viewport. Shared by
@@ -95,7 +106,10 @@ public:
 
 	// The uniform scale that fits p_board_count boards, plus the gutters
 	// between them, inside the viewport width. Never exceeds 1: a single
-	// board is never blown up past its natural size.
+	// board is never blown up past its natural size. Never goes below
+	// MIN_OVERVIEW_SCALE either, even when the fixed-width gutters alone would
+	// exceed the viewport for a large enough board count, so the resulting
+	// scale always stays finite and strictly positive.
 	static real_t overview_scale_for(int p_board_count, const Size2 &p_viewport);
 
 	// Begins an animated switch to the board at p_index, retargeting from the
@@ -129,6 +143,17 @@ public:
 	// comment for how this combines with the strip's own child pitch to
 	// produce the overview's inter-board gutters.
 	Transform2D get_transform() const;
+
+	// The additional local (pre-transform) horizontal pitch, in local pixels,
+	// the strip must add to each board's position beyond p_viewport.width so
+	// that, once get_transform() scales the container, adjacent boards end up
+	// OVERVIEW_GUTTER pixels apart on screen. Ramps continuously between 0 and
+	// OVERVIEW_GUTTER / (current scale) alongside get_transform()'s own origin
+	// and scale, so entering or leaving the overview never jumps a board's
+	// position.
+	real_t get_board_pitch_gutter() const {
+		return scale > CMP_EPSILON ? pitch_gutter / scale : 0.0;
+	}
 
 	bool is_overview_active() const { return overview; }
 	int get_active_index() const { return active_index; }

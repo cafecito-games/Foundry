@@ -43,8 +43,10 @@ real_t EditorBoardView::overview_scale_for(int p_board_count, const Size2 &p_vie
 	const real_t total_gutter = real_t(p_board_count - 1) * OVERVIEW_GUTTER;
 	const real_t fitted = (p_viewport.width - total_gutter) / (real_t(p_board_count) * p_viewport.width);
 	// Fixed-width gutters can exceed the viewport for a large enough board count;
-	// clamp so the scale never goes negative and mirrors the strip.
-	return CLAMP(fitted, real_t(0.0), real_t(1.0));
+	// clamp to a small positive floor instead of letting the scale reach zero or
+	// negative, which would make get_board_pitch_gutter()'s division by scale
+	// (and every downstream position derived from it) blow up to infinity.
+	return CLAMP(fitted, MIN_OVERVIEW_SCALE, real_t(1.0));
 }
 
 Point2 EditorBoardView::_overview_origin(int p_board_count, const Size2 &p_viewport, real_t p_scale) {
@@ -56,31 +58,33 @@ Point2 EditorBoardView::_overview_origin(int p_board_count, const Size2 &p_viewp
 	return Point2(left, top);
 }
 
-void EditorBoardView::_begin_transition(const Point2 &p_target_origin, real_t p_target_scale) {
+void EditorBoardView::_begin_transition(const Point2 &p_target_origin, real_t p_target_scale, real_t p_target_pitch_gutter) {
 	transition_start_origin = origin;
 	transition_start_scale = scale;
+	transition_start_pitch_gutter = pitch_gutter;
 	target_origin = p_target_origin;
 	target_scale = p_target_scale;
+	target_pitch_gutter = p_target_pitch_gutter;
 	transition = 0.0;
 }
 
 void EditorBoardView::switch_to_index(int p_index, const Size2 &p_viewport) {
 	active_index = p_index;
 	overview = false;
-	_begin_transition(Point2(scroll_offset_for_index(p_index, p_viewport), 0.0), 1.0);
+	_begin_transition(Point2(scroll_offset_for_index(p_index, p_viewport), 0.0), 1.0, 0.0);
 }
 
 void EditorBoardView::enter_overview(int p_board_count, int p_active_index, const Size2 &p_viewport) {
 	active_index = p_active_index;
 	overview = true;
 	const real_t target = overview_scale_for(p_board_count, p_viewport);
-	_begin_transition(_overview_origin(p_board_count, p_viewport, target), target);
+	_begin_transition(_overview_origin(p_board_count, p_viewport, target), target, OVERVIEW_GUTTER);
 }
 
 void EditorBoardView::exit_overview(int p_active_index, const Size2 &p_viewport) {
 	active_index = p_active_index;
 	overview = false;
-	_begin_transition(Point2(scroll_offset_for_index(p_active_index, p_viewport), 0.0), 1.0);
+	_begin_transition(Point2(scroll_offset_for_index(p_active_index, p_viewport), 0.0), 1.0, 0.0);
 }
 
 int EditorBoardView::index_at_point(const Point2 &p_point, int p_board_count, const Size2 &p_viewport) const {
@@ -119,6 +123,7 @@ void EditorBoardView::advance(real_t p_delta) {
 
 	origin = transition_start_origin.lerp(target_origin, eased);
 	scale = Math::lerp(transition_start_scale, target_scale, eased);
+	pitch_gutter = Math::lerp(transition_start_pitch_gutter, target_pitch_gutter, eased);
 }
 
 Transform2D EditorBoardView::get_transform() const {
