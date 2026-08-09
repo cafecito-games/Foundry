@@ -487,14 +487,14 @@ TEST_CASE("[text-tab][SceneTree][Editor] text-tab-persist-roundtrip-reloads-from
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
@@ -532,7 +532,7 @@ TEST_CASE("[text-tab][SceneTree][Editor] text-tab-missing-file-dropped") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
@@ -545,7 +545,7 @@ TEST_CASE("[text-tab][SceneTree][Editor] text-tab-missing-file-dropped") {
 	ErrorDetector error_detector;
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	// The deleted file's tab is dropped with a diagnostic.
