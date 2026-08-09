@@ -43,6 +43,7 @@
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
+#include "editor/gui/dock_tooltip.h"
 #include "editor/gui/editor_bottom_drawer_strip.h"
 #include "editor/gui/editor_bottom_panel.h"
 #include "editor/gui/window_wrapper.h"
@@ -624,9 +625,7 @@ void EditorDockManager::_update_tab_style(EditorDock *p_dock) {
 		} break;
 	}
 
-	if (p_dock->shortcut.is_valid() && p_dock->shortcut->has_valid_event()) {
-		tooltip += (tooltip.is_empty() ? "" : "\n") + TTR(p_dock->shortcut->get_name()) + " (" + p_dock->shortcut->get_as_text() + ")";
-	}
+	tooltip = dock_tooltip_with_shortcut_fallback(p_dock, tooltip);
 	tab_container->set_tab_tooltip(index, tooltip);
 
 	if (assign_icon) {

@@ -39,7 +39,10 @@
 #include "editor/editor_data.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_undo_redo_manager.h"
+#include "editor/gui/dock_tooltip.h"
 #include "editor/scene/connections_dialog.h"
+
+#include "core/input/shortcut.h"
 
 #include "scene/2d/node_2d.h"
 #include "scene/gui/button.h"
@@ -571,6 +574,83 @@ TEST_CASE("[SceneTree][Editor] ConnectDialog resolves its script-search root fro
 	memdelete(signals_dock);
 	memdelete(context_a);
 	memdelete(context_b);
+}
+
+// The dock toggle tooltip helper is a pure function of an EditorDock, so it
+// is exercised directly rather than through EditorBottomDrawerStrip or
+// EditorDockManager (the latter is not constructible headlessly; see
+// editor/docks/editor_dock_manager.cpp:1119-1134).
+TEST_CASE("[Editor][DockTooltip] Shortcut with a bound key yields the shortcut clause") {
+	EditorDock *dock = memnew(EditorDock);
+	dock->set_title("Inspector");
+
+	Ref<Shortcut> shortcut;
+	shortcut.instantiate();
+	shortcut->set_name("Toggle Inspector");
+	Array events;
+	events.push_back(InputEventKey::create_reference(Key::I));
+	shortcut->set_events(events);
+	dock->set_dock_shortcut(shortcut);
+
+	const String expected = TTR("Toggle Inspector") + " (" + shortcut->get_as_text() + ")";
+	CHECK(dock_tooltip_with_shortcut_fallback(dock) == expected);
+
+	memdelete(dock);
+}
+
+TEST_CASE("[Editor][DockTooltip] No shortcut falls back to the display title") {
+	EditorDock *dock = memnew(EditorDock);
+	dock->set_title("Signals");
+
+	CHECK(dock->get_dock_shortcut().is_null());
+	CHECK(dock_tooltip_with_shortcut_fallback(dock) == TTR("Signals"));
+
+	memdelete(dock);
+}
+
+TEST_CASE("[Editor][DockTooltip] Shortcut with no bound key is treated as no shortcut") {
+	EditorDock *dock = memnew(EditorDock);
+	dock->set_title("Import");
+
+	Ref<Shortcut> shortcut;
+	shortcut.instantiate();
+	shortcut->set_name("Toggle Import");
+	dock->set_dock_shortcut(shortcut);
+
+	REQUIRE_FALSE(shortcut->has_valid_event());
+	CHECK(dock_tooltip_with_shortcut_fallback(dock) == TTR("Import"));
+
+	memdelete(dock);
+}
+
+TEST_CASE("[Editor][DockTooltip] A non-empty prefix with no bound-key shortcut is left unchanged") {
+	// Mirrors EditorDockManager's icon-only tab style, which already seeds
+	// the tooltip with the display title before the shortcut clause runs;
+	// the fallback must not duplicate that title.
+	EditorDock *dock = memnew(EditorDock);
+	dock->set_title("FileSystem");
+
+	CHECK(dock_tooltip_with_shortcut_fallback(dock, TTR("FileSystem")) == TTR("FileSystem"));
+
+	memdelete(dock);
+}
+
+TEST_CASE("[Editor][DockTooltip] A non-empty prefix with a bound-key shortcut appends the clause") {
+	EditorDock *dock = memnew(EditorDock);
+	dock->set_title("FileSystem");
+
+	Ref<Shortcut> shortcut;
+	shortcut.instantiate();
+	shortcut->set_name("Toggle FileSystem");
+	Array events;
+	events.push_back(InputEventKey::create_reference(Key::F));
+	shortcut->set_events(events);
+	dock->set_dock_shortcut(shortcut);
+
+	const String expected = TTR("FileSystem") + "\n" + TTR("Toggle FileSystem") + " (" + shortcut->get_as_text() + ")";
+	CHECK(dock_tooltip_with_shortcut_fallback(dock, TTR("FileSystem")) == expected);
+
+	memdelete(dock);
 }
 
 } // namespace TestDockSceneContextBinding
