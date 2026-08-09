@@ -8232,7 +8232,7 @@ void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
 	// only the active board round-trips. Persisting every board is board-strip work
 	// and lands with multi-board persistence.
 	if (EditorSceneWorkspace *workspace = get_scene_workspace()) {
-		EditorSceneWorkspace::save_to_config(p_config_file, workspace);
+		EditorSceneWorkspace::save_to_config(p_config_file, workspace, "Workspace");
 	}
 }
 
@@ -8245,7 +8245,7 @@ void EditorNode::_resolve_restored_script_leaf_associated_scenes() {
 
 bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
 	EditorSceneWorkspace *workspace = get_scene_workspace();
-	if (!workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file)) {
+	if (!workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file, "Workspace")) {
 		return false;
 	}
 
@@ -8262,7 +8262,7 @@ bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 		}
 	}
 
-	workspace->restore_from_config(p_config_file);
+	workspace->restore_from_config(p_config_file, "Workspace");
 
 	for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
 		_on_leaf_added(leaf->get_leaf_id());

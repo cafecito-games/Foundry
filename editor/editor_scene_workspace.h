@@ -144,8 +144,6 @@ public:
 	};
 
 private:
-	static inline const char *WORKSPACE_CONFIG_SECTION = "Workspace";
-
 	Vector<WorkspaceLeafNode *> leaves;
 	int focused_leaf_id = 0;
 	// Last leaf that was focused while hosting a scene tile. Scene/inspector docks
@@ -161,7 +159,7 @@ private:
 	WorkspaceLeafNode *_create_leaf(int p_leaf_id, const StringName &p_content_type = StringName("scene"));
 	void _mount_leaf_content(WorkspaceLeafNode *p_leaf, WorkspaceLeafContent *p_content);
 	Control *_get_structural_root() const;
-	Control *_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited);
+	Control *_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited, const String &p_section);
 	WorkspaceLeafNode *_find_first_leaf(Control *p_node) const;
 	WorkspaceLeafNode *_find_leaf_hosting_type(const StringName &p_type_id) const;
 	void _clear_tree();
@@ -268,11 +266,14 @@ public:
 	Vector<ScenePaneTile *> get_tiles() const;
 	int get_tile_count() const;
 
-	// Persistence (nested tree, flat index-addressed node list).
+	// Persistence (nested tree, flat index-addressed node list). p_section names the
+	// config section this workspace occupies; boards pass "Board_<n>" so several
+	// workspaces coexist in one config. Per-leaf sections are keyed on the globally
+	// unique leaf id and are therefore independent of p_section.
 	static String leaf_layout_section(int p_leaf_id);
-	static void save_to_config(const Ref<ConfigFile> &p_config, const EditorSceneWorkspace *p_workspace);
-	static bool has_workspace_session(const Ref<ConfigFile> &p_config);
-	void restore_from_config(const Ref<ConfigFile> &p_config);
+	static void save_to_config(const Ref<ConfigFile> &p_config, const EditorSceneWorkspace *p_workspace, const String &p_section);
+	static bool has_workspace_session(const Ref<ConfigFile> &p_config, const String &p_section);
+	void restore_from_config(const Ref<ConfigFile> &p_config, const String &p_section);
 	// Defensive self-heal for restored layouts: a persisted non-default leaf whose
 	// tabs no longer resolve to any content (a scene tab whose scene is owned by
 	// another leaf, or tabs dropped as unresolvable during load) can survive as a

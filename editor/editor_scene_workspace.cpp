@@ -1295,16 +1295,17 @@ int EditorSceneWorkspace::get_tile_count() const {
 
 struct WorkspaceSaveWalker {
 	Ref<ConfigFile> config;
+	String section;
 	int next_index = 0;
 
 	int walk(Control *p_node) {
 		const int index = next_index++;
 		WorkspaceLeafNode *leaf = Object::cast_to<WorkspaceLeafNode>(p_node);
 		if (leaf) {
-			config->set_value("Workspace", vformat("node_%d_type", index), "leaf");
-			config->set_value("Workspace", vformat("node_%d_leaf_id", index), leaf->get_leaf_id());
+			config->set_value(section, vformat("node_%d_type", index), "leaf");
+			config->set_value(section, vformat("node_%d_leaf_id", index), leaf->get_leaf_id());
 			if (leaf->get_leaf_content()) {
-				config->set_value("Workspace", vformat("node_%d_content_type", index), leaf->get_leaf_content()->get_content_type());
+				config->set_value(section, vformat("node_%d_content_type", index), leaf->get_leaf_content()->get_content_type());
 				const String layout_section = EditorSceneWorkspace::leaf_layout_section(leaf->get_leaf_id());
 				leaf->get_leaf_content()->save_layout(config, layout_section);
 			}
@@ -1325,23 +1326,23 @@ struct WorkspaceSaveWalker {
 		}
 		ERR_FAIL_COND_V(children.size() != 2, index);
 
-		config->set_value("Workspace", vformat("node_%d_type", index), "split");
-		config->set_value("Workspace", vformat("node_%d_vertical", index), split_node->is_vertical());
-		config->set_value("Workspace", vformat("node_%d_offset", index), split_node->get_split_offset());
+		config->set_value(section, vformat("node_%d_type", index), "split");
+		config->set_value(section, vformat("node_%d_vertical", index), split_node->is_vertical());
+		config->set_value(section, vformat("node_%d_offset", index), split_node->get_split_offset());
 		const int child_a = walk(children[0]);
 		const int child_b = walk(children[1]);
-		config->set_value("Workspace", vformat("node_%d_child_a", index), child_a);
-		config->set_value("Workspace", vformat("node_%d_child_b", index), child_b);
+		config->set_value(section, vformat("node_%d_child_a", index), child_a);
+		config->set_value(section, vformat("node_%d_child_b", index), child_b);
 		return index;
 	}
 };
 
-void EditorSceneWorkspace::save_to_config(const Ref<ConfigFile> &p_config, const EditorSceneWorkspace *p_workspace) {
+void EditorSceneWorkspace::save_to_config(const Ref<ConfigFile> &p_config, const EditorSceneWorkspace *p_workspace, const String &p_section) {
 	ERR_FAIL_COND(p_config.is_null());
 	ERR_FAIL_NULL(p_workspace);
 
-	if (p_config->has_section(WORKSPACE_CONFIG_SECTION)) {
-		p_config->erase_section(WORKSPACE_CONFIG_SECTION);
+	if (p_config->has_section(p_section)) {
+		p_config->erase_section(p_section);
 	}
 
 	Control *root = p_workspace->_get_structural_root();
@@ -1349,53 +1350,54 @@ void EditorSceneWorkspace::save_to_config(const Ref<ConfigFile> &p_config, const
 
 	WorkspaceSaveWalker walker;
 	walker.config = p_config;
+	walker.section = p_section;
 	const int root_index = walker.walk(root);
 
-	p_config->set_value(WORKSPACE_CONFIG_SECTION, "node_count", walker.next_index);
-	p_config->set_value(WORKSPACE_CONFIG_SECTION, "root_node", root_index);
-	p_config->set_value(WORKSPACE_CONFIG_SECTION, "focused_leaf_id", p_workspace->get_focused_leaf_id());
+	p_config->set_value(p_section, "node_count", walker.next_index);
+	p_config->set_value(p_section, "root_node", root_index);
+	p_config->set_value(p_section, "focused_leaf_id", p_workspace->get_focused_leaf_id());
 }
 
-bool EditorSceneWorkspace::has_workspace_session(const Ref<ConfigFile> &p_config) {
+bool EditorSceneWorkspace::has_workspace_session(const Ref<ConfigFile> &p_config, const String &p_section) {
 	ERR_FAIL_COND_V(p_config.is_null(), false);
-	if (!p_config->has_section(WORKSPACE_CONFIG_SECTION)) {
+	if (!p_config->has_section(p_section)) {
 		return false;
 	}
-	if (!p_config->has_section_key(WORKSPACE_CONFIG_SECTION, "node_count")) {
+	if (!p_config->has_section_key(p_section, "node_count")) {
 		return false;
 	}
-	const int node_count = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, "node_count"));
+	const int node_count = int(p_config->get_value(p_section, "node_count"));
 	return node_count >= 1;
 }
 
-Control *EditorSceneWorkspace::_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited) {
+Control *EditorSceneWorkspace::_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited, const String &p_section) {
 	if (p_node < 0 || p_node >= p_node_count || r_visited.has(p_node)) {
 		WorkspaceLeafNode *fallback = _create_leaf(get_leaf_id_allocator()->allocate_leaf_id());
 		return fallback;
 	}
 	r_visited.insert(p_node);
 
-	const String type = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_type", p_node), "leaf");
+	const String type = p_config->get_value(p_section, vformat("node_%d_type", p_node), "leaf");
 	if (type == "split") {
-		const bool vertical = bool(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_vertical", p_node), false));
+		const bool vertical = bool(p_config->get_value(p_section, vformat("node_%d_vertical", p_node), false));
 		WorkspaceSplitNode *split_node = WorkspaceSplitNode::create(vertical);
-		const int child_a = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_child_a", p_node), -1));
-		const int child_b = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_child_b", p_node), -1));
+		const int child_a = int(p_config->get_value(p_section, vformat("node_%d_child_a", p_node), -1));
+		const int child_b = int(p_config->get_value(p_section, vformat("node_%d_child_b", p_node), -1));
 		SplitContainer *sc = split_node->get_split_container();
-		Control *a = _restore_node_from_config(p_config, child_a, p_node_count, r_visited);
-		Control *b = _restore_node_from_config(p_config, child_b, p_node_count, r_visited);
+		Control *a = _restore_node_from_config(p_config, child_a, p_node_count, r_visited, p_section);
+		Control *b = _restore_node_from_config(p_config, child_b, p_node_count, r_visited, p_section);
 		if (a) {
 			sc->add_child(a);
 		}
 		if (b) {
 			sc->add_child(b);
 		}
-		split_node->set_split_offset(int(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_offset", p_node), 0)));
+		split_node->set_split_offset(int(p_config->get_value(p_section, vformat("node_%d_offset", p_node), 0)));
 		return split_node;
 	}
 
-	const int leaf_id = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_leaf_id", p_node), 0));
-	String content_type = p_config->get_value(WORKSPACE_CONFIG_SECTION, vformat("node_%d_content_type", p_node), String());
+	const int leaf_id = int(p_config->get_value(p_section, vformat("node_%d_leaf_id", p_node), 0));
+	String content_type = p_config->get_value(p_section, vformat("node_%d_content_type", p_node), String());
 	StringName initial_content_type = StringName("scene");
 	if (content_type == "script") {
 		initial_content_type = StringName("script");
@@ -1424,25 +1426,25 @@ void EditorSceneWorkspace::_clear_tree() {
 	}
 }
 
-void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config) {
+void EditorSceneWorkspace::restore_from_config(const Ref<ConfigFile> &p_config, const String &p_section) {
 	ERR_FAIL_COND(p_config.is_null());
-	if (!has_workspace_session(p_config)) {
+	if (!has_workspace_session(p_config, p_section)) {
 		return;
 	}
 
-	const int root_node = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, "root_node", 0));
-	const int node_count = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, "node_count", 0));
+	const int root_node = int(p_config->get_value(p_section, "root_node", 0));
+	const int node_count = int(p_config->get_value(p_section, "node_count", 0));
 
 	restoring_from_config = true;
 	_clear_tree();
 
 	HashSet<int> visited;
-	Control *new_root = _restore_node_from_config(p_config, root_node, node_count, visited);
+	Control *new_root = _restore_node_from_config(p_config, root_node, node_count, visited, p_section);
 	ERR_FAIL_NULL(new_root);
 	add_child(new_root);
 
 	ERR_FAIL_COND(leaves.is_empty());
-	int saved_focus = int(p_config->get_value(WORKSPACE_CONFIG_SECTION, "focused_leaf_id", leaves[0]->get_leaf_id()));
+	int saved_focus = int(p_config->get_value(p_section, "focused_leaf_id", leaves[0]->get_leaf_id()));
 	if (!get_leaf_by_id(saved_focus)) {
 		saved_focus = leaves[0]->get_leaf_id();
 	}

@@ -262,7 +262,7 @@ TEST_CASE("[Editor][script-view-persistence] Multi script leaves round-trip per-
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	const int script_a_id = script_a->get_leaf_id();
 	const int script_b_id = script_b->get_leaf_id();
@@ -275,7 +275,7 @@ TEST_CASE("[Editor][script-view-persistence] Multi script leaves round-trip per-
 	h2.pump();
 	ScriptEditorController *controller2 = memnew(ScriptEditorController);
 	controller2->init_global_services(h2.host);
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	CHECK(h2.workspace->get_script_leaves().size() == 2);

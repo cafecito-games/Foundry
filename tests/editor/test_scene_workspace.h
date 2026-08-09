@@ -541,11 +541,11 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tree-persist") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	CHECK(int(config->get_value("Workspace", "node_count")) == 5);
 	CHECK(int(config->get_value("Workspace", "focused_leaf_id")) == second->get_leaf_id());
-	CHECK(EditorSceneWorkspace::has_workspace_session(config));
+	CHECK(EditorSceneWorkspace::has_workspace_session(config, "Workspace"));
 
 	const Vector<int> expected_leaf_ids = { first->get_leaf_id(), second->get_leaf_id(), third->get_leaf_id() };
 	const int saved_focus = second->get_leaf_id();
@@ -555,7 +555,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tree-persist") {
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	CHECK(h2.workspace->get_leaf_count() == 3);
@@ -868,7 +868,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-id-model") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 	const Vector<int> saved_tile_ids = { tile_a, tile_b };
 	const int saved_focus = h.workspace->get_focused_leaf_id();
 
@@ -876,7 +876,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-id-model") {
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	for (int tile_id : saved_tile_ids) {
@@ -1115,7 +1115,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] leaf-content-generic") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	const int scene_leaf_id = scene_leaf->get_leaf_id();
 	const int script_leaf_id = script_leaf_node->get_leaf_id();
@@ -1125,7 +1125,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] leaf-content-generic") {
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	CHECK(h2.workspace->get_leaf_count() == 2);
@@ -1931,7 +1931,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-dock-region") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	const String layout_section = EditorSceneWorkspace::leaf_layout_section(tile_a->get_tile_id());
 	CHECK(config->has_section_key(layout_section, "tile_dock_right"));
@@ -1951,7 +1951,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] tile-dock-region") {
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	ScenePaneTile *restored_a = h2.workspace->get_tile_by_id(tile_a_id);
@@ -2030,7 +2030,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-open") {
 	// Each script leaf round-trips through persistence with its own tabs.
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 	const int scene_leaf_id = scene_leaf->get_leaf_id();
 	const int enemy_leaf_id = second->get_leaf_id();
 
@@ -2042,7 +2042,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] script-leaf-open") {
 	h2.pump();
 	ScriptEditorController *controller2 = memnew(ScriptEditorController);
 	controller2->init_global_services(h2.host);
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	CHECK(h2.workspace->get_leaf_count() == 3);
@@ -2227,7 +2227,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] reopening-script-tab-refreshes-as
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 	const int scene_b_id = scene_b->get_leaf_id();
 	const int script_host_id = script_host->get_leaf_id();
 
@@ -2240,7 +2240,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] reopening-script-tab-refreshes-as
 
 	ScriptEditorController *controller2 = memnew(ScriptEditorController);
 	controller2->init_global_services(h2.host);
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	WorkspaceLeafNode *restored_scene_b = h2.workspace->get_leaf_by_id(scene_b_id);
@@ -3489,13 +3489,13 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-mixed-pane-roundtrip") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
@@ -3544,13 +3544,13 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-active-and-focused") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	CHECK(h2.workspace->get_focused_leaf_id() == leaf_b_id);
@@ -3605,13 +3605,13 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-script-tab-payload") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
@@ -3651,7 +3651,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-missing-resource-graceful
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
@@ -3662,7 +3662,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-missing-resource-graceful
 	ErrorDetector error_detector;
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	CHECK(error_detector.has_error);
@@ -3705,14 +3705,14 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-unknown-type-skipped") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	ErrorDetector error_detector;
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	CHECK(error_detector.has_error);
@@ -3765,10 +3765,10 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-focus-invariant-holds") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	// Restore into the same workspace so editor_data (and its scene state) is kept.
-	h.workspace->restore_from_config(config);
+	h.workspace->restore_from_config(config, "Workspace");
 	h.pump();
 
 	// Mirror EditorNode's post-restore focus re-assertion: the editor's focused
@@ -3817,11 +3817,11 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-nonfocused-scene-tab-keep
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	// Restore into the same workspace so editor_data keeps both scenes; the
 	// non-focused pane's restored scene tab must not activate and steal focus.
-	h.workspace->restore_from_config(config);
+	h.workspace->restore_from_config(config, "Workspace");
 	h.pump();
 
 	CHECK(h.workspace->get_focused_leaf_id() == tile_b);
@@ -3851,7 +3851,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-restore-reserves-stable-i
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
@@ -3862,7 +3862,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-restore-reserves-stable-i
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	CHECK(WorkspacePane::get_shared_tab_registry().allocate_stable_id() > max_stable);
@@ -3913,7 +3913,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-restores-multipane-scene-
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 	h.unmount();
 
 	// Session 2: a fresh EditorData reopens the scenes before the workspace tree is
@@ -3931,7 +3931,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-restores-multipane-scene-
 	Node2D *reopened_a_root = memnew(Node2D);
 	const int reopened_a = add_startup_scene(h2.editor_data, "res://scene_a.tscn", reopened_a_root);
 
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 
 	// Decoupled ownership restoration: push each restored scene tab's tile ownership
 	// into EditorData before the tab sync runs, without claiming focus for non-focused panes.
@@ -3996,7 +3996,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-restores-mixed-pane-scene
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 	h.unmount();
 
 	// Session 2: fresh EditorData reopens both scenes onto the startup tile 0.
@@ -4011,7 +4011,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-restores-mixed-pane-scene
 	Node2D *reopened_b_root = memnew(Node2D);
 	const int reopened_b = add_startup_scene(h2.editor_data, "res://mixed_b.tscn", reopened_b_root);
 
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.workspace->restore_scene_tile_ownership_from_tabs();
 
 	CHECK(h2.editor_data.get_scene_tile(reopened_a) == tile_a);
@@ -4068,7 +4068,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-ignores-stale-unsaved-sce
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 	h.unmount();
 
 	// Session 2: the unsaved scene is not reopened. Its history id is recycled onto a
@@ -4087,7 +4087,7 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] restart-ignores-stale-unsaved-sce
 	h2.editor_data.get_scene_context(blank_scene)->set_scene_root_node(blank_root);
 	REQUIRE(h2.editor_data.get_scene_history_id(blank_scene) == stale_history_id);
 
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.workspace->restore_scene_tile_ownership_from_tabs();
 
 	// The saved scene is restored to its pane; the blank scene is never claimed by the
@@ -4312,14 +4312,14 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] mixed-persist-roundtrip") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
-	CHECK(EditorSceneWorkspace::has_workspace_session(config));
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
+	CHECK(EditorSceneWorkspace::has_workspace_session(config, "Workspace"));
 
 	h.unmount();
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
@@ -4472,14 +4472,14 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] restore-then-reconcile-drops-all-
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	ErrorDetector error_detector;
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	// leaf_b's only tab was unresolvable and dropped with a diagnostic, leaving it a

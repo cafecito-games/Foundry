@@ -297,13 +297,13 @@ TEST_CASE("[workspace-tab][SceneTree][Editor] fake-tab-type-persist-roundtrip") 
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
@@ -351,14 +351,14 @@ TEST_CASE("[workspace-tab][SceneTree][Editor] registry-required-for-new-type") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	ErrorDetector error_detector;
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	// The unregistered tab is skipped with a diagnostic; the registered scene tab
@@ -817,13 +817,13 @@ TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-persist-roundtrip") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	WorkspacePane *restored = get_leaf_pane(h2.workspace->get_leaf_by_id(leaf_id));
@@ -873,14 +873,14 @@ TEST_CASE("[workspace-tab][SceneTree][Editor] help-tab-missing-class-dropped") {
 
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorSceneWorkspace::save_to_config(config, h.workspace);
+	EditorSceneWorkspace::save_to_config(config, h.workspace, "Workspace");
 
 	h.unmount();
 
 	ErrorDetector error_detector;
 	WorkspaceHarness h2;
 	h2.mount();
-	h2.workspace->restore_from_config(config);
+	h2.workspace->restore_from_config(config, "Workspace");
 	h2.pump();
 
 	// The page for a class that no longer exists is dropped with a diagnostic.
