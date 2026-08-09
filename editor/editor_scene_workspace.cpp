@@ -536,15 +536,24 @@ Control *EditorSceneWorkspace::_get_structural_root() const {
 	return Object::cast_to<Control>(get_child(0, false));
 }
 
-EditorSceneWorkspace *EditorSceneWorkspace::create_single_leaf_workspace(EditorSelection *p_editor_selection, EditorData *p_editor_data) {
+EditorSceneWorkspace *EditorSceneWorkspace::create_single_leaf_workspace(EditorSelection *p_editor_selection, EditorData *p_editor_data, WorkspaceLeafIdAllocator *p_allocator) {
 	ERR_FAIL_NULL_V(p_editor_data, nullptr);
 	EditorSceneWorkspace *workspace = memnew(EditorSceneWorkspace);
 	workspace->editor_selection = p_editor_selection;
 	workspace->editor_data = p_editor_data;
-	WorkspaceLeafNode *leaf = workspace->_create_leaf(workspace->next_leaf_id++, StringName("scene"));
+	workspace->leaf_id_allocator = p_allocator;
+	WorkspaceLeafNode *leaf = workspace->_create_leaf(workspace->get_leaf_id_allocator()->allocate_leaf_id(), StringName("scene"));
 	workspace->add_child(leaf);
 	workspace->set_focused_leaf(leaf->get_leaf_id());
 	return workspace;
+}
+
+void EditorSceneWorkspace::set_leaf_id_allocator(WorkspaceLeafIdAllocator *p_allocator) {
+	leaf_id_allocator = p_allocator;
+}
+
+WorkspaceLeafIdAllocator *EditorSceneWorkspace::get_leaf_id_allocator() {
+	return leaf_id_allocator ? leaf_id_allocator : &owned_leaf_id_allocator;
 }
 
 WorkspaceLeafNode *EditorSceneWorkspace::split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side) {
@@ -566,7 +575,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::split_with_content(WorkspaceLeafNode *p
 	parent->add_child(split_node);
 	parent->move_child(split_node, idx);
 
-	WorkspaceLeafNode *new_leaf = _create_leaf(next_leaf_id++, p_content_type);
+	WorkspaceLeafNode *new_leaf = _create_leaf(get_leaf_id_allocator()->allocate_leaf_id(), p_content_type);
 	const bool insert_before = p_side == SPLIT_SIDE_FIRST;
 	if (insert_before) {
 		sc->add_child(new_leaf);
@@ -1361,9 +1370,7 @@ bool EditorSceneWorkspace::has_workspace_session(const Ref<ConfigFile> &p_config
 
 Control *EditorSceneWorkspace::_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited) {
 	if (p_node < 0 || p_node >= p_node_count || r_visited.has(p_node)) {
-		const int fallback_id = next_leaf_id + leaves.size();
-		WorkspaceLeafNode *fallback = _create_leaf(fallback_id);
-		next_leaf_id = MAX(next_leaf_id, fallback_id + 1);
+		WorkspaceLeafNode *fallback = _create_leaf(get_leaf_id_allocator()->allocate_leaf_id());
 		return fallback;
 	}
 	r_visited.insert(p_node);
@@ -1400,7 +1407,7 @@ Control *EditorSceneWorkspace::_restore_node_from_config(const Ref<ConfigFile> &
 		initial_content_type = StringName("scene");
 	}
 	WorkspaceLeafNode *leaf = _create_leaf(leaf_id, initial_content_type);
-	next_leaf_id = MAX(next_leaf_id, leaf_id + 1);
+	get_leaf_id_allocator()->reserve_leaf_id(leaf_id);
 	if (leaf && leaf->get_leaf_content()) {
 		const String layout_section = leaf_layout_section(leaf_id);
 		leaf->get_leaf_content()->load_layout(p_config, layout_section);

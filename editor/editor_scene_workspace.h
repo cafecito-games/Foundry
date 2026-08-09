@@ -41,6 +41,32 @@ class WorkspaceLeafContent;
 class WorkspacePane;
 
 /**
+ * Supplies leaf ids to a workspace. Ids must be unique across every workspace in
+ * the editor: EditorData keys scene-tile ownership on leaf id, and layout
+ * persistence keys per-pane sections on it, so two workspaces issuing the same id
+ * would share scene ownership and overwrite each other's saved layout.
+ */
+class WorkspaceLeafIdAllocator {
+public:
+	virtual int allocate_leaf_id() = 0;
+	// Called during restore so a persisted id is never handed out again.
+	virtual void reserve_leaf_id(int p_leaf_id) = 0;
+	virtual ~WorkspaceLeafIdAllocator() {}
+};
+
+// Default allocator used when a workspace is constructed standalone (tests, and
+// the transitional single-workspace path). Owns its own counter.
+class LocalWorkspaceLeafIdAllocator : public WorkspaceLeafIdAllocator {
+	int next_leaf_id = 0;
+
+public:
+	int allocate_leaf_id() override { return next_leaf_id++; }
+	void reserve_leaf_id(int p_leaf_id) override { next_leaf_id = MAX(next_leaf_id, p_leaf_id + 1); }
+	int peek_next_leaf_id() const { return next_leaf_id; }
+	void set_next_leaf_id(int p_value) { next_leaf_id = p_value; }
+};
+
+/**
  * A leaf of the recursive tiling tree. Holds exactly one WorkspaceLeafContent
  * (scene tile, script leaf, etc.).
  */
@@ -125,10 +151,11 @@ private:
 	// Last leaf that was focused while hosting a scene tile. Scene/inspector docks
 	// fall back to this tile when the focused leaf is a tile-less script leaf.
 	int last_focused_tile_id = 0;
-	int next_leaf_id = 0;
 	bool restoring_from_config = false;
 	EditorSelection *editor_selection = nullptr;
 	EditorData *editor_data = nullptr;
+	WorkspaceLeafIdAllocator *leaf_id_allocator = nullptr;
+	LocalWorkspaceLeafIdAllocator owned_leaf_id_allocator;
 
 	WorkspaceLeafContent *_create_leaf_content(int p_leaf_id, const StringName &p_content_type);
 	WorkspaceLeafNode *_create_leaf(int p_leaf_id, const StringName &p_content_type = StringName("scene"));
@@ -149,7 +176,12 @@ protected:
 	static void _bind_methods();
 
 public:
-	static EditorSceneWorkspace *create_single_leaf_workspace(EditorSelection *p_editor_selection, EditorData *p_editor_data);
+	static EditorSceneWorkspace *create_single_leaf_workspace(EditorSelection *p_editor_selection, EditorData *p_editor_data, WorkspaceLeafIdAllocator *p_allocator = nullptr);
+
+	// When null, the workspace falls back to its own local allocator. EditorBoardStrip
+	// injects the editor-wide allocator so ids never collide between boards.
+	void set_leaf_id_allocator(WorkspaceLeafIdAllocator *p_allocator);
+	WorkspaceLeafIdAllocator *get_leaf_id_allocator();
 
 	// Tree ops.
 	WorkspaceLeafNode *split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side);
