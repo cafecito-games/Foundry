@@ -2,288 +2,305 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add transparent user-defined type aliases/unions, a closed scalar `Number` union, union generic bounds, numeric promotion for valid bounded operations, and flow-sensitive narrowing in Foundry Script.
+**Goal:** Add transparent file-local type aliases and unions, a closed scalar `Number` union, union generic bounds, set-wise numeric operator checking, and flow-sensitive narrowing in Foundry Script, per `docs/superpowers/specs/2026-08-09-numeric-type-unions-design.md`.
 
-**Architecture:** Parse aliases and union members into a canonical static type-set representation carried by `FSParser::DataType`. Resolve aliases before compatibility, bound, inference, operator, and tooling decisions; retain the concrete runtime Variant representation and existing generic erasure. Implement numeric behavior through the existing `NumericType`/`FSNumericConversion` promotion machinery and reuse existing `is` flow analysis for narrowing.
+**Architecture:** Parse aliases and union members into a canonical type-set carried by a new `FSParser::DataType` kind. Normalize (expand, flatten, hoist nullability, dedupe, canonicalize) before every compatibility, bound, inference, operator, and tooling decision. Multi-member unions erase to untyped at runtime; single-member aliases stay fully transparent. Numeric behavior routes through the existing `FSAnalyzer::get_operation_type` / `FSNumericConversion` machinery, and narrowing extends `FSAnalyzer::FlowFinalityContext`.
 
-**Tech Stack:** C++ parser/analyzer (`modules/foundry_script`), Foundry Script fixtures, doctest, grammar/LSP/formatter fixtures, `scripts/agent_build.py`.
+**Tech Stack:** C++ parser/analyzer (`modules/foundry_script`), Foundry Script corpus fixtures, doctest, formatter/LSP fixtures, `scripts/agent_build.py`.
 
 ---
 
+## Test harness constraints — read before writing any fixture
+
+These are properties of the harness, verified in code. Getting them wrong wastes a build cycle each time.
+
+- **The whole script corpus is one doctest case.** `modules/foundry_script/tests/fs_test_runner_suite.h:70-95` registers `TEST_CASE("Script compilation and runtime")` and a second case that re-runs the identical corpus through compiled bytecode. Fixture filenames never appear in a case name.
+- **Therefore `--case "*type_alias_union*"` matches nothing, and a filter matching nothing is a hard failure**, not an empty pass: `tests/test_main.cpp:469-474` prints `The --case/--suite filter matched no tests; nothing was run.` and returns `EXIT_FAILURE`. Use:
+
+  ```sh
+  ./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --print-filenames --force-colors
+  ```
+
+  `--print-filenames` (`fs_test_runner_suite.h:72`) is how you see which fixture is executing.
+- **Every corpus `.fs` needs a paired `.out`.** `fs_test_runner.cpp:511` hard-fails discovery for a `.fs` with no `.out`, which fails the entire case, not just that fixture. Generate `.out` files with `test generate-fixtures`.
+- **Four subtrees are excluded from the corpus runner** and have their own doctest cases: `completion`, `lsp`, `refactor`, `format` (`fs_test_runner.cpp:475`). `analyzer/**`, `parser/**`, `runtime/**` are the corpus.
+- **`[Format] Idempotent over the script corpus`** (`test_format.h:1438`) sweeps *all* of `scripts/`, so any corpus fixture containing union syntax fails until the formatter handles it. This is why formatter support lands in Task 1, not last.
+- **`[Format] Refuses to format unparsable error fixtures`** (`test_format.h:1460`) sweeps `analyzer/errors`, `runtime/errors`, `parser/errors`. A fixture under `analyzer/errors` must still *parse* cleanly. Parse-level negatives (empty union, malformed member, parameterized alias) belong in `parser/errors/`.
+- **`--case` matches doctest case names, `--suite` matches suite names, and the two are OR'd** (`tests/test_case_filter.cpp:162-177`). Bracket tags embedded in a case-name string are part of the name, so `--case "*NumericTypes*"` works for `test_integer_promotion.h`; `--case "*IntegerPromotion*"` does not, because no case is named that.
+- **Binary path:** use the `./bin/foundry.*` glob. This checkout builds `foundry.macos.*` locally and `foundry.linuxbsd.editor.dev.x86_64` in the cloud VM.
+
 ## File map and ownership
 
-- `modules/foundry_script/fs_parser.h`: add alias declaration/type-union AST and `DataType` union metadata.
-- `modules/foundry_script/fs_parser.cpp`: parse top-level/inner alias declarations, parse `|` in type contexts, resolve and print aliases.
-- `modules/foundry_script/fs_analyzer.h`: declare alias registry, union normalization, compatibility, narrowing, and operator helpers.
-- `modules/foundry_script/fs_analyzer.cpp`: implement alias resolution, union bound checks, control-flow refinement, and bounded operator validation.
-- `modules/foundry_script/fs_type.h` / `fs_type.cpp`: expose reusable set-wise numeric operation/promotion helpers without changing existing scalar promotion behavior.
-- `modules/foundry_script/GRAMMAR.md`: document alias declarations, union grammar, precedence/context rules, and static/runtime semantics.
-- `modules/foundry_script/tests/scripts/analyzer/features/`: passing alias/union/bound/arithmetic fixtures.
-- `modules/foundry_script/tests/scripts/analyzer/errors/`: negative fixtures with exact diagnostics.
-- `modules/foundry_script/tests/scripts/runtime/features/`: runtime fixtures proving aliases erase to existing concrete values.
-- `modules/foundry_script/tests/scripts/lsp/` and `tests/scripts/format/`: presentation and formatter coverage.
-- `tests/test_integer_promotion.h` and/or `modules/foundry_script/tests/test_integer_promotion.h`: focused C++ tests for set-wise numeric result calculation.
+- `modules/foundry_script/fs_tokenizer.cpp`: contextual `type` recognition (no new hard keyword).
+- `modules/foundry_script/fs_parser.h`: alias declaration node, union `DataType` kind and member storage, `operator==` arm (`fs_parser.h:361-434`).
+- `modules/foundry_script/fs_parser.cpp`: alias declarations at file/class scope, `|` inside `parse_type()` (`fs_parser.cpp:6294-6576`), `@export` rejection (`fs_parser.cpp:7446-7521`).
+- `modules/foundry_script/fs_parser_data_type.cpp`: normalization, `to_string`, `to_property_info` (`:660-679`), substitution.
+- `modules/foundry_script/fs_analyzer.h` / `fs_analyzer.cpp`: alias registry, compatibility, bounds (`type_argument_satisfies_bound`, `:8870`), set-wise operators (`get_operation_type`, `:15736`).
+- `modules/foundry_script/fs_analyzer_flow_finality.cpp`: narrowing, downward-closed removal, unreachable-test warning.
+- `modules/foundry_script/fs_type.h` / `fs_type.cpp`: set-wise numeric helper beside `FSNumericConversion::promote_integer_pair` (`:311`).
+- `modules/foundry_script/fs_warning.h`: new unreachable-type-test warning.
+- `modules/foundry_script/fs_compiler.cpp`: union metadata in the rich `FSDataType` channel for the bytecode round trip.
+- `modules/foundry_script/GRAMMAR.md`: normative grammar, updated in the same change as the parser.
+- Fixtures: `tests/scripts/parser/{features,errors}/`, `tests/scripts/analyzer/{features,errors,warnings}/`, `tests/scripts/runtime/{features,errors}/`, `tests/scripts/format/<case>/{input.fs,expected.fs}`, `tests/scripts/lsp/`.
+- `modules/foundry_script/tests/test_integer_promotion.h`: the only such file; there is **no** `tests/test_integer_promotion.h` at repo root. Its cases are named `[Modules][FoundryScript][NumericTypes] ...`.
 
-## Task 1: Add the alias and union AST/data model
+---
+
+## Task 1: Parser, data model, formatter, and grammar
+
+Formatter and `GRAMMAR.md` land here rather than at the end, because the corpus formatter-idempotency sweep fails the moment a fixture contains `|` in a type, and because the repository requires grammar changes in the same change as parser changes.
 
 **Files:**
-- Modify: `modules/foundry_script/fs_parser.h`
-- Modify: `modules/foundry_script/fs_parser.cpp`
-- Test: `modules/foundry_script/tests/scripts/parser/features/type_alias_union.fs`
+- Modify: `fs_tokenizer.cpp`, `fs_parser.h`, `fs_parser.cpp`, `fs_parser_data_type.cpp`, formatter, `GRAMMAR.md`
+- Test: `tests/scripts/parser/features/type_alias_union.fs` + `.out`
+- Test: `tests/scripts/parser/errors/type_alias_union_invalid.fs` + `.out`
+- Test: `tests/scripts/format/type_alias_union/{input.fs,expected.fs}`
 
-- [ ] **Step 1: Write parser fixtures for declarations and context-sensitive `|`**
+- [ ] **Step 1: Write parser fixtures**
 
-Create a fixture containing `type Unsigned = uint | ulong`, aliases nested in generic arguments, and an expression using bitwise `|`. The parser fixture must assert the tree/diagnostic output through the existing parser test convention rather than inspecting source text.
+Cover `type Unsigned = uint | ulong`, a single-member alias, an alias used in a generic argument and a bound, a nullable member, an expression using bitwise `|`, and `var type = 5` proving `type` still works as an identifier. The error fixture covers an empty union, a malformed member, a parameterized alias, and an alias declared inside a function body. Assert through the fixture `.out` convention, never by inspecting source text.
 
-- [ ] **Step 2: Run the focused parser case and verify it fails**
-
-Run:
+- [ ] **Step 2: Run the corpus and confirm the new fixtures fail**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*type_alias_union*" --force-colors
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --print-filenames --force-colors
 ```
 
-Expected: the new declaration is rejected or parsed as an unknown declaration before implementation.
+Expected: the alias declaration is rejected as an unknown declaration.
 
-- [ ] **Step 3: Add AST nodes and `DataType::UNION`/alias metadata**
+- [ ] **Step 3: Add the union `DataType` kind and alias AST**
 
-Add a declaration node that stores the alias name and one or more `TypeNode` members. Add a union representation to `FSParser::DataType` with canonical member storage, equality, substitution, nullable propagation, `to_string`, and serialization/property-info behavior explicitly preserving the existing runtime carrier erasure. Keep aliases transparent after resolution; do not add a runtime Variant type.
+Add a `Kind` value for a type set with canonical member storage, plus a declaration node holding the alias name and its member `TypeNode`s. Extend `DataType::operator==` (`fs_parser.h:361-434`), substitution, `to_string`, serialization, and `to_property_info` so a multi-member union reports `Variant::NIL` and a single-member union collapses to its member with its `NumericType` intact.
 
 - [ ] **Step 4: Parse aliases and type-context unions**
 
-Register aliases wherever a script-level type declaration is legal. Extend `parse_type()` so `|` is consumed only while parsing a type expression; leave expression precedence and bitwise OR unchanged. Reject an empty union and emit a source-located diagnostic for an invalid member.
+Recognize `type IDENTIFIER =` at file and class scope only, by two-token lookahead, leaving `type` an ordinary identifier elsewhere. Extend `parse_type()` so `|` is consumed only inside a type expression at the lowest precedence, below `?`. Leave expression precedence and `Token::PIPE` handling at `fs_parser.cpp:5076` untouched. Reject empty unions, `void`/`Variant`/bare-type-parameter members, and parameterized aliases with source-located diagnostics. Reject `@export` on a multi-member union at `fs_parser.cpp:7446-7521`.
 
-- [ ] **Step 5: Run parser and formatting checks**
+- [ ] **Step 5: Formatter and grammar**
 
-Run:
+Emit canonical `type Name = A | B` with single spaces around `|`, and confirm expression-level bitwise OR formatting is unchanged. Document the alias production, contextual `type` and `|`, precedence relative to `?`, normalization including nullability hoisting, and runtime erasure in `GRAMMAR.md`.
+
+- [ ] **Step 6: Regenerate fixtures and verify**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*Parser*" --force-colors
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test generate-format-fixtures modules/foundry_script/tests/scripts/format
+./bin/foundry.* --headless test generate-fixtures modules/foundry_script/tests/scripts
+./bin/foundry.* --headless test generate-format-fixtures modules/foundry_script/tests/scripts/format
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --force-colors
+./bin/foundry.* --headless test run --suite "*[Modules][FoundryScript][Format]*" --force-colors
 ```
 
-Expected: existing parser cases remain green and the alias fixture parses with stable formatting.
+Review the regenerated diff before staging — both generators rewrite every fixture they sweep and neither takes a path filter.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```sh
-git add modules/foundry_script/fs_parser.h modules/foundry_script/fs_parser.cpp modules/foundry_script/tests/scripts/parser/features/type_alias_union.fs
+git add modules/foundry_script/fs_tokenizer.cpp modules/foundry_script/fs_parser.h modules/foundry_script/fs_parser.cpp modules/foundry_script/fs_parser_data_type.cpp modules/foundry_script/GRAMMAR.md modules/foundry_script/tests/scripts
 git commit -m "feat(foundry_script): parse static type unions"
 ```
 
 ## Task 2: Resolve aliases and normalize unions
 
 **Files:**
-- Modify: `modules/foundry_script/fs_analyzer.h`
-- Modify: `modules/foundry_script/fs_analyzer.cpp`
-- Modify: `modules/foundry_script/fs_parser.cpp`
-- Test: `modules/foundry_script/tests/scripts/analyzer/features/type_alias_union.fs`
-- Test: `modules/foundry_script/tests/scripts/analyzer/errors/type_alias_union_invalid.fs`
+- Modify: `fs_analyzer.h`, `fs_analyzer.cpp`, `fs_parser_data_type.cpp`, `fs_compiler.cpp`
+- Test: `tests/scripts/analyzer/features/type_alias_union.fs`, `tests/scripts/analyzer/errors/type_alias_union_invalid.fs`, `tests/scripts/runtime/features/type_alias_union_erasure.fs` (each with `.out`)
 
-- [ ] **Step 1: Write executable analyzer fixtures**
+- [ ] **Step 1: Write analyzer and runtime fixtures**
 
-Cover aliases in variables, parameters, returns, `Array[Alias]`, `Dictionary[String, Alias]`, callable signatures, nested aliases, duplicate members, and alias cycles/unknown names. Include a user-defined class union to prove unions are not runtime wrappers.
+Cover aliases in variables, parameters, returns, and callable signatures; nested aliases; duplicate members; nullability hoisting proving `int? | uint` and `int | uint?` are the same type; single-member collapse retaining width; a user-defined class union proving no wrapper exists. Negative fixtures (analyzer-level, so they must still parse): alias cycles, unknown members, an alias used as an expression/constructor/`extends`/`uses` target, `is` against a multi-member alias, and a union as a typed-container element type.
 
-- [ ] **Step 2: Run the focused analyzer cases and verify failures**
-
-Run:
+- [ ] **Step 2: Run the corpus and confirm failures**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*type_alias_union*" --force-colors
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --print-filenames --force-colors
 ```
 
-Expected: alias fixtures fail resolution or compatibility checks before the registry exists.
+- [ ] **Step 3: Implement file-local alias registration and normalization**
 
-- [ ] **Step 3: Implement declaration-scope alias registration**
-
-Register aliases with the same lexical/import visibility rules as existing named types. Resolve alias members lazily with cycle detection, preserving source locations for diagnostics. Normalize recursively by expanding aliases, flattening unions, removing duplicates, and canonicalizing member order.
+Register aliases per file, not as globals. Resolve members lazily with cycle detection, preserving source locations. Normalize in the locked order: expand, flatten, hoist nullability, dedupe, canonicalize, collapse single members.
 
 - [ ] **Step 4: Integrate normalized unions into compatibility**
 
-Update `is_type_compatible`, assignment checks, return checks, container element checks, and callable signature checks so a source satisfies a union target when it satisfies one member. Ensure a union source is accepted by a target only when every possible member is compatible, unless existing flow narrowing has removed alternatives.
+Update `is_type_compatible`, assignment, return, and callable-signature checks so a source satisfies a union target when it satisfies one member, and a union source satisfies a concrete target only when every member does. Reject unions as typed-container element types.
 
-- [ ] **Step 5: Verify runtime erasure**
+- [ ] **Step 5: Preserve union metadata through compiled bytecode**
 
-Add a runtime fixture that passes `int`, `uint`, and a class through alias-typed parameters and returns them unchanged. Assert observable values and concrete operations, not serialized source text or internal implementation fields.
+The corpus runs a second time through compiled bytecode (`fs_test_runner_suite.h:84`), so union `DataType`s must serialize and reload. Carry them in the rich `FSDataType` channel (`fs_compiler.cpp:343`, `:5138-5151`), not the lossy `PropertyInfo`.
 
-- [ ] **Step 6: Regenerate fixtures and commit**
+- [ ] **Step 6: Verify runtime erasure**
+
+The runtime fixture passes `int`, `uint`, and a class through alias-typed parameters and returns them unchanged, and asserts a single-member alias keeps its width. Assert observable values, not internal fields.
+
+- [ ] **Step 7: Regenerate fixtures and commit**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test generate-fixtures modules/foundry_script/tests/scripts
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*type_alias_union*" --force-colors
-git add modules/foundry_script/fs_analyzer.h modules/foundry_script/fs_analyzer.cpp modules/foundry_script/fs_parser.cpp modules/foundry_script/tests/scripts/analyzer modules/foundry_script/tests/scripts/runtime
+./bin/foundry.* --headless test generate-fixtures modules/foundry_script/tests/scripts
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --force-colors
+git add modules/foundry_script/fs_analyzer.h modules/foundry_script/fs_analyzer.cpp modules/foundry_script/fs_parser_data_type.cpp modules/foundry_script/fs_compiler.cpp modules/foundry_script/tests/scripts
 git commit -m "feat(foundry_script): resolve transparent type aliases"
 ```
 
-## Task 3: Add `Number` and union generic-bound enforcement
+## Task 3: `Number` and union generic bounds
 
 **Files:**
-- Modify: `modules/foundry_script/fs_analyzer.cpp`
-- Modify: `modules/foundry_script/fs_type.cpp`
-- Test: `modules/foundry_script/tests/scripts/analyzer/features/generic_union_bounds.fs`
-- Test: `modules/foundry_script/tests/scripts/analyzer/errors/generic_union_bound_violation.fs`
+- Modify: `fs_analyzer.cpp`, `fs_analyzer_surface.cpp`, `fs_analyzer_call_validation.cpp`
+- Test: `tests/scripts/analyzer/features/generic_union_bounds.fs`, `tests/scripts/analyzer/errors/generic_union_bound_violation.fs` (each with `.out`)
 
 - [ ] **Step 1: Write bound fixtures**
 
-Declare `type Number = int | uint | long | ulong | float` and a generic method/class with `[T: Number]`. Instantiate it with each scalar, with a non-scalar, with `Variant`, and with a type parameter whose own bound is either sufficient or insufficient.
+A generic method and a generic class with `[T: Number]` and `[T: A | B]`, instantiated with each scalar, a non-scalar, `Variant`, a union-typed argument, and a forwarded type parameter with a sufficient and an insufficient bound. Include an attempt to redeclare `Number`.
 
-- [ ] **Step 2: Run the bound cases before implementation**
+- [ ] **Step 2: Run the corpus and confirm failures**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*generic_union_bound*" --force-colors
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --print-filenames --force-colors
 ```
 
-Expected: valid scalar applications are rejected because union bounds are not yet recognized; invalid applications must retain stable diagnostics after implementation.
+- [ ] **Step 3: Implement union bound satisfaction**
 
-- [ ] **Step 3: Implement “any member” bound satisfaction**
+Extend `type_argument_satisfies_bound()` (`fs_analyzer.cpp:8870`): a concrete argument satisfies a union bound if one normalized member accepts it; a **union** argument satisfies it only if every member does; a type-parameter argument must prove satisfaction through its own bound; unbounded parameters remain rejected. Preserve the existing strict-null guard (`:8926-8928`) and `Type[T]` handle recursion (`:8895-8907`).
 
-Extend `type_argument_satisfies_bound()` so a concrete argument satisfies a union bound if one normalized member accepts it. For a type-parameter argument, recurse through its declared bound and reject unbounded parameters against a concrete union. Preserve strict-null and handle-layer behavior.
+- [ ] **Step 4: Integrate with inference and substitution**
 
-- [ ] **Step 4: Integrate aliases with generic inference and substitutions**
+Inferred and explicit type arguments use the same path (`fs_analyzer_surface.cpp:1421-1450`, `fs_analyzer_call_validation.cpp:376-416`). Inference from a union-typed argument yields the normalized union. Note that `collect_method_type_parameter_bounds` (`fs_analyzer_call_validation.cpp:108-120`) and every other reader index `type_parameter_bound[0]`; the single-bound invariant is unchanged, only the bound's *kind* is new. Diagnostics name the alias and its normalized members deterministically.
 
-Ensure inferred type arguments are checked against normalized aliases/unions, explicit type arguments use the same path, inherited generic substitutions retain union metadata, and raw generic behavior remains unchanged. Diagnostic text must name the alias and/or normalized union in a deterministic form.
+- [ ] **Step 5: Add `Number`**
 
-- [ ] **Step 5: Add closed built-in `Number` handling**
+Provide `Number` as a compiler-defined, globally visible alias expanding to the source-spellable numeric types — derive it from the `NUMERIC_BUILTIN_TYPES` registry (`fs_parser_data_type.cpp:68-78`) plus `float` rather than hard-coding five names. Reject user redeclaration via `class_name`, `trait_name`, or `type`.
 
-Provide `Number` as a reserved compiler-defined alias or equivalent built-in type-set that expands exactly to the five scalar numeric types. Reject user-defined nominal types, vectors, strings, and `Variant` as `Number` arguments.
-
-- [ ] **Step 6: Run focused tests and commit**
+- [ ] **Step 6: Run and commit**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*generic_union_bound*" --force-colors
-git add modules/foundry_script/fs_analyzer.cpp modules/foundry_script/fs_type.cpp modules/foundry_script/tests/scripts/analyzer
+./bin/foundry.* --headless test generate-fixtures modules/foundry_script/tests/scripts
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --force-colors
+git add modules/foundry_script/fs_analyzer.cpp modules/foundry_script/fs_analyzer_surface.cpp modules/foundry_script/fs_analyzer_call_validation.cpp modules/foundry_script/tests/scripts
 git commit -m "feat(foundry_script): enforce union generic bounds"
 ```
 
-## Task 4: Support numeric operations over bounded values
+## Task 4: Set-wise numeric operations
 
 **Files:**
-- Modify: `modules/foundry_script/fs_type.h`
-- Modify: `modules/foundry_script/fs_type.cpp`
-- Modify: `modules/foundry_script/fs_analyzer.cpp`
+- Modify: `fs_type.h`, `fs_type.cpp`, `fs_analyzer.cpp`
 - Test: `modules/foundry_script/tests/test_integer_promotion.h`
-- Test: `modules/foundry_script/tests/scripts/analyzer/features/generic_numeric_operations.fs`
-- Test: `modules/foundry_script/tests/scripts/analyzer/errors/generic_numeric_operation_invalid.fs`
+- Test: `tests/scripts/analyzer/features/generic_numeric_operations.fs`, `tests/scripts/analyzer/errors/generic_numeric_operation_invalid.fs` (each with `.out`)
 
-- [ ] **Step 1: Write the operation matrix tests**
+- [ ] **Step 1: Write the operation-matrix C++ tests**
 
-Add C++ tests for the existing scalar promotion matrix lifted over member sets: a pair is valid when each permitted combination has an operator result and the result set has a common representable type. Include valid same-carrier integer pairs, float combinations, mixed signed/unsigned cases, and an invalid pair with no common result.
+Add cases to `test_integer_promotion.h` using its existing `[Modules][FoundryScript][NumericTypes]` name prefix. Cover a member-set pair where all combinations agree (`int | long` with `int | long` → `long`), one where results differ (`int | float` with `int` → `int | float`), one with a combination that has no result (`int | ulong` with `long`), and the `Number`-with-`Number` case, which must be rejected.
 
-- [ ] **Step 2: Run the C++ tests and verify the new cases fail**
+- [ ] **Step 2: Run the C++ cases and confirm the new ones fail**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*IntegerPromotion*" --force-colors
+./bin/foundry.* --headless test run --case "*NumericTypes*" --force-colors
 ```
 
-Expected: existing scalar tests pass; new member-set cases fail until the helper is implemented.
+- [ ] **Step 3: Implement the set-wise helper**
 
-- [ ] **Step 3: Implement set-wise numeric result calculation**
+Add a helper beside `FSNumericConversion` that enumerates normalized members, invokes the existing per-pair logic, and returns either a rejection identifying the offending pair or the normalized union of the per-pair results. Route through `FSAnalyzer::get_operation_type` (`fs_analyzer.cpp:15736`) rather than `promote_integer_pair` alone, because `float` carries `NumericType::NONE` and is not handled by the integer-only promoter. Do not weaken scalar rules and do not introduce mixed-carrier conversions.
 
-Add a helper that enumerates normalized union members, invokes the existing validated operator/promotion logic for each pair, and joins compatible result descriptors. Do not weaken the existing scalar rules or silently introduce mixed-carrier conversions.
+- [ ] **Step 4: Apply the helper to binary expressions**
 
-- [ ] **Step 4: Apply the helper to generic binary expressions**
-
-When an operand is a type parameter or union with a numeric bound, use the set-wise helper. Permit direct arithmetic only when all permitted combinations have a valid common result; otherwise emit an actionable diagnostic requiring narrowing or explicit conversion.
+When an operand is a union or a union-bounded type parameter, use the helper. The result type is the union of per-pair results. Reject when any pair has no result, with a diagnostic naming the pair and directing the author to narrow or convert. Reuse the phrasing established by `make_integer_promotion_error` (`fs_analyzer.cpp:15872`).
 
 - [ ] **Step 5: Add Foundry Script behavior fixtures**
 
-Test direct arithmetic for a bound whose combinations are valid, rejection for an unconstrained mixed set, and an `add[X: Number, Y: Number]` implementation that narrows/converts cases and returns `long` according to its own policy.
+Cover direct arithmetic under `[T: int | long]`; an `add[X: Number, Y: Number]` that narrows before operating and returns `long`; and an explicit negative fixture asserting that `left + right` under `[X: Number, Y: Number]` is rejected. That rejection is a designed outcome, not a bug — the promotion matrix has no common type for `int`/`ulong` or `long`/`ulong` (`fs_type.cpp:334-353`).
 
-- [ ] **Step 6: Run focused tests and commit**
+Also assert that the pre-existing `long + 1.5` acceptance (`fs_analyzer.cpp:15829-15836`) is unchanged, so set-wise checking does not accidentally tighten it.
+
+- [ ] **Step 6: Run and commit**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*IntegerPromotion*" --force-colors
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*generic_numeric_operations*" --force-colors
-git add modules/foundry_script/fs_type.h modules/foundry_script/fs_type.cpp modules/foundry_script/fs_analyzer.cpp tests/test_integer_promotion.h modules/foundry_script/tests/scripts/analyzer
+./bin/foundry.* --headless test run --case "*NumericTypes*" --force-colors
+./bin/foundry.* --headless test generate-fixtures modules/foundry_script/tests/scripts
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --force-colors
+git add modules/foundry_script/fs_type.h modules/foundry_script/fs_type.cpp modules/foundry_script/fs_analyzer.cpp modules/foundry_script/tests/test_integer_promotion.h modules/foundry_script/tests/scripts
 git commit -m "feat(foundry_script): check numeric union operations"
 ```
 
-## Task 5: Add flow-sensitive narrowing for unions and bounded generics
+## Task 5: Flow-sensitive narrowing
 
 **Files:**
-- Modify: `modules/foundry_script/fs_analyzer.cpp`
-- Test: `modules/foundry_script/tests/scripts/analyzer/features/type_union_narrowing.fs`
-- Test: `modules/foundry_script/tests/scripts/analyzer/errors/type_union_narrowing_invalid.fs`
+- Modify: `fs_analyzer_flow_finality.cpp`, `fs_analyzer.h`, `fs_warning.h`
+- Test: `tests/scripts/analyzer/features/type_union_narrowing.fs`, `tests/scripts/analyzer/errors/type_union_narrowing_invalid.fs`, `tests/scripts/analyzer/warnings/type_union_unreachable_test.fs` (each with `.out`)
 
 - [ ] **Step 1: Write narrowing fixtures**
 
-Cover `if value is int`, `is not`, chained tests, nested aliases, generic `[T: Number]` values, nullable union members, and narrowing across the existing branch/merge rules. Include a negative case where an operation is attempted before narrowing.
+Cover `if value is int`, `is not`, chained and nested tests, aliases, `[T: Number]` parameters, nullable unions, and branch joins. Include these specific cases, each of which encodes a locked decision:
 
-- [ ] **Step 2: Run the narrowing fixture before implementation**
+- `is not long` removes both `long` and `int` (downward-closed removal); `is not int` removes only `int`.
+- Testing `long` before `int` in a chain produces the unreachable-test warning.
+- A union-typed **member** variable is not narrowed, and the local-copy workaround is.
+- In a function returning `X`, `return value` after `if value is int:` is an error.
+- An operation attempted before narrowing is rejected.
+
+- [ ] **Step 2: Run the corpus and confirm failures**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*type_union_narrowing*" --force-colors
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --print-filenames --force-colors
 ```
 
-Expected: branch-local operations remain opaque or report invalid operations before union refinement is integrated.
+- [ ] **Step 3: Refine the flow state**
 
-- [ ] **Step 3: Refine the existing type-test flow state**
+In `FSAnalyzer::FlowFinalityContext` (`fs_analyzer.h:192-250`), when the tested type is a member of the subject's normalized union, set the branch-local type to that member. For the false branch, remove the tested member **and every member it subsumes** — `long` subsumes `int`, `ulong` subsumes `uint` — because `is` on a numeric type is a carrier-plus-range predicate (`fs_vm.cpp:2064-2084`), not a declared-width test. Preserve nullability and existing tagged-union case-bind behavior (`fs_analyzer_flow_finality.cpp:1736-1765`).
 
-When the tested type is a normalized union member, replace the subject's branch-local type with the intersection of the current alternatives and the tested member. For `is not`, remove the tested member. Preserve nullability and existing tagged-union case binding behavior.
+- [ ] **Step 4: Handle type parameters and joins**
 
-- [ ] **Step 4: Handle generic type parameters**
+Narrowing refines the *value's* static type; the type parameter itself is unchanged, so generic substitution and return checks continue to see `X`. At joins, union the surviving alternatives. Extend `apply_match_branch_flow_narrowing` (`:1680`) only insofar as `when value is T` already routes through the shared type-test path; bare-type match patterns for builtins stay unsupported.
 
-For a bounded type parameter, narrow its effective member set without discarding the original type-parameter identity needed for generic return/substitution checks. At branch joins, compute the union of surviving alternatives and avoid claiming a narrower type after divergent paths merge.
+- [ ] **Step 5: Add the unreachable-test warning**
 
-- [ ] **Step 5: Run focused tests and commit**
+Add a warning to `fs_warning.h` for a type test on a union subject that is statically unreachable because an earlier test in the chain subsumes it. Default severity WARN.
+
+- [ ] **Step 6: Run and commit**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*type_union_narrowing*" --force-colors
-git add modules/foundry_script/fs_analyzer.cpp modules/foundry_script/tests/scripts/analyzer
+./bin/foundry.* --headless test generate-fixtures modules/foundry_script/tests/scripts
+./bin/foundry.* --headless test run --case "*Script compilation and runtime*" --force-colors
+git add modules/foundry_script/fs_analyzer_flow_finality.cpp modules/foundry_script/fs_analyzer.h modules/foundry_script/fs_warning.h modules/foundry_script/tests/scripts
 git commit -m "feat(foundry_script): narrow union values by type tests"
 ```
 
-## Task 6: Update grammar, formatter, LSP, and refactoring surfaces
+## Task 6: LSP, completion, and refactoring
+
+Grammar and formatter already landed in Task 1; this task covers the remaining tooling surfaces, which live outside the corpus runner.
 
 **Files:**
-- Modify: `modules/foundry_script/GRAMMAR.md`
-- Modify: relevant presentation/refactor code discovered by existing generic-type tooling tests
-- Test: `modules/foundry_script/tests/scripts/lsp/type_alias_union_presentation.fs`
-- Test: `modules/foundry_script/tests/scripts/format/type_alias_union/`
+- Modify: presentation/completion/refactor code reached by the existing generic-type tooling tests
+- Test: `tests/scripts/lsp/type_alias_union_presentation.fs`
 
-- [ ] **Step 1: Add grammar and tooling fixtures first**
+- [ ] **Step 1: Add tooling fixtures first**
 
-Specify expected presentation for alias names, expanded union members where diagnostics require them, and canonical formatting for `type Name = A | B`. Include an expression-level bitwise OR fixture to prevent precedence regressions.
+Specify expected presentation for alias names, the expanded members shown where a diagnostic needs them, and completion behavior at a type position after `|`.
 
-- [ ] **Step 2: Run LSP and formatter cases before implementation**
+- [ ] **Step 2: Run the tooling suites before implementation**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*type_alias_union*" --force-colors
+./bin/foundry.* --headless test run --suite "*[Modules][FoundryScript][LSP]*" --suite "*[Modules][FoundryScript][Completion]*" --suite "*[Modules][FoundryScript][Refactor]*" --force-colors
 ```
 
-Expected: parser/analyzer may succeed after earlier tasks, but LSP/formatter output is missing or unstable.
+- [ ] **Step 3: Update presentation, completion, and refactoring**
 
-- [ ] **Step 3: Document the normative grammar**
+Show alias declarations and union members in symbol and completion results. Preserve the alias name in source-oriented presentation and show the normalized members in diagnostics. Rename and find-references must treat the alias declaration as the definition and its member types as references to *their* declarations, not to the alias.
 
-Add productions for type aliases and type unions, state that `|` is contextual, document flattening/alias transparency, `Number`, generic-bound semantics, narrowing, runtime erasure, and operator restrictions.
-
-- [ ] **Step 4: Update presentation/completion/refactoring**
-
-Expose alias declarations and union members in symbol/completion results, preserve alias names in source-oriented presentation, and make rename/reference operations resolve aliases without treating their members as declarations of the alias itself.
-
-- [ ] **Step 5: Regenerate formatter fixtures and commit**
+- [ ] **Step 4: Run and commit**
 
 ```sh
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test generate-format-fixtures modules/foundry_script/tests/scripts/format
-./bin/foundry.linuxbsd.editor.dev.x86_64 --headless test run --case "*LSP*" --force-colors
-git add modules/foundry_script/GRAMMAR.md modules/foundry_script/tests/scripts/lsp modules/foundry_script/tests/scripts/format
-git commit -m "docs(foundry_script): document type aliases and unions"
+./bin/foundry.* --headless test run --suite "*[Modules][FoundryScript][LSP]*" --suite "*[Modules][FoundryScript][Completion]*" --suite "*[Modules][FoundryScript][Refactor]*" --force-colors
+git add modules/foundry_script/tests/scripts/lsp
+git commit -m "feat(foundry_script): present type aliases in editor tooling"
 ```
 
 ## Task 7: Full regression validation and handoff
 
-**Files:**
-- Modify: only fixture `.out`/`expected.fs` files intentionally regenerated by prior tasks.
-
-- [ ] **Step 1: Run focused Foundry Script suites**
+- [ ] **Step 1: Run the focused suites**
 
 ```sh
-python3 scripts/agent_build.py --backend ninja --test --case "*Parser*"
-python3 scripts/agent_build.py --backend ninja --test --case "*Generic*"
-python3 scripts/agent_build.py --backend ninja --test --case "*IntegerPromotion*"
+python3 scripts/agent_build.py --backend ninja --test --case "*Script compilation and runtime*"
+python3 scripts/agent_build.py --backend ninja --test --case "*NumericTypes*"
+python3 scripts/agent_build.py --backend ninja --test --suite "*[Modules][FoundryScript][Format]*"
 ```
 
-Expected: all focused cases pass with no unrelated fixture changes.
+Expected: all pass with no unintended fixture churn.
 
 - [ ] **Step 2: Run native strict validation**
 
@@ -291,17 +308,16 @@ Expected: all focused cases pass with no unrelated fixture changes.
 python3 scripts/agent_build.py --compiler-cache ccache --jobs 4 --test
 ```
 
-Expected: strict `dev_mode=yes dev_build=yes tests=yes` build completes and the full test suite reports doctest success. Record any expected cleanup leak summary separately from the doctest result.
+Expected: the strict `dev_mode=yes dev_build=yes tests=yes` build completes and doctest reports `Status: SUCCESS!`. Trust that summary line, not the process exit code — the run prints `ObjectDB instances leaked` at cleanup and can exit non-zero even when every test passes. Record any leak summary separately.
 
-- [ ] **Step 3: Run repository hygiene checks**
+- [ ] **Step 3: Repository hygiene**
 
 ```sh
 git diff --check
-git grep -nE '\.split\("(void|bool|String|private fun|const val|def )' -- '*.py' || true
 git status --short
 ```
 
-Expected: no whitespace errors, no new source-signature tests, and only intentional tracked changes.
+Expected: no whitespace errors and only intentional tracked changes. `modules/foundry_script/tests/scripts/.foundry/autoload_index_cache.cfg` is generated by corpus runs and must not be staged; if the corpus project config or fixtures show unexpected modifications, reset them rather than committing the pollution.
 
 - [ ] **Step 4: Commit final fixture updates if needed**
 
@@ -312,4 +328,4 @@ git commit -m "test(foundry_script): cover numeric type unions"
 
 - [ ] **Step 5: Prepare review/merge handoff**
 
-Summarize the exact commits, focused/full test commands, any limitations (especially mixed numeric conversion policy), and the issue/epic links. Do not claim completion until strict validation evidence is available.
+Summarize the commits, the focused and full test commands with their evidence, and the locked limitations — notably that direct arithmetic under a full `Number` bound is rejected by design, that `is int`/`is long` are subset predicates rather than disjoint discriminators, that member variables cannot be narrowed, and that aliases are file-local in v1. Link the epic and child issues. Do not claim completion without strict-validation evidence.
