@@ -218,6 +218,16 @@ Add a union/type-set representation to `FSParser::DataType` — a new `Kind` val
 6. Flow narrowing in `fs_analyzer_flow_finality.cpp`, including downward-closed removal.
 7. Formatter, completion, LSP presentation, refactoring, and `GRAMMAR.md`.
 
+## Documentation
+
+Two documents, two charters, and they must not be conflated.
+
+`modules/foundry_script/GRAMMAR.md` carries the **syntax**: the alias production, contextual `type` and `|`, precedence relative to `?`, normalization including nullability hoisting, and runtime erasure. It is a normative specification written to be a blueprint for re-implementing the front-end in another language, and §10 scopes its sync obligation to tokens, keywords, precedence, and syntax. Usage advice does not belong in it.
+
+`docs/fs_language_primer.md` carries the **guidance**: when a type union is the right tool and when it is not. This is not optional polish. Every locked limitation above sits exactly where an author's first instinct lands — reaching for a union to distinguish cases, which needs a tagged union's runtime tag; or expecting `+` to work under a `Number` bound, which is rejected by design. Shipping the syntax without the guidance invites precisely the misuse the design forbids.
+
+The guidance must state, with reasons: prefer a tagged union when the cases must be reliably distinguished, a trait when a shared method surface is needed, `T?` for "value or nothing", and `Variant` for genuinely dynamic values; a single-member alias is a zero-cost readability device; `[T: int | long]` is roughly the widest bound permitting direct arithmetic; numeric type tests go narrowest-first; and unions are unavailable on member variables, in typed containers, and in exports.
+
 ## Testing strategy
 
 The corpus conventions constrain how this is tested; see the plan for the mechanics. Coverage must include:
