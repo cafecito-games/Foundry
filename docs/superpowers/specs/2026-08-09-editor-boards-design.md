@@ -113,10 +113,46 @@ clickable at full font size while the boards behind them shrink.
 ### What changes in existing code
 
 `EditorNode::get_scene_workspace()` keeps its signature and returns the *active*
-board's workspace. All 15 existing call sites (main screen, file system, script
-editor plugin and controller, automation) mean "the workspace the user is
-looking at", so their behavior is unchanged. Cross-board work goes through a new
+board's workspace. Cross-board work goes through a new
 `EditorNode::get_board_strip()`.
+
+**The 15 existing call sites are not uniform, and this is the sharpest hazard in
+the change.** Most do mean "the workspace the user is looking at" and are
+correct unchanged, but three mean "every workspace in the editor" and would
+become silent, hard-to-notice bugs if left pointing at the active board only.
+They must be reclassified explicitly rather than inherited:
+
+Active-board semantics — correct unchanged:
+
+- `editor/editor_main_screen.cpp:105` — whether a script leaf visibly holds
+  focus, for main-screen name persistence.
+- `editor/script/script_editor_controller.cpp:500` — open a script beside the
+  focused leaf.
+- `editor/script/script_editor_controller.cpp:1178`
+  (`_open_help_in_workspace`) — open a help tab beside the focused leaf.
+- `editor/automation/editor_automation_driver.cpp:1354`, `:1370`,
+  `editor/automation/editor_automation_wait.cpp:234`, and the three sites in
+  `editor_automation_acceptance_workflow.cpp` — drive and wait on what the user
+  is looking at.
+
+All-boards semantics — **must change**:
+
+- `editor/script/script_editor_controller.cpp:871` and
+  `editor/file_system/editor_file_system.cpp:2587` both call
+  `refresh_help_tab()` after documentation changes. A class-reference page open
+  on a dormant board would otherwise show stale documentation indefinitely,
+  with no user-visible cause.
+- `editor/script/script_editor_plugin.cpp:671` probes `get_script_leaves()` at
+  restore time to decide whether a per-leaf script layout exists. Scoped to one
+  board it would misclassify a multi-board layout as legacy and apply the
+  wrong restore path.
+- `editor/automation/editor_automation_state.cpp:381` —
+  `capture_workspace_state` becomes a per-board capture (see
+  [Editor automation](#editor-automation)).
+
+`EditorBoardStrip` therefore exposes `for_each_workspace(callable)` so these
+sites express "all boards" at the call site rather than reaching through the
+active board and hoping.
 
 `EditorSceneWorkspace` changes in exactly two ways:
 
@@ -180,8 +216,8 @@ The delta is therefore three changes, not a new subsystem:
 
 `EditorTileDropOverlay`, the rosette hit-testing, and `drop_region_at` need no
 changes: in overview mode the target board is a live, scaled `Control`
-receiving ordinary mouse events, and Godot's `Viewport::_gui_input_event`
-hit-tests through `get_global_transform_with_canvas()`. This is the specific
+receiving ordinary mouse events, and `Viewport::_gui_input_event` hit-tests
+through `get_global_transform_with_canvas()`. This is the specific
 reason the strip uses a canvas transform rather than per-board `SubViewport`s —
 drag-and-drop state lives on `Viewport`, so a viewport boundary between boards
 would make cross-board drag impossible without reimplementing drag-and-drop.
@@ -225,8 +261,15 @@ never collapsed.
 
 ## Persistence
 
-State goes through `EditorLayoutStore`, which already has a versioned migration
-framework (`CURRENT_VERSION`, `run_migrations`, `editor/editor_layout_store.h:61`).
+State goes through `EditorLayoutStore` as it does today.
+
+**No migration is provided.** `editor_layout.cfg` is local editor session state
+in an unshipped fork, and this project's standing position is that its schemas
+are replaced outright rather than migrated. A legacy `[Workspace]` section is
+simply not read: a config that has one but no `[Boards]` section restores as a
+cold start with a single default board, which is the same fallback path an
+absent or corrupt config already takes. The cost is that everyone loses their
+current pane layout once, on the first launch after this lands.
 
 The per-leaf schema does not change at all. Because leaf ids are globally
 unique, `leaf_layout_section()` still produces collision-free section names
@@ -290,17 +333,6 @@ change, so it is called out as its own implementation step with its own test.
 `next_leaf_id` is persisted explicitly. Restore keeps the existing self-healing
 `MAX`-over-restored-ids backstop, now taken across all boards.
 
-### Migration
-
-`EditorLayoutStore` gains a v1 → v2 migration that renames a legacy
-`[Workspace]` section to `[Board_0]` and synthesizes a one-board `[Boards]`
-section pointing at it. `[WorkspaceLeaf_*]` sections are left untouched, since
-their schema and keying are unchanged.
-
-Without this, every developer silently loses their pane layout on first launch
-after this merges. The migration framework exists for exactly this case and the
-branch is small.
-
 ## Performance
 
 The requirement is that switching and the overview feel fluid with no visible
@@ -310,8 +342,8 @@ lag on a fully populated editor.
 
 `EditorBoard::set_dormant(true)` calls `hide()` and sets
 `PROCESS_MODE_DISABLED`. A hidden board skips layout, skips drawing, and every
-`SubViewportContainer` beneath it stops rendering through the mechanism Godot
-already has.
+`SubViewportContainer` beneath it stops rendering through the engine's existing
+visibility mechanism.
 
 The rejected alternative was gating `SubViewport::UPDATE_*` flags directly. That
 is a trap: `UPDATE_WHEN_VISIBLE` keys off the visibility *flag*, not off-screen
@@ -370,8 +402,9 @@ The feature is one design but not one landing. Three stages, each independently
 shippable and independently testable:
 
 1. **Boards without motion.** `EditorBoard`, `EditorBoardStrip`, the global leaf
-   id allocator, the `get_scene_workspace()` redirection, per-board persistence
-   and the v1 → v2 migration, and a plain switcher with instant switching. At
+   id allocator, the `get_scene_workspace()` redirection **and the call-site
+   reclassification**, per-board persistence, and a plain switcher with instant
+   switching. At
    the end of this stage the editor has N boards and restores them correctly;
    it simply has no slide and no overview. This stage carries all the invariant
    risk (leaf id uniqueness, restore ordering), so it lands and stabilises
@@ -419,14 +452,22 @@ breaks, so it gets a dedicated test. Refusing to close the last board.
 text tabs, saved and restored to identical trees, tabs, and per-board focus.
 Scratch files under `FOUNDRY_TEST_SCRATCH`.
 
-**Migration.** A v1 config carrying a legacy `[Workspace]` section migrates to a
-single `[Board_0]` plus a one-board `[Boards]`, with `[WorkspaceLeaf_*]`
-sections untouched.
+**Legacy config is ignored, not honoured.** A config carrying a legacy
+`[Workspace]` section and no `[Boards]` section restores as a single default
+board, with no leaves adopted from the stale section. This pins the clean-break
+decision so a partial read can't be reintroduced later by accident.
 
 **Restore ordering.** A multi-board restore asserts the scene-mode surface is
 detached exactly once before any board rebuild and reattached exactly once
 after, guarding the use-after-free identified in
 [Persistence](#persistence).
+
+**Cross-board help refresh.** With a class-reference tab open on a dormant
+board and a different board active, changing that class's documentation
+refreshes the dormant board's tab. This is the regression test for the
+call-site reclassification described in
+[What changes in existing code](#what-changes-in-existing-code); without it the
+bug is invisible until a user notices stale docs.
 
 **Cross-board tab drop.** Drive `handle_tab_drop` with the source pane in board
 A and the target leaf in board B, asserting that `EditorData` scene-tile
