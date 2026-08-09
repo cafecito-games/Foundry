@@ -4865,6 +4865,18 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 		return;
 	}
 
+	// Editor-wide focus and the edited scene follow the visible board. A pane in a
+	// dormant board can still ask to activate its tab -- a restored pane replays its
+	// persisted active tab deferred, after the restore bracket has closed -- and must
+	// not pull the editor onto a board the user cannot see. Callers that legitimately
+	// open a scene living in another board make that board active first.
+	if (board_strip) {
+		EditorBoard *owner = board_strip->find_board_for_leaf(p_tile_id);
+		if (owner && owner != board_strip->get_active_board()) {
+			return;
+		}
+	}
+
 	const bool already_owned = editor_data.get_scene_tile(p_scene_idx) == p_tile_id;
 	const bool already_tile_current = editor_data.get_tile_current_scene(p_tile_id) == p_scene_idx;
 	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id;
