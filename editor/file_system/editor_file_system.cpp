@@ -39,6 +39,7 @@
 #include "core/os/os.h"
 #include "core/variant/variant_parser.h"
 #include "editor/doc/editor_help.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/file_system/editor_paths.h"
@@ -2583,9 +2584,13 @@ void EditorFileSystem::_reindex_script_documentation(const Ref<Script> &p_script
 		EditorHelp::add_doc(cd);
 		if (!first_scan) {
 			// Refresh an already-open workspace help page so it reflects the updated
-			// documentation.
-			if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
-				workspace->refresh_help_tab(cd.qualified_name());
+			// documentation. The page can be open on any board, not just the active
+			// one, so this must not go through EditorNode::get_scene_workspace()
+			// (active board only).
+			if (EditorBoardStrip *board_strip = EditorNode::get_board_strip()) {
+				for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+					workspace->refresh_help_tab(cd.qualified_name());
+				}
 			}
 		}
 	}

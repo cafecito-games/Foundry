@@ -162,6 +162,7 @@ private:
 	Control *_restore_node_from_config(const Ref<ConfigFile> &p_config, int p_node, int p_node_count, HashSet<int> &r_visited, const String &p_section);
 	WorkspaceLeafNode *_find_first_leaf(Control *p_node) const;
 	WorkspaceLeafNode *_find_leaf_hosting_type(const StringName &p_type_id) const;
+	WorkspaceLeafNode *_locate_help_tab(const String &p_class_key, WorkspacePane **r_pane, int *r_tab_index) const;
 	void _clear_tree();
 	void _set_focused_leaf(int p_id, bool p_activate_content);
 	bool _is_leaf_node(Control *p_node) const;
@@ -208,6 +209,14 @@ public:
 	// the class is currently open. Wired to the doc-change notifications so an open
 	// page does not keep showing stale documentation until closed and reopened.
 	void refresh_help_tab(const String &p_class_key);
+
+	// Resolve the leaf hosting an already-open class-reference help page for
+	// p_class_key in this workspace, or nullptr when this workspace has no such
+	// page open. The canonical tab index (WorkspaceTabRegistry) is shared across
+	// every board's workspace, so this confirms the located tab actually belongs
+	// to this workspace before returning it; callers that mean "search every
+	// board" must probe each workspace in turn, mirroring find_script_leaf_for_path.
+	WorkspaceLeafNode *find_leaf_by_help_class(const String &p_class_key) const;
 
 	// Open-or-reveal a non-script text document (.txt, .md, text .json, README,
 	// ...) as a "text" workspace tab. Reveals an existing tab for the same file

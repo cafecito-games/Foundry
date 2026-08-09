@@ -900,35 +900,60 @@ WorkspaceLeafNode *EditorSceneWorkspace::open_help_tab(WorkspaceLeafNode *p_sour
 	return target;
 }
 
-void EditorSceneWorkspace::refresh_help_tab(const String &p_class_key) {
+// Shared by find_leaf_by_help_class and refresh_help_tab: resolves the
+// canonical help-tab location for p_class_key and confirms it both belongs to
+// this workspace and is still the located help page (the canonical index in
+// WorkspaceTabRegistry is shared across every board's workspace and is only a
+// hint, see open_help_tab). Returns the hosting leaf, or nullptr along with
+// r_pane/r_tab_index left untouched when this workspace has no such page open.
+WorkspaceLeafNode *EditorSceneWorkspace::_locate_help_tab(const String &p_class_key, WorkspacePane **r_pane, int *r_tab_index) const {
 	if (p_class_key.is_empty()) {
-		return;
+		return nullptr;
 	}
 
 	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
-	HelpTabType *help_type = static_cast<HelpTabType *>(registry.find_type(StringName("help")));
-	if (!help_type) {
-		return;
+	if (!registry.find_type(StringName("help"))) {
+		return nullptr;
 	}
 
-	// The canonical index is only a hint (see open_help_tab): confirm the located
-	// tab is still this help page before refreshing it, so a stale entry whose
-	// pane/tab was reused by a different page is ignored rather than mis-refreshed.
 	WorkspaceTab existing_tab;
 	WorkspaceTabLocation existing_location;
 	if (!registry.find_canonical(StringName("help"), p_class_key, existing_tab, existing_location) || !existing_location.is_valid()) {
-		return;
+		return nullptr;
 	}
 	WorkspaceLeafNode *leaf = get_leaf_by_id(existing_location.pane_id);
 	WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
 	if (!pane || existing_location.tab_index >= pane->get_tab_count()) {
-		return;
+		return nullptr;
 	}
 	const WorkspaceTab &located = pane->get_tab(existing_location.tab_index);
 	if (located.get_type_id() != StringName("help") || located.get_resource_key() != p_class_key) {
+		return nullptr;
+	}
+	if (r_pane) {
+		*r_pane = pane;
+	}
+	if (r_tab_index) {
+		*r_tab_index = existing_location.tab_index;
+	}
+	return leaf;
+}
+
+WorkspaceLeafNode *EditorSceneWorkspace::find_leaf_by_help_class(const String &p_class_key) const {
+	return _locate_help_tab(p_class_key, nullptr, nullptr);
+}
+
+void EditorSceneWorkspace::refresh_help_tab(const String &p_class_key) {
+	WorkspacePane *pane = nullptr;
+	int tab_index = -1;
+	if (!_locate_help_tab(p_class_key, &pane, &tab_index)) {
 		return;
 	}
-	help_type->refresh_docs(located);
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	HelpTabType *help_type = static_cast<HelpTabType *>(registry.find_type(StringName("help")));
+	if (help_type) {
+		help_type->refresh_docs(pane->get_tab(tab_index));
+	}
 }
 
 WorkspaceLeafNode *EditorSceneWorkspace::open_text_tab(WorkspaceLeafNode *p_source_leaf, const String &p_path, bool p_force_new_leaf) {
