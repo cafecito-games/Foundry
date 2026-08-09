@@ -1,5 +1,5 @@
 # AsyncCallable[[...], void].call() at root is a void fire-and-forget launch; no MISSING_AWAIT.
-async func _work(value: int) -> void:
+async func _work(_value: int) -> void:
 	pass
 
 
