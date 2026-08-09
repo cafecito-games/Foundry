@@ -51,10 +51,11 @@ struct TileDockGapMap {
 	int gap_count = 0; // visible children minus one, floored at 0
 };
 
-// p_child_visible has one entry per body child, in child order, holding
-// Control::is_visible(). p_center_child_index indexes the centre host in that
-// same full child list. SplitContainer builds valid_children from is_visible(),
-// so gap g sits between the g-th and (g+1)-th *visible* children.
+// p_child_visible has one entry per non-internal body child, in
+// get_child(i, false) order. An entry is true only when that child is a
+// non-top-level visible Control — the same predicate SplitContainer uses for
+// valid_children. p_center_child_index is the centre host's get_index(false)
+// in that same list. Gap g sits between the g-th and (g+1)-th *true* entries.
 inline TileDockGapMap tile_dock_gap_map(const Vector<bool> &p_child_visible, int p_center_child_index) {
 	TileDockGapMap map;
 

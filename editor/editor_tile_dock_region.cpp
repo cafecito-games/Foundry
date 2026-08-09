@@ -42,14 +42,19 @@ static TileDockGapMap _tile_dock_gap_map_for_body(HSplitContainer *p_body, Contr
 	TileDockGapMap map;
 	ERR_FAIL_NULL_V(p_body, map);
 	ERR_FAIL_NULL_V(p_center_host, map);
+	ERR_FAIL_COND_V(p_center_host->get_parent() != p_body, map);
 
+	// Must match SplitContainer::_add_valid_child: non-internal, non-top-level,
+	// visible Control children only (scene/gui/split_container.cpp). The body
+	// always owns at least one INTERNAL_MODE_BACK dragger from construction.
+	const int child_count = p_body->get_child_count(false);
 	Vector<bool> child_visible;
-	child_visible.resize(p_body->get_child_count());
-	for (int i = 0; i < p_body->get_child_count(); i++) {
-		Control *child = Object::cast_to<Control>(p_body->get_child(i));
-		child_visible.write[i] = child && child->is_visible();
+	child_visible.resize_uninitialized(child_count);
+	for (int i = 0; i < child_count; i++) {
+		Control *child = Object::cast_to<Control>(p_body->get_child(i, false));
+		child_visible.write[i] = child && !child->is_set_as_top_level() && child->is_visible();
 	}
-	return tile_dock_gap_map(child_visible, p_center_host->get_index());
+	return tile_dock_gap_map(child_visible, p_center_host->get_index(false));
 }
 
 String EditorTileDockRegion::layout_key_for_tile(const String &p_base_key, int p_tile_id) {
@@ -62,6 +67,7 @@ String EditorTileDockRegion::layout_key_for_tile(const String &p_base_key, int p
 void EditorTileDockRegion::attach(HSplitContainer *p_body, Control *p_center_host) {
 	ERR_FAIL_NULL(p_body);
 	ERR_FAIL_NULL(p_center_host);
+	ERR_FAIL_COND(p_center_host->get_parent() != p_body);
 	body = p_body;
 	center_host = p_center_host;
 
@@ -79,7 +85,7 @@ void EditorTileDockRegion::place_left(EditorDock *p_dock) {
 	ERR_FAIL_NULL(p_dock);
 	ERR_FAIL_NULL(center_host);
 
-	const int center_index = center_host->get_index();
+	const int center_index = center_host->get_index(false);
 	body->add_child(p_dock);
 	body->move_child(p_dock, center_index);
 }
@@ -194,6 +200,9 @@ void EditorTileDockRegion::load_layout(const Ref<ConfigFile> &p_config, const St
 		_apply_dock_tab_order(right_tabs, p_config->get_value(p_section, "tile_dock_right"));
 	}
 
+	// Per-side visibility (future tile_rail_* keys) must already match the
+	// body's live show/hide state before this point; the gap map is resolved
+	// from current visibility and will mis-apply offsets if restored later.
 	const TileDockGapMap gap_map = _tile_dock_gap_map_for_body(body, center_host);
 	PackedInt32Array offsets = body->get_split_offsets();
 	const int desired_size = MAX(1, gap_map.gap_count);

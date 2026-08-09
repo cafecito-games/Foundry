@@ -43,6 +43,7 @@ namespace TestTileDockOffsets {
 
 TEST_CASE("[Editor][TileDockOffsets] gap map resolves identities relative to the centre") {
 	struct Case {
+		const char *name = nullptr;
 		Vector<bool> visible;
 		int center_index = 0;
 		int left_center = TileDockGapMap::ABSENT;
@@ -51,19 +52,20 @@ TEST_CASE("[Editor][TileDockOffsets] gap map resolves identities relative to the
 	};
 
 	const Case cases[] = {
-		{ Vector<bool>{ true, true, true }, 1, 0, 1, 2 },
-		{ Vector<bool>{ false, true, true }, 1, TileDockGapMap::ABSENT, 0, 1 },
-		{ Vector<bool>{ true, true, false }, 1, 0, TileDockGapMap::ABSENT, 1 },
-		{ Vector<bool>{ false, true, false }, 1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 0 },
-		{ Vector<bool>{ true, false, true }, 1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 1 },
-		{ Vector<bool>{ true, true, true, true }, 2, 1, 2, 3 },
-		{ Vector<bool>{ false, true, true, true }, 2, 0, 1, 2 },
-		{ Vector<bool>{ true, true, true }, -1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 2 },
-		{ Vector<bool>{ true, true, true }, 3, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 2 },
-		{ Vector<bool>(), 0, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 0 },
+		{ "all visible", Vector<bool>{ true, true, true }, 1, 0, 1, 2 },
+		{ "left hidden", Vector<bool>{ false, true, true }, 1, TileDockGapMap::ABSENT, 0, 1 },
+		{ "right hidden", Vector<bool>{ true, true, false }, 1, 0, TileDockGapMap::ABSENT, 1 },
+		{ "both sides hidden", Vector<bool>{ false, true, false }, 1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 0 },
+		{ "centre hidden", Vector<bool>{ true, false, true }, 1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 1 },
+		{ "two left docks", Vector<bool>{ true, true, true, true }, 2, 1, 2, 3 },
+		{ "two left docks, first hidden", Vector<bool>{ false, true, true, true }, 2, 0, 1, 2 },
+		{ "centre index -1", Vector<bool>{ true, true, true }, -1, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 2 },
+		{ "centre index out of range", Vector<bool>{ true, true, true }, 3, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 2 },
+		{ "empty child list", Vector<bool>(), 0, TileDockGapMap::ABSENT, TileDockGapMap::ABSENT, 0 },
 	};
 
 	for (const Case &c : cases) {
+		INFO(c.name);
 		const TileDockGapMap map = tile_dock_gap_map(c.visible, c.center_index);
 		CHECK(map.left_center == c.left_center);
 		CHECK(map.center_right == c.center_right);
@@ -97,8 +99,9 @@ struct TileDockFixture {
 	void set_column_visible(bool p_left, bool p_center, bool p_right) {
 		left->set_visible(p_left);
 		center->set_visible(p_center);
-		if (right_tabs()) {
-			right_tabs()->set_visible(p_right);
+		Control *right = right_tabs();
+		if (right) {
+			right->set_visible(p_right);
 		}
 	}
 };
@@ -179,6 +182,49 @@ TEST_CASE("[Editor][TileDockOffsets] save does not create keys for absent gaps")
 
 	CHECK_FALSE(config->has_section_key(section, "tile_dock_hsplit_1"));
 	CHECK_FALSE(config->has_section_key(section, "tile_dock_hsplit_2"));
+}
+
+TEST_CASE("[Editor][TileDockOffsets] save skips a gap index beyond the offsets array") {
+	TileDockFixture fixture;
+	fixture.set_column_visible(true, true, true);
+
+	PackedInt32Array short_offsets;
+	short_offsets.push_back(220);
+	fixture.body->set_split_offsets(short_offsets);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const String section = "WorkspaceLeaf_0";
+	config->set_value(section, "tile_dock_hsplit_2", 999);
+	fixture.region.save_layout(config, section);
+
+	REQUIRE(config->has_section_key(section, "tile_dock_hsplit_1"));
+	CHECK(int(config->get_value(section, "tile_dock_hsplit_1")) == int(220 / EDSCALE));
+	CHECK(int(config->get_value(section, "tile_dock_hsplit_2")) == 999);
+}
+
+TEST_CASE("[Editor][TileDockOffsets] save and load ignore keys when the centre is hidden") {
+	TileDockFixture fixture;
+	fixture.set_column_visible(true, false, true);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const String section = "WorkspaceLeaf_0";
+	config->set_value(section, "tile_dock_hsplit_1", 111);
+	config->set_value(section, "tile_dock_hsplit_2", 222);
+
+	PackedInt32Array offsets;
+	offsets.push_back(333);
+	fixture.body->set_split_offsets(offsets);
+	fixture.region.save_layout(config, section);
+
+	CHECK(int(config->get_value(section, "tile_dock_hsplit_1")) == 111);
+	CHECK(int(config->get_value(section, "tile_dock_hsplit_2")) == 222);
+
+	fixture.region.load_layout(config, section);
+	PackedInt32Array loaded = fixture.body->get_split_offsets();
+	REQUIRE(loaded.size() == 1);
+	CHECK(loaded[0] == 333);
 }
 
 TEST_CASE("[Editor][TileDockOffsets] load applies keys by gap identity") {
@@ -284,6 +330,44 @@ TEST_CASE("[Editor][TileDockOffsets] round trip preserves widths across a collap
 	REQUIRE(restored.size() == 2);
 	CHECK(restored[0] == int(220 / EDSCALE) * EDSCALE);
 	CHECK(restored[1] == int(-240 / EDSCALE) * EDSCALE);
+}
+
+TEST_CASE("[Editor][TileDockOffsets] internal split-container children are not counted as columns") {
+	TileDockFixture fixture;
+	fixture.set_column_visible(true, true, true);
+	// SplitContainer parents its draggers as INTERNAL_MODE_BACK children
+	// (scene/gui/split_container.cpp); they must not read as body columns.
+	fixture.body->add_child(memnew(Control), false, Node::INTERNAL_MODE_BACK);
+	fixture.body->add_child(memnew(Control), false, Node::INTERNAL_MODE_BACK);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const String section = "WorkspaceLeaf_0";
+	config->set_value(section, "tile_dock_hsplit_1", 180);
+	config->set_value(section, "tile_dock_hsplit_2", 260);
+	fixture.region.load_layout(config, section);
+
+	PackedInt32Array offsets = fixture.body->get_split_offsets();
+	REQUIRE(offsets.size() == 2);
+	CHECK(offsets[0] == 180 * EDSCALE);
+	CHECK(offsets[1] == 260 * EDSCALE);
+}
+
+TEST_CASE("[Editor][TileDockOffsets] internal children do not invent a centre-right gap when the right is hidden") {
+	TileDockFixture fixture;
+	fixture.set_column_visible(true, true, false);
+	fixture.body->add_child(memnew(Control), false, Node::INTERNAL_MODE_BACK);
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	const String section = "WorkspaceLeaf_0";
+	config->set_value(section, "tile_dock_hsplit_1", 180);
+	config->set_value(section, "tile_dock_hsplit_2", 260);
+	fixture.region.load_layout(config, section);
+
+	PackedInt32Array offsets = fixture.body->get_split_offsets();
+	REQUIRE(offsets.size() == 1);
+	CHECK(offsets[0] == 180 * EDSCALE);
 }
 
 } // namespace TestTileDockOffsets
