@@ -1226,6 +1226,249 @@ static String register_global_script_class(const TempScriptFile &p_script) {
 	return class_name;
 }
 
+struct TempScriptCacheCleanup {
+	Vector<String> paths;
+
+	~TempScriptCacheCleanup() {
+		for (const String &path : paths) {
+			FSCache::remove_script(path);
+		}
+	}
+};
+
+static int count_script_signal(const Ref<FoundryScript> &p_script, const StringName &p_name) {
+	List<MethodInfo> signals;
+	p_script->get_script_signal_list(&signals);
+
+	int count = 0;
+	for (const MethodInfo &signal : signals) {
+		if (signal.name == p_name) {
+			count++;
+		}
+	}
+	return count;
+}
+
+static Variant instantiate_script(const Ref<FoundryScript> &p_script) {
+	Callable::CallError call_error;
+	call_error.error = Callable::CallError::CALL_OK;
+	Variant instance = p_script->_new(nullptr, 0, call_error);
+	CHECK_EQ(call_error.error, Callable::CallError::CALL_OK);
+	CHECK_EQ(instance.get_type(), Variant::OBJECT);
+	return instance;
+}
+
+TEST_CASE("[Modules][FoundryScript][TraitSignalReload] Global trait signals survive keep-state reload") {
+	ScopedFSNativeGlobals native_globals;
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+	TempScriptCacheCleanup cleanup;
+
+	TempScriptFile trait("reload_global_signal_trait.fs", R"(
+trait_name ReloadSignalTrait extends RefCounted
+
+signal requested(value: int)
+
+func request(value: int) -> void:
+	requested.emit(value)
+)");
+	cleanup.paths.push_back(trait.path);
+	const String trait_name = register_global_script_class(trait);
+	CHECK_EQ(trait_name, "ReloadSignalTrait");
+	if (trait_name != "ReloadSignalTrait") {
+		return;
+	}
+
+	TempScriptFile composite("reload_global_signal_composite.fs", R"(
+trait_name ReloadSignalComposite extends RefCounted uses ReloadSignalTrait
+)");
+	cleanup.paths.push_back(composite.path);
+	const String composite_name = register_global_script_class(composite);
+	CHECK_EQ(composite_name, "ReloadSignalComposite");
+	if (composite_name != "ReloadSignalComposite") {
+		return;
+	}
+
+	// The same signal is reached through both the composed trait and a direct reapplication. The
+	// compiler's member-flattening order must materialize it once, not allocate duplicate storage.
+	TempScriptFile implementer("reload_global_signal_implementer.fs", R"(
+class_name ReloadSignalImplementer extends RefCounted uses ReloadSignalComposite, ReloadSignalTrait
+)");
+	cleanup.paths.push_back(implementer.path);
+	const String implementer_name = register_global_script_class(implementer);
+	CHECK_EQ(implementer_name, "ReloadSignalImplementer");
+	if (implementer_name != "ReloadSignalImplementer") {
+		return;
+	}
+
+	// Deliberately declares no method that refers to an inherited trait member. Runtime inheritance
+	// is exercised from C++ below so this regression remains independent of #1808's static lookup.
+	TempScriptFile subclass("reload_global_signal_subclass.fs", R"(
+class_name ReloadSignalSubclass extends ReloadSignalImplementer
+)");
+	cleanup.paths.push_back(subclass.path);
+	const String subclass_name = register_global_script_class(subclass);
+	CHECK_EQ(subclass_name, "ReloadSignalSubclass");
+	if (subclass_name != "ReloadSignalSubclass") {
+		return;
+	}
+
+	TempScriptFile consumer("reload_global_signal_consumer.fs", R"(
+class_name ReloadSignalConsumer extends RefCounted
+
+var total := 0
+
+func watch_concrete(value: ReloadSignalImplementer) -> void:
+	value.requested.connect(_on_requested)
+
+func watch_trait(value: ReloadSignalTrait) -> void:
+	value.requested.connect(_on_requested)
+
+func _on_requested(value: int) -> void:
+	total += value
+
+func get_total() -> int:
+	return total
+)");
+	cleanup.paths.push_back(consumer.path);
+	const String consumer_name = register_global_script_class(consumer);
+	CHECK_EQ(consumer_name, "ReloadSignalConsumer");
+	if (consumer_name != "ReloadSignalConsumer") {
+		return;
+	}
+
+	Error err = OK;
+	Ref<FoundryScript> implementer_script = FSCache::get_full_script(implementer.path, err, "", true);
+	CHECK_EQ(err, OK);
+	CHECK(implementer_script.is_valid());
+	if (err != OK || implementer_script.is_null()) {
+		return;
+	}
+
+	// get_full_script() compiles through reload(true), including the editor export-cache rebuild that
+	// previously cleared the signal the compiler had just flattened from the global trait.
+	CHECK(implementer_script->has_script_signal(SNAME("requested")));
+	CHECK_EQ(count_script_signal(implementer_script, SNAME("requested")), 1);
+	if (!implementer_script->has_script_signal(SNAME("requested"))) {
+		return;
+	}
+
+	Ref<FoundryScript> subclass_script = FSCache::get_full_script(subclass.path, err, "", true);
+	CHECK_EQ(err, OK);
+	CHECK(subclass_script.is_valid());
+	if (err != OK || subclass_script.is_null()) {
+		return;
+	}
+	CHECK(subclass_script->has_script_signal(SNAME("requested")));
+	CHECK_EQ(count_script_signal(subclass_script, SNAME("requested")), 1);
+	if (!subclass_script->has_script_signal(SNAME("requested"))) {
+		return;
+	}
+
+	Ref<FoundryScript> consumer_script = FSCache::get_full_script(consumer.path, err, "", true);
+	CHECK_EQ(err, OK);
+	CHECK(consumer_script.is_valid());
+	if (err != OK || consumer_script.is_null()) {
+		return;
+	}
+
+	Variant implementer_instance = instantiate_script(implementer_script);
+	Variant subclass_instance = instantiate_script(subclass_script);
+	Variant consumer_instance = instantiate_script(consumer_script);
+	Object *implementer_object = implementer_instance;
+	Object *subclass_object = subclass_instance;
+	Object *consumer_object = consumer_instance;
+	CHECK(implementer_object != nullptr);
+	CHECK(subclass_object != nullptr);
+	CHECK(consumer_object != nullptr);
+	if (implementer_object == nullptr || subclass_object == nullptr || consumer_object == nullptr) {
+		return;
+	}
+
+	CHECK(implementer_object->has_signal(SNAME("requested")));
+	CHECK(subclass_object->has_signal(SNAME("requested")));
+
+	// Exercise concrete-typed and trait-typed signal access in Foundry Script, then emit through the
+	// concrete method body flattened from that same trait. The subclass call is dynamic on purpose.
+	consumer_object->call(SNAME("watch_concrete"), implementer_instance);
+	implementer_object->call(SNAME("request"), 4);
+	consumer_object->call(SNAME("watch_trait"), subclass_instance);
+	subclass_object->call(SNAME("request"), 6);
+	CHECK_EQ(int(consumer_object->call(SNAME("get_total"))), 10);
+}
+
+TEST_CASE("[Modules][FoundryScript][TraitSignalReload] Inner trait signals match global traits and stale signals are removed") {
+	ScopedFSNativeGlobals native_globals;
+	GlobalScriptClassCacheBackup backup;
+	ScriptServer::global_classes_clear();
+	TempScriptCacheCleanup cleanup;
+
+	TempScriptFile script_file("reload_inner_signal_implementer.fs", R"(
+class_name ReloadInnerSignalImplementer extends RefCounted uses InnerSignalTrait
+
+trait InnerSignalTrait:
+	signal requested(value: int)
+
+	func request(value: int) -> void:
+		requested.emit(value)
+)");
+	cleanup.paths.push_back(script_file.path);
+	const String script_name = register_global_script_class(script_file);
+	CHECK_EQ(script_name, "ReloadInnerSignalImplementer");
+	if (script_name != "ReloadInnerSignalImplementer") {
+		return;
+	}
+
+	Error err = OK;
+	Ref<FoundryScript> script = FSCache::get_full_script(script_file.path, err, "", true);
+	CHECK_EQ(err, OK);
+	CHECK(script.is_valid());
+	if (err != OK || script.is_null()) {
+		return;
+	}
+	CHECK(script->has_script_signal(SNAME("requested")));
+	CHECK_EQ(count_script_signal(script, SNAME("requested")), 1);
+	if (!script->has_script_signal(SNAME("requested"))) {
+		return;
+	}
+
+	Variant instance = instantiate_script(script);
+	Object *object = instance;
+	CHECK(object != nullptr);
+	if (object == nullptr) {
+		return;
+	}
+	CHECK(object->has_signal(SNAME("requested")));
+	CHECK(object->has_method(SNAME("request")));
+	instance = Variant();
+
+	Ref<FileAccess> file = FileAccess::open(script_file.path, FileAccess::WRITE);
+	CHECK(file.is_valid());
+	if (file.is_null()) {
+		return;
+	}
+	file->store_string(R"(
+class_name ReloadInnerSignalImplementer extends RefCounted uses InnerSignalTrait
+
+trait InnerSignalTrait:
+	pass
+)");
+	file.unref();
+
+	const Error load_err = script->load_source_code(script_file.path);
+	CHECK_EQ(load_err, OK);
+	if (load_err != OK) {
+		return;
+	}
+	const Error reload_err = script->reload(true);
+	CHECK_EQ(reload_err, OK);
+	if (reload_err != OK) {
+		return;
+	}
+	CHECK_FALSE(script->has_script_signal(SNAME("requested")));
+	CHECK_EQ(count_script_signal(script, SNAME("requested")), 0);
+}
+
 #ifdef TOOLS_ENABLED
 static Color get_highlighted_color_at(const Dictionary &p_highlighting, int p_column) {
 	Color color;
