@@ -40,6 +40,7 @@
 #include "core/os/os.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestEditorHelpCache {
 
@@ -96,8 +97,10 @@ TEST_CASE("[Editor][EditorHelpCache] a future binary resource cache is discarded
 	file->store_32(UINT32_MAX);
 	file.unref();
 
+	ErrorDetector error_detector;
 	CHECK_FALSE(EditorHelp::prepare_doc_cache_for_tests(cache.get_path()));
 	CHECK_FALSE(FileAccess::exists(cache.get_path()));
+	CHECK_FALSE(error_detector.has_error);
 }
 
 } // namespace TestEditorHelpCache
