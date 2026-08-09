@@ -5450,6 +5450,26 @@ FSParser::ExpressionNode *FSParser::parse_grouping(ExpressionNode *p_previous_op
 		ExpressionNode::GroupingSpan span;
 		span.open_line = open_paren.start_line;
 		span.close_line = previous.start_line;
+		span.close_column = previous.end_column;
+		// `current` is the token immediately after the consumed `)`. Structural
+		// line-boundary tokens are not source continuations; every other token on
+		// the close's physical line proves that a later token, not this delimiter,
+		// owns any trailing comment on that line.
+		bool next_is_source_token = true;
+		switch (current.type) {
+			case FSTokenizer::Token::TK_EOF:
+			case FSTokenizer::Token::ERROR:
+			case FSTokenizer::Token::NEWLINE:
+			case FSTokenizer::Token::INDENT:
+			case FSTokenizer::Token::DEDENT:
+				next_is_source_token = false;
+				break;
+			default:
+				break;
+		}
+		const bool has_later_source_on_line = next_is_source_token && current.start_line == span.close_line &&
+				current.start_column >= span.close_column;
+		span.close_is_last_token_on_line = !has_later_source_on_line;
 		first_element->redundant_groupings.push_back(span);
 		return first_element;
 	}

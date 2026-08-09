@@ -557,16 +557,19 @@ public:
 		// entry with `open_line`/`close_line` at the `(`/`)`. Such a grouping
 		// carries no semantic effect and gets no dedicated AST node -- each
 		// `parse_grouping` call drops it and returns this expression directly --
-		// so a comment trailing an opening delimiter would have nowhere left to
-		// attach. The formatter checks every recorded level and, for one whose
-		// opening delimiter carries a comment, re-wraps this expression's printed
-		// text in real parentheses instead of ever appending the comment to text
-		// that has not been written yet -- which would silently comment that text
-		// out. Empty when this expression was never the direct content of a
-		// dropped grouping.
+		// so a comment trailing either delimiter would have nowhere left to attach.
+		// The formatter checks this token-level metadata and re-wraps only a
+		// grouping proven to own such a comment, instead of appending the comment
+		// to text the caller has not finished writing. Empty when this expression
+		// was never the direct content of a dropped grouping.
 		struct GroupingSpan {
 			int open_line = 0;
 			int close_line = 0;
+			int close_column = 0;
+			// True only when the consumed `)` was the final source token on its
+			// physical line. A comment on that line then belongs to this delimiter;
+			// otherwise it belongs to the later comma/operator/postfix token.
+			bool close_is_last_token_on_line = false;
 		};
 		Vector<GroupingSpan> redundant_groupings;
 
