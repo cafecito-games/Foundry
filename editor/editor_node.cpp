@@ -4858,6 +4858,13 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 	ERR_FAIL_INDEX(p_scene_idx, editor_data.get_edited_scene_count());
 	ERR_FAIL_COND(p_tile_id < 0);
 
+	// Rebuilding the boards replays each pane's persisted active tab. Those replays must
+	// not fight over editor-wide focus and the edited scene; the restore bracket assigns
+	// both once, from the active board, after every board exists.
+	if (restoring_boards) {
+		return;
+	}
+
 	const bool already_owned = editor_data.get_scene_tile(p_scene_idx) == p_tile_id;
 	const bool already_tile_current = editor_data.get_tile_current_scene(p_tile_id) == p_scene_idx;
 	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id;
@@ -8240,6 +8247,8 @@ void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
 }
 
 void EditorNode::_on_boards_about_to_restore() {
+	restoring_boards = true;
+
 	// Every board's workspace tree is about to be freed. The remote scene tree and the
 	// shared scene-mode surface are editor-wide, not per board, so they are detached
 	// exactly once here. Detaching inside the per-board loop instead would leave the
@@ -8257,6 +8266,9 @@ void EditorNode::_on_boards_about_to_restore() {
 }
 
 void EditorNode::_on_boards_restored() {
+	// Cleared first: everything below deliberately runs through the normal activation
+	// paths, now that every board exists and the active one is known.
+	restoring_boards = false;
 	ERR_FAIL_NULL(board_strip);
 
 	for (int i = 0; i < board_strip->get_board_count(); i++) {

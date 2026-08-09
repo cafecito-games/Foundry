@@ -347,6 +347,11 @@ private:
 	DockSplitContainer *right_r_vsplit = nullptr;
 	Control *center_overlay = nullptr;
 	EditorBoardStrip *board_strip = nullptr;
+	// Set for the duration of a multi-board rebuild. Restoring a board's panes activates
+	// their persisted active tab, and tab activation writes editor-wide state (owning
+	// tile, focused tile, edited scene). Without this guard a dormant board restored
+	// after the active one would claim editor focus for a board the user cannot see.
+	bool restoring_boards = false;
 	int pending_focus_tile_id = -1;
 	uint64_t pending_focus_tile_generation = 0;
 	Control *global_screen_host = nullptr;
