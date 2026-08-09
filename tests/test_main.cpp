@@ -112,6 +112,7 @@
 #include "tests/editor/test_startup_dialog.h"
 #include "tests/editor/test_startup_router.h"
 #include "tests/editor/test_text_tab.h"
+#include "tests/editor/test_tile_dock_offsets.h"
 #include "tests/editor/test_workspace_command_routing.h"
 #include "tests/editor/test_workspace_tab_model.h"
 #endif // TOOLS_ENABLED
