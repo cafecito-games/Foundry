@@ -45,6 +45,7 @@
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/docks/filesystem_dock.h"
 #include "editor/docks/inspector_dock.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
@@ -866,9 +867,11 @@ void ScriptEditorController::update_docs_from_script(const Ref<Script> &p_script
 	}
 	// The doc database now carries the script's latest documentation; refresh any
 	// already-open workspace help page for those classes so it stops showing stale
-	// docs until closed and reopened.
-	if (p_script.is_valid()) {
-		if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
+	// docs until closed and reopened. A help page for the changed class can be open
+	// on any board, not just the active one, so this must not go through
+	// EditorNode::get_scene_workspace() (active board only).
+	if (p_script.is_valid() && EditorNode::get_board_strip()) {
+		for (EditorSceneWorkspace *workspace : EditorNode::get_board_strip()->get_workspaces()) {
 			for (const DocData::ClassDoc &cd : p_script->get_documentation()) {
 				workspace->refresh_help_tab(cd.qualified_name());
 			}

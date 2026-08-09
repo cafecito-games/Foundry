@@ -48,6 +48,7 @@
 #include "editor/docks/filesystem_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/signals_dock.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
@@ -664,19 +665,27 @@ void ScriptEditorPlugin::set_window_layout(Ref<ConfigFile> p_layout) {
 	}
 
 	// Legacy single-surface layout: apply to the first script leaf when per-leaf
-	// open_scripts were not persisted yet.
+	// open_scripts were not persisted yet. This probe must check every board's
+	// script leaves, not just the active board's, or a multi-board layout with
+	// per-leaf sections only on a dormant board is misclassified as legacy and
+	// the wrong restore path runs.
 	bool has_per_leaf_layout = false;
 	if (p_layout->has_section_key("ScriptEditor", "open_scripts")) {
-		if (EditorNode::get_singleton() && EditorNode::get_singleton()->get_scene_workspace()) {
-			for (WorkspaceLeafNode *leaf : EditorNode::get_singleton()->get_scene_workspace()->get_script_leaves()) {
-				WorkspacePane *pane = leaf->get_workspace_pane();
-				ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
-				if (script_leaf && script_leaf->get_script_editor_view()) {
-					const String section = EditorSceneWorkspace::leaf_layout_section(leaf->get_leaf_id());
-					if (p_layout->has_section_key(section, "open_scripts")) {
-						has_per_leaf_layout = true;
-						break;
+		if (EditorBoardStrip *board_strip = EditorNode::get_board_strip()) {
+			for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+				for (WorkspaceLeafNode *leaf : workspace->get_script_leaves()) {
+					WorkspacePane *pane = leaf->get_workspace_pane();
+					ScriptLeaf *script_leaf = pane ? pane->get_script_leaf() : nullptr;
+					if (script_leaf && script_leaf->get_script_editor_view()) {
+						const String section = EditorSceneWorkspace::leaf_layout_section(leaf->get_leaf_id());
+						if (p_layout->has_section_key(section, "open_scripts")) {
+							has_per_leaf_layout = true;
+							break;
+						}
 					}
+				}
+				if (has_per_leaf_layout) {
+					break;
 				}
 			}
 		}
