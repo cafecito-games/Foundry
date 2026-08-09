@@ -56,10 +56,10 @@ Point2 EditorBoardView::_overview_origin(int p_board_count, const Size2 &p_viewp
 	return Point2(left, top);
 }
 
-void EditorBoardView::_begin_transition(real_t p_target_scroll_x, real_t p_target_scale) {
-	transition_start_scroll_x = scroll_x;
+void EditorBoardView::_begin_transition(const Point2 &p_target_origin, real_t p_target_scale) {
+	transition_start_origin = origin;
 	transition_start_scale = scale;
-	target_scroll_x = p_target_scroll_x;
+	target_origin = p_target_origin;
 	target_scale = p_target_scale;
 	transition = 0.0;
 }
@@ -67,21 +67,20 @@ void EditorBoardView::_begin_transition(real_t p_target_scroll_x, real_t p_targe
 void EditorBoardView::switch_to_index(int p_index, const Size2 &p_viewport) {
 	active_index = p_index;
 	overview = false;
-	_begin_transition(scroll_offset_for_index(p_index, p_viewport), 1.0);
+	_begin_transition(Point2(scroll_offset_for_index(p_index, p_viewport), 0.0), 1.0);
 }
 
 void EditorBoardView::enter_overview(int p_board_count, int p_active_index, const Size2 &p_viewport) {
 	active_index = p_active_index;
 	overview = true;
-	overview_board_count = p_board_count;
-	overview_viewport = p_viewport;
-	_begin_transition(0.0, overview_scale_for(p_board_count, p_viewport));
+	const real_t target = overview_scale_for(p_board_count, p_viewport);
+	_begin_transition(_overview_origin(p_board_count, p_viewport, target), target);
 }
 
 void EditorBoardView::exit_overview(int p_active_index, const Size2 &p_viewport) {
 	active_index = p_active_index;
 	overview = false;
-	_begin_transition(scroll_offset_for_index(p_active_index, p_viewport), 1.0);
+	_begin_transition(Point2(scroll_offset_for_index(p_active_index, p_viewport), 0.0), 1.0);
 }
 
 int EditorBoardView::index_at_point(const Point2 &p_point, int p_board_count, const Size2 &p_viewport) const {
@@ -93,13 +92,13 @@ int EditorBoardView::index_at_point(const Point2 &p_point, int p_board_count, co
 	const real_t board_width = p_viewport.width * board_scale;
 	const real_t board_height = p_viewport.height * board_scale;
 
-	const Point2 origin = _overview_origin(p_board_count, p_viewport, board_scale);
-	if (p_point.y < origin.y || p_point.y > origin.y + board_height) {
+	const Point2 settled_origin = _overview_origin(p_board_count, p_viewport, board_scale);
+	if (p_point.y < settled_origin.y || p_point.y > settled_origin.y + board_height) {
 		return -1;
 	}
 
 	for (int i = 0; i < p_board_count; i++) {
-		const real_t board_left = origin.x + real_t(i) * (board_width + OVERVIEW_GUTTER);
+		const real_t board_left = settled_origin.x + real_t(i) * (board_width + OVERVIEW_GUTTER);
 		const real_t board_right = board_left + board_width;
 		if (p_point.x >= board_left && p_point.x <= board_right) {
 			return i;
@@ -118,16 +117,13 @@ void EditorBoardView::advance(real_t p_delta) {
 	// Cubic ease-out: fast start, gentle settle at the target.
 	const real_t eased = real_t(1.0) - Math::pow(real_t(1.0) - transition, real_t(3.0));
 
-	scroll_x = Math::lerp(transition_start_scroll_x, target_scroll_x, eased);
+	origin = transition_start_origin.lerp(target_origin, eased);
 	scale = Math::lerp(transition_start_scale, target_scale, eased);
 }
 
 Transform2D EditorBoardView::get_transform() const {
 	Transform2D transform;
 	transform.set_scale(Size2(scale, scale));
-	// In overview, board 0's on-screen origin must match the centered, gutter-
-	// aware layout index_at_point() hit-tests against; a plain (scroll_x, 0)
-	// origin would leave every board drawn flush against the top-left corner.
-	transform.set_origin(overview ? _overview_origin(overview_board_count, overview_viewport, scale) : Point2(scroll_x, 0.0));
+	transform.set_origin(origin);
 	return transform;
 }

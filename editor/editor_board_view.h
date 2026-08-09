@@ -34,10 +34,21 @@
 #include "core/math/vector2.h"
 
 // Control-free geometry and animation state behind board switching and the
-// overview. Boards are laid edge-to-edge horizontally at the viewport width;
-// scrolling the strip by a whole viewport width per board centers the board
-// at that index, and the overview scales every board down uniformly so all of
-// them, plus the gutters between them, fit within the viewport width.
+// overview. Boards are laid edge-to-edge horizontally at the viewport width
+// while switching; scrolling the strip by a whole viewport width per board
+// centers the board at that index.
+//
+// A single Transform2D cannot, on its own, open up gaps between boards that
+// are otherwise laid out edge-to-edge: get_transform() only ever supplies one
+// uniform scale and one origin for the whole board container. Producing the
+// OVERVIEW_GUTTER visible between boards in the overview additionally
+// requires whoever positions the board children (the strip, not this class,
+// which stays Control-free) to widen each board's local horizontal pitch to
+// `p_viewport.width + OVERVIEW_GUTTER / get_scale()` while is_overview_active()
+// is true, instead of the fixed `p_viewport.width` pitch used while switching.
+// get_transform()'s origin already accounts for the resulting wider content
+// block, so the two combine to produce exactly the layout index_at_point()
+// hit-tests against.
 //
 // Every member is either a plain data field or a static/const function so
 // this class is testable headlessly: it never includes scene/gui or
@@ -51,32 +62,29 @@ private:
 	// Time, in seconds, a switch or overview transition takes to complete.
 	static constexpr real_t TRANSITION_DURATION = 0.25;
 
-	real_t scroll_x = 0.0;
+	Point2 origin;
 	real_t scale = 1.0;
 	int active_index = 0;
 
-	real_t transition_start_scroll_x = 0.0;
+	Point2 transition_start_origin;
 	real_t transition_start_scale = 1.0;
-	real_t target_scroll_x = 0.0;
+	Point2 target_origin;
 	real_t target_scale = 1.0;
 
-	// Normalised transition progress in [0, 1]. 1 means idle: scroll_x and
+	// Normalised transition progress in [0, 1]. 1 means idle: origin and
 	// scale already equal their targets.
 	real_t transition = 1.0;
 
 	bool overview = false;
-	// Snapshot of the overview layout parameters, taken on enter_overview() so
-	// get_transform() can keep centering the boards correctly while scale
-	// animates towards overview_scale_for(overview_board_count, overview_viewport).
-	int overview_board_count = 0;
-	Size2 overview_viewport;
 
-	void _begin_transition(real_t p_target_scroll_x, real_t p_target_scale);
+	// Captures the current origin/scale as the transition's starting point, so
+	// switching targets mid-flight retargets smoothly instead of jumping.
+	void _begin_transition(const Point2 &p_target_origin, real_t p_target_scale);
 	// The top-left corner, in screen pixels, at which board index 0 must be
 	// drawn so that p_board_count boards laid out at p_scale, separated by
 	// OVERVIEW_GUTTER, are centered inside p_viewport. Shared by
-	// index_at_point() and get_transform() so the clickable geometry and the
-	// drawn geometry can never drift apart.
+	// index_at_point() and enter_overview()/exit_overview() so the clickable
+	// geometry and the animation target can never drift apart.
 	static Point2 _overview_origin(int p_board_count, const Size2 &p_viewport, real_t p_scale);
 
 public:
@@ -106,6 +114,9 @@ public:
 	// Resolves the board under p_point while the overview is active, or -1
 	// when the view is not in overview or the point is outside every board
 	// (including the gutters between them and the space above/below them).
+	// Targets the overview's settled layout regardless of transition progress,
+	// so a click during the brief zoom-out animation still selects the board
+	// it is animating towards.
 	int index_at_point(const Point2 &p_point, int p_board_count, const Size2 &p_viewport) const;
 
 	// Advances the current transition by p_delta seconds along an ease-out
@@ -113,13 +124,15 @@ public:
 	void advance(real_t p_delta);
 	bool is_animating() const { return transition < 1.0; }
 
-	// The transform the strip applies to its board container: translation by
-	// the current scroll offset and uniform scaling by the current scale.
+	// The transform the strip applies to its board container: uniform scaling
+	// by the current scale, translated by the current origin. See the class
+	// comment for how this combines with the strip's own child pitch to
+	// produce the overview's inter-board gutters.
 	Transform2D get_transform() const;
 
 	bool is_overview_active() const { return overview; }
 	int get_active_index() const { return active_index; }
-	real_t get_scroll_x() const { return scroll_x; }
+	real_t get_scroll_x() const { return origin.x; }
 	real_t get_scale() const { return scale; }
 
 	EditorBoardView() {}
