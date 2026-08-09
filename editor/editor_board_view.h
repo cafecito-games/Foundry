@@ -65,8 +65,19 @@ private:
 	real_t transition = 1.0;
 
 	bool overview = false;
+	// Snapshot of the overview layout parameters, taken on enter_overview() so
+	// get_transform() can keep centering the boards correctly while scale
+	// animates towards overview_scale_for(overview_board_count, overview_viewport).
+	int overview_board_count = 0;
+	Size2 overview_viewport;
 
 	void _begin_transition(real_t p_target_scroll_x, real_t p_target_scale);
+	// The top-left corner, in screen pixels, at which board index 0 must be
+	// drawn so that p_board_count boards laid out at p_scale, separated by
+	// OVERVIEW_GUTTER, are centered inside p_viewport. Shared by
+	// index_at_point() and get_transform() so the clickable geometry and the
+	// drawn geometry can never drift apart.
+	static Point2 _overview_origin(int p_board_count, const Size2 &p_viewport, real_t p_scale);
 
 public:
 	// The scroll offset that lands board p_index at the viewport origin at
