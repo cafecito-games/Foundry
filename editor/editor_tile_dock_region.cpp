@@ -32,9 +32,25 @@
 
 #include "core/input/shortcut.h"
 #include "editor/docks/editor_dock.h"
+#include "editor/gui/side_rail_state.h"
 #include "editor/themes/editor_scale.h"
+#include "scene/gui/control.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
+
+static TileDockGapMap _tile_dock_gap_map_for_body(HSplitContainer *p_body, Control *p_center_host) {
+	TileDockGapMap map;
+	ERR_FAIL_NULL_V(p_body, map);
+	ERR_FAIL_NULL_V(p_center_host, map);
+
+	Vector<bool> child_visible;
+	child_visible.resize(p_body->get_child_count());
+	for (int i = 0; i < p_body->get_child_count(); i++) {
+		Control *child = Object::cast_to<Control>(p_body->get_child(i));
+		child_visible.write[i] = child && child->is_visible();
+	}
+	return tile_dock_gap_map(child_visible, p_center_host->get_index());
+}
 
 String EditorTileDockRegion::layout_key_for_tile(const String &p_base_key, int p_tile_id) {
 	if (p_tile_id <= 0) {
@@ -133,12 +149,13 @@ void EditorTileDockRegion::save_layout(const Ref<ConfigFile> &p_config, const St
 	ERR_FAIL_COND(p_config.is_null());
 	ERR_FAIL_NULL(body);
 
+	const TileDockGapMap gap_map = _tile_dock_gap_map_for_body(body, center_host);
 	PackedInt32Array offsets = body->get_split_offsets();
-	if (offsets.size() >= 1) {
-		p_config->set_value(p_section, "tile_dock_hsplit_1", int(offsets[0] / EDSCALE));
+	if (gap_map.left_center != TileDockGapMap::ABSENT && gap_map.left_center < offsets.size()) {
+		p_config->set_value(p_section, "tile_dock_hsplit_1", int(offsets[gap_map.left_center] / EDSCALE));
 	}
-	if (offsets.size() >= 2) {
-		p_config->set_value(p_section, "tile_dock_hsplit_2", int(offsets[1] / EDSCALE));
+	if (gap_map.center_right != TileDockGapMap::ABSENT && gap_map.center_right < offsets.size()) {
+		p_config->set_value(p_section, "tile_dock_hsplit_2", int(offsets[gap_map.center_right] / EDSCALE));
 	}
 
 	const String right_names = _dock_layout_names(right_tabs);
@@ -177,15 +194,19 @@ void EditorTileDockRegion::load_layout(const Ref<ConfigFile> &p_config, const St
 		_apply_dock_tab_order(right_tabs, p_config->get_value(p_section, "tile_dock_right"));
 	}
 
+	const TileDockGapMap gap_map = _tile_dock_gap_map_for_body(body, center_host);
 	PackedInt32Array offsets = body->get_split_offsets();
-	if (offsets.size() < 2 && body->get_child_count() >= 3) {
-		offsets.resize(2);
+	const int desired_size = MAX(1, gap_map.gap_count);
+	if (offsets.size() != desired_size) {
+		offsets.resize_initialized(desired_size);
 	}
-	if (offsets.size() >= 1 && p_config->has_section_key(p_section, "tile_dock_hsplit_1")) {
-		offsets.write[0] = int(p_config->get_value(p_section, "tile_dock_hsplit_1")) * EDSCALE;
+	if (gap_map.left_center != TileDockGapMap::ABSENT && gap_map.left_center < offsets.size() &&
+			p_config->has_section_key(p_section, "tile_dock_hsplit_1")) {
+		offsets.write[gap_map.left_center] = int(p_config->get_value(p_section, "tile_dock_hsplit_1")) * EDSCALE;
 	}
-	if (offsets.size() >= 2 && p_config->has_section_key(p_section, "tile_dock_hsplit_2")) {
-		offsets.write[1] = int(p_config->get_value(p_section, "tile_dock_hsplit_2")) * EDSCALE;
+	if (gap_map.center_right != TileDockGapMap::ABSENT && gap_map.center_right < offsets.size() &&
+			p_config->has_section_key(p_section, "tile_dock_hsplit_2")) {
+		offsets.write[gap_map.center_right] = int(p_config->get_value(p_section, "tile_dock_hsplit_2")) * EDSCALE;
 	}
 	if (offsets.size() > 0) {
 		body->set_split_offsets(offsets);
