@@ -11,6 +11,5 @@ async func _job() -> void:
 
 
 func test() -> void:
-	@warning_ignore("missing_await")
 	_job()
 	go.emit()

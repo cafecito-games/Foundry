@@ -22,7 +22,6 @@ async func _drain(p_handle: Coroutine[String]) -> void:
 
 
 func test() -> void:
-	@warning_ignore("missing_await")
 	_drain(_job())
 	# The drain is parked inside its first `await p_handle`; the job is parked on `go`.
 	go.emit()

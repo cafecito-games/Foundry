@@ -27,7 +27,6 @@ async func _run_all() -> void:
 
 
 func test() -> void:
-	@warning_ignore("missing_await")
 	_run_all()
 	go.emit()
 	go.emit()

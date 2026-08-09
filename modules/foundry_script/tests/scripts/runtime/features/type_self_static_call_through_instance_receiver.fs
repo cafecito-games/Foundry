@@ -57,9 +57,8 @@ func test() -> void:
 	print("three-level receiver factory is Leaf: %s" % [leaf.make() is Leaf])
 
 	# A suspended static frame keeps the receiver it was entered with across the resumption.
-	@warning_ignore("missing_await")
-	@warning_ignore("return_value_discarded")
-	child.wait_for(child)
+	# Capture the non-void Coroutine[Child] handle so the launch is intentional, not a forgotten await.
+	var _pending: Coroutine[Child] = child.wait_for(child)
 	child.done.emit(child)
 
 	# The class-handle form is unchanged.

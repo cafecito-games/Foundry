@@ -30,7 +30,6 @@ func test() -> void:
 	# The body parked at `await go`, so nothing ran past the await yet and the handle is a live object.
 	print("held a handle: ", handle != null)
 
-	@warning_ignore("missing_await")
 	_drain(handle)
 	# The runner is parked inside `await handle`; the job is still parked on `go`. Nothing resumed yet.
 	print("before resume: '%s'" % _drained)

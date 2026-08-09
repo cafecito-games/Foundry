@@ -1,2 +1,2 @@
 FS_TEST_OK
-~~ WARNING at line 7: (MISSING_AWAIT) "await" keyword might be desired because the expression is a coroutine.
+~~ WARNING at line 8: (MISSING_AWAIT) The call returns a "Coroutine[int]" whose result is discarded. Use "await", or store or pass the handle if it is awaited elsewhere.

@@ -27,7 +27,6 @@ async func _runner() -> void:
 
 
 func test() -> void:
-	@warning_ignore("missing_await")
 	_runner()
 	# The runner is parked inside `await _job(1)` and the job is parked on `go`; nothing has resumed.
 	print("before resume")

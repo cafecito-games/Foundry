@@ -19,7 +19,6 @@ async func _runner() -> void:
 	print(await loaded.describe_after(go))
 
 func test() -> void:
-	@warning_ignore("missing_await")
 	_runner()
 	print("before resume")
 	go.emit()

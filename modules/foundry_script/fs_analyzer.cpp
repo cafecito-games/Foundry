@@ -1297,6 +1297,18 @@ static FSParser::DataType make_coroutine_type(const FSParser::DataType &p_result
 	return type;
 }
 
+// True when a coroutine's phantom result is hard `void` (BUILTIN NIL in container_element_types[0]).
+// Root-position discards of Coroutine[void] are intentional fire-and-forget launches — no result
+// exists to lose — so MISSING_AWAIT skips them. A missing element (lossy signature boundary) or any
+// non-void result still warns.
+static bool coroutine_result_is_void(const FSParser::DataType &p_type) {
+	if (!p_type.is_coroutine || !p_type.has_container_element_type(0)) {
+		return false;
+	}
+	const FSParser::DataType result = p_type.get_container_element_type(0);
+	return result.kind == FSParser::DataType::BUILTIN && result.builtin_type == Variant::NIL;
+}
+
 // A coroutine call whose live `FSFunctionState` handle is captured into a statically
 // `Coroutine[T]`-typed slot (variable/parameter/return value, or a `Coroutine[T]` container
 // element) is meant to be held and awaited later, not a forgotten `await`. Mark such a call so the
@@ -7742,11 +7754,12 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		}
 	}
 
-	if (call_type.is_coroutine && !p_is_await && p_is_root) {
+	if (call_type.is_coroutine && !p_is_await && p_is_root && !coroutine_result_is_void(call_type)) {
 		// Honest Coroutine[T] typing makes a held or passed coroutine well-typed, so only a discarded
 		// coroutine *statement* (root position) still warns about a probably-forgotten "await".
+		// Coroutine[void] root discards are exempt: fire-and-forget launches lose no result value.
 #ifdef DEBUG_ENABLED
-		parser->push_warning(p_call, FSWarning::MISSING_AWAIT);
+		parser->push_warning(p_call, FSWarning::MISSING_AWAIT, call_type.to_string());
 #endif // DEBUG_ENABLED
 	}
 
