@@ -33,6 +33,7 @@
 #include "editor/docks/editor_dock.h"
 #include "editor/docks/editor_dock_manager.h"
 #include "editor/editor_string_names.h"
+#include "editor/gui/dock_tooltip.h"
 #include "editor/gui/editor_bottom_panel.h"
 #include "editor/gui/editor_toaster.h"
 #include "editor/gui/editor_version_button.h"
@@ -113,12 +114,7 @@ void EditorBottomDrawerStrip::_refresh_toggle(int p_toggle_index) {
 	}
 	toggle->set_button_icon(icon);
 
-	String tooltip;
-	Ref<Shortcut> shortcut = dock->get_dock_shortcut();
-	if (shortcut.is_valid() && shortcut->has_valid_event()) {
-		tooltip = TTR(shortcut->get_name()) + " (" + shortcut->get_as_text() + ")";
-	}
-	toggle->set_tooltip_text(tooltip);
+	toggle->set_tooltip_text(dock_tooltip_with_shortcut_fallback(dock));
 
 	// Mirror TabBar::set_font_color_override_all semantics: a transparent
 	// title color means "no override".
