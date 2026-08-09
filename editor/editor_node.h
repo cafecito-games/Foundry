@@ -347,6 +347,11 @@ private:
 	DockSplitContainer *right_r_vsplit = nullptr;
 	Control *center_overlay = nullptr;
 	EditorBoardStrip *board_strip = nullptr;
+	// Set for the duration of a multi-board rebuild. Restoring a board's panes activates
+	// their persisted active tab, and tab activation writes editor-wide state (owning
+	// tile, focused tile, edited scene). Without this guard a dormant board restored
+	// after the active one would claim editor focus for a board the user cannot see.
+	bool restoring_boards = false;
 	int pending_focus_tile_id = -1;
 	uint64_t pending_focus_tile_generation = 0;
 	Control *global_screen_host = nullptr;
@@ -732,7 +737,8 @@ private:
 	void _save_workspace_to_config(Ref<ConfigFile> p_config_file);
 	bool _load_workspace_from_config(const Ref<ConfigFile> &p_config_file);
 	void _reconcile_workspace_empty_leaves_after_restore();
-	void _resolve_restored_script_leaf_associated_scenes();
+	void _on_boards_about_to_restore();
+	void _on_boards_restored();
 	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
 	void _close_script_leaf();
 	void _sync_script_leaf_path();

@@ -34,6 +34,7 @@
 
 #include "scene/gui/container.h"
 
+class ConfigFile;
 class EditorBoard;
 class EditorData;
 class EditorSelection;
@@ -53,6 +54,11 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 
 	EditorSelection *editor_selection = nullptr;
 	EditorData *editor_data = nullptr;
+
+	EditorBoard *_append_board(int p_board_id, const String &p_title);
+	void _clear_boards();
+	// Highest leaf id persisted anywhere in the config, plus one.
+	static int _persisted_leaf_id_ceiling(const Ref<ConfigFile> &p_config, int p_board_count);
 
 protected:
 	void _notification(int p_what);
@@ -82,6 +88,23 @@ public:
 	// workspace stays with the caller, which owns the editor-wide focus bookkeeping.
 	void set_active_index(int p_index);
 	void set_active_board(EditorBoard *p_board);
+
+	// Config section holding the tiling tree of the board at p_index.
+	static String board_section(int p_index);
+
+	// Whole-strip session persistence. save_to_config() rewrites [Boards] and one
+	// [Board_<i>] section per board; restore_from_config() rebuilds every board from
+	// them. has_board_session() deliberately never inspects the pre-boards [Workspace]
+	// section: a config written before boards existed restores as a fresh single board.
+	static void save_to_config(const Ref<ConfigFile> &p_config, const EditorBoardStrip *p_strip);
+	static bool has_board_session(const Ref<ConfigFile> &p_config);
+	// Emits boards_about_to_restore before anything is freed and boards_restored once
+	// every board has been rebuilt. Callers that own editor-wide state parented into a
+	// board -- the shared scene-mode surface, the remote scene tree -- hang their detach
+	// on the first signal and their reattach on the second, so that work happens exactly
+	// once around the whole loop. Detaching per board would leave the surface parented
+	// to an already-freed tile host.
+	void restore_from_config(const Ref<ConfigFile> &p_config);
 
 	// Every workspace in the editor, in board order. Call sites that mean "all
 	// workspaces" (documentation refresh, feature-profile toggles, cross-board tile

@@ -4858,6 +4858,25 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 	ERR_FAIL_INDEX(p_scene_idx, editor_data.get_edited_scene_count());
 	ERR_FAIL_COND(p_tile_id < 0);
 
+	// Rebuilding the boards replays each pane's persisted active tab. Those replays must
+	// not fight over editor-wide focus and the edited scene; the restore bracket assigns
+	// both once, from the active board, after every board exists.
+	if (restoring_boards) {
+		return;
+	}
+
+	// Editor-wide focus and the edited scene follow the visible board. A pane in a
+	// dormant board can still ask to activate its tab -- a restored pane replays its
+	// persisted active tab deferred, after the restore bracket has closed -- and must
+	// not pull the editor onto a board the user cannot see. Callers that legitimately
+	// open a scene living in another board make that board active first.
+	if (board_strip) {
+		EditorBoard *owner = board_strip->find_board_for_leaf(p_tile_id);
+		if (owner && owner != board_strip->get_active_board()) {
+			return;
+		}
+	}
+
 	const bool already_owned = editor_data.get_scene_tile(p_scene_idx) == p_tile_id;
 	const bool already_tile_current = editor_data.get_tile_current_scene(p_tile_id) == p_scene_idx;
 	const bool already_focused = editor_data.get_focused_tile_id() == p_tile_id;
@@ -7747,10 +7766,12 @@ HistoryDock *EditorNode::get_focused_history_dock() const {
 }
 
 void EditorNode::_bind_leaf_docks(int p_leaf_id) {
-	if (!get_scene_workspace()) {
+	if (!board_strip) {
 		return;
 	}
-	ScenePaneTile *tile = get_scene_workspace()->get_tile_by_id(p_leaf_id);
+	// Resolve through the strip: leaf ids are editor-wide, and a restore binds docks
+	// for dormant boards' leaves too.
+	ScenePaneTile *tile = board_strip->find_tile_by_id(p_leaf_id);
 	if (!tile) {
 		return;
 	}
@@ -7764,11 +7785,13 @@ void EditorNode::_bind_leaf_docks(int p_leaf_id) {
 }
 
 void EditorNode::_bind_all_leaf_docks() {
-	if (!get_scene_workspace()) {
+	if (!board_strip) {
 		return;
 	}
-	for (WorkspaceLeafNode *leaf : get_scene_workspace()->get_leaves()) {
-		_bind_leaf_docks(leaf->get_leaf_id());
+	for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+		for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+			_bind_leaf_docks(leaf->get_leaf_id());
+		}
 	}
 }
 
@@ -7808,9 +7831,11 @@ void EditorNode::_wire_leaf_tile(WorkspaceLeafNode *p_leaf) {
 }
 
 void EditorNode::_on_leaf_added(int p_leaf_id) {
-	ERR_FAIL_NULL(get_scene_workspace());
+	ERR_FAIL_NULL(board_strip);
 	editor_data.register_tile(p_leaf_id);
-	WorkspaceLeafNode *leaf = get_scene_workspace()->get_leaf_by_id(p_leaf_id);
+	// Leaf ids are editor-wide, so resolve through the strip: a multi-board restore
+	// wires leaves belonging to dormant boards as well as the active one.
+	WorkspaceLeafNode *leaf = board_strip->find_leaf_by_id(p_leaf_id);
 	ERR_FAIL_NULL(leaf);
 	ScenePaneTile *tile = leaf->get_pane_tile();
 	if (!tile) {
@@ -8228,29 +8253,18 @@ void EditorNode::_focus_leaf_history_dock() {
 }
 
 void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
-	// Layout persistence is per-workspace and currently writes a single section, so
-	// only the active board round-trips. Persisting every board is board-strip work
-	// and lands with multi-board persistence.
-	if (EditorSceneWorkspace *workspace = get_scene_workspace()) {
-		EditorSceneWorkspace::save_to_config(p_config_file, workspace, "Workspace");
+	if (board_strip) {
+		EditorBoardStrip::save_to_config(p_config_file, board_strip);
 	}
 }
 
-void EditorNode::_resolve_restored_script_leaf_associated_scenes() {
-	if (!get_scene_workspace()) {
-		return;
-	}
-	get_scene_workspace()->resolve_script_leaf_associated_scenes(editor_data);
-}
+void EditorNode::_on_boards_about_to_restore() {
+	restoring_boards = true;
 
-bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
-	EditorSceneWorkspace *workspace = get_scene_workspace();
-	if (!workspace || !EditorSceneWorkspace::has_workspace_session(p_config_file, "Workspace")) {
-		return false;
-	}
-
-	// restore_from_config() frees the outgoing workspace tree. Detach the shared
-	// scene-mode surface first so it is not destroyed with the old tile hosts.
+	// Every board's workspace tree is about to be freed. The remote scene tree and the
+	// shared scene-mode surface are editor-wide, not per board, so they are detached
+	// exactly once here. Detaching inside the per-board loop instead would leave the
+	// surface parented to an already-freed tile host from the second board onwards.
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
 		debugger->detach_remote_scene_tree();
 	}
@@ -8261,55 +8275,84 @@ bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 			}
 		}
 	}
+}
 
-	workspace->restore_from_config(p_config_file, "Workspace");
+void EditorNode::_on_boards_restored() {
+	// Cleared first: everything below deliberately runs through the normal activation
+	// paths, now that every board exists and the active one is known.
+	restoring_boards = false;
+	ERR_FAIL_NULL(board_strip);
 
-	for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
-		_on_leaf_added(leaf->get_leaf_id());
+	for (int i = 0; i < board_strip->get_board_count(); i++) {
+		EditorSceneWorkspace *workspace = board_strip->get_board(i)->get_workspace();
+		ERR_CONTINUE(!workspace);
+		_connect_workspace_signals(workspace);
+		for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+			_on_leaf_added(leaf->get_leaf_id());
+		}
+
+		// Reopened scenes were all assigned to the startup tile before the workspace tree
+		// existed, and only the focused pane claims ownership via activation. Restore each
+		// restored scene tab's tile ownership now -- decoupled from focus -- so the focused
+		// tile has a current scene and the tab sync below reads the correct scene->tile map.
+		workspace->restore_scene_tile_ownership_from_tabs();
+		workspace->resolve_script_leaf_associated_scenes(editor_data);
 	}
 
-	// Reopened scenes were all assigned to the startup tile before the workspace tree
-	// existed, and only the focused pane claims ownership via activation. Restore each
-	// restored scene tab's tile ownership now -- decoupled from focus -- so the focused
-	// tile has a current scene and the tab sync below reads the correct scene->tile map.
-	workspace->restore_scene_tile_ownership_from_tabs();
-
-	// The persisted focus can point at a script leaf, but the editor's focused tile
-	// must be a scene tile; fall back to the first scene tile when it is not.
-	WorkspaceLeafNode *restored_focus = workspace->get_focused_leaf();
-	if (!restored_focus || !restored_focus->get_pane_tile()) {
-		for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
-			if (leaf->get_pane_tile()) {
-				workspace->set_focused_leaf(leaf->get_leaf_id());
-				break;
+	// Everything below is editor-wide and runs once, after every board is rebuilt.
+	if (EditorSceneWorkspace *active = board_strip->get_active_workspace()) {
+		// The persisted focus can point at a script leaf, but the editor's focused tile
+		// must be a scene tile; fall back to the first scene tile when it is not. Only the
+		// active board hosts the scene-mode surface, so dormant boards keep the focus they
+		// persisted.
+		WorkspaceLeafNode *restored_focus = active->get_focused_leaf();
+		if (!restored_focus || !restored_focus->get_pane_tile()) {
+			for (WorkspaceLeafNode *leaf : active->get_leaves()) {
+				if (leaf->get_pane_tile()) {
+					active->set_focused_leaf(leaf->get_leaf_id());
+					break;
+				}
 			}
 		}
+		editor_data.set_focused_tile_id(active->get_focused_leaf_id());
 	}
-	editor_data.set_focused_tile_id(workspace->get_focused_leaf_id());
+
 	_bind_all_leaf_docks();
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
 		debugger->rebind_remote_scene_tree();
 	}
 
-	WorkspaceLeafNode *focused_leaf = workspace->get_focused_leaf();
-	if (focused_leaf && focused_leaf->get_pane_tile()) {
-		_sync_focused_tile_chrome(focused_leaf->get_pane_tile());
+	if (EditorSceneWorkspace *active = board_strip->get_active_workspace()) {
+		WorkspaceLeafNode *focused_leaf = active->get_focused_leaf();
+		if (focused_leaf && focused_leaf->get_pane_tile()) {
+			_sync_focused_tile_chrome(focused_leaf->get_pane_tile());
+		}
+		_reparent_scene_mode_into(active->get_focused_tile());
 	}
-	_reparent_scene_mode_into(workspace->get_focused_tile());
+}
+
+bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
+	if (!board_strip || !EditorBoardStrip::has_board_session(p_config_file)) {
+		return false;
+	}
+
+	// The strip brackets the whole rebuild with boards_about_to_restore /
+	// boards_restored, which is where the editor-wide detach and reattach live.
+	board_strip->restore_from_config(p_config_file);
 
 	// Re-host the script surface into a restored script leaf and reopen its script.
 	// A feature profile that disables scripts is applied before layout restore, so
-	// honor it by closing the restored script leaf instead of reopening it.
+	// honor it by closing the restored script leaves instead of reopening them.
 	if (!is_script_feature_enabled()) {
-		for (WorkspaceLeafNode *script_leaf_node : workspace->get_script_leaves()) {
-			workspace->collapse(script_leaf_node);
+		for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+			for (WorkspaceLeafNode *script_leaf_node : workspace->get_script_leaves()) {
+				workspace->collapse(script_leaf_node);
+			}
 		}
 	} else {
 		_connect_script_leaf_sync();
 		callable_mp(this, &EditorNode::_sync_script_leaf_path).call_deferred();
 	}
-
-	_resolve_restored_script_leaf_associated_scenes();
 
 	_set_current_scene_nocheck(editor_data.get_tile_current_scene(editor_data.get_focused_tile_id()));
 
@@ -8322,11 +8365,13 @@ bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_fil
 }
 
 void EditorNode::_reconcile_workspace_empty_leaves_after_restore() {
-	if (!get_scene_workspace()) {
+	if (!board_strip) {
 		return;
 	}
 
-	get_scene_workspace()->reconcile_empty_leaves();
+	for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+		workspace->reconcile_empty_leaves();
+	}
 
 	ScenePaneTile *focused_tile = get_focused_tile();
 	if (focused_tile) {
@@ -11084,6 +11129,11 @@ EditorNode::EditorNode() {
 	board_strip = EditorBoardStrip::create(editor_selection, &editor_data);
 	srt->add_child(board_strip);
 	board_strip->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	// The strip frees every board on restore, so the editor-wide surfaces parented into
+	// a board are detached and reattached through this bracket rather than around any
+	// single board's rebuild.
+	board_strip->connect("boards_about_to_restore", callable_mp(this, &EditorNode::_on_boards_about_to_restore));
+	board_strip->connect("boards_restored", callable_mp(this, &EditorNode::_on_boards_restored));
 	_connect_workspace_signals(board_strip->get_active_workspace());
 
 	editor_main_screen = memnew(EditorMainScreen);
