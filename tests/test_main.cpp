@@ -99,6 +99,7 @@
 #include "tests/editor/test_editor_scene_context.h"
 #include "tests/editor/test_editor_tooling_host.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
+#include "tests/editor/test_inspector_density.h"
 #include "tests/editor/test_known_project_store.h"
 #include "tests/editor/test_node_3d_editor_world_scope.h"
 #include "tests/editor/test_project_scanner.h"

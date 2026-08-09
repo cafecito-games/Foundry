@@ -59,6 +59,7 @@ uint32_t EditorThemeManager::ThemeConfiguration::hash() {
 	hash = hash_murmur3_one_32(style.hash(), hash);
 	hash = hash_murmur3_one_32(preset.hash(), hash);
 	hash = hash_murmur3_one_32(spacing_preset.hash(), hash);
+	hash = hash_murmur3_one_32(inspector_density.hash(), hash);
 
 	hash = hash_murmur3_one_32(base_color.to_rgba32(), hash);
 	hash = hash_murmur3_one_32(accent_color.to_rgba32(), hash);
@@ -243,6 +244,7 @@ EditorThemeManager::ThemeConfiguration EditorThemeManager::_create_theme_config(
 	config.style = EDITOR_GET("interface/theme/style");
 	config.preset = EDITOR_GET("interface/theme/color_preset");
 	config.spacing_preset = EDITOR_GET("interface/theme/spacing_preset");
+	config.inspector_density = EDITOR_GET("interface/theme/inspector_density");
 
 	config.base_color = EDITOR_GET("interface/theme/base_color");
 	config.accent_color = EDITOR_GET("interface/theme/accent_color");
@@ -774,6 +776,15 @@ bool EditorThemeManager::is_generated_theme_outdated() {
 	}
 
 	return outdated_cache;
+}
+
+float EditorThemeManager::get_inspector_density_scale(const String &p_inspector_density) {
+	if (p_inspector_density == "Compact") {
+		return 0.75;
+	} else if (p_inspector_density == "Spacious") {
+		return 1.25;
+	}
+	return 1.0; // Default.
 }
 
 bool EditorThemeManager::is_dark_theme() {

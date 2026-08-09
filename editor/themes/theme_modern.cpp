@@ -2322,8 +2322,9 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		p_theme->set_constant("separation", "EditorSectionContainer", p_config.base_margin * 0.5 * EDSCALE);
 
 		// Vertical separation between inspector properties.
+		float inspector_density_scale = EditorThemeManager::get_inspector_density_scale(p_config.inspector_density);
 		p_theme->set_type_variation("EditorPropertyContainer", "VBoxContainer");
-		p_theme->set_constant("separation", "EditorPropertyContainer", p_config.base_margin * 0.5 * EDSCALE);
+		p_theme->set_constant("separation", "EditorPropertyContainer", Math::round(p_config.base_margin * 0.5 * EDSCALE * inspector_density_scale));
 
 		// EditorProperty.
 
@@ -2367,8 +2368,8 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		inspector_indent_color.a = 0.2;
 		Ref<StyleBoxFlat> inspector_indent_style = EditorThemeManager::make_flat_stylebox(inspector_indent_color, 2.0 * EDSCALE, 0, 2.0 * EDSCALE, 0);
 		p_theme->set_stylebox("indent_box", "EditorInspectorSection", inspector_indent_style);
-		p_theme->set_constant("indent_size", "EditorInspectorSection", 6.0 * EDSCALE);
-		p_theme->set_constant("h_separation", "EditorInspectorSection", p_config.base_margin * EDSCALE);
+		p_theme->set_constant("indent_size", "EditorInspectorSection", Math::round(6.0 * EDSCALE * inspector_density_scale));
+		p_theme->set_constant("h_separation", "EditorInspectorSection", Math::round(p_config.base_margin * EDSCALE * inspector_density_scale));
 
 		Color prop_subsection_stylebox_color = p_config.button_disabled_color.lerp(p_config.base_color, 0.48);
 		p_theme->set_color("prop_subsection_stylebox_color", EditorStringName(Editor), prop_subsection_stylebox_color);
@@ -2489,7 +2490,7 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 
 		p_theme->set_type_variation("EditorInspectorButton", "Button");
 		Ref<StyleBoxFlat> style_line = p_theme->get_stylebox(CoreStringName(normal), SNAME("LineEdit"));
-		float vertical_margin = style_line->get_content_margin(SIDE_TOP);
+		float vertical_margin = Math::round(style_line->get_content_margin(SIDE_TOP) * inspector_density_scale);
 
 		Ref<StyleBoxFlat> style_inspector_button = p_config.button_style->duplicate();
 		style_inspector_button->set_content_margin(SIDE_TOP, vertical_margin);
@@ -2523,7 +2524,8 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		Ref<StyleBoxFlat> inspector_button_style = p_theme->get_stylebox(CoreStringName(normal), SNAME("EditorInspectorButton"));
 		Ref<Font> font = p_theme->get_font(SceneStringName(font), SNAME("LineEdit"));
 		int font_size = p_theme->get_font_size(SceneStringName(font_size), SNAME("LineEdit"));
-		p_config.inspector_property_height = inspector_button_style->get_minimum_size().height + font->get_height(font_size);
+		int inspector_property_height_floor = font->get_height(font_size) + 2 * EDSCALE;
+		p_config.inspector_property_height = MAX((int)(inspector_button_style->get_minimum_size().height + font->get_height(font_size)), inspector_property_height_floor);
 		p_theme->set_constant("inspector_property_height", EditorStringName(Editor), p_config.inspector_property_height);
 
 		// EditorInspectorFlatButton.

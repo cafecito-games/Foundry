@@ -2093,8 +2093,9 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_constant("separation", "EditorSectionContainer", 0);
 
 		// Vertical separation between inspector properties.
+		float inspector_density_scale = EditorThemeManager::get_inspector_density_scale(p_config.inspector_density);
 		p_theme->set_type_variation("EditorPropertyContainer", "VBoxContainer");
-		p_theme->set_constant("separation", "EditorPropertyContainer", p_config.increased_margin * EDSCALE);
+		p_theme->set_constant("separation", "EditorPropertyContainer", Math::round(p_config.increased_margin * EDSCALE * inspector_density_scale));
 
 		// EditorProperty.
 
@@ -2126,11 +2127,34 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		style_property_group_note->set_bg_color(property_group_note_color);
 		p_theme->set_stylebox("bg_group_note", "EditorProperty", style_property_group_note);
 
+		// EditorInspectorButton. Buttons placed inside inspector rows (property pickers,
+		// array/dictionary editors, etc.) get their own variation so the density factor can
+		// scale their vertical content margins without affecting buttons outside the inspector.
+		p_theme->set_type_variation("EditorInspectorButton", "Button");
+
+		auto scale_button_vertical_margin = [&](const Ref<StyleBoxFlat> &p_base) {
+			Ref<StyleBoxFlat> style = p_base->duplicate();
+			style->set_content_margin(SIDE_TOP, Math::round(p_base->get_content_margin(SIDE_TOP) * inspector_density_scale));
+			style->set_content_margin(SIDE_BOTTOM, Math::round(p_base->get_content_margin(SIDE_BOTTOM) * inspector_density_scale));
+			return style;
+		};
+
+		Ref<StyleBoxFlat> inspector_button_normal = scale_button_vertical_margin(p_theme->get_stylebox(CoreStringName(normal), SNAME("Button")));
+		Ref<StyleBoxFlat> inspector_button_hover = scale_button_vertical_margin(p_theme->get_stylebox(SceneStringName(hover), SNAME("Button")));
+		Ref<StyleBoxFlat> inspector_button_pressed = scale_button_vertical_margin(p_theme->get_stylebox(SceneStringName(pressed), SNAME("Button")));
+		Ref<StyleBoxFlat> inspector_button_disabled = scale_button_vertical_margin(p_theme->get_stylebox("disabled", SNAME("Button")));
+
+		p_theme->set_stylebox(CoreStringName(normal), "EditorInspectorButton", inspector_button_normal);
+		p_theme->set_stylebox(SceneStringName(hover), "EditorInspectorButton", inspector_button_hover);
+		p_theme->set_stylebox(SceneStringName(pressed), "EditorInspectorButton", inspector_button_pressed);
+		p_theme->set_stylebox("hover_pressed", "EditorInspectorButton", inspector_button_pressed);
+		p_theme->set_stylebox("disabled", "EditorInspectorButton", inspector_button_disabled);
+
 		// Make the height for properties uniform.
-		Ref<StyleBoxFlat> inspector_button_style = p_theme->get_stylebox(CoreStringName(normal), SNAME("Button"));
 		Ref<Font> font = p_theme->get_font(SceneStringName(font), SNAME("LineEdit"));
 		int font_size = p_theme->get_font_size(SceneStringName(font_size), SNAME("LineEdit"));
-		p_config.inspector_property_height = inspector_button_style->get_minimum_size().height + font->get_height(font_size);
+		int inspector_property_height_floor = font->get_height(font_size) + 2 * EDSCALE;
+		p_config.inspector_property_height = MAX((int)(inspector_button_normal->get_minimum_size().height + font->get_height(font_size)), inspector_property_height_floor);
 		p_theme->set_constant("inspector_property_height", EditorStringName(Editor), p_config.inspector_property_height);
 
 		// EditorInspectorSection.
@@ -2142,8 +2166,8 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		inspector_indent_color.a = 0.2;
 		Ref<StyleBoxFlat> inspector_indent_style = EditorThemeManager::make_flat_stylebox(inspector_indent_color, 2.0 * EDSCALE, 0, 2.0 * EDSCALE, 0);
 		p_theme->set_stylebox("indent_box", "EditorInspectorSection", inspector_indent_style);
-		p_theme->set_constant("indent_size", "EditorInspectorSection", 6.0 * EDSCALE);
-		p_theme->set_constant("h_separation", "EditorInspectorSection", 2.0 * EDSCALE);
+		p_theme->set_constant("indent_size", "EditorInspectorSection", Math::round(6.0 * EDSCALE * inspector_density_scale));
+		p_theme->set_constant("h_separation", "EditorInspectorSection", Math::round(2.0 * EDSCALE * inspector_density_scale));
 
 		Color prop_subsection_stylebox_color = Color(1, 1, 1, 0);
 		p_theme->set_color("prop_subsection_stylebox_color", EditorStringName(Editor), prop_subsection_stylebox_color);

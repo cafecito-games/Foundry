@@ -56,6 +56,7 @@ public:
 		String style;
 		String preset;
 		String spacing_preset;
+		String inspector_density;
 
 		Color base_color;
 		Color accent_color;
@@ -225,6 +226,11 @@ public:
 
 	static Ref<EditorTheme> generate_theme(const Ref<EditorTheme> &p_old_theme = nullptr);
 	static bool is_generated_theme_outdated();
+
+	// The single source of truth for how much the `interface/theme/inspector_density`
+	// setting scales inspector styleboxes and spacing constants. Both themes must call
+	// this instead of hardcoding the factors so they cannot drift apart.
+	static float get_inspector_density_scale(const String &p_inspector_density);
 
 	static bool is_dark_theme();
 	static bool is_dark_icon_and_font();

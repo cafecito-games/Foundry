@@ -1224,6 +1224,13 @@
 			The saturation to use for editor icons. Higher values result in more vibrant colors.
 			[b]Note:[/b] The default editor icon saturation was increased by 30% in Godot 4.0 and later. To get Godot 3.x's icon saturation back, set [member interface/theme/icon_saturation] to [code]0.77[/code].
 		</member>
+		<member name="interface/theme/inspector_density" type="String" setter="" getter="">
+			The density of inspector property rows.
+			- [b]Compact[/b] shrinks row height and inspector section spacing.
+			- [b]Default[/b] uses the standard row height and spacing.
+			- [b]Spacious[/b] grows row height and inspector section spacing.
+			See also [member interface/theme/spacing_preset].
+		</member>
 		<member name="interface/theme/relationship_line_opacity" type="float" setter="" getter="">
 			The opacity to use when drawing relationship lines in the editor's [Tree]-based GUIs (such as the Scene tree dock).
 		</member>
