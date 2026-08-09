@@ -10422,26 +10422,28 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 	List<FSParser::ClassNode *> script_classes;
 	HashSet<FSParser::ClassNode *> trait_interface_classes;
 	bool is_base = true;
+	bool receiver_chain_may_have_traits = false;
 
 	if (base_class != nullptr) {
+		// Preserve the established ordinary lookup surface for both bare and explicit receivers. The
+		// trait fallback below has its own receiver-only inheritance walk, so lexical outers keep their
+		// ordinary precedence without donating their applied traits.
 		get_class_node_current_scope_classes(base_class, &script_classes, p_identifier);
-		// Flattened trait members are reachable from a class that applies the trait
-		// (directly or transitively), and from a trait that requires another trait.
-		// They are treated as instance-accessible members of the using scope.
-		if (base_class->is_trait || !base_class->used_traits.is_empty()) {
-			resolve_trait_uses(base_class, p_identifier);
-			for (FSParser::ClassNode *trait : base_class->resolved_traits) {
-				if (script_classes.find(trait) == nullptr) {
-					script_classes.push_back(trait);
-				}
-				trait_interface_classes.insert(trait);
+		for (FSParser::ClassNode *lookup_class = base_class; lookup_class != nullptr; lookup_class = lookup_class->base_type.class_type) {
+			if (lookup_class->is_trait || !lookup_class->used_traits.is_empty()) {
+				receiver_chain_may_have_traits = true;
+				break;
 			}
 		}
 	}
 
 	bool is_constructor = base.is_meta_type && p_identifier->name == SNAME("new");
+	bool searched_trait_members = false;
+	bool ordinary_member_name_found = false;
+	bool found_unflattenable_trait_member = false;
 
-	for (FSParser::ClassNode *script_class : script_classes) {
+	for (List<FSParser::ClassNode *>::Element *script_class_element = script_classes.front(); script_class_element != nullptr; script_class_element = script_class_element->next()) {
+		FSParser::ClassNode *script_class = script_class_element->get();
 		const bool is_trait_interface_class = trait_interface_classes.has(script_class);
 		const bool can_access_instance_member = is_base || is_trait_interface_class;
 		FSParser::EnumNode *enum_file_decl = script_class->is_enum_file ? script_class->enum_file_decl : nullptr;
@@ -10505,6 +10507,13 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 		}
 
 		if (script_class->has_member(name)) {
+			if (is_base && !is_trait_interface_class) {
+				// An ordinary declaration claims its name even when this access form cannot use it (for
+				// example an instance member named through a class handle). Compiler flattening drops a
+				// same-named trait member in that case, so analyzer fallback must not resurrect it. Lexical
+				// outers are outside the receiver inheritance segment and do not participate in flattening.
+				ordinary_member_name_found = true;
+			}
 			resolve_class_member(script_class, name, p_identifier);
 
 			FSParser::ClassNode::Member member = script_class->get_member(name);
@@ -10618,8 +10627,23 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 
 		if (is_base) {
 			is_base = script_class->base_type.class_type != nullptr;
-			if (!is_base && p_base != nullptr && trait_interface_classes.is_empty()) {
+			if (!is_base && p_base != nullptr && !receiver_chain_may_have_traits) {
+				// Preserve the pre-trait-fallback behavior for explicit receivers whose entire chain has
+				// no trait surface: their lexical outers were never needed as an instance-member fallback.
 				break;
+			}
+		}
+
+		// Only after the ordinary class/base/outer lookup has missed, append the one trait declaration
+		// that supplies this name. The helper walks the receiver's inheritance chain but not lexical
+		// outers, and this marker makes trait members instance-accessible like flattened class members.
+		if (script_class_element->next() == nullptr && !searched_trait_members && !ordinary_member_name_found) {
+			searched_trait_members = true;
+			FSParser::ClassNode *declaring_trait = nullptr;
+			FSParser::ClassNode::Member trait_member;
+			if (find_trait_member_in_inheritance_chain(base_class, name, p_identifier, declaring_trait, trait_member, &found_unflattenable_trait_member)) {
+				script_classes.push_back(declaring_trait);
+				trait_interface_classes.insert(declaring_trait);
 			}
 		}
 	}
@@ -10742,6 +10766,17 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 				p_identifier->set_datatype(type_from_variant(int_constant, p_identifier));
 			}
 		}
+	}
+
+	// A non-flattened trait declaration does not claim the runtime name. For an explicit receiver,
+	// diagnose it as missing only after external-script and native surfaces have also missed. A bare
+	// name continues through conformance, global, builtin, and autoload lookup in reduce_identifier(),
+	// which supplies the ordinary undeclared-name diagnostic if every one of those surfaces misses.
+	if (p_base != nullptr && found_unflattenable_trait_member && p_identifier->get_datatype().has_no_type()) {
+		push_error(vformat(R"(Cannot find member "%s" in base "%s".)", name, base.to_string()), p_identifier);
+		FSParser::DataType dummy;
+		dummy.kind = FSParser::DataType::VARIANT;
+		p_identifier->set_datatype(dummy);
 	}
 }
 
@@ -14546,16 +14581,12 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		base_class = base_class->base_type.class_type;
 	}
 
-	// Resolve calls to methods flattened in from applied traits, both when the base is a
-	// trait (trait-requires-trait) and when it is a class that applies traits directly.
-	if (found_function == nullptr && original_base_class != nullptr && (original_base_class->is_trait || !original_base_class->used_traits.is_empty())) {
-		resolve_trait_uses(original_base_class, p_source);
-		for (FSParser::ClassNode *trait : original_base_class->resolved_traits) {
-			if (trait == nullptr || !trait->has_member(function_name)) {
-				continue;
-			}
-
-			const FSParser::ClassNode::Member &member = trait->get_member(function_name);
+	// Resolve calls to methods flattened in from traits applied anywhere along the receiver's class
+	// chain, after every ordinary class member has had precedence.
+	if (found_function == nullptr && original_base_class != nullptr) {
+		FSParser::ClassNode *declaring_trait = nullptr;
+		FSParser::ClassNode::Member member;
+		if (find_trait_member_in_inheritance_chain(original_base_class, function_name, p_source, declaring_trait, member)) {
 			if (member.type != FSParser::ClassNode::Member::FUNCTION) {
 				const FSParser::DataType member_type = member.get_datatype();
 				if (member_type.is_set() && member_type.kind == FSParser::DataType::BUILTIN && member_type.builtin_type == Variant::CALLABLE) {
@@ -14565,10 +14596,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				return false;
 			}
 
-			resolve_class_member(trait, function_name, p_source);
+			resolve_class_member(declaring_trait, function_name, p_source);
 			found_function = member.function;
-			found_in_class = trait;
-			break;
+			found_in_class = declaring_trait;
 		}
 	}
 

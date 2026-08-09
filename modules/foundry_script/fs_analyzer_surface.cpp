@@ -1267,12 +1267,71 @@ bool FSAnalyzer::resolve_type_parameter(const StringName &p_name, FSParser::Data
 	return true;
 }
 
+// Mirrors `FSCompiler::_is_flattenable_trait_member` for class receivers. A trait receiver also
+// exposes transitive abstract function requirements as callable interface signatures even though no
+// function body is copied into an implementing class. Inner classes, tuples, and export groups are
+// never inherited through this fallback.
+static bool _is_analyzer_reachable_trait_member(const FSParser::ClassNode::Member &p_member, bool p_receiver_is_trait) {
+	switch (p_member.type) {
+		case FSParser::ClassNode::Member::VARIABLE:
+		case FSParser::ClassNode::Member::CONSTANT:
+		case FSParser::ClassNode::Member::ENUM:
+		case FSParser::ClassNode::Member::ENUM_VALUE:
+		case FSParser::ClassNode::Member::SIGNAL:
+			return true;
+		case FSParser::ClassNode::Member::FUNCTION:
+			return p_member.function != nullptr && (p_receiver_is_trait || !p_member.function->is_abstract);
+		default:
+			return false;
+	}
+}
+
+bool FSAnalyzer::find_trait_member_in_inheritance_chain(FSParser::ClassNode *p_receiver, const StringName &p_name,
+		const FSParser::Node *p_source, FSParser::ClassNode *&r_declaring_trait,
+		FSParser::ClassNode::Member &r_member, bool *r_found_unflattenable) {
+	r_declaring_trait = nullptr;
+	r_member = FSParser::ClassNode::Member();
+	if (r_found_unflattenable != nullptr) {
+		*r_found_unflattenable = false;
+	}
+	HashSet<FSParser::ClassNode *> seen_traits;
+	const bool receiver_is_trait = p_receiver != nullptr && p_receiver->is_trait;
+
+	// Flattened class members and transitive trait requirements remain reachable even though their
+	// declarations are not copied into the receiver's AST. Walk only the receiver's inheritance chain:
+	// lexical outers remain ordinary scope entries and must never donate their traits to an inner receiver.
+	for (FSParser::ClassNode *owner = p_receiver; owner != nullptr; owner = owner->base_type.class_type) {
+		if (resolve_trait_uses(owner, p_source) != OK) {
+			return false;
+		}
+		for (FSParser::ClassNode *trait : owner->resolved_traits) {
+			if (trait == nullptr || seen_traits.has(trait)) {
+				continue;
+			}
+			seen_traits.insert(trait);
+			if (!trait->has_member(p_name)) {
+				continue;
+			}
+			const FSParser::ClassNode::Member &member = trait->get_member(p_name);
+			if (!_is_analyzer_reachable_trait_member(member, receiver_is_trait)) {
+				if (r_found_unflattenable != nullptr) {
+					*r_found_unflattenable = true;
+				}
+				continue;
+			}
+			r_declaring_trait = trait;
+			r_member = member;
+			return true;
+		}
+	}
+	return false;
+}
+
 FSParser::FunctionNode *FSAnalyzer::find_generic_method(FSParser::ClassNode *p_class, const StringName &p_name, bool &r_found_member) {
 	// Find a generic method named `p_name` reachable from `p_class`, matching get_function_signature's
 	// resolution order: the entire class/base chain is searched for an own member first, and only if
-	// none is found are the starting class's applied traits consulted (base-class traits are already
-	// flattened into the base members walked above). `r_found_member` reports whether any member of
-	// that name exists, so callers can tell a missing method from a non-generic one.
+	// none is found are traits applied anywhere along that chain consulted. `r_found_member` reports
+	// whether any member of that name exists, so callers can tell a missing method from a non-generic one.
 	r_found_member = false;
 	for (FSParser::ClassNode *lookup_class = p_class; lookup_class != nullptr; lookup_class = lookup_class->base_type.class_type) {
 		if (lookup_class->has_member(p_name)) {
@@ -1284,19 +1343,14 @@ FSParser::FunctionNode *FSAnalyzer::find_generic_method(FSParser::ClassNode *p_c
 			return nullptr;
 		}
 	}
-	if (p_class != nullptr && (p_class->is_trait || !p_class->used_traits.is_empty())) {
-		resolve_trait_uses(p_class);
-		for (FSParser::ClassNode *trait : p_class->resolved_traits) {
-			if (trait == nullptr || !trait->has_member(p_name)) {
-				continue;
-			}
-			r_found_member = true;
-			const FSParser::ClassNode::Member &member = trait->get_member(p_name);
-			if (member.type == FSParser::ClassNode::Member::FUNCTION && member.function != nullptr && !member.function->type_parameters.is_empty()) {
-				return member.function;
-			}
-			return nullptr;
+	FSParser::ClassNode *declaring_trait = nullptr;
+	FSParser::ClassNode::Member member;
+	if (find_trait_member_in_inheritance_chain(p_class, p_name, nullptr, declaring_trait, member)) {
+		r_found_member = true;
+		if (member.type == FSParser::ClassNode::Member::FUNCTION && member.function != nullptr && !member.function->type_parameters.is_empty()) {
+			return member.function;
 		}
+		return nullptr;
 	}
 	return nullptr;
 }

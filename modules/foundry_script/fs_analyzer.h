@@ -491,6 +491,9 @@ private:
 	Error resolve_class_inheritance(FSParser::ClassNode *p_class, bool p_recursive);
 	FSParser::DataType resolve_datatype(FSParser::TypeNode *p_type);
 	bool resolve_type_parameter(const StringName &p_name, FSParser::DataType &r_type);
+	bool find_trait_member_in_inheritance_chain(FSParser::ClassNode *p_receiver, const StringName &p_name,
+			const FSParser::Node *p_source, FSParser::ClassNode *&r_declaring_trait,
+			FSParser::ClassNode::Member &r_member, bool *r_found_unflattenable = nullptr);
 	FSParser::FunctionNode *find_generic_method(FSParser::ClassNode *p_class, const StringName &p_name, bool &r_found_member);
 	FSParser::DataType substitute_member_type(
 			const FSParser::DataType &p_member_type,
