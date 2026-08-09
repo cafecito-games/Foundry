@@ -795,6 +795,43 @@ static bool _datatype_container_element_contains_self_type_parameter(const FSPar
 	return false;
 }
 
+static bool _datatype_contains_type_parameter_from_scope(
+		const FSParser::DataType &p_type,
+		FSParser::DataType::TypeParameterScope p_scope) {
+	// Synthetic `Self` is reified by declaration lowering rather than erased. The separate inherited
+	// `Self` marker handles the one case where its declaring-class metadata differs from the receiver.
+	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER && p_type.type_parameter_scope == p_scope &&
+			p_type.type_parameter_name != SNAME("@Self")) {
+		return true;
+	}
+	for (const FSParser::DataType &element : p_type.container_element_types) {
+		if (_datatype_contains_type_parameter_from_scope(element, p_scope)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &argument : p_type.type_arguments) {
+		if (_datatype_contains_type_parameter_from_scope(argument, p_scope)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool _container_return_involves_erased_parameter(
+		const FSParser::DataType &p_return_type,
+		FSParser::DataType::TypeParameterScope p_scope) {
+	if (p_return_type.kind != FSParser::DataType::BUILTIN ||
+			(p_return_type.builtin_type != Variant::ARRAY && p_return_type.builtin_type != Variant::DICTIONARY)) {
+		return false;
+	}
+	for (const FSParser::DataType &element : p_return_type.container_element_types) {
+		if (_datatype_contains_type_parameter_from_scope(element, p_scope)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool _datatype_represents_final_class(const FSParser::DataType &p_type) {
 	return p_type.kind == FSParser::DataType::CLASS && p_type.class_type != nullptr && p_type.class_type->is_final;
 }
@@ -10586,10 +10623,16 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 						callable_type = substitute_member_type(
 								callable_type, specialized_base, member.function, &parameter_self_type);
 						callable_type.method_return_type.clear();
-						callable_type.method_return_type.push_back(substitute_member_type(
-								member.function->get_datatype(), specialized_base, member.function, &self_type));
-						if (base_class != nullptr && script_class != base_class && !script_class->is_trait &&
-								_datatype_container_element_contains_self_type_parameter(member.function->get_datatype())) {
+						const FSParser::DataType specialized_return = substitute_member_type(
+								member.function->get_datatype(), specialized_base, member.function, &self_type);
+						callable_type.method_return_type.push_back(specialized_return);
+						const bool inherited_self_return = base_class != nullptr && script_class != base_class &&
+								!script_class->is_trait &&
+								_datatype_container_element_contains_self_type_parameter(member.function->get_datatype());
+						const bool class_parameter_return = _container_return_involves_erased_parameter(
+								member.function->get_datatype(), FSParser::DataType::TYPE_PARAMETER_CLASS);
+						if ((inherited_self_return || class_parameter_return) &&
+								!_signature_type_involves_type_parameter(specialized_return)) {
 							callable_type.method_return_is_erased_container = true;
 						}
 						if (p_base != nullptr) {
@@ -13872,7 +13915,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	}
 
 	if (p_base_type.kind == FSParser::DataType::BUILTIN) {
-		const FSParser::CallNode *call = p_source != nullptr && p_source->type == FSParser::Node::CALL ? static_cast<const FSParser::CallNode *>(p_source) : nullptr;
+		FSParser::CallNode *call = p_source != nullptr && p_source->type == FSParser::Node::CALL ? static_cast<FSParser::CallNode *>(p_source) : nullptr;
 		if (p_base_type.builtin_type == Variant::CALLABLE && p_base_type.is_meta_type && p_function == SNAME("create")) {
 			FSParser::DataType callable_type;
 			if (call != nullptr && call_site_validation.callable_type_from_constant_method_args(call, 0, 1, callable_type)) {
@@ -14644,14 +14687,18 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 						found_function->rest_parameter->get_datatype(), specialized_base, found_function, &parameter_self_type);
 			}
 		}
-		if (p_source != nullptr && p_source->type == FSParser::Node::CALL &&
-				original_base_class != nullptr && found_in_class != nullptr && found_in_class != original_base_class &&
-				!found_in_class->is_trait) {
-			if (_datatype_container_element_contains_self_type_parameter(found_function->get_datatype())) {
+		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base, found_function, &self_type);
+		if (p_source != nullptr && p_source->type == FSParser::Node::CALL && original_base_class != nullptr) {
+			const bool inherited_self_return = found_in_class != nullptr && found_in_class != original_base_class &&
+					!found_in_class->is_trait &&
+					_datatype_container_element_contains_self_type_parameter(found_function->get_datatype());
+			const bool class_parameter_return = _container_return_involves_erased_parameter(
+					found_function->get_datatype(), FSParser::DataType::TYPE_PARAMETER_CLASS);
+			if ((inherited_self_return || class_parameter_return) &&
+					!_signature_type_involves_type_parameter(r_return_type)) {
 				static_cast<FSParser::CallNode *>(p_source)->returns_erased_container = true;
 			}
 		}
-		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base, found_function, &self_type);
 		r_return_type.is_meta_type = false;
 		if (found_function->is_coroutine) {
 			r_return_type = make_coroutine_type(r_return_type);
@@ -16191,8 +16238,10 @@ void FSAnalyzer::mark_coroutine_handle_capture(FSParser::ExpressionNode *p_expre
 	::mark_coroutine_handle_capture(p_expression, p_target_type);
 }
 
-bool FSAnalyzer::signature_type_involves_type_parameter(const FSParser::DataType &p_type) const {
-	return _signature_type_involves_type_parameter(p_type);
+bool FSAnalyzer::container_return_involves_erased_parameter(
+		const FSParser::DataType &p_return_type,
+		FSParser::DataType::TypeParameterScope p_scope) const {
+	return _container_return_involves_erased_parameter(p_return_type, p_scope);
 }
 
 FSAnalyzer::FSAnalyzer(FSParser *p_parser) :

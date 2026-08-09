@@ -1,0 +1,6 @@
+FS_TEST_RUNTIME_ERROR
+>> ERROR: Method/function failed. Returning: false
+>>   Attempted to assign a variable of type 'String' into a TypedArray of type 'int'.
+>> ERROR: Condition "!typed.validate(data[i], "assign")" is true.
+>>   Unable to convert array index 0 from "String" to "int".
+[]

@@ -308,7 +308,7 @@ private:
 		FSParser::DataType explicit_signal_type_from_node(const FSParser::SignalNode *p_signal, const FSParser::DataType &p_receiver_type, const FSParser::ClassNode *p_declaring_class) const;
 		FSParser::ArrayNode *array_literal_argument(const FSParser::CallNode *p_call, int p_argument_index) const;
 		bool callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type);
-		bool callable_type_from_constant_method_args(const FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type);
+		bool callable_type_from_constant_method_args(FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type);
 		bool call_argument_can_be_string_name(const FSParser::CallNode *p_call, int p_argument_index);
 		void validate_strict_callable_method_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_method_arg_index);
 		bool signal_name_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, StringName &r_signal_name) const;
@@ -360,7 +360,9 @@ private:
 			const FSParser::DataType &p_actual_type,
 			const FSParser::Node *p_actual_node) const;
 	void mark_coroutine_handle_capture(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_target_type);
-	bool signature_type_involves_type_parameter(const FSParser::DataType &p_type) const;
+	bool container_return_involves_erased_parameter(
+			const FSParser::DataType &p_return_type,
+			FSParser::DataType::TypeParameterScope p_scope) const;
 
 	// Ensures deferred lambda bodies are resolved before leaving body analysis.
 	class PendingLambdaBodiesScope {
