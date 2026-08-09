@@ -206,6 +206,7 @@ class EditorHelp : public VBoxContainer {
 	static void _finish_regen_script_doc_thread(void *p_udata);
 	static void _reload_scripts_documentation(EditorFileSystemDirectory *p_dir);
 	static void _delete_script_doc_cache();
+	static bool _prepare_doc_cache(const String &p_path);
 	static void _compute_doc_version_hash();
 
 	struct PropertyCompare {
@@ -232,6 +233,10 @@ public:
 	static void save_script_doc_cache();
 	static String get_cache_full_path();
 	static String get_script_doc_cache_full_path();
+
+#ifdef TESTS_ENABLED
+	static bool prepare_doc_cache_for_tests(const String &p_path) { return _prepare_doc_cache(p_path); }
+#endif
 
 	// Adding scripts to DocData directly may make script doc cache inconsistent. Use methods below when adding script docs.
 	// Usage during startup can also cause deadlocks.

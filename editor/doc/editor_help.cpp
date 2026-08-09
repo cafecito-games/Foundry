@@ -3489,8 +3489,8 @@ void EditorHelp::load_script_doc_cache() {
 
 	_wait_for_thread();
 
-	if (!ResourceLoader::exists(get_script_doc_cache_full_path())) {
-		print_verbose("Script documentation cache not found. Regenerating it may take a while for projects with many scripts.");
+	if (!_prepare_doc_cache(get_script_doc_cache_full_path())) {
+		print_verbose("Script documentation cache not found or incompatible. Regenerating it may take a while for projects with many scripts.");
 		regenerate_script_doc_cache();
 		return;
 	}
@@ -3623,6 +3623,19 @@ void EditorHelp::_delete_script_doc_cache() {
 	}
 }
 
+bool EditorHelp::_prepare_doc_cache(const String &p_path) {
+	if (!FileAccess::exists(p_path)) {
+		return false;
+	}
+
+	if (ResourceLoader::get_resource_type(p_path) == "Resource") {
+		return true;
+	}
+
+	DirAccess::remove_file_or_error(ProjectSettings::get_singleton()->globalize_path(p_path));
+	return false;
+}
+
 void EditorHelp::save_script_doc_cache() {
 	if (!_script_docs_loaded.is_set()) {
 		print_verbose("Script docs haven't been properly loaded or regenerated, so don't save them to disk.");
@@ -3659,7 +3672,7 @@ void EditorHelp::generate_doc(bool p_use_cache, bool p_use_script_cache) {
 		_compute_doc_version_hash();
 	}
 
-	if (p_use_cache && FileAccess::exists(get_cache_full_path())) {
+	if (p_use_cache && _prepare_doc_cache(get_cache_full_path())) {
 		worker_thread.start(_load_doc_thread, (void *)p_use_script_cache);
 	} else {
 		print_verbose("Regenerating editor help cache");

@@ -1326,6 +1326,9 @@ Error DocTools::_load(Ref<XMLParser> parser) {
 						c.description = parser->get_node_data();
 					}
 				} else if (name2 == "tutorials") {
+					if (parser->is_empty()) {
+						continue;
+					}
 					while (parser->read() == OK) {
 						if (parser->get_node_type() == XMLParser::NODE_ELEMENT) {
 							String name3 = parser->get_node_name();
