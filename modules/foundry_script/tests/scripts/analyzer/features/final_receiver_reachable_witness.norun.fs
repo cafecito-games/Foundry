@@ -1,7 +1,7 @@
-# An unresolved method on a `final` receiver is a hard error only when nothing can ever supply it.
-# Instance witnesses are deliberately not resolved statically, so this call is not typed from the
-# conformance — but the conformance is reachable, the runtime dispatches to it, and analysis must
-# leave the call alone (merely unsafe) instead of rejecting a program that works.
+# A method on a `final` receiver that a reachable conformance supplies is now resolved from that
+# conformance: the instance witness types the call, so it neither errors as a closed-final receiver nor
+# degrades to an unsafe-access warning. This pins that the reachable witness now types instead of
+# leaving the call merely unsafe.
 const _Conformance = preload("frw_conformance.notest.fs")
 
 

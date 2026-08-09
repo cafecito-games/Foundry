@@ -760,7 +760,7 @@ private:
 			FSParser::ClassNode *p_trait, const HashMap<StringName, FSParser::DataType> &p_trait_substitution);
 	HashMap<StringName, FSParser::DataType> conformance_trait_substitution(FSParser::ClassNode *p_trait,
 			const FSParser::ClassNode::TraitUse &p_trait_use);
-	FSParser::FunctionNode *find_static_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method);
+	FSParser::FunctionNode *find_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method);
 	// True once this analysis has run the conformance-index probe, so it runs at most once per file.
 	bool indexed_conformance_files_probed = false;
 	// Registers the conformances of every conformance-declaring file the project-wide declaration
@@ -768,8 +768,9 @@ private:
 	// whatever this process happened to analyze first. Creates no reach.
 	void ensure_indexed_conformance_files_registered();
 	// True when a retroactive conformance this file can reach supplies `p_method` anywhere on
-	// `p_target_type`'s base chain. Only the name is checked: instance witnesses are not resolved
-	// statically, so this answers "could this call mean something" and never types it.
+	// `p_target_type`'s base chain. Only the name is checked (not whether the witness resolves), so it
+	// serves as a safety net for the closed-final carve-out: it stays true in the one case
+	// `find_conformance_witness` cannot — the declaring parser fails to reload at `INTERFACE_SOLVED`.
 	bool reachable_conformance_supplies_method(const FSParser::DataType &p_target_type, const StringName &p_method);
 	// True when a retroactive conformance supplies `p_method` for `p_target_type` but this file does
 	// not load its declaring file, reporting where it was declared. Lets an unresolved call say why
