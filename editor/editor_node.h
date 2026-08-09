@@ -73,6 +73,8 @@ class DynamicFontImportSettingsDialog;
 class FoundryBuildTaskBootstrapLoader;
 class EditorAbout;
 class StartupDialog;
+class EditorBoard;
+class EditorBoardStrip;
 class EditorBuildProfileManager;
 class EditorBottomDrawerStrip;
 class EditorBottomPanel;
@@ -344,7 +346,7 @@ private:
 	DockSplitContainer *right_l_vsplit = nullptr;
 	DockSplitContainer *right_r_vsplit = nullptr;
 	Control *center_overlay = nullptr;
-	EditorSceneWorkspace *scene_workspace = nullptr;
+	EditorBoardStrip *board_strip = nullptr;
 	int pending_focus_tile_id = -1;
 	uint64_t pending_focus_tile_generation = 0;
 	Control *global_screen_host = nullptr;
@@ -741,6 +743,9 @@ private:
 	void _bind_leaf_docks(int p_leaf_id);
 	void _bind_all_leaf_docks();
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
+	// Every board's workspace routes its leaf lifecycle signals to EditorNode, so a
+	// board created after startup wires itself through this same helper.
+	void _connect_workspace_signals(EditorSceneWorkspace *p_workspace);
 	void _on_leaf_added(int p_leaf_id);
 	void _on_leaf_about_to_remove(int p_leaf_id);
 	void _on_leaf_removed(int p_leaf_id, int p_successor_leaf_id);
@@ -879,7 +884,10 @@ public:
 	static EditorBottomPanel *get_bottom_panel() { return singleton->bottom_panel; }
 	static EditorBottomDrawerStrip *get_bottom_drawer_strip() { return singleton->bottom_drawer_strip; }
 	static EditorMainScreen *get_editor_main_screen() { return singleton->editor_main_screen; }
-	static EditorSceneWorkspace *get_scene_workspace() { return singleton ? singleton->scene_workspace : nullptr; }
+	static EditorBoardStrip *get_board_strip() { return singleton ? singleton->board_strip : nullptr; }
+	// The workspace the user is currently looking at. Call sites that mean "every
+	// workspace in the editor" must go through get_board_strip() instead.
+	static EditorSceneWorkspace *get_scene_workspace();
 
 	// Returns the focused scene tile's in-tile dock instances (not global shell docks).
 	ScenePaneTile *get_focused_tile() const;
