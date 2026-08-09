@@ -4648,7 +4648,27 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 						// Is this even possible to be null at this point?
 						if (obj) {
 							if (obj->is_class_ptr(ScriptFunctionState::get_class_ptr_static())) {
-								result = Signal(obj, SNAME("completed"));
+								FSFunctionState *awaited_state = Object::cast_to<FSFunctionState>(obj);
+								if (awaited_state) {
+									Variant latched;
+									if (awaited_state->_try_get_completed_result(latched)) {
+										// The coroutine behind the handle already finished: resolve
+										// immediately with its latched final result instead of parking
+										// on a one-shot `completed` signal that fired exactly once.
+										result = latched;
+									} else {
+										// Await the first state's `completed` signal directly rather than
+										// building a fresh `Signal(obj, "completed")`. The first state is
+										// the one that actually emits at completion, so a handle to a
+										// later (non-first) state from a manual `resume()` return value
+										// still resolves instead of hanging.
+										result = awaited_state->state.completed;
+									}
+								} else {
+									// A non-FS ScriptFunctionState (from another script language): keep the
+									// original behavior of awaiting its own "completed" signal.
+									result = Signal(obj, SNAME("completed"));
+								}
 							}
 						}
 					}
@@ -6181,6 +6201,16 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 	if (p_state && !awaited) {
 		// This means we have finished executing a resumed function and it was not awaited again.
 		// Signal the next function-state to resume.
+		// Latch the final result on the first state — the object owning the `completed` signal that
+		// callers hold as their `Coroutine[T]` handle — so a later `await` of an already-resolved
+		// handle resolves immediately instead of parking on a signal that fires exactly once. This
+		// covers both normal completion and the error path, since both reach here with `retvalue`
+		// already set (the result, or the return type's default on failure).
+		if (Object *completed_obj = p_state->completed.get_object()) {
+			if (FSFunctionState *first_state = Object::cast_to<FSFunctionState>(completed_obj)) {
+				first_state->_latch_completed_result(retvalue);
+			}
+		}
 		const Variant *args[1] = { &retvalue };
 		p_state->completed.emit(args, 1);
 	}
