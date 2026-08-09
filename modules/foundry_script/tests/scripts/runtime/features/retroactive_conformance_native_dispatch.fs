@@ -37,3 +37,5 @@ func test() -> void:
 	var res := Resource.new()
 	print(res is RtcNativePingable)
 	print((res as RtcNativePingable).ping())
+	# Direct call on a native-typed receiver resolves and dispatches the same witness.
+	print(r.ping())

@@ -33,7 +33,9 @@ func test() -> void:
 	print(via_param(n))
 	print(via_bound(n))
 	print(n is RtcBuiltinPingable)
-	var as_pingable := n as RtcBuiltinPingable
+	# The explicit `as` operator does not yet accept a builtin→trait widening (see
+	# `retroactive_conformance_builtin_is_as`), so adopt via the implicit assignment cast instead.
+	var as_pingable: RtcBuiltinPingable = n
 	print(as_pingable.ping())
 	var as_variant: Variant = n
 	print(as_variant is RtcBuiltinPingable)
@@ -46,5 +48,7 @@ func test() -> void:
 	print(a.size())
 	var before := n
 	var np: RtcBuiltinPingable = before
-	_ = np.ping()
+	print(np.ping())
 	print(before)
+	# Direct call on a typed builtin local resolves and dispatches the same witness.
+	print(n.ping())

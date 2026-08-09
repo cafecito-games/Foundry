@@ -1,6 +1,6 @@
-# The carve-out that keeps the final-receiver rule true also covers a receiver typed as a type
-# parameter bounded by that final class. The conformance is reachable and the runtime dispatches to
-# it, so the call stays merely unsafe instead of being rejected.
+# A type parameter bounded by a `final` class reaches the same conformance its bound does. The
+# reachable instance witness now types the call, so it neither errors as a closed-final bound nor
+# degrades to an unsafe-access warning.
 const _Conformance = preload("frw_conformance.notest.fs")
 
 

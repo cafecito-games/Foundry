@@ -7678,10 +7678,13 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 		// method later, so unless a conformance this file reaches supplies the name, nothing can ever
 		// resolve the call. The soft "may be present on a subtype" treatment below is a bet on a
 		// subtype that cannot exist, so such receivers skip it and are rejected outright. The carve-out
-		// is what keeps the rule true: an instance witness is deliberately not resolved statically, so
-		// a call a reachable conformance supplies is legal and dispatches at run time even though
-		// nothing here types it. A type parameter whose direct bound is such a class is closed for the
-		// same reason and is rejected the same way, with a message naming the bound.
+		// is a safety net: after the change that resolves instance witnesses up front, a reachable
+		// conformance resolves the call before this branch is ever reached. The one case it still covers
+		// is a conformance the registry reports as reachable (`reachable_conformance_supplies_method`)
+		// but whose declaring parser fails to re-load at `INTERFACE_SOLVED`, where `find_conformance_witness`
+		// returns null — rejecting outright would still be wrong there, so the call stays merely unsafe.
+		// A type parameter whose direct bound is such a class is closed for the same reason and is
+		// rejected the same way, with a message naming the bound.
 		const bool receiver_is_final_bounded_parameter = _datatype_is_type_parameter_bounded_by_final_class(base_type);
 		const bool receiver_is_closed_final = !found && !is_self && !p_call->is_super &&
 				base_type.is_hard_type() && !base_type.is_meta_type &&
@@ -13700,17 +13703,26 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	p_base_type = _resolve_type_parameter_bound_chain(p_base_type);
 
 	// A retroactive conformance (`extend Target uses Trait: ...`) supplies its witnesses from outside the
-	// target's own definition, so they are absent from the target's member surface. An instance witness
-	// still reaches its receiver through the runtime's member-miss fallback, but a `static` witness is
-	// only ever named through the target type, where an unresolved call is a hard error with no dynamic
-	// fallback. This fills the signature from such a witness so the call type-checks; the emitted call is
-	// unchanged and lands on the runtime's static witness fallback.
+	// target's own definition, so they are absent from the target's member surface. The runtime reaches
+	// an instance witness through the receiver's member-miss fallback and a `static` witness through the
+	// target type, and both are also named on a value of the conformed type. This fills the signature
+	// from such a witness so the call type-checks exactly as it dispatches; the emitted call is
+	// unchanged and lands on the runtime's witness fallback.
+	//
+	// An instance witness is only ever named on a receiver, never through the type, so a non-static
+	// witness reached on a class handle (`is_meta_type`) is rejected here and falls through to the
+	// existing miss diagnostics: naming an instance member through its type is an error whether the
+	// member is a real one or a witness.
 	//
 	// It is a *fallback*: every call site below runs it only after the target's own surface has missed,
 	// so a witness can never shadow a real member.
-	auto apply_static_conformance_witness = [&](FSParser::ClassNode *p_found_in_class) -> bool {
-		FSParser::FunctionNode *witness = find_static_conformance_witness(p_base_type, function_name);
+	auto apply_conformance_witness = [&](FSParser::ClassNode *p_found_in_class) -> bool {
+		FSParser::FunctionNode *witness = find_conformance_witness(p_base_type, function_name);
 		if (witness == nullptr) {
+			return false;
+		}
+		// An instance witness needs a receiver; the type handle has none, so leave it unresolved.
+		if (!witness->is_static && p_base_type.is_meta_type) {
 			return false;
 		}
 		if (r_found_function) {
@@ -13722,7 +13734,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		if (r_is_noreturn) {
 			*r_is_noreturn = witness->is_noreturn;
 		}
-		r_method_flags.set_flag(METHOD_FLAG_STATIC);
+		if (witness->is_static) {
+			r_method_flags.set_flag(METHOD_FLAG_STATIC);
+		}
 		if (witness->is_coroutine) {
 			r_method_flags.set_flag(METHOD_FLAG_ASYNC);
 		}
@@ -14462,11 +14476,11 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			}
 		}
 
-		// A builtin value type is a supported retroactive-conformance target, so a static witness on it
-		// is reachable once its own surface has missed. An instance receiver names the same class the
-		// type name does, so both forms resolve here; `apply_static_conformance_witness` substitutes
-		// `Self` against the receiver either way.
-		if (!p_is_constructor && apply_static_conformance_witness(nullptr)) {
+		// A builtin value type is a supported retroactive-conformance target, so a witness on it —
+		// `static` or instance — is reachable once its own surface has missed. An instance receiver names
+		// the same class the type name does, so both forms resolve here; `apply_conformance_witness`
+		// substitutes `Self` against the receiver either way.
+		if (!p_is_constructor && apply_conformance_witness(nullptr)) {
 			return true;
 		}
 
@@ -14849,17 +14863,18 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	}
 
 	// Last resort for a script class or a native engine class: its own members, base chain, applied
-	// traits, base scripts, and native surface have all missed, so a `static` witness from a retroactive
-	// conformance is the only thing left. It has to be last, because that is the order the runtime
-	// resolves in — `FSNativeClass::callp` tries the `MethodBind` first, and codegen only routes a call
-	// to the witness path for a name ClassDB does not know. Resolving a witness any earlier would give
-	// the analyzer one signature and the runtime a different function.
+	// traits, base scripts, and native surface have all missed, so a witness from a retroactive
+	// conformance — `static` or instance — is the only thing left. It has to be last, because that is
+	// the order the runtime resolves in — `FSNativeClass::callp` tries the `MethodBind` first, and
+	// codegen only routes a call to the witness path for a name ClassDB does not know. Resolving a
+	// witness any earlier would give the analyzer one signature and the runtime a different function.
 	//
 	// An instance receiver reaches the same witness: `FSInstance::callp` falls back to the conformance
-	// registry after its own member functions miss, so naming a static witness through a value of the
-	// target type dispatches exactly as naming it through the type does. The call is still reported as
-	// a static call on an instance; it is simply no longer an unresolved one.
-	if (!p_is_constructor && apply_static_conformance_witness(original_base_class)) {
+	// registry after its own member functions miss, so naming a witness through a value of the target
+	// type dispatches exactly as the trait surface already typed it. A `static` witness named through
+	// an instance is still reported as a static call on an instance; an instance witness simply resolves
+	// without that warning. Either way, it is no longer an unresolved one.
+	if (!p_is_constructor && apply_conformance_witness(original_base_class)) {
 		return true;
 	}
 

@@ -259,7 +259,7 @@ bool FSAnalyzer::ConformanceVisibility::can_see(const String &p_source_file) con
 	return visible_files.has(p_source_file);
 }
 
-FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method) {
+FSParser::FunctionNode *FSAnalyzer::find_conformance_witness(const FSParser::DataType &p_target_type, const StringName &p_method) {
 	if (p_method == StringName()) {
 		return nullptr;
 	}
@@ -268,14 +268,15 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 		return nullptr;
 	}
 
-	// Only a `static` witness is resolved here. An instance witness is reached through the receiver and
-	// already dispatches via the runtime's member-miss fallback; resolving it statically would change
-	// how instance calls on a conformed target are typed, which this lookup deliberately leaves alone.
+	// A witness from a retroactive conformance — `static` or instance — is resolved here. The runtime
+	// reaches an instance witness through the receiver's member-miss fallback and a `static` witness
+	// through the type, so analysis resolves the exact same function each dispatch will run; resolving
+	// both up front keeps the analyzer and the runtime in agreement on a conformed target.
 	//
 	// The registry's own witness nodes are borrowed from the declaring file's parse tree, which a
 	// registration can outlive, so they are never dereferenced here. The registry only reports *where*
 	// the conformance was declared; the node is then re-found in a parse tree this analysis holds live.
-	auto static_witness_for_target = [&](const String &p_target_fqcn) -> FSParser::FunctionNode * {
+	auto witness_for_target = [&](const String &p_target_fqcn) -> FSParser::FunctionNode * {
 		String declaring_file;
 		int conformance_index = -1;
 		if (!registry->find_witness_location(p_target_fqcn, p_method, declaring_file, conformance_index)) {
@@ -302,7 +303,7 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 		}
 		for (FSParser::FunctionNode *witness : conformance->witnesses) {
 			if (witness != nullptr && witness->identifier != nullptr && witness->identifier->name == p_method) {
-				return witness->is_static ? witness : nullptr;
+				return witness;
 			}
 		}
 		return nullptr;
@@ -314,7 +315,7 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 	// subclass — the same reach `FSConformanceRegistry::find_native_witness_function` gives the runtime.
 	if (p_target_type.kind == FSParser::DataType::NATIVE) {
 		for (StringName cursor = p_target_type.native_type; cursor != StringName(); cursor = ClassDB::get_parent_class(cursor)) {
-			FSParser::FunctionNode *witness = static_witness_for_target(String(cursor));
+			FSParser::FunctionNode *witness = witness_for_target(String(cursor));
 			if (witness != nullptr) {
 				return witness;
 			}
@@ -323,7 +324,7 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 	}
 	if (p_target_type.kind == FSParser::DataType::BUILTIN) {
 		// Builtins have no inheritance chain, so this is an exact lookup.
-		return static_witness_for_target(String(Variant::get_type_name(p_target_type.builtin_type)));
+		return witness_for_target(String(Variant::get_type_name(p_target_type.builtin_type)));
 	}
 
 	// Lookups go strictly by a target's fully-qualified class name. A conformance is also registered
@@ -333,9 +334,9 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 	// alias would let one class answer a call with an unrelated sibling's witness.
 	//
 	// The base chain is walked so a witness declared on a base class stays reachable through a derived
-	// type, matching how the runtime resolves a static witness in `FoundryScript::callp`.
+	// type, matching how the runtime resolves a witness in `FoundryScript::callp`.
 	for (const FSParser::ClassNode *cursor = p_target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
-		FSParser::FunctionNode *witness = static_witness_for_target(cursor->fqcn);
+		FSParser::FunctionNode *witness = witness_for_target(cursor->fqcn);
 		if (witness != nullptr) {
 			return witness;
 		}
@@ -343,7 +344,7 @@ FSParser::FunctionNode *FSAnalyzer::find_static_conformance_witness(const FSPars
 	// A target that arrives as a bare script reference has no ClassNode to read an FQCN from, but a root
 	// class's FQCN *is* its script path, so the path identifies it exactly.
 	if (p_target_type.class_type == nullptr && !p_target_type.script_path.is_empty()) {
-		return static_witness_for_target(p_target_type.script_path);
+		return witness_for_target(p_target_type.script_path);
 	}
 	return nullptr;
 }
@@ -434,7 +435,7 @@ bool FSAnalyzer::reachable_conformance_supplies_method(const FSParser::DataType 
 	ensure_indexed_conformance_files_registered();
 
 	// The base chain is walked because a conformance declared on a base stays reachable through the
-	// derived type, matching `find_static_conformance_witness` and the runtime's witness lookup.
+	// derived type, matching `find_conformance_witness` and the runtime's witness lookup.
 	for (const FSParser::ClassNode *cursor = target_type.class_type; cursor != nullptr; cursor = cursor->base_type.class_type) {
 		String witness_source;
 		int witness_conformance_index = -1;
