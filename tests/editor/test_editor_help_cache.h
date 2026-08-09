@@ -72,15 +72,15 @@ public:
 	const String &get_path() const { return path; }
 };
 
-static void save_cache_resource(const String &p_path) {
+static void save_cache_resource(const String &p_path, uint32_t p_flags = ResourceSaver::FLAG_NONE) {
 	Ref<Resource> resource;
 	resource.instantiate();
-	REQUIRE_EQ(ResourceSaver::save(resource, p_path), OK);
+	REQUIRE_EQ(ResourceSaver::save(resource, p_path, p_flags), OK);
 }
 
 TEST_CASE("[Editor][EditorHelpCache] a current binary resource cache is retained") {
 	ScopedDocCacheFile cache("editor_help_current_cache");
-	save_cache_resource(cache.get_path());
+	save_cache_resource(cache.get_path(), ResourceSaver::FLAG_COMPRESS);
 
 	CHECK(EditorHelp::prepare_doc_cache_for_tests(cache.get_path()));
 	CHECK(FileAccess::exists(cache.get_path()));
