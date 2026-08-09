@@ -47,7 +47,7 @@ TEST_CASE("[FoundryTestProgress] Text events include stable prefix and index") {
 
 TEST_CASE("[FoundryTestProgress] JSONL events include version and event name") {
 	Dictionary event;
-	event["version"] = 1;
+	event["version"] = 2;
 	event["event"] = "test_start";
 	event["index"] = 1;
 	event["name"] = "example";
@@ -56,7 +56,7 @@ TEST_CASE("[FoundryTestProgress] JSONL events include version and event name") {
 	Variant parsed = JSON::parse_string(json);
 	REQUIRE(parsed.get_type() == Variant::DICTIONARY);
 	const Dictionary parsed_dict = parsed;
-	CHECK_EQ(int(parsed_dict["version"]), 1);
+	CHECK_EQ(int(parsed_dict["version"]), 2);
 	CHECK_EQ(parsed_dict["event"], "test_start");
 	CHECK_EQ(int(parsed_dict["index"]), 1);
 	CHECK_EQ(parsed_dict["name"], "example");

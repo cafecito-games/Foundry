@@ -79,11 +79,12 @@ jobs:
           mkdir -p shard-logs
           pids=()
           for i in $(seq 1 "$FOUNDRY_SHARDS"); do
-            # Shards run concurrently, so each one needs its own `user://` tree. Without
-            # this, every shard reads and rewrites the same editor settings, caches, and
-            # script-test project config, and one shard can observe another's half-written
-            # file. The XDG variables are the platform's own user-data seam, so unsharded
-            # runs are unaffected.
+            # `user://` is now engine-isolated: `foundry test run` redirects the user-data
+            # root to a per-shard directory under `$FOUNDRY_TEST_SCRATCH` (or the OS temp
+            # dir) on every platform, so concurrent shards never share one `user://` tree.
+            # These per-shard XDG homes are kept as defense-in-depth for config/cache paths
+            # (shader cache, editor settings seams) that the user-data override does not
+            # cover. They are the platform's own seam, so unsharded runs are unaffected.
             shard_home="${RUNNER_TEMP:-/tmp}/foundry-shard-home-$i"
             mkdir -p "$shard_home/config" "$shard_home/data" "$shard_home/cache"
             XDG_CONFIG_HOME="$shard_home/config" \

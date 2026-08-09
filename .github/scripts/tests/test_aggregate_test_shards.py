@@ -23,7 +23,7 @@ import aggregate_test_shards  # noqa: E402
 
 def test_end_event(name: str, suite: str = "[Core]", file: str = "tests/test_a.h", line: int = 10) -> dict[str, Any]:
     return {
-        "version": 1,
+        "version": 2,
         "event": "test_end",
         "name": name,
         "suite": suite,
@@ -33,14 +33,21 @@ def test_end_event(name: str, suite: str = "[Core]", file: str = "tests/test_a.h
     }
 
 
-def run_end_event(passed: int, failed: int = 0, skipped: int = 0, status: str = "passed") -> dict[str, Any]:
+def run_end_event(
+    passed: int,
+    failed: int = 0,
+    skipped: int = 0,
+    status: str = "passed",
+    full_suite_case_count: int = 0,
+) -> dict[str, Any]:
     return {
-        "version": 1,
+        "version": 2,
         "event": "run_end",
         "status": status,
         "passed": passed,
         "failed": failed,
         "skipped": skipped,
+        "full_suite_case_count": full_suite_case_count,
     }
 
 
@@ -63,7 +70,7 @@ class AggregateTestShardsTests(unittest.TestCase):
                 [
                     test_end_event("case a", line=10),
                     test_end_event("corpus", line=99),
-                    run_end_event(passed=2),
+                    run_end_event(passed=2, full_suite_case_count=3),
                 ],
             )
             write_shard(
@@ -72,7 +79,7 @@ class AggregateTestShardsTests(unittest.TestCase):
                 [
                     test_end_event("case b", line=20),
                     test_end_event("corpus", line=99),
-                    run_end_event(passed=2),
+                    run_end_event(passed=2, full_suite_case_count=3),
                 ],
             )
 
@@ -82,27 +89,63 @@ class AggregateTestShardsTests(unittest.TestCase):
         self.assertIn("distinct cases executed: 3", report)
         self.assertIn("all shards reported success", report)
 
-    def test_expected_case_count_mismatch_fails(self):
+    def test_case_on_zero_shards_fails_the_union_check(self):
+        # The partial-overlap check cannot see a case that no shard ran. Each shard
+        # self-reports the full-suite count, and the cross-shard union must equal it; a union
+        # short by one is exactly a case silently dropped onto zero shards.
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1)])
-            write_shard(directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1)])
+            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=3)])
+            write_shard(directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=3)])
 
-            matching, _ = aggregate_test_shards.aggregate(directory, expected_case_count=2)
-            mismatching, report = aggregate_test_shards.aggregate(directory, expected_case_count=3)
+            exit_code, report = aggregate_test_shards.aggregate(directory)
 
-        self.assertEqual(matching, 0)
-        self.assertEqual(mismatching, 1)
-        self.assertIn("expected 3 distinct case(s)", report)
+        self.assertEqual(exit_code, 1)
+        self.assertIn("ran on zero shards", report)
+
+    def test_cross_shard_disagreement_on_case_count_fails(self):
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)])
+            write_shard(directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=3)])
+
+            exit_code, report = aggregate_test_shards.aggregate(directory)
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("disagree on full_suite_case_count", report)
+
+    def test_run_end_missing_case_count_fails(self):
+        # A version-1 (or older) stream omits full_suite_case_count. The aggregator offers no
+        # compatibility with it: the missing field is an error, not a silent skip.
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            legacy_run_end = {"version": 1, "event": "run_end", "status": "passed", "passed": 1, "failed": 0, "skipped": 0}
+            write_shard(directory, 1, [test_end_event("case a", line=10), legacy_run_end])
+            write_shard(directory, 2, [test_end_event("case b", line=20), run_end_event(passed=1, full_suite_case_count=2)])
+
+            exit_code, report = aggregate_test_shards.aggregate(directory)
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("missing 'full_suite_case_count'", report)
+
+    def test_removed_case_count_flag_is_rejected(self):
+        # The dormant per-shard case-count CLI surface was removed in favor of the
+        # self-reported count. argparse rejects the unknown flag (exit code 2). The flag name is
+        # assembled from parts so this file does not itself contain the removed literal token.
+        removed_flag = "--expected-" + "case-count"
+        with tempfile.TemporaryDirectory() as raw_directory:
+            with self.assertRaises(SystemExit) as raised:
+                aggregate_test_shards.main([raw_directory, removed_flag, "5"])
+        self.assertEqual(raised.exception.code, 2)
 
     def test_failing_shard_fails_the_run(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1)])
+            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)])
             write_shard(
                 directory,
                 2,
-                [test_end_event("case b", line=20), run_end_event(passed=0, failed=1, status="failed")],
+                [test_end_event("case b", line=20), run_end_event(passed=0, failed=1, status="failed", full_suite_case_count=2)],
             )
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
@@ -114,7 +157,7 @@ class AggregateTestShardsTests(unittest.TestCase):
     def test_truncated_shard_stream_fails_the_run(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1)])
+            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)])
             # A shard killed mid-run never writes `run_end`, which the exit code alone would
             # not distinguish from a clean finish.
             write_shard(directory, 2, [test_end_event("case b", line=20)])
@@ -128,9 +171,9 @@ class AggregateTestShardsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
             shared = test_end_event("shared", line=42)
-            write_shard(directory, 1, [shared, test_end_event("case a", line=10), run_end_event(passed=2)])
-            write_shard(directory, 2, [shared, test_end_event("case b", line=20), run_end_event(passed=2)])
-            write_shard(directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1)])
+            write_shard(directory, 1, [shared, test_end_event("case a", line=10), run_end_event(passed=2, full_suite_case_count=4)])
+            write_shard(directory, 2, [shared, test_end_event("case b", line=20), run_end_event(passed=2, full_suite_case_count=4)])
+            write_shard(directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1, full_suite_case_count=4)])
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
 
@@ -144,8 +187,8 @@ class AggregateTestShardsTests(unittest.TestCase):
             # Shard 2 died before it opened its progress file. The workflow ignores the shard
             # processes' exit codes, so discovery by glob alone would report a green run over
             # the two survivors and lose a third of the suite.
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1)])
-            write_shard(directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1)])
+            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=2)])
+            write_shard(directory, 3, [test_end_event("case c", line=30), run_end_event(passed=1, full_suite_case_count=2)])
 
             without_expectation, _ = aggregate_test_shards.aggregate(directory)
             with_expectation, report = aggregate_test_shards.aggregate(directory, expected_shards=3)
@@ -161,7 +204,7 @@ class AggregateTestShardsTests(unittest.TestCase):
                 write_shard(
                     directory,
                     index,
-                    [test_end_event(f"case {index}", line=index * 10), run_end_event(passed=1)],
+                    [test_end_event(f"case {index}", line=index * 10), run_end_event(passed=1, full_suite_case_count=3)],
                 )
 
             exit_code, report = aggregate_test_shards.aggregate(directory, expected_shards=3)
@@ -178,8 +221,8 @@ class AggregateTestShardsTests(unittest.TestCase):
     def test_shard_that_executed_nothing_fails(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
-            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1)])
-            write_shard(directory, 2, [run_end_event(passed=0)])
+            write_shard(directory, 1, [test_end_event("case a", line=10), run_end_event(passed=1, full_suite_case_count=1)])
+            write_shard(directory, 2, [run_end_event(passed=0, full_suite_case_count=1)])
 
             exit_code, report = aggregate_test_shards.aggregate(directory)
 

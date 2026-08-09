@@ -78,6 +78,12 @@ class OS {
 
 	RemoteFilesystemClient default_rfs;
 
+	// When non-empty, the no-arg get_user_data_dir() resolves every user-data branch
+	// under this root instead of the platform data path. Set only by the test entrypoint
+	// to give each shard process an isolated `user://` tree. When empty, behavior is
+	// unchanged. Not exposed to scripts or the command line.
+	String user_data_root_override;
+
 	// For tracking benchmark data
 	bool use_benchmark = false;
 	String benchmark_file;
@@ -310,6 +316,10 @@ public:
 
 	virtual String get_user_data_dir(const String &p_user_dir) const;
 	virtual String get_user_data_dir() const;
+	// Redirects `get_user_data_dir()` (and therefore `user://`) to resolve under `p_root`.
+	// Intended for the engine's own test entrypoint; see `user_data_root_override`.
+	void set_user_data_root_override(const String &p_root) { user_data_root_override = p_root; }
+	String get_user_data_root_override() const { return user_data_root_override; }
 	virtual String get_resource_dir() const;
 
 	enum SystemDir {

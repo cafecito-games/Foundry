@@ -69,6 +69,13 @@ public:
 	// coverage that proves the partition covers every case and never repeats one.
 	static Vector<String> select_case_identities(int p_shard_index, int p_shard_total);
 
+	// Number of registered cases that are not currently skip-marked. Intended to be measured
+	// after the `--case`/`--suite` filter marks its non-matches but before the shard partition
+	// marks its out-of-shard cases, so every shard computes the same full-suite count. Works
+	// whether or not sharding is active. Backs the progress stream's self-reported
+	// `full_suite_case_count`, which the shard aggregator cross-checks.
+	static int count_selectable_cases();
+
 	// Identities of the registered cases on the run-everywhere allowlist. These are the only
 	// cases a shard partition is allowed to hand to more than one shard.
 	static Vector<String> select_run_everywhere_case_identities();

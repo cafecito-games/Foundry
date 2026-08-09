@@ -891,6 +891,48 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 #ifdef TESTS_ENABLED
 	test_setup();
 
+	// Per-shard `user://` isolation. `test run` redirects the user-data root to a
+	// deterministic directory under the test scratch space so concurrent shard processes can
+	// never read or delete each other's `user://` files — on every platform, not just where
+	// the CI workflow's per-shard XDG homes apply. The directory is recreated clean each run
+	// so prior-run artifacts never bleed in, and so test runs stop polluting the developer's
+	// real `app_userdata` tree.
+	{
+		String user_data_root;
+		if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+			user_data_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+		}
+		if (user_data_root.is_empty()) {
+			user_data_root = OS::get_singleton()->get_temp_path();
+		}
+		const String leaf = (cli_parse.invocation.test_shard_total > 1)
+				? vformat("user-shard-%d-of-%d", cli_parse.invocation.test_shard_index, cli_parse.invocation.test_shard_total)
+				: "user-unsharded";
+		user_data_root = user_data_root.simplify_path().path_join(leaf);
+
+		Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (da.is_valid()) {
+			if (DirAccess::exists(user_data_root)) {
+				// Recreate clean: erase contents then leave the empty root in place.
+				if (da->change_dir(user_data_root) == OK) {
+					const Error erase_err = da->erase_contents_recursive();
+					if (erase_err != OK) {
+						ERR_PRINT(vformat("Could not erase stale per-shard user-data root \"%s\" (error %d); "
+										  "artifacts from a prior run may bleed into this one.",
+								user_data_root, (int)erase_err));
+					}
+				}
+			}
+			Error make_err = da->make_dir_recursive(user_data_root);
+			if (make_err != OK) {
+				ERR_PRINT(vformat("Could not create per-shard user-data root \"%s\" (error %d); "
+								  "user:// isolation for this run may be incomplete.",
+						user_data_root, (int)make_err));
+			}
+		}
+		OS::get_singleton()->set_user_data_root_override(user_data_root);
+	}
+
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	bool project_loaded_for_build_pipeline = false;
 	const bool old_foundry_build_trusted = ProjectBuildTrustStore::is_cli_trusted_execution();

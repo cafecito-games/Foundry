@@ -155,6 +155,19 @@ Vector<String> FoundryTestCaseShard::select_case_identities(int p_shard_index, i
 	return identities;
 }
 
+int FoundryTestCaseShard::count_selectable_cases() {
+	// Counts every registered case that is not currently skip-marked. When measured after the
+	// `--case`/`--suite` filter (which marks non-matches) and before the shard partition (which
+	// marks out-of-shard cases), the result is identical on every shard regardless of `n`.
+	int count = 0;
+	for (const doctest::detail::TestCase &test_case : doctest::detail::getRegisteredTests()) {
+		if (!test_case.m_skip) {
+			count++;
+		}
+	}
+	return count;
+}
+
 Vector<String> FoundryTestCaseShard::select_run_everywhere_case_identities() {
 	Vector<String> identities;
 	for (const doctest::detail::TestCase &test_case : doctest::detail::getRegisteredTests()) {

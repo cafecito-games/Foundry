@@ -53,6 +53,9 @@ struct Config {
 
 void configure_from_invocation(const FoundryCLIParser::CLIInvocation &p_invocation);
 void set_doctest_quiet(bool p_quiet);
+// Records the full-suite (pre-partition) case count so the progress stream can self-report it
+// on `run_start`/`run_end`. Every shard reports the same value; the aggregator cross-checks it.
+void set_full_suite_case_count(int p_count);
 bool is_enabled();
 const Config &get_config();
 
