@@ -1125,6 +1125,16 @@ class FSFunctionState : public ScriptFunctionState {
 	Variant _signal_callback(const Variant **p_args, int p_argcount, Callable::CallError &r_error);
 	Ref<FSFunctionState> first_state;
 
+	// Latches the coroutine's final result once it completes, so that a later `await` of an
+	// already-resolved handle resolves immediately instead of parking forever on a `completed`
+	// signal that fired exactly once at completion. Only the first state (the one owning the
+	// `completed` signal that callers hold as their `Coroutine[T]` handle) ever holds the latch.
+	// Both accessors take the `FSLanguage::mutex` so a cross-thread `await` cannot race the latch.
+	bool completed_latched = false;
+	Variant latched_result;
+	void _latch_completed_result(const Variant &p_result);
+	bool _try_get_completed_result(Variant &r_result) const;
+
 	SelfList<FSFunctionState> scripts_list;
 	SelfList<FSFunctionState> instances_list;
 

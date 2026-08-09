@@ -794,6 +794,21 @@ bool FSFunctionState::is_valid(bool p_extended_check) const {
 	return true;
 }
 
+void FSFunctionState::_latch_completed_result(const Variant &p_result) {
+	MutexLock lock(FSLanguage::get_singleton()->mutex);
+	completed_latched = true;
+	latched_result = p_result;
+}
+
+bool FSFunctionState::_try_get_completed_result(Variant &r_result) const {
+	MutexLock lock(FSLanguage::get_singleton()->mutex);
+	if (!completed_latched) {
+		return false;
+	}
+	r_result = latched_result;
+	return true;
+}
+
 Variant FSFunctionState::resume(const Variant &p_arg) {
 	ERR_FAIL_NULL_V(function, Variant());
 
