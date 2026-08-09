@@ -1,4 +1,4 @@
-# Custom JSON Marshalling Implementation Plan
+# Custom JSON Marshaling Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers-extended-cc:subagent-driven-development (recommended) or superpowers-extended-cc:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -637,7 +637,7 @@ TEST_CASE("[JSONMarshal] Marshaller declining leaves output unchanged") {
 	JSON::set_object_marshaller(nullptr);
 }
 
-TEST_CASE("[JSONMarshal] Marshalled tree is encoded") {
+TEST_CASE("[JSONMarshal] Marshaled tree is encoded") {
 	RecordingMarshaller marshaller;
 	Dictionary payload;
 	payload["level"] = 3;
@@ -652,7 +652,7 @@ TEST_CASE("[JSONMarshal] Marshalled tree is encoded") {
 	JSON::set_object_marshaller(nullptr);
 }
 
-TEST_CASE("[JSONMarshal] Marshalled object nested in a container is encoded") {
+TEST_CASE("[JSONMarshal] Marshaled object nested in a container is encoded") {
 	RecordingMarshaller marshaller;
 	marshaller.payload = 7;
 	JSON::set_object_marshaller(&marshaller);
@@ -750,11 +750,11 @@ In `core/io/json.cpp`, add before `default:` in the `switch (p_var.get_type())`:
 				ERR_FAIL_MSG("Converting circular structure to JSON.");
 			}
 
-			Variant marshalled;
+			Variant marshaled;
 			p_object_markers.insert(object_id);
-			const bool handled = object_marshaller->marshal_object(object, marshalled);
+			const bool handled = object_marshaller->marshal_object(object, marshaled);
 			if (handled) {
-				_stringify(r_result, marshalled, p_indent, p_cur_indent, p_sort_keys, p_markers, p_full_precision, p_object_markers);
+				_stringify(r_result, marshaled, p_indent, p_cur_indent, p_sort_keys, p_markers, p_full_precision, p_object_markers);
 			}
 			p_object_markers.erase(object_id);
 
@@ -821,7 +821,7 @@ git commit -m "feat(json): Add object marshaller seam to JSON.stringify"
 
 ---
 
-### Task 5: Declare the builtin marshalling types
+### Task 5: Declare the builtin marshaling types
 
 **Goal:** `JsonNode`, `JsonDecodeError`, `JsonResult[T]`, and `JsonSerializable` exist as builtin global types usable from user scripts.
 
@@ -1122,7 +1122,7 @@ git add modules/foundry_script/builtin/ \
         modules/foundry_script/tests/scripts/analyzer/features/json_serializable_conformance.* \
         modules/foundry_script/tests/scripts/analyzer/errors/json_serializable_wrong_from_json_return.* \
         tests/test_main.cpp
-git commit -m "feat(foundry_script): Add builtin JSON marshalling types"
+git commit -m "feat(foundry_script): Add builtin JSON marshaling types"
 ```
 
 ---
@@ -1251,7 +1251,7 @@ git commit -m "feat(foundry_script): Register to_json as a script-dispatched hoo
 
 **Acceptance Criteria:**
 - [ ] `JSON.stringify(player)` produces the class's `to_json` representation
-- [ ] A conforming object nested in a Dictionary or Array is marshalled
+- [ ] A conforming object nested in a Dictionary or Array is marshaled
 - [ ] A non-conforming object is unchanged
 - [ ] A malformed `JsonNode` array `push_error`s and yields `null`
 - [ ] Lowering enforces a depth limit mirroring `MAX_RECURSION_DEPTH`
@@ -1768,7 +1768,7 @@ Expected: all hooks pass. If the generated-doc dry run reports a diff, apply it 
 
 ```bash
 git add doc/classes/JSON.xml modules/foundry_script/doc_classes/
-git commit -m "docs: Document JSON custom marshalling API"
+git commit -m "docs: Document JSON custom marshaling API"
 ```
 
 ---

@@ -188,6 +188,7 @@ repos:
             modules/foundry_script/tests/scripts/parser/features/mixed_indentation_on_blank_lines\.fs|
             modules/foundry_script/tests/scripts/parser/warnings/empty_file_newline_comment\.norun\.fs|
             modules/foundry_script/tests/scripts/parser/warnings/empty_file_newline\.norun\.fs|
+            tools/foundry-test-adapter/protocol/v1/fixtures/.*|
             tests/data/.*\.bin
           )$
 
