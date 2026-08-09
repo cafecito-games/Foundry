@@ -31,7 +31,6 @@ async func drain(handle: Coroutine[Crate]) -> void:
 
 func test() -> void:
 	var handle: Coroutine[Crate] = ImageTexture.pack(go)
-	@warning_ignore("missing_await")
 	drain(handle)
 	go.emit()
 	print(outcome)

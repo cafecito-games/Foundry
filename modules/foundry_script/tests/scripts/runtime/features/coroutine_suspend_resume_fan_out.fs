@@ -26,7 +26,6 @@ async func _runner(p_value: int) -> void:
 
 func test() -> void:
 	for value: int in [1, 2, 3]:
-		@warning_ignore("missing_await")
 		_runner(value)
 	# Every job is parked on the shared signal; no runner has collected a result yet.
 	print("before resume: ", _results)

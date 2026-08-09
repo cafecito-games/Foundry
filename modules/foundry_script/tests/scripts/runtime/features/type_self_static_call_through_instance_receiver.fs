@@ -21,12 +21,11 @@ class Base:
 	static func make() -> Self:
 		return Self.new()
 
-	# A static coroutine: it suspends before its `Self`-typed return is produced, so the receiver has
+	# A static coroutine: it suspends before it can read the awaited signal value, so the receiver has
 	# to survive the suspension for the resumed frame to validate the value it comes back with.
-	static func wait_for(source: Self) -> Self:
+	static func wait_for(source: Self) -> void:
 		var received: Variant = await source.done
 		print("resumed parameter is Child: %s" % [received is Child])
-		return source
 
 
 class Child extends Base:
@@ -57,8 +56,6 @@ func test() -> void:
 	print("three-level receiver factory is Leaf: %s" % [leaf.make() is Leaf])
 
 	# A suspended static frame keeps the receiver it was entered with across the resumption.
-	@warning_ignore("missing_await")
-	@warning_ignore("return_value_discarded")
 	child.wait_for(child)
 	child.done.emit(child)
 

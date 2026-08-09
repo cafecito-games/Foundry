@@ -1,0 +1,2 @@
+FS_TEST_OK
+~~ WARNING at line 7: (MISSING_AWAIT) The call returns a "Coroutine[Variant]" whose result is discarded. Use "await", or store or pass the handle if it is awaited elsewhere.

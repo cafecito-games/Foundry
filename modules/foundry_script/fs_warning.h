@@ -125,7 +125,7 @@ public:
 		WARN, // MISSING_TOOL
 		WARN, // REDUNDANT_STATIC_UNLOAD
 		WARN, // REDUNDANT_AWAIT
-		IGNORE, // MISSING_AWAIT
+		WARN, // MISSING_AWAIT // Root non-void coroutine discard; a Coroutine[void] fire-and-forget is exempt.
 		WARN, // ASSERT_ALWAYS_TRUE
 		WARN, // ASSERT_ALWAYS_FALSE
 		WARN, // INTEGER_DIVISION

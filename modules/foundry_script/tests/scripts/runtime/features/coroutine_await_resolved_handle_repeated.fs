@@ -17,6 +17,5 @@ async func _drain(p_handle: Coroutine[String]) -> void:
 
 
 func test() -> void:
-	@warning_ignore("missing_await")
 	_drain(_job())
 	go.emit()

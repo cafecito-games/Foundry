@@ -1296,6 +1296,19 @@ static FSParser::DataType make_coroutine_type(const FSParser::DataType &p_result
 	type.set_container_element_type(0, result_type);
 	return type;
 }
+// A root-discarded coroutine call loses nothing when its phantom result is hard "void": there is no
+// value to keep, the language has no exceptions whose failure would go unobserved, and runtime errors
+// print regardless of awaiting. Fire-and-forget launching a Coroutine[void] is the established idiom,
+// so MISSING_AWAIT skips it. A result-less coroutine (no container_element_type at [0], produced by
+// lossy signature boundaries) and any non-void result stay conservative: an unknown result may be
+// meaningful, so it still warns.
+static bool coroutine_result_is_void(const FSParser::DataType &p_call_type) {
+	if (!p_call_type.is_coroutine || !p_call_type.has_container_element_type(0)) {
+		return false;
+	}
+	const FSParser::DataType result = p_call_type.get_container_element_type(0);
+	return result.kind == FSParser::DataType::BUILTIN && result.builtin_type == Variant::NIL;
+}
 
 // A coroutine call whose live `FSFunctionState` handle is captured into a statically
 // `Coroutine[T]`-typed slot (variable/parameter/return value, or a `Coroutine[T]` container
@@ -7744,9 +7757,13 @@ void FSAnalyzer::reduce_call(FSParser::CallNode *p_call, bool p_is_await, bool p
 
 	if (call_type.is_coroutine && !p_is_await && p_is_root) {
 		// Honest Coroutine[T] typing makes a held or passed coroutine well-typed, so only a discarded
-		// coroutine *statement* (root position) still warns about a probably-forgotten "await".
+		// coroutine *statement* (root position) still warns about a probably-forgotten "await". A
+		// root-discard whose phantom result is hard "void" loses nothing (fire-and-forget launch is the
+		// established idiom), so it is exempted; everything else names the discarded type for the reader.
 #ifdef DEBUG_ENABLED
-		parser->push_warning(p_call, FSWarning::MISSING_AWAIT);
+		if (!coroutine_result_is_void(call_type)) {
+			parser->push_warning(p_call, FSWarning::MISSING_AWAIT, call_type.to_string());
+		}
 #endif // DEBUG_ENABLED
 	}
 

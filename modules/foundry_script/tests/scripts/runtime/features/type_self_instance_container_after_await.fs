@@ -23,11 +23,9 @@ func test() -> void:
 	# A Child receiver must keep resolving `Self` to Child once its frame is resumed; a regression
 	# would type the array as the declaring Base and print `false`.
 	var child := Child.new()
-	@warning_ignore("missing_await")
 	child.observe(go)
 	go.emit()
 
 	var base := Base.new()
-	@warning_ignore("missing_await")
 	base.observe(go)
 	go.emit()

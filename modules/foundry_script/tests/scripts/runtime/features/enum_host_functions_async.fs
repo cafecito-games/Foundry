@@ -18,7 +18,6 @@ async func _runner() -> void:
 
 
 func test() -> void:
-	@warning_ignore("missing_await")
 	_runner()
 	print("before resume")
 	go.emit()

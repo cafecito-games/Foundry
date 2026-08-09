@@ -122,7 +122,8 @@ String FSWarning::get_message() const {
 		case REDUNDANT_AWAIT:
 			return R"("await" keyword is unnecessary because the expression isn't a coroutine nor a signal.)";
 		case MISSING_AWAIT:
-			return R"("await" keyword might be desired because the expression is a coroutine.)";
+			CHECK_SYMBOLS(1);
+			return vformat(R"*(The call returns a "%s" whose result is discarded. Use "await", or store or pass the handle if it is awaited elsewhere.)*", symbols[0]);
 		case ASSERT_ALWAYS_TRUE:
 			return "Assert statement is redundant because the expression is always true.";
 		case ASSERT_ALWAYS_FALSE:
