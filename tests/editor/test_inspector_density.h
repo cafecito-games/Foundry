@@ -52,6 +52,10 @@ static Ref<EditorTheme> generate_theme_for_density(const String &p_density) {
 static int measure_property_minimum_height(const Ref<EditorTheme> &p_theme) {
 	EditorProperty *property = memnew(EditorProperty);
 	property->set_theme(p_theme);
+	// `set_theme` only notifies descendants of NOTIFICATION_THEME_CHANGED when the control is
+	// inside the scene tree; this control is deliberately standalone, so refresh its theme item
+	// cache directly the same way entering the tree would.
+	property->notification(Control::NOTIFICATION_THEME_CHANGED);
 	int height = (int)property->get_minimum_size().height;
 	memdelete(property);
 	return height;
