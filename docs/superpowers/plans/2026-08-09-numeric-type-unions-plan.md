@@ -290,7 +290,42 @@ git add modules/foundry_script/tests/scripts/lsp
 git commit -m "feat(foundry_script): present type aliases in editor tooling"
 ```
 
-## Task 7: Full regression validation and handoff
+## Task 7: Usage guidance in the language primer
+
+Syntax is documented in `GRAMMAR.md` by Task 1. This task documents *when to use* the feature, which is a separate concern with a separate home. `GRAMMAR.md` declares itself a normative specification and scopes its sync obligation to tokens, keywords, precedence, and syntax (§10), so best-practice prose does not belong there. `docs/fs_language_primer.md` is explicitly the idiomatic-usage reference "for people and code-generating models that need to produce valid, idiomatic `.fs` files" and already carries a `## Common Pitfalls` section.
+
+This matters because the feature's sharpest limits sit exactly where an author's first instinct lands: reaching for a union to distinguish cases (which needs a tagged union), or expecting `+` to work under a `Number` bound (which is rejected by design).
+
+**Files:**
+- Modify: `docs/fs_language_primer.md`
+- Modify: `modules/foundry_script/GRAMMAR.md` (one-line cross-reference only)
+
+- [ ] **Step 1: Add the type-alias/union subsection**
+
+Under `## Grammar And Syntax Cheat Sheet`, near `### Types`, add `### Type Aliases And Unions`. Cover when to reach for a union — one generic function over several numeric types instead of overloads; `[T: int | long]` when direct arithmetic is wanted; a single-member alias such as `type Meters = float` as a zero-cost readability device; a parameter that branches immediately — and when to reach for something else: a tagged union when the cases must be reliably distinguished, a trait when a shared method surface is needed, `T?` for "value or nothing", `Variant` for genuinely dynamic values, and nothing at all for member variables, typed containers, and exports.
+
+Include a short decision table (union / tagged union / trait / nullable / `Variant`); it carries more than paragraphs here.
+
+- [ ] **Step 2: Add a worked example**
+
+Under `## Few-Shot Examples`, show a `Number`-bounded function that narrows before operating. It must not imply that direct arithmetic works under a full `Number` bound, and its type tests must be ordered narrowest-first.
+
+- [ ] **Step 3: Add pitfalls**
+
+Extend `## Common Pitfalls` with entries for: expecting `+` to work under `[X: Number, Y: Number]`; using a union where a tagged union or trait is correct; expecting `is int` and `is long` to be disjoint; unions in typed containers or `@export`; and union-typed member variables, which never narrow.
+
+- [ ] **Step 4: Cross-reference and verify samples**
+
+Add a one-line pointer from the `GRAMMAR.md` type section to the primer, with no duplicated guidance. Verify every new code sample against the shipped implementation by compiling or running it, not by inspection. Do not add a test that asserts on this document's prose — documentation correctness is a review concern per the repository test-authoring rules.
+
+- [ ] **Step 5: Commit**
+
+```sh
+git add docs/fs_language_primer.md modules/foundry_script/GRAMMAR.md
+git commit -m "docs(foundry_script): document idiomatic use of type unions"
+```
+
+## Task 8: Full regression validation and handoff
 
 - [ ] **Step 1: Run the focused suites**
 
