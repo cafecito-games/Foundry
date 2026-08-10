@@ -318,7 +318,7 @@ TEST_CASE("[Editor][SideRail] pressing a non-shown toggle on a docked side only 
 	CHECK(shown[0] == fixture.groups);
 }
 
-TEST_CASE("[Editor][SideRail] selecting a production-focus dock is warning-free and preserves valid focus") {
+TEST_CASE("[Editor][SideRail] selecting production-focus docks is warning-free and preserves valid focus") {
 	CollapseFixture fixture(false);
 	REQUIRE(fixture.groups->get_focus_mode_with_override() == Control::FOCUS_NONE);
 
@@ -326,11 +326,26 @@ TEST_CASE("[Editor][SideRail] selecting a production-focus dock is warning-free 
 	fixture.center->grab_focus();
 	REQUIRE(SceneTree::get_singleton()->get_root()->gui_get_focus_owner() == fixture.center);
 
-	ErrorDetector error_detector;
-	fixture.region.press_rail_toggle(fixture.groups);
+	SUBCASE("a docked rail toggle selects a different tab") {
+		ErrorDetector error_detector;
+		fixture.region.press_rail_toggle(fixture.groups);
 
-	CHECK_FALSE(error_detector.has_error);
-	CHECK(fixture.right_tabs()->get_current_tab_control() == fixture.groups);
+		CHECK_FALSE(error_detector.has_error);
+		CHECK(fixture.right_tabs()->get_current_tab_control() == fixture.groups);
+	}
+
+	SUBCASE("direct focus opens a closed railed drawer") {
+		fixture.region.close_drawer(Side::RIGHT);
+		REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+
+		ErrorDetector error_detector;
+		fixture.region.focus_dock(fixture.groups);
+
+		CHECK_FALSE(error_detector.has_error);
+		CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.groups);
+		CHECK(fixture.right_tabs()->get_current_tab_control() == fixture.groups);
+	}
+
 	Control *focus_owner = SceneTree::get_singleton()->get_root()->gui_get_focus_owner();
 	REQUIRE(focus_owner != nullptr);
 	CHECK(focus_owner == fixture.center);
