@@ -236,15 +236,32 @@ TEST_CASE("[Editor][Automation] a gesture is delivered while input accumulation 
 	DragHarness harness;
 	harness.mount();
 
+	// The pointer starts outside the window, and moving it back across the window
+	// edge would make the display server flush the buffer for its own reasons.
+	// Parking it inside first keeps this case sensitive to the gesture's own
+	// drain and nothing else.
+	DisplayServer::get_singleton()->warp_mouse(Point2i(5, 5));
+
 	const Vector2 from = harness.source->get_global_rect().get_center();
 	const Vector2 to = harness.target->get_global_rect().get_center();
 
 	PackedStringArray events;
 	EditorAutomationInputModifiers modifiers;
-	CHECK(EditorAutomationInput::push_mouse_drag(
-			harness.window, from, to, Vector<Vector2>(), MouseButton::LEFT, modifiers, events, true));
-	MessageQueue::get_singleton()->flush();
 
+	CHECK(EditorAutomationInput::begin_mouse_gesture(harness.window, from, MouseButton::LEFT, modifiers, events));
+	MessageQueue::get_singleton()->flush();
+	// A press that is still sitting in the accumulation buffer has not reached
+	// the input state yet.
+	CHECK(input->is_mouse_button_pressed(MouseButton::LEFT));
+
+	CHECK(EditorAutomationInput::move_mouse_gesture(harness.window, to, Vector<Vector2>(), modifiers, events));
+	MessageQueue::get_singleton()->flush();
+	// Drag detection needs the intermediate motions, which is what the buffer
+	// would have merged away.
+	CHECK(harness.window->gui_is_dragging());
+
+	CHECK(EditorAutomationInput::end_mouse_gesture(harness.window, to, modifiers, events));
+	MessageQueue::get_singleton()->flush();
 	CHECK(harness.target->dropped);
 	CHECK(String(harness.target->dropped_data) == "drag_payload");
 

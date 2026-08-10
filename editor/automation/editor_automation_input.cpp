@@ -47,14 +47,14 @@ namespace {
 Vector2 editor_automation_last_mouse_position;
 MouseButton editor_automation_held_button = MouseButton::NONE;
 
-// Where the system pointer was, in the coordinates of the viewport that owned
-// the gesture, before automation first warped it. Warping is what makes a
-// synthesized drop land where it aims, but it moves the machine's real cursor,
-// so a gesture has to put it back when it ends or is abandoned.
 // The viewport a still-held gesture was started on, so an abandoned gesture can
 // be released on the same viewport that received its press.
 ObjectID editor_automation_gesture_viewport;
 
+// Where the system pointer was, in the coordinates of the viewport that owned
+// the gesture, before automation first warped it. Warping is what makes a
+// synthesized drop land where it aims, but it moves the machine's real cursor,
+// so a gesture has to put it back when it ends or is abandoned.
 ObjectID editor_automation_pointer_restore_viewport;
 Vector2 editor_automation_pointer_restore_position;
 bool editor_automation_pointer_has_restore_position = false;
