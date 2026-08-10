@@ -4916,6 +4916,10 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 		}
 	}
 
+	// Focus may have moved without reaching _set_current_scene_nocheck (already_edited).
+	// Enforce preview-only chrome against the new focused tile regardless.
+	_promote_non_demotable_tiles();
+
 	if (!already_edited) {
 		_set_current_scene_nocheck(p_scene_idx);
 	}
@@ -5370,18 +5374,10 @@ void EditorNode::reveal_script_leaf() {
 	_sync_script_leaf_path();
 }
 
-void EditorNode::_update_tile_display_attachments() {
+void EditorNode::_promote_non_demotable_tiles() {
 	if (!board_strip) {
-		_attach_active_scene_context();
 		return;
 	}
-
-	// Preview-only chrome is a presentational property of every scene tile, not of
-	// the per-scene loop below. Scene-less tiles (e.g. a pane that still holds a
-	// script tab after its last scene was dragged away) are never visited by that
-	// loop, so promote them — and the focused tile — back to FOCUSED_LIVE first.
-	// Otherwise presentation_hidden can stick true with docks and rails gone and
-	// no path that restores them.
 	const int focused_tile_id = editor_data.get_focused_tile_id();
 	for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
 		if (!workspace) {
@@ -5397,6 +5393,22 @@ void EditorNode::_update_tile_display_attachments() {
 			}
 		}
 	}
+}
+
+void EditorNode::_update_tile_display_attachments() {
+	if (!board_strip) {
+		_attach_active_scene_context();
+		return;
+	}
+
+	// Preview-only chrome is a presentational property of every scene tile, not of
+	// the per-scene loop below. Scene-less tiles (e.g. a pane that still holds a
+	// script tab after its last scene was dragged away) are never visited by that
+	// loop, so promote them — and the focused tile — back to FOCUSED_LIVE first.
+	// Otherwise presentation_hidden can stick true with docks and rails gone and
+	// no path that restores them.
+	_promote_non_demotable_tiles();
+	const int focused_tile_id = editor_data.get_focused_tile_id();
 
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		EditorSceneContext *ctx = editor_data.get_scene_context(i);

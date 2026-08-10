@@ -59,6 +59,12 @@ void ScenePaneTile::_notification(int p_what) {
 		case NOTIFICATION_RESIZED: {
 			_fit_content_children();
 		} break;
+		case NOTIFICATION_DRAG_END: {
+			if (chrome_hide_pending) {
+				chrome_hide_pending = false;
+				_apply_preview_chrome_for_current_mode();
+			}
+		} break;
 	}
 }
 
@@ -250,11 +256,12 @@ void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode) {
 	if (preview_only && vp && vp->gui_is_dragging()) {
 		// Hiding the previously focused tile's docks mid-drag synthesizes a
 		// mouse-button release into the drag source via Viewport::_gui_hide_control.
-		// Defer the chrome hide until after the drag resolves; promotion applies
-		// immediately and cancels a stale deferred hide via preview_mode.
-		callable_mp(this, &ScenePaneTile::_apply_preview_chrome_for_current_mode).call_deferred();
+		// Wait for NOTIFICATION_DRAG_END; promotion clears the pending flag and
+		// applies immediately so a stale hide cannot land after focus returns.
+		chrome_hide_pending = true;
 		return;
 	}
+	chrome_hide_pending = false;
 	_apply_preview_chrome_for_current_mode();
 }
 

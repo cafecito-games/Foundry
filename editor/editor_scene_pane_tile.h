@@ -103,6 +103,9 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	EditorSideRailStrip *left_rail = nullptr;
 	EditorSideRailStrip *right_rail = nullptr;
 	TilePreviewMode preview_mode = TilePreviewMode::FOCUSED_LIVE;
+	// Set when a demotion arrives mid-drag; applied on NOTIFICATION_DRAG_END so
+	// hiding docks cannot synthesize a mouse release into the drag source.
+	bool chrome_hide_pending = false;
 
 	// Cost bounds applied while the tile is drawn shrunk in the board overview. Neither
 	// affects layout: the shrink only changes how many pixels the tile's SubViewports

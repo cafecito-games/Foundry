@@ -767,6 +767,10 @@ private:
 	void _sync_script_leaf_path();
 	void _connect_script_leaf_sync();
 	void _update_tile_display_attachments();
+	// Preview-only chrome is a pure function of focus and scene ownership. Promote
+	// every tile that must not stay demoted (focused tile, or any scene-less tile)
+	// so presentation_hidden cannot stick after focus moves without a scene rebuild.
+	void _promote_non_demotable_tiles();
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _sync_focused_tile_chrome(ScenePaneTile *p_tile);
 	void _bind_leaf_docks(int p_leaf_id);
