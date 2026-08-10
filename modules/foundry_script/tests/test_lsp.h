@@ -735,18 +735,28 @@ String lsp_fixture_root_absolute() {
 }
 
 TEST_CASE("[Modules][FoundryScript][LSP scratch] test project root is staged under scratch") {
-	const String scratch_root = lsp_scratch_contract_root();
-	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", scratch_root);
+	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", lsp_scratch_contract_root());
+	// The helper canonicalizes the configured root, so containment is checked against the resolved
+	// path rather than the raw environment value.
+	const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
+	REQUIRE_FALSE(scratch_root.is_empty());
+	if (scratch_root.is_empty()) {
+		return;
+	}
 
 	const String test_root = String(root).simplify_path();
-	CHECK(test_root.begins_with(scratch_root.path_join("")));
+	CHECK(TemporaryProjectTree::is_strict_descendant(scratch_root, test_root));
 	CHECK_NE(test_root, lsp_fixture_root_absolute());
 	CHECK(FileAccess::exists(test_root.path_join("project.foundry")));
 }
 
 TEST_CASE("[Modules][FoundryScript][LSP scratch] temp files resolve inside staged project") {
-	const String scratch_root = lsp_scratch_contract_root();
-	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", scratch_root);
+	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", lsp_scratch_contract_root());
+	const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
+	REQUIRE_FALSE(scratch_root.is_empty());
+	if (scratch_root.is_empty()) {
+		return;
+	}
 	FSLanguageProtocol *proto = initialize(root);
 
 	const String temp_path = "res://lsp/scratch_probe_generated.txt";
@@ -756,7 +766,7 @@ TEST_CASE("[Modules][FoundryScript][LSP scratch] temp files resolve inside stage
 	{
 		ScopedLSPTempFile temp(temp_path, "probe\n");
 		const String absolute_path = ScopedLSPTempFile::resolve_path(temp_path).simplify_path();
-		CHECK(absolute_path.begins_with(scratch_root.path_join("")));
+		CHECK(TemporaryProjectTree::is_strict_descendant(scratch_root, absolute_path));
 		CHECK_FALSE(FileAccess::exists(fixture_path));
 	}
 
