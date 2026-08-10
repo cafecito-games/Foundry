@@ -30,9 +30,13 @@
 
 #pragma once
 
+#include "editor/automation/editor_automation_driver.h"
+#include "editor/automation/editor_automation_mcp_contracts.h"
 #include "editor/automation/editor_automation_selector.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_automation_workspace.h"
+#include "editor/editor_board.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
@@ -483,6 +487,303 @@ TEST_CASE("[Editor][Automation][MCP] snapshot-nested-tabbar-skips-workspace-meta
 	CHECK_FALSE(nested_tab->metadata.has("resource_key"));
 
 	h.unmount();
+}
+
+struct BoardAutomationHarness {
+	Control *host = nullptr;
+	EditorData editor_data;
+	EditorSelection *selection = nullptr;
+	EditorBoardStrip *strip = nullptr;
+
+	// Boards are laid out at the full strip rect, so the strip needs a real size before any
+	// board geometry means anything to the transition-settled predicate.
+	void mount(int p_board_count = 3) {
+		host = memnew(Control);
+		host->set_custom_minimum_size(Size2(800, 600));
+		SceneTree::get_singleton()->get_root()->add_child(host);
+		selection = memnew(EditorSelection);
+		strip = EditorBoardStrip::create(selection, &editor_data);
+		host->add_child(strip);
+		strip->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		host->set_size(Size2(800, 600));
+		strip->set_size(Size2(800, 600));
+		for (int i = strip->get_board_count(); i < p_board_count; i++) {
+			strip->add_board(vformat("Board %d", i + 1));
+		}
+		pump();
+	}
+
+	void pump(double p_delta = 0.016) {
+		SceneTree::get_singleton()->process(p_delta);
+		MessageQueue::get_singleton()->flush();
+	}
+
+	// Advances past the transition duration so the ease-out lands and dormancy settles.
+	void settle() {
+		pump(1.0);
+		pump();
+	}
+
+	void unmount() {
+		SceneTree::get_singleton()->get_root()->remove_child(host);
+		memdelete(host);
+		memdelete(selection);
+	}
+};
+
+static Dictionary board_entry_at(const Dictionary &p_boards_state, int p_index) {
+	const Array boards = p_boards_state.get("boards", Array());
+	if (p_index < 0 || p_index >= boards.size()) {
+		return Dictionary();
+	}
+	return boards[p_index];
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-boards-state-reports-every-board") {
+	BoardAutomationHarness h;
+	h.mount(3);
+	h.settle();
+
+	const Dictionary initial = EditorAutomationWorkspace::capture_boards_state(&h.editor_data, h.strip);
+	CHECK((bool)initial.get("supported", false));
+	CHECK(int(initial.get("board_count", 0)) == 3);
+	CHECK(int(initial.get("active_board", -1)) == 0);
+	CHECK_FALSE((bool)initial.get("overview_active", true));
+
+	const Array boards = initial.get("boards", Array());
+	if (boards.size() != 3) {
+		h.unmount();
+		FAIL_CHECK("a three-board strip must report three board entries");
+		return;
+	}
+
+	for (int i = 0; i < 3; i++) {
+		const Dictionary entry = board_entry_at(initial, i);
+		CHECK(int(entry.get("index", -1)) == i);
+		CHECK(int(entry.get("id", -1)) == h.strip->get_board(i)->get_board_id());
+		CHECK(String(entry.get("title", String())) == h.strip->get_board(i)->get_title());
+		// Only the active board is awake once a switch has settled.
+		CHECK((bool)entry.get("dormant", true) == (i != 0));
+		CHECK((bool)entry.get("active", false) == (i == 0));
+		const Dictionary board_workspace = entry.get("workspace", Dictionary());
+		CHECK((bool)board_workspace.get("supported", false));
+	}
+
+	h.strip->set_active_board(2);
+	h.settle();
+
+	const Dictionary switched = EditorAutomationWorkspace::capture_boards_state(&h.editor_data, h.strip);
+	CHECK(int(switched.get("active_board", -1)) == 2);
+	for (int i = 0; i < 3; i++) {
+		const Dictionary entry = board_entry_at(switched, i);
+		CHECK((bool)entry.get("dormant", true) == (i != 2));
+		CHECK((bool)entry.get("active", false) == (i == 2));
+	}
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-boards-state-active-workspace-matches-single-board-shape") {
+	BoardAutomationHarness h;
+	h.mount(1);
+	h.settle();
+
+	// The board-aware capture must not change what a single-board editor reports for its
+	// one workspace: read_editor_state's `workspace` key keeps describing the active board.
+	const Dictionary boards_state = EditorAutomationWorkspace::capture_boards_state(&h.editor_data, h.strip);
+	const Dictionary board_workspace = board_entry_at(boards_state, 0).get("workspace", Dictionary());
+	const Dictionary active_workspace = EditorAutomationWorkspace::capture_workspace_state(
+			&h.editor_data, h.strip->get_active_workspace());
+
+	const Array expected_keys = active_workspace.keys();
+	CHECK(expected_keys.size() == board_workspace.keys().size());
+	for (int i = 0; i < expected_keys.size(); i++) {
+		const String key = expected_keys[i];
+		CHECK(board_workspace.has(key));
+	}
+	CHECK((bool)board_workspace.get("supported", false) == (bool)active_workspace.get("supported", false));
+	CHECK(int(board_workspace.get("tile_count", -1)) == int(active_workspace.get("tile_count", -2)));
+	CHECK(int(board_workspace.get("focused_leaf_id", -1)) == int(active_workspace.get("focused_leaf_id", -2)));
+	CHECK(int(board_workspace.get("focused_tile_id", -1)) == int(active_workspace.get("focused_tile_id", -2)));
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-boards-state-unsupported-without-a-strip") {
+	EditorData editor_data;
+	const Dictionary state = EditorAutomationWorkspace::capture_boards_state(&editor_data, nullptr);
+	CHECK_FALSE((bool)state.get("supported", true));
+	CHECK(int(state.get("board_count", -1)) == 0);
+	CHECK(int(state.get("active_board", 0)) == -1);
+	CHECK_FALSE((bool)state.get("overview_active", true));
+	const Array boards = state.get("boards", Array());
+	CHECK(boards.is_empty());
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-activate-board-resolves-index-and-title") {
+	BoardAutomationHarness h;
+	h.mount(3);
+	h.settle();
+
+	Dictionary by_index;
+	by_index["board_index"] = 2;
+	const EditorAutomationBoardResolution index_resolution = EditorAutomationWorkspace::resolve_board(h.strip, by_index);
+	CHECK(index_resolution.ok());
+	CHECK(index_resolution.index == 2);
+
+	Dictionary by_title;
+	by_title["board_title"] = h.strip->get_board(1)->get_title();
+	const EditorAutomationBoardResolution title_resolution = EditorAutomationWorkspace::resolve_board(h.strip, by_title);
+	CHECK(title_resolution.ok());
+	CHECK(title_resolution.index == 1);
+
+	// An unknown title is an error, never a silent no-op: the agent gets the titles it
+	// could have meant instead of a success that changed nothing.
+	Dictionary unknown_title;
+	unknown_title["board_title"] = "Not A Board";
+	const EditorAutomationBoardResolution unknown = EditorAutomationWorkspace::resolve_board(h.strip, unknown_title);
+	CHECK_FALSE(unknown.ok());
+	CHECK(unknown.failure_kind == "invalid_target");
+	CHECK(unknown.message.contains("Not A Board"));
+	CHECK(unknown.message.contains(h.strip->get_board(0)->get_title()));
+
+	Dictionary out_of_range;
+	out_of_range["board_index"] = 7;
+	const EditorAutomationBoardResolution too_large = EditorAutomationWorkspace::resolve_board(h.strip, out_of_range);
+	CHECK_FALSE(too_large.ok());
+	CHECK(too_large.failure_kind == "invalid_target");
+
+	const EditorAutomationBoardResolution missing = EditorAutomationWorkspace::resolve_board(h.strip, Dictionary());
+	CHECK_FALSE(missing.ok());
+	CHECK(missing.failure_kind == "invalid_parameter");
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-board-transition-settled-waits-for-the-slide") {
+	BoardAutomationHarness h;
+	h.mount(3);
+	h.settle();
+
+	// An idle strip is settled as soon as two consecutive samples agree.
+	PackedVector2Array previous = EditorAutomationWorkspace::capture_board_geometry(h.strip);
+	h.pump();
+	PackedVector2Array current = EditorAutomationWorkspace::capture_board_geometry(h.strip);
+	CHECK(EditorAutomationWorkspace::board_transition_settled(h.strip, previous, current));
+
+	h.strip->set_active_board(1);
+	previous = EditorAutomationWorkspace::capture_board_geometry(h.strip);
+	h.pump();
+	current = EditorAutomationWorkspace::capture_board_geometry(h.strip);
+	CHECK_FALSE(EditorAutomationWorkspace::board_transition_settled(h.strip, previous, current));
+
+	// The slide takes several frames, and the condition holds off for all of them rather
+	// than reporting settled the moment the switch was requested.
+	int frames = 1;
+	while (!EditorAutomationWorkspace::board_transition_settled(h.strip, previous, current) && frames < 240) {
+		previous = current;
+		h.pump();
+		current = EditorAutomationWorkspace::capture_board_geometry(h.strip);
+		frames++;
+	}
+	CHECK(frames > 2);
+	CHECK(frames < 240);
+	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
+	CHECK(h.strip->get_board(0)->is_dormant());
+	CHECK(h.strip->get_board(1)->get_position().is_equal_approx(Point2()));
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-board-overview-is-observable-in-state") {
+	BoardAutomationHarness h;
+	h.mount(3);
+	h.settle();
+
+	h.strip->set_overview(true);
+	h.settle();
+	const Dictionary overview_state = EditorAutomationWorkspace::capture_boards_state(&h.editor_data, h.strip);
+	CHECK((bool)overview_state.get("overview_active", false));
+	for (int i = 0; i < 3; i++) {
+		// Every board is live in the overview, so none of them reports dormant.
+		CHECK_FALSE((bool)board_entry_at(overview_state, i).get("dormant", true));
+	}
+
+	h.strip->set_overview(false);
+	h.settle();
+	const Dictionary closed_state = EditorAutomationWorkspace::capture_boards_state(&h.editor_data, h.strip);
+	CHECK_FALSE((bool)closed_state.get("overview_active", true));
+	CHECK((bool)board_entry_at(closed_state, 1).get("dormant", false));
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-board-actions-report-a-missing-strip") {
+	// Outside a live editor there is no board strip; the board actions are still routed
+	// (rather than rejected as unknown actions) and fail with a diagnosable message.
+	Node *root = memnew(Node);
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	Dictionary options;
+	options["board_index"] = 1;
+	const EditorAutomationActionResult activate = EditorAutomationDriver::perform(snapshot, "activate_board", Dictionary(), options);
+	CHECK_FALSE(activate.ok);
+	CHECK(activate.kind == "unsupported_action");
+	CHECK(activate.message.contains("board"));
+
+	Dictionary overview_options;
+	overview_options["overview"] = true;
+	const EditorAutomationActionResult overview = EditorAutomationDriver::perform(snapshot, "set_board_overview", Dictionary(), overview_options);
+	CHECK_FALSE(overview.ok);
+	CHECK(overview.kind == "unsupported_action");
+	CHECK(overview.message.contains("board"));
+
+	root->queue_free();
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-board-actions-are-published-in-tool-schemas") {
+	const PackedStringArray actions = EditorAutomationMCPContracts::action_names();
+	CHECK(actions.has("activate_board"));
+	CHECK(actions.has("set_board_overview"));
+
+	const PackedStringArray conditions = EditorAutomationMCPContracts::wait_condition_types();
+	CHECK(conditions.has("board_transition_settled"));
+
+	const Array tools = EditorAutomationMCPContracts::build_tools_list();
+	Dictionary act;
+	for (int i = 0; i < tools.size(); i++) {
+		const Dictionary tool = tools[i];
+		if (String(tool.get("name", String())) == "act") {
+			act = tool;
+			break;
+		}
+	}
+	if (act.is_empty()) {
+		FAIL_CHECK("the act tool must be published in tools/list");
+		return;
+	}
+
+	const Dictionary act_input = act["inputSchema"];
+	const Dictionary act_props = act_input["properties"];
+	const Dictionary action_schema = act_props["action"];
+	const Array action_enum = action_schema["enum"];
+	CHECK(action_enum.has(Variant(String("activate_board"))));
+	CHECK(action_enum.has(Variant(String("set_board_overview"))));
+
+	// Both actions carry their arguments in the published args contract, so an agent can
+	// discover board_index/board_title/overview without reading engine source.
+	const Dictionary args_schema = act_props["args"];
+	const Dictionary args_props = args_schema["properties"];
+	CHECK(args_props.has("board_index"));
+	CHECK(args_props.has("board_title"));
+	CHECK(args_props.has("overview"));
+
+	const Dictionary wait_schema = act_props["wait"];
+	const Dictionary wait_props = wait_schema["properties"];
+	const Dictionary wait_type = wait_props["type"];
+	const Array wait_enum = wait_type["enum"];
+	CHECK(wait_enum.has(Variant(String("board_transition_settled"))));
 }
 
 } // namespace TestEditorAutomationWorkspace

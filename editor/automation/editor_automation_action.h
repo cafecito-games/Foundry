@@ -52,6 +52,8 @@ struct EditorAutomationActionRouteNames {
 	static inline const char *INPUT_DRAG = "input_drag";
 	static inline const char *INPUT_CONTEXT_MENU = "input_context_menu";
 	static inline const char *SEMANTIC_DOCK = "semantic_dock";
+	static inline const char *SEMANTIC_ACTIVATE_BOARD = "semantic_activate_board";
+	static inline const char *SEMANTIC_SET_BOARD_OVERVIEW = "semantic_set_board_overview";
 	static inline const char *INPUT_DOCK = "input_dock";
 	static inline const char *UNSUPPORTED = "unsupported";
 };
@@ -82,6 +84,8 @@ enum class EditorAutomationActionKind {
 	DECREMENT,
 	DRAG,
 	DOCK,
+	ACTIVATE_BOARD,
+	SET_BOARD_OVERVIEW,
 	UNKNOWN,
 };
 

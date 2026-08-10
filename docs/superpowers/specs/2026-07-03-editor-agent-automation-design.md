@@ -254,6 +254,14 @@ The tiled scene workspace exposes additional automation surfaces:
 
 Regression coverage lives in `tests/editor/test_editor_automation_workspace.h` (`mcp-workspace-state`, `mcp-tile-scoped-selector`, `mcp-dock-action`).
 
+## Boards
+
+Boards are whole editing arrangements switched between as a filmstrip, so the automation surface describes the strip alongside the active board's workspace:
+
+- `read_editor_state` returns a `boards` array with one `{ index, id, title, dormant, active, workspace }` entry per board, plus `active_board` and `board_overview_active`. The existing `workspace` key keeps describing the active board, so a single-board editor reports exactly what it reported before boards existed.
+- `act` supports `activate_board` with `board_index` or `board_title` (an unknown title is an error, not a silent no-op) and `set_board_overview` with an `overview` boolean.
+- `wait_for` adds `board_transition_settled`, which returns only once no board is still moving, so an agent never sleeps on the slide or the overview zoom.
+
 ## References
 
 - MCP transports: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports

@@ -33,6 +33,8 @@
 #include "core/object/object.h"
 #include "editor/automation/editor_automation_workspace.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_board.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_data.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_context.h"
@@ -217,6 +219,127 @@ Dictionary EditorAutomationWorkspace::capture_workspace_state(EditorData *p_edit
 	}
 	workspace["tiles"] = tiles;
 	return workspace;
+}
+
+Dictionary EditorAutomationWorkspace::capture_boards_state(EditorData *p_editor_data, EditorBoardStrip *p_strip) {
+	Dictionary boards_state;
+	Array boards;
+	if (p_editor_data == nullptr || p_strip == nullptr) {
+		boards_state["supported"] = false;
+		boards_state["board_count"] = 0;
+		boards_state["active_board"] = -1;
+		boards_state["overview_active"] = false;
+		boards_state["boards"] = boards;
+		return boards_state;
+	}
+
+	const int active_index = p_strip->get_active_index();
+	for (int i = 0; i < p_strip->get_board_count(); i++) {
+		EditorBoard *board = p_strip->get_board(i);
+		if (board == nullptr) {
+			continue;
+		}
+		Dictionary entry;
+		entry["index"] = i;
+		entry["id"] = board->get_board_id();
+		entry["title"] = board->get_title();
+		entry["dormant"] = board->is_dormant();
+		entry["active"] = i == active_index;
+		entry["workspace"] = capture_workspace_state(p_editor_data, board->get_workspace());
+		boards.push_back(entry);
+	}
+
+	boards_state["supported"] = true;
+	boards_state["board_count"] = boards.size();
+	boards_state["active_board"] = active_index;
+	boards_state["overview_active"] = p_strip->is_overview_active();
+	boards_state["boards"] = boards;
+	return boards_state;
+}
+
+EditorAutomationBoardResolution EditorAutomationWorkspace::resolve_board(const EditorBoardStrip *p_strip, const Dictionary &p_options) {
+	EditorAutomationBoardResolution resolution;
+	if (p_strip == nullptr) {
+		resolution.failure_kind = "unsupported_action";
+		resolution.message = "No board strip is available.";
+		return resolution;
+	}
+
+	const int board_count = p_strip->get_board_count();
+	int64_t requested_index = -1;
+	if (_read_optional_int(p_options, "board_index", requested_index)) {
+		if (requested_index < 0 || requested_index >= board_count) {
+			resolution.failure_kind = "invalid_target";
+			resolution.message = vformat("Board index %d is out of range; the editor has %d board(s).", requested_index, board_count);
+			return resolution;
+		}
+		resolution.index = int(requested_index);
+		return resolution;
+	}
+
+	if (_selector_has_key(p_options, "board_title")) {
+		const String requested_title = p_options.get("board_title", Variant());
+		PackedStringArray titles;
+		for (int i = 0; i < board_count; i++) {
+			EditorBoard *board = p_strip->get_board(i);
+			if (board == nullptr) {
+				continue;
+			}
+			if (board->get_title() == requested_title) {
+				resolution.index = i;
+				return resolution;
+			}
+			titles.push_back(board->get_title());
+		}
+		resolution.failure_kind = "invalid_target";
+		resolution.message = vformat("No board is titled '%s'. Available boards: %s.", requested_title, String(", ").join(titles));
+		return resolution;
+	}
+
+	resolution.failure_kind = "invalid_parameter";
+	resolution.message = "activate_board requires a `board_index` or `board_title` argument.";
+	return resolution;
+}
+
+PackedVector2Array EditorAutomationWorkspace::capture_board_geometry(const EditorBoardStrip *p_strip) {
+	PackedVector2Array geometry;
+	if (p_strip == nullptr) {
+		return geometry;
+	}
+	for (int i = 0; i < p_strip->get_board_count(); i++) {
+		EditorBoard *board = p_strip->get_board(i);
+		if (board == nullptr) {
+			continue;
+		}
+		geometry.push_back(board->get_position());
+		geometry.push_back(board->get_size());
+	}
+	return geometry;
+}
+
+bool EditorAutomationWorkspace::board_transition_settled(
+		const EditorBoardStrip *p_strip,
+		const PackedVector2Array &p_previous_geometry,
+		const PackedVector2Array &p_current_geometry) {
+	if (p_strip == nullptr) {
+		return true;
+	}
+	if (p_previous_geometry.size() != p_current_geometry.size()) {
+		return false;
+	}
+	// Compared element-wise instead of with a single array equality check so this keeps its
+	// own explicit length guard above, and so any NaN slipping into a sample makes `!=` true
+	// and this predicate report "not settled" rather than silently treating NaN as equal.
+	for (int i = 0; i < p_current_geometry.size(); i++) {
+		if (p_previous_geometry[i] != p_current_geometry[i]) {
+			return false;
+		}
+	}
+	// The strip processes for as long as a slide is in flight, and keeps processing while
+	// the overview is up to drive its throttled preview refresh. So the process flag is an
+	// exact "slide landed" signal outside the overview, and inside it the geometry above is
+	// what says the zoom stopped.
+	return p_strip->is_overview_active() || !p_strip->is_processing();
 }
 
 bool EditorAutomationWorkspace::selector_is_tile_container(const Dictionary &p_selector) {
