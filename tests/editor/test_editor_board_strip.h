@@ -303,13 +303,18 @@ TEST_CASE("[Editor][Boards] Closing a board with scenes goes through the scene-c
 	const int scene_index = h.editor_data.add_edited_scene(-1);
 	REQUIRE(h.editor_data.get_scene_tile(scene_index) == second_leaf);
 
+	SIGNAL_WATCH(h.strip, "board_removed");
+
 	// With no handler installed the strip refuses rather than discarding the scene.
 	CHECK_FALSE(h.strip->close_board(1));
 	CHECK(h.strip->get_board_count() == 2);
+	SIGNAL_CHECK_FALSE("board_removed");
 
 	// A handler that declines -- the editor's answer while unsaved-changes prompts are
 	// still on screen, and its final answer when one of them is cancelled -- leaves the
-	// board and its scene intact.
+	// board and its scene intact, and emits nothing: a deferred or cancelled close must
+	// be silent so listeners (like EditorBoardSwitcher) never rebuild around a board that
+	// is still there.
 	h.strip->set_board_scene_close_handler(callable_mp_static(&record_board_close));
 	close_handler_record.reset(false);
 	CHECK_FALSE(h.strip->close_board(1));
@@ -321,13 +326,57 @@ TEST_CASE("[Editor][Boards] Closing a board with scenes goes through the scene-c
 	CHECK(h.strip->get_board_count() == 2);
 	CHECK(h.editor_data.get_edited_scene_count() == 1);
 	CHECK(h.editor_data.get_scene_tile(scene_index) == second_leaf);
+	SIGNAL_CHECK_FALSE("board_removed");
 
 	// Once the editor reports every scene dealt with, the board goes.
 	close_handler_record.reset(true);
 	CHECK(h.strip->close_board(1));
 	CHECK(close_handler_record.call_count == 1);
 	CHECK(h.strip->get_board_count() == 1);
+	SIGNAL_CHECK("board_removed", { { 1 } });
 
+	SIGNAL_UNWATCH(h.strip, "board_removed");
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Closing a non-active board shifts trailing indices without reactivating") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("B");
+	REQUIRE(board_b != nullptr);
+	h.pump();
+	EditorBoard *board_c = h.strip->add_board("C");
+	REQUIRE(board_c != nullptr);
+	h.pump();
+
+	h.strip->set_active_board(2);
+	h.pump();
+	REQUIRE(h.strip->get_active_index() == 2);
+	REQUIRE(h.strip->get_active_board() == board_c);
+
+	SIGNAL_WATCH(h.strip, "active_board_changed");
+	SIGNAL_WATCH(h.strip, "board_removed");
+
+	// Board B sits before the active board (C) but is not itself active: closing it must
+	// shift C's index down without touching which board is on screen or emitting
+	// active_board_changed, since the visible board never moved.
+	CHECK(h.strip->close_board(1));
+	h.pump();
+
+	CHECK(h.strip->get_board_count() == 2);
+	CHECK(h.strip->get_board_index(board_a) == 0);
+	CHECK(h.strip->get_board_index(board_c) == 1);
+	CHECK(h.strip->get_active_index() == 1);
+	CHECK(h.strip->get_active_board() == board_c);
+	CHECK_FALSE(board_c->is_dormant());
+	SIGNAL_CHECK("board_removed", { { 1 } });
+	SIGNAL_CHECK_FALSE("active_board_changed");
+
+	SIGNAL_UNWATCH(h.strip, "active_board_changed");
+	SIGNAL_UNWATCH(h.strip, "board_removed");
 	h.unmount();
 }
 
