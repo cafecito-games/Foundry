@@ -43,6 +43,8 @@ namespace {
 constexpr const char *BOARDS_SECTION = "Boards";
 // Vertical gap, in pixels, between a board's bottom edge and its caption.
 constexpr real_t CAPTION_MARGIN = 6.0;
+// Horizontal travel, in pixels, that turns a held caption into a reorder instead of a click.
+constexpr real_t CAPTION_DRAG_THRESHOLD = 6.0;
 } // namespace
 
 void EditorBoardStrip::_notification(int p_what) {
@@ -77,6 +79,8 @@ void EditorBoardStrip::_bind_methods() {
 	// parented into it and drop the registrations keyed on its leaves.
 	ADD_SIGNAL(MethodInfo("board_about_to_close", PropertyInfo(Variant::INT, "index")));
 	ADD_SIGNAL(MethodInfo("board_removed", PropertyInfo(Variant::INT, "index")));
+	// Emitted once per completed reorder, with the indices the board came from and landed on.
+	ADD_SIGNAL(MethodInfo("board_moved", PropertyInfo(Variant::INT, "from"), PropertyInfo(Variant::INT, "to")));
 	ADD_SIGNAL(MethodInfo("active_board_changed", PropertyInfo(Variant::INT, "index")));
 	// Emitted when the zoomed-out overview is entered or left, at the start of the motion
 	// rather than once it settles, so chrome reflecting the mode never lags a transition.
@@ -172,6 +176,60 @@ bool EditorBoardStrip::close_board(int p_index) {
 	return true;
 }
 
+void EditorBoardStrip::move_board(int p_from, int p_to) {
+	ERR_FAIL_INDEX(p_from, boards.size());
+	ERR_FAIL_INDEX(p_to, boards.size());
+	if (p_from == p_to) {
+		return;
+	}
+
+	EditorBoard *moved = boards[p_from];
+	ERR_FAIL_NULL(moved);
+
+	// Captured before the list changes and re-resolved after it, so the board on screen is
+	// the same object either side of the reorder.
+	EditorBoard *previous_active = get_active_board();
+	const ObjectID active_board_id = previous_active ? previous_active->get_instance_id() : ObjectID();
+	const int previous_active_index = active_index;
+
+	boards.remove_at(p_from);
+	boards.insert(p_to, moved);
+
+	// Child order is board order: it decides draw order and which board a click lands on, so
+	// it has to track the list. The caption overlay is pushed back to last afterwards because
+	// it must keep drawing above every board.
+	move_child(moved, p_to);
+	if (caption_overlay) {
+		move_child(caption_overlay, get_child_count() - 1);
+		// Captions are built one per board in board order, so the same move keeps each caption
+		// with its board. Reordering the existing buttons rather than rebuilding them matters
+		// while a drag is live: a rebuild would free the very caption the input is coming from.
+		if (caption_overlay->get_child_count() == boards.size()) {
+			caption_overlay->move_child(caption_overlay->get_child(p_from), p_to);
+		}
+	}
+
+	const int resolved_active = resolve_board_index(active_board_id);
+	if (resolved_active >= 0) {
+		active_index = resolved_active;
+	}
+
+	if (!board_view.is_overview_active() && active_index != previous_active_index) {
+		// Boards are laid out by index, so moving the active board changes where it sits.
+		// The reorder itself is instantaneous, so the strip scrolls onto its new position as
+		// a hard cut rather than sliding: there is no motion here for an ease-out to express.
+		// Settling first is what keeps a slide that was still in flight from leaving a board
+		// awake with nothing left to sleep it.
+		_settle_dormancy();
+		board_view.switch_to_index(active_index, get_size());
+		board_view.finish_transition();
+		set_process(false);
+	}
+
+	queue_sort();
+	emit_signal(SNAME("board_moved"), p_from, p_to);
+}
+
 PackedInt32Array EditorBoardStrip::_collect_board_scene_indices(const EditorBoard *p_board) const {
 	PackedInt32Array indices;
 	ERR_FAIL_NULL_V(p_board, indices);
@@ -237,6 +295,8 @@ void EditorBoardStrip::_clear_boards() {
 	// consistent with "no slide in progress" rather than pointing at a freed instance id.
 	transition_outgoing_id = ObjectID();
 	overview_exit_pending = false;
+	caption_drag_board_id = ObjectID();
+	caption_drag_active = false;
 	set_process(false);
 }
 
@@ -430,6 +490,10 @@ void EditorBoardStrip::_leave_overview_state() {
 	// how long after -- a caller gets around to its own switch_to_index()/exit_overview()
 	// call for the accompanying motion.
 	board_view.leave_overview();
+	// The captions are about to be hidden, so any caption drag they were feeding ends with
+	// them rather than surviving as state pointing at a caption nobody can reach.
+	caption_drag_board_id = ObjectID();
+	caption_drag_active = false;
 	_apply_overview_preview_bounds(false);
 	if (caption_overlay) {
 		caption_overlay->hide();
@@ -537,6 +601,9 @@ void EditorBoardStrip::_rebuild_captions() {
 		// Bound by instance id rather than index: a close shifts every index after it, and
 		// these buttons outlive that shift.
 		caption->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardStrip::_on_caption_pressed).bind(board->get_instance_id()));
+		// Taken before the button's own handling, so a horizontal drag reorders instead of
+		// reading as a click on the board it started over.
+		caption->connect(SceneStringName(gui_input), callable_mp(this, &EditorBoardStrip::_on_caption_gui_input).bind(board->get_instance_id()));
 		caption_overlay->add_child(caption);
 	}
 }
@@ -550,9 +617,22 @@ void EditorBoardStrip::_layout_captions(const Transform2D &p_transform, real_t p
 	fit_child_in_rect(caption_overlay, Rect2(Point2(), size));
 
 	const int count = MIN(caption_overlay->get_child_count(), boards.size());
+	const int dragged_index = caption_drag_active ? resolve_board_index(caption_drag_board_id) : -1;
 	for (int i = 0; i < count; i++) {
 		Control *caption = Object::cast_to<Control>(caption_overlay->get_child(i));
 		if (!caption) {
+			continue;
+		}
+		if (i == dragged_index) {
+			// The dragged caption tracks the pointer instead of its board slot, so it stays
+			// under the cursor between crossings while the boards themselves snap into their
+			// new order behind it.
+			const Size2 dragged_size = caption->get_combined_minimum_size();
+			const Point2 slot_position = p_transform.xform(Point2(real_t(i) * p_pitch, 0.0));
+			const real_t dragged_x = CLAMP(caption_drag_pointer_x - dragged_size.width * 0.5, real_t(0.0), MAX(real_t(0.0), size.width - dragged_size.width));
+			const real_t dragged_y = MIN(slot_position.y + p_scaled_size.height + CAPTION_MARGIN, size.height - dragged_size.height);
+			caption->set_size(dragged_size);
+			caption->set_position(Point2(dragged_x, dragged_y));
 			continue;
 		}
 		// The caption sits outside the scaled board container, so it is laid out at its own
@@ -567,11 +647,101 @@ void EditorBoardStrip::_layout_captions(const Transform2D &p_transform, real_t p
 }
 
 void EditorBoardStrip::_on_caption_pressed(ObjectID p_board_id) {
+	if (caption_drag_swallow_click) {
+		caption_drag_swallow_click = false;
+		return;
+	}
 	const int index = resolve_board_index(p_board_id);
 	if (index < 0) {
 		return;
 	}
 	_exit_overview_to(index);
+}
+
+int EditorBoardStrip::_overview_index_at_x(real_t p_x) const {
+	// The boards are centered vertically in the overview, so the strip's own vertical center
+	// is always inside the board band whatever the board count or scale.
+	return board_view.index_at_point(Point2(p_x, get_size().height * 0.5), boards.size(), get_size());
+}
+
+void EditorBoardStrip::_end_caption_drag(bool p_release_inside_caption) {
+	// Only arm the swallow when the caption's own BaseButton is about to emit "pressed" for
+	// this same release (i.e. the pointer came back inside its bounds). A release outside the
+	// caption never fires "pressed" at all, so leaving the flag armed for that case would go
+	// uncleared until some unrelated activation happened to trip it, including a keyboard
+	// activation on a different caption that never touched this drag.
+	caption_drag_swallow_click = caption_drag_active && p_release_inside_caption;
+	caption_drag_board_id = ObjectID();
+	caption_drag_active = false;
+	queue_sort();
+}
+
+void EditorBoardStrip::_on_caption_gui_input(const Ref<InputEvent> &p_event, ObjectID p_board_id) {
+	if (!board_view.is_overview_active()) {
+		return;
+	}
+
+	// Event positions are viewport-relative; every board index the drag resolves is computed
+	// in the strip's own space, the same space the boards are laid out in.
+	const Transform2D to_strip = get_global_transform().affine_inverse();
+
+	const Ref<InputEventMouseButton> mouse_button = p_event;
+	if (mouse_button.is_valid() && mouse_button->get_button_index() == MouseButton::LEFT) {
+		if (mouse_button->is_pressed()) {
+			caption_drag_board_id = p_board_id;
+			caption_drag_press_x = to_strip.xform(mouse_button->get_global_position()).x;
+			caption_drag_pointer_x = caption_drag_press_x;
+			caption_drag_active = false;
+			caption_drag_swallow_click = false;
+		} else if (caption_drag_board_id.is_valid()) {
+			// Approximates the bounds check BaseButton itself runs to decide whether it will
+			// emit "pressed" for this release, in the strip's own space rather than trusting
+			// the event's local position field. Horizontal-only, like the rest of the drag: the
+			// caption overlay sits over the strip with an identity transform, so a caption's
+			// laid-out x-range is already in that space.
+			const int drag_index = resolve_board_index(caption_drag_board_id);
+			bool release_inside = false;
+			if (caption_overlay && drag_index >= 0 && drag_index < caption_overlay->get_child_count()) {
+				if (Control *caption = Object::cast_to<Control>(caption_overlay->get_child(drag_index))) {
+					const real_t release_x = to_strip.xform(mouse_button->get_global_position()).x;
+					release_inside = release_x >= caption->get_position().x && release_x <= caption->get_position().x + caption->get_size().x;
+				}
+			}
+			_end_caption_drag(release_inside);
+		}
+		return;
+	}
+
+	const Ref<InputEventMouseMotion> motion = p_event;
+	if (motion.is_null() || !caption_drag_board_id.is_valid()) {
+		return;
+	}
+	if (!motion->get_button_mask().has_flag(MouseButtonMask::LEFT)) {
+		// The button came up somewhere this caption never saw, so its BaseButton never
+		// registered a press-inside release; drop the drag rather than letting a later hover
+		// keep reordering boards, and without arming a swallow that would never be consumed.
+		_end_caption_drag(false);
+		return;
+	}
+
+	caption_drag_pointer_x = to_strip.xform(motion->get_global_position()).x;
+	if (!caption_drag_active && Math::abs(caption_drag_pointer_x - caption_drag_press_x) < CAPTION_DRAG_THRESHOLD) {
+		return;
+	}
+	caption_drag_active = true;
+
+	// The reorder is committed as the pointer crosses into another board rather than held
+	// back until release, so the boards visibly part around the one being dragged. Each
+	// crossing is one reorder and emits board_moved once; a pointer in a gutter or past the
+	// ends resolves to no board and leaves the order alone.
+	const int from = resolve_board_index(caption_drag_board_id);
+	const int to = _overview_index_at_x(caption_drag_pointer_x);
+	if (from >= 0 && to >= 0 && from != to) {
+		move_board(from, to);
+	} else {
+		// Between crossings the caption still has to follow the pointer.
+		queue_sort();
+	}
 }
 
 bool EditorBoardStrip::is_leaf_on_active_board(int p_leaf_id) const {
