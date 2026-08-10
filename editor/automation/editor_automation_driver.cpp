@@ -43,10 +43,15 @@
 #include "editor/automation/editor_automation_workspace.h"
 #include "editor/editor_board.h"
 #include "editor/editor_board_strip.h"
+#include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_pane_tile.h"
+#include "editor/gui/editor_zoom_widget.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/inspector/editor_properties.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_view.h"
+#include "editor/scene/canvas_item_editor_view_state.h"
 #include "scene/gui/base_button.h"
 #include "scene/gui/check_box.h"
 #include "scene/gui/code_edit.h"
@@ -1531,6 +1536,79 @@ EditorAutomationActionResult _action_set_board_overview(const Dictionary &p_opti
 	return result;
 }
 
+EditorAutomationActionResult _action_set_canvas_2d_zoom(const Dictionary &p_options) {
+	// Parameter shape is validated before editor availability so agents get a stable
+	// invalid_parameter contract even when no 2D canvas is mounted.
+	if (!p_options.has("zoom")) {
+		return EditorAutomationActionResult::failure("invalid_parameter", "set_canvas_2d_zoom requires a numeric `zoom` argument.");
+	}
+	const Variant requested_variant = p_options.get("zoom", Variant());
+	if (!requested_variant.is_num()) {
+		return EditorAutomationActionResult::failure("invalid_parameter", "`zoom` must be a finite number (boolean values are rejected).");
+	}
+	const real_t requested_zoom = real_t(requested_variant);
+	if (!Math::is_finite(requested_zoom)) {
+		return EditorAutomationActionResult::failure("invalid_parameter", "`zoom` must be a finite number.");
+	}
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return EditorAutomationActionResult::failure("unsupported_action", "Editor is not ready for canvas zoom.");
+	}
+
+	CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton();
+	if (canvas_editor == nullptr || !canvas_editor->is_visible_in_tree()) {
+		return EditorAutomationActionResult::failure("unsupported_action", "No active 2D canvas view is available.");
+	}
+
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen == nullptr || main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return EditorAutomationActionResult::failure("unsupported_action", "The focused tile has no active 2D canvas view.");
+	}
+
+	CanvasItemEditorView *view = canvas_editor->get_focused_view();
+	EditorZoomWidget *zoom_widget = view != nullptr ? view->get_zoom_widget() : nullptr;
+	if (view == nullptr || zoom_widget == nullptr) {
+		return EditorAutomationActionResult::failure("unsupported_action", "No focused 2D canvas view is available.");
+	}
+
+	// Prefer the effective focused tile when available so tile_id matches read_editor_state;
+	// fall back to 0 when the board/tile surface is not mounted yet.
+	int tile_id = 0;
+	if (ScenePaneTile *focused_tile = editor_node->get_focused_tile()) {
+		tile_id = focused_tile->get_tile_id();
+	} else {
+		tile_id = EditorAutomationWorkspace::get_focused_tile_id();
+	}
+
+	const real_t min_absolute = zoom_widget->get_min_zoom();
+	const real_t max_absolute = zoom_widget->get_max_zoom();
+	const CanvasItemEditorNormalizedZoom::Validation validation = CanvasItemEditorNormalizedZoom::validate(requested_zoom, min_absolute, max_absolute);
+	const real_t min_normalized = CanvasItemEditorNormalizedZoom::to_normalized(min_absolute);
+	const real_t max_normalized = CanvasItemEditorNormalizedZoom::to_normalized(max_absolute);
+	if (validation == CanvasItemEditorNormalizedZoom::Validation::OUT_OF_RANGE) {
+		EditorAutomationActionResult result = EditorAutomationActionResult::failure(
+				"value_out_of_range",
+				vformat("`zoom` %s is outside the normalized range [%s, %s].", rtos(requested_zoom), rtos(min_normalized), rtos(max_normalized)));
+		result.public_fields["minimum"] = min_normalized;
+		result.public_fields["maximum"] = max_normalized;
+		result.public_fields["requested_zoom"] = requested_zoom;
+		return result;
+	}
+
+	const real_t absolute_zoom = CanvasItemEditorNormalizedZoom::to_absolute(requested_zoom);
+	const bool changed = view->apply_absolute_zoom_at_center(absolute_zoom);
+	const real_t effective_zoom = CanvasItemEditorNormalizedZoom::to_normalized(view->get_view_state().zoom);
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(
+			EditorAutomationActionRouteNames::SEMANTIC_SET_CANVAS_2D_ZOOM, String());
+	result.public_fields["changed"] = changed;
+	result.public_fields["requested_zoom"] = requested_zoom;
+	result.public_fields["effective_zoom"] = effective_zoom;
+	result.public_fields["tile_id"] = tile_id;
+	return result;
+}
+
 String _read_string_option(const Dictionary &p_options, const char *p_key) {
 	if (!p_options.has(p_key)) {
 		return String();
@@ -1620,12 +1698,17 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 		return result;
 	}
 
-	// Board actions address the editor-wide board strip rather than a snapshot element, so
-	// they resolve no selector, exactly like press_key.
-	if (action_kind == EditorAutomationActionKind::ACTIVATE_BOARD || action_kind == EditorAutomationActionKind::SET_BOARD_OVERVIEW) {
-		EditorAutomationActionResult result = action_kind == EditorAutomationActionKind::ACTIVATE_BOARD
-				? _action_activate_board(p_options)
-				: _action_set_board_overview(p_options);
+	// Board and canvas-zoom actions address editor-wide surfaces rather than a snapshot
+	// element, so they resolve no selector, exactly like press_key.
+	if (action_kind == EditorAutomationActionKind::ACTIVATE_BOARD || action_kind == EditorAutomationActionKind::SET_BOARD_OVERVIEW || action_kind == EditorAutomationActionKind::SET_CANVAS_2D_ZOOM) {
+		EditorAutomationActionResult result;
+		if (action_kind == EditorAutomationActionKind::ACTIVATE_BOARD) {
+			result = _action_activate_board(p_options);
+		} else if (action_kind == EditorAutomationActionKind::SET_BOARD_OVERVIEW) {
+			result = _action_set_board_overview(p_options);
+		} else {
+			result = _action_set_canvas_2d_zoom(p_options);
+		}
 		_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
 		EditorAutomationTrace::get_singleton().end_action();
 		return result;

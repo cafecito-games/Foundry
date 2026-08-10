@@ -40,6 +40,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_basic_scene_editing(EditorWorkfl
 	return EditorAutomationAcceptanceWorkflow::run_basic_scene_editing(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_canvas_2d_zoom_automation(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_canvas_2d_zoom_automation(p_driver);
+}
+
 EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver) {
 	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_editing(p_driver);
 }
@@ -133,6 +137,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	PackedStringArray basic_scene_aliases;
 	basic_scene_aliases.push_back("mvp");
 	_register_workflow("basic_scene_editing", &_run_basic_scene_editing, basic_scene_aliases);
+	_register_workflow("canvas_2d_zoom_automation", &_run_canvas_2d_zoom_automation);
 	_register_workflow("close_last_scene_empty_pane", &_run_close_last_scene_empty_pane);
 	_register_workflow("split_scene_root_button_context", &_run_split_scene_root_button_context);
 	_register_workflow("mixed_workspace_editing", &_run_mixed_workspace_editing);

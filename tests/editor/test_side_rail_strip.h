@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/core_string_names.h"
 #include "core/input/input_event.h"
 #include "core/input/shortcut.h"
 #include "core/io/config_file.h"
@@ -37,13 +38,13 @@
 #include "core/object/message_queue.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_data.h"
-#include "editor/settings/editor_settings.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_tile_dock_region.h"
 #include "editor/gui/editor_side_rail_button.h"
 #include "editor/gui/editor_side_rail_strip.h"
 #include "editor/gui/side_rail_state.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
 #include "scene/gui/box_container.h"
@@ -51,6 +52,8 @@
 #include "scene/main/scene_tree.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
+#include "scene/resources/style_box_flat.h"
+#include "scene/theme/theme_db.h"
 
 #include "tests/test_macros.h"
 
@@ -290,14 +293,38 @@ TEST_CASE("[Editor][SideRail] deferred first rebuild does not lock the rail into
 	memdelete(host);
 }
 
-static Ref<Texture2D> _make_side_rail_test_icon(int p_size) {
-	Ref<Image> image = Image::create_empty(p_size, p_size, false, Image::FORMAT_RGBA8);
+struct EditorScaleGuard {
+	float previous = 1.0f;
+	explicit EditorScaleGuard(float p_scale) :
+			previous(EditorScale::get_scale()) {
+		EditorScale::set_scale(p_scale);
+	}
+	~EditorScaleGuard() {
+		EditorScale::set_scale(previous);
+	}
+};
+
+struct ThemeStyleGuard {
+	String previous;
+	explicit ThemeStyleGuard(const String &p_style) :
+			previous(EDITOR_GET("interface/theme/style")) {
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", p_style);
+	}
+	~ThemeStyleGuard() {
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", previous);
+	}
+};
+
+static Ref<Texture2D> _make_side_rail_test_icon(int p_width, int p_height = -1) {
+	const int height = p_height > 0 ? p_height : p_width;
+	Ref<Image> image = Image::create_empty(p_width, height, false, Image::FORMAT_RGBA8);
 	image->fill(Color(1, 1, 1, 1));
 	return ImageTexture::create_from_image(image);
 }
 
 static void _assert_side_rail_composed_geometry(EditorSideRailButton *p_button) {
-	p_button->set_size(p_button->get_minimum_size());
+	const Size2 min_size = p_button->get_minimum_size();
+	p_button->set_size(min_size);
 	const EditorSideRailButton::ComposedGeometry geometry = p_button->get_composed_geometry();
 
 	REQUIRE(geometry.has_icon);
@@ -313,17 +340,45 @@ static void _assert_side_rail_composed_geometry(EditorSideRailButton *p_button) 
 	CHECK(geometry.icon_rect.get_end().y <= geometry.label_rect.position.y + 0.5);
 	const real_t gap = geometry.label_rect.position.y - geometry.icon_rect.get_end().y;
 	CHECK(gap >= geometry.icon_label_separation - 0.5);
+	// Ceil of the strip long-axis can add up to just under 1px of slack.
+	CHECK(gap <= geometry.icon_label_separation + 1.0);
 
 	// Both rects stay inside the stylebox content rect (no clipping / neighbor bleed).
 	CHECK(geometry.content_rect.encloses(geometry.icon_rect));
 	CHECK(geometry.content_rect.encloses(geometry.label_rect));
 
-	// Minimum size covers the composed content bounds plus stylebox margins.
+	// Pixel-snapped transform origin and icon bounds keep rotated content crisp.
+	CHECK(geometry.content_transform.get_origin().x == Math::floor(geometry.content_transform.get_origin().x));
+	CHECK(geometry.content_transform.get_origin().y == Math::floor(geometry.content_transform.get_origin().y));
+	CHECK(geometry.icon_rect.position.x == Math::floor(geometry.icon_rect.position.x));
+	CHECK(geometry.icon_rect.position.y == Math::floor(geometry.icon_rect.position.y));
+	CHECK(geometry.label_rect.position.x == Math::floor(geometry.label_rect.position.x));
+
+	// Draw consumes icon_strip_position / label_strip_baseline under content_transform.
+	// Pin them to the measured rects so they cannot drift independently.
+	const Point2 icon_drawn = geometry.content_transform.xform(geometry.icon_strip_position);
+	CHECK(icon_drawn.x == doctest::Approx(geometry.icon_rect.position.x));
+	CHECK(icon_drawn.y == doctest::Approx(geometry.icon_rect.get_end().y));
+
+	const Ref<Font> font = p_button->get_theme_font(SceneStringName(font));
+	REQUIRE(font.is_valid());
+	if (font.is_valid()) {
+		const int font_size = p_button->get_theme_font_size(SceneStringName(font_size));
+		const Point2 baseline_drawn = geometry.content_transform.xform(geometry.label_strip_baseline);
+		CHECK(baseline_drawn.x == doctest::Approx(Math::round(geometry.label_rect.position.x + font->get_ascent(font_size))));
+		CHECK(baseline_drawn.y == doctest::Approx(geometry.label_rect.get_end().y));
+		CHECK(baseline_drawn.x == Math::floor(baseline_drawn.x));
+	}
+
+	// Minimum size is a tight fit around the composed content plus stylebox margins.
 	const Rect2 union_rect = geometry.icon_rect.merge(geometry.label_rect);
+	const Size2 stylebox_min = min_size - geometry.content_rect.size;
 	CHECK(geometry.content_rect.size.width + 0.5 >= union_rect.size.width);
 	CHECK(geometry.content_rect.size.height + 0.5 >= union_rect.size.height);
-	CHECK(p_button->get_minimum_size().width + 0.5 >= union_rect.get_end().x);
-	CHECK(p_button->get_minimum_size().height + 0.5 >= union_rect.get_end().y);
+	CHECK(min_size.width + 0.5 >= union_rect.get_end().x);
+	CHECK(min_size.height + 0.5 >= union_rect.get_end().y);
+	CHECK(min_size.width <= union_rect.size.width + stylebox_min.width + 1.0);
+	CHECK(min_size.height <= union_rect.size.height + stylebox_min.height + 1.0);
 }
 
 TEST_CASE("[Editor][SideRailButton] rotated-label minimum size covers the rendered text width") {
@@ -357,17 +412,17 @@ TEST_CASE("[Editor][SideRailButton] composed icon and label share rotation, sepa
 	// unit, keep them separated by the theme gap, and keep their union inside
 	// the stylebox content rect. Geometry is asserted from measured rects, not
 	// from source text.
-	const float previous_scale = EditorScale::get_scale();
-	const String previous_style = EDITOR_GET("interface/theme/style");
-
 	for (const String &style : { String("Modern"), String("Classic") }) {
-		EditorSettings::get_singleton()->set_manually("interface/theme/style", style);
+		ThemeStyleGuard style_guard(style);
 		for (const float scale : { 1.0f, 1.5f, 2.0f }) {
-			EditorScale::set_scale(scale);
+			EditorScaleGuard scale_guard(scale);
+			CAPTURE(style);
+			CAPTURE(scale);
 			Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
 			const int icon_px = MAX(1, (int)Math::round(16.0f * scale));
 
 			for (const String &label : { String("Groups"), String("InspectorPanelConfiguration") }) {
+				CAPTURE(label);
 				EditorSideRailButton *button = memnew(EditorSideRailButton);
 				button->set_rail_icon(_make_side_rail_test_icon(icon_px));
 				button->set_rail_label(label);
@@ -378,9 +433,274 @@ TEST_CASE("[Editor][SideRailButton] composed icon and label share rotation, sepa
 			}
 		}
 	}
+}
 
-	EditorScale::set_scale(previous_scale);
-	EditorSettings::get_singleton()->set_manually("interface/theme/style", previous_style);
+TEST_CASE("[Editor][SideRailButton] non-square icons swap axes under the shared rotation") {
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_rail_icon(_make_side_rail_test_icon(16, 24));
+	button->set_rail_label("Groups");
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+
+	_assert_side_rail_composed_geometry(button);
+	const EditorSideRailButton::ComposedGeometry geometry = button->get_composed_geometry();
+	CHECK(geometry.icon_rect.size.width == doctest::Approx(24));
+	CHECK(geometry.icon_rect.size.height == doctest::Approx(16));
+	CHECK(button->get_minimum_size().width >= 24);
+
+	memdelete(button);
+}
+
+TEST_CASE("[Editor][SideRailButton] labelled mode without an icon still contains the rotated label") {
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_rail_label("Inspector");
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	button->set_size(button->get_minimum_size());
+
+	const EditorSideRailButton::ComposedGeometry geometry = button->get_composed_geometry();
+	CHECK_FALSE(geometry.has_icon);
+	REQUIRE(geometry.has_label);
+	if (!geometry.has_label) {
+		memdelete(button);
+		return;
+	}
+	CHECK(geometry.content_transform.get_rotation() == doctest::Approx(-Math::PI / 2.0));
+	CHECK(geometry.content_rect.encloses(geometry.label_rect));
+
+	memdelete(button);
+}
+
+TEST_CASE("[Editor][SideRailButton] align_to_largest_stylebox keeps pressed and normal layout identical") {
+	// Build a theme where normal and pressed have deliberately different
+	// integer content margins. With align_to_largest_stylebox=1 the pressed
+	// toggle must still use the larger margins; with it cleared, pressed must
+	// track the current stylebox instead.
+	Ref<StyleBoxFlat> normal_sb;
+	normal_sb.instantiate();
+	normal_sb->set_content_margin_all(4);
+	Ref<StyleBoxFlat> pressed_sb;
+	pressed_sb.instantiate();
+	pressed_sb->set_content_margin_all(8);
+
+	Ref<Theme> theme;
+	theme.instantiate();
+	theme->set_type_variation("FlatMenuButton", "Button");
+	theme->set_stylebox(SNAME("normal"), SNAME("FlatMenuButton"), normal_sb);
+	theme->set_stylebox(SNAME("pressed"), SNAME("FlatMenuButton"), pressed_sb);
+	theme->set_stylebox(SNAME("hover"), SNAME("FlatMenuButton"), pressed_sb);
+	theme->set_stylebox(SNAME("hover_pressed"), SNAME("FlatMenuButton"), pressed_sb);
+	theme->set_stylebox(SNAME("disabled"), SNAME("FlatMenuButton"), normal_sb);
+	theme->set_constant(SNAME("align_to_largest_stylebox"), SNAME("Button"), 1);
+	theme->set_constant(SNAME("h_separation"), SNAME("Button"), 4);
+	theme->set_font_size(SceneStringName(font_size), SNAME("Button"), 16);
+	theme->set_font(SceneStringName(font), SNAME("Button"), ThemeDB::get_singleton()->get_fallback_font());
+	theme->set_color(SceneStringName(font_color), SNAME("Button"), Color(1, 1, 1));
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_rail_icon(_make_side_rail_test_icon(16));
+	button->set_rail_label("Inspector");
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+
+	const Size2 aligned_min = button->get_minimum_size();
+	button->set_size(aligned_min);
+	const EditorSideRailButton::ComposedGeometry normal = button->get_composed_geometry();
+	button->set_pressed_no_signal(true);
+	button->set_size(button->get_minimum_size());
+	const EditorSideRailButton::ComposedGeometry pressed = button->get_composed_geometry();
+
+	CHECK(button->get_minimum_size() == aligned_min);
+	CHECK(pressed.content_rect == normal.content_rect);
+	CHECK(pressed.content_rect.position == Point2(8, 8));
+
+	theme->set_constant(SNAME("align_to_largest_stylebox"), SNAME("Button"), 0);
+	button->set_pressed_no_signal(false);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	button->set_size(button->get_minimum_size());
+	const EditorSideRailButton::ComposedGeometry unaligned_normal = button->get_composed_geometry();
+	button->set_pressed_no_signal(true);
+	button->set_size(button->get_minimum_size());
+	const EditorSideRailButton::ComposedGeometry unaligned_pressed = button->get_composed_geometry();
+
+	CHECK(unaligned_normal.content_rect.position == Point2(4, 4));
+	CHECK(unaligned_pressed.content_rect.position == Point2(8, 8));
+	CHECK(unaligned_pressed.content_rect != unaligned_normal.content_rect);
+
+	memdelete(button);
+}
+
+static Ref<Theme> _make_side_rail_margin_theme(int p_content_margin) {
+	Ref<StyleBoxFlat> stylebox;
+	stylebox.instantiate();
+	stylebox->set_content_margin_all(p_content_margin);
+	Ref<Theme> theme;
+	theme.instantiate();
+	theme->set_type_variation("FlatMenuButton", "Button");
+	theme->set_stylebox(SNAME("normal"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_stylebox(SNAME("hover"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_stylebox(SNAME("pressed"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_stylebox(SNAME("hover_pressed"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_stylebox(SNAME("disabled"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_constant(SNAME("align_to_largest_stylebox"), SNAME("Button"), 0);
+	theme->set_constant(SNAME("h_separation"), SNAME("Button"), 4);
+	theme->set_font_size(SceneStringName(font_size), SNAME("Button"), 16);
+	theme->set_font(SceneStringName(font), SNAME("Button"), ThemeDB::get_singleton()->get_fallback_font());
+	theme->set_color(SceneStringName(font_color), SNAME("Button"), Color(1, 1, 1));
+	return theme;
+}
+
+static int _changed_connections_to(const Ref<Resource> &p_res, const Object *p_target) {
+	List<Object::Connection> connections;
+	p_res->get_signal_connection_list(CoreStringName(changed), &connections);
+	int count = 0;
+	for (const Object::Connection &c : connections) {
+		if (c.callable.get_object() == p_target) {
+			count++;
+		}
+	}
+	return count;
+}
+
+TEST_CASE("[Editor][SideRailButton] undersized icon-only mode overflows in one direction only") {
+	// Non-zero margins so "flush to content origin" is distinguishable from
+	// absolute zero. Size the button before attaching the icon: outside the
+	// scene tree update_minimum_size() is a no-op, so the explicit size
+	// survives and the clamp path is exercised.
+	const int margin = 3;
+	Ref<Theme> theme = _make_side_rail_margin_theme(margin);
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_label_visible(false);
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	button->set_size(Size2(10, 10));
+	button->set_rail_icon(_make_side_rail_test_icon(16));
+
+	const EditorSideRailButton::ComposedGeometry geometry = button->get_composed_geometry();
+	REQUIRE(geometry.has_icon);
+	if (!geometry.has_icon) {
+		memdelete(button);
+		return;
+	}
+	CHECK(button->get_size() == Size2(10, 10));
+	CHECK(geometry.content_rect.position == Point2(margin, margin));
+	CHECK(geometry.content_rect.size.width < 16);
+	CHECK(geometry.icon_rect.position.x >= geometry.content_rect.position.x - 0.5);
+	CHECK(geometry.icon_rect.position.y >= geometry.content_rect.position.y - 0.5);
+	CHECK(geometry.icon_rect.get_end().x > geometry.content_rect.get_end().x - 0.5);
+	CHECK(geometry.icon_rect.get_end().y > geometry.content_rect.get_end().y - 0.5);
+
+	memdelete(button);
+}
+
+TEST_CASE("[Editor][SideRailButton] undersized labelled mode overflows in one direction only") {
+	const int margin = 3;
+	Ref<Theme> theme = _make_side_rail_margin_theme(margin);
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	// Narrow and short vs the labelled strip so both axes clamp.
+	button->set_size(Size2(12, 20));
+	button->set_rail_icon(_make_side_rail_test_icon(16));
+	button->set_rail_label("Inspector");
+
+	const EditorSideRailButton::ComposedGeometry geometry = button->get_composed_geometry();
+	REQUIRE(geometry.has_icon);
+	REQUIRE(geometry.has_label);
+	if (!(geometry.has_icon && geometry.has_label)) {
+		memdelete(button);
+		return;
+	}
+	CHECK(button->get_size() == Size2(12, 20));
+	CHECK(geometry.content_rect.position == Point2(margin, margin));
+	const Rect2 union_rect = geometry.icon_rect.merge(geometry.label_rect);
+	CHECK(union_rect.position.x == doctest::Approx(geometry.content_rect.position.x));
+	CHECK(union_rect.position.y == doctest::Approx(geometry.content_rect.position.y));
+	CHECK(union_rect.get_end().x > geometry.content_rect.get_end().x - 0.5);
+	CHECK(union_rect.get_end().y > geometry.content_rect.get_end().y - 0.5);
+
+	memdelete(button);
+}
+
+TEST_CASE("[Editor][SideRailButton] editor theme icon colors stay non-black across draw modes") {
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_rail_icon(_make_side_rail_test_icon(16));
+	button->set_rail_label("Inspector");
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	button->set_size(button->get_minimum_size());
+
+	auto assert_icon_visible = [](const Color &p_color) {
+		CHECK(p_color.a > 0.0);
+		const bool is_black_rgb = p_color.r == 0.0 && p_color.g == 0.0 && p_color.b == 0.0;
+		CHECK_FALSE(is_black_rgb);
+	};
+
+	assert_icon_visible(button->get_composed_geometry().icon_color);
+
+	button->set_pressed_no_signal(true);
+	assert_icon_visible(button->get_composed_geometry().icon_color);
+
+	button->set_disabled(true);
+	assert_icon_visible(button->get_composed_geometry().icon_color);
+
+	button->set_disabled(false);
+	button->set_pressed_no_signal(false);
+	theme->set_color(SNAME("icon_pressed_color"), SNAME("Button"), Color(0.1, 0.8, 0.2, 1));
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	button->set_pressed_no_signal(true);
+	CHECK(button->get_composed_geometry().icon_color == Color(0.1, 0.8, 0.2, 1));
+
+	memdelete(button);
+}
+
+TEST_CASE("[Editor][SideRailButton] rail icon texture resize invalidates the cached minimum size") {
+	const int margin = 3;
+	Ref<Theme> theme = _make_side_rail_margin_theme(margin);
+
+	Ref<ImageTexture> first;
+	first.instantiate();
+	Ref<ImageTexture> second;
+	second.instantiate();
+	Ref<Image> image = Image::create_empty(16, 16, false, Image::FORMAT_RGBA8);
+	image->fill(Color(1, 1, 1, 1));
+	second->set_image(image);
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_label_visible(false);
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	// In-tree so update_minimum_size() is not a no-op and the cache is live.
+	SceneTree::get_singleton()->get_root()->add_child(button);
+	button->set_rail_icon(first);
+	CHECK(_changed_connections_to(first, button) == 1);
+
+	// Prime Control's minimum-size cache while the texture is still empty.
+	REQUIRE(button->get_combined_minimum_size() == Size2(margin * 2, margin * 2));
+
+	first->set_image(image);
+	// Only reachable if set_rail_icon connected `changed` and the handler
+	// called update_minimum_size(); otherwise this stays the primed margins.
+	CHECK(button->get_combined_minimum_size() == Size2(16 + margin * 2, 16 + margin * 2));
+
+	button->set_rail_icon(second);
+	CHECK(_changed_connections_to(first, button) == 0);
+	CHECK(_changed_connections_to(second, button) == 1);
+
+	SceneTree::get_singleton()->get_root()->remove_child(button);
+	memdelete(button);
+
+	List<Object::Connection> leftover;
+	second->get_signal_connection_list(CoreStringName(changed), &leftover);
+	CHECK(leftover.is_empty());
 }
 
 TEST_CASE("[Editor][SideRailButton] content transform is independent of the button's position in its parent") {
@@ -463,8 +783,12 @@ TEST_CASE("[Editor][SideRailButton] icon-only mode centers an upright icon witho
 	CHECK(geometry.content_transform == Transform2D());
 	CHECK(geometry.icon_rect.size == Size2(16, 16));
 	CHECK(geometry.content_rect.encloses(geometry.icon_rect));
-	CHECK(geometry.icon_rect.get_center().x == doctest::Approx(geometry.content_rect.get_center().x).epsilon(0.5));
-	CHECK(geometry.icon_rect.get_center().y == doctest::Approx(geometry.content_rect.get_center().y).epsilon(0.5));
+	CHECK(Math::abs(geometry.icon_rect.get_center().x - geometry.content_rect.get_center().x) <= 0.5);
+	CHECK(Math::abs(geometry.icon_rect.get_center().y - geometry.content_rect.get_center().y) <= 0.5);
+	// Draw feeds icon_strip_position through content_transform in both modes;
+	// with the identity transform it must resolve to the icon rect's top-left
+	// (labelled mode resolves to the rect's bottom-left instead).
+	CHECK(geometry.content_transform.xform(geometry.icon_strip_position) == geometry.icon_rect.position);
 
 	memdelete(button);
 }

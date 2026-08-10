@@ -137,14 +137,44 @@ static int measure_property_minimum_height(const Ref<EditorTheme> &p_theme) {
 	return height;
 }
 
+// EditorProperty::get_minimum_size() folds a child's minimum size into the row height only when
+// Container::as_sortable_control() accepts that child under the default VISIBLE_IN_TREE policy. A
+// standalone CanvasItem keeps `parent_visible_in_tree == false` until it enters the tree, so a
+// property measured outside the SceneTree has its HBoxContainer rejected, the nested LineEdit never
+// contributes get_combined_minimum_size(), and the result silently degrades to EditorProperty's own
+// density-scaled `inspector_property_height` floor. Mounting under the root window (and applying the
+// theme while mounted, so NOTIFICATION_THEME_CHANGED reaches every descendant) is what makes this
+// measurement exercise the same layout path the inspector uses, and therefore what makes it sensitive
+// to the LineEdit's density-scaled theme variation.
 static int measure_text_property_minimum_height(const Ref<EditorTheme> &p_theme) {
 	EditorPropertyText *property = memnew(EditorPropertyText);
+	SceneTree::get_singleton()->get_root()->add_child(property);
 	property->set_theme(p_theme);
-	property->notification(Control::NOTIFICATION_THEME_CHANGED);
 	int height = (int)property->get_minimum_size().height;
+	SceneTree::get_singleton()->get_root()->remove_child(property);
 	memdelete(property);
 	return height;
 }
+
+// Restores `interface/theme/style` when the enclosing scope ends. Exceptions are disabled in this
+// build, so a failed REQUIRE does not unwind; the guard exists to cover early returns, `continue`,
+// and normal scope exit after a failed assertion has already been recorded.
+class EditorThemeStyleScope {
+	String previous_style;
+
+public:
+	explicit EditorThemeStyleScope(const String &p_style) {
+		previous_style = EDITOR_GET("interface/theme/style");
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", p_style);
+	}
+
+	~EditorThemeStyleScope() {
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", previous_style);
+	}
+
+	EditorThemeStyleScope(const EditorThemeStyleScope &) = delete;
+	EditorThemeStyleScope &operator=(const EditorThemeStyleScope &) = delete;
+};
 
 // EditorProperty::get_minimum_size() only folds a child's minimum size into the row height when
 // Container::as_sortable_control() considers that child visible in tree, which requires the
@@ -250,16 +280,32 @@ TEST_CASE("[Editor][InspectorDensity] measured EditorPropertyText minimum height
 	// so its minimum size dominated EditorProperty's row height and Compact/Spacious had no
 	// visible effect on the most common (String) property rows. The LineEdit must use the
 	// density-scaled "EditorInspectorLineEdit" variation for this to shrink and grow correctly.
-	Ref<EditorTheme> compact_theme = generate_theme_for_density("Compact");
-	Ref<EditorTheme> default_theme = generate_theme_for_density("Default");
-	Ref<EditorTheme> spacious_theme = generate_theme_for_density("Spacious");
+	// Both editor styles define that variation independently, so both are measured here.
+	for (const String &style : { String("Modern"), String("Classic") }) {
+		EditorThemeStyleScope style_scope(style);
 
-	int compact_height = measure_text_property_minimum_height(compact_theme);
-	int default_height = measure_text_property_minimum_height(default_theme);
-	int spacious_height = measure_text_property_minimum_height(spacious_theme);
+		Ref<EditorTheme> compact_theme = generate_theme_for_density("Compact");
+		Ref<EditorTheme> default_theme = generate_theme_for_density("Default");
+		Ref<EditorTheme> spacious_theme = generate_theme_for_density("Spacious");
 
-	CHECK(compact_height < default_height);
-	CHECK(default_height < spacious_height);
+		CAPTURE(style);
+		REQUIRE(compact_theme.is_valid());
+		REQUIRE(default_theme.is_valid());
+		REQUIRE(spacious_theme.is_valid());
+		if (compact_theme.is_null() || default_theme.is_null() || spacious_theme.is_null()) {
+			continue;
+		}
+
+		int compact_height = measure_text_property_minimum_height(compact_theme);
+		int default_height = measure_text_property_minimum_height(default_theme);
+		int spacious_height = measure_text_property_minimum_height(spacious_theme);
+
+		CAPTURE(compact_height);
+		CAPTURE(default_height);
+		CAPTURE(spacious_height);
+		CHECK(compact_height < default_height);
+		CHECK(default_height < spacious_height);
+	}
 }
 
 TEST_CASE("[Editor][InspectorDensity] measured EditorPropertyFloat minimum height is strictly ordered") {

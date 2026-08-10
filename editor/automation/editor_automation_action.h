@@ -57,6 +57,7 @@ struct EditorAutomationActionRouteNames {
 	static inline const char *SEMANTIC_DOCK = "semantic_dock";
 	static inline const char *SEMANTIC_ACTIVATE_BOARD = "semantic_activate_board";
 	static inline const char *SEMANTIC_SET_BOARD_OVERVIEW = "semantic_set_board_overview";
+	static inline const char *SEMANTIC_SET_CANVAS_2D_ZOOM = "semantic_set_canvas_2d_zoom";
 	static inline const char *INPUT_DOCK = "input_dock";
 	static inline const char *UNSUPPORTED = "unsupported";
 };
@@ -92,6 +93,7 @@ enum class EditorAutomationActionKind {
 	MOUSE_UP,
 	ACTIVATE_BOARD,
 	SET_BOARD_OVERVIEW,
+	SET_CANVAS_2D_ZOOM,
 	UNKNOWN,
 };
 
@@ -104,6 +106,9 @@ struct EditorAutomationActionResult {
 	PackedStringArray events;
 	String focus;
 	Array candidates;
+	// Action-specific fields promoted to the top-level public MCP contract.
+	// Keep diagnostics that should stay nested under `details` out of this map.
+	Dictionary public_fields;
 	Dictionary details;
 
 	static EditorAutomationActionResult success(const String &p_route, const String &p_element_id);

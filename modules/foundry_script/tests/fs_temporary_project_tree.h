@@ -140,6 +140,20 @@ struct TemporaryProjectTree {
 	}
 
 	static void remove_recursive(const String &p_path) {
+		// Safety: never remove a directory tree that contains the running executable.
+		// The name-mangler export tests stage a binary-named `.pck` and re-launch the
+		// binary from a temp `runtime` dir. If the test scratch root ever resolves onto
+		// the executable's directory (e.g. a misconfigured `FOUNDRY_TEST_SCRATCH`), a
+		// recursive delete here would wipe out the binary the test suite was launched
+		// from. Refuse and log instead of deleting.
+		const String exe_path = OS::get_singleton()->get_executable_path().simplify_path();
+		const String normalized = p_path.simplify_path();
+		if (!exe_path.is_empty() && !normalized.is_empty() &&
+				(exe_path == normalized || exe_path.begins_with(normalized + "/"))) {
+			ERR_PRINT(vformat("Refusing to recursively delete test scratch path '%s' because it contains the running executable '%s'. Check FOUNDRY_TEST_SCRATCH.", normalized, exe_path));
+			return;
+		}
+
 		Ref<DirAccess> dir = DirAccess::open(p_path);
 		if (dir.is_null()) {
 			return;

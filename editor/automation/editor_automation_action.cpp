@@ -71,6 +71,15 @@ Dictionary EditorAutomationActionResult::to_dictionary() const {
 	if (!candidates.is_empty()) {
 		dict["candidates"] = candidates;
 	}
+	if (!public_fields.is_empty()) {
+		const Array keys = public_fields.keys();
+		for (int i = 0; i < keys.size(); i++) {
+			const Variant key = keys[i];
+			if (!dict.has(key)) {
+				dict[key] = public_fields[key];
+			}
+		}
+	}
 	if (!details.is_empty()) {
 		dict["details"] = details;
 	}
@@ -150,6 +159,9 @@ EditorAutomationActionKind editor_automation_action_kind_from_string(const Strin
 	}
 	if (action == "set_board_overview") {
 		return EditorAutomationActionKind::SET_BOARD_OVERVIEW;
+	}
+	if (action == "set_canvas_2d_zoom") {
+		return EditorAutomationActionKind::SET_CANVAS_2D_ZOOM;
 	}
 	return EditorAutomationActionKind::UNKNOWN;
 }

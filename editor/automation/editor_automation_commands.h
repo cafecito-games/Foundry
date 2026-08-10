@@ -33,6 +33,8 @@
 #include "core/input/shortcut.h"
 #include "core/variant/variant.h"
 
+class Viewport;
+
 // Shared command discovery and execution for editor automation clients.
 //
 // Backed by EditorCommandPalette and EditorSettings shortcut registries.
@@ -41,6 +43,16 @@ public:
 	static Dictionary list_commands(const Dictionary &p_args = Dictionary());
 	static Dictionary execute(const String &p_command);
 	static Array suggest_commands(const String &p_query, int p_limit = 10);
+
+	enum class ShortcutDispatchResult {
+		UNAVAILABLE, // Viewport cannot receive input (null, outside tree, or input disabled).
+		HANDLED, // A control marked the dispatched InputEventShortcut handled.
+		UNHANDLED, // The event was dispatched but no control marked it handled.
+	};
+
+	// Dispatches an InputEventShortcut through p_viewport. Exposed for unit tests
+	// that supply their own viewport and shortcut consumer.
+	static ShortcutDispatchResult push_shortcut_event(Viewport *p_viewport, const Ref<Shortcut> &p_shortcut);
 
 private:
 	static String _category_from_key(const String &p_key);

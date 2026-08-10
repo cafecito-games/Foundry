@@ -54,24 +54,61 @@ class EditorSideRailButton : public Button {
 		Ref<Font> font;
 		int font_size = 0;
 		Color font_color;
+		Color font_hover_color;
+		Color font_pressed_color;
+		Color font_hover_pressed_color;
+		Color font_focus_color;
+		Color font_disabled_color;
+		Color icon_normal_color;
+		Color icon_hover_color;
+		Color icon_pressed_color;
+		Color icon_hover_pressed_color;
+		Color icon_focus_color;
+		Color icon_disabled_color;
 		int icon_label_separation = 0;
+		bool align_to_largest_stylebox = false;
+		real_t style_margin_left = 0;
+		real_t style_margin_top = 0;
+		real_t style_margin_right = 0;
+		real_t style_margin_bottom = 0;
 	} theme_cache;
 
+	struct StripMetrics {
+		Size2 icon_size;
+		real_t text_width = 0;
+		real_t font_height = 0;
+		real_t ascent = 0;
+		real_t separation = 0;
+		real_t strip_width = 0;
+		real_t strip_height = 0;
+		bool has_icon = false;
+		bool has_label = false;
+	};
+
 	void _update_theme_cache();
+	void _get_layout_margins(real_t &r_left, real_t &r_top, real_t &r_right, real_t &r_bottom) const;
+	StripMetrics _compute_strip_metrics(bool p_with_label) const;
 	Size2 _compute_minimum_size(bool p_with_label) const;
+	Color _get_current_font_color() const;
+	Color _get_current_icon_color() const;
+	void _rail_icon_changed();
 
 protected:
 	void _notification(int p_what);
 
 public:
-	// Measured layout of the composed toggle in this control's local space.
-	// Tests assert rotation, separation, containment, and min-size coverage
-	// against these rects rather than against source text.
+	// Single production layout source used by NOTIFICATION_DRAW. Tests assert
+	// against these measured rects rather than source text.
 	struct ComposedGeometry {
 		Rect2 content_rect;
 		Rect2 icon_rect;
 		Rect2 label_rect;
 		Transform2D content_transform;
+		// Draw positions in content_transform space (local when identity).
+		Point2 label_strip_baseline;
+		Point2 icon_strip_position;
+		Color font_color;
+		Color icon_color;
 		real_t icon_label_separation = 0;
 		bool has_icon = false;
 		bool has_label = false;
@@ -93,8 +130,6 @@ public:
 	// whether returning to labelled mode would fit.
 	Size2 get_labelled_minimum_size() const;
 
-	// Exact geometry NOTIFICATION_DRAW uses. Exposed for tests that prove
-	// common rotation, separation, containment, and min-size coverage.
 	ComposedGeometry get_composed_geometry() const;
 
 	EditorSideRailButton();

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foundry Review Gallery</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --panel: #f6f7f9;
+  --border: #e3e6ea;
+  --text: #1b1f24;
+  --muted: #6b7480;
+  --accent: #3b82f6;
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --border: #262c36;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+}
+:root[data-theme="light"] {
+  --bg: #ffffff; --panel: #f6f7f9; --border: #e3e6ea;
+  --text: #1b1f24; --muted: #6b7480; --accent: #3b82f6;
+  --shadow: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+:root[data-theme="dark"] {
+  --bg: #0e1116; --panel: #161b22; --border: #262c36;
+  --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+header {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 24px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: 0.2px; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+.board {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
+}
+.board-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
+.board-head h2 { font-size: 18px; margin: 0; font-weight: 600; }
+.mode-tag {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--muted); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 10px;
+}
+.shots { display: grid; gap: 16px; }
+.shots.proof { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.shots.walkthrough { grid-template-columns: 1fr; }
+.pairs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .pairs { grid-template-columns: 1fr; } }
+.shot { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.shot figure { margin: 0; }
+.shot img, .shot video { display: block; width: 100%; height: auto; background: #000; }
+.shot figcaption { padding: 10px 12px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--border); }
+.step-index { color: var(--accent); font-weight: 600; margin-right: 6px; }
+.pair-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); padding: 8px 12px 0; }
+.empty { color: var(--muted); text-align: center; padding: 48px 0; }
+button.theme {
+  font: inherit; font-size: 13px; cursor: pointer;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+}
+</style>
+</head>
+<body>
+<header><h1>Foundry Review Gallery</h1><button id="theme-toggle" class="theme" type="button">Toggle theme</button></header>
+<main>
+<section class="board"><div class="board-head"><h2>Boards walkthrough</h2><span class="mode-tag">walkthrough</span></div><div class="shots walkthrough"><div class="shot"><figure><img loading="lazy" src="shots/ba6a05f3383baaae.png" alt="Confirm one board on its own looks exactly like the editor did before boards existed: a single scene tab strip, the Scene dock on the left, the Inspector on the right, and nothing new inside the editing area. The only addition is the Board 1/2/3 switcher in the title bar (Board 3 highlighted)."><figcaption><span class="step-index">1.</span>Confirm one board on its own looks exactly like the editor did before boards existed: a single scene tab strip, the Scene dock on the left, the Inspector on the right, and nothing new inside the editing area. The only addition is the Board 1/2/3 switcher in the title bar (Board 3 highlighted).</figcaption></figure></div><div class="shot"><figure><img loading="lazy" src="shots/ab29a77df3b74e31.png" alt="Confirm the neighbouring board is still on screen at the right edge during the switch: Board 3&#x27;s own scene tab (&#x27;terrain&#x27;) and its own Scene dock (Terrain/Grass/Soil/Title/Rock) are visible beside the arriving Board 2. Two boards sharing the frame is what proves the switch travels through space rather than swapping one board&#x27;s content for another&#x27;s in place."><figcaption><span class="step-index">2.</span>Confirm the neighbouring board is still on screen at the right edge during the switch: Board 3&#x27;s own scene tab (&#x27;terrain&#x27;) and its own Scene dock (Terrain/Grass/Soil/Title/Rock) are visible beside the arriving Board 2. Two boards sharing the frame is what proves the switch travels through space rather than swapping one board&#x27;s content for another&#x27;s in place.</figcaption></figure></div><div class="shot"><figure><img loading="lazy" src="shots/01877bd8f1e3f6a7.png" alt="Confirm no board in the zoomed-out overview is a frozen still: each of the three shows its own live 2D viewport rendering its own scene (ARENA, HUD, TERRAIN), its own scene tab, its own Scene dock listing that scene&#x27;s nodes, and its own Inspector. A cached thumbnail could not show per-board docks and node lists."><figcaption><span class="step-index">3.</span>Confirm no board in the zoomed-out overview is a frozen still: each of the three shows its own live 2D viewport rendering its own scene (ARENA, HUD, TERRAIN), its own scene tab, its own Scene dock listing that scene&#x27;s nodes, and its own Inspector. A cached thumbnail could not show per-board docks and node lists.</figcaption></figure></div><div class="shot"><figure><img loading="lazy" src="shots/17b4e8ace40de9a7.png" alt="Confirm the drop rosette is lit on a different board from the one the drag started in: the &#x27;arena&#x27; pane is being dragged out of Board 1 (its tab is still in Board 1&#x27;s strip on the left), while the rosette and the orange right-half drop preview are on Board 2 in the middle, with the right-hand chevron aimed. Board 3 is untouched."><figcaption><span class="step-index">4.</span>Confirm the drop rosette is lit on a different board from the one the drag started in: the &#x27;arena&#x27; pane is being dragged out of Board 1 (its tab is still in Board 1&#x27;s strip on the left), while the rosette and the orange right-half drop preview are on Board 2 in the middle, with the right-hand chevron aimed. Board 3 is untouched.</figcaption></figure></div><div class="shot"><figure><img loading="lazy" src="shots/a68eb42b948e1304.png" alt="Confirm the cross-board move completed: the editor is back on a single board (Board 2 highlighted) and arena now lives there as a second pane, split to the right of hud, focused and fully interactive. Board 1 no longer lists arena — its emptied pane collapsed, and the board itself survived in the switcher."><figcaption><span class="step-index">5.</span>Confirm the cross-board move completed: the editor is back on a single board (Board 2 highlighted) and arena now lives there as a second pane, split to the right of hud, focused and fully interactive. Board 1 no longer lists arena — its emptied pane collapsed, and the board itself survived in the switcher.</figcaption></figure></div></div></section>
+</main>
+<script>
+(function () {
+  var KEY = "foundry-gallery-theme";
+  var root = document.documentElement;
+  var saved = null;
+  try { saved = localStorage.getItem(KEY); } catch (e) {}
+  if (saved === "light" || saved === "dark") { root.setAttribute("data-theme", saved); }
+  var btn = document.getElementById("theme-toggle");
+  function label() {
+    var t = root.getAttribute("data-theme");
+    btn.textContent = t === "dark" ? "Light theme" : t === "light" ? "Dark theme" : "Toggle theme";
+  }
+  btn.addEventListener("click", function () {
+    var current = root.getAttribute("data-theme");
+    if (!current) {
+      current = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    var next = current === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem(KEY, next); } catch (e) {}
+    label();
+  });
+  label();
+})();
+</script>
+</body>
+</html>

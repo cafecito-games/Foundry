@@ -812,6 +812,7 @@ TEST_CASE("[Editor][Automation][MCP] mcp-board-actions-are-published-in-tool-sch
 	const PackedStringArray actions = EditorAutomationMCPContracts::action_names();
 	CHECK(actions.has("activate_board"));
 	CHECK(actions.has("set_board_overview"));
+	CHECK(actions.has("set_canvas_2d_zoom"));
 
 	const PackedStringArray conditions = EditorAutomationMCPContracts::wait_condition_types();
 	CHECK(conditions.has("board_transition_settled"));
@@ -836,6 +837,7 @@ TEST_CASE("[Editor][Automation][MCP] mcp-board-actions-are-published-in-tool-sch
 	const Array action_enum = action_schema["enum"];
 	CHECK(action_enum.has(Variant(String("activate_board"))));
 	CHECK(action_enum.has(Variant(String("set_board_overview"))));
+	CHECK(action_enum.has(Variant(String("set_canvas_2d_zoom"))));
 
 	// Both actions carry their arguments in the published args contract, so an agent can
 	// discover board_index/board_title/overview without reading engine source.
@@ -844,6 +846,8 @@ TEST_CASE("[Editor][Automation][MCP] mcp-board-actions-are-published-in-tool-sch
 	CHECK(args_props.has("board_index"));
 	CHECK(args_props.has("board_title"));
 	CHECK(args_props.has("overview"));
+	CHECK(args_props.has("zoom"));
+	CHECK(String(((Dictionary)args_props["zoom"]).get("type", String())) == "number");
 
 	const Dictionary wait_schema = act_props["wait"];
 	const Dictionary wait_props = wait_schema["properties"];
