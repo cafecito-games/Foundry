@@ -34,6 +34,7 @@
 #include "core/input/input_map.h"
 #include "core/math/math_funcs.h"
 #include "core/object/message_queue.h"
+#include "core/object/object.h"
 #include "core/os/keyboard.h"
 #include "scene/gui/control.h"
 #include "scene/gui/subviewport_container.h"
@@ -45,6 +46,67 @@ namespace {
 
 Vector2 editor_automation_last_mouse_position;
 MouseButton editor_automation_held_button = MouseButton::NONE;
+
+// Where the system pointer was, in the coordinates of the viewport that owned
+// the gesture, before automation first warped it. Warping is what makes a
+// synthesized drop land where it aims, but it moves the machine's real cursor,
+// so a gesture has to put it back when it ends or is abandoned.
+ObjectID editor_automation_pointer_restore_viewport;
+Vector2 editor_automation_pointer_restore_position;
+bool editor_automation_pointer_has_restore_position = false;
+
+bool _display_server_can_warp() {
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	return display_server != nullptr && display_server->has_feature(DisplayServer::FEATURE_MOUSE_WARP);
+}
+
+void _remember_system_pointer(Viewport *p_viewport) {
+	if (editor_automation_pointer_has_restore_position || p_viewport == nullptr) {
+		return;
+	}
+	editor_automation_pointer_restore_position = p_viewport->get_mouse_position();
+	editor_automation_pointer_restore_viewport = p_viewport->get_instance_id();
+	editor_automation_pointer_has_restore_position = true;
+}
+
+void _restore_system_pointer() {
+	if (!editor_automation_pointer_has_restore_position) {
+		return;
+	}
+	const ObjectID viewport_id = editor_automation_pointer_restore_viewport;
+	const Vector2 position = editor_automation_pointer_restore_position;
+	editor_automation_pointer_has_restore_position = false;
+	editor_automation_pointer_restore_viewport = ObjectID();
+	editor_automation_pointer_restore_position = Vector2();
+
+	if (!_display_server_can_warp()) {
+		return;
+	}
+	Viewport *viewport = ObjectDB::get_instance<Viewport>(viewport_id);
+	if (viewport == nullptr || !viewport->is_inside_tree()) {
+		return;
+	}
+	// Symmetric with the warp in sync_window_pointer: both sides go through the
+	// same viewport transform, so the pointer lands exactly where it started.
+	viewport->warp_mouse(position);
+}
+
+// A gesture owns the system pointer from its first warp until its release. Any
+// path that leaves this scope without the gesture continuing -- an early error
+// return as much as a normal end -- abandons it: the pointer goes back where
+// the user left it.
+struct AutomationGestureScope {
+	bool in_flight = false;
+
+	void keep_in_flight() { in_flight = true; }
+
+	~AutomationGestureScope() {
+		if (in_flight) {
+			return;
+		}
+		_restore_system_pointer();
+	}
+};
 
 #ifdef TESTS_ENABLED
 struct AutomationMouseTrace {
@@ -314,6 +376,7 @@ Vector2 EditorAutomationInput::get_last_mouse_position() {
 }
 
 void EditorAutomationInput::reset_pointer_state() {
+	_restore_system_pointer();
 	editor_automation_held_button = MouseButton::NONE;
 	editor_automation_last_mouse_position = Vector2();
 }
@@ -322,10 +385,10 @@ void EditorAutomationInput::sync_window_pointer(Viewport *p_viewport, const Vect
 	if (p_viewport == nullptr) {
 		return;
 	}
-	DisplayServer *display_server = DisplayServer::get_singleton();
-	if (display_server == nullptr || !display_server->has_feature(DisplayServer::FEATURE_MOUSE_WARP)) {
+	if (!_display_server_can_warp()) {
 		return;
 	}
+	_remember_system_pointer(p_viewport);
 	// Drop handling reads the pointer from the display server, not from the
 	// synthesized event: Viewport::get_mouse_position() (and therefore the point
 	// handed to can_drop_data/drop_data) comes from DisplayServer::mouse_get_position(),
@@ -341,6 +404,9 @@ bool EditorAutomationInput::begin_mouse_gesture(
 		MouseButton p_button,
 		const EditorAutomationInputModifiers &p_modifiers,
 		PackedStringArray &r_events) {
+	// Declared before the argument check so that every return from here on --
+	// including the failed precondition -- runs the pointer restore.
+	AutomationGestureScope gesture;
 	ERR_FAIL_NULL_V(p_viewport, false);
 
 	sync_window_pointer(p_viewport, p_global);
@@ -357,6 +423,7 @@ bool EditorAutomationInput::begin_mouse_gesture(
 		return false;
 	}
 	editor_automation_held_button = p_button;
+	gesture.keep_in_flight();
 	return true;
 }
 
@@ -366,6 +433,7 @@ bool EditorAutomationInput::move_mouse_gesture(
 		const Vector<Vector2> &p_waypoints,
 		const EditorAutomationInputModifiers &p_modifiers,
 		PackedStringArray &r_events) {
+	AutomationGestureScope gesture;
 	ERR_FAIL_NULL_V(p_viewport, false);
 
 	const MouseButtonMask button_mask = editor_automation_held_button == MouseButton::NONE
@@ -398,6 +466,13 @@ bool EditorAutomationInput::move_mouse_gesture(
 			}
 		}
 	}
+
+	// A move with a button down leaves the gesture in flight and the pointer at
+	// the drag position, which is what drop tracking reads. A move with no
+	// button held is a hover: it has no continuation, so the pointer goes back.
+	if (editor_automation_held_button != MouseButton::NONE) {
+		gesture.keep_in_flight();
+	}
 	return true;
 }
 
@@ -406,6 +481,9 @@ bool EditorAutomationInput::end_mouse_gesture(
 		const Vector2 &p_global,
 		const EditorAutomationInputModifiers &p_modifiers,
 		PackedStringArray &r_events) {
+	// The scope is never kept in flight here: the release ends the gesture, so
+	// the system pointer is handed back to the user once the drop is delivered.
+	AutomationGestureScope gesture;
 	ERR_FAIL_NULL_V(p_viewport, false);
 
 	const MouseButton button = editor_automation_held_button == MouseButton::NONE

@@ -42,6 +42,7 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "servers/display/display_server.h"
 
 #include "tests/test_macros.h"
 
@@ -213,6 +214,107 @@ TEST_CASE("[Editor][Automation] mouse_down, mouse_move and mouse_up compose a dr
 	CHECK(harness.target->dropped);
 	CHECK(String(harness.target->dropped_data) == "drag_payload");
 
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][Automation] a completed gesture returns the system pointer to where it started") {
+	EditorAutomationInput::reset_pointer_state();
+
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	REQUIRE(display_server != nullptr);
+	REQUIRE(display_server->has_feature(DisplayServer::FEATURE_MOUSE_WARP));
+
+	DragHarness harness;
+	harness.mount();
+
+	const Point2i resting_pointer(7, 11);
+	display_server->warp_mouse(resting_pointer);
+	REQUIRE(display_server->mouse_get_position() == resting_pointer);
+
+	const Vector2 from = harness.source->get_global_rect().get_center();
+	const Vector2 to = harness.target->get_global_rect().get_center();
+
+	PackedStringArray events;
+	EditorAutomationInputModifiers modifiers;
+	CHECK(EditorAutomationInput::push_mouse_drag(
+			harness.window, from, to, Vector<Vector2>(), MouseButton::LEFT, modifiers, events, true));
+	MessageQueue::get_singleton()->flush();
+
+	CHECK(harness.target->dropped);
+	CHECK(display_server->mouse_get_position() == resting_pointer);
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][Automation] a held gesture keeps the pointer until the release returns it") {
+	EditorAutomationInput::reset_pointer_state();
+
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	REQUIRE(display_server != nullptr);
+	REQUIRE(display_server->has_feature(DisplayServer::FEATURE_MOUSE_WARP));
+
+	DragHarness harness;
+	harness.mount();
+
+	const Point2i resting_pointer(9, 13);
+	display_server->warp_mouse(resting_pointer);
+	REQUIRE(display_server->mouse_get_position() == resting_pointer);
+
+	const Vector2 from = harness.source->get_global_rect().get_center();
+	const Vector2 to = harness.target->get_global_rect().get_center();
+
+	PackedStringArray events;
+	EditorAutomationInputModifiers modifiers;
+	CHECK(EditorAutomationInput::push_mouse_drag(
+			harness.window, from, to, Vector<Vector2>(), MouseButton::LEFT, modifiers, events, false));
+	MessageQueue::get_singleton()->flush();
+
+	// Drop tracking reads the system pointer, so an in-flight gesture has to
+	// keep it at the drag position.
+	CHECK(display_server->mouse_get_position() != resting_pointer);
+	CHECK(EditorAutomationInput::get_held_mouse_button() == MouseButton::LEFT);
+
+	PackedStringArray release_events;
+	CHECK(EditorAutomationInput::end_mouse_gesture(harness.window, to, modifiers, release_events));
+	MessageQueue::get_singleton()->flush();
+
+	CHECK(harness.target->dropped);
+	CHECK(display_server->mouse_get_position() == resting_pointer);
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][Automation] a failed gesture step does not strand the system pointer") {
+	EditorAutomationInput::reset_pointer_state();
+
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	REQUIRE(display_server != nullptr);
+	REQUIRE(display_server->has_feature(DisplayServer::FEATURE_MOUSE_WARP));
+
+	DragHarness harness;
+	harness.mount();
+
+	const Point2i resting_pointer(21, 5);
+	display_server->warp_mouse(resting_pointer);
+	REQUIRE(display_server->mouse_get_position() == resting_pointer);
+
+	const Vector2 from = harness.source->get_global_rect().get_center();
+	const Vector2 to = harness.target->get_global_rect().get_center();
+
+	PackedStringArray events;
+	EditorAutomationInputModifiers modifiers;
+	CHECK(EditorAutomationInput::begin_mouse_gesture(harness.window, from, MouseButton::LEFT, modifiers, events));
+	MessageQueue::get_singleton()->flush();
+
+	// A move whose viewport went away mid-gesture is the abandonment case: the
+	// step fails, and the pointer must not be left at the drag position.
+	ERR_PRINT_OFF;
+	CHECK_FALSE(EditorAutomationInput::move_mouse_gesture(nullptr, to, Vector<Vector2>(), modifiers, events));
+	ERR_PRINT_ON;
+
+	CHECK(display_server->mouse_get_position() == resting_pointer);
+
+	EditorAutomationInput::reset_pointer_state();
 	harness.unmount();
 }
 
