@@ -59,7 +59,7 @@ Vector<EditorDock *> EditorSideRailStrip::_get_source_docks_in_order() const {
 
 	// Left side: the ordered EditorDock children of body preceding
 	// content_host (place_left admits more than the one dock shipping today).
-	Control *body = Object::cast_to<Control>(dock_region->get_body());
+	Control *body = dock_region->get_body();
 	Control *center_host = dock_region->get_center_host();
 	if (!body || !center_host) {
 		return docks;
@@ -251,8 +251,12 @@ EditorSideRailStrip::EditorSideRailStrip(Side p_side, EditorTileDockRegion *p_do
 	// infinitely (see EditorBottomDrawerStrip).
 	set_theme_type_variation(side == Side::LEFT ? "SideRailStripLeft" : "SideRailStripRight");
 
+	main_vbox = memnew(VBoxContainer);
+	add_child(main_vbox);
+
 	toggles_vbox = memnew(VBoxContainer);
-	add_child(toggles_vbox);
+	toggles_vbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	main_vbox->add_child(toggles_vbox);
 
 	close_button = memnew(Button);
 	close_button->set_theme_type_variation("FlatMenuButton");
@@ -262,15 +266,14 @@ EditorSideRailStrip::EditorSideRailStrip(Side p_side, EditorTileDockRegion *p_do
 	close_button->hide();
 	toggles_vbox->add_child(close_button);
 
-	// The far end of the rail; only meaningful once a side can be RAILED
-	// (issue #1991 depends on this widget shipping first), so it stays
-	// permanently hidden for now.
+	// The far end of the rail; only meaningful once a side can be RAILED,
+	// which is a follow-up issue, so it stays permanently hidden for now.
 	expand_button = memnew(Button);
 	expand_button->set_theme_type_variation("FlatMenuButton");
 	expand_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	expand_button->set_accessibility_name(TTRC("Expand Tile Drawer"));
 	expand_button->hide();
-	add_child(expand_button);
+	main_vbox->add_child(expand_button);
 
 	if (active_source_tabs) {
 		active_source_tabs->connect("tab_changed", callable_mp(this, &EditorSideRailStrip::_update_active_states).unbind(1));

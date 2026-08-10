@@ -159,7 +159,7 @@ TEST_CASE("[Editor][SideRail] toggle tooltip is non-empty with and without a sho
 	shortcut->set_events(events);
 	with_shortcut->set_dock_shortcut(shortcut);
 
-	EditorDock *without_shortcut = fixture.add_right_dock("Signals");
+	fixture.add_right_dock("Signals");
 
 	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
 	strip->rebuild_toggles();

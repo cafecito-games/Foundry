@@ -65,6 +65,10 @@ private:
 	// with no such notion, so this stays null there.
 	TabContainer *active_source_tabs = nullptr;
 
+	// PanelContainer stacks every direct child to the same full rect, so the
+	// strip has exactly one: main_vbox holds the toggle stack and the expand
+	// button in a real vertical order.
+	VBoxContainer *main_vbox = nullptr;
 	VBoxContainer *toggles_vbox = nullptr;
 	Button *close_button = nullptr;
 	Button *expand_button = nullptr;
