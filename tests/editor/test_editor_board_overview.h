@@ -83,8 +83,10 @@ struct OverviewHarness {
 	}
 
 	// The rect a control actually occupies in its parent's space, its own canvas scale
-	// included. Control::get_rect() reports the unscaled layout size, so it cannot tell a
-	// board that was scaled down from one that was resized down.
+	// included. Control::get_rect() already folds in the control's scale, so for a
+	// zero-rotation, zero-pivot control like EditorBoard this is equivalent; the helper
+	// exists to make that intent explicit at each call site rather than to work around a
+	// gap in get_rect().
 	static Rect2 scaled_rect(const Control *p_control) {
 		return p_control->get_transform().xform(Rect2(Point2(), p_control->get_size()));
 	}
@@ -412,7 +414,7 @@ TEST_CASE("[Editor][Boards] Overview captions are unscaled, aligned to their boa
 		CHECK(caption->get_size().height > caption->get_combined_minimum_size().height * board_scale * 1.5);
 
 		// And each one is centered on the board it names, measured against the board's
-		// on-screen rect rather than its unscaled layout rect.
+		// scaled rect in its parent's space.
 		const Rect2 board_rect = OverviewHarness::scaled_rect(h.strip->get_board(i));
 		const real_t caption_center = caption->get_position().x + caption->get_size().width * 0.5;
 		CHECK(Math::abs(caption_center - board_rect.get_center().x) < 1.0);
