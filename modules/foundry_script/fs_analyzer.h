@@ -259,6 +259,39 @@ private:
 
 	OwnerResolutionFailures owner_resolution_failures;
 
+	// Replaying an owner-memoized failure is observable in the dependent parser, whose analysis may
+	// revisit the same shared node many times. Record replays here so one dependent reports each
+	// foreign member/phase once, while separate analyzers and separate operations still propagate it.
+	class DependentResolutionFailureReplays {
+		struct ClassReplays {
+			uint8_t phases = 0;
+			HashSet<int> members;
+		};
+
+		HashMap<const FSParser::ClassNode *, ClassReplays> replays;
+
+	public:
+		bool record_class(const FSParser::ClassNode *p_class, OwnerResolutionFailures::ClassPhase p_phase) {
+			ClassReplays &class_replays = replays[p_class];
+			if ((class_replays.phases & p_phase) != 0) {
+				return false;
+			}
+			class_replays.phases |= p_phase;
+			return true;
+		}
+
+		bool record_member(const FSParser::ClassNode *p_class, int p_index) {
+			ClassReplays &class_replays = replays[p_class];
+			if (class_replays.members.has(p_index)) {
+				return false;
+			}
+			class_replays.members.insert(p_index);
+			return true;
+		}
+	};
+
+	DependentResolutionFailureReplays dependent_resolution_failure_replays;
+
 	// A foreign node's memoized result must be defined by its owning file, independent of which caller
 	// first forces its resolution. Route the owner's visibility with every delegated analyzer call so
 	// the shared result remains order-independent.

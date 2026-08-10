@@ -32,7 +32,9 @@
 
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_parser.h"
+#include "modules/foundry_script/fs_warning.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/file_access.h"
 
 #include "tests/test_macros.h"
@@ -105,6 +107,55 @@ static int generic_count_errors_containing(const FSParser &p_parser, const Strin
 	}
 	return count;
 }
+
+static String generic_error_messages(const FSParser &p_parser) {
+	String messages;
+	for (const FSParser::ParserError &parser_error : p_parser.get_errors()) {
+		if (!messages.is_empty()) {
+			messages += " | ";
+		}
+		messages += parser_error.message;
+	}
+	return messages;
+}
+
+#ifdef DEBUG_ENABLED
+class GenericAnalyzerWarningSettingsScope {
+	Variant previous_enable;
+	Variant previous_level;
+	bool previous_ignore = false;
+
+public:
+	GenericAnalyzerWarningSettingsScope() {
+		previous_ignore = FSParser::is_ignoring_warnings();
+		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
+		const String setting = FSWarning::get_setting_path_from_code(FSWarning::UNSAFE_METHOD_ACCESS);
+		previous_level = ProjectSettings::get_singleton()->get_setting(setting, (int)FSWarning::IGNORE);
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
+		ProjectSettings::get_singleton()->set_setting(setting, (int)FSWarning::WARN);
+		FSParser::set_ignoring_warnings(false);
+		FSParser::update_project_settings();
+	}
+
+	~GenericAnalyzerWarningSettingsScope() {
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
+		ProjectSettings::get_singleton()->set_setting(
+				FSWarning::get_setting_path_from_code(FSWarning::UNSAFE_METHOD_ACCESS), previous_level);
+		FSParser::set_ignoring_warnings(previous_ignore);
+		FSParser::update_project_settings();
+	}
+};
+
+static int generic_count_warnings(const FSParser &p_parser, FSWarning::Code p_code) {
+	int count = 0;
+	for (const FSWarning &warning : p_parser.get_warnings()) {
+		if (warning.code == p_code) {
+			count++;
+		}
+	}
+	return count;
+}
+#endif // DEBUG_ENABLED
 
 static Error generic_parse_analyzer_feature_fixture(FSParser &p_parser, const String &p_filename) {
 	const String fixture_path = "modules/foundry_script/tests/scripts/analyzer/features/" + p_filename;
@@ -1503,6 +1554,36 @@ TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inherited trait surfaces r
 	CHECK(generic->get_datatype().kind == FSParser::DataType::BUILTIN);
 	CHECK(generic->get_datatype().builtin_type == Variant::STRING);
 }
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Abstract classes expose deferred trait requirements") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_abstract_requirement.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK_MESSAGE(analyzer.analyze() == OK, generic_error_messages(parser));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Trait lookup continues past an owner whose uses failed") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_lookup_after_failed_uses.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+	CHECK(generic_has_error_containing(parser, "MissingTrait"));
+	CHECK_FALSE(generic_has_error_containing(parser, "inherited_value"));
+}
+
+#ifdef DEBUG_ENABLED
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Soft receivers warn for unflattenable trait members") {
+	GenericAnalyzerWarningSettingsScope warning_settings;
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_unflattenable_soft_receiver.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK_MESSAGE(analyzer.analyze() == OK, generic_error_messages(parser));
+	CHECK_EQ(generic_count_warnings(parser, FSWarning::UNSAFE_METHOD_ACCESS), 1);
+}
+#endif // DEBUG_ENABLED
 
 TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inherited trait surfaces enforce specialized contracts") {
 	auto check_error = [&](const String &p_fixture, const String &p_fragment) {

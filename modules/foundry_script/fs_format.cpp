@@ -2597,10 +2597,19 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 			ERR_FAIL_MSG("FSPrinter: unhandled expression node type " + itos(p_expression->type) + ".");
 	}
 	if (!wrapped_groupings.is_empty()) {
-		// The expression's own final-line comment is exact trivia metadata, not a
-		// span scan. Claim it before closing wrappers so a later delimiter comment
-		// cannot replace it at the statement level.
-		append_inline_comment(p_expression->end_line);
+		bool end_comment_belongs_to_close = false;
+		for (const int grouping_index : wrapped_groupings) {
+			const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[grouping_index];
+			if (span.close_line == p_expression->end_line && span.close_is_last_token_on_line) {
+				end_comment_belongs_to_close = true;
+				break;
+			}
+		}
+		// The expression's own final-line comment is exact trivia metadata. Claim it
+		// before closing wrappers unless a selected closing delimiter owns that line.
+		if (!end_comment_belongs_to_close) {
+			append_inline_comment(p_expression->end_line);
+		}
 	}
 	for (int selected = wrapped_groupings.size() - 1; selected >= 0; selected--) {
 		const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[wrapped_groupings[selected]];

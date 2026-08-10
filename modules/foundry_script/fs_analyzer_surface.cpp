@@ -1268,11 +1268,12 @@ bool FSAnalyzer::resolve_type_parameter(const StringName &p_name, FSParser::Data
 	return true;
 }
 
-// Mirrors `FSCompiler::_is_flattenable_trait_member` for class receivers. A trait receiver also
-// exposes transitive abstract function requirements as callable interface signatures even though no
-// function body is copied into an implementing class. Inner classes, tuples, and export groups are
-// never inherited through this fallback.
-static bool _is_analyzer_reachable_trait_member(const FSParser::ClassNode::Member &p_member, bool p_receiver_is_trait) {
+// Mirrors `FSCompiler::_is_flattenable_trait_member` for concrete class receivers. A trait or abstract
+// class receiver also exposes transitive abstract function requirements as callable interface signatures
+// even though no function body is copied into an implementing class. Inner classes, tuples, and export
+// groups are never inherited through this fallback.
+static bool _is_analyzer_reachable_trait_member(
+		const FSParser::ClassNode::Member &p_member, bool p_receiver_allows_abstract_requirements) {
 	switch (p_member.type) {
 		case FSParser::ClassNode::Member::VARIABLE:
 		case FSParser::ClassNode::Member::CONSTANT:
@@ -1281,7 +1282,8 @@ static bool _is_analyzer_reachable_trait_member(const FSParser::ClassNode::Membe
 		case FSParser::ClassNode::Member::SIGNAL:
 			return true;
 		case FSParser::ClassNode::Member::FUNCTION:
-			return p_member.function != nullptr && (p_receiver_is_trait || !p_member.function->is_abstract);
+			return p_member.function != nullptr &&
+					(p_receiver_allows_abstract_requirements || !p_member.function->is_abstract);
 		default:
 			return false;
 	}
@@ -1296,14 +1298,18 @@ bool FSAnalyzer::find_trait_member_in_inheritance_chain(FSParser::ClassNode *p_r
 		*r_found_unflattenable = false;
 	}
 	HashSet<FSParser::ClassNode *> seen_traits;
-	const bool receiver_is_trait = p_receiver != nullptr && p_receiver->is_trait;
+	const bool receiver_allows_abstract_requirements =
+			p_receiver != nullptr && (p_receiver->is_trait || p_receiver->is_abstract);
 
 	// Flattened class members and transitive trait requirements remain reachable even though their
 	// declarations are not copied into the receiver's AST. Walk only the receiver's inheritance chain:
 	// lexical outers remain ordinary scope entries and must never donate their traits to an inner receiver.
 	for (FSParser::ClassNode *owner = p_receiver; owner != nullptr; owner = owner->base_type.class_type) {
+		if (!owner->is_trait && owner->used_traits.is_empty()) {
+			continue;
+		}
 		if (resolve_trait_uses(owner, p_source) != OK) {
-			return false;
+			continue;
 		}
 		for (FSParser::ClassNode *trait : owner->resolved_traits) {
 			if (trait == nullptr || seen_traits.has(trait)) {
@@ -1314,7 +1320,7 @@ bool FSAnalyzer::find_trait_member_in_inheritance_chain(FSParser::ClassNode *p_r
 				continue;
 			}
 			const FSParser::ClassNode::Member &member = trait->get_member(p_name);
-			if (!_is_analyzer_reachable_trait_member(member, receiver_is_trait)) {
+			if (!_is_analyzer_reachable_trait_member(member, receiver_allows_abstract_requirements)) {
 				if (r_found_unflattenable != nullptr) {
 					*r_found_unflattenable = true;
 				}
@@ -1633,6 +1639,11 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 			dependency_parser_access.ensure_cached_external_parser_for_class(member_type.get_container_element_type(i).class_type, p_class, "Trying to resolve datatype of class member", p_source);
 		}
 	});
+	auto push_external_member_failure = [&]() {
+		if (dependent_resolution_failure_replays.record_member(p_class, p_index)) {
+			push_error(vformat(R"(Could not resolve external class member "%s".)", member.get_name()), p_source);
+		}
+	};
 
 	if (member.get_datatype().is_resolving()) {
 		push_error(vformat(R"(Could not resolve member "%s": Cyclic reference.)", member.get_name()), p_source);
@@ -1643,7 +1654,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 		if (!parser->has_class(p_class) && parser_ref.is_valid()) {
 			FSAnalyzer *other_analyzer = parser_ref->get_analyzer();
 			if (other_analyzer->owner_resolution_failures.has_member(p_class, p_index)) {
-				push_error(vformat(R"(Could not resolve external class member "%s".)", member.get_name()), p_source);
+				push_external_member_failure();
 			}
 		}
 		return;
@@ -1676,7 +1687,7 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 		ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 		other_analyzer->resolve_class_member(p_class, p_index);
 		if (other_parser->errors.size() > error_count) {
-			push_error(vformat(R"(Could not resolve external class member "%s".)", member.get_name()), p_source);
+			push_external_member_failure();
 			return;
 		}
 
@@ -1971,11 +1982,17 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 					p_class, OwnerResolutionFailures::INTERFACE, interface_error_count);
 		}
 	});
+	auto push_external_interface_failure = [&]() {
+		if (dependent_resolution_failure_replays.record_class(
+					p_class, OwnerResolutionFailures::INTERFACE)) {
+			push_error(vformat(R"(Could not resolve class "%s".)", p_class->fqcn), p_source);
+		}
+	};
 
 	if (p_class->resolved_interface && !owns_class && parser_ref.is_valid() &&
 			parser_ref->get_analyzer()->owner_resolution_failures.has_class(
 					p_class, OwnerResolutionFailures::INTERFACE)) {
-		push_error(vformat(R"(Could not resolve class "%s".)", p_class->fqcn), p_source);
+		push_external_interface_failure();
 	}
 
 	if (!p_class->resolved_interface) {
@@ -2004,7 +2021,7 @@ void FSAnalyzer::resolve_class_interface(FSParser::ClassNode *p_class, const FSP
 			if (other_parser->errors.size() > error_count ||
 					other_analyzer->owner_resolution_failures.has_class(
 							p_class, OwnerResolutionFailures::INTERFACE)) {
-				push_error(vformat(R"(Could not resolve class "%s".)", p_class->fqcn), p_source);
+				push_external_interface_failure();
 				return;
 			}
 

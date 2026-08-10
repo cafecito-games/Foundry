@@ -124,6 +124,17 @@ static bool nested_conformance_visibility_has_exact_error(
 	return false;
 }
 
+static int nested_conformance_visibility_count_exact_errors(
+		const NestedConformanceVisibilityResult &p_result, const String &p_expected) {
+	int count = 0;
+	for (const String &error : p_result.errors) {
+		if (error == p_expected) {
+			count++;
+		}
+	}
+	return count;
+}
+
 static bool nested_conformance_visibility_parser_has_exact_error(
 		const Ref<FSParserRef> &p_parser_ref, const String &p_expected) {
 	if (p_parser_ref.is_null() || p_parser_ref->get_parser() == nullptr) {
@@ -217,13 +228,26 @@ TEST_CASE("[Modules][FoundryScript][Conformance] a dependency is resolved under 
 		REQUIRE(a_dependency != nullptr);
 		CHECK_EQ(a_dependency->ptr(), b_result.parser_ref.ptr());
 
-		CHECK_MESSAGE(nested_conformance_visibility_has_exact_error(a_result,
-							  R"(Could not resolve external class member "thing".)"),
+		CHECK_MESSAGE(nested_conformance_visibility_count_exact_errors(a_result,
+							  R"(Could not resolve external class member "thing".)") == 1,
 				nested_conformance_visibility_errors(a_result));
 		CHECK_MESSAGE(nested_conformance_visibility_has_exact_error(b_result,
 							  R"(Cannot assign a value of type RtcvWidget to variable "thing" with specified type RtcvGadgetlike.)"),
 				nested_conformance_visibility_errors(b_result));
 	}
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] a repeated foreign member failure is replayed once per dependent") {
+	NestedConformanceVisibilityFixture fixture("member",
+			{ "project.foundry", "widget.fs", "gadgetlike.fs", "conformance.fs", "b.fs", "a.fs" },
+			{ { "RtcvWidget", "widget.fs", false }, { "RtcvGadgetlike", "gadgetlike.fs", true },
+					{ "RtcvB", "b.fs", false } });
+
+	const NestedConformanceVisibilityResult result =
+			analyze_nested_conformance_visibility_file(fixture.path("a.fs"));
+	CHECK_MESSAGE(nested_conformance_visibility_count_exact_errors(
+						  result, R"(Could not resolve external class member "thing".)") == 1,
+			nested_conformance_visibility_errors(result));
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] nested foreign interface resolution does not borrow the caller's conformances") {
@@ -293,6 +317,19 @@ TEST_CASE("[Modules][FoundryScript][Conformance] foreign dependents replay an ow
 			nested_conformance_visibility_errors(c_result));
 	CHECK(nested_conformance_visibility_parser_has_exact_error(*a_dependency,
 			R"(Cannot assign a value of type RtcviWidget to parameter "thing" with specified type RtcviGadgetlike.)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] a repeated foreign interface failure is replayed once per dependent") {
+	NestedConformanceVisibilityFixture fixture("interface",
+			{ "project.foundry", "widget.fs", "gadgetlike.fs", "conformance.fs", "b.fs", "repeat.fs" },
+			{ { "RtcviWidget", "widget.fs", false }, { "RtcviGadgetlike", "gadgetlike.fs", true },
+					{ "RtcviB", "b.fs", false } });
+
+	const NestedConformanceVisibilityResult result =
+			analyze_nested_conformance_visibility_file(fixture.path("repeat.fs"));
+	CHECK_MESSAGE(nested_conformance_visibility_count_exact_errors(
+						  result, R"(Could not resolve class "RtcviB".)") == 1,
+			nested_conformance_visibility_errors(result));
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] a cached member failure propagates into its owner interface") {
@@ -385,6 +422,23 @@ TEST_CASE("[Modules][FoundryScript][Conformance] foreign dependents replay an ow
 			nested_conformance_visibility_errors(c_result));
 	CHECK(nested_conformance_visibility_parser_has_exact_error(*a_dependency,
 			R"(Cannot return value of type "RtcvbWidget" because the function return type is "RtcvbGadgetlike".)"));
+}
+
+TEST_CASE("[Modules][FoundryScript][Conformance] a repeated foreign body failure is replayed once per dependent") {
+	NestedConformanceVisibilityFixture fixture("body",
+			{ "project.foundry", "widget.fs", "gadgetlike.fs", "conformance.fs", "b.fs", "repeat.fs" },
+			{ { "RtcvbWidget", "widget.fs", false }, { "RtcvbGadgetlike", "gadgetlike.fs", true },
+					{ "RtcvbB", "b.fs", false } });
+
+	const NestedConformanceVisibilityResult result =
+			analyze_nested_conformance_visibility_file(fixture.path("repeat.fs"));
+	String expected_body_error =
+			vformat(R"(Could not resolve class "RtcvbB". The class is declared in "%s", which has errors, )",
+					fixture.path("b.fs"));
+	expected_body_error += R"(the first at line 5: Cannot return value of type "RtcvbWidget" )";
+	expected_body_error += R"(because the function return type is "RtcvbGadgetlike".)";
+	CHECK_MESSAGE(nested_conformance_visibility_count_exact_errors(result, expected_body_error) == 1,
+			nested_conformance_visibility_errors(result));
 }
 
 TEST_CASE("[Modules][FoundryScript][Conformance] a dependency that loads the conformance itself still resolves") {

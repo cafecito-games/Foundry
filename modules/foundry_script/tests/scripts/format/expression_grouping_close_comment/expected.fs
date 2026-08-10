@@ -55,6 +55,10 @@ var canonical_full_line = (
 	20 + 21
 	# canonical close fallback
 )
+var content_and_close_same_line = (
+	27 + 28
+	# same-line close
+)
 
 var binary_continuation = 22 + 23 + 24  # binary tail
 var postfix_continuation = [25, 26].size()  # postfix tail

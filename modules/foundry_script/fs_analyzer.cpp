@@ -2918,6 +2918,10 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 	});
 
 	auto push_external_body_failure = [&](int p_first_error_index) {
+		if (!dependent_resolution_failure_replays.record_class(
+					p_class, OwnerResolutionFailures::BODY)) {
+			return;
+		}
 		String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
 		String class_path = parser_ref->get_path();
 		if (class_path.is_empty()) {
@@ -10850,7 +10854,8 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 	// diagnose it as missing only after external-script and native surfaces have also missed. A bare
 	// name continues through conformance, global, builtin, and autoload lookup in reduce_identifier(),
 	// which supplies the ordinary undeclared-name diagnostic if every one of those surfaces misses.
-	if (p_base != nullptr && found_unflattenable_trait_member && p_identifier->get_datatype().has_no_type()) {
+	if (p_base != nullptr && found_unflattenable_trait_member && p_identifier->get_datatype().has_no_type() &&
+			base.is_hard_type()) {
 		push_error(vformat(R"(Cannot find member "%s" in base "%s".)", name, base.to_string()), p_identifier);
 		FSParser::DataType dummy;
 		dummy.kind = FSParser::DataType::VARIANT;
