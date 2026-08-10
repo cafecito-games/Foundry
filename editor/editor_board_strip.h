@@ -133,7 +133,7 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	void _on_caption_gui_input(const Ref<InputEvent> &p_event, ObjectID p_board_id);
 	// Clears the drag state and decides whether the press the caption is about to report has
 	// to be swallowed.
-	void _end_caption_drag();
+	void _end_caption_drag(bool p_release_inside_caption);
 	// The board under a strip-local pointer x while the overview is up, or -1 in a gutter or
 	// past the ends. Captions hang below the boards, so a caption drag hit-tests at the
 	// board band's own height rather than at the pointer's y: the horizontal math is

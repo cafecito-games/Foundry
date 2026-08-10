@@ -887,9 +887,18 @@ TEST_CASE("[Editor][Boards] Board order round-trips through save and restore aft
 	saved.strip->move_board(0, 2);
 	saved.pump();
 
-	REQUIRE(saved.strip->get_board(0)->get_title() == "B");
-	REQUIRE(saved.strip->get_board(1)->get_title() == "C");
-	REQUIRE(saved.strip->get_board(2)->get_title() == "A");
+	EditorBoard *reordered_0 = saved.strip->get_board(0);
+	EditorBoard *reordered_1 = saved.strip->get_board(1);
+	EditorBoard *reordered_2 = saved.strip->get_board(2);
+	if (!reordered_0 || !reordered_1 || !reordered_2) {
+		saved.unmount();
+		FAIL_CHECK("the strip must keep three boards after a reorder");
+		return;
+	}
+
+	REQUIRE(reordered_0->get_title() == "B");
+	REQUIRE(reordered_1->get_title() == "C");
+	REQUIRE(reordered_2->get_title() == "A");
 	// C was active at index 2 and the reorder displaced it to index 1.
 	REQUIRE(saved.strip->get_active_index() == 1);
 
@@ -909,9 +918,17 @@ TEST_CASE("[Editor][Boards] Board order round-trips through save and restore aft
 	restored.pump();
 
 	CHECK(restored.strip->get_board_count() == 3);
-	CHECK(restored.strip->get_board(0)->get_title() == "B");
-	CHECK(restored.strip->get_board(1)->get_title() == "C");
-	CHECK(restored.strip->get_board(2)->get_title() == "A");
+	EditorBoard *restored_0 = restored.strip->get_board(0);
+	EditorBoard *restored_1 = restored.strip->get_board(1);
+	EditorBoard *restored_2 = restored.strip->get_board(2);
+	if (!restored_0 || !restored_1 || !restored_2) {
+		restored.unmount();
+		FAIL_CHECK("the restored strip must have three boards");
+		return;
+	}
+	CHECK(restored_0->get_title() == "B");
+	CHECK(restored_1->get_title() == "C");
+	CHECK(restored_2->get_title() == "A");
 	CHECK(restored.strip->get_active_index() == 1);
 
 	restored.unmount();
@@ -1024,6 +1041,55 @@ TEST_CASE("[Editor][Boards] A caption drag that stays inside its own board leave
 	SIGNAL_CHECK_FALSE("board_moved");
 
 	SIGNAL_UNWATCH(h.strip, "board_moved");
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A stale drag swallow flag does not eat a later keyboard activation") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("B");
+	if (!board_b) {
+		h.unmount();
+		FAIL_CHECK("the strip must be able to add boards");
+		return;
+	}
+	h.pump();
+
+	h.strip->set_overview(true);
+	h.pump();
+
+	Button *caption_a = caption_for(h.strip, 0);
+	if (!caption_a) {
+		h.unmount();
+		FAIL_CHECK("the overview must build one caption per board");
+		return;
+	}
+
+	// Cross the drag threshold and release far from board A's own slot, with no layout pass in
+	// between: the caption's laid-out rect is still at its pre-drag position when the release
+	// arrives, so the release lands outside it, just like a pointer that never travels back
+	// over the caption it started on. BaseButton never fires "pressed" for a release outside
+	// its own bounds, so nothing consumes the swallow flag this drag would otherwise leave
+	// armed for whatever activates next.
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_button(20.0, true));
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_motion(700.0));
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_button(700.0, false));
+	h.pump();
+
+	REQUIRE(h.strip->is_overview_active());
+
+	// Keyboard activation goes straight to the "pressed" signal with no preceding mouse-down,
+	// the same as BaseButton dispatching ui_accept. A stale swallow flag left over from the
+	// drag above must not eat this activation.
+	caption_a->emit_signal(SceneStringName(pressed));
+	h.pump();
+
+	CHECK_FALSE(h.strip->is_overview_active());
+	CHECK(h.strip->get_active_board() == board_a);
+
 	h.unmount();
 }
 

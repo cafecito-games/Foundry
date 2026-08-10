@@ -664,8 +664,13 @@ int EditorBoardStrip::_overview_index_at_x(real_t p_x) const {
 	return board_view.index_at_point(Point2(p_x, get_size().height * 0.5), boards.size(), get_size());
 }
 
-void EditorBoardStrip::_end_caption_drag() {
-	caption_drag_swallow_click = caption_drag_active;
+void EditorBoardStrip::_end_caption_drag(bool p_release_inside_caption) {
+	// Only arm the swallow when the caption's own BaseButton is about to emit "pressed" for
+	// this same release (i.e. the pointer came back inside its bounds). A release outside the
+	// caption never fires "pressed" at all, so leaving the flag armed for that case would go
+	// uncleared until some unrelated activation happened to trip it, including a keyboard
+	// activation on a different caption that never touched this drag.
+	caption_drag_swallow_click = caption_drag_active && p_release_inside_caption;
 	caption_drag_board_id = ObjectID();
 	caption_drag_active = false;
 	queue_sort();
@@ -689,7 +694,20 @@ void EditorBoardStrip::_on_caption_gui_input(const Ref<InputEvent> &p_event, Obj
 			caption_drag_active = false;
 			caption_drag_swallow_click = false;
 		} else if (caption_drag_board_id.is_valid()) {
-			_end_caption_drag();
+			// Approximates the bounds check BaseButton itself runs to decide whether it will
+			// emit "pressed" for this release, in the strip's own space rather than trusting
+			// the event's local position field. Horizontal-only, like the rest of the drag: the
+			// caption overlay sits over the strip with an identity transform, so a caption's
+			// laid-out x-range is already in that space.
+			const int drag_index = resolve_board_index(caption_drag_board_id);
+			bool release_inside = false;
+			if (caption_overlay && drag_index >= 0 && drag_index < caption_overlay->get_child_count()) {
+				if (Control *caption = Object::cast_to<Control>(caption_overlay->get_child(drag_index))) {
+					const real_t release_x = to_strip.xform(mouse_button->get_global_position()).x;
+					release_inside = release_x >= caption->get_position().x && release_x <= caption->get_position().x + caption->get_size().x;
+				}
+			}
+			_end_caption_drag(release_inside);
 		}
 		return;
 	}
@@ -699,9 +717,10 @@ void EditorBoardStrip::_on_caption_gui_input(const Ref<InputEvent> &p_event, Obj
 		return;
 	}
 	if (!motion->get_button_mask().has_flag(MouseButtonMask::LEFT)) {
-		// The button came up somewhere this caption never saw; drop the drag rather than
-		// letting a later hover keep reordering boards.
-		_end_caption_drag();
+		// The button came up somewhere this caption never saw, so its BaseButton never
+		// registered a press-inside release; drop the drag rather than letting a later hover
+		// keep reordering boards, and without arming a swallow that would never be consumed.
+		_end_caption_drag(false);
 		return;
 	}
 
