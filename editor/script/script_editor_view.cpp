@@ -777,29 +777,6 @@ void _save_text_editor_theme_as(const String &p_file) {
 
 void ScriptEditorView::_file_dialog_action(const String &p_file) {
 	switch (controller->get_file_dialog_option()) {
-		case FILE_MENU_NEW_TEXTFILE: {
-			Error err;
-			{
-				Ref<FileAccess> file = FileAccess::open(p_file, FileAccess::WRITE, &err);
-				if (err) {
-					EditorNode::get_singleton()->show_warning(TTR("Error writing TextFile:") + "\n" + p_file, TTR("Error!"));
-					break;
-				}
-			}
-
-			if (EditorFileSystem::get_singleton()) {
-				if (textfile_extensions.has(p_file.get_extension())) {
-					EditorFileSystem::get_singleton()->update_file(p_file);
-				}
-			}
-
-			// The file is now on disk (file-backed identity from birth). Route it
-			// through the shared open path so a non-script text document opens as a
-			// workspace TextTab; a script extension falls back to the script editor.
-			controller->set_file_dialog_option(-1);
-			EditorNode::get_singleton()->load_resource(p_file);
-			break;
-		}
 		case FILE_MENU_OPEN: {
 			// Non-script text documents are owned by the workspace TextTab; route
 			// them through the shared open path so the script editor never holds a
@@ -889,16 +866,7 @@ void ScriptEditorView::_menu_option(int p_option) {
 			controller->get_script_create_dialog()->popup_centered();
 		} break;
 		case FILE_MENU_NEW_TEXTFILE: {
-			controller->get_file_dialog()->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
-			controller->get_file_dialog()->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
-			controller->set_file_dialog_option(FILE_MENU_NEW_TEXTFILE);
-
-			controller->get_file_dialog()->clear_filters();
-			for (const String &E : textfile_extensions) {
-				controller->get_file_dialog()->add_filter("*." + E, E.to_upper());
-			}
-			controller->get_file_dialog()->set_title(TTRC("New Text File..."));
-			controller->get_file_dialog()->popup_file_dialog();
+			controller->open_text_file_create_dialog(controller->get_file_dialog()->get_current_dir());
 		} break;
 		case FILE_MENU_OPEN: {
 			controller->get_file_dialog()->set_file_mode(EditorFileDialog::FILE_MODE_OPEN_FILE);

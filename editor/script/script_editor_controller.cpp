@@ -112,6 +112,14 @@ static bool script_path_exists(const String &p_path) {
 	return FileAccess::exists(p_path);
 }
 
+// The configured text-file extensions for the FileSystem dock's "New Text File"
+// flow. Read live from the editor setting instead of mirroring the cached set
+// in ScriptEditorView, so the controller-owned dialog always reflects the
+// current project configuration.
+static Vector<String> get_textfile_extensions() {
+	return ((String)EDITOR_GET("docks/filesystem/textfile_extensions")).split(",", false);
+}
+
 ScriptEditorController::ScriptEditorController() {
 	singleton = this;
 
@@ -160,6 +168,35 @@ ScriptEditorView *ScriptEditorController::_active_view() const {
 }
 
 void ScriptEditorController::_on_file_dialog_selected(const String &p_file) {
+	if (file_dialog_option == ScriptEditorView::FILE_MENU_NEW_TEXTFILE) {
+		file_dialog_option = -1;
+
+		Error err = OK;
+		{
+			Ref<FileAccess> file = FileAccess::open(p_file, FileAccess::WRITE, &err);
+		}
+		if (err != OK) {
+			if (EditorNode *editor_node = EditorNode::get_singleton()) {
+				editor_node->show_warning(TTR("Error writing TextFile:") + "\n" + p_file, TTR("Error!"));
+			}
+			return;
+		}
+
+		if (EditorFileSystem *editor_file_system = EditorFileSystem::get_singleton()) {
+			if (get_textfile_extensions().has(p_file.get_extension())) {
+				editor_file_system->update_file(p_file);
+			}
+		}
+
+		// Route the new path through the normal resource-loading path so a
+		// non-script text document opens as a workspace TextTab while a script
+		// extension falls back to the script editor.
+		if (EditorNode *editor_node = EditorNode::get_singleton()) {
+			editor_node->load_resource(p_file);
+		}
+		return;
+	}
+
 	if (file_dialog_view) {
 		file_dialog_view->_file_dialog_action(p_file);
 	} else if (focused_view) {
@@ -586,13 +623,21 @@ void ScriptEditorController::open_script_create_dialog(const String &p_base_name
 }
 
 void ScriptEditorController::open_text_file_create_dialog(const String &p_base_path, const String &p_base_name) {
-	if (ScriptEditorView *view = _active_view()) {
-		view->_menu_option(ScriptEditorView::FILE_MENU_NEW_TEXTFILE);
+	ERR_FAIL_NULL(file_dialog);
+
+	file_dialog_view = nullptr;
+	file_dialog->set_file_mode(EditorFileDialog::FILE_MODE_SAVE_FILE);
+	file_dialog->set_access(EditorFileDialog::ACCESS_FILESYSTEM);
+	file_dialog_option = ScriptEditorView::FILE_MENU_NEW_TEXTFILE;
+
+	file_dialog->clear_filters();
+	for (const String &extension : get_textfile_extensions()) {
+		file_dialog->add_filter("*." + extension, extension.to_upper());
 	}
-	if (file_dialog) {
-		file_dialog->set_current_dir(p_base_path);
-		file_dialog->set_current_file(p_base_name);
-	}
+	file_dialog->set_title(TTRC("New Text File..."));
+	file_dialog->set_current_dir(p_base_path);
+	file_dialog->set_current_file(p_base_name);
+	file_dialog->popup_file_dialog();
 }
 
 Ref<Resource> ScriptEditorController::open_file(const String &p_file) {

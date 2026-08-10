@@ -37,6 +37,7 @@
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/gui/code_editor.h"
+#include "editor/gui/editor_file_dialog.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_editor_view.h"
@@ -86,16 +87,73 @@ static Ref<TextFile> make_text_file(const String &p_path, const String &p_source
 	return text_file;
 }
 
-static String write_temp_text_file(const String &p_name, const String &p_source) {
-	const String dir = OS::get_singleton()->get_cache_path().path_join("script_view_persist");
+static String get_script_view_scratch_dir() {
+	String root;
+	if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+		root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+	} else {
+		root = OS::get_singleton()->get_cache_path().path_join("foundry_tests");
+	}
+
+	const String dir = root.path_join("script_editor_views");
 	Ref<DirAccess> da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 	ERR_FAIL_COND_V(da.is_null(), String());
-	da->make_dir_recursive(dir);
+	ERR_FAIL_COND_V(da->make_dir_recursive(dir) != OK, String());
+	return dir;
+}
+
+static String write_temp_text_file(const String &p_name, const String &p_source) {
+	const String dir = get_script_view_scratch_dir();
+	ERR_FAIL_COND_V(dir.is_empty(), String());
 	const String path = dir.path_join(p_name);
 	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE);
 	ERR_FAIL_COND_V(file.is_null(), String());
 	file->store_string(p_source);
 	return path;
+}
+
+TEST_CASE("[Editor][script-controller-textfile-dialog] Opens without an active script view") {
+	ScriptControllerHarness h;
+	h.mount();
+	h.pump();
+
+	const String scratch_dir = get_script_view_scratch_dir();
+	REQUIRE_FALSE(scratch_dir.is_empty());
+	CHECK(h.controller->get_open_scripts().is_empty());
+
+	h.controller->open_text_file_create_dialog(scratch_dir, "new_notes.txt");
+	h.pump();
+
+	EditorFileDialog *dialog = h.controller->get_file_dialog();
+	REQUIRE(dialog != nullptr);
+	CHECK(dialog->is_visible());
+	CHECK(dialog->get_current_dir() == scratch_dir);
+	CHECK(dialog->get_current_file() == "new_notes.txt");
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][script-controller-textfile-dialog] Creates a selected file without an active script view") {
+	ScriptControllerHarness h;
+	h.mount();
+	h.pump();
+
+	const String scratch_dir = get_script_view_scratch_dir();
+	REQUIRE_FALSE(scratch_dir.is_empty());
+	const String file_path = scratch_dir.path_join("created_without_view.txt");
+	if (FileAccess::exists(file_path)) {
+		REQUIRE(DirAccess::remove_absolute(file_path) == OK);
+	}
+	REQUIRE_FALSE(FileAccess::exists(file_path));
+
+	h.controller->open_text_file_create_dialog(scratch_dir);
+	h.pump();
+	h.controller->get_file_dialog()->emit_signal("file_selected", file_path);
+	h.pump();
+
+	CHECK(FileAccess::exists(file_path));
+
+	h.unmount();
 }
 
 TEST_CASE("[Editor][two-scripts-two-leaves] Distinct script leaves keep independent tabs") {
