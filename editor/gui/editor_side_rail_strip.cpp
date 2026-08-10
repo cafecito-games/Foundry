@@ -213,18 +213,6 @@ void EditorSideRailStrip::_apply_label_mode() {
 		return;
 	}
 
-	// rebuild_toggles() runs deferred and can fire before this control's first
-	// real layout pass (e.g. its parent container has not sorted children
-	// yet), when get_size() is still the construction-time zero. Deciding
-	// against that bogus baseline can wrongly drop to ICON_ONLY, and because
-	// the decision is hysteretic, a later real height inside the hysteresis
-	// band would then never return to LABELLED. Skip the decision until a
-	// real size exists; the control's actual first resize notification
-	// re-triggers this with a legitimate height.
-	if (get_size().height <= 0) {
-		return;
-	}
-
 	Vector<real_t> labelled_heights;
 	labelled_heights.resize(toggle_buttons.size());
 	for (uint32_t i = 0; i < toggle_buttons.size(); i++) {

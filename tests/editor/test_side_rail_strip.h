@@ -204,23 +204,50 @@ TEST_CASE("[Editor][SideRail] toggle tooltip is non-empty with and without a sho
 TEST_CASE("[Editor][SideRail] deferred first rebuild does not lock the rail into icon-only") {
 	// EditorSideRailStrip's constructor defers its first rebuild_toggles()
 	// call (matching EditorBottomDrawerStrip's own construction pattern), so
-	// it can run before any parent container has sized the strip, i.e. while
-	// get_size().height is still the construction-time zero. Deciding the
-	// label-mode fit against that bogus baseline would drop straight to
-	// ICON_ONLY, and because the fit decision is hysteretic, a real height
-	// inside the hysteresis band would then never return to LABELLED. This
-	// reproduces exactly that ordering: pump the deferred call without ever
-	// giving the strip a real size first.
+	// it can run before any parent container has explicitly sized the strip.
+	// A suspected bug: if get_size() were still the construction-time zero at
+	// that point, deciding the label-mode fit against it would drop straight
+	// to ICON_ONLY, and because the fit decision is hysteretic, a later real
+	// height inside the hysteresis band would then never return to LABELLED.
+	//
+	// This does not happen: Control::_size_changed() always clamps a
+	// control's actual size to at least its own combined minimum size, and a
+	// PanelContainer's minimum size already includes its children's minimum
+	// sizes. So by the time this deferred rebuild runs and creates the
+	// toggle buttons, the strip's own get_size() is never smaller than the
+	// sum of their labelled minimum heights -- the same quantity
+	// drop_to_icon_only is computed from -- so the decision can never see a
+	// bogus zero baseline. This test pins that behavior so a future change
+	// to sizing (e.g. removing the minimum-size clamp, or computing minimum
+	// size lazily) that reintroduces the bogus baseline gets caught.
 	SideRailFixture fixture;
 	fixture.add_right_dock("Inspector");
 	fixture.add_right_dock("Signals");
 
+	// A standalone strip outside the scene tree has no window ancestor to
+	// resolve a theme through, so its buttons' labelled heights would stay
+	// zero and the hysteresis thresholds below would be zero too -- unable to
+	// exercise the scenario this test covers. Root it under the real tree,
+	// with no explicit size set, exactly mirroring production construction
+	// order (construct, then add_child), so its toggle buttons get real font
+	// metrics by the time the deferred rebuild runs.
+	Control *host = memnew(Control);
+	SceneTree::get_singleton()->get_root()->add_child(host);
+
 	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
+	host->add_child(strip);
+
+	// The constructor's rebuild_toggles() call is deferred (matching
+	// EditorBottomDrawerStrip's own construction pattern), so it fires here,
+	// before this test has ever explicitly sized the strip.
 	SideRailFixture::pump();
 
 	REQUIRE(strip->get_toggle_buttons().size() == 2);
 	if (strip->get_toggle_buttons().size() != 2) {
+		host->remove_child(strip);
 		memdelete(strip);
+		SceneTree::get_singleton()->get_root()->remove_child(host);
+		memdelete(host);
 		return;
 	}
 
@@ -234,21 +261,28 @@ TEST_CASE("[Editor][SideRail] deferred first rebuild does not lock the rail into
 	const SideRailFitThresholds thresholds = side_rail_fit_thresholds(labelled_heights);
 	REQUIRE(thresholds.drop_to_icon_only > 0);
 	if (!(thresholds.drop_to_icon_only > 0)) {
+		host->remove_child(strip);
 		memdelete(strip);
+		SceneTree::get_singleton()->get_root()->remove_child(host);
+		memdelete(host);
 		return;
 	}
 
-	// A height inside the hysteresis band, applied as the strip's first real
-	// resize, must still be measured against the true starting mode
-	// (LABELLED) and therefore stay LABELLED. Before the guard, the bogus
-	// zero-height rebuild above would already have dropped to ICON_ONLY, and
-	// this height (below return_to_labelled) would then be stuck there.
+	// A height inside the hysteresis band, applied as the strip's first
+	// explicit resize, must still be measured against the true starting mode
+	// (LABELLED) and therefore stay LABELLED. If the deferred rebuild above
+	// had instead seen a bogus zero-height baseline, it would already have
+	// dropped to ICON_ONLY, and this height (below return_to_labelled) would
+	// then be stuck there.
 	const real_t within_hysteresis_band = (thresholds.drop_to_icon_only + thresholds.return_to_labelled) / 2.0;
 	strip->set_size(Size2(32, within_hysteresis_band));
 
 	CHECK(strip->get_label_mode() == SideRailLabelMode::LABELLED);
 
+	host->remove_child(strip);
 	memdelete(strip);
+	SceneTree::get_singleton()->get_root()->remove_child(host);
+	memdelete(host);
 }
 
 TEST_CASE("[Editor][SideRailButton] rotated-label minimum size covers the rendered text width") {
