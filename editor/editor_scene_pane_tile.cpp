@@ -62,6 +62,74 @@ void ScenePaneTile::_notification(int p_what) {
 	}
 }
 
+void ScenePaneTile::_apply_preview_bounds(Node *p_node, int p_shrink, PreviewCadence p_cadence) {
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		Node *child = p_node->get_child(i);
+		// A SubViewport's contents render into whatever resolution its host container
+		// already imposes, so descending past one would compound the shrink.
+		if (Object::cast_to<SubViewport>(child)) {
+			continue;
+		}
+
+		SubViewportContainer *container = Object::cast_to<SubViewportContainer>(child);
+		if (container && container->is_stretch_enabled()) {
+			container->set_stretch_shrink(p_shrink);
+			for (int j = 0; j < container->get_child_count(); j++) {
+				SubViewport *viewport = Object::cast_to<SubViewport>(container->get_child(j));
+				if (!viewport) {
+					continue;
+				}
+				switch (p_cadence) {
+					case PreviewCadence::RUN_FREE: {
+						// Mirrors what SubViewportContainer installs for its own visibility,
+						// so unthrottling restores the exact mode the container would have set
+						// rather than a guess at the default.
+						viewport->set_update_mode(container->is_visible_in_tree() ? SubViewport::UPDATE_ALWAYS : SubViewport::UPDATE_DISABLED);
+					} break;
+					case PreviewCadence::PAUSED: {
+						viewport->set_update_mode(SubViewport::UPDATE_DISABLED);
+					} break;
+					case PreviewCadence::SINGLE_FRAME: {
+						viewport->set_update_mode(SubViewport::UPDATE_ONCE);
+					} break;
+				}
+			}
+		}
+
+		_apply_preview_bounds(child, p_shrink, p_cadence);
+	}
+}
+
+void ScenePaneTile::_apply_preview_bounds() {
+	_apply_preview_bounds(this, preview_render_shrink, preview_refresh_throttled ? PreviewCadence::PAUSED : PreviewCadence::RUN_FREE);
+}
+
+void ScenePaneTile::set_preview_render_shrink(int p_shrink) {
+	const int shrink = MAX(1, p_shrink);
+	if (shrink == preview_render_shrink) {
+		return;
+	}
+	preview_render_shrink = shrink;
+	_apply_preview_bounds();
+}
+
+void ScenePaneTile::set_preview_refresh_throttled(bool p_throttled) {
+	if (p_throttled == preview_refresh_throttled) {
+		return;
+	}
+	preview_refresh_throttled = p_throttled;
+	_apply_preview_bounds();
+}
+
+void ScenePaneTile::refresh_throttled_previews() {
+	if (!preview_refresh_throttled) {
+		return;
+	}
+	// UPDATE_ONCE renders a single frame and then stops on its own, so one call per tick
+	// is the whole cadence bound.
+	_apply_preview_bounds(this, preview_render_shrink, PreviewCadence::SINGLE_FRAME);
+}
+
 void ScenePaneTile::_interaction_gui_input(const Ref<InputEvent> &p_event) {
 	Ref<InputEventMouseButton> mb = p_event;
 	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT) {

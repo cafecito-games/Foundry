@@ -67,6 +67,20 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	// a raw pointer is what makes every settle site safe regardless of whether the board
 	// is still alive.
 	ObjectID transition_outgoing_id;
+	// Set while a zoom back out of the overview is still running. On settle every board but
+	// the active one goes dormant. The boards to sleep are read from the live list at
+	// settle time rather than captured here, so a close during the zoom cannot strand a
+	// freed board or a board that shifted index.
+	bool overview_exit_pending = false;
+	// Seconds of process time accumulated towards the next throttled preview refresh.
+	real_t overview_refresh_accumulator = 0.0;
+	// Throttled refreshes issued since the current overview was entered. Readable so the
+	// cadence bound is observable rather than inferred from timing.
+	uint32_t overview_refresh_count = 0;
+	// Board titles drawn over, not inside, the scaled board container, so they stay at
+	// full font size and remain clickable while the boards behind them shrink. Always the
+	// strip's last child so it draws above every board.
+	Control *caption_overlay = nullptr;
 
 	EditorBoard *_append_board(int p_board_id, const String &p_title);
 	void _clear_boards();
@@ -75,6 +89,27 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	static int _persisted_leaf_id_ceiling(const Ref<ConfigFile> &p_config, int p_board_count);
 	// Applies one frame of the slide and, once it settles, sleeps the outgoing board.
 	void _advance_transition(real_t p_delta);
+	// Puts every board that must no longer be live to sleep. Called from every site where a
+	// transition lands, whether by animating to its end or by being cut short.
+	void _settle_dormancy();
+	// The body of set_active_board() with no overview handling, so the overview's own exit
+	// can drive a switch without recursing back through set_active_board().
+	void _switch_to_board(int p_index);
+	// Wakes every board, bounds every tile's preview cost, and retargets the view at the
+	// overview layout.
+	void _enter_overview();
+	// Restores every tile's preview cost and hides the captions. Does not touch the view:
+	// callers follow it with whichever transition lands the exit.
+	void _leave_overview_state();
+	// The one way out of the overview: restores the tiles, animates onto p_index, and
+	// arranges for every other board to sleep once the motion settles.
+	void _exit_overview_to(int p_index);
+	void _apply_overview_preview_bounds(bool p_overview);
+	// Consumes p_delta and issues a preview refresh whenever a tick is due.
+	void _pump_overview_refresh(real_t p_delta);
+	void _rebuild_captions();
+	void _layout_captions(const Transform2D &p_transform, real_t p_pitch, const Size2 &p_scaled_size);
+	void _on_caption_pressed(ObjectID p_board_id);
 
 protected:
 	void _notification(int p_what);
@@ -131,6 +166,43 @@ public:
 	// of snapping, and immediately sleeps whichever board is no longer part of the new
 	// outgoing/incoming pair.
 	void set_active_board(int p_index);
+
+	// Zooms every board out into a live filmstrip, or back onto the active board.
+	//
+	// The overview is live rather than a wall of frozen thumbnails: every board stays
+	// awake, keeps rendering, and remains an ordinary Control, so panes can still be
+	// dropped across boards while it is up. What makes that affordable is two explicit
+	// bounds, both applied here and both undone on exit. Resolution: every tile's preview
+	// SubViewports are shrunk by overview_preview_shrink_for(), so a board drawn at 1/n of
+	// its layout size renders roughly 1/n^2 the pixels and the whole filmstrip costs about
+	// one board. Cadence: previews render one frame per OVERVIEW_REFRESH_INTERVAL tick
+	// instead of one per frame, which is invisible on a miniature.
+	//
+	// Entering during an in-flight board switch retargets the slide into the zoom out from
+	// wherever it currently is and cancels the pending sleep of the outgoing board, since
+	// every board must be live in the overview.
+	void set_overview(bool p_overview);
+	bool is_overview_active() const { return board_view.is_overview_active(); }
+
+	// Seconds between overview preview refreshes.
+	static constexpr real_t OVERVIEW_REFRESH_INTERVAL = real_t(1.0) / real_t(15.0);
+
+	// The resolution divisor for p_board_count boards in p_viewport: the reciprocal of the
+	// overview's on-screen scale, rounded to the nearest whole divisor and never below 1.
+	static int overview_preview_shrink_for(int p_board_count, const Size2 &p_viewport);
+
+	uint32_t get_overview_refresh_count() const { return overview_refresh_count; }
+	// The unscaled caption layer over the overview. Exposed so callers can observe the
+	// captions without reaching through the scaled board container.
+	Control *get_caption_overlay() const { return caption_overlay; }
+
+	// Converts a leaf focus request raised while the overview is up into a board
+	// selection, and returns true when it did. In the overview every board is on screen at
+	// once, so pointing at one -- clicking inside it, dropping a pane onto it -- means
+	// "open this board", not "retarget the editor at that board's leaf". Returns false
+	// when the overview is not up or the workspace belongs to no board here, in which case
+	// the request proceeds normally.
+	bool route_overview_focus_request(const EditorSceneWorkspace *p_workspace);
 
 	// Config section holding the tiling tree of the board at p_index.
 	static String board_section(int p_index);

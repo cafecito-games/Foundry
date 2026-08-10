@@ -1207,6 +1207,14 @@ void EditorSceneWorkspace::set_focused_leaf_without_content_activation(int p_id)
 }
 
 void EditorSceneWorkspace::request_leaf_focus(int p_leaf_id) {
+	// While the board overview is up every board is on screen at once, so pointing at one
+	// means "open this board", not "retarget the editor at that board's leaf". The strip
+	// consumes the request and turns it into a board selection; suppressing the signal here
+	// rather than downstream is what keeps a click inside a shrunk board from changing the
+	// focused tile or retargeting the main screen mid-zoom.
+	if (board_strip && board_strip->route_overview_focus_request(this)) {
+		return;
+	}
 	if (p_leaf_id == focused_leaf_id) {
 		return;
 	}

@@ -103,6 +103,23 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	EditorSideRailStrip *left_rail = nullptr;
 	EditorSideRailStrip *right_rail = nullptr;
 
+	// Cost bounds applied while the tile is drawn shrunk in the board overview. Neither
+	// affects layout: the shrink only changes how many pixels the tile's SubViewports
+	// render into, and the throttle only changes how often they render.
+	int preview_render_shrink = 1;
+	bool preview_refresh_throttled = false;
+
+	enum class PreviewCadence {
+		RUN_FREE,
+		PAUSED,
+		SINGLE_FRAME,
+	};
+	// Walks the tile's stretch-enabled SubViewportContainers and applies both bounds.
+	// SubViewports are never descended into: their own contents are already reduced by
+	// whatever shrink their host container carries.
+	static void _apply_preview_bounds(Node *p_node, int p_shrink, PreviewCadence p_cadence);
+	void _apply_preview_bounds();
+
 	void _request_focus();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);
 	void _bind_focus_on_interaction(Control *p_control);
@@ -136,6 +153,28 @@ public:
 	SubViewportContainer *get_context_viewport_host() const { return context_viewport_host; }
 	Node3DEditorViewport *get_spatial_view() const { return spatial_view; }
 	Camera3D *get_preview_3d_camera() const { return preview_3d_camera; }
+	SubViewport *get_preview_3d_viewport() const { return preview_3d_viewport; }
+
+	// Divides the render resolution of every preview SubViewport under this tile by
+	// p_shrink; 1 restores full resolution. The board overview draws boards at a fraction
+	// of their layout size, and matching the render resolution to that on-screen size is
+	// what keeps a live filmstrip affordable: a board at 1/4 scale renders its previews at
+	// 1/16 the pixels.
+	//
+	// Implemented through SubViewportContainer::set_stretch_shrink() rather than
+	// SubViewport::set_size(): these containers all enable stretch, and a stretch-enabled
+	// container makes SubViewport::set_size() warn and no-op, which would silently leave
+	// every board rendering at full resolution.
+	void set_preview_render_shrink(int p_shrink);
+	int get_preview_render_shrink() const { return preview_render_shrink; }
+
+	// While throttled, the tile's preview SubViewports stop redrawing on their own and
+	// render exactly one frame per refresh_throttled_previews() call. Untoggling restores
+	// the update mode SubViewportContainer itself installs for its current visibility, so
+	// the tile is left exactly as the container would have configured it.
+	void set_preview_refresh_throttled(bool p_throttled);
+	bool is_preview_refresh_throttled() const { return preview_refresh_throttled; }
+	void refresh_throttled_previews();
 
 	void set_spatial_view(Node3DEditorViewport *p_view) { spatial_view = p_view; }
 

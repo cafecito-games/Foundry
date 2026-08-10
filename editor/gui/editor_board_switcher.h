@@ -40,7 +40,7 @@ class LineEdit;
 
 /**
  * Title-bar chrome for switching between boards: one button per board, an "add
- * board" button, and an overview toggle (inert until the overview stage lands).
+ * board" button, and a toggle for the zoomed-out board overview.
  *
  * The switcher holds no board list of its own. It mirrors EditorBoardStrip by
  * rebuilding its buttons from scratch on every structural signal the strip
@@ -65,6 +65,10 @@ class EditorBoardSwitcher : public HBoxContainer {
 	void _on_board_button_pressed(int p_index);
 	void _on_board_button_gui_input(const Ref<InputEvent> &p_event, int p_index);
 	void _on_add_pressed();
+	void _on_overview_toggled(bool p_pressed);
+	// Keeps the toggle in step with the strip when the overview is entered or left from
+	// somewhere else -- a caption click, a drop onto another board, a board shortcut.
+	void _on_overview_changed(bool p_active);
 	void _begin_rename(int p_index);
 	void _apply_pending_rename(const String &p_text);
 	void _commit_rename(const String &p_text);
