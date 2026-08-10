@@ -3924,6 +3924,19 @@ void FSCompiler::_collect_flattened_trait_members(const FSParser::ClassNode *p_c
 	}
 }
 
+Vector<const FSParser::ClassNode::Member *> FSCompiler::collect_effective_members(const FSParser::ClassNode *p_class) {
+	Vector<const FSParser::ClassNode::Member *> members;
+	if (p_class == nullptr) {
+		return members;
+	}
+
+	for (const FSParser::ClassNode::Member &member : p_class->members) {
+		members.push_back(&member);
+	}
+	_collect_flattened_trait_members(p_class, members);
+	return members;
+}
+
 // Records the abstract method requirements contributed by the traits `p_class`
 // (transitively) uses but does not flatten into its own members. Abstract trait
 // members are contracts the implementer satisfies, not bodies that are copied in,
@@ -4129,10 +4142,7 @@ FSFunction *FSCompiler::_parse_function(Error &r_error, FoundryScript *p_script,
 	// trait state is set up per implementer.
 	Vector<const FSParser::ClassNode::Member *> initializer_members;
 	if (!p_for_lambda && (is_implicit_initializer || is_implicit_ready)) {
-		for (int i = 0; i < p_class->members.size(); i++) {
-			initializer_members.push_back(&p_class->members[i]);
-		}
-		_collect_flattened_trait_members(p_class, initializer_members);
+		initializer_members = collect_effective_members(p_class);
 	}
 
 	if (!p_for_lambda && is_implicit_initializer) {
@@ -4360,11 +4370,7 @@ FSFunction *FSCompiler::_make_static_initializer(Error &r_error, FoundryScript *
 	FSCodeGenerator::Address class_addr(FSCodeGenerator::Address::CLASS);
 
 	// Static variables flattened in from applied traits are initialized here too.
-	Vector<const FSParser::ClassNode::Member *> static_members;
-	for (int i = 0; i < p_class->members.size(); i++) {
-		static_members.push_back(&p_class->members[i]);
-	}
-	_collect_flattened_trait_members(p_class, static_members);
+	const Vector<const FSParser::ClassNode::Member *> static_members = collect_effective_members(p_class);
 
 	// Initialize the default values for typed variables before anything.
 	// This avoids crashes if they are accessed with validated calls before being properly initialized.
@@ -5042,11 +5048,7 @@ Error FSCompiler::_prepare_compilation(FoundryScript *p_script, const FSParser::
 	// Flatten the applied traits' members into this script alongside the class's own
 	// members so their state, constants, signals, and methods are recompiled per
 	// implementer. Shadowed names and abstract requirements are filtered out here.
-	Vector<const FSParser::ClassNode::Member *> members_to_compile;
-	for (int i = 0; i < p_class->members.size(); i++) {
-		members_to_compile.push_back(&p_class->members[i]);
-	}
-	_collect_flattened_trait_members(p_class, members_to_compile);
+	const Vector<const FSParser::ClassNode::Member *> members_to_compile = collect_effective_members(p_class);
 	const HashMap<const FSParser::ClassNode::Member *, FlattenedTraitArguments> flattened_trait_arguments =
 			_flattened_trait_arguments(p_class);
 
@@ -5385,11 +5387,7 @@ Error FSCompiler::_compile_class(FoundryScript *p_script, const FSParser::ClassN
 	// Compile member functions, getters, and setters, including the bodies flattened in
 	// from applied traits. Trait functions are compiled against the implementing script
 	// so member accesses bind to the flattened member layout of this class.
-	Vector<const FSParser::ClassNode::Member *> members_to_compile;
-	for (int i = 0; i < p_class->members.size(); i++) {
-		members_to_compile.push_back(&p_class->members[i]);
-	}
-	_collect_flattened_trait_members(p_class, members_to_compile);
+	const Vector<const FSParser::ClassNode::Member *> members_to_compile = collect_effective_members(p_class);
 
 	for (int i = 0; i < members_to_compile.size(); i++) {
 		const FSParser::ClassNode::Member &member = *members_to_compile[i];

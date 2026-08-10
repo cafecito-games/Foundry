@@ -32,6 +32,10 @@
 
 #include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_parser.h"
+#include "modules/foundry_script/fs_warning.h"
+
+#include "core/config/project_settings.h"
+#include "core/io/file_access.h"
 
 #include "tests/test_macros.h"
 
@@ -83,6 +87,82 @@ static const FSParser::VariableNode *generic_find_local_variable(const FSParser:
 		}
 	}
 	return nullptr;
+}
+
+static bool generic_has_error_containing(const FSParser &p_parser, const String &p_fragment) {
+	for (const FSParser::ParserError &parser_error : p_parser.get_errors()) {
+		if (parser_error.message.contains(p_fragment)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static int generic_count_errors_containing(const FSParser &p_parser, const String &p_fragment) {
+	int count = 0;
+	for (const FSParser::ParserError &parser_error : p_parser.get_errors()) {
+		if (parser_error.message.contains(p_fragment)) {
+			count++;
+		}
+	}
+	return count;
+}
+
+static String generic_error_messages(const FSParser &p_parser) {
+	String messages;
+	for (const FSParser::ParserError &parser_error : p_parser.get_errors()) {
+		if (!messages.is_empty()) {
+			messages += " | ";
+		}
+		messages += parser_error.message;
+	}
+	return messages;
+}
+
+#ifdef DEBUG_ENABLED
+class GenericAnalyzerWarningSettingsScope {
+	Variant previous_enable;
+	Variant previous_level;
+	bool previous_ignore = false;
+
+public:
+	GenericAnalyzerWarningSettingsScope() {
+		previous_ignore = FSParser::is_ignoring_warnings();
+		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
+		const String setting = FSWarning::get_setting_path_from_code(FSWarning::UNSAFE_METHOD_ACCESS);
+		previous_level = ProjectSettings::get_singleton()->get_setting(setting, (int)FSWarning::IGNORE);
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
+		ProjectSettings::get_singleton()->set_setting(setting, (int)FSWarning::WARN);
+		FSParser::set_ignoring_warnings(false);
+		FSParser::update_project_settings();
+	}
+
+	~GenericAnalyzerWarningSettingsScope() {
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
+		ProjectSettings::get_singleton()->set_setting(
+				FSWarning::get_setting_path_from_code(FSWarning::UNSAFE_METHOD_ACCESS), previous_level);
+		FSParser::set_ignoring_warnings(previous_ignore);
+		FSParser::update_project_settings();
+	}
+};
+
+static int generic_count_warnings(const FSParser &p_parser, FSWarning::Code p_code) {
+	int count = 0;
+	for (const FSWarning &warning : p_parser.get_warnings()) {
+		if (warning.code == p_code) {
+			count++;
+		}
+	}
+	return count;
+}
+#endif // DEBUG_ENABLED
+
+static Error generic_parse_analyzer_feature_fixture(FSParser &p_parser, const String &p_filename) {
+	const String fixture_path = "modules/foundry_script/tests/scripts/analyzer/features/" + p_filename;
+	if (!FileAccess::exists(fixture_path)) {
+		return ERR_FILE_NOT_FOUND;
+	}
+	return p_parser.parse(FileAccess::get_file_as_string(fixture_path), fixture_path, false);
 }
 
 TEST_CASE("[Modules][FoundryScript] Analyzer resolves a class type parameter inside a generic class") {
@@ -1437,6 +1517,256 @@ func test() -> void:
 	CHECK(type.builtin_type == Variant::INT);
 }
 
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] An inherited trait member specializes against the original receiver") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_original_receiver.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+
+	const FSParser::DataType type = got->get_datatype();
+	CHECK(type.kind == FSParser::DataType::BUILTIN);
+	CHECK(type.builtin_type == Variant::INT);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inherited trait surfaces resolve on bare self and explicit receivers") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_surface_resolution.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	for (const StringName &name : { StringName("concrete"), StringName("called") }) {
+		const FSParser::VariableNode *variable = generic_find_local_variable(test, name);
+		REQUIRE(variable != nullptr);
+		CHECK(variable->get_datatype().kind == FSParser::DataType::BUILTIN);
+		CHECK(variable->get_datatype().builtin_type == Variant::INT);
+	}
+	const FSParser::VariableNode *generic = generic_find_local_variable(test, "generic");
+	REQUIRE(generic != nullptr);
+	CHECK(generic->get_datatype().kind == FSParser::DataType::BUILTIN);
+	CHECK(generic->get_datatype().builtin_type == Variant::STRING);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Abstract classes expose deferred trait requirements") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_abstract_requirement.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK_MESSAGE(analyzer.analyze() == OK, generic_error_messages(parser));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Trait lookup continues past an owner whose uses failed") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_lookup_after_failed_uses.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+	CHECK(generic_has_error_containing(parser, "MissingTrait"));
+	CHECK_FALSE(generic_has_error_containing(parser, "inherited_value"));
+}
+
+#ifdef DEBUG_ENABLED
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Soft receivers warn for unflattenable trait members") {
+	GenericAnalyzerWarningSettingsScope warning_settings;
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_unflattenable_soft_receiver.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK_MESSAGE(analyzer.analyze() == OK, generic_error_messages(parser));
+	CHECK_EQ(generic_count_warnings(parser, FSWarning::UNSAFE_METHOD_ACCESS), 1);
+}
+#endif // DEBUG_ENABLED
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inherited trait surfaces enforce specialized contracts") {
+	auto check_error = [&](const String &p_fixture, const String &p_fragment) {
+		FSParser parser;
+		REQUIRE(generic_parse_analyzer_feature_fixture(parser, p_fixture) == OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK(analyzer.analyze() != OK);
+		CHECK(generic_has_error_containing(parser, p_fragment));
+	};
+
+	SUBCASE("wrong variable assignment") {
+		check_error("inherited_trait_contract_wrong_variable.notest.fs",
+				"Value of type \"String\" cannot be assigned to a variable of type \"int\"");
+	}
+
+	SUBCASE("wrong concrete method argument") {
+		check_error("inherited_trait_contract_wrong_argument.notest.fs",
+				"Invalid argument for \"accept()\" function");
+	}
+
+	SUBCASE("incompatible return") {
+		check_error("inherited_trait_contract_wrong_return.notest.fs",
+				"Cannot return value of type \"int\" because the function return type is \"String\"");
+	}
+
+	SUBCASE("typed container mismatch") {
+		check_error("inherited_trait_contract_wrong_container.notest.fs",
+				"Cannot assign a value of type Array[int] to variable \"strings\" with specified type Array[String]");
+	}
+
+	SUBCASE("signal connection mismatch") {
+		check_error("inherited_trait_contract_wrong_signal.notest.fs",
+				"Cannot connect signal \"Signal[[int]]\" to callable \"Callable[[String], void]\"");
+	}
+
+	SUBCASE("explicit generic method keeps receiver contract") {
+		check_error("inherited_trait_contract_wrong_generic.notest.fs",
+				"Invalid argument for \"project()\" function");
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inherited trait signals and callable values keep their specialization") {
+	auto check_error = [&](const String &p_fixture, const String &p_fragment) {
+		FSParser parser;
+		REQUIRE(generic_parse_analyzer_feature_fixture(parser, p_fixture) == OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK(analyzer.analyze() != OK);
+		CHECK(generic_has_error_containing(parser, p_fragment));
+	};
+
+	SUBCASE("signal emit") {
+		check_error("inherited_trait_signal_wrong_argument.notest.fs", "Invalid argument for \"emit()\" function");
+	}
+
+	SUBCASE("callable call") {
+		check_error("inherited_trait_callable_wrong_argument.notest.fs", "Invalid argument for \"call()\" function");
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Ordinary and lexical members precede inherited traits") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_precedence.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inherited trait lookup excludes outer traits") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_outer_isolation.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+	CHECK(generic_has_error_containing(parser, "outer_only"));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] An inaccessible ordinary declaration blocks trait fallback") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_ordinary_shadow.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+	CHECK(generic_has_error_containing(parser, "claimed"));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inaccessible lexical outer declarations do not block inherited traits") {
+	auto check_valid = [&](const String &p_fixture) {
+		FSParser parser;
+		REQUIRE(generic_parse_analyzer_feature_fixture(parser, p_fixture) == OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK(analyzer.analyze() == OK);
+	};
+
+	SUBCASE("bare access") {
+		check_valid("inherited_trait_outer_instance_shadow_bare.notest.fs");
+	}
+
+	SUBCASE("explicit access") {
+		check_valid("inherited_trait_outer_instance_shadow_explicit.notest.fs");
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inherited trait lookup excludes members the compiler does not flatten") {
+	auto check_missing = [&](const String &p_fixture, const String &p_member) {
+		FSParser parser;
+		REQUIRE(generic_parse_analyzer_feature_fixture(parser, p_fixture) == OK);
+		FSAnalyzer analyzer(&parser);
+		CHECK(analyzer.analyze() != OK);
+		CHECK(generic_has_error_containing(parser, p_member));
+	};
+
+	SUBCASE("inner class") {
+		check_missing("inherited_trait_unsupported_class.notest.fs", "Nested");
+	}
+
+	SUBCASE("tuple") {
+		check_missing("inherited_trait_unsupported_tuple.notest.fs", "Pair");
+	}
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Unsupported trait metatype access reports once") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_unsupported_metatype.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() != OK);
+	CHECK(parser.get_errors().size() == 2);
+	CHECK(generic_count_errors_containing(parser, "Nested") == 1);
+	CHECK(generic_count_errors_containing(parser, "Pair") == 1);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Unsupported trait members do not shadow native members") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_unsupported_native_collision.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Unsupported trait members do not shadow bare globals") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_unsupported_bare_global.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Inherited trait lookup preserves level and declaration order") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_lookup_order.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *blocked_callable = generic_find_local_variable(test, "blocked_callable");
+	REQUIRE(blocked_callable != nullptr);
+	REQUIRE(blocked_callable->initializer != nullptr);
+	REQUIRE(blocked_callable->initializer->type == FSParser::Node::SUBSCRIPT);
+	const FSParser::SubscriptNode *blocked_access = static_cast<const FSParser::SubscriptNode *>(blocked_callable->initializer);
+	REQUIRE(blocked_access->attribute != nullptr);
+
+	const FSParser::ClassNode *declaring_base = generic_find_inner_class(parser.get_tree(), "DeclaringBase");
+	REQUIRE(declaring_base != nullptr);
+	CHECK(blocked_access->attribute->function_source == generic_find_function(declaring_base, "blocked"));
+}
+
+TEST_CASE("[Modules][FoundryScript][GenericTypeModel] A concrete base trait application specializes on a derived receiver") {
+	FSParser parser;
+	REQUIRE(generic_parse_analyzer_feature_fixture(parser, "inherited_trait_concrete_base.notest.fs") == OK);
+
+	FSAnalyzer analyzer(&parser);
+	REQUIRE(analyzer.analyze() == OK);
+
+	const FSParser::FunctionNode *test = generic_find_function(parser.get_tree(), "test");
+	REQUIRE(test != nullptr);
+	const FSParser::VariableNode *got = generic_find_local_variable(test, "got");
+	REQUIRE(got != nullptr);
+	CHECK(got->get_datatype().kind == FSParser::DataType::BUILTIN);
+	CHECK(got->get_datatype().builtin_type == Variant::INT);
+}
+
 TEST_CASE("[Modules][FoundryScript][GenericTypeModel] Two applications of one generic trait specialize independently") {
 	FSParser parser;
 	const String source = R"(
@@ -1480,15 +1810,6 @@ func test() -> void:
 	REQUIRE(declared_value != nullptr);
 	CHECK(declared_value->get_datatype().kind == FSParser::DataType::TYPE_PARAMETER);
 	CHECK(declared_value->get_datatype().type_parameter_name == StringName("T"));
-}
-
-static bool generic_has_error_containing(const FSParser &p_parser, const String &p_fragment) {
-	for (const FSParser::ParserError &parser_error : p_parser.get_errors()) {
-		if (parser_error.message.contains(p_fragment)) {
-			return true;
-		}
-	}
-	return false;
 }
 
 static FSParser::DataType generic_argument_at(const FSParser::DataType &p_type, int p_index) {

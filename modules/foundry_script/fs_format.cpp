@@ -757,6 +757,9 @@ void FSPrinter::emit_leading_trivia(int p_next_line, int p_required_blanks) {
 // the code line first; this rewrites its trailing newline so the comment trails
 // the code with the canonical two-space gap.
 void FSPrinter::emit_trailing_comment(int p_line) {
+	if (emitted_inline_comments.has(p_line)) {
+		return; // An inner printer already claimed this exact source comment.
+	}
 	HashMap<int, FSTokenizer::CommentData>::ConstIterator found = comments.find(p_line);
 	if (!found || found->value.new_line) {
 		return;
@@ -2499,46 +2502,39 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 	if (p_expression == nullptr) {
 		return;
 	}
-	// A redundant parenthesized grouping this expression was the sole content of
-	// carries no semantic effect and is normally never re-printed. But a comment
-	// trailing its opening delimiter (`(  # note`) has nowhere else to attach (the
-	// grouping itself has no AST node), so re-wrap this expression's printed text
-	// in real, multi-line parentheses -- never by appending the comment straight
-	// after the collapsed text, which would silently comment out whatever the
-	// caller writes next on that same line (an enclosing operator, a call's
-	// closing delimiter, ...).
-	//
-	// This only ever claims that one, unambiguous line: the opening delimiter's
-	// own, and only when the content does not also start on it (so the comment
-	// cannot instead be trailing the content). Every other placement -- a comment
-	// on the closing delimiter's line, or one shared with the grouping's content
-	// on a single physical line -- is left alone; on a single-line grouping the
-	// comment is indistinguishable from the statement's ordinary trailing comment
-	// and the existing collapse-and-let-the-caller-flush-it path already handles
-	// it correctly (the same way it does for `var x = 1 + 2  # tail`), and a
-	// closing-line comment risks landing after other source the caller still has
-	// to write on that same output line. Check every recorded level (outermost
-	// first, since that is the one a caller can safely wrap around) and use the
-	// first one that qualifies.
-	int wrap_open_line = 0;
-	int wrap_close_line = 0;
+	// A redundant grouping normally disappears with no AST node of its own. Keep
+	// exactly the multiline levels that own a delimiter comment. Closing-line
+	// ownership comes from the parser's token positions: a line number alone
+	// cannot distinguish `)  # ours` from `) + tail()  # tail's`.
+	Vector<int> wrapped_groupings;
 	for (int i = p_expression->redundant_groupings.size() - 1; i >= 0; i--) {
 		const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[i];
-		if (span.open_line != span.close_line && span.open_line != p_expression->start_line &&
-				has_inline_comment(span.open_line)) {
-			wrap_open_line = span.open_line;
-			wrap_close_line = span.close_line;
-			break;
+		if (span.open_line == span.close_line) {
+			continue;
+		}
+		const bool owns_open_comment = span.open_line != p_expression->start_line && has_inline_comment(span.open_line);
+		const bool owns_close_comment = span.close_is_last_token_on_line && has_inline_comment(span.close_line);
+		// This is the formatter's canonical spelling for a close-owned comment.
+		// Exact adjacency keeps the second pass stable without restoring the old
+		// broad scan across every line inside the grouping.
+		const bool has_canonical_close_comment = span.close_line - 1 > last_emitted_line &&
+				is_full_line_comment(span.close_line - 1);
+		if (owns_open_comment || owns_close_comment || has_canonical_close_comment) {
+			wrapped_groupings.push_back(i);
 		}
 	}
-	if (wrap_open_line > 0) {
+	for (int selected = 0; selected < wrapped_groupings.size(); selected++) {
+		const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[wrapped_groupings[selected]];
 		write("(");
-		append_inline_comment(wrap_open_line);
-		if (wrap_open_line > last_emitted_line) {
-			last_emitted_line = wrap_open_line;
+		if (span.open_line != p_expression->start_line) {
+			append_inline_comment(span.open_line);
+		}
+		if (span.open_line > last_emitted_line) {
+			last_emitted_line = span.open_line;
 		}
 		indent_level++;
-		flush_inner_comments(p_expression->start_line);
+		const int next_content_line = selected + 1 < wrapped_groupings.size() ? p_expression->redundant_groupings[wrapped_groupings[selected + 1]].open_line : p_expression->start_line;
+		flush_inner_comments(next_content_line);
 		newline();
 		write_indent();
 	}
@@ -2600,12 +2596,31 @@ void FSPrinter::print_expression(const FSParser::ExpressionNode *p_expression) {
 		default:
 			ERR_FAIL_MSG("FSPrinter: unhandled expression node type " + itos(p_expression->type) + ".");
 	}
-	if (wrap_open_line > 0) {
-		// A full-line comment strictly between the content and the closing
-		// delimiter (`# dangling` below) is unambiguous -- it cannot be anything
-		// else's -- so it is safe to interleave here, unlike an inline comment
-		// directly on the closing delimiter's own line (see above).
-		flush_inner_comments(wrap_close_line);
+	if (!wrapped_groupings.is_empty()) {
+		bool end_comment_belongs_to_close = false;
+		for (const int grouping_index : wrapped_groupings) {
+			const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[grouping_index];
+			if (span.close_line == p_expression->end_line && span.close_is_last_token_on_line) {
+				end_comment_belongs_to_close = true;
+				break;
+			}
+		}
+		// The expression's own final-line comment is exact trivia metadata. Claim it
+		// before closing wrappers unless a selected closing delimiter owns that line.
+		if (!end_comment_belongs_to_close) {
+			append_inline_comment(p_expression->end_line);
+		}
+	}
+	for (int selected = wrapped_groupings.size() - 1; selected >= 0; selected--) {
+		const FSParser::ExpressionNode::GroupingSpan &span = p_expression->redundant_groupings[wrapped_groupings[selected]];
+		flush_inner_comments(span.close_line);
+		if (span.close_is_last_token_on_line && has_inline_comment(span.close_line)) {
+			newline();
+			write_indent();
+			write(normalize_comment_text(comments.find(span.close_line)->value.comment));
+			emitted_inline_comments.insert(span.close_line);
+			last_emitted_line = span.close_line;
+		}
 		indent_level--;
 		newline();
 		write_indent();

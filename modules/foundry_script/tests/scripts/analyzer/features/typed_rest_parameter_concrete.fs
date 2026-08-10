@@ -4,7 +4,7 @@ class Marker:
 func ints(...values: Array[int]) -> long:
 	return values.size()
 
-func labelled(prefix: String, ...values: Array[String]) -> String:
+func labeled(prefix: String, ...values: Array[String]) -> String:
 	return prefix + str(values.size())
 
 func markers(...values: Array[Marker]) -> long:
@@ -25,8 +25,8 @@ func explicit_variant(...values: Array[Variant]) -> long:
 func test() -> void:
 	print(ints())
 	print(ints(1, 2, 3))
-	print(labelled("count: "))
-	print(labelled("count: ", "a", "b"))
+	print(labeled("count: "))
+	print(labeled("count: ", "a", "b"))
 	print(markers(Marker.new(), Marker.new()))
 	print(nullable_markers(Marker.new(), null))
 	print(nested([1], [2, 3]))

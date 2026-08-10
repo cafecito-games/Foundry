@@ -1,4 +1,4 @@
-# Custom JSON Marshalling — Design
+# Custom JSON Marshaling — Design
 
 Status: approved design, epic pending implementation.
 Scope: a user-implementable trait that lets a Foundry Script class control how it is encoded to and
@@ -15,7 +15,7 @@ which breaks down as soon as an object is nested inside a Dictionary, an Array, 
 Decoding is worse: `JSON.parse()` yields untyped Dictionaries that each caller re-validates by hand,
 with no shared vocabulary for reporting which field of a save file was malformed.
 
-This design adds a trait-based marshalling contract so a class declares its JSON representation once,
+This design adds a trait-based marshaling contract so a class declares its JSON representation once,
 and `JSON.stringify()` honors it automatically at any nesting depth.
 
 `JSON.from_native`/`to_native` are unaffected. They remain the full-fidelity reflection-based
@@ -53,7 +53,7 @@ serializer for engine round-tripping, which is a different concern from user-def
 
 ## 3. Prerequisites
 
-Two pieces of language/module infrastructure must land before any marshalling work.
+Two pieces of language/module infrastructure must land before any marshaling work.
 
 ## 3.1 Self-recursive tagged unions
 
@@ -259,7 +259,7 @@ public:
 3. Guards cycles with an `ObjectID` marker set held alongside `p_markers`. The existing markers key
    on `Array`/`Dictionary` ids and would miss `a.to_json()` returning something that reaches `a`.
 4. On success, recurses `_stringify` over the returned Variant tree, so `indent`, `sort_keys`, and
-   `full_precision` all keep applying to marshalled output.
+   `full_precision` all keep applying to marshaled output.
 
 ### 5.2 Module handler
 
@@ -328,7 +328,7 @@ than left implied.
   Conformance on *scripted* classes works normally. Consulting the module's conformance registry
   directly for scriptless targets is a clean follow-up, but it is a different lookup mechanism and is
   not folded into the first change.
-- **Automatic marshalling of non-conforming classes.** Reflecting declared properties into JSON by
+- **Automatic marshaling of non-conforming classes.** Reflecting declared properties into JSON by
   default was considered and rejected: cycles, engine subobjects, and `Node` references make it hard
   to keep predictable.
 - **`@export` of `JsonNode`-typed properties**, which inherits the existing tagged-union export
@@ -363,7 +363,7 @@ C++ doctests covering the marshaller seam:
 - Non-conforming object unchanged.
 - Conforming object.
 - Conforming object nested inside a Dictionary and inside an Array.
-- `indent`, `sort_keys`, and `full_precision` applied to marshalled output.
+- `indent`, `sort_keys`, and `full_precision` applied to marshaled output.
 - Freed object.
 - Object cycle through `to_json`.
 - Malformed `JsonNode` array (bad ordinal, wrong arity).

@@ -1414,6 +1414,8 @@ bool FoundryScript::_update_exports(bool *r_err, bool p_recursive_call, PlaceHol
 
 			members_cache.push_back(get_class_category());
 
+			// Exports and layout groups are class declarations, not flattened trait state. Keep this
+			// direct-member pass deliberately separate from the effective signal pass below.
 			for (int i = 0; i < c->members.size(); i++) {
 				const FSParser::ClassNode::Member &member = c->members[i];
 
@@ -1427,14 +1429,21 @@ bool FoundryScript::_update_exports(bool *r_err, bool p_recursive_call, PlaceHol
 						Variant default_value = analyzer.make_variable_default_value(member.variable);
 						member_default_values_cache[member.variable->identifier->name] = default_value;
 					} break;
-					case FSParser::ClassNode::Member::SIGNAL: {
-						_signals[member.signal->identifier->name] = member.signal->method_info;
-					} break;
 					case FSParser::ClassNode::Member::GROUP: {
 						members_cache.push_back(member.annotation->export_info);
 					} break;
 					default:
 						break; // Nothing.
+				}
+			}
+
+			// reload(true) rebuilds reflection after compilation. Use the compiler's authoritative
+			// direct-plus-flattened member order so trait signals keep the same shadowing and diamond
+			// behavior as the runtime state that was just materialized.
+			const Vector<const FSParser::ClassNode::Member *> effective_members = FSCompiler::collect_effective_members(c);
+			for (const FSParser::ClassNode::Member *member : effective_members) {
+				if (member->type == FSParser::ClassNode::Member::SIGNAL) {
+					_signals[member->signal->identifier->name] = member->signal->method_info;
 				}
 			}
 		} else {

@@ -795,6 +795,43 @@ static bool _datatype_container_element_contains_self_type_parameter(const FSPar
 	return false;
 }
 
+static bool _datatype_contains_type_parameter_from_scope(
+		const FSParser::DataType &p_type,
+		FSParser::DataType::TypeParameterScope p_scope) {
+	// Synthetic `Self` is reified by declaration lowering rather than erased. The separate inherited
+	// `Self` marker handles the one case where its declaring-class metadata differs from the receiver.
+	if (p_type.kind == FSParser::DataType::TYPE_PARAMETER && p_type.type_parameter_scope == p_scope &&
+			p_type.type_parameter_name != SNAME("@Self")) {
+		return true;
+	}
+	for (const FSParser::DataType &element : p_type.container_element_types) {
+		if (_datatype_contains_type_parameter_from_scope(element, p_scope)) {
+			return true;
+		}
+	}
+	for (const FSParser::DataType &argument : p_type.type_arguments) {
+		if (_datatype_contains_type_parameter_from_scope(argument, p_scope)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool _container_return_involves_erased_parameter(
+		const FSParser::DataType &p_return_type,
+		FSParser::DataType::TypeParameterScope p_scope) {
+	if (p_return_type.kind != FSParser::DataType::BUILTIN ||
+			(p_return_type.builtin_type != Variant::ARRAY && p_return_type.builtin_type != Variant::DICTIONARY)) {
+		return false;
+	}
+	for (const FSParser::DataType &element : p_return_type.container_element_types) {
+		if (_datatype_contains_type_parameter_from_scope(element, p_scope)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 static bool _datatype_represents_final_class(const FSParser::DataType &p_type) {
 	return p_type.kind == FSParser::DataType::CLASS && p_type.class_type != nullptr && p_type.class_type->is_final;
 }
@@ -2867,13 +2904,49 @@ static FSParser::DataType _substitute_type_parameters_and_self(
 }
 
 void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser::Node *p_source) {
-	if (p_source == nullptr && parser->has_class(p_class)) {
+	const bool owns_class = parser->has_class(p_class);
+	if (p_source == nullptr && owns_class) {
 		p_source = p_class;
 	}
 
 	Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(p_class, nullptr, "Trying to resolve class body", p_source);
+	const int body_error_count = parser->errors.size();
+	Finally record_body_failure([&]() {
+		if (owns_class && parser->errors.size() > body_error_count) {
+			owner_resolution_failures.record_class(p_class, OwnerResolutionFailures::BODY, body_error_count);
+		}
+	});
+
+	auto push_external_body_failure = [&](int p_first_error_index) {
+		if (!dependent_resolution_failure_replays.record_class(
+					p_class, OwnerResolutionFailures::BODY)) {
+			return;
+		}
+		String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
+		String class_path = parser_ref->get_path();
+		if (class_path.is_empty()) {
+			class_path = p_class->get_datatype().script_path;
+		}
+		if (_localize_script_path(class_path) == p_class->fqcn) {
+			class_path = String();
+		}
+		const String suffix = _dependency_error_suffix(
+				"class", class_path, parser_ref->get_parser(), p_first_error_index);
+		if (!suffix.is_empty()) {
+			message += " " + suffix;
+		}
+		push_error(message, p_source);
+	};
 
 	if (p_class->resolved_body) {
+		if (!owns_class && parser_ref.is_valid()) {
+			FSAnalyzer *other_analyzer = parser_ref->get_analyzer();
+			if (other_analyzer->owner_resolution_failures.has_class(p_class, OwnerResolutionFailures::BODY)) {
+				push_external_body_failure(
+						other_analyzer->owner_resolution_failures.first_error_index(
+								p_class, OwnerResolutionFailures::BODY));
+			}
+		}
 		return;
 	}
 
@@ -2896,24 +2969,19 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 		// Raising a dependency member by member bypasses `run_phase_body_expression_callable_signal`, so
 		// the end-of-phase sweep that reports contextual shorthands in no-expected-type positions does not
 		// run for it here. Those shorthands are swept when the dependency is analyzed as its own file.
+		ForeignAnalyzerVisibilityScope visibility_scope(other_analyzer);
 		other_analyzer->resolve_class_body(p_class);
-		if (other_parser->errors.size() > error_count) {
-			String message = vformat(R"(Could not resolve class "%s".)", p_class->fqcn);
-			// A `class_name` class reports its global name here rather than a path, so the
-			// declaring file still has to be named; it is only omitted when the name already is
-			// that path.
-			String class_path = parser_ref->get_path();
-			if (class_path.is_empty()) {
-				class_path = p_class->get_datatype().script_path;
+		if (other_parser->errors.size() > error_count ||
+				other_analyzer->owner_resolution_failures.has_class(p_class, OwnerResolutionFailures::BODY)) {
+			// A `class_name` class reports its global name rather than a path, so the shared
+			// formatter still names the declaring file and its first owner-local error.
+			int first_error_index = error_count;
+			if (other_analyzer->owner_resolution_failures.has_class(
+						p_class, OwnerResolutionFailures::BODY)) {
+				first_error_index = other_analyzer->owner_resolution_failures.first_error_index(
+						p_class, OwnerResolutionFailures::BODY);
 			}
-			if (_localize_script_path(class_path) == p_class->fqcn) {
-				class_path = String();
-			}
-			const String suffix = _dependency_error_suffix("class", class_path, other_parser, error_count);
-			if (!suffix.is_empty()) {
-				message += " " + suffix;
-			}
-			push_error(message, p_source);
+			push_external_body_failure(first_error_index);
 			return;
 		}
 
@@ -2926,6 +2994,10 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 	parser->current_class = p_class;
 
 	resolve_class_interface(p_class, p_source);
+	if (owner_resolution_failures.has_class(p_class, OwnerResolutionFailures::INTERFACE)) {
+		owner_resolution_failures.record_class(p_class, OwnerResolutionFailures::BODY,
+				owner_resolution_failures.first_error_index(p_class, OwnerResolutionFailures::INTERFACE));
+	}
 
 	// A class flattens its applied traits' members — including method bodies — into
 	// itself at compile time. Identifiers inside a trait body only get their source
@@ -2962,6 +3034,10 @@ void FSAnalyzer::resolve_class_body(FSParser::ClassNode *p_class, const FSParser
 	if (base_type.kind == FSParser::DataType::CLASS) {
 		FSParser::ClassNode *base_class = base_type.class_type;
 		resolve_class_body(base_class, p_class);
+		if (owner_resolution_failures.has_class(base_class, OwnerResolutionFailures::BODY)) {
+			owner_resolution_failures.record_class(p_class, OwnerResolutionFailures::BODY,
+					owner_resolution_failures.first_error_index(base_class, OwnerResolutionFailures::BODY));
+		}
 	}
 
 	if (p_class == parser->head && p_class->is_enum_file && p_class->enum_file_decl != nullptr) {
@@ -10422,26 +10498,28 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 	List<FSParser::ClassNode *> script_classes;
 	HashSet<FSParser::ClassNode *> trait_interface_classes;
 	bool is_base = true;
+	bool receiver_chain_may_have_traits = false;
 
 	if (base_class != nullptr) {
+		// Preserve the established ordinary lookup surface for both bare and explicit receivers. The
+		// trait fallback below has its own receiver-only inheritance walk, so lexical outers keep their
+		// ordinary precedence without donating their applied traits.
 		get_class_node_current_scope_classes(base_class, &script_classes, p_identifier);
-		// Flattened trait members are reachable from a class that applies the trait
-		// (directly or transitively), and from a trait that requires another trait.
-		// They are treated as instance-accessible members of the using scope.
-		if (base_class->is_trait || !base_class->used_traits.is_empty()) {
-			resolve_trait_uses(base_class, p_identifier);
-			for (FSParser::ClassNode *trait : base_class->resolved_traits) {
-				if (script_classes.find(trait) == nullptr) {
-					script_classes.push_back(trait);
-				}
-				trait_interface_classes.insert(trait);
+		for (FSParser::ClassNode *lookup_class = base_class; lookup_class != nullptr; lookup_class = lookup_class->base_type.class_type) {
+			if (lookup_class->is_trait || !lookup_class->used_traits.is_empty()) {
+				receiver_chain_may_have_traits = true;
+				break;
 			}
 		}
 	}
 
 	bool is_constructor = base.is_meta_type && p_identifier->name == SNAME("new");
+	bool searched_trait_members = false;
+	bool ordinary_member_name_found = false;
+	bool found_unflattenable_trait_member = false;
 
-	for (FSParser::ClassNode *script_class : script_classes) {
+	for (List<FSParser::ClassNode *>::Element *script_class_element = script_classes.front(); script_class_element != nullptr; script_class_element = script_class_element->next()) {
+		FSParser::ClassNode *script_class = script_class_element->get();
 		const bool is_trait_interface_class = trait_interface_classes.has(script_class);
 		const bool can_access_instance_member = is_base || is_trait_interface_class;
 		FSParser::EnumNode *enum_file_decl = script_class->is_enum_file ? script_class->enum_file_decl : nullptr;
@@ -10505,6 +10583,13 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 		}
 
 		if (script_class->has_member(name)) {
+			if (is_base && !is_trait_interface_class) {
+				// An ordinary declaration claims its name even when this access form cannot use it (for
+				// example an instance member named through a class handle). Compiler flattening drops a
+				// same-named trait member in that case, so analyzer fallback must not resurrect it. Lexical
+				// outers are outside the receiver inheritance segment and do not participate in flattening.
+				ordinary_member_name_found = true;
+			}
 			resolve_class_member(script_class, name, p_identifier);
 
 			FSParser::ClassNode::Member member = script_class->get_member(name);
@@ -10577,10 +10662,16 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 						callable_type = substitute_member_type(
 								callable_type, specialized_base, member.function, &parameter_self_type);
 						callable_type.method_return_type.clear();
-						callable_type.method_return_type.push_back(substitute_member_type(
-								member.function->get_datatype(), specialized_base, member.function, &self_type));
-						if (base_class != nullptr && script_class != base_class && !script_class->is_trait &&
-								_datatype_container_element_contains_self_type_parameter(member.function->get_datatype())) {
+						const FSParser::DataType specialized_return = substitute_member_type(
+								member.function->get_datatype(), specialized_base, member.function, &self_type);
+						callable_type.method_return_type.push_back(specialized_return);
+						const bool inherited_self_return = base_class != nullptr && script_class != base_class &&
+								!script_class->is_trait &&
+								_datatype_container_element_contains_self_type_parameter(member.function->get_datatype());
+						const bool class_parameter_return = _container_return_involves_erased_parameter(
+								member.function->get_datatype(), FSParser::DataType::TYPE_PARAMETER_CLASS);
+						if ((inherited_self_return || class_parameter_return) &&
+								!_signature_type_involves_type_parameter(specialized_return)) {
 							callable_type.method_return_is_erased_container = true;
 						}
 						if (p_base != nullptr) {
@@ -10618,8 +10709,23 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 
 		if (is_base) {
 			is_base = script_class->base_type.class_type != nullptr;
-			if (!is_base && p_base != nullptr && trait_interface_classes.is_empty()) {
+			if (!is_base && p_base != nullptr && !receiver_chain_may_have_traits) {
+				// Preserve the pre-trait-fallback behavior for explicit receivers whose entire chain has
+				// no trait surface: their lexical outers were never needed as an instance-member fallback.
 				break;
+			}
+		}
+
+		// Only after the ordinary class/base/outer lookup has missed, append the one trait declaration
+		// that supplies this name. The helper walks the receiver's inheritance chain but not lexical
+		// outers, and this marker makes trait members instance-accessible like flattened class members.
+		if (script_class_element->next() == nullptr && !searched_trait_members && !ordinary_member_name_found) {
+			searched_trait_members = true;
+			FSParser::ClassNode *declaring_trait = nullptr;
+			FSParser::ClassNode::Member trait_member;
+			if (find_trait_member_in_inheritance_chain(base_class, name, p_identifier, declaring_trait, trait_member, &found_unflattenable_trait_member)) {
+				script_classes.push_back(declaring_trait);
+				trait_interface_classes.insert(declaring_trait);
 			}
 		}
 	}
@@ -10742,6 +10848,18 @@ void FSAnalyzer::reduce_identifier_from_base(FSParser::IdentifierNode *p_identif
 				p_identifier->set_datatype(type_from_variant(int_constant, p_identifier));
 			}
 		}
+	}
+
+	// A non-flattened trait declaration does not claim the runtime name. For an explicit receiver,
+	// diagnose it as missing only after external-script and native surfaces have also missed. A bare
+	// name continues through conformance, global, builtin, and autoload lookup in reduce_identifier(),
+	// which supplies the ordinary undeclared-name diagnostic if every one of those surfaces misses.
+	if (p_base != nullptr && found_unflattenable_trait_member && p_identifier->get_datatype().has_no_type() &&
+			base.is_hard_type()) {
+		push_error(vformat(R"(Cannot find member "%s" in base "%s".)", name, base.to_string()), p_identifier);
+		FSParser::DataType dummy;
+		dummy.kind = FSParser::DataType::VARIANT;
+		p_identifier->set_datatype(dummy);
 	}
 }
 
@@ -13837,7 +13955,7 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 	}
 
 	if (p_base_type.kind == FSParser::DataType::BUILTIN) {
-		const FSParser::CallNode *call = p_source != nullptr && p_source->type == FSParser::Node::CALL ? static_cast<const FSParser::CallNode *>(p_source) : nullptr;
+		FSParser::CallNode *call = p_source != nullptr && p_source->type == FSParser::Node::CALL ? static_cast<FSParser::CallNode *>(p_source) : nullptr;
 		if (p_base_type.builtin_type == Variant::CALLABLE && p_base_type.is_meta_type && p_function == SNAME("create")) {
 			FSParser::DataType callable_type;
 			if (call != nullptr && call_site_validation.callable_type_from_constant_method_args(call, 0, 1, callable_type)) {
@@ -14546,16 +14664,12 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 		base_class = base_class->base_type.class_type;
 	}
 
-	// Resolve calls to methods flattened in from applied traits, both when the base is a
-	// trait (trait-requires-trait) and when it is a class that applies traits directly.
-	if (found_function == nullptr && original_base_class != nullptr && (original_base_class->is_trait || !original_base_class->used_traits.is_empty())) {
-		resolve_trait_uses(original_base_class, p_source);
-		for (FSParser::ClassNode *trait : original_base_class->resolved_traits) {
-			if (trait == nullptr || !trait->has_member(function_name)) {
-				continue;
-			}
-
-			const FSParser::ClassNode::Member &member = trait->get_member(function_name);
+	// Resolve calls to methods flattened in from traits applied anywhere along the receiver's class
+	// chain, after every ordinary class member has had precedence.
+	if (found_function == nullptr && original_base_class != nullptr) {
+		FSParser::ClassNode *declaring_trait = nullptr;
+		FSParser::ClassNode::Member member;
+		if (find_trait_member_in_inheritance_chain(original_base_class, function_name, p_source, declaring_trait, member)) {
 			if (member.type != FSParser::ClassNode::Member::FUNCTION) {
 				const FSParser::DataType member_type = member.get_datatype();
 				if (member_type.is_set() && member_type.kind == FSParser::DataType::BUILTIN && member_type.builtin_type == Variant::CALLABLE) {
@@ -14565,10 +14679,9 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 				return false;
 			}
 
-			resolve_class_member(trait, function_name, p_source);
+			resolve_class_member(declaring_trait, function_name, p_source);
 			found_function = member.function;
-			found_in_class = trait;
-			break;
+			found_in_class = declaring_trait;
 		}
 	}
 
@@ -14614,14 +14727,18 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 						found_function->rest_parameter->get_datatype(), specialized_base, found_function, &parameter_self_type);
 			}
 		}
-		if (p_source != nullptr && p_source->type == FSParser::Node::CALL &&
-				original_base_class != nullptr && found_in_class != nullptr && found_in_class != original_base_class &&
-				!found_in_class->is_trait) {
-			if (_datatype_container_element_contains_self_type_parameter(found_function->get_datatype())) {
+		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base, found_function, &self_type);
+		if (p_source != nullptr && p_source->type == FSParser::Node::CALL && original_base_class != nullptr) {
+			const bool inherited_self_return = found_in_class != nullptr && found_in_class != original_base_class &&
+					!found_in_class->is_trait &&
+					_datatype_container_element_contains_self_type_parameter(found_function->get_datatype());
+			const bool class_parameter_return = _container_return_involves_erased_parameter(
+					found_function->get_datatype(), FSParser::DataType::TYPE_PARAMETER_CLASS);
+			if ((inherited_self_return || class_parameter_return) &&
+					!_signature_type_involves_type_parameter(r_return_type)) {
 				static_cast<FSParser::CallNode *>(p_source)->returns_erased_container = true;
 			}
 		}
-		r_return_type = p_is_constructor ? p_base_type : substitute_member_type(found_function->get_datatype(), specialized_base, found_function, &self_type);
 		r_return_type.is_meta_type = false;
 		if (found_function->is_coroutine) {
 			r_return_type = make_coroutine_type(r_return_type);
@@ -16161,8 +16278,10 @@ void FSAnalyzer::mark_coroutine_handle_capture(FSParser::ExpressionNode *p_expre
 	::mark_coroutine_handle_capture(p_expression, p_target_type);
 }
 
-bool FSAnalyzer::signature_type_involves_type_parameter(const FSParser::DataType &p_type) const {
-	return _signature_type_involves_type_parameter(p_type);
+bool FSAnalyzer::container_return_involves_erased_parameter(
+		const FSParser::DataType &p_return_type,
+		FSParser::DataType::TypeParameterScope p_scope) const {
+	return _container_return_involves_erased_parameter(p_return_type, p_scope);
 }
 
 FSAnalyzer::FSAnalyzer(FSParser *p_parser) :

@@ -189,6 +189,120 @@ private:
 
 	ConformanceVisibility conformance_visibility;
 
+	// Resolution flags and datatypes are shared through FSCache, so their owner-local failures must be
+	// memoized alongside them. This ledger records only errors added by the exact class phase/member;
+	// a later foreign caller never infers failure from unrelated errors already in the owner parser.
+	class OwnerResolutionFailures {
+	public:
+		enum ClassPhase : uint8_t {
+			INTERFACE = 1 << 0,
+			BODY = 1 << 1,
+		};
+
+	private:
+		struct ClassFailures {
+			uint8_t phases = 0;
+			int interface_first_error_index = -1;
+			int body_first_error_index = -1;
+			HashMap<int, int> member_first_error_indices;
+		};
+
+		HashMap<const FSParser::ClassNode *, ClassFailures> failures;
+
+	public:
+		void record_class(const FSParser::ClassNode *p_class, ClassPhase p_phase, int p_first_error_index) {
+			ClassFailures &class_failures = failures[p_class];
+			class_failures.phases |= p_phase;
+			int *first_error_index = &class_failures.body_first_error_index;
+			if (p_phase == INTERFACE) {
+				first_error_index = &class_failures.interface_first_error_index;
+			}
+			if (*first_error_index < 0 || p_first_error_index < *first_error_index) {
+				*first_error_index = p_first_error_index;
+			}
+		}
+
+		bool has_class(const FSParser::ClassNode *p_class, ClassPhase p_phase) const {
+			const ClassFailures *class_failures = failures.getptr(p_class);
+			return class_failures != nullptr && (class_failures->phases & p_phase) != 0;
+		}
+
+		int first_error_index(const FSParser::ClassNode *p_class, ClassPhase p_phase) const {
+			const ClassFailures *class_failures = failures.getptr(p_class);
+			if (class_failures == nullptr) {
+				return -1;
+			}
+			if (p_phase == INTERFACE) {
+				return class_failures->interface_first_error_index;
+			}
+			return class_failures->body_first_error_index;
+		}
+
+		void record_member(const FSParser::ClassNode *p_class, int p_index, int p_first_error_index) {
+			failures[p_class].member_first_error_indices.insert(p_index, p_first_error_index);
+		}
+
+		bool has_member(const FSParser::ClassNode *p_class, int p_index) const {
+			const ClassFailures *class_failures = failures.getptr(p_class);
+			return class_failures != nullptr && class_failures->member_first_error_indices.has(p_index);
+		}
+
+		int member_first_error_index(const FSParser::ClassNode *p_class, int p_index) const {
+			const ClassFailures *class_failures = failures.getptr(p_class);
+			if (class_failures == nullptr) {
+				return -1;
+			}
+			const int *first_error_index = class_failures->member_first_error_indices.getptr(p_index);
+			return first_error_index != nullptr ? *first_error_index : -1;
+		}
+	};
+
+	OwnerResolutionFailures owner_resolution_failures;
+
+	// Replaying an owner-memoized failure is observable in the dependent parser, whose analysis may
+	// revisit the same shared node many times. Record replays here so one dependent reports each
+	// foreign member/phase once, while separate analyzers and separate operations still propagate it.
+	class DependentResolutionFailureReplays {
+		struct ClassReplays {
+			uint8_t phases = 0;
+			HashSet<int> members;
+		};
+
+		HashMap<const FSParser::ClassNode *, ClassReplays> replays;
+
+	public:
+		bool record_class(const FSParser::ClassNode *p_class, OwnerResolutionFailures::ClassPhase p_phase) {
+			ClassReplays &class_replays = replays[p_class];
+			if ((class_replays.phases & p_phase) != 0) {
+				return false;
+			}
+			class_replays.phases |= p_phase;
+			return true;
+		}
+
+		bool record_member(const FSParser::ClassNode *p_class, int p_index) {
+			ClassReplays &class_replays = replays[p_class];
+			if (class_replays.members.has(p_index)) {
+				return false;
+			}
+			class_replays.members.insert(p_index);
+			return true;
+		}
+	};
+
+	DependentResolutionFailureReplays dependent_resolution_failure_replays;
+
+	// A foreign node's memoized result must be defined by its owning file, independent of which caller
+	// first forces its resolution. Route the owner's visibility with every delegated analyzer call so
+	// the shared result remains order-independent.
+	class ForeignAnalyzerVisibilityScope {
+		FSConformanceRegistry::ScopedVisibility visibility_scope;
+
+	public:
+		explicit ForeignAnalyzerVisibilityScope(FSAnalyzer *p_owner) :
+				visibility_scope(&p_owner->conformance_visibility) {}
+	};
+
 	// Owns flow-sensitive narrowing state and definite-assignment analysis for `final` variables.
 	// Lifetime: `flow_narrowed_types` and `flow_narrowing_captured_sources` are active during body
 	// resolution (one function body at a time via `FlowNarrowingScope`); `flattened_trait_final_nodes`
@@ -308,7 +422,7 @@ private:
 		FSParser::DataType explicit_signal_type_from_node(const FSParser::SignalNode *p_signal, const FSParser::DataType &p_receiver_type, const FSParser::ClassNode *p_declaring_class) const;
 		FSParser::ArrayNode *array_literal_argument(const FSParser::CallNode *p_call, int p_argument_index) const;
 		bool callable_type_from_method(const FSParser::DataType &p_receiver_type, const StringName &p_method_name, FSParser::Node *p_source, FSParser::DataType &r_callable_type);
-		bool callable_type_from_constant_method_args(const FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type);
+		bool callable_type_from_constant_method_args(FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type);
 		bool call_argument_can_be_string_name(const FSParser::CallNode *p_call, int p_argument_index);
 		void validate_strict_callable_method_fallback(const FSParser::CallNode *p_call, const FSParser::DataType &p_receiver_type, int p_method_arg_index);
 		bool signal_name_from_constant_arg(const FSParser::CallNode *p_call, int p_signal_arg_index, StringName &r_signal_name) const;
@@ -360,7 +474,9 @@ private:
 			const FSParser::DataType &p_actual_type,
 			const FSParser::Node *p_actual_node) const;
 	void mark_coroutine_handle_capture(FSParser::ExpressionNode *p_expression, const FSParser::DataType &p_target_type);
-	bool signature_type_involves_type_parameter(const FSParser::DataType &p_type) const;
+	bool container_return_involves_erased_parameter(
+			const FSParser::DataType &p_return_type,
+			FSParser::DataType::TypeParameterScope p_scope) const;
 
 	// Ensures deferred lambda bodies are resolved before leaving body analysis.
 	class PendingLambdaBodiesScope {
@@ -491,6 +607,9 @@ private:
 	Error resolve_class_inheritance(FSParser::ClassNode *p_class, bool p_recursive);
 	FSParser::DataType resolve_datatype(FSParser::TypeNode *p_type);
 	bool resolve_type_parameter(const StringName &p_name, FSParser::DataType &r_type);
+	bool find_trait_member_in_inheritance_chain(FSParser::ClassNode *p_receiver, const StringName &p_name,
+			const FSParser::Node *p_source, FSParser::ClassNode *&r_declaring_trait,
+			FSParser::ClassNode::Member &r_member, bool *r_found_unflattenable = nullptr);
 	FSParser::FunctionNode *find_generic_method(FSParser::ClassNode *p_class, const StringName &p_name, bool &r_found_member);
 	FSParser::DataType substitute_member_type(
 			const FSParser::DataType &p_member_type,

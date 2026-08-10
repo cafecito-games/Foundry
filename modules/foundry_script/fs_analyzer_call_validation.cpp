@@ -428,13 +428,8 @@ void FSAnalyzer::CallSiteValidationContext::apply_generic_method_call(FSParser::
 	// at runtime: the method, compiled once, returns an untyped container. We still substitute the
 	// static type to the concrete container below, so flag the call here (before erasing the marker) so
 	// an assignment to a concrete typed container retypes the untyped runtime value.
-	if (p_call != nullptr) {
-		for (int i = 0; i < r_return_type.container_element_types.size(); i++) {
-			if (analyzer->signature_type_involves_type_parameter(r_return_type.container_element_types[i])) {
-				p_call->returns_erased_container = true;
-				break;
-			}
-		}
+	if (p_call != nullptr && analyzer->container_return_involves_erased_parameter(r_return_type, FSParser::DataType::TYPE_PARAMETER_METHOD)) {
+		p_call->returns_erased_container = true;
 	}
 
 	r_return_type = FSParser::DataType::substitute(r_return_type, bindings);
@@ -573,7 +568,7 @@ bool FSAnalyzer::CallSiteValidationContext::callable_type_from_method(const FSPa
 	return true;
 }
 
-bool FSAnalyzer::CallSiteValidationContext::callable_type_from_constant_method_args(const FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type) {
+bool FSAnalyzer::CallSiteValidationContext::callable_type_from_constant_method_args(FSParser::CallNode *p_call, int p_receiver_arg_index, int p_method_arg_index, FSParser::DataType &r_callable_type) {
 	if (p_receiver_arg_index < 0 || p_receiver_arg_index >= p_call->arguments.size()) {
 		return false;
 	}
@@ -583,7 +578,17 @@ bool FSAnalyzer::CallSiteValidationContext::callable_type_from_constant_method_a
 		return false;
 	}
 
-	return callable_type_from_method(p_call->arguments[p_receiver_arg_index]->get_datatype(), method_name, const_cast<FSParser::CallNode *>(p_call), r_callable_type);
+	// get_function_signature() classifies an erased return on its source CallNode. Here that source is
+	// the Callable constructor rather than an invocation of the target method, so move the provenance
+	// onto the rich callable type consumed later by call()/callv() and leave the constructor unmarked.
+	p_call->returns_erased_container = false;
+	const bool found = callable_type_from_method(
+			p_call->arguments[p_receiver_arg_index]->get_datatype(), method_name, p_call, r_callable_type);
+	if (found && p_call->returns_erased_container) {
+		r_callable_type.method_return_is_erased_container = true;
+	}
+	p_call->returns_erased_container = false;
+	return found;
 }
 
 bool FSAnalyzer::CallSiteValidationContext::call_argument_can_be_string_name(const FSParser::CallNode *p_call, int p_argument_index) {
