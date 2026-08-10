@@ -229,7 +229,12 @@ public:
 	NodePath get_edited_scene_live_edit_root();
 	bool check_and_update_scene(int p_idx);
 	bool reload_scene_from_memory(int p_idx, bool p_mark_unsaved);
-	void move_edited_scene_to_index(int p_idx);
+	// Moves the scene at p_from_idx (defaults to the currently edited scene) to
+	// p_idx. Every tile's tracked scene index -- including the currently edited
+	// one -- is remapped for the array shift, so a caller can reorder a scene
+	// that belongs to a tile other than the focused one without disturbing
+	// which scene is currently being edited.
+	void move_edited_scene_to_index(int p_idx, int p_from_idx = -1);
 
 	Vector<int> get_tile_scene_indices(int p_tile_id) const;
 	int tile_tab_to_scene_index(int p_tile_id, int p_tab) const;

@@ -331,6 +331,135 @@ TEST_CASE("[Editor][Boards] handle_tab_strip_drop moves a scene tab across board
 	h.unmount();
 }
 
+// #2074: WorkspacePane::move_tab unconditionally claimed editor-wide focus for
+// the pane it belongs to, with no check for whether that pane's board is the
+// active one. handle_tab_strip_drop's same-pane branch is the real dispatch
+// path a reorder drag on a dormant board's tab strip takes into move_tab, so
+// drive it through there rather than calling move_tab directly.
+TEST_CASE("[Editor][Boards] A scene tab reorder on a dormant board does not steal focus") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	CrossBoardHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_b != nullptr);
+	h.pump();
+	REQUIRE_FALSE(board_a->is_dormant());
+	REQUIRE(board_b->is_dormant());
+
+	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
+	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+
+	WorkspaceLeafNode *leaf_a = workspace_a->get_focused_leaf();
+	REQUIRE(leaf_a != nullptr);
+	const int leaf_a_id = leaf_a->get_leaf_id();
+
+	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
+	REQUIRE(leaf_b != nullptr);
+	const int leaf_b_id = leaf_b->get_leaf_id();
+
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_b_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_b_id, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+	Node2D *root_c = memnew(Node2D);
+	const int scene_c = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_b_id, root_c);
+	h.editor_data.set_scene_path(scene_c, "res://c.tscn");
+
+	workspace_b->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
+	REQUIRE(pane_b != nullptr);
+	REQUIRE(pane_b->get_tab_count() == 3);
+
+	// Board A is the one on screen, so focus belongs there before the reorder.
+	h.editor_data.set_focused_tile_id(leaf_a_id);
+	REQUIRE(h.editor_data.get_focused_tile_id() == leaf_a_id);
+
+	// Same-pane strip drop is the real dispatch path a cross-board reorder drag
+	// takes into WorkspacePane::move_tab.
+	WorkspaceLeafNode *dest = workspace_b->handle_tab_strip_drop(leaf_b_id, 0, leaf_b_id, 2);
+	h.pump();
+
+	REQUIRE(dest == leaf_b);
+	// The reorder itself must still have happened: a.tscn (moved from index 0
+	// to 2) now trails b.tscn and c.tscn. resource_key_for_scene is keyed by
+	// scene index, and the reorder renumbers indices, so the expected keys are
+	// the literal paths rather than a lookup through the now-stale scene_a/
+	// scene_b/scene_c indices.
+	CHECK(pane_b->get_tab(0).get_resource_key() == "res://b.tscn");
+	CHECK(pane_b->get_tab(1).get_resource_key() == "res://c.tscn");
+	CHECK(pane_b->get_tab(2).get_resource_key() == "res://a.tscn");
+	// ...but a pure model reorder on a dormant board's pane must not steal
+	// editor-wide focus onto that board.
+	CHECK(h.editor_data.get_focused_tile_id() == leaf_a_id);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A scene tab reorder on the active board keeps claiming focus") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	CrossBoardHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_b != nullptr);
+	h.pump();
+	REQUIRE_FALSE(board_a->is_dormant());
+
+	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
+	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+
+	WorkspaceLeafNode *leaf_a = workspace_a->get_focused_leaf();
+	REQUIRE(leaf_a != nullptr);
+	const int leaf_a_id = leaf_a->get_leaf_id();
+
+	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
+	REQUIRE(leaf_b != nullptr);
+	const int leaf_b_id = leaf_b->get_leaf_id();
+
+	Node2D *root_a = memnew(Node2D);
+	const int scene_a = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_a_id, root_a);
+	h.editor_data.set_scene_path(scene_a, "res://a.tscn");
+	Node2D *root_b = memnew(Node2D);
+	const int scene_b = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_a_id, root_b);
+	h.editor_data.set_scene_path(scene_b, "res://b.tscn");
+	Node2D *root_c = memnew(Node2D);
+	const int scene_c = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_a_id, root_c);
+	h.editor_data.set_scene_path(scene_c, "res://c.tscn");
+
+	workspace_a->sync_scene_tabs_from_editor_data();
+	WorkspacePane *pane_a = leaf_a->get_workspace_pane();
+	REQUIRE(pane_a != nullptr);
+	REQUIRE(pane_a->get_tab_count() == 3);
+
+	// Focus starts elsewhere (the dormant board's leaf); the active board's own
+	// reorder must still claim it, matching the pre-existing behavior.
+	h.editor_data.set_focused_tile_id(leaf_b_id);
+	REQUIRE(h.editor_data.get_focused_tile_id() == leaf_b_id);
+
+	WorkspaceLeafNode *dest = workspace_a->handle_tab_strip_drop(leaf_a_id, 0, leaf_a_id, 2);
+	h.pump();
+
+	REQUIRE(dest == leaf_a);
+	// resource_key_for_scene is keyed by scene index, and the reorder renumbers
+	// indices, so compare against the literal paths rather than through the
+	// now-stale scene_a/scene_b/scene_c indices.
+	CHECK(pane_a->get_tab(0).get_resource_key() == "res://b.tscn");
+	CHECK(pane_a->get_tab(1).get_resource_key() == "res://c.tscn");
+	CHECK(pane_a->get_tab(2).get_resource_key() == "res://a.tscn");
+	CHECK(h.editor_data.get_focused_tile_id() == leaf_a_id);
+
+	h.unmount();
+}
+
 // #2047: the rosette/tile-body drop path resolved its destination leaf only in
 // the active board's workspace, so a drop onto a non-active board's tile body
 // failed with a null target leaf while the tab-strip path (which resolves the
