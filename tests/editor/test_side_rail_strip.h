@@ -99,7 +99,14 @@ TEST_CASE("[Editor][SideRail] toggle set matches the enabled dock set in order")
 	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
 	strip->rebuild_toggles();
 
+	// A failed REQUIRE does not stop the test case in this build (doctest's
+	// unwind is compiled out under disable_exceptions=yes), so guard the
+	// indexing below by hand instead of trusting the REQUIRE above to abort.
 	REQUIRE(strip->get_toggle_docks().size() == 3);
+	if (strip->get_toggle_docks().size() != 3) {
+		memdelete(strip);
+		return;
+	}
 	CHECK(strip->get_toggle_docks()[0] == a);
 	CHECK(strip->get_toggle_docks()[1] == b);
 	CHECK(strip->get_toggle_docks()[2] == c);
@@ -116,6 +123,10 @@ TEST_CASE("[Editor][SideRail] disabling a dock removes its toggle and re-enablin
 	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
 	strip->rebuild_toggles();
 	REQUIRE(strip->get_toggle_docks().size() == 3);
+	if (strip->get_toggle_docks().size() != 3) {
+		memdelete(strip);
+		return;
+	}
 
 	// The rail's rebuild-on-enabled_changed connection is deferred (matching
 	// the bottom drawer strip's child_order_changed connection), so a real
@@ -124,12 +135,20 @@ TEST_CASE("[Editor][SideRail] disabling a dock removes its toggle and re-enablin
 	fixture.region.set_dock_enabled(b, false);
 	SideRailFixture::pump();
 	REQUIRE(strip->get_toggle_docks().size() == 2);
+	if (strip->get_toggle_docks().size() != 2) {
+		memdelete(strip);
+		return;
+	}
 	CHECK(strip->get_toggle_docks()[0] == a);
 	CHECK(strip->get_toggle_docks()[1] == c);
 
 	fixture.region.set_dock_enabled(b, true);
 	SideRailFixture::pump();
 	REQUIRE(strip->get_toggle_docks().size() == 3);
+	if (strip->get_toggle_docks().size() != 3) {
+		memdelete(strip);
+		return;
+	}
 	CHECK(strip->get_toggle_docks()[0] == a);
 	CHECK(strip->get_toggle_docks()[1] == b);
 	CHECK(strip->get_toggle_docks()[2] == c);
@@ -146,6 +165,10 @@ TEST_CASE("[Editor][SideRail] left rail mirrors the ordered EditorDock children 
 	strip->rebuild_toggles();
 
 	REQUIRE(strip->get_toggle_docks().size() == 1);
+	if (strip->get_toggle_docks().size() != 1) {
+		memdelete(strip);
+		return;
+	}
 	CHECK(strip->get_toggle_docks()[0] == left);
 
 	memdelete(strip);
@@ -168,6 +191,10 @@ TEST_CASE("[Editor][SideRail] toggle tooltip is non-empty with and without a sho
 	strip->rebuild_toggles();
 
 	REQUIRE(strip->get_toggle_buttons().size() == 2);
+	if (strip->get_toggle_buttons().size() != 2) {
+		memdelete(strip);
+		return;
+	}
 	CHECK_FALSE(strip->get_toggle_buttons()[0]->get_tooltip_text().is_empty());
 	CHECK_FALSE(strip->get_toggle_buttons()[1]->get_tooltip_text().is_empty());
 
