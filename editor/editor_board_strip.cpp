@@ -37,6 +37,7 @@
 #include "core/io/config_file.h"
 #include "core/math/math_funcs.h"
 #include "scene/gui/button.h"
+#include "scene/main/viewport.h"
 #include "scene/scene_string_names.h"
 
 namespace {
