@@ -35,6 +35,7 @@
 
 #include "core/io/stream_peer_tcp.h"
 #include "core/io/tcp_server.h"
+#include "core/os/mutex.h"
 
 #include "modules/jsonrpc/jsonrpc.h"
 
@@ -101,6 +102,21 @@ private:
 	Ref<FSTextDocument> text_document;
 	Ref<FSWorkspace> workspace;
 
+	// Deferred invalidations enqueued by main-thread funnels. Drained by
+	// `apply_pending_invalidations()`, which runs on the poll thread (when `use_thread` is on)
+	// or the main-thread internal-process tick. See D3 in fs_language_protocol.cpp.
+	struct PendingInvalidations {
+		bool reparse_all = false;
+		HashSet<String> paths;
+		HashSet<String> namespaces;
+	};
+	// Leaf lock: nothing else may be acquired while this is held, and it may be acquired while any
+	// other lock is held. The enqueue_* entry points take only this mutex so the invalidation
+	// funnels never block on the protocol mutex (D3), avoiding the FSCache::mutex -> protocol
+	// lock-order inversion.
+	Mutex pending_invalidations_mutex;
+	PendingInvalidations pending_invalidations;
+
 	Error on_client_connected();
 	void on_client_disconnected(const int &p_client_id);
 
@@ -108,6 +124,16 @@ private:
 	String format_output(const String &p_text);
 
 	bool _initialized = false;
+
+	// Private after D5: their only caller is `apply_pending_invalidations()`.
+	void reparse_open_scripts();
+	void reparse_open_scripts(const HashSet<String> &p_paths);
+
+	// Paths of open documents whose last parse reaches `p_namespace`: the document is in it, or
+	// imports it. An open document is not necessarily backed by a cached FSCache parser, so a
+	// namespace-keyed invalidation cannot find it through the cache alone. Empty for the global
+	// namespace, which no document reaches implicitly.
+	HashSet<String> collect_open_scripts_reaching_namespace(const String &p_namespace) const;
 
 protected:
 	static void _bind_methods();
@@ -120,6 +146,15 @@ public:
 	_FORCE_INLINE_ Ref<FSWorkspace> get_workspace() { return workspace; }
 	_FORCE_INLINE_ Ref<FSTextDocument> get_text_document() { return text_document; }
 	_FORCE_INLINE_ bool is_initialized() const { return _initialized; }
+
+	// Lock order (D4): FSLanguageProtocol::mutex is the outermost FoundryScript lock.
+	//   FSLanguageProtocol::mutex -> FSCache::mutex -> FSLanguage::mutex /
+	//   conformance_index_mutex / FSConformanceRegistry::mutex.
+	// `pending_invalidations_mutex` is a leaf: it may be acquired while any other lock is held, and
+	// nothing may be acquired while it is held. No code may acquire this `mutex` while holding
+	// `FSCache::mutex` (D3 makes that invariant holdable). Recursive so re-entrant acquisition on
+	// one thread is uncontended and cheap.
+	mutable Mutex mutex;
 
 	bool complete_initialization_if_workspace_ready();
 	void poll(int p_limit_usec);
@@ -144,6 +179,9 @@ public:
 	 *
 	 * The result fulfills no semantic guarantees, nor is it guaranteed to be complete.
 	 * Should only be used for "smart resolve".
+	 *
+	 * The returned symbol pointers are valid only while the calling thread holds `mutex`; callers
+	 * that need them beyond the call must keep the lock across the whole use.
 	 */
 	void resolve_related_symbols(const LSP::TextDocumentPositionParams &p_doc_pos, List<const LSP::DocumentSymbol *> &r_list);
 
@@ -160,6 +198,10 @@ public:
 	/**
 	 * Returns parse results for the given path, using the cache if available.
 	 * If no such file exists, or the file is not a FoundryScript file a `nullptr` is returned.
+	 *
+	 * The returned pointer is valid only while the calling thread holds `mutex`: it may be
+	 * `memdelete`d by another operation the moment the lock is released. Dereference it only inside
+	 * the critical section that obtained it, or keep the lock across the whole use.
 	 */
 	ExtendFSParser *get_parse_result(const String &p_path);
 
@@ -167,21 +209,25 @@ public:
 	 * Returns the cached parse result for the given path without triggering a
 	 * parse, or `nullptr` when nothing is cached. Used by the raw-text pre-filter
 	 * to inspect already-open documents cheaply.
+	 *
+	 * The returned pointer is valid only while the calling thread holds `mutex` (see
+	 * `get_parse_result`).
 	 */
 	ExtendFSParser *peek_parse_result(const String &p_path);
 
-	// Re-parses every open (client-managed) document from its in-memory buffer and re-publishes its
-	// diagnostics. Used when an analysis-affecting project setting (e.g. the strict-mode flags)
-	// changes, so already-open documents are re-reported under the new flags without waiting for an
-	// edit or reopen. Re-parsing reads the managed buffer, not disk, so unsaved edits are preserved.
-	void reparse_open_scripts();
-	void reparse_open_scripts(const HashSet<String> &p_paths);
+	// --- Deferred invalidation entry points (D3) ---------------------------------------------
+	// Thread-safe and non-blocking: they take only `pending_invalidations_mutex` and append to the
+	// pending record. The actual re-parse is performed later by `apply_pending_invalidations()` on
+	// the poll thread / main-thread internal-process tick, so the invalidation funnels never block
+	// on the protocol mutex.
+	void enqueue_reparse_all();
+	void enqueue_reparse_paths(const HashSet<String> &p_paths);
+	void enqueue_namespace_invalidation(const String &p_namespace);
 
-	// Paths of open documents whose last parse reaches `p_namespace`: the document is in it, or
-	// imports it. An open document is not necessarily backed by a cached FSCache parser, so a
-	// namespace-keyed invalidation cannot find it through the cache alone. Empty for the global
-	// namespace, which no document reaches implicitly.
-	HashSet<String> collect_open_scripts_reaching_namespace(const String &p_namespace) const;
+	// Swaps the pending-invalidation record out under `pending_invalidations_mutex`, then under
+	// `mutex` resolves namespaces through `collect_open_scripts_reaching_namespace` and runs
+	// `reparse_open_scripts(...)`. Called first thing in `poll()`.
+	void apply_pending_invalidations();
 
 	FSLanguageProtocol();
 	~FSLanguageProtocol();

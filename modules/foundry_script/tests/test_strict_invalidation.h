@@ -198,10 +198,12 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		CHECK_EQ(error_diagnostic_count(before), 0);
 
 		// Flip the setting on, run the shared invalidation hook, and re-parse the open documents the
-		// way the live settings-change handler does.
+		// way the live settings-change handler does. The handler now enqueues and the poll drain
+		// performs the re-parse, so drain explicitly here to observe the synchronous result.
 		settings->set_setting("debug/foundry_script/analysis/strict_dynamic_checks", true);
 		CHECK(FSParser::invalidate_analysis_on_strict_settings_change());
-		protocol->reparse_open_scripts();
+		protocol->enqueue_reparse_all();
+		protocol->apply_pending_invalidations();
 
 		// The re-parse used the in-memory buffer and now reports the strict violation as a diagnostic.
 		ExtendFSParser *after = FSLanguageProtocol::get_singleton()->get_parse_result(path);
@@ -335,6 +337,8 @@ TEST_SUITE("[Modules][FoundryScript][StrictInvalidation]") {
 		}
 
 		FSLanguage::get_singleton()->notify_disk_source_changed(parent_path);
+		// The funnel now enqueues the re-parse; drain it so the next read sees the refreshed parser.
+		protocol->apply_pending_invalidations();
 
 		ExtendFSParser *after = FSLanguageProtocol::get_singleton()->get_parse_result(child_path);
 		REQUIRE(after);

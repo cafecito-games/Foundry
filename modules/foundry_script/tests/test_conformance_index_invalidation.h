@@ -348,6 +348,8 @@ TEST_SUITE("[Modules][FoundryScript][Conformance]") {
 
 		TemporaryScriptFile conformance(ConformanceIndexInvalidationFixture::CONFORMANCE_PATH, fixture.conformance_source("FsciWidget", "one"));
 		fixture.index(ConformanceIndexInvalidationFixture::CONFORMANCE_PATH);
+		// The namespace-invalidation funnel now enqueues; drain so the re-parse runs before the read.
+		fixture.protocol->apply_pending_invalidations();
 
 		const ExtendFSParser *after = FSLanguageProtocol::get_singleton()->get_parse_result(ConformanceIndexInvalidationFixture::IMPORTER_PATH);
 		REQUIRE(after != nullptr);

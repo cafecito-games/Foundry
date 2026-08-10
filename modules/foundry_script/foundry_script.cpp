@@ -4005,7 +4005,7 @@ void FSLanguage::_on_settings_changed() {
 		// documents from their in-memory buffers so the LSP re-publishes under the new flags too.
 		FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
 		if (protocol != nullptr && protocol->is_initialized()) {
-			protocol->reparse_open_scripts();
+			protocol->enqueue_reparse_all();
 		}
 #endif
 	}
@@ -4912,7 +4912,7 @@ void FSLanguage::notify_disk_source_changed(const String &p_path) {
 #if !defined(FOUNDRY_SCRIPT_NO_LSP)
 	FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
 	if (protocol != nullptr && protocol->is_initialized()) {
-		protocol->reparse_open_scripts(affected);
+		protocol->enqueue_reparse_paths(affected);
 	}
 #endif
 }
@@ -4944,12 +4944,12 @@ void FSLanguage::notify_conformance_namespace_changed(const String &p_namespace)
 	FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
 	if (protocol != nullptr && protocol->is_initialized()) {
 		// An open document reaches the namespace whether or not the shared cache happens to hold a
-		// parser for it, so the documents to republish are collected from the language server too.
-		for (const String &path : protocol->collect_open_scripts_reaching_namespace(p_namespace)) {
-			affected.insert(path);
-		}
+		// parser for it. The namespace -> open-document resolution is performed by the poll drain
+		// (`apply_pending_invalidations`) under the protocol mutex, so this funnel never blocks on it
+		// and never touches the shared maps directly.
+		protocol->enqueue_namespace_invalidation(p_namespace);
 		if (!affected.is_empty()) {
-			protocol->reparse_open_scripts(affected);
+			protocol->enqueue_reparse_paths(affected);
 		}
 	}
 #endif

@@ -814,6 +814,14 @@ void FSWorkspace::publish_diagnostics(const String &p_path) {
 }
 
 bool FSWorkspace::refresh_after_successful_build_outputs(const PackedStringArray &p_outputs) {
+	// Hold the protocol lock for the whole operation so `reload_all_workspace_scripts` and the raw
+	// parser dereferences it performs (get_parse_result -> parser->...) are a single critical
+	// section (D2). The LSP singleton is non-null here: this entry point is reached from the build
+	// task on the main thread while the editor is alive, and the body already dereferences the
+	// singleton without a guard (`reload_all_workspace_scripts` -> get_parse_result).
+	FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
+	MutexLock lock(protocol->mutex);
+
 	bool has_res_output = false;
 	bool has_foundry_script_output = false;
 	for (int i = 0; i < p_outputs.size(); i++) {
@@ -845,10 +853,8 @@ bool FSWorkspace::refresh_after_successful_build_outputs(const PackedStringArray
 		if (recovering_initial_index) {
 			initialized = true;
 			build_pipeline_initialization_ready_for_recovery = false;
-			FSLanguageProtocol *protocol = FSLanguageProtocol::get_singleton();
-			if (protocol != nullptr) {
-				protocol->complete_initialization_if_workspace_ready();
-			}
+			// `protocol` is the non-null singleton captured for the whole-body lock above.
+			protocol->complete_initialization_if_workspace_ready();
 		}
 	}
 
