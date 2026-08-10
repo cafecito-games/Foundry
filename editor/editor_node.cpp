@@ -124,6 +124,7 @@
 #include "editor/file_system/dependency_editor.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/editor_about.h"
+#include "editor/gui/editor_board_switcher.h"
 #include "editor/gui/editor_bottom_drawer_strip.h"
 #include "editor/gui/editor_bottom_panel.h"
 #include "editor/gui/editor_file_dialog.h"
@@ -467,6 +468,10 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 			_open_command_palette();
 		} else if (ED_IS_SHORTCUT("editor/toggle_last_opened_bottom_panel", p_event)) {
 			bottom_panel->toggle_last_opened_bottom_panel();
+		} else if (ED_IS_SHORTCUT("editor/previous_board", p_event)) {
+			_activate_relative_board(-1);
+		} else if (ED_IS_SHORTCUT("editor/next_board", p_event)) {
+			_activate_relative_board(1);
 		} else if (ED_IS_SHORTCUT("docks/open_scene", p_event)) {
 			_focus_leaf_scene_tree_dock();
 		} else if (ED_IS_SHORTCUT("docks/open_inspector", p_event)) {
@@ -8384,6 +8389,16 @@ void EditorNode::_on_board_removed(int p_index) {
 	save_editor_layout_delayed();
 }
 
+void EditorNode::_activate_relative_board(int p_delta) {
+	ERR_FAIL_NULL(board_strip);
+	const int board_count = board_strip->get_board_count();
+	if (board_count <= 1) {
+		return;
+	}
+	const int target = ((board_strip->get_active_index() + p_delta) % board_count + board_count) % board_count;
+	board_strip->set_active_board(target);
+}
+
 bool EditorNode::_close_board_scenes(int p_board_index, const PackedInt32Array &p_scene_indices) {
 	if (p_scene_indices.is_empty()) {
 		return true;
@@ -11283,6 +11298,8 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/distraction_free_mode", TTRC("Distraction Free Mode"), KeyModifierMask::CTRL | KeyModifierMask::SHIFT | Key::F11);
 	ED_SHORTCUT_OVERRIDE("editor/distraction_free_mode", "macos", KeyModifierMask::META | KeyModifierMask::SHIFT | Key::D);
 	ED_SHORTCUT_AND_COMMAND("editor/toggle_last_opened_bottom_panel", TTRC("Toggle Last Opened Bottom Panel"), KeyModifierMask::CMD_OR_CTRL | Key::J);
+	ED_SHORTCUT_AND_COMMAND("editor/previous_board", TTRC("Previous Board"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key::LEFT);
+	ED_SHORTCUT_AND_COMMAND("editor/next_board", TTRC("Next Board"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key::RIGHT);
 	distraction_free->set_shortcut(ED_GET_SHORTCUT("editor/distraction_free_mode"));
 	distraction_free->set_tooltip_text(TTRC("Toggle distraction-free mode."));
 	distraction_free->set_toggle_mode(true);
@@ -11516,6 +11533,10 @@ EditorNode::EditorNode() {
 	title_bar->add_child(project_run_bar);
 	project_run_bar->connect("play_pressed", callable_mp(this, &EditorNode::_project_run_started));
 	project_run_bar->connect("stop_pressed", callable_mp(this, &EditorNode::_project_run_stopped));
+
+	board_switcher = memnew(EditorBoardSwitcher);
+	title_bar->add_child(board_switcher);
+	board_switcher->setup(board_strip);
 
 	right_menu_hb = memnew(HBoxContainer);
 	right_menu_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);

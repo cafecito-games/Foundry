@@ -75,6 +75,7 @@ class EditorAbout;
 class StartupDialog;
 class EditorBoard;
 class EditorBoardStrip;
+class EditorBoardSwitcher;
 class EditorBuildProfileManager;
 class EditorBottomDrawerStrip;
 class EditorBottomPanel;
@@ -383,6 +384,7 @@ private:
 	Control *right_menu_spacer = nullptr;
 	EditorTitleBar *title_bar = nullptr;
 	EditorRunBar *project_run_bar = nullptr;
+	EditorBoardSwitcher *board_switcher = nullptr;
 	HBoxContainer *right_menu_hb = nullptr;
 
 	// Spacers to center 2D / 3D / Script buttons.
@@ -749,6 +751,9 @@ private:
 	void _on_board_added(int p_index);
 	void _on_board_about_to_close(int p_index);
 	void _on_board_removed(int p_index);
+	// Activates the board p_delta positions away from the active one, wrapping around the
+	// ends of the list. Used by the previous/next board shortcuts.
+	void _activate_relative_board(int p_delta);
 	bool _close_board_scenes(int p_board_index, const PackedInt32Array &p_scene_indices);
 	void _finish_pending_board_close();
 	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
