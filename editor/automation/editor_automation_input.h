@@ -125,6 +125,13 @@ public:
 	static Vector2 get_last_mouse_position();
 	static void reset_pointer_state();
 
+	// Ends a gesture that was never finished: releases the still-held button on
+	// the viewport that received its press and returns the system pointer. Leaving
+	// a drag in flight across requests is intentional, so this is only for
+	// teardown -- an automation session that stops mid-gesture must not leave the
+	// editor with a phantom button down.
+	static void abandon_gesture();
+
 	// Places the system pointer over p_global when the display server supports
 	// warping, so window-manager pointer state matches the synthesized gesture.
 	static void sync_window_pointer(Viewport *p_viewport, const Vector2 &p_global);

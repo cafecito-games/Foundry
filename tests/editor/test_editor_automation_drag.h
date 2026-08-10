@@ -35,6 +35,7 @@
 #include "editor/automation/editor_automation_input.h"
 #include "editor/automation/editor_automation_mcp_contracts.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
+#include "editor/automation/editor_automation_server.h"
 #include "editor/automation/editor_automation_snapshot.h"
 
 #include "core/object/message_queue.h"
@@ -313,8 +314,77 @@ TEST_CASE("[Editor][Automation] a failed gesture step does not strand the system
 	ERR_PRINT_ON;
 
 	CHECK(display_server->mouse_get_position() == resting_pointer);
+	CHECK(EditorAutomationInput::get_held_mouse_button() == MouseButton::NONE);
 
 	EditorAutomationInput::reset_pointer_state();
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][Automation] a new press finishes a gesture that was never released") {
+	EditorAutomationInput::reset_pointer_state();
+
+	DragHarness harness;
+	harness.mount();
+
+	const Vector2 from = harness.source->get_global_rect().get_center();
+
+	PackedStringArray events;
+	EditorAutomationInputModifiers modifiers;
+	CHECK(EditorAutomationInput::begin_mouse_gesture(harness.window, from, MouseButton::LEFT, modifiers, events));
+	MessageQueue::get_singleton()->flush();
+	CHECK(EditorAutomationInput::get_held_mouse_button() == MouseButton::LEFT);
+	CHECK_FALSE(events.has("mouse_released"));
+
+	PackedStringArray second_events;
+	CHECK(EditorAutomationInput::begin_mouse_gesture(harness.window, from, MouseButton::RIGHT, modifiers, second_events));
+	MessageQueue::get_singleton()->flush();
+
+	// The stale left button is released before the new press, so exactly one
+	// button is held afterwards.
+	CHECK(second_events.has("mouse_released"));
+	CHECK(EditorAutomationInput::get_held_mouse_button() == MouseButton::RIGHT);
+
+	EditorAutomationInput::reset_pointer_state();
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][Automation] automation teardown releases a gesture left in flight") {
+	EditorAutomationInput::reset_pointer_state();
+
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	REQUIRE(display_server != nullptr);
+
+	DragHarness harness;
+	harness.mount();
+
+	const Point2i resting_pointer(3, 29);
+	display_server->warp_mouse(resting_pointer);
+	REQUIRE(display_server->mouse_get_position() == resting_pointer);
+
+	EditorAutomationServer *automation_server = memnew(EditorAutomationServer);
+	SceneTree::get_singleton()->get_root()->add_child(automation_server);
+	MessageQueue::get_singleton()->flush();
+
+	const Vector2 from = harness.source->get_global_rect().get_center();
+	const Vector2 to = harness.target->get_global_rect().get_center();
+
+	PackedStringArray events;
+	EditorAutomationInputModifiers modifiers;
+	CHECK(EditorAutomationInput::push_mouse_drag(
+			harness.window, from, to, Vector<Vector2>(), MouseButton::LEFT, modifiers, events, false));
+	MessageQueue::get_singleton()->flush();
+	REQUIRE(EditorAutomationInput::get_held_mouse_button() == MouseButton::LEFT);
+	CHECK(harness.window->gui_is_dragging());
+
+	// Leaving the tree runs the session teardown that owns the held button.
+	SceneTree::get_singleton()->get_root()->remove_child(automation_server);
+	memdelete(automation_server);
+	MessageQueue::get_singleton()->flush();
+
+	CHECK(EditorAutomationInput::get_held_mouse_button() == MouseButton::NONE);
+	CHECK_FALSE(harness.window->gui_is_dragging());
+	CHECK(display_server->mouse_get_position() == resting_pointer);
+
 	harness.unmount();
 }
 

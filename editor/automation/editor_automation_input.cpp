@@ -51,6 +51,10 @@ MouseButton editor_automation_held_button = MouseButton::NONE;
 // the gesture, before automation first warped it. Warping is what makes a
 // synthesized drop land where it aims, but it moves the machine's real cursor,
 // so a gesture has to put it back when it ends or is abandoned.
+// The viewport a still-held gesture was started on, so an abandoned gesture can
+// be released on the same viewport that received its press.
+ObjectID editor_automation_gesture_viewport;
+
 ObjectID editor_automation_pointer_restore_viewport;
 Vector2 editor_automation_pointer_restore_position;
 bool editor_automation_pointer_has_restore_position = false;
@@ -91,10 +95,11 @@ void _restore_system_pointer() {
 	viewport->warp_mouse(position);
 }
 
-// A gesture owns the system pointer from its first warp until its release. Any
-// path that leaves this scope without the gesture continuing -- an early error
-// return as much as a normal end -- abandons it: the pointer goes back where
-// the user left it.
+// A gesture owns the held mouse button and the system pointer from its first
+// warp until its release. Any path that leaves this scope without the gesture
+// continuing -- an early error return as much as a normal end -- abandons it:
+// the button is no longer considered held and the pointer goes back where the
+// user left it, so a failed gesture cannot poison the next one.
 struct AutomationGestureScope {
 	bool in_flight = false;
 
@@ -104,6 +109,8 @@ struct AutomationGestureScope {
 		if (in_flight) {
 			return;
 		}
+		editor_automation_held_button = MouseButton::NONE;
+		editor_automation_gesture_viewport = ObjectID();
 		_restore_system_pointer();
 	}
 };
@@ -378,7 +385,24 @@ Vector2 EditorAutomationInput::get_last_mouse_position() {
 void EditorAutomationInput::reset_pointer_state() {
 	_restore_system_pointer();
 	editor_automation_held_button = MouseButton::NONE;
+	editor_automation_gesture_viewport = ObjectID();
 	editor_automation_last_mouse_position = Vector2();
+}
+
+void EditorAutomationInput::abandon_gesture() {
+	if (editor_automation_held_button != MouseButton::NONE) {
+		// Release on the viewport that received the press, so the viewport's own
+		// drag bookkeeping is unwound instead of being left mid-drag.
+		Viewport *viewport = ObjectDB::get_instance<Viewport>(editor_automation_gesture_viewport);
+		if (viewport != nullptr && viewport->is_inside_tree()) {
+			PackedStringArray discarded_events;
+			const EditorAutomationInputModifiers modifiers;
+			end_mouse_gesture(viewport, editor_automation_last_mouse_position, modifiers, discarded_events);
+		}
+	}
+	editor_automation_held_button = MouseButton::NONE;
+	editor_automation_gesture_viewport = ObjectID();
+	_restore_system_pointer();
 }
 
 void EditorAutomationInput::sync_window_pointer(Viewport *p_viewport, const Vector2 &p_global) {
@@ -409,6 +433,17 @@ bool EditorAutomationInput::begin_mouse_gesture(
 	AutomationGestureScope gesture;
 	ERR_FAIL_NULL_V(p_viewport, false);
 
+	// A press while a button is still held means the previous gesture was never
+	// finished. Release it on its own terms first, so held state and the drag it
+	// left in the viewport cannot accumulate across requests.
+	if (editor_automation_held_button != MouseButton::NONE) {
+		Viewport *previous_viewport = ObjectDB::get_instance<Viewport>(editor_automation_gesture_viewport);
+		if (previous_viewport == nullptr || !previous_viewport->is_inside_tree()) {
+			previous_viewport = p_viewport;
+		}
+		end_mouse_gesture(previous_viewport, editor_automation_last_mouse_position, p_modifiers, r_events);
+	}
+
 	sync_window_pointer(p_viewport, p_global);
 
 	// Hover the origin before pressing so the viewport's mouse-over bookkeeping
@@ -423,6 +458,7 @@ bool EditorAutomationInput::begin_mouse_gesture(
 		return false;
 	}
 	editor_automation_held_button = p_button;
+	editor_automation_gesture_viewport = p_viewport->get_instance_id();
 	gesture.keep_in_flight();
 	return true;
 }
@@ -490,6 +526,7 @@ bool EditorAutomationInput::end_mouse_gesture(
 			? MouseButton::LEFT
 			: editor_automation_held_button;
 	editor_automation_held_button = MouseButton::NONE;
+	editor_automation_gesture_viewport = ObjectID();
 	sync_window_pointer(p_viewport, p_global);
 	return push_mouse_button(p_viewport, p_global, button, false, MouseButtonMask::NONE, p_modifiers, r_events);
 }
