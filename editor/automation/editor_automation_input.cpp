@@ -95,11 +95,37 @@ void _restore_system_pointer() {
 	viewport->warp_mouse(position);
 }
 
+// Releases a still-held gesture button on the viewport that received its
+// press, so that viewport's own drag bookkeeping (Viewport::gui_is_dragging())
+// is unwound instead of being left mid-drag. Shared by every abandonment path
+// -- the public teardown entry point and the automatic scope destructor --
+// so they cannot drift into different contracts.
+//
+// This routes through EditorAutomationInput::end_mouse_gesture, which declares
+// its own AutomationGestureScope. That inner scope cannot re-enter this
+// function: end_mouse_gesture clears editor_automation_held_button before this
+// call returns, so by the time the inner scope's destructor runs (on that
+// call's own return), the held-button check below is already false and it is
+// a no-op.
+void _unwind_held_gesture() {
+	if (editor_automation_held_button != MouseButton::NONE) {
+		Viewport *viewport = ObjectDB::get_instance<Viewport>(editor_automation_gesture_viewport);
+		if (viewport != nullptr && viewport->is_inside_tree()) {
+			PackedStringArray discarded_events;
+			const EditorAutomationInputModifiers modifiers;
+			EditorAutomationInput::end_mouse_gesture(viewport, editor_automation_last_mouse_position, modifiers, discarded_events);
+		}
+	}
+	editor_automation_held_button = MouseButton::NONE;
+	editor_automation_gesture_viewport = ObjectID();
+}
+
 // A gesture owns the held mouse button and the system pointer from its first
 // warp until its release. Any path that leaves this scope without the gesture
 // continuing -- an early error return as much as a normal end -- abandons it:
-// the button is no longer considered held and the pointer goes back where the
-// user left it, so a failed gesture cannot poison the next one.
+// the held button is released on the viewport that started the drag (so that
+// viewport is never left mid-drag) and the pointer goes back where the user
+// left it, so a failed gesture cannot poison the next one.
 struct AutomationGestureScope {
 	bool in_flight = false;
 
@@ -109,8 +135,7 @@ struct AutomationGestureScope {
 		if (in_flight) {
 			return;
 		}
-		editor_automation_held_button = MouseButton::NONE;
-		editor_automation_gesture_viewport = ObjectID();
+		_unwind_held_gesture();
 		_restore_system_pointer();
 	}
 };
@@ -390,18 +415,7 @@ void EditorAutomationInput::reset_pointer_state() {
 }
 
 void EditorAutomationInput::abandon_gesture() {
-	if (editor_automation_held_button != MouseButton::NONE) {
-		// Release on the viewport that received the press, so the viewport's own
-		// drag bookkeeping is unwound instead of being left mid-drag.
-		Viewport *viewport = ObjectDB::get_instance<Viewport>(editor_automation_gesture_viewport);
-		if (viewport != nullptr && viewport->is_inside_tree()) {
-			PackedStringArray discarded_events;
-			const EditorAutomationInputModifiers modifiers;
-			end_mouse_gesture(viewport, editor_automation_last_mouse_position, modifiers, discarded_events);
-		}
-	}
-	editor_automation_held_button = MouseButton::NONE;
-	editor_automation_gesture_viewport = ObjectID();
+	_unwind_held_gesture();
 	_restore_system_pointer();
 }
 

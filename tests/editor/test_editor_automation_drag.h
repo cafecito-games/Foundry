@@ -367,6 +367,11 @@ TEST_CASE("[Editor][Automation] a failed gesture step does not strand the system
 	CHECK(display_server->mouse_get_position() == resting_pointer);
 	CHECK(EditorAutomationInput::get_held_mouse_button() == MouseButton::NONE);
 
+	// The gesture started on harness.window, which is where gui_is_dragging()
+	// must clear: an abandoned gesture that only forgets automation's own
+	// bookkeeping still leaves the viewport mid-drag with its preview live.
+	CHECK_FALSE(harness.window->gui_is_dragging());
+
 	EditorAutomationInput::reset_pointer_state();
 	harness.unmount();
 }
