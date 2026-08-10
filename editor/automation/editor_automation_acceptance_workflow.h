@@ -50,6 +50,9 @@ public:
 	static Result run_canvas_2d_zoom_automation(EditorWorkflowTestDriver &p_driver, const String &p_scene_path = "res://scenes/main.tscn");
 	static Result run_close_last_scene_empty_pane(EditorWorkflowTestDriver &p_driver);
 	static Result run_split_scene_root_button_context(EditorWorkflowTestDriver &p_driver);
+	// Real-pointer cross-board drag: grabs a scene tab on the active board and
+	// drops it on the tile body of a non-active board shown in the overview.
+	static Result run_cross_board_tile_body_drop(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver);

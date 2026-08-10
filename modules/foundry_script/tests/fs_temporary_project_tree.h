@@ -35,11 +35,13 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/os/os.h"
+#include "core/templates/vector.h"
 
 #ifdef UNIX_ENABLED
 #include <sys/types.h>
 #include <cerrno>
 #include <csignal>
+#include <cstdlib>
 #endif // UNIX_ENABLED
 
 #ifdef WINDOWS_ENABLED
@@ -52,25 +54,86 @@ namespace FSTests {
 // Builds a throwaway project tree on disk under the shared test scratch path and removes it on
 // destruction, so filesystem-walking code runs against real directories without touching the test
 // project or res://.
+//
+// The helper owns exactly one validated subtree and is unable to create, write, or delete anywhere
+// else:
+//
+//   - the scratch root is resolved once, must be absolute, and is canonicalized so aliases and
+//     symlinks cannot defeat containment checks;
+//   - a child name must be relative and free of `..`, absolute prefixes, drive/share prefixes, and
+//     schemes;
+//   - creation, writing, and deletion all require the target to be a strict descendant of the
+//     scratch root, compared component by component (so `/tmp/a` does not contain `/tmp/ab`);
+//   - cleanup never traverses a symlink, including when the cleanup root is itself a symlink;
+//   - any path that contains the running executable is refused as a second, independent check;
+//   - a failed validation returns an `Error` and performs no deletion, directory creation, or file
+//     write.
 struct TemporaryProjectTree {
 	String root;
 
 	explicit TemporaryProjectTree(const String &p_name) {
-		root = get_test_scratch_path(p_name);
+		// The root is captured once here so cleanup is validated against the very root this tree was
+		// created under, whatever the environment looks like at destruction time.
+		owned_scratch_root = get_test_scratch_root();
+		setup_error = owned_scratch_root.is_empty() ? ERR_UNCONFIGURED : resolve_owned_child(owned_scratch_root, p_name, root);
+		CHECK_MESSAGE(setup_error == OK, vformat("Cannot resolve an owned scratch path for '%s'", p_name));
+		if (setup_error != OK) {
+			root = String();
+			return;
+		}
+
 		// Start from a clean slate in case a previous aborted run left the tree behind.
-		remove_recursive(root);
+		setup_error = remove_validated_descendant(owned_scratch_root, root);
+		CHECK_MESSAGE(setup_error == OK, vformat("Cannot clear scratch path '%s'", root));
+		if (setup_error != OK) {
+			root = String();
+			return;
+		}
+
 		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-		CHECK_EQ(dir->make_dir_recursive(root), OK);
+		if (dir.is_null()) {
+			setup_error = ERR_CANT_CREATE;
+			CHECK_MESSAGE(false, "Cannot access the filesystem to create a scratch project tree");
+			root = String();
+			return;
+		}
+		setup_error = dir->make_dir_recursive(root);
+		CHECK_EQ(setup_error, OK);
+		if (setup_error != OK) {
+			root = String();
+		}
 	}
 
 	~TemporaryProjectTree() {
-		remove_recursive(root);
+		if (root.is_empty()) {
+			return;
+		}
+		remove_validated_descendant(owned_scratch_root, root);
 	}
 
-	// Writes p_contents to root/p_relative_path, creating intermediate directories as needed.
+	Error get_setup_error() const {
+		return setup_error;
+	}
+
+	bool is_valid() const {
+		return setup_error == OK && !root.is_empty();
+	}
+
+	// Writes p_contents to root/p_relative_path, creating intermediate directories as needed. A
+	// relative path that would escape the owned tree is refused before anything is created.
 	void write_file(const String &p_relative_path, const String &p_contents) const {
-		const String absolute_path = root.path_join(p_relative_path);
+		String absolute_path;
+		const Error path_error = resolve_owned_child(root, p_relative_path, absolute_path);
+		CHECK_MESSAGE(path_error == OK, vformat("Refusing to write '%s' outside the owned scratch tree", p_relative_path));
+		if (path_error != OK) {
+			return;
+		}
+
 		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (dir.is_null()) {
+			CHECK_MESSAGE(false, "Cannot access the filesystem to write a scratch file");
+			return;
+		}
 		CHECK_EQ(dir->make_dir_recursive(absolute_path.get_base_dir()), OK);
 		Ref<FileAccess> file = FileAccess::open(absolute_path, FileAccess::WRITE);
 		CHECK_MESSAGE(file.is_valid(), vformat("Cannot write '%s'", absolute_path));
@@ -80,34 +143,164 @@ struct TemporaryProjectTree {
 		file->store_string(p_contents);
 	}
 
+	// The absolute, canonical scratch root every owned path must live under. Empty when the
+	// configured root is unusable, in which case no owned path can be produced at all.
 	static String get_test_scratch_root() {
+		// The configured value is re-validated and re-canonicalized on every resolution rather than
+		// memoized, so a test that scopes `FOUNDRY_TEST_SCRATCH` still redirects staging. That does
+		// not reintroduce working-directory sensitivity: a relative value is always rejected, and an
+		// absolute one canonicalizes to the same path from any working directory. Each owned path is
+		// resolved from the root once and retains it, so an object always validates its own cleanup
+		// against the root it was created under.
 		if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
 			const String configured_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
 			if (!configured_root.is_empty()) {
-				return configured_root.simplify_path();
+				String absolute_root;
+				if (resolve_scratch_root(configured_root, absolute_root) != OK) {
+					ERR_PRINT(vformat("FOUNDRY_TEST_SCRATCH '%s' is not a usable absolute scratch root; test scratch is unavailable.", configured_root));
+					return String();
+				}
+				return absolute_root;
 			}
 		}
 		// Without an explicit `FOUNDRY_TEST_SCRATCH`, fall back to a directory scoped to this
 		// process. A fixed shared path would let two `foundry` test processes running
 		// concurrently on the same machine (e.g. separate worktrees during a multi-agent
-		// session) race on the same staged project tree: one process's `remove_recursive` +
-		// `copy_dir` in `stage_project_copy` can interleave with another's, corrupting the
-		// staged files each currently-running test depends on.
-		static const String scoped_root = [] {
-			const String base = OS::get_singleton()->get_temp_path().simplify_path();
-			// Sweep scratch directories left behind by processes that are no longer
-			// running (crashed, killed, or otherwise never reached their own cleanup) so
-			// direct, `FOUNDRY_TEST_SCRATCH`-less invocations don't accumulate one staged
-			// project copy per past run.
+		// session) race on the same staged project tree: one process's cleanup + `copy_dir`
+		// in `stage_project_copy` can interleave with another's, corrupting the staged files
+		// each currently-running test depends on.
+		static const String process_scoped_root = []() -> String {
+			String base;
+			if (resolve_scratch_root(OS::get_singleton()->get_temp_path(), base) != OK) {
+				ERR_PRINT("Cannot resolve an absolute OS temporary directory; test scratch is unavailable.");
+				return String();
+			}
+			// Sweep scratch directories left behind by processes that are no longer running
+			// (crashed, killed, or otherwise never reached their own cleanup) so direct,
+			// `FOUNDRY_TEST_SCRATCH`-less invocations don't accumulate one staged project copy
+			// per past run.
 			reap_dead_process_scratch_dirs(base);
-			const String directory_name = vformat("foundry-tests-%d", OS::get_singleton()->get_process_id());
-			return base.path_join(directory_name).simplify_path();
+			return base.path_join(vformat("foundry-tests-%d", OS::get_singleton()->get_process_id()));
 		}();
-		return scoped_root;
+		return process_scoped_root;
 	}
 
+	// Absolute path of an owned scratch child, or an empty String when p_name is not a safe
+	// relative name or the scratch root is unusable. Produces no filesystem side effects.
 	static String get_test_scratch_path(const String &p_name) {
-		return get_test_scratch_root().path_join(p_name).simplify_path();
+		String absolute_path;
+		if (resolve_owned_path(p_name, absolute_path) != OK) {
+			return String();
+		}
+		return absolute_path;
+	}
+
+	// Validation-only resolution of an owned scratch child. Never touches the filesystem, so it is
+	// also the safe way to prove a rejection happened before any mutation.
+	static Error resolve_owned_path(const String &p_name, String &r_absolute_path) {
+		r_absolute_path = String();
+		const String scratch_root = get_test_scratch_root();
+		if (scratch_root.is_empty()) {
+			return ERR_UNCONFIGURED;
+		}
+		return resolve_owned_child(scratch_root, p_name, r_absolute_path);
+	}
+
+	// Recursively removes an owned scratch path. Refuses, without deleting anything, when the path
+	// is not a strict descendant of the scratch root or when it contains the running executable.
+	static Error remove_owned_path(const String &p_absolute_path) {
+		const String scratch_root = get_test_scratch_root();
+		if (scratch_root.is_empty()) {
+			return ERR_UNCONFIGURED;
+		}
+		return remove_validated_descendant(scratch_root, p_absolute_path);
+	}
+
+	// The only containment-checked recursive removal available to callers: p_absolute_path is
+	// removed exactly when it is a strict descendant of p_container_root and does not contain the
+	// running executable. Both refusals return an `Error` and delete nothing.
+	static Error remove_validated_descendant(const String &p_container_root, const String &p_absolute_path) {
+		if (path_contains_running_executable(p_absolute_path)) {
+			ERR_PRINT(vformat("Refusing to recursively delete '%s' because it contains the running executable '%s'. Check FOUNDRY_TEST_SCRATCH.", p_absolute_path, OS::get_singleton()->get_executable_path()));
+			return ERR_UNAUTHORIZED;
+		}
+		if (!is_strict_descendant(p_container_root, p_absolute_path)) {
+			ERR_PRINT(vformat("Refusing to recursively delete '%s' because it is not inside the owned tree '%s'.", p_absolute_path, p_container_root));
+			return ERR_UNAUTHORIZED;
+		}
+		return remove_recursive(p_absolute_path);
+	}
+
+	// Resolves a configured scratch root to an absolute canonical filesystem path, creating the
+	// directory when it does not exist yet. A relative, scheme-qualified, or otherwise unusable
+	// value is rejected before anything is created.
+	static Error resolve_scratch_root(const String &p_configured_root, String &r_absolute_root) {
+		r_absolute_root = String();
+		if (!is_absolute_filesystem_path(p_configured_root)) {
+			return ERR_INVALID_PARAMETER;
+		}
+
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (filesystem.is_null()) {
+			return ERR_CANT_CREATE;
+		}
+		if (!filesystem->dir_exists(p_configured_root)) {
+			const Error make_error = filesystem->make_dir_recursive(p_configured_root);
+			if (make_error != OK) {
+				return make_error;
+			}
+		}
+
+		// Canonicalizing an existing directory is what makes later containment checks meaningful:
+		// an alias or symlinked scratch root would otherwise compare unequal to the real paths the
+		// tests write and delete.
+		const String canonical_root = canonicalize_existing_path(p_configured_root);
+		if (!is_absolute_filesystem_path(canonical_root)) {
+			return ERR_CANT_RESOLVE;
+		}
+		r_absolute_root = canonical_root;
+		return OK;
+	}
+
+	// True when p_path is p_ancestor's strict descendant, compared component by component so a
+	// shared string prefix (`/tmp/a` against `/tmp/ab`) never counts as containment. Equality is
+	// deliberately not containment.
+	static bool is_strict_descendant(const String &p_ancestor, const String &p_path) {
+		if (!is_absolute_filesystem_path(p_ancestor) || !is_absolute_filesystem_path(p_path)) {
+			return false;
+		}
+		const Vector<String> ancestor_components = get_path_components(p_ancestor);
+		const Vector<String> path_components = get_path_components(p_path);
+		if (ancestor_components.is_empty() || path_components.size() <= ancestor_components.size()) {
+			return false;
+		}
+		for (int index = 0; index < ancestor_components.size(); index++) {
+			if (ancestor_components[index] != path_components[index]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	// True when p_path is the running executable or one of its ancestor directories. Kept as an
+	// independent refusal on top of scratch containment: a scratch root misconfigured onto the
+	// binary's directory must never be deletable, whatever the containment check concludes.
+	static bool path_contains_running_executable(const String &p_path) {
+		const String executable_path = OS::get_singleton()->get_executable_path();
+		if (executable_path.is_empty() || p_path.is_empty()) {
+			return false;
+		}
+		const Vector<String> path_components = get_path_components(p_path);
+		const Vector<String> executable_components = get_path_components(executable_path);
+		if (path_components.is_empty() || executable_components.size() < path_components.size()) {
+			return false;
+		}
+		for (int index = 0; index < path_components.size(); index++) {
+			if (path_components[index] != executable_components[index]) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	static String stage_project_copy(const String &p_source_root, const String &p_name) {
@@ -121,12 +314,20 @@ struct TemporaryProjectTree {
 
 		const String source_root = source_dir->get_current_dir().simplify_path();
 		const String staged_root = get_test_scratch_path(p_name);
+		CHECK_MESSAGE(!staged_root.is_empty(), vformat("Cannot resolve an owned scratch path for '%s'", p_name));
+		if (staged_root.is_empty()) {
+			return String();
+		}
 
 		static String last_source_root;
 		static String last_staged_root;
 		if (last_source_root != source_root || last_staged_root != staged_root ||
 				!FileAccess::exists(staged_root.path_join("project.foundry"))) {
-			remove_recursive(staged_root);
+			const Error remove_error = remove_owned_path(staged_root);
+			CHECK_MESSAGE(remove_error == OK, vformat("Cannot clear staged project '%s'", staged_root));
+			if (remove_error != OK) {
+				return String();
+			}
 			const Error copy_err = source_dir->copy_dir(source_root, staged_root);
 			CHECK_MESSAGE(copy_err == OK, vformat("Cannot stage test project '%s' at '%s'", source_root, staged_root));
 			if (copy_err != OK) {
@@ -139,45 +340,169 @@ struct TemporaryProjectTree {
 		return staged_root;
 	}
 
-	static void remove_recursive(const String &p_path) {
-		// Safety: never remove a directory tree that contains the running executable.
-		// The name-mangler export tests stage a binary-named `.pck` and re-launch the
-		// binary from a temp `runtime` dir. If the test scratch root ever resolves onto
-		// the executable's directory (e.g. a misconfigured `FOUNDRY_TEST_SCRATCH`), a
-		// recursive delete here would wipe out the binary the test suite was launched
-		// from. Refuse and log instead of deleting.
-		const String exe_path = OS::get_singleton()->get_executable_path().simplify_path();
-		const String normalized = p_path.simplify_path();
-		if (!exe_path.is_empty() && !normalized.is_empty() &&
-				(exe_path == normalized || exe_path.begins_with(normalized + "/"))) {
-			ERR_PRINT(vformat("Refusing to recursively delete test scratch path '%s' because it contains the running executable '%s'. Check FOUNDRY_TEST_SCRATCH.", normalized, exe_path));
-			return;
+private:
+	String owned_scratch_root;
+	Error setup_error = OK;
+
+	// Splits a path into comparison-ready components. Windows paths are compared case-insensitively
+	// and with normalized separators; every platform drops empty segments and lexical `.`/`..`.
+	static Vector<String> get_path_components(const String &p_path) {
+		Vector<String> components = p_path.replace("\\", "/").simplify_path().split("/", false);
+#ifdef WINDOWS_ENABLED
+		for (int index = 0; index < components.size(); index++) {
+			components.write[index] = components[index].to_lower();
+		}
+#endif // WINDOWS_ENABLED
+		return components;
+	}
+
+	// True for a path rooted at a filesystem root or drive. A scheme-qualified path (`res://`,
+	// `user://`) is not a filesystem path and is rejected.
+	static bool is_absolute_filesystem_path(const String &p_path) {
+		if (p_path.is_empty() || p_path.contains("://")) {
+			return false;
+		}
+		return p_path.is_absolute_path();
+	}
+
+	// True only for a relative path that cannot escape its container: no absolute or network-share
+	// prefix, no drive letter or scheme (both of which contain `:`), and no `.`/`..` component.
+	static bool is_safe_relative_path(const String &p_relative_path) {
+		if (p_relative_path.is_empty() || p_relative_path.contains(":")) {
+			return false;
+		}
+		if (p_relative_path.is_absolute_path() || p_relative_path.is_network_share_path()) {
+			return false;
+		}
+		const Vector<String> components = p_relative_path.replace("\\", "/").split("/", false);
+		if (components.is_empty()) {
+			return false;
+		}
+		for (const String &component : components) {
+			if (component == "." || component == "..") {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	static Error resolve_owned_child(const String &p_container, const String &p_relative_path, String &r_absolute_path) {
+		r_absolute_path = String();
+		if (!is_absolute_filesystem_path(p_container)) {
+			return ERR_UNCONFIGURED;
+		}
+		if (!is_safe_relative_path(p_relative_path)) {
+			return ERR_INVALID_PARAMETER;
+		}
+		const String candidate = p_container.path_join(p_relative_path).simplify_path();
+		if (!is_strict_descendant(p_container, candidate)) {
+			return ERR_UNAUTHORIZED;
+		}
+		r_absolute_path = candidate;
+		return OK;
+	}
+
+	// Removes a tree whose containment has already been validated by the caller. Private on purpose:
+	// arbitrary recursive deletion must not be reachable without validation.
+	static Error remove_recursive(const String &p_path) {
+		Ref<DirAccess> filesystem = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (filesystem.is_null()) {
+			return ERR_CANT_CREATE;
+		}
+
+		// A link is removable only as a leaf, and only now that its parent passed validation. This
+		// includes the cleanup root itself: opening it would walk into the link's target, which
+		// lives outside the validated subtree.
+		if (filesystem->is_link(p_path)) {
+			return DirAccess::remove_absolute(p_path);
+		}
+		if (!filesystem->dir_exists(p_path)) {
+			if (filesystem->file_exists(p_path)) {
+				return DirAccess::remove_absolute(p_path);
+			}
+			return OK;
 		}
 
 		Ref<DirAccess> dir = DirAccess::open(p_path);
 		if (dir.is_null()) {
-			return;
+			return ERR_CANT_OPEN;
 		}
 		dir->set_include_hidden(true);
+
+		// The listing is collected before anything is removed so the directory is not mutated while
+		// it is being enumerated.
+		Vector<String> child_directories;
+		Vector<String> leaves;
 		dir->list_dir_begin();
 		for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
 			if (entry == "." || entry == "..") {
 				continue;
 			}
 			const String child = p_path.path_join(entry);
-			// Remove a symlink as a leaf; never descend through it, or a link back into the tree
-			// would make cleanup recurse forever (and could delete files outside the tree).
 			if (dir->current_is_dir() && !dir->is_link(child)) {
-				remove_recursive(child);
+				child_directories.push_back(child);
 			} else {
-				DirAccess::remove_absolute(child);
+				leaves.push_back(child);
 			}
 		}
 		dir->list_dir_end();
-		DirAccess::remove_absolute(p_path);
+
+		Error result = OK;
+		for (const String &leaf : leaves) {
+			const Error remove_error = DirAccess::remove_absolute(leaf);
+			if (remove_error != OK) {
+				result = remove_error;
+			}
+		}
+		for (const String &child : child_directories) {
+			const Error remove_error = remove_recursive(child);
+			if (remove_error != OK) {
+				result = remove_error;
+			}
+		}
+		const Error remove_error = DirAccess::remove_absolute(p_path);
+		if (remove_error != OK) {
+			result = remove_error;
+		}
+		return result;
 	}
 
-private:
+	// Absolute filesystem path of an existing file or directory with symlinks and aliases resolved.
+	// Empty when the path does not exist or cannot be resolved.
+	static String canonicalize_existing_path(const String &p_path) {
+#ifdef UNIX_ENABLED
+		char *resolved = ::realpath(p_path.utf8().get_data(), nullptr);
+		if (resolved == nullptr) {
+			return String();
+		}
+		String canonical;
+		const Error parse_error = canonical.append_utf8(resolved);
+		::free(resolved);
+		if (parse_error != OK) {
+			return String();
+		}
+		return canonical.simplify_path();
+#elif defined(WINDOWS_ENABLED)
+		HANDLE handle = ::CreateFileW((LPCWSTR)(p_path.utf16().get_data()), FILE_READ_ATTRIBUTES,
+				FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+				FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+		if (handle == INVALID_HANDLE_VALUE) {
+			return String();
+		}
+		WCHAR buffer[4096];
+		const DWORD length = ::GetFinalPathNameByHandleW(handle, buffer, 4095, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+		::CloseHandle(handle);
+		if (length == 0 || length > 4095) {
+			return String();
+		}
+		buffer[length] = 0;
+		const String canonical = String::utf16((const char16_t *)buffer, (int)length);
+		return canonical.trim_prefix("\\\\?\\").replace("\\", "/").simplify_path();
+#else
+		return p_path.simplify_path();
+#endif
+	}
+
 	// A grace period before a `foundry-tests-<pid>` directory is even considered for
 	// reaping. This alone cannot prove the owning process exited (a paused debugger
 	// session, or a backward wall-clock jump, could make a live process's directory look
@@ -227,6 +552,7 @@ private:
 		}
 		const uint64_t now = OS::get_singleton()->get_unix_time();
 		dir->list_dir_begin();
+		Vector<String> reapable;
 		for (String entry = dir->get_next(); !entry.is_empty(); entry = dir->get_next()) {
 			const String child = p_base.path_join(entry);
 			// Never follow a symlink here: a planted (or merely stale, from a different
@@ -244,9 +570,15 @@ private:
 			if (recently_touched || !process_is_definitely_dead(pid_text.to_int())) {
 				continue;
 			}
-			remove_recursive(child);
+			reapable.push_back(child);
 		}
 		dir->list_dir_end();
+
+		for (const String &child : reapable) {
+			// The reaped directories are siblings of this process's own scratch root, so they are
+			// validated against the shared base rather than against the scratch root itself.
+			remove_validated_descendant(p_base, child);
+		}
 	}
 };
 

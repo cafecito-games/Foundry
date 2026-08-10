@@ -50,9 +50,29 @@ static const String CUSTOMIZED_IMPORTED_RESOURCE_PATH = "res://tests/editor/fixt
 static const String CUSTOMIZED_RESOURCE_PATH = "res://tests/editor/fixtures/export_manifest/customized_resource.tres";
 static const String CUSTOMIZED_SCENE_PATH = "res://tests/editor/fixtures/export_manifest/customized_scene.tscn";
 
+// Component-aware containment: a shared string prefix (`/tmp/a` against `/tmp/ab`) is not
+// containment, and a path is never a strict descendant of itself.
+static bool is_strict_descendant(const String &p_ancestor, const String &p_path) {
+	if (p_ancestor.is_empty() || p_path.is_empty()) {
+		return false;
+	}
+	const Vector<String> ancestor_components = p_ancestor.replace("\\", "/").simplify_path().split("/", false);
+	const Vector<String> path_components = p_path.replace("\\", "/").simplify_path().split("/", false);
+	if (ancestor_components.is_empty() || path_components.size() <= ancestor_components.size()) {
+		return false;
+	}
+	for (int index = 0; index < ancestor_components.size(); index++) {
+		if (ancestor_components[index] != path_components[index]) {
+			return false;
+		}
+	}
+	return true;
+}
+
 class ScopedManifestExportScratch {
 	TestProjectSettingsRestoreScope restore_project_settings;
 	String saved_project_data_dir_name;
+	String owned_scratch_root;
 	String scoped_root;
 	Error setup_error = OK;
 
@@ -75,6 +95,12 @@ public:
 		if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
 			const String configured_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
 			if (!configured_root.is_empty()) {
+				// A relative or scheme-qualified value would be reinterpreted against whatever the
+				// working directory happens to be, so it is refused instead of resolved.
+				if (configured_root.contains("://") || !configured_root.is_absolute_path()) {
+					setup_error = ERR_INVALID_PARAMETER;
+					return;
+				}
 				scratch_root = configured_root;
 			}
 		}
@@ -86,7 +112,20 @@ public:
 			return;
 		}
 
-		scoped_root = scratch_root.path_join("editor_export_manifest_process_" + itos(OS::get_singleton()->get_process_id()));
+		const String candidate_root = scratch_root.path_join("editor_export_manifest_process_" + itos(OS::get_singleton()->get_process_id())).simplify_path();
+		if (!is_strict_descendant(scratch_root, candidate_root)) {
+			setup_error = ERR_INVALID_PARAMETER;
+			return;
+		}
+		// A symlink here would make the recursive cleanup below erase the link's target instead of
+		// this process's own scratch tree.
+		if (filesystem->is_link(candidate_root)) {
+			setup_error = ERR_INVALID_PARAMETER;
+			return;
+		}
+
+		owned_scratch_root = scratch_root;
+		scoped_root = candidate_root;
 		const String project_data_path = scoped_root.path_join(".foundry");
 		setup_error = filesystem->make_dir_recursive(project_data_path);
 		if (setup_error != OK) {
@@ -99,6 +138,17 @@ public:
 	~ScopedManifestExportScratch() {
 		TestProjectSettingsInternalsAccessor::project_data_dir_name() = saved_project_data_dir_name;
 		if (scoped_root.is_empty()) {
+			return;
+		}
+		if (!is_strict_descendant(owned_scratch_root, scoped_root)) {
+			CHECK_MESSAGE(false, vformat("Refusing to erase '%s' outside the owned scratch root '%s'", scoped_root, owned_scratch_root));
+			return;
+		}
+
+		Ref<DirAccess> link_probe = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		if (link_probe.is_valid() && link_probe->is_link(scoped_root)) {
+			// Remove the link as a leaf; opening it would walk into a target outside the scratch root.
+			CHECK_EQ(DirAccess::remove_absolute(scoped_root), OK);
 			return;
 		}
 

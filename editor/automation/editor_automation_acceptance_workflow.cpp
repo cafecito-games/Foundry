@@ -31,6 +31,7 @@
 #include "editor_automation_acceptance_workflow.h"
 
 #include "editor/automation/editor_automation_driver.h"
+#include "editor/automation/editor_automation_input.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
@@ -44,6 +45,7 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
+#include "editor/editor_tile_drop_overlay.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
 #include "editor/project_manager/known_project_store.h"
@@ -71,6 +73,7 @@
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
 #include "scene/gui/dialogs.h"
+#include "scene/gui/tab_bar.h"
 #include "scene/gui/tree.h"
 #include "scene/main/scene_tree.h"
 
@@ -1313,6 +1316,234 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	return result;
 #else
 	return _failure_with_message(p_driver, result.workflow, "Split scene root button workflow requires an editor (TOOLS_ENABLED) build.");
+#endif
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_cross_board_tile_body_drop(
+		EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "cross_board_tile_body_drop";
+
+	p_driver.begin_workflow();
+
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+
+	p_driver.set_step("create_scene_root");
+	SceneTreeDock *scene_dock = editor_node->get_focused_scene_tree_dock();
+	if (scene_dock == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable.");
+	}
+	Node2D *scene_root = memnew(Node2D);
+	scene_root->set_name("Dragged");
+	scene_dock->add_root_node(scene_root);
+	p_driver.flush_frames(20);
+
+	p_driver.set_step("add_destination_board");
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Board strip is unavailable.");
+	}
+	EditorBoard *destination_board = strip->add_board("Destination");
+	if (destination_board == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Adding a second board failed.");
+	}
+	// Boards are re-resolved by id after every frame advance: activation, overview
+	// layout and the drop itself all mutate the board list, so a raw pointer held
+	// across the gesture could outlive its referent.
+	const ObjectID destination_board_id = destination_board->get_instance_id();
+	p_driver.flush_frames(20);
+
+	EditorSceneWorkspace *source_workspace = strip->get_active_workspace();
+	EditorSceneWorkspace *destination_workspace = destination_board->get_workspace();
+	if (source_workspace == nullptr || destination_workspace == nullptr || source_workspace == destination_workspace) {
+		return _failure_with_message(p_driver, result.workflow, "The two boards did not resolve to distinct workspaces.");
+	}
+	if (strip->get_active_index() != 0 || !destination_board->is_dormant()) {
+		return _failure_with_message(p_driver, result.workflow, "The destination board is not the dormant, non-active board.");
+	}
+
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int scene_index = editor_data.get_edited_scene();
+	const int source_leaf_id = source_workspace->get_focused_leaf_id();
+	const int destination_leaf_id = destination_workspace->get_focused_leaf_id();
+	if (scene_index < 0 || editor_data.get_scene_tile(scene_index) != source_leaf_id) {
+		return _failure_with_message(p_driver, result.workflow, "The dragged scene does not start on the active board's pane.");
+	}
+
+	// A pane with no content hides its chrome host, and with it the rosette
+	// overlay, so the destination board gets a scene of its own: the drop surface
+	// under test only exists on a pane that is actually showing something.
+	p_driver.set_step("seed_destination_board");
+	strip->set_active_board(1);
+	p_driver.flush_frames(30);
+	if (strip->get_active_index() != 1) {
+		return _failure_with_message(p_driver, result.workflow, "The destination board did not activate for seeding.");
+	}
+	if (editor_node->new_scene() < 0) {
+		return _failure_with_message(p_driver, result.workflow, "Creating the destination board's own scene failed.");
+	}
+	scene_dock = editor_node->get_focused_scene_tree_dock();
+	if (scene_dock == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable on the destination board.");
+	}
+	Node2D *destination_root = memnew(Node2D);
+	destination_root->set_name("Resident");
+	scene_dock->add_root_node(destination_root);
+	p_driver.flush_frames(20);
+
+	strip->set_active_board(0);
+	p_driver.flush_frames(30);
+	EditorBoard *seeded_destination_board = ObjectDB::get_instance<EditorBoard>(destination_board_id);
+	if (strip->get_active_index() != 0 || seeded_destination_board == nullptr || !seeded_destination_board->is_dormant()) {
+		return _failure_with_message(p_driver, result.workflow, "The destination board is not the dormant, non-active board after seeding.");
+	}
+	if (editor_data.get_scene_tile(scene_index) != source_leaf_id) {
+		return _failure_with_message(p_driver, result.workflow, "Seeding the destination board moved the dragged scene.");
+	}
+
+	p_driver.set_step("enter_overview");
+	strip->set_overview(true);
+	p_driver.flush_frames(30);
+	Dictionary settled_condition;
+	settled_condition["type"] = "board_transition_settled";
+	if (!p_driver.require_ok(p_driver.wait_for(settled_condition, 10000), "enter_overview")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	if (!strip->is_overview_active()) {
+		return _failure_with_message(p_driver, result.workflow, "The board overview did not come up.");
+	}
+
+	p_driver.set_step("drop_pane_on_dormant_board_tile_body");
+	// Re-resolve every participant after the overview relayout rather than reusing
+	// pointers captured before it.
+	strip = EditorNode::get_board_strip();
+	EditorBoard *live_destination_board = ObjectDB::get_instance<EditorBoard>(destination_board_id);
+	if (strip == nullptr || live_destination_board == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The board strip or destination board did not survive the overview transition.");
+	}
+	source_workspace = strip->get_active_workspace();
+	destination_workspace = live_destination_board->get_workspace();
+	if (source_workspace == nullptr || destination_workspace == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "A board workspace did not survive the overview transition.");
+	}
+	WorkspaceLeafNode *source_leaf = source_workspace->get_leaf_by_id(source_leaf_id);
+	WorkspaceLeafNode *destination_leaf = destination_workspace->get_leaf_by_id(destination_leaf_id);
+	WorkspacePane *source_pane = source_leaf != nullptr ? source_leaf->get_workspace_pane() : nullptr;
+	WorkspacePane *destination_pane = destination_leaf != nullptr ? destination_leaf->get_workspace_pane() : nullptr;
+	if (source_pane == nullptr || destination_pane == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve the source pane and the dormant board's destination pane.");
+	}
+	const int destination_tab_count_before = destination_pane->get_tab_count();
+	TabBar *source_tab_strip = source_pane->get_tab_strip();
+	const int source_tab_index = source_pane->find_scene_tab_index(scene_index);
+	if (source_tab_strip == nullptr || source_tab_index < 0) {
+		return _failure_with_message(p_driver, result.workflow, "The dragged scene has no tab in the source pane's strip.");
+	}
+
+	const Vector2 grab_point = source_tab_strip->get_global_transform().xform(source_tab_strip->get_tab_rect(source_tab_index).get_center());
+	const Size2 destination_size = destination_leaf->get_size();
+	if (destination_size.x < 4 || destination_size.y < 4) {
+		return _failure_with_message(p_driver, result.workflow, "The dormant board's pane has no usable on-screen area in the overview.");
+	}
+	// The tile body's center is the rosette's center region, which moves the tab
+	// into the destination pane instead of splitting it.
+	const Vector2 drop_point = destination_leaf->get_global_transform().xform(destination_size * 0.5f);
+
+	Viewport *viewport = editor_node->get_viewport();
+	if (viewport == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "No viewport is available for pointer input.");
+	}
+
+	PackedStringArray pointer_events;
+	const EditorAutomationInputModifiers modifiers;
+	if (!EditorAutomationInput::begin_mouse_gesture(viewport, grab_point, MouseButton::LEFT, modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not press the pointer on the source tab.");
+	}
+	if (!EditorAutomationInput::move_mouse_gesture(viewport, drop_point, Vector<Vector2>(), modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not drag the pointer onto the dormant board's tile body.");
+	}
+	Dictionary drag_diagnostics;
+	drag_diagnostics["dragging_after_move"] = viewport->gui_is_dragging();
+	drag_diagnostics["drag_data_after_move"] = viewport->gui_get_drag_data();
+	drag_diagnostics["viewport_mouse_position"] = viewport->get_mouse_position();
+	drag_diagnostics["destination_leaf_global_rect"] = destination_leaf->get_global_rect();
+	if (!viewport->gui_is_dragging()) {
+		return _failure_with_message(p_driver, result.workflow, "Dragging the tab did not start a workspace tab drag.");
+	}
+	// The rosette overlay arms from its internal-process tick, so the frames have
+	// to run before the release, followed by one more motion inside the tile.
+	p_driver.flush_frames(5);
+	if (!EditorAutomationInput::move_mouse_gesture(viewport, drop_point + Vector2(2, 2), Vector<Vector2>(), modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not settle the pointer inside the dormant board's tile body.");
+	}
+	p_driver.flush_frames(2);
+	drag_diagnostics["dragging_before_release"] = viewport->gui_is_dragging();
+	drag_diagnostics["viewport_mouse_position_before_release"] = viewport->get_mouse_position();
+	EditorTileDropOverlay *destination_overlay = destination_pane->get_drop_overlay();
+	if (destination_overlay != nullptr) {
+		// The rosette only becomes a drop target once it has armed, so its state is
+		// recorded: a drop that lands nowhere is otherwise indistinguishable from a
+		// drop the destination refused.
+		drag_diagnostics["overlay_visible"] = destination_overlay->is_visible_in_tree();
+		drag_diagnostics["overlay_rect"] = destination_overlay->get_global_rect();
+		drag_diagnostics["overlay_armed"] = destination_overlay->get_mouse_filter() == Control::MOUSE_FILTER_STOP;
+	}
+	if (!EditorAutomationInput::end_mouse_gesture(viewport, drop_point + Vector2(2, 2), modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not release the pointer over the dormant board's tile body.");
+	}
+	drag_diagnostics["dragging_after_release"] = viewport->gui_is_dragging();
+	p_driver.flush_frames(30);
+	if (!p_driver.wait_workspace_settled(10000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after the cross-board drop.");
+	}
+
+	p_driver.set_step("verify_pane_moved_to_dormant_board");
+	const int landed_tile_id = editor_data.get_scene_tile(scene_index);
+	WorkspacePane *landed_pane = destination_workspace->get_leaf_by_id(destination_leaf_id) != nullptr
+			? destination_workspace->get_leaf_by_id(destination_leaf_id)->get_workspace_pane()
+			: nullptr;
+	const int destination_tab_count_after = landed_pane != nullptr ? landed_pane->get_tab_count() : -1;
+	if (landed_tile_id != destination_leaf_id || destination_tab_count_after != destination_tab_count_before + 1) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Dropping the pane on a non-active board's tile body did not move it.";
+		Dictionary details = p_driver.make_failure_details("verify_pane_moved_to_dormant_board");
+		details["source_leaf_id"] = source_leaf_id;
+		details["destination_leaf_id"] = destination_leaf_id;
+		details["landed_tile_id"] = landed_tile_id;
+		details["destination_tab_count_before"] = destination_tab_count_before;
+		details["destination_tab_count_after"] = destination_tab_count_after;
+		details["grab_point"] = grab_point;
+		details["drop_point"] = drop_point;
+		details["pointer_events"] = pointer_events;
+		details["drag_diagnostics"] = drag_diagnostics;
+		details["editor_log"] = p_driver.read_editor_log();
+		fail.details = details;
+		return fail;
+	}
+
+	// The null-target-leaf failure this workflow guards against is reported through
+	// the error handler rather than by returning, so the log has to be clean too.
+	if (!p_driver.assert_no_new_errors_since_step()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "A pane dropped on a non-active board's tile body moved to that board.";
+	Dictionary details;
+	details["source_leaf_id"] = source_leaf_id;
+	details["destination_leaf_id"] = destination_leaf_id;
+	details["pointer_events"] = pointer_events;
+	details["workspace"] = p_driver.read_editor_state().get("workspace", Dictionary());
+	result.details = details;
+	return result;
+#else
+	return _failure_with_message(p_driver, result.workflow, "Cross-board tile body drop workflow requires an editor (TOOLS_ENABLED) build.");
 #endif
 }
 
