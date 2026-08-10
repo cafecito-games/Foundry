@@ -65,17 +65,6 @@ class EditorSideRailButton : public Button {
 		Color icon_hover_pressed_color;
 		Color icon_focus_color;
 		Color icon_disabled_color;
-		bool has_font_hover_color = false;
-		bool has_font_pressed_color = false;
-		bool has_font_hover_pressed_color = false;
-		bool has_font_focus_color = false;
-		bool has_font_disabled_color = false;
-		bool has_icon_normal_color = false;
-		bool has_icon_hover_color = false;
-		bool has_icon_pressed_color = false;
-		bool has_icon_hover_pressed_color = false;
-		bool has_icon_focus_color = false;
-		bool has_icon_disabled_color = false;
 		int icon_label_separation = 0;
 		bool align_to_largest_stylebox = false;
 		real_t style_margin_left = 0;
@@ -102,6 +91,7 @@ class EditorSideRailButton : public Button {
 	Size2 _compute_minimum_size(bool p_with_label) const;
 	Color _get_current_font_color() const;
 	Color _get_current_icon_color() const;
+	void _rail_icon_changed();
 
 protected:
 	void _notification(int p_what);
@@ -114,8 +104,11 @@ public:
 		Rect2 icon_rect;
 		Rect2 label_rect;
 		Transform2D content_transform;
+		// Draw positions in content_transform space (local when identity).
 		Point2 label_strip_baseline;
 		Point2 icon_strip_position;
+		Color font_color;
+		Color icon_color;
 		real_t icon_label_separation = 0;
 		bool has_icon = false;
 		bool has_label = false;

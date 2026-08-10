@@ -49,36 +49,31 @@ Rect2 strip_rect_to_local(const Point2 &p_origin, const Rect2 &p_strip_rect) {
 void EditorSideRailButton::_update_theme_cache() {
 	theme_cache.font = get_theme_font(SceneStringName(font));
 	theme_cache.font_size = get_theme_font_size(SceneStringName(font_size));
+	// Resolve colors through the theme cascade (default theme always defines
+	// Button font/icon colors). Match Button's BIND_THEME_ITEM caching rather
+	// than branching on has_theme_color — those branches are unreachable while
+	// ThemeDB's default theme is installed.
 	theme_cache.font_color = get_theme_color(SceneStringName(font_color));
-	theme_cache.has_font_hover_color = has_theme_color(SNAME("font_hover_color"));
-	theme_cache.font_hover_color = theme_cache.has_font_hover_color ? get_theme_color(SNAME("font_hover_color")) : theme_cache.font_color;
-	theme_cache.has_font_pressed_color = has_theme_color(SNAME("font_pressed_color"));
-	theme_cache.font_pressed_color = theme_cache.has_font_pressed_color ? get_theme_color(SNAME("font_pressed_color")) : theme_cache.font_color;
-	theme_cache.has_font_hover_pressed_color = has_theme_color(SNAME("font_hover_pressed_color"));
-	theme_cache.font_hover_pressed_color = theme_cache.has_font_hover_pressed_color ? get_theme_color(SNAME("font_hover_pressed_color")) : theme_cache.font_color;
-	theme_cache.has_font_focus_color = has_theme_color(SNAME("font_focus_color"));
-	theme_cache.font_focus_color = theme_cache.has_font_focus_color ? get_theme_color(SNAME("font_focus_color")) : theme_cache.font_color;
-	theme_cache.has_font_disabled_color = has_theme_color(SNAME("font_disabled_color"));
-	theme_cache.font_disabled_color = theme_cache.has_font_disabled_color ? get_theme_color(SNAME("font_disabled_color")) : theme_cache.font_color;
+	theme_cache.font_hover_color = get_theme_color(SNAME("font_hover_color"));
+	theme_cache.font_pressed_color = get_theme_color(SNAME("font_pressed_color"));
+	theme_cache.font_hover_pressed_color = get_theme_color(SNAME("font_hover_pressed_color"));
+	theme_cache.font_focus_color = get_theme_color(SNAME("font_focus_color"));
+	theme_cache.font_disabled_color = get_theme_color(SNAME("font_disabled_color"));
 
-	theme_cache.has_icon_normal_color = has_theme_color(SNAME("icon_normal_color"));
-	theme_cache.icon_normal_color = theme_cache.has_icon_normal_color ? get_theme_color(SNAME("icon_normal_color")) : Color(1, 1, 1, 1);
-	theme_cache.has_icon_hover_color = has_theme_color(SNAME("icon_hover_color"));
-	theme_cache.icon_hover_color = theme_cache.has_icon_hover_color ? get_theme_color(SNAME("icon_hover_color")) : Color(1, 1, 1, 1);
-	theme_cache.has_icon_pressed_color = has_theme_color(SNAME("icon_pressed_color"));
-	theme_cache.icon_pressed_color = theme_cache.has_icon_pressed_color ? get_theme_color(SNAME("icon_pressed_color")) : Color(1, 1, 1, 1);
-	theme_cache.has_icon_hover_pressed_color = has_theme_color(SNAME("icon_hover_pressed_color"));
-	theme_cache.icon_hover_pressed_color = theme_cache.has_icon_hover_pressed_color ? get_theme_color(SNAME("icon_hover_pressed_color")) : Color(1, 1, 1, 1);
-	theme_cache.has_icon_focus_color = has_theme_color(SNAME("icon_focus_color"));
-	theme_cache.icon_focus_color = theme_cache.has_icon_focus_color ? get_theme_color(SNAME("icon_focus_color")) : Color(1, 1, 1, 1);
-	theme_cache.has_icon_disabled_color = has_theme_color(SNAME("icon_disabled_color"));
-	theme_cache.icon_disabled_color = theme_cache.has_icon_disabled_color ? get_theme_color(SNAME("icon_disabled_color")) : Color(1, 1, 1, 1);
+	theme_cache.icon_normal_color = get_theme_color(SNAME("icon_normal_color"));
+	theme_cache.icon_hover_color = get_theme_color(SNAME("icon_hover_color"));
+	theme_cache.icon_pressed_color = get_theme_color(SNAME("icon_pressed_color"));
+	theme_cache.icon_hover_pressed_color = get_theme_color(SNAME("icon_hover_pressed_color"));
+	theme_cache.icon_focus_color = get_theme_color(SNAME("icon_focus_color"));
+	theme_cache.icon_disabled_color = get_theme_color(SNAME("icon_disabled_color"));
 
 	theme_cache.icon_label_separation = get_theme_constant(SNAME("h_separation"));
 	theme_cache.align_to_largest_stylebox = get_theme_constant(SNAME("align_to_largest_stylebox"));
 
 	// Mirror Button's align_to_largest_stylebox behaviour so active/hovered
 	// toggles keep the same content margins as their neighbours.
+	// RTL *_mirrored styleboxes are intentionally not consulted: the side rail
+	// is LTR in production and margins in the editor theme are symmetric.
 	theme_cache.style_margin_left = 0;
 	theme_cache.style_margin_top = 0;
 	theme_cache.style_margin_right = 0;
@@ -210,6 +205,8 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 			Point2(margin_left, margin_top),
 			Size2(MAX(0.0, size.width - margin_left - margin_right), MAX(0.0, size.height - margin_top - margin_bottom)));
 	geometry.icon_label_separation = theme_cache.icon_label_separation;
+	geometry.font_color = _get_current_font_color();
+	geometry.icon_color = _get_current_icon_color();
 
 	const StripMetrics metrics = _compute_strip_metrics(label_visible);
 	geometry.has_icon = metrics.has_icon;
@@ -227,6 +224,7 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 							Math::round(geometry.content_rect.position.x + icon_offset_x),
 							Math::round(geometry.content_rect.position.y + icon_offset_y)),
 					metrics.icon_size);
+			// Identity content_transform: strip-space positions equal local.
 			geometry.icon_strip_position = geometry.icon_rect.position;
 		}
 		geometry.content_transform = Transform2D();
@@ -251,7 +249,9 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 	geometry.content_transform = Transform2D(-Math::PI / 2.0, strip_origin);
 
 	const real_t label_strip_y = Math::floor((metrics.strip_height - metrics.font_height) / 2.0);
-	geometry.label_strip_baseline = Point2(0, label_strip_y + metrics.ascent);
+	// Round the baseline so strip-y (local x after the quarter-turn) lands on
+	// a whole pixel; label_rect stays derived from the floored strip y.
+	geometry.label_strip_baseline = Point2(0, Math::round(label_strip_y + metrics.ascent));
 	const Rect2 label_strip_rect(Point2(0, label_strip_y), Size2(metrics.text_width, metrics.font_height));
 	geometry.label_rect = strip_rect_to_local(strip_origin, label_strip_rect);
 
@@ -277,35 +277,43 @@ void EditorSideRailButton::_notification(int p_what) {
 
 		case NOTIFICATION_DRAW: {
 			const ComposedGeometry geometry = get_composed_geometry();
-			const Color font_color = _get_current_font_color();
-			const Color icon_color = _get_current_icon_color();
-
-			if (!geometry.has_label) {
-				if (geometry.has_icon) {
-					draw_texture(rail_icon, geometry.icon_rect.position, icon_color);
-				}
+			if (!geometry.has_icon && !geometry.has_label) {
 				break;
 			}
 
 			// NOTIFICATION_DRAW is already emitted in the control's local
 			// space (the engine applies get_transform() when compositing
 			// this item), so the content transform is expressed purely in
-			// local space and reset to identity when done.
+			// local space and reset to identity when done. Icon-only mode
+			// uses an identity transform so strip positions equal local.
 			draw_set_transform_matrix(geometry.content_transform);
-			draw_string(theme_cache.font, geometry.label_strip_baseline, rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size, font_color);
+			if (geometry.has_label) {
+				draw_string(theme_cache.font, geometry.label_strip_baseline, rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size, geometry.font_color);
+			}
 			if (geometry.has_icon) {
-				draw_texture(rail_icon, geometry.icon_strip_position, icon_color);
+				draw_texture(rail_icon, geometry.icon_strip_position, geometry.icon_color);
 			}
 			draw_set_transform_matrix(Transform2D());
 		} break;
 	}
 }
 
+void EditorSideRailButton::_rail_icon_changed() {
+	update_minimum_size();
+	queue_redraw();
+}
+
 void EditorSideRailButton::set_rail_icon(const Ref<Texture2D> &p_icon) {
 	if (rail_icon == p_icon) {
 		return;
 	}
+	if (rail_icon.is_valid()) {
+		rail_icon->disconnect_changed(callable_mp(this, &EditorSideRailButton::_rail_icon_changed));
+	}
 	rail_icon = p_icon;
+	if (rail_icon.is_valid()) {
+		rail_icon->connect_changed(callable_mp(this, &EditorSideRailButton::_rail_icon_changed));
+	}
 	update_minimum_size();
 	queue_redraw();
 }
