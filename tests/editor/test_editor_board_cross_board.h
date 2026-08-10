@@ -339,6 +339,11 @@ TEST_CASE("[Editor][Boards] handle_tab_strip_drop moves a scene tab across board
 // real pointer drag. This drives a real editor subprocess through the workflow
 // harness so the whole path -- tab drag, drop overlay, EditorNode resolution --
 // runs as a user's drag does.
+//
+// #2061 extends it to the state a new board actually starts in: both drops land
+// on a pane holding nothing at all, first a dormant board and then the active
+// board the first leg emptied. Neither destination is ever seeded, so the drag
+// only has a drop target if an empty pane keeps a sized, visible overlay.
 TEST_CASE("[Editor][Boards] Cross-board tile body drop workflow subprocess") {
 	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
 		MESSAGE("Requires a GUI display. Re-run with DISPLAY set so the editor subprocess starts.");
