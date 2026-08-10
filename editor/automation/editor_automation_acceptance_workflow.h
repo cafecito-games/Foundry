@@ -62,6 +62,9 @@ public:
 	// Opens a 3D scene in a board tile and switches boards, which demotes that tile out
 	// of focus and makes the editor build a secondary 3D viewport for its live preview.
 	static Result run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver);
+	// Splits the active board so a 3D tile is demoted next to a focused sibling, then
+	// drives real pointer and key input at both the passive 3D and passive 2D previews.
+	static Result run_passive_preview_input_policy(EditorWorkflowTestDriver &p_driver);
 	static Result run_projectless_shell_smoke(EditorWorkflowTestDriver &p_driver);
 	static Result run_projectless_shell_dismiss_quits(EditorWorkflowTestDriver &p_driver);
 	static Result run_projectless_shell_open_in_process(EditorWorkflowTestDriver &p_driver);

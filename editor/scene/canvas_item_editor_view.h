@@ -52,6 +52,16 @@ class CanvasItemEditorView : public Control {
 
 	friend class CanvasItemEditorViewport;
 
+public:
+	// The focused editor is the single interactive 2D surface. A passive preview renders
+	// the same scene for a non-focused tile but never takes focus, handles editor input,
+	// mutates view state, or accepts a drop. The role is fixed at build_ui() time.
+	enum class ViewRole {
+		FOCUSED_EDITOR,
+		PASSIVE_PREVIEW,
+	};
+
+private:
 	CanvasItemEditor *editor = nullptr;
 	EditorSceneContext *scene_context = nullptr;
 	CanvasItemEditorViewState &view_state;
@@ -65,7 +75,7 @@ class CanvasItemEditorView : public Control {
 	Button *button_center_view = nullptr;
 	EditorZoomWidget *zoom_widget = nullptr;
 	Ref<ViewPanner> panner;
-	bool plugin_forwarding_target = false;
+	ViewRole view_role = ViewRole::FOCUSED_EDITOR;
 
 	void _pan_callback(Vector2 p_scroll_vec, Ref<InputEvent> p_event);
 	void _zoom_callback(float p_zoom_factor, Vector2 p_origin, Ref<InputEvent> p_event);
@@ -121,7 +131,7 @@ public:
 	CanvasItemEditorView(CanvasItemEditor *p_editor, CanvasItemEditorViewState &p_view_state);
 	~CanvasItemEditorView();
 
-	void build_ui(Control *p_parent, bool p_register_primary_container = true);
+	void build_ui(Control *p_parent, ViewRole p_role = ViewRole::FOCUSED_EDITOR);
 	void bind_context(EditorSceneContext *p_context);
 	void push_viewport_state();
 
@@ -154,7 +164,9 @@ public:
 	void active_scene_context_changed();
 	void set_cursor_shape_override(Control::CursorShape p_shape = Control::CURSOR_ARROW);
 	Control::CursorShape get_cursor_shape(const Point2 &p_pos) const override;
-	bool is_plugin_forwarding_target() const { return plugin_forwarding_target; }
+	ViewRole get_view_role() const { return view_role; }
+	bool is_passive_preview() const { return view_role == ViewRole::PASSIVE_PREVIEW; }
+	bool is_plugin_forwarding_target() const { return view_role == ViewRole::FOCUSED_EDITOR; }
 
 	// Test-only counter incremented by update_viewport(); used by unit tests.
 	uint64_t test_update_viewport_invocations = 0;

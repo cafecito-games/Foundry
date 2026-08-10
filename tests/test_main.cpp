@@ -102,6 +102,7 @@
 #include "tests/editor/test_editor_main_screen_layout.h"
 #include "tests/editor/test_editor_namespaced_class_display.h"
 #include "tests/editor/test_editor_new_script_command.h"
+#include "tests/editor/test_editor_passive_scene_preview.h"
 #include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
 #include "tests/editor/test_editor_scene_context.h"
 #include "tests/editor/test_editor_tooling_host.h"

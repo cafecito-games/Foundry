@@ -140,16 +140,19 @@ void CanvasItemEditorView::push_viewport_state() {
 	}
 }
 
-void CanvasItemEditorView::build_ui(Control *p_parent, bool p_register_primary_container) {
+void CanvasItemEditorView::build_ui(Control *p_parent, ViewRole p_role) {
 	ERR_FAIL_NULL(p_parent);
 
-	plugin_forwarding_target = p_register_primary_container;
+	view_role = p_role;
+	const bool passive = p_role == ViewRole::PASSIVE_PREVIEW;
 
 	ERR_FAIL_NULL(editor);
 
 	viewport_scrollable = memnew(Control);
 	p_parent->add_child(viewport_scrollable);
-	viewport_scrollable->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	// A passive preview lets pointer events fall through to the owning ScenePaneTile,
+	// which promotes the tile instead of editing through the preview.
+	viewport_scrollable->set_mouse_filter(passive ? Control::MOUSE_FILTER_IGNORE : Control::MOUSE_FILTER_PASS);
 	viewport_scrollable->set_clip_contents(true);
 	viewport_scrollable->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	viewport_scrollable->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -159,47 +162,61 @@ void CanvasItemEditorView::build_ui(Control *p_parent, bool p_register_primary_c
 	viewport_scrollable->add_child(scene_tree);
 	scene_tree->set_stretch(true);
 	scene_tree->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	if (p_register_primary_container && EditorNode::get_singleton()) {
+	if (passive) {
+		scene_tree->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	} else if (EditorNode::get_singleton()) {
 		EditorNode::get_singleton()->set_scene_viewport_container(scene_tree);
 	}
 
+	// controls_vb survives in both roles because update_scrollbars() positions it on
+	// every layout pass, but a passive preview leaves it empty: the center-view, zoom,
+	// and translation-preview controls are interactive editor chrome.
 	controls_vb = memnew(VBoxContainer);
 	controls_vb->set_begin(Point2(5, 5));
 
-	HBoxContainer *controls_hb = memnew(HBoxContainer);
-	controls_vb->add_child(controls_hb);
+	if (!passive) {
+		HBoxContainer *controls_hb = memnew(HBoxContainer);
+		controls_vb->add_child(controls_hb);
 
-	button_center_view = memnew(Button);
-	controls_hb->add_child(button_center_view);
-	button_center_view->set_flat(true);
-	button_center_view->set_tooltip_text(TTR("Center View"));
-	button_center_view->connect(SceneStringName(pressed), callable_mp(editor, &CanvasItemEditor::_popup_callback).bind(CanvasItemEditor::VIEW_CENTER_TO_SELECTION));
+		button_center_view = memnew(Button);
+		controls_hb->add_child(button_center_view);
+		button_center_view->set_flat(true);
+		button_center_view->set_tooltip_text(TTR("Center View"));
+		button_center_view->connect(SceneStringName(pressed), callable_mp(editor, &CanvasItemEditor::_popup_callback).bind(CanvasItemEditor::VIEW_CENTER_TO_SELECTION));
 
-	zoom_widget = memnew(EditorZoomWidget);
-	zoom_widget->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT, Control::PRESET_MODE_MINSIZE, 2 * EDSCALE);
-	zoom_widget->set_shortcut_context(editor);
-	controls_hb->add_child(zoom_widget);
-	zoom_widget->connect("zoom_changed", callable_mp(this, &CanvasItemEditorView::_update_zoom));
+		zoom_widget = memnew(EditorZoomWidget);
+		zoom_widget->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT, Control::PRESET_MODE_MINSIZE, 2 * EDSCALE);
+		zoom_widget->set_shortcut_context(editor);
+		controls_hb->add_child(zoom_widget);
+		zoom_widget->connect("zoom_changed", callable_mp(this, &CanvasItemEditorView::_update_zoom));
 
-	EditorTranslationPreviewButton *translation_preview_button = memnew(EditorTranslationPreviewButton);
-	translation_preview_button->set_flat(true);
-	translation_preview_button->add_theme_constant_override("outline_size", Math::ceil(2 * EDSCALE));
-	translation_preview_button->add_theme_color_override("font_outline_color", Color(0, 0, 0));
-	translation_preview_button->add_theme_color_override(SceneStringName(font_color), Color(1, 1, 1));
-	controls_hb->add_child(translation_preview_button);
+		EditorTranslationPreviewButton *translation_preview_button = memnew(EditorTranslationPreviewButton);
+		translation_preview_button->set_flat(true);
+		translation_preview_button->add_theme_constant_override("outline_size", Math::ceil(2 * EDSCALE));
+		translation_preview_button->add_theme_color_override("font_outline_color", Color(0, 0, 0));
+		translation_preview_button->add_theme_color_override(SceneStringName(font_color), Color(1, 1, 1));
+		controls_hb->add_child(translation_preview_button);
 
-	panner.instantiate();
-	panner->set_callbacks(callable_mp(this, &CanvasItemEditorView::_pan_callback), callable_mp(this, &CanvasItemEditorView::_zoom_callback));
+		panner.instantiate();
+		panner->set_callbacks(callable_mp(this, &CanvasItemEditorView::_pan_callback), callable_mp(this, &CanvasItemEditorView::_zoom_callback));
+	}
 
 	viewport = memnew(CanvasItemEditorViewport(editor, this));
 	viewport_scrollable->add_child(viewport);
-	viewport->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	viewport->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	viewport->set_clip_contents(true);
-	viewport->set_focus_mode(Control::FOCUS_ALL);
+	// The draw connection stays in both roles: it renders the canvas, grid, guides,
+	// selection outlines, and gizmos that make the preview useful.
 	viewport->connect(SceneStringName(draw), callable_mp(this, &CanvasItemEditorView::_draw_viewport));
-	viewport->connect(SceneStringName(gui_input), callable_mp(this, &CanvasItemEditorView::_gui_input_viewport));
-	viewport->connect(SceneStringName(focus_exited), callable_mp(panner.ptr(), &ViewPanner::release_pan_key));
+	if (passive) {
+		viewport->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		viewport->set_focus_mode(Control::FOCUS_NONE);
+	} else {
+		viewport->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+		viewport->set_focus_mode(Control::FOCUS_ALL);
+		viewport->connect(SceneStringName(gui_input), callable_mp(this, &CanvasItemEditorView::_gui_input_viewport));
+		viewport->connect(SceneStringName(focus_exited), callable_mp(panner.ptr(), &ViewPanner::release_pan_key));
+	}
 
 	h_scroll = memnew(HScrollBar);
 	viewport->add_child(h_scroll);
@@ -210,6 +227,13 @@ void CanvasItemEditorView::build_ui(Control *p_parent, bool p_register_primary_c
 	viewport->add_child(v_scroll);
 	v_scroll->connect(SceneStringName(value_changed), callable_mp(this, &CanvasItemEditorView::_update_scroll));
 	v_scroll->hide();
+
+	if (passive) {
+		// Scrollbars still show the scrollable extent, but dragging one would move a
+		// view a passive preview is not allowed to change.
+		h_scroll->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+		v_scroll->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	}
 
 	viewport->add_child(controls_vb);
 }
@@ -1784,6 +1808,13 @@ bool CanvasItemEditorView::_gui_input_hover(const Ref<InputEvent> &p_event) {
 }
 
 void CanvasItemEditorView::_gui_input_viewport(const Ref<InputEvent> &p_event) {
+	// A passive preview is not an editor: build_ui() never connects this handler and
+	// never lets its viewport take focus or the mouse. This is defense in depth against
+	// a future caller re-introducing a path into editor input.
+	if (is_passive_preview()) {
+		return;
+	}
+
 	bool accepted = false;
 
 	Ref<InputEventMouseButton> mb = p_event;
@@ -1793,7 +1824,7 @@ void CanvasItemEditorView::_gui_input_viewport(const Ref<InputEvent> &p_event) {
 		accepted = true;
 		if (_gui_input_rulers_and_guides(p_event)) {
 			// print_line("Rulers and guides");
-		} else if (plugin_forwarding_target && EditorNode::get_singleton()->get_editor_plugins_over()->forward_gui_input(p_event)) {
+		} else if (is_plugin_forwarding_target() && EditorNode::get_singleton()->get_editor_plugins_over()->forward_gui_input(p_event)) {
 			// print_line("Plugin");
 		} else if (_gui_input_open_scene_on_double_click(p_event)) {
 			// print_line("Open scene on double click");
@@ -3288,7 +3319,7 @@ void CanvasItemEditorView::_draw_viewport() {
 	RID ci = viewport->get_canvas_item();
 	RenderingServer::get_singleton()->canvas_item_add_set_transform(ci, Transform2D());
 
-	if (plugin_forwarding_target) {
+	if (is_plugin_forwarding_target()) {
 		EditorNode::get_singleton()->get_editor_plugins_over()->forward_canvas_draw_over_viewport(viewport);
 		EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_canvas_force_draw_over_viewport(viewport);
 	}
@@ -3452,6 +3483,10 @@ void CanvasItemEditorView::update_cursor() {
 
 void CanvasItemEditorView::update_panner_from_settings() {
 	ERR_FAIL_NULL(editor);
+	if (is_passive_preview()) {
+		// A passive preview has no panner: panning is editor input.
+		return;
+	}
 	editor->simple_panning = EDITOR_GET("editors/panning/simple_panning");
 	panner->setup((ViewPanner::ControlScheme)EDITOR_GET("editors/panning/2d_editor_panning_scheme").operator int(), ED_GET_SHORTCUT("canvas_item_editor/pan_view"), editor->simple_panning);
 	panner->set_scroll_speed(EDITOR_GET("editors/panning/2d_editor_pan_speed"));
