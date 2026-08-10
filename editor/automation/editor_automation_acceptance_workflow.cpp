@@ -1618,6 +1618,11 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	const Vector2 grab_point = source_tab_strip->get_global_transform().xform(source_tab_strip->get_tab_rect(source_tab_index).get_center());
 	const Vector2 drop_point = destination_leaf->get_global_transform().xform(destination_size * 0.5f);
+	// Aimed well past the center inset (30% of the tile) toward the right edge, so a
+	// correct region computation resolves to DROP_RIGHT rather than the DROP_CENTER
+	// value hovered_region already defaults to before it is ever computed.
+	const Point2 aim_local_point(destination_size.x * 0.9f, destination_size.y * 0.5f);
+	const Vector2 aim_point = destination_leaf->get_global_transform().xform(aim_local_point);
 
 	Viewport *viewport = editor_node->get_viewport();
 	if (viewport == nullptr) {
@@ -1632,8 +1637,9 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	// One uninterrupted gesture: no frames are flushed and no second motion is
 	// issued between arriving inside the destination tile and inspecting the
 	// affordance. Anything that arms only on a later tick or a later motion fails
-	// here, which is the defect under test.
-	if (!EditorAutomationInput::move_mouse_gesture(viewport, drop_point, Vector<Vector2>(), modifiers, pointer_events)) {
+	// here, which is the defect under test. The motion lands off-center so the
+	// resulting region is only correct if region computation actually ran.
+	if (!EditorAutomationInput::move_mouse_gesture(viewport, aim_point, Vector<Vector2>(), modifiers, pointer_events)) {
 		return _failure_with_message(p_driver, result.workflow, "Could not drag the pointer into the neighboring tile.");
 	}
 	if (!viewport->gui_is_dragging()) {
@@ -1649,15 +1655,39 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	drag_diagnostics["overlay_aimed_region"] = int(aimed_region);
 	drag_diagnostics["overlay_visible"] = destination_overlay->is_visible_in_tree();
 	drag_diagnostics["overlay_rect"] = destination_overlay->get_global_rect();
+	drag_diagnostics["aim_point"] = aim_point;
 	drag_diagnostics["drop_point"] = drop_point;
 	drag_diagnostics["pointer_events"] = pointer_events;
-	if (!overlay_hit_testable || !overlay_painting || aimed_region != EditorSceneWorkspace::DROP_CENTER) {
+	if (!overlay_hit_testable || !overlay_painting || aimed_region != EditorSceneWorkspace::DROP_RIGHT) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
-		fail.message = "The drop overlay did not arm on the motion that carried the drag into the tile.";
+		fail.message = "The drop overlay did not arm and compute the aimed region on the motion that carried the drag into the tile.";
 		Dictionary details = p_driver.make_failure_details("drag_into_neighboring_tile_in_one_motion");
 		details["drag_diagnostics"] = drag_diagnostics;
+		details["editor_log"] = p_driver.read_editor_log();
+		fail.details = details;
+		EditorAutomationInput::end_mouse_gesture(viewport, aim_point, modifiers, pointer_events);
+		return fail;
+	}
+
+	p_driver.set_step("recenter_before_release");
+	// Recenters onto the pane's middle so the release below performs a plain tab
+	// move rather than the edge split DROP_RIGHT would otherwise trigger. This
+	// motion happens after arming and region computation are already proven above,
+	// so it does not reintroduce the "arms on a later motion" defect being guarded
+	// against.
+	if (!EditorAutomationInput::move_mouse_gesture(viewport, drop_point, Vector<Vector2>(), modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not move the pointer to the center of the neighboring tile.");
+	}
+	if (destination_overlay->get_hovered_region() != EditorSceneWorkspace::DROP_CENTER) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "The drop overlay did not recompute its region after the pointer moved to the tile's center.";
+		Dictionary details = p_driver.make_failure_details("recenter_before_release");
+		details["drag_diagnostics"] = drag_diagnostics;
+		details["recentered_region"] = int(destination_overlay->get_hovered_region());
 		details["editor_log"] = p_driver.read_editor_log();
 		fail.details = details;
 		EditorAutomationInput::end_mouse_gesture(viewport, drop_point, modifiers, pointer_events);
