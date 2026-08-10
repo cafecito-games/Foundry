@@ -58,6 +58,13 @@ TEST_CASE("[Editor][Boards] Passive scene previews reject editor input and promo
 		return;
 	}
 
+	// Point the optional gallery dump at scratch space. Under --headless the
+	// dummy renderer cannot capture, but requesting dumps must not trip
+	// assert_no_new_errors (regression for FOUNDRY_CAPTURE_DIR + headless).
+	const String capture_dir = TestUtils::get_temp_path(
+			"passive_preview_capture_" + String::num_uint64(OS::get_singleton()->get_ticks_usec()));
+	OS::get_singleton()->set_environment("FOUNDRY_CAPTURE_DIR", capture_dir);
+
 	List<String> arguments;
 	arguments.push_back("editor");
 	arguments.push_back("open");
@@ -69,6 +76,7 @@ TEST_CASE("[Editor][Boards] Passive scene previews reject editor input and promo
 
 	int exit_code = -1;
 	const String output = EditorWorkflowTestFixtures::workflow_run_subprocess(arguments, exit_code);
+	OS::get_singleton()->unset_environment("FOUNDRY_CAPTURE_DIR");
 	INFO("Subprocess output:\n", output);
 
 	const int marker = output.find("FOUNDRY_AUTOMATION_WORKFLOW");
@@ -92,6 +100,7 @@ TEST_CASE("[Editor][Boards] Passive scene previews reject editor input and promo
 	CHECK(String(payload.get("workflow", String())) == "passive_preview_input_policy");
 	CHECK_MESSAGE((bool)payload.get("ok", false), String(payload.get("message", String())));
 	CHECK(exit_code == 0);
+	CHECK_FALSE(output.contains("Parameter \"t\" is null"));
 }
 
 } // namespace TestEditorPassiveScenePreview

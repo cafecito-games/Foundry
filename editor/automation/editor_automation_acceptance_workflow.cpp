@@ -33,10 +33,14 @@
 #include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_input.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
+#include "editor/automation/editor_automation_screenshot.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
 #include "editor/debugger/debugger_editor_plugin.h"
+#include "editor/docks/editor_dock.h"
+#include "editor/docks/groups_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/docks/signals_dock.h"
 #include "editor/editor_board.h"
 #include "editor/editor_board_strip.h"
 #include "editor/editor_data.h"
@@ -46,9 +50,13 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
+#include "editor/editor_tile_dock_region.h"
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
+#include "editor/gui/editor_side_rail_strip.h"
+#include "editor/gui/progress_dialog.h"
+#include "editor/gui/side_rail_state.h"
 #include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/startup_dialog.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -63,6 +71,7 @@
 #include "editor/workspace/workspace_tab_type.h"
 
 #include "core/config/project_settings.h"
+#include "core/crypto/crypto_core.h"
 #include "core/input/input.h"
 #include "core/input/input_event.h"
 #include "core/input/shortcut.h"
@@ -75,10 +84,14 @@
 #include "scene/2d/node_2d.h"
 #include "scene/3d/node_3d.h"
 #include "scene/gui/dialogs.h"
+#include "scene/gui/split_container.h"
 #include "scene/gui/tab_bar.h"
+#include "scene/gui/tab_container.h"
 #include "scene/gui/tree.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
+#include "scene/main/window.h"
+#include "servers/display/display_server.h"
 
 namespace {
 
@@ -231,6 +244,275 @@ struct PassivePreviewSnapshot {
 				first_child_transform == p_other.first_child_transform;
 	}
 };
+
+// Captured chrome for a demoted tile so promotion can prove exact restoration.
+struct TileChromeSnapshot {
+	SideRailMode left_mode = SideRailMode::DOCKED;
+	SideRailMode right_mode = SideRailMode::DOCKED;
+	ObjectID left_drawer_id;
+	ObjectID right_drawer_id;
+	int right_tab_index = -1;
+	PackedInt32Array split_offsets;
+	bool left_rail_visible = true;
+	bool right_rail_visible = true;
+	bool left_column_visible = true;
+	bool right_column_visible = true;
+};
+
+// Optional proof-gallery dumps. Set FOUNDRY_CAPTURE_DIR to a writable directory
+// before running passive_preview_input_policy; unset leaves the workflow unchanged.
+// Failures are silent (no WARN/ERROR) so headless/dummy-renderer runs do not trip
+// assert_no_new_errors when capture is requested without a real GPU path.
+void _prepare_capture_frame(EditorWorkflowTestDriver &p_driver) {
+	if (ProgressDialog *progress = ProgressDialog::get_singleton()) {
+		// Layout-load progress can linger visually under llvmpipe and occlude the
+		// workspace; hide it so gallery shots show the tile chrome under test.
+		progress->hide();
+	}
+	p_driver.flush_frames(8);
+}
+
+void _maybe_capture_editor_png(EditorWorkflowTestDriver &p_driver, const String &p_filename) {
+	const String capture_dir = OS::get_singleton()->get_environment("FOUNDRY_CAPTURE_DIR").strip_edges();
+	if (capture_dir.is_empty() || p_filename.is_empty()) {
+		return;
+	}
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	if (display_server == nullptr || display_server->get_name() == StringName("headless") ||
+			OS::get_singleton()->get_current_rendering_method().to_lower() == "dummy") {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (screenshot_unsupported_renderer)\n", p_filename.utf8().get_data());
+		return;
+	}
+	const Error mkdir_err = DirAccess::make_dir_recursive_absolute(capture_dir);
+	if (mkdir_err != OK && mkdir_err != ERR_ALREADY_EXISTS) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP mkdir %s (%d)\n", capture_dir.utf8().get_data(), (int)mkdir_err);
+		return;
+	}
+
+	_prepare_capture_frame(p_driver);
+
+	EditorAutomationScreenshotOptions options;
+	options.enabled = true;
+	options.force_draw = true;
+	options.max_bytes = 8 * 1024 * 1024;
+	const EditorAutomationScreenshotAttachment attachment =
+			EditorAutomationScreenshot::capture_on_demand(options, false, Rect2i());
+	if (attachment.status != "available" || attachment.data.is_empty()) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (%s)\n", p_filename.utf8().get_data(), attachment.reason.utf8().get_data());
+		return;
+	}
+
+	const CharString encoded = attachment.data.utf8();
+	Vector<uint8_t> png_bytes;
+	png_bytes.resize(encoded.length());
+	size_t decoded_len = 0;
+	const Error decode_err = CryptoCore::b64_decode(png_bytes.ptrw(), png_bytes.size(), &decoded_len,
+			(const uint8_t *)encoded.get_data(), encoded.length());
+	if (decode_err != OK || decoded_len == 0) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (decode)\n", p_filename.utf8().get_data());
+		return;
+	}
+	png_bytes.resize((int)decoded_len);
+
+	const String path = capture_dir.path_join(p_filename);
+	Error write_err = OK;
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE, &write_err);
+	if (file.is_null() || write_err != OK) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (write %d)\n", path.utf8().get_data(), (int)write_err);
+		return;
+	}
+	file->store_buffer(png_bytes);
+	OS::get_singleton()->print("FOUNDRY_CAPTURE %s\n", path.utf8().get_data());
+}
+
+void _capture_demoted_chrome_budget_pair(EditorWorkflowTestDriver &p_driver, ScenePaneTile *p_demoted_tile) {
+	if (p_demoted_tile == nullptr || OS::get_singleton()->get_environment("FOUNDRY_CAPTURE_DIR").strip_edges().is_empty()) {
+		return;
+	}
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	if (display_server == nullptr || display_server->get_name() == StringName("headless") ||
+			OS::get_singleton()->get_current_rendering_method().to_lower() == "dummy") {
+		// Skip chrome mutation under the dummy renderer; capture cannot succeed
+		// and temporarily restoring docks would only add flaky layout churn.
+		return;
+	}
+	EditorTileDockRegion *region = p_demoted_tile->get_dock_region();
+	if (region == nullptr || !region->is_presentation_hidden()) {
+		return;
+	}
+	// Capture the fixed preview-only state first, then temporarily restore per-tile
+	// chrome without promoting focus to recreate the pre-fix chrome-budget collapse.
+	_maybe_capture_editor_png(p_driver, "2067_after_preview_only_horizontal.png");
+
+	region->set_presentation_hidden(false);
+	if (EditorSideRailStrip *left_rail = p_demoted_tile->get_left_rail()) {
+		left_rail->set_visible(true);
+	}
+	if (EditorSideRailStrip *right_rail = p_demoted_tile->get_right_rail()) {
+		right_rail->set_visible(true);
+	}
+	p_driver.flush_frames(20);
+	_maybe_capture_editor_png(p_driver, "2067_before_chrome_budget.png");
+
+	p_demoted_tile->set_preview_mode(p_demoted_tile->get_preview_mode());
+	p_driver.flush_frames(20);
+	_prepare_capture_frame(p_driver);
+}
+
+TileChromeSnapshot _sample_tile_chrome(ScenePaneTile *p_tile) {
+	TileChromeSnapshot snapshot;
+	if (p_tile == nullptr) {
+		return snapshot;
+	}
+	EditorTileDockRegion *region = p_tile->get_dock_region();
+	snapshot.left_mode = region->get_side_mode(EditorTileDockRegion::Side::LEFT);
+	snapshot.right_mode = region->get_side_mode(EditorTileDockRegion::Side::RIGHT);
+	if (EditorDock *drawer = region->get_drawer_dock(EditorTileDockRegion::Side::LEFT)) {
+		snapshot.left_drawer_id = drawer->get_instance_id();
+	}
+	if (EditorDock *drawer = region->get_drawer_dock(EditorTileDockRegion::Side::RIGHT)) {
+		snapshot.right_drawer_id = drawer->get_instance_id();
+	}
+	if (TabContainer *right_tabs = region->get_right_tabs()) {
+		snapshot.right_tab_index = right_tabs->get_current_tab();
+		snapshot.right_column_visible = right_tabs->is_visible();
+	}
+	if (HSplitContainer *body = region->get_body()) {
+		snapshot.split_offsets = body->get_split_offsets();
+	}
+	if (SceneTreeDock *left = p_tile->get_scene_tree_dock()) {
+		snapshot.left_column_visible = left->is_visible();
+	}
+	if (EditorSideRailStrip *left_rail = p_tile->get_left_rail()) {
+		snapshot.left_rail_visible = left_rail->is_visible();
+	}
+	if (EditorSideRailStrip *right_rail = p_tile->get_right_rail()) {
+		snapshot.right_rail_visible = right_rail->is_visible();
+	}
+	return snapshot;
+}
+
+String _describe_tile_preview_geometry(ScenePaneTile *p_tile, Control *p_preview_surface) {
+	if (p_tile == nullptr) {
+		return "tile=null";
+	}
+	const Rect2 tile_rect = p_tile->get_global_rect();
+	const Rect2 host_rect = p_tile->get_content_host() ? p_tile->get_content_host()->get_global_rect() : Rect2();
+	const Rect2 surface_rect = p_preview_surface ? p_preview_surface->get_global_rect() : Rect2();
+	const EditorTileDockRegion *region = p_tile->get_dock_region();
+	const bool left_rail_visible = p_tile->get_left_rail() && p_tile->get_left_rail()->is_visible();
+	const bool right_rail_visible = p_tile->get_right_rail() && p_tile->get_right_rail()->is_visible();
+	const bool left_column_visible = p_tile->get_scene_tree_dock() && p_tile->get_scene_tree_dock()->is_visible();
+	const bool right_column_visible = region && region->get_right_tabs() && region->get_right_tabs()->is_visible();
+	return vformat(
+			"tile_id=%d tile_rect=%s host_rect=%s surface_rect=%s presentation_hidden=%s left_rail=%s right_rail=%s left_column=%s right_column=%s left_mode=%d right_mode=%d",
+			p_tile->get_tile_id(),
+			String(tile_rect),
+			String(host_rect),
+			String(surface_rect),
+			region && region->is_presentation_hidden() ? "true" : "false",
+			left_rail_visible ? "visible" : "hidden",
+			right_rail_visible ? "visible" : "hidden",
+			left_column_visible ? "visible" : "hidden",
+			right_column_visible ? "visible" : "hidden",
+			region ? (int)region->get_side_mode(EditorTileDockRegion::Side::LEFT) : -1,
+			region ? (int)region->get_side_mode(EditorTileDockRegion::Side::RIGHT) : -1);
+}
+
+bool _assert_preview_only_chrome(ScenePaneTile *p_tile, Control *p_preview_surface, String &r_message) {
+	if (p_tile == nullptr) {
+		r_message = "Preview tile is null.";
+		return false;
+	}
+	EditorTileDockRegion *region = p_tile->get_dock_region();
+	if (region == nullptr || !region->is_presentation_hidden()) {
+		r_message = vformat("Demoted tile is not presentation-hidden. %s", _describe_tile_preview_geometry(p_tile, p_preview_surface));
+		return false;
+	}
+	if (p_tile->get_left_rail() == nullptr || p_tile->get_left_rail()->is_visible()) {
+		r_message = vformat("Demoted tile left rail is still visible. %s", _describe_tile_preview_geometry(p_tile, p_preview_surface));
+		return false;
+	}
+	if (p_tile->get_right_rail() == nullptr || p_tile->get_right_rail()->is_visible()) {
+		r_message = vformat("Demoted tile right rail is still visible. %s", _describe_tile_preview_geometry(p_tile, p_preview_surface));
+		return false;
+	}
+	if (p_tile->get_scene_tree_dock() == nullptr || p_tile->get_scene_tree_dock()->is_visible()) {
+		r_message = vformat("Demoted tile left dock column is still visible. %s", _describe_tile_preview_geometry(p_tile, p_preview_surface));
+		return false;
+	}
+	if (region->get_right_tabs() == nullptr || region->get_right_tabs()->is_visible()) {
+		r_message = vformat("Demoted tile right dock column is still visible. %s", _describe_tile_preview_geometry(p_tile, p_preview_surface));
+		return false;
+	}
+	if (p_preview_surface == nullptr || !p_preview_surface->is_visible_in_tree()) {
+		r_message = vformat("Preview surface is missing or not on screen. %s", _describe_tile_preview_geometry(p_tile, p_preview_surface));
+		return false;
+	}
+	const real_t tile_width = p_tile->get_size().x;
+	const real_t surface_width = p_preview_surface->get_size().x;
+	const real_t surface_area = p_preview_surface->get_global_rect().get_area();
+	if (tile_width <= 0.0 || surface_width <= 0.0 || surface_area <= 0.0) {
+		r_message = vformat("Preview surface has no usable geometry. %s", _describe_tile_preview_geometry(p_tile, p_preview_surface));
+		return false;
+	}
+	if (surface_width < tile_width * 0.8) {
+		r_message = vformat(
+				"Preview surface width %.1f is below 80%% of tile width %.1f. %s",
+				surface_width, tile_width, _describe_tile_preview_geometry(p_tile, p_preview_surface));
+		return false;
+	}
+	return true;
+}
+
+bool _assert_chrome_restored(ScenePaneTile *p_tile, const TileChromeSnapshot &p_before, String &r_message) {
+	if (p_tile == nullptr) {
+		r_message = "Promoted tile is null.";
+		return false;
+	}
+	const TileChromeSnapshot after = _sample_tile_chrome(p_tile);
+	if (p_tile->get_dock_region()->is_presentation_hidden()) {
+		r_message = vformat("Promoted tile is still presentation-hidden. %s", _describe_tile_preview_geometry(p_tile, p_tile->get_content_host()));
+		return false;
+	}
+	if (!after.left_rail_visible || !after.right_rail_visible) {
+		r_message = vformat("Promoted tile rails were not restored. %s", _describe_tile_preview_geometry(p_tile, p_tile->get_content_host()));
+		return false;
+	}
+	if (after.left_mode != p_before.left_mode || after.right_mode != p_before.right_mode) {
+		r_message = vformat(
+				"Promoted tile side modes changed (left %d->%d, right %d->%d). %s",
+				(int)p_before.left_mode, (int)after.left_mode, (int)p_before.right_mode, (int)after.right_mode,
+				_describe_tile_preview_geometry(p_tile, p_tile->get_content_host()));
+		return false;
+	}
+	if (after.left_drawer_id != p_before.left_drawer_id || after.right_drawer_id != p_before.right_drawer_id) {
+		r_message = vformat("Promoted tile drawer docks changed. %s", _describe_tile_preview_geometry(p_tile, p_tile->get_content_host()));
+		return false;
+	}
+	if (after.right_tab_index != p_before.right_tab_index) {
+		r_message = vformat(
+				"Promoted tile right tab changed (%d->%d). %s",
+				p_before.right_tab_index, after.right_tab_index,
+				_describe_tile_preview_geometry(p_tile, p_tile->get_content_host()));
+		return false;
+	}
+	if (after.left_column_visible != p_before.left_column_visible || after.right_column_visible != p_before.right_column_visible) {
+		r_message = vformat("Promoted tile column visibility changed. %s", _describe_tile_preview_geometry(p_tile, p_tile->get_content_host()));
+		return false;
+	}
+	// Split offsets are only meaningful while columns are visible. When both
+	// sides show a column again, both body gaps must exist; the remembered
+	// widths survive demotion via EditorTileDockRegion gap identity.
+	if (after.left_column_visible && after.right_column_visible && after.split_offsets.size() != 2) {
+		r_message = vformat(
+				"Promoted tile did not restore both dock split gaps (got %d). %s",
+				after.split_offsets.size(),
+				_describe_tile_preview_geometry(p_tile, p_tile->get_content_host()));
+		return false;
+	}
+	return true;
+}
 
 PassivePreviewSnapshot _sample_passive_preview(Node3DEditorViewport *p_spatial_view, CanvasItemEditorView *p_canvas_view, Node *p_scene_root) {
 	PassivePreviewSnapshot snapshot;
@@ -2569,21 +2851,62 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	scene_dock->add_root_node(second_root);
 	p_driver.flush_frames(20);
 
-	p_driver.set_step("split_active_board_into_two_tiles");
+	p_driver.set_step("constrain_editor_window");
+	Window *root_window = SceneTree::get_singleton() ? SceneTree::get_singleton()->get_root() : nullptr;
+	if (root_window == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Root window is unavailable for deterministic sizing.");
+	}
+	// Narrow enough that a horizontal demoted tile with both dock columns and both
+	// rails visible collapses its preview surface; wide enough for a preview-only
+	// demoted tile to keep a usable surface for pointer probes. Restore on every
+	// exit so interactive MCP runs do not persist the temporary size.
+	const Size2i constrained_size(1600, 900);
+	const Size2i original_window_size = root_window->get_size();
+	struct RestoreWindowSize {
+		Window *window = nullptr;
+		Size2i size;
+		~RestoreWindowSize() {
+			if (window) {
+				window->set_size(size);
+			}
+		}
+	} restore_window_size{ root_window, original_window_size };
+	root_window->set_size(constrained_size);
+	p_driver.flush_frames(10);
+	if (Math::abs(root_window->get_size().x - constrained_size.x) > 64 ||
+			Math::abs(root_window->get_size().y - constrained_size.y) > 64) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Failed to constrain the editor window (got %s, wanted %s).",
+						String(root_window->get_size()), String(constrained_size)));
+	}
+
+	p_driver.set_step("configure_source_tile_chrome");
 	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
 	if (workspace == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "Scene workspace is unavailable.");
 	}
+	ScenePaneTile *source_tile = workspace->get_tile_by_id(0);
+	if (source_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve the source tile before the split.");
+	}
+	EditorTileDockRegion *source_region = source_tile->get_dock_region();
+	source_region->set_side_mode(EditorTileDockRegion::Side::LEFT, SideRailMode::DOCKED);
+	source_region->set_side_mode(EditorTileDockRegion::Side::RIGHT, SideRailMode::RAILED);
+	source_region->press_rail_toggle(source_tile->get_signals_dock());
+	p_driver.flush_frames(5);
+	const TileChromeSnapshot source_chrome_before = _sample_tile_chrome(source_tile);
+
+	p_driver.set_step("split_active_board_into_two_tiles");
 	// handle_tile_scene_drop's last argument is a tab index local to the source tile,
 	// not the global scene index that new_scene() returned.
 	const int source_tab = editor_node->get_editor_data().scene_index_to_tile_tab(second_scene);
 	if (source_tab < 0) {
 		return _failure_with_message(p_driver, result.workflow, "Could not map the second scene to a tab on the source tile.");
 	}
-	// Split vertically: each tile carries its own dock columns, and a horizontal split
-	// leaves less width than those columns' combined minimum, collapsing the preview to
-	// zero geometry with nothing to aim pointer input at.
-	editor_node->handle_tile_scene_drop(0, (int)EditorSceneWorkspace::DROP_BOTTOM, 0, source_tab);
+	// Split horizontally: demoted tiles hide their dock columns and rails so the
+	// preview keeps usable width even when the combined chrome minima would
+	// otherwise consume the tile.
+	editor_node->handle_tile_scene_drop(0, (int)EditorSceneWorkspace::DROP_RIGHT, 0, source_tab);
 	p_driver.flush_frames(30);
 	if (!p_driver.wait_workspace_settled(5000)) {
 		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after splitting the board.");
@@ -2609,7 +2932,9 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	};
 	Control *surface = spatial_view->get_surface();
 	if (surface == nullptr || !surface->is_visible_in_tree()) {
-		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview's surface is not on screen, so no real input could reach it.");
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("The passive 3D preview's surface is not on screen, so no real input could reach it. %s",
+						_describe_tile_preview_geometry(preview_tile, surface)));
 	}
 	const ObjectID surface_id = surface->get_instance_id();
 	auto resolve_surface = [&]() -> Control * {
@@ -2618,14 +2943,55 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	p_driver.flush_frames(30);
 	spatial_view = resolve_spatial_view();
 	surface = resolve_surface();
-	if (spatial_view == nullptr || surface == nullptr) {
+	preview_tile = ObjectDB::get_instance<ScenePaneTile>(preview_tile_id);
+	if (spatial_view == nullptr || surface == nullptr || preview_tile == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview viewport or surface did not survive a frame advance.");
 	}
-	if (surface->get_global_rect().get_area() <= 0.0) {
-		return _failure_with_message(p_driver, result.workflow,
-				vformat("The passive 3D preview's surface has no geometry (%s), so no pointer input could be aimed at it.",
-						String(surface->get_global_rect())));
+	{
+		String chrome_message;
+		if (!_assert_preview_only_chrome(preview_tile, surface, chrome_message)) {
+			return _failure_with_message(p_driver, result.workflow, chrome_message);
+		}
 	}
+	if (preview_tile->get_dock_region()->get_side_mode(EditorTileDockRegion::Side::LEFT) != source_chrome_before.left_mode ||
+			preview_tile->get_dock_region()->get_side_mode(EditorTileDockRegion::Side::RIGHT) != source_chrome_before.right_mode) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Demotion mutated stored side modes. %s", _describe_tile_preview_geometry(preview_tile, surface)));
+	}
+	p_driver.set_step("capture_demoted_chrome_budget_pair");
+	_capture_demoted_chrome_budget_pair(p_driver, preview_tile);
+	preview_tile = ObjectDB::get_instance<ScenePaneTile>(preview_tile_id);
+	spatial_view = resolve_spatial_view();
+	surface = resolve_surface();
+	if (preview_tile == nullptr || spatial_view == nullptr || surface == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The demoted 3D preview did not survive the optional capture pair.");
+	}
+	{
+		String chrome_message;
+		if (!_assert_preview_only_chrome(preview_tile, surface, chrome_message)) {
+			return _failure_with_message(p_driver, result.workflow,
+					vformat("Optional capture pair left demoted chrome unrestored. %s", chrome_message));
+		}
+	}
+
+	p_driver.set_step("configure_focused_2d_tile_chrome");
+	ScenePaneTile *focused_2d_tile = workspace->get_tile_by_id(1);
+	if (focused_2d_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve the focused 2D tile after the split.");
+	}
+	EditorTileDockRegion *focused_2d_region = focused_2d_tile->get_dock_region();
+	// close_drawer collapses to RAILED with a closed drawer. set_side_mode(RAILED)
+	// would reopen the last/shown dock, which is not the asymmetric chrome we want.
+	focused_2d_region->close_drawer(EditorTileDockRegion::Side::LEFT);
+	focused_2d_region->set_side_mode(EditorTileDockRegion::Side::RIGHT, SideRailMode::DOCKED);
+	if (TabContainer *right_tabs = focused_2d_region->get_right_tabs()) {
+		const int groups_tab = right_tabs->get_tab_idx_from_control(focused_2d_tile->get_groups_dock());
+		if (groups_tab >= 0) {
+			right_tabs->set_current_tab(groups_tab);
+		}
+	}
+	p_driver.flush_frames(5);
+	const TileChromeSnapshot canvas_chrome_before = _sample_tile_chrome(focused_2d_tile);
 
 	p_driver.set_step("assert_passive_3d_policy");
 	if (!spatial_view->is_secondary_view()) {
@@ -2739,6 +3105,21 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 			return _failure_with_message(p_driver, result.workflow, "The promoting gesture selected content instead of only promoting the tile.");
 		}
 	}
+	{
+		String chrome_message;
+		// Column visibility in the pre-split snapshot still describes the stored
+		// modes/drawer (left docked, right railed-open). Promotion must restore that.
+		TileChromeSnapshot expected = source_chrome_before;
+		expected.left_rail_visible = true;
+		expected.right_rail_visible = true;
+		expected.left_column_visible = true;
+		expected.right_column_visible = true;
+		if (!_assert_chrome_restored(promoted_tile, expected, chrome_message)) {
+			return _failure_with_message(p_driver, result.workflow, chrome_message);
+		}
+	}
+	p_driver.set_step("capture_promoted_chrome_restored");
+	_maybe_capture_editor_png(p_driver, "2067_after_promoted_chrome_restored.png");
 
 	// EditorAutomationState::read_editor_state() calls get_focused_viewport()->get_state(),
 	// which dereferences the View menu and its display submenu. Routing a passive preview
@@ -2814,11 +3195,28 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!canvas_viewport->has_connections(SceneStringName(draw))) {
 		return _failure_with_message(p_driver, result.workflow, "A passive 2D preview lost the draw path that renders the editor visualization.");
 	}
+	{
+		String chrome_message;
+		if (!_assert_preview_only_chrome(canvas_tile, canvas_viewport, chrome_message)) {
+			return _failure_with_message(p_driver, result.workflow, chrome_message);
+		}
+		if (canvas_tile->get_dock_region()->get_side_mode(EditorTileDockRegion::Side::LEFT) != canvas_chrome_before.left_mode ||
+				canvas_tile->get_dock_region()->get_side_mode(EditorTileDockRegion::Side::RIGHT) != canvas_chrome_before.right_mode ||
+				canvas_tile->get_dock_region()->get_right_tabs()->get_current_tab() != canvas_chrome_before.right_tab_index) {
+			return _failure_with_message(p_driver, result.workflow,
+					vformat("2D demotion mutated stored chrome. %s", _describe_tile_preview_geometry(canvas_tile, canvas_viewport)));
+		}
+	}
 
 	const PassivePreviewSnapshot before_2d = _sample_passive_preview(nullptr, canvas_view, canvas_tile->get_current_scene_root());
 
 	p_driver.set_step("drive_non_promoting_input_at_passive_2d_preview");
-	if (canvas_viewport->is_visible_in_tree()) {
+	if (!canvas_viewport->is_visible_in_tree()) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("The passive 2D preview viewport is not visible for input probes. %s",
+						_describe_tile_preview_geometry(canvas_tile, canvas_viewport)));
+	}
+	{
 		RealPointerDispatch dispatch;
 		if (!dispatch.bind(canvas_viewport)) {
 			return _failure_with_message(p_driver, result.workflow, "Could not bind real pointer dispatch to the passive 2D preview.");
@@ -2866,11 +3264,24 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 			return _failure_with_message(p_driver, result.workflow, "Clicking a passive 2D preview did not focus its owning tile.");
 		}
 		canvas_view = resolve_canvas_view();
-		if (canvas_view == nullptr) {
+		canvas_tile = resolve_canvas_tile();
+		if (canvas_view == nullptr || canvas_tile == nullptr) {
 			return _failure_with_message(p_driver, result.workflow, "The passive 2D preview did not survive the promoting gesture.");
 		}
 		if (!Math::is_equal_approx(canvas_view->get_view_state().zoom, before_2d.canvas_zoom)) {
 			return _failure_with_message(p_driver, result.workflow, "The 2D promoting gesture changed the preview's zoom.");
+		}
+		{
+			String chrome_message;
+			TileChromeSnapshot expected = canvas_chrome_before;
+			expected.left_rail_visible = true;
+			expected.right_rail_visible = true;
+			// Left is railed closed, so the left column stays hidden after restore.
+			expected.left_column_visible = false;
+			expected.right_column_visible = true;
+			if (!_assert_chrome_restored(canvas_tile, expected, chrome_message)) {
+				return _failure_with_message(p_driver, result.workflow, chrome_message);
+			}
 		}
 	}
 
@@ -2880,9 +3291,10 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 
 	result.ok = true;
-	result.message = "Passive 2D and 3D previews ignored editor input and promoted their tiles on click.";
+	result.message = "Passive 2D and 3D previews used preview-only chrome, ignored editor input, and restored chrome on promote.";
 	Dictionary details;
 	details["workspace"] = p_driver.read_editor_state().get("workspace", Dictionary());
+	details["window_size"] = root_window->get_size();
 	result.details = details;
 	return result;
 }

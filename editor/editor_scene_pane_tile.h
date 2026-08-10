@@ -102,6 +102,10 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	PanelContainer *focus_frame = nullptr; // Accent border when focused.
 	EditorSideRailStrip *left_rail = nullptr;
 	EditorSideRailStrip *right_rail = nullptr;
+	TilePreviewMode preview_mode = TilePreviewMode::FOCUSED_LIVE;
+	// Set when a demotion arrives mid-drag; applied on NOTIFICATION_DRAG_END so
+	// hiding docks cannot synthesize a mouse release into the drag source.
+	bool chrome_hide_pending = false;
 
 	// Cost bounds applied while the tile is drawn shrunk in the board overview. Neither
 	// affects layout: the shrink only changes how many pixels the tile's SubViewports
@@ -125,6 +129,10 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	void _bind_focus_on_interaction(Control *p_control);
 	void _fit_content_child(Control *p_child);
 	void _fit_content_children();
+	// Applies dock-column + rail visibility from the current preview_mode. Safe to
+	// call deferred: a stale hide queued mid-drag is ignored once the mode is
+	// FOCUSED_LIVE again.
+	void _apply_preview_chrome_for_current_mode();
 
 protected:
 	void _notification(int p_what);
@@ -180,6 +188,7 @@ public:
 
 	void set_focused_visual(bool p_focused);
 	void set_preview_mode(TilePreviewMode p_mode);
+	TilePreviewMode get_preview_mode() const { return preview_mode; }
 	void bind_3d_preview_world(const Ref<World3D> &p_world);
 	void apply_3d_preview_camera_state(const Dictionary &p_viewport_state);
 

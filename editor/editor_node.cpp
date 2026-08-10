@@ -4916,6 +4916,10 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 		}
 	}
 
+	// Focus may have moved without reaching _set_current_scene_nocheck (already_edited).
+	// Enforce preview-only chrome against the new focused tile regardless.
+	_promote_non_demotable_tiles();
+
 	if (!already_edited) {
 		_set_current_scene_nocheck(p_scene_idx);
 	}
@@ -5370,11 +5374,41 @@ void EditorNode::reveal_script_leaf() {
 	_sync_script_leaf_path();
 }
 
+void EditorNode::_promote_non_demotable_tiles() {
+	if (!board_strip) {
+		return;
+	}
+	const int focused_tile_id = editor_data.get_focused_tile_id();
+	for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
+		if (!workspace) {
+			continue;
+		}
+		for (ScenePaneTile *tile : workspace->get_tiles()) {
+			if (!tile) {
+				continue;
+			}
+			const int tile_id = tile->get_tile_id();
+			if (tile_id == focused_tile_id || editor_data.get_tile_current_scene(tile_id) < 0) {
+				tile->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+			}
+		}
+	}
+}
+
 void EditorNode::_update_tile_display_attachments() {
 	if (!board_strip) {
 		_attach_active_scene_context();
 		return;
 	}
+
+	// Preview-only chrome is a presentational property of every scene tile, not of
+	// the per-scene loop below. Scene-less tiles (e.g. a pane that still holds a
+	// script tab after its last scene was dragged away) are never visited by that
+	// loop, so promote them — and the focused tile — back to FOCUSED_LIVE first.
+	// Otherwise presentation_hidden can stick true with docks and rails gone and
+	// no path that restores them.
+	_promote_non_demotable_tiles();
+	const int focused_tile_id = editor_data.get_focused_tile_id();
 
 	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 		EditorSceneContext *ctx = editor_data.get_scene_context(i);
@@ -5392,7 +5426,7 @@ void EditorNode::_update_tile_display_attachments() {
 			continue;
 		}
 
-		const bool is_focused_tile = tile_id == editor_data.get_focused_tile_id();
+		const bool is_focused_tile = tile_id == focused_tile_id;
 
 		if (is_focused_tile) {
 			tile->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
@@ -7971,6 +8005,9 @@ void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_
 	ERR_FAIL_NULL(tile);
 
 	_sync_focused_tile_chrome(tile);
+	// Focused tiles always restore normal chrome, even when they have no current
+	// scene (the early return below skips _update_tile_display_attachments).
+	tile->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
 	const uint64_t reparent_start_usec = profile_switch ? OS::get_singleton()->get_ticks_usec() : 0;
 	_reparent_scene_mode_into(tile);
 	if (profile_switch) {
