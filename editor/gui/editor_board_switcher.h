@@ -35,8 +35,10 @@
 #include "scene/gui/box_container.h"
 
 class Button;
+class EditorBoardActionsMenu;
 class EditorBoardStrip;
 class LineEdit;
+class SceneTreeTimer;
 
 /**
  * Title-bar chrome for switching between boards: one button per board, an "add
@@ -46,13 +48,22 @@ class LineEdit;
  * rebuilding its buttons from scratch on every structural signal the strip
  * emits, which is cheaper and far less bug-prone than incrementally patching
  * button state for a handful of boards.
+ *
+ * The active board button carries a dropdown caret and opens a board actions
+ * menu (rename / close / reorder) after a short delay so a double-click can
+ * still claim the gesture for inline rename. Inactive buttons switch on
+ * left-click; any board button opens the same menu on right-click.
  */
 class EditorBoardSwitcher : public HBoxContainer {
 	FOUNDRY_CLASS(EditorBoardSwitcher, HBoxContainer);
 
 	EditorBoardStrip *strip = nullptr;
+	EditorBoardActionsMenu *actions_menu = nullptr;
 	Button *add_button = nullptr;
 	Button *overview_button = nullptr;
+	// Identity-keyed rather than child-index-keyed: rebuilds free and recreate buttons,
+	// and the owned actions menu is a sibling that must not participate in board indexing.
+	Vector<Button *> board_buttons;
 
 	// Identifies the board button currently swapped for a LineEdit. Stored as an
 	// instance id rather than a cached board pointer, so a board closing mid-rename is
@@ -60,6 +71,11 @@ class EditorBoardSwitcher : public HBoxContainer {
 	ObjectID renaming_board_id;
 	Button *renaming_button = nullptr;
 	LineEdit *rename_edit = nullptr;
+
+	// Delayed open of the actions menu on the active board. A double-click cancels this
+	// so inline rename keeps working; the board is held by ObjectID across the delay.
+	ObjectID pending_menu_board_id;
+	Ref<SceneTreeTimer> pending_menu_timer;
 
 	void _rebuild();
 	void _on_board_button_pressed(int p_index);
@@ -74,6 +90,10 @@ class EditorBoardSwitcher : public HBoxContainer {
 	void _commit_rename(const String &p_text);
 	void _commit_rename_from_focus_loss();
 	void _cancel_rename();
+	void _popup_actions_menu(int p_index, const Point2 &p_screen_position);
+	void _cancel_pending_menu();
+	void _open_pending_actions_menu();
+	Button *_board_button_at(int p_index) const;
 
 protected:
 	void _notification(int p_what);
@@ -86,10 +106,20 @@ public:
 	void setup(EditorBoardStrip *p_strip);
 
 	EditorBoardStrip *get_strip() const { return strip; }
+	EditorBoardActionsMenu *get_actions_menu() const { return actions_menu; }
+
+	// Opens the board actions menu for p_board_index at p_screen_position. Used by the
+	// strip's caption context-menu handler and by the switcher's own button interactions.
+	void popup_board_actions(int p_board_index, const Point2 &p_screen_position);
 
 	// True while an inline rename LineEdit is showing. Exposed for tests, which
 	// cannot observe the swapped-in LineEdit through the strip.
 	bool is_renaming() const { return rename_edit != nullptr; }
+
+	// Board button at strip index p_index, or null. Identity-keyed across rebuilds;
+	// preferred over reading HBoxContainer children by position (the actions menu is a
+	// sibling that must not participate in board indexing).
+	Button *get_board_button(int p_index) const { return _board_button_at(p_index); }
 
 	EditorBoardSwitcher();
 };

@@ -713,10 +713,10 @@ TEST_CASE("[Editor][Boards] Closing an unrelated board mid-slide still sleeps th
 // Feeds a caption the mouse events a real drag would deliver. The strip takes them from the
 // caption's gui_input, ahead of the button's own handling, so driving that signal exercises
 // exactly the path a pointer does.
-static Ref<InputEventMouseButton> caption_mouse_button(real_t p_x, bool p_pressed) {
+static Ref<InputEventMouseButton> caption_mouse_button(real_t p_x, bool p_pressed, MouseButton p_button = MouseButton::LEFT) {
 	Ref<InputEventMouseButton> event;
 	event.instantiate();
-	event->set_button_index(MouseButton::LEFT);
+	event->set_button_index(p_button);
 	event->set_pressed(p_pressed);
 	event->set_position(Point2(p_x, 0));
 	event->set_global_position(Point2(p_x, 0));
@@ -1089,6 +1089,294 @@ TEST_CASE("[Editor][Boards] A stale drag swallow flag does not eat a later keybo
 
 	CHECK_FALSE(h.strip->is_overview_active());
 	CHECK(h.strip->get_active_board() == board_a);
+
+	h.unmount();
+}
+
+struct ContextMenuHandlerRecord {
+	int board_index = -1;
+	Point2 screen_position;
+	int call_count = 0;
+
+	void reset() {
+		board_index = -1;
+		screen_position = Point2();
+		call_count = 0;
+	}
+};
+
+static ContextMenuHandlerRecord context_menu_handler_record;
+
+static void record_board_context_menu(int p_board_index, const Point2 &p_screen_position) {
+	context_menu_handler_record.board_index = p_board_index;
+	context_menu_handler_record.screen_position = p_screen_position;
+	context_menu_handler_record.call_count++;
+}
+
+static void drain_pending_closes(BoardStripHarness &p_harness, int p_max_pumps = 8) {
+	for (int i = 0; i < p_max_pumps; i++) {
+		p_harness.pump();
+	}
+}
+
+TEST_CASE("[Editor][Boards] close_boards closes every queued scene-less board and keeps the survivor active") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *keep = h.strip->get_board(0);
+	REQUIRE(keep != nullptr);
+	if (!keep) {
+		h.unmount();
+		return;
+	}
+	keep->set_title("keep");
+	EditorBoard *a = h.strip->add_board("A");
+	EditorBoard *b = h.strip->add_board("B");
+	EditorBoard *c = h.strip->add_board("C");
+	REQUIRE(a != nullptr);
+	REQUIRE(b != nullptr);
+	REQUIRE(c != nullptr);
+	if (!a || !b || !c) {
+		h.unmount();
+		return;
+	}
+	h.strip->set_active_board(0);
+
+	Vector<ObjectID> to_close;
+	to_close.push_back(a->get_instance_id());
+	to_close.push_back(b->get_instance_id());
+	to_close.push_back(c->get_instance_id());
+	h.strip->close_boards(to_close);
+
+	// close_boards defers its first advance and every subsequent one.
+	drain_pending_closes(h);
+
+	CHECK(h.strip->get_board_count() == 1);
+	CHECK(h.strip->get_active_board() == keep);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] close_boards clears the queue when a close is refused") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *a = h.strip->get_board(0);
+	EditorBoard *b = h.strip->add_board("B");
+	EditorBoard *c = h.strip->add_board("C");
+	REQUIRE(a != nullptr);
+	REQUIRE(b != nullptr);
+	REQUIRE(c != nullptr);
+	if (!a || !b || !c) {
+		h.unmount();
+		return;
+	}
+
+	// Queue every board. After A and B close, C is the last board and is refused, which
+	// must clear the queue rather than spinning on a board that can never close.
+	Vector<ObjectID> to_close;
+	to_close.push_back(a->get_instance_id());
+	to_close.push_back(b->get_instance_id());
+	to_close.push_back(c->get_instance_id());
+	h.strip->close_boards(to_close);
+	drain_pending_closes(h);
+
+	CHECK(h.strip->get_board_count() == 1);
+	CHECK(h.strip->get_active_board() == c);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] abort_pending_closes leaves not-yet-closed boards alive") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *a = h.strip->get_board(0);
+	EditorBoard *b = h.strip->add_board("B");
+	EditorBoard *c = h.strip->add_board("C");
+	REQUIRE(a != nullptr);
+	REQUIRE(b != nullptr);
+	REQUIRE(c != nullptr);
+	if (!a || !b || !c) {
+		h.unmount();
+		return;
+	}
+
+	// Put a scene on A so the first close defers through the handler.
+	EditorSceneWorkspace *workspace_a = a->get_workspace();
+	REQUIRE(workspace_a != nullptr);
+	if (!workspace_a) {
+		h.unmount();
+		return;
+	}
+	WorkspaceLeafNode *leaf_node_a = workspace_a->get_focused_leaf();
+	REQUIRE(leaf_node_a != nullptr);
+	if (!leaf_node_a) {
+		h.unmount();
+		return;
+	}
+	const int leaf_a = leaf_node_a->get_leaf_id();
+	h.editor_data.register_tile(leaf_a);
+	h.editor_data.set_focused_tile_id(leaf_a);
+	const int scene_index = h.editor_data.add_edited_scene(-1);
+	REQUIRE(h.editor_data.get_scene_tile(scene_index) == leaf_a);
+
+	h.strip->set_board_scene_close_handler(callable_mp_static(&record_board_close));
+	close_handler_record.reset(false);
+
+	Vector<ObjectID> to_close;
+	to_close.push_back(a->get_instance_id());
+	to_close.push_back(b->get_instance_id());
+	h.strip->close_boards(to_close);
+	h.pump();
+
+	CHECK(close_handler_record.call_count == 1);
+	CHECK(h.strip->get_board_count() == 3);
+
+	h.strip->abort_pending_closes();
+
+	// Finishing the deferred close for A must not resume the aborted queue and take B.
+	close_handler_record.reset(true);
+	CHECK(h.strip->close_board(0));
+	h.pump();
+
+	CHECK(h.strip->get_board_count() == 2);
+	CHECK(h.strip->get_board_index(b) >= 0);
+	CHECK(h.strip->get_board_index(c) >= 0);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] close_boards resumes after a deferred close finishes through close_board") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *a = h.strip->get_board(0);
+	EditorBoard *b = h.strip->add_board("B");
+	EditorBoard *keep = h.strip->add_board("keep");
+	REQUIRE(a != nullptr);
+	REQUIRE(b != nullptr);
+	REQUIRE(keep != nullptr);
+	if (!a || !b || !keep) {
+		h.unmount();
+		return;
+	}
+
+	EditorSceneWorkspace *workspace_a = a->get_workspace();
+	REQUIRE(workspace_a != nullptr);
+	if (!workspace_a) {
+		h.unmount();
+		return;
+	}
+	WorkspaceLeafNode *leaf_node_a = workspace_a->get_focused_leaf();
+	REQUIRE(leaf_node_a != nullptr);
+	if (!leaf_node_a) {
+		h.unmount();
+		return;
+	}
+	const int leaf_a = leaf_node_a->get_leaf_id();
+	h.editor_data.register_tile(leaf_a);
+	h.editor_data.set_focused_tile_id(leaf_a);
+	const int scene_index = h.editor_data.add_edited_scene(-1);
+	REQUIRE(h.editor_data.get_scene_tile(scene_index) == leaf_a);
+
+	h.strip->set_board_scene_close_handler(callable_mp_static(&record_board_close));
+	close_handler_record.reset(false);
+
+	Vector<ObjectID> to_close;
+	to_close.push_back(a->get_instance_id());
+	to_close.push_back(b->get_instance_id());
+	h.strip->close_boards(to_close);
+	h.pump();
+
+	CHECK(close_handler_record.call_count == 1);
+	CHECK(h.strip->get_board_count() == 3);
+
+	// Finish A's deferred close the way EditorNode::_finish_pending_board_close does: call
+	// close_board() again once the scenes are gone. That resume path must then drain B.
+	h.editor_data.remove_scene(scene_index);
+	close_handler_record.reset(true);
+	CHECK(h.strip->close_board(0));
+	drain_pending_closes(h);
+
+	CHECK(h.strip->get_board_count() == 1);
+	CHECK(h.strip->get_active_board() == keep);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Right-clicking an overview caption invokes the context-menu handler") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	h.strip->add_board("B");
+	h.strip->add_board("C");
+	h.strip->set_overview(true);
+	h.settle_transition();
+
+	Button *caption = caption_for(h.strip, 1);
+	REQUIRE(caption != nullptr);
+	if (!caption) {
+		h.unmount();
+		return;
+	}
+
+	context_menu_handler_record.reset();
+	h.strip->set_board_context_menu_handler(callable_mp_static(&record_board_context_menu));
+
+	SIGNAL_WATCH(h.strip, "board_moved");
+	const Ref<InputEventMouseButton> right_click = caption_mouse_button(100.0, true, MouseButton::RIGHT);
+	const Point2 strip_local = h.strip->get_global_transform_with_canvas().affine_inverse().xform(right_click->get_global_position());
+	const Point2 expected_screen = h.strip->get_screen_transform().xform(strip_local);
+	caption->emit_signal(SceneStringName(gui_input), right_click);
+	h.pump();
+
+	CHECK(context_menu_handler_record.call_count == 1);
+	CHECK(context_menu_handler_record.board_index == 1);
+	CHECK(context_menu_handler_record.screen_position == expected_screen);
+	CHECK(h.strip->is_overview_active());
+	SIGNAL_CHECK_FALSE("board_moved");
+
+	// A subsequent plain click must still open the board: the right-click must not have
+	// armed caption_drag_swallow_click.
+	caption->emit_signal(SceneStringName(gui_input), caption_mouse_button(100.0, true));
+	caption->emit_signal(SceneStringName(gui_input), caption_mouse_button(100.0, false));
+	caption->emit_signal(SceneStringName(pressed));
+	h.pump();
+	CHECK_FALSE(h.strip->is_overview_active());
+
+	SIGNAL_UNWATCH(h.strip, "board_moved");
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A caption right-click with no handler installed is inert") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	h.strip->add_board("B");
+	h.strip->set_overview(true);
+	h.settle_transition();
+
+	Button *caption = caption_for(h.strip, 0);
+	REQUIRE(caption != nullptr);
+	if (!caption) {
+		h.unmount();
+		return;
+	}
+
+	context_menu_handler_record.reset();
+	caption->emit_signal(SceneStringName(gui_input), caption_mouse_button(50.0, true, MouseButton::RIGHT));
+	h.pump();
+
+	CHECK(context_menu_handler_record.call_count == 0);
+	CHECK(h.strip->is_overview_active());
+	CHECK(h.strip->get_board_count() == 2);
 
 	h.unmount();
 }

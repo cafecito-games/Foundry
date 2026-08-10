@@ -37,6 +37,7 @@
 #include "core/io/config_file.h"
 #include "core/math/math_funcs.h"
 #include "scene/gui/button.h"
+#include "scene/main/viewport.h"
 #include "scene/scene_string_names.h"
 
 namespace {
@@ -116,29 +117,29 @@ EditorBoard *EditorBoardStrip::add_board(const String &p_title) {
 	return board;
 }
 
-bool EditorBoardStrip::close_board(int p_index) {
-	ERR_FAIL_INDEX_V(p_index, boards.size(), false);
+EditorBoardStrip::CloseOutcome EditorBoardStrip::_close_board_internal(int p_index) {
+	ERR_FAIL_INDEX_V(p_index, boards.size(), CloseOutcome::REFUSED);
 	// A boardless editor has nowhere to put the docks, the scene-mode surface, or the
 	// current scene, so the last board is not closable.
 	if (boards.size() <= 1) {
-		return false;
+		return CloseOutcome::REFUSED;
 	}
 
 	EditorBoard *board = boards[p_index];
-	ERR_FAIL_NULL_V(board, false);
+	ERR_FAIL_NULL_V(board, CloseOutcome::REFUSED);
 
 	const PackedInt32Array scene_indices = _collect_board_scene_indices(board);
 	if (!scene_indices.is_empty()) {
 		if (!board_scene_close_handler.is_valid()) {
-			return false;
+			return CloseOutcome::REFUSED;
 		}
 		if (!bool(board_scene_close_handler.call(p_index, scene_indices))) {
-			return false;
+			return CloseOutcome::DEFERRED;
 		}
 		// The handler runs arbitrary editor code. Re-validate rather than trusting that
 		// the board set survived it unchanged.
-		ERR_FAIL_INDEX_V(p_index, boards.size(), false);
-		ERR_FAIL_COND_V(boards[p_index] != board, false);
+		ERR_FAIL_INDEX_V(p_index, boards.size(), CloseOutcome::REFUSED);
+		ERR_FAIL_COND_V(boards[p_index] != board, CloseOutcome::REFUSED);
 	}
 
 	// Activate a neighbor before the outgoing board is torn down so the editor is
@@ -182,7 +183,83 @@ bool EditorBoardStrip::close_board(int p_index) {
 
 	queue_sort();
 	emit_signal(SNAME("board_removed"), p_index);
+	return CloseOutcome::CLOSED;
+}
+
+bool EditorBoardStrip::close_board(int p_index) {
+	ERR_FAIL_INDEX_V(p_index, boards.size(), false);
+	EditorBoard *board = boards[p_index];
+	ERR_FAIL_NULL_V(board, false);
+	const ObjectID board_id = board->get_instance_id();
+
+	const CloseOutcome outcome = _close_board_internal(p_index);
+	if (outcome != CloseOutcome::CLOSED) {
+		return false;
+	}
+
+	// An async continuation of close_boards() lands here once the scene prompts resolve:
+	// the head of the queue is the board that just closed, so drop it and resume.
+	if (!pending_close_ids.is_empty() && pending_close_ids[0] == board_id) {
+		pending_close_ids.remove_at(0);
+		_queue_advance_pending_closes();
+	}
 	return true;
+}
+
+void EditorBoardStrip::close_boards(const Vector<ObjectID> &p_board_ids) {
+	ERR_FAIL_COND_MSG(!pending_close_ids.is_empty(), "A bulk board close is already in progress.");
+	pending_close_ids = p_board_ids;
+	// Defer the first advance too so a menu id_pressed (or any other input stack) never
+	// tears a board down synchronously -- matching EditorNode's deferred board-close finish.
+	_queue_advance_pending_closes();
+}
+
+void EditorBoardStrip::abort_pending_closes() {
+	// Leave pending_close_advance_queued alone: a deferred _advance_pending_closes may
+	// already be in the message queue. It will see the empty list and return; clearing the
+	// flag here would let a brand-new close_boards() queue a second advance in the same flush.
+	pending_close_ids.clear();
+}
+
+void EditorBoardStrip::_queue_advance_pending_closes() {
+	if (pending_close_advance_queued) {
+		return;
+	}
+	pending_close_advance_queued = true;
+	callable_mp(this, &EditorBoardStrip::_advance_pending_closes).call_deferred();
+}
+
+void EditorBoardStrip::_advance_pending_closes() {
+	pending_close_advance_queued = false;
+	while (!pending_close_ids.is_empty()) {
+		const ObjectID board_id = pending_close_ids[0];
+		const int index = resolve_board_index(board_id);
+		if (index < 0) {
+			// Already gone -- an interleaved close or restore freed it. Skip ahead.
+			pending_close_ids.remove_at(0);
+			continue;
+		}
+
+		const CloseOutcome outcome = _close_board_internal(index);
+		if (outcome == CloseOutcome::CLOSED) {
+			pending_close_ids.remove_at(0);
+			// Defer the next close so listeners of board_removed (the switcher rebuild,
+			// EditorNode layout work) finish before another board comes down. Same
+			// re-entrancy reason as EditorNode's deferred finish of a pending board close.
+			_queue_advance_pending_closes();
+			return;
+		}
+		if (outcome == CloseOutcome::DEFERRED) {
+			// Leave the head in place. When the scene-close handler finishes it calls
+			// close_board() again; that success path resumes the queue.
+			return;
+		}
+
+		// Refused: last board, or a board with scenes and no handler. Clear so the queue
+		// can never spin on a board that will never close.
+		pending_close_ids.clear();
+		return;
+	}
 }
 
 void EditorBoardStrip::move_board(int p_from, int p_to) {
@@ -306,6 +383,9 @@ void EditorBoardStrip::_clear_boards() {
 	overview_exit_pending = false;
 	caption_drag_board_id = ObjectID();
 	caption_drag_active = false;
+	// A restore (or any wholesale board wipe) must not leave a deferred bulk-close queue
+	// parked on freed ObjectIDs -- that would permanently refuse later close_boards() calls.
+	abort_pending_closes();
 	set_process(false);
 }
 
@@ -712,11 +792,29 @@ void EditorBoardStrip::_on_caption_gui_input(const Ref<InputEvent> &p_event, Obj
 		return;
 	}
 
+	const Ref<InputEventMouseButton> mouse_button = p_event;
+	// Right-click opens the board actions menu and must not arm or clear the caption drag
+	// state machine: a context-menu press is not a reorder gesture and must not swallow the
+	// next caption activation.
+	if (mouse_button.is_valid() && mouse_button->get_button_index() == MouseButton::RIGHT) {
+		if (mouse_button->is_pressed() && board_context_menu_handler.is_valid()) {
+			const int index = resolve_board_index(p_board_id);
+			if (index >= 0) {
+				// InputEventMouse::global_position is viewport-relative. Control::get_screen_transform
+				// (via get_popup_base_transform) includes the window's desktop origin for
+				// non-embedded editor subwindows; Viewport::get_screen_transform does not.
+				const Point2 strip_local = get_global_transform_with_canvas().affine_inverse().xform(mouse_button->get_global_position());
+				const Point2 screen_position = get_screen_transform().xform(strip_local);
+				board_context_menu_handler.call(index, screen_position);
+			}
+		}
+		return;
+	}
+
 	// Event positions are viewport-relative; every board index the drag resolves is computed
 	// in the strip's own space, the same space the boards are laid out in.
 	const Transform2D to_strip = get_global_transform().affine_inverse();
 
-	const Ref<InputEventMouseButton> mouse_button = p_event;
 	if (mouse_button.is_valid() && mouse_button->get_button_index() == MouseButton::LEFT) {
 		if (mouse_button->is_pressed()) {
 			caption_drag_board_id = p_board_id;
