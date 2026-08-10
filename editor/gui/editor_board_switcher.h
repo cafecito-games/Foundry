@@ -55,7 +55,7 @@ class EditorBoardSwitcher : public HBoxContainer {
 	Button *overview_button = nullptr;
 
 	// Identifies the board button currently swapped for a LineEdit. Stored as an
-	// instance id, not a Vector<EditorBoard *>, so a board closing mid-rename is
+	// instance id rather than a cached board pointer, so a board closing mid-rename is
 	// simply "the id no longer resolves" rather than a dangling pointer.
 	ObjectID renaming_board_id;
 	Button *renaming_button = nullptr;
