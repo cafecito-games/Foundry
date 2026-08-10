@@ -430,10 +430,10 @@ Dictionary EditorAutomationState::read_editor_state() {
 	Dictionary view_2d_state;
 	if (CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton()) {
 		view_2d_state["supported"] = true;
-		EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+		EditorMainScreen *main_screen_for_zoom = EditorNode::get_editor_main_screen();
 		const bool zoom_settable = canvas_editor->is_visible_in_tree() &&
-				main_screen != nullptr &&
-				main_screen->get_selected_index() == EditorMainScreen::EDITOR_2D &&
+				main_screen_for_zoom != nullptr &&
+				main_screen_for_zoom->get_selected_index() == EditorMainScreen::EDITOR_2D &&
 				canvas_editor->get_focused_view() != nullptr &&
 				canvas_editor->get_focused_view()->get_zoom_widget() != nullptr;
 		view_2d_state["zoom_settable"] = zoom_settable;
