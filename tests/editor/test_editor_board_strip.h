@@ -61,9 +61,15 @@ struct BoardStripHarness {
 		strip->set_size(Size2(800, 600));
 	}
 
-	void pump() {
-		SceneTree::get_singleton()->process(0.016);
+	void pump(double p_delta = 0.016) {
+		SceneTree::get_singleton()->process(p_delta);
 		MessageQueue::get_singleton()->flush();
+	}
+
+	// Advances well past a switch's transition duration so its ease-out settles and the
+	// outgoing board sleeps, without a test hard-coding that duration itself.
+	void settle_transition() {
+		pump(1.0);
 	}
 
 	void unmount() {
@@ -213,10 +219,16 @@ TEST_CASE("[Editor][Boards] Leaf and tile lookup spans dormant boards") {
 	h.strip->set_active_board(1);
 	h.pump();
 	CHECK(h.strip->get_active_workspace() == second_board->get_workspace());
-	CHECK(first_board->is_dormant());
+	// The outgoing board stays awake for the duration of the slide; it only goes dormant
+	// once the switch settles.
+	CHECK_FALSE(first_board->is_dormant());
 	CHECK_FALSE(second_board->is_dormant());
 	// The board left behind remembers where the user was.
 	CHECK(first_board->get_remembered_focused_leaf_id() == first_board->get_workspace()->get_focused_leaf_id());
+
+	h.settle_transition();
+	CHECK(first_board->is_dormant());
+	CHECK_FALSE(second_board->is_dormant());
 
 	h.unmount();
 }
@@ -246,9 +258,14 @@ TEST_CASE("[Editor][Boards] Boards can be added, activated, and closed") {
 	h.strip->set_active_board(1);
 	h.pump();
 	CHECK(h.strip->get_active_index() == 1);
+	// Both halves of the switch stay awake for the duration of the slide.
+	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
+	CHECK_FALSE(h.strip->get_board(0)->is_dormant());
+	SIGNAL_CHECK("active_board_changed", { { 1 } });
+
+	h.settle_transition();
 	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
 	CHECK(h.strip->get_board(0)->is_dormant());
-	SIGNAL_CHECK("active_board_changed", { { 1 } });
 
 	// Re-activating the board already on screen is not a switch and must stay silent.
 	h.strip->set_active_board(1);
@@ -557,6 +574,134 @@ TEST_CASE("[Editor][Boards] A scene open on a dormant board is revealed where it
 	// The scene's context stays resolvable from the strip throughout, which is what
 	// keeps _update_tile_display_attachments from deactivating scenes it cannot place.
 	CHECK(h.strip->find_tile_by_id(h.editor_data.get_scene_tile(scene_index)) != nullptr);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A switch keeps the outgoing board awake until the slide settles") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	REQUIRE(h.strip->add_board("Second") != nullptr);
+	h.pump();
+	REQUIRE(h.strip->add_board("Third") != nullptr);
+	h.pump();
+	REQUIRE(h.strip->get_board_count() == 3);
+
+	h.strip->set_active_board(1);
+	// Immediately after the call -- before a single frame of animation runs -- both halves
+	// of the switch are awake and the board not involved in it stays dormant.
+	CHECK_FALSE(h.strip->get_board(0)->is_dormant());
+	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
+	CHECK(h.strip->get_board(2)->is_dormant());
+
+	h.settle_transition();
+	CHECK(h.strip->get_board(0)->is_dormant());
+	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
+	CHECK(h.strip->get_board(2)->is_dormant());
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] active_board_changed fires once per switch regardless of animation length") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+	REQUIRE(h.strip->add_board("Second") != nullptr);
+	h.pump();
+
+	SIGNAL_WATCH(h.strip, "active_board_changed");
+	h.strip->set_active_board(1);
+	// Several frames of animation elapse; none of them is a fresh switch, so none of them
+	// may emit the signal again.
+	for (int i = 0; i < 10; i++) {
+		h.pump();
+	}
+	h.settle_transition();
+	SIGNAL_CHECK("active_board_changed", { { 1 } });
+
+	SIGNAL_UNWATCH(h.strip, "active_board_changed");
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Interrupting a switch retargets instead of snapping") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+	REQUIRE(h.strip->add_board("Second") != nullptr);
+	h.pump();
+	REQUIRE(h.strip->add_board("Third") != nullptr);
+	h.pump();
+	REQUIRE(h.strip->get_board_count() == 3);
+
+	h.strip->set_active_board(1);
+	// Let the slide toward board 1 make real progress before interrupting it.
+	for (int i = 0; i < 5; i++) {
+		h.pump();
+	}
+	// Board 0's local position is 0, so its on-screen position is exactly the current
+	// scroll offset shared by every board -- a direct, API-free read of the transform.
+	const real_t mid_position = h.strip->get_board(0)->get_position().x;
+	CHECK(mid_position < real_t(-1.0));
+	CHECK(mid_position > real_t(-799.0));
+
+	h.strip->set_active_board(2);
+	h.pump();
+	const real_t just_after_retarget = h.strip->get_board(0)->get_position().x;
+
+	// Retargeting continues from mid_position toward the new target (-1600) rather than
+	// snapping back to the interrupted slide's start (0, which is greater than
+	// mid_position) or jumping straight to its old target (-800, which is less negative
+	// than the new one can have reached after only one frame): the new value must lie
+	// strictly between where the slide already was and where it is now headed.
+	CHECK(just_after_retarget < mid_position);
+	CHECK(just_after_retarget > real_t(-1600.0));
+
+	// Board 1 -- the interrupted target -- is no longer part of the live pair once the new
+	// slide settles; every board but the new outgoing/incoming pair stays dormant.
+	h.settle_transition();
+	CHECK(h.strip->get_board(0)->is_dormant());
+	CHECK(h.strip->get_board(1)->is_dormant());
+	CHECK_FALSE(h.strip->get_board(2)->is_dormant());
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Closing an unrelated board mid-slide still sleeps the outgoing board") {
+	// Reproduces the stranded-outgoing-board defect: closing a third board that is neither
+	// the active nor the outgoing half of an in-flight switch must not skip settling the
+	// outgoing board's dormancy. Before the fix, close_board() unconditionally cleared
+	// transition_outgoing without ever calling set_dormant(true) on the board it pointed
+	// at, so a board that survived the close was left awake, visible, and processing
+	// forever at its settled off-screen position.
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+	REQUIRE(h.strip->add_board("Second") != nullptr);
+	h.pump();
+	REQUIRE(h.strip->add_board("Third") != nullptr);
+	h.pump();
+	REQUIRE(h.strip->get_board_count() == 3);
+
+	EditorBoard *board_a = h.strip->get_board(0);
+
+	h.strip->set_active_board(1);
+	// The slide has started but not settled; A is the outgoing half and must still be awake.
+	CHECK_FALSE(board_a->is_dormant());
+
+	// Close C -- neither the active board (1) nor the outgoing board (A) -- before the
+	// slide toward B settles.
+	CHECK(h.strip->close_board(2));
+	h.pump();
+	CHECK(h.strip->get_board_count() == 2);
+	CHECK(h.strip->get_active_index() == 1);
+
+	// A must not be stranded awake: it is off-screen once the strip settles, so it must
+	// also be dormant.
+	CHECK(board_a->is_dormant());
+	CHECK_FALSE(board_a->is_visible());
+	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
 
 	h.unmount();
 }

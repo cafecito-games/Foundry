@@ -43,9 +43,17 @@ void EditorBoardStrip::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_SORT_CHILDREN: {
 			const Size2 size = get_size();
+			const Transform2D transform = board_view.get_transform();
+			const real_t pitch = size.width + board_view.get_board_pitch_gutter();
+			const Size2 scaled_size = size * board_view.get_scale();
 			for (int i = 0; i < boards.size(); i++) {
-				fit_child_in_rect(boards[i], Rect2(Point2(i * size.width, 0), size));
+				const Point2 position = transform.xform(Point2(real_t(i) * pitch, 0.0));
+				fit_child_in_rect(boards[i], Rect2(position, scaled_size));
 			}
+		} break;
+
+		case NOTIFICATION_PROCESS: {
+			_advance_transition(real_t(get_process_delta_time()));
 		} break;
 	}
 }
@@ -121,6 +129,26 @@ bool EditorBoardStrip::close_board(int p_index) {
 	if (active_index > p_index) {
 		active_index--;
 	}
+
+	// A removal invalidates any slide in progress: board_view's target offset was computed
+	// against a board list that no longer exists. The outgoing half of the pair may be the
+	// board that was just freed above (either the one just displaced, or a stale one left
+	// over from an earlier interrupted switch), but it may just as easily be a board that
+	// survives this close untouched -- p_index need not be the active or outgoing board at
+	// all. Resolving by instance id instead of dereferencing the raw pointer covers both:
+	// a freed outgoing board resolves to null and is skipped, and a surviving one is put to
+	// sleep here rather than being stranded awake and off-screen with nothing left to ever
+	// settle it. Settling instantly on the current active board is a deliberate hard cut
+	// rather than rebasing a partial animation against the new indices: this is a rare
+	// interruption, and a clean landing beats a subtly wrong ease-out.
+	if (EditorBoard *outgoing_board = ObjectDB::get_instance<EditorBoard>(transition_outgoing_id)) {
+		outgoing_board->set_dormant(true);
+	}
+	transition_outgoing_id = ObjectID();
+	board_view.switch_to_index(active_index, get_size());
+	board_view.finish_transition();
+	set_process(false);
+
 	queue_sort();
 	emit_signal(SNAME("board_removed"), p_index);
 	return true;
@@ -170,6 +198,11 @@ void EditorBoardStrip::_clear_boards() {
 	boards.clear();
 	active_index = 0;
 	next_board_id = 0;
+	// Every board a slide could have been animating between is gone; the outgoing id would
+	// resolve to null from here on regardless, but clearing it keeps the field's state
+	// consistent with "no slide in progress" rather than pointing at a freed instance id.
+	transition_outgoing_id = ObjectID();
+	set_process(false);
 }
 
 EditorBoard *EditorBoardStrip::get_board(int p_index) const {
@@ -215,20 +248,35 @@ void EditorBoardStrip::set_active_board(int p_index) {
 		return;
 	}
 
-	EditorBoard *outgoing = get_active_board();
+	// The board the strip was already showing (or already sliding towards, if this call
+	// interrupts an in-flight switch) becomes the new outgoing board.
+	EditorBoard *previous_active = get_active_board();
 	EditorBoard *incoming = boards[p_index];
-	if (outgoing) {
-		outgoing->remember_focused_leaf_id(outgoing->get_workspace()->get_focused_leaf_id());
+	if (previous_active) {
+		previous_active->remember_focused_leaf_id(previous_active->get_workspace()->get_focused_leaf_id());
 	}
+
+	// An interrupted slide can leave a stale outgoing board still awake -- the one from
+	// before this call -- that is neither the new outgoing nor the new incoming board.
+	// It is no longer part of the live pair, so it sleeps immediately rather than riding
+	// out a slide nobody is animating towards it for.
+	EditorBoard *stale_outgoing = ObjectDB::get_instance<EditorBoard>(transition_outgoing_id);
+	if (stale_outgoing && stale_outgoing != previous_active && stale_outgoing != incoming) {
+		stale_outgoing->set_dormant(true);
+	}
+
 	// Wake before sleeping: a frame in which every board is hidden would tear down the
 	// live scene viewports and re-create them on the next frame.
 	incoming->set_dormant(false);
-	if (outgoing && outgoing != incoming) {
-		outgoing->set_dormant(true);
-	}
+	transition_outgoing_id = (previous_active && previous_active != incoming) ? previous_active->get_instance_id() : ObjectID();
+
 	// active_index is committed before the focus request, because the editor resolves
-	// leaf_focus_requested through the active board's workspace.
+	// leaf_focus_requested through the active board's workspace. It is also committed at
+	// the start of the slide, not once it settles, so is_leaf_on_active_board() and the
+	// active_board_changed signal both reflect the target immediately.
 	active_index = p_index;
+	board_view.switch_to_index(p_index, get_size());
+	set_process(true);
 	queue_sort();
 
 	EditorSceneWorkspace *workspace = incoming->get_workspace();
@@ -238,6 +286,20 @@ void EditorBoardStrip::set_active_board(int p_index) {
 	}
 
 	emit_signal(SNAME("active_board_changed"), active_index);
+}
+
+void EditorBoardStrip::_advance_transition(real_t p_delta) {
+	board_view.advance(p_delta);
+	queue_sort();
+	if (board_view.is_animating()) {
+		return;
+	}
+
+	if (EditorBoard *outgoing_board = ObjectDB::get_instance<EditorBoard>(transition_outgoing_id)) {
+		outgoing_board->set_dormant(true);
+	}
+	transition_outgoing_id = ObjectID();
+	set_process(false);
 }
 
 bool EditorBoardStrip::is_leaf_on_active_board(int p_leaf_id) const {
@@ -399,6 +461,10 @@ void EditorBoardStrip::restore_from_config(const Ref<ConfigFile> &p_config) {
 	for (int i = 0; i < boards.size(); i++) {
 		boards[i]->set_dormant(i != active_index);
 	}
+	// A restored active board is not the result of a switch, so it appears already settled
+	// at its resting position rather than sliding in from board 0.
+	board_view.switch_to_index(active_index, get_size());
+	board_view.finish_transition();
 	queue_sort();
 
 	emit_signal(SNAME("boards_restored"));
