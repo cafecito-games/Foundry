@@ -63,7 +63,10 @@ public:
 
 private:
 	CanvasItemEditor *editor = nullptr;
-	EditorSceneContext *scene_context = nullptr;
+	// The bound context is held by identity, not by address: a context can be freed
+	// while this view is still registered for viewport fan-out, and a raw pointer
+	// would be read through after the free (#2062).
+	uint64_t scene_context_id = 0;
 	CanvasItemEditorViewState &view_state;
 
 	Control *viewport_scrollable = nullptr;
@@ -126,6 +129,7 @@ private:
 	SubViewport *get_scene_viewport() const;
 	Node *get_edited_scene() const;
 	EditorSelection *get_editor_selection() const;
+	EditorSceneContext *_resolve_scene_context() const;
 
 public:
 	CanvasItemEditorView(CanvasItemEditor *p_editor, CanvasItemEditorViewState &p_view_state);
@@ -135,7 +139,8 @@ public:
 	void bind_context(EditorSceneContext *p_context);
 	void push_viewport_state();
 
-	EditorSceneContext *get_bound_context() const { return scene_context; }
+	// Returns nullptr once the bound context has been freed; never a stale pointer.
+	EditorSceneContext *get_bound_context() const { return _resolve_scene_context(); }
 	CanvasItemEditorViewState &get_view_state() { return view_state; }
 	const CanvasItemEditorViewState &get_view_state() const { return view_state; }
 

@@ -5514,6 +5514,13 @@ void EditorNode::configure_scene_context(EditorSceneContext *p_context) {
 }
 
 void EditorNode::scene_context_about_to_be_removed(EditorSceneContext *p_context) {
+	ERR_FAIL_NULL(p_context);
+	// Canvas views bind to a context regardless of which board owns it, so a preview
+	// on a dormant board outlives the removal of a non-active context. Drop those
+	// bindings before the active-context handling below, which returns early for
+	// every other context.
+	p_context->detach_bound_canvas_views();
+
 	if (active_scene_context != p_context) {
 		return;
 	}
