@@ -114,6 +114,9 @@ class Node3DEditorViewport : public Control {
 	friend class Node3DEditor;
 	friend class ViewportNavigationControl;
 	friend class ViewportRotationControl;
+	// Drives orbit-snap and wheel-zoom directly for secondary-viewport regression
+	// coverage; see run_board_switch_3d_scene().
+	friend class EditorAutomationAcceptanceWorkflow;
 
 public:
 	enum class ViewportBinding {

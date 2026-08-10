@@ -45,6 +45,7 @@
 #include "editor/gui/code_editor.h"
 #include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/startup_dialog.h"
+#include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_editor_view.h"
@@ -52,6 +53,7 @@
 #include "editor/workspace/workspace_tab_type.h"
 
 #include "core/config/project_settings.h"
+#include "core/input/input.h"
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -1332,6 +1334,47 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (demoted_tile->get_spatial_view() == nullptr) {
 		return _failure_with_message(p_driver, result.workflow,
 				"Demoting the 3D tile did not build a secondary 3D viewport, so this run never exercised the crash path.");
+	}
+
+	// Building the secondary viewport is only one of the ways its null overlay members
+	// can be reached. Orbiting to a 90-degree axis and zooming with the mouse wheel are
+	// both driven straight through the surface's input handlers on a real user's machine;
+	// exercise the same functions directly here so a regression segfaults this subprocess
+	// instead of silently reintroducing the null derefs those handlers guard against.
+	p_driver.set_step("orbit_secondary_viewport_to_axis_snap");
+	{
+		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
+		spatial_view->cursor.unsnapped_x_rot = 0.0;
+		spatial_view->cursor.unsnapped_y_rot = 0.0;
+		Ref<InputEventMouseMotion> orbit_event;
+		orbit_event.instantiate();
+		Input::get_singleton()->action_press("spatial_editor/viewport_orbit_snap_modifier_1");
+		spatial_view->_nav_orbit(orbit_event, Vector2(0, 100000));
+		Input::get_singleton()->action_release("spatial_editor/viewport_orbit_snap_modifier_1");
+		if (spatial_view->view_type != Node3DEditorViewport::VIEW_TYPE_TOP) {
+			return _failure_with_message(p_driver, result.workflow,
+					"Orbiting the secondary viewport did not snap to the Top view; the axis-snap trigger was not exercised.");
+		}
+	}
+	p_driver.flush_frames(5);
+
+	p_driver.set_step("zoom_secondary_viewport_with_wheel");
+	{
+		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
+		Ref<InputEventMouseButton> wheel_event;
+		wheel_event.instantiate();
+		spatial_view->_nav_zoom(wheel_event, Vector2(1000, 1000));
+		if (!(spatial_view->zoom_indicator_delay > 0.0)) {
+			return _failure_with_message(p_driver, result.workflow,
+					"Zooming the secondary viewport did not arm the zoom indicator; the wheel-zoom trigger was not exercised.");
+		}
+		spatial_view->_draw();
+	}
+	p_driver.flush_frames(5);
+
+	p_driver.set_step("assert_no_new_errors_after_secondary_input");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
 	}
 
 	// Switching back and forth re-runs the demotion against an existing secondary
