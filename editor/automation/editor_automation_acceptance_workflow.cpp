@@ -73,6 +73,7 @@
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
+#include "scene/3d/node_3d.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/gui/tree.h"
@@ -2204,6 +2205,20 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 	p_driver.flush_frames(30);
 
+	// The fixture scene root has no children of its own, so first_child_transform would
+	// never have anything to compare. Add the probe child at runtime instead of editing
+	// the shared fixture -- board_switch_3d_scene also loads secondary.tscn, so mutating
+	// it there would perturb that workflow too.
+	Node *preview_probe_root = editor_node->get_edited_scene();
+	if (preview_probe_root == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The 3D scene has no edited root after loading.");
+	}
+	Node3D *preview_probe_child = memnew(Node3D);
+	preview_probe_child->set_name("PassivePreviewProbeChild");
+	preview_probe_child->set_position(Vector3(1, 2, 3));
+	preview_probe_root->add_child(preview_probe_child);
+	preview_probe_child->set_owner(preview_probe_root);
+
 	// A tile is demoted to a preview by editor-wide focus, not by board activity, so a
 	// second board would only re-focus its lone tile and hide the preview. Splitting the
 	// same active board into two tiles keeps the demoted preview on screen and clickable.
@@ -2253,11 +2268,26 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (spatial_view == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "The demoted 3D tile did not build a passive preview viewport.");
 	}
+	// Held across flush_frames(), so re-resolved from an ObjectID at each use following a
+	// frame advance rather than trusted to still be alive.
+	const ObjectID spatial_view_id = spatial_view->get_instance_id();
+	auto resolve_spatial_view = [&]() -> Node3DEditorViewport * {
+		return ObjectDB::get_instance<Node3DEditorViewport>(spatial_view_id);
+	};
 	Control *surface = spatial_view->get_surface();
 	if (surface == nullptr || !surface->is_visible_in_tree()) {
 		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview's surface is not on screen, so no real input could reach it.");
 	}
+	const ObjectID surface_id = surface->get_instance_id();
+	auto resolve_surface = [&]() -> Control * {
+		return ObjectDB::get_instance<Control>(surface_id);
+	};
 	p_driver.flush_frames(30);
+	spatial_view = resolve_spatial_view();
+	surface = resolve_surface();
+	if (spatial_view == nullptr || surface == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview viewport or surface did not survive a frame advance.");
+	}
 	if (surface->get_global_rect().get_area() <= 0.0) {
 		return _failure_with_message(p_driver, result.workflow,
 				vformat("The passive 3D preview's surface has no geometry (%s), so no pointer input could be aimed at it.",
@@ -2315,6 +2345,10 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		p_driver.flush_frames(10);
 	}
 
+	spatial_view = resolve_spatial_view();
+	if (spatial_view == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview viewport did not survive the non-promoting input probe.");
+	}
 	if (!(_sample_passive_preview(spatial_view, nullptr, preview_scene_root) == before_3d)) {
 		return _failure_with_message(p_driver, result.workflow, "Non-promoting input changed a passive 3D preview's camera, selection, or scene content.");
 	}
@@ -2325,6 +2359,10 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	// The promoting gesture: primary button press, motion while held, then release.
 	// The tile must gain focus while the whole gesture stays edit-free.
 	p_driver.set_step("promote_tile_with_primary_gesture");
+	surface = resolve_surface();
+	if (surface == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview's surface did not survive the non-promoting input probe.");
+	}
 	{
 		RealPointerDispatch dispatch;
 		if (!dispatch.bind(surface)) {
@@ -2401,10 +2439,20 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (canvas_tile == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "Could not resolve the demoted 2D tile after promotion.");
 	}
+	// Held across flush_frames(), so re-resolved from an ObjectID at each use following a
+	// frame advance rather than trusted to still be alive.
+	const ObjectID canvas_tile_id = canvas_tile->get_instance_id();
+	auto resolve_canvas_tile = [&]() -> ScenePaneTile * {
+		return ObjectDB::get_instance<ScenePaneTile>(canvas_tile_id);
+	};
 	CanvasItemEditorView *canvas_view = canvas_tile->get_canvas_view();
 	if (canvas_view == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "The demoted 2D tile did not build a passive canvas preview.");
 	}
+	const ObjectID canvas_view_id = canvas_view->get_instance_id();
+	auto resolve_canvas_view = [&]() -> CanvasItemEditorView * {
+		return ObjectDB::get_instance<CanvasItemEditorView>(canvas_view_id);
+	};
 	if (!canvas_view->is_passive_preview()) {
 		return _failure_with_message(p_driver, result.workflow, "The demoted 2D tile's view does not report the passive role.");
 	}
@@ -2451,6 +2499,15 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		dispatch.button(MouseButton::RIGHT, false, MouseButtonMask::NONE, events);
 		p_driver.flush_frames(10);
 
+		canvas_view = resolve_canvas_view();
+		canvas_tile = resolve_canvas_tile();
+		if (canvas_view == nullptr || canvas_tile == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "The passive 2D preview did not survive the non-promoting input probe.");
+		}
+		canvas_viewport = canvas_view->get_viewport_control();
+		if (canvas_viewport == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "The passive 2D preview lost its viewport control after the non-promoting input probe.");
+		}
 		if (!(_sample_passive_preview(nullptr, canvas_view, canvas_tile->get_current_scene_root()) == before_2d)) {
 			return _failure_with_message(p_driver, result.workflow, "Non-promoting input changed a passive 2D preview's canvas transform, selection, or scene content.");
 		}
@@ -2474,6 +2531,10 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		}
 		if (editor_node->get_editor_data().get_focused_tile_id() != 1) {
 			return _failure_with_message(p_driver, result.workflow, "Clicking a passive 2D preview did not focus its owning tile.");
+		}
+		canvas_view = resolve_canvas_view();
+		if (canvas_view == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "The passive 2D preview did not survive the promoting gesture.");
 		}
 		if (!Math::is_equal_approx(canvas_view->get_view_state().zoom, before_2d.canvas_zoom)) {
 			return _failure_with_message(p_driver, result.workflow, "The 2D promoting gesture changed the preview's zoom.");
