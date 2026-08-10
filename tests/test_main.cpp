@@ -79,6 +79,7 @@
 #include "tests/editor/test_editor_automation_wait.h"
 #include "tests/editor/test_editor_automation_workflow.h"
 #include "tests/editor/test_editor_automation_workspace.h"
+#include "tests/editor/test_editor_board_3d_switch.h"
 #include "tests/editor/test_editor_board_cross_board.h"
 #include "tests/editor/test_editor_board_overview.h"
 #include "tests/editor/test_editor_board_persistence.h"
