@@ -755,6 +755,17 @@ static void apply_foundry_cli_invocation(
 			editor = true;
 #if defined(TOOLS_ENABLED)
 			EditorAutomationServer::apply_cli_options(inv);
+			// An automation subprocess must coexist with a developer's running
+			// editor and with other automation fixtures, so it must not bind the
+			// ordinary editor's fixed LSP/DAP ports (6005/6006). Enabling the
+			// tooling host with port 0 for both services lets the OS choose
+			// ephemeral ports; each server reads back and reports its actual port
+			// through the FOUNDRY_TOOLING readiness record.
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) && !defined(FOUNDRY_SCRIPT_NO_LSP)
+			if (inv.automation) {
+				EditorToolingHost::configure(0, 0);
+			}
+#endif
 #endif
 			for (int i = 0; i < inv.passthrough_args.size(); i++) {
 				r_engine_args.push_back(inv.passthrough_args[i]);
