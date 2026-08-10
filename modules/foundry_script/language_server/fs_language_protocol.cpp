@@ -186,6 +186,8 @@ void FSLanguageProtocol::_bind_methods() {
 }
 
 Dictionary FSLanguageProtocol::initialize(const Dictionary &p_params) {
+	MutexLock lock(mutex);
+
 	LSP::InitializeResult ret;
 
 	{
@@ -262,6 +264,8 @@ bool FSLanguageProtocol::complete_initialization_if_workspace_ready() {
 }
 
 void FSLanguageProtocol::initialized(const Variant &p_params) {
+	MutexLock lock(mutex);
+
 	LSP::FoundryCapabilities capabilities;
 
 	DocTools *doc = EditorHelp::get_doc_data();
@@ -278,7 +282,64 @@ void FSLanguageProtocol::initialized(const Variant &p_params) {
 	notify_client("foundry_script/capabilities", capabilities.to_json());
 }
 
+void FSLanguageProtocol::enqueue_reparse_all() {
+	MutexLock lock(pending_invalidations_mutex);
+	pending_invalidations.reparse_all = true;
+}
+
+void FSLanguageProtocol::enqueue_reparse_paths(const HashSet<String> &p_paths) {
+	MutexLock lock(pending_invalidations_mutex);
+	for (const String &path : p_paths) {
+		pending_invalidations.paths.insert(path);
+	}
+}
+
+void FSLanguageProtocol::enqueue_namespace_invalidation(const String &p_namespace) {
+	MutexLock lock(pending_invalidations_mutex);
+	pending_invalidations.namespaces.insert(p_namespace);
+}
+
+void FSLanguageProtocol::apply_pending_invalidations() {
+	PendingInvalidations snapshot;
+	{
+		// Swap the pending record out under the leaf lock, then drain it under the protocol mutex.
+		MutexLock lock(pending_invalidations_mutex);
+		if (!pending_invalidations.reparse_all && pending_invalidations.paths.is_empty() && pending_invalidations.namespaces.is_empty()) {
+			return;
+		}
+		snapshot.reparse_all = pending_invalidations.reparse_all;
+		snapshot.paths = pending_invalidations.paths;
+		snapshot.namespaces = pending_invalidations.namespaces;
+		pending_invalidations.reparse_all = false;
+		pending_invalidations.paths.clear();
+		pending_invalidations.namespaces.clear();
+	}
+
+	MutexLock lock(mutex);
+	if (snapshot.reparse_all) {
+		reparse_open_scripts();
+		return;
+	}
+
+	HashSet<String> affected = snapshot.paths;
+	for (const String &ns : snapshot.namespaces) {
+		for (const String &path : collect_open_scripts_reaching_namespace(ns)) {
+			affected.insert(path);
+		}
+	}
+	if (!affected.is_empty()) {
+		reparse_open_scripts(affected);
+	}
+}
+
 void FSLanguageProtocol::poll(int p_limit_usec) {
+	// Drain deferred invalidations first so main-thread funnels never block on the protocol mutex
+	// (D3). `apply_pending_invalidations()` acquires `mutex` internally; the rest of `poll` re-takes
+	// it below (recursive acquisition is uncontended on a single thread).
+	apply_pending_invalidations();
+
+	MutexLock lock(mutex);
+
 	uint64_t target_ticks = OS::get_singleton()->get_ticks_usec() + p_limit_usec;
 
 	if (server->is_connection_available()) {
@@ -330,6 +391,8 @@ int FSLanguageProtocol::get_local_port() const {
 }
 
 void FSLanguageProtocol::stop() {
+	MutexLock lock(mutex);
+
 	for (const KeyValue<int, Ref<LSPeer>> &E : clients) {
 		Ref<LSPeer> peer = clients.get(E.key);
 		peer->connection->disconnect_from_host();
@@ -339,6 +402,8 @@ void FSLanguageProtocol::stop() {
 }
 
 void FSLanguageProtocol::notify_client(const String &p_method, const Variant &p_params, int p_client_id) {
+	MutexLock lock(mutex);
+
 #ifdef TESTS_ENABLED
 	if (clients.is_empty()) {
 		return;
@@ -359,6 +424,8 @@ void FSLanguageProtocol::notify_client(const String &p_method, const Variant &p_
 }
 
 void FSLanguageProtocol::request_client(const String &p_method, const Variant &p_params, int p_client_id) {
+	MutexLock lock(mutex);
+
 #ifdef TESTS_ENABLED
 	if (clients.is_empty()) {
 		return;
@@ -453,6 +520,8 @@ void FSLanguageProtocol::LSPeer::remove_cached_parser(const String &p_path) {
 }
 
 ExtendFSParser *FSLanguageProtocol::get_parse_result(const String &p_path) {
+	MutexLock lock(mutex);
+
 	LSP_CLIENT_V(nullptr);
 
 	ExtendFSParser **cached_parser = client->parse_results.getptr(p_path);
@@ -463,6 +532,8 @@ ExtendFSParser *FSLanguageProtocol::get_parse_result(const String &p_path) {
 }
 
 bool FSLanguageProtocol::get_managed_document_text(const String &p_path, String &r_text) const {
+	MutexLock lock(mutex);
+
 	if (latest_client_id == LSP_NO_CLIENT) {
 		return false;
 	}
@@ -479,6 +550,8 @@ bool FSLanguageProtocol::get_managed_document_text(const String &p_path, String 
 }
 
 ExtendFSParser *FSLanguageProtocol::peek_parse_result(const String &p_path) {
+	MutexLock lock(mutex);
+
 	LSP_CLIENT_V(nullptr);
 
 	ExtendFSParser **cached_parser = client->parse_results.getptr(p_path);
@@ -486,6 +559,8 @@ ExtendFSParser *FSLanguageProtocol::peek_parse_result(const String &p_path) {
 }
 
 void FSLanguageProtocol::lsp_did_open(const Dictionary &p_params) {
+	MutexLock lock(mutex);
+
 	LSP_CLIENT;
 
 	LSP::TextDocumentItem document;
@@ -506,6 +581,8 @@ void FSLanguageProtocol::lsp_did_open(const Dictionary &p_params) {
 }
 
 void FSLanguageProtocol::lsp_did_change(const Dictionary &p_params) {
+	MutexLock lock(mutex);
+
 	LSP_CLIENT;
 
 	LSP::TextDocumentIdentifier identifier;
@@ -536,6 +613,8 @@ void FSLanguageProtocol::lsp_did_change(const Dictionary &p_params) {
 }
 
 void FSLanguageProtocol::lsp_did_close(const Dictionary &p_params) {
+	MutexLock lock(mutex);
+
 	LSP_CLIENT;
 
 	LSP::TextDocumentIdentifier identifier;
@@ -551,6 +630,8 @@ void FSLanguageProtocol::lsp_did_close(const Dictionary &p_params) {
 }
 
 void FSLanguageProtocol::resolve_related_symbols(const LSP::TextDocumentPositionParams &p_doc_pos, List<const LSP::DocumentSymbol *> &r_list) {
+	MutexLock lock(mutex);
+
 	LSP_CLIENT;
 
 	String path = workspace->get_file_path(p_doc_pos.textDocument.uri);
@@ -587,10 +668,14 @@ void FSLanguageProtocol::resolve_related_symbols(const LSP::TextDocumentPosition
 }
 
 void FSLanguageProtocol::reparse_open_scripts() {
+	MutexLock lock(mutex);
+
 	reparse_open_scripts(HashSet<String>());
 }
 
 void FSLanguageProtocol::reparse_open_scripts(const HashSet<String> &p_paths) {
+	MutexLock lock(mutex);
+
 	const bool filter_paths = !p_paths.is_empty();
 	// parse_script() -> FSWorkspace::publish_diagnostics() resolves and notifies through
 	// latest_client_id, so each client must be made the "latest" while its own documents are
@@ -622,6 +707,8 @@ void FSLanguageProtocol::reparse_open_scripts(const HashSet<String> &p_paths) {
 }
 
 HashSet<String> FSLanguageProtocol::collect_open_scripts_reaching_namespace(const String &p_namespace) const {
+	MutexLock lock(mutex);
+
 	HashSet<String> paths;
 	if (p_namespace.is_empty()) {
 		return paths;
