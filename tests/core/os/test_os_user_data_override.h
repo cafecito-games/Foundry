@@ -31,6 +31,8 @@
 #pragma once
 
 #include "core/config/project_settings.h"
+#include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/os/os.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
@@ -94,6 +96,48 @@ TEST_CASE("[OS] user-data root override redirects every get_user_data_dir branch
 		CHECK_MESSAGE(!resolved.begins_with(override_prefix),
 				"With the override cleared, user data should resolve on the platform path: ", resolved);
 	}
+
+	// Restore process-global state.
+	os->set_user_data_root_override(saved_override);
+	ps->set_setting("application/config/name", saved_name);
+	ps->set_setting("application/config/use_custom_user_dir", saved_use_custom);
+	ps->set_setting("application/config/custom_user_dir_name", saved_custom_dir);
+}
+
+// Regression for the per-shard `user://` isolation override (set by the test entrypoint).
+// `set_user_data_root_override()` only redirects the root, and the entrypoint only creates the
+// root directory — not the resolved per-project leaf beneath it. After `ensure_user_data_dir()`
+// runs, a `FileAccess::open("user://…", WRITE)` must succeed because the parent leaf exists.
+TEST_CASE("[OS] ensure_user_data_dir makes user:// writable under override root") {
+	ProjectSettings *ps = ProjectSettings::get_singleton();
+	OS *os = OS::get_singleton();
+
+	const String saved_override = os->get_user_data_root_override();
+	const Variant saved_name = GLOBAL_GET("application/config/name");
+	const Variant saved_use_custom = GLOBAL_GET("application/config/use_custom_user_dir");
+	const Variant saved_custom_dir = GLOBAL_GET("application/config/custom_user_dir_name");
+
+	const String override_root = TestUtils::get_temp_path("user_data_writable_probe").simplify_path();
+
+	// Use the unnamed-project mapping so the resolved leaf is deterministic and, before
+	// `ensure_user_data_dir()`, definitely does not exist.
+	ps->set_setting("application/config/name", String());
+	ps->set_setting("application/config/use_custom_user_dir", false);
+	os->set_user_data_root_override(override_root);
+
+	const String resolved_leaf = os->get_user_data_dir();
+	CHECK_MESSAGE(!DirAccess::exists(resolved_leaf),
+			"The resolved leaf should not exist before ensure_user_data_dir(): ", resolved_leaf);
+
+	os->ensure_user_data_dir();
+
+	CHECK_MESSAGE(DirAccess::exists(resolved_leaf),
+			"The resolved leaf should exist after ensure_user_data_dir(): ", resolved_leaf);
+
+	const String probe = "user://ensure_writable_probe.txt";
+	Ref<FileAccess> file = FileAccess::open(probe, FileAccess::WRITE);
+	CHECK_MESSAGE(file.is_valid(),
+			"FileAccess::open(\"user://…\", WRITE) should return a valid handle after ensure_user_data_dir()");
 
 	// Restore process-global state.
 	os->set_user_data_root_override(saved_override);
