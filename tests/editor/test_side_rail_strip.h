@@ -51,6 +51,7 @@
 #include "scene/main/scene_tree.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
+#include "scene/resources/style_box.h"
 #include "scene/resources/style_box_flat.h"
 #include "scene/theme/theme_db.h"
 
@@ -517,14 +518,28 @@ TEST_CASE("[Editor][SideRailButton] align_to_largest_stylebox keeps pressed and 
 }
 
 TEST_CASE("[Editor][SideRailButton] undersized icon-only mode overflows in one direction only") {
-	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+	// Zero-margin styleboxes so set_size(10, 10) is not clamped up by theme
+	// margins before the icon is attached. Outside the scene tree,
+	// update_minimum_size() is a no-op, so the explicit size survives after
+	// set_rail_icon and the clamp path is actually exercised.
+	Ref<StyleBoxEmpty> empty_sb;
+	empty_sb.instantiate();
+	Ref<Theme> theme;
+	theme.instantiate();
+	theme->set_type_variation("FlatMenuButton", "Button");
+	theme->set_stylebox(SNAME("normal"), SNAME("FlatMenuButton"), empty_sb);
+	theme->set_stylebox(SNAME("hover"), SNAME("FlatMenuButton"), empty_sb);
+	theme->set_stylebox(SNAME("pressed"), SNAME("FlatMenuButton"), empty_sb);
+	theme->set_stylebox(SNAME("hover_pressed"), SNAME("FlatMenuButton"), empty_sb);
+	theme->set_stylebox(SNAME("disabled"), SNAME("FlatMenuButton"), empty_sb);
+	theme->set_constant(SNAME("align_to_largest_stylebox"), SNAME("Button"), 0);
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
-	button->set_rail_icon(_make_side_rail_test_icon(16));
 	button->set_label_visible(false);
 	button->set_theme(theme);
 	button->notification(Control::NOTIFICATION_THEME_CHANGED);
 	button->set_size(Size2(10, 10));
+	button->set_rail_icon(_make_side_rail_test_icon(16));
 
 	const EditorSideRailButton::ComposedGeometry geometry = button->get_composed_geometry();
 	REQUIRE(geometry.has_icon);
@@ -532,8 +547,46 @@ TEST_CASE("[Editor][SideRailButton] undersized icon-only mode overflows in one d
 		memdelete(button);
 		return;
 	}
+	CHECK(button->get_size() == Size2(10, 10));
+	CHECK(geometry.content_rect.size.width < 16);
 	CHECK(geometry.icon_rect.position.x >= geometry.content_rect.position.x - 0.5);
 	CHECK(geometry.icon_rect.position.y >= geometry.content_rect.position.y - 0.5);
+	CHECK(geometry.icon_rect.get_end().x > geometry.content_rect.get_end().x - 0.5);
+	CHECK(geometry.icon_rect.get_end().y > geometry.content_rect.get_end().y - 0.5);
+
+	memdelete(button);
+}
+
+TEST_CASE("[Editor][SideRailButton] composed geometry exposes draw colors; icons stay opaque white without overrides") {
+	Ref<Theme> theme;
+	theme.instantiate();
+	theme->set_type_variation("FlatMenuButton", "Button");
+	theme->set_constant(SNAME("h_separation"), SNAME("Button"), 4);
+	theme->set_font_size(SceneStringName(font_size), SNAME("Button"), 16);
+	theme->set_font(SceneStringName(font), SNAME("Button"), ThemeDB::get_singleton()->get_fallback_font());
+	theme->set_color(SceneStringName(font_color), SNAME("Button"), Color(0.2, 0.4, 0.6));
+	// No icon_*_color overrides on this theme. ThemeDB defaults and our
+	// has_theme_color guards both resolve icons to opaque white — never black.
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_rail_icon(_make_side_rail_test_icon(16));
+	button->set_rail_label("Inspector");
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	button->set_size(button->get_minimum_size());
+
+	const EditorSideRailButton::ComposedGeometry normal = button->get_composed_geometry();
+	CHECK(normal.font_color == Color(0.2, 0.4, 0.6));
+	CHECK(normal.icon_color == Color(1, 1, 1, 1));
+
+	button->set_pressed_no_signal(true);
+	const EditorSideRailButton::ComposedGeometry pressed = button->get_composed_geometry();
+	CHECK(pressed.icon_color == Color(1, 1, 1, 1));
+
+	theme->set_color(SNAME("icon_pressed_color"), SNAME("Button"), Color(0.1, 0.8, 0.2, 1));
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	const EditorSideRailButton::ComposedGeometry pressed_tinted = button->get_composed_geometry();
+	CHECK(pressed_tinted.icon_color == Color(0.1, 0.8, 0.2, 1));
 
 	memdelete(button);
 }

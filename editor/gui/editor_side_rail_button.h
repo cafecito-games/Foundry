@@ -65,17 +65,6 @@ class EditorSideRailButton : public Button {
 		Color icon_hover_pressed_color;
 		Color icon_focus_color;
 		Color icon_disabled_color;
-		bool has_font_hover_color = false;
-		bool has_font_pressed_color = false;
-		bool has_font_hover_pressed_color = false;
-		bool has_font_focus_color = false;
-		bool has_font_disabled_color = false;
-		bool has_icon_normal_color = false;
-		bool has_icon_hover_color = false;
-		bool has_icon_pressed_color = false;
-		bool has_icon_hover_pressed_color = false;
-		bool has_icon_focus_color = false;
-		bool has_icon_disabled_color = false;
 		int icon_label_separation = 0;
 		bool align_to_largest_stylebox = false;
 		real_t style_margin_left = 0;
@@ -116,6 +105,8 @@ public:
 		Transform2D content_transform;
 		Point2 label_strip_baseline;
 		Point2 icon_strip_position;
+		Color font_color;
+		Color icon_color;
 		real_t icon_label_separation = 0;
 		bool has_icon = false;
 		bool has_label = false;
