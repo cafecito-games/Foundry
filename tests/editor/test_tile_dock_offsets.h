@@ -255,6 +255,10 @@ TEST_CASE("[Editor][TileDockOffsets] load applies keys by gap identity") {
 	}
 
 	SUBCASE("right hidden uses tile_dock_hsplit_1 for the surviving gap") {
+		// load_layout restores each side's collapse state before resolving the
+		// gap map, so the right column has to be collapsed in the stored layout
+		// rather than only hidden by hand.
+		config->set_value(section, "tile_rail_right", true);
 		fixture.set_column_visible(true, true, false);
 		fixture.region.load_layout(config, section);
 
@@ -363,6 +367,7 @@ TEST_CASE("[Editor][TileDockOffsets] internal children do not invent a centre-ri
 	const String section = "WorkspaceLeaf_0";
 	config->set_value(section, "tile_dock_hsplit_1", 180);
 	config->set_value(section, "tile_dock_hsplit_2", 260);
+	config->set_value(section, "tile_rail_right", true);
 	fixture.region.load_layout(config, section);
 
 	PackedInt32Array offsets = fixture.body->get_split_offsets();

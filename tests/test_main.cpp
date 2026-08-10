@@ -114,6 +114,8 @@
 #include "tests/editor/test_script_leaf_node_drop.h"
 #include "tests/editor/test_script_refactor_apply.h"
 #include "tests/editor/test_script_refactor_vcs_guard.h"
+#include "tests/editor/test_side_rail_collapse.h"
+#include "tests/editor/test_side_rail_state.h"
 #include "tests/editor/test_side_rail_strip.h"
 #include "tests/editor/test_startup_dialog.h"
 #include "tests/editor/test_startup_router.h"

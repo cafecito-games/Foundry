@@ -40,44 +40,6 @@
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
 
-Vector<EditorDock *> EditorSideRailStrip::_get_source_docks_in_order() const {
-	Vector<EditorDock *> docks;
-
-	if (side == Side::RIGHT) {
-		TabContainer *tabs = dock_region->get_right_tabs();
-		if (!tabs) {
-			return docks;
-		}
-		for (int i = 0; i < tabs->get_tab_count(); i++) {
-			EditorDock *dock = Object::cast_to<EditorDock>(tabs->get_tab_control(i));
-			if (dock) {
-				docks.push_back(dock);
-			}
-		}
-		return docks;
-	}
-
-	// Left side: the ordered EditorDock children of body preceding
-	// content_host (place_left admits more than the one dock shipping today).
-	Control *body = dock_region->get_body();
-	Control *center_host = dock_region->get_center_host();
-	if (!body || !center_host) {
-		return docks;
-	}
-	const int child_count = body->get_child_count(false);
-	for (int i = 0; i < child_count; i++) {
-		Node *child = body->get_child(i, false);
-		if (child == center_host) {
-			break;
-		}
-		EditorDock *dock = Object::cast_to<EditorDock>(child);
-		if (dock) {
-			docks.push_back(dock);
-		}
-	}
-	return docks;
-}
-
 void EditorSideRailStrip::_rebuild_toggles() {
 	for (EditorSideRailButton *button : toggle_buttons) {
 		toggles_vbox->remove_child(button);
@@ -86,7 +48,7 @@ void EditorSideRailStrip::_rebuild_toggles() {
 	toggle_buttons.clear();
 	toggle_docks.clear();
 
-	const Vector<EditorDock *> source_docks = _get_source_docks_in_order();
+	const Vector<EditorDock *> source_docks = dock_region->get_side_docks(side);
 	for (EditorDock *dock : source_docks) {
 		// EditorDock::is_enabled(), not Control::is_visible(): a right-side
 		// dock's own visibility tracks TabContainer tab selection, not
@@ -172,31 +134,34 @@ void EditorSideRailStrip::_dock_style_changed(EditorDock *p_dock) {
 }
 
 void EditorSideRailStrip::_toggle_pressed(EditorDock *p_dock) {
-	dock_region->focus_dock(p_dock);
+	dock_region->press_rail_toggle(p_dock);
 }
 
 void EditorSideRailStrip::_close_pressed() {
-	// The close button only ever shows on a side that has a current-tab
-	// concept (see _update_active_states): deselecting the current tab hides
-	// its content, mirroring EditorBottomDrawerStrip::_close_pressed's
-	// bottom_panel->hide_bottom_panel() for this rail's tab-backed side.
-	if (active_source_tabs) {
-		active_source_tabs->set_current_tab(-1);
-	}
+	// Mirrors EditorBottomDrawerStrip::_close_pressed's
+	// bottom_panel->hide_bottom_panel(): the side stops showing a dock. From
+	// DOCKED that also collapses the side, which is the same transition as
+	// pressing the shown dock's own toggle.
+	dock_region->close_drawer(side);
+}
+
+void EditorSideRailStrip::_expand_pressed() {
+	dock_region->set_side_mode(side, SideRailMode::DOCKED);
 }
 
 void EditorSideRailStrip::_update_active_states() {
 	int active_toggle = -1;
-	if (active_source_tabs) {
-		EditorDock *current_dock = Object::cast_to<EditorDock>(active_source_tabs->get_current_tab_control());
-		if (current_dock) {
-			active_toggle = (int)toggle_docks.find(current_dock);
+	for (uint32_t i = 0; i < toggle_docks.size(); i++) {
+		const bool shown = dock_region->is_dock_shown(toggle_docks[i]);
+		toggle_buttons[i]->set_pressed_no_signal(shown);
+		// A docked left side can show several docks at once; the close button
+		// sits after the first of them.
+		if (shown && active_toggle == -1) {
+			active_toggle = (int)i;
 		}
 	}
 
-	for (uint32_t i = 0; i < toggle_buttons.size(); i++) {
-		toggle_buttons[i]->set_pressed_no_signal((int)i == active_toggle);
-	}
+	expand_button->set_visible(dock_region->get_side_mode(side) == SideRailMode::RAILED);
 
 	if (active_toggle == -1) {
 		close_button->hide();
@@ -280,14 +245,17 @@ EditorSideRailStrip::EditorSideRailStrip(Side p_side, EditorTileDockRegion *p_do
 	close_button->connect(SceneStringName(pressed), callable_mp(this, &EditorSideRailStrip::_close_pressed));
 	toggles_vbox->add_child(close_button);
 
-	// The far end of the rail; only meaningful once a side can be RAILED,
-	// which is a follow-up issue, so it stays permanently hidden for now.
+	// The far end of the rail; only meaningful while the side is RAILED.
 	expand_button = memnew(Button);
 	expand_button->set_theme_type_variation("FlatMenuButton");
 	expand_button->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 	expand_button->set_accessibility_name(TTRC("Expand Tile Drawer"));
+	expand_button->set_tooltip_text(TTRC("Restore this side of the tile to its full width."));
 	expand_button->hide();
+	expand_button->connect(SceneStringName(pressed), callable_mp(this, &EditorSideRailStrip::_expand_pressed));
 	main_vbox->add_child(expand_button);
+
+	dock_region->set_side_changed_callback(side, callable_mp(this, &EditorSideRailStrip::_update_active_states));
 
 	if (active_source_tabs) {
 		active_source_tabs->connect("tab_changed", callable_mp(this, &EditorSideRailStrip::_update_active_states).unbind(1));
