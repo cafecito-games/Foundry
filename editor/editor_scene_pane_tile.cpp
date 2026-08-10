@@ -41,6 +41,7 @@
 #include "editor/editor_string_names.h"
 #include "editor/editor_tile_dock_region.h"
 #include "editor/editor_tile_drop_overlay.h"
+#include "editor/gui/editor_side_rail_strip.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_view.h"
@@ -212,10 +213,19 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	focus_frame->set_clip_contents(true);
 	add_child(focus_frame);
 
+	// Rails live outside the split: body's split offsets are persisted by
+	// position (tile_dock_hsplit_1/2), and SplitContainer::get_split_offsets()
+	// returns one entry per gap between visible children, so an always-visible
+	// rail child of body would silently re-alias every saved width key.
+	HBoxContainer *rail_hbox = memnew(HBoxContainer);
+	rail_hbox->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	rail_hbox->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	rail_hbox->add_theme_constant_override("separation", 0);
+	focus_frame->add_child(rail_hbox);
+
 	body = memnew(HSplitContainer);
 	body->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	body->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	focus_frame->add_child(body);
 
 	// In-tile docks: constructed and bound per tile, never registered in the
 	// global EditorDockManager slots. The false flag suppresses global
@@ -257,6 +267,15 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	history_dock->set_global(false);
 	dock_region.add_right(history_dock);
 
+	// The rails mirror the dock region, so they are constructed once its
+	// docks exist, and mounted around body rather than inside it (see the
+	// rail_hbox comment above).
+	left_rail = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::LEFT, &dock_region));
+	right_rail = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &dock_region));
+	rail_hbox->add_child(left_rail);
+	rail_hbox->add_child(body);
+	rail_hbox->add_child(right_rail);
+
 	preview_container = memnew(SubViewportContainer);
 	preview_container->set_stretch(true);
 	preview_container->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
@@ -294,6 +313,8 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 	_bind_focus_on_interaction(groups_dock);
 	_bind_focus_on_interaction(history_dock);
 	_bind_focus_on_interaction(content_host);
+	_bind_focus_on_interaction(left_rail);
+	_bind_focus_on_interaction(right_rail);
 
 	_fit_content_children();
 }

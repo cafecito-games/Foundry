@@ -42,6 +42,7 @@ class EditorData;
 class EditorSceneContext;
 class EditorSceneTabs;
 class EditorSelection;
+class EditorSideRailStrip;
 class HSplitContainer;
 class GroupsDock;
 class HistoryDock;
@@ -99,6 +100,8 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	Camera3D *preview_3d_camera = nullptr;
 	Node3DEditorViewport *spatial_view = nullptr; // World-bound 3D editing surface.
 	PanelContainer *focus_frame = nullptr; // Accent border when focused.
+	EditorSideRailStrip *left_rail = nullptr;
+	EditorSideRailStrip *right_rail = nullptr;
 
 	void _request_focus();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);
@@ -120,6 +123,8 @@ public:
 	HistoryDock *get_history_dock() const { return history_dock; }
 	EditorTileDockRegion *get_dock_region() { return &dock_region; }
 	const EditorTileDockRegion *get_dock_region() const { return &dock_region; }
+	EditorSideRailStrip *get_left_rail() const { return left_rail; }
+	EditorSideRailStrip *get_right_rail() const { return right_rail; }
 
 	void set_signals_dock_enabled(bool p_enabled);
 	void set_groups_dock_enabled(bool p_enabled);

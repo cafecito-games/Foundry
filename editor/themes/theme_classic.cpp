@@ -1765,6 +1765,22 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_type_variation("BottomDrawerStrip", "PanelContainer");
 		p_theme->set_stylebox(SceneStringName(panel), "BottomDrawerStrip", style_bottom_drawer_strip);
 
+		// Tile side rail: the vertical analogue of the bottom drawer strip, a
+		// slim flat bar with a single border on the edge facing the tile body.
+		// Two type variations (not overrides, for the same recursion reason as
+		// the bottom strip) since the bordered edge differs per side.
+		Ref<StyleBoxFlat> style_side_rail_strip_left = style_bottom_drawer_strip->duplicate();
+		style_side_rail_strip_left->set_border_width_all(0);
+		style_side_rail_strip_left->set_border_width(SIDE_RIGHT, Math::round(EDSCALE));
+		p_theme->set_type_variation("SideRailStripLeft", "PanelContainer");
+		p_theme->set_stylebox(SceneStringName(panel), "SideRailStripLeft", style_side_rail_strip_left);
+
+		Ref<StyleBoxFlat> style_side_rail_strip_right = style_bottom_drawer_strip->duplicate();
+		style_side_rail_strip_right->set_border_width_all(0);
+		style_side_rail_strip_right->set_border_width(SIDE_LEFT, Math::round(EDSCALE));
+		p_theme->set_type_variation("SideRailStripRight", "PanelContainer");
+		p_theme->set_stylebox(SceneStringName(panel), "SideRailStripRight", style_side_rail_strip_right);
+
 		// Audio bus.
 		p_theme->set_stylebox(CoreStringName(normal), "EditorAudioBus", style_bottom_panel);
 		p_theme->set_stylebox("master", "EditorAudioBus", p_config.button_style_disabled);
