@@ -1480,9 +1480,9 @@ TEST_CASE("[Editor][Automation][MCP] set_canvas_2d_zoom rejects invalid zoom bef
 	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
 
 	Dictionary missing;
-	const EditorAutomationActionResult missing_result = EditorAutomationDriver::perform(snapshot, "set_canvas_2d_zoom", Dictionary(), missing);
-	CHECK_FALSE(missing_result.ok);
-	CHECK(missing_result.kind == "invalid_parameter");
+	const EditorAutomationActionResult missing_driver_result = EditorAutomationDriver::perform(snapshot, "set_canvas_2d_zoom", Dictionary(), missing);
+	CHECK_FALSE(missing_driver_result.ok);
+	CHECK(missing_driver_result.kind == "invalid_parameter");
 
 	Dictionary bad_type;
 	bad_type["zoom"] = true;
