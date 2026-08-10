@@ -50,6 +50,7 @@
 #include "scene/main/scene_tree.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestSideRailCollapse {
 
@@ -65,11 +66,12 @@ struct CollapseFixture {
 	Control *center = nullptr;
 	EditorTileDockRegion region;
 	EditorDock *scene = nullptr;
+	EditorDock *filesystem = nullptr;
 	EditorDock *inspector = nullptr;
 	EditorDock *signals = nullptr;
 	EditorDock *groups = nullptr;
 
-	CollapseFixture() {
+	CollapseFixture(bool p_make_docks_focusable = true, bool p_add_second_left_dock = false) {
 		body = memnew(HSplitContainer);
 		SceneTree::get_singleton()->get_root()->add_child(body);
 		center = memnew(Control);
@@ -79,12 +81,23 @@ struct CollapseFixture {
 		scene = memnew(EditorDock);
 		scene->set_title("Scene");
 		scene->set_layout_key("Scene");
-		scene->set_focus_mode(Control::FOCUS_ALL);
+		if (p_make_docks_focusable) {
+			scene->set_focus_mode(Control::FOCUS_ALL);
+		}
 		region.place_left(scene);
+		if (p_add_second_left_dock) {
+			filesystem = memnew(EditorDock);
+			filesystem->set_title("FileSystem");
+			filesystem->set_layout_key("FileSystem");
+			if (p_make_docks_focusable) {
+				filesystem->set_focus_mode(Control::FOCUS_ALL);
+			}
+			region.place_left(filesystem);
+		}
 
-		inspector = _add_right("Inspector");
-		signals = _add_right("Signals");
-		groups = _add_right("Groups");
+		inspector = _add_right("Inspector", p_make_docks_focusable);
+		signals = _add_right("Signals", p_make_docks_focusable);
+		groups = _add_right("Groups", p_make_docks_focusable);
 	}
 
 	~CollapseFixture() {
@@ -92,11 +105,13 @@ struct CollapseFixture {
 		memdelete(body);
 	}
 
-	EditorDock *_add_right(const String &p_title) {
+	EditorDock *_add_right(const String &p_title, bool p_make_focusable = true) {
 		EditorDock *dock = memnew(EditorDock);
 		dock->set_title(p_title);
 		dock->set_layout_key(p_title);
-		dock->set_focus_mode(Control::FOCUS_ALL);
+		if (p_make_focusable) {
+			dock->set_focus_mode(Control::FOCUS_ALL);
+		}
 		region.add_right(dock);
 		return dock;
 	}
@@ -125,6 +140,32 @@ struct CollapseFixture {
 		return shown;
 	}
 };
+
+struct RailStripFixture {
+	EditorSideRailStrip *strip = nullptr;
+
+	RailStripFixture(Side p_side, EditorTileDockRegion *p_region) {
+		strip = memnew(EditorSideRailStrip(p_side, p_region));
+		SceneTree::get_singleton()->get_root()->add_child(strip);
+		strip->rebuild_toggles();
+	}
+
+	~RailStripFixture() {
+		SceneTree::get_singleton()->get_root()->remove_child(strip);
+		memdelete(strip);
+	}
+};
+
+static void activate_rail_toggle_with_keyboard(EditorSideRailButton *p_button) {
+	Ref<InputEventAction> accept;
+	accept.instantiate();
+	accept->set_action("ui_accept");
+	accept->set_pressed(true);
+	static_cast<Control *>(p_button)->gui_input(accept);
+
+	accept->set_pressed(false);
+	static_cast<Control *>(p_button)->gui_input(accept);
+}
 
 TEST_CASE("[Editor][SideRail] a fresh region is docked on both sides") {
 	CollapseFixture fixture;
@@ -311,6 +352,107 @@ TEST_CASE("[Editor][SideRail] pressing a non-shown toggle on a docked side only 
 		return;
 	}
 	CHECK(shown[0] == fixture.groups);
+}
+
+TEST_CASE("[Editor][SideRail] selecting production-focus docks is warning-free and preserves valid focus") {
+	CollapseFixture fixture(false);
+	REQUIRE(fixture.groups->get_focus_mode_with_override() == Control::FOCUS_NONE);
+
+	fixture.center->set_focus_mode(Control::FOCUS_ALL);
+	fixture.center->grab_focus();
+	REQUIRE(SceneTree::get_singleton()->get_root()->gui_get_focus_owner() == fixture.center);
+
+	SUBCASE("a docked rail toggle selects a different tab") {
+		ErrorDetector error_detector;
+		fixture.region.press_rail_toggle(fixture.groups);
+
+		CHECK_FALSE(error_detector.has_error);
+		CHECK(fixture.right_tabs()->get_current_tab_control() == fixture.groups);
+	}
+
+	SUBCASE("direct focus opens a closed railed drawer") {
+		fixture.region.close_drawer(Side::RIGHT);
+		REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+
+		ErrorDetector error_detector;
+		fixture.region.focus_dock(fixture.groups);
+
+		CHECK_FALSE(error_detector.has_error);
+		CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.groups);
+		CHECK(fixture.right_tabs()->get_current_tab_control() == fixture.groups);
+	}
+
+	Control *focus_owner = SceneTree::get_singleton()->get_root()->gui_get_focus_owner();
+	REQUIRE(focus_owner != nullptr);
+	CHECK(focus_owner == fixture.center);
+	CHECK(focus_owner->is_visible_in_tree());
+	CHECK(focus_owner->get_focus_mode_with_override() != Control::FOCUS_NONE);
+}
+
+TEST_CASE("[Editor][SideRail] production-focus rail buttons are warning-free on both sides") {
+	const Side sides[] = { Side::LEFT, Side::RIGHT };
+	for (Side side : sides) {
+		const int toggle_count = side == Side::LEFT ? 2 : 3;
+		for (int toggle_index = 0; toggle_index < toggle_count; toggle_index++) {
+			INFO((side == Side::LEFT ? "left rail" : "right rail"));
+			INFO(toggle_index);
+
+			CollapseFixture fixture(false, true);
+			RailStripFixture rail(side, &fixture.region);
+			REQUIRE(rail.strip->get_toggle_buttons().size() == (uint32_t)toggle_count);
+			EditorSideRailButton *button = rail.strip->get_toggle_buttons()[toggle_index];
+			REQUIRE(button->get_focus_mode() == Control::FOCUS_ACCESSIBILITY);
+
+			fixture.center->set_focus_mode(Control::FOCUS_ALL);
+			fixture.center->grab_focus();
+			REQUIRE(SceneTree::get_singleton()->get_root()->gui_get_focus_owner() == fixture.center);
+
+			// Keyboard ui_accept and the accessibility click action both use
+			// BaseButton::_pressed(), so this drives their shared production
+			// signal path through EditorSideRailStrip::_toggle_pressed().
+			ErrorDetector error_detector;
+			activate_rail_toggle_with_keyboard(button);
+
+			CHECK_FALSE(error_detector.has_error);
+			Control *focus_owner = SceneTree::get_singleton()->get_root()->gui_get_focus_owner();
+			REQUIRE(focus_owner != nullptr);
+			CHECK(focus_owner == fixture.center);
+			CHECK(focus_owner->is_visible_in_tree());
+			CHECK(focus_owner->get_focus_mode_with_override() != Control::FOCUS_NONE);
+		}
+	}
+}
+
+TEST_CASE("[Editor][SideRail] production-focus rail buttons open and close both drawers without warnings") {
+	const Side sides[] = { Side::LEFT, Side::RIGHT };
+	for (Side side : sides) {
+		INFO((side == Side::LEFT ? "left rail" : "right rail"));
+
+		CollapseFixture fixture(false, true);
+		RailStripFixture rail(side, &fixture.region);
+		REQUIRE(rail.strip->get_toggle_buttons().size() > 1);
+		EditorSideRailButton *button = rail.strip->get_toggle_buttons()[1];
+		EditorDock *dock = rail.strip->get_toggle_docks()[1];
+
+		fixture.center->set_focus_mode(Control::FOCUS_ALL);
+		fixture.center->grab_focus();
+		fixture.region.close_drawer(side);
+		REQUIRE(fixture.region.get_drawer_dock(side) == nullptr);
+
+		ErrorDetector error_detector;
+		activate_rail_toggle_with_keyboard(button);
+		CHECK(fixture.region.get_drawer_dock(side) == dock);
+
+		activate_rail_toggle_with_keyboard(button);
+		CHECK(fixture.region.get_drawer_dock(side) == nullptr);
+
+		CHECK_FALSE(error_detector.has_error);
+		Control *focus_owner = SceneTree::get_singleton()->get_root()->gui_get_focus_owner();
+		REQUIRE(focus_owner != nullptr);
+		CHECK(focus_owner == fixture.center);
+		CHECK(focus_owner->is_visible_in_tree());
+		CHECK(focus_owner->get_focus_mode_with_override() != Control::FOCUS_NONE);
+	}
 }
 
 TEST_CASE("[Editor][SideRail] disabling the drawer dock never leaves the drawer open on it") {
