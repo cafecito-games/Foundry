@@ -46,6 +46,16 @@
 
 namespace TestEditorBoardSwitcher {
 
+struct BoardMovedCounter {
+	int count = 0;
+};
+
+static BoardMovedCounter board_moved_counter;
+
+static void record_board_moved(int, int) {
+	board_moved_counter.count++;
+}
+
 struct BoardSwitcherHarness {
 	Control *host = nullptr;
 	EditorData editor_data;
@@ -83,6 +93,19 @@ struct BoardSwitcherHarness {
 		for (int i = 0; i < switcher->get_child_count(); i++) {
 			if (LineEdit *edit = Object::cast_to<LineEdit>(switcher->get_child(i))) {
 				return edit;
+			}
+		}
+		return nullptr;
+	}
+
+	// Finds a board button by its visible label rather than its position, so callers can
+	// identify a board after a reorder without relying on the index it used to occupy.
+	Button *board_button_with_text(const String &p_text) const {
+		for (int i = 0; i < switcher->get_child_count(); i++) {
+			if (Button *button = Object::cast_to<Button>(switcher->get_child(i))) {
+				if (button->get_text() == p_text) {
+					return button;
+				}
 			}
 		}
 		return nullptr;
@@ -410,6 +433,171 @@ TEST_CASE("[Editor][BoardSwitcher] Renaming while the overview is up refreshes t
 	}
 	CHECK(refreshed_caption->get_text() == "renamed during overview");
 
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] A reorder rebuilds the switcher's entry order without add/remove/restore") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	EditorBoard *board_a = harness.strip->get_board(0);
+	REQUIRE(board_a != nullptr);
+	if (!board_a) {
+		harness.unmount();
+		return;
+	}
+	board_a->set_title("A");
+	harness.strip->add_board();
+	EditorBoard *board_b = harness.strip->get_board(1);
+	REQUIRE(board_b != nullptr);
+	if (!board_b) {
+		harness.unmount();
+		return;
+	}
+	board_b->set_title("B");
+	harness.strip->add_board();
+	EditorBoard *board_c = harness.strip->get_board(2);
+	REQUIRE(board_c != nullptr);
+	if (!board_c) {
+		harness.unmount();
+		return;
+	}
+	board_c->set_title("C");
+	REQUIRE(harness.strip->get_board_count() == 3);
+
+	// Drag C (index 2) to the first position: the strip's order becomes C, A, B.
+	harness.strip->move_board(2, 0);
+	EditorBoard *reordered_first = harness.strip->get_board(0);
+	EditorBoard *reordered_second = harness.strip->get_board(1);
+	EditorBoard *reordered_third = harness.strip->get_board(2);
+	REQUIRE(reordered_first != nullptr);
+	REQUIRE(reordered_second != nullptr);
+	REQUIRE(reordered_third != nullptr);
+	if (!reordered_first || !reordered_second || !reordered_third) {
+		harness.unmount();
+		return;
+	}
+	REQUIRE(reordered_first->get_title() == "C");
+	REQUIRE(reordered_second->get_title() == "A");
+	REQUIRE(reordered_third->get_title() == "B");
+
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		Button *button = harness.board_button(i);
+		REQUIRE(button != nullptr);
+		if (!button) {
+			harness.unmount();
+			return;
+		}
+		CHECK(button->get_text() == harness.strip->get_board(i)->get_title());
+	}
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Activating the Nth entry after a reorder activates the board at index N") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	EditorBoard *board_a = harness.strip->get_board(0);
+	REQUIRE(board_a != nullptr);
+	if (!board_a) {
+		harness.unmount();
+		return;
+	}
+	board_a->set_title("A");
+	harness.strip->add_board();
+	EditorBoard *board_b = harness.strip->get_board(1);
+	REQUIRE(board_b != nullptr);
+	if (!board_b) {
+		harness.unmount();
+		return;
+	}
+	board_b->set_title("B");
+	harness.strip->add_board();
+	EditorBoard *board_c = harness.strip->get_board(2);
+	REQUIRE(board_c != nullptr);
+	if (!board_c) {
+		harness.unmount();
+		return;
+	}
+	board_c->set_title("C");
+	REQUIRE(harness.strip->get_board_count() == 3);
+
+	// Drag C (index 2) to the first position: the strip's order becomes C, A, B.
+	harness.strip->move_board(2, 0);
+	EditorBoard *reordered_first = harness.strip->get_board(0);
+	EditorBoard *reordered_second = harness.strip->get_board(1);
+	EditorBoard *reordered_third = harness.strip->get_board(2);
+	REQUIRE(reordered_first != nullptr);
+	REQUIRE(reordered_second != nullptr);
+	REQUIRE(reordered_third != nullptr);
+	if (!reordered_first || !reordered_second || !reordered_third) {
+		harness.unmount();
+		return;
+	}
+	REQUIRE(reordered_first->get_title() == "C");
+	REQUIRE(reordered_second->get_title() == "A");
+	REQUIRE(reordered_third->get_title() == "B");
+
+	// Each switcher button's pressed signal is bound to its build-time index
+	// (EditorBoardSwitcher::_rebuild()), so pressing whichever button currently sits at a
+	// given position always activates that position's board -- that would hold trivially
+	// even if the switcher never refreshed its labels after a reorder. Identify the button
+	// by its visible text instead: board "A" now lives at strip index 1, but if the
+	// switcher failed to rebuild after board_moved, its buttons would still read the
+	// pre-reorder labels (A, B, C at positions 0, 1, 2), so the button labelled "A" would
+	// still sit at position 0 and pressing it would activate the board actually at index 0
+	// ("C"), not "A". That mismatch is what this test catches.
+	Button *entry = harness.board_button_with_text("A");
+	REQUIRE(entry != nullptr);
+	if (!entry) {
+		harness.unmount();
+		return;
+	}
+	entry->emit_signal(SceneStringName(pressed));
+
+	EditorBoard *active_board = harness.strip->get_board(harness.strip->get_active_index());
+	REQUIRE(active_board != nullptr);
+	if (!active_board) {
+		harness.unmount();
+		return;
+	}
+	CHECK(active_board == board_a);
+	CHECK(active_board->get_title() == "A");
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] A reorder triggers exactly one rebuild, matching a single board_moved emission") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	harness.strip->add_board();
+	harness.strip->add_board();
+	REQUIRE(harness.strip->get_board_count() == 3);
+
+	// The switcher rebuilds by connecting its handler directly to board_moved, so a single
+	// emission of that signal must drive exactly one rebuild. A probe connected the same way
+	// pins the emission count board_moved actually produces for one reorder; if the switcher
+	// ever connected _rebuild() more than once (or board_moved fired more than once per
+	// move_board() call), this count would betray it.
+	board_moved_counter.count = 0;
+	Callable counter_callable = callable_mp_static(&record_board_moved);
+	harness.strip->connect(SNAME("board_moved"), counter_callable);
+
+	harness.strip->move_board(2, 0);
+
+	CHECK(board_moved_counter.count == 1);
+
+	EditorBoard *first_board = harness.strip->get_board(0);
+	Button *first_button = harness.board_button(0);
+	REQUIRE(first_board != nullptr);
+	REQUIRE(first_button != nullptr);
+	if (first_board && first_button) {
+		CHECK(first_board->get_title() == first_button->get_text());
+	}
+
+	harness.strip->disconnect(SNAME("board_moved"), counter_callable);
 	harness.unmount();
 }
 

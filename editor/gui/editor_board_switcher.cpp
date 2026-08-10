@@ -60,6 +60,7 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 	if (strip) {
 		strip->disconnect(SNAME("board_added"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
 		strip->disconnect(SNAME("board_removed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
+		strip->disconnect(SNAME("board_moved"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(2));
 		strip->disconnect(SNAME("boards_restored"), callable_mp(this, &EditorBoardSwitcher::_rebuild));
 		strip->disconnect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
 		strip->disconnect(SNAME("overview_changed"), callable_mp(this, &EditorBoardSwitcher::_on_overview_changed));
@@ -72,9 +73,12 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 		// handful of boards this is cheaper than incremental updates and cannot drift from
 		// the strip, since there is nothing incremental to keep in sync. A restore replaces
 		// every EditorBoard instance without emitting board_added (boards_restored already
-		// covers "every board changed at once"), so the switcher listens for both.
+		// covers "every board changed at once"), so the switcher listens for both. Entries
+		// are selected by position, so a reorder (board_moved) must rebuild too, or the
+		// switcher's stale order silently activates the wrong board.
 		strip->connect(SNAME("board_added"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
 		strip->connect(SNAME("board_removed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
+		strip->connect(SNAME("board_moved"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(2));
 		strip->connect(SNAME("boards_restored"), callable_mp(this, &EditorBoardSwitcher::_rebuild));
 		strip->connect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
 		// The overview toggle is the only piece of chrome the mode affects, so it is patched
