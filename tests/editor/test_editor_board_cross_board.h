@@ -190,8 +190,11 @@ TEST_CASE("[Editor][Boards] A scene tab dragged across boards moves ownership an
 	// Called on board B's workspace -- the destination -- with a source pane id that
 	// belongs to board A. This is the shape a real drop takes: the model call
 	// resolves the source itself instead of the caller pre-locating it.
+	// handle_tab_drop moves scene-tile ownership and resyncs both panes' tab counts
+	// synchronously; only the emptied source leaf's collapse is deferred to an idle
+	// frame (collapse_if_empty_deferred). Assert the synchronous effects before the
+	// first pump so that pump does not race ahead of the leaf_count == 2 check below.
 	WorkspaceLeafNode *dest = workspace_b->handle_tab_drop(leaf_a_source->get_leaf_id(), 0, leaf_b, EditorSceneWorkspace::DROP_CENTER);
-	h.pump();
 
 	REQUIRE(dest == leaf_b);
 	CHECK(h.editor_data.get_scene_tile(scene_idx) == leaf_b->get_leaf_id());
