@@ -483,9 +483,10 @@ Two new controls, mounted and rendering. Clicking a toggle focuses a dock (exist
 
 ### Implementation
 
-- [ ] `EditorSideRailButton : Button` drawing an unrotated icon above a 90°-rotated label
-      reading bottom-to-top. Use the `draw_set_transform_matrix` pattern the canvas editor's
-      vertical ruler labels already use — a `-PI/2` transform around the draw, restored
+- [ ] `EditorSideRailButton : Button` drawing icon and label under one shared `-PI/2`
+      transform so both read bottom-to-top as a composed unit (see #2039). Use the
+      `draw_set_transform_matrix` pattern the canvas editor's vertical ruler labels already
+      use — a `-PI/2` transform around the draw, restored
       immediately after (`editor/scene/canvas_item_editor_view.cpp:2307-2311`).
       `get_minimum_size` returns width = max(icon width, font height) + padding, and
       height = icon height + separation + rendered text width.

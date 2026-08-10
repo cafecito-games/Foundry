@@ -241,16 +241,21 @@ New control, `editor/gui/editor_side_rail_strip.{h,cpp}`, modelled directly on
 ### 4.5 Rail buttons: icon plus rotated label (D1)
 
 `TabBar`/`TabContainer` have no vertical mode, and `Control::set_rotation` is ignored by
-container layout, so the label must be drawn. New `EditorSideRailButton : Button`
+container layout, so the toggle content must be drawn. New `EditorSideRailButton : Button`
 overriding `_draw` and `get_minimum_size`:
 
-- Icon drawn unrotated at the top of the button.
-- Text drawn rotated 90° via `draw_set_transform_matrix`, reading bottom-to-top. The
-  canvas editor's vertical ruler labels already do exactly this — a `-PI/2` transform
-  around the text draw, restored immediately after
-  (`editor/scene/canvas_item_editor_view.cpp:2307-2311`) — and is the pattern to follow.
-- `get_minimum_size` returns width = max(icon width, font height) plus padding, and
-  height = icon height + separation + rendered text width.
+- Icon and label are composed as one horizontal strip (`[icon][separation][label]`), then
+  drawn under a shared `-PI/2` transform so both share the same bottom-to-top quarter-turn
+  orientation (revises the earlier unrotated-icon contract; see #2039). The canvas editor's
+  vertical ruler labels already use this transform pattern
+  (`editor/scene/canvas_item_editor_view.cpp:2307-2311`).
+- Icon bounds and label bounds are disjoint and separated by the theme's icon/label
+  separation; their union stays inside the button's stylebox content rect.
+- `get_minimum_size` returns the composed strip's post-rotation size plus stylebox margins:
+  width = max(icon height, font height) plus padding, and height = icon width +
+  separation + rendered text width.
+- Icon-only overflow mode centers an upright, unrotated icon and does not reserve label
+  space.
 
 **Overflow fallback.** The right rail mirrors up to four docks (Inspector, Signals, Groups,
 History); labelled toggles for four will not fit a short tile, and a tile is shorter than

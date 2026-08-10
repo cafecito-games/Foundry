@@ -33,6 +33,22 @@
 #include "scene/resources/font.h"
 #include "scene/resources/style_box.h"
 
+namespace {
+
+Rect2 _xform_rect(const Transform2D &p_xform, const Rect2 &p_rect) {
+	const Vector2 p0 = p_xform.xform(p_rect.position);
+	const Vector2 p1 = p_xform.xform(p_rect.position + Size2(p_rect.size.x, 0));
+	const Vector2 p2 = p_xform.xform(p_rect.position + p_rect.size);
+	const Vector2 p3 = p_xform.xform(p_rect.position + Size2(0, p_rect.size.y));
+	const real_t min_x = MIN(MIN(p0.x, p1.x), MIN(p2.x, p3.x));
+	const real_t max_x = MAX(MAX(p0.x, p1.x), MAX(p2.x, p3.x));
+	const real_t min_y = MIN(MIN(p0.y, p1.y), MIN(p2.y, p3.y));
+	const real_t max_y = MAX(MAX(p0.y, p1.y), MAX(p2.y, p3.y));
+	return Rect2(Point2(min_x, min_y), Size2(max_x - min_x, max_y - min_y));
+}
+
+} // namespace
+
 void EditorSideRailButton::_update_theme_cache() {
 	theme_cache.font = get_theme_font(SceneStringName(font));
 	theme_cache.font_size = get_theme_font_size(SceneStringName(font_size));
@@ -41,40 +57,91 @@ void EditorSideRailButton::_update_theme_cache() {
 }
 
 Size2 EditorSideRailButton::_compute_minimum_size(bool p_with_label) const {
-	if (theme_cache.font.is_null()) {
-		return Size2();
-	}
-
-	const Size2 icon_size = rail_icon.is_valid() ? rail_icon->get_size() : Size2();
 	const Ref<StyleBox> stylebox = _get_current_stylebox();
 	const Size2 stylebox_min_size = stylebox.is_valid() ? stylebox->get_minimum_size() : Size2();
+	const Size2 icon_size = rail_icon.is_valid() ? rail_icon->get_size() : Size2();
 
-	if (!p_with_label || rail_label.is_empty()) {
-		return Size2(icon_size.width, icon_size.height) + stylebox_min_size;
+	if (!p_with_label || rail_label.is_empty() || theme_cache.font.is_null()) {
+		return icon_size + stylebox_min_size;
 	}
 
 	const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
 	const real_t text_width = theme_cache.font->get_string_size(rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size).x;
+	const real_t separation = icon_size != Size2() ? theme_cache.icon_label_separation : 0;
 
-	const real_t width = MAX(icon_size.width, font_height);
-	const real_t height = icon_size.height + theme_cache.icon_label_separation + text_width;
-	return Size2(width, height) + stylebox_min_size;
+	// Horizontal strip [icon][sep][label], then quarter-turned: the strip's
+	// short axis becomes button width and its long axis becomes button height.
+	const real_t strip_width = icon_size.width + separation + text_width;
+	const real_t strip_height = MAX(icon_size.height, font_height);
+	return Size2(strip_height, strip_width) + stylebox_min_size;
 }
 
-Transform2D EditorSideRailButton::_get_label_transform(real_t p_cursor_y, real_t p_text_width) const {
-	const Size2 size = get_size();
-	const real_t ascent = theme_cache.font->get_ascent(theme_cache.font_size);
-	const real_t descent = theme_cache.font->get_descent(theme_cache.font_size);
+EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geometry() const {
+	ComposedGeometry geometry;
 
-	// -90° so the local +x (left-to-right glyph advance) maps to local -y,
-	// i.e. the label reads bottom-to-top. The origin is the bottom of the
-	// label region, offset horizontally so the font's ascent/descent band is
-	// centred in the button. Expressed entirely in the button's own local
-	// space, independent of get_transform() (see the NOTIFICATION_DRAW
-	// comment at the call site), so it does not shift with the button's
-	// position in its parent container.
-	const Point2 origin(Math::round(size.width / 2.0 + (ascent - descent) / 2.0), Math::round(p_cursor_y + p_text_width));
-	return Transform2D(-Math::PI / 2.0, origin);
+	const Ref<StyleBox> stylebox = _get_current_stylebox();
+	const real_t margin_left = stylebox.is_valid() ? stylebox->get_margin(SIDE_LEFT) : 0;
+	const real_t margin_top = stylebox.is_valid() ? stylebox->get_margin(SIDE_TOP) : 0;
+	const real_t margin_right = stylebox.is_valid() ? stylebox->get_margin(SIDE_RIGHT) : 0;
+	const real_t margin_bottom = stylebox.is_valid() ? stylebox->get_margin(SIDE_BOTTOM) : 0;
+	const Size2 size = get_size();
+	geometry.content_rect = Rect2(
+			Point2(margin_left, margin_top),
+			Size2(MAX(0.0, size.width - margin_left - margin_right), MAX(0.0, size.height - margin_top - margin_bottom)));
+	geometry.icon_label_separation = theme_cache.icon_label_separation;
+	geometry.has_icon = rail_icon.is_valid();
+	geometry.has_label = label_visible && !rail_label.is_empty() && theme_cache.font.is_valid();
+
+	if (!geometry.has_label) {
+		// Icon-only (and empty) mode: upright, unrotated icon centered in the
+		// stylebox content rect. No label space is reserved.
+		if (geometry.has_icon) {
+			const Size2 icon_size = rail_icon->get_size();
+			geometry.icon_rect = Rect2(
+					Point2(
+							Math::round(geometry.content_rect.position.x + (geometry.content_rect.size.x - icon_size.width) / 2.0),
+							Math::round(geometry.content_rect.position.y + (geometry.content_rect.size.y - icon_size.height) / 2.0)),
+					icon_size);
+		}
+		geometry.content_transform = Transform2D();
+		return geometry;
+	}
+
+	const Size2 icon_size = geometry.has_icon ? rail_icon->get_size() : Size2();
+	const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
+	const real_t text_width = theme_cache.font->get_string_size(rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size).x;
+	const real_t separation = geometry.has_icon ? theme_cache.icon_label_separation : 0;
+	const real_t strip_width = icon_size.width + separation + text_width;
+	const real_t strip_height = MAX(icon_size.height, font_height);
+
+	// Strip space lays the toggle out as a horizontal tab: icon, then
+	// separation, then label. The -PI/2 transform maps strip +x (reading
+	// direction) onto local -y, so the composed unit reads bottom-to-top with
+	// the icon at the bottom — the same orientation a horizontal tab gets when
+	// stood on end for bottom-to-top reading.
+	//
+	// Expressed entirely in this control's local space so it does not shift
+	// with the button's position in its parent (NOTIFICATION_DRAW already runs
+	// in local space; composing get_transform() would double-apply it).
+	const Point2 strip_origin(
+			Math::round(geometry.content_rect.position.x + (geometry.content_rect.size.x - strip_height) / 2.0),
+			Math::round(geometry.content_rect.position.y + (geometry.content_rect.size.y + strip_width) / 2.0));
+	geometry.content_transform = Transform2D(-Math::PI / 2.0, strip_origin);
+
+	if (geometry.has_icon) {
+		const Rect2 icon_strip_rect(
+				Point2(0, Math::round((strip_height - icon_size.height) / 2.0)),
+				icon_size);
+		geometry.icon_rect = _xform_rect(geometry.content_transform, icon_strip_rect);
+	}
+
+	const real_t label_strip_x = icon_size.width + separation;
+	const Rect2 label_strip_rect(
+			Point2(label_strip_x, Math::round((strip_height - font_height) / 2.0)),
+			Size2(text_width, font_height));
+	geometry.label_rect = _xform_rect(geometry.content_transform, label_strip_rect);
+
+	return geometry;
 }
 
 void EditorSideRailButton::_notification(int p_what) {
@@ -86,39 +153,42 @@ void EditorSideRailButton::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_DRAW: {
-			if (theme_cache.font.is_null()) {
+			const ComposedGeometry geometry = get_composed_geometry();
+
+			if (!geometry.has_label) {
+				if (geometry.has_icon) {
+					draw_texture(rail_icon, geometry.icon_rect.position);
+				}
 				break;
 			}
 
-			const Size2 size = get_size();
-			const Ref<StyleBox> stylebox = _get_current_stylebox();
-			const real_t margin_left = stylebox.is_valid() ? stylebox->get_margin(SIDE_LEFT) : 0;
-			const real_t margin_top = stylebox.is_valid() ? stylebox->get_margin(SIDE_TOP) : 0;
+			// NOTIFICATION_DRAW is already emitted in the control's local
+			// space (the engine applies get_transform() when compositing
+			// this item), so the content transform is expressed purely in
+			// local space and reset to identity when done.
+			draw_set_transform_matrix(geometry.content_transform);
 
-			real_t cursor_y = margin_top;
-			if (rail_icon.is_valid()) {
-				const Point2 icon_pos(Math::round((size.width - rail_icon->get_width()) / 2.0), cursor_y);
-				rail_icon->draw(get_canvas_item(), icon_pos);
-				cursor_y += rail_icon->get_height();
+			if (geometry.has_icon) {
+				const Size2 icon_size = rail_icon->get_size();
+				const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
+				const real_t strip_height = MAX(icon_size.height, font_height);
+				const Point2 icon_pos(0, Math::round((strip_height - icon_size.height) / 2.0));
+				draw_texture(rail_icon, icon_pos);
 			}
 
-			if (label_visible && !rail_label.is_empty()) {
-				cursor_y += theme_cache.icon_label_separation;
-
-				const real_t text_width = theme_cache.font->get_string_size(rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size).x;
-				const Transform2D text_xform = _get_label_transform(cursor_y, text_width);
-
-				// NOTIFICATION_DRAW is already emitted in the control's local
-				// space (the engine applies get_transform() when compositing
-				// this item), so composing get_transform() here again would
-				// apply the button's own layout position a second time. Every
-				// draw_set_transform_matrix() call in this scope is therefore
-				// expressed purely in local space, and reset to identity
-				// rather than back to get_transform() when done.
-				draw_set_transform_matrix(text_xform);
-				draw_string(theme_cache.font, Point2(margin_left, 0), rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size, theme_cache.font_color);
-				draw_set_transform_matrix(Transform2D());
+			{
+				const Size2 icon_size = geometry.has_icon ? rail_icon->get_size() : Size2();
+				const real_t separation = geometry.has_icon ? theme_cache.icon_label_separation : 0;
+				const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
+				const real_t ascent = theme_cache.font->get_ascent(theme_cache.font_size);
+				const real_t strip_height = MAX(icon_size.height, font_height);
+				const Point2 text_pos(
+						icon_size.width + separation,
+						Math::round((strip_height - font_height) / 2.0 + ascent));
+				draw_string(theme_cache.font, text_pos, rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size, theme_cache.font_color);
 			}
+
+			draw_set_transform_matrix(Transform2D());
 		} break;
 	}
 }
