@@ -35,16 +35,13 @@
 
 namespace {
 
-Rect2 _xform_rect(const Transform2D &p_xform, const Rect2 &p_rect) {
-	const Vector2 p0 = p_xform.xform(p_rect.position);
-	const Vector2 p1 = p_xform.xform(p_rect.position + Size2(p_rect.size.x, 0));
-	const Vector2 p2 = p_xform.xform(p_rect.position + p_rect.size);
-	const Vector2 p3 = p_xform.xform(p_rect.position + Size2(0, p_rect.size.y));
-	const real_t min_x = MIN(MIN(p0.x, p1.x), MIN(p2.x, p3.x));
-	const real_t max_x = MAX(MAX(p0.x, p1.x), MAX(p2.x, p3.x));
-	const real_t min_y = MIN(MIN(p0.y, p1.y), MIN(p2.y, p3.y));
-	const real_t max_y = MAX(MAX(p0.y, p1.y), MAX(p2.y, p3.y));
-	return Rect2(Point2(min_x, min_y), Size2(max_x - min_x, max_y - min_y));
+// Axis-aligned bounds of a strip-space rect after the labelled-mode -PI/2
+// content transform (p -> (y, -x) + origin). Computed analytically so the
+// measured geometry is not subject to corner-transform float drift.
+Rect2 _strip_rect_to_local(const Point2 &p_origin, const Rect2 &p_strip_rect) {
+	return Rect2(
+			Point2(p_origin.x + p_strip_rect.position.y, p_origin.y - p_strip_rect.position.x - p_strip_rect.size.x),
+			Size2(p_strip_rect.size.y, p_strip_rect.size.x));
 }
 
 } // namespace
@@ -71,8 +68,10 @@ Size2 EditorSideRailButton::_compute_minimum_size(bool p_with_label) const {
 
 	// Horizontal strip [icon][sep][label], then quarter-turned: the strip's
 	// short axis becomes button width and its long axis becomes button height.
-	const real_t strip_width = icon_size.width + separation + text_width;
-	const real_t strip_height = MAX(icon_size.height, font_height);
+	// Ceil fractional font advances so the stylebox content rect always covers
+	// the composed draw bounds after pixel snapping.
+	const real_t strip_width = Math::ceil(icon_size.width + separation + text_width);
+	const real_t strip_height = Math::ceil(MAX(icon_size.height, font_height));
 	return Size2(strip_height, strip_width) + stylebox_min_size;
 }
 
@@ -99,8 +98,8 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 			const Size2 icon_size = rail_icon->get_size();
 			geometry.icon_rect = Rect2(
 					Point2(
-							Math::round(geometry.content_rect.position.x + (geometry.content_rect.size.x - icon_size.width) / 2.0),
-							Math::round(geometry.content_rect.position.y + (geometry.content_rect.size.y - icon_size.height) / 2.0)),
+							geometry.content_rect.position.x + Math::floor((geometry.content_rect.size.x - icon_size.width) / 2.0),
+							geometry.content_rect.position.y + Math::floor((geometry.content_rect.size.y - icon_size.height) / 2.0)),
 					icon_size);
 		}
 		geometry.content_transform = Transform2D();
@@ -111,8 +110,8 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 	const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
 	const real_t text_width = theme_cache.font->get_string_size(rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size).x;
 	const real_t separation = geometry.has_icon ? theme_cache.icon_label_separation : 0;
-	const real_t strip_width = icon_size.width + separation + text_width;
-	const real_t strip_height = MAX(icon_size.height, font_height);
+	const real_t strip_width = Math::ceil(icon_size.width + separation + text_width);
+	const real_t strip_height = Math::ceil(MAX(icon_size.height, font_height));
 
 	// Strip space lays the toggle out as a horizontal tab: icon, then
 	// separation, then label. The -PI/2 transform maps strip +x (reading
@@ -123,23 +122,25 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 	// Expressed entirely in this control's local space so it does not shift
 	// with the button's position in its parent (NOTIFICATION_DRAW already runs
 	// in local space; composing get_transform() would double-apply it).
+	// Floor the centering offsets so rounded inner draw positions cannot spill
+	// outside the stylebox content rect.
 	const Point2 strip_origin(
-			Math::round(geometry.content_rect.position.x + (geometry.content_rect.size.x - strip_height) / 2.0),
-			Math::round(geometry.content_rect.position.y + (geometry.content_rect.size.y + strip_width) / 2.0));
+			geometry.content_rect.position.x + Math::floor((geometry.content_rect.size.x - strip_height) / 2.0),
+			geometry.content_rect.position.y + Math::floor((geometry.content_rect.size.y - strip_width) / 2.0) + strip_width);
 	geometry.content_transform = Transform2D(-Math::PI / 2.0, strip_origin);
 
 	if (geometry.has_icon) {
 		const Rect2 icon_strip_rect(
-				Point2(0, Math::round((strip_height - icon_size.height) / 2.0)),
+				Point2(0, Math::floor((strip_height - icon_size.height) / 2.0)),
 				icon_size);
-		geometry.icon_rect = _xform_rect(geometry.content_transform, icon_strip_rect);
+		geometry.icon_rect = _strip_rect_to_local(strip_origin, icon_strip_rect);
 	}
 
 	const real_t label_strip_x = icon_size.width + separation;
 	const Rect2 label_strip_rect(
-			Point2(label_strip_x, Math::round((strip_height - font_height) / 2.0)),
+			Point2(label_strip_x, Math::floor((strip_height - font_height) / 2.0)),
 			Size2(text_width, font_height));
-	geometry.label_rect = _xform_rect(geometry.content_transform, label_strip_rect);
+	geometry.label_rect = _strip_rect_to_local(strip_origin, label_strip_rect);
 
 	return geometry;
 }
@@ -171,8 +172,8 @@ void EditorSideRailButton::_notification(int p_what) {
 			if (geometry.has_icon) {
 				const Size2 icon_size = rail_icon->get_size();
 				const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
-				const real_t strip_height = MAX(icon_size.height, font_height);
-				const Point2 icon_pos(0, Math::round((strip_height - icon_size.height) / 2.0));
+				const real_t strip_height = Math::ceil(MAX(icon_size.height, font_height));
+				const Point2 icon_pos(0, Math::floor((strip_height - icon_size.height) / 2.0));
 				draw_texture(rail_icon, icon_pos);
 			}
 
@@ -181,10 +182,10 @@ void EditorSideRailButton::_notification(int p_what) {
 				const real_t separation = geometry.has_icon ? theme_cache.icon_label_separation : 0;
 				const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
 				const real_t ascent = theme_cache.font->get_ascent(theme_cache.font_size);
-				const real_t strip_height = MAX(icon_size.height, font_height);
+				const real_t strip_height = Math::ceil(MAX(icon_size.height, font_height));
 				const Point2 text_pos(
 						icon_size.width + separation,
-						Math::round((strip_height - font_height) / 2.0 + ascent));
+						Math::floor((strip_height - font_height) / 2.0) + ascent);
 				draw_string(theme_cache.font, text_pos, rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size, theme_cache.font_color);
 			}
 
