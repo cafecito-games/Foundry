@@ -757,9 +757,9 @@ void Node3DEditorViewport::cancel_transform() {
 void Node3DEditorViewport::_update_shrink() {
 	const float scaling_3d_scale = GLOBAL_GET("rendering/scaling_3d/scale");
 	// Reached from _project_settings_changed(), which every viewport connects to,
-	// including secondary ones that have no overlay to read the half-resolution
+	// including passive previews that have no View menu to read the half-resolution
 	// toggle from. Those always render at full scale.
-	const float shrink_factor = view_display_menu && view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_HALF_RESOLUTION)) ? 0.5 : 1.0;
+	const float shrink_factor = !is_secondary_view() && view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_HALF_RESOLUTION)) ? 0.5 : 1.0;
 	viewport->set_scaling_3d_scale(MAX(0.25, scaling_3d_scale * shrink_factor));
 }
 
@@ -1210,14 +1210,6 @@ void Node3DEditorViewport::_select_region() {
 }
 
 void Node3DEditorViewport::_update_name() {
-	// A secondary viewport is a chrome-less tile preview: it never builds the overlay
-	// that carries the view name. The name is still recomputed from camera snapping,
-	// freelook and state restore, all of which a secondary viewport runs, so this has
-	// to stay a no-op rather than an assumption that the overlay exists.
-	if (!view_display_menu) {
-		return;
-	}
-
 	String name;
 
 	switch (view_type) {
@@ -1740,18 +1732,11 @@ void Node3DEditorViewport::_surface_mouse_exit() {
 }
 
 void Node3DEditorViewport::_surface_focus_enter() {
-	// Connected to `surface`'s focus_entered signal unconditionally, and a secondary
-	// viewport's surface accepts focus (FOCUS_ALL), but it has no view_display_menu
-	// to disable shortcuts on.
-	if (view_display_menu) {
-		view_display_menu->set_disable_shortcuts(false);
-	}
+	view_display_menu->set_disable_shortcuts(false);
 }
 
 void Node3DEditorViewport::_surface_focus_exit() {
-	if (view_display_menu) {
-		view_display_menu->set_disable_shortcuts(true);
-	}
+	view_display_menu->set_disable_shortcuts(true);
 }
 
 bool Node3DEditorViewport::_is_node_locked(const Node *p_node) const {
@@ -1881,6 +1866,13 @@ void Node3DEditorViewport::input(const Ref<InputEvent> &p_event) {
 }
 
 void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
+	// A secondary viewport is a passive preview: the constructor never connects this
+	// handler and never lets its surface take focus or the mouse. This is defense in
+	// depth against a future caller re-introducing a path into editor input.
+	if (is_secondary_view()) {
+		return;
+	}
+
 	const Ref<InputEventKey> k = p_event;
 
 	if (k.is_valid() && k->is_pressed() && EDITOR_GET("editors/3d/navigation/emulate_numpad")) {
@@ -2059,9 +2051,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 						break;
 					}
 
-					// ruler belongs to the overlay, which a secondary viewport never builds;
-					// the ruler tool has nothing to activate there.
-					if (ruler && spatial_editor->get_tool_mode() == Node3DEditor::TOOL_RULER) {
+					if (spatial_editor->get_tool_mode() == Node3DEditor::TOOL_RULER) {
 						EditorNode::get_singleton()->get_scene_root()->add_child(ruler);
 						collision_reposition = true;
 						break;
@@ -2080,11 +2070,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 					bool can_select_gizmos = spatial_editor->get_single_selected_node();
 
-					// view_display_menu belongs to the overlay, which a secondary viewport never
-					// builds. Its "View Gizmos" and "View Transform Gizmo" toggles default to
-					// checked, so a secondary viewport keeps that same default: gizmos stay
-					// selectable and the transform gizmo stays visible.
-					if (view_display_menu) {
+					{
 						int idx = view_display_menu->get_popup()->get_item_index(VIEW_GIZMOS);
 						int idx2 = view_display_menu->get_popup()->get_item_index(VIEW_TRANSFORM_GIZMO);
 						can_select_gizmos = can_select_gizmos && view_display_menu->get_popup()->is_item_checked(idx);
@@ -2269,8 +2255,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 
 					surface->queue_redraw();
 				} else {
-					// ruler belongs to the overlay, which a secondary viewport never builds.
-					if (ruler && ruler->is_inside_tree()) {
+					if (ruler->is_inside_tree()) {
 						ruler->get_parent()->remove_child(ruler);
 						ruler_start_point->set_visible(false);
 						ruler_end_point->set_visible(false);
@@ -2821,9 +2806,7 @@ void Node3DEditorViewport::_sinput(const Ref<InputEvent> &p_event) {
 					begin_transform(TRANSFORM_SCALE, true);
 				}
 			}
-			// collision_reposition drives the ruler in NOTIFICATION_PHYSICS_PROCESS, which
-			// belongs to the overlay that a secondary viewport never builds.
-			if (ruler && ED_IS_SHORTCUT("spatial_editor/collision_reposition", event_mod) && editor_selection->get_top_selected_node_list().size() == 1 && !collision_reposition) {
+			if (ED_IS_SHORTCUT("spatial_editor/collision_reposition", event_mod) && editor_selection->get_top_selected_node_list().size() == 1 && !collision_reposition) {
 				if (_edit.mode == TRANSFORM_NONE || _edit.instant) {
 					if (_edit.mode == TRANSFORM_NONE) {
 						_compute_edit(_edit.mouse_pos);
@@ -3394,7 +3377,9 @@ void Node3DEditorViewport::_notification(int p_what) {
 			bool vp_visible = is_visible_in_tree();
 
 			set_process(vp_visible);
-			set_physics_process(vp_visible);
+			// Physics processing only drives the ruler and drop-preview placement, both of
+			// which are editing concerns a passive preview never performs.
+			set_physics_process(vp_visible && viewport_binding != ViewportBinding::SECONDARY);
 
 			if (viewport_binding == ViewportBinding::SECONDARY) {
 				if (vp_visible) {
@@ -3727,10 +3712,7 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_PHYSICS_PROCESS: {
-			// ruler belongs to the overlay, which a secondary viewport never builds; the
-			// activation sites for collision_reposition already keep it false without a
-			// ruler, but this stays a defensive check against the same class of bug.
-			if (collision_reposition && ruler) {
+			if (collision_reposition) {
 				Node3D *selected_node = nullptr;
 
 				if (ruler->is_inside_tree()) {
@@ -3806,6 +3788,13 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_ENTER_TREE: {
+			if (viewport_binding == ViewportBinding::SECONDARY) {
+				// Passive preview: no overlay drawing, no editor input, no focus or hover
+				// handling. Gizmo instances still bind so the preview renders normally.
+				_init_gizmo_instance(index);
+				break;
+			}
+
 			Callable draw_cb = callable_mp(this, &Node3DEditorViewport::_draw);
 			Callable input_cb = callable_mp(this, &Node3DEditorViewport::_sinput);
 			Callable mouse_enter_cb = callable_mp(this, &Node3DEditorViewport::_surface_mouse_enter);
@@ -3885,6 +3874,11 @@ void Node3DEditorViewport::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_DRAG_END: {
+			// Delivered tree-wide, so a passive preview sees the end of every drag even
+			// though it never accepted one. It has no drop preview state to tear down.
+			if (viewport_binding == ViewportBinding::SECONDARY) {
+				break;
+			}
 			// Clear preview material when dropped outside applicable object.
 			if (spatial_editor->get_preview_material().is_valid() && !is_drag_successful()) {
 				_reset_preview_material();
@@ -3932,8 +3926,7 @@ void Node3DEditorViewport::_draw() {
 		EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_3d_force_draw_over_viewport(surface);
 	}
 
-	// rotation_control belongs to the overlay, which a secondary viewport never builds.
-	if (surface->has_focus() || (rotation_control && rotation_control->has_focus())) {
+	if (surface->has_focus() || rotation_control->has_focus()) {
 		Size2 size = surface->get_size();
 		Rect2 r = Rect2(Point2(), size);
 		get_theme_stylebox(SNAME("FocusViewport"), EditorStringName(EditorStyles))->draw(surface->get_canvas_item(), r);
@@ -4141,12 +4134,7 @@ void Node3DEditorViewport::_draw() {
 
 			} else {
 				// Show zoom
-				// zoom_limit_label belongs to the overlay, which a secondary viewport never
-				// builds; its `previewing` is always null, so this branch runs unconditionally
-				// there whenever a mouse wheel zooms a focused secondary preview.
-				if (zoom_limit_label) {
-					zoom_limit_label->set_visible(zoom_failed_attempts_count > 15);
-				}
+				zoom_limit_label->set_visible(zoom_failed_attempts_count > 15);
 
 				real_t min_distance = MAX(camera->get_near() * 4, ZOOM_FREELOOK_MIN);
 				real_t max_distance = MIN(camera->get_far() / 4, ZOOM_FREELOOK_MAX);
@@ -4599,12 +4587,6 @@ void Node3DEditorViewport::_menu_option(int p_option) {
 }
 
 void Node3DEditorViewport::_set_auto_orthogonal() {
-	// view_display_menu belongs to the overlay, which a secondary viewport never builds.
-	// Reached from _nav_orbit() snapping to an axis and from the VIEW_TOP/BOTTOM/... cases
-	// of _menu_option(), both of which run on secondary viewports too.
-	if (!view_display_menu) {
-		return;
-	}
 	if (!orthogonal && view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_AUTO_ORTHOGONAL))) {
 		_menu_option(VIEW_ORTHOGONAL);
 		auto_orthogonal = true;
@@ -5496,12 +5478,6 @@ void Node3DEditorViewport::_create_preview_node(const Vector<String> &files) con
 }
 
 void Node3DEditorViewport::_remove_preview_node() {
-	// preview_node belongs to the overlay's drag-and-drop instantiation state, which a
-	// secondary viewport never gets assigned. Reached unconditionally from
-	// _surface_mouse_exit(), connected before the secondary constructor returns.
-	if (!preview_node) {
-		return;
-	}
 	set_message("");
 	if (preview_node->get_parent()) {
 		for (int i = preview_node->get_child_count() - 1; i >= 0; i--) {
@@ -5604,12 +5580,8 @@ void Node3DEditorViewport::_reset_preview_material() const {
 }
 
 void Node3DEditorViewport::_remove_preview_material() {
-	// preview_material_label(_desc) belong to the overlay, which a secondary viewport
-	// never builds. Reached unconditionally from _surface_mouse_exit().
-	if (preview_material_label) {
-		preview_material_label->hide();
-		preview_material_label_desc->hide();
-	}
+	preview_material_label->hide();
+	preview_material_label_desc->hide();
 
 	spatial_editor->set_preview_material(Ref<Material>());
 	spatial_editor->set_preview_reset_material(Ref<Material>());
@@ -5814,10 +5786,9 @@ bool Node3DEditorViewport::can_drop_data_fw(const Point2 &p_point, const Variant
 	if (p_point == Vector2(Math::INF, Math::INF)) {
 		return false;
 	}
-	// A secondary viewport is wired up as a drag-and-drop target (SET_DRAG_FORWARDING_CD
-	// runs before the secondary constructor returns) but has no preview_node, accept
-	// dialog, or preview material overlay to instantiate a drop into.
-	if (!preview_node) {
+	// A passive preview never accepts or previews a drop; the owning tile promotes
+	// itself on drag-hover and the focused editor handles the eventual drop.
+	if (is_secondary_view()) {
 		return false;
 	}
 	preview_node_viewport_pos = p_point;
@@ -6559,7 +6530,6 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 
 	c->add_child(viewport);
 	surface = memnew(Control);
-	SET_DRAG_FORWARDING_CD(surface, Node3DEditorViewport);
 	add_child(surface);
 	surface->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	surface->set_clip_contents(true);
@@ -6568,9 +6538,18 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 	camera->set_cull_mask(((1 << 20) - 1) | (1 << (GIZMO_BASE_LAYER + p_index)) | (1 << GIZMO_EDIT_LAYER) | (1 << GIZMO_GRID_LAYER) | (1 << MISC_TOOL_LAYER));
 	viewport->add_child(camera);
 	camera->make_current();
-	surface->set_focus_mode(FOCUS_ALL);
 
 	if (viewport_binding == ViewportBinding::SECONDARY) {
+		// A secondary viewport is a passive tile preview, not an editor. Everything that
+		// would let it take focus, receive editor input, or accept a drop is deliberately
+		// never installed, so the interaction handlers below are unreachable instead of
+		// having to defend themselves against the chrome this constructor never builds.
+		// Pointer events fall through to the owning ScenePaneTile, which promotes the tile.
+		set_mouse_filter(MOUSE_FILTER_IGNORE);
+		c->set_mouse_filter(MOUSE_FILTER_IGNORE);
+		surface->set_focus_mode(FOCUS_NONE);
+		surface->set_mouse_filter(MOUSE_FILTER_IGNORE);
+
 		Ref<World3D> world = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_edited_world_3d() : Ref<World3D>();
 		if (world.is_valid()) {
 			bound_world = world;
@@ -6582,14 +6561,12 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 		accept = nullptr;
 		freelook_active = false;
 		freelook_speed = EDITOR_GET("editors/3d/freelook/freelook_base_speed");
-		selection_menu = memnew(PopupMenu);
-		add_child(selection_menu);
-		selection_menu->set_min_size(Size2(100, 0) * EDSCALE);
-		selection_menu->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditorViewport::_selection_result_pressed));
-		selection_menu->connect("popup_hide", callable_mp(this, &Node3DEditorViewport::_selection_menu_hide));
 		view_type = VIEW_TYPE_USER;
 		return;
 	}
+
+	surface->set_focus_mode(FOCUS_ALL);
+	SET_DRAG_FORWARDING_CD(surface, Node3DEditorViewport);
 
 	VBoxContainer *vbox = memnew(VBoxContainer);
 	surface->add_child(vbox);
@@ -10005,10 +9982,6 @@ void Node3DEditor::_set_focused_viewport(Node3DEditorViewport *p_viewport) {
 	focused_viewport = p_viewport;
 }
 
-void Node3DEditor::_secondary_viewport_clicked(Node3DEditorViewport *p_viewport) {
-	_set_focused_viewport(p_viewport);
-}
-
 Node3DEditorViewport *Node3DEditor::create_secondary_viewport(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport, Control *p_parent) {
 	ERR_FAIL_COND_V(p_world.is_null(), nullptr);
 	Node3DEditorViewport *viewport = memnew(Node3DEditorViewport(this, VIEWPORTS_COUNT, Node3DEditorViewport::ViewportBinding::SECONDARY));
@@ -10020,7 +9993,6 @@ Node3DEditorViewport *Node3DEditor::create_secondary_viewport(const Ref<World3D>
 	}
 	viewport->bind_world(p_world, p_preview_parent_viewport);
 	secondary_viewports.push_back(viewport);
-	viewport->connect("clicked", callable_mp(this, &Node3DEditor::_secondary_viewport_clicked).bind(viewport));
 	return viewport;
 }
 

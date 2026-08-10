@@ -913,7 +913,6 @@ private:
 	void _finish_indicators();
 	void _finish_grid();
 	void _set_focused_viewport(Node3DEditorViewport *p_viewport);
-	void _secondary_viewport_clicked(Node3DEditorViewport *p_viewport);
 
 	void _toggle_maximize_view(Object *p_viewport);
 	void _viewport_clicked(int p_viewport_idx);

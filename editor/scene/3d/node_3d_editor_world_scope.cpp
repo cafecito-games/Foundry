@@ -145,7 +145,10 @@ Node3DEditorViewport *Node3DEditorViewRouting::get_focused_viewport(
 		Node3DEditorViewport *const *p_tile_viewports,
 		uint32_t p_tile_viewport_count,
 		int p_last_used_tile_viewport_index) {
-	if (p_focused_viewport) {
+	// A secondary viewport is a passive tile preview, never an editing target. Routing
+	// one here would hand callers a chrome-less viewport whose overlay-backed accessors
+	// (get_state(), the View menu, the ruler) have nothing to read.
+	if (p_focused_viewport && !p_focused_viewport->is_secondary_view()) {
 		return p_focused_viewport;
 	}
 	if (p_tile_viewport_count == 0) {

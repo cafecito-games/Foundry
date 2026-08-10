@@ -39,6 +39,7 @@
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/editor_board.h"
 #include "editor/editor_board_strip.h"
+#include "editor/editor_data.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_context.h"
@@ -72,10 +73,12 @@
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
+#include "scene/3d/node_3d.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/gui/tree.h"
 #include "scene/main/scene_tree.h"
+#include "scene/main/viewport.h"
 
 namespace {
 
@@ -154,6 +157,101 @@ EditorAutomationAcceptanceWorkflow::Result _failure_with_message(EditorWorkflowT
 	fail.message = p_message;
 	fail.details = p_driver.make_failure_details();
 	return fail;
+}
+
+// Drives a pointer gesture at a control through the same EditorAutomationInput
+// primitives the MCP "click" action uses (see _push_mouse_click in
+// editor_automation_driver.cpp) rather than invoking a private input handler. Routing
+// through Viewport::push_input -> Input::parse_input_event exercises the real
+// gui_input signal wiring, so a passive surface that ignores the mouse genuinely
+// receives nothing instead of being skipped by a test that never dispatched.
+struct RealPointerDispatch {
+	Viewport *viewport = nullptr;
+	Vector2 position;
+	bool local_coords = false;
+
+	bool bind(Control *p_control) {
+		if (p_control == nullptr) {
+			return false;
+		}
+		if (!EditorAutomationInput::ensure_window_focus(p_control).ok) {
+			return false;
+		}
+		const Vector2 global_position = p_control->get_global_rect().get_center();
+		position = global_position;
+		viewport = EditorAutomationInput::input_viewport_for_control(p_control, position, global_position);
+		if (viewport == nullptr) {
+			return false;
+		}
+		local_coords = Object::cast_to<SubViewport>(viewport) != nullptr;
+		return true;
+	}
+
+	bool button(MouseButton p_button, bool p_pressed, MouseButtonMask p_mask, PackedStringArray &r_events) const {
+		const EditorAutomationInputModifiers modifiers;
+		return EditorAutomationInput::push_mouse_button(viewport, position, p_button, p_pressed, p_mask, modifiers, r_events, local_coords);
+	}
+
+	// gui_get_hovered_control() -- which ScenePaneTile::input() consults before treating a
+	// press as its own -- is only refreshed by mouse motion, so a gesture has to establish
+	// hover at the target before pressing.
+	bool hover(PackedStringArray &r_events) const {
+		const EditorAutomationInputModifiers modifiers;
+		return EditorAutomationInput::push_mouse_motion(viewport, position, Vector2(), MouseButtonMask::NONE, modifiers, r_events, local_coords);
+	}
+
+	bool motion(const Vector2 &p_relative, MouseButtonMask p_mask, PackedStringArray &r_events) {
+		position += p_relative;
+		const EditorAutomationInputModifiers modifiers;
+		return EditorAutomationInput::push_mouse_motion(viewport, position, p_relative, p_mask, modifiers, r_events, local_coords);
+	}
+
+	bool key(Key p_key, PackedStringArray &r_events) const {
+		const EditorAutomationInputModifiers modifiers;
+		return EditorAutomationInput::push_key_event(viewport, p_key, true, 0, modifiers, r_events) &&
+				EditorAutomationInput::push_key_event(viewport, p_key, false, 0, modifiers, r_events);
+	}
+};
+
+// Everything a passive preview must leave untouched, sampled before and after input.
+struct PassivePreviewSnapshot {
+	Transform3D camera_transform;
+	Transform2D canvas_transform;
+	real_t canvas_zoom = 0.0;
+	int selected_count = 0;
+	int scene_child_count = 0;
+	Transform3D first_child_transform;
+
+	bool operator==(const PassivePreviewSnapshot &p_other) const {
+		return camera_transform == p_other.camera_transform &&
+				canvas_transform == p_other.canvas_transform &&
+				Math::is_equal_approx(canvas_zoom, p_other.canvas_zoom) &&
+				selected_count == p_other.selected_count &&
+				scene_child_count == p_other.scene_child_count &&
+				first_child_transform == p_other.first_child_transform;
+	}
+};
+
+PassivePreviewSnapshot _sample_passive_preview(Node3DEditorViewport *p_spatial_view, CanvasItemEditorView *p_canvas_view, Node *p_scene_root) {
+	PassivePreviewSnapshot snapshot;
+	if (p_spatial_view != nullptr && p_spatial_view->get_camera_3d() != nullptr) {
+		snapshot.camera_transform = p_spatial_view->get_camera_3d()->get_global_transform();
+	}
+	if (p_canvas_view != nullptr) {
+		snapshot.canvas_transform = p_canvas_view->get_canvas_transform();
+		snapshot.canvas_zoom = p_canvas_view->get_view_state().zoom;
+	}
+	EditorSelection *selection = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_editor_selection() : nullptr;
+	if (selection != nullptr) {
+		snapshot.selected_count = (int)selection->get_selection().size();
+	}
+	if (p_scene_root != nullptr) {
+		snapshot.scene_child_count = p_scene_root->get_child_count();
+		if (Node3D *first = Object::cast_to<Node3D>(p_scene_root->get_child_count() > 0 ? p_scene_root->get_child(0) : nullptr)) {
+			snapshot.first_child_transform = first->get_global_transform();
+		}
+	}
+	return snapshot;
 }
 
 bool _assert_visible_workspace_tab(EditorWorkflowTestDriver &p_driver, const String &p_type_id, const String &p_resource_key, int p_tile_id, const String &p_context) {
@@ -2109,74 +2207,36 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 				"Demoting the 3D tile did not build a secondary 3D viewport, so this run never exercised the crash path.");
 	}
 
-	// Building the secondary viewport is only one of the ways its null overlay members
-	// can be reached. Orbiting to a 90-degree axis and zooming with the mouse wheel are
-	// both driven straight through the surface's input handlers on a real user's machine;
-	// exercise the same functions directly here so a regression segfaults this subprocess
-	// instead of silently reintroducing the null derefs those handlers guard against.
-	p_driver.set_step("orbit_secondary_viewport_to_axis_snap");
+	// A demoted 3D tile hosts a passive preview, not an editor. Assert the policy that
+	// makes its chrome-less state safe rather than probing individual overlay members:
+	// nothing is wired that could reach them.
+	p_driver.set_step("assert_secondary_viewport_is_passive");
 	{
 		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
-		spatial_view->cursor.unsnapped_x_rot = 0.0;
-		spatial_view->cursor.unsnapped_y_rot = 0.0;
-		Ref<InputEventMouseMotion> orbit_event;
-		orbit_event.instantiate();
-		Input::get_singleton()->action_press("spatial_editor/viewport_orbit_snap_modifier_1");
-		spatial_view->_nav_orbit(orbit_event, Vector2(0, 100000));
-		Input::get_singleton()->action_release("spatial_editor/viewport_orbit_snap_modifier_1");
-		if (spatial_view->view_type != Node3DEditorViewport::VIEW_TYPE_TOP) {
-			return _failure_with_message(p_driver, result.workflow,
-					"Orbiting the secondary viewport did not snap to the Top view; the axis-snap trigger was not exercised.");
+		if (!spatial_view->is_secondary_view()) {
+			return _failure_with_message(p_driver, result.workflow, "The demoted tile's viewport does not report the secondary (passive) role.");
 		}
-	}
-	p_driver.flush_frames(5);
-
-	p_driver.set_step("zoom_secondary_viewport_with_wheel");
-	{
-		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
-		Ref<InputEventMouseButton> wheel_event;
-		wheel_event.instantiate();
-		spatial_view->_nav_zoom(wheel_event, Vector2(1000, 1000));
-		if (!(spatial_view->zoom_indicator_delay > 0.0)) {
-			return _failure_with_message(p_driver, result.workflow,
-					"Zooming the secondary viewport did not arm the zoom indicator; the wheel-zoom trigger was not exercised.");
+		Control *surface = spatial_view->get_surface();
+		if (surface == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "The secondary viewport has no surface.");
 		}
-		// _draw() only draws validly when invoked through the real NOTIFICATION_DRAW
-		// dispatch, so request a redraw and let the engine call it naturally rather
-		// than calling the C++ method directly.
-		spatial_view->get_surface()->queue_redraw();
-	}
-	p_driver.flush_frames(10);
-
-	// Focus and mouse-exit are wired to the surface unconditionally in
-	// NOTIFICATION_ENTER_TREE, before the secondary constructor's early return, and
-	// reach the same null overlay members through a second, independent set of
-	// dereferences (view_display_menu, preview_node, preview_material_label).
-	p_driver.set_step("focus_secondary_viewport_surface");
-	{
-		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
-		spatial_view->_surface_focus_enter();
-		spatial_view->_surface_focus_exit();
-	}
-
-	p_driver.set_step("exit_mouse_from_secondary_viewport_surface");
-	{
-		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
-		spatial_view->_surface_mouse_exit();
-	}
-
-	// A secondary viewport is still wired up as a drag-and-drop target
-	// (SET_DRAG_FORWARDING_CD runs before the secondary constructor returns), so
-	// dragging any file over it must not instantiate a preview it has nowhere to put.
-	p_driver.set_step("probe_drag_and_drop_over_secondary_viewport");
-	{
-		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
+		if (surface->get_focus_mode() != Control::FOCUS_NONE) {
+			return _failure_with_message(p_driver, result.workflow, "A passive 3D preview's surface can take keyboard focus.");
+		}
+		if (surface->get_mouse_filter() != Control::MOUSE_FILTER_IGNORE) {
+			return _failure_with_message(p_driver, result.workflow, "A passive 3D preview's surface does not pass pointer input through to its tile.");
+		}
+		if (surface->has_connections(SceneStringName(gui_input))) {
+			return _failure_with_message(p_driver, result.workflow, "A passive 3D preview's surface is connected to an editor input handler.");
+		}
 		Dictionary drag_data;
 		drag_data["type"] = "files";
 		drag_data["files"] = PackedStringArray();
 		if (spatial_view->can_drop_data_fw(Point2(10, 10), drag_data, nullptr)) {
-			return _failure_with_message(p_driver, result.workflow,
-					"A secondary viewport accepted a drag-and-drop it cannot instantiate into.");
+			return _failure_with_message(p_driver, result.workflow, "A passive 3D preview accepted drag-and-drop data.");
+		}
+		if (Node3DEditor::get_singleton() != nullptr && Node3DEditor::get_singleton()->get_focused_viewport() == spatial_view) {
+			return _failure_with_message(p_driver, result.workflow, "A passive 3D preview is reported as the focused 3D viewport.");
 		}
 	}
 
@@ -2221,6 +2281,372 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	result.message = "Board switching with a 3D scene open completed without crashing.";
 	Dictionary details;
 	details["board_count"] = strip->get_board_count();
+	details["workspace"] = p_driver.read_editor_state().get("workspace", Dictionary());
+	result.details = details;
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_passive_preview_input_policy(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "passive_preview_input_policy";
+
+	p_driver.begin_workflow();
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+
+	p_driver.set_step("open_3d_scene");
+	if (editor_node->load_scene(BOARD_SWITCH_3D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Failed to load scene '%s'.", BOARD_SWITCH_3D_SCENE));
+	}
+	p_driver.flush_frames(30);
+
+	// The fixture scene root has no children of its own, so first_child_transform would
+	// never have anything to compare. Add the probe child at runtime instead of editing
+	// the shared fixture -- board_switch_3d_scene also loads secondary.tscn, so mutating
+	// it there would perturb that workflow too.
+	Node *preview_probe_root = editor_node->get_edited_scene();
+	if (preview_probe_root == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The 3D scene has no edited root after loading.");
+	}
+	Node3D *preview_probe_child = memnew(Node3D);
+	preview_probe_child->set_name("PassivePreviewProbeChild");
+	preview_probe_child->set_position(Vector3(1, 2, 3));
+	preview_probe_root->add_child(preview_probe_child);
+	preview_probe_child->set_owner(preview_probe_root);
+
+	// A tile is demoted to a preview by editor-wide focus, not by board activity, so a
+	// second board would only re-focus its lone tile and hide the preview. Splitting the
+	// same active board into two tiles keeps the demoted preview on screen and clickable.
+	p_driver.set_step("create_second_scene");
+	const int second_scene = editor_node->new_scene();
+	if (second_scene < 0) {
+		return _failure_with_message(p_driver, result.workflow, "Failed to create a second scene.");
+	}
+	SceneTreeDock *scene_dock = editor_node->get_focused_scene_tree_dock();
+	if (scene_dock == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable after creating the second scene.");
+	}
+	Node2D *second_root = memnew(Node2D);
+	second_root->set_name("PassiveSibling");
+	scene_dock->add_root_node(second_root);
+	p_driver.flush_frames(20);
+
+	p_driver.set_step("split_active_board_into_two_tiles");
+	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
+	if (workspace == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Scene workspace is unavailable.");
+	}
+	// handle_tile_scene_drop's last argument is a tab index local to the source tile,
+	// not the global scene index that new_scene() returned.
+	const int source_tab = editor_node->get_editor_data().scene_index_to_tile_tab(second_scene);
+	if (source_tab < 0) {
+		return _failure_with_message(p_driver, result.workflow, "Could not map the second scene to a tab on the source tile.");
+	}
+	// Split vertically: each tile carries its own dock columns, and a horizontal split
+	// leaves less width than those columns' combined minimum, collapsing the preview to
+	// zero geometry with nothing to aim pointer input at.
+	editor_node->handle_tile_scene_drop(0, (int)EditorSceneWorkspace::DROP_BOTTOM, 0, source_tab);
+	p_driver.flush_frames(30);
+	if (!p_driver.wait_workspace_settled(5000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after splitting the board.");
+	}
+
+	ScenePaneTile *preview_tile = workspace->get_tile_by_id(0);
+	if (preview_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve the demoted tile after the split.");
+	}
+	const ObjectID preview_tile_id = preview_tile->get_instance_id();
+	if (editor_node->get_editor_data().get_focused_tile_id() == 0) {
+		return _failure_with_message(p_driver, result.workflow, "Splitting the board left the 3D tile focused, so it never became a passive preview.");
+	}
+	Node3DEditorViewport *spatial_view = preview_tile->get_spatial_view();
+	if (spatial_view == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The demoted 3D tile did not build a passive preview viewport.");
+	}
+	// Held across flush_frames(), so re-resolved from an ObjectID at each use following a
+	// frame advance rather than trusted to still be alive.
+	const ObjectID spatial_view_id = spatial_view->get_instance_id();
+	auto resolve_spatial_view = [&]() -> Node3DEditorViewport * {
+		return ObjectDB::get_instance<Node3DEditorViewport>(spatial_view_id);
+	};
+	Control *surface = spatial_view->get_surface();
+	if (surface == nullptr || !surface->is_visible_in_tree()) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview's surface is not on screen, so no real input could reach it.");
+	}
+	const ObjectID surface_id = surface->get_instance_id();
+	auto resolve_surface = [&]() -> Control * {
+		return ObjectDB::get_instance<Control>(surface_id);
+	};
+	p_driver.flush_frames(30);
+	spatial_view = resolve_spatial_view();
+	surface = resolve_surface();
+	if (spatial_view == nullptr || surface == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview viewport or surface did not survive a frame advance.");
+	}
+	if (surface->get_global_rect().get_area() <= 0.0) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("The passive 3D preview's surface has no geometry (%s), so no pointer input could be aimed at it.",
+						String(surface->get_global_rect())));
+	}
+
+	p_driver.set_step("assert_passive_3d_policy");
+	if (!spatial_view->is_secondary_view()) {
+		return _failure_with_message(p_driver, result.workflow, "The preview viewport does not report the passive (secondary) role.");
+	}
+	if (surface->get_focus_mode() != Control::FOCUS_NONE) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 3D preview's surface can take keyboard focus.");
+	}
+	if (surface->get_mouse_filter() != Control::MOUSE_FILTER_IGNORE) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 3D preview's surface does not pass pointer input through to its tile.");
+	}
+	if (surface->has_connections(SceneStringName(gui_input))) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 3D preview's surface is connected to an editor input handler.");
+	}
+	if (spatial_view->is_physics_processing()) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 3D preview runs editing physics work.");
+	}
+	if (Node3DEditor::get_singleton() != nullptr && Node3DEditor::get_singleton()->get_focused_viewport() == spatial_view) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 3D preview is reported as the focused 3D viewport.");
+	}
+	{
+		Dictionary drag_data;
+		drag_data["type"] = "files";
+		drag_data["files"] = PackedStringArray();
+		if (spatial_view->can_drop_data_fw(Point2(10, 10), drag_data, nullptr)) {
+			return _failure_with_message(p_driver, result.workflow, "A passive 3D preview accepted drag-and-drop data.");
+		}
+	}
+
+	Node *preview_scene_root = preview_tile->get_current_scene_root();
+	const PassivePreviewSnapshot before_3d = _sample_passive_preview(spatial_view, nullptr, preview_scene_root);
+
+	// Non-promoting probes: wheel, keyboard, and a right-button drag. None of these
+	// promote a tile, so every recorded value must survive them untouched.
+	p_driver.set_step("drive_non_promoting_input_at_passive_3d_preview");
+	{
+		RealPointerDispatch dispatch;
+		if (!dispatch.bind(surface)) {
+			return _failure_with_message(p_driver, result.workflow, "Could not bind real pointer dispatch to the passive 3D preview's surface.");
+		}
+		PackedStringArray events;
+		dispatch.hover(events);
+		dispatch.button(MouseButton::WHEEL_UP, true, MouseButtonMask::NONE, events);
+		dispatch.button(MouseButton::WHEEL_UP, false, MouseButtonMask::NONE, events);
+		dispatch.button(MouseButton::RIGHT, true, MouseButtonMask::RIGHT, events);
+		dispatch.motion(Vector2(24, 18), MouseButtonMask::RIGHT, events);
+		dispatch.button(MouseButton::RIGHT, false, MouseButtonMask::NONE, events);
+		dispatch.key(Key::F, events);
+		dispatch.key(Key::T, events);
+		p_driver.flush_frames(10);
+	}
+
+	spatial_view = resolve_spatial_view();
+	if (spatial_view == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview viewport did not survive the non-promoting input probe.");
+	}
+	if (!(_sample_passive_preview(spatial_view, nullptr, preview_scene_root) == before_3d)) {
+		return _failure_with_message(p_driver, result.workflow, "Non-promoting input changed a passive 3D preview's camera, selection, or scene content.");
+	}
+	if (editor_node->get_editor_data().get_focused_tile_id() == 0) {
+		return _failure_with_message(p_driver, result.workflow, "A wheel/keyboard/right-drag probe promoted the passive tile.");
+	}
+
+	// The promoting gesture: primary button press, motion while held, then release.
+	// The tile must gain focus while the whole gesture stays edit-free.
+	p_driver.set_step("promote_tile_with_primary_gesture");
+	surface = resolve_surface();
+	if (surface == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 3D preview's surface did not survive the non-promoting input probe.");
+	}
+	{
+		RealPointerDispatch dispatch;
+		if (!dispatch.bind(surface)) {
+			return _failure_with_message(p_driver, result.workflow, "Could not bind real pointer dispatch for the promoting gesture.");
+		}
+		PackedStringArray events;
+		dispatch.hover(events);
+		p_driver.flush_frames(2);
+		if (!dispatch.button(MouseButton::LEFT, true, MouseButtonMask::LEFT, events)) {
+			return _failure_with_message(p_driver, result.workflow, "Failed to synthesize the promoting button press.");
+		}
+		dispatch.motion(Vector2(30, 20), MouseButtonMask::LEFT, events);
+		if (!dispatch.button(MouseButton::LEFT, false, MouseButtonMask::NONE, events)) {
+			return _failure_with_message(p_driver, result.workflow, "Failed to synthesize the promoting button release.");
+		}
+		if (!events.has("mouse_pressed") || !events.has("mouse_released")) {
+			return _failure_with_message(p_driver, result.workflow, "The promoting gesture did not report both press and release events.");
+		}
+		p_driver.flush_frames(30);
+	}
+	if (!p_driver.wait_workspace_settled(5000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after the promoting gesture.");
+	}
+	if (editor_node->get_editor_data().get_focused_tile_id() != 0) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Clicking a passive 3D preview did not focus its owning tile (focused_tile_id=%d).",
+						editor_node->get_editor_data().get_focused_tile_id()));
+	}
+
+	ScenePaneTile *promoted_tile = ObjectDB::get_instance<ScenePaneTile>(preview_tile_id);
+	if (promoted_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The promoted tile did not survive promotion.");
+	}
+	Node *promoted_scene_root = promoted_tile->get_current_scene_root();
+	if (promoted_scene_root == nullptr || promoted_scene_root->get_child_count() != before_3d.scene_child_count) {
+		return _failure_with_message(p_driver, result.workflow, "The promoting gesture changed the scene it was promoting.");
+	}
+	{
+		EditorSelection *selection = editor_node->get_editor_selection();
+		if (selection != nullptr && (int)selection->get_selection().size() != before_3d.selected_count) {
+			return _failure_with_message(p_driver, result.workflow, "The promoting gesture selected content instead of only promoting the tile.");
+		}
+	}
+
+	// EditorAutomationState::read_editor_state() calls get_focused_viewport()->get_state(),
+	// which dereferences the View menu and its display submenu. Routing a passive preview
+	// there would abort here; a populated state Dictionary is the observable proof that a
+	// click on a preview never made it the focused viewport.
+	p_driver.set_step("read_focused_viewport_state_after_promotion");
+	{
+		Node3DEditor *spatial_editor = Node3DEditor::get_singleton();
+		if (spatial_editor != nullptr) {
+			Node3DEditorViewport *focused = spatial_editor->get_focused_viewport();
+			if (focused == nullptr) {
+				return _failure_with_message(p_driver, result.workflow, "No focused 3D viewport after promotion.");
+			}
+			if (focused->is_secondary_view()) {
+				return _failure_with_message(p_driver, result.workflow, "A passive preview became the focused 3D viewport.");
+			}
+			if (focused->get_state().is_empty()) {
+				return _failure_with_message(p_driver, result.workflow, "The focused 3D viewport reported no view state.");
+			}
+		}
+		const Dictionary editor_state = p_driver.read_editor_state();
+		if (!(bool)editor_state.get("supported", false)) {
+			return _failure_with_message(p_driver, result.workflow, "Reading editor state after promotion failed.");
+		}
+	}
+
+	// Promotion demoted the previously focused sibling, which is 2D. Its live preview is
+	// the passive CanvasItemEditorView, so the same policy is asserted for 2D here.
+	p_driver.set_step("assert_passive_2d_policy");
+	ScenePaneTile *canvas_tile = workspace->get_tile_by_id(1);
+	if (canvas_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve the demoted 2D tile after promotion.");
+	}
+	// Held across flush_frames(), so re-resolved from an ObjectID at each use following a
+	// frame advance rather than trusted to still be alive.
+	const ObjectID canvas_tile_id = canvas_tile->get_instance_id();
+	auto resolve_canvas_tile = [&]() -> ScenePaneTile * {
+		return ObjectDB::get_instance<ScenePaneTile>(canvas_tile_id);
+	};
+	CanvasItemEditorView *canvas_view = canvas_tile->get_canvas_view();
+	if (canvas_view == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The demoted 2D tile did not build a passive canvas preview.");
+	}
+	const ObjectID canvas_view_id = canvas_view->get_instance_id();
+	auto resolve_canvas_view = [&]() -> CanvasItemEditorView * {
+		return ObjectDB::get_instance<CanvasItemEditorView>(canvas_view_id);
+	};
+	if (!canvas_view->is_passive_preview()) {
+		return _failure_with_message(p_driver, result.workflow, "The demoted 2D tile's view does not report the passive role.");
+	}
+	if (canvas_view->is_plugin_forwarding_target()) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 2D preview forwards input to editor plugins.");
+	}
+	if (canvas_view->get_zoom_widget() != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 2D preview exposes the zoom control.");
+	}
+	Control *canvas_viewport = canvas_view->get_viewport_control();
+	if (canvas_viewport == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 2D preview has no viewport control.");
+	}
+	if (canvas_view->get_scene_viewport_container() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive 2D preview lost its scene rendering surface.");
+	}
+	if (canvas_viewport->get_focus_mode() != Control::FOCUS_NONE) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 2D preview's viewport can take keyboard focus.");
+	}
+	if (canvas_viewport->get_mouse_filter() != Control::MOUSE_FILTER_IGNORE) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 2D preview's viewport does not pass pointer input through to its tile.");
+	}
+	if (canvas_viewport->has_connections(SceneStringName(gui_input))) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 2D preview's viewport is connected to an editor input handler.");
+	}
+	if (!canvas_viewport->has_connections(SceneStringName(draw))) {
+		return _failure_with_message(p_driver, result.workflow, "A passive 2D preview lost the draw path that renders the editor visualization.");
+	}
+
+	const PassivePreviewSnapshot before_2d = _sample_passive_preview(nullptr, canvas_view, canvas_tile->get_current_scene_root());
+
+	p_driver.set_step("drive_non_promoting_input_at_passive_2d_preview");
+	if (canvas_viewport->is_visible_in_tree()) {
+		RealPointerDispatch dispatch;
+		if (!dispatch.bind(canvas_viewport)) {
+			return _failure_with_message(p_driver, result.workflow, "Could not bind real pointer dispatch to the passive 2D preview.");
+		}
+		PackedStringArray events;
+		dispatch.hover(events);
+		dispatch.button(MouseButton::WHEEL_UP, true, MouseButtonMask::NONE, events);
+		dispatch.button(MouseButton::WHEEL_UP, false, MouseButtonMask::NONE, events);
+		dispatch.button(MouseButton::RIGHT, true, MouseButtonMask::RIGHT, events);
+		dispatch.motion(Vector2(22, 16), MouseButtonMask::RIGHT, events);
+		dispatch.button(MouseButton::RIGHT, false, MouseButtonMask::NONE, events);
+		p_driver.flush_frames(10);
+
+		canvas_view = resolve_canvas_view();
+		canvas_tile = resolve_canvas_tile();
+		if (canvas_view == nullptr || canvas_tile == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "The passive 2D preview did not survive the non-promoting input probe.");
+		}
+		canvas_viewport = canvas_view->get_viewport_control();
+		if (canvas_viewport == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "The passive 2D preview lost its viewport control after the non-promoting input probe.");
+		}
+		if (!(_sample_passive_preview(nullptr, canvas_view, canvas_tile->get_current_scene_root()) == before_2d)) {
+			return _failure_with_message(p_driver, result.workflow, "Non-promoting input changed a passive 2D preview's canvas transform, selection, or scene content.");
+		}
+
+		p_driver.set_step("promote_2d_tile_with_primary_gesture");
+		if (!dispatch.bind(canvas_viewport)) {
+			return _failure_with_message(p_driver, result.workflow, "Could not re-bind real pointer dispatch for the 2D promoting gesture.");
+		}
+		dispatch.hover(events);
+		p_driver.flush_frames(2);
+		if (!dispatch.button(MouseButton::LEFT, true, MouseButtonMask::LEFT, events)) {
+			return _failure_with_message(p_driver, result.workflow, "Failed to synthesize the 2D promoting button press.");
+		}
+		dispatch.motion(Vector2(26, 14), MouseButtonMask::LEFT, events);
+		if (!dispatch.button(MouseButton::LEFT, false, MouseButtonMask::NONE, events)) {
+			return _failure_with_message(p_driver, result.workflow, "Failed to synthesize the 2D promoting button release.");
+		}
+		p_driver.flush_frames(30);
+		if (!p_driver.wait_workspace_settled(5000)) {
+			return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after the 2D promoting gesture.");
+		}
+		if (editor_node->get_editor_data().get_focused_tile_id() != 1) {
+			return _failure_with_message(p_driver, result.workflow, "Clicking a passive 2D preview did not focus its owning tile.");
+		}
+		canvas_view = resolve_canvas_view();
+		if (canvas_view == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "The passive 2D preview did not survive the promoting gesture.");
+		}
+		if (!Math::is_equal_approx(canvas_view->get_view_state().zoom, before_2d.canvas_zoom)) {
+			return _failure_with_message(p_driver, result.workflow, "The 2D promoting gesture changed the preview's zoom.");
+		}
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Passive 2D and 3D previews ignored editor input and promoted their tiles on click.";
+	Dictionary details;
 	details["workspace"] = p_driver.read_editor_state().get("workspace", Dictionary());
 	result.details = details;
 	return result;

@@ -48,9 +48,11 @@ TEST_CASE("[Editor][plugin-forwarding] Primary canvas view accepts plugin forwar
 	Control *host = memnew(Control);
 	tree_root->add_child(host);
 	host->add_child(view);
-	view->build_ui(host, true);
+	view->build_ui(host, CanvasItemEditorView::ViewRole::FOCUSED_EDITOR);
 
 	CHECK(view->is_plugin_forwarding_target());
+	CHECK_FALSE(view->is_passive_preview());
+	CHECK(view->get_view_role() == CanvasItemEditorView::ViewRole::FOCUSED_EDITOR);
 
 	host->remove_child(view);
 	tree_root->remove_child(host);
@@ -66,9 +68,11 @@ TEST_CASE("[Editor][plugin-forwarding] Secondary canvas view rejects plugin forw
 	Control *host = memnew(Control);
 	tree_root->add_child(host);
 	host->add_child(view);
-	view->build_ui(host, false);
+	view->build_ui(host, CanvasItemEditorView::ViewRole::PASSIVE_PREVIEW);
 
 	CHECK_FALSE(view->is_plugin_forwarding_target());
+	CHECK(view->is_passive_preview());
+	CHECK(view->get_view_role() == CanvasItemEditorView::ViewRole::PASSIVE_PREVIEW);
 
 	host->remove_child(view);
 	tree_root->remove_child(host);

@@ -2780,7 +2780,7 @@ CanvasItemEditorView *CanvasItemEditor::create_secondary_view(EditorSceneContext
 		memdelete(state);
 		ERR_FAIL_V_MSG(nullptr, "Unable to register secondary canvas view.");
 	}
-	view->build_ui(p_parent, false);
+	view->build_ui(p_parent, CanvasItemEditorView::ViewRole::PASSIVE_PREVIEW);
 	if (Control *scrollable = view->get_viewport_scrollable()) {
 		scrollable->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	}
@@ -3211,6 +3211,12 @@ bool CanvasItemEditorViewport::can_drop_data(const Point2 &p_point, const Varian
 	if (p_point == Vector2(Math::INF, Math::INF)) {
 		return false;
 	}
+	// A passive preview never accepts or previews a drop. Its viewport also ignores the
+	// mouse, so drag targeting should not reach here; this keeps the policy explicit
+	// rather than implied by mouse filters alone.
+	if (canvas_item_editor_view && canvas_item_editor_view->is_passive_preview()) {
+		return false;
+	}
 	Dictionary d = p_data;
 	if (!d.has("type") || (String(d["type"]) != "files")) {
 		label->hide();
@@ -3344,6 +3350,9 @@ bool CanvasItemEditorViewport::_is_any_texture_selected() const {
 
 void CanvasItemEditorViewport::drop_data(const Point2 &p_point, const Variant &p_data) {
 	if (p_point == Vector2(Math::INF, Math::INF)) {
+		return;
+	}
+	if (canvas_item_editor_view && canvas_item_editor_view->is_passive_preview()) {
 		return;
 	}
 	bool is_shift = Input::get_singleton()->is_key_pressed(Key::SHIFT);
