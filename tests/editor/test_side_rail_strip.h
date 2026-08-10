@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/core_string_names.h"
 #include "core/input/input_event.h"
 #include "core/input/shortcut.h"
 #include "core/io/config_file.h"
@@ -51,7 +52,6 @@
 #include "scene/main/scene_tree.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
-#include "scene/resources/style_box.h"
 #include "scene/resources/style_box_flat.h"
 #include "scene/theme/theme_db.h"
 
@@ -534,17 +534,18 @@ TEST_CASE("[Editor][SideRailButton] align_to_largest_stylebox keeps pressed and 
 	memdelete(button);
 }
 
-static Ref<Theme> _make_side_rail_zero_margin_theme() {
-	Ref<StyleBoxEmpty> empty_sb;
-	empty_sb.instantiate();
+static Ref<Theme> _make_side_rail_margin_theme(int p_content_margin) {
+	Ref<StyleBoxFlat> stylebox;
+	stylebox.instantiate();
+	stylebox->set_content_margin_all(p_content_margin);
 	Ref<Theme> theme;
 	theme.instantiate();
 	theme->set_type_variation("FlatMenuButton", "Button");
-	theme->set_stylebox(SNAME("normal"), SNAME("FlatMenuButton"), empty_sb);
-	theme->set_stylebox(SNAME("hover"), SNAME("FlatMenuButton"), empty_sb);
-	theme->set_stylebox(SNAME("pressed"), SNAME("FlatMenuButton"), empty_sb);
-	theme->set_stylebox(SNAME("hover_pressed"), SNAME("FlatMenuButton"), empty_sb);
-	theme->set_stylebox(SNAME("disabled"), SNAME("FlatMenuButton"), empty_sb);
+	theme->set_stylebox(SNAME("normal"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_stylebox(SNAME("hover"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_stylebox(SNAME("pressed"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_stylebox(SNAME("hover_pressed"), SNAME("FlatMenuButton"), stylebox);
+	theme->set_stylebox(SNAME("disabled"), SNAME("FlatMenuButton"), stylebox);
 	theme->set_constant(SNAME("align_to_largest_stylebox"), SNAME("Button"), 0);
 	theme->set_constant(SNAME("h_separation"), SNAME("Button"), 4);
 	theme->set_font_size(SceneStringName(font_size), SNAME("Button"), 16);
@@ -553,12 +554,25 @@ static Ref<Theme> _make_side_rail_zero_margin_theme() {
 	return theme;
 }
 
+static int _changed_connections_to(const Ref<Resource> &p_res, const Object *p_target) {
+	List<Object::Connection> connections;
+	p_res->get_signal_connection_list(CoreStringName(changed), &connections);
+	int count = 0;
+	for (const Object::Connection &c : connections) {
+		if (c.callable.get_object() == p_target) {
+			count++;
+		}
+	}
+	return count;
+}
+
 TEST_CASE("[Editor][SideRailButton] undersized icon-only mode overflows in one direction only") {
-	// Zero-margin styleboxes so set_size(10, 10) is not clamped up by theme
-	// margins before the icon is attached. Outside the scene tree,
-	// update_minimum_size() is a no-op, so the explicit size survives after
-	// set_rail_icon and the clamp path is actually exercised.
-	Ref<Theme> theme = _make_side_rail_zero_margin_theme();
+	// Non-zero margins so "flush to content origin" is distinguishable from
+	// absolute zero. Size the button before attaching the icon: outside the
+	// scene tree update_minimum_size() is a no-op, so the explicit size
+	// survives and the clamp path is exercised.
+	const int margin = 3;
+	Ref<Theme> theme = _make_side_rail_margin_theme(margin);
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
 	button->set_label_visible(false);
@@ -574,6 +588,7 @@ TEST_CASE("[Editor][SideRailButton] undersized icon-only mode overflows in one d
 		return;
 	}
 	CHECK(button->get_size() == Size2(10, 10));
+	CHECK(geometry.content_rect.position == Point2(margin, margin));
 	CHECK(geometry.content_rect.size.width < 16);
 	CHECK(geometry.icon_rect.position.x >= geometry.content_rect.position.x - 0.5);
 	CHECK(geometry.icon_rect.position.y >= geometry.content_rect.position.y - 0.5);
@@ -584,13 +599,14 @@ TEST_CASE("[Editor][SideRailButton] undersized icon-only mode overflows in one d
 }
 
 TEST_CASE("[Editor][SideRailButton] undersized labelled mode overflows in one direction only") {
-	Ref<Theme> theme = _make_side_rail_zero_margin_theme();
+	const int margin = 3;
+	Ref<Theme> theme = _make_side_rail_margin_theme(margin);
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
 	button->set_theme(theme);
 	button->notification(Control::NOTIFICATION_THEME_CHANGED);
 	// Narrow and short vs the labelled strip so both axes clamp.
-	button->set_size(Size2(8, 20));
+	button->set_size(Size2(12, 20));
 	button->set_rail_icon(_make_side_rail_test_icon(16));
 	button->set_rail_label("Inspector");
 
@@ -601,7 +617,8 @@ TEST_CASE("[Editor][SideRailButton] undersized labelled mode overflows in one di
 		memdelete(button);
 		return;
 	}
-	CHECK(button->get_size() == Size2(8, 20));
+	CHECK(button->get_size() == Size2(12, 20));
+	CHECK(geometry.content_rect.position == Point2(margin, margin));
 	const Rect2 union_rect = geometry.icon_rect.merge(geometry.label_rect);
 	CHECK(union_rect.position.x == doctest::Approx(geometry.content_rect.position.x));
 	CHECK(union_rect.position.y == doctest::Approx(geometry.content_rect.position.y));
@@ -645,30 +662,45 @@ TEST_CASE("[Editor][SideRailButton] editor theme icon colors stay non-black acro
 	memdelete(button);
 }
 
-TEST_CASE("[Editor][SideRailButton] rail icon texture changes refresh composed geometry") {
-	Ref<Theme> theme = _make_side_rail_zero_margin_theme();
+TEST_CASE("[Editor][SideRailButton] rail icon texture resize invalidates the cached minimum size") {
+	const int margin = 3;
+	Ref<Theme> theme = _make_side_rail_margin_theme(margin);
 
-	Ref<ImageTexture> texture;
-	texture.instantiate();
+	Ref<ImageTexture> first;
+	first.instantiate();
+	Ref<ImageTexture> second;
+	second.instantiate();
+	Ref<Image> image = Image::create_empty(16, 16, false, Image::FORMAT_RGBA8);
+	image->fill(Color(1, 1, 1, 1));
+	second->set_image(image);
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
 	button->set_label_visible(false);
 	button->set_theme(theme);
 	button->notification(Control::NOTIFICATION_THEME_CHANGED);
-	button->set_rail_icon(texture);
+	// In-tree so update_minimum_size() is not a no-op and the cache is live.
+	SceneTree::get_singleton()->get_root()->add_child(button);
+	button->set_rail_icon(first);
+	CHECK(_changed_connections_to(first, button) == 1);
 
-	CHECK_FALSE(button->get_composed_geometry().has_icon);
+	// Prime Control's minimum-size cache while the texture is still empty.
+	REQUIRE(button->get_combined_minimum_size() == Size2(margin * 2, margin * 2));
 
-	Ref<Image> image = Image::create_empty(16, 16, false, Image::FORMAT_RGBA8);
-	image->fill(Color(1, 1, 1, 1));
-	texture->set_image(image);
+	first->set_image(image);
+	// Only reachable if set_rail_icon connected `changed` and the handler
+	// called update_minimum_size(); otherwise this stays the primed margins.
+	CHECK(button->get_combined_minimum_size() == Size2(16 + margin * 2, 16 + margin * 2));
 
-	const EditorSideRailButton::ComposedGeometry geometry = button->get_composed_geometry();
-	CHECK(geometry.has_icon);
-	CHECK(geometry.icon_rect.size == Size2(16, 16));
-	CHECK(button->get_minimum_size() == Size2(16, 16));
+	button->set_rail_icon(second);
+	CHECK(_changed_connections_to(first, button) == 0);
+	CHECK(_changed_connections_to(second, button) == 1);
 
+	SceneTree::get_singleton()->get_root()->remove_child(button);
 	memdelete(button);
+
+	List<Object::Connection> leftover;
+	second->get_signal_connection_list(CoreStringName(changed), &leftover);
+	CHECK(leftover.is_empty());
 }
 
 TEST_CASE("[Editor][SideRailButton] content transform is independent of the button's position in its parent") {
@@ -753,6 +785,10 @@ TEST_CASE("[Editor][SideRailButton] icon-only mode centers an upright icon witho
 	CHECK(geometry.content_rect.encloses(geometry.icon_rect));
 	CHECK(Math::abs(geometry.icon_rect.get_center().x - geometry.content_rect.get_center().x) <= 0.5);
 	CHECK(Math::abs(geometry.icon_rect.get_center().y - geometry.content_rect.get_center().y) <= 0.5);
+	// Draw feeds icon_strip_position through content_transform in both modes;
+	// with the identity transform it must resolve to the icon rect's top-left
+	// (labelled mode resolves to the rect's bottom-left instead).
+	CHECK(geometry.content_transform.xform(geometry.icon_strip_position) == geometry.icon_rect.position);
 
 	memdelete(button);
 }

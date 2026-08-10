@@ -72,8 +72,9 @@ void EditorSideRailButton::_update_theme_cache() {
 
 	// Mirror Button's align_to_largest_stylebox behaviour so active/hovered
 	// toggles keep the same content margins as their neighbours.
-	// RTL *_mirrored styleboxes are intentionally not consulted: the side rail
-	// is LTR in production and margins in the editor theme are symmetric.
+	// RTL *_mirrored styleboxes are intentionally not consulted: the rail is
+	// LTR in production (strip order and -PI/2 rotation assume LTR reading),
+	// and editor-theme margins are symmetric.
 	theme_cache.style_margin_left = 0;
 	theme_cache.style_margin_top = 0;
 	theme_cache.style_margin_right = 0;
