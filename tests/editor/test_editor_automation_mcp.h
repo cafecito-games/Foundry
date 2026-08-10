@@ -1416,7 +1416,7 @@ TEST_CASE("[Editor][Automation][MCP] standalone shortcut dispatch reports handle
 	root->add_child(consumer);
 	mcp_flush_frames(2);
 
-	CHECK(EditorAutomationCommands::push_shortcut_event(root, handled_shortcut));
+	CHECK(EditorAutomationCommands::push_shortcut_event(root, handled_shortcut) == EditorAutomationCommands::ShortcutDispatchResult::HANDLED);
 
 	Ref<Shortcut> unhandled_shortcut;
 	unhandled_shortcut.instantiate();
@@ -1428,13 +1428,13 @@ TEST_CASE("[Editor][Automation][MCP] standalone shortcut dispatch reports handle
 	unhandled_events.push_back(unhandled_key);
 	unhandled_shortcut->set_events(unhandled_events);
 
-	CHECK_FALSE(EditorAutomationCommands::push_shortcut_event(root, unhandled_shortcut));
+	CHECK(EditorAutomationCommands::push_shortcut_event(root, unhandled_shortcut) == EditorAutomationCommands::ShortcutDispatchResult::UNHANDLED);
+	CHECK(EditorAutomationCommands::push_shortcut_event(nullptr, unhandled_shortcut) == EditorAutomationCommands::ShortcutDispatchResult::UNAVAILABLE);
 
-	// Drive the MCP execute path with a registered standalone shortcut that has no
-	// consumer in the editor viewport (unit-test process has no EditorNode viewport
-	// consumer for this key). When the editor viewport is unavailable the command
-	// remains unavailable; when it is available, unhandled dispatch must surface as
-	// shortcut_unhandled with isError.
+	// In the unit-test process there is no EditorNode viewport, so execute() for a
+	// registered standalone shortcut remains unavailable. The handled/unhandled
+	// contract above is covered by push_shortcut_event; end-to-end shortcut_unhandled
+	// through execute() is covered by the canvas_2d_zoom_automation acceptance workflow.
 	EditorSettings::get_singleton()->add_shortcut("automation/unhandled_shortcut_probe", unhandled_shortcut);
 	EditorAutomationMCPDispatcher dispatcher;
 	Dictionary run_params;
@@ -1447,13 +1447,7 @@ TEST_CASE("[Editor][Automation][MCP] standalone shortcut dispatch reports handle
 	const Dictionary run_structured = run_result.get("structuredContent", Dictionary());
 	CHECK((bool)run_result.get("isError", false));
 	CHECK_FALSE((bool)run_structured.get("ok", true));
-	const String kind = run_structured.get("kind", String());
-	CHECK((kind == "shortcut_unhandled" || kind == "unavailable"));
-	if (kind == "shortcut_unhandled") {
-		CHECK(String(run_structured.get("route", String())) == "shortcut");
-		CHECK(String(run_structured.get("command", String())) == "automation/unhandled_shortcut_probe");
-		CHECK(String(run_structured.get("message", String())).contains("no control handled"));
-	}
+	CHECK(String(run_structured.get("kind", String())) == "unavailable");
 
 	EditorSettings::get_singleton()->remove_shortcut("automation/unhandled_shortcut_probe");
 	root->remove_child(consumer);
@@ -1513,6 +1507,48 @@ TEST_CASE("[Editor][Automation][MCP] set_canvas_2d_zoom rejects invalid zoom bef
 	const EditorAutomationActionResult unavailable = EditorAutomationDriver::perform(snapshot, "set_canvas_2d_zoom", Dictionary(), valid_but_unavailable);
 	CHECK_FALSE(unavailable.ok);
 	CHECK(unavailable.kind == "unsupported_action");
+
+	// MCP clients never reach the driver for a non-numeric zoom: parse fails first
+	// with a JSON-RPC invalid_params error on args.zoom.
+	EditorAutomationMCPDispatcher dispatcher;
+	Dictionary act_params;
+	act_params["name"] = "act";
+	Dictionary act_args;
+	act_args["action"] = "set_canvas_2d_zoom";
+	Dictionary zoom_bool;
+	zoom_bool["zoom"] = true;
+	act_args["args"] = zoom_bool;
+	act_params["arguments"] = act_args;
+	const Dictionary bool_response = dispatcher.handle_message(make_request(29, "tools/call", act_params));
+	CHECK(bool_response.has("error"));
+	CHECK(int(bool_response.get("error", Dictionary()).get("code", 0)) != 0);
+
+	Dictionary missing_args;
+	missing_args["action"] = "set_canvas_2d_zoom";
+	missing_args["args"] = Dictionary();
+	Dictionary missing_params;
+	missing_params["name"] = "act";
+	missing_params["arguments"] = missing_args;
+	const Dictionary missing_response = dispatcher.handle_message(make_request(30, "tools/call", missing_params));
+	CHECK(missing_response.has("result"));
+	const Dictionary missing_result = missing_response.get("result", Dictionary());
+	CHECK((bool)missing_result.get("isError", false));
+	const Dictionary missing_structured = missing_result.get("structuredContent", Dictionary());
+	CHECK_FALSE((bool)missing_structured.get("ok", true));
+	CHECK(String(missing_structured.get("kind", String())) == "invalid_parameter");
+
+	// Public zoom fields are opt-in per action, not a blanket details promotion.
+	EditorAutomationActionResult shaped = EditorAutomationActionResult::success("semantic_set_canvas_2d_zoom", String());
+	shaped.public_fields["changed"] = true;
+	shaped.public_fields["requested_zoom"] = 2.0;
+	shaped.public_fields["effective_zoom"] = 2.0;
+	shaped.public_fields["tile_id"] = 0;
+	shaped.details["diagnostic_only"] = "nested";
+	const Dictionary shaped_dict = shaped.to_dictionary();
+	CHECK((bool)shaped_dict.get("changed", false));
+	CHECK(Math::is_equal_approx(real_t(shaped_dict.get("effective_zoom", 0.0)), real_t(2.0)));
+	CHECK_FALSE(shaped_dict.has("diagnostic_only"));
+	CHECK(String(((Dictionary)shaped_dict.get("details", Dictionary())).get("diagnostic_only", String())) == "nested");
 
 	root->queue_free();
 }

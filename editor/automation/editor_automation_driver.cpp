@@ -1591,9 +1591,9 @@ EditorAutomationActionResult _action_set_canvas_2d_zoom(const Dictionary &p_opti
 		EditorAutomationActionResult result = EditorAutomationActionResult::failure(
 				"value_out_of_range",
 				vformat("`zoom` %s is outside the normalized range [%s, %s].", rtos(requested_zoom), rtos(min_normalized), rtos(max_normalized)));
-		result.details["minimum"] = min_normalized;
-		result.details["maximum"] = max_normalized;
-		result.details["requested_zoom"] = requested_zoom;
+		result.public_fields["minimum"] = min_normalized;
+		result.public_fields["maximum"] = max_normalized;
+		result.public_fields["requested_zoom"] = requested_zoom;
 		return result;
 	}
 
@@ -1603,10 +1603,10 @@ EditorAutomationActionResult _action_set_canvas_2d_zoom(const Dictionary &p_opti
 
 	EditorAutomationActionResult result = EditorAutomationActionResult::success(
 			EditorAutomationActionRouteNames::SEMANTIC_SET_CANVAS_2D_ZOOM, String());
-	result.details["changed"] = changed;
-	result.details["requested_zoom"] = requested_zoom;
-	result.details["effective_zoom"] = effective_zoom;
-	result.details["tile_id"] = focused_tile->get_tile_id();
+	result.public_fields["changed"] = changed;
+	result.public_fields["requested_zoom"] = requested_zoom;
+	result.public_fields["effective_zoom"] = effective_zoom;
+	result.public_fields["tile_id"] = focused_tile->get_tile_id();
 	return result;
 }
 

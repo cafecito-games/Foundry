@@ -41,14 +41,17 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
-#include "editor/settings/editor_settings.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
 #include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/startup_dialog.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_view.h"
+#include "editor/scene/canvas_item_editor_view_state.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_editor_view.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/workspace/workspace_pane.h"
 #include "editor/workspace/workspace_tab_type.h"
 
@@ -709,6 +712,28 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	main_screen->select(EditorMainScreen::EDITOR_2D);
 #endif
 	p_driver.flush_frames(20);
+#ifdef TOOLS_ENABLED
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Failed to select the 2D workspace.");
+	}
+#endif
+
+	p_driver.set_step("seed_canvas_zoom");
+	Dictionary seed_args;
+	seed_args["zoom"] = 1.0;
+	const Dictionary seed_result = p_driver.act(Dictionary(), "set_canvas_2d_zoom", seed_args);
+	if (!p_driver.require_ok(seed_result, "seed_canvas_zoom")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	p_driver.set_step("capture_pre_zoom_state");
+	const Dictionary pre_state = p_driver.read_editor_state();
+	const Dictionary pre_view_2d = pre_state.get("view_2d", Dictionary());
+	if (!(bool)pre_view_2d.get("zoom_settable", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected view_2d.zoom_settable before set_canvas_2d_zoom.");
+	}
+	const Vector2 pre_offset = pre_view_2d.get("view_offset", Vector2());
+	const real_t pre_zoom = real_t(pre_view_2d.get("zoom", 0.0));
 
 	p_driver.set_step("set_canvas_2d_zoom");
 	Dictionary zoom_args;
@@ -738,6 +763,39 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 	if (!Math::is_equal_approx(real_t(view_2d.get("zoom", 0.0)), real_t(2.0))) {
 		return _failure_with_message(p_driver, result.workflow, "Expected read_editor_state.view_2d.zoom == 2.0.");
+	}
+
+	const Vector2 post_offset = view_2d.get("view_offset", Vector2());
+#ifdef TOOLS_ENABLED
+	p_driver.set_step("verify_center_anchor");
+	if (CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton()) {
+		if (CanvasItemEditorView *focused_view = canvas_editor->get_focused_view()) {
+			if (Control *scrollable = focused_view->get_viewport_scrollable()) {
+				const Point2 center = scrollable->get_size() / 2.0;
+				const real_t pre_absolute = CanvasItemEditorNormalizedZoom::to_absolute(pre_zoom);
+				const real_t post_absolute = CanvasItemEditorNormalizedZoom::to_absolute(real_t(view_2d.get("zoom", 0.0)));
+				const Point2 scene_before = center / pre_absolute + pre_offset;
+				const Point2 scene_after = center / post_absolute + post_offset;
+				if (!scene_before.is_equal_approx(scene_after)) {
+					return _failure_with_message(p_driver, result.workflow, "Zoom around viewport center moved the anchored scene point.");
+				}
+			}
+		}
+	}
+#endif
+
+	p_driver.set_step("verify_idempotent_zoom");
+	const Dictionary repeat_result = p_driver.act(Dictionary(), "set_canvas_2d_zoom", zoom_args);
+	if (!p_driver.require_ok(repeat_result, "verify_idempotent_zoom")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	if ((bool)repeat_result.get("changed", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected repeating set_canvas_2d_zoom(2.0) to report changed:false.");
+	}
+	const Dictionary repeat_state = p_driver.read_editor_state();
+	const Dictionary repeat_view = repeat_state.get("view_2d", Dictionary());
+	if (!Vector2(repeat_view.get("view_offset", Vector2())).is_equal_approx(post_offset)) {
+		return _failure_with_message(p_driver, result.workflow, "Idempotent zoom changed view_offset.");
 	}
 
 	p_driver.set_step("run_inapplicable_shortcut");
@@ -772,9 +830,6 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!(bool)run_result.get("isError", false)) {
 		return _failure_with_message(p_driver, result.workflow, "Expected MCP isError:true for unhandled shortcut.");
 	}
-#else
-	const Dictionary shortcut_result;
-#endif
 	if ((bool)shortcut_result.get("ok", true)) {
 		return _failure_with_message(p_driver, result.workflow, "Expected inapplicable standalone shortcut to fail.");
 	}
@@ -784,6 +839,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (String(shortcut_result.get("route", String())) != "shortcut") {
 		return _failure_with_message(p_driver, result.workflow, "Expected route shortcut for unhandled shortcut.");
 	}
+#endif
 
 	p_driver.set_step("assert_no_new_errors");
 	if (!p_driver.assert_no_new_errors()) {

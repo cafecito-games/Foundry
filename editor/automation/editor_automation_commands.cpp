@@ -87,14 +87,18 @@ bool _editor_viewport_available() {
 
 } // namespace
 
-bool EditorAutomationCommands::push_shortcut_event(Viewport *p_viewport, const Ref<Shortcut> &p_shortcut) {
-	ERR_FAIL_NULL_V(p_viewport, false);
-	ERR_FAIL_COND_V(p_shortcut.is_null(), false);
+EditorAutomationCommands::ShortcutDispatchResult EditorAutomationCommands::push_shortcut_event(Viewport *p_viewport, const Ref<Shortcut> &p_shortcut) {
+	if (p_viewport == nullptr || p_shortcut.is_null()) {
+		return ShortcutDispatchResult::UNAVAILABLE;
+	}
+	if (!p_viewport->is_inside_tree() || p_viewport->is_input_disabled()) {
+		return ShortcutDispatchResult::UNAVAILABLE;
+	}
 	Ref<InputEventShortcut> ev;
 	ev.instantiate();
 	ev->set_shortcut(p_shortcut);
 	p_viewport->push_input(ev, false);
-	return p_viewport->is_input_handled();
+	return p_viewport->is_input_handled() ? ShortcutDispatchResult::HANDLED : ShortcutDispatchResult::UNHANDLED;
 }
 
 String EditorAutomationCommands::_category_from_key(const String &p_key) {
@@ -363,11 +367,22 @@ Dictionary EditorAutomationCommands::execute(const String &p_command) {
 		}
 
 		Viewport *viewport = EditorNode::get_singleton()->get_viewport();
-		if (!push_shortcut_event(viewport, shortcut)) {
+		const ShortcutDispatchResult dispatch = push_shortcut_event(viewport, shortcut);
+		if (dispatch == ShortcutDispatchResult::UNAVAILABLE) {
+			result["ok"] = false;
+			result["kind"] = "unavailable";
+			result["message"] = vformat("Shortcut '%s' cannot run because the editor viewport is not available.", p_command);
+			result["candidates"] = suggest_commands(p_command);
+			return result;
+		}
+		if (dispatch == ShortcutDispatchResult::UNHANDLED) {
 			result["ok"] = false;
 			result["kind"] = "shortcut_unhandled";
 			result["route"] = "shortcut";
-			result["message"] = vformat("Shortcut '%s' was dispatched but no control handled it.", p_command);
+			result["message"] = vformat(
+					"Shortcut '%s' was dispatched but no control marked it handled. "
+					"The current UI context may not consume this shortcut (handlers that omit accept_event() can also produce this result).",
+					p_command);
 			return result;
 		}
 

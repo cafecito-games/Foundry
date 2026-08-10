@@ -42,6 +42,7 @@
 #include "editor/run/editor_run_bar.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_view.h"
 #include "editor/script/script_editor_plugin.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/main/window.h"
@@ -429,6 +430,13 @@ Dictionary EditorAutomationState::read_editor_state() {
 	Dictionary view_2d_state;
 	if (CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton()) {
 		view_2d_state["supported"] = true;
+		EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+		const bool zoom_settable = canvas_editor->is_visible_in_tree() &&
+				main_screen != nullptr &&
+				main_screen->get_selected_index() == EditorMainScreen::EDITOR_2D &&
+				canvas_editor->get_focused_view() != nullptr &&
+				canvas_editor->get_focused_view()->get_zoom_widget() != nullptr;
+		view_2d_state["zoom_settable"] = zoom_settable;
 		view_2d_state["tool"] = _canvas_tool_name(canvas_editor->get_current_tool());
 		const Dictionary geometry = canvas_editor->get_state();
 		if (geometry.has("zoom")) {
@@ -439,6 +447,7 @@ Dictionary EditorAutomationState::read_editor_state() {
 		}
 	} else {
 		view_2d_state["supported"] = false;
+		view_2d_state["zoom_settable"] = false;
 	}
 	state["view_2d"] = view_2d_state;
 

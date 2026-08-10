@@ -71,16 +71,16 @@ Dictionary EditorAutomationActionResult::to_dictionary() const {
 	if (!candidates.is_empty()) {
 		dict["candidates"] = candidates;
 	}
-	if (!details.is_empty()) {
-		// Promote action-specific fields to the top-level public contract while
-		// retaining the nested details object for existing consumers.
-		const Array keys = details.keys();
+	if (!public_fields.is_empty()) {
+		const Array keys = public_fields.keys();
 		for (int i = 0; i < keys.size(); i++) {
 			const Variant key = keys[i];
 			if (!dict.has(key)) {
-				dict[key] = details[key];
+				dict[key] = public_fields[key];
 			}
 		}
+	}
+	if (!details.is_empty()) {
 		dict["details"] = details;
 	}
 	return dict;

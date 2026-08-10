@@ -248,6 +248,7 @@ TEST_CASE("[Editor][Automation] workflow registry resolves canonical names and a
 	EditorAutomationWorkflowRegistry::register_builtin_workflows();
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("basic_scene_editing"));
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("mvp"));
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("canvas_2d_zoom_automation"));
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("close_last_scene_empty_pane"));
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("split_scene_root_button_context"));
 	CHECK(EditorAutomationWorkflowRegistry::resolve_canonical_name("mvp") == "basic_scene_editing");
@@ -256,6 +257,7 @@ TEST_CASE("[Editor][Automation] workflow registry resolves canonical names and a
 
 	const PackedStringArray names = EditorAutomationWorkflowRegistry::list_workflow_names();
 	CHECK(names.has("basic_scene_editing"));
+	CHECK(names.has("canvas_2d_zoom_automation"));
 	CHECK(names.has("close_last_scene_empty_pane"));
 	CHECK(names.has("split_scene_root_button_context"));
 	CHECK(EditorAutomationWorkflowRegistry::format_unknown_workflow_message("missing").contains("basic_scene_editing"));

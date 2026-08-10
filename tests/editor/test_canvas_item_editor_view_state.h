@@ -150,33 +150,38 @@ TEST_CASE("[Editor][canvas-viewstate-transitions] Normalized zoom conversion is 
 	}
 }
 
-TEST_CASE("[Editor][canvas-viewstate-transitions] Idempotent zoom leaves offset unchanged") {
+TEST_CASE("[Editor][canvas-viewstate-transitions] Idempotent center zoom leaves offset unchanged") {
+	// Mirrors CanvasItemEditorView::apply_absolute_zoom_at_center: absolute zoom at
+	// viewport_scrollable->get_size() / 2.0 through apply_zoom_at_point.
 	CanvasItemEditorViewState state;
-	state.zoom = 2.0;
+	state.zoom = CanvasItemEditorNormalizedZoom::to_absolute(2.0);
 	state.view_offset = Point2(33, 44);
 	const Point2 offset_before = state.view_offset;
+	const Size2 viewport_size(640, 480);
+	const Point2 center = viewport_size / 2.0;
 
-	CHECK_FALSE(CanvasItemEditorViewMath::apply_zoom_at_point(state, 2.0, Point2(100, 50)));
+	CHECK_FALSE(CanvasItemEditorViewMath::apply_zoom_at_point(state, CanvasItemEditorNormalizedZoom::to_absolute(2.0), center));
 	CHECK(state.view_offset.is_equal_approx(offset_before));
-	CHECK(Math::is_equal_approx(state.zoom, real_t(2.0)));
+	CHECK(Math::is_equal_approx(CanvasItemEditorNormalizedZoom::to_normalized(state.zoom), real_t(2.0)));
 }
 
-TEST_CASE("[Editor][canvas-viewstate-transitions] Focused view zoom leaves a secondary view untouched") {
+TEST_CASE("[Editor][canvas-viewstate-transitions] Center zoom anchors scene point and leaves a secondary view untouched") {
 	CanvasItemEditorViewState focused;
-	focused.zoom = 1.0;
+	focused.zoom = CanvasItemEditorNormalizedZoom::to_absolute(1.0);
 	focused.view_offset = Point2(8, 16);
 	CanvasItemEditorViewState secondary;
-	secondary.zoom = 1.5;
+	secondary.zoom = CanvasItemEditorNormalizedZoom::to_absolute(1.5);
 	secondary.view_offset = Point2(64, 32);
 	const real_t secondary_zoom = secondary.zoom;
 	const Point2 secondary_offset = secondary.view_offset;
 
-	const Point2 center(200, 120);
+	const Size2 viewport_size(400, 300);
+	const Point2 center = viewport_size / 2.0;
 	const Point2 scene_before = center / focused.zoom + focused.view_offset;
-	CHECK(CanvasItemEditorViewMath::apply_zoom_at_point(focused, 2.0, center));
+	CHECK(CanvasItemEditorViewMath::apply_zoom_at_point(focused, CanvasItemEditorNormalizedZoom::to_absolute(2.0), center));
 	const Point2 scene_after = center / focused.zoom + focused.view_offset;
 	CHECK(scene_before.is_equal_approx(scene_after));
-	CHECK(Math::is_equal_approx(focused.zoom, real_t(2.0)));
+	CHECK(Math::is_equal_approx(CanvasItemEditorNormalizedZoom::to_normalized(focused.zoom), real_t(2.0)));
 
 	CHECK(Math::is_equal_approx(secondary.zoom, secondary_zoom));
 	CHECK(secondary.view_offset.is_equal_approx(secondary_offset));

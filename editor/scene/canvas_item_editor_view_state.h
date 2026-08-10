@@ -117,7 +117,9 @@ struct CanvasItemEditorViewState {
 	// Canvas-to-screen transform pushed to the edited scene each draw frame.
 	// Derived from zoom and view_offset by CanvasItemEditorViewMath::update_canvas_transform().
 	Transform2D transform;
-	// Current viewport zoom factor (1.0 = 100%). Scene units per screen pixel.
+	// Absolute viewport zoom including MAX(1, EDSCALE). Normalized zoom
+	// (1.0 = 100%, independent of editor UI scale) is absolute / MAX(1, EDSCALE);
+	// see CanvasItemEditorNormalizedZoom.
 	real_t zoom = 1.0;
 	// Top-left scene point visible in the viewport, in scene coordinates.
 	Point2 view_offset;

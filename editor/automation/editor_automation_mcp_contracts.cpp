@@ -1157,8 +1157,10 @@ Dictionary EditorAutomationMCPFindElementsInput::to_dictionary() const {
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActInput::schema() {
 	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
-			"Input for act. Provide action and selector (the element to act on) for a new interaction; optionally include wait to combine action and postcondition. "
-			"Action inputs such as text, key, and value live under 'args', not at the top level. "
+			"Input for act. Provide action for a new interaction; include selector for element-targeted actions "
+			"(selectorless actions such as set_canvas_2d_zoom, activate_board, and set_board_overview omit it). "
+			"Optionally include wait to combine action and postcondition. "
+			"Action inputs such as text, key, value, and zoom live under 'args', not at the top level. "
 			"When polling a pending cooperative act+wait, pass wait_id without repeating selector/action.");
 	schema->add_property("selector", EditorAutomationMCPSelector::schema());
 	schema->add_property("element", EditorAutomationMCPSelector::schema("Alias for 'selector': the element to act on, matching the shape returned by observe_ui/find_elements. Provide either 'selector' or 'element', not both."));
@@ -1653,6 +1655,14 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 
 	{
 		Ref<EditorAutomationMCPJsonSchema> act_output = _ok_result_schema();
+		act_output->add_property("route", EditorAutomationMCPJsonSchema::string("Action route that handled the request (for example semantic_set_canvas_2d_zoom)."));
+		act_output->add_property("changed", EditorAutomationMCPJsonSchema::boolean("Whether set_canvas_2d_zoom changed the focused 2D view zoom."));
+		act_output->add_property("requested_zoom", EditorAutomationMCPJsonSchema::number("Normalized zoom requested by set_canvas_2d_zoom (1.0 = 100%)."));
+		act_output->add_property("effective_zoom", EditorAutomationMCPJsonSchema::number("Normalized zoom in effect after set_canvas_2d_zoom."));
+		act_output->add_property("tile_id", EditorAutomationMCPJsonSchema::integer("Effective focused tile whose 2D canvas view was targeted."));
+		act_output->add_property("minimum", EditorAutomationMCPJsonSchema::number("Normalized minimum zoom when set_canvas_2d_zoom fails with value_out_of_range."));
+		act_output->add_property("maximum", EditorAutomationMCPJsonSchema::number("Normalized maximum zoom when set_canvas_2d_zoom fails with value_out_of_range."));
+		act_output->add_property("kind", EditorAutomationMCPJsonSchema::string("Failure kind such as invalid_parameter, unsupported_action, or value_out_of_range."));
 		_add_failure_details_output_props(act_output);
 		tools.push_back(_make_tool("act",
 				"Performs a semantic or input action on a selected element (or a selectorless editor action such as set_canvas_2d_zoom) and optionally waits for a UI condition in one call.",

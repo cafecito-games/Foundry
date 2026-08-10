@@ -106,6 +106,9 @@ struct EditorAutomationActionResult {
 	PackedStringArray events;
 	String focus;
 	Array candidates;
+	// Action-specific fields promoted to the top-level public MCP contract.
+	// Keep diagnostics that should stay nested under `details` out of this map.
+	Dictionary public_fields;
 	Dictionary details;
 
 	static EditorAutomationActionResult success(const String &p_route, const String &p_element_id);

@@ -173,15 +173,11 @@ void CanvasItemEditorView::build_ui(Control *p_parent, bool p_register_primary_c
 	controls_hb->add_child(button_center_view);
 	button_center_view->set_flat(true);
 	button_center_view->set_tooltip_text(TTR("Center View"));
-	if (editor != nullptr) {
-		button_center_view->connect(SceneStringName(pressed), callable_mp(editor, &CanvasItemEditor::_popup_callback).bind(CanvasItemEditor::VIEW_CENTER_TO_SELECTION));
-	}
+	button_center_view->connect(SceneStringName(pressed), callable_mp(editor, &CanvasItemEditor::_popup_callback).bind(CanvasItemEditor::VIEW_CENTER_TO_SELECTION));
 
 	zoom_widget = memnew(EditorZoomWidget);
 	zoom_widget->set_anchors_and_offsets_preset(Control::PRESET_TOP_LEFT, Control::PRESET_MODE_MINSIZE, 2 * EDSCALE);
-	if (editor != nullptr) {
-		zoom_widget->set_shortcut_context(editor);
-	}
+	zoom_widget->set_shortcut_context(editor);
 	controls_hb->add_child(zoom_widget);
 	zoom_widget->connect("zoom_changed", callable_mp(this, &CanvasItemEditorView::_update_zoom));
 
