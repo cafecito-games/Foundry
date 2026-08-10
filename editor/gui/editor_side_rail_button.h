@@ -32,14 +32,17 @@
 
 #include "scene/gui/button.h"
 
-// A tile side-rail toggle: an unrotated icon above a label rotated 90° so it
-// reads bottom-to-top, the vertical analogue of a horizontal tab. Drawing is
-// fully self-managed (Button's own icon/text layout is not used, since it has
-// no vertical mode) so get_minimum_size and _draw agree on the same geometry.
+// A tile side-rail toggle: label and icon composed as one horizontal strip,
+// then drawn with a shared -90° transform so both read bottom-to-top with the
+// icon at the top of the button. Drawing is fully self-managed (Button's own
+// icon/text layout is not used, since it has no vertical mode) so
+// get_minimum_size and _draw agree on the same geometry.
 //
 // The icon-only fallback (side_rail_state.h) hides the label without changing
 // the icon or losing track of what the label would have measured; callers ask
 // for that via get_labelled_minimum_size() independent of the current mode.
+// Icon-only mode centers an upright, unrotated icon and does not reserve
+// label space.
 class EditorSideRailButton : public Button {
 	FOUNDRY_CLASS(EditorSideRailButton, Button);
 
@@ -56,12 +59,24 @@ class EditorSideRailButton : public Button {
 
 	void _update_theme_cache();
 	Size2 _compute_minimum_size(bool p_with_label) const;
-	Transform2D _get_label_transform(real_t p_cursor_y, real_t p_text_width) const;
 
 protected:
 	void _notification(int p_what);
 
 public:
+	// Measured layout of the composed toggle in this control's local space.
+	// Tests assert rotation, separation, containment, and min-size coverage
+	// against these rects rather than against source text.
+	struct ComposedGeometry {
+		Rect2 content_rect;
+		Rect2 icon_rect;
+		Rect2 label_rect;
+		Transform2D content_transform;
+		real_t icon_label_separation = 0;
+		bool has_icon = false;
+		bool has_label = false;
+	};
+
 	void set_rail_icon(const Ref<Texture2D> &p_icon);
 	Ref<Texture2D> get_rail_icon() const { return rail_icon; }
 
@@ -78,12 +93,9 @@ public:
 	// whether returning to labelled mode would fit.
 	Size2 get_labelled_minimum_size() const;
 
-	// The exact transform NOTIFICATION_DRAW applies before drawing the rotated
-	// label, expressed purely in this control's local space. Exposed for
-	// tests, which use it to prove the label transform does not depend on the
-	// button's position within its parent (get_transform() must never be
-	// composed into it; NOTIFICATION_DRAW already runs in local space).
-	Transform2D get_label_transform_for_test(real_t p_cursor_y, real_t p_text_width) const { return _get_label_transform(p_cursor_y, p_text_width); }
+	// Exact geometry NOTIFICATION_DRAW uses. Exposed for tests that prove
+	// common rotation, separation, containment, and min-size coverage.
+	ComposedGeometry get_composed_geometry() const;
 
 	EditorSideRailButton();
 };

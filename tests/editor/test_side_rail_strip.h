@@ -33,9 +33,11 @@
 #include "core/input/input_event.h"
 #include "core/input/shortcut.h"
 #include "core/io/config_file.h"
+#include "core/io/image.h"
 #include "core/object/message_queue.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_data.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_tile_dock_region.h"
@@ -44,8 +46,11 @@
 #include "editor/gui/side_rail_state.h"
 #include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
+#include "scene/gui/box_container.h"
 #include "scene/gui/split_container.h"
 #include "scene/main/scene_tree.h"
+#include "scene/resources/font.h"
+#include "scene/resources/image_texture.h"
 
 #include "tests/test_macros.h"
 
@@ -285,6 +290,42 @@ TEST_CASE("[Editor][SideRail] deferred first rebuild does not lock the rail into
 	memdelete(host);
 }
 
+static Ref<Texture2D> _make_side_rail_test_icon(int p_size) {
+	Ref<Image> image = Image::create_empty(p_size, p_size, false, Image::FORMAT_RGBA8);
+	image->fill(Color(1, 1, 1, 1));
+	return ImageTexture::create_from_image(image);
+}
+
+static void _assert_side_rail_composed_geometry(EditorSideRailButton *p_button) {
+	p_button->set_size(p_button->get_minimum_size());
+	const EditorSideRailButton::ComposedGeometry geometry = p_button->get_composed_geometry();
+
+	REQUIRE(geometry.has_icon);
+	REQUIRE(geometry.has_label);
+	if (!(geometry.has_icon && geometry.has_label)) {
+		return;
+	}
+
+	// Icon and label share one bottom-to-top quarter-turn.
+	CHECK(geometry.content_transform.get_rotation() == doctest::Approx(-Math::PI / 2.0));
+
+	// Icon sits above the label along the reading axis, separated by the theme gap.
+	CHECK(geometry.icon_rect.get_end().y <= geometry.label_rect.position.y + 0.5);
+	const real_t gap = geometry.label_rect.position.y - geometry.icon_rect.get_end().y;
+	CHECK(gap >= geometry.icon_label_separation - 0.5);
+
+	// Both rects stay inside the stylebox content rect (no clipping / neighbor bleed).
+	CHECK(geometry.content_rect.encloses(geometry.icon_rect));
+	CHECK(geometry.content_rect.encloses(geometry.label_rect));
+
+	// Minimum size covers the composed content bounds plus stylebox margins.
+	const Rect2 union_rect = geometry.icon_rect.merge(geometry.label_rect);
+	CHECK(geometry.content_rect.size.width + 0.5 >= union_rect.size.width);
+	CHECK(geometry.content_rect.size.height + 0.5 >= union_rect.size.height);
+	CHECK(p_button->get_minimum_size().width + 0.5 >= union_rect.get_end().x);
+	CHECK(p_button->get_minimum_size().height + 0.5 >= union_rect.get_end().y);
+}
+
 TEST_CASE("[Editor][SideRailButton] rotated-label minimum size covers the rendered text width") {
 	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
 
@@ -311,14 +352,44 @@ TEST_CASE("[Editor][SideRailButton] rotated-label minimum size covers the render
 	memdelete(button);
 }
 
-TEST_CASE("[Editor][SideRailButton] label transform is independent of the button's position in its parent") {
-	// Regression for the label rendering displaced by its own layout position:
+TEST_CASE("[Editor][SideRailButton] composed icon and label share rotation, separation, and containment") {
+	// Issue #2039: labelled toggles must rotate icon and label together as one
+	// unit, keep them separated by the theme gap, and keep their union inside
+	// the stylebox content rect. Geometry is asserted from measured rects, not
+	// from source text.
+	const float previous_scale = EditorScale::get_scale();
+	const String previous_style = EDITOR_GET("interface/theme/style");
+
+	for (const String &style : { String("Modern"), String("Classic") }) {
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", style);
+		for (const float scale : { 1.0f, 1.5f, 2.0f }) {
+			EditorScale::set_scale(scale);
+			Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+			const int icon_px = MAX(1, (int)Math::round(16.0f * scale));
+
+			for (const String &label : { String("Groups"), String("InspectorPanelConfiguration") }) {
+				EditorSideRailButton *button = memnew(EditorSideRailButton);
+				button->set_rail_icon(_make_side_rail_test_icon(icon_px));
+				button->set_rail_label(label);
+				button->set_theme(theme);
+				button->notification(Control::NOTIFICATION_THEME_CHANGED);
+				_assert_side_rail_composed_geometry(button);
+				memdelete(button);
+			}
+		}
+	}
+
+	EditorScale::set_scale(previous_scale);
+	EditorSettings::get_singleton()->set_manually("interface/theme/style", previous_style);
+}
+
+TEST_CASE("[Editor][SideRailButton] content transform is independent of the button's position in its parent") {
+	// Regression for content rendering displaced by its own layout position:
 	// NOTIFICATION_DRAW already runs in the control's local space, so
-	// composing get_transform() into the label's draw transform applies the
-	// button's own position a second time. Two buttons with identical local
-	// geometry sitting at different y-offsets in a VBoxContainer must produce
-	// the exact same label transform, since that transform must be expressed
-	// purely in local space and never read the button's position.
+	// composing get_transform() into the draw transform applies the button's
+	// own position a second time. Two buttons with identical local geometry
+	// sitting at different y-offsets in a VBoxContainer must produce the exact
+	// same content transform.
 	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
 
 	Control *root = memnew(Control);
@@ -329,11 +400,13 @@ TEST_CASE("[Editor][SideRailButton] label transform is independent of the button
 	root->add_child(vbox);
 
 	EditorSideRailButton *first = memnew(EditorSideRailButton);
+	first->set_rail_icon(_make_side_rail_test_icon(16));
 	first->set_rail_label("Inspector");
 	first->set_custom_minimum_size(Size2(32, 140));
 	vbox->add_child(first);
 
 	EditorSideRailButton *second = memnew(EditorSideRailButton);
+	second->set_rail_icon(_make_side_rail_test_icon(16));
 	second->set_rail_label("Inspector");
 	second->set_custom_minimum_size(Size2(32, 140));
 	vbox->add_child(second);
@@ -352,19 +425,19 @@ TEST_CASE("[Editor][SideRailButton] label transform is independent of the button
 		return;
 	}
 
-	const real_t cursor_y = 20;
-	const real_t text_width = 60;
-	const Transform2D first_transform = first->get_label_transform_for_test(cursor_y, text_width);
-	const Transform2D second_transform = second->get_label_transform_for_test(cursor_y, text_width);
+	const Transform2D first_transform = first->get_composed_geometry().content_transform;
+	const Transform2D second_transform = second->get_composed_geometry().content_transform;
 	CHECK(first_transform == second_transform);
+	CHECK(first_transform.get_rotation() == doctest::Approx(-Math::PI / 2.0));
 
 	memdelete(root);
 }
 
-TEST_CASE("[Editor][SideRailButton] icon-only minimum size drops the label contribution") {
+TEST_CASE("[Editor][SideRailButton] icon-only mode centers an upright icon without label space") {
 	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_rail_icon(_make_side_rail_test_icon(16));
 	button->set_rail_label("A very long dock title that would dominate the labelled height");
 	button->set_theme(theme);
 	button->notification(Control::NOTIFICATION_THEME_CHANGED);
@@ -378,6 +451,20 @@ TEST_CASE("[Editor][SideRailButton] icon-only minimum size drops the label contr
 	// mode, since the rail's fit decision needs it to know whether returning
 	// to labelled mode would fit.
 	CHECK(button->get_labelled_minimum_size().height == doctest::Approx(labelled_size.height));
+
+	button->set_size(Size2(40, 40));
+	const EditorSideRailButton::ComposedGeometry geometry = button->get_composed_geometry();
+	CHECK_FALSE(geometry.has_label);
+	REQUIRE(geometry.has_icon);
+	if (!geometry.has_icon) {
+		memdelete(button);
+		return;
+	}
+	CHECK(geometry.content_transform == Transform2D());
+	CHECK(geometry.icon_rect.size == Size2(16, 16));
+	CHECK(geometry.content_rect.encloses(geometry.icon_rect));
+	CHECK(geometry.icon_rect.get_center().x == doctest::Approx(geometry.content_rect.get_center().x).epsilon(0.5));
+	CHECK(geometry.icon_rect.get_center().y == doctest::Approx(geometry.content_rect.get_center().y).epsilon(0.5));
 
 	memdelete(button);
 }
