@@ -30,14 +30,36 @@
 
 #include "editor_scene_context.h"
 
+#include "core/templates/hash_map.h"
 #include "editor/docks/groups_editor.h"
 #include "editor/docks/history_dock.h"
 #include "editor/docks/inspector_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/scene/canvas_item_editor_view.h"
 #include "editor/scene/connections_dialog.h"
 #include "scene/3d/node_3d.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/3d/world_3d.h"
+
+namespace {
+
+// Editor-main-thread only, like the rest of the context lifetime.
+uint64_t next_scene_context_id = 1;
+
+HashMap<uint64_t, EditorSceneContext *> &live_scene_contexts() {
+	static HashMap<uint64_t, EditorSceneContext *> contexts;
+	return contexts;
+}
+
+} // namespace
+
+EditorSceneContext *EditorSceneContext::get_context_by_id(uint64_t p_context_id) {
+	if (p_context_id == 0) {
+		return nullptr;
+	}
+	HashMap<uint64_t, EditorSceneContext *>::Iterator found = live_scene_contexts().find(p_context_id);
+	return found ? found->value : nullptr;
+}
 
 void EditorSceneContext::_detach_bound_docks() {
 	Vector<ObjectID> scene_tree_dock_ids;
@@ -325,7 +347,37 @@ void EditorSceneContext::unregister_history_dock(HistoryDock *p_dock) {
 	bound_history_docks.erase(p_dock->get_instance_id());
 }
 
+void EditorSceneContext::register_canvas_view(CanvasItemEditorView *p_view) {
+	ERR_FAIL_NULL(p_view);
+	bound_canvas_views.insert(p_view->get_instance_id());
+}
+
+void EditorSceneContext::unregister_canvas_view(CanvasItemEditorView *p_view) {
+	ERR_FAIL_NULL(p_view);
+	bound_canvas_views.erase(p_view->get_instance_id());
+}
+
+void EditorSceneContext::detach_bound_canvas_views() {
+	// Collect and clear first: bind_context() unregisters, which would otherwise
+	// mutate the set being iterated.
+	Vector<ObjectID> view_ids;
+	for (const ObjectID &view_id : bound_canvas_views) {
+		view_ids.push_back(view_id);
+	}
+	bound_canvas_views.clear();
+
+	for (const ObjectID &view_id : view_ids) {
+		CanvasItemEditorView *view = ObjectDB::get_instance<CanvasItemEditorView>(view_id);
+		if (view && view->get_bound_context() == this) {
+			view->bind_context(nullptr);
+		}
+	}
+}
+
 EditorSceneContext::EditorSceneContext() {
+	context_id = next_scene_context_id++;
+	live_scene_contexts()[context_id] = this;
+
 	viewport = memnew(SubViewport);
 	world_3d.instantiate();
 	viewport->set_world_3d(world_3d);
@@ -340,6 +392,11 @@ EditorSceneContext::EditorSceneContext() {
 }
 
 EditorSceneContext::~EditorSceneContext() {
+	// Drop the bindings while the identity still resolves, then retire the identity
+	// before anything this context owns is freed, so a holder that re-resolves
+	// mid-teardown sees a dead context instead of a half-torn one.
+	detach_bound_canvas_views();
+	live_scene_contexts().erase(context_id);
 	_detach_bound_docks();
 	if (viewport) {
 		if (viewport->get_parent()) {

@@ -63,7 +63,9 @@ CanvasItemEditorView::CanvasItemEditorView(CanvasItemEditor *p_editor, CanvasIte
 		view_state(p_view_state) {
 }
 
-CanvasItemEditorView::~CanvasItemEditorView() = default;
+CanvasItemEditorView::~CanvasItemEditorView() {
+	bind_context(nullptr);
+}
 
 CanvasItemEditorView *CanvasItemEditorViewRouting::get_focused_view(const Vector<CanvasItemEditorView *> &p_views) {
 	return p_views.is_empty() ? nullptr : p_views[0];
@@ -94,9 +96,13 @@ void CanvasItemEditorViewRouting::update_all_viewports(const Vector<CanvasItemEd
 	}
 }
 
+EditorSceneContext *CanvasItemEditorView::_resolve_scene_context() const {
+	return EditorSceneContext::get_context_by_id(scene_context_id);
+}
+
 SubViewport *CanvasItemEditorView::get_scene_viewport() const {
-	if (scene_context) {
-		return scene_context->get_viewport();
+	if (EditorSceneContext *context = _resolve_scene_context()) {
+		return context->get_viewport();
 	}
 	if (EditorNode::get_singleton()) {
 		return EditorNode::get_singleton()->get_scene_root();
@@ -105,8 +111,8 @@ SubViewport *CanvasItemEditorView::get_scene_viewport() const {
 }
 
 Node *CanvasItemEditorView::get_edited_scene() const {
-	if (scene_context) {
-		return scene_context->get_scene_root_node();
+	if (EditorSceneContext *context = _resolve_scene_context()) {
+		return context->get_scene_root_node();
 	}
 	if (EditorNode::get_singleton()) {
 		return EditorNode::get_singleton()->get_edited_scene();
@@ -115,8 +121,8 @@ Node *CanvasItemEditorView::get_edited_scene() const {
 }
 
 EditorSelection *CanvasItemEditorView::get_editor_selection() const {
-	if (scene_context) {
-		return scene_context->get_selection();
+	if (EditorSceneContext *context = _resolve_scene_context()) {
+		return context->get_selection();
 	}
 	if (editor) {
 		return editor->editor_selection;
@@ -125,7 +131,17 @@ EditorSelection *CanvasItemEditorView::get_editor_selection() const {
 }
 
 void CanvasItemEditorView::bind_context(EditorSceneContext *p_context) {
-	scene_context = p_context;
+	const uint64_t new_context_id = p_context ? p_context->get_context_id() : 0;
+	if (new_context_id == scene_context_id) {
+		return;
+	}
+	if (EditorSceneContext *previous = _resolve_scene_context()) {
+		previous->unregister_canvas_view(this);
+	}
+	scene_context_id = new_context_id;
+	if (p_context) {
+		p_context->register_canvas_view(this);
+	}
 }
 
 void CanvasItemEditorView::push_viewport_state() {

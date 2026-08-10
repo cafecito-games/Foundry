@@ -33,6 +33,7 @@
 #include "core/templates/hash_set.h"
 #include "editor/editor_data.h"
 
+class CanvasItemEditorView;
 class ConnectionsDock;
 class GroupsEditor;
 class HistoryDock;
@@ -69,6 +70,8 @@ class EditorSceneContext {
 	HashSet<ObjectID> bound_connections_docks;
 	HashSet<ObjectID> bound_groups_editors;
 	HashSet<ObjectID> bound_history_docks;
+	HashSet<ObjectID> bound_canvas_views;
+	uint64_t context_id = 0;
 	bool active = false;
 	bool has_3d_content = false;
 
@@ -78,6 +81,13 @@ class EditorSceneContext {
 	void _detach_bound_docks();
 
 public:
+	// Stable identity for holders that can outlive the context. EditorSceneContext is
+	// not an Object, so it cannot be tracked through ObjectDB; this id plus the live
+	// registry gives the same re-resolution guarantee, address reuse included.
+	// Never reused, and 0 is reserved for "no context".
+	uint64_t get_context_id() const { return context_id; }
+	static EditorSceneContext *get_context_by_id(uint64_t p_context_id);
+
 	SubViewport *get_viewport() const { return viewport; }
 	Ref<World3D> get_world_3d() const { return world_3d; }
 	EditorSelection *get_selection() const { return selection; }
@@ -118,6 +128,13 @@ public:
 	void unregister_groups_editor(GroupsEditor *p_editor);
 	void register_history_dock(HistoryDock *p_dock);
 	void unregister_history_dock(HistoryDock *p_dock);
+	void register_canvas_view(CanvasItemEditorView *p_view);
+	void unregister_canvas_view(CanvasItemEditorView *p_view);
+
+	// Drops the binding of every canvas view still pointing at this context. Runs
+	// from the destructor, and earlier from EditorNode::scene_context_about_to_be_removed(),
+	// so no view can read through the context while it is being torn down.
+	void detach_bound_canvas_views();
 
 	EditorSceneContext();
 	~EditorSceneContext();
