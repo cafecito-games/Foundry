@@ -30,6 +30,7 @@
 
 #include "editor_automation_acceptance_workflow.h"
 
+#include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
@@ -733,7 +734,6 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_with_message(p_driver, result.workflow, "Expected view_2d.zoom_settable before set_canvas_2d_zoom.");
 	}
 	Point2 scene_under_center_before;
-	Vector2 pre_offset;
 	bool have_center_sample = false;
 #ifdef TOOLS_ENABLED
 	if (CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton()) {
@@ -741,7 +741,6 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 			if (Control *scrollable = focused_view->get_viewport_scrollable()) {
 				const Point2 center = scrollable->get_size() / 2.0;
 				const CanvasItemEditorViewState &view_state = focused_view->get_view_state();
-				pre_offset = view_state.view_offset;
 				scene_under_center_before = center / view_state.zoom + view_state.view_offset;
 				have_center_sample = center.length_squared() > 0.0;
 			}
@@ -795,7 +794,6 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 					if (screen_drift > 1.0 + CMP_EPSILON) {
 						return _failure_with_message(p_driver, result.workflow, "Zoom around viewport center moved the anchored scene point.");
 					}
-					(void)pre_offset;
 				}
 			}
 		}
@@ -814,6 +812,35 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	const Dictionary repeat_view = repeat_state.get("view_2d", Dictionary());
 	if (!Vector2(repeat_view.get("view_offset", Vector2())).is_equal_approx(post_offset)) {
 		return _failure_with_message(p_driver, result.workflow, "Idempotent zoom changed view_offset.");
+	}
+
+	p_driver.set_step("reject_out_of_range_zoom");
+	// Call the driver directly so the expected failure does not poison workflow failure state.
+	Dictionary out_of_range_args;
+	out_of_range_args["zoom"] = 1000.0;
+	const EditorAutomationSnapshot out_of_range_snapshot;
+	const EditorAutomationActionResult out_of_range_action = EditorAutomationDriver::perform(
+			out_of_range_snapshot, "set_canvas_2d_zoom", Dictionary(), out_of_range_args);
+	const Dictionary out_of_range_result = out_of_range_action.to_dictionary();
+	if ((bool)out_of_range_result.get("ok", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected set_canvas_2d_zoom(1000) to fail.");
+	}
+	if (String(out_of_range_result.get("kind", String())) != "value_out_of_range") {
+		return _failure_with_message(p_driver, result.workflow, "Expected kind value_out_of_range for oversized zoom.");
+	}
+	if (!out_of_range_result.has("minimum") || !out_of_range_result.has("maximum") || !out_of_range_result.has("requested_zoom")) {
+		return _failure_with_message(p_driver, result.workflow, "Expected minimum/maximum/requested_zoom on value_out_of_range.");
+	}
+	if (!Math::is_equal_approx(real_t(out_of_range_result.get("requested_zoom", 0.0)), real_t(1000.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected requested_zoom == 1000.0 on value_out_of_range.");
+	}
+	if (!(real_t(out_of_range_result.get("minimum", 0.0)) < real_t(out_of_range_result.get("maximum", 0.0)))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected minimum < maximum on value_out_of_range.");
+	}
+	const Dictionary unchanged_state = p_driver.read_editor_state();
+	const Dictionary unchanged_view = unchanged_state.get("view_2d", Dictionary());
+	if (!Math::is_equal_approx(real_t(unchanged_view.get("zoom", 0.0)), real_t(2.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Out-of-range zoom mutated view_2d.zoom.");
 	}
 
 	p_driver.set_step("run_inapplicable_shortcut");

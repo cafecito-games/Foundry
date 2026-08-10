@@ -1700,8 +1700,9 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 
 	tools.push_back(_make_tool("run_command",
 			"Executes a command palette command or editor shortcut action by key via the existing editor registries. "
-			"For standalone shortcuts, success means a control handled the dispatched InputEventShortcut; "
-			"an unhandled dispatch returns ok:false with kind shortcut_unhandled.",
+			"For standalone shortcuts, success means a control marked the dispatched InputEventShortcut handled; "
+			"an unhandled dispatch returns ok:false with kind shortcut_unhandled. "
+			"When an embedded subwindow is focused, Viewport may mark the event handled on redirect even if no control consumed it.",
 			EditorAutomationMCPRunCommandInput::schema(), _ok_result_schema())
 					.to_dictionary());
 

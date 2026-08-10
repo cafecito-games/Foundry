@@ -1550,6 +1550,17 @@ TEST_CASE("[Editor][Automation][MCP] set_canvas_2d_zoom rejects invalid zoom bef
 	CHECK_FALSE(shaped_dict.has("diagnostic_only"));
 	CHECK(String(((Dictionary)shaped_dict.get("details", Dictionary())).get("diagnostic_only", String())) == "nested");
 
+	EditorAutomationActionResult out_of_range = EditorAutomationActionResult::failure("value_out_of_range", "out of range");
+	out_of_range.public_fields["minimum"] = 1.0 / 128.0;
+	out_of_range.public_fields["maximum"] = 128.0;
+	out_of_range.public_fields["requested_zoom"] = 1000.0;
+	const Dictionary out_of_range_dict = out_of_range.to_dictionary();
+	CHECK_FALSE((bool)out_of_range_dict.get("ok", true));
+	CHECK(String(out_of_range_dict.get("kind", String())) == "value_out_of_range");
+	CHECK(Math::is_equal_approx(real_t(out_of_range_dict.get("minimum", 0.0)), real_t(1.0 / 128.0)));
+	CHECK(Math::is_equal_approx(real_t(out_of_range_dict.get("maximum", 0.0)), real_t(128.0)));
+	CHECK(Math::is_equal_approx(real_t(out_of_range_dict.get("requested_zoom", 0.0)), real_t(1000.0)));
+
 	root->queue_free();
 }
 

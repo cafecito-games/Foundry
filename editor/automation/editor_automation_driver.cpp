@@ -1556,16 +1556,6 @@ EditorAutomationActionResult _action_set_canvas_2d_zoom(const Dictionary &p_opti
 		return EditorAutomationActionResult::failure("unsupported_action", "Editor is not ready for canvas zoom.");
 	}
 
-	EditorBoardStrip *strip = EditorNode::get_board_strip();
-	if (strip == nullptr || strip->get_board_count() <= 0) {
-		return EditorAutomationActionResult::failure("unsupported_action", "No active board is available.");
-	}
-
-	ScenePaneTile *focused_tile = editor_node->get_focused_tile();
-	if (focused_tile == nullptr) {
-		return EditorAutomationActionResult::failure("unsupported_action", "No focused tile is available.");
-	}
-
 	CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton();
 	if (canvas_editor == nullptr || !canvas_editor->is_visible_in_tree()) {
 		return EditorAutomationActionResult::failure("unsupported_action", "No active 2D canvas view is available.");
@@ -1580,6 +1570,15 @@ EditorAutomationActionResult _action_set_canvas_2d_zoom(const Dictionary &p_opti
 	EditorZoomWidget *zoom_widget = view != nullptr ? view->get_zoom_widget() : nullptr;
 	if (view == nullptr || zoom_widget == nullptr) {
 		return EditorAutomationActionResult::failure("unsupported_action", "No focused 2D canvas view is available.");
+	}
+
+	// Prefer the effective focused tile when available so tile_id matches read_editor_state;
+	// fall back to 0 when the board/tile surface is not mounted yet.
+	int tile_id = 0;
+	if (ScenePaneTile *focused_tile = editor_node->get_focused_tile()) {
+		tile_id = focused_tile->get_tile_id();
+	} else {
+		tile_id = EditorAutomationWorkspace::get_focused_tile_id();
 	}
 
 	const real_t min_absolute = zoom_widget->get_min_zoom();
@@ -1606,7 +1605,7 @@ EditorAutomationActionResult _action_set_canvas_2d_zoom(const Dictionary &p_opti
 	result.public_fields["changed"] = changed;
 	result.public_fields["requested_zoom"] = requested_zoom;
 	result.public_fields["effective_zoom"] = effective_zoom;
-	result.public_fields["tile_id"] = focused_tile->get_tile_id();
+	result.public_fields["tile_id"] = tile_id;
 	return result;
 }
 
