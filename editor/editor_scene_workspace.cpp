@@ -34,6 +34,8 @@
 #include "core/io/config_file.h"
 #include "core/io/resource_loader.h"
 #include "editor/doc/editor_help.h"
+#include "editor/editor_board.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_script_leaf.h"
@@ -142,10 +144,29 @@ void EditorSceneWorkspace::reconcile_empty_leaves() {
 
 WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, int p_source_tab_index, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region) {
 	ERR_FAIL_NULL_V(p_target_leaf, nullptr);
-	ERR_FAIL_COND_V(!leaves.has(p_target_leaf), nullptr);
+
+	// The target leaf usually belongs to this workspace, but the overview lets a
+	// drop land on a pane owned by a different board. Resolve its owning workspace
+	// through the strip so a split runs on the tree that actually contains the
+	// leaf, rather than mutating this workspace's own leaf list.
+	EditorSceneWorkspace *target_workspace = this;
+	if (!leaves.has(p_target_leaf)) {
+		EditorBoard *target_board = board_strip ? board_strip->find_board_for_leaf(p_target_leaf->get_leaf_id()) : nullptr;
+		ERR_FAIL_NULL_V(target_board, nullptr);
+		target_workspace = target_board->get_workspace();
+		ERR_FAIL_NULL_V(target_workspace, nullptr);
+	}
 
 	WorkspaceLeafNode *source_leaf = get_leaf_by_id(p_source_pane_id);
+	EditorSceneWorkspace *source_workspace = this;
+	if (!source_leaf && board_strip) {
+		if (EditorBoard *source_board = board_strip->find_board_for_leaf(p_source_pane_id)) {
+			source_workspace = source_board->get_workspace();
+			source_leaf = source_workspace ? source_workspace->get_leaf_by_id(p_source_pane_id) : nullptr;
+		}
+	}
 	ERR_FAIL_NULL_V(source_leaf, nullptr);
+	ERR_FAIL_NULL_V(source_workspace, nullptr);
 	WorkspacePane *source_pane = source_leaf->get_workspace_pane();
 	ERR_FAIL_NULL_V(source_pane, nullptr);
 	ERR_FAIL_INDEX_V(p_source_tab_index, source_pane->get_tab_count(), nullptr);
@@ -174,7 +195,7 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, i
 		const bool vertical = p_region == DROP_TOP || p_region == DROP_BOTTOM;
 		const SplitSide side = (p_region == DROP_LEFT || p_region == DROP_TOP) ? SPLIT_SIDE_FIRST : SPLIT_SIDE_SECOND;
 		const StringName content_type = is_scene_tab ? StringName("scene") : StringName("script");
-		dest_leaf = split_with_content(p_target_leaf, vertical, side, content_type);
+		dest_leaf = target_workspace->split_with_content(p_target_leaf, vertical, side, content_type);
 		ERR_FAIL_NULL_V(dest_leaf, nullptr);
 	}
 
@@ -187,10 +208,12 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, i
 			return nullptr;
 		}
 		// Route scene-tab moves through EditorData membership so the scene tile
-		// ownership stays canonical, then rebuild every pane's scene tabs.
+		// ownership stays canonical, then rebuild scene tabs in every workspace the
+		// move touched -- a cross-board move leaves stale tabs behind in the source
+		// board's pane if only the destination is resynced.
 		editor_data->set_scene_tile(scene_idx, dest_leaf_id);
 		editor_data->set_tile_current_scene(dest_leaf_id, scene_idx);
-		sync_scene_tabs_from_editor_data();
+		_sync_scene_tabs_after_move(source_workspace, target_workspace);
 	} else {
 		// Generic move: take_tab captures the type payload and removes it from the
 		// source pane; add_tab appends it to the destination. Never prompts.
@@ -206,20 +229,43 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, i
 	}
 
 	if (source_leaf != dest_leaf) {
-		collapse_if_empty_deferred(p_source_pane_id);
+		// Collapse on the workspace that actually owns the emptied pane: a
+		// cross-board move's source pane lives outside `this`, and this->leaves
+		// would never find it.
+		source_workspace->collapse_if_empty_deferred(p_source_pane_id);
 	}
 	return dest_leaf;
 }
 
 WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_strip_drop(int p_source_pane_id, int p_source_tab_index, int p_dest_pane_id, int p_dest_index) {
-	WorkspaceLeafNode *source_leaf = get_leaf_by_id(p_source_pane_id);
-	ERR_FAIL_NULL_V(source_leaf, nullptr);
-	WorkspacePane *source_pane = source_leaf->get_workspace_pane();
-	ERR_FAIL_NULL_V(source_pane, nullptr);
+	// Both endpoints are addressed by id rather than by pointer, so each is
+	// resolved the same way: try this workspace first, then fall back to the
+	// board strip when the id belongs to a sibling board's workspace.
 	WorkspaceLeafNode *dest_leaf = get_leaf_by_id(p_dest_pane_id);
+	EditorSceneWorkspace *target_workspace = this;
+	if (!dest_leaf && board_strip) {
+		if (EditorBoard *target_board = board_strip->find_board_for_leaf(p_dest_pane_id)) {
+			target_workspace = target_board->get_workspace();
+			dest_leaf = target_workspace ? target_workspace->get_leaf_by_id(p_dest_pane_id) : nullptr;
+		}
+	}
 	ERR_FAIL_NULL_V(dest_leaf, nullptr);
+	ERR_FAIL_NULL_V(target_workspace, nullptr);
 	WorkspacePane *dest_pane = dest_leaf->get_workspace_pane();
 	ERR_FAIL_NULL_V(dest_pane, nullptr);
+
+	WorkspaceLeafNode *source_leaf = get_leaf_by_id(p_source_pane_id);
+	EditorSceneWorkspace *source_workspace = this;
+	if (!source_leaf && board_strip) {
+		if (EditorBoard *source_board = board_strip->find_board_for_leaf(p_source_pane_id)) {
+			source_workspace = source_board->get_workspace();
+			source_leaf = source_workspace ? source_workspace->get_leaf_by_id(p_source_pane_id) : nullptr;
+		}
+	}
+	ERR_FAIL_NULL_V(source_leaf, nullptr);
+	ERR_FAIL_NULL_V(source_workspace, nullptr);
+	WorkspacePane *source_pane = source_leaf->get_workspace_pane();
+	ERR_FAIL_NULL_V(source_pane, nullptr);
 	ERR_FAIL_INDEX_V(p_source_tab_index, source_pane->get_tab_count(), nullptr);
 
 	// A same-pane strip drop is an ordinary intra-pane reorder; the tab strip
@@ -262,11 +308,12 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_strip_drop(int p_source_pane
 			}
 		}
 
-		// Move scene-tile ownership, then rebuild every pane's scene tabs so the
-		// moved scene materializes in the destination before it is reordered.
+		// Move scene-tile ownership, then rebuild scene tabs in every workspace the
+		// move touched so the moved scene materializes in the destination -- and
+		// disappears from the source -- before it is reordered.
 		editor_data->set_scene_tile(scene_idx, p_dest_pane_id);
 		editor_data->set_tile_current_scene(p_dest_pane_id, scene_idx);
-		sync_scene_tabs_from_editor_data();
+		_sync_scene_tabs_after_move(source_workspace, target_workspace);
 
 		// move_tab's scene path reorders through EditorData; the moved scene's current
 		// tab index equals its scene ordinal (scenes are grouped first), and the
@@ -287,7 +334,9 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_strip_drop(int p_source_pane
 		dest_pane->set_active_tab(clamped);
 	}
 
-	collapse_if_empty_deferred(p_source_pane_id);
+	// Collapse on the workspace that actually owns the emptied pane: a cross-board
+	// move's source pane lives outside `this`, and this->leaves would never find it.
+	source_workspace->collapse_if_empty_deferred(p_source_pane_id);
 	return dest_leaf;
 }
 
@@ -1210,12 +1259,30 @@ Vector<ScenePaneTile *> EditorSceneWorkspace::get_tiles() const {
 
 void EditorSceneWorkspace::sync_scene_tabs_from_editor_data() {
 	WorkspacePane::get_shared_tab_registry().clear_canonical_for_type(StringName("scene"));
+	_rebuild_scene_tabs();
+}
+
+void EditorSceneWorkspace::_rebuild_scene_tabs() {
 	for (WorkspaceLeafNode *leaf : leaves) {
 		if (WorkspacePane *pane = leaf->get_workspace_pane()) {
 			// Activate only the focused pane; a non-focused pane re-mounting its
 			// active scene tab must not reparent the shared scene editor into it.
 			pane->sync_scene_tabs_from_editor_data(leaf->get_leaf_id() == focused_leaf_id);
 		}
+	}
+}
+
+void EditorSceneWorkspace::_sync_scene_tabs_after_move(EditorSceneWorkspace *p_source_workspace, EditorSceneWorkspace *p_target_workspace) {
+	// clear_canonical_for_type is global, not scoped to one workspace's leaves. A
+	// same-board move only rebuilds one workspace and the single clear+rebuild in
+	// sync_scene_tabs_from_editor_data() is correct as-is; a cross-board move
+	// rebuilds two, and clearing twice in sequence would wipe the first rebuild's
+	// canonical registrations before the second one runs. Clear exactly once here,
+	// then rebuild both workspaces against the same clear.
+	WorkspacePane::get_shared_tab_registry().clear_canonical_for_type(StringName("scene"));
+	p_source_workspace->_rebuild_scene_tabs();
+	if (p_target_workspace != p_source_workspace) {
+		p_target_workspace->_rebuild_scene_tabs();
 	}
 }
 
