@@ -219,10 +219,16 @@ TEST_CASE("[Editor][Boards] Leaf and tile lookup spans dormant boards") {
 	h.strip->set_active_board(1);
 	h.pump();
 	CHECK(h.strip->get_active_workspace() == second_board->get_workspace());
-	CHECK(first_board->is_dormant());
+	// The outgoing board stays awake for the duration of the slide; it only goes dormant
+	// once the switch settles.
+	CHECK_FALSE(first_board->is_dormant());
 	CHECK_FALSE(second_board->is_dormant());
 	// The board left behind remembers where the user was.
 	CHECK(first_board->get_remembered_focused_leaf_id() == first_board->get_workspace()->get_focused_leaf_id());
+
+	h.settle_transition();
+	CHECK(first_board->is_dormant());
+	CHECK_FALSE(second_board->is_dormant());
 
 	h.unmount();
 }
