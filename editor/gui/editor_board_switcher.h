@@ -66,6 +66,7 @@ class EditorBoardSwitcher : public HBoxContainer {
 	void _on_board_button_gui_input(const Ref<InputEvent> &p_event, int p_index);
 	void _on_add_pressed();
 	void _begin_rename(int p_index);
+	void _apply_pending_rename(const String &p_text);
 	void _commit_rename(const String &p_text);
 	void _commit_rename_from_focus_loss();
 	void _cancel_rename();

@@ -106,6 +106,10 @@ TEST_CASE("[Editor][BoardSwitcher] Rebuilds one button per board and marks the a
 	REQUIRE(harness.switcher->get_child_count() == 3);
 	Button *first = harness.board_button(0);
 	REQUIRE(first != nullptr);
+	if (!first) {
+		harness.unmount();
+		return;
+	}
 	CHECK(first->get_text() == harness.strip->get_board(0)->get_title());
 	CHECK(first->is_pressed());
 
@@ -113,6 +117,10 @@ TEST_CASE("[Editor][BoardSwitcher] Rebuilds one button per board and marks the a
 	REQUIRE(harness.switcher->get_child_count() == 4);
 	Button *second = harness.board_button(1);
 	REQUIRE(second != nullptr);
+	if (!second) {
+		harness.unmount();
+		return;
+	}
 	CHECK(second->get_text() == harness.strip->get_board(1)->get_title());
 	CHECK_FALSE(second->is_pressed());
 
@@ -121,6 +129,10 @@ TEST_CASE("[Editor][BoardSwitcher] Rebuilds one button per board and marks the a
 	second = harness.board_button(1);
 	REQUIRE(first != nullptr);
 	REQUIRE(second != nullptr);
+	if (!first || !second) {
+		harness.unmount();
+		return;
+	}
 	CHECK_FALSE(first->is_pressed());
 	CHECK(second->is_pressed());
 
@@ -135,6 +147,10 @@ TEST_CASE("[Editor][BoardSwitcher] The add button appends and activates a new bo
 	// The add button is the second-to-last child; the overview toggle is last.
 	Button *add_button = harness.board_button(harness.switcher->get_child_count() - 2);
 	REQUIRE(add_button != nullptr);
+	if (!add_button) {
+		harness.unmount();
+		return;
+	}
 	add_button->emit_signal(SceneStringName(pressed));
 
 	CHECK(harness.strip->get_board_count() == board_count_before + 1);
@@ -149,6 +165,10 @@ TEST_CASE("[Editor][BoardSwitcher] Double-clicking a board button renames it inl
 
 	Button *button = harness.board_button(0);
 	REQUIRE(button != nullptr);
+	if (!button) {
+		harness.unmount();
+		return;
+	}
 	CHECK_FALSE(harness.switcher->is_renaming());
 
 	harness.double_click(button);
@@ -156,6 +176,10 @@ TEST_CASE("[Editor][BoardSwitcher] Double-clicking a board button renames it inl
 
 	LineEdit *rename_edit = harness.find_rename_edit();
 	REQUIRE(rename_edit != nullptr);
+	if (!rename_edit) {
+		harness.unmount();
+		return;
+	}
 	CHECK(rename_edit->get_text() == harness.strip->get_board(0)->get_title());
 
 	rename_edit->set_text("face shader");
@@ -165,6 +189,10 @@ TEST_CASE("[Editor][BoardSwitcher] Double-clicking a board button renames it inl
 	CHECK(harness.strip->get_board(0)->get_title() == "face shader");
 	Button *renamed_button = harness.board_button(0);
 	REQUIRE(renamed_button != nullptr);
+	if (!renamed_button) {
+		harness.unmount();
+		return;
+	}
 	CHECK(renamed_button->get_text() == "face shader");
 
 	harness.unmount();
@@ -176,11 +204,19 @@ TEST_CASE("[Editor][BoardSwitcher] Losing focus commits the rename") {
 
 	Button *button = harness.board_button(0);
 	REQUIRE(button != nullptr);
+	if (!button) {
+		harness.unmount();
+		return;
+	}
 	harness.double_click(button);
 	REQUIRE(harness.switcher->is_renaming());
 
 	LineEdit *rename_edit = harness.find_rename_edit();
 	REQUIRE(rename_edit != nullptr);
+	if (!rename_edit) {
+		harness.unmount();
+		return;
+	}
 	rename_edit->set_text("renamed by focus loss");
 	rename_edit->emit_signal(SceneStringName(focus_exited));
 
@@ -197,11 +233,19 @@ TEST_CASE("[Editor][BoardSwitcher] An empty commit leaves the title unchanged") 
 	const String original_title = harness.strip->get_board(0)->get_title();
 	Button *button = harness.board_button(0);
 	REQUIRE(button != nullptr);
+	if (!button) {
+		harness.unmount();
+		return;
+	}
 	harness.double_click(button);
 	REQUIRE(harness.switcher->is_renaming());
 
 	LineEdit *rename_edit = harness.find_rename_edit();
 	REQUIRE(rename_edit != nullptr);
+	if (!rename_edit) {
+		harness.unmount();
+		return;
+	}
 	rename_edit->set_text("   ");
 	rename_edit->emit_signal(SceneStringName(text_submitted), String("   "));
 
@@ -230,7 +274,81 @@ TEST_CASE("[Editor][BoardSwitcher] A restore rebuilds the switcher without board
 	REQUIRE(harness.switcher->get_child_count() == harness.strip->get_board_count() + 2);
 	Button *restored = harness.board_button(1);
 	REQUIRE(restored != nullptr);
+	if (!restored) {
+		harness.unmount();
+		return;
+	}
 	CHECK(restored->get_text() == "kept across restore");
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Switching boards while a rename is pending commits the typed title") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	harness.strip->add_board();
+	REQUIRE(harness.switcher->get_child_count() == 4);
+
+	Button *first = harness.board_button(0);
+	Button *second = harness.board_button(1);
+	REQUIRE(first != nullptr);
+	REQUIRE(second != nullptr);
+	if (!first || !second) {
+		harness.unmount();
+		return;
+	}
+
+	harness.double_click(first);
+	REQUIRE(harness.switcher->is_renaming());
+
+	LineEdit *rename_edit = harness.find_rename_edit();
+	REQUIRE(rename_edit != nullptr);
+	if (!rename_edit) {
+		harness.unmount();
+		return;
+	}
+	rename_edit->set_text("renamed mid-switch");
+
+	// A single click on another board's button moves neither keyboard focus (the board
+	// buttons use FOCUS_ACCESSIBILITY, so focus_exited only fires with a screen reader
+	// enabled) nor submits the LineEdit -- it just fires the button's pressed signal, the
+	// same path _on_board_button_gui_input takes for a real click. Regression coverage
+	// for the rename being silently dropped when _rebuild() ran via _cancel_rename().
+	second->emit_signal(SceneStringName(pressed));
+
+	CHECK_FALSE(harness.switcher->is_renaming());
+	CHECK(harness.strip->get_active_index() == 1);
+	CHECK(harness.strip->get_board(0)->get_title() == "renamed mid-switch");
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Closing the active board through the strip rebuilds around the new active board") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	harness.strip->add_board();
+	REQUIRE(harness.switcher->get_child_count() == 4);
+	harness.strip->set_active_board(1);
+	REQUIRE(harness.strip->get_active_index() == 1);
+
+	// EditorBoardSwitcher has no close control of its own yet, so this drives
+	// close_board() directly the way a future close action will. Closing the active
+	// board fires active_board_changed (the strip activates a neighbour first) and then
+	// board_removed, each triggering its own switcher rebuild; what matters is that the
+	// buttons are left consistent once both have landed.
+	CHECK(harness.strip->close_board(1));
+
+	CHECK(harness.switcher->get_child_count() == 3);
+	Button *remaining = harness.board_button(0);
+	REQUIRE(remaining != nullptr);
+	if (!remaining) {
+		harness.unmount();
+		return;
+	}
+	CHECK(remaining->is_pressed());
+	CHECK(harness.strip->get_active_index() == 0);
 
 	harness.unmount();
 }

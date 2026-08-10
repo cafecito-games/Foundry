@@ -82,7 +82,14 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 }
 
 void EditorBoardSwitcher::_rebuild() {
-	_cancel_rename();
+	// A pending rename must be committed, not discarded: clicking another board button
+	// does not move keyboard focus off the LineEdit (the board buttons use
+	// FOCUS_ACCESSIBILITY, so focus_exited never fires outside a screen reader), and
+	// board_removed/boards_restored can just as easily land mid-rename. Committing here
+	// covers every _rebuild() trigger uniformly instead of relying on focus behavior.
+	if (rename_edit) {
+		_apply_pending_rename(rename_edit->get_text());
+	}
 
 	while (get_child_count() > 0) {
 		Node *child = get_child(0);
@@ -195,7 +202,7 @@ void EditorBoardSwitcher::_begin_rename(int p_index) {
 	rename_edit->select_all();
 }
 
-void EditorBoardSwitcher::_commit_rename(const String &p_text) {
+void EditorBoardSwitcher::_apply_pending_rename(const String &p_text) {
 	if (!rename_edit) {
 		return;
 	}
@@ -212,6 +219,13 @@ void EditorBoardSwitcher::_commit_rename(const String &p_text) {
 		return;
 	}
 	board->set_title(new_title);
+}
+
+void EditorBoardSwitcher::_commit_rename(const String &p_text) {
+	if (!rename_edit) {
+		return;
+	}
+	_apply_pending_rename(p_text);
 	_rebuild();
 }
 
