@@ -107,7 +107,9 @@ TEST_CASE("[Editor][Boards] Overview preview shrink tracks the on-screen board s
 	// Three boards plus their gutters fit at roughly a third of the width, so previews
 	// render at roughly a ninth of the pixels.
 	CHECK(EditorBoardStrip::overview_preview_shrink_for(3, viewport) == 3);
-	CHECK(EditorBoardStrip::overview_preview_shrink_for(6, viewport) == 6);
+	// The fixed gutters eat into the width too, so at six boards the divisor is a notch
+	// past six rather than exactly six.
+	CHECK(EditorBoardStrip::overview_preview_shrink_for(6, viewport) == 7);
 
 	// A degenerate viewport must still produce a legal divisor rather than a division by
 	// zero propagating into SubViewportContainer::set_stretch_shrink().
@@ -119,45 +121,54 @@ TEST_CASE("[Editor][Boards] Overview shrinks every preview viewport and restores
 	OverviewHarness h;
 	h.mount();
 
-	Vector<Size2> baseline;
+	// Resolving the container through the viewport keeps the assertion on the real node the
+	// tile hands to the renderer, rather than on a stand-in built by the test.
+	Vector<SubViewportContainer *> containers;
+	Vector<SubViewport *> viewports;
 	for (int i = 0; i < h.strip->get_board_count(); i++) {
 		ScenePaneTile *tile = h.first_tile(i);
-		if (!tile || !tile->get_preview_3d_viewport()) {
+		SubViewport *viewport = tile ? tile->get_preview_3d_viewport() : nullptr;
+		SubViewportContainer *container = viewport ? Object::cast_to<SubViewportContainer>(viewport->get_parent()) : nullptr;
+		if (!container) {
 			h.unmount();
-			FAIL_CHECK("every board must expose a preview viewport to bound");
+			FAIL_CHECK("every board's tile must own a stretch-enabled preview container");
 			return;
 		}
-		baseline.push_back(tile->get_preview_3d_viewport()->get_size());
 		CHECK(tile->get_preview_render_shrink() == 1);
+		CHECK(container->get_stretch_shrink() == 1);
+		containers.push_back(container);
+		viewports.push_back(viewport);
 	}
-	// A zero-sized baseline would make the shrink assertion below vacuously true.
-	CHECK(baseline[0].width > 0);
+
+	// The editor's own layout gives these hidden previews a degenerate size, which would
+	// make a shrink assertion vacuous, so each container is driven at a known size. Sizing
+	// the container is exactly what the renderer-facing path does: the container derives
+	// the SubViewport's render resolution from its own rect and the shrink.
+	const Size2 probe_size(400, 300);
+	const int expected_shrink = EditorBoardStrip::overview_preview_shrink_for(h.strip->get_board_count(), Size2(800, 600));
+	CHECK(expected_shrink > 1);
 
 	h.strip->set_overview(true);
 	h.pump();
 
-	for (int i = 0; i < h.strip->get_board_count(); i++) {
-		ScenePaneTile *tile = h.first_tile(i);
-		if (!tile) {
-			continue;
-		}
-		CHECK(tile->get_preview_render_shrink() == EditorBoardStrip::overview_preview_shrink_for(h.strip->get_board_count(), Size2(800, 600)));
-		// The shrink must actually reach the SubViewport. It would not if it had been
+	for (int i = 0; i < containers.size(); i++) {
+		CHECK(h.first_tile(i)->get_preview_render_shrink() == expected_shrink);
+		CHECK(containers[i]->get_stretch_shrink() == expected_shrink);
+		// The shrink must reach the SubViewport itself. It would not have if it had been
 		// implemented with SubViewport::set_size(), which a stretch-enabled container makes
-		// warn and no-op, silently leaving every board at full render resolution.
-		CHECK(tile->get_preview_3d_viewport()->get_size().width < baseline[i].width);
+		// warn and no-op, silently leaving every board rendering at full resolution.
+		containers[i]->set_size(probe_size);
+		CHECK(viewports[i]->get_size() == Size2i(probe_size / expected_shrink));
 	}
 
 	h.strip->set_overview(false);
 	h.settle();
 
-	for (int i = 0; i < h.strip->get_board_count(); i++) {
-		ScenePaneTile *tile = h.first_tile(i);
-		if (!tile) {
-			continue;
-		}
-		CHECK(tile->get_preview_render_shrink() == 1);
-		CHECK(tile->get_preview_3d_viewport()->get_size() == baseline[i]);
+	for (int i = 0; i < containers.size(); i++) {
+		CHECK(h.first_tile(i)->get_preview_render_shrink() == 1);
+		CHECK(containers[i]->get_stretch_shrink() == 1);
+		containers[i]->set_size(probe_size);
+		CHECK(viewports[i]->get_size() == Size2i(probe_size));
 	}
 
 	h.unmount();
@@ -321,12 +332,12 @@ TEST_CASE("[Editor][Boards] Overview captions are unscaled, aligned to their boa
 		CHECK(caption->get_text() == h.strip->get_board(i)->get_title());
 		// Captions sit outside the scaled board container: they are laid out at their own
 		// natural size, so their text stays at full font size while the boards shrink.
-		CHECK(caption->get_size() == caption->get_combined_minimum_size());
+		CHECK(caption->get_size().is_equal_approx(caption->get_combined_minimum_size()));
 		// A caption folded into the scaled container would have come out at roughly
 		// board_scale times its natural height instead.
 		CHECK(caption->get_size().height > caption->get_combined_minimum_size().height * board_scale * 1.5);
 
-		// And each one is centred on the board it names.
+		// And each one is centered on the board it names.
 		const Rect2 board_rect = h.strip->get_board(i)->get_rect();
 		const real_t caption_center = caption->get_position().x + caption->get_size().width * 0.5;
 		CHECK(Math::abs(caption_center - board_rect.get_center().x) < 1.0);

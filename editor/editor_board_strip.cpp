@@ -128,7 +128,7 @@ bool EditorBoardStrip::close_board(int p_index) {
 		ERR_FAIL_COND_V(boards[p_index] != board, false);
 	}
 
-	// Activate a neighbour before the outgoing board is torn down so the editor is
+	// Activate a neighbor before the outgoing board is torn down so the editor is
 	// never left without a live board.
 	if (p_index == active_index) {
 		set_active_board(p_index > 0 ? p_index - 1 : p_index + 1);
