@@ -51,9 +51,11 @@ namespace TestSideRailCollapse {
 
 using Side = EditorTileDockRegion::Side;
 
-// A tile dock region with real EditorDock instances but no scene-tree
-// membership and no EditorDockManager dependency, mirroring TileDockFixture
-// (tests/editor/test_tile_dock_offsets.h).
+// A tile dock region with real EditorDock instances but no EditorDockManager
+// dependency, mirroring TileDockFixture (tests/editor/test_tile_dock_offsets.h).
+// The body is rooted in the scene tree because TabContainer::set_current_tab
+// only defers its selection until the container enters the tree, so a detached
+// region could never express "the right side shows this dock".
 struct CollapseFixture {
 	HSplitContainer *body = nullptr;
 	Control *center = nullptr;
@@ -65,6 +67,7 @@ struct CollapseFixture {
 
 	CollapseFixture() {
 		body = memnew(HSplitContainer);
+		SceneTree::get_singleton()->get_root()->add_child(body);
 		center = memnew(Control);
 		body->add_child(center);
 		region.attach(body, center);
@@ -72,6 +75,7 @@ struct CollapseFixture {
 		scene = memnew(EditorDock);
 		scene->set_title("Scene");
 		scene->set_layout_key("Scene");
+		scene->set_focus_mode(Control::FOCUS_ALL);
 		region.place_left(scene);
 
 		inspector = _add_right("Inspector");
@@ -80,6 +84,7 @@ struct CollapseFixture {
 	}
 
 	~CollapseFixture() {
+		SceneTree::get_singleton()->get_root()->remove_child(body);
 		memdelete(body);
 	}
 
@@ -87,6 +92,7 @@ struct CollapseFixture {
 		EditorDock *dock = memnew(EditorDock);
 		dock->set_title(p_title);
 		dock->set_layout_key(p_title);
+		dock->set_focus_mode(Control::FOCUS_ALL);
 		region.add_right(dock);
 		return dock;
 	}
