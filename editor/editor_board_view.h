@@ -138,6 +138,18 @@ public:
 	void advance(real_t p_delta);
 	bool is_animating() const { return transition < 1.0; }
 
+	// Immediately lands on the current transition's target instead of animating towards
+	// it. Used when the animation's premise breaks mid-flight -- most notably a board
+	// central to the switch being closed -- so the view settles on a consistent, current
+	// layout rather than keep sliding an extra frame toward geometry that no longer
+	// matches the board list.
+	void finish_transition() {
+		origin = target_origin;
+		scale = target_scale;
+		pitch_gutter = target_pitch_gutter;
+		transition = 1.0;
+	}
+
 	// The transform the strip applies to its board container: uniform scaling
 	// by the current scale, translated by the current origin. See the class
 	// comment for how this combines with the strip's own child pitch to

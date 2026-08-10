@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "editor/editor_board_view.h"
 #include "editor/editor_scene_workspace.h"
 
 #include "scene/gui/container.h"
@@ -56,11 +57,19 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	EditorData *editor_data = nullptr;
 	Callable board_scene_close_handler;
 
+	// Drives the horizontal slide. Idle (is_animating() == false) outside of a switch.
+	EditorBoardView board_view;
+	// The board that must go dormant once the current slide finishes. Non-null exactly
+	// while a slide has an outgoing board still awake; see set_active_board().
+	EditorBoard *transition_outgoing = nullptr;
+
 	EditorBoard *_append_board(int p_board_id, const String &p_title);
 	void _clear_boards();
 	PackedInt32Array _collect_board_scene_indices(const EditorBoard *p_board) const;
 	// Highest leaf id persisted anywhere in the config, plus one.
 	static int _persisted_leaf_id_ceiling(const Ref<ConfigFile> &p_config, int p_board_count);
+	// Applies one frame of the slide and, once it settles, sleeps the outgoing board.
+	void _advance_transition(real_t p_delta);
 
 protected:
 	void _notification(int p_what);
@@ -107,11 +116,15 @@ public:
 	// the board no longer exists.
 	int resolve_board_index(ObjectID p_board_id) const;
 
-	// Makes p_index the visible board: the outgoing board remembers its focused leaf,
-	// the incoming one wakes before the outgoing one sleeps so no frame is left without
-	// a live board, and the incoming board's remembered leaf is requested as focused.
-	// Emits active_board_changed exactly once, and nothing at all when p_index is
-	// already active.
+	// Makes p_index the visible board over a short horizontal slide: the outgoing board
+	// remembers its focused leaf, the incoming one wakes immediately so both are live for
+	// the duration of the slide, and the incoming board's remembered leaf is requested as
+	// focused. Emits active_board_changed exactly once, at the start of the switch, and
+	// nothing at all when p_index is already the active (or already-targeted) board.
+	// The outgoing board goes dormant only once the slide completes. Calling this again
+	// before the slide finishes retargets the animation from its current position instead
+	// of snapping, and immediately sleeps whichever board is no longer part of the new
+	// outgoing/incoming pair.
 	void set_active_board(int p_index);
 
 	// Config section holding the tiling tree of the board at p_index.
