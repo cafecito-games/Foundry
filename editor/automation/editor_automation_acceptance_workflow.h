@@ -59,6 +59,9 @@ public:
 	static Result run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver);
+	// Opens a 3D scene in a board tile and switches boards, which demotes that tile out
+	// of focus and makes the editor build a secondary 3D viewport for its live preview.
+	static Result run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver);
 	static Result run_projectless_shell_smoke(EditorWorkflowTestDriver &p_driver);
 	static Result run_projectless_shell_dismiss_quits(EditorWorkflowTestDriver &p_driver);
 	static Result run_projectless_shell_open_in_process(EditorWorkflowTestDriver &p_driver);
