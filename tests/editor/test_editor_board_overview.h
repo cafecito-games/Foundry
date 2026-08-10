@@ -190,7 +190,7 @@ TEST_CASE("[Editor][Boards] Overview scales boards whole and keeps every scene v
 	// A typical editor window at the default UI scale. At this width a board that is
 	// *resized* into the overview rect re-runs its own layout at roughly a third of the
 	// width, where the in-tile docks hold their minimum widths and the scene viewport
-	// absorbs the whole loss until nothing of the scene is left to recognise the board by.
+	// absorbs the whole loss until nothing of the scene is left to recognize the board by.
 	const Size2 window(1512, 982);
 	const int board_count = 3;
 

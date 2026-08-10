@@ -63,7 +63,7 @@ void EditorBoardStrip::_notification(int p_what) {
 				// hold their minimum widths and the scene viewport absorbs the entire loss --
 				// at three boards on a typical window the viewport reaches zero and the
 				// overview degenerates into dock stacks. Scaling shrinks the board whole, so
-				// it keeps the focused board's aspect and stays recognisable.
+				// it keeps the focused board's aspect and stays recognizable.
 				fit_child_in_rect(boards[i], Rect2(position, size));
 				boards[i]->set_scale(Size2(view_scale, view_scale));
 			}
