@@ -37,12 +37,14 @@
 #include "core/os/keyboard.h"
 #include "scene/gui/control.h"
 #include "scene/gui/subviewport_container.h"
+#include "servers/display/display_server.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
 
 namespace {
 
 Vector2 editor_automation_last_mouse_position;
+MouseButton editor_automation_held_button = MouseButton::NONE;
 
 #ifdef TESTS_ENABLED
 struct AutomationMouseTrace {
@@ -76,8 +78,15 @@ void _copy_prefixed_position_option(const Dictionary &p_from, Dictionary &r_to, 
 	}
 }
 
+// Input keeps parsed events in an accumulation buffer that the main loop drains
+// once per frame, and consecutive mouse motions collapse into a single event
+// while they sit there. A synthesized gesture therefore has to drain the buffer
+// itself: without this, press/motion/release issued inside one action call are
+// never delivered while the action runs, and the intermediate motions that
+// drive drag detection and drop-target tracking are merged away.
 void _dispatch_input_event(const Ref<InputEvent> &p_event) {
 	Input::get_singleton()->parse_input_event(p_event);
+	Input::get_singleton()->flush_buffered_events();
 	MessageQueue::get_singleton()->flush();
 }
 
@@ -296,6 +305,117 @@ bool EditorAutomationInput::push_mouse_motion(
 	return true;
 }
 
+MouseButton EditorAutomationInput::get_held_mouse_button() {
+	return editor_automation_held_button;
+}
+
+Vector2 EditorAutomationInput::get_last_mouse_position() {
+	return editor_automation_last_mouse_position;
+}
+
+void EditorAutomationInput::reset_pointer_state() {
+	editor_automation_held_button = MouseButton::NONE;
+	editor_automation_last_mouse_position = Vector2();
+}
+
+void EditorAutomationInput::sync_window_pointer(Viewport *p_viewport, const Vector2 &p_global) {
+	if (p_viewport == nullptr) {
+		return;
+	}
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	if (display_server == nullptr || !display_server->has_feature(DisplayServer::FEATURE_MOUSE_WARP)) {
+		return;
+	}
+	// Drop handling reads the pointer from the display server, not from the
+	// synthesized event: Viewport::get_mouse_position() (and therefore the point
+	// handed to can_drop_data/drop_data) comes from DisplayServer::mouse_get_position(),
+	// and a native window only tracks a drop target at all while the window
+	// manager reports the pointer as being inside it. Moving the system pointer
+	// along with the gesture is what makes a synthesized drag land where it aims.
+	p_viewport->warp_mouse(p_global);
+}
+
+bool EditorAutomationInput::begin_mouse_gesture(
+		Viewport *p_viewport,
+		const Vector2 &p_global,
+		MouseButton p_button,
+		const EditorAutomationInputModifiers &p_modifiers,
+		PackedStringArray &r_events) {
+	ERR_FAIL_NULL_V(p_viewport, false);
+
+	sync_window_pointer(p_viewport, p_global);
+
+	// Hover the origin before pressing so the viewport's mouse-over bookkeeping
+	// matches the press position even when the gesture starts far from wherever
+	// the previous action left the pointer.
+	if (!push_mouse_motion(p_viewport, p_global, Vector2(), MouseButtonMask::NONE, p_modifiers, r_events)) {
+		return false;
+	}
+
+	const MouseButtonMask button_mask = mouse_button_to_mask(p_button);
+	if (!push_mouse_button(p_viewport, p_global, p_button, true, button_mask, p_modifiers, r_events)) {
+		return false;
+	}
+	editor_automation_held_button = p_button;
+	return true;
+}
+
+bool EditorAutomationInput::move_mouse_gesture(
+		Viewport *p_viewport,
+		const Vector2 &p_to_global,
+		const Vector<Vector2> &p_waypoints,
+		const EditorAutomationInputModifiers &p_modifiers,
+		PackedStringArray &r_events) {
+	ERR_FAIL_NULL_V(p_viewport, false);
+
+	const MouseButtonMask button_mask = editor_automation_held_button == MouseButton::NONE
+			? MouseButtonMask::NONE
+			: mouse_button_to_mask(editor_automation_held_button);
+
+	Vector<Vector2> path;
+	path.push_back(editor_automation_last_mouse_position);
+	for (const Vector2 &waypoint : p_waypoints) {
+		path.push_back(waypoint);
+	}
+	path.push_back(p_to_global);
+
+	// Step in increments below the viewport's drag threshold so accumulation
+	// crosses the threshold on a motion event rather than in one jump, matching
+	// how a real pointer produces a drag.
+	const float step_distance = MAX(1.0f, float(p_viewport->get_drag_threshold()) * 0.5f);
+	Vector2 current = editor_automation_last_mouse_position;
+	for (int segment_index = 1; segment_index < path.size(); segment_index++) {
+		const Vector2 target = path[segment_index];
+		const float distance = (target - current).length();
+		const int steps = MAX(1, int(Math::ceil(distance / step_distance)));
+		for (int step = 1; step <= steps; step++) {
+			const Vector2 next = current.lerp(target, float(step) / float(steps));
+			const Vector2 relative = next - current;
+			current = next;
+			sync_window_pointer(p_viewport, current);
+			if (!push_mouse_motion(p_viewport, current, relative, button_mask, p_modifiers, r_events)) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+bool EditorAutomationInput::end_mouse_gesture(
+		Viewport *p_viewport,
+		const Vector2 &p_global,
+		const EditorAutomationInputModifiers &p_modifiers,
+		PackedStringArray &r_events) {
+	ERR_FAIL_NULL_V(p_viewport, false);
+
+	const MouseButton button = editor_automation_held_button == MouseButton::NONE
+			? MouseButton::LEFT
+			: editor_automation_held_button;
+	editor_automation_held_button = MouseButton::NONE;
+	sync_window_pointer(p_viewport, p_global);
+	return push_mouse_button(p_viewport, p_global, button, false, MouseButtonMask::NONE, p_modifiers, r_events);
+}
+
 bool EditorAutomationInput::push_mouse_drag(
 		Viewport *p_viewport,
 		const Vector2 &p_from_global,
@@ -303,39 +423,20 @@ bool EditorAutomationInput::push_mouse_drag(
 		const Vector<Vector2> &p_waypoints,
 		MouseButton p_button,
 		const EditorAutomationInputModifiers &p_modifiers,
-		PackedStringArray &r_events) {
+		PackedStringArray &r_events,
+		bool p_release) {
 	ERR_FAIL_NULL_V(p_viewport, false);
 
-	const MouseButtonMask button_mask = mouse_button_to_mask(p_button);
-	if (!push_mouse_button(p_viewport, p_from_global, p_button, true, button_mask, p_modifiers, r_events)) {
+	if (!begin_mouse_gesture(p_viewport, p_from_global, p_button, p_modifiers, r_events)) {
 		return false;
 	}
-
-	Vector<Vector2> path;
-	path.push_back(p_from_global);
-	for (const Vector2 &waypoint : p_waypoints) {
-		path.push_back(waypoint);
+	if (!move_mouse_gesture(p_viewport, p_to_global, p_waypoints, p_modifiers, r_events)) {
+		return false;
 	}
-	path.push_back(p_to_global);
-
-	const float step_distance = MAX(1.0f, float(p_viewport->get_drag_threshold()) * 0.5f);
-	Vector2 current = p_from_global;
-	for (int segment_index = 1; segment_index < path.size(); segment_index++) {
-		const Vector2 target = path[segment_index];
-		const Vector2 delta = target - current;
-		const float distance = delta.length();
-		const int steps = MAX(1, int(Math::ceil(distance / step_distance)));
-		for (int step = 1; step <= steps; step++) {
-			const Vector2 next = current.lerp(target, float(step) / float(steps));
-			const Vector2 relative = next - current;
-			current = next;
-			if (!push_mouse_motion(p_viewport, current, relative, button_mask, p_modifiers, r_events)) {
-				return false;
-			}
-		}
+	if (!p_release) {
+		return true;
 	}
-
-	return push_mouse_button(p_viewport, p_to_global, p_button, false, MouseButtonMask::NONE, p_modifiers, r_events);
+	return end_mouse_gesture(p_viewport, p_to_global, p_modifiers, r_events);
 }
 
 Vector2 EditorAutomationInput::global_center_of_bounds(const Rect2i &p_bounds) {

@@ -136,6 +136,15 @@ EditorAutomationActionKind editor_automation_action_kind_from_string(const Strin
 	if (action == "dock" || action == "drag_to_region") {
 		return EditorAutomationActionKind::DOCK;
 	}
+	if (action == "mouse_down") {
+		return EditorAutomationActionKind::MOUSE_DOWN;
+	}
+	if (action == "mouse_move") {
+		return EditorAutomationActionKind::MOUSE_MOVE;
+	}
+	if (action == "mouse_up") {
+		return EditorAutomationActionKind::MOUSE_UP;
+	}
 	if (action == "activate_board") {
 		return EditorAutomationActionKind::ACTIVATE_BOARD;
 	}

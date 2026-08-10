@@ -40,6 +40,7 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "servers/rendering/rendering_server.h"
 
 Dictionary EditorAutomationScreenshotAttachment::to_dictionary() const {
 	Dictionary dict;
@@ -131,10 +132,20 @@ Viewport *EditorAutomationScreenshot::_resolve_capture_viewport(Node *p_snapshot
 	return nullptr;
 }
 
-Ref<Image> EditorAutomationScreenshot::_acquire_viewport_image(Node *p_snapshot_root, Dictionary &r_viewport_meta) {
+Ref<Image> EditorAutomationScreenshot::_acquire_viewport_image(Node *p_snapshot_root, Dictionary &r_viewport_meta, bool p_force_draw) {
 	Viewport *viewport = _resolve_capture_viewport(p_snapshot_root);
 	if (viewport == nullptr) {
 		return Ref<Image>();
+	}
+
+	if (p_force_draw) {
+		// Render without presenting: the goal is a fresh viewport texture, not a
+		// swapped front buffer, so the capture never fights the main loop over
+		// what is on screen.
+		RenderingServer *rendering_server = RenderingServer::get_singleton();
+		if (rendering_server != nullptr) {
+			rendering_server->draw(false, 0.0);
+		}
 	}
 
 	Ref<ViewportTexture> texture = viewport->get_texture();
@@ -254,7 +265,7 @@ EditorAutomationScreenshotAttachment EditorAutomationScreenshot::capture_for_fai
 	}
 
 	Dictionary viewport_meta;
-	Ref<Image> image = _acquire_viewport_image(p_options.snapshot_root, viewport_meta);
+	Ref<Image> image = _acquire_viewport_image(p_options.snapshot_root, viewport_meta, p_options.force_draw);
 	if (image.is_null()) {
 		attachment.status = "unavailable";
 		attachment.reason = "screenshot_unavailable";
@@ -295,7 +306,7 @@ EditorAutomationScreenshotAttachment EditorAutomationScreenshot::capture_on_dema
 	EditorAutomationScreenshotAttachment attachment;
 
 	Dictionary viewport_meta;
-	Ref<Image> image = _acquire_viewport_image(p_options.snapshot_root, viewport_meta);
+	Ref<Image> image = _acquire_viewport_image(p_options.snapshot_root, viewport_meta, p_options.force_draw);
 	if (image.is_null()) {
 		attachment.status = "unavailable";
 		attachment.reason = "screenshot_unavailable";

@@ -750,6 +750,8 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActionArgs::schema() {
 	schema->add_property("target_point", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component."), "Absolute drag release point [x, y] in global coordinates."));
 	schema->add_property("waypoints", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Drag path as absolute [x, y] waypoint arrays."));
 	schema->add_property("path", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::number("Coordinate component.")), "Alias for waypoints."));
+	schema->add_property("hold", EditorAutomationMCPJsonSchema::boolean("Leave the drag in flight for drag/dock: press and move without releasing (default false). Finish the gesture with a mouse_up action."));
+	schema->add_property("release", EditorAutomationMCPJsonSchema::boolean("Whether drag/dock releases the mouse button at the end of the motion path (default true). Setting false is equivalent to hold."));
 	schema->add_property("target_tile_id", EditorAutomationMCPJsonSchema::integer("Target workspace tile id for dock/drag_to_region actions."));
 	schema->add_property("target_tile", EditorAutomationMCPJsonSchema::object("Tile container selector for dock/drag_to_region actions."));
 	schema->add_property("region", EditorAutomationMCPJsonSchema::enum_string(EditorAutomationMCPContracts::tile_drop_region_enum_values(), "Tile drop region for dock/drag_to_region actions."));
@@ -815,6 +817,12 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs> EditorAutomationMC
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
 	if (!_read_optional_bool(dict, "page", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_bool(dict, "hold", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_bool(dict, "release", args.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
 	if (dict.has("target")) {
@@ -1456,6 +1464,7 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPCaptureScreenshotInput::sc
 	schema->add_property("padding", EditorAutomationMCPJsonSchema::integer("Padding in pixels added around the element bounds for cropped captures (default 16). Ignored for full-window captures."));
 	schema->add_property("include_internal", EditorAutomationMCPJsonSchema::boolean("Resolve the selector against internal implementation children too (default false). Required when targeting an element observed with include_internal."));
 	schema->add_property("max_screenshot_bytes", EditorAutomationMCPJsonSchema::integer("Maximum inline screenshot payload size in bytes (default 524288). Larger captures are reported as truncated."));
+	schema->add_property("force_draw", EditorAutomationMCPJsonSchema::boolean("Draw a frame before reading the viewport (default false). Required to photograph a state that has not been rendered yet, such as a drag left in flight by hold."));
 	return schema;
 }
 
@@ -1485,6 +1494,9 @@ EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput> Editor
 	if (!_read_optional_int(p_dict, "max_screenshot_bytes", input.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::invalid(error.field, error.message);
 	}
+	if (!_read_optional_bool(p_dict, "force_draw", input.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::invalid(error.field, error.message);
+	}
 	return EditorAutomationMCPParseResult<EditorAutomationMCPCaptureScreenshotInput>::success(input);
 }
 
@@ -1502,6 +1514,9 @@ PackedStringArray EditorAutomationMCPContracts::action_names() {
 	actions.push_back("press_key");
 	actions.push_back("drag");
 	actions.push_back("dock");
+	actions.push_back("mouse_down");
+	actions.push_back("mouse_move");
+	actions.push_back("mouse_up");
 	actions.push_back("drag_to_region");
 	actions.push_back("select");
 	actions.push_back("activate");
