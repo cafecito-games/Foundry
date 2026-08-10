@@ -1544,14 +1544,14 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	// The destination tile needs content of its own: a pane with nothing in it
 	// hides its chrome host and with it the overlay under test.
-	p_driver.set_step("create_neighbour_tile");
+	p_driver.set_step("create_neighboring_tile");
 	const int resident_scene_index = editor_node->new_scene();
 	if (resident_scene_index < 0) {
-		return _failure_with_message(p_driver, result.workflow, "Creating the neighbouring tile's scene failed.");
+		return _failure_with_message(p_driver, result.workflow, "Creating the neighboring tile's scene failed.");
 	}
 	scene_dock = editor_node->get_focused_scene_tree_dock();
 	if (scene_dock == nullptr) {
-		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable for the neighbouring scene.");
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable for the neighboring scene.");
 	}
 	Node2D *resident_root = memnew(Node2D);
 	resident_root->set_name("Resident");
@@ -1573,7 +1573,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 	const int resident_tab_index = source_pane->find_scene_tab_index(resident_scene_index);
 	if (resident_tab_index < 0) {
-		return _failure_with_message(p_driver, result.workflow, "The neighbouring scene has no tab in the source pane.");
+		return _failure_with_message(p_driver, result.workflow, "The neighboring scene has no tab in the source pane.");
 	}
 	// Split the pane to the right so the drag has a sibling tile to travel into.
 	editor_node->handle_tile_tab_drop(source_leaf_id, EditorSceneWorkspace::DROP_RIGHT, source_leaf_id, resident_tab_index);
@@ -1587,7 +1587,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_with_message(p_driver, result.workflow, "Splitting the pane did not produce a second tile.");
 	}
 
-	p_driver.set_step("drag_into_neighbour_tile_in_one_motion");
+	p_driver.set_step("drag_into_neighboring_tile_in_one_motion");
 	// Everything is re-resolved after the relayout rather than reusing pointers
 	// captured before it.
 	workspace = EditorNode::get_scene_workspace();
@@ -1634,7 +1634,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	// affordance. Anything that arms only on a later tick or a later motion fails
 	// here, which is the defect under test.
 	if (!EditorAutomationInput::move_mouse_gesture(viewport, drop_point, Vector<Vector2>(), modifiers, pointer_events)) {
-		return _failure_with_message(p_driver, result.workflow, "Could not drag the pointer into the neighbouring tile.");
+		return _failure_with_message(p_driver, result.workflow, "Could not drag the pointer into the neighboring tile.");
 	}
 	if (!viewport->gui_is_dragging()) {
 		return _failure_with_message(p_driver, result.workflow, "Dragging the tab did not start a workspace tab drag.");
@@ -1656,7 +1656,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		fail.ok = false;
 		fail.workflow = result.workflow;
 		fail.message = "The drop overlay did not arm on the motion that carried the drag into the tile.";
-		Dictionary details = p_driver.make_failure_details("drag_into_neighbour_tile_in_one_motion");
+		Dictionary details = p_driver.make_failure_details("drag_into_neighboring_tile_in_one_motion");
 		details["drag_diagnostics"] = drag_diagnostics;
 		details["editor_log"] = p_driver.read_editor_log();
 		fail.details = details;
@@ -1664,9 +1664,9 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return fail;
 	}
 
-	p_driver.set_step("release_on_neighbour_tile");
+	p_driver.set_step("release_on_neighboring_tile");
 	if (!EditorAutomationInput::end_mouse_gesture(viewport, drop_point, modifiers, pointer_events)) {
-		return _failure_with_message(p_driver, result.workflow, "Could not release the pointer over the neighbouring tile.");
+		return _failure_with_message(p_driver, result.workflow, "Could not release the pointer over the neighboring tile.");
 	}
 	p_driver.flush_frames(30);
 	if (!p_driver.wait_workspace_settled(10000)) {
@@ -1682,7 +1682,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
-		fail.message = "The armed drop did not move the dragged tab into the neighbouring tile.";
+		fail.message = "The armed drop did not move the dragged tab into the neighboring tile.";
 		Dictionary details = p_driver.make_failure_details("verify_tab_moved");
 		details["source_leaf_id"] = source_leaf_id;
 		details["destination_leaf_id"] = destination_leaf_id;
