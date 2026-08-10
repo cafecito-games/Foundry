@@ -1113,6 +1113,12 @@ static void record_board_context_menu(int p_board_index, const Point2 &p_screen_
 	context_menu_handler_record.call_count++;
 }
 
+static void drain_pending_closes(BoardStripHarness &p_harness, int p_max_pumps = 8) {
+	for (int i = 0; i < p_max_pumps; i++) {
+		p_harness.pump();
+	}
+}
+
 TEST_CASE("[Editor][Boards] close_boards closes every queued scene-less board and keeps the survivor active") {
 	BoardStripHarness h;
 	h.mount();
@@ -1143,10 +1149,8 @@ TEST_CASE("[Editor][Boards] close_boards closes every queued scene-less board an
 	to_close.push_back(c->get_instance_id());
 	h.strip->close_boards(to_close);
 
-	// close_boards advances with call_deferred between closes.
-	h.pump();
-	h.pump();
-	h.pump();
+	// close_boards defers its first advance and every subsequent one.
+	drain_pending_closes(h);
 
 	CHECK(h.strip->get_board_count() == 1);
 	CHECK(h.strip->get_active_board() == keep);
@@ -1177,9 +1181,7 @@ TEST_CASE("[Editor][Boards] close_boards clears the queue when a close is refuse
 	to_close.push_back(b->get_instance_id());
 	to_close.push_back(c->get_instance_id());
 	h.strip->close_boards(to_close);
-	h.pump();
-	h.pump();
-	h.pump();
+	drain_pending_closes(h);
 
 	CHECK(h.strip->get_board_count() == 1);
 	CHECK(h.strip->get_active_board() == c);
@@ -1229,6 +1231,7 @@ TEST_CASE("[Editor][Boards] abort_pending_closes leaves not-yet-closed boards al
 	to_close.push_back(a->get_instance_id());
 	to_close.push_back(b->get_instance_id());
 	h.strip->close_boards(to_close);
+	h.pump();
 
 	CHECK(close_handler_record.call_count == 1);
 	CHECK(h.strip->get_board_count() == 3);
@@ -1243,6 +1246,65 @@ TEST_CASE("[Editor][Boards] abort_pending_closes leaves not-yet-closed boards al
 	CHECK(h.strip->get_board_count() == 2);
 	CHECK(h.strip->get_board_index(b) >= 0);
 	CHECK(h.strip->get_board_index(c) >= 0);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] close_boards resumes after a deferred close finishes through close_board") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *a = h.strip->get_board(0);
+	EditorBoard *b = h.strip->add_board("B");
+	EditorBoard *keep = h.strip->add_board("keep");
+	REQUIRE(a != nullptr);
+	REQUIRE(b != nullptr);
+	REQUIRE(keep != nullptr);
+	if (!a || !b || !keep) {
+		h.unmount();
+		return;
+	}
+
+	EditorSceneWorkspace *workspace_a = a->get_workspace();
+	REQUIRE(workspace_a != nullptr);
+	if (!workspace_a) {
+		h.unmount();
+		return;
+	}
+	WorkspaceLeafNode *leaf_node_a = workspace_a->get_focused_leaf();
+	REQUIRE(leaf_node_a != nullptr);
+	if (!leaf_node_a) {
+		h.unmount();
+		return;
+	}
+	const int leaf_a = leaf_node_a->get_leaf_id();
+	h.editor_data.register_tile(leaf_a);
+	h.editor_data.set_focused_tile_id(leaf_a);
+	const int scene_index = h.editor_data.add_edited_scene(-1);
+	REQUIRE(h.editor_data.get_scene_tile(scene_index) == leaf_a);
+
+	h.strip->set_board_scene_close_handler(callable_mp_static(&record_board_close));
+	close_handler_record.reset(false);
+
+	Vector<ObjectID> to_close;
+	to_close.push_back(a->get_instance_id());
+	to_close.push_back(b->get_instance_id());
+	h.strip->close_boards(to_close);
+	h.pump();
+
+	CHECK(close_handler_record.call_count == 1);
+	CHECK(h.strip->get_board_count() == 3);
+
+	// Finish A's deferred close the way EditorNode::_finish_pending_board_close does: call
+	// close_board() again once the scenes are gone. That resume path must then drain B.
+	h.editor_data.remove_scene(scene_index);
+	close_handler_record.reset(true);
+	CHECK(h.strip->close_board(0));
+	drain_pending_closes(h);
+
+	CHECK(h.strip->get_board_count() == 1);
+	CHECK(h.strip->get_active_board() == keep);
 
 	h.unmount();
 }
@@ -1268,12 +1330,14 @@ TEST_CASE("[Editor][Boards] Right-clicking an overview caption invokes the conte
 	h.strip->set_board_context_menu_handler(callable_mp_static(&record_board_context_menu));
 
 	SIGNAL_WATCH(h.strip, "board_moved");
-	caption->emit_signal(SceneStringName(gui_input), caption_mouse_button(100.0, true, MouseButton::RIGHT));
+	const Ref<InputEventMouseButton> right_click = caption_mouse_button(100.0, true, MouseButton::RIGHT);
+	const Point2 expected_screen = h.strip->get_viewport()->get_screen_transform().xform(right_click->get_global_position());
+	caption->emit_signal(SceneStringName(gui_input), right_click);
 	h.pump();
 
 	CHECK(context_menu_handler_record.call_count == 1);
 	CHECK(context_menu_handler_record.board_index == 1);
-	CHECK(context_menu_handler_record.screen_position == Point2(100, 0));
+	CHECK(context_menu_handler_record.screen_position == expected_screen);
 	CHECK(h.strip->is_overview_active());
 	SIGNAL_CHECK_FALSE("board_moved");
 

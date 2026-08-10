@@ -62,6 +62,9 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	// ObjectIDs still waiting to be closed by close_boards(). Identity, not index: each
 	// completed close shifts every later position.
 	Vector<ObjectID> pending_close_ids;
+	// True while a call_deferred(_advance_pending_closes) is already queued, so close_board()
+	// and a just-finished advance cannot stack two advances in one frame.
+	bool pending_close_advance_queued = false;
 
 	enum class CloseOutcome {
 		CLOSED,
@@ -74,6 +77,7 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	// last-board and no-handler cases.
 	CloseOutcome _close_board_internal(int p_index);
 	void _advance_pending_closes();
+	void _queue_advance_pending_closes();
 
 	// Drives the horizontal slide. Idle (is_animating() == false) outside of a switch.
 	EditorBoardView board_view;

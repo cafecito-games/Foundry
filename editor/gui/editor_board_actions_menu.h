@@ -62,6 +62,9 @@ private:
 
 	void _rebuild_items();
 	void _on_id_pressed(int p_id);
+	// Deferred from id_pressed so close_board cannot run inside popup input dispatch.
+	void _close_target_board();
+	void _close_other_boards();
 
 protected:
 	static void _bind_methods();

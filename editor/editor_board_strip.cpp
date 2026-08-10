@@ -200,21 +200,34 @@ bool EditorBoardStrip::close_board(int p_index) {
 	// the head of the queue is the board that just closed, so drop it and resume.
 	if (!pending_close_ids.is_empty() && pending_close_ids[0] == board_id) {
 		pending_close_ids.remove_at(0);
-		callable_mp(this, &EditorBoardStrip::_advance_pending_closes).call_deferred();
+		_queue_advance_pending_closes();
 	}
 	return true;
 }
 
 void EditorBoardStrip::close_boards(const Vector<ObjectID> &p_board_ids) {
+	ERR_FAIL_COND_MSG(!pending_close_ids.is_empty(), "A bulk board close is already in progress.");
 	pending_close_ids = p_board_ids;
-	_advance_pending_closes();
+	// Defer the first advance too so a menu id_pressed (or any other input stack) never
+	// tears a board down synchronously -- matching EditorNode's deferred board-close finish.
+	_queue_advance_pending_closes();
 }
 
 void EditorBoardStrip::abort_pending_closes() {
 	pending_close_ids.clear();
+	pending_close_advance_queued = false;
+}
+
+void EditorBoardStrip::_queue_advance_pending_closes() {
+	if (pending_close_advance_queued) {
+		return;
+	}
+	pending_close_advance_queued = true;
+	callable_mp(this, &EditorBoardStrip::_advance_pending_closes).call_deferred();
 }
 
 void EditorBoardStrip::_advance_pending_closes() {
+	pending_close_advance_queued = false;
 	while (!pending_close_ids.is_empty()) {
 		const ObjectID board_id = pending_close_ids[0];
 		const int index = resolve_board_index(board_id);
@@ -230,7 +243,7 @@ void EditorBoardStrip::_advance_pending_closes() {
 			// Defer the next close so listeners of board_removed (the switcher rebuild,
 			// EditorNode layout work) finish before another board comes down. Same
 			// re-entrancy reason as EditorNode's deferred finish of a pending board close.
-			callable_mp(this, &EditorBoardStrip::_advance_pending_closes).call_deferred();
+			_queue_advance_pending_closes();
 			return;
 		}
 		if (outcome == CloseOutcome::DEFERRED) {
@@ -773,10 +786,6 @@ void EditorBoardStrip::_on_caption_gui_input(const Ref<InputEvent> &p_event, Obj
 		return;
 	}
 
-	// Event positions are viewport-relative; every board index the drag resolves is computed
-	// in the strip's own space, the same space the boards are laid out in.
-	const Transform2D to_strip = get_global_transform().affine_inverse();
-
 	const Ref<InputEventMouseButton> mouse_button = p_event;
 	// Right-click opens the board actions menu and must not arm or clear the caption drag
 	// state machine: a context-menu press is not a reorder gesture and must not swallow the
@@ -785,11 +794,18 @@ void EditorBoardStrip::_on_caption_gui_input(const Ref<InputEvent> &p_event, Obj
 		if (mouse_button->is_pressed() && board_context_menu_handler.is_valid()) {
 			const int index = resolve_board_index(p_board_id);
 			if (index >= 0) {
-				board_context_menu_handler.call(index, mouse_button->get_global_position());
+				// InputEventMouse::global_position is viewport-relative; the switcher's
+				// Popup::popup expects screen coordinates for non-embedded subwindows.
+				const Point2 screen_position = get_viewport()->get_screen_transform().xform(mouse_button->get_global_position());
+				board_context_menu_handler.call(index, screen_position);
 			}
 		}
 		return;
 	}
+
+	// Event positions are viewport-relative; every board index the drag resolves is computed
+	// in the strip's own space, the same space the boards are laid out in.
+	const Transform2D to_strip = get_global_transform().affine_inverse();
 
 	if (mouse_button.is_valid() && mouse_button->get_button_index() == MouseButton::LEFT) {
 		if (mouse_button->is_pressed()) {

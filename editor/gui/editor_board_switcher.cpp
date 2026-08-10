@@ -36,7 +36,13 @@
 
 #include "scene/gui/button.h"
 #include "scene/gui/line_edit.h"
+#include "scene/main/scene_tree.h"
 #include "scene/scene_string_names.h"
+
+// Slightly under a typical OS double-click window so a second press can cancel the
+// pending menu open and claim the gesture for inline rename before the popup appears
+// (a FLAG_POPUP menu would otherwise swallow the second press).
+static constexpr double BOARD_ACTIONS_MENU_OPEN_DELAY_SEC = 0.2;
 
 void EditorBoardSwitcher::_notification(int p_what) {
 	switch (p_what) {
@@ -109,10 +115,13 @@ void EditorBoardSwitcher::_rebuild() {
 	if (rename_edit) {
 		_apply_pending_rename(rename_edit->get_text());
 	}
+	_cancel_pending_menu();
 
 	// Free chrome children but keep the owned actions menu across rebuilds. The menu
 	// captures its target by ObjectID, so surviving a board_removed that frees that board
 	// is what lets an activation after the close resolve to -1 and no-op.
+	// renaming_button is cleared here: the button is about to be queue_freed, and leaving
+	// the pointer set would let a later _cancel_rename() call show() on freed memory.
 	Vector<Node *> to_free;
 	for (int i = 0; i < get_child_count(); i++) {
 		Node *child = get_child(i);
@@ -128,6 +137,7 @@ void EditorBoardSwitcher::_rebuild() {
 	add_button = nullptr;
 	overview_button = nullptr;
 	renaming_button = nullptr;
+	board_buttons.clear();
 
 	if (!strip) {
 		return;
@@ -136,6 +146,7 @@ void EditorBoardSwitcher::_rebuild() {
 	for (int i = 0; i < strip->get_board_count(); i++) {
 		EditorBoard *board = strip->get_board(i);
 		if (!board) {
+			board_buttons.push_back(nullptr);
 			continue;
 		}
 
@@ -156,10 +167,7 @@ void EditorBoardSwitcher::_rebuild() {
 		button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_board_button_pressed).bind(i));
 		button->connect(SceneStringName(gui_input), callable_mp(this, &EditorBoardSwitcher::_on_board_button_gui_input).bind(i));
 		add_child(button);
-		if (actions_menu) {
-			// Keep the menu as the last child so board buttons stay at indices 0..n-1.
-			move_child(actions_menu, get_child_count() - 1);
-		}
+		board_buttons.push_back(button);
 	}
 
 	add_button = memnew(Button);
@@ -170,9 +178,6 @@ void EditorBoardSwitcher::_rebuild() {
 	add_button->set_button_icon(get_editor_theme_icon(SNAME("Add")));
 	add_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_add_pressed));
 	add_child(add_button);
-	if (actions_menu) {
-		move_child(actions_menu, get_child_count() - 1);
-	}
 
 	overview_button = memnew(Button);
 	overview_button->set_flat(true);
@@ -183,19 +188,13 @@ void EditorBoardSwitcher::_rebuild() {
 	overview_button->set_pressed_no_signal(strip->is_overview_active());
 	overview_button->connect(SceneStringName(toggled), callable_mp(this, &EditorBoardSwitcher::_on_overview_toggled));
 	add_child(overview_button);
-	if (actions_menu) {
-		move_child(actions_menu, get_child_count() - 1);
-	}
 }
 
 Button *EditorBoardSwitcher::_board_button_at(int p_index) const {
-	if (!strip || p_index < 0 || p_index >= strip->get_board_count()) {
+	if (p_index < 0 || p_index >= board_buttons.size()) {
 		return nullptr;
 	}
-	if (p_index >= get_child_count()) {
-		return nullptr;
-	}
-	return Object::cast_to<Button>(get_child(p_index));
+	return board_buttons[p_index];
 }
 
 void EditorBoardSwitcher::_on_overview_toggled(bool p_pressed) {
@@ -219,7 +218,35 @@ void EditorBoardSwitcher::_popup_actions_menu(int p_index, const Point2 &p_scree
 }
 
 void EditorBoardSwitcher::popup_board_actions(int p_board_index, const Point2 &p_screen_position) {
+	_cancel_pending_menu();
 	_popup_actions_menu(p_board_index, p_screen_position);
+}
+
+void EditorBoardSwitcher::_cancel_pending_menu() {
+	pending_menu_board_id = ObjectID();
+	pending_menu_timer.unref();
+}
+
+void EditorBoardSwitcher::_open_pending_actions_menu() {
+	pending_menu_timer.unref();
+	if (!pending_menu_board_id.is_valid() || !strip || is_renaming()) {
+		pending_menu_board_id = ObjectID();
+		return;
+	}
+
+	const int index = strip->resolve_board_index(pending_menu_board_id);
+	pending_menu_board_id = ObjectID();
+	if (index < 0) {
+		return;
+	}
+
+	if (Button *button = _board_button_at(index)) {
+		button->set_pressed_no_signal(true);
+		const Rect2 screen_rect = button->get_screen_rect();
+		_popup_actions_menu(index, Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y));
+	} else {
+		_popup_actions_menu(index, get_screen_transform().xform(get_local_mouse_position()));
+	}
 }
 
 void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
@@ -235,19 +262,26 @@ void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
 		// opening the menu so the button never reads as deselected.
 		if (Button *button = _board_button_at(p_index)) {
 			button->set_pressed_no_signal(true);
-			if (skip_actions_menu) {
-				skip_actions_menu = false;
-				return;
-			}
-			const Rect2 screen_rect = button->get_screen_rect();
-			_popup_actions_menu(p_index, Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y));
-		} else if (skip_actions_menu) {
-			skip_actions_menu = false;
 		}
+		// A double-click starts an inline rename from gui_input, which runs before the
+		// button's own release handling; that same release must not also open the menu.
+		if (is_renaming()) {
+			return;
+		}
+
+		EditorBoard *board = strip->get_board(p_index);
+		if (!board || !get_tree()) {
+			return;
+		}
+		// Delay the popup so a follow-up double-click can cancel it and rename instead.
+		// Opening immediately would raise a FLAG_POPUP menu that swallows the second press.
+		pending_menu_board_id = board->get_instance_id();
+		pending_menu_timer = get_tree()->create_timer(BOARD_ACTIONS_MENU_OPEN_DELAY_SEC);
+		pending_menu_timer->connect(SNAME("timeout"), callable_mp(this, &EditorBoardSwitcher::_open_pending_actions_menu), Object::CONNECT_ONE_SHOT);
 		return;
 	}
 
-	skip_actions_menu = false;
+	_cancel_pending_menu();
 	strip->set_active_board(p_index);
 }
 
@@ -258,12 +292,15 @@ void EditorBoardSwitcher::_on_board_button_gui_input(const Ref<InputEvent> &p_ev
 	}
 
 	if (mb->get_button_index() == MouseButton::RIGHT) {
-		_popup_actions_menu(p_index, mb->get_global_position());
+		_cancel_pending_menu();
+		// InputEventMouse::global_position is viewport-relative; Popup::popup expects screen
+		// coordinates for non-embedded editor subwindows.
+		_popup_actions_menu(p_index, get_screen_transform().xform(get_local_mouse_position()));
 		return;
 	}
 
 	if (mb->get_button_index() == MouseButton::LEFT && mb->is_double_click()) {
-		skip_actions_menu = true;
+		_cancel_pending_menu();
 		_begin_rename(p_index);
 	}
 }
@@ -303,10 +340,9 @@ void EditorBoardSwitcher::_begin_rename(int p_index) {
 	rename_edit->set_custom_minimum_size(button->get_size());
 	rename_edit->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
 	add_child(rename_edit);
-	move_child(rename_edit, p_index);
-	if (actions_menu) {
-		move_child(actions_menu, get_child_count() - 1);
-	}
+	// Place the editor where the (hidden) board button sits, without assuming board
+	// buttons occupy child indices 0..n-1 relative to the actions menu sibling.
+	move_child(rename_edit, button->get_index());
 
 	rename_edit->connect(SceneStringName(text_submitted), callable_mp(this, &EditorBoardSwitcher::_commit_rename));
 	rename_edit->connect(SceneStringName(focus_exited), callable_mp(this, &EditorBoardSwitcher::_commit_rename_from_focus_loss));

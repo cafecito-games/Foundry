@@ -45,7 +45,6 @@ void EditorBoardActionsMenu::set_strip(EditorBoardStrip *p_strip) {
 
 void EditorBoardActionsMenu::_rebuild_items() {
 	clear();
-	reset_size();
 
 	const int board_count = strip ? strip->get_board_count() : 0;
 	const int index = strip ? strip->resolve_board_index(target_board_id) : -1;
@@ -63,6 +62,7 @@ void EditorBoardActionsMenu::_rebuild_items() {
 	set_item_disabled(get_item_index(ITEM_MOVE_LEFT), !can_move_left);
 	add_item(TTRC("Move Right"), ITEM_MOVE_RIGHT);
 	set_item_disabled(get_item_index(ITEM_MOVE_RIGHT), !can_move_right);
+	reset_size();
 }
 
 void EditorBoardActionsMenu::popup_for_board(int p_index, const Point2 &p_screen_position) {
@@ -72,7 +72,41 @@ void EditorBoardActionsMenu::popup_for_board(int p_index, const Point2 &p_screen
 
 	target_board_id = board->get_instance_id();
 	_rebuild_items();
-	popup(Rect2i(p_screen_position, Size2i()));
+	// Size2i(1, 1) avoids Window::popup()'s empty-rect special case at position (0, 0).
+	popup(Rect2i(p_screen_position, Size2i(1, 1)));
+}
+
+void EditorBoardActionsMenu::_close_target_board() {
+	if (!strip) {
+		return;
+	}
+	const int index = strip->resolve_board_index(target_board_id);
+	if (index < 0) {
+		return;
+	}
+	strip->close_board(index);
+}
+
+void EditorBoardActionsMenu::_close_other_boards() {
+	if (!strip) {
+		return;
+	}
+	const int index = strip->resolve_board_index(target_board_id);
+	if (index < 0) {
+		return;
+	}
+
+	Vector<ObjectID> others;
+	for (int i = 0; i < strip->get_board_count(); i++) {
+		if (i == index) {
+			continue;
+		}
+		EditorBoard *board = strip->get_board(i);
+		if (board) {
+			others.push_back(board->get_instance_id());
+		}
+	}
+	strip->close_boards(others);
 }
 
 void EditorBoardActionsMenu::_on_id_pressed(int p_id) {
@@ -92,20 +126,12 @@ void EditorBoardActionsMenu::_on_id_pressed(int p_id) {
 			emit_signal(SNAME("rename_requested"), index);
 		} break;
 		case ITEM_CLOSE: {
-			strip->close_board(index);
+			// Never tear a board down from inside PopupMenu input dispatch: EditorNode's
+			// board-close finish path is deferred for the same reason.
+			callable_mp(this, &EditorBoardActionsMenu::_close_target_board).call_deferred();
 		} break;
 		case ITEM_CLOSE_OTHERS: {
-			Vector<ObjectID> others;
-			for (int i = 0; i < strip->get_board_count(); i++) {
-				if (i == index) {
-					continue;
-				}
-				EditorBoard *board = strip->get_board(i);
-				if (board) {
-					others.push_back(board->get_instance_id());
-				}
-			}
-			strip->close_boards(others);
+			callable_mp(this, &EditorBoardActionsMenu::_close_other_boards).call_deferred();
 		} break;
 		case ITEM_MOVE_LEFT: {
 			if (index > 0) {
