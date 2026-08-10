@@ -355,7 +355,7 @@ private:
 	// after the active one would claim editor focus for a board the user cannot see.
 	bool restoring_boards = false;
 	// Identity of the board whose scenes are being closed one prompt at a time. The board
-	// itself is freed only once that queue drains; cancelling any prompt clears this and
+	// itself is freed only once that queue drains; canceling any prompt clears this and
 	// the board survives with every scene intact. Stored as an instance id rather than a
 	// list index because an unrelated board close can interleave while these prompts are
 	// still on screen and shift every index after it; the finish step re-resolves this id
@@ -752,6 +752,11 @@ private:
 	void _on_board_added(int p_index);
 	void _on_board_about_to_close(int p_index);
 	void _on_board_removed(int p_index);
+	// Brings the editor-wide chrome -- scene tabs, docks, the shared scene-mode surface --
+	// onto the tile the newly active board is focusing. The strip has already re-pointed
+	// EditorData's focused tile by the time this runs, so scene routing is correct even if
+	// the presentation below has to wait for a drop to finish.
+	void _on_active_board_changed(int p_index);
 	// Activates the board p_delta positions away from the active one, wrapping around the
 	// ends of the list. Used by the previous/next board shortcuts.
 	void _activate_relative_board(int p_delta);

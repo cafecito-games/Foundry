@@ -81,6 +81,7 @@
 #include "tests/editor/test_editor_board_cross_board.h"
 #include "tests/editor/test_editor_board_overview.h"
 #include "tests/editor/test_editor_board_persistence.h"
+#include "tests/editor/test_editor_board_scene_routing.h"
 #include "tests/editor/test_editor_board_shortcuts.h"
 #include "tests/editor/test_editor_board_strip.h"
 #include "tests/editor/test_editor_board_switcher.h"

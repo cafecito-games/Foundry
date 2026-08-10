@@ -8403,6 +8403,34 @@ void EditorNode::_on_board_removed(int p_index) {
 	save_editor_layout_delayed();
 }
 
+void EditorNode::_on_active_board_changed(int p_index) {
+	if (restoring_boards) {
+		return;
+	}
+	EditorSceneWorkspace *workspace = get_scene_workspace();
+	if (!workspace) {
+		return;
+	}
+	const int tile_id = workspace->get_effective_focused_tile_id();
+	if (tile_id < 0 || !workspace->get_leaf_by_id(tile_id)) {
+		return;
+	}
+
+	Viewport *editor_viewport = get_viewport();
+	if (editor_viewport && editor_viewport->gui_is_dragging()) {
+		// A pane dropped onto another board switches boards mid-drop. Reparenting the
+		// shared scene-mode surface before the drop applies would tear down the active
+		// drop target, so the activation lands on the next frame instead.
+		_queue_focus_tile_activation(tile_id);
+		return;
+	}
+
+	// Any activation queued for the board being left names a leaf that is no longer on the
+	// active board, so it must not be allowed to land after this one.
+	_cancel_queued_focus_tile_activation();
+	_focus_tile_internal(tile_id, true);
+}
+
 void EditorNode::_activate_relative_board(int p_delta) {
 	ERR_FAIL_NULL(board_strip);
 	const int board_count = board_strip->get_board_count();
@@ -8973,7 +9001,7 @@ void EditorNode::_cancel_close_scene_tab() {
 	}
 	changing_scene = false;
 	tabs_to_close.clear();
-	// Cancelling any one prompt aborts the whole board close: the board and every scene
+	// Canceling any one prompt aborts the whole board close: the board and every scene
 	// still in it survive.
 	pending_board_close_id = ObjectID();
 }
@@ -11272,6 +11300,7 @@ EditorNode::EditorNode() {
 	board_strip->connect("board_added", callable_mp(this, &EditorNode::_on_board_added));
 	board_strip->connect("board_about_to_close", callable_mp(this, &EditorNode::_on_board_about_to_close));
 	board_strip->connect("board_removed", callable_mp(this, &EditorNode::_on_board_removed));
+	board_strip->connect("active_board_changed", callable_mp(this, &EditorNode::_on_active_board_changed));
 	// The strip refuses to discard edited scenes on its own; closing a board routes them
 	// back here so each one gets the usual unsaved-changes prompt.
 	board_strip->set_board_scene_close_handler(callable_mp(this, &EditorNode::_close_board_scenes));

@@ -1242,17 +1242,26 @@ ScenePaneTile *EditorSceneWorkspace::get_focused_tile() const {
 }
 
 ScenePaneTile *EditorSceneWorkspace::get_effective_focused_tile() const {
-	if (ScenePaneTile *tile = get_tile_by_id(focused_leaf_id)) {
-		return tile;
+	const int tile_id = get_effective_focused_tile_id();
+	return tile_id < 0 ? nullptr : get_tile_by_id(tile_id);
+}
+
+int EditorSceneWorkspace::get_effective_focused_tile_id() const {
+	if (get_tile_by_id(focused_leaf_id)) {
+		return focused_leaf_id;
 	}
 	// Focused leaf hosts no tile (e.g. a script leaf); fall back to the last
 	// focused scene tile, then to any scene tile, so scene/inspector docks stay
 	// valid instead of being resolved against a null tile.
-	if (ScenePaneTile *tile = get_tile_by_id(last_focused_tile_id)) {
-		return tile;
+	if (get_tile_by_id(last_focused_tile_id)) {
+		return last_focused_tile_id;
 	}
-	Vector<ScenePaneTile *> tiles = get_tiles();
-	return tiles.is_empty() ? nullptr : tiles[0];
+	for (const WorkspaceLeafNode *leaf : leaves) {
+		if (leaf->get_pane_tile()) {
+			return leaf->get_leaf_id();
+		}
+	}
+	return -1;
 }
 
 Vector<ScenePaneTile *> EditorSceneWorkspace::get_tiles() const {
