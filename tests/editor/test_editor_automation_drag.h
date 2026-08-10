@@ -358,6 +358,18 @@ TEST_CASE("[Editor][Automation] a failed gesture step does not strand the system
 	CHECK(EditorAutomationInput::begin_mouse_gesture(harness.window, from, MouseButton::LEFT, modifiers, events));
 	MessageQueue::get_singleton()->flush();
 
+	// Move far enough past the drag threshold that the viewport genuinely
+	// enters a drag (Viewport::gui_is_dragging() == true, preview live) before
+	// the next step fails. Abandoning a gesture that never crossed the
+	// threshold would trivially leave gui_is_dragging() false either way, so
+	// this step is required to exercise the real bug: leaving a viewport that
+	// is actually mid-drag stranded when a later step aborts.
+	PackedStringArray move_events;
+	const Vector2 drag_started_at = from + Vector2(harness.window->get_drag_threshold() * 4.0f, 0);
+	CHECK(EditorAutomationInput::move_mouse_gesture(harness.window, drag_started_at, Vector<Vector2>(), modifiers, move_events));
+	MessageQueue::get_singleton()->flush();
+	REQUIRE(harness.window->gui_is_dragging());
+
 	// A move whose viewport went away mid-gesture is the abandonment case: the
 	// step fails, and the pointer must not be left at the drag position.
 	ERR_PRINT_OFF;
