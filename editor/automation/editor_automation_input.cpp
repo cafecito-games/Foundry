@@ -553,7 +553,7 @@ bool EditorAutomationInput::end_mouse_gesture(
 	if (p_viewport->gui_is_dragging()) {
 		Control *drop_target = p_viewport->gui_find_control(p_global);
 		if (drop_target != nullptr) {
-			p_viewport->gui_perform_drop_at(drop_target->get_global_transform().affine_inverse().xform(p_global), drop_target);
+			p_viewport->gui_perform_drop_at(drop_target->get_global_transform_with_canvas().affine_inverse().xform(p_global), drop_target);
 			r_events.push_back(p_viewport->gui_is_drag_successful() ? "drop_performed" : "drop_rejected");
 		}
 	}
