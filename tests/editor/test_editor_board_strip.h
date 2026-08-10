@@ -36,8 +36,12 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 
+#include "core/input/input_event.h"
+#include "core/io/config_file.h"
+#include "scene/gui/button.h"
 #include "scene/gui/control.h"
 #include "scene/main/window.h"
+#include "scene/scene_string_names.h"
 
 #include "tests/test_macros.h"
 
@@ -703,6 +707,323 @@ TEST_CASE("[Editor][Boards] Closing an unrelated board mid-slide still sleeps th
 	CHECK_FALSE(board_a->is_visible());
 	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
 
+	h.unmount();
+}
+
+// Feeds a caption the mouse events a real drag would deliver. The strip takes them from the
+// caption's gui_input, ahead of the button's own handling, so driving that signal exercises
+// exactly the path a pointer does.
+static Ref<InputEventMouseButton> caption_mouse_button(real_t p_x, bool p_pressed) {
+	Ref<InputEventMouseButton> event;
+	event.instantiate();
+	event->set_button_index(MouseButton::LEFT);
+	event->set_pressed(p_pressed);
+	event->set_position(Point2(p_x, 0));
+	event->set_global_position(Point2(p_x, 0));
+	return event;
+}
+
+static Ref<InputEventMouseMotion> caption_mouse_motion(real_t p_x) {
+	Ref<InputEventMouseMotion> event;
+	event.instantiate();
+	event->set_button_mask(MouseButtonMask::LEFT);
+	event->set_position(Point2(p_x, 0));
+	event->set_global_position(Point2(p_x, 0));
+	return event;
+}
+
+static bool same_leaf_ids(const HashSet<int> &p_left, const HashSet<int> &p_right) {
+	if (p_left.size() != p_right.size()) {
+		return false;
+	}
+	for (const int id : p_left) {
+		if (!p_right.has(id)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static Button *caption_for(EditorBoardStrip *p_strip, int p_index) {
+	Control *overlay = p_strip->get_caption_overlay();
+	if (!overlay || p_index < 0 || p_index >= overlay->get_child_count()) {
+		return nullptr;
+	}
+	return Object::cast_to<Button>(overlay->get_child(p_index));
+}
+
+TEST_CASE("[Editor][Boards] Moving a board keeps the same board active by identity") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("B");
+	EditorBoard *board_c = h.strip->add_board("C");
+	if (!board_b || !board_c) {
+		h.unmount();
+		FAIL_CHECK("the strip must be able to add boards");
+		return;
+	}
+	h.pump();
+	h.settle_transition();
+
+	SIGNAL_WATCH(h.strip, "board_moved");
+	SIGNAL_WATCH(h.strip, "active_board_changed");
+
+	// The active board is the one being moved: it must ride along to its new index rather
+	// than the index staying put and a different board silently becoming active.
+	REQUIRE(h.strip->get_active_index() == 0);
+	h.strip->move_board(0, 2);
+	h.pump();
+
+	CHECK(h.strip->get_board(0) == board_b);
+	CHECK(h.strip->get_board(1) == board_c);
+	CHECK(h.strip->get_board(2) == board_a);
+	CHECK(h.strip->get_active_board() == board_a);
+	CHECK(h.strip->get_active_index() == 2);
+	CHECK_FALSE(board_a->is_dormant());
+	// A reorder is not a board switch: nothing about which board is on screen changed.
+	SIGNAL_CHECK_FALSE("active_board_changed");
+	// Exactly one emission for the whole reorder, not one per index it shifted.
+	SIGNAL_CHECK("board_moved", { { 0, 2 } });
+
+	// Child order carries draw order and hit-testing, so it has to match the board order.
+	for (int i = 0; i < h.strip->get_board_count(); i++) {
+		CHECK(h.strip->get_board(i)->get_index() == i);
+	}
+	// The captions still draw above every board.
+	CHECK(h.strip->get_caption_overlay()->get_index() == h.strip->get_child_count() - 1);
+
+	// A board moved past the active one displaces it: the active index changes even though
+	// the active board itself was not the one moved.
+	h.strip->move_board(0, 2);
+	h.pump();
+	CHECK(h.strip->get_board(0) == board_c);
+	CHECK(h.strip->get_board(1) == board_a);
+	CHECK(h.strip->get_board(2) == board_b);
+	CHECK(h.strip->get_active_board() == board_a);
+	CHECK(h.strip->get_active_index() == 1);
+	SIGNAL_CHECK("board_moved", { { 0, 2 } });
+
+	// A move that lands where it started is not a reorder and stays silent.
+	h.strip->move_board(1, 1);
+	h.pump();
+	SIGNAL_CHECK_FALSE("board_moved");
+	SIGNAL_CHECK_FALSE("active_board_changed");
+
+	SIGNAL_UNWATCH(h.strip, "board_moved");
+	SIGNAL_UNWATCH(h.strip, "active_board_changed");
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A reorder leaves leaf ids, tabs, and scene ownership untouched") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("B");
+	if (!board_b) {
+		h.unmount();
+		FAIL_CHECK("the strip must be able to add boards");
+		return;
+	}
+	h.pump();
+
+	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
+	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+	workspace_a->split(workspace_a->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+
+	const HashSet<int> ids_a = collect_leaf_ids(workspace_a);
+	const HashSet<int> ids_b = collect_leaf_ids(workspace_b);
+	const int focus_a = workspace_a->get_focused_leaf_id();
+	const int next_leaf_id = h.strip->peek_next_leaf_id();
+
+	// A scene owned by a tile on the board that is about to move: reordering must not so
+	// much as touch which tile owns it.
+	const int leaf_b = workspace_b->get_focused_leaf()->get_leaf_id();
+	h.editor_data.register_tile(leaf_b);
+	h.editor_data.set_focused_tile_id(leaf_b);
+	const int scene_index = h.editor_data.add_edited_scene(-1);
+	REQUIRE(h.editor_data.get_scene_tile(scene_index) == leaf_b);
+
+	h.strip->move_board(1, 0);
+	h.pump();
+
+	CHECK(h.strip->get_board(0) == board_b);
+	CHECK(h.strip->get_board(1) == board_a);
+	// Same workspaces, same leaves, same ids: no tree was rebuilt and no id reissued.
+	CHECK(board_a->get_workspace() == workspace_a);
+	CHECK(board_b->get_workspace() == workspace_b);
+	CHECK(same_leaf_ids(collect_leaf_ids(workspace_a), ids_a));
+	CHECK(same_leaf_ids(collect_leaf_ids(workspace_b), ids_b));
+	CHECK(workspace_a->get_focused_leaf_id() == focus_a);
+	CHECK(h.strip->peek_next_leaf_id() == next_leaf_id);
+	// Scene ownership is keyed on leaf id, which the reorder never touches.
+	CHECK(h.editor_data.get_edited_scene_count() == 1);
+	CHECK(h.editor_data.get_scene_tile(scene_index) == leaf_b);
+	CHECK(h.strip->find_board_for_leaf(leaf_b) == board_b);
+	CHECK(h.strip->find_tile_by_id(leaf_b) == workspace_b->get_focused_leaf()->get_pane_tile());
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Board order round-trips through save and restore after a reorder") {
+	Ref<ConfigFile> config;
+	config.instantiate();
+
+	BoardStripHarness saved;
+	saved.mount();
+	saved.pump();
+	saved.strip->get_board(0)->set_title("A");
+	REQUIRE(saved.strip->add_board("B") != nullptr);
+	REQUIRE(saved.strip->add_board("C") != nullptr);
+	saved.pump();
+
+	saved.strip->set_active_board(2);
+	saved.settle_transition();
+	saved.strip->move_board(0, 2);
+	saved.pump();
+
+	REQUIRE(saved.strip->get_board(0)->get_title() == "B");
+	REQUIRE(saved.strip->get_board(1)->get_title() == "C");
+	REQUIRE(saved.strip->get_board(2)->get_title() == "A");
+	// C was active at index 2 and the reorder displaced it to index 1.
+	REQUIRE(saved.strip->get_active_index() == 1);
+
+	EditorBoardStrip::save_to_config(config, saved.strip);
+	saved.unmount();
+
+	// The order is carried by the existing board_<i>_* keys, so no schema change is needed
+	// for a reordered strip to come back in the order the user left it in.
+	CHECK(String(config->get_value("Boards", "board_0_title")) == "B");
+	CHECK(String(config->get_value("Boards", "board_1_title")) == "C");
+	CHECK(String(config->get_value("Boards", "board_2_title")) == "A");
+	CHECK(int(config->get_value("Boards", "active_board")) == 1);
+
+	BoardStripHarness restored;
+	restored.mount();
+	restored.strip->restore_from_config(config);
+	restored.pump();
+
+	CHECK(restored.strip->get_board_count() == 3);
+	CHECK(restored.strip->get_board(0)->get_title() == "B");
+	CHECK(restored.strip->get_board(1)->get_title() == "C");
+	CHECK(restored.strip->get_board(2)->get_title() == "A");
+	CHECK(restored.strip->get_active_index() == 1);
+
+	restored.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Dragging a caption reorders its board instead of opening it") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("B");
+	EditorBoard *board_c = h.strip->add_board("C");
+	if (!board_b || !board_c) {
+		h.unmount();
+		FAIL_CHECK("the strip must be able to add boards");
+		return;
+	}
+	h.pump();
+
+	h.strip->set_overview(true);
+	h.pump();
+	REQUIRE(h.strip->is_overview_active());
+
+	Button *caption_a = caption_for(h.strip, 0);
+	if (!caption_a) {
+		h.unmount();
+		FAIL_CHECK("the overview must build one caption per board");
+		return;
+	}
+
+	SIGNAL_WATCH(h.strip, "board_moved");
+
+	// Press over the first board, then travel across the strip to the last one. Three boards
+	// in an 800px strip put board 2 well past the middle, so the pointer ends up squarely
+	// inside it rather than in a gutter.
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_button(100.0, true));
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_motion(700.0));
+	h.pump();
+
+	CHECK(h.strip->get_board(0) == board_b);
+	CHECK(h.strip->get_board(1) == board_c);
+	CHECK(h.strip->get_board(2) == board_a);
+	SIGNAL_CHECK("board_moved", { { 0, 2 } });
+	// The captions follow their boards without being rebuilt, so the button the drag is
+	// coming from is never freed mid-input.
+	CHECK(caption_for(h.strip, 2) == caption_a);
+	// Reordering is not selecting: the overview stays up for the whole drag.
+	CHECK(h.strip->is_overview_active());
+
+	// Releasing ends the drag. The button reports its press on release, and that press must
+	// not additionally read as "open this board".
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_button(700.0, false));
+	caption_a->emit_signal(SceneStringName(pressed));
+	h.pump();
+	CHECK(h.strip->is_overview_active());
+	SIGNAL_CHECK_FALSE("board_moved");
+
+	// A press that never travels is still a plain click, and still opens the board.
+	Button *caption_b = caption_for(h.strip, 0);
+	if (!caption_b) {
+		SIGNAL_UNWATCH(h.strip, "board_moved");
+		h.unmount();
+		FAIL_CHECK("the overview must keep one caption per board");
+		return;
+	}
+	caption_b->emit_signal(SceneStringName(gui_input), caption_mouse_button(100.0, true));
+	caption_b->emit_signal(SceneStringName(gui_input), caption_mouse_button(100.0, false));
+	caption_b->emit_signal(SceneStringName(pressed));
+	h.pump();
+	SIGNAL_CHECK_FALSE("board_moved");
+	CHECK_FALSE(h.strip->is_overview_active());
+	CHECK(h.strip->get_active_board() == board_b);
+
+	SIGNAL_UNWATCH(h.strip, "board_moved");
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A caption drag that stays inside its own board leaves the order alone") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	REQUIRE(h.strip->add_board("B") != nullptr);
+	REQUIRE(h.strip->add_board("C") != nullptr);
+	h.pump();
+
+	h.strip->set_overview(true);
+	h.pump();
+
+	Button *caption_a = caption_for(h.strip, 0);
+	if (!caption_a) {
+		h.unmount();
+		FAIL_CHECK("the overview must build one caption per board");
+		return;
+	}
+
+	SIGNAL_WATCH(h.strip, "board_moved");
+
+	// Past the drag threshold, but still over board 0 and then in the gutter after it:
+	// neither resolves to a different board, so neither is a reorder.
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_button(100.0, true));
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_motion(200.0));
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_motion(262.0));
+	caption_a->emit_signal(SceneStringName(gui_input), caption_mouse_button(262.0, false));
+	h.pump();
+
+	CHECK(h.strip->get_board(0) == board_a);
+	SIGNAL_CHECK_FALSE("board_moved");
+
+	SIGNAL_UNWATCH(h.strip, "board_moved");
 	h.unmount();
 }
 

@@ -81,6 +81,22 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	// full font size and remain clickable while the boards behind them shrink. Always the
 	// strip's last child so it draws above every board.
 	Control *caption_overlay = nullptr;
+	// The board whose caption is currently held down in the overview, or an invalid id when
+	// no caption is held. Held by instance id for the same reason the transition's outgoing
+	// board is: the drag outlives individual input events, and a board can be closed from
+	// elsewhere in between them.
+	ObjectID caption_drag_board_id;
+	// Strip-local pointer x at the moment the caption was pressed, and the latest one seen.
+	real_t caption_drag_press_x = 0.0;
+	real_t caption_drag_pointer_x = 0.0;
+	// True once the pointer has travelled far enough for the press to read as a reorder
+	// rather than as a click.
+	bool caption_drag_active = false;
+	// A caption that was dragged still reports a press when the button is released. That
+	// press must not additionally read as "open this board", so it is swallowed once. Reset
+	// on the next caption press so a drag released off the button cannot strand the flag and
+	// eat an unrelated click later.
+	bool caption_drag_swallow_click = false;
 
 	EditorBoard *_append_board(int p_board_id, const String &p_title);
 	void _clear_boards();
@@ -114,6 +130,16 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	void _rebuild_captions();
 	void _layout_captions(const Transform2D &p_transform, real_t p_pitch, const Size2 &p_scaled_size);
 	void _on_caption_pressed(ObjectID p_board_id);
+	void _on_caption_gui_input(const Ref<InputEvent> &p_event, ObjectID p_board_id);
+	// Clears the drag state and decides whether the press the caption is about to report has
+	// to be swallowed.
+	void _end_caption_drag();
+	// The board under a strip-local pointer x while the overview is up, or -1 in a gutter or
+	// past the ends. Captions hang below the boards, so a caption drag hit-tests at the
+	// board band's own height rather than at the pointer's y: the horizontal math is
+	// index_at_point()'s, unchanged, so a drop target can never disagree with the board a
+	// click at the same x would select.
+	int _overview_index_at_x(real_t p_x) const;
 	// A split or a cross-board pane drop can create a new tile at any time, live and full
 	// size by default. Wired to every board's workspace so that a tile created while the
 	// overview is up is bounded the same as the rest of the filmstrip instead of rendering
@@ -175,6 +201,18 @@ public:
 	// of snapping, and immediately sleeps whichever board is no longer part of the new
 	// outgoing/incoming pair.
 	void set_active_board(int p_index);
+
+	// Moves the board at p_from so that it ends up at p_to, shifting the boards in between.
+	// Emits board_moved(from, to) exactly once, and nothing at all when the two indices name
+	// the same position.
+	//
+	// A reorder is purely a change of board order: no workspace is rebuilt, no leaf id is
+	// reissued, and no scene changes hands. The board that was on screen stays on screen,
+	// which is why active_index is re-derived from the moved list by identity rather than
+	// patched with index arithmetic -- the active board may be the one being moved, may be
+	// displaced by it, or may sit outside the affected range entirely, and only identity
+	// gets all three right.
+	void move_board(int p_from, int p_to);
 
 	// Zooms every board out into a live filmstrip, or back onto the active board.
 	//
