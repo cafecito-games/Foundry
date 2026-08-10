@@ -276,6 +276,15 @@ public:
 	static Rect2 drop_preview_rect(const Size2 &p_size, TileDropRegion p_region);
 
 	WorkspaceLeafNode *get_leaf_by_id(int p_id) const;
+	// Board-wide leaf lookup: leaf ids are unique across every board, but each
+	// workspace only owns the leaves of its own board. A drop can address a pane
+	// on a board that is not active (the overview shows them all), so every
+	// id-addressed drop entry point resolves through here -- try this workspace,
+	// then fall back to the owning board via the strip -- rather than assuming the
+	// target lives in the active workspace. Optionally reports the workspace that
+	// actually owns the leaf, which is the one that must perform any split or
+	// collapse. Returns nullptr when no board hosts the id.
+	WorkspaceLeafNode *resolve_leaf_by_id_across_boards(int p_leaf_id, EditorSceneWorkspace **r_owning_workspace = nullptr);
 	WorkspaceLeafNode *get_focused_leaf() const { return get_leaf_by_id(focused_leaf_id); }
 	int get_focused_leaf_id() const { return focused_leaf_id; }
 	void set_focused_leaf(int p_id);

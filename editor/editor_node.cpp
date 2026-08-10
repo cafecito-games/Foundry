@@ -8072,7 +8072,11 @@ void EditorNode::_on_tile_tab_closed(int p_tab, int p_tile_id) {
 
 void EditorNode::handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_source_pane_id, int p_source_tab_index) {
 	ERR_FAIL_NULL(get_scene_workspace());
-	WorkspaceLeafNode *target_leaf = get_scene_workspace()->get_leaf_by_id(p_target_pane_id);
+	// The rosette overlay addresses its own pane by id, and in the overview that
+	// pane can belong to a board that is not the active one. Resolve across boards
+	// exactly as the tab-strip drop path does, so both drop surfaces accept the
+	// same destinations.
+	WorkspaceLeafNode *target_leaf = get_scene_workspace()->resolve_leaf_by_id_across_boards(p_target_pane_id);
 	ERR_FAIL_NULL(target_leaf);
 
 	WorkspaceLeafNode *dest_leaf = get_scene_workspace()->handle_tab_drop(p_source_pane_id, p_source_tab_index, target_leaf, (EditorSceneWorkspace::TileDropRegion)p_region);
@@ -8120,7 +8124,7 @@ void EditorNode::handle_tile_tab_strip_drop(int p_target_pane_id, int p_dest_ind
 
 void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int p_source_tile_id, int p_source_tab) {
 	ERR_FAIL_NULL(get_scene_workspace());
-	WorkspaceLeafNode *target_leaf = get_scene_workspace()->get_leaf_by_id(p_target_tile_id);
+	WorkspaceLeafNode *target_leaf = get_scene_workspace()->resolve_leaf_by_id_across_boards(p_target_tile_id);
 	ERR_FAIL_NULL(target_leaf);
 
 	const int scene_idx = editor_data.tile_tab_to_scene_index(p_source_tile_id, p_source_tab);
@@ -8144,7 +8148,7 @@ void EditorNode::handle_tile_scene_drop(int p_target_tile_id, int p_region, int 
 
 void EditorNode::handle_tile_scene_tab_bar_drop(int p_target_tile_id, const Variant &p_data, const Point2 &p_point) {
 	ERR_FAIL_NULL(get_scene_workspace());
-	WorkspaceLeafNode *target_leaf = get_scene_workspace()->get_leaf_by_id(p_target_tile_id);
+	WorkspaceLeafNode *target_leaf = get_scene_workspace()->resolve_leaf_by_id_across_boards(p_target_tile_id);
 	ERR_FAIL_NULL(target_leaf);
 
 	Dictionary d = p_data;

@@ -538,7 +538,7 @@ bool EditorAutomationWorkspace::dock_scene_tab(
 	if (scene_idx < 0) {
 		return false;
 	}
-	WorkspaceLeafNode *target_leaf = p_workspace->get_leaf_by_id(p_target_tile_id);
+	WorkspaceLeafNode *target_leaf = p_workspace->resolve_leaf_by_id_across_boards(p_target_tile_id);
 	ERR_FAIL_NULL_V(target_leaf, false);
 	WorkspaceLeafNode *dest_leaf = p_workspace->handle_scene_drop(scene_idx, target_leaf, p_region);
 	if (dest_leaf == nullptr) {

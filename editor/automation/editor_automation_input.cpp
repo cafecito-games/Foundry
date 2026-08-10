@@ -542,6 +542,22 @@ bool EditorAutomationInput::end_mouse_gesture(
 	editor_automation_held_button = MouseButton::NONE;
 	editor_automation_gesture_viewport = ObjectID();
 	sync_window_pointer(p_viewport, p_global);
+
+	// A release delivers a drop only to the control the viewport already tracks as
+	// hovered, and for a native window that tracking is fed by the window manager's
+	// mouse-enter notification. A synthesized pointer never produces one, so the
+	// release would otherwise discard the drag with no drop at all. Resolve the
+	// control actually under the release point and drop on it through the
+	// viewport's own machinery, which still runs can_drop_data before drop_data.
+	// This has to happen before the release event, which clears the drag payload.
+	if (p_viewport->gui_is_dragging()) {
+		Control *drop_target = p_viewport->gui_find_control(p_global);
+		if (drop_target != nullptr) {
+			p_viewport->gui_perform_drop_at(drop_target->get_global_transform_with_canvas().affine_inverse().xform(p_global), drop_target);
+			r_events.push_back(p_viewport->gui_is_drag_successful() ? "drop_performed" : "drop_rejected");
+		}
+	}
+
 	return push_mouse_button(p_viewport, p_global, button, false, MouseButtonMask::NONE, p_modifiers, r_events);
 }
 
