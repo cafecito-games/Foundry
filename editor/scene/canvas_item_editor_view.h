@@ -137,6 +137,12 @@ public:
 	VBoxContainer *get_controls_container() const { return controls_vb; }
 	EditorZoomWidget *get_zoom_widget() const { return zoom_widget; }
 
+	// Applies an absolute zoom at the viewport center using the same transition
+	// path as EditorZoomWidget's zoom_changed signal. Caller must validate range;
+	// this method still clamps through _zoom_on_position for safety. Returns
+	// whether view_state.zoom changed.
+	bool apply_absolute_zoom_at_center(real_t p_absolute_zoom);
+
 	void update_viewport();
 	void update_scrollbars();
 	void update_oversampling();

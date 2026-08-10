@@ -116,3 +116,27 @@ void CanvasItemEditorSceneGeometryState::apply(CanvasItemEditorViewState &p_stat
 		p_state.previous_update_view_offset = p_state.view_offset;
 	}
 }
+
+real_t CanvasItemEditorNormalizedZoom::scale_factor() {
+	return MAX(1, EDSCALE);
+}
+
+real_t CanvasItemEditorNormalizedZoom::to_absolute(real_t p_normalized) {
+	return p_normalized * scale_factor();
+}
+
+real_t CanvasItemEditorNormalizedZoom::to_normalized(real_t p_absolute) {
+	return p_absolute / scale_factor();
+}
+
+CanvasItemEditorNormalizedZoom::Validation CanvasItemEditorNormalizedZoom::validate(real_t p_normalized, real_t p_min_absolute, real_t p_max_absolute) {
+	if (!Math::is_finite(p_normalized)) {
+		return Validation::NON_FINITE;
+	}
+	const real_t min_normalized = to_normalized(p_min_absolute);
+	const real_t max_normalized = to_normalized(p_max_absolute);
+	if (p_normalized < min_normalized || p_normalized > max_normalized) {
+		return Validation::OUT_OF_RANGE;
+	}
+	return Validation::OK;
+}

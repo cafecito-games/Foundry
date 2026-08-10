@@ -41,6 +41,12 @@
 #include "core/object/message_queue.h"
 
 #ifdef TOOLS_ENABLED
+#include "core/input/input_event.h"
+#include "core/input/shortcut.h"
+#include "core/os/keyboard.h"
+#include "editor/automation/editor_automation_commands.h"
+#include "editor/automation/editor_automation_driver.h"
+#include "editor/automation/editor_automation_snapshot.h"
 #include "editor/settings/editor_command_palette.h"
 #include "editor/settings/editor_settings.h"
 #endif
@@ -52,6 +58,7 @@
 #include "scene/gui/panel_container.h"
 #include "scene/gui/spin_box.h"
 #include "scene/main/scene_tree.h"
+#include "scene/main/window.h"
 
 #include "tests/test_macros.h"
 
@@ -1387,6 +1394,174 @@ TEST_CASE("[Editor][Automation][MCP] scene_tree/add_child_node shortcut is disco
 	CHECK_FALSE((bool)entry.get("runnable_by_run_command", true));
 
 	EditorSettings::get_singleton()->remove_shortcut("scene_tree/add_child_node");
+}
+
+TEST_CASE("[Editor][Automation][MCP] standalone shortcut dispatch reports handled vs unhandled") {
+	Window *root = SceneTree::get_singleton()->get_root();
+	REQUIRE(root != nullptr);
+
+	Ref<Shortcut> handled_shortcut;
+	handled_shortcut.instantiate();
+	handled_shortcut->set_name("Handled Automation Shortcut");
+	Ref<InputEventKey> handled_key;
+	handled_key.instantiate();
+	handled_key->set_keycode(Key::F23);
+	Array handled_events;
+	handled_events.push_back(handled_key);
+	handled_shortcut->set_events(handled_events);
+
+	Button *consumer = memnew(Button);
+	consumer->set_text("Shortcut Consumer");
+	consumer->set_shortcut(handled_shortcut);
+	root->add_child(consumer);
+	mcp_flush_frames(2);
+
+	CHECK(EditorAutomationCommands::push_shortcut_event(root, handled_shortcut) == EditorAutomationCommands::ShortcutDispatchResult::HANDLED);
+
+	Ref<Shortcut> unhandled_shortcut;
+	unhandled_shortcut.instantiate();
+	unhandled_shortcut->set_name("Unhandled Automation Shortcut");
+	Ref<InputEventKey> unhandled_key;
+	unhandled_key.instantiate();
+	unhandled_key->set_keycode(Key::F22);
+	Array unhandled_events;
+	unhandled_events.push_back(unhandled_key);
+	unhandled_shortcut->set_events(unhandled_events);
+
+	CHECK(EditorAutomationCommands::push_shortcut_event(root, unhandled_shortcut) == EditorAutomationCommands::ShortcutDispatchResult::UNHANDLED);
+	CHECK(EditorAutomationCommands::push_shortcut_event(nullptr, unhandled_shortcut) == EditorAutomationCommands::ShortcutDispatchResult::UNAVAILABLE);
+
+	// In the unit-test process there is no EditorNode viewport, so execute() for a
+	// registered standalone shortcut remains unavailable. The handled/unhandled
+	// contract above is covered by push_shortcut_event; end-to-end shortcut_unhandled
+	// through execute() is covered by the canvas_2d_zoom_automation acceptance workflow.
+	EditorSettings::get_singleton()->add_shortcut("automation/unhandled_shortcut_probe", unhandled_shortcut);
+	EditorAutomationMCPDispatcher dispatcher;
+	Dictionary run_params;
+	run_params["name"] = "run_command";
+	Dictionary run_args;
+	run_args["command"] = "automation/unhandled_shortcut_probe";
+	run_params["arguments"] = run_args;
+	const Dictionary run_response = dispatcher.handle_message(make_request(28, "tools/call", run_params));
+	const Dictionary run_result = run_response.get("result", Dictionary());
+	const Dictionary run_structured = run_result.get("structuredContent", Dictionary());
+	CHECK((bool)run_result.get("isError", false));
+	CHECK_FALSE((bool)run_structured.get("ok", true));
+	CHECK(String(run_structured.get("kind", String())) == "unavailable");
+
+	EditorSettings::get_singleton()->remove_shortcut("automation/unhandled_shortcut_probe");
+	root->remove_child(consumer);
+	memdelete(consumer);
+}
+
+TEST_CASE("[Editor][Automation][MCP] set_canvas_2d_zoom is advertised with a numeric zoom arg") {
+	const PackedStringArray actions = EditorAutomationMCPContracts::action_names();
+	CHECK(actions.has("set_canvas_2d_zoom"));
+
+	const Array tools = EditorAutomationMCPContracts::build_tools_list();
+	const Dictionary act = tool_named(tools, "act");
+	REQUIRE_FALSE(act.is_empty());
+	const Dictionary act_input = act["inputSchema"];
+	const Dictionary act_props = act_input["properties"];
+	const Dictionary action_schema = act_props["action"];
+	const Array action_enum = action_schema["enum"];
+	CHECK(action_enum.has(Variant(String("set_canvas_2d_zoom"))));
+
+	const Dictionary args_schema = act_props["args"];
+	const Dictionary args_props = args_schema["properties"];
+	REQUIRE(args_props.has("zoom"));
+	const Dictionary zoom_schema = args_props["zoom"];
+	CHECK(String(zoom_schema.get("type", String())) == "number");
+}
+
+TEST_CASE("[Editor][Automation][MCP] set_canvas_2d_zoom rejects invalid zoom before editor availability") {
+	Node *root = memnew(Node);
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+
+	Dictionary missing;
+	const EditorAutomationActionResult missing_driver_result = EditorAutomationDriver::perform(snapshot, "set_canvas_2d_zoom", Dictionary(), missing);
+	CHECK_FALSE(missing_driver_result.ok);
+	CHECK(missing_driver_result.kind == "invalid_parameter");
+
+	Dictionary bad_type;
+	bad_type["zoom"] = true;
+	const EditorAutomationActionResult bool_result = EditorAutomationDriver::perform(snapshot, "set_canvas_2d_zoom", Dictionary(), bad_type);
+	CHECK_FALSE(bool_result.ok);
+	CHECK(bool_result.kind == "invalid_parameter");
+
+	Dictionary non_finite;
+	non_finite["zoom"] = Math::NaN;
+	const EditorAutomationActionResult nan_result = EditorAutomationDriver::perform(snapshot, "set_canvas_2d_zoom", Dictionary(), non_finite);
+	CHECK_FALSE(nan_result.ok);
+	CHECK(nan_result.kind == "invalid_parameter");
+
+	Dictionary infinity;
+	infinity["zoom"] = Math::INF;
+	const EditorAutomationActionResult inf_result = EditorAutomationDriver::perform(snapshot, "set_canvas_2d_zoom", Dictionary(), infinity);
+	CHECK_FALSE(inf_result.ok);
+	CHECK(inf_result.kind == "invalid_parameter");
+
+	Dictionary valid_but_unavailable;
+	valid_but_unavailable["zoom"] = 2.0;
+	const EditorAutomationActionResult unavailable = EditorAutomationDriver::perform(snapshot, "set_canvas_2d_zoom", Dictionary(), valid_but_unavailable);
+	CHECK_FALSE(unavailable.ok);
+	CHECK(unavailable.kind == "unsupported_action");
+
+	// MCP clients never reach the driver for a non-numeric zoom: parse fails first
+	// with a JSON-RPC invalid_params error on args.zoom.
+	EditorAutomationMCPDispatcher dispatcher;
+	Dictionary act_params;
+	act_params["name"] = "act";
+	Dictionary act_args;
+	act_args["action"] = "set_canvas_2d_zoom";
+	Dictionary zoom_bool;
+	zoom_bool["zoom"] = true;
+	act_args["args"] = zoom_bool;
+	act_params["arguments"] = act_args;
+	const Dictionary bool_response = dispatcher.handle_message(make_request(29, "tools/call", act_params));
+	CHECK(bool_response.has("error"));
+	CHECK(int(bool_response.get("error", Dictionary()).get("code", 0)) != 0);
+
+	Dictionary missing_args;
+	missing_args["action"] = "set_canvas_2d_zoom";
+	missing_args["args"] = Dictionary();
+	Dictionary missing_params;
+	missing_params["name"] = "act";
+	missing_params["arguments"] = missing_args;
+	const Dictionary missing_response = dispatcher.handle_message(make_request(30, "tools/call", missing_params));
+	CHECK(missing_response.has("result"));
+	const Dictionary missing_result = missing_response.get("result", Dictionary());
+	CHECK((bool)missing_result.get("isError", false));
+	const Dictionary missing_structured = missing_result.get("structuredContent", Dictionary());
+	CHECK_FALSE((bool)missing_structured.get("ok", true));
+	CHECK(String(missing_structured.get("kind", String())) == "invalid_parameter");
+
+	// Public zoom fields are opt-in per action, not a blanket details promotion.
+	EditorAutomationActionResult shaped = EditorAutomationActionResult::success("semantic_set_canvas_2d_zoom", String());
+	shaped.public_fields["changed"] = true;
+	shaped.public_fields["requested_zoom"] = 2.0;
+	shaped.public_fields["effective_zoom"] = 2.0;
+	shaped.public_fields["tile_id"] = 0;
+	shaped.details["diagnostic_only"] = "nested";
+	const Dictionary shaped_dict = shaped.to_dictionary();
+	CHECK((bool)shaped_dict.get("changed", false));
+	CHECK(Math::is_equal_approx(real_t(shaped_dict.get("effective_zoom", 0.0)), real_t(2.0)));
+	CHECK_FALSE(shaped_dict.has("diagnostic_only"));
+	CHECK(String(((Dictionary)shaped_dict.get("details", Dictionary())).get("diagnostic_only", String())) == "nested");
+
+	EditorAutomationActionResult out_of_range = EditorAutomationActionResult::failure("value_out_of_range", "out of range");
+	out_of_range.public_fields["minimum"] = 1.0 / 128.0;
+	out_of_range.public_fields["maximum"] = 128.0;
+	out_of_range.public_fields["requested_zoom"] = 1000.0;
+	const Dictionary out_of_range_dict = out_of_range.to_dictionary();
+	CHECK_FALSE((bool)out_of_range_dict.get("ok", true));
+	CHECK(String(out_of_range_dict.get("kind", String())) == "value_out_of_range");
+	CHECK(Math::is_equal_approx(real_t(out_of_range_dict.get("minimum", 0.0)), real_t(1.0 / 128.0)));
+	CHECK(Math::is_equal_approx(real_t(out_of_range_dict.get("maximum", 0.0)), real_t(128.0)));
+	CHECK(Math::is_equal_approx(real_t(out_of_range_dict.get("requested_zoom", 0.0)), real_t(1000.0)));
+
+	root->queue_free();
 }
 
 #endif // TOOLS_ENABLED

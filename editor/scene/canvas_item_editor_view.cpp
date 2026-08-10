@@ -3409,6 +3409,14 @@ void CanvasItemEditorView::_update_zoom(real_t p_zoom) {
 	_zoom_on_position(p_zoom, viewport_scrollable->get_size() / 2.0);
 }
 
+bool CanvasItemEditorView::apply_absolute_zoom_at_center(real_t p_absolute_zoom) {
+	ERR_FAIL_NULL_V(viewport_scrollable, false);
+	ERR_FAIL_NULL_V(zoom_widget, false);
+	const real_t before = view_state.zoom;
+	_zoom_on_position(p_absolute_zoom, viewport_scrollable->get_size() / 2.0);
+	return !Math::is_equal_approx(before, view_state.zoom);
+}
+
 void CanvasItemEditorView::_update_oversampling() {
 	get_scene_viewport()->set_oversampling_override(editor->auto_resampling_enabled ? view_state.zoom : 0.0);
 }

@@ -762,6 +762,7 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActionArgs::schema() {
 	schema->add_property("board_index", EditorAutomationMCPJsonSchema::integer("0-based board index for activate_board. Provide board_index or board_title."));
 	schema->add_property("board_title", EditorAutomationMCPJsonSchema::string("Board title for activate_board. An unknown title is an error, not a no-op."));
 	schema->add_property("overview", EditorAutomationMCPJsonSchema::boolean("Whether set_board_overview zooms out to the board overview (true) or back onto the active board (false)."));
+	schema->add_property("zoom", EditorAutomationMCPJsonSchema::number("Normalized 2D canvas zoom for set_canvas_2d_zoom. 1.0 means 100%, independent of editor UI scale."));
 	return schema;
 }
 
@@ -893,6 +894,9 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs> EditorAutomationMC
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
 	if (!_read_optional_bool(dict, "overview", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_number(dict, "zoom", args.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
 	return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::success(args);
@@ -1153,8 +1157,10 @@ Dictionary EditorAutomationMCPFindElementsInput::to_dictionary() const {
 
 Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActInput::schema() {
 	Ref<EditorAutomationMCPJsonSchema> schema = EditorAutomationMCPJsonSchema::object(
-			"Input for act. Provide action and selector (the element to act on) for a new interaction; optionally include wait to combine action and postcondition. "
-			"Action inputs such as text, key, and value live under 'args', not at the top level. "
+			"Input for act. Provide action for a new interaction; include selector for element-targeted actions "
+			"(selectorless actions such as set_canvas_2d_zoom, activate_board, and set_board_overview omit it). "
+			"Optionally include wait to combine action and postcondition. "
+			"Action inputs such as text, key, value, and zoom live under 'args', not at the top level. "
 			"When polling a pending cooperative act+wait, pass wait_id without repeating selector/action.");
 	schema->add_property("selector", EditorAutomationMCPSelector::schema());
 	schema->add_property("element", EditorAutomationMCPSelector::schema("Alias for 'selector': the element to act on, matching the shape returned by observe_ui/find_elements. Provide either 'selector' or 'element', not both."));
@@ -1530,6 +1536,7 @@ PackedStringArray EditorAutomationMCPContracts::action_names() {
 	actions.push_back("set_caret");
 	actions.push_back("activate_board");
 	actions.push_back("set_board_overview");
+	actions.push_back("set_canvas_2d_zoom");
 	return actions;
 }
 
@@ -1648,9 +1655,17 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 
 	{
 		Ref<EditorAutomationMCPJsonSchema> act_output = _ok_result_schema();
+		act_output->add_property("route", EditorAutomationMCPJsonSchema::string("Action route that handled the request (for example semantic_set_canvas_2d_zoom)."));
+		act_output->add_property("changed", EditorAutomationMCPJsonSchema::boolean("Whether set_canvas_2d_zoom changed the focused 2D view zoom."));
+		act_output->add_property("requested_zoom", EditorAutomationMCPJsonSchema::number("Normalized zoom requested by set_canvas_2d_zoom (1.0 = 100%)."));
+		act_output->add_property("effective_zoom", EditorAutomationMCPJsonSchema::number("Normalized zoom in effect after set_canvas_2d_zoom."));
+		act_output->add_property("tile_id", EditorAutomationMCPJsonSchema::integer("Effective focused tile whose 2D canvas view was targeted."));
+		act_output->add_property("minimum", EditorAutomationMCPJsonSchema::number("Normalized minimum zoom when set_canvas_2d_zoom fails with value_out_of_range."));
+		act_output->add_property("maximum", EditorAutomationMCPJsonSchema::number("Normalized maximum zoom when set_canvas_2d_zoom fails with value_out_of_range."));
+		act_output->add_property("kind", EditorAutomationMCPJsonSchema::string("Failure kind such as invalid_parameter, unsupported_action, or value_out_of_range."));
 		_add_failure_details_output_props(act_output);
 		tools.push_back(_make_tool("act",
-				"Performs a semantic or input action on a selected element and optionally waits for a UI condition in one call.",
+				"Performs a semantic or input action on a selected element (or a selectorless editor action such as set_canvas_2d_zoom) and optionally waits for a UI condition in one call.",
 				EditorAutomationMCPActInput::schema(), act_output)
 						.to_dictionary());
 	}
@@ -1667,7 +1682,7 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 	}
 
 	tools.push_back(_make_tool("read_editor_state",
-			"Returns selected nodes, open scenes, active scene, current script, playing state, unsaved state, the multi-pane workspace tree, and the board strip (boards, active_board, board_overview_active).",
+			"Returns selected nodes, open scenes, active scene, current script, playing state, unsaved state, view_2d.zoom (normalized, 1.0 = 100%), the multi-pane workspace tree, and the board strip (boards, active_board, board_overview_active).",
 			EditorAutomationMCPReadEditorStateInput::schema(), EditorAutomationMCPJsonSchema::object("Output from read_editor_state with a lightweight snapshot of editor/session state, including workspace tiles, focused_tile_id, and one boards entry per board with its id, title, and dormant flag."))
 					.to_dictionary());
 
@@ -1684,17 +1699,23 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 	}
 
 	tools.push_back(_make_tool("run_command",
-			"Executes a command palette command or editor shortcut action by key via the existing editor registries.",
+			"Executes a command palette command or editor shortcut action by key via the existing editor registries. "
+			"For standalone shortcuts, success means a control marked the dispatched InputEventShortcut handled; "
+			"an unhandled dispatch returns ok:false with kind shortcut_unhandled. "
+			"When an embedded subwindow is focused, Viewport may mark the event handled on redirect even if no control consumed it.",
 			EditorAutomationMCPRunCommandInput::schema(), _ok_result_schema())
 					.to_dictionary());
 
 	{
 		Ref<EditorAutomationMCPJsonSchema> output = EditorAutomationMCPJsonSchema::object(
-				"Output from list_commands. Use runnable_by_run_command before passing a command key to run_command.");
+				"Output from list_commands. Use runnable_by_run_command before passing a command key to run_command. "
+				"For standalone shortcuts, runnable_by_run_command means the shortcut can be dispatched in this editor process; "
+				"it does not promise the current UI focus/context will handle it.");
 		output->add_property("ok", EditorAutomationMCPJsonSchema::boolean("Whether listing succeeded."));
 		output->add_property("commands", EditorAutomationMCPJsonSchema::array(EditorAutomationMCPJsonSchema::object("Editor command entry."), "Command entries."));
 		tools.push_back(_make_tool("list_commands",
-				"Lists command palette commands and editor shortcut actions with runnable metadata.",
+				"Lists command palette commands and editor shortcut actions with runnable metadata. "
+				"Standalone shortcut runnable_by_run_command is dispatchability, not a guarantee of context handling.",
 				EditorAutomationMCPListCommandsInput::schema(), output)
 						.to_dictionary());
 	}

@@ -30,10 +30,13 @@
 
 #include "editor_automation_acceptance_workflow.h"
 
+#include "editor/automation/editor_automation_driver.h"
+#include "editor/automation/editor_automation_mcp_dispatcher.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
 #include "editor/debugger/debugger_editor_plugin.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
@@ -43,17 +46,24 @@
 #include "editor/gui/code_editor.h"
 #include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/startup_dialog.h"
+#include "editor/scene/canvas_item_editor_plugin.h"
+#include "editor/scene/canvas_item_editor_view.h"
+#include "editor/scene/canvas_item_editor_view_state.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_editor_view.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/workspace/workspace_pane.h"
 #include "editor/workspace/workspace_tab_type.h"
 
 #include "core/config/project_settings.h"
+#include "core/input/input_event.h"
+#include "core/input/shortcut.h"
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
+#include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
 #include "scene/gui/dialogs.h"
@@ -669,6 +679,220 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	result.ok = true;
 	result.message = "Basic scene-editing automation workflow completed.";
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_canvas_2d_zoom_automation(EditorWorkflowTestDriver &p_driver, const String &p_scene_path) {
+	Result result;
+	result.workflow = "canvas_2d_zoom_automation";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("setup_open_scene");
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		result.ok = false;
+		result.message = "EditorNode is not ready.";
+		return result;
+	}
+	if (editor_node->load_scene(p_scene_path) != OK) {
+		result.ok = false;
+		result.message = vformat("Failed to load setup scene '%s'.", p_scene_path);
+		return result;
+	}
+#endif
+	p_driver.flush_frames(30);
+
+	p_driver.set_step("select_2d_workspace");
+#ifdef TOOLS_ENABLED
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Editor main screen is unavailable.");
+	}
+	main_screen->select(EditorMainScreen::EDITOR_2D);
+#endif
+	p_driver.flush_frames(20);
+#ifdef TOOLS_ENABLED
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Failed to select the 2D workspace.");
+	}
+#endif
+
+	p_driver.set_step("seed_canvas_zoom");
+	Dictionary seed_args;
+	seed_args["zoom"] = 1.0;
+	const Dictionary seed_result = p_driver.act(Dictionary(), "set_canvas_2d_zoom", seed_args);
+	if (!p_driver.require_ok(seed_result, "seed_canvas_zoom")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	p_driver.set_step("capture_pre_zoom_state");
+	const Dictionary pre_state = p_driver.read_editor_state();
+	const Dictionary pre_view_2d = pre_state.get("view_2d", Dictionary());
+	if (!(bool)pre_view_2d.get("zoom_settable", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected view_2d.zoom_settable before set_canvas_2d_zoom.");
+	}
+	Point2 scene_under_center_before;
+	bool have_center_sample = false;
+#ifdef TOOLS_ENABLED
+	if (CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton()) {
+		if (CanvasItemEditorView *focused_view = canvas_editor->get_focused_view()) {
+			if (Control *scrollable = focused_view->get_viewport_scrollable()) {
+				const Point2 center = scrollable->get_size() / 2.0;
+				const CanvasItemEditorViewState &view_state = focused_view->get_view_state();
+				scene_under_center_before = center / view_state.zoom + view_state.view_offset;
+				have_center_sample = center.length_squared() > 0.0;
+			}
+		}
+	}
+#endif
+
+	p_driver.set_step("set_canvas_2d_zoom");
+	Dictionary zoom_args;
+	zoom_args["zoom"] = 2.0;
+	const Dictionary zoom_result = p_driver.act(Dictionary(), "set_canvas_2d_zoom", zoom_args);
+	if (!p_driver.require_ok(zoom_result, "set_canvas_2d_zoom")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	if (!(bool)zoom_result.get("changed", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected set_canvas_2d_zoom to report changed:true for zoom 2.0.");
+	}
+	if (!Math::is_equal_approx(real_t(zoom_result.get("effective_zoom", 0.0)), real_t(2.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected effective_zoom == 2.0.");
+	}
+	if (!Math::is_equal_approx(real_t(zoom_result.get("requested_zoom", 0.0)), real_t(2.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected requested_zoom == 2.0.");
+	}
+	if (!zoom_result.has("tile_id")) {
+		return _failure_with_message(p_driver, result.workflow, "Expected tile_id in set_canvas_2d_zoom result.");
+	}
+
+	p_driver.set_step("verify_view_2d_zoom");
+	const Dictionary state = p_driver.read_editor_state();
+	const Dictionary view_2d = state.get("view_2d", Dictionary());
+	if (!(bool)view_2d.get("supported", false)) {
+		return _failure_with_message(p_driver, result.workflow, "view_2d is unsupported after setting canvas zoom.");
+	}
+	if (!Math::is_equal_approx(real_t(view_2d.get("zoom", 0.0)), real_t(2.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected read_editor_state.view_2d.zoom == 2.0.");
+	}
+
+	const Vector2 post_offset = view_2d.get("view_offset", Vector2());
+#ifdef TOOLS_ENABLED
+	p_driver.set_step("verify_center_anchor");
+	if (have_center_sample) {
+		if (CanvasItemEditor *canvas_editor = CanvasItemEditor::get_singleton()) {
+			if (CanvasItemEditorView *focused_view = canvas_editor->get_focused_view()) {
+				if (Control *scrollable = focused_view->get_viewport_scrollable()) {
+					const Point2 center = scrollable->get_size() / 2.0;
+					const CanvasItemEditorViewState &view_state = focused_view->get_view_state();
+					const Point2 scene_under_center_after = center / view_state.zoom + view_state.view_offset;
+					// Integer zoom alignment can nudge the offset by a sub-pixel scene amount;
+					// require the anchored scene point to stay within one screen pixel.
+					const real_t screen_drift = scene_under_center_before.distance_to(scene_under_center_after) * view_state.zoom;
+					if (screen_drift > 1.0 + CMP_EPSILON) {
+						return _failure_with_message(p_driver, result.workflow, "Zoom around viewport center moved the anchored scene point.");
+					}
+				}
+			}
+		}
+	}
+#endif
+
+	p_driver.set_step("verify_idempotent_zoom");
+	const Dictionary repeat_result = p_driver.act(Dictionary(), "set_canvas_2d_zoom", zoom_args);
+	if (!p_driver.require_ok(repeat_result, "verify_idempotent_zoom")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	if ((bool)repeat_result.get("changed", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected repeating set_canvas_2d_zoom(2.0) to report changed:false.");
+	}
+	const Dictionary repeat_state = p_driver.read_editor_state();
+	const Dictionary repeat_view = repeat_state.get("view_2d", Dictionary());
+	if (!Vector2(repeat_view.get("view_offset", Vector2())).is_equal_approx(post_offset)) {
+		return _failure_with_message(p_driver, result.workflow, "Idempotent zoom changed view_offset.");
+	}
+
+	p_driver.set_step("reject_out_of_range_zoom");
+	// Call the driver directly so the expected failure does not poison workflow failure state.
+	Dictionary out_of_range_args;
+	out_of_range_args["zoom"] = 1000.0;
+	const EditorAutomationSnapshot out_of_range_snapshot;
+	const EditorAutomationActionResult out_of_range_action = EditorAutomationDriver::perform(
+			out_of_range_snapshot, "set_canvas_2d_zoom", Dictionary(), out_of_range_args);
+	const Dictionary out_of_range_result = out_of_range_action.to_dictionary();
+	if ((bool)out_of_range_result.get("ok", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected set_canvas_2d_zoom(1000) to fail.");
+	}
+	if (String(out_of_range_result.get("kind", String())) != "value_out_of_range") {
+		return _failure_with_message(p_driver, result.workflow, "Expected kind value_out_of_range for oversized zoom.");
+	}
+	if (!out_of_range_result.has("minimum") || !out_of_range_result.has("maximum") || !out_of_range_result.has("requested_zoom")) {
+		return _failure_with_message(p_driver, result.workflow, "Expected minimum/maximum/requested_zoom on value_out_of_range.");
+	}
+	if (!Math::is_equal_approx(real_t(out_of_range_result.get("requested_zoom", 0.0)), real_t(1000.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected requested_zoom == 1000.0 on value_out_of_range.");
+	}
+	if (!(real_t(out_of_range_result.get("minimum", 0.0)) < real_t(out_of_range_result.get("maximum", 0.0)))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected minimum < maximum on value_out_of_range.");
+	}
+	const Dictionary unchanged_state = p_driver.read_editor_state();
+	const Dictionary unchanged_view = unchanged_state.get("view_2d", Dictionary());
+	if (!Math::is_equal_approx(real_t(unchanged_view.get("zoom", 0.0)), real_t(2.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Out-of-range zoom mutated view_2d.zoom.");
+	}
+
+	p_driver.set_step("run_inapplicable_shortcut");
+#ifdef TOOLS_ENABLED
+	Ref<Shortcut> orphan_shortcut;
+	orphan_shortcut.instantiate();
+	orphan_shortcut->set_name("Automation Orphan Shortcut");
+	Ref<InputEventKey> orphan_key;
+	orphan_key.instantiate();
+	orphan_key->set_keycode(Key::F21);
+	Array orphan_events;
+	orphan_events.push_back(orphan_key);
+	orphan_shortcut->set_events(orphan_events);
+	EditorSettings::get_singleton()->add_shortcut("automation/orphan_shortcut_probe", orphan_shortcut);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	Dictionary run_params;
+	run_params["name"] = "run_command";
+	Dictionary run_args;
+	run_args["command"] = "automation/orphan_shortcut_probe";
+	run_params["arguments"] = run_args;
+	Dictionary request;
+	request["jsonrpc"] = "2.0";
+	request["id"] = 1;
+	request["method"] = "tools/call";
+	request["params"] = run_params;
+	const Dictionary run_response = dispatcher.handle_message(request);
+	EditorSettings::get_singleton()->remove_shortcut("automation/orphan_shortcut_probe");
+
+	const Dictionary run_result = run_response.get("result", Dictionary());
+	const Dictionary shortcut_result = run_result.get("structuredContent", Dictionary());
+	if (!(bool)run_result.get("isError", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected MCP isError:true for unhandled shortcut.");
+	}
+	if ((bool)shortcut_result.get("ok", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected inapplicable standalone shortcut to fail.");
+	}
+	if (String(shortcut_result.get("kind", String())) != "shortcut_unhandled") {
+		return _failure_with_message(p_driver, result.workflow, vformat("Expected shortcut_unhandled, got '%s'.", String(shortcut_result.get("kind", String()))));
+	}
+	if (String(shortcut_result.get("route", String())) != "shortcut") {
+		return _failure_with_message(p_driver, result.workflow, "Expected route shortcut for unhandled shortcut.");
+	}
+#endif
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Canvas 2D zoom automation workflow completed.";
 	return result;
 }
 
