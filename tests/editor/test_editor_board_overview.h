@@ -387,4 +387,37 @@ TEST_CASE("[Editor][Boards] Closing a board during overview leaves no board stra
 	h.unmount();
 }
 
+TEST_CASE("[Editor][Boards] A restore during overview leaves every preview unshrunk and unthrottled") {
+	OverviewHarness h;
+	h.mount();
+
+	Ref<ConfigFile> config;
+	config.instantiate();
+	EditorBoardStrip::save_to_config(config, h.strip);
+
+	h.strip->set_overview(true);
+	h.pump();
+	CHECK(h.strip->is_overview_active());
+
+	// A layout or session restore can land mid-overview; the restored strip must not
+	// inherit the overview's shrunk, throttled preview bounds with no overview left to
+	// undo them.
+	h.strip->restore_from_config(config);
+	h.pump();
+
+	CHECK_FALSE(h.strip->is_overview_active());
+	for (int i = 0; i < h.strip->get_board_count(); i++) {
+		ScenePaneTile *tile = h.first_tile(i);
+		if (!tile) {
+			h.unmount();
+			FAIL_CHECK("every restored board must own a tile");
+			return;
+		}
+		CHECK(tile->get_preview_render_shrink() == 1);
+		CHECK_FALSE(tile->is_preview_refresh_throttled());
+	}
+
+	h.unmount();
+}
+
 } // namespace TestEditorBoardOverview
