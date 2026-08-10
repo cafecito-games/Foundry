@@ -38,7 +38,6 @@
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
-#include "editor/editor_selection.h"
 #include "editor/editor_tile_dock_region.h"
 #include "editor/gui/editor_side_rail_button.h"
 #include "editor/gui/editor_side_rail_strip.h"
