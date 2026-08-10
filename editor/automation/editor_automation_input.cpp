@@ -37,9 +37,9 @@
 #include "core/os/keyboard.h"
 #include "scene/gui/control.h"
 #include "scene/gui/subviewport_container.h"
-#include "servers/display/display_server.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "servers/display/display_server.h"
 
 namespace {
 
