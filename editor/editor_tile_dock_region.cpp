@@ -527,7 +527,7 @@ void EditorTileDockRegion::load_layout(const Ref<ConfigFile> &p_config, const St
 		}
 	}
 
-	// Absent keys mean DOCKED with no drawer dock, which is the behaviour of a
+	// Absent keys mean DOCKED with no drawer dock, which is the behavior of a
 	// layout written before rails existed.
 	const Side side_order[2] = { Side::LEFT, Side::RIGHT };
 	const char *rail_keys[2] = { "tile_rail_left", "tile_rail_right" };
