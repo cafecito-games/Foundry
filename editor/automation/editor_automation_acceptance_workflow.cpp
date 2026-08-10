@@ -34,6 +34,8 @@
 #include "editor/automation/editor_workflow_test_driver.h"
 #include "editor/debugger/debugger_editor_plugin.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_board.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
@@ -64,6 +66,29 @@ namespace {
 
 static constexpr const char *MIXED_WORKSPACE_SCENE = "res://scenes/main.tscn";
 static constexpr const char *MIXED_WORKSPACE_SCRIPT = "res://scripts/player.fs";
+// Root is a Node3D, so opening it gives the owning tile 3D content and makes a
+// non-focused tile eligible for a secondary 3D viewport preview.
+static constexpr const char *BOARD_SWITCH_3D_SCENE = "res://scenes/secondary.tscn";
+static constexpr const char *BOARD_SWITCH_2D_SCENE = "res://scenes/main.tscn";
+
+ScenePaneTile *_resolve_focused_scene_tile(EditorBoard *p_board) {
+	EditorSceneWorkspace *workspace = p_board ? p_board->get_workspace() : nullptr;
+	if (workspace == nullptr) {
+		return nullptr;
+	}
+	WorkspaceLeafNode *leaf = workspace->get_focused_leaf();
+	WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
+	if (pane != nullptr && pane->get_scene_tile() != nullptr) {
+		return pane->get_scene_tile();
+	}
+	for (WorkspaceLeafNode *candidate : workspace->get_leaves()) {
+		WorkspacePane *candidate_pane = candidate->get_workspace_pane();
+		if (candidate_pane != nullptr && candidate_pane->get_scene_tile() != nullptr) {
+			return candidate_pane->get_scene_tile();
+		}
+	}
+	return nullptr;
+}
 
 ScriptLeaf *_find_mounted_script_leaf(WorkspacePane *p_pane) {
 	Control *host = p_pane ? p_pane->get_chrome_host() : nullptr;
@@ -1229,6 +1254,123 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	result.message = "Mixed workspace layout restored.";
 	Dictionary details;
 	details["workspace"] = workspace_state;
+	result.details = details;
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "board_switch_3d_scene";
+
+	p_driver.begin_workflow();
+	p_driver.set_step("open_3d_scene");
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+	if (editor_node->load_scene(BOARD_SWITCH_3D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Failed to load scene '%s'.", BOARD_SWITCH_3D_SCENE));
+	}
+	p_driver.flush_frames(30);
+
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Board strip is unavailable.");
+	}
+	if (strip->get_board_count() != 1 || strip->get_active_index() != 0) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected a single active board at startup, found %d board(s) with active index %d.",
+						strip->get_board_count(), strip->get_active_index()));
+	}
+
+	// Resolve the tile holding the 3D scene by instance id. The board switch below spans
+	// many frames and rebuilds display attachments, so a raw pointer captured now must not
+	// be trusted afterwards.
+	ScenePaneTile *initial_tile = _resolve_focused_scene_tile(strip->get_board(0));
+	if (initial_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve the scene tile holding the 3D scene.");
+	}
+	const ObjectID initial_tile_id = initial_tile->get_instance_id();
+	if (initial_tile->get_spatial_view() != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The focused tile already owns a secondary 3D viewport before any board switch.");
+	}
+
+	p_driver.set_step("add_second_board");
+	if (strip->add_board() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Failed to add a second board.");
+	}
+	p_driver.flush_frames(20);
+	if (strip->get_board_count() != 2) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected 2 boards after adding one, found %d.", strip->get_board_count()));
+	}
+
+	p_driver.set_step("switch_to_second_board");
+	strip->set_active_board(1);
+	p_driver.flush_frames(90);
+
+	if (strip->get_active_index() != 1) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected board 1 to be active after the switch, found %d.", strip->get_active_index()));
+	}
+
+	// Focusing a tile with no scene stops short of refreshing display attachments, so the
+	// second board has to actually get a scene before the 3D tile left behind is demoted
+	// to a preview. That demotion asks for a secondary 3D viewport, and building one is
+	// the operation that used to abort the editor.
+	p_driver.set_step("open_scene_on_second_board");
+	if (editor_node->load_scene(BOARD_SWITCH_2D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Failed to load scene '%s'.", BOARD_SWITCH_2D_SCENE));
+	}
+	p_driver.flush_frames(60);
+
+	ScenePaneTile *demoted_tile = ObjectDB::get_instance<ScenePaneTile>(initial_tile_id);
+	if (demoted_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The tile holding the 3D scene did not survive the board switch.");
+	}
+	if (demoted_tile->get_spatial_view() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow,
+				"Demoting the 3D tile did not build a secondary 3D viewport, so this run never exercised the crash path.");
+	}
+
+	// Switching back and forth re-runs the demotion against an existing secondary
+	// viewport, which is a different code path from building the first one.
+	p_driver.set_step("switch_back_to_first_board");
+	strip->set_active_board(0);
+	p_driver.flush_frames(90);
+	if (strip->get_active_index() != 0) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected board 0 to be active after switching back, found %d.", strip->get_active_index()));
+	}
+
+	p_driver.set_step("switch_to_second_board_again");
+	strip->set_active_board(1);
+	p_driver.flush_frames(90);
+	if (strip->get_active_index() != 1) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected board 1 to be active after the second switch, found %d.", strip->get_active_index()));
+	}
+
+	ScenePaneTile *surviving_tile = ObjectDB::get_instance<ScenePaneTile>(initial_tile_id);
+	if (surviving_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The tile holding the 3D scene did not survive repeated board switches.");
+	}
+	if (surviving_tile->get_spatial_view() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow,
+				"The 3D tile lost its secondary 3D viewport after switching boards a second time.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Board switching with a 3D scene open completed without crashing.";
+	Dictionary details;
+	details["board_count"] = strip->get_board_count();
+	details["workspace"] = p_driver.read_editor_state().get("workspace", Dictionary());
 	result.details = details;
 	return result;
 }

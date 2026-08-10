@@ -44,6 +44,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_editing(EditorWo
 	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_editing(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_board_switch_3d_scene(p_driver);
+}
+
 EditorAutomationAcceptanceWorkflow::Result _run_close_last_scene_empty_pane(EditorWorkflowTestDriver &p_driver) {
 	return EditorAutomationAcceptanceWorkflow::run_close_last_scene_empty_pane(p_driver);
 }
@@ -134,6 +138,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	_register_workflow("mixed_workspace_editing", &_run_mixed_workspace_editing);
 	_register_workflow("mixed_workspace_seed", &_run_mixed_workspace_seed);
 	_register_workflow("mixed_workspace_restore", &_run_mixed_workspace_restore);
+	_register_workflow("board_switch_3d_scene", &_run_board_switch_3d_scene);
 	_register_workflow("projectless_shell_smoke", &_run_projectless_shell_smoke);
 	_register_workflow("projectless_shell_dismiss_quits", &_run_projectless_shell_dismiss_quits);
 	_register_workflow("projectless_shell_open_in_process", &_run_projectless_shell_open_in_process);

@@ -756,7 +756,10 @@ void Node3DEditorViewport::cancel_transform() {
 
 void Node3DEditorViewport::_update_shrink() {
 	const float scaling_3d_scale = GLOBAL_GET("rendering/scaling_3d/scale");
-	const float shrink_factor = view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_HALF_RESOLUTION)) ? 0.5 : 1.0;
+	// Reached from _project_settings_changed(), which every viewport connects to,
+	// including secondary ones that have no overlay to read the half-resolution
+	// toggle from. Those always render at full scale.
+	const float shrink_factor = view_display_menu && view_display_menu->get_popup()->is_item_checked(view_display_menu->get_popup()->get_item_index(VIEW_HALF_RESOLUTION)) ? 0.5 : 1.0;
 	viewport->set_scaling_3d_scale(MAX(0.25, scaling_3d_scale * shrink_factor));
 }
 
@@ -1207,6 +1210,14 @@ void Node3DEditorViewport::_select_region() {
 }
 
 void Node3DEditorViewport::_update_name() {
+	// A secondary viewport is a chrome-less tile preview: it never builds the overlay
+	// that carries the view name. The name is still recomputed from camera snapping,
+	// freelook and state restore, all of which a secondary viewport runs, so this has
+	// to stay a no-op rather than an assumption that the overlay exists.
+	if (!view_display_menu) {
+		return;
+	}
+
 	String name;
 
 	switch (view_type) {
@@ -3306,6 +3317,11 @@ static void override_button_stylebox(Button *p_button, const Ref<StyleBox> p_sty
 void Node3DEditorViewport::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_TRANSLATION_CHANGED: {
+			// Everything retranslated below lives in the overlay, which a secondary
+			// viewport never builds.
+			if (viewport_binding == ViewportBinding::SECONDARY) {
+				break;
+			}
 			_update_name();
 			_update_centered_labels();
 			message_time = MIN(message_time, 0.001); // Make it disappear.
@@ -3897,7 +3913,8 @@ void Node3DEditorViewport::_draw() {
 		EditorNode::get_singleton()->get_editor_plugins_force_over()->forward_3d_force_draw_over_viewport(surface);
 	}
 
-	if (surface->has_focus() || rotation_control->has_focus()) {
+	// rotation_control belongs to the overlay, which a secondary viewport never builds.
+	if (surface->has_focus() || (rotation_control && rotation_control->has_focus())) {
 		Size2 size = surface->get_size();
 		Rect2 r = Rect2(Point2(), size);
 		get_theme_stylebox(SNAME("FocusViewport"), EditorStringName(EditorStyles))->draw(surface->get_canvas_item(), r);
@@ -6525,7 +6542,6 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 		selection_menu->connect(SceneStringName(id_pressed), callable_mp(this, &Node3DEditorViewport::_selection_result_pressed));
 		selection_menu->connect("popup_hide", callable_mp(this, &Node3DEditorViewport::_selection_menu_hide));
 		view_type = VIEW_TYPE_USER;
-		_update_name();
 		return;
 	}
 
