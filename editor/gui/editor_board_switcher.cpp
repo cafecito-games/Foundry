@@ -224,7 +224,12 @@ void EditorBoardSwitcher::popup_board_actions(int p_board_index, const Point2 &p
 
 void EditorBoardSwitcher::_cancel_pending_menu() {
 	pending_menu_board_id = ObjectID();
-	pending_menu_timer.unref();
+	if (pending_menu_timer.is_valid()) {
+		// SceneTree keeps its own Ref; unref alone leaves the timeout armed. Drop the
+		// connection so a cancelled delay cannot open the menu for a later press.
+		pending_menu_timer->release_connections();
+		pending_menu_timer.unref();
+	}
 }
 
 void EditorBoardSwitcher::_open_pending_actions_menu() {

@@ -67,6 +67,7 @@ private:
 	void _close_other_boards();
 
 protected:
+	void _notification(int p_what);
 	static void _bind_methods();
 
 public:

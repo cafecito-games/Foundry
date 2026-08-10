@@ -1331,7 +1331,8 @@ TEST_CASE("[Editor][Boards] Right-clicking an overview caption invokes the conte
 
 	SIGNAL_WATCH(h.strip, "board_moved");
 	const Ref<InputEventMouseButton> right_click = caption_mouse_button(100.0, true, MouseButton::RIGHT);
-	const Point2 expected_screen = h.strip->get_viewport()->get_screen_transform().xform(right_click->get_global_position());
+	const Point2 strip_local = h.strip->get_global_transform_with_canvas().affine_inverse().xform(right_click->get_global_position());
+	const Point2 expected_screen = h.strip->get_screen_transform().xform(strip_local);
 	caption->emit_signal(SceneStringName(gui_input), right_click);
 	h.pump();
 

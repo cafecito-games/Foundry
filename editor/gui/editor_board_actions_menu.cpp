@@ -39,6 +39,17 @@ void EditorBoardActionsMenu::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("rename_requested", PropertyInfo(Variant::INT, "board_index")));
 }
 
+void EditorBoardActionsMenu::_notification(int p_what) {
+	switch (p_what) {
+		case NOTIFICATION_POSTINITIALIZE: {
+			// id_pressed belongs to PopupMenu and is only visible to ClassDB after this
+			// class finishes _post_initialize; connecting from the constructor always fails
+			// for the first instance in a process (the one EditorNode actually uses).
+			connect(SceneStringName(id_pressed), callable_mp(this, &EditorBoardActionsMenu::_on_id_pressed));
+		} break;
+	}
+}
+
 void EditorBoardActionsMenu::set_strip(EditorBoardStrip *p_strip) {
 	strip = p_strip;
 }
@@ -147,5 +158,4 @@ void EditorBoardActionsMenu::_on_id_pressed(int p_id) {
 }
 
 EditorBoardActionsMenu::EditorBoardActionsMenu() {
-	connect(SceneStringName(id_pressed), callable_mp(this, &EditorBoardActionsMenu::_on_id_pressed));
 }

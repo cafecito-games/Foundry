@@ -381,6 +381,9 @@ void EditorBoardStrip::_clear_boards() {
 	overview_exit_pending = false;
 	caption_drag_board_id = ObjectID();
 	caption_drag_active = false;
+	// A restore (or any wholesale board wipe) must not leave a deferred bulk-close queue
+	// parked on freed ObjectIDs -- that would permanently refuse later close_boards() calls.
+	abort_pending_closes();
 	set_process(false);
 }
 
@@ -795,9 +798,11 @@ void EditorBoardStrip::_on_caption_gui_input(const Ref<InputEvent> &p_event, Obj
 		if (mouse_button->is_pressed() && board_context_menu_handler.is_valid()) {
 			const int index = resolve_board_index(p_board_id);
 			if (index >= 0) {
-				// InputEventMouse::global_position is viewport-relative; the switcher's
-				// Popup::popup expects screen coordinates for non-embedded subwindows.
-				const Point2 screen_position = get_viewport()->get_screen_transform().xform(mouse_button->get_global_position());
+				// InputEventMouse::global_position is viewport-relative. Control::get_screen_transform
+				// (via get_popup_base_transform) includes the window's desktop origin for
+				// non-embedded editor subwindows; Viewport::get_screen_transform does not.
+				const Point2 strip_local = get_global_transform_with_canvas().affine_inverse().xform(mouse_button->get_global_position());
+				const Point2 screen_position = get_screen_transform().xform(strip_local);
 				board_context_menu_handler.call(index, screen_position);
 			}
 		}
