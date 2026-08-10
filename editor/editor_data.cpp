@@ -952,11 +952,17 @@ String EditorData::get_scene_type(int p_idx) const {
 	return edited_scene[p_idx].get_root()->get_class();
 }
 
-void EditorData::move_edited_scene_to_index(int p_idx) {
-	ERR_FAIL_INDEX(current_edited_scene, edited_scene.size());
+void EditorData::move_edited_scene_to_index(int p_idx, int p_from_idx) {
+	if (p_from_idx < 0) {
+		p_from_idx = current_edited_scene;
+	}
+	ERR_FAIL_INDEX(p_from_idx, edited_scene.size());
 	ERR_FAIL_INDEX(p_idx, edited_scene.size());
+	if (p_from_idx == p_idx) {
+		return;
+	}
 
-	const int from_idx = current_edited_scene;
+	const int from_idx = p_from_idx;
 	auto remap_index = [&](int p_scene_idx) -> int {
 		if (p_scene_idx < 0) {
 			return -1;
@@ -979,11 +985,15 @@ void EditorData::move_edited_scene_to_index(int p_idx) {
 	for (KeyValue<int, int> &E : tile_current_scenes) {
 		E.value = remap_index(E.value);
 	}
+	// The moved scene may belong to a tile other than the focused one (a
+	// same-pane reorder on a dormant board never changes which scene the
+	// focused tile is showing), so the currently edited scene is remapped like
+	// every other tracked index rather than unconditionally forced to p_idx.
+	current_edited_scene = remap_index(current_edited_scene);
 
-	EditedScene es = edited_scene[current_edited_scene];
-	edited_scene.remove_at(current_edited_scene);
+	EditedScene es = edited_scene[from_idx];
+	edited_scene.remove_at(from_idx);
 	edited_scene.insert(p_idx, es);
-	current_edited_scene = p_idx;
 	_ensure_tile_registered(es.tile_id);
 	tile_current_scenes[es.tile_id] = p_idx;
 #ifdef DEV_ENABLED

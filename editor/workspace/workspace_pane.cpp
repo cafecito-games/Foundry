@@ -31,6 +31,7 @@
 #include "workspace_pane.h"
 
 #include "core/io/config_file.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
@@ -662,9 +663,24 @@ void WorkspacePane::move_tab(int p_from, int p_to) {
 		const int target_scene_idx = editor_data->tile_tab_to_scene_index(leaf_id, p_to);
 		if (scene_idx >= 0 && target_scene_idx >= 0) {
 			editor_data->set_tile_current_scene(leaf_id, scene_idx);
-			editor_data->set_focused_tile_id(leaf_id);
-			editor_data->move_edited_scene_to_index(target_scene_idx);
-			sync_scene_tabs_from_editor_data();
+			// A reorder is a model-only operation, not a user-initiated focus
+			// change; it must not steal editor-wide focus onto this pane's leaf
+			// when that leaf lives on a dormant board (#2074). This mirrors the
+			// guard EditorNode::activate_workspace_scene_tab uses for the same
+			// shape of defect (#2071). When the leaf isn't focused, the scene
+			// being moved is named explicitly instead of going through
+			// set_focused_tile_id, so the currently edited scene stays put, and
+			// the trailing resync is told not to activate -- its activate() path
+			// (SceneTabType::activate) claims focus unconditionally too.
+			const EditorBoardStrip *board_strip = workspace ? workspace->get_board_strip() : nullptr;
+			const bool leaf_is_focusable = !board_strip || board_strip->is_leaf_on_active_board(leaf_id);
+			if (leaf_is_focusable) {
+				editor_data->set_focused_tile_id(leaf_id);
+				editor_data->move_edited_scene_to_index(target_scene_idx);
+			} else {
+				editor_data->move_edited_scene_to_index(target_scene_idx, scene_idx);
+			}
+			sync_scene_tabs_from_editor_data(leaf_is_focusable);
 			return;
 		}
 	}
