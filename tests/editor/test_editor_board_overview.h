@@ -56,16 +56,16 @@ struct OverviewHarness {
 	// Boards are laid out at the full strip rect, so the strip needs a real size before any
 	// overview geometry -- scale, preview shrink, caption placement -- means anything. The
 	// host is mounted in the live SceneTree so children actually fold into layout.
-	void mount(int p_board_count = 3) {
+	void mount(int p_board_count = 3, const Size2 &p_size = Size2(800, 600)) {
 		host = memnew(Control);
-		host->set_custom_minimum_size(Size2(800, 600));
+		host->set_custom_minimum_size(p_size);
 		SceneTree::get_singleton()->get_root()->add_child(host);
 		selection = memnew(EditorSelection);
 		strip = EditorBoardStrip::create(selection, &editor_data);
 		host->add_child(strip);
 		strip->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-		host->set_size(Size2(800, 600));
-		strip->set_size(Size2(800, 600));
+		host->set_size(p_size);
+		strip->set_size(p_size);
 		for (int i = strip->get_board_count(); i < p_board_count; i++) {
 			strip->add_board(vformat("Board %d", i + 1));
 		}
@@ -80,6 +80,18 @@ struct OverviewHarness {
 	// Advances past the transition duration so the ease-out lands and dormancy settles.
 	void settle() {
 		pump(1.0);
+	}
+
+	// The rect a control actually occupies in its parent's space, its own canvas scale
+	// included. Control::get_rect() reports the unscaled layout size, so it cannot tell a
+	// board that was scaled down from one that was resized down.
+	static Rect2 scaled_rect(const Control *p_control) {
+		return p_control->get_transform().xform(Rect2(Point2(), p_control->get_size()));
+	}
+
+	// The width a control actually covers on screen, every ancestor scale included.
+	static real_t screen_width(const Control *p_control) {
+		return p_control->get_global_transform().xform(Rect2(Point2(), p_control->get_size())).size.width;
 	}
 
 	ScenePaneTile *first_tile(int p_board_index) const {
@@ -169,6 +181,68 @@ TEST_CASE("[Editor][Boards] Overview shrinks every preview viewport and restores
 		CHECK(containers[i]->get_stretch_shrink() == 1);
 		containers[i]->set_size(probe_size);
 		CHECK(viewports[i]->get_size() == Size2i(probe_size));
+	}
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Overview scales boards whole and keeps every scene viewport on screen") {
+	// A typical editor window at the default UI scale. At this width a board that is
+	// *resized* into the overview rect re-runs its own layout at roughly a third of the
+	// width, where the in-tile docks hold their minimum widths and the scene viewport
+	// absorbs the whole loss until nothing of the scene is left to recognise the board by.
+	const Size2 window(1512, 982);
+	const int board_count = 3;
+
+	OverviewHarness h;
+	h.mount(board_count, window);
+	REQUIRE(h.strip->get_board_count() == board_count);
+
+	// A board with no scene shows its empty placeholder instead of a tile, and a hidden
+	// tile is never laid out at all. Every board gets a scene so the assertion below is
+	// made against a real, laid-out scene surface.
+	for (int i = 0; i < board_count; i++) {
+		h.strip->set_active_board(i);
+		h.settle();
+		h.editor_data.add_edited_scene(-1);
+		h.pump();
+	}
+	h.strip->set_active_board(0);
+	h.settle();
+
+	h.strip->set_overview(true);
+	h.settle();
+	REQUIRE(h.strip->is_overview_active());
+
+	const real_t board_scale = EditorBoardView::overview_scale_for(board_count, window);
+	CHECK(board_scale < real_t(1.0));
+
+	for (int i = 0; i < board_count; i++) {
+		EditorBoard *board = h.strip->get_board(i);
+		ScenePaneTile *tile = h.first_tile(i);
+		Control *content_host = tile ? tile->get_content_host() : nullptr;
+		if (!board || !content_host) {
+			h.unmount();
+			FAIL_CHECK("every board must own a tile with a scene content host");
+			return;
+		}
+
+		// The board's own layout never re-runs at the smaller size: it stays laid out at
+		// the full strip rect and is shrunk by a canvas scale instead.
+		CHECK(board->get_size().is_equal_approx(window));
+		CHECK(Math::is_equal_approx(board->get_scale().x, board_scale));
+		CHECK(Math::is_equal_approx(board->get_scale().y, board_scale));
+
+		// The observable the defect destroyed: the scene viewport still covers real screen
+		// width in the overview.
+		const real_t viewport_width = OverviewHarness::screen_width(content_host);
+		INFO(vformat("board %d scene viewport screen width: %f", i, viewport_width));
+		CHECK(viewport_width > real_t(0.0));
+
+		// Scaling, not reflowing, also means the miniature keeps the focused board's shape.
+		const Rect2 board_rect = OverviewHarness::scaled_rect(board);
+		CHECK(board_rect.size.height > real_t(0.0));
+		CHECK(Math::abs(board_rect.size.width / board_rect.size.height - window.width / window.height) < real_t(0.01));
 	}
 
 	h.unmount();
@@ -337,8 +411,9 @@ TEST_CASE("[Editor][Boards] Overview captions are unscaled, aligned to their boa
 		// board_scale times its natural height instead.
 		CHECK(caption->get_size().height > caption->get_combined_minimum_size().height * board_scale * 1.5);
 
-		// And each one is centered on the board it names.
-		const Rect2 board_rect = h.strip->get_board(i)->get_rect();
+		// And each one is centered on the board it names, measured against the board's
+		// on-screen rect rather than its unscaled layout rect.
+		const Rect2 board_rect = OverviewHarness::scaled_rect(h.strip->get_board(i));
 		const real_t caption_center = caption->get_position().x + caption->get_size().width * 0.5;
 		CHECK(Math::abs(caption_center - board_rect.get_center().x) < 1.0);
 	}

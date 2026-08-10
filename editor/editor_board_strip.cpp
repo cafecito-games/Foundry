@@ -52,11 +52,20 @@ void EditorBoardStrip::_notification(int p_what) {
 		case NOTIFICATION_SORT_CHILDREN: {
 			const Size2 size = get_size();
 			const Transform2D transform = board_view.get_transform();
+			const real_t view_scale = board_view.get_scale();
 			const real_t pitch = size.width + board_view.get_board_pitch_gutter();
-			const Size2 scaled_size = size * board_view.get_scale();
+			const Size2 scaled_size = size * view_scale;
 			for (int i = 0; i < boards.size(); i++) {
 				const Point2 position = transform.xform(Point2(real_t(i) * pitch, 0.0));
-				fit_child_in_rect(boards[i], Rect2(position, scaled_size));
+				// Every board is laid out at the full strip rect and shrunk by a canvas
+				// scale, never by being resized into the smaller overview rect. A resize
+				// would re-run the board's own layout at the reduced width, where the docks
+				// hold their minimum widths and the scene viewport absorbs the entire loss --
+				// at three boards on a typical window the viewport reaches zero and the
+				// overview degenerates into dock stacks. Scaling shrinks the board whole, so
+				// it keeps the focused board's aspect and stays recognisable.
+				fit_child_in_rect(boards[i], Rect2(position, size));
+				boards[i]->set_scale(Size2(view_scale, view_scale));
 			}
 			_layout_captions(transform, pitch, scaled_size);
 		} break;
