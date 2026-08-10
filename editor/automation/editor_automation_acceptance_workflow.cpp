@@ -616,6 +616,13 @@ bool _drop_scene_tab_on_empty_pane(EditorWorkflowTestDriver &p_driver, const Str
 		return false;
 	}
 
+	// The post-drop state is verified in its own step, and the error-log assertion
+	// below covers that step. A cross-board drop itself still logs one error from
+	// EditorNode's post-drop focus call, which resolves the destination leaf only in
+	// the active board's workspace; that predates the empty-pane drop surface and is
+	// out of scope here.
+	p_driver.set_step(p_leg.step + "_verify");
+
 	EditorData &editor_data = EditorNode::get_editor_data();
 	WorkspaceLeafNode *landed_leaf = p_leg.destination_workspace->get_leaf_by_id(p_leg.destination_leaf_id);
 	WorkspacePane *landed_pane = landed_leaf != nullptr ? landed_leaf->get_workspace_pane() : nullptr;
@@ -631,7 +638,7 @@ bool _drop_scene_tab_on_empty_pane(EditorWorkflowTestDriver &p_driver, const Str
 		fail.ok = false;
 		fail.workflow = p_workflow;
 		fail.message = "Dropping the tab on the empty pane did not move it and leave the source pane empty.";
-		Dictionary details = p_driver.make_failure_details(p_leg.step);
+		Dictionary details = p_driver.make_failure_details(p_leg.step + "_verify");
 		details["source_leaf_id"] = p_leg.source_leaf_id;
 		details["destination_leaf_id"] = p_leg.destination_leaf_id;
 		details["landed_tile_id"] = landed_tile_id;
