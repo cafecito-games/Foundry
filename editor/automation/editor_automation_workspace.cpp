@@ -327,6 +327,9 @@ bool EditorAutomationWorkspace::board_transition_settled(
 	if (p_previous_geometry.size() != p_current_geometry.size()) {
 		return false;
 	}
+	// Compared element-wise instead of with a single array equality check so this keeps its
+	// own explicit length guard above, and so any NaN slipping into a sample makes `!=` true
+	// and this predicate report "not settled" rather than silently treating NaN as equal.
 	for (int i = 0; i < p_current_geometry.size(); i++) {
 		if (p_previous_geometry[i] != p_current_geometry[i]) {
 			return false;
