@@ -33,6 +33,7 @@
 #include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_input.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
+#include "editor/automation/editor_automation_screenshot.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
 #include "editor/debugger/debugger_editor_plugin.h"
@@ -55,6 +56,7 @@
 #include "editor/gui/side_rail_state.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
+#include "editor/gui/progress_dialog.h"
 #include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/startup_dialog.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -69,6 +71,7 @@
 #include "editor/workspace/workspace_tab_type.h"
 
 #include "core/config/project_settings.h"
+#include "core/crypto/crypto_core.h"
 #include "core/input/input.h"
 #include "core/input/input_event.h"
 #include "core/input/shortcut.h"
@@ -254,6 +257,93 @@ struct TileChromeSnapshot {
 	bool left_column_visible = true;
 	bool right_column_visible = true;
 };
+
+// Optional proof-gallery dumps. Set FOUNDRY_CAPTURE_DIR to a writable directory
+// before running passive_preview_input_policy; unset leaves the workflow unchanged.
+// Failures are silent (no WARN/ERROR) so headless/dummy-renderer runs do not trip
+// assert_no_new_errors when capture is requested without a real GPU path.
+void _prepare_capture_frame(EditorWorkflowTestDriver &p_driver) {
+	if (ProgressDialog *progress = ProgressDialog::get_singleton()) {
+		// Layout-load progress can linger visually under llvmpipe and occlude the
+		// workspace; hide it so gallery shots show the tile chrome under test.
+		progress->hide();
+	}
+	p_driver.flush_frames(8);
+}
+
+void _maybe_capture_editor_png(EditorWorkflowTestDriver &p_driver, const String &p_filename) {
+	const String capture_dir = OS::get_singleton()->get_environment("FOUNDRY_CAPTURE_DIR").strip_edges();
+	if (capture_dir.is_empty() || p_filename.is_empty()) {
+		return;
+	}
+	const Error mkdir_err = DirAccess::make_dir_recursive_absolute(capture_dir);
+	if (mkdir_err != OK && mkdir_err != ERR_ALREADY_EXISTS) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP mkdir %s (%d)\n", capture_dir.utf8().get_data(), (int)mkdir_err);
+		return;
+	}
+
+	_prepare_capture_frame(p_driver);
+
+	EditorAutomationScreenshotOptions options;
+	options.enabled = true;
+	options.force_draw = true;
+	options.max_bytes = 8 * 1024 * 1024;
+	const EditorAutomationScreenshotAttachment attachment =
+			EditorAutomationScreenshot::capture_on_demand(options, false, Rect2i());
+	if (attachment.status != "available" || attachment.data.is_empty()) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (%s)\n", p_filename.utf8().get_data(), attachment.reason.utf8().get_data());
+		return;
+	}
+
+	const CharString encoded = attachment.data.utf8();
+	Vector<uint8_t> png_bytes;
+	png_bytes.resize(encoded.length());
+	size_t decoded_len = 0;
+	const Error decode_err = CryptoCore::b64_decode(png_bytes.ptrw(), png_bytes.size(), &decoded_len,
+			(const uint8_t *)encoded.get_data(), encoded.length());
+	if (decode_err != OK || decoded_len == 0) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (decode)\n", p_filename.utf8().get_data());
+		return;
+	}
+	png_bytes.resize((int)decoded_len);
+
+	const String path = capture_dir.path_join(p_filename);
+	Error write_err = OK;
+	Ref<FileAccess> file = FileAccess::open(path, FileAccess::WRITE, &write_err);
+	if (file.is_null() || write_err != OK) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (write %d)\n", path.utf8().get_data(), (int)write_err);
+		return;
+	}
+	file->store_buffer(png_bytes);
+	OS::get_singleton()->print("FOUNDRY_CAPTURE %s\n", path.utf8().get_data());
+}
+
+void _capture_demoted_chrome_budget_pair(EditorWorkflowTestDriver &p_driver, ScenePaneTile *p_demoted_tile) {
+	if (p_demoted_tile == nullptr || OS::get_singleton()->get_environment("FOUNDRY_CAPTURE_DIR").strip_edges().is_empty()) {
+		return;
+	}
+	EditorTileDockRegion *region = p_demoted_tile->get_dock_region();
+	if (region == nullptr || !region->is_presentation_hidden()) {
+		return;
+	}
+	// Capture the fixed preview-only state first, then temporarily restore per-tile
+	// chrome without promoting focus to recreate the pre-fix chrome-budget collapse.
+	_maybe_capture_editor_png(p_driver, "2067_after_preview_only_horizontal.png");
+
+	region->set_presentation_hidden(false);
+	if (EditorSideRailStrip *left_rail = p_demoted_tile->get_left_rail()) {
+		left_rail->set_visible(true);
+	}
+	if (EditorSideRailStrip *right_rail = p_demoted_tile->get_right_rail()) {
+		right_rail->set_visible(true);
+	}
+	p_driver.flush_frames(20);
+	_maybe_capture_editor_png(p_driver, "2067_before_chrome_budget.png");
+
+	p_demoted_tile->set_preview_mode(p_demoted_tile->get_preview_mode());
+	p_driver.flush_frames(20);
+	_prepare_capture_frame(p_driver);
+}
 
 TileChromeSnapshot _sample_tile_chrome(ScenePaneTile *p_tile) {
 	TileChromeSnapshot snapshot;
@@ -2619,6 +2709,21 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_with_message(p_driver, result.workflow,
 				vformat("Demotion mutated stored side modes. %s", _describe_tile_preview_geometry(preview_tile, surface)));
 	}
+	p_driver.set_step("capture_demoted_chrome_budget_pair");
+	_capture_demoted_chrome_budget_pair(p_driver, preview_tile);
+	preview_tile = ObjectDB::get_instance<ScenePaneTile>(preview_tile_id);
+	spatial_view = resolve_spatial_view();
+	surface = resolve_surface();
+	if (preview_tile == nullptr || spatial_view == nullptr || surface == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The demoted 3D preview did not survive the optional capture pair.");
+	}
+	{
+		String chrome_message;
+		if (!_assert_preview_only_chrome(preview_tile, surface, chrome_message)) {
+			return _failure_with_message(p_driver, result.workflow,
+					vformat("Optional capture pair left demoted chrome unrestored. %s", chrome_message));
+		}
+	}
 
 	p_driver.set_step("configure_focused_2d_tile_chrome");
 	ScenePaneTile *focused_2d_tile = workspace->get_tile_by_id(1);
@@ -2764,6 +2869,8 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 			return _failure_with_message(p_driver, result.workflow, chrome_message);
 		}
 	}
+	p_driver.set_step("capture_promoted_chrome_restored");
+	_maybe_capture_editor_png(p_driver, "2067_after_promoted_chrome_restored.png");
 
 	// EditorAutomationState::read_editor_state() calls get_focused_viewport()->get_state(),
 	// which dereferences the View menu and its display submenu. Routing a passive preview
