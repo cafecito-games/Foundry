@@ -146,12 +146,14 @@ void EditorBoardActionsMenu::_on_id_pressed(int p_id) {
 		} break;
 		case ITEM_MOVE_LEFT: {
 			if (index > 0) {
-				strip->move_board(index, index - 1);
+				// Same deferral as close: move_board rebuilds switcher chrome and must not
+				// run inside PopupMenu input dispatch.
+				callable_mp(strip, &EditorBoardStrip::move_board).bind(index, index - 1).call_deferred();
 			}
 		} break;
 		case ITEM_MOVE_RIGHT: {
 			if (index < strip->get_board_count() - 1) {
-				strip->move_board(index, index + 1);
+				callable_mp(strip, &EditorBoardStrip::move_board).bind(index, index + 1).call_deferred();
 			}
 		} break;
 	}

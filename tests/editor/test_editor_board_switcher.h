@@ -832,6 +832,7 @@ TEST_CASE("[Editor][BoardSwitcher] Activating Move Right emits one board_moved a
 	REQUIRE(menu != nullptr);
 	menu->popup_for_board(0, Point2());
 	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_MOVE_RIGHT);
+	harness.pump();
 
 	CHECK(board_moved_counter.count == 1);
 	CHECK(harness.strip->get_board(1) == board_a);

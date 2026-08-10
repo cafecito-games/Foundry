@@ -215,8 +215,10 @@ void EditorBoardStrip::close_boards(const Vector<ObjectID> &p_board_ids) {
 }
 
 void EditorBoardStrip::abort_pending_closes() {
+	// Leave pending_close_advance_queued alone: a deferred _advance_pending_closes may
+	// already be in the message queue. It will see the empty list and return; clearing the
+	// flag here would let a brand-new close_boards() queue a second advance in the same flush.
 	pending_close_ids.clear();
-	pending_close_advance_queued = false;
 }
 
 void EditorBoardStrip::_queue_advance_pending_closes() {
