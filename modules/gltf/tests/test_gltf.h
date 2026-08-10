@@ -48,6 +48,7 @@
 #include "scene/resources/material.h"
 #include "scene/resources/packed_scene.h"
 #include "tests/core/config/test_project_settings.h"
+#include "tests/test_utils.h"
 
 #include "modules/gltf/editor/editor_scene_importer_gltf.h"
 #include "modules/gltf/gltf_document.h"
@@ -159,9 +160,15 @@ void init(const String &p_test, const String &p_copy_target = String()) {
 	}
 
 	// Copy all the necessary test data files to the res:// directory.
-	String test_data = String("modules/gltf/tests/data/").path_join(p_test);
+	// Resolve the path absolutely via the executable directory (not the process
+	// working directory) so a polluted cwd from an earlier test cannot break
+	// fixture resolution and cause a null-handle dereference.
+	String test_data = TestUtils::get_tests_dir().path_join("../modules/gltf/tests/data/").path_join(p_test).simplify_path();
 	da = DirAccess::open(test_data);
 	CHECK_MESSAGE(da.is_valid(), "Unable to open folder.");
+	if (da.is_null()) {
+		return;
+	}
 	da->list_dir_begin();
 	for (String item = da->get_next(); !item.is_empty(); item = da->get_next()) {
 		if (!FileAccess::exists(test_data.path_join(item))) {
