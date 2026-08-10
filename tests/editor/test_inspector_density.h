@@ -87,13 +87,16 @@ static void ensure_array_fixture_registered() {
 // `NOTIFICATION_THEME_CHANGED` (and populates its `theme_cache`) if the editor is already inside the
 // `SceneTree` when the child is parented, matching the trap documented on
 // `measure_float_property_minimum_height`.
+//
+// The array is deliberately left empty: a non-empty array routes each element row through
+// `EditorInspector::instantiate_property_editor()`, which depends on `EditorInspectorDefaultPlugin`
+// being registered via `EditorInspector::add_inspector_plugin()` during `EditorNode` startup. The
+// doctest harness never boots `EditorNode`, so that path returns a null property editor and crashes.
+// An empty array still builds the Size row (and its `size_slider`) unconditionally, without touching
+// any element row.
 static int measure_array_size_slider_minimum_height(const Ref<EditorTheme> &p_theme) {
 	ensure_array_fixture_registered();
 	Ref<ArrayPropertyFixtureObject> object = memnew(ArrayPropertyFixtureObject);
-	Array items;
-	items.push_back(1.0);
-	items.push_back(2.0);
-	object->set_items(items);
 
 	EditorPropertyArray *editor = memnew(EditorPropertyArray);
 	editor->setup(Variant::ARRAY);
