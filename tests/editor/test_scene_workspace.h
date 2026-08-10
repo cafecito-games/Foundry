@@ -47,6 +47,7 @@
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_tile_dock_region.h"
+#include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/editor_workspace_leaf_content.h"
 #include "editor/scene/editor_scene_tabs.h"
@@ -1315,6 +1316,72 @@ TEST_CASE("[SceneWorkspace][SceneTree][Editor] pane-scene-only-layout-renders") 
 
 	CHECK(pane->get_scene_context() != nullptr);
 	CHECK(String(h.editor_data.get_scene_path(scene_idx)) == "res://pane_scene.tscn");
+
+	h.unmount();
+}
+
+// The drop overlay lives in the pane's always-visible body host, not under the
+// chrome host that an empty pane hides, so an empty pane still offers a
+// full-size drop surface for a workspace tab drag.
+TEST_CASE("[SceneWorkspace][SceneTree][Editor] empty pane keeps a body-sized drop overlay") {
+	WorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	WorkspaceLeafNode *leaf = h.workspace->get_focused_leaf();
+	REQUIRE(leaf != nullptr);
+	WorkspacePane *pane = get_leaf_pane(leaf);
+	REQUIRE(pane != nullptr);
+
+	Control *body_host = pane->get_body_host();
+	Control *chrome_host = pane->get_chrome_host();
+	Control *placeholder = pane->get_empty_placeholder();
+	TabBar *tab_strip = pane->get_tab_strip();
+	EditorTileDropOverlay *overlay = pane->get_drop_overlay();
+	REQUIRE(body_host != nullptr);
+	REQUIRE(chrome_host != nullptr);
+	REQUIRE(placeholder != nullptr);
+	REQUIRE(tab_strip != nullptr);
+	REQUIRE(overlay != nullptr);
+
+	for (int i = 0; i < 4 && body_host->get_size().is_zero_approx(); i++) {
+		h.pump();
+	}
+
+	CHECK(pane->get_tab_count() == 0);
+	CHECK_FALSE(pane->has_bridge_content());
+	CHECK_FALSE(tab_strip->is_visible());
+	CHECK_FALSE(chrome_host->is_visible());
+	CHECK(placeholder->is_visible_in_tree());
+	CHECK(overlay->is_visible_in_tree());
+	CHECK(overlay->get_size().x > 0);
+	CHECK(overlay->get_size().y > 0);
+	CHECK(overlay->get_global_rect().is_equal_approx(body_host->get_global_rect()));
+	CHECK(overlay->get_global_rect().is_equal_approx(placeholder->get_global_rect()));
+	// Outside a drag the overlay must not swallow pointer input.
+	CHECK(overlay->get_mouse_filter() == Control::MOUSE_FILTER_IGNORE);
+
+	const Rect2 empty_overlay_rect = overlay->get_global_rect();
+
+	Node2D *root = memnew(Node2D);
+	const int scene_idx = add_test_scene(h.editor_data, leaf->get_leaf_id(), root);
+	h.editor_data.set_scene_path(scene_idx, "res://empty_pane_overlay.tscn");
+	h.workspace->sync_scene_tabs_from_editor_data();
+	h.pump();
+
+	CHECK(pane->get_tab_count() == 1);
+	CHECK(tab_strip->is_visible());
+	CHECK(chrome_host->is_visible());
+	CHECK_FALSE(placeholder->is_visible());
+	CHECK(overlay->is_visible_in_tree());
+	CHECK(overlay->get_size().x > 0);
+	CHECK(overlay->get_size().y > 0);
+	CHECK(overlay->get_global_rect().is_equal_approx(body_host->get_global_rect()));
+	CHECK(overlay->get_global_rect().is_equal_approx(chrome_host->get_global_rect()));
+	// The strip now occupies the top of the pane, and the overlay covers only the
+	// body below it.
+	CHECK(overlay->get_global_rect().position.y >= tab_strip->get_global_rect().get_end().y);
+	CHECK(overlay->get_global_rect().size.y < empty_overlay_rect.size.y);
 
 	h.unmount();
 }

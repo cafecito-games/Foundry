@@ -50,8 +50,9 @@ class ScriptLeaf;
 class Texture2D;
 
 /**
- * Generic workspace leaf content: one tab strip, one chrome host for the
- * active tab, and an explicit empty-pane placeholder.
+ * Generic workspace leaf content: one tab strip above an always-sized body host
+ * that stacks three full-rect layers -- the chrome host for the active tab, the
+ * empty-pane placeholder, and the tile drop overlay.
  */
 class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	FOUNDRY_CLASS(WorkspacePane, VBoxContainer);
@@ -65,6 +66,7 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	int active_tab_index = -1;
 	WorkspaceTabRegistry *tab_registry = nullptr;
 	TabBar *tab_strip = nullptr;
+	Control *body_host = nullptr;
 	Control *chrome_host = nullptr;
 	Control *empty_placeholder = nullptr;
 	EditorTileDropOverlay *drop_overlay = nullptr;
@@ -171,6 +173,10 @@ public:
 
 	ScenePaneTile *get_scene_tile() const { return scene_tile; }
 	ScriptLeaf *get_script_leaf() const { return script_leaf; }
+	// Always-visible, always-sized pane body. Chrome, the empty placeholder, and the
+	// drop overlay are full-rect sibling layers inside it, so the drop surface keeps
+	// its geometry even while the pane shows nothing.
+	Control *get_body_host() const { return body_host; }
 	Control *get_chrome_host() const { return chrome_host; }
 	Control *get_empty_placeholder() const { return empty_placeholder; }
 	TabBar *get_tab_strip() const { return tab_strip; }

@@ -162,7 +162,15 @@ Ref<Texture2D> SceneTabType::get_icon(const WorkspaceTab &p_tab) const {
 
 void SceneTabType::mount(WorkspaceTab &p_tab, Control *p_chrome_host) {
 	ERR_FAIL_NULL(p_chrome_host);
-	WorkspacePane *pane = Object::cast_to<WorkspacePane>(p_chrome_host->get_parent());
+	// The chrome host is nested inside the pane's body host, so the owning pane is
+	// found by walking ancestors rather than by assuming a direct parent.
+	WorkspacePane *pane = nullptr;
+	for (Node *node = p_chrome_host->get_parent(); node; node = node->get_parent()) {
+		pane = Object::cast_to<WorkspacePane>(node);
+		if (pane) {
+			break;
+		}
+	}
 	ERR_FAIL_NULL(pane);
 
 	mounted_panes[p_tab.get_stable_id()] = pane->get_instance_id();

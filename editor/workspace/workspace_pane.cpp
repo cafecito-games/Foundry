@@ -147,7 +147,7 @@ void WorkspacePane::_detach_ephemeral_chrome() {
 	mounted_tab_stable_id = -1;
 	for (int i = chrome_host->get_child_count(false) - 1; i >= 0; i--) {
 		Node *child = chrome_host->get_child(i, false);
-		if (child == scene_tile || child == script_leaf || child == drop_overlay) {
+		if (child == scene_tile || child == script_leaf) {
 			continue;
 		}
 		chrome_host->remove_child(child);
@@ -999,29 +999,37 @@ WorkspacePane::WorkspacePane() {
 	add_child(tab_strip);
 	_bind_tab_strip();
 
-	chrome_host = memnew(Control);
-	chrome_host->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	chrome_host->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	chrome_host->set_clip_contents(true);
-	add_child(chrome_host);
+	// The single expanding child below the strip. It is never hidden, so the pane
+	// body keeps its geometry no matter which content layer is showing -- an empty
+	// pane still has a full-size, hit-testable drop surface.
+	body_host = memnew(Control);
+	body_host->set_v_size_flags(Control::SIZE_EXPAND_FILL);
+	body_host->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	body_host->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	add_child(body_host);
 
-	// One rosette drop overlay per pane, painted over the pane body while any
-	// workspace tab is dragged. It stays MOUSE_FILTER_IGNORE until a drag begins.
-	drop_overlay = memnew(EditorTileDropOverlay);
-	drop_overlay->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
-	drop_overlay->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
-	chrome_host->add_child(drop_overlay);
+	chrome_host = memnew(Control);
+	chrome_host->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	chrome_host->set_clip_contents(true);
+	body_host->add_child(chrome_host);
 
 	empty_placeholder = memnew(Control);
-	empty_placeholder->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	empty_placeholder->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	empty_placeholder->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	Label *placeholder_label = memnew(Label);
 	placeholder_label->set_text(TTR("Open a scene or script to get started"));
 	placeholder_label->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
 	placeholder_label->set_vertical_alignment(VERTICAL_ALIGNMENT_CENTER);
 	placeholder_label->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 	empty_placeholder->add_child(placeholder_label);
-	add_child(empty_placeholder);
+	body_host->add_child(empty_placeholder);
+
+	// One rosette drop overlay per pane, painted over the pane body while any
+	// workspace tab is dragged. It is added last so it stacks above whichever body
+	// layer is visible, and stays MOUSE_FILTER_IGNORE until a drag begins.
+	drop_overlay = memnew(EditorTileDropOverlay);
+	drop_overlay->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	drop_overlay->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	body_host->add_child(drop_overlay);
 }
 
 WorkspacePane::~WorkspacePane() {
