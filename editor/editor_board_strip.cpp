@@ -131,13 +131,20 @@ bool EditorBoardStrip::close_board(int p_index) {
 	}
 
 	// A removal invalidates any slide in progress: board_view's target offset was computed
-	// against a board list that no longer exists, and the freed board itself may have been
-	// the outgoing half of the pair (either the one just displaced above, or a stale one
-	// left over from an earlier interrupted switch -- transition_outgoing would otherwise
-	// dangle either way). Settling instantly on the current active board is a deliberate
-	// hard cut rather than rebasing a partial animation against the new indices: this is a
-	// rare interruption, and a clean landing beats a subtly wrong ease-out.
-	transition_outgoing = nullptr;
+	// against a board list that no longer exists. The outgoing half of the pair may be the
+	// board that was just freed above (either the one just displaced, or a stale one left
+	// over from an earlier interrupted switch), but it may just as easily be a board that
+	// survives this close untouched -- p_index need not be the active or outgoing board at
+	// all. Resolving by instance id instead of dereferencing the raw pointer covers both:
+	// a freed outgoing board resolves to null and is skipped, and a surviving one is put to
+	// sleep here rather than being stranded awake and off-screen with nothing left to ever
+	// settle it. Settling instantly on the current active board is a deliberate hard cut
+	// rather than rebasing a partial animation against the new indices: this is a rare
+	// interruption, and a clean landing beats a subtly wrong ease-out.
+	if (EditorBoard *outgoing_board = ObjectDB::get_instance<EditorBoard>(transition_outgoing_id)) {
+		outgoing_board->set_dormant(true);
+	}
+	transition_outgoing_id = ObjectID();
 	board_view.switch_to_index(active_index, get_size());
 	board_view.finish_transition();
 	set_process(false);
@@ -188,9 +195,10 @@ void EditorBoardStrip::_clear_boards() {
 	boards.clear();
 	active_index = 0;
 	next_board_id = 0;
-	// Every board a slide could have been animating between is gone; drop the dangling
-	// reference and stop driving a transition with nothing left to settle.
-	transition_outgoing = nullptr;
+	// Every board a slide could have been animating between is gone; the outgoing id would
+	// resolve to null from here on regardless, but clearing it keeps the field's state
+	// consistent with "no slide in progress" rather than pointing at a freed instance id.
+	transition_outgoing_id = ObjectID();
 	set_process(false);
 }
 
@@ -249,14 +257,15 @@ void EditorBoardStrip::set_active_board(int p_index) {
 	// before this call -- that is neither the new outgoing nor the new incoming board.
 	// It is no longer part of the live pair, so it sleeps immediately rather than riding
 	// out a slide nobody is animating towards it for.
-	if (transition_outgoing && transition_outgoing != previous_active && transition_outgoing != incoming) {
-		transition_outgoing->set_dormant(true);
+	EditorBoard *stale_outgoing = ObjectDB::get_instance<EditorBoard>(transition_outgoing_id);
+	if (stale_outgoing && stale_outgoing != previous_active && stale_outgoing != incoming) {
+		stale_outgoing->set_dormant(true);
 	}
 
 	// Wake before sleeping: a frame in which every board is hidden would tear down the
 	// live scene viewports and re-create them on the next frame.
 	incoming->set_dormant(false);
-	transition_outgoing = (previous_active && previous_active != incoming) ? previous_active : nullptr;
+	transition_outgoing_id = (previous_active && previous_active != incoming) ? previous_active->get_instance_id() : ObjectID();
 
 	// active_index is committed before the focus request, because the editor resolves
 	// leaf_focus_requested through the active board's workspace. It is also committed at
@@ -283,10 +292,10 @@ void EditorBoardStrip::_advance_transition(real_t p_delta) {
 		return;
 	}
 
-	if (transition_outgoing) {
-		transition_outgoing->set_dormant(true);
-		transition_outgoing = nullptr;
+	if (EditorBoard *outgoing_board = ObjectDB::get_instance<EditorBoard>(transition_outgoing_id)) {
+		outgoing_board->set_dormant(true);
 	}
+	transition_outgoing_id = ObjectID();
 	set_process(false);
 }
 

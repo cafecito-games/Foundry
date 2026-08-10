@@ -619,4 +619,42 @@ TEST_CASE("[Editor][Boards] Interrupting a switch retargets instead of snapping"
 	h.unmount();
 }
 
+TEST_CASE("[Editor][Boards] Closing an unrelated board mid-slide still sleeps the outgoing board") {
+	// Reproduces the stranded-outgoing-board defect: closing a third board that is neither
+	// the active nor the outgoing half of an in-flight switch must not skip settling the
+	// outgoing board's dormancy. Before the fix, close_board() unconditionally cleared
+	// transition_outgoing without ever calling set_dormant(true) on the board it pointed
+	// at, so a board that survived the close was left awake, visible, and processing
+	// forever at its settled off-screen position.
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+	REQUIRE(h.strip->add_board("Second") != nullptr);
+	h.pump();
+	REQUIRE(h.strip->add_board("Third") != nullptr);
+	h.pump();
+	REQUIRE(h.strip->get_board_count() == 3);
+
+	EditorBoard *board_a = h.strip->get_board(0);
+
+	h.strip->set_active_board(1);
+	// The slide has started but not settled; A is the outgoing half and must still be awake.
+	CHECK_FALSE(board_a->is_dormant());
+
+	// Close C -- neither the active board (1) nor the outgoing board (A) -- before the
+	// slide toward B settles.
+	CHECK(h.strip->close_board(2));
+	h.pump();
+	CHECK(h.strip->get_board_count() == 2);
+	CHECK(h.strip->get_active_index() == 1);
+
+	// A must not be stranded awake: it is off-screen once the strip settles, so it must
+	// also be dormant.
+	CHECK(board_a->is_dormant());
+	CHECK_FALSE(board_a->is_visible());
+	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
+
+	h.unmount();
+}
+
 } // namespace TestEditorBoardStrip

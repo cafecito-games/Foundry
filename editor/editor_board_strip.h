@@ -59,9 +59,14 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 
 	// Drives the horizontal slide. Idle (is_animating() == false) outside of a switch.
 	EditorBoardView board_view;
-	// The board that must go dormant once the current slide finishes. Non-null exactly
-	// while a slide has an outgoing board still awake; see set_active_board().
-	EditorBoard *transition_outgoing = nullptr;
+	// The board that must go dormant once the current slide finishes. Valid exactly while
+	// a slide has an outgoing board still awake; see set_active_board(). Held by instance
+	// id rather than by pointer because a board close for an unrelated index can free the
+	// board this was pointing at without going through set_active_board() or
+	// _advance_transition() first -- resolving through ObjectDB rather than dereferencing
+	// a raw pointer is what makes every settle site safe regardless of whether the board
+	// is still alive.
+	ObjectID transition_outgoing_id;
 
 	EditorBoard *_append_board(int p_board_id, const String &p_title);
 	void _clear_boards();
