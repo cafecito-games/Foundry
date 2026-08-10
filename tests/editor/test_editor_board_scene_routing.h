@@ -178,14 +178,30 @@ TEST_CASE("[Editor][Boards] Switching to a split board targets that board's focu
 
 	EditorBoard *second = h.strip->add_board("Second");
 	REQUIRE(second != nullptr);
+	if (!second) {
+		h.unmount();
+		return;
+	}
 	EditorSceneWorkspace *second_workspace = second->get_workspace();
 	REQUIRE(second_workspace != nullptr);
+	if (!second_workspace) {
+		h.unmount();
+		return;
+	}
 	h.pump();
 
 	WorkspaceLeafNode *original = second_workspace->get_focused_leaf();
 	REQUIRE(original != nullptr);
+	if (!original) {
+		h.unmount();
+		return;
+	}
 	WorkspaceLeafNode *added = second_workspace->split(original, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 	REQUIRE(added != nullptr);
+	if (!added) {
+		h.unmount();
+		return;
+	}
 	second_workspace->set_focused_leaf(added->get_leaf_id());
 	h.pump();
 
@@ -225,8 +241,16 @@ TEST_CASE("[Editor][Boards] Scene routing with a single board is unchanged") {
 	// A split inside the one board still routes by workspace focus, not by board.
 	EditorSceneWorkspace *workspace = h.strip->get_active_workspace();
 	REQUIRE(workspace != nullptr);
+	if (!workspace) {
+		h.unmount();
+		return;
+	}
 	WorkspaceLeafNode *added = workspace->split(workspace->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 	REQUIRE(added != nullptr);
+	if (!added) {
+		h.unmount();
+		return;
+	}
 	h.pump();
 	CHECK(h.editor_data.get_focused_tile_id() == only_tile);
 
