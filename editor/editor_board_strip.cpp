@@ -199,6 +199,10 @@ EditorBoard *EditorBoardStrip::_append_board(int p_board_id, const String &p_tit
 	// Lets the workspace resolve a cross-board tab drop through find_board_for_leaf()
 	// instead of only ever looking at its own leaf list.
 	board->get_workspace()->set_board_strip(this);
+	// A split or a cross-board pane drop mints a new leaf -- and tile -- at any time, not
+	// just through this method, so the overview's preview bounds are re-synced from the
+	// signal rather than only from the call sites that happen to create boards.
+	board->get_workspace()->connect(SNAME("leaf_added"), callable_mp(this, &EditorBoardStrip::_on_leaf_added));
 	next_board_id = MAX(next_board_id, p_board_id + 1);
 
 	board->set_dormant(!boards.is_empty());
@@ -381,6 +385,13 @@ void EditorBoardStrip::set_overview(bool p_overview) {
 	}
 }
 
+void EditorBoardStrip::refresh_overview_captions() {
+	if (!board_view.is_overview_active()) {
+		return;
+	}
+	_rebuild_captions();
+}
+
 void EditorBoardStrip::_enter_overview() {
 	// Every board is on screen at once, so every board must be live. A slide still in
 	// flight has a board queued to sleep the moment it settles; that pending sleep is
@@ -411,6 +422,14 @@ void EditorBoardStrip::_leave_overview_state() {
 	if (!board_view.is_overview_active()) {
 		return;
 	}
+	// Clearing the view's own overview flag here, rather than leaving it to whatever
+	// transition a caller kicks off afterwards, is what makes it structurally impossible
+	// for is_overview_active() to still read true once this returns: every other piece of
+	// overview-only state (preview bounds, captions) is torn down unconditionally in this
+	// same function, so the flag cannot legally lag behind it, regardless of whether -- or
+	// how long after -- a caller gets around to its own switch_to_index()/exit_overview()
+	// call for the accompanying motion.
+	board_view.leave_overview();
 	_apply_overview_preview_bounds(false);
 	if (caption_overlay) {
 		caption_overlay->hide();
@@ -451,6 +470,18 @@ void EditorBoardStrip::_apply_overview_preview_bounds(bool p_overview) {
 			}
 		}
 	}
+}
+
+void EditorBoardStrip::_on_leaf_added(int p_leaf_id) {
+	if (!board_view.is_overview_active()) {
+		return;
+	}
+	// The board count has not changed, so this only needs to bring the new tile in line
+	// with the rest of the filmstrip, not retarget the view. Re-applying to every tile
+	// rather than resolving p_leaf_id's own tile keeps this on the same path
+	// _enter_overview()/_append_board() already use, so there is exactly one place that
+	// computes the shrink and cadence every tile in the overview must agree on.
+	_apply_overview_preview_bounds(true);
 }
 
 void EditorBoardStrip::_pump_overview_refresh(real_t p_delta) {

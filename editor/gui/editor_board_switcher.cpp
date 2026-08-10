@@ -236,6 +236,11 @@ void EditorBoardSwitcher::_apply_pending_rename(const String &p_text) {
 		return;
 	}
 	board->set_title(new_title);
+	// The switcher's own button relabels on the _rebuild() that follows a text_submitted
+	// signal, but the overview's captions are a separate snapshot the rename otherwise has
+	// no way to reach: the switcher's rename field stays usable while the overview is up,
+	// since renaming is exactly how a caption a user is looking at gets its name fixed.
+	strip->refresh_overview_captions();
 }
 
 void EditorBoardSwitcher::_commit_rename(const String &p_text) {

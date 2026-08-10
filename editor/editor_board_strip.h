@@ -98,8 +98,12 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	// Wakes every board, bounds every tile's preview cost, and retargets the view at the
 	// overview layout.
 	void _enter_overview();
-	// Restores every tile's preview cost and hides the captions. Does not touch the view:
-	// callers follow it with whichever transition lands the exit.
+	// Restores every tile's preview cost, hides the captions, and clears the view's own
+	// overview flag immediately (with no transition motion of its own). is_overview_active()
+	// is guaranteed false the moment this returns; callers still follow it with whichever
+	// transition (switch_to_index()/exit_overview()) lands the visual exit, but nothing
+	// between this call and that one can observe the overview-only state and the flag
+	// disagreeing.
 	void _leave_overview_state();
 	// The one way out of the overview: restores the tiles, animates onto p_index, and
 	// arranges for every other board to sleep once the motion settles.
@@ -110,6 +114,11 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	void _rebuild_captions();
 	void _layout_captions(const Transform2D &p_transform, real_t p_pitch, const Size2 &p_scaled_size);
 	void _on_caption_pressed(ObjectID p_board_id);
+	// A split or a cross-board pane drop can create a new tile at any time, live and full
+	// size by default. Wired to every board's workspace so that a tile created while the
+	// overview is up is bounded the same as the rest of the filmstrip instead of rendering
+	// at full resolution until the next overview toggle re-syncs it.
+	void _on_leaf_added(int p_leaf_id);
 
 protected:
 	void _notification(int p_what);
@@ -183,6 +192,12 @@ public:
 	// every board must be live in the overview.
 	void set_overview(bool p_overview);
 	bool is_overview_active() const { return board_view.is_overview_active(); }
+
+	// Re-draws the overview captions from each board's current title, or does nothing
+	// outside the overview. The captions are snapshotted text, not bound to the board's
+	// title property, so a rename that happens while the overview is up -- the title-bar
+	// switcher supports renaming without leaving it -- has no other way to reach them.
+	void refresh_overview_captions();
 
 	// Seconds between overview preview refreshes.
 	static constexpr real_t OVERVIEW_REFRESH_INTERVAL = real_t(1.0) / real_t(15.0);

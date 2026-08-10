@@ -387,13 +387,56 @@ TEST_CASE("[Editor][Boards] Closing a board during overview leaves no board stra
 	h.unmount();
 }
 
+TEST_CASE("[Editor][Boards] A split during overview bounds the new tile immediately") {
+	OverviewHarness h;
+	h.mount();
+
+	h.strip->set_overview(true);
+	h.pump();
+	CHECK(h.strip->is_overview_active());
+
+	const int expected_shrink = EditorBoardStrip::overview_preview_shrink_for(h.strip->get_board_count(), Size2(800, 600));
+	CHECK(expected_shrink > 1);
+
+	EditorSceneWorkspace *workspace = h.strip->get_board(0)->get_workspace();
+	WorkspaceLeafNode *new_leaf = workspace->split(workspace->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	if (!new_leaf) {
+		h.unmount();
+		FAIL_CHECK("splitting board 0 while the overview is up must still succeed");
+		return;
+	}
+
+	ScenePaneTile *new_tile = new_leaf->get_pane_tile();
+	if (!new_tile) {
+		h.unmount();
+		FAIL_CHECK("the split must produce a tile");
+		return;
+	}
+	// A tile born mid-overview must join it already bounded, not render at full
+	// resolution until the next overview toggle happens to re-sync it.
+	CHECK(new_tile->get_preview_render_shrink() == expected_shrink);
+	CHECK(new_tile->is_preview_refresh_throttled());
+
+	h.unmount();
+}
+
 TEST_CASE("[Editor][Boards] A restore during overview leaves every preview unshrunk and unthrottled") {
 	OverviewHarness h;
 	h.mount();
 
+	// Every board section is intentionally left without a persisted tiling tree, so each
+	// restored board keeps its fresh default single-leaf workspace and workspace-level
+	// restore never runs. That keeps this test isolated to the strip's own overview
+	// bookkeeping: a per-board content restore would otherwise route its own initial
+	// focus request back through the strip and incidentally clear the overview state the
+	// same way a fix would, masking exactly the bug this test exists to catch.
 	Ref<ConfigFile> config;
 	config.instantiate();
-	EditorBoardStrip::save_to_config(config, h.strip);
+	config->set_value("Boards", "board_count", h.strip->get_board_count());
+	config->set_value("Boards", "active_board", 0);
+	for (int i = 0; i < h.strip->get_board_count(); i++) {
+		config->set_value("Boards", vformat("board_%d_id", i), i);
+	}
 
 	h.strip->set_overview(true);
 	h.pump();
