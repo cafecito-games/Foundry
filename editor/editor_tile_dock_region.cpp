@@ -369,9 +369,15 @@ void EditorTileDockRegion::focus_dock(EditorDock *p_dock) {
 		_apply_side(side);
 	}
 
+	// Node::get_index() counts the TabContainer's internal TabBar, so it is one
+	// past every tab index; get_tab_idx_from_control is the only mapping that
+	// agrees with set_current_tab.
 	TabContainer *tabs = Object::cast_to<TabContainer>(p_dock->get_parent());
 	if (tabs) {
-		tabs->set_current_tab(p_dock->get_index());
+		const int tab_index = tabs->get_tab_idx_from_control(p_dock);
+		if (tab_index >= 0) {
+			tabs->set_current_tab(tab_index);
+		}
 	}
 	p_dock->grab_focus();
 }
