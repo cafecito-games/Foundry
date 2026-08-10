@@ -30,15 +30,18 @@
 
 #include "editor_automation_acceptance_workflow.h"
 
+#include "editor/automation/editor_automation_mcp_dispatcher.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
 #include "editor/debugger/debugger_editor_plugin.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
 #include "editor/project_manager/known_project_store.h"
@@ -50,10 +53,13 @@
 #include "editor/workspace/workspace_tab_type.h"
 
 #include "core/config/project_settings.h"
+#include "core/input/input_event.h"
+#include "core/input/shortcut.h"
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
+#include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
 #include "scene/gui/dialogs.h"
@@ -669,6 +675,123 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	result.ok = true;
 	result.message = "Basic scene-editing automation workflow completed.";
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_canvas_2d_zoom_automation(EditorWorkflowTestDriver &p_driver, const String &p_scene_path) {
+	Result result;
+	result.workflow = "canvas_2d_zoom_automation";
+
+	p_driver.begin_workflow();
+
+	p_driver.set_step("setup_open_scene");
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		result.ok = false;
+		result.message = "EditorNode is not ready.";
+		return result;
+	}
+	if (editor_node->load_scene(p_scene_path) != OK) {
+		result.ok = false;
+		result.message = vformat("Failed to load setup scene '%s'.", p_scene_path);
+		return result;
+	}
+#endif
+	p_driver.flush_frames(30);
+
+	p_driver.set_step("select_2d_workspace");
+#ifdef TOOLS_ENABLED
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Editor main screen is unavailable.");
+	}
+	main_screen->select(EditorMainScreen::EDITOR_2D);
+#endif
+	p_driver.flush_frames(20);
+
+	p_driver.set_step("set_canvas_2d_zoom");
+	Dictionary zoom_args;
+	zoom_args["zoom"] = 2.0;
+	const Dictionary zoom_result = p_driver.act(Dictionary(), "set_canvas_2d_zoom", zoom_args);
+	if (!p_driver.require_ok(zoom_result, "set_canvas_2d_zoom")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	if (!(bool)zoom_result.get("changed", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected set_canvas_2d_zoom to report changed:true for zoom 2.0.");
+	}
+	if (!Math::is_equal_approx(real_t(zoom_result.get("effective_zoom", 0.0)), real_t(2.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected effective_zoom == 2.0.");
+	}
+	if (!Math::is_equal_approx(real_t(zoom_result.get("requested_zoom", 0.0)), real_t(2.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected requested_zoom == 2.0.");
+	}
+	if (!zoom_result.has("tile_id")) {
+		return _failure_with_message(p_driver, result.workflow, "Expected tile_id in set_canvas_2d_zoom result.");
+	}
+
+	p_driver.set_step("verify_view_2d_zoom");
+	const Dictionary state = p_driver.read_editor_state();
+	const Dictionary view_2d = state.get("view_2d", Dictionary());
+	if (!(bool)view_2d.get("supported", false)) {
+		return _failure_with_message(p_driver, result.workflow, "view_2d is unsupported after setting canvas zoom.");
+	}
+	if (!Math::is_equal_approx(real_t(view_2d.get("zoom", 0.0)), real_t(2.0))) {
+		return _failure_with_message(p_driver, result.workflow, "Expected read_editor_state.view_2d.zoom == 2.0.");
+	}
+
+	p_driver.set_step("run_inapplicable_shortcut");
+#ifdef TOOLS_ENABLED
+	Ref<Shortcut> orphan_shortcut;
+	orphan_shortcut.instantiate();
+	orphan_shortcut->set_name("Automation Orphan Shortcut");
+	Ref<InputEventKey> orphan_key;
+	orphan_key.instantiate();
+	orphan_key->set_keycode(Key::F21);
+	Array orphan_events;
+	orphan_events.push_back(orphan_key);
+	orphan_shortcut->set_events(orphan_events);
+	EditorSettings::get_singleton()->add_shortcut("automation/orphan_shortcut_probe", orphan_shortcut);
+
+	EditorAutomationMCPDispatcher dispatcher;
+	Dictionary run_params;
+	run_params["name"] = "run_command";
+	Dictionary run_args;
+	run_args["command"] = "automation/orphan_shortcut_probe";
+	run_params["arguments"] = run_args;
+	Dictionary request;
+	request["jsonrpc"] = "2.0";
+	request["id"] = 1;
+	request["method"] = "tools/call";
+	request["params"] = run_params;
+	const Dictionary run_response = dispatcher.handle_message(request);
+	EditorSettings::get_singleton()->remove_shortcut("automation/orphan_shortcut_probe");
+
+	const Dictionary run_result = run_response.get("result", Dictionary());
+	const Dictionary shortcut_result = run_result.get("structuredContent", Dictionary());
+	if (!(bool)run_result.get("isError", false)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected MCP isError:true for unhandled shortcut.");
+	}
+#else
+	const Dictionary shortcut_result;
+#endif
+	if ((bool)shortcut_result.get("ok", true)) {
+		return _failure_with_message(p_driver, result.workflow, "Expected inapplicable standalone shortcut to fail.");
+	}
+	if (String(shortcut_result.get("kind", String())) != "shortcut_unhandled") {
+		return _failure_with_message(p_driver, result.workflow, vformat("Expected shortcut_unhandled, got '%s'.", String(shortcut_result.get("kind", String()))));
+	}
+	if (String(shortcut_result.get("route", String())) != "shortcut") {
+		return _failure_with_message(p_driver, result.workflow, "Expected route shortcut for unhandled shortcut.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Canvas 2D zoom automation workflow completed.";
 	return result;
 }
 

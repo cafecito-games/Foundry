@@ -34,6 +34,7 @@
 #include "core/input/shortcut.h"
 #include "core/templates/hash_set.h"
 #include "core/templates/sort_array.h"
+#include "scene/main/viewport.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_node.h"
@@ -84,22 +85,17 @@ bool _editor_viewport_available() {
 #endif
 }
 
-bool _push_shortcut_to_editor(const Ref<Shortcut> &p_shortcut) {
-#ifdef TOOLS_ENABLED
-	if (!_editor_viewport_available() || p_shortcut.is_null()) {
-		return false;
-	}
+} // namespace
+
+bool EditorAutomationCommands::push_shortcut_event(Viewport *p_viewport, const Ref<Shortcut> &p_shortcut) {
+	ERR_FAIL_NULL_V(p_viewport, false);
+	ERR_FAIL_COND_V(p_shortcut.is_null(), false);
 	Ref<InputEventShortcut> ev;
 	ev.instantiate();
 	ev->set_shortcut(p_shortcut);
-	EditorNode::get_singleton()->get_viewport()->push_input(ev, false);
-	return true;
-#else
-	return false;
-#endif
+	p_viewport->push_input(ev, false);
+	return p_viewport->is_input_handled();
 }
-
-} // namespace
 
 String EditorAutomationCommands::_category_from_key(const String &p_key) {
 	const int slash = p_key.find_char('/');
@@ -153,6 +149,9 @@ Dictionary EditorAutomationCommands::_entry_from_shortcut(const String &p_key, c
 
 	const bool viewport_available = _editor_viewport_available();
 	entry["runnable"] = has_events && viewport_available;
+	// runnable_by_run_command means the shortcut can be dispatched in this
+	// process. It does not promise the current UI context will handle it;
+	// execute() reports shortcut_unhandled when dispatch is ignored.
 	entry["runnable_by_run_command"] = entry["runnable"];
 
 	if (!has_events) {
@@ -355,11 +354,20 @@ Dictionary EditorAutomationCommands::execute(const String &p_command) {
 			result["candidates"] = suggest_commands(p_command);
 			return result;
 		}
-		if (!_push_shortcut_to_editor(shortcut)) {
+		if (!_editor_viewport_available()) {
 			result["ok"] = false;
 			result["kind"] = "unavailable";
 			result["message"] = vformat("Shortcut '%s' cannot run because the editor viewport is not available.", p_command);
 			result["candidates"] = suggest_commands(p_command);
+			return result;
+		}
+
+		Viewport *viewport = EditorNode::get_singleton()->get_viewport();
+		if (!push_shortcut_event(viewport, shortcut)) {
+			result["ok"] = false;
+			result["kind"] = "shortcut_unhandled";
+			result["route"] = "shortcut";
+			result["message"] = vformat("Shortcut '%s' was dispatched but no control handled it.", p_command);
 			return result;
 		}
 

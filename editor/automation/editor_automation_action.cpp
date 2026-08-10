@@ -72,6 +72,15 @@ Dictionary EditorAutomationActionResult::to_dictionary() const {
 		dict["candidates"] = candidates;
 	}
 	if (!details.is_empty()) {
+		// Promote action-specific fields to the top-level public contract while
+		// retaining the nested details object for existing consumers.
+		const Array keys = details.keys();
+		for (int i = 0; i < keys.size(); i++) {
+			const Variant key = keys[i];
+			if (!dict.has(key)) {
+				dict[key] = details[key];
+			}
+		}
 		dict["details"] = details;
 	}
 	return dict;
@@ -150,6 +159,9 @@ EditorAutomationActionKind editor_automation_action_kind_from_string(const Strin
 	}
 	if (action == "set_board_overview") {
 		return EditorAutomationActionKind::SET_BOARD_OVERVIEW;
+	}
+	if (action == "set_canvas_2d_zoom") {
+		return EditorAutomationActionKind::SET_CANVAS_2D_ZOOM;
 	}
 	return EditorAutomationActionKind::UNKNOWN;
 }

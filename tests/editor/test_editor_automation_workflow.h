@@ -410,6 +410,43 @@ TEST_CASE("[Editor][EditorAutomation] basic scene-editing workflow subprocess") 
 	CHECK(exit_code == 0);
 }
 
+TEST_CASE("[Editor][EditorAutomation] canvas 2D zoom automation workflow subprocess") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=canvas_2d_zoom_automation");
+		return;
+	}
+
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary workflow project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=canvas_2d_zoom_automation");
+
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_MESSAGE(output.contains("FOUNDRY_AUTOMATION_WORKFLOW"), "Workflow result line was not printed.");
+
+	JSON json;
+	if (output.contains("FOUNDRY_AUTOMATION_WORKFLOW")) {
+		const int line_start = output.find("FOUNDRY_AUTOMATION_WORKFLOW") + String("FOUNDRY_AUTOMATION_WORKFLOW ").length();
+		const int line_end = output.find_char('\n', line_start);
+		const String json_text = line_end >= 0 ? output.substr(line_start, line_end - line_start) : output.substr(line_start);
+		REQUIRE(json.parse(json_text.strip_edges()) == OK);
+		const Dictionary payload = json.get_data();
+		CHECK(String(payload.get("workflow", String())) == "canvas_2d_zoom_automation");
+		CHECK((bool)payload.get("ok", false));
+	}
+
+	CHECK(exit_code == 0);
+}
+
 TEST_CASE("[Editor][EditorAutomation] mvp workflow alias subprocess") {
 	if (!workflow_has_display()) {
 		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=mvp");

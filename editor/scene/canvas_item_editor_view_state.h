@@ -214,6 +214,23 @@ struct CanvasItemEditorSceneGeometryState {
 	static bool is_geometry_key(const StringName &p_key);
 };
 
+// Normalized 2D canvas zoom helpers for automation and state round-trips.
+// Normalized zoom is independent of EDSCALE: 1.0 means 100%, 2.0 means 200%.
+// Absolute zoom stored on CanvasItemEditorViewState includes MAX(1, EDSCALE).
+struct CanvasItemEditorNormalizedZoom {
+	enum class Validation {
+		OK,
+		NON_FINITE,
+		OUT_OF_RANGE,
+	};
+
+	static real_t scale_factor();
+	static real_t to_absolute(real_t p_normalized);
+	static real_t to_normalized(real_t p_absolute);
+	// Validates a normalized zoom against absolute widget limits. Does not clamp.
+	static Validation validate(real_t p_normalized, real_t p_min_absolute, real_t p_max_absolute);
+};
+
 // Pure view math that operates on CanvasItemEditorViewState without Control dependencies.
 struct CanvasItemEditorViewMath {
 	// Applies a pan scroll delta to view_offset, accounting for the current zoom.
