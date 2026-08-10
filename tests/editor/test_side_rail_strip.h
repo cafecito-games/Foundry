@@ -309,9 +309,9 @@ static void _assert_side_rail_composed_geometry(EditorSideRailButton *p_button) 
 	// Icon and label share one bottom-to-top quarter-turn.
 	CHECK(geometry.content_transform.get_rotation() == doctest::Approx(-Math::PI / 2.0));
 
-	// Label sits above the icon along the reading axis, separated by the theme gap.
-	CHECK(geometry.label_rect.get_end().y <= geometry.icon_rect.position.y + 0.5);
-	const real_t gap = geometry.icon_rect.position.y - geometry.label_rect.get_end().y;
+	// Icon sits above the label along the reading axis, separated by the theme gap.
+	CHECK(geometry.icon_rect.get_end().y <= geometry.label_rect.position.y + 0.5);
+	const real_t gap = geometry.label_rect.position.y - geometry.icon_rect.get_end().y;
 	CHECK(gap >= geometry.icon_label_separation - 0.5);
 
 	// Both rects stay inside the stylebox content rect (no clipping / neighbor bleed).

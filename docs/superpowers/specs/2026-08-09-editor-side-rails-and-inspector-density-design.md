@@ -244,11 +244,11 @@ New control, `editor/gui/editor_side_rail_strip.{h,cpp}`, modelled directly on
 container layout, so the toggle content must be drawn. New `EditorSideRailButton : Button`
 overriding `_draw` and `get_minimum_size`:
 
-- Icon and label are composed as one horizontal strip (`[icon][separation][label]`), then
+- Icon and label are composed as one horizontal strip (`[label][separation][icon]`), then
   drawn under a shared `-PI/2` transform so both share the same bottom-to-top quarter-turn
-  orientation (revises the earlier unrotated-icon contract; see #2039). The canvas editor's
-  vertical ruler labels already use this transform pattern
-  (`editor/scene/canvas_item_editor_view.cpp:2307-2311`).
+  orientation with the icon at the top of the toggle (revises the earlier unrotated-icon
+  contract; see #2039). The canvas editor's vertical ruler labels already use this transform
+  pattern (`editor/scene/canvas_item_editor_view.cpp:2307-2311`).
 - Icon bounds and label bounds are disjoint and separated by the theme's icon/label
   separation; their union stays inside the button's stylebox content rect.
 - `get_minimum_size` returns the composed strip's post-rotation size plus stylebox margins:

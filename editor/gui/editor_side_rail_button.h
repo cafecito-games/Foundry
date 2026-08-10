@@ -32,11 +32,11 @@
 
 #include "scene/gui/button.h"
 
-// A tile side-rail toggle: icon and label composed as one horizontal strip,
-// then drawn with a shared -90° transform so both read bottom-to-top. Drawing
-// is fully self-managed (Button's own icon/text layout is not used, since it
-// has no vertical mode) so get_minimum_size and _draw agree on the same
-// geometry.
+// A tile side-rail toggle: label and icon composed as one horizontal strip,
+// then drawn with a shared -90° transform so both read bottom-to-top with the
+// icon at the top of the button. Drawing is fully self-managed (Button's own
+// icon/text layout is not used, since it has no vertical mode) so
+// get_minimum_size and _draw agree on the same geometry.
 //
 // The icon-only fallback (side_rail_state.h) hides the label without changing
 // the icon or losing track of what the label would have measured; callers ask

@@ -113,11 +113,11 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 	const real_t strip_width = Math::ceil(icon_size.width + separation + text_width);
 	const real_t strip_height = Math::ceil(MAX(icon_size.height, font_height));
 
-	// Strip space lays the toggle out as a horizontal tab: icon, then
-	// separation, then label. The -PI/2 transform maps strip +x (reading
-	// direction) onto local -y, so the composed unit reads bottom-to-top with
-	// the icon at the bottom — the same orientation a horizontal tab gets when
-	// stood on end for bottom-to-top reading.
+	// Strip space lays the toggle out as [label][sep][icon]. The -PI/2
+	// transform maps strip +x onto local -y, so the composed unit reads
+	// bottom-to-top with the icon at the top of the button — matching the
+	// previous labelled-rail visual hierarchy while keeping icon and label on
+	// the same quarter-turn.
 	//
 	// Expressed entirely in this control's local space so it does not shift
 	// with the button's position in its parent (NOTIFICATION_DRAW already runs
@@ -129,18 +129,17 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 			geometry.content_rect.position.y + Math::floor((geometry.content_rect.size.y - strip_width) / 2.0) + strip_width);
 	geometry.content_transform = Transform2D(-Math::PI / 2.0, strip_origin);
 
+	const Rect2 label_strip_rect(
+			Point2(0, Math::floor((strip_height - font_height) / 2.0)),
+			Size2(text_width, font_height));
+	geometry.label_rect = _strip_rect_to_local(strip_origin, label_strip_rect);
+
 	if (geometry.has_icon) {
 		const Rect2 icon_strip_rect(
-				Point2(0, Math::floor((strip_height - icon_size.height) / 2.0)),
+				Point2(text_width + separation, Math::floor((strip_height - icon_size.height) / 2.0)),
 				icon_size);
 		geometry.icon_rect = _strip_rect_to_local(strip_origin, icon_strip_rect);
 	}
-
-	const real_t label_strip_x = icon_size.width + separation;
-	const Rect2 label_strip_rect(
-			Point2(label_strip_x, Math::floor((strip_height - font_height) / 2.0)),
-			Size2(text_width, font_height));
-	geometry.label_rect = _strip_rect_to_local(strip_origin, label_strip_rect);
 
 	return geometry;
 }
@@ -169,24 +168,22 @@ void EditorSideRailButton::_notification(int p_what) {
 			// local space and reset to identity when done.
 			draw_set_transform_matrix(geometry.content_transform);
 
-			if (geometry.has_icon) {
-				const Size2 icon_size = rail_icon->get_size();
-				const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
-				const real_t strip_height = Math::ceil(MAX(icon_size.height, font_height));
-				const Point2 icon_pos(0, Math::floor((strip_height - icon_size.height) / 2.0));
-				draw_texture(rail_icon, icon_pos);
-			}
-
 			{
 				const Size2 icon_size = geometry.has_icon ? rail_icon->get_size() : Size2();
 				const real_t separation = geometry.has_icon ? theme_cache.icon_label_separation : 0;
 				const real_t font_height = theme_cache.font->get_height(theme_cache.font_size);
 				const real_t ascent = theme_cache.font->get_ascent(theme_cache.font_size);
 				const real_t strip_height = Math::ceil(MAX(icon_size.height, font_height));
-				const Point2 text_pos(
-						icon_size.width + separation,
-						Math::floor((strip_height - font_height) / 2.0) + ascent);
+				const Point2 text_pos(0, Math::floor((strip_height - font_height) / 2.0) + ascent);
 				draw_string(theme_cache.font, text_pos, rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size, theme_cache.font_color);
+
+				if (geometry.has_icon) {
+					const real_t text_width = theme_cache.font->get_string_size(rail_label, HORIZONTAL_ALIGNMENT_LEFT, -1, theme_cache.font_size).x;
+					const Point2 icon_pos(
+							text_width + separation,
+							Math::floor((strip_height - icon_size.height) / 2.0));
+					draw_texture(rail_icon, icon_pos);
+				}
 			}
 
 			draw_set_transform_matrix(Transform2D());
