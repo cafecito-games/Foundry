@@ -212,6 +212,10 @@ int EditorTileDockRegion::_shown_dock_index(Side p_side) const {
 }
 
 bool EditorTileDockRegion::is_dock_shown(EditorDock *p_dock) const {
+	if (presentation_hidden) {
+		return false;
+	}
+
 	Side side = Side::LEFT;
 	if (!find_dock_side(p_dock, side) || !p_dock->is_enabled()) {
 		return false;
@@ -233,8 +237,29 @@ bool EditorTileDockRegion::is_dock_shown(EditorDock *p_dock) const {
 
 bool EditorTileDockRegion::_update_side_visibility(Side p_side) {
 	const Vector<EditorDock *> docks = get_side_docks(p_side);
-	const SideRailSideVisibility visibility = side_rail_side_visibility(_pure_state(p_side), docks.size());
 	bool changed = false;
+
+	if (presentation_hidden) {
+		// Force both columns away without consulting stored modes. Availability
+		// and selection may still change under the override; they are reflected
+		// when presentation is restored.
+		if (p_side == Side::LEFT) {
+			for (EditorDock *dock : docks) {
+				if (dock->is_visible()) {
+					dock->set_visible(false);
+					changed = true;
+				}
+			}
+			return changed;
+		}
+		if (right_tabs && right_tabs->is_visible()) {
+			right_tabs->set_visible(false);
+			return true;
+		}
+		return false;
+	}
+
+	const SideRailSideVisibility visibility = side_rail_side_visibility(_pure_state(p_side), docks.size());
 
 	if (p_side == Side::LEFT) {
 		for (int i = 0; i < docks.size(); i++) {
@@ -264,6 +289,32 @@ bool EditorTileDockRegion::_update_side_visibility(Side p_side) {
 		changed = true;
 	}
 	return changed;
+}
+
+void EditorTileDockRegion::set_presentation_hidden(bool p_hidden) {
+	if (presentation_hidden == p_hidden) {
+		return;
+	}
+
+	if (p_hidden) {
+		// Capture both live gaps before either column is hidden. SplitContainer
+		// rewrites its offset array synchronously on each visibility change, so
+		// hiding the sides separately would re-alias the surviving offset and
+		// corrupt the remembered width for the other side.
+		_sync_remembered_gaps();
+		presentation_hidden = true;
+		_update_side_visibility(Side::LEFT);
+		_update_side_visibility(Side::RIGHT);
+		_reapply_gaps();
+		return;
+	}
+
+	presentation_hidden = false;
+	_update_side_visibility(Side::LEFT);
+	_update_side_visibility(Side::RIGHT);
+	_reapply_gaps();
+	_notify_side_changed(Side::LEFT);
+	_notify_side_changed(Side::RIGHT);
 }
 
 void EditorTileDockRegion::_sync_remembered_gaps() {

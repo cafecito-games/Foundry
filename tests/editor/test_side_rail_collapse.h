@@ -981,4 +981,213 @@ TEST_CASE("[Editor][SideRail] tile rail toggle chords do not collide with any ot
 	CHECK_FALSE(next_board->matches_event(toggle_right_event));
 }
 
+TEST_CASE("[Editor][SideRail] preview-only presentation hides both columns without mutating stored state") {
+	const SideRailMode left_modes[] = { SideRailMode::DOCKED, SideRailMode::RAILED };
+	const SideRailMode right_modes[] = { SideRailMode::RAILED, SideRailMode::DOCKED };
+
+	for (int order = 0; order < 2; order++) {
+		INFO((order == 0 ? "left docked / right railed drawer" : "left railed / right docked"));
+		CollapseFixture fixture;
+		PackedInt32Array offsets;
+		offsets.push_back(220);
+		offsets.push_back(-240);
+		fixture.body->set_split_offsets(offsets);
+
+		fixture.region.set_side_mode(Side::LEFT, left_modes[order]);
+		fixture.region.set_side_mode(Side::RIGHT, right_modes[order]);
+		if (right_modes[order] == SideRailMode::RAILED) {
+			fixture.region.press_rail_toggle(fixture.signals);
+			REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.signals);
+		} else {
+			fixture.right_tabs()->set_current_tab(fixture.right_tabs()->get_tab_idx_from_control(fixture.groups));
+			REQUIRE(fixture.right_tabs()->get_current_tab_control() == fixture.groups);
+		}
+		if (left_modes[order] == SideRailMode::RAILED) {
+			fixture.region.press_rail_toggle(fixture.scene);
+			REQUIRE(fixture.region.get_drawer_dock(Side::LEFT) == fixture.scene);
+		}
+
+		const SideRailMode left_mode_before = fixture.region.get_side_mode(Side::LEFT);
+		const SideRailMode right_mode_before = fixture.region.get_side_mode(Side::RIGHT);
+		EditorDock *left_drawer_before = fixture.region.get_drawer_dock(Side::LEFT);
+		EditorDock *right_drawer_before = fixture.region.get_drawer_dock(Side::RIGHT);
+		const int right_tab_before = fixture.right_tabs()->get_current_tab();
+		PackedInt32Array offsets_before = fixture.body->get_split_offsets();
+
+		Ref<ConfigFile> before_config;
+		before_config.instantiate();
+		const String section = "WorkspaceLeaf_preview";
+		fixture.region.save_layout(before_config, section);
+
+		fixture.region.set_presentation_hidden(true);
+
+		CHECK(fixture.region.is_presentation_hidden());
+		CHECK(fixture.shown_docks(Side::LEFT).is_empty());
+		CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+		CHECK(fixture.center->is_visible());
+		CHECK_FALSE(fixture.region.is_dock_shown(fixture.scene));
+		CHECK_FALSE(fixture.region.is_dock_shown(fixture.signals));
+		CHECK_FALSE(fixture.region.is_dock_shown(fixture.groups));
+
+		CHECK(fixture.region.get_side_mode(Side::LEFT) == left_mode_before);
+		CHECK(fixture.region.get_side_mode(Side::RIGHT) == right_mode_before);
+		CHECK(fixture.region.get_drawer_dock(Side::LEFT) == left_drawer_before);
+		CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == right_drawer_before);
+		CHECK(fixture.right_tabs()->get_current_tab() == right_tab_before);
+
+		Ref<ConfigFile> during_config;
+		during_config.instantiate();
+		fixture.region.save_layout(during_config, section);
+		CHECK(bool(during_config->get_value(section, "tile_rail_left")) == bool(before_config->get_value(section, "tile_rail_left")));
+		CHECK(bool(during_config->get_value(section, "tile_rail_right")) == bool(before_config->get_value(section, "tile_rail_right")));
+		CHECK(String(during_config->get_value(section, "tile_drawer_dock_left")) == String(before_config->get_value(section, "tile_drawer_dock_left")));
+		CHECK(String(during_config->get_value(section, "tile_drawer_dock_right")) == String(before_config->get_value(section, "tile_drawer_dock_right")));
+		CHECK(int(during_config->get_value(section, "tile_dock_right_selected_tab_idx")) == int(before_config->get_value(section, "tile_dock_right_selected_tab_idx")));
+		CHECK(int(during_config->get_value(section, "tile_dock_hsplit_1")) == int(before_config->get_value(section, "tile_dock_hsplit_1")));
+		CHECK(int(during_config->get_value(section, "tile_dock_hsplit_2")) == int(before_config->get_value(section, "tile_dock_hsplit_2")));
+		CHECK_FALSE(during_config->has_section_key(section, "tile_presentation_hidden"));
+
+		// Availability may change while hidden and must stick on restore.
+		fixture.region.set_dock_enabled(fixture.inspector, false);
+
+		fixture.region.set_presentation_hidden(true); // idempotent re-enter
+		CHECK(fixture.region.is_presentation_hidden());
+		CHECK(fixture.shown_docks(Side::LEFT).is_empty());
+		CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+
+		fixture.region.set_presentation_hidden(false);
+
+		CHECK_FALSE(fixture.region.is_presentation_hidden());
+		CHECK(fixture.region.get_side_mode(Side::LEFT) == left_mode_before);
+		CHECK(fixture.region.get_side_mode(Side::RIGHT) == right_mode_before);
+		CHECK(fixture.region.get_drawer_dock(Side::LEFT) == left_drawer_before);
+		CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == right_drawer_before);
+		CHECK(fixture.right_tabs()->get_current_tab() == right_tab_before);
+		CHECK_FALSE(fixture.region.is_dock_shown(fixture.inspector));
+
+		if (left_mode_before == SideRailMode::DOCKED) {
+			CHECK(fixture.shown_docks(Side::LEFT).size() == 1);
+		} else {
+			CHECK(fixture.shown_docks(Side::LEFT).size() == (left_drawer_before ? 1 : 0));
+		}
+		if (right_mode_before == SideRailMode::DOCKED) {
+			const Vector<EditorDock *> shown_right = fixture.shown_docks(Side::RIGHT);
+			REQUIRE(shown_right.size() == 1);
+			CHECK(shown_right[0] == fixture.groups);
+		} else {
+			CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.signals);
+			const Vector<EditorDock *> shown_right = fixture.shown_docks(Side::RIGHT);
+			REQUIRE(shown_right.size() == 1);
+			CHECK(shown_right[0] == fixture.signals);
+		}
+
+		PackedInt32Array offsets_after = fixture.body->get_split_offsets();
+		REQUIRE(offsets_after.size() == offsets_before.size());
+		for (int i = 0; i < offsets_before.size(); i++) {
+			CHECK(offsets_after[i] == offsets_before[i]);
+		}
+
+		fixture.region.set_presentation_hidden(false); // idempotent leave
+		CHECK_FALSE(fixture.region.is_presentation_hidden());
+	}
+}
+
+TEST_CASE("[Editor][SideRail] demoted scene tiles hide docks and rails and restore them on focus") {
+	RailWorkspaceHarness h;
+	h.mount();
+	// Narrower than the combined dock/rail minima of two docked tiles so a
+	// horizontal demoted tile would otherwise collapse its preview to zero width.
+	h.host->set_custom_minimum_size(Size2(900, 500));
+	h.host->set_size(Size2(900, 500));
+	h.workspace->set_size(Size2(900, 500));
+	h.pump();
+
+	WorkspaceLeafNode *first = h.workspace->get_focused_leaf();
+	WorkspaceLeafNode *second = h.workspace->split(first, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(second != nullptr);
+
+	ScenePaneTile *tile_a = first->get_pane_tile();
+	ScenePaneTile *tile_b = second->get_pane_tile();
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+
+	EditorTileDockRegion *region_a = tile_a->get_dock_region();
+	EditorTileDockRegion *region_b = tile_b->get_dock_region();
+	region_a->set_side_mode(Side::LEFT, SideRailMode::DOCKED);
+	region_a->set_side_mode(Side::RIGHT, SideRailMode::RAILED);
+	region_a->press_rail_toggle(tile_a->get_signals_dock());
+	region_b->set_side_mode(Side::LEFT, SideRailMode::RAILED);
+	region_b->set_side_mode(Side::RIGHT, SideRailMode::DOCKED);
+	h.pump();
+
+	const SideRailMode a_left_before = region_a->get_side_mode(Side::LEFT);
+	const SideRailMode a_right_before = region_a->get_side_mode(Side::RIGHT);
+	EditorDock *a_right_drawer = region_a->get_drawer_dock(Side::RIGHT);
+	const SideRailMode b_left_before = region_b->get_side_mode(Side::LEFT);
+	const SideRailMode b_right_before = region_b->get_side_mode(Side::RIGHT);
+
+	auto assert_preview_only = [](ScenePaneTile *p_tile) {
+		REQUIRE(p_tile != nullptr);
+		CHECK(p_tile->get_dock_region()->is_presentation_hidden());
+		CHECK_FALSE(p_tile->get_left_rail()->is_visible());
+		CHECK_FALSE(p_tile->get_right_rail()->is_visible());
+		CHECK_FALSE(p_tile->get_scene_tree_dock()->is_visible());
+		CHECK_FALSE(p_tile->get_dock_region()->get_right_tabs()->is_visible());
+		CHECK(p_tile->get_content_host()->is_visible());
+		const real_t tile_width = p_tile->get_size().x;
+		const real_t host_width = p_tile->get_content_host()->get_size().x;
+		CHECK(tile_width > 0);
+		CHECK(host_width > 0);
+		CHECK(host_width >= tile_width * 0.8);
+	};
+
+	auto assert_chrome_restored = [](ScenePaneTile *p_tile, SideRailMode p_left, SideRailMode p_right) {
+		REQUIRE(p_tile != nullptr);
+		CHECK_FALSE(p_tile->get_dock_region()->is_presentation_hidden());
+		CHECK(p_tile->get_left_rail()->is_visible());
+		CHECK(p_tile->get_right_rail()->is_visible());
+		CHECK(p_tile->get_dock_region()->get_side_mode(Side::LEFT) == p_left);
+		CHECK(p_tile->get_dock_region()->get_side_mode(Side::RIGHT) == p_right);
+	};
+
+	CHECK(tile_a->get_preview_mode() == TilePreviewMode::FOCUSED_LIVE);
+	assert_chrome_restored(tile_a, a_left_before, a_right_before);
+
+	tile_a->set_preview_mode(TilePreviewMode::LIVE_3D);
+	h.pump();
+	assert_preview_only(tile_a);
+	CHECK(region_a->get_side_mode(Side::LEFT) == a_left_before);
+	CHECK(region_a->get_side_mode(Side::RIGHT) == a_right_before);
+	CHECK(region_a->get_drawer_dock(Side::RIGHT) == a_right_drawer);
+	CHECK(region_b->get_side_mode(Side::LEFT) == b_left_before);
+	CHECK(region_b->get_side_mode(Side::RIGHT) == b_right_before);
+
+	tile_b->set_preview_mode(TilePreviewMode::LIVE_2D);
+	h.pump();
+	assert_preview_only(tile_b);
+	CHECK(region_b->get_side_mode(Side::LEFT) == b_left_before);
+	CHECK(region_b->get_side_mode(Side::RIGHT) == b_right_before);
+
+	tile_a->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+	h.pump();
+	assert_chrome_restored(tile_a, a_left_before, a_right_before);
+	CHECK(region_a->get_drawer_dock(Side::RIGHT) == a_right_drawer);
+	assert_preview_only(tile_b);
+
+	tile_b->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+	tile_a->set_preview_mode(TilePreviewMode::LIVE_2D);
+	h.pump();
+	assert_chrome_restored(tile_b, b_left_before, b_right_before);
+	assert_preview_only(tile_a);
+
+	// A single focused tile keeps its normal presentation.
+	tile_a->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+	h.pump();
+	assert_chrome_restored(tile_a, a_left_before, a_right_before);
+	assert_chrome_restored(tile_b, b_left_before, b_right_before);
+
+	h.unmount();
+}
+
 } // namespace TestSideRailCollapse

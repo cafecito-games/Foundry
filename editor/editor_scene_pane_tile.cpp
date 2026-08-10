@@ -206,6 +206,8 @@ void ScenePaneTile::set_focused_visual(bool p_focused) {
 }
 
 void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode) {
+	preview_mode = p_mode;
+
 	const bool show_canvas_view = p_mode == TilePreviewMode::LIVE_2D && canvas_view;
 	if (preview_container) {
 		preview_container->set_visible(p_mode == TilePreviewMode::LIVE_2D && !show_canvas_view);
@@ -221,6 +223,21 @@ void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode) {
 	}
 	if (context_viewport_host) {
 		context_viewport_host->set_visible(p_mode == TilePreviewMode::LIVE_3D);
+	}
+
+	// Demoted live tiles are preview-only: hide both dock columns and both side
+	// rails so a horizontal split keeps a usable preview surface. The dock
+	// region's stored modes/drawers/offsets are left untouched and restored on
+	// promotion; rails are only hidden, never destroyed or rebuilt.
+	// set_presentation_hidden is itself idempotent, so repeated LIVE_* calls do
+	// not re-capture gaps or thrash remembered widths.
+	const bool preview_only = p_mode == TilePreviewMode::LIVE_2D || p_mode == TilePreviewMode::LIVE_3D;
+	dock_region.set_presentation_hidden(preview_only);
+	if (left_rail) {
+		left_rail->set_visible(!preview_only);
+	}
+	if (right_rail) {
+		right_rail->set_visible(!preview_only);
 	}
 }
 

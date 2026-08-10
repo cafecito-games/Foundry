@@ -102,6 +102,7 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	PanelContainer *focus_frame = nullptr; // Accent border when focused.
 	EditorSideRailStrip *left_rail = nullptr;
 	EditorSideRailStrip *right_rail = nullptr;
+	TilePreviewMode preview_mode = TilePreviewMode::FOCUSED_LIVE;
 
 	// Cost bounds applied while the tile is drawn shrunk in the board overview. Neither
 	// affects layout: the shrink only changes how many pixels the tile's SubViewports
@@ -180,6 +181,7 @@ public:
 
 	void set_focused_visual(bool p_focused);
 	void set_preview_mode(TilePreviewMode p_mode);
+	TilePreviewMode get_preview_mode() const { return preview_mode; }
 	void bind_3d_preview_world(const Ref<World3D> &p_world);
 	void apply_3d_preview_camera_state(const Dictionary &p_viewport_state);
 

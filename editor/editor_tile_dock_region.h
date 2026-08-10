@@ -79,6 +79,11 @@ private:
 	SideState sides[2];
 	bool has_remembered_gap[GAP_MAX] = { false, false };
 	int remembered_gap[GAP_MAX] = { 0, 0 };
+	// Transient preview-only chrome override. Hides both dock columns without
+	// mutating stored side modes, drawers, or selected tabs. Split gaps are
+	// remembered by identity before either column is hidden so promotion can
+	// restore the exact prior presentation.
+	bool presentation_hidden = false;
 
 	static int _side_index(Side p_side) { return p_side == Side::LEFT ? 0 : 1; }
 
@@ -126,6 +131,12 @@ public:
 
 	void focus_dock(EditorDock *p_dock);
 	void set_dock_enabled(EditorDock *p_dock, bool p_enabled);
+
+	// Preview-only presentation: hide both dock columns as one operation while
+	// leaving stored side state untouched. Idempotent. save_layout() continues
+	// to write the underlying user state, never this override.
+	void set_presentation_hidden(bool p_hidden);
+	bool is_presentation_hidden() const { return presentation_hidden; }
 
 	void save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const;
 	void load_layout(const Ref<ConfigFile> &p_config, const String &p_section);
