@@ -11298,8 +11298,8 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/distraction_free_mode", TTRC("Distraction Free Mode"), KeyModifierMask::CTRL | KeyModifierMask::SHIFT | Key::F11);
 	ED_SHORTCUT_OVERRIDE("editor/distraction_free_mode", "macos", KeyModifierMask::META | KeyModifierMask::SHIFT | Key::D);
 	ED_SHORTCUT_AND_COMMAND("editor/toggle_last_opened_bottom_panel", TTRC("Toggle Last Opened Bottom Panel"), KeyModifierMask::CMD_OR_CTRL | Key::J);
-	ED_SHORTCUT_AND_COMMAND("editor/previous_board", TTRC("Previous Board"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key::LEFT);
-	ED_SHORTCUT_AND_COMMAND("editor/next_board", TTRC("Next Board"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::ALT | Key::RIGHT);
+	ED_SHORTCUT_AND_COMMAND("editor/previous_board", TTRC("Previous Board"), KeyModifierMask::CMD_OR_CTRL | Key::PAGEUP);
+	ED_SHORTCUT_AND_COMMAND("editor/next_board", TTRC("Next Board"), KeyModifierMask::CMD_OR_CTRL | Key::PAGEDOWN);
 	distraction_free->set_shortcut(ED_GET_SHORTCUT("editor/distraction_free_mode"));
 	distraction_free->set_tooltip_text(TTRC("Toggle distraction-free mode."));
 	distraction_free->set_toggle_mode(true);
