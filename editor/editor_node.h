@@ -355,7 +355,7 @@ private:
 	// after the active one would claim editor focus for a board the user cannot see.
 	bool restoring_boards = false;
 	// Identity of the board whose scenes are being closed one prompt at a time. The board
-	// itself is freed only once that queue drains; cancelling any prompt clears this and
+	// itself is freed only once that queue drains; canceling any prompt clears this and
 	// the board survives with every scene intact. Stored as an instance id rather than a
 	// list index because an unrelated board close can interleave while these prompts are
 	// still on screen and shift every index after it; the finish step re-resolves this id

@@ -9001,7 +9001,7 @@ void EditorNode::_cancel_close_scene_tab() {
 	}
 	changing_scene = false;
 	tabs_to_close.clear();
-	// Cancelling any one prompt aborts the whole board close: the board and every scene
+	// Canceling any one prompt aborts the whole board close: the board and every scene
 	// still in it survive.
 	pending_board_close_id = ObjectID();
 }
