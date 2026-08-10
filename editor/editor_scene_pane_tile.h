@@ -126,6 +126,10 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	void _bind_focus_on_interaction(Control *p_control);
 	void _fit_content_child(Control *p_child);
 	void _fit_content_children();
+	// Applies dock-column + rail visibility from the current preview_mode. Safe to
+	// call deferred: a stale hide queued mid-drag is ignored once the mode is
+	// FOCUSED_LIVE again.
+	void _apply_preview_chrome_for_current_mode();
 
 protected:
 	void _notification(int p_what);

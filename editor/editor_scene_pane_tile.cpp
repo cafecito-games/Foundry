@@ -205,7 +205,21 @@ void ScenePaneTile::set_focused_visual(bool p_focused) {
 	}
 }
 
+void ScenePaneTile::_apply_preview_chrome_for_current_mode() {
+	const bool preview_only = preview_mode == TilePreviewMode::LIVE_2D || preview_mode == TilePreviewMode::LIVE_3D;
+	dock_region.set_presentation_hidden(preview_only);
+	if (left_rail) {
+		left_rail->set_visible(!preview_only);
+	}
+	if (right_rail) {
+		right_rail->set_visible(!preview_only);
+	}
+}
+
 void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode) {
+	// preview_mode is retained even when surfaces are refreshed with the same
+	// mode: EditorNode may call LIVE_2D/LIVE_3D before canvas_view/spatial_view
+	// exist and relies on a later identical call to flip the surface visibility.
 	preview_mode = p_mode;
 
 	const bool show_canvas_view = p_mode == TilePreviewMode::LIVE_2D && canvas_view;
@@ -232,13 +246,16 @@ void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode) {
 	// set_presentation_hidden is itself idempotent, so repeated LIVE_* calls do
 	// not re-capture gaps or thrash remembered widths.
 	const bool preview_only = p_mode == TilePreviewMode::LIVE_2D || p_mode == TilePreviewMode::LIVE_3D;
-	dock_region.set_presentation_hidden(preview_only);
-	if (left_rail) {
-		left_rail->set_visible(!preview_only);
+	Viewport *vp = get_viewport();
+	if (preview_only && vp && vp->gui_is_dragging()) {
+		// Hiding the previously focused tile's docks mid-drag synthesizes a
+		// mouse-button release into the drag source via Viewport::_gui_hide_control.
+		// Defer the chrome hide until after the drag resolves; promotion applies
+		// immediately and cancels a stale deferred hide via preview_mode.
+		callable_mp(this, &ScenePaneTile::_apply_preview_chrome_for_current_mode).call_deferred();
+		return;
 	}
-	if (right_rail) {
-		right_rail->set_visible(!preview_only);
-	}
+	_apply_preview_chrome_for_current_mode();
 }
 
 void ScenePaneTile::bind_3d_preview_world(const Ref<World3D> &p_world) {

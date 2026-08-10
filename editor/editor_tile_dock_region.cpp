@@ -186,6 +186,35 @@ void EditorTileDockRegion::_store_state(Side p_side, const SideRailSideState &p_
 int EditorTileDockRegion::_shown_dock_index(Side p_side) const {
 	const Vector<EditorDock *> docks = get_side_docks(p_side);
 
+	if (presentation_hidden) {
+		// Report what the side would show if presentation were restored, so
+		// mode/drawer transitions taken while columns are hidden produce the
+		// same stored state as when visible.
+		const SideRailSideVisibility visibility = side_rail_side_visibility(_pure_state(p_side), docks.size());
+		if (!visibility.side_shown) {
+			return -1;
+		}
+		if (!visibility.all_docks_shown) {
+			return visibility.single_dock;
+		}
+		if (p_side == Side::RIGHT) {
+			if (!right_tabs) {
+				return -1;
+			}
+			const int index = docks.find(Object::cast_to<EditorDock>(right_tabs->get_current_tab_control()));
+			if (index < 0 || !docks[index]->is_enabled()) {
+				return -1;
+			}
+			return index;
+		}
+		for (int i = 0; i < docks.size(); i++) {
+			if (docks[i]->is_enabled()) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	if (p_side == Side::RIGHT) {
 		if (!right_tabs || !right_tabs->is_visible()) {
 			return -1;
@@ -303,16 +332,22 @@ void EditorTileDockRegion::set_presentation_hidden(bool p_hidden) {
 		// corrupt the remembered width for the other side.
 		_sync_remembered_gaps();
 		presentation_hidden = true;
-		_update_side_visibility(Side::LEFT);
-		_update_side_visibility(Side::RIGHT);
-		_reapply_gaps();
+		bool changed = _update_side_visibility(Side::LEFT);
+		changed = _update_side_visibility(Side::RIGHT) || changed;
+		if (changed) {
+			_reapply_gaps();
+		}
+		_notify_side_changed(Side::LEFT);
+		_notify_side_changed(Side::RIGHT);
 		return;
 	}
 
 	presentation_hidden = false;
-	_update_side_visibility(Side::LEFT);
-	_update_side_visibility(Side::RIGHT);
-	_reapply_gaps();
+	bool changed = _update_side_visibility(Side::LEFT);
+	changed = _update_side_visibility(Side::RIGHT) || changed;
+	if (changed) {
+		_reapply_gaps();
+	}
 	_notify_side_changed(Side::LEFT);
 	_notify_side_changed(Side::RIGHT);
 }

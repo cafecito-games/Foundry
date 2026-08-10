@@ -2519,11 +2519,23 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 	// Narrow enough that a horizontal demoted tile with both dock columns and both
 	// rails visible collapses its preview surface; wide enough for a preview-only
-	// demoted tile to keep a usable surface for pointer probes.
+	// demoted tile to keep a usable surface for pointer probes. Restore on every
+	// exit so interactive MCP runs do not persist the temporary size.
 	const Size2i constrained_size(1600, 900);
+	const Size2i original_window_size = root_window->get_size();
+	struct RestoreWindowSize {
+		Window *window = nullptr;
+		Size2i size;
+		~RestoreWindowSize() {
+			if (window) {
+				window->set_size(size);
+			}
+		}
+	} restore_window_size{ root_window, original_window_size };
 	root_window->set_size(constrained_size);
 	p_driver.flush_frames(10);
-	if (root_window->get_size().x < constrained_size.x / 2) {
+	if (Math::abs(root_window->get_size().x - constrained_size.x) > 64 ||
+			Math::abs(root_window->get_size().y - constrained_size.y) > 64) {
 		return _failure_with_message(p_driver, result.workflow,
 				vformat("Failed to constrain the editor window (got %s, wanted %s).",
 						String(root_window->get_size()), String(constrained_size)));
