@@ -353,4 +353,64 @@ TEST_CASE("[Editor][BoardSwitcher] Closing the active board through the strip re
 	harness.unmount();
 }
 
+TEST_CASE("[Editor][BoardSwitcher] Renaming while the overview is up refreshes the caption") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+	harness.strip->set_size(Size2(800, 600));
+
+	harness.strip->set_overview(true);
+
+	Control *overlay = harness.strip->get_caption_overlay();
+	REQUIRE(overlay != nullptr);
+	if (!overlay) {
+		harness.unmount();
+		return;
+	}
+	REQUIRE(overlay->get_child_count() == 1);
+	Button *caption = Object::cast_to<Button>(overlay->get_child(0));
+	REQUIRE(caption != nullptr);
+	if (!caption) {
+		harness.unmount();
+		return;
+	}
+
+	// The switcher's own board button stays reachable and renameable while the overview
+	// is up; nothing about it gates renaming on the strip's view mode.
+	Button *button = harness.board_button(0);
+	REQUIRE(button != nullptr);
+	if (!button) {
+		harness.unmount();
+		return;
+	}
+	harness.double_click(button);
+	REQUIRE(harness.switcher->is_renaming());
+
+	LineEdit *rename_edit = harness.find_rename_edit();
+	REQUIRE(rename_edit != nullptr);
+	if (!rename_edit) {
+		harness.unmount();
+		return;
+	}
+	rename_edit->set_text("renamed during overview");
+	rename_edit->emit_signal(SceneStringName(text_submitted), String("renamed during overview"));
+
+	CHECK(harness.strip->get_board(0)->get_title() == "renamed during overview");
+	// The caption is a snapshot taken when it was last built, not a live binding to the
+	// board's title, so nothing but an explicit refresh keeps it in step with a rename
+	// that happens while it is on screen. _rebuild_captions() replaces every caption
+	// control outright, so the refreshed one is re-resolved from the overlay rather than
+	// read off the pre-rename pointer, which the refresh may have already queued for
+	// freeing.
+	REQUIRE(overlay->get_child_count() == 1);
+	Button *refreshed_caption = Object::cast_to<Button>(overlay->get_child(0));
+	REQUIRE(refreshed_caption != nullptr);
+	if (!refreshed_caption) {
+		harness.unmount();
+		return;
+	}
+	CHECK(refreshed_caption->get_text() == "renamed during overview");
+
+	harness.unmount();
+}
+
 } // namespace TestEditorBoardSwitcher

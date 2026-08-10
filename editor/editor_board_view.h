@@ -125,6 +125,15 @@ public:
 	// Leaves the overview layout, animating back to p_active_index at scale 1.
 	void exit_overview(int p_active_index, const Size2 &p_viewport);
 
+	// Clears the overview flag immediately, without starting or altering any transition.
+	// Exists so a caller that tears down the overview's UI-side state (preview bounds,
+	// captions) can make is_overview_active() agree with that teardown right away, even
+	// when it defers -- or never reaches -- the switch_to_index()/exit_overview() call
+	// that would otherwise be the only thing clearing the flag. Idempotent, and safe to
+	// call before a follow-up switch_to_index()/exit_overview(): both already clear the
+	// flag themselves and neither depends on its prior value.
+	void leave_overview() { overview = false; }
+
 	// Resolves the board under p_point while the overview is active, or -1
 	// when the view is not in overview or the point is outside every board
 	// (including the gutters between them and the space above/below them).

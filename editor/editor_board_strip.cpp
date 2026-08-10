@@ -32,11 +32,17 @@
 
 #include "editor/editor_board.h"
 #include "editor/editor_data.h"
+#include "editor/editor_scene_pane_tile.h"
 
 #include "core/io/config_file.h"
+#include "core/math/math_funcs.h"
+#include "scene/gui/button.h"
+#include "scene/scene_string_names.h"
 
 namespace {
 constexpr const char *BOARDS_SECTION = "Boards";
+// Vertical gap, in pixels, between a board's bottom edge and its caption.
+constexpr real_t CAPTION_MARGIN = 6.0;
 } // namespace
 
 void EditorBoardStrip::_notification(int p_what) {
@@ -50,10 +56,15 @@ void EditorBoardStrip::_notification(int p_what) {
 				const Point2 position = transform.xform(Point2(real_t(i) * pitch, 0.0));
 				fit_child_in_rect(boards[i], Rect2(position, scaled_size));
 			}
+			_layout_captions(transform, pitch, scaled_size);
 		} break;
 
 		case NOTIFICATION_PROCESS: {
-			_advance_transition(real_t(get_process_delta_time()));
+			const real_t delta = real_t(get_process_delta_time());
+			_advance_transition(delta);
+			if (board_view.is_overview_active()) {
+				_pump_overview_refresh(delta);
+			}
 		} break;
 	}
 }
@@ -67,6 +78,9 @@ void EditorBoardStrip::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("board_about_to_close", PropertyInfo(Variant::INT, "index")));
 	ADD_SIGNAL(MethodInfo("board_removed", PropertyInfo(Variant::INT, "index")));
 	ADD_SIGNAL(MethodInfo("active_board_changed", PropertyInfo(Variant::INT, "index")));
+	// Emitted when the zoomed-out overview is entered or left, at the start of the motion
+	// rather than once it settles, so chrome reflecting the mode never lags a transition.
+	ADD_SIGNAL(MethodInfo("overview_changed", PropertyInfo(Variant::BOOL, "active")));
 }
 
 EditorBoardStrip *EditorBoardStrip::create(EditorSelection *p_editor_selection, EditorData *p_editor_data) {
@@ -114,7 +128,7 @@ bool EditorBoardStrip::close_board(int p_index) {
 		ERR_FAIL_COND_V(boards[p_index] != board, false);
 	}
 
-	// Activate a neighbour before the outgoing board is torn down so the editor is
+	// Activate a neighbor before the outgoing board is torn down so the editor is
 	// never left without a live board.
 	if (p_index == active_index) {
 		set_active_board(p_index > 0 ? p_index - 1 : p_index + 1);
@@ -141,10 +155,14 @@ bool EditorBoardStrip::close_board(int p_index) {
 	// settle it. Settling instantly on the current active board is a deliberate hard cut
 	// rather than rebasing a partial animation against the new indices: this is a rare
 	// interruption, and a clean landing beats a subtly wrong ease-out.
-	if (EditorBoard *outgoing_board = ObjectDB::get_instance<EditorBoard>(transition_outgoing_id)) {
-		outgoing_board->set_dormant(true);
+	// The same hard cut applies to a zoom out of the overview: the tiles' preview bounds and
+	// the caption overlay are torn down here rather than left stranded in overview state
+	// with no transition left to finish them.
+	if (board_view.is_overview_active()) {
+		_leave_overview_state();
+		overview_exit_pending = true;
 	}
-	transition_outgoing_id = ObjectID();
+	_settle_dormancy();
 	board_view.switch_to_index(active_index, get_size());
 	board_view.finish_transition();
 	set_process(false);
@@ -181,11 +199,27 @@ EditorBoard *EditorBoardStrip::_append_board(int p_board_id, const String &p_tit
 	// Lets the workspace resolve a cross-board tab drop through find_board_for_leaf()
 	// instead of only ever looking at its own leaf list.
 	board->get_workspace()->set_board_strip(this);
+	// A split or a cross-board pane drop mints a new leaf -- and tile -- at any time, not
+	// just through this method, so the overview's preview bounds are re-synced from the
+	// signal rather than only from the call sites that happen to create boards.
+	board->get_workspace()->connect(SNAME("leaf_added"), callable_mp(this, &EditorBoardStrip::_on_leaf_added));
 	next_board_id = MAX(next_board_id, p_board_id + 1);
 
 	board->set_dormant(!boards.is_empty());
 	boards.push_back(board);
 	add_child(board);
+	// The captions draw on top of every board, which for a Control means being the last
+	// child; a board appended after them would otherwise cover them.
+	if (caption_overlay) {
+		move_child(caption_overlay, get_child_count() - 1);
+	}
+	if (board_view.is_overview_active()) {
+		// A board added while the filmstrip is up joins it live and bounded like the rest.
+		board->set_dormant(false);
+		_apply_overview_preview_bounds(true);
+		_rebuild_captions();
+		board_view.enter_overview(boards.size(), active_index, get_size());
+	}
 	queue_sort();
 	return board;
 }
@@ -202,6 +236,7 @@ void EditorBoardStrip::_clear_boards() {
 	// resolve to null from here on regardless, but clearing it keeps the field's state
 	// consistent with "no slide in progress" rather than pointing at a freed instance id.
 	transition_outgoing_id = ObjectID();
+	overview_exit_pending = false;
 	set_process(false);
 }
 
@@ -243,6 +278,18 @@ int EditorBoardStrip::resolve_board_index(ObjectID p_board_id) const {
 }
 
 void EditorBoardStrip::set_active_board(int p_index) {
+	ERR_FAIL_INDEX(p_index, boards.size());
+	if (board_view.is_overview_active()) {
+		// Selecting a board is how the overview is left. Routing every selection through
+		// one exit is what keeps the tiles' preview bounds and the caption overlay from
+		// being stranded in their overview state by a caller that only knows about boards.
+		_exit_overview_to(p_index);
+		return;
+	}
+	_switch_to_board(p_index);
+}
+
+void EditorBoardStrip::_switch_to_board(int p_index) {
 	ERR_FAIL_INDEX(p_index, boards.size());
 	if (p_index == active_index) {
 		return;
@@ -295,11 +342,236 @@ void EditorBoardStrip::_advance_transition(real_t p_delta) {
 		return;
 	}
 
+	_settle_dormancy();
+	// The overview keeps processing after its zoom settles: the throttled preview tick has
+	// to keep running for as long as the filmstrip is on screen.
+	if (!board_view.is_overview_active()) {
+		set_process(false);
+	}
+}
+
+void EditorBoardStrip::_settle_dormancy() {
 	if (EditorBoard *outgoing_board = ObjectDB::get_instance<EditorBoard>(transition_outgoing_id)) {
 		outgoing_board->set_dormant(true);
 	}
 	transition_outgoing_id = ObjectID();
-	set_process(false);
+
+	if (overview_exit_pending) {
+		// Every board stayed awake for the zoom back in so none of them blanked mid-motion;
+		// only the board landed on survives it.
+		for (int i = 0; i < boards.size(); i++) {
+			boards[i]->set_dormant(i != active_index);
+		}
+		overview_exit_pending = false;
+	}
+}
+
+int EditorBoardStrip::overview_preview_shrink_for(int p_board_count, const Size2 &p_viewport) {
+	const real_t board_scale = EditorBoardView::overview_scale_for(p_board_count, p_viewport);
+	if (board_scale <= CMP_EPSILON) {
+		return 1;
+	}
+	return MAX(1, int(Math::round(real_t(1.0) / board_scale)));
+}
+
+void EditorBoardStrip::set_overview(bool p_overview) {
+	if (p_overview == board_view.is_overview_active()) {
+		return;
+	}
+	if (p_overview) {
+		_enter_overview();
+	} else {
+		_exit_overview_to(active_index);
+	}
+}
+
+void EditorBoardStrip::refresh_overview_captions() {
+	if (!board_view.is_overview_active()) {
+		return;
+	}
+	_rebuild_captions();
+}
+
+void EditorBoardStrip::_enter_overview() {
+	// Every board is on screen at once, so every board must be live. A slide still in
+	// flight has a board queued to sleep the moment it settles; that pending sleep is
+	// dropped here rather than allowed to blank one frame of the filmstrip. The zoom out
+	// itself retargets from wherever the slide currently is, so the two motions join up
+	// instead of snapping.
+	transition_outgoing_id = ObjectID();
+	overview_exit_pending = false;
+	for (EditorBoard *board : boards) {
+		board->set_dormant(false);
+	}
+
+	board_view.enter_overview(boards.size(), active_index, get_size());
+	_apply_overview_preview_bounds(true);
+	_rebuild_captions();
+	if (caption_overlay) {
+		caption_overlay->show();
+	}
+
+	overview_refresh_accumulator = 0.0;
+	overview_refresh_count = 0;
+	set_process(true);
+	queue_sort();
+	emit_signal(SNAME("overview_changed"), true);
+}
+
+void EditorBoardStrip::_leave_overview_state() {
+	if (!board_view.is_overview_active()) {
+		return;
+	}
+	// Clearing the view's own overview flag here, rather than leaving it to whatever
+	// transition a caller kicks off afterwards, is what makes it structurally impossible
+	// for is_overview_active() to still read true once this returns: every other piece of
+	// overview-only state (preview bounds, captions) is torn down unconditionally in this
+	// same function, so the flag cannot legally lag behind it, regardless of whether -- or
+	// how long after -- a caller gets around to its own switch_to_index()/exit_overview()
+	// call for the accompanying motion.
+	board_view.leave_overview();
+	_apply_overview_preview_bounds(false);
+	if (caption_overlay) {
+		caption_overlay->hide();
+	}
+	emit_signal(SNAME("overview_changed"), false);
+}
+
+void EditorBoardStrip::_exit_overview_to(int p_index) {
+	ERR_FAIL_INDEX(p_index, boards.size());
+	if (!board_view.is_overview_active()) {
+		return;
+	}
+
+	_leave_overview_state();
+	if (p_index != active_index) {
+		// The switch supplies the zoom back in: switch_to_index() retargets from the
+		// overview's current scale and origin, so this stays one continuous motion.
+		_switch_to_board(p_index);
+	} else {
+		board_view.exit_overview(active_index, get_size());
+		set_process(true);
+		queue_sort();
+	}
+	overview_exit_pending = true;
+}
+
+void EditorBoardStrip::_apply_overview_preview_bounds(bool p_overview) {
+	const int shrink = p_overview ? overview_preview_shrink_for(boards.size(), get_size()) : 1;
+	for (EditorBoard *board : boards) {
+		EditorSceneWorkspace *workspace = board->get_workspace();
+		if (!workspace) {
+			continue;
+		}
+		for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+			if (ScenePaneTile *tile = leaf->get_pane_tile()) {
+				tile->set_preview_render_shrink(shrink);
+				tile->set_preview_refresh_throttled(p_overview);
+			}
+		}
+	}
+}
+
+void EditorBoardStrip::_on_leaf_added(int p_leaf_id) {
+	if (!board_view.is_overview_active()) {
+		return;
+	}
+	// The board count has not changed, so this only needs to bring the new tile in line
+	// with the rest of the filmstrip, not retarget the view. Re-applying to every tile
+	// rather than resolving p_leaf_id's own tile keeps this on the same path
+	// _enter_overview()/_append_board() already use, so there is exactly one place that
+	// computes the shrink and cadence every tile in the overview must agree on.
+	_apply_overview_preview_bounds(true);
+}
+
+void EditorBoardStrip::_pump_overview_refresh(real_t p_delta) {
+	overview_refresh_accumulator += p_delta;
+	if (overview_refresh_accumulator < OVERVIEW_REFRESH_INTERVAL) {
+		return;
+	}
+	// A stall must not queue up a burst of catch-up frames: the filmstrip only ever needs
+	// the newest one.
+	overview_refresh_accumulator = Math::fmod(overview_refresh_accumulator, OVERVIEW_REFRESH_INTERVAL);
+	overview_refresh_count++;
+
+	for (EditorBoard *board : boards) {
+		EditorSceneWorkspace *workspace = board->get_workspace();
+		if (!workspace) {
+			continue;
+		}
+		for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+			if (ScenePaneTile *tile = leaf->get_pane_tile()) {
+				tile->refresh_throttled_previews();
+			}
+		}
+	}
+}
+
+bool EditorBoardStrip::route_overview_focus_request(const EditorSceneWorkspace *p_workspace) {
+	if (!board_view.is_overview_active() || !p_workspace) {
+		return false;
+	}
+	for (int i = 0; i < boards.size(); i++) {
+		if (boards[i]->get_workspace() == p_workspace) {
+			_exit_overview_to(i);
+			return true;
+		}
+	}
+	return false;
+}
+
+void EditorBoardStrip::_rebuild_captions() {
+	ERR_FAIL_NULL(caption_overlay);
+	while (caption_overlay->get_child_count() > 0) {
+		Node *child = caption_overlay->get_child(0);
+		caption_overlay->remove_child(child);
+		child->queue_free();
+	}
+
+	for (EditorBoard *board : boards) {
+		Button *caption = memnew(Button);
+		caption->set_text(board->get_title());
+		caption->set_tooltip_text(board->get_title());
+		caption->set_accessibility_name(board->get_title());
+		caption->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
+		// Bound by instance id rather than index: a close shifts every index after it, and
+		// these buttons outlive that shift.
+		caption->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardStrip::_on_caption_pressed).bind(board->get_instance_id()));
+		caption_overlay->add_child(caption);
+	}
+}
+
+void EditorBoardStrip::_layout_captions(const Transform2D &p_transform, real_t p_pitch, const Size2 &p_scaled_size) {
+	if (!caption_overlay || !caption_overlay->is_visible()) {
+		return;
+	}
+
+	const Size2 size = get_size();
+	fit_child_in_rect(caption_overlay, Rect2(Point2(), size));
+
+	const int count = MIN(caption_overlay->get_child_count(), boards.size());
+	for (int i = 0; i < count; i++) {
+		Control *caption = Object::cast_to<Control>(caption_overlay->get_child(i));
+		if (!caption) {
+			continue;
+		}
+		// The caption sits outside the scaled board container, so it is laid out at its own
+		// natural size and stays crisp at full font size while the board behind it shrinks.
+		const Size2 caption_size = caption->get_combined_minimum_size();
+		const Point2 board_position = p_transform.xform(Point2(real_t(i) * p_pitch, 0.0));
+		const real_t x = board_position.x + (p_scaled_size.width - caption_size.width) * 0.5;
+		const real_t y = MIN(board_position.y + p_scaled_size.height + CAPTION_MARGIN, size.height - caption_size.height);
+		caption->set_size(caption_size);
+		caption->set_position(Point2(x, y));
+	}
+}
+
+void EditorBoardStrip::_on_caption_pressed(ObjectID p_board_id) {
+	const int index = resolve_board_index(p_board_id);
+	if (index < 0) {
+		return;
+	}
+	_exit_overview_to(index);
 }
 
 bool EditorBoardStrip::is_leaf_on_active_board(int p_leaf_id) const {
@@ -428,6 +700,10 @@ void EditorBoardStrip::restore_from_config(const Ref<ConfigFile> &p_config) {
 
 	emit_signal(SNAME("boards_about_to_restore"));
 
+	// The tiles the overview bounded are about to be freed, and the restored strip lands on
+	// a single active board, so the overview does not survive a restore.
+	_leave_overview_state();
+
 	// Seed the allocator past every id persisted anywhere in the config before a single
 	// leaf exists. Reserving each id as its leaf is restored is not enough: a malformed
 	// node falls back to a freshly allocated id, which would then collide with a
@@ -473,4 +749,12 @@ void EditorBoardStrip::restore_from_config(const Ref<ConfigFile> &p_config) {
 EditorBoardStrip::EditorBoardStrip() {
 	set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	set_h_size_flags(Control::SIZE_EXPAND_FILL);
+
+	// A plain Control rather than a Container: its children are positioned from board
+	// geometry every sort, and it must pass every event it does not sit under straight
+	// through to the boards below so cross-board drag keeps working in the overview.
+	caption_overlay = memnew(Control);
+	caption_overlay->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	caption_overlay->hide();
+	add_child(caption_overlay);
 }

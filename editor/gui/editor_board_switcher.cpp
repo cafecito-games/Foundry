@@ -62,6 +62,7 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 		strip->disconnect(SNAME("board_removed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
 		strip->disconnect(SNAME("boards_restored"), callable_mp(this, &EditorBoardSwitcher::_rebuild));
 		strip->disconnect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
+		strip->disconnect(SNAME("overview_changed"), callable_mp(this, &EditorBoardSwitcher::_on_overview_changed));
 	}
 
 	strip = p_strip;
@@ -76,6 +77,9 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 		strip->connect(SNAME("board_removed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
 		strip->connect(SNAME("boards_restored"), callable_mp(this, &EditorBoardSwitcher::_rebuild));
 		strip->connect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
+		// The overview toggle is the only piece of chrome the mode affects, so it is patched
+		// in place rather than triggering a full rebuild the way structural changes do.
+		strip->connect(SNAME("overview_changed"), callable_mp(this, &EditorBoardSwitcher::_on_overview_changed));
 	}
 
 	_rebuild();
@@ -130,15 +134,28 @@ void EditorBoardSwitcher::_rebuild() {
 	add_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_add_pressed));
 	add_child(add_button);
 
-	// Toggling the overview is wired in the overview task; the button is placed now so the
-	// title bar's layout does not shift when that lands.
 	overview_button = memnew(Button);
 	overview_button->set_flat(true);
 	overview_button->set_toggle_mode(true);
 	overview_button->set_tooltip_text(TTR("Board Overview"));
 	overview_button->set_accessibility_name(TTRC("Board Overview"));
 	overview_button->set_button_icon(get_editor_theme_icon(SNAME("GridLayout")));
+	overview_button->set_pressed_no_signal(strip->is_overview_active());
+	overview_button->connect(SceneStringName(toggled), callable_mp(this, &EditorBoardSwitcher::_on_overview_toggled));
 	add_child(overview_button);
+}
+
+void EditorBoardSwitcher::_on_overview_toggled(bool p_pressed) {
+	if (!strip) {
+		return;
+	}
+	strip->set_overview(p_pressed);
+}
+
+void EditorBoardSwitcher::_on_overview_changed(bool p_active) {
+	if (overview_button) {
+		overview_button->set_pressed_no_signal(p_active);
+	}
 }
 
 void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
@@ -219,6 +236,11 @@ void EditorBoardSwitcher::_apply_pending_rename(const String &p_text) {
 		return;
 	}
 	board->set_title(new_title);
+	// The switcher's own button relabels on the _rebuild() that follows a text_submitted
+	// signal, but the overview's captions are a separate snapshot the rename otherwise has
+	// no way to reach: the switcher's rename field stays usable while the overview is up,
+	// since renaming is exactly how a caption a user is looking at gets its name fixed.
+	strip->refresh_overview_captions();
 }
 
 void EditorBoardSwitcher::_commit_rename(const String &p_text) {
