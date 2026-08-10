@@ -245,7 +245,8 @@ TEST_CASE("[Editor][SideRail] a railed side shows exactly one dock and never two
 // shipped code without constructing an EditorNode (#2010).
 TEST_CASE("[Editor][SideRail] toggling the mode restores the last open drawer dock") {
 	CollapseFixture fixture;
-	fixture.region.press_rail_toggle(fixture.signals); // Collapses the right side onto Signals.
+	fixture.region.press_rail_toggle(fixture.inspector); // Collapses the right side, drawer closed.
+	fixture.region.press_rail_toggle(fixture.signals); // Opens the drawer on Signals.
 	REQUIRE(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
 	REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.signals);
 
@@ -282,8 +283,10 @@ TEST_CASE("[Editor][SideRail] toggling the mode on a side with no docks leaves t
 
 TEST_CASE("[Editor][SideRail] toggling one side's mode never affects the other side") {
 	CollapseFixture fixture;
-	fixture.region.press_rail_toggle(fixture.inspector); // Collapses the right side.
+	fixture.region.press_rail_toggle(fixture.inspector); // Collapses the right side, drawer closed.
+	fixture.region.press_rail_toggle(fixture.inspector); // Reopens the drawer on Inspector.
 	REQUIRE(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.inspector);
 	REQUIRE(fixture.region.get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
 
 	fixture.region.toggle_side_mode(Side::LEFT);
