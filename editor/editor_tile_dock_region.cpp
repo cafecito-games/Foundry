@@ -189,7 +189,17 @@ int EditorTileDockRegion::_shown_dock_index(Side p_side) const {
 		if (!right_tabs || !right_tabs->is_visible()) {
 			return -1;
 		}
-		return docks.find(Object::cast_to<EditorDock>(right_tabs->get_current_tab_control()));
+		// The tab stack's current-tab index survives its own tab becoming
+		// disabled (set_tab_hidden does not move the selection unless the
+		// side is DOCKED and there is another enabled tab to fall back to;
+		// see set_dock_enabled), so a disabled current tab must still read as
+		// "nothing shown" here, or entering RAILED on an empty side could
+		// open the drawer on a dock that no longer has a toggle for it.
+		const int index = docks.find(Object::cast_to<EditorDock>(right_tabs->get_current_tab_control()));
+		if (index < 0 || !docks[index]->is_enabled()) {
+			return -1;
+		}
+		return index;
 	}
 
 	for (int i = 0; i < docks.size(); i++) {

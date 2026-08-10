@@ -87,6 +87,15 @@ protected:
 public:
 	void rebuild_toggles();
 
+	// A side with no enabled docks has neither a toggle nor (in DOCKED mode,
+	// where the expand button is hidden) any other visible child for
+	// PanelContainer's own get_minimum_size() to measure, which would
+	// otherwise report a near-zero width: the rail control stays visible but
+	// has no clickable area. Floors to a single icon-sized toggle's footprint
+	// so an empty rail keeps a real presence and its width does not jump when
+	// the side gains its first dock.
+	virtual Size2 get_minimum_size() const override;
+
 	// Toggle set matches _get_source_docks_in_order() filtered to is_enabled().
 	// Exposed for tests; production code never needs the raw dock list.
 	const LocalVector<EditorDock *> &get_toggle_docks() const { return toggle_docks; }

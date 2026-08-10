@@ -35,10 +35,12 @@
 #include "editor/editor_tile_dock_region.h"
 #include "editor/gui/dock_tooltip.h"
 #include "editor/gui/editor_side_rail_button.h"
+#include "editor/themes/editor_scale.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
+#include "scene/resources/font.h"
 
 void EditorSideRailStrip::_rebuild_toggles() {
 	for (EditorSideRailButton *button : toggle_buttons) {
@@ -171,6 +173,23 @@ void EditorSideRailStrip::_update_active_states() {
 	close_button->show();
 	// Sit the close button immediately after the active toggle.
 	toggles_vbox->move_child(close_button, active_toggle + 1);
+}
+
+Size2 EditorSideRailStrip::get_minimum_size() const {
+	const Size2 base = PanelContainer::get_minimum_size();
+	if (!toggle_buttons.is_empty() || (expand_button && expand_button->is_visible())) {
+		// A toggle or the expand button already gives PanelContainer's own
+		// computation a real child to measure; nothing to floor.
+		return base;
+	}
+
+	const Ref<Font> font = get_theme_font(SceneStringName(font));
+	if (font.is_null()) {
+		return base;
+	}
+	const int font_size = get_theme_font_size(SceneStringName(font_size));
+	const real_t floor_extent = font->get_height(font_size) + 2 * EDSCALE;
+	return base.max(Size2(floor_extent, floor_extent));
 }
 
 void EditorSideRailStrip::_apply_label_mode() {
