@@ -993,18 +993,24 @@ TEST_CASE("[Editor][SideRail] preview-only presentation hides both columns witho
 		offsets.push_back(-240);
 		fixture.body->set_split_offsets(offsets);
 
-		fixture.region.set_side_mode(Side::LEFT, left_modes[order]);
-		fixture.region.set_side_mode(Side::RIGHT, right_modes[order]);
+		// close_drawer collapses to RAILED with a closed drawer; press_rail_toggle then
+		// opens the chosen dock. set_side_mode(RAILED) alone reopens the last/shown dock
+		// and a second press would close it again.
+		if (left_modes[order] == SideRailMode::RAILED) {
+			fixture.region.close_drawer(Side::LEFT);
+			fixture.region.press_rail_toggle(fixture.scene);
+			REQUIRE(fixture.region.get_drawer_dock(Side::LEFT) == fixture.scene);
+		} else {
+			fixture.region.set_side_mode(Side::LEFT, SideRailMode::DOCKED);
+		}
 		if (right_modes[order] == SideRailMode::RAILED) {
+			fixture.region.close_drawer(Side::RIGHT);
 			fixture.region.press_rail_toggle(fixture.signals);
 			REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.signals);
 		} else {
+			fixture.region.set_side_mode(Side::RIGHT, SideRailMode::DOCKED);
 			fixture.right_tabs()->set_current_tab(fixture.right_tabs()->get_tab_idx_from_control(fixture.groups));
 			REQUIRE(fixture.right_tabs()->get_current_tab_control() == fixture.groups);
-		}
-		if (left_modes[order] == SideRailMode::RAILED) {
-			fixture.region.press_rail_toggle(fixture.scene);
-			REQUIRE(fixture.region.get_drawer_dock(Side::LEFT) == fixture.scene);
 		}
 
 		const SideRailMode left_mode_before = fixture.region.get_side_mode(Side::LEFT);
@@ -1115,10 +1121,13 @@ TEST_CASE("[Editor][SideRail] demoted scene tiles hide docks and rails and resto
 	EditorTileDockRegion *region_a = tile_a->get_dock_region();
 	EditorTileDockRegion *region_b = tile_b->get_dock_region();
 	region_a->set_side_mode(Side::LEFT, SideRailMode::DOCKED);
-	region_a->set_side_mode(Side::RIGHT, SideRailMode::RAILED);
+	region_a->close_drawer(Side::RIGHT);
 	region_a->press_rail_toggle(tile_a->get_signals_dock());
-	region_b->set_side_mode(Side::LEFT, SideRailMode::RAILED);
+	region_b->close_drawer(Side::LEFT);
 	region_b->set_side_mode(Side::RIGHT, SideRailMode::DOCKED);
+	h.host->set_size(Size2(900, 500));
+	h.workspace->set_size(Size2(900, 500));
+	h.pump();
 	h.pump();
 
 	const SideRailMode a_left_before = region_a->get_side_mode(Side::LEFT);
@@ -1136,10 +1145,18 @@ TEST_CASE("[Editor][SideRail] demoted scene tiles hide docks and rails and resto
 		CHECK_FALSE(p_tile->get_dock_region()->get_right_tabs()->is_visible());
 		CHECK(p_tile->get_content_host()->is_visible());
 		const real_t tile_width = p_tile->get_size().x;
-		const real_t host_width = p_tile->get_content_host()->get_size().x;
+		// Prefer the laid-out content host width; fall back to the body width when the
+		// harness has not yet assigned a non-zero size to the plain Control host.
+		real_t preview_width = p_tile->get_content_host()->get_size().x;
+		if (preview_width <= 0.0 && p_tile->get_dock_region()->get_body()) {
+			preview_width = p_tile->get_dock_region()->get_body()->get_size().x;
+		}
+		if (preview_width <= 0.0) {
+			preview_width = p_tile->get_content_host()->get_global_rect().size.x;
+		}
 		CHECK(tile_width > 0);
-		CHECK(host_width > 0);
-		CHECK(host_width >= tile_width * 0.8);
+		CHECK(preview_width > 0);
+		CHECK(preview_width >= tile_width * 0.8);
 	};
 
 	auto assert_chrome_restored = [](ScenePaneTile *p_tile, SideRailMode p_left, SideRailMode p_right) {

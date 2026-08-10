@@ -37,7 +37,9 @@
 #include "editor/automation/editor_workflow_test_driver.h"
 #include "editor/debugger/debugger_editor_plugin.h"
 #include "editor/docks/editor_dock.h"
+#include "editor/docks/groups_dock.h"
 #include "editor/docks/scene_tree_dock.h"
+#include "editor/docks/signals_dock.h"
 #include "editor/editor_board.h"
 #include "editor/editor_board_strip.h"
 #include "editor/editor_data.h"
@@ -2612,7 +2614,9 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_with_message(p_driver, result.workflow, "Could not resolve the focused 2D tile after the split.");
 	}
 	EditorTileDockRegion *focused_2d_region = focused_2d_tile->get_dock_region();
-	focused_2d_region->set_side_mode(EditorTileDockRegion::Side::LEFT, SideRailMode::RAILED);
+	// close_drawer collapses to RAILED with a closed drawer. set_side_mode(RAILED)
+	// would reopen the last/shown dock, which is not the asymmetric chrome we want.
+	focused_2d_region->close_drawer(EditorTileDockRegion::Side::LEFT);
 	focused_2d_region->set_side_mode(EditorTileDockRegion::Side::RIGHT, SideRailMode::DOCKED);
 	if (TabContainer *right_tabs = focused_2d_region->get_right_tabs()) {
 		const int groups_tab = right_tabs->get_tab_idx_from_control(focused_2d_tile->get_groups_dock());
