@@ -48,7 +48,7 @@ class EditorTileDropOverlay : public Control {
 
 	EditorSceneWorkspace::TileDropRegion _region_at(const Point2 &p_local) const;
 	static bool _resolve_source(const Variant &p_data, int &r_source_pane_id, int &r_source_tab_index);
-	void _update_drag_active();
+	void _update_drag_active(const Point2 &p_canvas_position);
 	void _draw_region_preview(const Rect2 &p_preview_rect, const Color &p_accent);
 	void _draw_guide_rosette(const Point2 &p_center, EditorSceneWorkspace::TileDropRegion p_aimed_region);
 	void _draw_rosette_button(const Rect2 &p_rect, bool p_aimed, const Ref<Texture2D> &p_icon, const Color &p_accent);
@@ -60,6 +60,13 @@ public:
 	static bool is_workspace_tab_drag(const Variant &p_data);
 
 	void set_owning_pane_id(int p_pane_id) { owning_pane_id = p_pane_id; }
+
+	// True while the pointer is inside this pane during a workspace tab drag, which
+	// is exactly when the rosette and the region preview are painted.
+	bool is_drag_active() const { return drag_active; }
+	EditorSceneWorkspace::TileDropRegion get_hovered_region() const { return hovered_region; }
+
+	virtual void input(const Ref<InputEvent> &p_event) override;
 
 	virtual bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override;
 	virtual void drop_data(const Point2 &p_point, const Variant &p_data) override;

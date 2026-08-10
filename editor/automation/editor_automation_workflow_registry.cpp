@@ -48,6 +48,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_cross_board_tile_body_drop(Edito
 	return EditorAutomationAcceptanceWorkflow::run_cross_board_tile_body_drop(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_continuous_drag_arms_drop_overlay(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_continuous_drag_arms_drop_overlay(p_driver);
+}
+
 EditorAutomationAcceptanceWorkflow::Result _run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver) {
 	return EditorAutomationAcceptanceWorkflow::run_mixed_workspace_editing(p_driver);
 }
@@ -141,6 +145,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	_register_workflow("close_last_scene_empty_pane", &_run_close_last_scene_empty_pane);
 	_register_workflow("split_scene_root_button_context", &_run_split_scene_root_button_context);
 	_register_workflow("cross_board_tile_body_drop", &_run_cross_board_tile_body_drop);
+	_register_workflow("continuous_drag_arms_drop_overlay", &_run_continuous_drag_arms_drop_overlay);
 	_register_workflow("mixed_workspace_editing", &_run_mixed_workspace_editing);
 	_register_workflow("mixed_workspace_seed", &_run_mixed_workspace_seed);
 	_register_workflow("mixed_workspace_restore", &_run_mixed_workspace_restore);

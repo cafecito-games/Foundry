@@ -30,6 +30,7 @@
 
 #include "editor_tile_drop_overlay.h"
 
+#include "core/input/input_event.h"
 #include "editor/editor_node.h"
 #include "editor/editor_string_names.h"
 #include "editor/themes/editor_scale.h"
@@ -166,25 +167,32 @@ void EditorTileDropOverlay::_draw_guide_rosette(const Point2 &p_center, EditorSc
 	_draw_rosette_button(center_rect, p_aimed_region == EditorSceneWorkspace::DROP_CENTER, icon_tab, accent);
 }
 
-void EditorTileDropOverlay::_update_drag_active() {
-	const bool should_be_active = workspace_tab_drag && get_global_rect().has_point(get_global_mouse_position());
-	if (should_be_active == drag_active) {
-		if (drag_active) {
-			const EditorSceneWorkspace::TileDropRegion region = _region_at(get_local_mouse_position());
-			if (region != hovered_region) {
-				hovered_region = region;
-				queue_redraw();
-			}
-		}
+void EditorTileDropOverlay::_update_drag_active(const Point2 &p_canvas_position) {
+	const bool should_be_active = workspace_tab_drag && get_global_rect().has_point(p_canvas_position);
+	const EditorSceneWorkspace::TileDropRegion region = should_be_active
+			? _region_at(get_global_transform().affine_inverse().xform(p_canvas_position))
+			: hovered_region;
+	if (should_be_active == drag_active && region == hovered_region) {
 		return;
 	}
 
 	drag_active = should_be_active;
-	set_mouse_filter(drag_active ? Control::MOUSE_FILTER_STOP : Control::MOUSE_FILTER_IGNORE);
-	if (drag_active) {
-		hovered_region = _region_at(get_local_mouse_position());
-	}
+	hovered_region = region;
 	queue_redraw();
+}
+
+void EditorTileDropOverlay::input(const Ref<InputEvent> &p_event) {
+	if (!workspace_tab_drag) {
+		return;
+	}
+	const Ref<InputEventMouse> mouse_event = p_event;
+	if (mouse_event.is_null()) {
+		return;
+	}
+	// Node input runs before the viewport routes the same event to the GUI, so the
+	// rosette follows the pointer on the very motion that carries it into this
+	// tile instead of trailing an internal-process tick behind it.
+	_update_drag_active(get_canvas_transform().affine_inverse().xform(mouse_event->get_position()));
 }
 
 void EditorTileDropOverlay::_notification(int p_what) {
@@ -193,12 +201,21 @@ void EditorTileDropOverlay::_notification(int p_what) {
 			Viewport *viewport = get_viewport();
 			workspace_tab_drag = viewport && is_workspace_tab_drag(viewport->gui_get_drag_data());
 			set_process_internal(workspace_tab_drag);
+			set_process_input(workspace_tab_drag);
 			if (!workspace_tab_drag) {
 				drag_active = false;
 				set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 				queue_redraw();
 				break;
 			}
+			// Hit-testing is armed for the whole drag, not only once the pointer has
+			// been observed inside. The viewport resolves the control under the
+			// pointer before any node sees the event, so a filter flipped from a
+			// later tick would miss the motion that entered this tile -- the drag
+			// would cross the tile with no drop target and no affordance at all.
+			// The overlay only spans this pane's body, so nothing outside it is
+			// affected.
+			set_mouse_filter(Control::MOUSE_FILTER_STOP);
 			// Raise to the top of the pane body only now that a drag is active, so
 			// the rosette paints over the mounted content and hit-tests before it.
 			// Doing this here (rather than on every pane-state update) avoids
@@ -209,7 +226,7 @@ void EditorTileDropOverlay::_notification(int p_what) {
 					parent->move_child(this, last);
 				}
 			}
-			_update_drag_active();
+			_update_drag_active(get_global_mouse_position());
 		} break;
 
 		case NOTIFICATION_DRAG_END: {
@@ -217,11 +234,14 @@ void EditorTileDropOverlay::_notification(int p_what) {
 			drag_active = false;
 			set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
 			set_process_internal(false);
+			set_process_input(false);
 			queue_redraw();
 		} break;
 
 		case NOTIFICATION_INTERNAL_PROCESS: {
-			_update_drag_active();
+			// Covers pointer-independent changes, such as the pane being resized or
+			// relaid out under a stationary pointer mid-drag.
+			_update_drag_active(get_global_mouse_position());
 		} break;
 
 		case NOTIFICATION_DRAW: {
