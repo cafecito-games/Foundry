@@ -352,6 +352,13 @@ private:
 	// tile, focused tile, edited scene). Without this guard a dormant board restored
 	// after the active one would claim editor focus for a board the user cannot see.
 	bool restoring_boards = false;
+	// Identity of the board whose scenes are being closed one prompt at a time. The board
+	// itself is freed only once that queue drains; cancelling any prompt clears this and
+	// the board survives with every scene intact. Stored as an instance id rather than a
+	// list index because an unrelated board close can interleave while these prompts are
+	// still on screen and shift every index after it; the finish step re-resolves this id
+	// to a live index instead of trusting a stale position.
+	ObjectID pending_board_close_id;
 	int pending_focus_tile_id = -1;
 	uint64_t pending_focus_tile_generation = 0;
 	Control *global_screen_host = nullptr;
@@ -739,6 +746,11 @@ private:
 	void _reconcile_workspace_empty_leaves_after_restore();
 	void _on_boards_about_to_restore();
 	void _on_boards_restored();
+	void _on_board_added(int p_index);
+	void _on_board_about_to_close(int p_index);
+	void _on_board_removed(int p_index);
+	bool _close_board_scenes(int p_board_index, const PackedInt32Array &p_scene_indices);
+	void _finish_pending_board_close();
 	void _reparent_scene_mode_into(ScenePaneTile *p_tile);
 	void _close_script_leaf();
 	void _sync_script_leaf_path();

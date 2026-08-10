@@ -122,7 +122,7 @@ TEST_CASE("[Editor][Boards] Three boards round-trip independently") {
 	WorkspaceLeafNode *second = workspace_2->split(workspace_2->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 	workspace_2->split(second, true, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 
-	saved.strip->set_active_index(1);
+	saved.strip->set_active_board(1);
 	const int board_1_focus = workspace_1->get_focused_leaf_id();
 	const int board_2_focus = workspace_2->get_focused_leaf_id();
 	const int leaf_high_water = saved.strip->peek_next_leaf_id();

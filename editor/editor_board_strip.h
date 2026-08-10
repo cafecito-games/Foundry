@@ -54,9 +54,11 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 
 	EditorSelection *editor_selection = nullptr;
 	EditorData *editor_data = nullptr;
+	Callable board_scene_close_handler;
 
 	EditorBoard *_append_board(int p_board_id, const String &p_title);
 	void _clear_boards();
+	PackedInt32Array _collect_board_scene_indices(const EditorBoard *p_board) const;
 	// Highest leaf id persisted anywhere in the config, plus one.
 	static int _persisted_leaf_id_ceiling(const Ref<ConfigFile> &p_config, int p_board_count);
 
@@ -72,22 +74,45 @@ public:
 	int peek_next_leaf_id() const { return leaf_ids.peek_next_leaf_id(); }
 	void set_next_leaf_id(int p_value) { leaf_ids.set_next_leaf_id(p_value); }
 
-	// Appends a board whose workspace draws leaf ids from the strip-wide allocator.
-	// The editor creates exactly one board today; the board switcher that lets users
-	// add and close boards is built on top of this.
-	EditorBoard *add_board(const String &p_title);
+	// Appends a board whose workspace draws leaf ids from the strip-wide allocator and
+	// emits board_added with its index. An empty title gets the next default one.
+	EditorBoard *add_board(const String &p_title = String());
+
+	// Frees the board at p_index and emits board_removed with the index it had.
+	// Returns false when the close does not happen: the last board is never closable,
+	// and a board that still owns edited scenes is handed to the scene-close handler
+	// first. That handler drives the per-scene unsaved-changes prompts, which are
+	// asynchronous in the GUI, so it returns false and calls close_board() again once
+	// every scene is gone -- or never, if the user cancels a prompt. A strip with no
+	// handler installed refuses to close a board that owns scenes rather than
+	// discarding them silently.
+	bool close_board(int p_index);
+
+	// Invoked from close_board() as handler(board_index, scene_indices) with the scene
+	// indices owned by the board's tiles. Returning true lets the close proceed
+	// immediately; returning false leaves the board and every scene in it intact.
+	void set_board_scene_close_handler(const Callable &p_handler) { board_scene_close_handler = p_handler; }
 
 	int get_board_count() const { return boards.size(); }
 	EditorBoard *get_board(int p_index) const;
 	EditorBoard *get_active_board() const;
 	int get_active_index() const { return active_index; }
+	int get_board_index(const EditorBoard *p_board) const;
 	EditorSceneWorkspace *get_active_workspace() const;
 
-	// Makes p_index the visible board: the outgoing board remembers its focused leaf
-	// and goes dormant, the incoming one wakes. Focus restoration inside the incoming
-	// workspace stays with the caller, which owns the editor-wide focus bookkeeping.
-	void set_active_index(int p_index);
-	void set_active_board(EditorBoard *p_board);
+	// Re-resolves a board captured by instance id back to its current index. Any board
+	// close can shift every index after it, so a caller that holds on to a board across
+	// an asynchronous gap -- an unsaved-changes prompt, a deferred call -- must re-resolve
+	// through here instead of trusting a position captured before the gap. Returns -1 when
+	// the board no longer exists.
+	int resolve_board_index(ObjectID p_board_id) const;
+
+	// Makes p_index the visible board: the outgoing board remembers its focused leaf,
+	// the incoming one wakes before the outgoing one sleeps so no frame is left without
+	// a live board, and the incoming board's remembered leaf is requested as focused.
+	// Emits active_board_changed exactly once, and nothing at all when p_index is
+	// already active.
+	void set_active_board(int p_index);
 
 	// Config section holding the tiling tree of the board at p_index.
 	static String board_section(int p_index);
@@ -116,6 +141,13 @@ public:
 	WorkspaceLeafNode *find_leaf_by_id(int p_leaf_id) const;
 	EditorBoard *find_board_for_leaf(int p_leaf_id) const;
 	ScenePaneTile *find_tile_by_id(int p_tile_id) const;
+
+	// True when the leaf lives on the visible board, or on no board at all. Editor-wide
+	// state -- focus, the edited scene, the shared scene-mode surface -- follows the
+	// visible board, so call sites that would write it on behalf of a leaf must check
+	// this first: a dormant board's pane can still ask, most notably when a restored
+	// pane replays its persisted active tab after the restore bracket has closed.
+	bool is_leaf_on_active_board(int p_leaf_id) const;
 
 	EditorBoardStrip();
 };

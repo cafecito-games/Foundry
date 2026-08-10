@@ -4870,11 +4870,8 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 	// persisted active tab deferred, after the restore bracket has closed -- and must
 	// not pull the editor onto a board the user cannot see. Callers that legitimately
 	// open a scene living in another board make that board active first.
-	if (board_strip) {
-		EditorBoard *owner = board_strip->find_board_for_leaf(p_tile_id);
-		if (owner && owner != board_strip->get_active_board()) {
-			return;
-		}
+	if (board_strip && !board_strip->is_leaf_on_active_board(p_tile_id)) {
+		return;
 	}
 
 	const bool already_owned = editor_data.get_scene_tile(p_scene_idx) == p_tile_id;
@@ -5710,7 +5707,7 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 				if (board_strip) {
 					EditorBoard *owner = board_strip->find_board_for_leaf(editor_data.get_scene_tile(i));
 					if (owner) {
-						board_strip->set_active_board(owner);
+						board_strip->set_active_board(board_strip->get_board_index(owner));
 						owner->get_workspace()->focus_scene_tab(i);
 					} else if (EditorSceneWorkspace *workspace = board_strip->get_active_workspace()) {
 						workspace->focus_scene_tab(i);
@@ -8331,6 +8328,106 @@ void EditorNode::_on_boards_restored() {
 	}
 }
 
+void EditorNode::_on_board_added(int p_index) {
+	ERR_FAIL_NULL(board_strip);
+	EditorBoard *board = board_strip->get_board(p_index);
+	ERR_FAIL_NULL(board);
+	EditorSceneWorkspace *workspace = board->get_workspace();
+	ERR_FAIL_NULL(workspace);
+
+	// The board's first leaf exists before this signal reaches us, so it never fires
+	// leaf_added; register and wire it explicitly, exactly as startup does for the
+	// initial board's leaf.
+	_connect_workspace_signals(workspace);
+	for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+		editor_data.register_tile(leaf->get_leaf_id());
+		if (leaf->get_pane_tile()) {
+			_wire_leaf_tile(leaf);
+			_bind_leaf_docks(leaf->get_leaf_id());
+		}
+	}
+}
+
+void EditorNode::_on_board_about_to_close(int p_index) {
+	ERR_FAIL_NULL(board_strip);
+	EditorBoard *board = board_strip->get_board(p_index);
+	ERR_FAIL_NULL(board);
+	EditorSceneWorkspace *workspace = board->get_workspace();
+	ERR_FAIL_NULL(workspace);
+
+	// Editor-wide surfaces are parented into whichever tile currently hosts them. The
+	// board is about to be freed, so anything of ours living inside it must be pulled
+	// out first or it would be freed along with the board.
+	VBoxContainer *scene_mode = editor_main_screen ? editor_main_screen->get_scene_mode_control() : nullptr;
+	if (scene_mode && board->is_ancestor_of(scene_mode) && scene_mode->get_parent()) {
+		scene_mode->get_parent()->remove_child(scene_mode);
+	}
+
+	EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton();
+	for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+		ScenePaneTile *tile = leaf->get_pane_tile();
+		if (debugger && tile && debugger->is_remote_scene_tree_bound_to(tile->get_scene_tree_dock())) {
+			debugger->detach_remote_scene_tree();
+		}
+		editor_data.unregister_tile(leaf->get_leaf_id());
+	}
+}
+
+void EditorNode::_on_board_removed(int p_index) {
+	_update_all_scene_tabs();
+	_bind_all_leaf_docks();
+	_update_tile_display_attachments();
+	_reparent_scene_mode_into(get_focused_tile());
+	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
+		debugger->rebind_remote_scene_tree();
+	}
+	save_editor_layout_delayed();
+}
+
+bool EditorNode::_close_board_scenes(int p_board_index, const PackedInt32Array &p_scene_indices) {
+	if (p_scene_indices.is_empty()) {
+		return true;
+	}
+	ERR_FAIL_NULL_V(board_strip, false);
+	// One board close at a time: a second request while prompts are still on screen
+	// would interleave two scene queues.
+	ERR_FAIL_COND_V(pending_board_close_id.is_valid(), false);
+
+	EditorBoard *board = board_strip->get_board(p_board_index);
+	ERR_FAIL_NULL_V(board, false);
+
+	tab_closing_menu_option = -1;
+	for (const int scene_index : p_scene_indices) {
+		tabs_to_close.push_back(editor_data.get_scene_path(scene_index));
+	}
+	pending_board_close_id = board->get_instance_id();
+
+	// The close is always finished from _proceed_closing_scene_tabs, never from here:
+	// prompts are asynchronous, and even the no-prompt path unwinds through this same
+	// call stack, which is still inside EditorBoardStrip::close_board.
+	_proceed_closing_scene_tabs();
+	return false;
+}
+
+void EditorNode::_finish_pending_board_close() {
+	const ObjectID board_id = pending_board_close_id;
+	pending_board_close_id = ObjectID();
+	if (!board_id.is_valid() || !board_strip) {
+		return;
+	}
+
+	// An unrelated board close can interleave while these prompts were on screen and
+	// shift every index after it, so the id is re-resolved to a live index here rather
+	// than trusting a position captured back when the close was requested. The board
+	// may also already be gone (e.g. a whole-strip restore tore it down), in which case
+	// there is nothing left to close.
+	const int index = board_strip->resolve_board_index(board_id);
+	if (index < 0) {
+		return;
+	}
+	board_strip->close_board(index);
+}
+
 bool EditorNode::_load_workspace_from_config(const Ref<ConfigFile> &p_config_file) {
 	if (!board_strip || !EditorBoardStrip::has_board_session(p_config_file)) {
 		return false;
@@ -8708,6 +8805,12 @@ void EditorNode::_layout_menu_option(int p_id) {
 void EditorNode::_proceed_closing_scene_tabs() {
 	List<String>::Element *E = tabs_to_close.front();
 	if (!E) {
+		if (pending_board_close_id.is_valid()) {
+			// Deferred because this can be reached from inside EditorBoardStrip::close_board
+			// when no scene needed a prompt; freeing the board from that stack would pull the
+			// ground out from under the frame that asked for the close.
+			callable_mp(this, &EditorNode::_finish_pending_board_close).call_deferred();
+		}
 		if (_is_closing_editor()) {
 			current_menu_option = tab_closing_menu_option;
 			_menu_option_confirm(tab_closing_menu_option, true);
@@ -8841,6 +8944,9 @@ void EditorNode::_cancel_close_scene_tab() {
 	}
 	changing_scene = false;
 	tabs_to_close.clear();
+	// Cancelling any one prompt aborts the whole board close: the board and every scene
+	// still in it survive.
+	pending_board_close_id = ObjectID();
 }
 
 void EditorNode::_cancel_confirmation() {
@@ -11134,6 +11240,14 @@ EditorNode::EditorNode() {
 	// single board's rebuild.
 	board_strip->connect("boards_about_to_restore", callable_mp(this, &EditorNode::_on_boards_about_to_restore));
 	board_strip->connect("boards_restored", callable_mp(this, &EditorNode::_on_boards_restored));
+	board_strip->connect("board_added", callable_mp(this, &EditorNode::_on_board_added));
+	board_strip->connect("board_about_to_close", callable_mp(this, &EditorNode::_on_board_about_to_close));
+	board_strip->connect("board_removed", callable_mp(this, &EditorNode::_on_board_removed));
+	// The strip refuses to discard edited scenes on its own; closing a board routes them
+	// back here so each one gets the usual unsaved-changes prompt.
+	board_strip->set_board_scene_close_handler(callable_mp(this, &EditorNode::_close_board_scenes));
+	// The strip's own first board predates these connections, so its workspace and leaf
+	// are wired explicitly here and just below.
 	_connect_workspace_signals(board_strip->get_active_workspace());
 
 	editor_main_screen = memnew(EditorMainScreen);
