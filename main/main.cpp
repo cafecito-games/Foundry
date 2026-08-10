@@ -931,6 +931,14 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			}
 		}
 		OS::get_singleton()->set_user_data_root_override(user_data_root);
+
+		// The override only creates the *root* directory. `get_user_data_dir()` resolves
+		// `user://` to a nested per-project leaf beneath the root (e.g.
+		// `<root>/foundry/app_userdata/[unnamed project]`), and `FileAccess::open(..., WRITE)`
+		// does not create missing parent directories. Ensure the resolved leaf exists for the
+		// project mapping active at this point (the default unnamed-project mapping) so the
+		// first `user://` write in any test succeeds.
+		OS::get_singleton()->ensure_user_data_dir();
 	}
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
@@ -945,6 +953,11 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 			return EXIT_FAILURE;
 		}
 		project_loaded_for_build_pipeline = true;
+
+		// Re-resolve and create the user-data leaf now that the project's name maps the
+		// leaf, so a `--project` with a non-empty `application/config/name` also resolves
+		// to a writable directory from the first `user://` write.
+		OS::get_singleton()->ensure_user_data_dir();
 
 		ProjectBuildTrustStore::set_cli_trusted_execution(cli_parse.trusted);
 		const bool pre_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
