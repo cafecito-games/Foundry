@@ -51,6 +51,8 @@
 #include "scene/main/scene_tree.h"
 #include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
+#include "scene/resources/style_box_flat.h"
+#include "scene/theme/theme_db.h"
 
 #include "tests/test_macros.h"
 
@@ -455,9 +457,31 @@ TEST_CASE("[Editor][SideRailButton] labelled mode without an icon still contains
 	memdelete(button);
 }
 
-TEST_CASE("[Editor][SideRailButton] pressed and normal draw modes share the same layout geometry") {
-	ThemeStyleGuard style_guard("Modern");
-	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+TEST_CASE("[Editor][SideRailButton] align_to_largest_stylebox keeps pressed and normal layout identical") {
+	// Build a theme where normal and pressed have deliberately different
+	// integer content margins. With align_to_largest_stylebox=1 the pressed
+	// toggle must still use the larger margins; with it cleared, pressed must
+	// track the current stylebox instead.
+	Ref<StyleBoxFlat> normal_sb;
+	normal_sb.instantiate();
+	normal_sb->set_content_margin_all(4);
+	Ref<StyleBoxFlat> pressed_sb;
+	pressed_sb.instantiate();
+	pressed_sb->set_content_margin_all(8);
+
+	Ref<Theme> theme;
+	theme.instantiate();
+	theme->set_type_variation("FlatMenuButton", "Button");
+	theme->set_stylebox(SNAME("normal"), SNAME("FlatMenuButton"), normal_sb);
+	theme->set_stylebox(SNAME("pressed"), SNAME("FlatMenuButton"), pressed_sb);
+	theme->set_stylebox(SNAME("hover"), SNAME("FlatMenuButton"), pressed_sb);
+	theme->set_stylebox(SNAME("hover_pressed"), SNAME("FlatMenuButton"), pressed_sb);
+	theme->set_stylebox(SNAME("disabled"), SNAME("FlatMenuButton"), normal_sb);
+	theme->set_constant(SNAME("align_to_largest_stylebox"), SNAME("Button"), 1);
+	theme->set_constant(SNAME("h_separation"), SNAME("Button"), 4);
+	theme->set_font_size(SceneStringName(font_size), SNAME("Button"), 16);
+	theme->set_font(SceneStringName(font), SNAME("Button"), ThemeDB::get_singleton()->get_fallback_font());
+	theme->set_color(SceneStringName(font_color), SNAME("Button"), Color(1, 1, 1));
 
 	EditorSideRailButton *button = memnew(EditorSideRailButton);
 	button->set_rail_icon(_make_side_rail_test_icon(16));
@@ -465,19 +489,51 @@ TEST_CASE("[Editor][SideRailButton] pressed and normal draw modes share the same
 	button->set_theme(theme);
 	button->notification(Control::NOTIFICATION_THEME_CHANGED);
 
-	const Size2 normal_min = button->get_minimum_size();
-	button->set_size(normal_min);
+	const Size2 aligned_min = button->get_minimum_size();
+	button->set_size(aligned_min);
 	const EditorSideRailButton::ComposedGeometry normal = button->get_composed_geometry();
-
 	button->set_pressed_no_signal(true);
-	const Size2 pressed_min = button->get_minimum_size();
-	button->set_size(pressed_min);
+	button->set_size(button->get_minimum_size());
 	const EditorSideRailButton::ComposedGeometry pressed = button->get_composed_geometry();
 
-	CHECK(pressed_min == normal_min);
+	CHECK(button->get_minimum_size() == aligned_min);
 	CHECK(pressed.content_rect == normal.content_rect);
-	CHECK(pressed.icon_rect == normal.icon_rect);
-	CHECK(pressed.label_rect == normal.label_rect);
+	CHECK(pressed.content_rect.position == Point2(8, 8));
+
+	theme->set_constant(SNAME("align_to_largest_stylebox"), SNAME("Button"), 0);
+	button->set_pressed_no_signal(false);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	button->set_size(button->get_minimum_size());
+	const EditorSideRailButton::ComposedGeometry unaligned_normal = button->get_composed_geometry();
+	button->set_pressed_no_signal(true);
+	button->set_size(button->get_minimum_size());
+	const EditorSideRailButton::ComposedGeometry unaligned_pressed = button->get_composed_geometry();
+
+	CHECK(unaligned_normal.content_rect.position == Point2(4, 4));
+	CHECK(unaligned_pressed.content_rect.position == Point2(8, 8));
+	CHECK(unaligned_pressed.content_rect != unaligned_normal.content_rect);
+
+	memdelete(button);
+}
+
+TEST_CASE("[Editor][SideRailButton] undersized icon-only mode overflows in one direction only") {
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	EditorSideRailButton *button = memnew(EditorSideRailButton);
+	button->set_rail_icon(_make_side_rail_test_icon(16));
+	button->set_label_visible(false);
+	button->set_theme(theme);
+	button->notification(Control::NOTIFICATION_THEME_CHANGED);
+	button->set_size(Size2(10, 10));
+
+	const EditorSideRailButton::ComposedGeometry geometry = button->get_composed_geometry();
+	REQUIRE(geometry.has_icon);
+	if (!geometry.has_icon) {
+		memdelete(button);
+		return;
+	}
+	CHECK(geometry.icon_rect.position.x >= geometry.content_rect.position.x - 0.5);
+	CHECK(geometry.icon_rect.position.y >= geometry.content_rect.position.y - 0.5);
 
 	memdelete(button);
 }

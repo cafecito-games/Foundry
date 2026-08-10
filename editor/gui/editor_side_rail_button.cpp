@@ -50,15 +50,30 @@ void EditorSideRailButton::_update_theme_cache() {
 	theme_cache.font = get_theme_font(SceneStringName(font));
 	theme_cache.font_size = get_theme_font_size(SceneStringName(font_size));
 	theme_cache.font_color = get_theme_color(SceneStringName(font_color));
-	theme_cache.font_hover_color = get_theme_color(SNAME("font_hover_color"));
-	theme_cache.font_pressed_color = get_theme_color(SNAME("font_pressed_color"));
-	theme_cache.font_hover_pressed_color = get_theme_color(SNAME("font_hover_pressed_color"));
-	theme_cache.font_disabled_color = get_theme_color(SNAME("font_disabled_color"));
-	theme_cache.icon_normal_color = get_theme_color(SNAME("icon_normal_color"));
-	theme_cache.icon_hover_color = get_theme_color(SNAME("icon_hover_color"));
-	theme_cache.icon_pressed_color = get_theme_color(SNAME("icon_pressed_color"));
-	theme_cache.icon_hover_pressed_color = get_theme_color(SNAME("icon_hover_pressed_color"));
-	theme_cache.icon_disabled_color = get_theme_color(SNAME("icon_disabled_color"));
+	theme_cache.has_font_hover_color = has_theme_color(SNAME("font_hover_color"));
+	theme_cache.font_hover_color = theme_cache.has_font_hover_color ? get_theme_color(SNAME("font_hover_color")) : theme_cache.font_color;
+	theme_cache.has_font_pressed_color = has_theme_color(SNAME("font_pressed_color"));
+	theme_cache.font_pressed_color = theme_cache.has_font_pressed_color ? get_theme_color(SNAME("font_pressed_color")) : theme_cache.font_color;
+	theme_cache.has_font_hover_pressed_color = has_theme_color(SNAME("font_hover_pressed_color"));
+	theme_cache.font_hover_pressed_color = theme_cache.has_font_hover_pressed_color ? get_theme_color(SNAME("font_hover_pressed_color")) : theme_cache.font_color;
+	theme_cache.has_font_focus_color = has_theme_color(SNAME("font_focus_color"));
+	theme_cache.font_focus_color = theme_cache.has_font_focus_color ? get_theme_color(SNAME("font_focus_color")) : theme_cache.font_color;
+	theme_cache.has_font_disabled_color = has_theme_color(SNAME("font_disabled_color"));
+	theme_cache.font_disabled_color = theme_cache.has_font_disabled_color ? get_theme_color(SNAME("font_disabled_color")) : theme_cache.font_color;
+
+	theme_cache.has_icon_normal_color = has_theme_color(SNAME("icon_normal_color"));
+	theme_cache.icon_normal_color = theme_cache.has_icon_normal_color ? get_theme_color(SNAME("icon_normal_color")) : Color(1, 1, 1, 1);
+	theme_cache.has_icon_hover_color = has_theme_color(SNAME("icon_hover_color"));
+	theme_cache.icon_hover_color = theme_cache.has_icon_hover_color ? get_theme_color(SNAME("icon_hover_color")) : Color(1, 1, 1, 1);
+	theme_cache.has_icon_pressed_color = has_theme_color(SNAME("icon_pressed_color"));
+	theme_cache.icon_pressed_color = theme_cache.has_icon_pressed_color ? get_theme_color(SNAME("icon_pressed_color")) : Color(1, 1, 1, 1);
+	theme_cache.has_icon_hover_pressed_color = has_theme_color(SNAME("icon_hover_pressed_color"));
+	theme_cache.icon_hover_pressed_color = theme_cache.has_icon_hover_pressed_color ? get_theme_color(SNAME("icon_hover_pressed_color")) : Color(1, 1, 1, 1);
+	theme_cache.has_icon_focus_color = has_theme_color(SNAME("icon_focus_color"));
+	theme_cache.icon_focus_color = theme_cache.has_icon_focus_color ? get_theme_color(SNAME("icon_focus_color")) : Color(1, 1, 1, 1);
+	theme_cache.has_icon_disabled_color = has_theme_color(SNAME("icon_disabled_color"));
+	theme_cache.icon_disabled_color = theme_cache.has_icon_disabled_color ? get_theme_color(SNAME("icon_disabled_color")) : Color(1, 1, 1, 1);
+
 	theme_cache.icon_label_separation = get_theme_constant(SNAME("h_separation"));
 	theme_cache.align_to_largest_stylebox = get_theme_constant(SNAME("align_to_largest_stylebox"));
 
@@ -155,6 +170,10 @@ Color EditorSideRailButton::_get_current_font_color() const {
 		case DRAW_DISABLED:
 			return theme_cache.font_disabled_color;
 		default:
+			// Focus colors only take precedence over the normal state, matching Button.
+			if (has_focus(true)) {
+				return theme_cache.font_focus_color;
+			}
 			return theme_cache.font_color;
 	}
 }
@@ -170,6 +189,9 @@ Color EditorSideRailButton::_get_current_icon_color() const {
 		case DRAW_DISABLED:
 			return theme_cache.icon_disabled_color;
 		default:
+			if (has_focus(true)) {
+				return theme_cache.icon_focus_color;
+			}
 			return theme_cache.icon_normal_color;
 	}
 }
@@ -195,12 +217,15 @@ EditorSideRailButton::ComposedGeometry EditorSideRailButton::get_composed_geomet
 
 	if (!geometry.has_label) {
 		// Icon-only (and empty) mode: upright, unrotated icon centered in the
-		// stylebox content rect. No label space is reserved.
+		// stylebox content rect. No label space is reserved. Clamp centering so
+		// an undersized button overflows in one direction only.
 		if (geometry.has_icon) {
+			const real_t icon_offset_x = MAX(0.0, (geometry.content_rect.size.x - metrics.icon_size.width) / 2.0);
+			const real_t icon_offset_y = MAX(0.0, (geometry.content_rect.size.y - metrics.icon_size.height) / 2.0);
 			geometry.icon_rect = Rect2(
 					Point2(
-							Math::round(geometry.content_rect.position.x + (geometry.content_rect.size.x - metrics.icon_size.width) / 2.0),
-							Math::round(geometry.content_rect.position.y + (geometry.content_rect.size.y - metrics.icon_size.height) / 2.0)),
+							Math::round(geometry.content_rect.position.x + icon_offset_x),
+							Math::round(geometry.content_rect.position.y + icon_offset_y)),
 					metrics.icon_size);
 			geometry.icon_strip_position = geometry.icon_rect.position;
 		}
