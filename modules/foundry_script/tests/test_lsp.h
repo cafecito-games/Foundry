@@ -723,8 +723,88 @@ struct ScopedEnvironmentVariable {
 	}
 };
 
+// Environment seam used only by the concurrency regression below: when a parent test supplies a
+// barrier directory and a participant count, each selected case announces itself and waits for its
+// siblings before resolving its staged root. Absent these variables every case runs unchanged.
+constexpr const char *LSP_SCRATCH_BARRIER_DIRECTORY_ENV = "FOUNDRY_TEST_LSP_SCRATCH_BARRIER_DIRECTORY";
+constexpr const char *LSP_SCRATCH_BARRIER_COUNT_ENV = "FOUNDRY_TEST_LSP_SCRATCH_BARRIER_COUNT";
+constexpr const char *LSP_SCRATCH_BARRIER_MARKER_PREFIX = "ready_";
+constexpr uint64_t LSP_SCRATCH_BARRIER_TIMEOUT_MILLISECONDS = 60 * 1000;
+
+int count_lsp_scratch_barrier_markers(const String &p_barrier_directory) {
+	Ref<DirAccess> directory = DirAccess::open(p_barrier_directory);
+	if (directory.is_null()) {
+		return 0;
+	}
+	int count = 0;
+	directory->list_dir_begin();
+	for (String entry = directory->get_next(); !entry.is_empty(); entry = directory->get_next()) {
+		if (!directory->current_is_dir() && entry.begins_with(LSP_SCRATCH_BARRIER_MARKER_PREFIX)) {
+			count++;
+		}
+	}
+	directory->list_dir_end();
+	return count;
+}
+
+// Releases all participating processes together so their staging operations overlap, instead of
+// leaving the overlap to incidental scheduler timing. The wait is bounded so a lost sibling degrades
+// into a slower run rather than a hang.
+void wait_for_lsp_scratch_barrier() {
+	OS *os = OS::get_singleton();
+	if (!os->has_environment(LSP_SCRATCH_BARRIER_DIRECTORY_ENV) || !os->has_environment(LSP_SCRATCH_BARRIER_COUNT_ENV)) {
+		return;
+	}
+	const String barrier_directory = os->get_environment(LSP_SCRATCH_BARRIER_DIRECTORY_ENV);
+	const int expected_participants = os->get_environment(LSP_SCRATCH_BARRIER_COUNT_ENV).to_int();
+	if (barrier_directory.is_empty() || expected_participants <= 0) {
+		return;
+	}
+	if (DirAccess::make_dir_recursive_absolute(barrier_directory) != OK) {
+		return;
+	}
+
+	const String marker_path = barrier_directory.path_join(vformat("%s%d", LSP_SCRATCH_BARRIER_MARKER_PREFIX, os->get_process_id()));
+	{
+		Ref<FileAccess> marker = FileAccess::open(marker_path, FileAccess::WRITE);
+		if (marker.is_null()) {
+			return;
+		}
+		marker->store_string("ready\n");
+	}
+
+	const uint64_t deadline = os->get_ticks_msec() + LSP_SCRATCH_BARRIER_TIMEOUT_MILLISECONDS;
+	while (count_lsp_scratch_barrier_markers(barrier_directory) < expected_participants) {
+		if (os->get_ticks_msec() >= deadline) {
+			return;
+		}
+		os->delay_usec(5000);
+	}
+}
+
+// The contract root is process-scoped so concurrent shards, and independent `foundry` invocations on
+// the same machine, never stage this contract's fixture project under one shared directory. Two
+// processes sharing it can interleave `stage_project_copy()`'s remove-then-copy, leaving the other's
+// staged project partially deleted while it is being read.
+//
+// The path is resolved once per process, on the first call, which happens before any case installs
+// its own scoped override. All three cases in one process therefore agree on it, while separate
+// processes never do.
 String lsp_scratch_contract_root() {
-	return OS::get_singleton()->get_temp_path().path_join("foundry_lsp_scratch_contract");
+	static const String process_scoped_root = []() -> String {
+		String base;
+		if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+			base = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+		}
+		// An inherited scratch root is honored so a harness that owns the filesystem area keeps
+		// ownership of it. Anything unusable as a filesystem root falls back to the OS temporary
+		// directory, which is where a direct invocation lands anyway.
+		if (base.is_empty() || base.contains("://") || !base.is_absolute_path()) {
+			base = OS::get_singleton()->get_temp_path();
+		}
+		return base.path_join(vformat("foundry_lsp_scratch_contract_%d", OS::get_singleton()->get_process_id()));
+	}();
+	return process_scoped_root;
 }
 
 String lsp_fixture_root_absolute() {
@@ -735,6 +815,7 @@ String lsp_fixture_root_absolute() {
 }
 
 TEST_CASE("[Modules][FoundryScript][LSP scratch] test project root is staged under scratch") {
+	wait_for_lsp_scratch_barrier();
 	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", lsp_scratch_contract_root());
 	// The helper canonicalizes the configured root, so containment is checked against the resolved
 	// path rather than the raw environment value.
@@ -751,6 +832,7 @@ TEST_CASE("[Modules][FoundryScript][LSP scratch] test project root is staged und
 }
 
 TEST_CASE("[Modules][FoundryScript][LSP scratch] temp files resolve inside staged project") {
+	wait_for_lsp_scratch_barrier();
 	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", lsp_scratch_contract_root());
 	const String scratch_root = TemporaryProjectTree::get_test_scratch_root();
 	REQUIRE_FALSE(scratch_root.is_empty());
@@ -775,6 +857,7 @@ TEST_CASE("[Modules][FoundryScript][LSP scratch] temp files resolve inside stage
 }
 
 TEST_CASE("[Modules][FoundryScript][LSP scratch] temp file cleanup uses original resolved path after language teardown") {
+	wait_for_lsp_scratch_barrier();
 	const String scratch_root = lsp_scratch_contract_root();
 	ScopedEnvironmentVariable scratch_env("FOUNDRY_TEST_SCRATCH", scratch_root);
 	const String test_root = String(root);
