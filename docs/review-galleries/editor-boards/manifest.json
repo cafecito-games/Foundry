@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "boards": [
+    {
+      "title": "Boards walkthrough",
+      "mode": "walkthrough",
+      "shots": [
+        {
+          "file": "shots/ba6a05f3383baaae.png",
+          "caption": "Confirm one board on its own looks exactly like the editor did before boards existed: a single scene tab strip, the Scene dock on the left, the Inspector on the right, and nothing new inside the editing area. The only addition is the Board 1/2/3 switcher in the title bar (Board 3 highlighted).",
+          "type": "image",
+          "order": 0
+        },
+        {
+          "file": "shots/ab29a77df3b74e31.png",
+          "caption": "Confirm the neighbouring board is still on screen at the right edge during the switch: Board 3's own scene tab ('terrain') and its own Scene dock (Terrain/Grass/Soil/Title/Rock) are visible beside the arriving Board 2. Two boards sharing the frame is what proves the switch travels through space rather than swapping one board's content for another's in place.",
+          "type": "image",
+          "order": 1
+        },
+        {
+          "file": "shots/01877bd8f1e3f6a7.png",
+          "caption": "Confirm no board in the zoomed-out overview is a frozen still: each of the three shows its own live 2D viewport rendering its own scene (ARENA, HUD, TERRAIN), its own scene tab, its own Scene dock listing that scene's nodes, and its own Inspector. A cached thumbnail could not show per-board docks and node lists.",
+          "type": "image",
+          "order": 2
+        },
+        {
+          "file": "shots/17b4e8ace40de9a7.png",
+          "caption": "Confirm the drop rosette is lit on a different board from the one the drag started in: the 'arena' pane is being dragged out of Board 1 (its tab is still in Board 1's strip on the left), while the rosette and the orange right-half drop preview are on Board 2 in the middle, with the right-hand chevron aimed. Board 3 is untouched.",
+          "type": "image",
+          "order": 3
+        },
+        {
+          "file": "shots/a68eb42b948e1304.png",
+          "caption": "Confirm the cross-board move completed: the editor is back on a single board (Board 2 highlighted) and arena now lives there as a second pane, split to the right of hud, focused and fully interactive. Board 1 no longer lists arena \u2014 its emptied pane collapsed, and the board itself survived in the switcher.",
+          "type": "image",
+          "order": 4
+        }
+      ]
+    }
+  ]
+}
