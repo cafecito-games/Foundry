@@ -41,6 +41,8 @@
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_workflow.h"
 #include "editor/automation/editor_automation_workspace.h"
+#include "editor/editor_board.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/inspector/editor_inspector.h"
@@ -1405,6 +1407,50 @@ EditorAutomationActionResult _action_dock(
 	return result;
 }
 
+EditorAutomationActionResult _action_activate_board(const Dictionary &p_options) {
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr) {
+		return EditorAutomationActionResult::failure("unsupported_action", "No board strip is available.");
+	}
+
+	const EditorAutomationBoardResolution resolution = EditorAutomationWorkspace::resolve_board(strip, p_options);
+	if (!resolution.ok()) {
+		return EditorAutomationActionResult::failure(resolution.failure_kind, resolution.message);
+	}
+
+	strip->set_active_board(resolution.index);
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(
+			EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE_BOARD, String());
+	result.details["board_index"] = resolution.index;
+	EditorBoard *board = strip->get_board(resolution.index);
+	result.details["board_title"] = board != nullptr ? board->get_title() : String();
+	result.details["board_id"] = board != nullptr ? board->get_board_id() : -1;
+	return result;
+}
+
+EditorAutomationActionResult _action_set_board_overview(const Dictionary &p_options) {
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr) {
+		return EditorAutomationActionResult::failure("unsupported_action", "No board strip is available.");
+	}
+	if (!p_options.has("overview")) {
+		return EditorAutomationActionResult::failure("invalid_parameter", "set_board_overview requires an `overview` boolean argument.");
+	}
+	const Variant requested = p_options.get("overview", Variant());
+	if (requested.get_type() != Variant::BOOL) {
+		return EditorAutomationActionResult::failure("invalid_parameter", "`overview` must be a boolean.");
+	}
+
+	strip->set_overview(bool(requested));
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(
+			EditorAutomationActionRouteNames::SEMANTIC_SET_BOARD_OVERVIEW, String());
+	result.details["overview_active"] = strip->is_overview_active();
+	result.details["active_board"] = strip->get_active_index();
+	return result;
+}
+
 String _read_string_option(const Dictionary &p_options, const char *p_key) {
 	if (!p_options.has(p_key)) {
 		return String();
@@ -1478,6 +1524,17 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 			return result;
 		}
 		EditorAutomationActionResult result = _action_press_key(p_snapshot, key_name, p_options, route_preference);
+		_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
+		EditorAutomationTrace::get_singleton().end_action();
+		return result;
+	}
+
+	// Board actions address the editor-wide board strip rather than a snapshot element, so
+	// they resolve no selector, exactly like press_key.
+	if (action_kind == EditorAutomationActionKind::ACTIVATE_BOARD || action_kind == EditorAutomationActionKind::SET_BOARD_OVERVIEW) {
+		EditorAutomationActionResult result = action_kind == EditorAutomationActionKind::ACTIVATE_BOARD
+				? _action_activate_board(p_options)
+				: _action_set_board_overview(p_options);
 		_record_action_trace(p_action, p_target, p_snapshot, nullptr, result, log_marker);
 		EditorAutomationTrace::get_singleton().end_action();
 		return result;

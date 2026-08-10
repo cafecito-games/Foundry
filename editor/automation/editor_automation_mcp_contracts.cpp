@@ -757,6 +757,9 @@ Ref<EditorAutomationMCPJsonSchema> EditorAutomationMCPActionArgs::schema() {
 	schema->add_property("column", EditorAutomationMCPJsonSchema::integer("0-based caret column for set_caret on TextEdit-backed elements."));
 	schema->add_property("to_line", EditorAutomationMCPJsonSchema::integer("0-based selection end line for set_caret. Selects a range when both to_line and to_column are present."));
 	schema->add_property("to_column", EditorAutomationMCPJsonSchema::integer("0-based selection end column for set_caret. Selects a range when both to_line and to_column are present."));
+	schema->add_property("board_index", EditorAutomationMCPJsonSchema::integer("0-based board index for activate_board. Provide board_index or board_title."));
+	schema->add_property("board_title", EditorAutomationMCPJsonSchema::string("Board title for activate_board. An unknown title is an error, not a no-op."));
+	schema->add_property("overview", EditorAutomationMCPJsonSchema::boolean("Whether set_board_overview zooms out to the board overview (true) or back onto the active board (false)."));
 	return schema;
 }
 
@@ -873,6 +876,15 @@ EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs> EditorAutomationMC
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
 	if (!_read_optional_int(dict, "to_column", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_int(dict, "board_index", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_string(dict, "board_title", args.values, error)) {
+		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
+	}
+	if (!_read_optional_bool(dict, "overview", args.values, error)) {
 		return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::invalid(p_field + "." + error.field, error.message);
 	}
 	return EditorAutomationMCPParseResult<EditorAutomationMCPActionArgs>::success(args);
@@ -1501,6 +1513,8 @@ PackedStringArray EditorAutomationMCPContracts::action_names() {
 	actions.push_back("right_click");
 	actions.push_back("set_value");
 	actions.push_back("set_caret");
+	actions.push_back("activate_board");
+	actions.push_back("set_board_overview");
 	return actions;
 }
 
@@ -1560,6 +1574,7 @@ PackedStringArray EditorAutomationMCPContracts::wait_condition_types() {
 	types.push_back("tile_collapsed");
 	types.push_back("focused_tile_changed");
 	types.push_back("workspace_settled");
+	types.push_back("board_transition_settled");
 	return types;
 }
 
@@ -1637,8 +1652,8 @@ Array EditorAutomationMCPContracts::build_tools_list() {
 	}
 
 	tools.push_back(_make_tool("read_editor_state",
-			"Returns selected nodes, open scenes, active scene, current script, playing state, unsaved state, and the multi-pane workspace tree.",
-			EditorAutomationMCPReadEditorStateInput::schema(), EditorAutomationMCPJsonSchema::object("Output from read_editor_state with a lightweight snapshot of editor/session state, including workspace tiles and focused_tile_id."))
+			"Returns selected nodes, open scenes, active scene, current script, playing state, unsaved state, the multi-pane workspace tree, and the board strip (boards, active_board, board_overview_active).",
+			EditorAutomationMCPReadEditorStateInput::schema(), EditorAutomationMCPJsonSchema::object("Output from read_editor_state with a lightweight snapshot of editor/session state, including workspace tiles, focused_tile_id, and one boards entry per board with its id, title, and dormant flag."))
 					.to_dictionary());
 
 	{

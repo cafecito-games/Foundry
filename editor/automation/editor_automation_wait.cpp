@@ -35,6 +35,7 @@
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_workspace.h"
+#include "editor/editor_board_strip.h"
 #include "editor/editor_node.h"
 #include "editor/file_system/editor_file_system.h"
 #include "scene/main/scene_tree.h"
@@ -59,6 +60,7 @@ enum class WaitConditionKind {
 	TILE_COLLAPSED,
 	FOCUSED_TILE_CHANGED,
 	WORKSPACE_SETTLED,
+	BOARD_TRANSITION_SETTLED,
 	UNSUPPORTED,
 };
 
@@ -76,6 +78,8 @@ struct PendingWait {
 	int baseline_tile_count = -1;
 	int baseline_focused_tile_id = -1;
 	int workspace_settled_frames = 0;
+	PackedVector2Array previous_board_geometry;
+	bool has_previous_board_geometry = false;
 	bool cancelled = false;
 	EditorAutomationActWaitContext act_context;
 	EditorAutomationCooperativeWaitStatus status = EditorAutomationCooperativeWaitStatus::PENDING;
@@ -191,6 +195,9 @@ WaitConditionKind _parse_condition_kind(const Dictionary &p_condition) {
 	}
 	if (type == "workspace_settled") {
 		return WaitConditionKind::WORKSPACE_SETTLED;
+	}
+	if (type == "board_transition_settled") {
+		return WaitConditionKind::BOARD_TRANSITION_SETTLED;
 	}
 	return WaitConditionKind::UNSUPPORTED;
 }
@@ -399,6 +406,17 @@ bool _evaluate_wait_step(PendingWait &p_wait, EditorAutomationWaitResult &r_imme
 			satisfied = p_wait.settled_frames >= 1;
 			break;
 		}
+		case WaitConditionKind::BOARD_TRANSITION_SETTLED: {
+			EditorBoardStrip *strip = EditorNode::get_board_strip();
+			const PackedVector2Array geometry = EditorAutomationWorkspace::capture_board_geometry(strip);
+			// The first poll only establishes the baseline: settling is a statement about
+			// two consecutive frames, so it can never be answered from a single sample.
+			satisfied = p_wait.has_previous_board_geometry &&
+					EditorAutomationWorkspace::board_transition_settled(strip, p_wait.previous_board_geometry, geometry);
+			p_wait.previous_board_geometry = geometry;
+			p_wait.has_previous_board_geometry = true;
+			break;
+		}
 		case WaitConditionKind::WORKSPACE_SETTLED: {
 			const int tile_count = _current_tile_count();
 			const int focused_tile = EditorAutomationWorkspace::get_focused_tile_id();
@@ -546,6 +564,9 @@ bool EditorAutomationWait::evaluate_condition_once(
 		case WaitConditionKind::MODAL_STACK_CHANGED:
 		case WaitConditionKind::MODAL_STACK_SETTLED:
 		case WaitConditionKind::WORKSPACE_SETTLED:
+		case WaitConditionKind::BOARD_TRANSITION_SETTLED:
+			// Frame-to-frame conditions: a single sample cannot answer them, so they are
+			// only ever satisfied through the polled pending-wait path.
 			return false;
 		case WaitConditionKind::SELECTOR_APPEARS:
 			return _selector_has_matches(p_snapshot, _read_dictionary(p_condition, "selector"));

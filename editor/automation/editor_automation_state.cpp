@@ -245,6 +245,9 @@ Dictionary EditorAutomationState::read_editor_state() {
 		state["modal_stack"] = Array();
 		state["focused_tile_id"] = 0;
 		state["workspace"] = Dictionary();
+		state["boards"] = Array();
+		state["active_board"] = -1;
+		state["board_overview_active"] = false;
 		state["inspector"] = _empty_subsystem_state();
 		state["undo_redo"] = _empty_subsystem_state();
 		state["view_2d"] = _empty_subsystem_state();
@@ -378,7 +381,14 @@ Dictionary EditorAutomationState::read_editor_state() {
 
 	const int focused_tile_id = editor_data.get_focused_tile_id();
 	state["focused_tile_id"] = focused_tile_id;
+	// `workspace` stays the active board's workspace, unchanged in shape, so every existing
+	// automation consumer keeps working; `boards` is the per-board view alongside it.
 	state["workspace"] = EditorAutomationWorkspace::capture_workspace_state(&editor_data, EditorNode::get_scene_workspace());
+
+	const Dictionary boards_state = EditorAutomationWorkspace::capture_boards_state(&editor_data, EditorNode::get_board_strip());
+	state["boards"] = boards_state.get("boards", Array());
+	state["active_board"] = boards_state.get("active_board", -1);
+	state["board_overview_active"] = boards_state.get("overview_active", false);
 
 	Dictionary inspector_state;
 	EditorInspector *inspector = editor_node->get_focused_inspector();
