@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/math/math_defs.h"
 #include "core/templates/vector.h"
 #include "core/typedefs.h"
 
