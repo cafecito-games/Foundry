@@ -38,6 +38,7 @@
 #include "editor/automation/editor_automation_server.h"
 #include "editor/automation/editor_automation_snapshot.h"
 
+#include "core/input/input.h"
 #include "core/object/message_queue.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/main/scene_tree.h"
@@ -215,6 +216,39 @@ TEST_CASE("[Editor][Automation] mouse_down, mouse_move and mouse_up compose a dr
 	CHECK(harness.target->dropped);
 	CHECK(String(harness.target->dropped_data) == "drag_payload");
 
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][Automation] a gesture is delivered while input accumulation is on") {
+	EditorAutomationInput::reset_pointer_state();
+
+	Input *input = Input::get_singleton();
+	REQUIRE(input != nullptr);
+
+	// The editor runs with accumulated input, where parsed events sit in a buffer
+	// that the main loop drains once per frame and consecutive motions collapse
+	// while they wait. A gesture synthesized inside one request has to drain that
+	// buffer itself, so the whole press/motion/release sequence must be exercised
+	// with accumulation on to cover it at all.
+	const bool previous_accumulated_input = input->is_using_accumulated_input();
+	input->set_use_accumulated_input(true);
+
+	DragHarness harness;
+	harness.mount();
+
+	const Vector2 from = harness.source->get_global_rect().get_center();
+	const Vector2 to = harness.target->get_global_rect().get_center();
+
+	PackedStringArray events;
+	EditorAutomationInputModifiers modifiers;
+	CHECK(EditorAutomationInput::push_mouse_drag(
+			harness.window, from, to, Vector<Vector2>(), MouseButton::LEFT, modifiers, events, true));
+	MessageQueue::get_singleton()->flush();
+
+	CHECK(harness.target->dropped);
+	CHECK(String(harness.target->dropped_data) == "drag_payload");
+
+	input->set_use_accumulated_input(previous_accumulated_input);
 	harness.unmount();
 }
 
