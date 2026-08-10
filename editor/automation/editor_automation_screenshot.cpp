@@ -145,6 +145,12 @@ Ref<Image> EditorAutomationScreenshot::_acquire_viewport_image(Node *p_snapshot_
 		RenderingServer *rendering_server = RenderingServer::get_singleton();
 		if (rendering_server != nullptr) {
 			rendering_server->draw(false, 0.0);
+			// With a render thread, draw() only queues the frame and returns, so
+			// reading the viewport texture straight afterwards would hand back the
+			// pre-draw contents -- exactly what force_draw exists to avoid. Waiting
+			// for the render thread to drain the queue is what makes the read see
+			// the frame that was just requested.
+			rendering_server->sync();
 		}
 	}
 
