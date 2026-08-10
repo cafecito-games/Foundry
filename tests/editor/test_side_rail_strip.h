@@ -201,6 +201,56 @@ TEST_CASE("[Editor][SideRail] toggle tooltip is non-empty with and without a sho
 	memdelete(strip);
 }
 
+TEST_CASE("[Editor][SideRail] deferred first rebuild does not lock the rail into icon-only") {
+	// EditorSideRailStrip's constructor defers its first rebuild_toggles()
+	// call (matching EditorBottomDrawerStrip's own construction pattern), so
+	// it can run before any parent container has sized the strip, i.e. while
+	// get_size().height is still the construction-time zero. Deciding the
+	// label-mode fit against that bogus baseline would drop straight to
+	// ICON_ONLY, and because the fit decision is hysteretic, a real height
+	// inside the hysteresis band would then never return to LABELLED. This
+	// reproduces exactly that ordering: pump the deferred call without ever
+	// giving the strip a real size first.
+	SideRailFixture fixture;
+	fixture.add_right_dock("Inspector");
+	fixture.add_right_dock("Signals");
+
+	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
+	SideRailFixture::pump();
+
+	REQUIRE(strip->get_toggle_buttons().size() == 2);
+	if (strip->get_toggle_buttons().size() != 2) {
+		memdelete(strip);
+		return;
+	}
+
+	CHECK(strip->get_label_mode() == SideRailLabelMode::LABELLED);
+
+	Vector<real_t> labelled_heights;
+	labelled_heights.resize(strip->get_toggle_buttons().size());
+	for (uint32_t i = 0; i < strip->get_toggle_buttons().size(); i++) {
+		labelled_heights.write[i] = strip->get_toggle_buttons()[i]->get_labelled_minimum_size().height;
+	}
+	const SideRailFitThresholds thresholds = side_rail_fit_thresholds(labelled_heights);
+	REQUIRE(thresholds.drop_to_icon_only > 0);
+	if (!(thresholds.drop_to_icon_only > 0)) {
+		memdelete(strip);
+		return;
+	}
+
+	// A height inside the hysteresis band, applied as the strip's first real
+	// resize, must still be measured against the true starting mode
+	// (LABELLED) and therefore stay LABELLED. Before the guard, the bogus
+	// zero-height rebuild above would already have dropped to ICON_ONLY, and
+	// this height (below return_to_labelled) would then be stuck there.
+	const real_t within_hysteresis_band = (thresholds.drop_to_icon_only + thresholds.return_to_labelled) / 2.0;
+	strip->set_size(Size2(32, within_hysteresis_band));
+
+	CHECK(strip->get_label_mode() == SideRailLabelMode::LABELLED);
+
+	memdelete(strip);
+}
+
 TEST_CASE("[Editor][SideRailButton] rotated-label minimum size covers the rendered text width") {
 	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
 
@@ -214,6 +264,10 @@ TEST_CASE("[Editor][SideRailButton] rotated-label minimum size covers the render
 
 	const Ref<Font> font = button->get_theme_font(SceneStringName(font));
 	REQUIRE(font.is_valid());
+	if (font.is_null()) {
+		memdelete(button);
+		return;
+	}
 	const int font_size = button->get_theme_font_size(SceneStringName(font_size));
 	const real_t text_width = font->get_string_size("Inspector", HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x;
 
@@ -221,6 +275,56 @@ TEST_CASE("[Editor][SideRailButton] rotated-label minimum size covers the render
 	CHECK(labelled_size.height >= text_width);
 
 	memdelete(button);
+}
+
+TEST_CASE("[Editor][SideRailButton] label transform is independent of the button's position in its parent") {
+	// Regression for the label rendering displaced by its own layout position:
+	// NOTIFICATION_DRAW already runs in the control's local space, so
+	// composing get_transform() into the label's draw transform applies the
+	// button's own position a second time. Two buttons with identical local
+	// geometry sitting at different y-offsets in a VBoxContainer must produce
+	// the exact same label transform, since that transform must be expressed
+	// purely in local space and never read the button's position.
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	Control *root = memnew(Control);
+	root->set_size(Size2(400, 400));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	VBoxContainer *vbox = memnew(VBoxContainer);
+	root->add_child(vbox);
+
+	EditorSideRailButton *first = memnew(EditorSideRailButton);
+	first->set_rail_label("Inspector");
+	first->set_custom_minimum_size(Size2(32, 140));
+	vbox->add_child(first);
+
+	EditorSideRailButton *second = memnew(EditorSideRailButton);
+	second->set_rail_label("Inspector");
+	second->set_custom_minimum_size(Size2(32, 140));
+	vbox->add_child(second);
+
+	root->set_theme(theme);
+	SceneTree::get_singleton()->process(0.016);
+	MessageQueue::get_singleton()->flush();
+
+	// The setup only proves anything if the two buttons actually land at
+	// different y-positions; otherwise a position-dependent bug would be
+	// invisible here too (the double-transform bug this test guards against
+	// was invisible on the first toggle for exactly this reason).
+	REQUIRE(second->get_position().y > first->get_position().y);
+	if (!(second->get_position().y > first->get_position().y)) {
+		memdelete(root);
+		return;
+	}
+
+	const real_t cursor_y = 20;
+	const real_t text_width = 60;
+	const Transform2D first_transform = first->get_label_transform_for_test(cursor_y, text_width);
+	const Transform2D second_transform = second->get_label_transform_for_test(cursor_y, text_width);
+	CHECK(first_transform == second_transform);
+
+	memdelete(root);
 }
 
 TEST_CASE("[Editor][SideRailButton] icon-only minimum size drops the label contribution") {
@@ -324,6 +428,10 @@ TEST_CASE("[Editor][SideRail] rails do not change split-offset count or saved va
 
 	ScenePaneTile *tile = h.workspace->get_focused_tile();
 	REQUIRE(tile != nullptr);
+	if (tile == nullptr) {
+		h.unmount();
+		return;
+	}
 	REQUIRE(tile->get_left_rail() != nullptr);
 	REQUIRE(tile->get_right_rail() != nullptr);
 

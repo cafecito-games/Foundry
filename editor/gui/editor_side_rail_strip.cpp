@@ -175,6 +175,16 @@ void EditorSideRailStrip::_toggle_pressed(EditorDock *p_dock) {
 	dock_region->focus_dock(p_dock);
 }
 
+void EditorSideRailStrip::_close_pressed() {
+	// The close button only ever shows on a side that has a current-tab
+	// concept (see _update_active_states): deselecting the current tab hides
+	// its content, mirroring EditorBottomDrawerStrip::_close_pressed's
+	// bottom_panel->hide_bottom_panel() for this rail's tab-backed side.
+	if (active_source_tabs) {
+		active_source_tabs->set_current_tab(-1);
+	}
+}
+
 void EditorSideRailStrip::_update_active_states() {
 	int active_toggle = -1;
 	if (active_source_tabs) {
@@ -200,6 +210,18 @@ void EditorSideRailStrip::_update_active_states() {
 
 void EditorSideRailStrip::_apply_label_mode() {
 	if (toggle_buttons.is_empty()) {
+		return;
+	}
+
+	// rebuild_toggles() runs deferred and can fire before this control's first
+	// real layout pass (e.g. its parent container has not sorted children
+	// yet), when get_size() is still the construction-time zero. Deciding
+	// against that bogus baseline can wrongly drop to ICON_ONLY, and because
+	// the decision is hysteretic, a later real height inside the hysteresis
+	// band would then never return to LABELLED. Skip the decision until a
+	// real size exists; the control's actual first resize notification
+	// re-triggers this with a legitimate height.
+	if (get_size().height <= 0) {
 		return;
 	}
 
@@ -267,6 +289,7 @@ EditorSideRailStrip::EditorSideRailStrip(Side p_side, EditorTileDockRegion *p_do
 	close_button->set_accessibility_name(TTRC("Close Drawer"));
 	close_button->set_tooltip_text(TTRC("Close the open tile drawer."));
 	close_button->hide();
+	close_button->connect(SceneStringName(pressed), callable_mp(this, &EditorSideRailStrip::_close_pressed));
 	toggles_vbox->add_child(close_button);
 
 	// The far end of the rail; only meaningful once a side can be RAILED,

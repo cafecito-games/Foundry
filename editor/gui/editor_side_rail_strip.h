@@ -83,6 +83,7 @@ private:
 	void _refresh_toggle(int p_toggle_index);
 	void _dock_style_changed(EditorDock *p_dock);
 	void _toggle_pressed(EditorDock *p_dock);
+	void _close_pressed();
 	void _update_active_states();
 	void _apply_label_mode();
 
@@ -92,7 +93,7 @@ protected:
 public:
 	void rebuild_toggles();
 
-	// Toggle set matches _get_source_docks_in_order() filtered to is_visible().
+	// Toggle set matches _get_source_docks_in_order() filtered to is_enabled().
 	// Exposed for tests; production code never needs the raw dock list.
 	const LocalVector<EditorDock *> &get_toggle_docks() const { return toggle_docks; }
 	const LocalVector<EditorSideRailButton *> &get_toggle_buttons() const { return toggle_buttons; }

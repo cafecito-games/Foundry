@@ -56,6 +56,7 @@ class EditorSideRailButton : public Button {
 
 	void _update_theme_cache();
 	Size2 _compute_minimum_size(bool p_with_label) const;
+	Transform2D _get_label_transform(real_t p_cursor_y, real_t p_text_width) const;
 
 protected:
 	void _notification(int p_what);
@@ -76,6 +77,13 @@ public:
 	// is_label_visible(). Used by the rail's overflow fit decision to know
 	// whether returning to labelled mode would fit.
 	Size2 get_labelled_minimum_size() const;
+
+	// The exact transform NOTIFICATION_DRAW applies before drawing the rotated
+	// label, expressed purely in this control's local space. Exposed for
+	// tests, which use it to prove the label transform does not depend on the
+	// button's position within its parent (get_transform() must never be
+	// composed into it; NOTIFICATION_DRAW already runs in local space).
+	Transform2D get_label_transform_for_test(real_t p_cursor_y, real_t p_text_width) const { return _get_label_transform(p_cursor_y, p_text_width); }
 
 	EditorSideRailButton();
 };
