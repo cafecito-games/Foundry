@@ -455,6 +455,155 @@ struct SideRailWorkspaceHarness {
 	}
 };
 
+TEST_CASE("[Editor][SideRail] empty side keeps a non-zero rail width in DOCKED mode") {
+	// A side that starts with zero enabled docks has neither a toggle nor
+	// (DOCKED hides the expand button) any other visible child, so
+	// PanelContainer's own get_minimum_size() would otherwise report a
+	// near-zero width even though the control itself is not hidden.
+	SideRailFixture fixture;
+	EditorDock *dock = fixture.add_right_dock("Signals");
+	fixture.region.set_dock_enabled(dock, false);
+
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
+	strip->set_theme(theme);
+	strip->notification(Control::NOTIFICATION_THEME_CHANGED);
+
+	CHECK(strip->get_toggle_docks().is_empty());
+	CHECK(strip->is_visible());
+	CHECK(strip->get_minimum_size().width > 0);
+
+	memdelete(strip);
+}
+
+TEST_CASE("[Editor][SideRail] empty side keeps its rail visible and sized in RAILED mode") {
+	// RAILED always shows the expand button regardless of dock count, so an
+	// empty RAILED side already has a real child to size against; this pins
+	// that it stays true once the DOCKED floor above is added.
+	SideRailFixture fixture;
+	EditorDock *dock = fixture.add_right_dock("Signals");
+	fixture.region.set_dock_enabled(dock, false);
+	fixture.region.set_side_mode(EditorTileDockRegion::Side::RIGHT, SideRailMode::RAILED);
+
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
+	strip->set_theme(theme);
+	strip->notification(Control::NOTIFICATION_THEME_CHANGED);
+
+	CHECK(strip->get_toggle_docks().is_empty());
+	CHECK(strip->is_visible());
+	CHECK(strip->get_minimum_size().width > 0);
+
+	memdelete(strip);
+}
+
+TEST_CASE("[Editor][SideRail] expand button on an empty railed side returns it to DOCKED") {
+	SideRailFixture fixture;
+	EditorDock *dock = fixture.add_right_dock("Signals");
+	fixture.region.set_dock_enabled(dock, false);
+	fixture.region.set_side_mode(EditorTileDockRegion::Side::RIGHT, SideRailMode::RAILED);
+	REQUIRE(fixture.region.get_side_mode(EditorTileDockRegion::Side::RIGHT) == SideRailMode::RAILED);
+
+	fixture.region.set_side_mode(EditorTileDockRegion::Side::RIGHT, SideRailMode::DOCKED);
+
+	CHECK(fixture.region.get_side_mode(EditorTileDockRegion::Side::RIGHT) == SideRailMode::DOCKED);
+}
+
+TEST_CASE("[Editor][SideRail] re-enabling a dock on an empty side repopulates the rail in position") {
+	SideRailFixture fixture;
+	EditorDock *a = fixture.add_right_dock("A");
+	EditorDock *b = fixture.add_right_dock("B");
+	EditorDock *c = fixture.add_right_dock("C");
+	fixture.region.set_dock_enabled(a, false);
+	fixture.region.set_dock_enabled(b, false);
+	fixture.region.set_dock_enabled(c, false);
+
+	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
+	strip->rebuild_toggles();
+	REQUIRE(strip->get_toggle_docks().is_empty());
+
+	fixture.region.set_dock_enabled(b, true);
+	SideRailFixture::pump();
+
+	REQUIRE(strip->get_toggle_docks().size() == 1);
+	if (strip->get_toggle_docks().size() != 1) {
+		memdelete(strip);
+		return;
+	}
+	CHECK(strip->get_toggle_docks()[0] == b);
+
+	fixture.region.set_dock_enabled(a, true);
+	SideRailFixture::pump();
+	REQUIRE(strip->get_toggle_docks().size() == 2);
+	if (strip->get_toggle_docks().size() != 2) {
+		memdelete(strip);
+		return;
+	}
+	// Re-enabling A restores its position ahead of B, matching the source's
+	// own ordering rather than insertion order.
+	CHECK(strip->get_toggle_docks()[0] == a);
+	CHECK(strip->get_toggle_docks()[1] == b);
+
+	memdelete(strip);
+}
+
+TEST_CASE("[Editor][SideRail] re-enabling a dock on a RAILED empty side leaves the drawer closed") {
+	SideRailFixture fixture;
+	EditorDock *dock = fixture.add_right_dock("Signals");
+	fixture.region.set_dock_enabled(dock, false);
+	fixture.region.set_side_mode(EditorTileDockRegion::Side::RIGHT, SideRailMode::RAILED);
+	REQUIRE(fixture.region.get_drawer_dock(EditorTileDockRegion::Side::RIGHT) == nullptr);
+
+	fixture.region.set_dock_enabled(dock, true);
+
+	CHECK(fixture.region.get_side_mode(EditorTileDockRegion::Side::RIGHT) == SideRailMode::RAILED);
+	CHECK(fixture.region.get_drawer_dock(EditorTileDockRegion::Side::RIGHT) == nullptr);
+	CHECK_FALSE(fixture.region.is_dock_shown(dock));
+}
+
+TEST_CASE("[Editor][SideRail] a side with no docks at all still shows a real rail") {
+	// Distinct from the disabled-dock cases above: this side never had any
+	// EditorDock placed on it, so get_side_docks() is empty from construction.
+	SideRailFixture fixture;
+	fixture.add_left_dock("Scene"); // Keep the left side non-empty for contrast.
+
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
+	strip->set_theme(theme);
+	strip->notification(Control::NOTIFICATION_THEME_CHANGED);
+
+	CHECK(strip->get_toggle_docks().is_empty());
+	CHECK(strip->is_visible());
+	CHECK(strip->get_minimum_size().width > 0);
+
+	memdelete(strip);
+}
+
+TEST_CASE("[Editor][SideRail] removing a side's last dock empties the rail without losing the floor") {
+	SideRailFixture fixture;
+	EditorDock *dock = fixture.add_right_dock("Signals");
+
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+
+	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
+	strip->set_theme(theme);
+	strip->rebuild_toggles();
+	REQUIRE(strip->get_toggle_docks().size() == 1);
+
+	fixture.region.get_right_tabs()->remove_child(dock);
+	memdelete(dock);
+	SideRailFixture::pump();
+
+	CHECK(strip->get_toggle_docks().is_empty());
+	CHECK(strip->is_visible());
+	CHECK(strip->get_minimum_size().width > 0);
+
+	memdelete(strip);
+}
+
 TEST_CASE("[Editor][SideRail] rails do not change split-offset count or saved values") {
 	SideRailWorkspaceHarness h;
 	h.mount();
