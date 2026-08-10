@@ -1424,7 +1424,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (destination_size.x < 4 || destination_size.y < 4) {
 		return _failure_with_message(p_driver, result.workflow, "The dormant board's pane has no usable on-screen area in the overview.");
 	}
-	// The tile body's centre is the rosette's center region, which moves the tab
+	// The tile body's center is the rosette's center region, which moves the tab
 	// into the destination pane instead of splitting it.
 	const Vector2 drop_point = destination_leaf->get_global_transform().xform(destination_size * 0.5f);
 
