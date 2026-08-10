@@ -72,7 +72,10 @@ struct TemporaryProjectTree {
 	String root;
 
 	explicit TemporaryProjectTree(const String &p_name) {
-		setup_error = resolve_owned_path(p_name, root);
+		// The root is captured once here so cleanup is validated against the very root this tree was
+		// created under, whatever the environment looks like at destruction time.
+		owned_scratch_root = get_test_scratch_root();
+		setup_error = owned_scratch_root.is_empty() ? ERR_UNCONFIGURED : resolve_owned_child(owned_scratch_root, p_name, root);
 		CHECK_MESSAGE(setup_error == OK, vformat("Cannot resolve an owned scratch path for '%s'", p_name));
 		if (setup_error != OK) {
 			root = String();
@@ -80,7 +83,7 @@ struct TemporaryProjectTree {
 		}
 
 		// Start from a clean slate in case a previous aborted run left the tree behind.
-		setup_error = remove_owned_path(root);
+		setup_error = remove_validated_descendant(owned_scratch_root, root);
 		CHECK_MESSAGE(setup_error == OK, vformat("Cannot clear scratch path '%s'", root));
 		if (setup_error != OK) {
 			root = String();
@@ -105,7 +108,7 @@ struct TemporaryProjectTree {
 		if (root.is_empty()) {
 			return;
 		}
-		remove_owned_path(root);
+		remove_validated_descendant(owned_scratch_root, root);
 	}
 
 	Error get_setup_error() const {
@@ -143,26 +146,30 @@ struct TemporaryProjectTree {
 	// The absolute, canonical scratch root every owned path must live under. Empty when the
 	// configured root is unusable, in which case no owned path can be produced at all.
 	static String get_test_scratch_root() {
-		// Resolved exactly once, before any owned path exists, so a later working-directory change
-		// cannot reinterpret it.
-		static const String resolved_root = []() -> String {
-			if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
-				const String configured_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
-				if (!configured_root.is_empty()) {
-					String absolute_root;
-					if (resolve_scratch_root(configured_root, absolute_root) != OK) {
-						ERR_PRINT(vformat("FOUNDRY_TEST_SCRATCH '%s' is not a usable absolute scratch root; test scratch is unavailable.", configured_root));
-						return String();
-					}
-					return absolute_root;
+		// The configured value is re-validated and re-canonicalized on every resolution rather than
+		// memoized, so a test that scopes `FOUNDRY_TEST_SCRATCH` still redirects staging. That does
+		// not reintroduce working-directory sensitivity: a relative value is always rejected, and an
+		// absolute one canonicalizes to the same path from any working directory. Each owned path is
+		// resolved from the root once and retains it, so an object always validates its own cleanup
+		// against the root it was created under.
+		if (OS::get_singleton()->has_environment("FOUNDRY_TEST_SCRATCH")) {
+			const String configured_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+			if (!configured_root.is_empty()) {
+				String absolute_root;
+				if (resolve_scratch_root(configured_root, absolute_root) != OK) {
+					ERR_PRINT(vformat("FOUNDRY_TEST_SCRATCH '%s' is not a usable absolute scratch root; test scratch is unavailable.", configured_root));
+					return String();
 				}
+				return absolute_root;
 			}
-			// Without an explicit `FOUNDRY_TEST_SCRATCH`, fall back to a directory scoped to this
-			// process. A fixed shared path would let two `foundry` test processes running
-			// concurrently on the same machine (e.g. separate worktrees during a multi-agent
-			// session) race on the same staged project tree: one process's cleanup + `copy_dir`
-			// in `stage_project_copy` can interleave with another's, corrupting the staged files
-			// each currently-running test depends on.
+		}
+		// Without an explicit `FOUNDRY_TEST_SCRATCH`, fall back to a directory scoped to this
+		// process. A fixed shared path would let two `foundry` test processes running
+		// concurrently on the same machine (e.g. separate worktrees during a multi-agent
+		// session) race on the same staged project tree: one process's cleanup + `copy_dir`
+		// in `stage_project_copy` can interleave with another's, corrupting the staged files
+		// each currently-running test depends on.
+		static const String process_scoped_root = []() -> String {
 			String base;
 			if (resolve_scratch_root(OS::get_singleton()->get_temp_path(), base) != OK) {
 				ERR_PRINT("Cannot resolve an absolute OS temporary directory; test scratch is unavailable.");
@@ -175,7 +182,7 @@ struct TemporaryProjectTree {
 			reap_dead_process_scratch_dirs(base);
 			return base.path_join(vformat("foundry-tests-%d", OS::get_singleton()->get_process_id()));
 		}();
-		return resolved_root;
+		return process_scoped_root;
 	}
 
 	// Absolute path of an owned scratch child, or an empty String when p_name is not a safe
@@ -334,6 +341,7 @@ struct TemporaryProjectTree {
 	}
 
 private:
+	String owned_scratch_root;
 	Error setup_error = OK;
 
 	// Splits a path into comparison-ready components. Windows paths are compared case-insensitively
