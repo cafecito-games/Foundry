@@ -46,6 +46,16 @@
 
 namespace TestEditorBoardSwitcher {
 
+struct BoardMovedCounter {
+	int count = 0;
+};
+
+static BoardMovedCounter board_moved_counter;
+
+static void record_board_moved(int, int) {
+	board_moved_counter.count++;
+}
+
 struct BoardSwitcherHarness {
 	Control *host = nullptr;
 	EditorData editor_data;
@@ -410,6 +420,108 @@ TEST_CASE("[Editor][BoardSwitcher] Renaming while the overview is up refreshes t
 	}
 	CHECK(refreshed_caption->get_text() == "renamed during overview");
 
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] A reorder rebuilds the switcher's entry order without add/remove/restore") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	harness.strip->get_board(0)->set_title("A");
+	harness.strip->add_board();
+	harness.strip->get_board(1)->set_title("B");
+	harness.strip->add_board();
+	harness.strip->get_board(2)->set_title("C");
+	REQUIRE(harness.strip->get_board_count() == 3);
+
+	// Drag C (index 2) to the first position: the strip's order becomes C, A, B.
+	harness.strip->move_board(2, 0);
+	REQUIRE(harness.strip->get_board(0)->get_title() == "C");
+	REQUIRE(harness.strip->get_board(1)->get_title() == "A");
+	REQUIRE(harness.strip->get_board(2)->get_title() == "B");
+
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		Button *button = harness.board_button(i);
+		REQUIRE(button != nullptr);
+		if (!button) {
+			harness.unmount();
+			return;
+		}
+		CHECK(button->get_text() == harness.strip->get_board(i)->get_title());
+	}
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Activating the Nth entry after a reorder activates the board at index N") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	harness.strip->get_board(0)->set_title("A");
+	harness.strip->add_board();
+	harness.strip->get_board(1)->set_title("B");
+	harness.strip->add_board();
+	harness.strip->get_board(2)->set_title("C");
+	REQUIRE(harness.strip->get_board_count() == 3);
+
+	harness.strip->move_board(2, 0);
+	REQUIRE(harness.strip->get_board(0)->get_title() == "C");
+	REQUIRE(harness.strip->get_board(1)->get_title() == "A");
+	REQUIRE(harness.strip->get_board(2)->get_title() == "B");
+
+	// Identity, not position: capture the board pointer actually sitting at index 1 (title
+	// "A") after the reorder, then confirm pressing the switcher's entry at that same index
+	// activates that exact board, not whichever board used to live there.
+	EditorBoard *expected_board = harness.strip->get_board(1);
+	REQUIRE(expected_board != nullptr);
+	if (!expected_board) {
+		harness.unmount();
+		return;
+	}
+
+	Button *entry = harness.board_button(1);
+	REQUIRE(entry != nullptr);
+	if (!entry) {
+		harness.unmount();
+		return;
+	}
+	entry->emit_signal(SceneStringName(pressed));
+
+	EditorBoard *active_board = harness.strip->get_board(harness.strip->get_active_index());
+	REQUIRE(active_board != nullptr);
+	if (!active_board) {
+		harness.unmount();
+		return;
+	}
+	CHECK(active_board == expected_board);
+	CHECK(active_board->get_title() == "A");
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] A reorder triggers exactly one rebuild, matching a single board_moved emission") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	harness.strip->add_board();
+	harness.strip->add_board();
+	REQUIRE(harness.strip->get_board_count() == 3);
+
+	// The switcher rebuilds by connecting its handler directly to board_moved, so a single
+	// emission of that signal must drive exactly one rebuild. A probe connected the same way
+	// pins the emission count board_moved actually produces for one reorder; if the switcher
+	// ever connected _rebuild() more than once (or board_moved fired more than once per
+	// move_board() call), this count would betray it.
+	board_moved_counter.count = 0;
+	Callable counter_callable = callable_mp_static(&record_board_moved);
+	harness.strip->connect(SNAME("board_moved"), counter_callable);
+
+	harness.strip->move_board(2, 0);
+
+	CHECK(board_moved_counter.count == 1);
+	CHECK(harness.strip->get_board(0)->get_title() == harness.board_button(0)->get_text());
+
+	harness.strip->disconnect(SNAME("board_moved"), counter_callable);
 	harness.unmount();
 }
 
