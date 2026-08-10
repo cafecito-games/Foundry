@@ -9058,8 +9058,12 @@ void EditorNode::_cancel_close_scene_tab() {
 	changing_scene = false;
 	tabs_to_close.clear();
 	// Canceling any one prompt aborts the whole board close: the board and every scene
-	// still in it survive.
+	// still in it survive. A bulk Close Other Boards shares the same rule -- drop every
+	// not-yet-closed board from the strip's queue so the close cannot resume afterwards.
 	pending_board_close_id = ObjectID();
+	if (board_strip) {
+		board_strip->abort_pending_closes();
+	}
 }
 
 void EditorNode::_cancel_confirmation() {
@@ -11638,6 +11642,8 @@ EditorNode::EditorNode() {
 	board_switcher = memnew(EditorBoardSwitcher);
 	title_bar->add_child(board_switcher);
 	board_switcher->setup(board_strip);
+	// Overview captions reach the same board actions menu the title-bar switcher owns.
+	board_strip->set_board_context_menu_handler(callable_mp(board_switcher, &EditorBoardSwitcher::popup_board_actions));
 
 	right_menu_hb = memnew(HBoxContainer);
 	right_menu_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);

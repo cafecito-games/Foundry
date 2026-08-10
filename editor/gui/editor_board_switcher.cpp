@@ -32,6 +32,7 @@
 
 #include "editor/editor_board.h"
 #include "editor/editor_board_strip.h"
+#include "editor/gui/editor_board_actions_menu.h"
 
 #include "scene/gui/button.h"
 #include "scene/gui/line_edit.h"
@@ -45,6 +46,13 @@ void EditorBoardSwitcher::_notification(int p_what) {
 			}
 			if (overview_button) {
 				overview_button->set_button_icon(get_editor_theme_icon(SNAME("GridLayout")));
+			}
+			if (strip) {
+				const int active = strip->get_active_index();
+				if (Button *active_button = _board_button_at(active)) {
+					active_button->set_button_icon(get_editor_theme_icon(SNAME("GuiDropdown")));
+					active_button->set_icon_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+				}
 			}
 		} break;
 	}
@@ -67,6 +75,9 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 	}
 
 	strip = p_strip;
+	if (actions_menu) {
+		actions_menu->set_strip(strip);
+	}
 
 	if (strip) {
 		// The switcher rebuilds wholesale rather than patching individual buttons: with a
@@ -99,13 +110,24 @@ void EditorBoardSwitcher::_rebuild() {
 		_apply_pending_rename(rename_edit->get_text());
 	}
 
-	while (get_child_count() > 0) {
-		Node *child = get_child(0);
+	// Free chrome children but keep the owned actions menu across rebuilds. The menu
+	// captures its target by ObjectID, so surviving a board_removed that frees that board
+	// is what lets an activation after the close resolve to -1 and no-op.
+	Vector<Node *> to_free;
+	for (int i = 0; i < get_child_count(); i++) {
+		Node *child = get_child(i);
+		if (child == actions_menu) {
+			continue;
+		}
+		to_free.push_back(child);
+	}
+	for (Node *child : to_free) {
 		remove_child(child);
 		child->queue_free();
 	}
 	add_button = nullptr;
 	overview_button = nullptr;
+	renaming_button = nullptr;
 
 	if (!strip) {
 		return;
@@ -124,9 +146,20 @@ void EditorBoardSwitcher::_rebuild() {
 		button->set_tooltip_text(board->get_title());
 		button->set_accessibility_name(board->get_title());
 		button->set_pressed_no_signal(i == strip->get_active_index());
+		if (i == strip->get_active_index()) {
+			// Trailing caret marks the active board as the menu trigger. Pressing it is
+			// otherwise inert today, so treating the whole button as the menu open costs
+			// no prior behavior and avoids hit-testing the icon half by hand.
+			button->set_button_icon(get_editor_theme_icon(SNAME("GuiDropdown")));
+			button->set_icon_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
+		}
 		button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_board_button_pressed).bind(i));
 		button->connect(SceneStringName(gui_input), callable_mp(this, &EditorBoardSwitcher::_on_board_button_gui_input).bind(i));
 		add_child(button);
+		if (actions_menu) {
+			// Keep the menu as the last child so board buttons stay at indices 0..n-1.
+			move_child(actions_menu, get_child_count() - 1);
+		}
 	}
 
 	add_button = memnew(Button);
@@ -137,6 +170,9 @@ void EditorBoardSwitcher::_rebuild() {
 	add_button->set_button_icon(get_editor_theme_icon(SNAME("Add")));
 	add_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_add_pressed));
 	add_child(add_button);
+	if (actions_menu) {
+		move_child(actions_menu, get_child_count() - 1);
+	}
 
 	overview_button = memnew(Button);
 	overview_button->set_flat(true);
@@ -147,6 +183,19 @@ void EditorBoardSwitcher::_rebuild() {
 	overview_button->set_pressed_no_signal(strip->is_overview_active());
 	overview_button->connect(SceneStringName(toggled), callable_mp(this, &EditorBoardSwitcher::_on_overview_toggled));
 	add_child(overview_button);
+	if (actions_menu) {
+		move_child(actions_menu, get_child_count() - 1);
+	}
+}
+
+Button *EditorBoardSwitcher::_board_button_at(int p_index) const {
+	if (!strip || p_index < 0 || p_index >= strip->get_board_count()) {
+		return nullptr;
+	}
+	if (p_index >= get_child_count()) {
+		return nullptr;
+	}
+	return Object::cast_to<Button>(get_child(p_index));
 }
 
 void EditorBoardSwitcher::_on_overview_toggled(bool p_pressed) {
@@ -162,6 +211,17 @@ void EditorBoardSwitcher::_on_overview_changed(bool p_active) {
 	}
 }
 
+void EditorBoardSwitcher::_popup_actions_menu(int p_index, const Point2 &p_screen_position) {
+	if (!actions_menu) {
+		return;
+	}
+	actions_menu->popup_for_board(p_index, p_screen_position);
+}
+
+void EditorBoardSwitcher::popup_board_actions(int p_board_index, const Point2 &p_screen_position) {
+	_popup_actions_menu(p_board_index, p_screen_position);
+}
+
 void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
 	if (!strip) {
 		return;
@@ -169,12 +229,41 @@ void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
 	if (p_index < 0 || p_index >= strip->get_board_count()) {
 		return;
 	}
+
+	if (p_index == strip->get_active_index()) {
+		// Toggle mode flips the button off on press; restore the active visual before
+		// opening the menu so the button never reads as deselected.
+		if (Button *button = _board_button_at(p_index)) {
+			button->set_pressed_no_signal(true);
+			if (skip_actions_menu) {
+				skip_actions_menu = false;
+				return;
+			}
+			const Rect2 screen_rect = button->get_screen_rect();
+			_popup_actions_menu(p_index, Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y));
+		} else if (skip_actions_menu) {
+			skip_actions_menu = false;
+		}
+		return;
+	}
+
+	skip_actions_menu = false;
 	strip->set_active_board(p_index);
 }
 
 void EditorBoardSwitcher::_on_board_button_gui_input(const Ref<InputEvent> &p_event, int p_index) {
 	Ref<InputEventMouseButton> mb = p_event;
-	if (mb.is_valid() && mb->is_pressed() && mb->get_button_index() == MouseButton::LEFT && mb->is_double_click()) {
+	if (mb.is_null() || !mb->is_pressed()) {
+		return;
+	}
+
+	if (mb->get_button_index() == MouseButton::RIGHT) {
+		_popup_actions_menu(p_index, mb->get_global_position());
+		return;
+	}
+
+	if (mb->get_button_index() == MouseButton::LEFT && mb->is_double_click()) {
+		skip_actions_menu = true;
 		_begin_rename(p_index);
 	}
 }
@@ -200,7 +289,7 @@ void EditorBoardSwitcher::_begin_rename(int p_index) {
 
 	_cancel_rename();
 
-	Button *button = Object::cast_to<Button>(get_child(p_index));
+	Button *button = _board_button_at(p_index);
 	if (!button) {
 		return;
 	}
@@ -215,6 +304,9 @@ void EditorBoardSwitcher::_begin_rename(int p_index) {
 	rename_edit->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
 	add_child(rename_edit);
 	move_child(rename_edit, p_index);
+	if (actions_menu) {
+		move_child(actions_menu, get_child_count() - 1);
+	}
 
 	rename_edit->connect(SceneStringName(text_submitted), callable_mp(this, &EditorBoardSwitcher::_commit_rename));
 	rename_edit->connect(SceneStringName(focus_exited), callable_mp(this, &EditorBoardSwitcher::_commit_rename_from_focus_loss));
@@ -276,4 +368,8 @@ void EditorBoardSwitcher::_cancel_rename() {
 
 EditorBoardSwitcher::EditorBoardSwitcher() {
 	set_mouse_filter(Control::MOUSE_FILTER_STOP);
+
+	actions_menu = memnew(EditorBoardActionsMenu);
+	add_child(actions_menu);
+	actions_menu->connect(SNAME("rename_requested"), callable_mp(this, &EditorBoardSwitcher::_begin_rename));
 }

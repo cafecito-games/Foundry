@@ -56,6 +56,24 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	EditorSelection *editor_selection = nullptr;
 	EditorData *editor_data = nullptr;
 	Callable board_scene_close_handler;
+	// Invoked from a right-click on an overview caption as handler(board_index, screen_position).
+	// A strip with no handler installed simply has no caption context menu (headless tests).
+	Callable board_context_menu_handler;
+	// ObjectIDs still waiting to be closed by close_boards(). Identity, not index: each
+	// completed close shifts every later position.
+	Vector<ObjectID> pending_close_ids;
+
+	enum class CloseOutcome {
+		CLOSED,
+		DEFERRED,
+		REFUSED,
+	};
+
+	// Shared body of close_board() / close_boards(): closed on a real free, deferred when the
+	// scene-close handler returned false (async prompts still in flight), refused for the
+	// last-board and no-handler cases.
+	CloseOutcome _close_board_internal(int p_index);
+	void _advance_pending_closes();
 
 	// Drives the horizontal slide. Idle (is_animating() == false) outside of a switch.
 	EditorBoardView board_view;
@@ -179,10 +197,23 @@ public:
 	// discarding them silently.
 	bool close_board(int p_index);
 
+	// Queues the given boards for close, advancing one at a time. A deferred close
+	// (async scene prompts) holds the queue until close_board() succeeds for that
+	// board; a refused close clears the whole queue. Board identity is ObjectID so an
+	// intervening close cannot make the queue act on the wrong index.
+	void close_boards(const Vector<ObjectID> &p_board_ids);
+
+	// Drops every not-yet-closed board from the close_boards() queue. Called when the
+	// user cancels an unsaved-scene prompt so a bulk close cannot resume afterwards.
+	void abort_pending_closes();
+
 	// Invoked from close_board() as handler(board_index, scene_indices) with the scene
 	// indices owned by the board's tiles. Returning true lets the close proceed
 	// immediately; returning false leaves the board and every scene in it intact.
 	void set_board_scene_close_handler(const Callable &p_handler) { board_scene_close_handler = p_handler; }
+
+	// Invoked from a right-click on an overview caption as handler(board_index, screen_position).
+	void set_board_context_menu_handler(const Callable &p_handler) { board_context_menu_handler = p_handler; }
 
 	int get_board_count() const { return boards.size(); }
 	EditorBoard *get_board(int p_index) const;
