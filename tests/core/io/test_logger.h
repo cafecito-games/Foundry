@@ -143,6 +143,13 @@ TEST_CASE("[Logger][RotatedFileLogger] Falls back when the log destination canno
 
 void get_log_files(Vector<String> &log_files) {
 	Ref<DirAccess> dir = DirAccess::open(get_logs_dir());
+	if (dir.is_null()) {
+		// `user://logs` can be unusable when an earlier test left process-global
+		// state dirty (e.g. a remapped `user://` pointing at a removed tree).
+		// Bail out cleanly so the caller's size check fails as an assertion
+		// instead of dereferencing a null handle (SIGSEGV).
+		return;
+	}
 	dir->list_dir_begin();
 	String file = dir->get_next();
 	while (file != "") {
