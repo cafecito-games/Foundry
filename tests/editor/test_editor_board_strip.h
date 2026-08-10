@@ -786,7 +786,7 @@ TEST_CASE("[Editor][Boards] Moving a board keeps the same board active by identi
 	// A reorder is not a board switch: nothing about which board is on screen changed.
 	SIGNAL_CHECK_FALSE("active_board_changed");
 	// Exactly one emission for the whole reorder, not one per index it shifted.
-	SIGNAL_CHECK("board_moved", { { 0, 2 } });
+	SIGNAL_CHECK("board_moved", Array({ { 0, 2 } }));
 
 	// Child order carries draw order and hit-testing, so it has to match the board order.
 	for (int i = 0; i < h.strip->get_board_count(); i++) {
@@ -804,7 +804,7 @@ TEST_CASE("[Editor][Boards] Moving a board keeps the same board active by identi
 	CHECK(h.strip->get_board(2) == board_b);
 	CHECK(h.strip->get_active_board() == board_a);
 	CHECK(h.strip->get_active_index() == 1);
-	SIGNAL_CHECK("board_moved", { { 0, 2 } });
+	SIGNAL_CHECK("board_moved", Array({ { 0, 2 } }));
 
 	// A move that lands where it started is not a reorder and stays silent.
 	h.strip->move_board(1, 1);
@@ -955,7 +955,7 @@ TEST_CASE("[Editor][Boards] Dragging a caption reorders its board instead of ope
 	CHECK(h.strip->get_board(0) == board_b);
 	CHECK(h.strip->get_board(1) == board_c);
 	CHECK(h.strip->get_board(2) == board_a);
-	SIGNAL_CHECK("board_moved", { { 0, 2 } });
+	SIGNAL_CHECK("board_moved", Array({ { 0, 2 } }));
 	// The captions follow their boards without being rebuilt, so the button the drag is
 	// coming from is never freed mid-input.
 	CHECK(caption_for(h.strip, 2) == caption_a);
