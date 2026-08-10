@@ -1368,9 +1368,12 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 			return _failure_with_message(p_driver, result.workflow,
 					"Zooming the secondary viewport did not arm the zoom indicator; the wheel-zoom trigger was not exercised.");
 		}
-		spatial_view->_draw();
+		// _draw() only draws validly when invoked through the real NOTIFICATION_DRAW
+		// dispatch, so request a redraw and let the engine call it naturally rather
+		// than calling the C++ method directly.
+		spatial_view->get_surface()->queue_redraw();
 	}
-	p_driver.flush_frames(5);
+	p_driver.flush_frames(10);
 
 	p_driver.set_step("assert_no_new_errors_after_secondary_input");
 	if (!p_driver.assert_no_new_errors()) {
