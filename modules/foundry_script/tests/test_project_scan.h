@@ -158,8 +158,13 @@ TEST_SUITE("[Modules][FoundryScript][ProjectScan]") {
 	}
 
 	TEST_CASE("Reports a fatal error when the root cannot be opened") {
-		const String missing_root = OS::get_singleton()->get_temp_path().path_join("fs_project_scan_missing");
-		TemporaryProjectTree::remove_recursive(missing_root); // Ensure it does not exist.
+		const String missing_root = TemporaryProjectTree::get_test_scratch_path("fs_project_scan_missing");
+		REQUIRE_FALSE(missing_root.is_empty());
+		if (missing_root.is_empty()) {
+			return;
+		}
+		// Ensure it does not exist. The owned removal refuses anything outside the scratch tree.
+		REQUIRE_EQ(TemporaryProjectTree::remove_owned_path(missing_root), OK);
 
 		const ProjectScanResult result = FSProjectScan::scan(missing_root);
 		CHECK_FALSE(result.ok);
