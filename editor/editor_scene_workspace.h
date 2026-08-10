@@ -33,6 +33,7 @@
 #include "scene/gui/container.h"
 
 class ConfigFile;
+class EditorBoardStrip;
 class EditorData;
 class EditorSelection;
 class ScenePaneTile;
@@ -154,6 +155,11 @@ private:
 	EditorData *editor_data = nullptr;
 	WorkspaceLeafIdAllocator *leaf_id_allocator = nullptr;
 	LocalWorkspaceLeafIdAllocator owned_leaf_id_allocator;
+	// Null for a standalone workspace (tests, or before a board is wired up); the
+	// owning EditorBoardStrip injects itself so cross-board tab drops can resolve a
+	// source or target leaf that belongs to a sibling board's workspace instead of
+	// this one.
+	EditorBoardStrip *board_strip = nullptr;
 
 	WorkspaceLeafContent *_create_leaf_content(int p_leaf_id, const StringName &p_content_type);
 	WorkspaceLeafNode *_create_leaf(int p_leaf_id, const StringName &p_content_type = StringName("scene"));
@@ -169,6 +175,13 @@ private:
 	bool _is_split_node(Control *p_node) const;
 	void _update_focus_visuals();
 	void _collapse_if_empty(int p_leaf_id);
+	// Rebuilds this workspace's own panes' scene tabs from EditorData without
+	// touching the shared canonical-tab registry. sync_scene_tabs_from_editor_data()
+	// wraps this with the registry clear for the common single-workspace call; a
+	// cross-board move needs the clear to happen exactly once across both
+	// workspaces it touches, so it goes through _sync_scene_tabs_after_move instead.
+	void _rebuild_scene_tabs();
+	static void _sync_scene_tabs_after_move(EditorSceneWorkspace *p_source_workspace, EditorSceneWorkspace *p_target_workspace);
 
 protected:
 	void _notification(int p_what);
@@ -181,6 +194,12 @@ public:
 	// injects the editor-wide allocator so ids never collide between boards.
 	void set_leaf_id_allocator(WorkspaceLeafIdAllocator *p_allocator);
 	WorkspaceLeafIdAllocator *get_leaf_id_allocator();
+
+	// Injected by EditorBoardStrip once this workspace's board is appended. Lets
+	// handle_tab_drop and handle_tab_strip_drop resolve a pane id that belongs to a
+	// different board instead of assuming every drop stays within this workspace.
+	void set_board_strip(EditorBoardStrip *p_board_strip) { board_strip = p_board_strip; }
+	EditorBoardStrip *get_board_strip() const { return board_strip; }
 
 	// Tree ops.
 	WorkspaceLeafNode *split(WorkspaceLeafNode *p_leaf, bool p_vertical, SplitSide p_side);

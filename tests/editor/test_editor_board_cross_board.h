@@ -35,6 +35,7 @@
 #include "editor/editor_data.h"
 #include "editor/editor_scene_workspace.h"
 
+#include "scene/2d/node_2d.h"
 #include "scene/gui/control.h"
 #include "scene/main/window.h"
 
@@ -135,6 +136,194 @@ TEST_CASE("[Editor][Boards] Help tab on a dormant board is reachable through eve
 		workspace->refresh_help_tab("Node2D");
 	}
 	CHECK(headless_help_type_singleton->refreshed_stable_ids.size() == 1);
+
+	h.unmount();
+}
+
+// #1981: dragging a pane out of one board and into another is the interaction the
+// whole canvas-transform hosting architecture exists to make possible. This proves
+// handle_tab_drop resolves a source pane on a different board through
+// EditorBoardStrip::find_board_for_leaf(), moves EditorData scene-tile ownership,
+// and resyncs both the source and destination workspaces -- not just the one the
+// call landed on.
+TEST_CASE("[Editor][Boards] A scene tab dragged across boards moves ownership and collapses the emptied source pane") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	CrossBoardHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_b != nullptr);
+	h.pump();
+
+	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
+	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+	REQUIRE(workspace_a != nullptr);
+	REQUIRE(workspace_b != nullptr);
+
+	// Split board A so the scene lives on a non-default leaf: the sole/default leaf
+	// of a workspace is never collapsed, so this is the only way to exercise the
+	// "emptied source pane collapses" half of the acceptance criteria.
+	WorkspaceLeafNode *leaf_a_default = workspace_a->get_focused_leaf();
+	REQUIRE(leaf_a_default != nullptr);
+	WorkspaceLeafNode *leaf_a_source = workspace_a->split(leaf_a_default, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+	REQUIRE(leaf_a_source != nullptr);
+	REQUIRE(workspace_a->get_leaf_count() == 2);
+
+	Node2D *root = memnew(Node2D);
+	const int scene_idx = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_a_source->get_leaf_id(), root);
+	workspace_a->sync_scene_tabs_from_editor_data();
+
+	WorkspacePane *pane_a_source = leaf_a_source->get_workspace_pane();
+	REQUIRE(pane_a_source != nullptr);
+	REQUIRE(pane_a_source->get_tab_count() == 1);
+
+	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
+	REQUIRE(leaf_b != nullptr);
+	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
+	REQUIRE(pane_b != nullptr);
+	REQUIRE(pane_b->get_tab_count() == 0);
+
+	// Called on board B's workspace -- the destination -- with a source pane id that
+	// belongs to board A. This is the shape a real drop takes: the model call
+	// resolves the source itself instead of the caller pre-locating it.
+	// handle_tab_drop moves scene-tile ownership and resyncs both panes' tab counts
+	// synchronously; only the emptied source leaf's collapse is deferred to an idle
+	// frame (collapse_if_empty_deferred). Assert the synchronous effects before the
+	// first pump so that pump does not race ahead of the leaf_count == 2 check below.
+	WorkspaceLeafNode *dest = workspace_b->handle_tab_drop(leaf_a_source->get_leaf_id(), 0, leaf_b, EditorSceneWorkspace::DROP_CENTER);
+
+	REQUIRE(dest == leaf_b);
+	CHECK(h.editor_data.get_scene_tile(scene_idx) == leaf_b->get_leaf_id());
+	CHECK(pane_b->get_tab_count() == 1);
+	CHECK(pane_b->get_tab(0).get_type_id() == StringName("scene"));
+
+	// Both workspaces were resynced by the single handle_tab_drop call: the
+	// destination gained the tab and the source's pane lost it.
+	CHECK(pane_a_source->get_tab_count() == 0);
+
+	// The now-empty non-default pane on board A collapses on the next idle frame;
+	// board A's default leaf, which the move never touched, survives.
+	CHECK(workspace_a->get_leaf_count() == 2);
+	h.pump();
+	CHECK(workspace_a->get_leaf_count() == 1);
+	CHECK(workspace_a->get_leaf_by_id(leaf_a_default->get_leaf_id()) == leaf_a_default);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A script tab dragged across boards moves via take_tab/add_tab") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	CrossBoardHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_b != nullptr);
+	h.pump();
+
+	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
+	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+
+	WorkspaceLeafNode *leaf_a = workspace_a->get_focused_leaf();
+	REQUIRE(leaf_a != nullptr);
+	WorkspacePane *pane_a = leaf_a->get_workspace_pane();
+	REQUIRE(pane_a != nullptr);
+	TestSceneWorkspace::add_script_tab(pane_a, "res://move.fs");
+	REQUIRE(pane_a->get_tab_count() == 1);
+
+	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
+	REQUIRE(leaf_b != nullptr);
+	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
+	REQUIRE(pane_b != nullptr);
+	REQUIRE(pane_b->get_tab_count() == 0);
+
+	WorkspaceLeafNode *dest = workspace_b->handle_tab_drop(leaf_a->get_leaf_id(), 0, leaf_b, EditorSceneWorkspace::DROP_CENTER);
+	h.pump();
+
+	REQUIRE(dest == leaf_b);
+	CHECK(pane_b->get_tab_count() == 1);
+	CHECK(pane_b->get_tab(0).get_resource_key() == "res://move.fs");
+	// Board A's leaf is its sole/default leaf, so emptying it never collapses it.
+	CHECK(pane_a->get_tab_count() == 0);
+	CHECK(workspace_a->get_leaf_count() == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A cross-board drop with an unresolvable source pane makes no partial move") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	CrossBoardHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_b != nullptr);
+	h.pump();
+	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+
+	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
+	REQUIRE(leaf_b != nullptr);
+	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
+	REQUIRE(pane_b != nullptr);
+	REQUIRE(pane_b->get_tab_count() == 0);
+
+	// No leaf anywhere in the strip carries this id.
+	const int unresolvable_source_id = 999999;
+	WorkspaceLeafNode *dest = workspace_b->handle_tab_drop(unresolvable_source_id, 0, leaf_b, EditorSceneWorkspace::DROP_CENTER);
+
+	CHECK(dest == nullptr);
+	CHECK(pane_b->get_tab_count() == 0);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] handle_tab_strip_drop moves a scene tab across boards and resyncs both") {
+	WorkspacePane::get_shared_tab_registry().clear_canonical_index();
+
+	CrossBoardHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_b != nullptr);
+	h.pump();
+
+	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
+	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+
+	WorkspaceLeafNode *leaf_a = workspace_a->get_focused_leaf();
+	REQUIRE(leaf_a != nullptr);
+	Node2D *root = memnew(Node2D);
+	const int scene_idx = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_a->get_leaf_id(), root);
+	workspace_a->sync_scene_tabs_from_editor_data();
+
+	WorkspacePane *pane_a = leaf_a->get_workspace_pane();
+	REQUIRE(pane_a != nullptr);
+	REQUIRE(pane_a->get_tab_count() == 1);
+
+	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
+	REQUIRE(leaf_b != nullptr);
+	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
+	REQUIRE(pane_b != nullptr);
+	REQUIRE(pane_b->get_tab_count() == 0);
+
+	// Same cross-board shape as handle_tab_drop, but through the strip-based entry
+	// point used for a drop landing at a specific tab-strip position.
+	WorkspaceLeafNode *dest = workspace_b->handle_tab_strip_drop(leaf_a->get_leaf_id(), 0, leaf_b->get_leaf_id(), 0);
+	h.pump();
+
+	REQUIRE(dest == leaf_b);
+	CHECK(h.editor_data.get_scene_tile(scene_idx) == leaf_b->get_leaf_id());
+	CHECK(pane_b->get_tab_count() == 1);
+	CHECK(pane_a->get_tab_count() == 0);
 
 	h.unmount();
 }

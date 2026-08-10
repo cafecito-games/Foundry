@@ -150,6 +150,9 @@ EditorBoard *EditorBoardStrip::_append_board(int p_board_id, const String &p_tit
 	// fallback counter and collide with another board's first leaf.
 	EditorBoard *board = EditorBoard::create(p_board_id, p_title, editor_selection, editor_data, this);
 	ERR_FAIL_NULL_V(board, nullptr);
+	// Lets the workspace resolve a cross-board tab drop through find_board_for_leaf()
+	// instead of only ever looking at its own leaf list.
+	board->get_workspace()->set_board_strip(this);
 	next_board_id = MAX(next_board_id, p_board_id + 1);
 
 	board->set_dormant(!boards.is_empty());
