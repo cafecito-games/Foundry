@@ -1474,15 +1474,6 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!viewport->gui_is_dragging()) {
 		return _failure_with_message(p_driver, result.workflow, "Dragging the tab did not start a workspace tab drag.");
 	}
-	// The rosette overlay arms from its internal-process tick, so the frames have
-	// to run before the release, followed by one more motion inside the tile.
-	p_driver.flush_frames(5);
-	if (!EditorAutomationInput::move_mouse_gesture(viewport, drop_point + Vector2(2, 2), Vector<Vector2>(), modifiers, pointer_events)) {
-		return _failure_with_message(p_driver, result.workflow, "Could not settle the pointer inside the dormant board's tile body.");
-	}
-	p_driver.flush_frames(2);
-	drag_diagnostics["dragging_before_release"] = viewport->gui_is_dragging();
-	drag_diagnostics["viewport_mouse_position_before_release"] = viewport->get_mouse_position();
 	EditorTileDropOverlay *destination_overlay = destination_pane->get_drop_overlay();
 	if (destination_overlay != nullptr) {
 		// The rosette only becomes a drop target once it has armed, so its state is
@@ -1492,7 +1483,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		drag_diagnostics["overlay_rect"] = destination_overlay->get_global_rect();
 		drag_diagnostics["overlay_armed"] = destination_overlay->get_mouse_filter() == Control::MOUSE_FILTER_STOP;
 	}
-	if (!EditorAutomationInput::end_mouse_gesture(viewport, drop_point + Vector2(2, 2), modifiers, pointer_events)) {
+	if (!EditorAutomationInput::end_mouse_gesture(viewport, drop_point, modifiers, pointer_events)) {
 		return _failure_with_message(p_driver, result.workflow, "Could not release the pointer over the dormant board's tile body.");
 	}
 	drag_diagnostics["dragging_after_release"] = viewport->gui_is_dragging();
@@ -1544,6 +1535,235 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	return result;
 #else
 	return _failure_with_message(p_driver, result.workflow, "Cross-board tile body drop workflow requires an editor (TOOLS_ENABLED) build.");
+#endif
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_continuous_drag_arms_drop_overlay(
+		EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "continuous_drag_arms_drop_overlay";
+
+	p_driver.begin_workflow();
+
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+
+	p_driver.set_step("create_dragged_scene");
+	SceneTreeDock *scene_dock = editor_node->get_focused_scene_tree_dock();
+	if (scene_dock == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable.");
+	}
+	Node2D *dragged_root = memnew(Node2D);
+	dragged_root->set_name("Dragged");
+	scene_dock->add_root_node(dragged_root);
+	p_driver.flush_frames(20);
+
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int dragged_scene_index = editor_data.get_edited_scene();
+	if (dragged_scene_index < 0) {
+		return _failure_with_message(p_driver, result.workflow, "The dragged scene has no editor-data index.");
+	}
+
+	// The destination tile needs content of its own: a pane with nothing in it
+	// hides its chrome host and with it the overlay under test.
+	p_driver.set_step("create_neighboring_tile");
+	const int resident_scene_index = editor_node->new_scene();
+	if (resident_scene_index < 0) {
+		return _failure_with_message(p_driver, result.workflow, "Creating the neighboring tile's scene failed.");
+	}
+	scene_dock = editor_node->get_focused_scene_tree_dock();
+	if (scene_dock == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable for the neighboring scene.");
+	}
+	Node2D *resident_root = memnew(Node2D);
+	resident_root->set_name("Resident");
+	scene_dock->add_root_node(resident_root);
+	p_driver.flush_frames(20);
+
+	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
+	if (workspace == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The scene workspace is unavailable.");
+	}
+	const int source_leaf_id = editor_data.get_scene_tile(dragged_scene_index);
+	if (source_leaf_id != editor_data.get_scene_tile(resident_scene_index)) {
+		return _failure_with_message(p_driver, result.workflow, "The two scenes did not start in the same pane.");
+	}
+	WorkspaceLeafNode *source_leaf = workspace->get_leaf_by_id(source_leaf_id);
+	WorkspacePane *source_pane = source_leaf != nullptr ? source_leaf->get_workspace_pane() : nullptr;
+	if (source_pane == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The source pane could not be resolved.");
+	}
+	const int resident_tab_index = source_pane->find_scene_tab_index(resident_scene_index);
+	if (resident_tab_index < 0) {
+		return _failure_with_message(p_driver, result.workflow, "The neighboring scene has no tab in the source pane.");
+	}
+	// Split the pane to the right so the drag has a sibling tile to travel into.
+	editor_node->handle_tile_tab_drop(source_leaf_id, EditorSceneWorkspace::DROP_RIGHT, source_leaf_id, resident_tab_index);
+	p_driver.flush_frames(30);
+	if (!p_driver.wait_workspace_settled(10000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after splitting the pane.");
+	}
+
+	const int destination_leaf_id = editor_data.get_scene_tile(resident_scene_index);
+	if (destination_leaf_id == source_leaf_id) {
+		return _failure_with_message(p_driver, result.workflow, "Splitting the pane did not produce a second tile.");
+	}
+
+	p_driver.set_step("drag_into_neighboring_tile_in_one_motion");
+	// Everything is re-resolved after the relayout rather than reusing pointers
+	// captured before it.
+	workspace = EditorNode::get_scene_workspace();
+	if (workspace == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The scene workspace did not survive the split.");
+	}
+	source_leaf = workspace->get_leaf_by_id(source_leaf_id);
+	WorkspaceLeafNode *destination_leaf = workspace->get_leaf_by_id(destination_leaf_id);
+	source_pane = source_leaf != nullptr ? source_leaf->get_workspace_pane() : nullptr;
+	WorkspacePane *destination_pane = destination_leaf != nullptr ? destination_leaf->get_workspace_pane() : nullptr;
+	if (source_pane == nullptr || destination_pane == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The two tiles did not survive the split.");
+	}
+	EditorTileDropOverlay *destination_overlay = destination_pane->get_drop_overlay();
+	if (destination_overlay == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The destination tile has no drop overlay.");
+	}
+	const int destination_tab_count_before = destination_pane->get_tab_count();
+	TabBar *source_tab_strip = source_pane->get_tab_strip();
+	const int source_tab_index = source_pane->find_scene_tab_index(dragged_scene_index);
+	if (source_tab_strip == nullptr || source_tab_index < 0) {
+		return _failure_with_message(p_driver, result.workflow, "The dragged scene has no tab in the source pane's strip.");
+	}
+	const Size2 destination_size = destination_leaf->get_size();
+	if (destination_size.x < 4 || destination_size.y < 4) {
+		return _failure_with_message(p_driver, result.workflow, "The destination tile has no usable on-screen area.");
+	}
+
+	const Vector2 grab_point = source_tab_strip->get_global_transform().xform(source_tab_strip->get_tab_rect(source_tab_index).get_center());
+	const Vector2 drop_point = destination_leaf->get_global_transform().xform(destination_size * 0.5f);
+	// Aimed well past the center inset (30% of the tile) toward the right edge, so a
+	// correct region computation resolves to DROP_RIGHT rather than the DROP_CENTER
+	// value hovered_region already defaults to before it is ever computed.
+	const Point2 aim_local_point(destination_size.x * 0.9f, destination_size.y * 0.5f);
+	const Vector2 aim_point = destination_leaf->get_global_transform().xform(aim_local_point);
+
+	Viewport *viewport = editor_node->get_viewport();
+	if (viewport == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "No viewport is available for pointer input.");
+	}
+
+	PackedStringArray pointer_events;
+	const EditorAutomationInputModifiers modifiers;
+	if (!EditorAutomationInput::begin_mouse_gesture(viewport, grab_point, MouseButton::LEFT, modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not press the pointer on the source tab.");
+	}
+	// One uninterrupted gesture: no frames are flushed and no second motion is
+	// issued between arriving inside the destination tile and inspecting the
+	// affordance. Anything that arms only on a later tick or a later motion fails
+	// here, which is the defect under test. The motion lands off-center so the
+	// resulting region is only correct if region computation actually ran.
+	if (!EditorAutomationInput::move_mouse_gesture(viewport, aim_point, Vector<Vector2>(), modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not drag the pointer into the neighboring tile.");
+	}
+	if (!viewport->gui_is_dragging()) {
+		return _failure_with_message(p_driver, result.workflow, "Dragging the tab did not start a workspace tab drag.");
+	}
+
+	Dictionary drag_diagnostics;
+	const bool overlay_hit_testable = destination_overlay->get_mouse_filter() == Control::MOUSE_FILTER_STOP;
+	const bool overlay_painting = destination_overlay->is_drag_active();
+	const EditorSceneWorkspace::TileDropRegion aimed_region = destination_overlay->get_hovered_region();
+	drag_diagnostics["overlay_hit_testable"] = overlay_hit_testable;
+	drag_diagnostics["overlay_painting"] = overlay_painting;
+	drag_diagnostics["overlay_aimed_region"] = int(aimed_region);
+	drag_diagnostics["overlay_visible"] = destination_overlay->is_visible_in_tree();
+	drag_diagnostics["overlay_rect"] = destination_overlay->get_global_rect();
+	drag_diagnostics["aim_point"] = aim_point;
+	drag_diagnostics["drop_point"] = drop_point;
+	drag_diagnostics["pointer_events"] = pointer_events;
+	if (!overlay_hit_testable || !overlay_painting || aimed_region != EditorSceneWorkspace::DROP_RIGHT) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "The drop overlay did not arm and compute the aimed region on the motion that carried the drag into the tile.";
+		Dictionary details = p_driver.make_failure_details("drag_into_neighboring_tile_in_one_motion");
+		details["drag_diagnostics"] = drag_diagnostics;
+		details["editor_log"] = p_driver.read_editor_log();
+		fail.details = details;
+		EditorAutomationInput::end_mouse_gesture(viewport, aim_point, modifiers, pointer_events);
+		return fail;
+	}
+
+	p_driver.set_step("recenter_before_release");
+	// Recenters onto the pane's middle so the release below performs a plain tab
+	// move rather than the edge split DROP_RIGHT would otherwise trigger. This
+	// motion happens after arming and region computation are already proven above,
+	// so it does not reintroduce the "arms on a later motion" defect being guarded
+	// against.
+	if (!EditorAutomationInput::move_mouse_gesture(viewport, drop_point, Vector<Vector2>(), modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not move the pointer to the center of the neighboring tile.");
+	}
+	if (destination_overlay->get_hovered_region() != EditorSceneWorkspace::DROP_CENTER) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "The drop overlay did not recompute its region after the pointer moved to the tile's center.";
+		Dictionary details = p_driver.make_failure_details("recenter_before_release");
+		details["drag_diagnostics"] = drag_diagnostics;
+		details["recentered_region"] = int(destination_overlay->get_hovered_region());
+		details["editor_log"] = p_driver.read_editor_log();
+		fail.details = details;
+		EditorAutomationInput::end_mouse_gesture(viewport, drop_point, modifiers, pointer_events);
+		return fail;
+	}
+
+	p_driver.set_step("release_on_neighboring_tile");
+	if (!EditorAutomationInput::end_mouse_gesture(viewport, drop_point, modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not release the pointer over the neighboring tile.");
+	}
+	p_driver.flush_frames(30);
+	if (!p_driver.wait_workspace_settled(10000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after the drop.");
+	}
+
+	p_driver.set_step("verify_tab_moved");
+	WorkspaceLeafNode *landed_leaf = workspace->get_leaf_by_id(destination_leaf_id);
+	WorkspacePane *landed_pane = landed_leaf != nullptr ? landed_leaf->get_workspace_pane() : nullptr;
+	const int landed_tile_id = editor_data.get_scene_tile(dragged_scene_index);
+	const int destination_tab_count_after = landed_pane != nullptr ? landed_pane->get_tab_count() : -1;
+	if (landed_tile_id != destination_leaf_id || destination_tab_count_after != destination_tab_count_before + 1) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "The armed drop did not move the dragged tab into the neighboring tile.";
+		Dictionary details = p_driver.make_failure_details("verify_tab_moved");
+		details["source_leaf_id"] = source_leaf_id;
+		details["destination_leaf_id"] = destination_leaf_id;
+		details["landed_tile_id"] = landed_tile_id;
+		details["destination_tab_count_before"] = destination_tab_count_before;
+		details["destination_tab_count_after"] = destination_tab_count_after;
+		details["drag_diagnostics"] = drag_diagnostics;
+		details["editor_log"] = p_driver.read_editor_log();
+		fail.details = details;
+		return fail;
+	}
+
+	if (!p_driver.assert_no_new_errors_since_step()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "A single continuous drag armed the destination tile's drop overlay before the release.";
+	Dictionary details;
+	details["source_leaf_id"] = source_leaf_id;
+	details["destination_leaf_id"] = destination_leaf_id;
+	details["drag_diagnostics"] = drag_diagnostics;
+	result.details = details;
+	return result;
+#else
+	return _failure_with_message(p_driver, result.workflow, "Continuous drag overlay workflow requires an editor (TOOLS_ENABLED) build.");
 #endif
 }
 

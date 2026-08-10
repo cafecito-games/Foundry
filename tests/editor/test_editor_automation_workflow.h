@@ -551,6 +551,46 @@ TEST_CASE("[Editor][EditorAutomation] split-scene-root-button-context workflow s
 	CHECK(exit_code == 0);
 }
 
+// #2048: the tile drop overlay armed only from a later internal-process tick, so
+// a flick that entered a tile and released in one gesture showed no rosette and
+// found no drop target. Only a real editor can prove this: the arming has to
+// happen inside the viewport's own hit-test for the motion that entered the
+// tile, which no directly mounted widget exercises.
+TEST_CASE("[Editor][EditorAutomation] continuous-drag-arms-drop-overlay workflow subprocess") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.* editor open --project <project> --automation --automation-run-workflow=continuous_drag_arms_drop_overlay");
+		return;
+	}
+
+	const String project_path = workflow_prepare_disposable_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary workflow project copy.");
+	if (project_path.is_empty()) {
+		return;
+	}
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=continuous_drag_arms_drop_overlay");
+
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+
+	Dictionary payload;
+	REQUIRE_MESSAGE(workflow_parse_result_payload(output, payload), "Workflow result line was not printed or was not valid JSON.");
+	if (payload.is_empty()) {
+		return;
+	}
+	CHECK(String(payload.get("workflow", String())) == "continuous_drag_arms_drop_overlay");
+	CHECK_MESSAGE((bool)payload.get("ok", false), String(payload.get("message", String())));
+	CHECK(exit_code == 0);
+}
+
 TEST_CASE("[Editor][EditorAutomation] mixed-workspace-editing workflow subprocess") {
 	if (!workflow_has_display()) {
 		MESSAGE("Requires a GUI display. Run with DISPLAY=:1 ./bin/foundry.linuxbsd.editor.dev.x86_64 editor open --project <project> --automation --automation-run-workflow=mixed_workspace_editing");
