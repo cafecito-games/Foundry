@@ -53,6 +53,10 @@ public:
 	// Real-pointer cross-board drag: grabs a scene tab on the active board and
 	// drops it on the tile body of a non-active board shown in the overview.
 	static Result run_cross_board_tile_body_drop(EditorWorkflowTestDriver &p_driver);
+	// Real-pointer cross-board drag: grabs a scene tab on the active board and
+	// drops it on the tab strip of a non-active board's already-populated pane,
+	// shown in the overview.
+	static Result run_cross_board_tab_strip_drop(EditorWorkflowTestDriver &p_driver);
 	// Real-pointer drag that enters a neighboring tile in one uninterrupted
 	// gesture, asserting the drop affordance is live before the release.
 	static Result run_continuous_drag_arms_drop_overlay(EditorWorkflowTestDriver &p_driver);

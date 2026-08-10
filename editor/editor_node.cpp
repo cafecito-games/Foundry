@@ -8086,9 +8086,14 @@ void EditorNode::handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_
 
 	const int dest_leaf_id = dest_leaf->get_leaf_id();
 	// A scene tab landing in the destination pane makes that pane the focused scene
-	// tile; a script (or other) tab just takes workspace focus.
+	// tile; a script (or other) tab just takes workspace focus. _focus_tile assumes
+	// the target leaf lives on the active board (it drives active-board chrome and
+	// the active-board scene mode host), so a leaf on a dormant board must not be
+	// focused here -- mirrors the guard in activate_workspace_scene_tab.
 	if (dest_leaf->get_pane_tile()) {
-		_focus_tile(dest_leaf_id);
+		if (!board_strip || board_strip->is_leaf_on_active_board(dest_leaf_id)) {
+			_focus_tile(dest_leaf_id);
+		}
 	} else {
 		get_scene_workspace()->request_leaf_focus(dest_leaf_id);
 	}
@@ -8110,9 +8115,12 @@ void EditorNode::handle_tile_tab_strip_drop(int p_target_pane_id, int p_dest_ind
 	// A scene tab landing in the destination pane makes that pane the focused scene
 	// tile; a script (or other) tab just takes workspace focus. Mirrors the rosette
 	// overlay path (handle_tile_tab_drop) so both drop surfaces update focus, docks,
-	// scene-tab UI and the delayed layout save identically.
+	// scene-tab UI and the delayed layout save identically, including the
+	// active-board guard on _focus_tile (see the comment there).
 	if (dest_leaf->get_pane_tile()) {
-		_focus_tile(dest_leaf_id);
+		if (!board_strip || board_strip->is_leaf_on_active_board(dest_leaf_id)) {
+			_focus_tile(dest_leaf_id);
+		}
 	} else {
 		get_scene_workspace()->request_leaf_focus(dest_leaf_id);
 	}
