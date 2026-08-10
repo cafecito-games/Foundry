@@ -52,11 +52,11 @@
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_tile_dock_region.h"
 #include "editor/editor_tile_drop_overlay.h"
-#include "editor/gui/editor_side_rail_strip.h"
-#include "editor/gui/side_rail_state.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
+#include "editor/gui/editor_side_rail_strip.h"
 #include "editor/gui/progress_dialog.h"
+#include "editor/gui/side_rail_state.h"
 #include "editor/project_manager/known_project_store.h"
 #include "editor/project_manager/startup_dialog.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
@@ -91,6 +91,7 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "servers/display/display_server.h"
 
 namespace {
 
@@ -276,6 +277,11 @@ void _maybe_capture_editor_png(EditorWorkflowTestDriver &p_driver, const String 
 	if (capture_dir.is_empty() || p_filename.is_empty()) {
 		return;
 	}
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	if (display_server == nullptr || display_server->get_name() == StringName("headless")) {
+		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (screenshot_unsupported_renderer)\n", p_filename.utf8().get_data());
+		return;
+	}
 	const Error mkdir_err = DirAccess::make_dir_recursive_absolute(capture_dir);
 	if (mkdir_err != OK && mkdir_err != ERR_ALREADY_EXISTS) {
 		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP mkdir %s (%d)\n", capture_dir.utf8().get_data(), (int)mkdir_err);
@@ -320,6 +326,12 @@ void _maybe_capture_editor_png(EditorWorkflowTestDriver &p_driver, const String 
 
 void _capture_demoted_chrome_budget_pair(EditorWorkflowTestDriver &p_driver, ScenePaneTile *p_demoted_tile) {
 	if (p_demoted_tile == nullptr || OS::get_singleton()->get_environment("FOUNDRY_CAPTURE_DIR").strip_edges().is_empty()) {
+		return;
+	}
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	if (display_server == nullptr || display_server->get_name() == StringName("headless")) {
+		// Skip chrome mutation under the dummy renderer; capture cannot succeed
+		// and temporarily restoring docks would only add flaky layout churn.
 		return;
 	}
 	EditorTileDockRegion *region = p_demoted_tile->get_dock_region();

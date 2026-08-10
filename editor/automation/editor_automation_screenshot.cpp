@@ -40,7 +40,15 @@
 #include "scene/main/scene_tree.h"
 #include "scene/main/viewport.h"
 #include "scene/main/window.h"
+#include "servers/display/display_server.h"
 #include "servers/rendering/rendering_server.h"
+
+static bool _screenshot_renderer_supported() {
+	DisplayServer *display_server = DisplayServer::get_singleton();
+	// Headless uses the dummy texture storage, which ERR_FAIL_NULL_V's on
+	// texture_2d_get instead of returning a null image. Probe before reading.
+	return display_server != nullptr && display_server->get_name() != StringName("headless");
+}
 
 Dictionary EditorAutomationScreenshotAttachment::to_dictionary() const {
 	Dictionary dict;
@@ -133,6 +141,9 @@ Viewport *EditorAutomationScreenshot::_resolve_capture_viewport(Node *p_snapshot
 }
 
 Ref<Image> EditorAutomationScreenshot::_acquire_viewport_image(Node *p_snapshot_root, Dictionary &r_viewport_meta, bool p_force_draw) {
+	if (!_screenshot_renderer_supported()) {
+		return Ref<Image>();
+	}
 	Viewport *viewport = _resolve_capture_viewport(p_snapshot_root);
 	if (viewport == nullptr) {
 		return Ref<Image>();
@@ -270,6 +281,12 @@ EditorAutomationScreenshotAttachment EditorAutomationScreenshot::capture_for_fai
 		return attachment;
 	}
 
+	if (!_screenshot_renderer_supported()) {
+		attachment.status = "unavailable";
+		attachment.reason = "screenshot_unsupported_renderer";
+		return attachment;
+	}
+
 	Dictionary viewport_meta;
 	Ref<Image> image = _acquire_viewport_image(p_options.snapshot_root, viewport_meta, p_options.force_draw);
 	if (image.is_null()) {
@@ -310,6 +327,12 @@ EditorAutomationScreenshotAttachment EditorAutomationScreenshot::capture_on_dema
 		bool p_crop_to_element,
 		const Rect2i &p_element_bounds) {
 	EditorAutomationScreenshotAttachment attachment;
+
+	if (!_screenshot_renderer_supported()) {
+		attachment.status = "unavailable";
+		attachment.reason = "screenshot_unsupported_renderer";
+		return attachment;
+	}
 
 	Dictionary viewport_meta;
 	Ref<Image> image = _acquire_viewport_image(p_options.snapshot_root, viewport_meta, p_options.force_draw);
