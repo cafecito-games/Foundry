@@ -37,6 +37,9 @@
 #include "editor/themes/editor_theme.h"
 #include "editor/themes/editor_theme_manager.h"
 
+#include "scene/main/scene_tree.h"
+#include "scene/main/window.h"
+
 #include "tests/test_macros.h"
 
 namespace TestInspectorDensity {
@@ -72,11 +75,20 @@ static int measure_text_property_minimum_height(const Ref<EditorTheme> &p_theme)
 	return height;
 }
 
+// EditorProperty::get_minimum_size() only folds a child's minimum size into the row height when
+// Container::as_sortable_control() considers that child visible in tree, which requires the
+// property to actually be inside the SceneTree (a standalone control's `parent_visible_in_tree`
+// defaults to false). Measuring EditorPropertyFloat outside the tree would silently degrade to just
+// the container's own `inspector_property_height` floor and never exercise the spin slider's own
+// get_minimum_size() at all, so this attaches the property to the root window for the duration of
+// the measurement.
 static int measure_float_property_minimum_height(const Ref<EditorTheme> &p_theme) {
 	EditorPropertyFloat *property = memnew(EditorPropertyFloat);
 	property->set_theme(p_theme);
+	SceneTree::get_singleton()->get_root()->add_child(property);
 	property->notification(Control::NOTIFICATION_THEME_CHANGED);
 	int height = (int)property->get_minimum_size().height;
+	SceneTree::get_singleton()->get_root()->remove_child(property);
 	memdelete(property);
 	return height;
 }
@@ -209,6 +221,9 @@ TEST_CASE("[Editor][InspectorDensity] EditorSpinSlider outside the inspector is 
 	int default_height = measure_standalone_spin_slider_minimum_height(default_theme);
 	int spacious_height = measure_standalone_spin_slider_minimum_height(spacious_theme);
 
+	CAPTURE(compact_height);
+	CAPTURE(default_height);
+	CAPTURE(spacious_height);
 	CHECK(compact_height == default_height);
 	CHECK(default_height == spacious_height);
 }

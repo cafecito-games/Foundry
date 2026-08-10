@@ -1825,6 +1825,7 @@ EditorPropertyInteger::EditorPropertyInteger() {
 	value_edit->connect(SceneStringName(focus_exited), callable_mp(this, &EditorPropertyInteger::_focus_exited));
 
 	spin = memnew(EditorSpinSlider);
+	spin->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 	spin->set_flat(true);
 	spin->set_editing_integer(true);
 	spin->set_h_size_flags(SIZE_EXPAND_FILL);
@@ -1981,6 +1982,7 @@ void EditorPropertyFloat::setup(const EditorPropertyRangeHint &p_range_hint) {
 
 EditorPropertyFloat::EditorPropertyFloat() {
 	spin = memnew(EditorSpinSlider);
+	spin->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 	spin->set_flat(true);
 	add_child(spin);
 	add_focusable(spin);
@@ -2203,6 +2205,7 @@ EditorPropertyEasing::EditorPropertyEasing() {
 	preset->connect(SceneStringName(id_pressed), callable_mp(this, &EditorPropertyEasing::_set_preset));
 
 	spin = memnew(EditorSpinSlider);
+	spin->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 	spin->set_flat(true);
 	spin->set_min(-100);
 	spin->set_max(100);
@@ -2290,6 +2293,7 @@ EditorPropertyRect2::EditorPropertyRect2(bool p_force_wide) {
 	static const char *desc[4] = { "x", "y", "w", "h" };
 	for (int i = 0; i < 4; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
 		spin[i]->set_flat(true);
@@ -2384,6 +2388,7 @@ EditorPropertyRect2i::EditorPropertyRect2i(bool p_force_wide) {
 	static const char *desc[4] = { "x", "y", "w", "h" };
 	for (int i = 0; i < 4; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
 		spin[i]->set_flat(true);
@@ -2476,6 +2481,7 @@ EditorPropertyPlane::EditorPropertyPlane(bool p_force_wide) {
 	static const char *desc[4] = { "x", "y", "z", "d" };
 	for (int i = 0; i < 4; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_flat(true);
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
@@ -2647,6 +2653,7 @@ EditorPropertyQuaternion::EditorPropertyQuaternion() {
 	static const char *desc[4] = { "x", "y", "z", "w" };
 	for (int i = 0; i < 4; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_flat(true);
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
@@ -2676,6 +2683,7 @@ EditorPropertyQuaternion::EditorPropertyQuaternion() {
 
 	for (int i = 0; i < 3; i++) {
 		euler[i] = memnew(EditorSpinSlider);
+		euler[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		euler[i]->set_flat(true);
 		euler[i]->set_label(desc[i]);
 		euler[i]->set_accessibility_name(vformat(TTR("Temporary Euler %s"), desc[i]));
@@ -2764,6 +2772,7 @@ EditorPropertyAABB::EditorPropertyAABB() {
 	static const char *desc[6] = { "x", "y", "z", "w", "h", "d" };
 	for (int i = 0; i < 6; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
 		spin[i]->set_flat(true);
@@ -2846,6 +2855,7 @@ EditorPropertyTransform2D::EditorPropertyTransform2D(bool p_include_origin) {
 	static const char *desc[6] = { "xx", "xy", "xo", "yx", "yy", "yo" };
 	for (int i = 0; i < 6; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
 		spin[i]->set_flat(true);
@@ -2930,6 +2940,7 @@ EditorPropertyBasis::EditorPropertyBasis() {
 	static const char *desc[9] = { "xx", "xy", "xz", "yx", "yy", "yz", "zx", "zy", "zz" };
 	for (int i = 0; i < 9; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
 		spin[i]->set_flat(true);
@@ -3021,6 +3032,7 @@ EditorPropertyTransform3D::EditorPropertyTransform3D() {
 	static const char *desc[12] = { "xx", "xy", "xz", "xo", "yx", "yy", "yz", "yo", "zx", "zy", "zz", "zo" };
 	for (int i = 0; i < 12; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
 		spin[i]->set_flat(true);
@@ -3120,6 +3132,7 @@ EditorPropertyProjection::EditorPropertyProjection() {
 	static const char *desc[16] = { "xx", "xy", "xz", "xw", "yx", "yy", "yz", "yw", "zx", "zy", "zz", "zw", "wx", "wy", "wz", "ww" };
 	for (int i = 0; i < 16; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		spin[i]->set_label(desc[i]);
 		spin[i]->set_accessibility_name(desc[i]);
 		spin[i]->set_flat(true);

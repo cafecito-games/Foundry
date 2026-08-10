@@ -59,13 +59,26 @@ String EditorSpinSlider::get_tooltip(const Point2 &p_pos) const {
 }
 
 Size2 EditorSpinSlider::get_minimum_size() const {
-	Ref<StyleBox> sb = get_theme_stylebox(CoreStringName(normal), SNAME("LineEdit"));
+	// EditorSpinSlider borrows LineEdit's stylebox and font purely to compute a plausible row
+	// height; it draws no LineEdit itself. It is also used outside the inspector (viewport zoom,
+	// timelines, and other chrome) where inspector density scaling must not apply. Inspector call
+	// sites opt in with set_theme_type_variation(SNAME("EditorInspectorSpinSlider")), so both the
+	// density-scaled stylebox lookup and the inspector_property_height floor below are gated on
+	// that variation; everywhere else keeps reading the unscaled base LineEdit type and ignores
+	// inspector density entirely, matching its pre-existing height in every context.
+	StringName type_variation = get_theme_type_variation();
+	bool in_inspector = type_variation == SNAME("EditorInspectorSpinSlider");
+	StringName size_reference_type = in_inspector ? type_variation : SNAME("LineEdit");
+
+	Ref<StyleBox> sb = get_theme_stylebox(CoreStringName(normal), size_reference_type);
 	Ref<Font> font = get_theme_font(SceneStringName(font), SNAME("LineEdit"));
 	int font_size = get_theme_font_size(SceneStringName(font_size), SNAME("LineEdit"));
 
 	Size2 ms = sb->get_minimum_size();
 	ms.height += font->get_height(font_size);
-	ms.height = MAX(ms.height, get_theme_constant(SNAME("inspector_property_height"), EditorStringName(Editor)));
+	if (in_inspector) {
+		ms.height = MAX(ms.height, get_theme_constant(SNAME("inspector_property_height"), EditorStringName(Editor)));
+	}
 
 	return ms;
 }
