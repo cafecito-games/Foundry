@@ -389,4 +389,57 @@ TEST_CASE("[Editor][Boards] Cross-board tile body drop workflow subprocess") {
 	CHECK(exit_code == 0);
 }
 
+// #2071: handle_tile_tab_drop and handle_tile_tab_strip_drop both call
+// EditorNode::_focus_tile unconditionally after a successful drop, but
+// _focus_tile_internal resolves the destination leaf only through the active
+// board's workspace, so every cross-board drop logged a null-leaf focus error.
+// The rosette/tile-body path is covered above; this drives the tab-strip drop
+// path -- landing on a pane that already has a resident tab -- through the same
+// real editor subprocess so the workflow's own error-log assertion, which spans
+// the drop itself rather than a fresh step boundary, has to stay clean.
+TEST_CASE("[Editor][Boards] Cross-board tab strip drop workflow subprocess") {
+	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Re-run with DISPLAY set so the editor subprocess starts.");
+		return;
+	}
+
+	const String project_path = EditorWorkflowTestFixtures::prepare_disposable_project();
+	if (project_path.is_empty()) {
+		FAIL("Failed to prepare a temporary workflow project copy.");
+		return;
+	}
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=cross_board_tab_strip_drop");
+
+	int exit_code = -1;
+	const String output = EditorWorkflowTestFixtures::workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+
+	const int marker = output.find("FOUNDRY_AUTOMATION_WORKFLOW");
+	CHECK_MESSAGE(marker >= 0, "Workflow result line was not printed.");
+	if (marker < 0) {
+		return;
+	}
+
+	const int line_start = marker + String("FOUNDRY_AUTOMATION_WORKFLOW ").length();
+	const int line_end = output.find_char('\n', line_start);
+	const String json_text = line_end >= 0 ? output.substr(line_start, line_end - line_start) : output.substr(line_start);
+	JSON json;
+	if (json.parse(json_text.strip_edges()) != OK) {
+		FAIL("Workflow result line was not valid JSON: ", json_text);
+		return;
+	}
+	const Dictionary payload = json.get_data();
+	CHECK(String(payload.get("workflow", String())) == "cross_board_tab_strip_drop");
+	CHECK_MESSAGE((bool)payload.get("ok", false), String(payload.get("message", String())));
+	CHECK(exit_code == 0);
+}
+
 } // namespace TestEditorBoardCrossBoard

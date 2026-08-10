@@ -616,11 +616,16 @@ bool _drop_scene_tab_on_empty_pane(EditorWorkflowTestDriver &p_driver, const Str
 		return false;
 	}
 
-	// The post-drop state is verified in its own step, and the error-log assertion
-	// below covers that step. A cross-board drop itself still logs one error from
-	// EditorNode's post-drop focus call, which resolves the destination leaf only in
-	// the active board's workspace; that predates the empty-pane drop surface and is
-	// out of scope here.
+	// Assert against p_leg.step's own marker -- set before the drag began -- rather
+	// than opening a fresh step here. A drop that lands on a non-active board still
+	// has to route its post-drop focus call through EditorNode, and that call has to
+	// stay error-free across the drop itself, not just after a new step boundary
+	// that would fence the error out of this assertion's window.
+	if (!p_driver.assert_no_new_errors_since_step()) {
+		r_failure = _failure_from_driver(p_driver, p_workflow);
+		return false;
+	}
+
 	p_driver.set_step(p_leg.step + "_verify");
 
 	EditorData &editor_data = EditorNode::get_editor_data();
@@ -1633,6 +1638,236 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	return result;
 #else
 	return _failure_with_message(p_driver, result.workflow, "Cross-board tile body drop workflow requires an editor (TOOLS_ENABLED) build.");
+#endif
+}
+
+// #2071: handle_tile_tab_strip_drop calls _focus_tile(dest_leaf_id) unconditionally
+// after a successful drop, but _focus_tile_internal resolves the leaf only through
+// the active board's workspace. cross_board_tile_body_drop exercises the rosette
+// overlay path onto an empty pane; this exercises the tab-strip path onto a pane
+// that already has a resident tab, so the tab strip itself -- rather than the
+// empty-pane placeholder -- is the real drop surface.
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_cross_board_tab_strip_drop(
+		EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "cross_board_tab_strip_drop";
+
+	p_driver.begin_workflow();
+
+#ifdef TOOLS_ENABLED
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+
+	p_driver.set_step("create_dragged_scene");
+	SceneTreeDock *scene_dock = editor_node->get_focused_scene_tree_dock();
+	if (scene_dock == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Focused scene tree dock is unavailable.");
+	}
+	Node2D *dragged_root = memnew(Node2D);
+	dragged_root->set_name("Dragged");
+	scene_dock->add_root_node(dragged_root);
+	p_driver.flush_frames(20);
+
+	EditorData &editor_data = EditorNode::get_editor_data();
+	const int dragged_scene_index = editor_data.get_edited_scene();
+	if (dragged_scene_index < 0) {
+		return _failure_with_message(p_driver, result.workflow, "The dragged scene has no editor-data index.");
+	}
+
+	p_driver.set_step("add_destination_board");
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Board strip is unavailable.");
+	}
+	EditorBoard *destination_board = strip->add_board("Destination");
+	if (destination_board == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Adding a second board failed.");
+	}
+	// Boards are re-resolved by id after every frame advance, exactly as the
+	// tile-body drop workflow re-resolves them.
+	const ObjectID destination_board_id = destination_board->get_instance_id();
+	p_driver.flush_frames(20);
+
+	EditorSceneWorkspace *source_workspace = strip->get_active_workspace();
+	EditorSceneWorkspace *destination_workspace = destination_board->get_workspace();
+	if (source_workspace == nullptr || destination_workspace == nullptr || source_workspace == destination_workspace) {
+		return _failure_with_message(p_driver, result.workflow, "The two boards did not resolve to distinct workspaces.");
+	}
+	if (strip->get_active_index() != 0 || !destination_board->is_dormant()) {
+		return _failure_with_message(p_driver, result.workflow, "The destination board is not the dormant, non-active board.");
+	}
+
+	const int source_leaf_id = source_workspace->get_focused_leaf_id();
+	if (editor_data.get_scene_tile(dragged_scene_index) != source_leaf_id) {
+		return _failure_with_message(p_driver, result.workflow, "The dragged scene does not start on the active board's pane.");
+	}
+
+	// The destination pane needs a resident tab of its own so its tab strip -- not
+	// the empty-pane placeholder -- is the visible drop surface. Seeded directly
+	// through EditorData, the same low-level path EditorNode::new_scene() itself
+	// goes through, so the dormant board never has to become active to acquire it.
+	p_driver.set_step("seed_destination_board");
+	WorkspaceLeafNode *destination_leaf = destination_workspace->get_focused_leaf();
+	if (destination_leaf == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The destination board has no focused leaf.");
+	}
+	const int destination_leaf_id = destination_leaf->get_leaf_id();
+	editor_data.register_tile(destination_leaf_id);
+	const int resident_scene_index = editor_data.add_edited_scene(-1);
+	if (editor_data.get_scene_tile(resident_scene_index) != destination_leaf_id) {
+		editor_data.set_scene_tile(resident_scene_index, destination_leaf_id);
+	}
+	destination_workspace->sync_scene_tabs_from_editor_data();
+	p_driver.flush_frames(20);
+
+	WorkspacePane *destination_pane = destination_leaf->get_workspace_pane();
+	if (destination_pane == nullptr || destination_pane->get_tab_count() != 1) {
+		return _failure_with_message(p_driver, result.workflow, "Seeding the destination board's pane did not produce a resident tab.");
+	}
+
+	p_driver.set_step("enter_overview");
+	strip->set_overview(true);
+	p_driver.flush_frames(30);
+	Dictionary settled_condition;
+	settled_condition["type"] = "board_transition_settled";
+	if (!p_driver.require_ok(p_driver.wait_for(settled_condition, 10000), "enter_overview")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	if (!strip->is_overview_active()) {
+		return _failure_with_message(p_driver, result.workflow, "The board overview did not come up.");
+	}
+
+	// Re-resolve every participant after the overview relayout rather than reusing
+	// pointers captured before it.
+	strip = EditorNode::get_board_strip();
+	EditorBoard *live_destination_board = ObjectDB::get_instance<EditorBoard>(destination_board_id);
+	if (strip == nullptr || live_destination_board == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The board strip or destination board did not survive the overview transition.");
+	}
+	source_workspace = strip->get_active_workspace();
+	destination_workspace = live_destination_board->get_workspace();
+	if (source_workspace == nullptr || destination_workspace == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "A board workspace did not survive the overview transition.");
+	}
+
+	WorkspaceLeafNode *source_leaf = source_workspace->get_leaf_by_id(source_leaf_id);
+	destination_leaf = destination_workspace->get_leaf_by_id(destination_leaf_id);
+	WorkspacePane *source_pane = source_leaf != nullptr ? source_leaf->get_workspace_pane() : nullptr;
+	destination_pane = destination_leaf != nullptr ? destination_leaf->get_workspace_pane() : nullptr;
+	if (source_pane == nullptr || destination_pane == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The source or destination pane did not survive the overview transition.");
+	}
+
+	TabBar *source_tab_strip = source_pane->get_tab_strip();
+	const int source_tab_index = source_pane->find_scene_tab_index(dragged_scene_index);
+	if (source_tab_strip == nullptr || source_tab_index < 0) {
+		return _failure_with_message(p_driver, result.workflow, "The dragged scene has no tab in the source pane's strip.");
+	}
+	TabBar *destination_tab_strip = destination_pane->get_tab_strip();
+	if (destination_tab_strip == nullptr || destination_tab_strip->get_tab_count() != 1) {
+		return _failure_with_message(p_driver, result.workflow, "The destination pane's tab strip did not survive the overview transition.");
+	}
+
+	const Rect2 destination_strip_rect_before_drag = destination_tab_strip->get_global_rect();
+	if (!destination_tab_strip->is_visible_in_tree() || destination_strip_rect_before_drag.size.x < 4 || destination_strip_rect_before_drag.size.y < 4) {
+		return _failure_with_message(p_driver, result.workflow, "The destination pane's tab strip is not visible and sized, so nothing can be dropped onto it.");
+	}
+
+	Viewport *viewport = editor_node->get_viewport();
+	if (viewport == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "No viewport is available for pointer input.");
+	}
+
+	const Vector2 grab_point = source_tab_strip->get_global_transform().xform(source_tab_strip->get_tab_rect(source_tab_index).get_center());
+	// Aimed at the resident tab's leading half so the requested strip position
+	// (before the resident tab) matches the ordinal a scene-tab rebuild lands it
+	// at anyway (scene tabs are ordered by EditorData index, and the dragged scene
+	// was created before the resident one). Landing where requested keeps this
+	// workflow isolated to the tab-strip drop's own focus call; a mismatch would
+	// additionally trigger WorkspacePane::move_tab's reorder path, which has its
+	// own, unrelated focus side effect.
+	const Rect2 resident_tab_rect = destination_tab_strip->get_tab_rect(0);
+	const Vector2 drop_local(resident_tab_rect.position.x + resident_tab_rect.size.width * 0.25f, resident_tab_rect.size.height * 0.5f);
+	const Vector2 drop_point = destination_tab_strip->get_global_transform().xform(drop_local);
+
+	p_driver.set_step("drop_tab_on_dormant_board_tab_strip");
+	PackedStringArray pointer_events;
+	const EditorAutomationInputModifiers modifiers;
+	if (!EditorAutomationInput::begin_mouse_gesture(viewport, grab_point, MouseButton::LEFT, modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not press the pointer on the source tab.");
+	}
+	if (!EditorAutomationInput::move_mouse_gesture(viewport, drop_point, Vector<Vector2>(), modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not drag the pointer onto the destination pane's tab strip.");
+	}
+	if (!viewport->gui_is_dragging()) {
+		return _failure_with_message(p_driver, result.workflow, "Dragging the tab did not start a workspace tab drag.");
+	}
+	if (!EditorAutomationInput::end_mouse_gesture(viewport, drop_point, modifiers, pointer_events)) {
+		return _failure_with_message(p_driver, result.workflow, "Could not release the pointer over the destination pane's tab strip.");
+	}
+	p_driver.flush_frames(30);
+	if (!p_driver.wait_workspace_settled(10000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after the tab-strip drop.");
+	}
+
+	// Assert against the drop_tab_on_dormant_board_tab_strip step's own marker,
+	// set before the drag began, so the assertion window spans the drop itself
+	// rather than a fresh step boundary opened after it -- the exact gap that let
+	// the null-leaf focus error in #2071 pass unnoticed for the tile-body path.
+	if (!p_driver.assert_no_new_errors_since_step()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	p_driver.set_step("verify_landed");
+	WorkspaceLeafNode *landed_leaf = destination_workspace->get_leaf_by_id(destination_leaf_id);
+	WorkspacePane *landed_pane = landed_leaf != nullptr ? landed_leaf->get_workspace_pane() : nullptr;
+	WorkspaceLeafNode *vacated_leaf = source_workspace->get_leaf_by_id(source_leaf_id);
+	WorkspacePane *vacated_pane = vacated_leaf != nullptr ? vacated_leaf->get_workspace_pane() : nullptr;
+	const int landed_tile_id = editor_data.get_scene_tile(dragged_scene_index);
+	const int landed_tab_count = landed_pane != nullptr ? landed_pane->get_tab_count() : -1;
+	const int vacated_tab_count = vacated_pane != nullptr ? vacated_pane->get_tab_count() : -1;
+	if (landed_tile_id != destination_leaf_id || landed_tab_count != 2 || vacated_pane == nullptr || vacated_tab_count != 0) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Dropping the tab on the dormant board's tab strip did not move it into that pane.";
+		Dictionary details = p_driver.make_failure_details("verify_landed");
+		details["source_leaf_id"] = source_leaf_id;
+		details["destination_leaf_id"] = destination_leaf_id;
+		details["landed_tile_id"] = landed_tile_id;
+		details["landed_tab_count"] = landed_tab_count;
+		details["vacated_tab_count"] = vacated_tab_count;
+		fail.details = details;
+		return fail;
+	}
+
+	// The drop itself must not have switched which board is active -- that is a
+	// distinct guarantee from which leaf holds editor-wide focus, and #2071 is
+	// scoped to the latter's null-leaf error, not every focus-adjacent side effect
+	// a tab move can have on the destination pane.
+	if (strip->get_active_index() != 0) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "The cross-board drop changed which board is active.";
+		Dictionary details = p_driver.make_failure_details("verify_landed");
+		details["active_index"] = strip->get_active_index();
+		fail.details = details;
+		return fail;
+	}
+
+	result.ok = true;
+	result.message = "A tab dropped on a dormant board's tab strip moves without logging a null-leaf focus error.";
+	Dictionary details;
+	details["source_leaf_id"] = source_leaf_id;
+	details["destination_leaf_id"] = destination_leaf_id;
+	details["workspace"] = p_driver.read_editor_state().get("workspace", Dictionary());
+	result.details = details;
+	return result;
+#else
+	return _failure_with_message(p_driver, result.workflow, "Cross-board tab strip drop workflow requires an editor (TOOLS_ENABLED) build.");
 #endif
 }
 
