@@ -47,6 +47,7 @@
 #include "core/io/file_access.h"
 #include "core/io/json.h"
 #include "core/io/stream_peer_tcp.h"
+#include "core/io/tcp_server.h"
 #include "core/object/message_queue.h"
 #include "core/os/os.h"
 #include "scene/gui/button.h"
@@ -58,6 +59,10 @@
 #include "tests/editor/editor_workflow_test_fixtures.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
+
+#ifdef UNIX_ENABLED
+#include <signal.h>
+#endif
 
 namespace TestEditorAutomationWorkflow {
 
@@ -1052,6 +1057,253 @@ TEST_CASE("[Editor][EditorAutomation][MCP] launched editor smoke handshake") {
 		stdout_pipe->close();
 	}
 	OS::get_singleton()->kill(pid);
+}
+
+// ---------------------------------------------------------------------------
+// Issue #2070: Automation listener isolation and subprocess ownership tests.
+// ---------------------------------------------------------------------------
+
+// Parse the FOUNDRY_TOOLING readiness record from captured subprocess output so
+// tests can observe the actual ephemeral LSP/DAP ports an automation editor bound.
+static bool workflow_parse_tooling_record(const String &p_output, Dictionary &r_payload) {
+	if (!p_output.contains("FOUNDRY_TOOLING {")) {
+		return false;
+	}
+	const int line_start = p_output.find("FOUNDRY_TOOLING ") + String("FOUNDRY_TOOLING ").length();
+	const int line_end = p_output.find_char('\n', line_start);
+	const String json_text = line_end >= 0 ? p_output.substr(line_start, line_end - line_start) : p_output.substr(line_start);
+
+	JSON json;
+	if (json.parse(json_text.strip_edges()) != OK) {
+		return false;
+	}
+	r_payload = json.get_data();
+	return true;
+}
+
+static Ref<TCPServer> workflow_occupy_specific_port(int p_port) {
+	Ref<TCPServer> blocker;
+	blocker.instantiate();
+	if (blocker->listen(p_port, IPAddress("127.0.0.1")) != OK) {
+		return Ref<TCPServer>();
+	}
+	return blocker;
+}
+
+// Drain available bytes from a pipe into a string buffer.
+static void workflow_drain_pipe(const Ref<FileAccess> &p_pipe, String &r_output) {
+	if (p_pipe.is_null() || !p_pipe->is_open()) {
+		return;
+	}
+	const uint64_t available = p_pipe->get_length();
+	if (available == 0) {
+		return;
+	}
+	Vector<uint8_t> chunk;
+	chunk.resize(available);
+	const uint64_t read = p_pipe->get_buffer(chunk.ptrw(), available);
+	if (read > 0) {
+		r_output += String::utf8((const char *)chunk.ptr(), read);
+	}
+}
+
+// Wait up to p_timeout_msec for p_marker to appear in the child's combined output.
+static bool workflow_wait_for_marker(const Ref<FileAccess> &p_stdout, const Ref<FileAccess> &p_stderr,
+		String &r_output, OS::ProcessID p_pid, const String &p_marker, uint64_t p_timeout_msec) {
+	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + p_timeout_msec;
+	while (OS::get_singleton()->get_ticks_msec() < deadline) {
+		workflow_drain_pipe(p_stdout, r_output);
+		workflow_drain_pipe(p_stderr, r_output);
+		if (r_output.contains(p_marker)) {
+			return true;
+		}
+		if (!OS::get_singleton()->is_process_running(p_pid)) {
+			return r_output.contains(p_marker);
+		}
+		OS::get_singleton()->delay_usec(20000);
+	}
+	return r_output.contains(p_marker);
+}
+
+static void workflow_shutdown_subprocess(OS::ProcessID p_pid, const Ref<FileAccess> &p_stdout, const Ref<FileAccess> &p_stderr) {
+	if (p_stdout.is_valid()) {
+		p_stdout->close();
+	}
+	if (p_stderr.is_valid()) {
+		p_stderr->close();
+	}
+	if (p_pid != 0 && OS::get_singleton()->is_process_running(p_pid)) {
+		OS::get_singleton()->kill(p_pid);
+	}
+}
+
+// With both default ports (6005/6006) occupied by parent-owned listeners, an
+// automation editor must still start, bind distinct ephemeral ports, run its
+// workflow, and exit 0.
+TEST_CASE("[Editor][EditorAutomation] automation LSP/DAP bind ephemeral ports when defaults are occupied") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Verify that automation binds ephemeral ports when 6005/6006 are occupied.");
+		return;
+	}
+
+	Ref<TCPServer> lsp_blocker = workflow_occupy_specific_port(6005);
+	if (lsp_blocker.is_null()) {
+		MESSAGE("Port 6005 is already in use; skipping port-collision regression.");
+		return;
+	}
+	Ref<TCPServer> dap_blocker = workflow_occupy_specific_port(6006);
+	if (dap_blocker.is_null()) {
+		MESSAGE("Port 6006 is already in use; skipping port-collision regression.");
+		return;
+	}
+
+	const String project_path = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary MVP project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=basic_scene_editing");
+
+	int exit_code = -1;
+	const String output = workflow_run_subprocess(arguments, exit_code);
+
+	lsp_blocker->stop();
+	dap_blocker->stop();
+
+	INFO("Subprocess output:\n", output);
+	CHECK(exit_code == 0);
+
+	Dictionary tooling_payload;
+	CHECK_MESSAGE(workflow_parse_tooling_record(output, tooling_payload),
+			"Automation editor did not emit a FOUNDRY_TOOLING readiness record.");
+	if (!tooling_payload.is_empty()) {
+		const int lsp_port = tooling_payload["lsp_port"];
+		const int dap_port = tooling_payload["dap_port"];
+		CHECK_MESSAGE(lsp_port > 0, "LSP bound port should be a nonzero ephemeral port.");
+		CHECK_MESSAGE(dap_port > 0, "DAP bound port should be a nonzero ephemeral port.");
+		CHECK_MESSAGE(lsp_port != dap_port, "LSP and DAP should bind distinct ports.");
+		CHECK_MESSAGE(lsp_port != 6005, "LSP should not use the occupied default port 6005.");
+		CHECK_MESSAGE(dap_port != 6006, "DAP should not use the occupied default port 6006.");
+	}
+}
+
+// Two automation editors launched concurrently must not share any LSP or DAP port.
+TEST_CASE("[Editor][EditorAutomation] concurrent automation editors bind distinct ephemeral ports") {
+	if (!workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Verify that two concurrent automation editors bind distinct ports.");
+		return;
+	}
+
+	const String project_a = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_a.is_empty(), "Failed to prepare project copy A.");
+	const String project_b = workflow_prepare_temp_project();
+	REQUIRE_MESSAGE(!project_b.is_empty(), "Failed to prepare project copy B.");
+
+	Dictionary environment;
+	environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
+
+	const auto build_args = [](const String &p_project) {
+		List<String> args;
+		args.push_back("editor");
+		args.push_back("open");
+		args.push_back("--headless");
+		args.push_back("--project");
+		args.push_back(p_project);
+		args.push_back("--automation");
+		args.push_back("--automation-transport=mcp");
+		args.push_back("--automation-port");
+		args.push_back("0");
+		args.push_back("--automation-token");
+		args.push_back("concurrent-" + p_project.get_file());
+		return args;
+	};
+
+	Dictionary pipe_a = OS::get_singleton()->execute_with_pipe(
+			OS::get_singleton()->get_executable_path(), build_args(project_a), false, String(), environment, false);
+	Dictionary pipe_b = OS::get_singleton()->execute_with_pipe(
+			OS::get_singleton()->get_executable_path(), build_args(project_b), false, String(), environment, false);
+	REQUIRE_FALSE_MESSAGE(pipe_a.is_empty(), "Failed to launch the first automation editor.");
+	REQUIRE_FALSE_MESSAGE(pipe_b.is_empty(), "Failed to launch the second automation editor.");
+
+	Ref<FileAccess> stdout_a = pipe_a["stdio"];
+	Ref<FileAccess> stderr_a = pipe_a["stderr"];
+	const OS::ProcessID pid_a = pipe_a["pid"];
+	Ref<FileAccess> stdout_b = pipe_b["stdio"];
+	Ref<FileAccess> stderr_b = pipe_b["stderr"];
+	const OS::ProcessID pid_b = pipe_b["pid"];
+
+	String output_a;
+	String output_b;
+	const bool ready_a = workflow_wait_for_marker(stdout_a, stderr_a, output_a, pid_a, "FOUNDRY_TOOLING {", 180000);
+	const bool ready_b = workflow_wait_for_marker(stdout_b, stderr_b, output_b, pid_b, "FOUNDRY_TOOLING {", 180000);
+
+	workflow_shutdown_subprocess(pid_a, stdout_a, stderr_a);
+	workflow_shutdown_subprocess(pid_b, stdout_b, stderr_b);
+
+	INFO("Editor A output:\n", output_a);
+	INFO("Editor B output:\n", output_b);
+	REQUIRE_MESSAGE(ready_a, "First automation editor did not emit FOUNDRY_TOOLING.");
+	REQUIRE_MESSAGE(ready_b, "Second automation editor did not emit FOUNDRY_TOOLING.");
+
+	Dictionary payload_a;
+	Dictionary payload_b;
+	REQUIRE_MESSAGE(workflow_parse_tooling_record(output_a, payload_a), "Failed to parse FOUNDRY_TOOLING from editor A.");
+	REQUIRE_MESSAGE(workflow_parse_tooling_record(output_b, payload_b), "Failed to parse FOUNDRY_TOOLING from editor B.");
+
+	const int lsp_a = payload_a["lsp_port"];
+	const int dap_a = payload_a["dap_port"];
+	const int lsp_b = payload_b["lsp_port"];
+	const int dap_b = payload_b["dap_port"];
+	CHECK_MESSAGE(lsp_a > 0, "Editor A LSP should bind a nonzero ephemeral port.");
+	CHECK_MESSAGE(dap_a > 0, "Editor A DAP should bind a nonzero ephemeral port.");
+	CHECK_MESSAGE(lsp_b > 0, "Editor B LSP should bind a nonzero ephemeral port.");
+	CHECK_MESSAGE(dap_b > 0, "Editor B DAP should bind a nonzero ephemeral port.");
+	CHECK_MESSAGE(lsp_a != lsp_b, "LSP ports must differ across concurrent editors.");
+	CHECK_MESSAGE(dap_a != dap_b, "DAP ports must differ across concurrent editors.");
+	CHECK_MESSAGE(lsp_a != dap_b, "Cross-editor LSP/DAP ports must not collide.");
+	CHECK_MESSAGE(dap_a != lsp_b, "Cross-editor DAP/LSP ports must not collide.");
+}
+
+// A timed-out subprocess is terminated and reaped; the outcome is explicitly
+// marked as timeout and the child PID no longer exists afterward.
+TEST_CASE("[Editor][EditorAutomation] subprocess timeout terminates and reaps the child") {
+	const String sleep_path = "/bin/sleep";
+	if (!FileAccess::exists(sleep_path)) {
+		MESSAGE("/bin/sleep not found; skipping subprocess timeout/reap regression.");
+		return;
+	}
+
+	List<String> arguments;
+	arguments.push_back("30"); // sleep for 30 seconds — well beyond the test timeout.
+
+	int exit_code = -42;
+	EditorWorkflowTestFixtures::SubprocessOutcome outcome = EditorWorkflowTestFixtures::SUBPROCESS_NORMAL_EXIT;
+	OS::ProcessID pid = 0;
+	const String output = EditorWorkflowTestFixtures::workflow_run_subprocess(
+			arguments, exit_code, String(), &outcome, &pid, 3000, sleep_path);
+
+	INFO("Subprocess output:\n", output);
+	CHECK_MESSAGE(outcome == EditorWorkflowTestFixtures::SUBPROCESS_TIMEOUT,
+			"Expected the subprocess to be marked as timed out.");
+	CHECK_MESSAGE(exit_code == -1, "A timed-out subprocess should report exit_code -1.");
+
+	// The helper must have terminated and reaped the child.
+	INFO("The timed-out child PID should no longer be tracked after the helper returns.");
+	CHECK_FALSE(OS::get_singleton()->is_process_running(pid));
+
+#ifdef UNIX_ENABLED
+	// OS-level verification: signal 0 probes existence without sending a signal.
+	// After SIGKILL + reap, kill(pid, 0) fails with ESRCH ("No such process").
+	if (pid > 0) {
+		const int probe = ::kill(pid, 0);
+		CHECK_MESSAGE(probe == -1, "The timed-out child process should not exist at the OS level after reaping.");
+	}
+#endif
 }
 
 } // namespace TestEditorAutomationWorkflow

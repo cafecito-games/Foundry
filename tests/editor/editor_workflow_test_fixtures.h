@@ -110,29 +110,55 @@ static String prepare_basic_scene_project() {
 	return prepare_disposable_project(spec);
 }
 
+enum SubprocessOutcome {
+	SUBPROCESS_NORMAL_EXIT,
+	SUBPROCESS_LAUNCH_FAILURE,
+	SUBPROCESS_TIMEOUT,
+	SUBPROCESS_TERMINATION_FAILURE,
+};
+
 static bool workflow_has_display() {
 	return OS::get_singleton()->has_environment("DISPLAY") && !OS::get_singleton()->get_environment("DISPLAY").is_empty();
 }
 
-static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code, const String &p_working_directory = String()) {
+static String workflow_run_subprocess(const List<String> &p_arguments, int &r_exit_code,
+		const String &p_working_directory = String(),
+		SubprocessOutcome *r_outcome = nullptr,
+		OS::ProcessID *r_pid = nullptr,
+		uint64_t p_timeout_ms = 180000,
+		const String &p_executable_override = String()) {
 	Vector<uint8_t> stdout_bytes;
 	Vector<uint8_t> stderr_bytes;
+
+	if (r_outcome) {
+		*r_outcome = SUBPROCESS_NORMAL_EXIT;
+	}
 
 	Dictionary environment;
 	if (workflow_has_display()) {
 		environment["DISPLAY"] = OS::get_singleton()->get_environment("DISPLAY");
 	}
 
+	const String executable = p_executable_override.is_empty()
+			? OS::get_singleton()->get_executable_path()
+			: p_executable_override;
+
 	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
-			OS::get_singleton()->get_executable_path(), p_arguments, false, p_working_directory, environment, false);
+			executable, p_arguments, false, p_working_directory, environment, false);
 	if (pipe_info.is_empty()) {
 		r_exit_code = -1;
+		if (r_outcome) {
+			*r_outcome = SUBPROCESS_LAUNCH_FAILURE;
+		}
 		return String();
 	}
 
 	Ref<FileAccess> stdout_pipe = pipe_info["stdio"];
 	Ref<FileAccess> stderr_pipe = pipe_info["stderr"];
 	const OS::ProcessID pid = pipe_info["pid"];
+	if (r_pid) {
+		*r_pid = pid;
+	}
 
 	auto pump_pipe = [](const Ref<FileAccess> &p_pipe, Vector<uint8_t> &r_bytes) -> uint64_t {
 		if (p_pipe.is_null() || !p_pipe->is_open()) {
@@ -153,8 +179,9 @@ static String workflow_run_subprocess(const List<String> &p_arguments, int &r_ex
 		return read;
 	};
 
-	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + 180000;
-	while (OS::get_singleton()->get_ticks_msec() < deadline) {
+	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + p_timeout_ms;
+	bool timed_out = false;
+	while (true) {
 		pump_pipe(stdout_pipe, stdout_bytes);
 		pump_pipe(stderr_pipe, stderr_bytes);
 		if (!OS::get_singleton()->is_process_running(pid)) {
@@ -162,7 +189,17 @@ static String workflow_run_subprocess(const List<String> &p_arguments, int &r_ex
 			pump_pipe(stderr_pipe, stderr_bytes);
 			break;
 		}
+		if (OS::get_singleton()->get_ticks_msec() >= deadline) {
+			timed_out = true;
+			break;
+		}
 		OS::get_singleton()->delay_usec(20000);
+	}
+
+	if (timed_out) {
+		// Drain whatever output arrived before we close the pipes.
+		pump_pipe(stdout_pipe, stdout_bytes);
+		pump_pipe(stderr_pipe, stderr_bytes);
 	}
 
 	if (stdout_pipe.is_valid()) {
@@ -172,7 +209,24 @@ static String workflow_run_subprocess(const List<String> &p_arguments, int &r_ex
 		stderr_pipe->close();
 	}
 
-	r_exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	if (timed_out) {
+		// The helper owns the child: terminate and reap it before returning so a
+		// timed-out process cannot survive the test and hold its ports for the
+		// next run. OS::kill both signals and reaps on every platform.
+		if (OS::get_singleton()->is_process_running(pid)) {
+			const Error kill_err = OS::get_singleton()->kill(pid);
+			if (kill_err != OK && r_outcome) {
+				*r_outcome = SUBPROCESS_TERMINATION_FAILURE;
+			}
+		}
+		r_exit_code = -1;
+		if (r_outcome && *r_outcome != SUBPROCESS_TERMINATION_FAILURE) {
+			*r_outcome = SUBPROCESS_TIMEOUT;
+		}
+	} else {
+		r_exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	}
+
 	String output = String::utf8((const char *)stdout_bytes.ptr(), stdout_bytes.size());
 	output += String::utf8((const char *)stderr_bytes.ptr(), stderr_bytes.size());
 	return output;
