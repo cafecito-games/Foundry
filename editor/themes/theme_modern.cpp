@@ -2520,6 +2520,27 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		p_theme->set_stylebox("hover_pressed_mirrored", "EditorInspectorButton", style_inspector_button_pressed);
 		p_theme->set_stylebox("disabled_mirrored", "EditorInspectorButton", style_inspector_button_disabled);
 
+		// EditorInspectorLineEdit. Text-entry property editors (String, path, locale, etc.) get
+		// their own LineEdit variation so the density factor reaches them too — without this,
+		// their unscaled LineEdit minimum size would dominate EditorProperty's row height and the
+		// Compact/Spacious settings would have no visible effect on the most common property rows.
+		p_theme->set_type_variation("EditorInspectorLineEdit", "LineEdit");
+
+		Ref<StyleBoxFlat> style_inspector_line_edit = style_line->duplicate();
+		style_inspector_line_edit->set_content_margin(SIDE_TOP, vertical_margin);
+		style_inspector_line_edit->set_content_margin(SIDE_BOTTOM, vertical_margin);
+		p_theme->set_stylebox(CoreStringName(normal), "EditorInspectorLineEdit", style_inspector_line_edit);
+
+		Ref<StyleBoxFlat> style_inspector_line_edit_focus = p_theme->get_stylebox("focus", SNAME("LineEdit"))->duplicate();
+		style_inspector_line_edit_focus->set_content_margin(SIDE_TOP, vertical_margin);
+		style_inspector_line_edit_focus->set_content_margin(SIDE_BOTTOM, vertical_margin);
+		p_theme->set_stylebox("focus", "EditorInspectorLineEdit", style_inspector_line_edit_focus);
+
+		Ref<StyleBoxFlat> style_inspector_line_edit_read_only = p_theme->get_stylebox("read_only", SNAME("LineEdit"))->duplicate();
+		style_inspector_line_edit_read_only->set_content_margin(SIDE_TOP, vertical_margin);
+		style_inspector_line_edit_read_only->set_content_margin(SIDE_BOTTOM, vertical_margin);
+		p_theme->set_stylebox("read_only", "EditorInspectorLineEdit", style_inspector_line_edit_read_only);
+
 		// Make the height for properties uniform.
 		Ref<StyleBoxFlat> inspector_button_style = p_theme->get_stylebox(CoreStringName(normal), SNAME("EditorInspectorButton"));
 		Ref<Font> font = p_theme->get_font(SceneStringName(font), SNAME("LineEdit"));

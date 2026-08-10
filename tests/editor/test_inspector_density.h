@@ -31,6 +31,7 @@
 #pragma once
 
 #include "editor/inspector/editor_inspector.h"
+#include "editor/inspector/editor_properties.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_theme.h"
 #include "editor/themes/editor_theme_manager.h"
@@ -55,6 +56,15 @@ static int measure_property_minimum_height(const Ref<EditorTheme> &p_theme) {
 	// `set_theme` only notifies descendants of NOTIFICATION_THEME_CHANGED when the control is
 	// inside the scene tree; this control is deliberately standalone, so refresh its theme item
 	// cache directly the same way entering the tree would.
+	property->notification(Control::NOTIFICATION_THEME_CHANGED);
+	int height = (int)property->get_minimum_size().height;
+	memdelete(property);
+	return height;
+}
+
+static int measure_text_property_minimum_height(const Ref<EditorTheme> &p_theme) {
+	EditorPropertyText *property = memnew(EditorPropertyText);
+	property->set_theme(p_theme);
 	property->notification(Control::NOTIFICATION_THEME_CHANGED);
 	int height = (int)property->get_minimum_size().height;
 	memdelete(property);
@@ -128,6 +138,23 @@ TEST_CASE("[Editor][InspectorDensity] measured EditorProperty minimum height is 
 	int compact_height = measure_property_minimum_height(compact_theme);
 	int default_height = measure_property_minimum_height(default_theme);
 	int spacious_height = measure_property_minimum_height(spacious_theme);
+
+	CHECK(compact_height < default_height);
+	CHECK(default_height < spacious_height);
+}
+
+TEST_CASE("[Editor][InspectorDensity] measured EditorPropertyText minimum height is strictly ordered") {
+	// EditorPropertyText's LineEdit child previously read the unscaled base "LineEdit" stylebox,
+	// so its minimum size dominated EditorProperty's row height and Compact/Spacious had no
+	// visible effect on the most common (String) property rows. The LineEdit must use the
+	// density-scaled "EditorInspectorLineEdit" variation for this to shrink and grow correctly.
+	Ref<EditorTheme> compact_theme = generate_theme_for_density("Compact");
+	Ref<EditorTheme> default_theme = generate_theme_for_density("Default");
+	Ref<EditorTheme> spacious_theme = generate_theme_for_density("Spacious");
+
+	int compact_height = measure_text_property_minimum_height(compact_theme);
+	int default_height = measure_text_property_minimum_height(default_theme);
+	int spacious_height = measure_text_property_minimum_height(spacious_theme);
 
 	CHECK(compact_height < default_height);
 	CHECK(default_height < spacious_height);

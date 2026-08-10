@@ -2150,6 +2150,15 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_stylebox("hover_pressed", "EditorInspectorButton", inspector_button_pressed);
 		p_theme->set_stylebox("disabled", "EditorInspectorButton", inspector_button_disabled);
 
+		// EditorInspectorLineEdit. Text-entry property editors (String, path, locale, etc.) get
+		// their own LineEdit variation so the density factor reaches them too — without this,
+		// their unscaled LineEdit minimum size would dominate EditorProperty's row height and the
+		// Compact/Spacious settings would have no visible effect on the most common property rows.
+		p_theme->set_type_variation("EditorInspectorLineEdit", "LineEdit");
+		p_theme->set_stylebox(CoreStringName(normal), "EditorInspectorLineEdit", scale_button_vertical_margin(p_theme->get_stylebox(CoreStringName(normal), SNAME("LineEdit"))));
+		p_theme->set_stylebox("focus", "EditorInspectorLineEdit", scale_button_vertical_margin(p_theme->get_stylebox("focus", SNAME("LineEdit"))));
+		p_theme->set_stylebox("read_only", "EditorInspectorLineEdit", scale_button_vertical_margin(p_theme->get_stylebox("read_only", SNAME("LineEdit"))));
+
 		// Make the height for properties uniform.
 		Ref<Font> font = p_theme->get_font(SceneStringName(font), SNAME("LineEdit"));
 		int font_size = p_theme->get_font_size(SceneStringName(font_size), SNAME("LineEdit"));

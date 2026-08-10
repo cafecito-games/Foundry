@@ -281,6 +281,7 @@ EditorPropertyText::EditorPropertyText() {
 	add_child(hb);
 
 	text = memnew(LineEdit);
+	text->set_theme_type_variation(SNAME("EditorInspectorLineEdit"));
 	text->set_h_size_flags(SIZE_EXPAND_FILL);
 	text->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED); // Prevents translating placeholder.
 	hb->add_child(text);
@@ -592,6 +593,7 @@ EditorPropertyTextEnum::EditorPropertyTextEnum() {
 	edit_button->connect(SceneStringName(pressed), callable_mp(this, &EditorPropertyTextEnum::_edit_custom_value));
 
 	custom_value_edit = memnew(LineEdit);
+	custom_value_edit->set_theme_type_variation(SNAME("EditorInspectorLineEdit"));
 	custom_value_edit->set_accessibility_name(TTRC("Custom Value"));
 	custom_value_edit->set_h_size_flags(SIZE_EXPAND_FILL);
 	edit_custom_layout->add_child(custom_value_edit);
@@ -662,6 +664,7 @@ EditorPropertyLocale::EditorPropertyLocale() {
 	HBoxContainer *locale_hb = memnew(HBoxContainer);
 	add_child(locale_hb);
 	locale = memnew(LineEdit);
+	locale->set_theme_type_variation(SNAME("EditorInspectorLineEdit"));
 	locale->set_accessibility_name(TTRC("Locale"));
 	locale_hb->add_child(locale);
 	locale->connect(SceneStringName(text_submitted), callable_mp(this, &EditorPropertyLocale::_locale_selected));
@@ -836,6 +839,7 @@ EditorPropertyPath::EditorPropertyPath() {
 	HBoxContainer *path_hb = memnew(HBoxContainer);
 	add_child(path_hb);
 	path = memnew(LineEdit);
+	path->set_theme_type_variation(SNAME("EditorInspectorLineEdit"));
 	path->set_accessibility_name(TTRC("Path"));
 	SET_DRAG_FORWARDING_CDU(path, EditorPropertyPath);
 	path->set_structured_text_bidi_override(TextServer::STRUCTURED_TEXT_FILE);
@@ -1812,6 +1816,7 @@ EditorPropertyInteger::EditorPropertyInteger() {
 	add_child(hb);
 
 	value_edit = memnew(LineEdit);
+	value_edit->set_theme_type_variation(SNAME("EditorInspectorLineEdit"));
 	value_edit->set_h_size_flags(SIZE_EXPAND_FILL);
 	value_edit->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 	hb->add_child(value_edit);
@@ -3550,6 +3555,7 @@ EditorPropertyNodePath::EditorPropertyNodePath() {
 	menu->get_popup()->connect(SceneStringName(id_pressed), callable_mp(this, &EditorPropertyNodePath::_menu_option));
 
 	edit = memnew(LineEdit);
+	edit->set_theme_type_variation(SNAME("EditorInspectorLineEdit"));
 	edit->set_accessibility_name(TTRC("Node Path"));
 	edit->set_h_size_flags(SIZE_EXPAND_FILL);
 	edit->hide();
