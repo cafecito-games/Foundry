@@ -42,20 +42,14 @@ class VBoxContainer;
 
 // Vertical transposition of EditorBottomDrawerStrip (editor_bottom_drawer_strip.h),
 // mirroring one side of a tile's dock region. A pure mirror: it owns no dock
-// state of its own, exactly like the strip it is modelled on.
-//
-// Widget only. The per-side collapse state machine (docked vs. railed with a
-// drawer dock open) is a follow-up issue, so today the close button only
-// tracks tab selection on the side that has one (the right rail's
-// TabContainer) and the expand button stays permanently hidden.
+// state of its own, exactly like the strip it is modelled on. The per-side
+// collapse state lives in EditorTileDockRegion; the rail only drives its
+// transitions and reflects the result.
 class EditorSideRailStrip : public PanelContainer {
 	FOUNDRY_CLASS(EditorSideRailStrip, PanelContainer);
 
 public:
-	enum class Side {
-		LEFT,
-		RIGHT,
-	};
+	using Side = SideRailSide;
 
 private:
 	Side side;
@@ -78,12 +72,12 @@ private:
 
 	SideRailLabelMode label_mode = SideRailLabelMode::LABELLED;
 
-	Vector<EditorDock *> _get_source_docks_in_order() const;
 	void _rebuild_toggles();
 	void _refresh_toggle(int p_toggle_index);
 	void _dock_style_changed(EditorDock *p_dock);
 	void _toggle_pressed(EditorDock *p_dock);
 	void _close_pressed();
+	void _expand_pressed();
 	void _update_active_states();
 	void _apply_label_mode();
 

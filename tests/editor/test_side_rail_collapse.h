@@ -1,0 +1,664 @@
+/**************************************************************************/
+/*  test_side_rail_collapse.h                                             */
+/**************************************************************************/
+/*                         This file is part of:                          */
+/*                             FOUNDRY ENGINE                             */
+/*          A fork of the Godot Engine (https://godotengine.org)          */
+/*                       https://www.cafecito.games                       */
+/**************************************************************************/
+/* Copyright (c) 2026-present Cafecito Games LLC.                         */
+/*                                                                        */
+/* Permission is hereby granted, free of charge, to any person obtaining  */
+/* a copy of this software and associated documentation files (the        */
+/* "Software"), to deal in the Software without restriction, including    */
+/* without limitation the rights to use, copy, modify, merge, publish,    */
+/* distribute, sublicense, and/or sell copies of the Software, and to     */
+/* permit persons to whom the Software is furnished to do so, subject to  */
+/* the following conditions:                                              */
+/*                                                                        */
+/* The above copyright notice and this permission notice shall be         */
+/* included in all copies or substantial portions of the Software.        */
+/*                                                                        */
+/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,        */
+/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
+/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
+/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
+/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
+/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
+/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
+/**************************************************************************/
+
+#pragma once
+
+#include "core/io/config_file.h"
+#include "core/object/message_queue.h"
+#include "editor/docks/editor_dock.h"
+#include "editor/editor_data.h"
+#include "editor/editor_scene_pane_tile.h"
+#include "editor/editor_scene_workspace.h"
+#include "editor/editor_tile_dock_region.h"
+#include "editor/gui/editor_side_rail_button.h"
+#include "editor/gui/editor_side_rail_strip.h"
+#include "editor/gui/side_rail_state.h"
+#include "editor/themes/editor_scale.h"
+#include "scene/gui/split_container.h"
+#include "scene/gui/tab_container.h"
+#include "scene/main/scene_tree.h"
+
+#include "tests/test_macros.h"
+
+namespace TestSideRailCollapse {
+
+using Side = EditorTileDockRegion::Side;
+
+// A tile dock region with real EditorDock instances but no scene-tree
+// membership and no EditorDockManager dependency, mirroring TileDockFixture
+// (tests/editor/test_tile_dock_offsets.h).
+struct CollapseFixture {
+	HSplitContainer *body = nullptr;
+	Control *center = nullptr;
+	EditorTileDockRegion region;
+	EditorDock *scene = nullptr;
+	EditorDock *inspector = nullptr;
+	EditorDock *signals = nullptr;
+	EditorDock *groups = nullptr;
+
+	CollapseFixture() {
+		body = memnew(HSplitContainer);
+		center = memnew(Control);
+		body->add_child(center);
+		region.attach(body, center);
+
+		scene = memnew(EditorDock);
+		scene->set_title("Scene");
+		scene->set_layout_key("Scene");
+		region.place_left(scene);
+
+		inspector = _add_right("Inspector");
+		signals = _add_right("Signals");
+		groups = _add_right("Groups");
+	}
+
+	~CollapseFixture() {
+		memdelete(body);
+	}
+
+	EditorDock *_add_right(const String &p_title) {
+		EditorDock *dock = memnew(EditorDock);
+		dock->set_title(p_title);
+		dock->set_layout_key(p_title);
+		region.add_right(dock);
+		return dock;
+	}
+
+	TabContainer *right_tabs() const { return region.get_right_tabs(); }
+
+	// The docks the side actually displays right now, read from live control
+	// state rather than from the region's own bookkeeping.
+	Vector<EditorDock *> shown_docks(Side p_side) const {
+		Vector<EditorDock *> shown;
+		if (p_side == Side::LEFT) {
+			for (EditorDock *dock : region.get_side_docks(Side::LEFT)) {
+				if (dock->is_visible()) {
+					shown.push_back(dock);
+				}
+			}
+			return shown;
+		}
+		if (!right_tabs()->is_visible()) {
+			return shown;
+		}
+		EditorDock *current = Object::cast_to<EditorDock>(right_tabs()->get_current_tab_control());
+		if (current) {
+			shown.push_back(current);
+		}
+		return shown;
+	}
+};
+
+TEST_CASE("[Editor][SideRail] a fresh region is docked on both sides") {
+	CollapseFixture fixture;
+	CHECK(fixture.region.get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+	CHECK(fixture.shown_docks(Side::LEFT).size() == 1);
+	CHECK(fixture.shown_docks(Side::RIGHT).size() == 1);
+	CHECK(fixture.region.get_drawer_dock(Side::LEFT) == nullptr);
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+}
+
+TEST_CASE("[Editor][SideRail] collapsing one side leaves the other untouched") {
+	SUBCASE("collapsing the left") {
+		CollapseFixture fixture;
+		fixture.region.press_rail_toggle(fixture.scene);
+
+		CHECK(fixture.region.get_side_mode(Side::LEFT) == SideRailMode::RAILED);
+		CHECK(fixture.shown_docks(Side::LEFT).is_empty());
+		CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+		CHECK(fixture.shown_docks(Side::RIGHT).size() == 1);
+	}
+
+	SUBCASE("collapsing the right") {
+		CollapseFixture fixture;
+		fixture.region.press_rail_toggle(fixture.inspector);
+
+		CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+		CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+		CHECK(fixture.region.get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
+		CHECK(fixture.shown_docks(Side::LEFT).size() == 1);
+	}
+}
+
+TEST_CASE("[Editor][SideRail] the two sides are independent across every mode combination") {
+	struct Case {
+		const char *name = nullptr;
+		bool left_collapsed = false;
+		bool right_collapsed = false;
+	};
+
+	const Case cases[] = {
+		{ "both docked", false, false },
+		{ "left collapsed only", true, false },
+		{ "right collapsed only", false, true },
+		{ "both collapsed", true, true },
+	};
+
+	for (const Case &c : cases) {
+		INFO(c.name);
+		CollapseFixture fixture;
+		if (c.left_collapsed) {
+			fixture.region.close_drawer(Side::LEFT);
+		}
+		if (c.right_collapsed) {
+			fixture.region.close_drawer(Side::RIGHT);
+		}
+		CHECK(fixture.shown_docks(Side::LEFT).size() == (c.left_collapsed ? 0 : 1));
+		CHECK(fixture.shown_docks(Side::RIGHT).size() == (c.right_collapsed ? 0 : 1));
+	}
+}
+
+TEST_CASE("[Editor][SideRail] a railed side shows exactly one dock and never two") {
+	CollapseFixture fixture;
+	fixture.region.press_rail_toggle(fixture.inspector); // Collapses the right side.
+	REQUIRE(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+
+	fixture.region.press_rail_toggle(fixture.signals);
+	Vector<EditorDock *> shown = fixture.shown_docks(Side::RIGHT);
+	REQUIRE(shown.size() == 1);
+	if (shown.size() != 1) {
+		return;
+	}
+	CHECK(shown[0] == fixture.signals);
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.signals);
+	CHECK(fixture.region.is_dock_shown(fixture.signals));
+	CHECK_FALSE(fixture.region.is_dock_shown(fixture.inspector));
+	CHECK_FALSE(fixture.region.is_dock_shown(fixture.groups));
+
+	SUBCASE("pressing another toggle switches without ever showing two") {
+		fixture.region.press_rail_toggle(fixture.groups);
+		shown = fixture.shown_docks(Side::RIGHT);
+		REQUIRE(shown.size() == 1);
+		if (shown.size() != 1) {
+			return;
+		}
+		CHECK(shown[0] == fixture.groups);
+		CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	}
+
+	SUBCASE("pressing the open toggle closes the drawer") {
+		fixture.region.press_rail_toggle(fixture.signals);
+		CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+		CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+		CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	}
+
+	SUBCASE("the close button closes the drawer") {
+		fixture.region.close_drawer(Side::RIGHT);
+		CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+		CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+	}
+
+	SUBCASE("expanding returns the side to docked on the drawer's dock") {
+		fixture.region.set_side_mode(Side::RIGHT, SideRailMode::DOCKED);
+		CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+		shown = fixture.shown_docks(Side::RIGHT);
+		REQUIRE(shown.size() == 1);
+		if (shown.size() != 1) {
+			return;
+		}
+		CHECK(shown[0] == fixture.signals);
+	}
+}
+
+TEST_CASE("[Editor][SideRail] pressing a non-shown toggle on a docked side only focuses it") {
+	CollapseFixture fixture;
+	fixture.region.press_rail_toggle(fixture.groups);
+
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+	const Vector<EditorDock *> shown = fixture.shown_docks(Side::RIGHT);
+	REQUIRE(shown.size() == 1);
+	if (shown.size() != 1) {
+		return;
+	}
+	CHECK(shown[0] == fixture.groups);
+}
+
+TEST_CASE("[Editor][SideRail] disabling the drawer dock never leaves the drawer open on it") {
+	CollapseFixture fixture;
+	fixture.region.press_rail_toggle(fixture.inspector);
+	fixture.region.press_rail_toggle(fixture.signals);
+	REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.signals);
+
+	fixture.region.set_dock_enabled(fixture.signals, false);
+
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+	CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+	CHECK_FALSE(fixture.region.is_dock_shown(fixture.signals));
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+
+	SUBCASE("and re-enabling it does not silently reopen the drawer") {
+		fixture.region.set_dock_enabled(fixture.signals, true);
+		CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+	}
+
+	SUBCASE("another dock can still be opened afterwards") {
+		fixture.region.press_rail_toggle(fixture.groups);
+		const Vector<EditorDock *> shown = fixture.shown_docks(Side::RIGHT);
+		REQUIRE(shown.size() == 1);
+		if (shown.size() != 1) {
+			return;
+		}
+		CHECK(shown[0] == fixture.groups);
+	}
+}
+
+TEST_CASE("[Editor][SideRail] disabling a dock on a docked side keeps today's tab fallback") {
+	CollapseFixture fixture;
+	REQUIRE(fixture.right_tabs()->get_current_tab() == 0);
+
+	fixture.region.set_dock_enabled(fixture.inspector, false);
+
+	const Vector<EditorDock *> shown = fixture.shown_docks(Side::RIGHT);
+	REQUIRE(shown.size() == 1);
+	if (shown.size() != 1) {
+		return;
+	}
+	CHECK(shown[0] == fixture.signals);
+}
+
+TEST_CASE("[Editor][SideRail] disabling the only left dock collapses its column without touching the right") {
+	CollapseFixture fixture;
+	fixture.region.set_dock_enabled(fixture.scene, false);
+
+	CHECK(fixture.shown_docks(Side::LEFT).is_empty());
+	CHECK(fixture.shown_docks(Side::RIGHT).size() == 1);
+}
+
+TEST_CASE("[Editor][SideRail] focusing a dock on a railed side opens it in the drawer") {
+	CollapseFixture fixture;
+	fixture.region.close_drawer(Side::RIGHT);
+	REQUIRE(fixture.shown_docks(Side::RIGHT).is_empty());
+
+	fixture.region.focus_dock(fixture.groups);
+
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.groups);
+	const Vector<EditorDock *> shown = fixture.shown_docks(Side::RIGHT);
+	REQUIRE(shown.size() == 1);
+	if (shown.size() != 1) {
+		return;
+	}
+	CHECK(shown[0] == fixture.groups);
+
+	SUBCASE("focusing a left dock on a railed left side shows it again") {
+		fixture.region.close_drawer(Side::LEFT);
+		REQUIRE(fixture.shown_docks(Side::LEFT).is_empty());
+		fixture.region.focus_dock(fixture.scene);
+		CHECK(fixture.shown_docks(Side::LEFT).size() == 1);
+		CHECK(fixture.region.get_drawer_dock(Side::LEFT) == fixture.scene);
+	}
+}
+
+TEST_CASE("[Editor][SideRail] restoring a side to docked restores its pre-collapse width") {
+	CollapseFixture fixture;
+	PackedInt32Array offsets;
+	offsets.push_back(220);
+	offsets.push_back(-240);
+	fixture.body->set_split_offsets(offsets);
+
+	SUBCASE("left") {
+		fixture.region.close_drawer(Side::LEFT);
+		PackedInt32Array collapsed = fixture.body->get_split_offsets();
+		REQUIRE(collapsed.size() == 1);
+		if (collapsed.size() != 1) {
+			return;
+		}
+		CHECK(collapsed[0] == -240);
+
+		fixture.region.set_side_mode(Side::LEFT, SideRailMode::DOCKED);
+		PackedInt32Array restored = fixture.body->get_split_offsets();
+		REQUIRE(restored.size() == 2);
+		if (restored.size() != 2) {
+			return;
+		}
+		CHECK(restored[0] == 220);
+		CHECK(restored[1] == -240);
+	}
+
+	SUBCASE("right") {
+		fixture.region.close_drawer(Side::RIGHT);
+		PackedInt32Array collapsed = fixture.body->get_split_offsets();
+		REQUIRE(collapsed.size() == 1);
+		if (collapsed.size() != 1) {
+			return;
+		}
+		CHECK(collapsed[0] == 220);
+
+		fixture.region.set_side_mode(Side::RIGHT, SideRailMode::DOCKED);
+		PackedInt32Array restored = fixture.body->get_split_offsets();
+		REQUIRE(restored.size() == 2);
+		if (restored.size() != 2) {
+			return;
+		}
+		CHECK(restored[0] == 220);
+		CHECK(restored[1] == -240);
+	}
+
+	SUBCASE("both sides collapsed and restored") {
+		fixture.region.close_drawer(Side::LEFT);
+		fixture.region.close_drawer(Side::RIGHT);
+		fixture.region.set_side_mode(Side::LEFT, SideRailMode::DOCKED);
+		fixture.region.set_side_mode(Side::RIGHT, SideRailMode::DOCKED);
+		PackedInt32Array restored = fixture.body->get_split_offsets();
+		REQUIRE(restored.size() == 2);
+		if (restored.size() != 2) {
+			return;
+		}
+		CHECK(restored[0] == 220);
+		CHECK(restored[1] == -240);
+	}
+}
+
+TEST_CASE("[Editor][SideRail] collapsing does not disturb the persisted right tab keys") {
+	CollapseFixture fixture;
+	fixture.right_tabs()->set_current_tab(1);
+
+	Ref<ConfigFile> before;
+	before.instantiate();
+	const String section = "WorkspaceLeaf_0";
+	fixture.region.save_layout(before, section);
+
+	fixture.region.close_drawer(Side::RIGHT);
+
+	Ref<ConfigFile> after;
+	after.instantiate();
+	fixture.region.save_layout(after, section);
+
+	CHECK(String(after->get_value(section, "tile_dock_right")) == String(before->get_value(section, "tile_dock_right")));
+	CHECK(int(after->get_value(section, "tile_dock_right_selected_tab_idx")) ==
+			int(before->get_value(section, "tile_dock_right_selected_tab_idx")));
+}
+
+TEST_CASE("[Editor][SideRail] save and load round trip mode, drawer dock and both widths") {
+	const String section = "WorkspaceLeaf_0";
+	Ref<ConfigFile> config;
+	config.instantiate();
+
+	{
+		CollapseFixture fixture;
+		PackedInt32Array offsets;
+		offsets.push_back(220);
+		offsets.push_back(-240);
+		fixture.body->set_split_offsets(offsets);
+
+		fixture.region.close_drawer(Side::LEFT);
+		fixture.region.press_rail_toggle(fixture.inspector); // Collapses the right side.
+		fixture.region.press_rail_toggle(fixture.groups); // Opens the drawer on Groups.
+		fixture.region.save_layout(config, section);
+	}
+
+	CHECK(bool(config->get_value(section, "tile_rail_left")));
+	CHECK(bool(config->get_value(section, "tile_rail_right")));
+	CHECK(String(config->get_value(section, "tile_drawer_dock_left")).is_empty());
+	CHECK(String(config->get_value(section, "tile_drawer_dock_right")) == "Groups");
+
+	CollapseFixture restored;
+	restored.region.load_layout(config, section);
+
+	CHECK(restored.region.get_side_mode(Side::LEFT) == SideRailMode::RAILED);
+	CHECK(restored.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	CHECK(restored.region.get_drawer_dock(Side::LEFT) == nullptr);
+	CHECK(restored.region.get_drawer_dock(Side::RIGHT) == restored.groups);
+	CHECK(restored.shown_docks(Side::LEFT).is_empty());
+	const Vector<EditorDock *> shown_right = restored.shown_docks(Side::RIGHT);
+	REQUIRE(shown_right.size() == 1);
+	if (shown_right.size() != 1) {
+		return;
+	}
+	CHECK(shown_right[0] == restored.groups);
+
+	// Expanding both sides after the load lands on the widths the layout was
+	// saved with, even though neither gap existed while it was collapsed.
+	restored.region.set_side_mode(Side::LEFT, SideRailMode::DOCKED);
+	restored.region.set_side_mode(Side::RIGHT, SideRailMode::DOCKED);
+	PackedInt32Array widths = restored.body->get_split_offsets();
+	REQUIRE(widths.size() == 2);
+	if (widths.size() != 2) {
+		return;
+	}
+	CHECK(widths[0] == int(220 / EDSCALE) * EDSCALE);
+	CHECK(widths[1] == int(-240 / EDSCALE) * EDSCALE);
+}
+
+TEST_CASE("[Editor][SideRail] a layout with no rail keys loads as docked") {
+	const String section = "WorkspaceLeaf_0";
+	Ref<ConfigFile> config;
+	config.instantiate();
+	config->set_value(section, "tile_dock_hsplit_1", 180);
+	config->set_value(section, "tile_dock_hsplit_2", -260);
+
+	CollapseFixture fixture;
+	// Collapsed first, so the load has to actively restore DOCKED rather than
+	// simply leaving an already-docked side alone.
+	fixture.region.close_drawer(Side::LEFT);
+	fixture.region.close_drawer(Side::RIGHT);
+
+	fixture.region.load_layout(config, section);
+
+	CHECK(fixture.region.get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+	CHECK(fixture.region.get_drawer_dock(Side::LEFT) == nullptr);
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+	CHECK(fixture.shown_docks(Side::LEFT).size() == 1);
+	CHECK(fixture.shown_docks(Side::RIGHT).size() == 1);
+
+	PackedInt32Array widths = fixture.body->get_split_offsets();
+	REQUIRE(widths.size() == 2);
+	if (widths.size() != 2) {
+		return;
+	}
+	CHECK(widths[0] == 180 * EDSCALE);
+	CHECK(widths[1] == -260 * EDSCALE);
+}
+
+TEST_CASE("[Editor][SideRail] a stored drawer dock that cannot be shown loads as a closed drawer") {
+	const String section = "WorkspaceLeaf_0";
+
+	SUBCASE("the dock no longer exists") {
+		Ref<ConfigFile> config;
+		config.instantiate();
+		config->set_value(section, "tile_rail_right", true);
+		config->set_value(section, "tile_drawer_dock_right", "AnimationPlayer");
+
+		CollapseFixture fixture;
+		fixture.region.load_layout(config, section);
+
+		CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+		CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+		CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+	}
+
+	SUBCASE("the dock is disabled in this session") {
+		Ref<ConfigFile> config;
+		config.instantiate();
+		config->set_value(section, "tile_rail_right", true);
+		config->set_value(section, "tile_drawer_dock_right", "Signals");
+
+		CollapseFixture fixture;
+		fixture.region.set_dock_enabled(fixture.signals, false);
+		fixture.region.load_layout(config, section);
+
+		CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+		CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+	}
+}
+
+struct RailWorkspaceHarness {
+	Control *host = nullptr;
+	EditorData editor_data;
+	EditorSelection *selection = nullptr;
+	EditorSceneWorkspace *workspace = nullptr;
+
+	void mount() {
+		host = memnew(Control);
+		host->set_custom_minimum_size(Size2(1200, 600));
+		SceneTree::get_singleton()->get_root()->add_child(host);
+		selection = memnew(EditorSelection);
+		workspace = EditorSceneWorkspace::create_single_leaf_workspace(selection, &editor_data);
+		host->add_child(workspace);
+		workspace->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+		host->set_size(Size2(1200, 600));
+		workspace->set_size(Size2(1200, 600));
+	}
+
+	void pump() {
+		SceneTree::get_singleton()->process(0.016);
+		MessageQueue::get_singleton()->flush();
+	}
+
+	void unmount() {
+		memdelete(workspace);
+		SceneTree::get_singleton()->get_root()->remove_child(host);
+		memdelete(host);
+		memdelete(selection);
+	}
+};
+
+TEST_CASE("[Editor][SideRail] collapsing a side in one tile leaves its sibling tile untouched") {
+	RailWorkspaceHarness h;
+	h.mount();
+	h.pump();
+	h.workspace->split(h.workspace->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+
+	Vector<ScenePaneTile *> tiles = h.workspace->get_tiles();
+	REQUIRE(tiles.size() == 2);
+	if (tiles.size() != 2) {
+		h.unmount();
+		return;
+	}
+
+	EditorTileDockRegion *first = tiles[0]->get_dock_region();
+	EditorTileDockRegion *second = tiles[1]->get_dock_region();
+
+	first->close_drawer(Side::LEFT);
+	first->close_drawer(Side::RIGHT);
+	h.pump();
+
+	CHECK(first->get_side_mode(Side::LEFT) == SideRailMode::RAILED);
+	CHECK(first->get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	CHECK(second->get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
+	CHECK(second->get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+	CHECK_FALSE(first->get_right_tabs()->is_visible());
+	CHECK(second->get_right_tabs()->is_visible());
+	CHECK(second->get_side_docks(Side::LEFT).size() > 0);
+	CHECK(second->is_dock_shown(second->get_side_docks(Side::LEFT)[0]));
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][SideRail] a side whose docks are all disabled keeps its rail") {
+	RailWorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ScenePaneTile *tile = h.workspace->get_focused_tile();
+	REQUIRE(tile != nullptr);
+	if (!tile) {
+		h.unmount();
+		return;
+	}
+
+	EditorTileDockRegion *region = tile->get_dock_region();
+	for (EditorDock *dock : region->get_side_docks(Side::RIGHT)) {
+		region->set_dock_enabled(dock, false);
+	}
+	for (EditorDock *dock : region->get_side_docks(Side::LEFT)) {
+		region->set_dock_enabled(dock, false);
+	}
+	h.pump();
+
+	REQUIRE(tile->get_left_rail() != nullptr);
+	REQUIRE(tile->get_right_rail() != nullptr);
+	if (!tile->get_left_rail() || !tile->get_right_rail()) {
+		h.unmount();
+		return;
+	}
+	CHECK(tile->get_left_rail()->is_visible());
+	CHECK(tile->get_right_rail()->is_visible());
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][SideRail] the rail reflects the collapse state it drives") {
+	RailWorkspaceHarness h;
+	h.mount();
+	h.pump();
+
+	ScenePaneTile *tile = h.workspace->get_focused_tile();
+	REQUIRE(tile != nullptr);
+	if (!tile) {
+		h.unmount();
+		return;
+	}
+	EditorSideRailStrip *rail = tile->get_right_rail();
+	EditorTileDockRegion *region = tile->get_dock_region();
+	REQUIRE(rail != nullptr);
+	if (!rail) {
+		h.unmount();
+		return;
+	}
+	REQUIRE(rail->get_toggle_docks().size() > 1);
+	if (rail->get_toggle_docks().size() <= 1) {
+		h.unmount();
+		return;
+	}
+
+	EditorDock *shown = Object::cast_to<EditorDock>(region->get_right_tabs()->get_current_tab_control());
+	REQUIRE(shown != nullptr);
+	if (!shown) {
+		h.unmount();
+		return;
+	}
+
+	// Pressing the shown dock's toggle collapses the side, exactly as clicking
+	// the button does.
+	region->press_rail_toggle(shown);
+	h.pump();
+	CHECK(region->get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	for (EditorSideRailButton *button : rail->get_toggle_buttons()) {
+		CHECK_FALSE(button->is_pressed());
+	}
+
+	EditorDock *other = rail->get_toggle_docks()[1] == shown ? rail->get_toggle_docks()[0] : rail->get_toggle_docks()[1];
+	region->press_rail_toggle(other);
+	h.pump();
+	CHECK(region->get_drawer_dock(Side::RIGHT) == other);
+	int pressed_count = 0;
+	for (EditorSideRailButton *button : rail->get_toggle_buttons()) {
+		pressed_count += button->is_pressed() ? 1 : 0;
+	}
+	CHECK(pressed_count == 1);
+
+	h.unmount();
+}
+
+} // namespace TestSideRailCollapse
