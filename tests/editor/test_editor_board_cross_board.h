@@ -53,6 +53,10 @@ struct CrossBoardHarness {
 	EditorSelection *selection = nullptr;
 	EditorBoardStrip *strip = nullptr;
 
+	~CrossBoardHarness() {
+		unmount();
+	}
+
 	void mount() {
 		host = memnew(Control);
 		host->set_custom_minimum_size(Size2(800, 600));
@@ -71,9 +75,15 @@ struct CrossBoardHarness {
 	}
 
 	void unmount() {
+		if (host == nullptr) {
+			return;
+		}
 		SceneTree::get_singleton()->get_root()->remove_child(host);
 		memdelete(host);
 		memdelete(selection);
+		host = nullptr;
+		selection = nullptr;
+		strip = nullptr;
 	}
 };
 
@@ -94,7 +104,11 @@ TEST_CASE("[Editor][Boards] Help tab on a dormant board is reachable through eve
 
 	EditorBoard *first_board = h.strip->get_board(0);
 	EditorBoard *second_board = h.strip->add_board("Second");
+	REQUIRE(first_board != nullptr);
 	REQUIRE(second_board != nullptr);
+	if (first_board == nullptr || second_board == nullptr) {
+		return;
+	}
 	h.pump();
 
 	// Only the first board is active; the second is dormant and hidden.
@@ -103,8 +117,14 @@ TEST_CASE("[Editor][Boards] Help tab on a dormant board is reachable through eve
 
 	EditorSceneWorkspace *dormant_workspace = second_board->get_workspace();
 	REQUIRE(dormant_workspace != nullptr);
+	if (dormant_workspace == nullptr) {
+		return;
+	}
 	WorkspaceLeafNode *dormant_source = dormant_workspace->get_focused_leaf();
 	REQUIRE(dormant_source != nullptr);
+	if (dormant_source == nullptr) {
+		return;
+	}
 
 	WorkspaceLeafNode *help_leaf = dormant_workspace->open_help_tab(dormant_source, "Node2D");
 	h.pump();
@@ -113,6 +133,9 @@ TEST_CASE("[Editor][Boards] Help tab on a dormant board is reachable through eve
 	// A leaf lookup scoped to the active workspace alone would never see this page.
 	EditorSceneWorkspace *active_workspace = h.strip->get_active_workspace();
 	REQUIRE(active_workspace != nullptr);
+	if (active_workspace == nullptr) {
+		return;
+	}
 	CHECK(active_workspace != dormant_workspace);
 	CHECK(active_workspace->find_leaf_by_help_class("Node2D") == nullptr);
 
@@ -158,22 +181,35 @@ TEST_CASE("[Editor][Boards] A scene tab dragged across boards moves ownership an
 
 	EditorBoard *board_a = h.strip->get_board(0);
 	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_a != nullptr);
 	REQUIRE(board_b != nullptr);
+	if (board_a == nullptr || board_b == nullptr) {
+		return;
+	}
 	h.pump();
 
 	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
 	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
 	REQUIRE(workspace_a != nullptr);
 	REQUIRE(workspace_b != nullptr);
+	if (workspace_a == nullptr || workspace_b == nullptr) {
+		return;
+	}
 
 	// Split board A so the scene lives on a non-default leaf: the sole/default leaf
 	// of a workspace is never collapsed, so this is the only way to exercise the
 	// "emptied source pane collapses" half of the acceptance criteria.
 	WorkspaceLeafNode *leaf_a_default = workspace_a->get_focused_leaf();
 	REQUIRE(leaf_a_default != nullptr);
+	if (leaf_a_default == nullptr) {
+		return;
+	}
 	WorkspaceLeafNode *leaf_a_source = workspace_a->split(leaf_a_default, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
 	h.pump();
 	REQUIRE(leaf_a_source != nullptr);
+	if (leaf_a_source == nullptr) {
+		return;
+	}
 	REQUIRE(workspace_a->get_leaf_count() == 2);
 
 	Node2D *root = memnew(Node2D);
@@ -182,12 +218,24 @@ TEST_CASE("[Editor][Boards] A scene tab dragged across boards moves ownership an
 
 	WorkspacePane *pane_a_source = leaf_a_source->get_workspace_pane();
 	REQUIRE(pane_a_source != nullptr);
+	if (pane_a_source == nullptr) {
+		return;
+	}
 	REQUIRE(pane_a_source->get_tab_count() == 1);
+	if (pane_a_source->get_tab_count() != 1) {
+		return;
+	}
 
 	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
 	REQUIRE(leaf_b != nullptr);
+	if (leaf_b == nullptr) {
+		return;
+	}
 	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
 	REQUIRE(pane_b != nullptr);
+	if (pane_b == nullptr) {
+		return;
+	}
 	REQUIRE(pane_b->get_tab_count() == 0);
 
 	// Called on board B's workspace -- the destination -- with a source pane id that
@@ -201,7 +249,10 @@ TEST_CASE("[Editor][Boards] A scene tab dragged across boards moves ownership an
 
 	REQUIRE(dest == leaf_b);
 	CHECK(h.editor_data.get_scene_tile(scene_idx) == leaf_b->get_leaf_id());
-	CHECK(pane_b->get_tab_count() == 1);
+	REQUIRE(pane_b->get_tab_count() == 1);
+	if (pane_b->get_tab_count() != 1) {
+		return;
+	}
 	CHECK(pane_b->get_tab(0).get_type_id() == StringName("scene"));
 
 	// Both workspaces were resynced by the single handle_tab_drop call: the
@@ -227,30 +278,57 @@ TEST_CASE("[Editor][Boards] A script tab dragged across boards moves via take_ta
 
 	EditorBoard *board_a = h.strip->get_board(0);
 	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_a != nullptr);
 	REQUIRE(board_b != nullptr);
+	if (board_a == nullptr || board_b == nullptr) {
+		return;
+	}
 	h.pump();
 
 	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
 	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+	REQUIRE(workspace_a != nullptr);
+	REQUIRE(workspace_b != nullptr);
+	if (workspace_a == nullptr || workspace_b == nullptr) {
+		return;
+	}
 
 	WorkspaceLeafNode *leaf_a = workspace_a->get_focused_leaf();
 	REQUIRE(leaf_a != nullptr);
+	if (leaf_a == nullptr) {
+		return;
+	}
 	WorkspacePane *pane_a = leaf_a->get_workspace_pane();
 	REQUIRE(pane_a != nullptr);
+	if (pane_a == nullptr) {
+		return;
+	}
 	TestSceneWorkspace::add_script_tab(pane_a, "res://move.fs");
 	REQUIRE(pane_a->get_tab_count() == 1);
+	if (pane_a->get_tab_count() != 1) {
+		return;
+	}
 
 	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
 	REQUIRE(leaf_b != nullptr);
+	if (leaf_b == nullptr) {
+		return;
+	}
 	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
 	REQUIRE(pane_b != nullptr);
+	if (pane_b == nullptr) {
+		return;
+	}
 	REQUIRE(pane_b->get_tab_count() == 0);
 
 	WorkspaceLeafNode *dest = workspace_b->handle_tab_drop(leaf_a->get_leaf_id(), 0, leaf_b, EditorSceneWorkspace::DROP_CENTER);
 	h.pump();
 
 	REQUIRE(dest == leaf_b);
-	CHECK(pane_b->get_tab_count() == 1);
+	REQUIRE(pane_b->get_tab_count() == 1);
+	if (pane_b->get_tab_count() != 1) {
+		return;
+	}
 	CHECK(pane_b->get_tab(0).get_resource_key() == "res://move.fs");
 	// Board A's leaf is its sole/default leaf, so emptying it never collapses it.
 	CHECK(pane_a->get_tab_count() == 0);
@@ -268,13 +346,26 @@ TEST_CASE("[Editor][Boards] A cross-board drop with an unresolvable source pane 
 
 	EditorBoard *board_b = h.strip->add_board("Board B");
 	REQUIRE(board_b != nullptr);
+	if (board_b == nullptr) {
+		return;
+	}
 	h.pump();
 	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+	REQUIRE(workspace_b != nullptr);
+	if (workspace_b == nullptr) {
+		return;
+	}
 
 	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
 	REQUIRE(leaf_b != nullptr);
+	if (leaf_b == nullptr) {
+		return;
+	}
 	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
 	REQUIRE(pane_b != nullptr);
+	if (pane_b == nullptr) {
+		return;
+	}
 	REQUIRE(pane_b->get_tab_count() == 0);
 
 	// No leaf anywhere in the strip carries this id.
@@ -296,26 +387,50 @@ TEST_CASE("[Editor][Boards] handle_tab_strip_drop moves a scene tab across board
 
 	EditorBoard *board_a = h.strip->get_board(0);
 	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_a != nullptr);
 	REQUIRE(board_b != nullptr);
+	if (board_a == nullptr || board_b == nullptr) {
+		return;
+	}
 	h.pump();
 
 	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
 	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+	REQUIRE(workspace_a != nullptr);
+	REQUIRE(workspace_b != nullptr);
+	if (workspace_a == nullptr || workspace_b == nullptr) {
+		return;
+	}
 
 	WorkspaceLeafNode *leaf_a = workspace_a->get_focused_leaf();
 	REQUIRE(leaf_a != nullptr);
+	if (leaf_a == nullptr) {
+		return;
+	}
 	Node2D *root = memnew(Node2D);
 	const int scene_idx = TestSceneWorkspace::add_test_scene(h.editor_data, leaf_a->get_leaf_id(), root);
 	workspace_a->sync_scene_tabs_from_editor_data();
 
 	WorkspacePane *pane_a = leaf_a->get_workspace_pane();
 	REQUIRE(pane_a != nullptr);
+	if (pane_a == nullptr) {
+		return;
+	}
 	REQUIRE(pane_a->get_tab_count() == 1);
+	if (pane_a->get_tab_count() != 1) {
+		return;
+	}
 
 	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
 	REQUIRE(leaf_b != nullptr);
+	if (leaf_b == nullptr) {
+		return;
+	}
 	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
 	REQUIRE(pane_b != nullptr);
+	if (pane_b == nullptr) {
+		return;
+	}
 	REQUIRE(pane_b->get_tab_count() == 0);
 
 	// Same cross-board shape as handle_tab_drop, but through the strip-based entry
@@ -345,20 +460,35 @@ TEST_CASE("[Editor][Boards] A scene tab reorder on a dormant board does not stea
 
 	EditorBoard *board_a = h.strip->get_board(0);
 	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_a != nullptr);
 	REQUIRE(board_b != nullptr);
+	if (board_a == nullptr || board_b == nullptr) {
+		return;
+	}
 	h.pump();
 	REQUIRE_FALSE(board_a->is_dormant());
 	REQUIRE(board_b->is_dormant());
 
 	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
 	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+	REQUIRE(workspace_a != nullptr);
+	REQUIRE(workspace_b != nullptr);
+	if (workspace_a == nullptr || workspace_b == nullptr) {
+		return;
+	}
 
 	WorkspaceLeafNode *leaf_a = workspace_a->get_focused_leaf();
 	REQUIRE(leaf_a != nullptr);
+	if (leaf_a == nullptr) {
+		return;
+	}
 	const int leaf_a_id = leaf_a->get_leaf_id();
 
 	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
 	REQUIRE(leaf_b != nullptr);
+	if (leaf_b == nullptr) {
+		return;
+	}
 	const int leaf_b_id = leaf_b->get_leaf_id();
 
 	Node2D *root_a = memnew(Node2D);
@@ -374,7 +504,13 @@ TEST_CASE("[Editor][Boards] A scene tab reorder on a dormant board does not stea
 	workspace_b->sync_scene_tabs_from_editor_data();
 	WorkspacePane *pane_b = leaf_b->get_workspace_pane();
 	REQUIRE(pane_b != nullptr);
+	if (pane_b == nullptr) {
+		return;
+	}
 	REQUIRE(pane_b->get_tab_count() == 3);
+	if (pane_b->get_tab_count() != 3) {
+		return;
+	}
 
 	// Board A is the one on screen, so focus belongs there before the reorder.
 	h.editor_data.set_focused_tile_id(leaf_a_id);
@@ -391,6 +527,10 @@ TEST_CASE("[Editor][Boards] A scene tab reorder on a dormant board does not stea
 	// scene index, and the reorder renumbers indices, so the expected keys are
 	// the literal paths rather than a lookup through the now-stale scene_a/
 	// scene_b/scene_c indices.
+	REQUIRE(pane_b->get_tab_count() == 3);
+	if (pane_b->get_tab_count() != 3) {
+		return;
+	}
 	CHECK(pane_b->get_tab(0).get_resource_key() == "res://b.tscn");
 	CHECK(pane_b->get_tab(1).get_resource_key() == "res://c.tscn");
 	CHECK(pane_b->get_tab(2).get_resource_key() == "res://a.tscn");
@@ -410,19 +550,34 @@ TEST_CASE("[Editor][Boards] A scene tab reorder on the active board keeps claimi
 
 	EditorBoard *board_a = h.strip->get_board(0);
 	EditorBoard *board_b = h.strip->add_board("Board B");
+	REQUIRE(board_a != nullptr);
 	REQUIRE(board_b != nullptr);
+	if (board_a == nullptr || board_b == nullptr) {
+		return;
+	}
 	h.pump();
 	REQUIRE_FALSE(board_a->is_dormant());
 
 	EditorSceneWorkspace *workspace_a = board_a->get_workspace();
 	EditorSceneWorkspace *workspace_b = board_b->get_workspace();
+	REQUIRE(workspace_a != nullptr);
+	REQUIRE(workspace_b != nullptr);
+	if (workspace_a == nullptr || workspace_b == nullptr) {
+		return;
+	}
 
 	WorkspaceLeafNode *leaf_a = workspace_a->get_focused_leaf();
 	REQUIRE(leaf_a != nullptr);
+	if (leaf_a == nullptr) {
+		return;
+	}
 	const int leaf_a_id = leaf_a->get_leaf_id();
 
 	WorkspaceLeafNode *leaf_b = workspace_b->get_focused_leaf();
 	REQUIRE(leaf_b != nullptr);
+	if (leaf_b == nullptr) {
+		return;
+	}
 	const int leaf_b_id = leaf_b->get_leaf_id();
 
 	Node2D *root_a = memnew(Node2D);
@@ -438,7 +593,13 @@ TEST_CASE("[Editor][Boards] A scene tab reorder on the active board keeps claimi
 	workspace_a->sync_scene_tabs_from_editor_data();
 	WorkspacePane *pane_a = leaf_a->get_workspace_pane();
 	REQUIRE(pane_a != nullptr);
+	if (pane_a == nullptr) {
+		return;
+	}
 	REQUIRE(pane_a->get_tab_count() == 3);
+	if (pane_a->get_tab_count() != 3) {
+		return;
+	}
 
 	// Focus starts elsewhere (the dormant board's leaf); the active board's own
 	// reorder must still claim it, matching the pre-existing behavior.
@@ -452,6 +613,10 @@ TEST_CASE("[Editor][Boards] A scene tab reorder on the active board keeps claimi
 	// resource_key_for_scene is keyed by scene index, and the reorder renumbers
 	// indices, so compare against the literal paths rather than through the
 	// now-stale scene_a/scene_b/scene_c indices.
+	REQUIRE(pane_a->get_tab_count() == 3);
+	if (pane_a->get_tab_count() != 3) {
+		return;
+	}
 	CHECK(pane_a->get_tab(0).get_resource_key() == "res://b.tscn");
 	CHECK(pane_a->get_tab(1).get_resource_key() == "res://c.tscn");
 	CHECK(pane_a->get_tab(2).get_resource_key() == "res://a.tscn");
