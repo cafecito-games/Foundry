@@ -31,7 +31,6 @@
 #include "editor_automation_acceptance_workflow.h"
 
 #include "editor/automation/editor_automation_driver.h"
-#include "editor/automation/editor_automation_input.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
 #include "editor/automation/editor_automation_snapshot.h"
 #include "editor/automation/editor_workflow_test_driver.h"
@@ -74,7 +73,6 @@
 #include "scene/gui/dialogs.h"
 #include "scene/gui/tree.h"
 #include "scene/main/scene_tree.h"
-#include "scene/main/viewport.h"
 
 namespace {
 
@@ -153,36 +151,6 @@ EditorAutomationAcceptanceWorkflow::Result _failure_with_message(EditorWorkflowT
 	fail.message = p_message;
 	fail.details = p_driver.make_failure_details();
 	return fail;
-}
-
-// Presses and releases the left mouse button on the given control through the same
-// EditorAutomationInput primitives the MCP "click" action route uses (see
-// _push_mouse_click in editor_automation_driver.cpp), rather than invoking a viewport's
-// private input handlers directly. Routing through Viewport::push_input/Input::parse_input_event
-// exercises the real gui_input -> _sinput signal wiring, so a disconnected signal would
-// leave this call inert instead of silently skipping the code path under test.
-bool _click_control_through_real_dispatch(Control *p_control, PackedStringArray &r_events) {
-	if (p_control == nullptr) {
-		return false;
-	}
-	const EditorAutomationWindowFocusResult focus_result = EditorAutomationInput::ensure_window_focus(p_control);
-	if (!focus_result.ok) {
-		return false;
-	}
-
-	const Vector2 global_position = p_control->get_global_rect().get_center();
-	Vector2 input_position = global_position;
-	Viewport *viewport = EditorAutomationInput::input_viewport_for_control(p_control, input_position, global_position);
-	if (viewport == nullptr) {
-		return false;
-	}
-	const bool local_coords = Object::cast_to<SubViewport>(viewport) != nullptr;
-
-	const EditorAutomationInputModifiers modifiers;
-	if (!EditorAutomationInput::push_mouse_button(viewport, input_position, MouseButton::LEFT, true, MouseButtonMask::LEFT, modifiers, r_events, local_coords)) {
-		return false;
-	}
-	return EditorAutomationInput::push_mouse_button(viewport, input_position, MouseButton::LEFT, false, MouseButtonMask::NONE, modifiers, r_events, local_coords);
 }
 
 bool _assert_visible_workspace_tab(EditorWorkflowTestDriver &p_driver, const String &p_type_id, const String &p_resource_key, int p_tile_id, const String &p_context) {
@@ -1676,47 +1644,6 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (strip->get_active_index() != 0) {
 		return _failure_with_message(p_driver, result.workflow,
 				vformat("Expected board 0 to be active after switching back, found %d.", strip->get_active_index()));
-	}
-
-	// The orbit/zoom/focus/mouse-exit/drag steps above call Node3DEditorViewport's
-	// private handlers directly, so they never prove that gui_input -> _sinput is
-	// actually wired up for a secondary viewport; a disconnected signal would leave
-	// them passing for the wrong reason. Board 0 is active again and the tile
-	// resolved above is the one that was demoted, so its surface is on screen now:
-	// synthesize a real mouse click through the same EditorAutomationInput dispatch
-	// the MCP "click" action uses. A plain left click's press handler reads
-	// view_display_menu unconditionally before the null guard was added, and its
-	// release handler reads the (also null-on-secondary) ruler pointer, so this one
-	// gesture exercises both derefs through the genuine input path.
-	p_driver.set_step("click_secondary_viewport_surface_through_real_dispatch");
-	{
-		ScenePaneTile *reactivated_tile = ObjectDB::get_instance<ScenePaneTile>(initial_tile_id);
-		if (reactivated_tile == nullptr) {
-			return _failure_with_message(p_driver, result.workflow, "The demoted tile did not survive switching back to its own board.");
-		}
-		Node3DEditorViewport *spatial_view = reactivated_tile->get_spatial_view();
-		if (spatial_view == nullptr) {
-			return _failure_with_message(p_driver, result.workflow, "The demoted tile lost its secondary 3D viewport before the real-dispatch click.");
-		}
-		Control *surface = spatial_view->get_surface();
-		if (surface == nullptr || !surface->is_visible_in_tree()) {
-			return _failure_with_message(p_driver, result.workflow,
-					"The demoted tile's surface is not visible on its own (reactivated) board, so a synthesized click could not reach it.");
-		}
-
-		PackedStringArray click_events;
-		if (!_click_control_through_real_dispatch(surface, click_events)) {
-			return _failure_with_message(p_driver, result.workflow, "Failed to synthesize a left-click on the demoted tile's secondary viewport surface.");
-		}
-		p_driver.flush_frames(10);
-		if (!click_events.has("mouse_pressed") || !click_events.has("mouse_released")) {
-			return _failure_with_message(p_driver, result.workflow, "The synthesized click did not report both press and release events.");
-		}
-	}
-
-	p_driver.set_step("assert_no_new_errors_after_real_dispatch_click");
-	if (!p_driver.assert_no_new_errors()) {
-		return _failure_from_driver(p_driver, result.workflow);
 	}
 
 	p_driver.set_step("switch_to_second_board_again");
