@@ -1375,6 +1375,38 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 	p_driver.flush_frames(10);
 
+	// Focus and mouse-exit are wired to the surface unconditionally in
+	// NOTIFICATION_ENTER_TREE, before the secondary constructor's early return, and
+	// reach the same null overlay members through a second, independent set of
+	// dereferences (view_display_menu, preview_node, preview_material_label).
+	p_driver.set_step("focus_secondary_viewport_surface");
+	{
+		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
+		spatial_view->_surface_focus_enter();
+		spatial_view->_surface_focus_exit();
+	}
+
+	p_driver.set_step("exit_mouse_from_secondary_viewport_surface");
+	{
+		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
+		spatial_view->_surface_mouse_exit();
+	}
+
+	// A secondary viewport is still wired up as a drag-and-drop target
+	// (SET_DRAG_FORWARDING_CD runs before the secondary constructor returns), so
+	// dragging any file over it must not instantiate a preview it has nowhere to put.
+	p_driver.set_step("probe_drag_and_drop_over_secondary_viewport");
+	{
+		Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
+		Dictionary drag_data;
+		drag_data["type"] = "files";
+		drag_data["files"] = PackedStringArray();
+		if (spatial_view->can_drop_data_fw(Point2(10, 10), drag_data, nullptr)) {
+			return _failure_with_message(p_driver, result.workflow,
+					"A secondary viewport accepted a drag-and-drop it cannot instantiate into.");
+		}
+	}
+
 	p_driver.set_step("assert_no_new_errors_after_secondary_input");
 	if (!p_driver.assert_no_new_errors()) {
 		return _failure_from_driver(p_driver, result.workflow);
