@@ -276,7 +276,7 @@ TEST_CASE("[Editor][Boards] Boards can be added, activated, and closed") {
 	h.pump();
 	SIGNAL_CHECK_FALSE("active_board_changed");
 
-	// Closing the visible board hands the screen to a neighbour rather than leaving the
+	// Closing the visible board hands the screen to a neighbor rather than leaving the
 	// editor with no live board.
 	CHECK(h.strip->close_board(1));
 	h.pump();
@@ -529,7 +529,7 @@ TEST_CASE("[Editor][Boards] Editor-wide activation is rejected for leaves on dor
 	const int dormant_leaf = second->get_workspace()->get_focused_leaf()->get_leaf_id();
 
 	// A dormant board's pane replays its persisted active tab after the restore bracket
-	// has closed. Honouring that would drag editor-wide focus and the edited scene onto
+	// has closed. Honoring that would drag editor-wide focus and the edited scene onto
 	// a board the user cannot see, which is silent: nothing fails, the wrong board wins.
 	CHECK(h.strip->is_leaf_on_active_board(active_leaf));
 	CHECK_FALSE(h.strip->is_leaf_on_active_board(dormant_leaf));
