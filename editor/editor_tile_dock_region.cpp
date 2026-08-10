@@ -108,16 +108,29 @@ void EditorTileDockRegion::focus_dock(EditorDock *p_dock) {
 
 void EditorTileDockRegion::set_dock_enabled(EditorDock *p_dock, bool p_enabled) {
 	ERR_FAIL_NULL(p_dock);
-	p_dock->set_visible(p_enabled);
-	if (!p_enabled && right_tabs && p_dock->get_parent() == right_tabs && right_tabs->get_current_tab() == p_dock->get_index()) {
-		for (int i = 0; i < right_tabs->get_tab_count(); i++) {
-			Control *child = right_tabs->get_tab_control(i);
-			if (child && child->is_visible()) {
-				right_tabs->set_current_tab(i);
-				break;
+	p_dock->set_enabled(p_enabled);
+
+	// A TabContainer child's own Control::visible tracks tab selection, not
+	// availability: TabContainer::_repaint hides every non-current tab
+	// regardless of caller intent, so a plain set_visible here would be
+	// overwritten (or already be a no-op) for anything but the current tab.
+	// set_tab_hidden is the primitive that actually removes a tab from the
+	// available set without fighting that.
+	if (right_tabs && p_dock->get_parent() == right_tabs) {
+		const int tab_index = p_dock->get_index();
+		right_tabs->set_tab_hidden(tab_index, !p_enabled);
+		if (!p_enabled && right_tabs->get_current_tab() == tab_index) {
+			for (int i = 0; i < right_tabs->get_tab_count(); i++) {
+				if (!right_tabs->is_tab_hidden(i)) {
+					right_tabs->set_current_tab(i);
+					break;
+				}
 			}
 		}
+		return;
 	}
+
+	p_dock->set_visible(p_enabled);
 }
 
 static String _dock_layout_names(TabContainer *p_tabs) {
