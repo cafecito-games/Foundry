@@ -30,15 +30,90 @@
 
 #pragma once
 
+#include "editor/gui/editor_spin_slider.h"
 #include "editor/inspector/editor_inspector.h"
 #include "editor/inspector/editor_properties.h"
+#include "editor/inspector/editor_properties_array_dict.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_theme.h"
 #include "editor/themes/editor_theme_manager.h"
 
+#include "core/object/class_db.h"
+#include "core/object/ref_counted.h"
+#include "scene/main/scene_tree.h"
+#include "scene/main/window.h"
+
 #include "tests/test_macros.h"
 
+// Friend accessor granting the test suite access to `EditorPropertyArray` internals without
+// widening its public API. Declared as a friend in editor/inspector/editor_properties_array_dict.h.
+class EditorPropertyArrayTestAccess {
+public:
+	static EditorSpinSlider *get_size_slider(EditorPropertyArray *p_editor) { return p_editor->size_slider; }
+};
+
 namespace TestInspectorDensity {
+
+// A minimal native class exposing a typed `float` array property, registered with ClassDB so
+// `EditorPropertyArray::set_object_and_property()`/`update_property()` exercise their real
+// `Object::get()` path instead of a test-only shortcut.
+class ArrayPropertyFixtureObject : public RefCounted {
+	FOUNDRY_CLASS(ArrayPropertyFixtureObject, RefCounted);
+
+	Array items;
+
+protected:
+	static void _bind_methods() {
+		ClassDB::bind_method(D_METHOD("set_items", "value"), &ArrayPropertyFixtureObject::set_items);
+		ClassDB::bind_method(D_METHOD("get_items"), &ArrayPropertyFixtureObject::get_items);
+		ADD_PROPERTY(PropertyInfo(Variant::ARRAY, "items"), "set_items", "get_items");
+	}
+
+public:
+	void set_items(const Array &p_value) { items = p_value; }
+	Array get_items() const { return items; }
+};
+
+static void ensure_array_fixture_registered() {
+	if (!ClassDB::class_exists("ArrayPropertyFixtureObject")) {
+		FOUNDRY_REGISTER_CLASS(ArrayPropertyFixtureObject);
+	}
+}
+
+// `EditorPropertyArray` only builds its unfolded body (including `size_slider`) inside
+// `update_property()`, and only when the edited object reports the section as unfolded. The child
+// `EditorSpinSlider` is created after `set_theme()` has already run on the editor, so unlike a
+// property whose spin slider exists from construction, this one only receives
+// `NOTIFICATION_THEME_CHANGED` (and populates its `theme_cache`) if the editor is already inside the
+// `SceneTree` when the child is parented, matching the trap documented on
+// `measure_float_property_minimum_height`.
+//
+// The array is deliberately left empty: a non-empty array routes each element row through
+// `EditorInspector::instantiate_property_editor()`, which depends on `EditorInspectorDefaultPlugin`
+// being registered via `EditorInspector::add_inspector_plugin()` during `EditorNode` startup. The
+// doctest harness never boots `EditorNode`, so that path returns a null property editor and crashes.
+// An empty array still builds the Size row (and its `size_slider`) unconditionally, without touching
+// any element row.
+static int measure_array_size_slider_minimum_height(const Ref<EditorTheme> &p_theme) {
+	ensure_array_fixture_registered();
+	Ref<ArrayPropertyFixtureObject> object = memnew(ArrayPropertyFixtureObject);
+
+	EditorPropertyArray *editor = memnew(EditorPropertyArray);
+	editor->setup(Variant::ARRAY);
+	SceneTree::get_singleton()->get_root()->add_child(editor);
+	editor->set_theme(p_theme);
+	editor->set_object_and_property(object.ptr(), "items");
+	object->editor_set_section_unfold("items", true);
+	editor->update_property();
+
+	EditorSpinSlider *size_slider = EditorPropertyArrayTestAccess::get_size_slider(editor);
+	REQUIRE(size_slider != nullptr);
+	int height = (int)size_slider->get_minimum_size().height;
+
+	SceneTree::get_singleton()->get_root()->remove_child(editor);
+	memdelete(editor);
+	return height;
+}
 
 // Regenerates the editor theme with `interface/theme/inspector_density` set to
 // `p_density`, restoring the previous setting value afterwards.
@@ -68,6 +143,33 @@ static int measure_text_property_minimum_height(const Ref<EditorTheme> &p_theme)
 	property->notification(Control::NOTIFICATION_THEME_CHANGED);
 	int height = (int)property->get_minimum_size().height;
 	memdelete(property);
+	return height;
+}
+
+// EditorProperty::get_minimum_size() only folds a child's minimum size into the row height when
+// Container::as_sortable_control() considers that child visible in tree, which requires the
+// property to actually be inside the SceneTree (a standalone control's `parent_visible_in_tree`
+// defaults to false). Measuring EditorPropertyFloat outside the tree would silently degrade to just
+// the container's own `inspector_property_height` floor and never exercise the spin slider's own
+// get_minimum_size() at all, so this attaches the property to the root window for the duration of
+// the measurement.
+static int measure_float_property_minimum_height(const Ref<EditorTheme> &p_theme) {
+	EditorPropertyFloat *property = memnew(EditorPropertyFloat);
+	property->set_theme(p_theme);
+	SceneTree::get_singleton()->get_root()->add_child(property);
+	property->notification(Control::NOTIFICATION_THEME_CHANGED);
+	int height = (int)property->get_minimum_size().height;
+	SceneTree::get_singleton()->get_root()->remove_child(property);
+	memdelete(property);
+	return height;
+}
+
+static int measure_standalone_spin_slider_minimum_height(const Ref<EditorTheme> &p_theme) {
+	EditorSpinSlider *spin_slider = memnew(EditorSpinSlider);
+	spin_slider->set_theme(p_theme);
+	spin_slider->notification(Control::NOTIFICATION_THEME_CHANGED);
+	int height = (int)spin_slider->get_minimum_size().height;
+	memdelete(spin_slider);
 	return height;
 }
 
@@ -158,6 +260,63 @@ TEST_CASE("[Editor][InspectorDensity] measured EditorPropertyText minimum height
 
 	CHECK(compact_height < default_height);
 	CHECK(default_height < spacious_height);
+}
+
+TEST_CASE("[Editor][InspectorDensity] measured EditorPropertyFloat minimum height is strictly ordered") {
+	// EditorPropertyFloat is backed directly by an EditorSpinSlider (no LineEdit sibling), so this
+	// isolates whether EditorSpinSlider::get_minimum_size() itself responds to inspector density.
+	Ref<EditorTheme> compact_theme = generate_theme_for_density("Compact");
+	Ref<EditorTheme> default_theme = generate_theme_for_density("Default");
+	Ref<EditorTheme> spacious_theme = generate_theme_for_density("Spacious");
+
+	int compact_height = measure_float_property_minimum_height(compact_theme);
+	int default_height = measure_float_property_minimum_height(default_theme);
+	int spacious_height = measure_float_property_minimum_height(spacious_theme);
+
+	CAPTURE(compact_height);
+	CAPTURE(default_height);
+	CAPTURE(spacious_height);
+	CHECK(compact_height < default_height);
+	CHECK(default_height < spacious_height);
+}
+
+TEST_CASE("[Editor][InspectorDensity] measured EditorPropertyArray Size row minimum height is strictly ordered") {
+	// The array/dictionary "Size:" row sits in the same panel as the element rows below it
+	// (editor/inspector/editor_properties_array_dict.cpp), which use the density-scaled
+	// EditorPropertyContainer variation. Without EditorInspectorSpinSlider on `size_slider`, this
+	// row stays frozen at the unscaled size while its neighbors shrink or grow around it.
+	Ref<EditorTheme> compact_theme = generate_theme_for_density("Compact");
+	Ref<EditorTheme> default_theme = generate_theme_for_density("Default");
+	Ref<EditorTheme> spacious_theme = generate_theme_for_density("Spacious");
+
+	int compact_height = measure_array_size_slider_minimum_height(compact_theme);
+	int default_height = measure_array_size_slider_minimum_height(default_theme);
+	int spacious_height = measure_array_size_slider_minimum_height(spacious_theme);
+
+	CAPTURE(compact_height);
+	CAPTURE(default_height);
+	CAPTURE(spacious_height);
+	CHECK(compact_height < default_height);
+	CHECK(default_height < spacious_height);
+}
+
+TEST_CASE("[Editor][InspectorDensity] EditorSpinSlider outside the inspector is unaffected by density") {
+	// EditorSpinSlider is also used for viewport zoom, timelines, and other non-inspector chrome.
+	// A standalone instance (no EditorInspectorSpinSlider variation applied) must not change height
+	// as the inspector density setting changes.
+	Ref<EditorTheme> compact_theme = generate_theme_for_density("Compact");
+	Ref<EditorTheme> default_theme = generate_theme_for_density("Default");
+	Ref<EditorTheme> spacious_theme = generate_theme_for_density("Spacious");
+
+	int compact_height = measure_standalone_spin_slider_minimum_height(compact_theme);
+	int default_height = measure_standalone_spin_slider_minimum_height(default_theme);
+	int spacious_height = measure_standalone_spin_slider_minimum_height(spacious_theme);
+
+	CAPTURE(compact_height);
+	CAPTURE(default_height);
+	CAPTURE(spacious_height);
+	CHECK(compact_height == default_height);
+	CHECK(default_height == spacious_height);
 }
 
 TEST_CASE("[Editor][InspectorDensity] inspector_property_height never drops below the font-height floor") {

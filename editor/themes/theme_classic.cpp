@@ -2159,6 +2159,16 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_stylebox("focus", "EditorInspectorLineEdit", scale_button_vertical_margin(p_theme->get_stylebox("focus", SNAME("LineEdit"))));
 		p_theme->set_stylebox("read_only", "EditorInspectorLineEdit", scale_button_vertical_margin(p_theme->get_stylebox("read_only", SNAME("LineEdit"))));
 
+		// EditorInspectorSpinSlider. EditorSpinSlider-backed property editors (Float, Vector2/3/4,
+		// Rect2, AABB, Color components, Euler, Transform, Quaternion, etc.) borrow LineEdit's
+		// stylebox purely to compute their minimum row height, the same way String/path/locale
+		// fields borrow EditorInspectorLineEdit above. EditorSpinSlider is also used outside the
+		// inspector (viewport zoom, timelines, ...), where density scaling would be wrong, so this
+		// variation is applied per instance at inspector call sites rather than to the base
+		// "LineEdit" type.
+		p_theme->set_type_variation("EditorInspectorSpinSlider", "LineEdit");
+		p_theme->set_stylebox(CoreStringName(normal), "EditorInspectorSpinSlider", scale_button_vertical_margin(p_theme->get_stylebox(CoreStringName(normal), SNAME("LineEdit"))));
+
 		// Make the height for properties uniform.
 		Ref<Font> font = p_theme->get_font(SceneStringName(font), SNAME("LineEdit"));
 		int font_size = p_theme->get_font_size(SceneStringName(font_size), SNAME("LineEdit"));

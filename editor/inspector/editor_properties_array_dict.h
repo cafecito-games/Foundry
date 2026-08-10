@@ -92,6 +92,8 @@ public:
 class EditorPropertyArray : public EditorProperty {
 	FOUNDRY_CLASS(EditorPropertyArray, EditorProperty);
 
+	friend class EditorPropertyArrayTestAccess;
+
 	struct Slot {
 		Ref<EditorPropertyArrayObject> object;
 		HBoxContainer *container = nullptr;

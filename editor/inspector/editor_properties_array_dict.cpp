@@ -453,6 +453,7 @@ void EditorPropertyArray::update_property() {
 			hbox->add_child(size_label);
 
 			size_slider = memnew(EditorSpinSlider);
+			size_slider->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 			size_slider->set_step(1);
 			size_slider->set_max(INT32_MAX);
 			size_slider->set_editing_integer(true);

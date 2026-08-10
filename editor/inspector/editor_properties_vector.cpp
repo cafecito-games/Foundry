@@ -211,6 +211,7 @@ EditorPropertyVectorN::EditorPropertyVectorN(Variant::Type p_type, bool p_force_
 
 	for (int i = 0; i < component_count; i++) {
 		spin[i] = memnew(EditorSpinSlider);
+		spin[i]->set_theme_type_variation(SNAME("EditorInspectorSpinSlider"));
 		bc->add_child(spin[i]);
 		spin[i]->set_flat(true);
 		spin[i]->set_label(String(COMPONENT_LABELS[i]));
