@@ -695,6 +695,72 @@ TEST_CASE("[Editor][Automation][MCP] mcp-board-transition-settled-waits-for-the-
 	h.unmount();
 }
 
+static bool board_geometry_is_bit_identical(const PackedVector2Array &p_previous, const PackedVector2Array &p_current) {
+	if (p_previous.size() != p_current.size()) {
+		return false;
+	}
+	for (int i = 0; i < p_current.size(); i++) {
+		if (p_previous[i] != p_current[i]) {
+			return false;
+		}
+	}
+	return true;
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-board-transition-settled-waits-for-the-overview-zoom") {
+	BoardAutomationHarness h;
+	h.mount(3);
+	h.settle();
+
+	h.strip->set_overview(true);
+
+	// Frame steps far below one display frame push the cubic ease-out deep into its tail,
+	// where the remaining motion per frame drops under one float ulp of the board positions
+	// and consecutive geometry samples come out bit-identical while the zoom is still
+	// running. Those are exactly the frames a geometry-only predicate reported as settled.
+	const double fine_delta = 0.0002;
+	PackedVector2Array previous = EditorAutomationWorkspace::capture_board_geometry(h.strip);
+	bool settled_while_animating = false;
+	bool identical_geometry_while_animating = false;
+	bool processing_while_animating = true;
+	bool settled = false;
+	int frames = 0;
+	while (frames < 4000) {
+		h.pump(fine_delta);
+		frames++;
+		const PackedVector2Array current = EditorAutomationWorkspace::capture_board_geometry(h.strip);
+		const bool animating = h.strip->is_transition_animating();
+		const bool condition = EditorAutomationWorkspace::board_transition_settled(h.strip, previous, current);
+		if (animating) {
+			// The acceptance criterion: never settled on any frame the zoom is still moving.
+			settled_while_animating = settled_while_animating || condition;
+			identical_geometry_while_animating = identical_geometry_while_animating ||
+					board_geometry_is_bit_identical(previous, current);
+			processing_while_animating = processing_while_animating && h.strip->is_processing();
+		} else if (condition) {
+			settled = true;
+			break;
+		}
+		previous = current;
+	}
+
+	CHECK_FALSE(settled_while_animating);
+#ifndef REAL_T_IS_DOUBLE
+	// Single precision is where the tail collapses to bit-identical samples; a double build
+	// keeps resolving the same frames, so it simply never reaches that degenerate case.
+	CHECK(identical_geometry_while_animating);
+#endif
+	CHECK(settled);
+	CHECK(frames < 4000);
+	CHECK(h.strip->is_overview_active());
+	// The overview keeps the strip processing to drive its throttled preview refresh, both
+	// during and after the zoom, which is why the process flag cannot end this wait here.
+	CHECK(processing_while_animating);
+	CHECK(h.strip->is_processing());
+
+	h.unmount();
+}
+
 TEST_CASE("[Editor][Automation][MCP] mcp-board-overview-is-observable-in-state") {
 	BoardAutomationHarness h;
 	h.mount(3);
