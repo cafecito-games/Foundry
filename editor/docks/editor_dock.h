@@ -121,6 +121,13 @@ public:
 	void set_closable(bool p_closable) { closable = p_closable; }
 	bool is_closable() const { return closable; }
 
+	// Per-tile dock regions (EditorTileDockRegion::set_dock_enabled) use this
+	// as the source of truth for "should this dock offer a toggle", since a
+	// TabContainer child's own Control::visible is owned by tab selection
+	// (TabContainer::_repaint hides every non-current tab), not availability.
+	void set_enabled(bool p_enabled);
+	bool is_enabled() const { return enabled; }
+
 	void set_icon_name(const StringName &p_name);
 	StringName get_icon_name() const { return icon_name; }
 

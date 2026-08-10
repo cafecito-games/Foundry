@@ -114,10 +114,13 @@ TEST_CASE("[Editor][SideRail] disabling a dock removes its toggle and re-enablin
 	EditorDock *c = fixture.add_right_dock("C");
 
 	EditorSideRailStrip *strip = memnew(EditorSideRailStrip(EditorSideRailStrip::Side::RIGHT, &fixture.region));
-	SideRailFixture::pump();
 	strip->rebuild_toggles();
 	REQUIRE(strip->get_toggle_docks().size() == 3);
 
+	// The rail's rebuild-on-enabled_changed connection is deferred (matching
+	// the bottom drawer strip's child_order_changed connection), so a real
+	// enable/disable round trip needs the message queue flushed, not a
+	// manual rebuild_toggles() call, to prove the automatic path works.
 	fixture.region.set_dock_enabled(b, false);
 	SideRailFixture::pump();
 	REQUIRE(strip->get_toggle_docks().size() == 2);

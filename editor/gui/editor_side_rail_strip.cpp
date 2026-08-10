@@ -88,16 +88,19 @@ void EditorSideRailStrip::_rebuild_toggles() {
 
 	const Vector<EditorDock *> source_docks = _get_source_docks_in_order();
 	for (EditorDock *dock : source_docks) {
-		// set_dock_enabled (EditorTileDockRegion) hides a disabled dock rather
-		// than removing it, unlike the bottom drawer's tabs, so visibility
-		// changes on docks that never appear as toggles must still rebuild the
-		// rail when they later become visible again.
-		const Callable visibility_changed_callable = callable_mp(this, &EditorSideRailStrip::rebuild_toggles);
-		if (!dock->is_connected(SceneStringName(visibility_changed), visibility_changed_callable)) {
-			dock->connect(SceneStringName(visibility_changed), visibility_changed_callable, CONNECT_DEFERRED);
+		// EditorDock::is_enabled(), not Control::is_visible(): a right-side
+		// dock's own visibility tracks TabContainer tab selection, not
+		// availability, so it stays false for every non-current tab whether
+		// or not that tab is enabled. set_dock_enabled hides a disabled dock
+		// rather than removing it, so enabled-state changes on docks that
+		// never appear as toggles must still rebuild the rail when they
+		// later become enabled again.
+		const Callable enabled_changed_callable = callable_mp(this, &EditorSideRailStrip::rebuild_toggles);
+		if (!dock->is_connected("enabled_changed", enabled_changed_callable)) {
+			dock->connect("enabled_changed", enabled_changed_callable, CONNECT_DEFERRED);
 		}
 
-		if (!dock->is_visible()) {
+		if (!dock->is_enabled()) {
 			continue;
 		}
 

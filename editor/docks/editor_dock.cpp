@@ -68,6 +68,10 @@ void EditorDock::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_closable"), &EditorDock::is_closable);
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "closable"), "set_closable", "is_closable");
 
+	ClassDB::bind_method(D_METHOD("set_enabled", "enabled"), &EditorDock::set_enabled);
+	ClassDB::bind_method(D_METHOD("is_enabled"), &EditorDock::is_enabled);
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "enabled"), "set_enabled", "is_enabled");
+
 	ClassDB::bind_method(D_METHOD("set_icon_name", "icon_name"), &EditorDock::set_icon_name);
 	ClassDB::bind_method(D_METHOD("get_icon_name"), &EditorDock::get_icon_name);
 	ADD_PROPERTY(PropertyInfo(Variant::STRING_NAME, "icon_name"), "set_icon_name", "get_icon_name");
@@ -98,6 +102,7 @@ void EditorDock::_bind_methods() {
 
 	ADD_SIGNAL(MethodInfo("closed"));
 	ADD_SIGNAL(MethodInfo("_tab_style_changed"));
+	ADD_SIGNAL(MethodInfo("enabled_changed"));
 
 	BIND_BITFIELD_FLAG(DOCK_LAYOUT_VERTICAL);
 	BIND_BITFIELD_FLAG(DOCK_LAYOUT_HORIZONTAL);
@@ -202,6 +207,14 @@ void EditorDock::set_title_color(const Color &p_color) {
 	}
 	title_color = p_color;
 	_emit_changed();
+}
+
+void EditorDock::set_enabled(bool p_enabled) {
+	if (enabled == p_enabled) {
+		return;
+	}
+	enabled = p_enabled;
+	emit_signal(SNAME("enabled_changed"));
 }
 
 void EditorDock::set_dock_shortcut(const Ref<Shortcut> &p_shortcut) {
