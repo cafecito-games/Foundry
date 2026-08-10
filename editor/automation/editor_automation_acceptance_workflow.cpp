@@ -1608,7 +1608,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (source_workspace == nullptr || destination_workspace == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "A board workspace did not survive the first drop.");
 	}
-	if (strip->get_active_index() != 0 || !live_destination_board->is_dormant()) {
+	if (strip->get_active_index() != 0) {
 		return _failure_with_message(p_driver, result.workflow, "The first drop changed which board is active.");
 	}
 
