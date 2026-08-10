@@ -482,6 +482,10 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 			_focus_leaf_groups_dock();
 		} else if (ED_IS_SHORTCUT("docks/open_history", p_event)) {
 			_focus_leaf_history_dock();
+		} else if (ED_IS_SHORTCUT("docks/toggle_left_tile_rail", p_event)) {
+			_toggle_focused_tile_rail(SideRailSide::LEFT);
+		} else if (ED_IS_SHORTCUT("docks/toggle_right_tile_rail", p_event)) {
+			_toggle_focused_tile_rail(SideRailSide::RIGHT);
 		} else {
 			is_handled = false;
 		}
@@ -8254,6 +8258,16 @@ void EditorNode::_focus_leaf_history_dock() {
 	_focus_leaf_dock(get_focused_history_dock());
 }
 
+void EditorNode::_toggle_focused_tile_rail(SideRailSide p_side) {
+	if (!get_scene_workspace()) {
+		return;
+	}
+	ScenePaneTile *tile = get_scene_workspace()->get_focused_tile();
+	if (tile) {
+		tile->get_dock_region()->toggle_side_mode(p_side);
+	}
+}
+
 void EditorNode::_save_workspace_to_config(Ref<ConfigFile> p_config_file) {
 	if (board_strip) {
 		EditorBoardStrip::save_to_config(p_config_file, board_strip);
@@ -11300,6 +11314,8 @@ EditorNode::EditorNode() {
 	ED_SHORTCUT_AND_COMMAND("editor/toggle_last_opened_bottom_panel", TTRC("Toggle Last Opened Bottom Panel"), KeyModifierMask::CMD_OR_CTRL | Key::J);
 	ED_SHORTCUT_AND_COMMAND("editor/previous_board", TTRC("Previous Board"), KeyModifierMask::CMD_OR_CTRL | Key::PAGEUP);
 	ED_SHORTCUT_AND_COMMAND("editor/next_board", TTRC("Next Board"), KeyModifierMask::CMD_OR_CTRL | Key::PAGEDOWN);
+	ED_SHORTCUT_AND_COMMAND("docks/toggle_left_tile_rail", TTRC("Toggle Left Tile Rail"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::BRACKETLEFT);
+	ED_SHORTCUT_AND_COMMAND("docks/toggle_right_tile_rail", TTRC("Toggle Right Tile Rail"), KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::BRACKETRIGHT);
 	distraction_free->set_shortcut(ED_GET_SHORTCUT("editor/distraction_free_mode"));
 	distraction_free->set_tooltip_text(TTRC("Toggle distraction-free mode."));
 	distraction_free->set_toggle_mode(true);

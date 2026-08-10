@@ -33,6 +33,7 @@
 #include "core/object/script_language.h"
 #include "core/templates/safe_refcount.h"
 #include "editor/editor_data.h"
+#include "editor/gui/side_rail_state.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/settings/editor_folding.h"
 #include "servers/display/display_server.h"
@@ -789,6 +790,7 @@ private:
 	void _focus_leaf_groups_dock();
 	void _focus_leaf_history_dock();
 	void _focus_leaf_dock(EditorDock *p_dock);
+	void _toggle_focused_tile_rail(SideRailSide p_side);
 
 	void _save_window_settings_to_config(Ref<ConfigFile> p_layout, const String &p_section);
 

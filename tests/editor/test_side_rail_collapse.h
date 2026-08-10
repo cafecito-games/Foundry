@@ -30,8 +30,11 @@
 
 #pragma once
 
+#include "core/input/input_event.h"
+#include "core/input/shortcut.h"
 #include "core/io/config_file.h"
 #include "core/object/message_queue.h"
+#include "core/os/keyboard.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/editor_data.h"
 #include "editor/editor_scene_pane_tile.h"
@@ -40,6 +43,7 @@
 #include "editor/gui/editor_side_rail_button.h"
 #include "editor/gui/editor_side_rail_strip.h"
 #include "editor/gui/side_rail_state.h"
+#include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
@@ -233,6 +237,67 @@ TEST_CASE("[Editor][SideRail] a railed side shows exactly one dock and never two
 		}
 		CHECK(shown[0] == fixture.signals);
 	}
+}
+
+// toggle_side_mode is exactly the primitive the docks/toggle_left_tile_rail and
+// docks/toggle_right_tile_rail shortcuts drive (EditorNode::_toggle_focused_tile_rail),
+// so exercising it directly against a real region is the highest seam that runs
+// shipped code without constructing an EditorNode (#2010).
+TEST_CASE("[Editor][SideRail] toggling the mode restores the last open drawer dock") {
+	CollapseFixture fixture;
+	fixture.region.press_rail_toggle(fixture.inspector); // Collapses the right side, drawer closed.
+	fixture.region.press_rail_toggle(fixture.signals); // Opens the drawer on Signals.
+	REQUIRE(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.signals);
+
+	fixture.region.toggle_side_mode(Side::RIGHT);
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+
+	fixture.region.toggle_side_mode(Side::RIGHT);
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.signals);
+	const Vector<EditorDock *> shown = fixture.shown_docks(Side::RIGHT);
+	REQUIRE(shown.size() == 1);
+	if (shown.size() != 1) {
+		return;
+	}
+	CHECK(shown[0] == fixture.signals);
+}
+
+TEST_CASE("[Editor][SideRail] toggling the mode on a side with no docks leaves the drawer closed") {
+	CollapseFixture fixture;
+	for (EditorDock *dock : fixture.region.get_side_docks(Side::RIGHT)) {
+		fixture.region.set_dock_enabled(dock, false);
+	}
+	REQUIRE(fixture.shown_docks(Side::RIGHT).is_empty());
+
+	fixture.region.toggle_side_mode(Side::RIGHT);
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == nullptr);
+	CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+
+	fixture.region.toggle_side_mode(Side::RIGHT);
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+	CHECK(fixture.shown_docks(Side::RIGHT).is_empty());
+}
+
+TEST_CASE("[Editor][SideRail] toggling one side's mode never affects the other side") {
+	CollapseFixture fixture;
+	fixture.region.press_rail_toggle(fixture.inspector); // Collapses the right side, drawer closed.
+	fixture.region.press_rail_toggle(fixture.inspector); // Reopens the drawer on Inspector.
+	REQUIRE(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	REQUIRE(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.inspector);
+	REQUIRE(fixture.region.get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
+
+	fixture.region.toggle_side_mode(Side::LEFT);
+	CHECK(fixture.region.get_side_mode(Side::LEFT) == SideRailMode::RAILED);
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.inspector);
+
+	fixture.region.toggle_side_mode(Side::LEFT);
+	CHECK(fixture.region.get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
+	CHECK(fixture.region.get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	CHECK(fixture.region.get_drawer_dock(Side::RIGHT) == fixture.inspector);
 }
 
 TEST_CASE("[Editor][SideRail] pressing a non-shown toggle on a docked side only focuses it") {
@@ -581,6 +646,51 @@ TEST_CASE("[Editor][SideRail] collapsing a side in one tile leaves its sibling t
 	h.unmount();
 }
 
+// EditorNode::_toggle_focused_tile_rail resolves the target tile through
+// EditorSceneWorkspace::get_focused_tile() and calls toggle_side_mode on that
+// tile's own region, exactly what this drives against a real split workspace.
+TEST_CASE("[Editor][SideRail] toggling the mode targets only the workspace's focused tile") {
+	RailWorkspaceHarness h;
+	h.mount();
+	h.pump();
+	h.workspace->split(h.workspace->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	h.pump();
+
+	Vector<ScenePaneTile *> tiles = h.workspace->get_tiles();
+	REQUIRE(tiles.size() == 2);
+	if (tiles.size() != 2) {
+		h.unmount();
+		return;
+	}
+
+	ScenePaneTile *focused_tile = h.workspace->get_focused_tile();
+	REQUIRE(focused_tile != nullptr);
+	if (!focused_tile) {
+		h.unmount();
+		return;
+	}
+	ScenePaneTile *other_tile = focused_tile == tiles[0] ? tiles[1] : tiles[0];
+
+	EditorTileDockRegion *focused_region = focused_tile->get_dock_region();
+	EditorTileDockRegion *other_region = other_tile->get_dock_region();
+
+	focused_region->toggle_side_mode(Side::LEFT);
+	h.pump();
+
+	CHECK(focused_region->get_side_mode(Side::LEFT) == SideRailMode::RAILED);
+	CHECK(other_region->get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
+	CHECK(other_region->get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+
+	focused_region->toggle_side_mode(Side::RIGHT);
+	h.pump();
+
+	CHECK(focused_region->get_side_mode(Side::RIGHT) == SideRailMode::RAILED);
+	CHECK(other_region->get_side_mode(Side::LEFT) == SideRailMode::DOCKED);
+	CHECK(other_region->get_side_mode(Side::RIGHT) == SideRailMode::DOCKED);
+
+	h.unmount();
+}
+
 TEST_CASE("[Editor][SideRail] a side whose docks are all disabled keeps its rail") {
 	RailWorkspaceHarness h;
 	h.mount();
@@ -665,6 +775,68 @@ TEST_CASE("[Editor][SideRail] the rail reflects the collapse state it drives") {
 	CHECK(pressed_count == 1);
 
 	h.unmount();
+}
+
+// The real docks/toggle_left_tile_rail and docks/toggle_right_tile_rail
+// shortcuts are registered from deep inside EditorNode's constructor, which no
+// doctest can instantiate (#2010). This mirrors
+// TestEditorBoardShortcuts::"Board switcher chords do not collide with script
+// editor history chords": it exercises the same ED_SHORTCUT/ED_SHORTCUT_OVERRIDE
+// registration entry points production code calls, under test-only paths
+// carrying the exact chords involved, then checks the real
+// Shortcut::matches_event() dispatch logic SceneTree's shortcut_input pass
+// uses. KeyModifierMask::CMD_OR_CTRL resolves at compile time to META on macOS
+// builds and CTRL everywhere else (core/os/keyboard.h), so this test is
+// meaningful on every platform it is compiled for.
+TEST_CASE("[Editor][SideRail] tile rail toggle chords do not collide with any other editor shortcut") {
+	ERR_FAIL_NULL(EditorSettings::get_singleton());
+
+	Ref<Shortcut> toggle_left = ED_SHORTCUT("test/toggle_left_tile_rail", "Toggle Left Tile Rail",
+			KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::BRACKETLEFT);
+	Ref<Shortcut> toggle_right = ED_SHORTCUT("test/toggle_right_tile_rail", "Toggle Right Tile Rail",
+			KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::BRACKETRIGHT);
+
+	Ref<InputEventKey> toggle_left_event = InputEventKey::create_reference(KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::BRACKETLEFT);
+	Ref<InputEventKey> toggle_right_event = InputEventKey::create_reference(KeyModifierMask::CMD_OR_CTRL | KeyModifierMask::SHIFT | Key::BRACKETRIGHT);
+
+	CHECK(toggle_left->matches_event(toggle_left_event));
+	CHECK(toggle_right->matches_event(toggle_right_event));
+
+	// editor/animation_editor: CMD_OR_CTRL + BracketLeft/Right (no Shift), for
+	// nudging audio track start/end offsets.
+	Ref<Shortcut> set_start_offset = ED_SHORTCUT("test/set_start_offset", "Set Start Offset", KeyModifierMask::CMD_OR_CTRL | Key::BRACKETLEFT);
+	Ref<Shortcut> set_end_offset = ED_SHORTCUT("test/set_end_offset", "Set End Offset", KeyModifierMask::CMD_OR_CTRL | Key::BRACKETRIGHT);
+	CHECK_FALSE(set_start_offset->matches_event(toggle_left_event));
+	CHECK_FALSE(set_end_offset->matches_event(toggle_right_event));
+	CHECK_FALSE(toggle_left->matches_event(InputEventKey::create_reference(KeyModifierMask::CMD_OR_CTRL | Key::BRACKETLEFT)));
+	CHECK_FALSE(toggle_right->matches_event(InputEventKey::create_reference(KeyModifierMask::CMD_OR_CTRL | Key::BRACKETRIGHT)));
+
+	// script_editor/history_previous and /history_next: Alt+Left/Right, with a
+	// macOS override to Alt+Meta+Left/Right — the exact family of chord that
+	// caused the #1977 board-shortcut collision.
+	Ref<Shortcut> history_previous = ED_SHORTCUT("test/history_previous", "History Previous", KeyModifierMask::ALT | Key::LEFT);
+	ED_SHORTCUT_OVERRIDE("test/history_previous", "macos", KeyModifierMask::ALT | KeyModifierMask::META | Key::LEFT);
+	Ref<Shortcut> history_next = ED_SHORTCUT("test/history_next", "History Next", KeyModifierMask::ALT | Key::RIGHT);
+	ED_SHORTCUT_OVERRIDE("test/history_next", "macos", KeyModifierMask::ALT | KeyModifierMask::META | Key::RIGHT);
+	CHECK_FALSE(history_previous->matches_event(toggle_left_event));
+	CHECK_FALSE(history_next->matches_event(toggle_right_event));
+	CHECK_FALSE(toggle_left->matches_event(InputEventKey::create_reference(KeyModifierMask::ALT | Key::LEFT)));
+	CHECK_FALSE(toggle_right->matches_event(InputEventKey::create_reference(KeyModifierMask::ALT | Key::RIGHT)));
+
+	// sprite_frames/move_left and /move_right: CMD_OR_CTRL+Left/Right, with no
+	// Shift, so textually close to the rail chords but not identical.
+	Ref<Shortcut> move_left = ED_SHORTCUT("test/move_left", "Move Frame Left", KeyModifierMask::CMD_OR_CTRL | Key::LEFT);
+	Ref<Shortcut> move_right = ED_SHORTCUT("test/move_right", "Move Frame Right", KeyModifierMask::CMD_OR_CTRL | Key::RIGHT);
+	CHECK_FALSE(move_left->matches_event(toggle_left_event));
+	CHECK_FALSE(move_right->matches_event(toggle_right_event));
+
+	// editor/previous_board and /next_board: CMD_OR_CTRL+PageUp/PageDown,
+	// unrelated keys, included as a sanity check that a different key on the
+	// same modifier set is never mistaken for a match.
+	Ref<Shortcut> previous_board = ED_SHORTCUT("test/previous_board", "Previous Board", KeyModifierMask::CMD_OR_CTRL | Key::PAGEUP);
+	Ref<Shortcut> next_board = ED_SHORTCUT("test/next_board", "Next Board", KeyModifierMask::CMD_OR_CTRL | Key::PAGEDOWN);
+	CHECK_FALSE(previous_board->matches_event(toggle_left_event));
+	CHECK_FALSE(next_board->matches_event(toggle_right_event));
 }
 
 } // namespace TestSideRailCollapse
