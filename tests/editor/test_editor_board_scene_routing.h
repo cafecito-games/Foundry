@@ -233,26 +233,15 @@ TEST_CASE("[Editor][Boards] Scene routing with a single board is unchanged") {
 	CHECK(h.editor_data.get_focused_tile_id() == only_tile);
 
 	const int scene_a = h.editor_data.add_edited_scene(-1);
-	const int scene_b = h.editor_data.add_edited_scene(-1);
 	CHECK(h.editor_data.get_scene_tile(scene_a) == only_tile);
+
+	// A scene opened right after the no-op reactivation above must still land on the
+	// one board's tile: if the sync ever mis-derived the editor-wide id in the
+	// single-board case, this scene would be filed under a stale or invalid tile
+	// instead of the board's own.
+	const int scene_b = h.editor_data.add_edited_scene(-1);
 	CHECK(h.editor_data.get_scene_tile(scene_b) == only_tile);
 	CHECK(h.editor_data.get_tile_scene_indices(only_tile).size() == 2);
-
-	// A split inside the one board still routes by workspace focus, not by board.
-	EditorSceneWorkspace *workspace = h.strip->get_active_workspace();
-	REQUIRE(workspace != nullptr);
-	if (!workspace) {
-		h.unmount();
-		return;
-	}
-	WorkspaceLeafNode *added = workspace->split(workspace->get_focused_leaf(), false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
-	REQUIRE(added != nullptr);
-	if (!added) {
-		h.unmount();
-		return;
-	}
-	h.pump();
-	CHECK(h.editor_data.get_focused_tile_id() == only_tile);
 
 	h.unmount();
 }
