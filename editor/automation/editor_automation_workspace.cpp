@@ -324,21 +324,30 @@ bool EditorAutomationWorkspace::board_transition_settled(
 	if (p_strip == nullptr) {
 		return true;
 	}
+	// The view's own progress is the exact end of board motion, and it is the only exact one
+	// inside the overview: the overview keeps the strip processing to refresh previews, and
+	// the tail of the ease-out moves so little per frame that two consecutive geometry
+	// samples can come out bit-identical in float while the zoom is still running.
+	if (p_strip->is_transition_animating()) {
+		return false;
+	}
 	if (p_previous_geometry.size() != p_current_geometry.size()) {
 		return false;
 	}
-	// Compared element-wise instead of with a single array equality check so this keeps its
-	// own explicit length guard above, and so any NaN slipping into a sample makes `!=` true
-	// and this predicate report "not settled" rather than silently treating NaN as equal.
+	// Board positions are re-derived in a deferred sort pass, so they can still change on the
+	// frame after the transition itself finished, and they also move for reasons no
+	// transition drives, such as a board being added or removed. Requiring two consecutive
+	// samples to agree covers that settling. Compared element-wise instead of with a single
+	// array equality check so this keeps its own explicit length guard above, and so any NaN
+	// slipping into a sample makes `!=` true and this predicate report "not settled" rather
+	// than silently treating NaN as equal.
 	for (int i = 0; i < p_current_geometry.size(); i++) {
 		if (p_previous_geometry[i] != p_current_geometry[i]) {
 			return false;
 		}
 	}
-	// The strip processes for as long as a slide is in flight, and keeps processing while
-	// the overview is up to drive its throttled preview refresh. So the process flag is an
-	// exact "slide landed" signal outside the overview, and inside it the geometry above is
-	// what says the zoom stopped.
+	// Outside the overview the strip stops processing on precisely the frame the slide lands
+	// and dormancy settles, so keep requiring that; inside the overview it never stops.
 	return p_strip->is_overview_active() || !p_strip->is_processing();
 }
 

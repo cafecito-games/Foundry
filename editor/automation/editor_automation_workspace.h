@@ -66,10 +66,10 @@ public:
 	// behind the board_transition_settled wait condition.
 	static PackedVector2Array capture_board_geometry(const EditorBoardStrip *p_strip);
 
-	// True once no board is still moving. Geometry that stopped changing is what an agent
-	// actually waits on, and it covers the overview zoom as well as a board switch; the
-	// strip's process flag additionally pins the switch case exactly, because the strip
-	// stops processing on the same frame the slide lands and dormancy settles.
+	// True once no board is still moving. The strip's transition progress is the exact end of
+	// board motion for both a switch and an overview zoom; stable geometry across two frames
+	// additionally covers the deferred layout pass and board list changes, and outside the
+	// overview the strip's process flag pins the moment dormancy settles.
 	static bool board_transition_settled(
 			const EditorBoardStrip *p_strip,
 			const PackedVector2Array &p_previous_geometry,

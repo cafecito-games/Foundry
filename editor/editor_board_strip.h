@@ -231,6 +231,13 @@ public:
 	void set_overview(bool p_overview);
 	bool is_overview_active() const { return board_view.is_overview_active(); }
 
+	// True while a board switch or an overview zoom is still in flight, and false from the
+	// frame its progress reaches the target onwards. Exposed because the strip's own process
+	// flag is not a usable "motion finished" signal inside the overview: the overview keeps
+	// processing after its zoom lands, to drive the throttled preview refresh. Observers that
+	// need to know when board motion is over -- automation waits above all -- read this.
+	bool is_transition_animating() const { return board_view.is_animating(); }
+
 	// Re-draws the overview captions from each board's current title, or does nothing
 	// outside the overview. The captions are snapshotted text, not bound to the board's
 	// title property, so a rename that happens while the overview is up -- the title-bar
