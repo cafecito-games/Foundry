@@ -73,6 +73,31 @@ struct BoardStripHarness {
 	}
 };
 
+// Stands in for EditorNode's board scene-close handler. The strip never discards edited
+// scenes itself; it asks, and the editor answers once its per-scene prompts are done.
+struct CloseHandlerRecord {
+	int board_index = -1;
+	PackedInt32Array scene_indices;
+	int call_count = 0;
+	bool allow = true;
+
+	void reset(bool p_allow) {
+		board_index = -1;
+		scene_indices.clear();
+		call_count = 0;
+		allow = p_allow;
+	}
+};
+
+static CloseHandlerRecord close_handler_record;
+
+static bool record_board_close(int p_board_index, const PackedInt32Array &p_scene_indices) {
+	close_handler_record.board_index = p_board_index;
+	close_handler_record.scene_indices = p_scene_indices;
+	close_handler_record.call_count++;
+	return close_handler_record.allow;
+}
+
 static HashSet<int> collect_leaf_ids(EditorSceneWorkspace *p_workspace) {
 	HashSet<int> ids;
 	for (WorkspaceLeafNode *leaf : p_workspace->get_leaves()) {
@@ -185,13 +210,228 @@ TEST_CASE("[Editor][Boards] Leaf and tile lookup spans dormant boards") {
 	CHECK(h.strip->find_tile_by_id(dormant_leaf->get_leaf_id()) == dormant_leaf->get_pane_tile());
 	CHECK(h.strip->get_workspaces().size() == 2);
 
-	h.strip->set_active_index(1);
+	h.strip->set_active_board(1);
 	h.pump();
 	CHECK(h.strip->get_active_workspace() == second_board->get_workspace());
 	CHECK(first_board->is_dormant());
 	CHECK_FALSE(second_board->is_dormant());
 	// The board left behind remembers where the user was.
 	CHECK(first_board->get_remembered_focused_leaf_id() == first_board->get_workspace()->get_focused_leaf_id());
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Boards can be added, activated, and closed") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	SIGNAL_WATCH(h.strip, "board_added");
+	SIGNAL_WATCH(h.strip, "active_board_changed");
+	SIGNAL_WATCH(h.strip, "board_removed");
+
+	EditorBoard *second = h.strip->add_board();
+	REQUIRE(second != nullptr);
+	h.pump();
+	CHECK(h.strip->get_board_count() == 2);
+	CHECK(second->get_workspace()->get_leaf_count() == 1);
+	CHECK(h.strip->get_board_index(second) == 1);
+	SIGNAL_CHECK("board_added", { { 1 } });
+
+	// #1970 locked decision 5: leaf ids are editor-wide, so two boards never share one.
+	const int leaf_a = h.strip->get_board(0)->get_workspace()->get_focused_leaf()->get_leaf_id();
+	const int leaf_b = second->get_workspace()->get_focused_leaf()->get_leaf_id();
+	CHECK(leaf_a != leaf_b);
+
+	h.strip->set_active_board(1);
+	h.pump();
+	CHECK(h.strip->get_active_index() == 1);
+	CHECK_FALSE(h.strip->get_board(1)->is_dormant());
+	CHECK(h.strip->get_board(0)->is_dormant());
+	SIGNAL_CHECK("active_board_changed", { { 1 } });
+
+	// Re-activating the board already on screen is not a switch and must stay silent.
+	h.strip->set_active_board(1);
+	h.pump();
+	SIGNAL_CHECK_FALSE("active_board_changed");
+
+	// Closing the visible board hands the screen to a neighbour rather than leaving the
+	// editor with no live board.
+	CHECK(h.strip->close_board(1));
+	h.pump();
+	CHECK(h.strip->get_board_count() == 1);
+	CHECK(h.strip->get_active_index() == 0);
+	CHECK_FALSE(h.strip->get_board(0)->is_dormant());
+	SIGNAL_CHECK("board_removed", { { 1 } });
+	SIGNAL_CHECK("active_board_changed", { { 0 } });
+
+	SIGNAL_UNWATCH(h.strip, "board_added");
+	SIGNAL_UNWATCH(h.strip, "active_board_changed");
+	SIGNAL_UNWATCH(h.strip, "board_removed");
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] The last board cannot be closed") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	SIGNAL_WATCH(h.strip, "board_removed");
+
+	CHECK(h.strip->get_board_count() == 1);
+	CHECK_FALSE(h.strip->close_board(0));
+	CHECK(h.strip->get_board_count() == 1);
+	CHECK(h.strip->get_active_board() != nullptr);
+	SIGNAL_CHECK_FALSE("board_removed");
+
+	SIGNAL_UNWATCH(h.strip, "board_removed");
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Closing a board with scenes goes through the scene-close handler") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *second = h.strip->add_board("Second");
+	REQUIRE(second != nullptr);
+	h.pump();
+
+	const int second_leaf = second->get_workspace()->get_focused_leaf()->get_leaf_id();
+	h.editor_data.register_tile(second_leaf);
+	h.editor_data.set_focused_tile_id(second_leaf);
+	const int scene_index = h.editor_data.add_edited_scene(-1);
+	REQUIRE(h.editor_data.get_scene_tile(scene_index) == second_leaf);
+
+	// With no handler installed the strip refuses rather than discarding the scene.
+	CHECK_FALSE(h.strip->close_board(1));
+	CHECK(h.strip->get_board_count() == 2);
+
+	// A handler that declines -- the editor's answer while unsaved-changes prompts are
+	// still on screen, and its final answer when one of them is cancelled -- leaves the
+	// board and its scene intact.
+	h.strip->set_board_scene_close_handler(callable_mp_static(&record_board_close));
+	close_handler_record.reset(false);
+	CHECK_FALSE(h.strip->close_board(1));
+	CHECK(close_handler_record.call_count == 1);
+	// The handler is told which board is closing and every scene index it owns.
+	CHECK(close_handler_record.board_index == 1);
+	REQUIRE(close_handler_record.scene_indices.size() == 1);
+	CHECK(close_handler_record.scene_indices[0] == scene_index);
+	CHECK(h.strip->get_board_count() == 2);
+	CHECK(h.editor_data.get_edited_scene_count() == 1);
+	CHECK(h.editor_data.get_scene_tile(scene_index) == second_leaf);
+
+	// Once the editor reports every scene dealt with, the board goes.
+	close_handler_record.reset(true);
+	CHECK(h.strip->close_board(1));
+	CHECK(close_handler_record.call_count == 1);
+	CHECK(h.strip->get_board_count() == 1);
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Activating a board restores its remembered focus") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *second = h.strip->add_board("Second");
+	REQUIRE(second != nullptr);
+	EditorSceneWorkspace *workspace = second->get_workspace();
+	REQUIRE(workspace != nullptr);
+	WorkspaceLeafNode *initial_leaf = workspace->get_focused_leaf();
+	REQUIRE(initial_leaf != nullptr);
+	WorkspaceLeafNode *split_leaf = workspace->split(initial_leaf, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	REQUIRE(split_leaf != nullptr);
+	h.pump();
+
+	// The strip only requests focus; applying it is the editor's job, so stand in for
+	// EditorNode's leaf_focus_requested handler.
+	workspace->connect("leaf_focus_requested", callable_mp(workspace, &EditorSceneWorkspace::set_focused_leaf));
+
+	h.strip->set_active_board(1);
+	workspace->set_focused_leaf(split_leaf->get_leaf_id());
+	h.pump();
+
+	h.strip->set_active_board(0);
+	h.pump();
+	CHECK(second->get_remembered_focused_leaf_id() == split_leaf->get_leaf_id());
+
+	// A scene closing on the dormant board can move its focus while the user is away;
+	// coming back must land on the leaf the user left, not on wherever it drifted.
+	workspace->set_focused_leaf(initial_leaf->get_leaf_id());
+
+	h.strip->set_active_board(1);
+	h.pump();
+	CHECK(workspace->get_focused_leaf_id() == split_leaf->get_leaf_id());
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] Editor-wide activation is rejected for leaves on dormant boards") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *first = h.strip->get_board(0);
+	EditorBoard *second = h.strip->add_board("Second");
+	REQUIRE(second != nullptr);
+	h.pump();
+
+	const int active_leaf = first->get_workspace()->get_focused_leaf()->get_leaf_id();
+	const int dormant_leaf = second->get_workspace()->get_focused_leaf()->get_leaf_id();
+
+	// A dormant board's pane replays its persisted active tab after the restore bracket
+	// has closed. Honouring that would drag editor-wide focus and the edited scene onto
+	// a board the user cannot see, which is silent: nothing fails, the wrong board wins.
+	CHECK(h.strip->is_leaf_on_active_board(active_leaf));
+	CHECK_FALSE(h.strip->is_leaf_on_active_board(dormant_leaf));
+
+	h.strip->set_active_board(1);
+	h.pump();
+	CHECK_FALSE(h.strip->is_leaf_on_active_board(active_leaf));
+	CHECK(h.strip->is_leaf_on_active_board(dormant_leaf));
+
+	// A leaf that belongs to no board at all is not a cross-board conflict, so it is not
+	// rejected; callers keep their own null handling.
+	CHECK(h.strip->is_leaf_on_active_board(9999));
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Boards] A scene open on a dormant board is revealed where it lives") {
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *second = h.strip->add_board("Second");
+	REQUIRE(second != nullptr);
+	h.pump();
+
+	EditorSceneWorkspace *dormant_workspace = second->get_workspace();
+	const int dormant_leaf = dormant_workspace->get_focused_leaf()->get_leaf_id();
+	h.editor_data.register_tile(dormant_leaf);
+	h.editor_data.set_focused_tile_id(dormant_leaf);
+	const int scene_index = h.editor_data.add_edited_scene(-1);
+	REQUIRE(h.editor_data.get_scene_tile(scene_index) == dormant_leaf);
+	h.pump();
+
+	// This is the resolution load_scene() performs when the requested path is already
+	// open: the owning board is found across the whole strip, activated, and only then
+	// asked to focus the tab. Resolving through the active board alone would leave the
+	// current scene pointing at a tile the user cannot see.
+	EditorBoard *owner = h.strip->find_board_for_leaf(h.editor_data.get_scene_tile(scene_index));
+	REQUIRE(owner == second);
+	h.strip->set_active_board(h.strip->get_board_index(owner));
+	h.pump();
+	CHECK(h.strip->get_active_board() == second);
+	CHECK(owner->get_workspace()->focus_scene_tab(scene_index));
+	CHECK(dormant_workspace->get_focused_leaf_id() == dormant_leaf);
+
+	// The scene's context stays resolvable from the strip throughout, which is what
+	// keeps _update_tile_display_attachments from deactivating scenes it cannot place.
+	CHECK(h.strip->find_tile_by_id(h.editor_data.get_scene_tile(scene_index)) != nullptr);
 
 	h.unmount();
 }

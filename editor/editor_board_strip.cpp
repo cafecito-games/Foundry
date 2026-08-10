@@ -31,6 +31,7 @@
 #include "editor/editor_board_strip.h"
 
 #include "editor/editor_board.h"
+#include "editor/editor_data.h"
 
 #include "core/io/config_file.h"
 
@@ -52,6 +53,12 @@ void EditorBoardStrip::_notification(int p_what) {
 void EditorBoardStrip::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("boards_about_to_restore"));
 	ADD_SIGNAL(MethodInfo("boards_restored"));
+	ADD_SIGNAL(MethodInfo("board_added", PropertyInfo(Variant::INT, "index")));
+	// Emitted while the board still exists, so listeners can relocate editor-wide state
+	// parented into it and drop the registrations keyed on its leaves.
+	ADD_SIGNAL(MethodInfo("board_about_to_close", PropertyInfo(Variant::INT, "index")));
+	ADD_SIGNAL(MethodInfo("board_removed", PropertyInfo(Variant::INT, "index")));
+	ADD_SIGNAL(MethodInfo("active_board_changed", PropertyInfo(Variant::INT, "index")));
 }
 
 EditorBoardStrip *EditorBoardStrip::create(EditorSelection *p_editor_selection, EditorData *p_editor_data) {
@@ -65,7 +72,73 @@ EditorBoardStrip *EditorBoardStrip::create(EditorSelection *p_editor_selection, 
 }
 
 EditorBoard *EditorBoardStrip::add_board(const String &p_title) {
-	return _append_board(next_board_id, p_title);
+	const String title = p_title.is_empty() ? vformat(TTR("Board %d"), boards.size() + 1) : p_title;
+	EditorBoard *board = _append_board(next_board_id, title);
+	ERR_FAIL_NULL_V(board, nullptr);
+	// Restores go through _append_board directly: boards_restored already rewires every
+	// board at once, and emitting per board would wire the restored ones twice.
+	emit_signal(SNAME("board_added"), boards.size() - 1);
+	return board;
+}
+
+bool EditorBoardStrip::close_board(int p_index) {
+	ERR_FAIL_INDEX_V(p_index, boards.size(), false);
+	// A boardless editor has nowhere to put the docks, the scene-mode surface, or the
+	// current scene, so the last board is not closable.
+	if (boards.size() <= 1) {
+		return false;
+	}
+
+	EditorBoard *board = boards[p_index];
+	ERR_FAIL_NULL_V(board, false);
+
+	const PackedInt32Array scene_indices = _collect_board_scene_indices(board);
+	if (!scene_indices.is_empty()) {
+		if (!board_scene_close_handler.is_valid()) {
+			return false;
+		}
+		if (!bool(board_scene_close_handler.call(p_index, scene_indices))) {
+			return false;
+		}
+		// The handler runs arbitrary editor code. Re-validate rather than trusting that
+		// the board set survived it unchanged.
+		ERR_FAIL_INDEX_V(p_index, boards.size(), false);
+		ERR_FAIL_COND_V(boards[p_index] != board, false);
+	}
+
+	// Activate a neighbour before the outgoing board is torn down so the editor is
+	// never left without a live board.
+	if (p_index == active_index) {
+		set_active_board(p_index > 0 ? p_index - 1 : p_index + 1);
+	}
+
+	emit_signal(SNAME("board_about_to_close"), p_index);
+
+	boards.remove_at(p_index);
+	remove_child(board);
+	memdelete(board);
+
+	if (active_index > p_index) {
+		active_index--;
+	}
+	queue_sort();
+	emit_signal(SNAME("board_removed"), p_index);
+	return true;
+}
+
+PackedInt32Array EditorBoardStrip::_collect_board_scene_indices(const EditorBoard *p_board) const {
+	PackedInt32Array indices;
+	ERR_FAIL_NULL_V(p_board, indices);
+	ERR_FAIL_NULL_V(editor_data, indices);
+
+	EditorSceneWorkspace *workspace = p_board->get_workspace();
+	ERR_FAIL_NULL_V(workspace, indices);
+	for (WorkspaceLeafNode *leaf : workspace->get_leaves()) {
+		for (const int scene_index : editor_data->get_tile_scene_indices(leaf->get_leaf_id())) {
+			indices.push_back(scene_index);
+		}
+	}
+	return indices;
 }
 
 EditorBoard *EditorBoardStrip::_append_board(int p_board_id, const String &p_title) {
@@ -113,26 +186,49 @@ EditorSceneWorkspace *EditorBoardStrip::get_active_workspace() const {
 	return board ? board->get_workspace() : nullptr;
 }
 
-void EditorBoardStrip::set_active_index(int p_index) {
+int EditorBoardStrip::get_board_index(const EditorBoard *p_board) const {
+	for (int i = 0; i < boards.size(); i++) {
+		if (boards[i] == p_board) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+void EditorBoardStrip::set_active_board(int p_index) {
 	ERR_FAIL_INDEX(p_index, boards.size());
 	if (p_index == active_index) {
 		return;
 	}
 
-	if (EditorBoard *outgoing = get_active_board()) {
+	EditorBoard *outgoing = get_active_board();
+	EditorBoard *incoming = boards[p_index];
+	if (outgoing) {
 		outgoing->remember_focused_leaf_id(outgoing->get_workspace()->get_focused_leaf_id());
+	}
+	// Wake before sleeping: a frame in which every board is hidden would tear down the
+	// live scene viewports and re-create them on the next frame.
+	incoming->set_dormant(false);
+	if (outgoing && outgoing != incoming) {
 		outgoing->set_dormant(true);
 	}
+	// active_index is committed before the focus request, because the editor resolves
+	// leaf_focus_requested through the active board's workspace.
 	active_index = p_index;
-	boards[active_index]->set_dormant(false);
 	queue_sort();
+
+	EditorSceneWorkspace *workspace = incoming->get_workspace();
+	const int remembered_leaf_id = incoming->get_remembered_focused_leaf_id();
+	if (workspace && workspace->get_leaf_by_id(remembered_leaf_id)) {
+		workspace->request_leaf_focus(remembered_leaf_id);
+	}
+
+	emit_signal(SNAME("active_board_changed"), active_index);
 }
 
-void EditorBoardStrip::set_active_board(EditorBoard *p_board) {
-	ERR_FAIL_NULL(p_board);
-	const int index = boards.find(p_board);
-	ERR_FAIL_COND(index < 0);
-	set_active_index(index);
+bool EditorBoardStrip::is_leaf_on_active_board(int p_leaf_id) const {
+	EditorBoard *owner = find_board_for_leaf(p_leaf_id);
+	return owner == nullptr || owner == get_active_board();
 }
 
 Vector<EditorSceneWorkspace *> EditorBoardStrip::get_workspaces() const {
