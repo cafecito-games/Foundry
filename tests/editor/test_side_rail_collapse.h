@@ -50,6 +50,7 @@
 #include "scene/main/scene_tree.h"
 
 #include "tests/test_macros.h"
+#include "tests/test_tools.h"
 
 namespace TestSideRailCollapse {
 
@@ -69,7 +70,7 @@ struct CollapseFixture {
 	EditorDock *signals = nullptr;
 	EditorDock *groups = nullptr;
 
-	CollapseFixture() {
+	CollapseFixture(bool p_make_docks_focusable = true) {
 		body = memnew(HSplitContainer);
 		SceneTree::get_singleton()->get_root()->add_child(body);
 		center = memnew(Control);
@@ -79,12 +80,14 @@ struct CollapseFixture {
 		scene = memnew(EditorDock);
 		scene->set_title("Scene");
 		scene->set_layout_key("Scene");
-		scene->set_focus_mode(Control::FOCUS_ALL);
+		if (p_make_docks_focusable) {
+			scene->set_focus_mode(Control::FOCUS_ALL);
+		}
 		region.place_left(scene);
 
-		inspector = _add_right("Inspector");
-		signals = _add_right("Signals");
-		groups = _add_right("Groups");
+		inspector = _add_right("Inspector", p_make_docks_focusable);
+		signals = _add_right("Signals", p_make_docks_focusable);
+		groups = _add_right("Groups", p_make_docks_focusable);
 	}
 
 	~CollapseFixture() {
@@ -92,11 +95,13 @@ struct CollapseFixture {
 		memdelete(body);
 	}
 
-	EditorDock *_add_right(const String &p_title) {
+	EditorDock *_add_right(const String &p_title, bool p_make_focusable = true) {
 		EditorDock *dock = memnew(EditorDock);
 		dock->set_title(p_title);
 		dock->set_layout_key(p_title);
-		dock->set_focus_mode(Control::FOCUS_ALL);
+		if (p_make_focusable) {
+			dock->set_focus_mode(Control::FOCUS_ALL);
+		}
 		region.add_right(dock);
 		return dock;
 	}
@@ -311,6 +316,26 @@ TEST_CASE("[Editor][SideRail] pressing a non-shown toggle on a docked side only 
 		return;
 	}
 	CHECK(shown[0] == fixture.groups);
+}
+
+TEST_CASE("[Editor][SideRail] selecting a production-focus dock is warning-free and preserves valid focus") {
+	CollapseFixture fixture(false);
+	REQUIRE(fixture.groups->get_focus_mode_with_override() == Control::FOCUS_NONE);
+
+	fixture.center->set_focus_mode(Control::FOCUS_ALL);
+	fixture.center->grab_focus();
+	REQUIRE(SceneTree::get_singleton()->get_root()->gui_get_focus_owner() == fixture.center);
+
+	ErrorDetector error_detector;
+	fixture.region.press_rail_toggle(fixture.groups);
+
+	CHECK_FALSE(error_detector.has_error);
+	CHECK(fixture.right_tabs()->get_current_tab_control() == fixture.groups);
+	Control *focus_owner = SceneTree::get_singleton()->get_root()->gui_get_focus_owner();
+	REQUIRE(focus_owner != nullptr);
+	CHECK(focus_owner == fixture.center);
+	CHECK(focus_owner->is_visible_in_tree());
+	CHECK(focus_owner->get_focus_mode_with_override() != Control::FOCUS_NONE);
 }
 
 TEST_CASE("[Editor][SideRail] disabling the drawer dock never leaves the drawer open on it") {

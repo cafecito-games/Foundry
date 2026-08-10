@@ -38,6 +38,7 @@
 #include "scene/gui/control.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_container.h"
+#include "scene/main/scene_tree.h"
 
 static TileDockGapMap _tile_dock_gap_map_for_body(HSplitContainer *p_body, Control *p_center_host) {
 	TileDockGapMap map;
@@ -389,7 +390,16 @@ void EditorTileDockRegion::focus_dock(EditorDock *p_dock) {
 			tabs->set_current_tab(tab_index);
 		}
 	}
-	p_dock->grab_focus();
+	// Production EditorDock roots are layout containers and commonly keep the
+	// default FOCUS_NONE. In that case, leave focus on the activating control.
+	const Control::FocusMode focus_mode = p_dock->get_focus_mode_with_override();
+	const bool focus_visible = p_dock->is_visible_in_tree();
+	const bool accessibility_focus = focus_visible && focus_mode == Control::FOCUS_ACCESSIBILITY &&
+			p_dock->get_tree()->is_accessibility_enabled();
+	if (focus_visible &&
+			(focus_mode == Control::FOCUS_ALL || focus_mode == Control::FOCUS_CLICK || accessibility_focus)) {
+		p_dock->grab_focus();
+	}
 }
 
 void EditorTileDockRegion::set_dock_enabled(EditorDock *p_dock, bool p_enabled) {
