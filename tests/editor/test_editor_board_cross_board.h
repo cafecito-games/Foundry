@@ -35,10 +35,13 @@
 #include "editor/editor_data.h"
 #include "editor/editor_scene_workspace.h"
 
+#include "core/io/json.h"
+
 #include "scene/2d/node_2d.h"
 #include "scene/gui/control.h"
 #include "scene/main/window.h"
 
+#include "tests/editor/editor_workflow_test_fixtures.h"
 #include "tests/editor/test_workspace_tab_model.h"
 #include "tests/test_macros.h"
 
@@ -326,6 +329,59 @@ TEST_CASE("[Editor][Boards] handle_tab_strip_drop moves a scene tab across board
 	CHECK(pane_a->get_tab_count() == 0);
 
 	h.unmount();
+}
+
+// #2047: the rosette/tile-body drop path resolved its destination leaf only in
+// the active board's workspace, so a drop onto a non-active board's tile body
+// failed with a null target leaf while the tab-strip path (which resolves the
+// destination across boards) worked. A strip mounted on its own cannot reach
+// that code: the resolution lives in EditorNode, and the failing gesture is a
+// real pointer drag. This drives a real editor subprocess through the workflow
+// harness so the whole path -- tab drag, drop overlay, EditorNode resolution --
+// runs as a user's drag does.
+TEST_CASE("[Editor][Boards] Cross-board tile body drop workflow subprocess") {
+	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Re-run with DISPLAY set so the editor subprocess starts.");
+		return;
+	}
+
+	const String project_path = EditorWorkflowTestFixtures::prepare_disposable_project();
+	if (project_path.is_empty()) {
+		FAIL("Failed to prepare a temporary workflow project copy.");
+		return;
+	}
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=cross_board_tile_body_drop");
+
+	int exit_code = -1;
+	const String output = EditorWorkflowTestFixtures::workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+
+	const int marker = output.find("FOUNDRY_AUTOMATION_WORKFLOW");
+	CHECK_MESSAGE(marker >= 0, "Workflow result line was not printed.");
+	if (marker < 0) {
+		return;
+	}
+
+	const int line_start = marker + String("FOUNDRY_AUTOMATION_WORKFLOW ").length();
+	const int line_end = output.find_char('\n', line_start);
+	const String json_text = line_end >= 0 ? output.substr(line_start, line_end - line_start) : output.substr(line_start);
+	JSON json;
+	if (json.parse(json_text.strip_edges()) != OK) {
+		FAIL("Workflow result line was not valid JSON: ", json_text);
+		return;
+	}
+	const Dictionary payload = json.get_data();
+	CHECK(String(payload.get("workflow", String())) == "cross_board_tile_body_drop");
+	CHECK_MESSAGE((bool)payload.get("ok", false), String(payload.get("message", String())));
+	CHECK(exit_code == 0);
 }
 
 } // namespace TestEditorBoardCrossBoard

@@ -142,29 +142,43 @@ void EditorSceneWorkspace::reconcile_empty_leaves() {
 	}
 }
 
+WorkspaceLeafNode *EditorSceneWorkspace::resolve_leaf_by_id_across_boards(int p_leaf_id, EditorSceneWorkspace **r_owning_workspace) {
+	if (r_owning_workspace != nullptr) {
+		*r_owning_workspace = this;
+	}
+	if (WorkspaceLeafNode *own_leaf = get_leaf_by_id(p_leaf_id)) {
+		return own_leaf;
+	}
+	if (board_strip == nullptr) {
+		return nullptr;
+	}
+	EditorBoard *board = board_strip->find_board_for_leaf(p_leaf_id);
+	EditorSceneWorkspace *owning_workspace = board != nullptr ? board->get_workspace() : nullptr;
+	if (owning_workspace == nullptr) {
+		return nullptr;
+	}
+	WorkspaceLeafNode *leaf = owning_workspace->get_leaf_by_id(p_leaf_id);
+	if (leaf != nullptr && r_owning_workspace != nullptr) {
+		*r_owning_workspace = owning_workspace;
+	}
+	return leaf;
+}
+
 WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_drop(int p_source_pane_id, int p_source_tab_index, WorkspaceLeafNode *p_target_leaf, TileDropRegion p_region) {
 	ERR_FAIL_NULL_V(p_target_leaf, nullptr);
 
 	// The target leaf usually belongs to this workspace, but the overview lets a
 	// drop land on a pane owned by a different board. Resolve its owning workspace
-	// through the strip so a split runs on the tree that actually contains the
-	// leaf, rather than mutating this workspace's own leaf list.
+	// so a split runs on the tree that actually contains the leaf, rather than
+	// mutating this workspace's own leaf list.
 	EditorSceneWorkspace *target_workspace = this;
 	if (!leaves.has(p_target_leaf)) {
-		EditorBoard *target_board = board_strip ? board_strip->find_board_for_leaf(p_target_leaf->get_leaf_id()) : nullptr;
-		ERR_FAIL_NULL_V(target_board, nullptr);
-		target_workspace = target_board->get_workspace();
+		ERR_FAIL_NULL_V(resolve_leaf_by_id_across_boards(p_target_leaf->get_leaf_id(), &target_workspace), nullptr);
 		ERR_FAIL_NULL_V(target_workspace, nullptr);
 	}
 
-	WorkspaceLeafNode *source_leaf = get_leaf_by_id(p_source_pane_id);
 	EditorSceneWorkspace *source_workspace = this;
-	if (!source_leaf && board_strip) {
-		if (EditorBoard *source_board = board_strip->find_board_for_leaf(p_source_pane_id)) {
-			source_workspace = source_board->get_workspace();
-			source_leaf = source_workspace ? source_workspace->get_leaf_by_id(p_source_pane_id) : nullptr;
-		}
-	}
+	WorkspaceLeafNode *source_leaf = resolve_leaf_by_id_across_boards(p_source_pane_id, &source_workspace);
 	ERR_FAIL_NULL_V(source_leaf, nullptr);
 	ERR_FAIL_NULL_V(source_workspace, nullptr);
 	WorkspacePane *source_pane = source_leaf->get_workspace_pane();
@@ -241,27 +255,15 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_tab_strip_drop(int p_source_pane
 	// Both endpoints are addressed by id rather than by pointer, so each is
 	// resolved the same way: try this workspace first, then fall back to the
 	// board strip when the id belongs to a sibling board's workspace.
-	WorkspaceLeafNode *dest_leaf = get_leaf_by_id(p_dest_pane_id);
 	EditorSceneWorkspace *target_workspace = this;
-	if (!dest_leaf && board_strip) {
-		if (EditorBoard *target_board = board_strip->find_board_for_leaf(p_dest_pane_id)) {
-			target_workspace = target_board->get_workspace();
-			dest_leaf = target_workspace ? target_workspace->get_leaf_by_id(p_dest_pane_id) : nullptr;
-		}
-	}
+	WorkspaceLeafNode *dest_leaf = resolve_leaf_by_id_across_boards(p_dest_pane_id, &target_workspace);
 	ERR_FAIL_NULL_V(dest_leaf, nullptr);
 	ERR_FAIL_NULL_V(target_workspace, nullptr);
 	WorkspacePane *dest_pane = dest_leaf->get_workspace_pane();
 	ERR_FAIL_NULL_V(dest_pane, nullptr);
 
-	WorkspaceLeafNode *source_leaf = get_leaf_by_id(p_source_pane_id);
 	EditorSceneWorkspace *source_workspace = this;
-	if (!source_leaf && board_strip) {
-		if (EditorBoard *source_board = board_strip->find_board_for_leaf(p_source_pane_id)) {
-			source_workspace = source_board->get_workspace();
-			source_leaf = source_workspace ? source_workspace->get_leaf_by_id(p_source_pane_id) : nullptr;
-		}
-	}
+	WorkspaceLeafNode *source_leaf = resolve_leaf_by_id_across_boards(p_source_pane_id, &source_workspace);
 	ERR_FAIL_NULL_V(source_leaf, nullptr);
 	ERR_FAIL_NULL_V(source_workspace, nullptr);
 	WorkspacePane *source_pane = source_leaf->get_workspace_pane();
@@ -344,7 +346,9 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_scene_drop(int p_scene_idx, Work
 	ERR_FAIL_NULL_V(p_target_leaf, nullptr);
 	ERR_FAIL_NULL_V(editor_data, nullptr);
 	ERR_FAIL_INDEX_V(p_scene_idx, editor_data->get_edited_scene_count(), nullptr);
-	ERR_FAIL_COND_V(!leaves.has(p_target_leaf), nullptr);
+	// Both endpoints may live on another board, so neither is required to be one
+	// of this workspace's own leaves; only that some board hosts them.
+	ERR_FAIL_NULL_V(resolve_leaf_by_id_across_boards(p_target_leaf->get_leaf_id()), nullptr);
 
 	const int source_tile_id = editor_data->get_scene_tile(p_scene_idx);
 
@@ -352,14 +356,15 @@ WorkspaceLeafNode *EditorSceneWorkspace::handle_scene_drop(int p_scene_idx, Work
 	// tab index and delegate to the generic path, syncing once if the pane's tab
 	// strip has not been materialized yet.
 	for (int attempt = 0; attempt < 2; attempt++) {
-		WorkspaceLeafNode *source_leaf = get_leaf_by_id(source_tile_id);
+		EditorSceneWorkspace *source_workspace = this;
+		WorkspaceLeafNode *source_leaf = resolve_leaf_by_id_across_boards(source_tile_id, &source_workspace);
 		WorkspacePane *source_pane = source_leaf ? source_leaf->get_workspace_pane() : nullptr;
 		const int tab_index = source_pane ? source_pane->find_scene_tab_index(p_scene_idx) : -1;
 		if (tab_index >= 0) {
 			return handle_tab_drop(source_tile_id, tab_index, p_target_leaf, p_region);
 		}
-		if (attempt == 0) {
-			sync_scene_tabs_from_editor_data();
+		if (attempt == 0 && source_workspace) {
+			source_workspace->sync_scene_tabs_from_editor_data();
 		}
 	}
 	return nullptr;
