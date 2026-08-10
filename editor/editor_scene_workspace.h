@@ -291,6 +291,11 @@ public:
 	// focused leaf hosts no tile (e.g. a script leaf). Used to keep scene/inspector
 	// docks valid while a script leaf holds workspace focus.
 	ScenePaneTile *get_effective_focused_tile() const;
+	// Leaf id of get_effective_focused_tile(), or -1 when this workspace hosts no scene
+	// tile at all. Call sites that must record the editor-wide focused tile need the id
+	// rather than the control, and deriving it by searching for the returned tile would
+	// duplicate the fallback order.
+	int get_effective_focused_tile_id() const;
 	Vector<ScenePaneTile *> get_tiles() const;
 	int get_tile_count() const;
 

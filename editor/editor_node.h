@@ -752,6 +752,11 @@ private:
 	void _on_board_added(int p_index);
 	void _on_board_about_to_close(int p_index);
 	void _on_board_removed(int p_index);
+	// Brings the editor-wide chrome -- scene tabs, docks, the shared scene-mode surface --
+	// onto the tile the newly active board is focusing. The strip has already re-pointed
+	// EditorData's focused tile by the time this runs, so scene routing is correct even if
+	// the presentation below has to wait for a drop to finish.
+	void _on_active_board_changed(int p_index);
 	// Activates the board p_delta positions away from the active one, wrapping around the
 	// ends of the list. Used by the previous/next board shortcuts.
 	void _activate_relative_board(int p_delta);

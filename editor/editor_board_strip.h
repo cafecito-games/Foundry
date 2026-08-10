@@ -111,6 +111,13 @@ class EditorBoardStrip : public Container, public WorkspaceLeafIdAllocator {
 	// The body of set_active_board() with no overview handling, so the overview's own exit
 	// can drive a switch without recursing back through set_active_board().
 	void _switch_to_board(int p_index);
+	// Re-points EditorData's editor-wide focused tile at the board that just became
+	// active. Scene ownership is keyed on that one id -- a newly opened scene is filed
+	// under it -- while the id itself is otherwise only ever written in response to a
+	// workspace focus change. A board switch is not one: the incoming board's workspace
+	// usually already has the leaf it is meant to focus, so its focus request is a no-op
+	// and nothing else would move the editor-wide id off the outgoing board.
+	void _sync_editor_focused_tile();
 	// Wakes every board, bounds every tile's preview cost, and retargets the view at the
 	// overview layout.
 	void _enter_overview();

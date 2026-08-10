@@ -392,7 +392,29 @@ void EditorBoardStrip::_switch_to_board(int p_index) {
 		workspace->request_leaf_focus(remembered_leaf_id);
 	}
 
+	// After the focus request, so the incoming board's workspace has already settled on
+	// the leaf it means to focus, and before the signal, so every listener observes an
+	// editor-wide focused tile that already names a tile on the new active board.
+	_sync_editor_focused_tile();
+
 	emit_signal(SNAME("active_board_changed"), active_index);
+}
+
+void EditorBoardStrip::_sync_editor_focused_tile() {
+	if (!editor_data) {
+		return;
+	}
+	EditorSceneWorkspace *workspace = get_active_workspace();
+	if (!workspace) {
+		return;
+	}
+	const int tile_id = workspace->get_effective_focused_tile_id();
+	if (tile_id < 0) {
+		// A board of nothing but script leaves owns no scene tile to file scenes under;
+		// leaving the previous id in place beats pointing it at a tile that is not there.
+		return;
+	}
+	editor_data->set_focused_tile_id(tile_id);
 }
 
 void EditorBoardStrip::_advance_transition(real_t p_delta) {
