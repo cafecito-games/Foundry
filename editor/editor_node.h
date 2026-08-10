@@ -352,10 +352,13 @@ private:
 	// tile, focused tile, edited scene). Without this guard a dormant board restored
 	// after the active one would claim editor focus for a board the user cannot see.
 	bool restoring_boards = false;
-	// Index of the board whose scenes are being closed one prompt at a time. The board
+	// Identity of the board whose scenes are being closed one prompt at a time. The board
 	// itself is freed only once that queue drains; cancelling any prompt clears this and
-	// the board survives with every scene intact.
-	int pending_board_close_index = -1;
+	// the board survives with every scene intact. Stored as an instance id rather than a
+	// list index because an unrelated board close can interleave while these prompts are
+	// still on screen and shift every index after it; the finish step re-resolves this id
+	// to a live index instead of trusting a stale position.
+	ObjectID pending_board_close_id;
 	int pending_focus_tile_id = -1;
 	uint64_t pending_focus_tile_generation = 0;
 	Control *global_screen_host = nullptr;

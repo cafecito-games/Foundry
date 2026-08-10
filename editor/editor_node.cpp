@@ -8391,13 +8391,16 @@ bool EditorNode::_close_board_scenes(int p_board_index, const PackedInt32Array &
 	ERR_FAIL_NULL_V(board_strip, false);
 	// One board close at a time: a second request while prompts are still on screen
 	// would interleave two scene queues.
-	ERR_FAIL_COND_V(pending_board_close_index >= 0, false);
+	ERR_FAIL_COND_V(pending_board_close_id.is_valid(), false);
+
+	EditorBoard *board = board_strip->get_board(p_board_index);
+	ERR_FAIL_NULL_V(board, false);
 
 	tab_closing_menu_option = -1;
 	for (const int scene_index : p_scene_indices) {
 		tabs_to_close.push_back(editor_data.get_scene_path(scene_index));
 	}
-	pending_board_close_index = p_board_index;
+	pending_board_close_id = board->get_instance_id();
 
 	// The close is always finished from _proceed_closing_scene_tabs, never from here:
 	// prompts are asynchronous, and even the no-prompt path unwinds through this same
@@ -8407,9 +8410,19 @@ bool EditorNode::_close_board_scenes(int p_board_index, const PackedInt32Array &
 }
 
 void EditorNode::_finish_pending_board_close() {
-	const int index = pending_board_close_index;
-	pending_board_close_index = -1;
-	if (index < 0 || !board_strip) {
+	const ObjectID board_id = pending_board_close_id;
+	pending_board_close_id = ObjectID();
+	if (!board_id.is_valid() || !board_strip) {
+		return;
+	}
+
+	// An unrelated board close can interleave while these prompts were on screen and
+	// shift every index after it, so the id is re-resolved to a live index here rather
+	// than trusting a position captured back when the close was requested. The board
+	// may also already be gone (e.g. a whole-strip restore tore it down), in which case
+	// there is nothing left to close.
+	const int index = board_strip->resolve_board_index(board_id);
+	if (index < 0) {
 		return;
 	}
 	board_strip->close_board(index);
@@ -8792,7 +8805,7 @@ void EditorNode::_layout_menu_option(int p_id) {
 void EditorNode::_proceed_closing_scene_tabs() {
 	List<String>::Element *E = tabs_to_close.front();
 	if (!E) {
-		if (pending_board_close_index >= 0) {
+		if (pending_board_close_id.is_valid()) {
 			// Deferred because this can be reached from inside EditorBoardStrip::close_board
 			// when no scene needed a prompt; freeing the board from that stack would pull the
 			// ground out from under the frame that asked for the close.
@@ -8933,7 +8946,7 @@ void EditorNode::_cancel_close_scene_tab() {
 	tabs_to_close.clear();
 	// Cancelling any one prompt aborts the whole board close: the board and every scene
 	// still in it survive.
-	pending_board_close_index = -1;
+	pending_board_close_id = ObjectID();
 }
 
 void EditorNode::_cancel_confirmation() {

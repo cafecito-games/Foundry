@@ -195,6 +195,17 @@ int EditorBoardStrip::get_board_index(const EditorBoard *p_board) const {
 	return -1;
 }
 
+int EditorBoardStrip::resolve_board_index(ObjectID p_board_id) const {
+	if (!p_board_id.is_valid()) {
+		return -1;
+	}
+	EditorBoard *board = ObjectDB::get_instance<EditorBoard>(p_board_id);
+	if (!board) {
+		return -1;
+	}
+	return get_board_index(board);
+}
+
 void EditorBoardStrip::set_active_board(int p_index) {
 	ERR_FAIL_INDEX(p_index, boards.size());
 	if (p_index == active_index) {

@@ -100,6 +100,13 @@ public:
 	int get_board_index(const EditorBoard *p_board) const;
 	EditorSceneWorkspace *get_active_workspace() const;
 
+	// Re-resolves a board captured by instance id back to its current index. Any board
+	// close can shift every index after it, so a caller that holds on to a board across
+	// an asynchronous gap -- an unsaved-changes prompt, a deferred call -- must re-resolve
+	// through here instead of trusting a position captured before the gap. Returns -1 when
+	// the board no longer exists.
+	int resolve_board_index(ObjectID p_board_id) const;
+
 	// Makes p_index the visible board: the outgoing board remembers its focused leaf,
 	// the incoming one wakes before the outgoing one sleeps so no frame is left without
 	// a live board, and the incoming board's remembered leaf is requested as focused.

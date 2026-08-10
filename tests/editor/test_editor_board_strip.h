@@ -331,6 +331,82 @@ TEST_CASE("[Editor][Boards] Closing a board with scenes goes through the scene-c
 	h.unmount();
 }
 
+TEST_CASE("[Editor][Boards] A pending board close survives an interleaved unrelated close") {
+	// Reproduces issue #1975: a caller that defers a board close across an asynchronous
+	// gap (EditorNode waits on unsaved-changes prompts) must not trust a board index
+	// captured before the gap, because an unrelated close in the meantime shifts every
+	// index after it.
+	BoardStripHarness h;
+	h.mount();
+	h.pump();
+
+	EditorBoard *board_a = h.strip->get_board(0);
+	EditorBoard *board_b = h.strip->add_board("B");
+	REQUIRE(board_b != nullptr);
+	h.pump();
+	EditorBoard *board_c = h.strip->add_board("C");
+	REQUIRE(board_c != nullptr);
+	h.pump();
+
+	REQUIRE(h.strip->get_board_index(board_a) == 0);
+	REQUIRE(h.strip->get_board_index(board_b) == 1);
+	REQUIRE(h.strip->get_board_index(board_c) == 2);
+
+	const int leaf_b = board_b->get_workspace()->get_focused_leaf()->get_leaf_id();
+	h.editor_data.register_tile(leaf_b);
+	h.editor_data.set_focused_tile_id(leaf_b);
+	const int scene_index = h.editor_data.add_edited_scene(-1);
+	REQUIRE(h.editor_data.get_scene_tile(scene_index) == leaf_b);
+
+	h.strip->set_board_scene_close_handler(callable_mp_static(&record_board_close));
+
+	// The handler declines once, standing in for the asynchronous unsaved-changes prompt
+	// that keeps B alive while the editor waits on the user.
+	close_handler_record.reset(false);
+	CHECK_FALSE(h.strip->close_board(1));
+	CHECK(close_handler_record.call_count == 1);
+	CHECK(h.strip->get_board_count() == 3);
+
+	// Capture B's identity the way a deferred caller must: by instance id, not by the
+	// index the handler was called with.
+	const ObjectID pending_board_id = board_b->get_instance_id();
+	const int stale_index = close_handler_record.board_index;
+	REQUIRE(stale_index == 1);
+
+	// An unrelated, scene-less board closes in between and shifts every later index.
+	CHECK(h.strip->close_board(0));
+	h.pump();
+	CHECK(h.strip->get_board_count() == 2);
+
+	// The stale index now names a different board than the one that was actually asked
+	// to close.
+	CHECK(h.strip->get_board_index(board_b) != stale_index);
+	CHECK(h.strip->get_board(stale_index) == board_c);
+
+	// Re-resolving by identity finds B at its new position instead of trusting the stale
+	// index.
+	const int resolved_index = h.strip->resolve_board_index(pending_board_id);
+	CHECK(resolved_index == h.strip->get_board_index(board_b));
+	CHECK(resolved_index != stale_index);
+
+	// Finishing the close at the resolved index removes B and leaves C untouched.
+	SIGNAL_WATCH(h.strip, "board_removed");
+	close_handler_record.reset(true);
+	CHECK(h.strip->close_board(resolved_index));
+	h.pump();
+	SIGNAL_CHECK("board_removed", { { resolved_index } });
+	SIGNAL_UNWATCH(h.strip, "board_removed");
+
+	CHECK(h.strip->get_board_count() == 1);
+	CHECK(h.strip->get_board(0) == board_c);
+
+	// A board id that no longer exists resolves to -1 rather than aliasing whatever now
+	// occupies its old index.
+	CHECK(h.strip->resolve_board_index(pending_board_id) == -1);
+
+	h.unmount();
+}
+
 TEST_CASE("[Editor][Boards] Activating a board restores its remembered focus") {
 	BoardStripHarness h;
 	h.mount();
