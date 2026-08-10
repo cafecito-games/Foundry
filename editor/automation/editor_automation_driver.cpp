@@ -72,6 +72,7 @@ namespace {
 
 String _read_string_option(const Dictionary &p_options, const char *p_key);
 Variant _read_variant_option(const Dictionary &p_options, const char *p_key);
+bool _read_bool_option(const Dictionary &p_options, const char *p_key, bool p_default);
 
 EditorAutomationActionResult _selector_failure(const EditorAutomationSelectorResult &p_selector_result) {
 	String kind = p_selector_result.error_kind;
@@ -1266,6 +1267,79 @@ Vector<Vector2> _read_waypoints(const Dictionary &p_options) {
 	return waypoints;
 }
 
+// `hold: true` and `release: false` are the two spellings for leaving a drag in
+// flight; both keep the button down after the motion path so the caller can
+// observe or photograph the mid-gesture state and finish it with `mouse_up`.
+bool _read_drag_release_option(const Dictionary &p_options) {
+	if (p_options.has("hold")) {
+		return !_read_bool_option(p_options, "hold", false);
+	}
+	return _read_bool_option(p_options, "release", true);
+}
+
+EditorAutomationActionResult _action_mouse_step(
+		const EditorAutomationSnapshot &p_snapshot,
+		const EditorAutomationElement &p_element,
+		const Dictionary &p_options,
+		EditorAutomationRoutePreference p_route_preference,
+		EditorAutomationActionKind p_kind) {
+	if (p_route_preference == EditorAutomationRoutePreference::SEMANTIC) {
+		return EditorAutomationActionResult::failure("unsupported_route", "mouse_down/mouse_move/mouse_up require synthesized input events.");
+	}
+
+	Node *node = nullptr;
+	const EditorAutomationActionResult prepare_result = _prepare_element_for_input(p_snapshot, p_element, node);
+	if (!prepare_result.ok) {
+		return _drag_failure(prepare_result.kind, prepare_result.message, p_snapshot, &p_element, nullptr);
+	}
+
+	Control *control = Object::cast_to<Control>(node);
+	if (control == nullptr) {
+		return _drag_failure("invalid_element", "Pointer step target is not a control.", p_snapshot, &p_element, nullptr);
+	}
+
+	Viewport *viewport = _viewport_for_node(control);
+	if (viewport == nullptr) {
+		return _drag_failure("unsupported_route", "No viewport is available for pointer input.", p_snapshot, &p_element, nullptr);
+	}
+
+	const Vector2 position = p_options.has("target_point")
+			? EditorAutomationInput::resolve_target_point(p_options)
+			: EditorAutomationInput::resolve_position_in_bounds(p_element.bounds, EditorAutomationInput::position_options_for_source(p_options));
+
+	const EditorAutomationInputModifiers modifiers = EditorAutomationInput::parse_modifiers(p_options.get("modifiers", Variant()));
+
+	PackedStringArray events;
+	bool dispatched = false;
+	String route;
+	switch (p_kind) {
+		case EditorAutomationActionKind::MOUSE_DOWN: {
+			const MouseButton button = EditorAutomationInput::parse_mouse_button(String(p_options.get("button", Variant())));
+			dispatched = EditorAutomationInput::begin_mouse_gesture(viewport, position, button, modifiers, events);
+			route = EditorAutomationActionRouteNames::INPUT_MOUSE_DOWN;
+		} break;
+		case EditorAutomationActionKind::MOUSE_MOVE: {
+			dispatched = EditorAutomationInput::move_mouse_gesture(viewport, position, _read_waypoints(p_options), modifiers, events);
+			route = EditorAutomationActionRouteNames::INPUT_MOUSE_MOVE;
+		} break;
+		default: {
+			dispatched = EditorAutomationInput::end_mouse_gesture(viewport, position, modifiers, events);
+			route = EditorAutomationActionRouteNames::INPUT_MOUSE_UP;
+		} break;
+	}
+
+	if (!dispatched) {
+		return _drag_failure("unsupported_route", "Pointer input could not be dispatched.", p_snapshot, &p_element, nullptr);
+	}
+
+	EditorAutomationActionResult result = EditorAutomationActionResult::success(route, p_element.id);
+	result.events = events;
+	result.focus = _focused_element_id(p_snapshot);
+	result.details["dragging"] = viewport->gui_is_dragging();
+	result.details["button_held"] = EditorAutomationInput::get_held_mouse_button() != MouseButton::NONE;
+	return result;
+}
+
 EditorAutomationActionResult _action_drag(
 		const EditorAutomationSnapshot &p_snapshot,
 		const EditorAutomationElement &p_source_element,
@@ -1317,14 +1391,17 @@ EditorAutomationActionResult _action_drag(
 	const MouseButton button = EditorAutomationInput::parse_mouse_button(String(p_options.get("button", Variant())));
 	const Vector<Vector2> waypoints = _read_waypoints(p_options);
 
+	const bool release = _read_drag_release_option(p_options);
+
 	PackedStringArray events;
-	if (!EditorAutomationInput::push_mouse_drag(viewport, source_position, target_position, waypoints, button, modifiers, events)) {
+	if (!EditorAutomationInput::push_mouse_drag(viewport, source_position, target_position, waypoints, button, modifiers, events, release)) {
 		return _drag_failure("unsupported_route", "Drag input could not be dispatched.", p_snapshot, &p_source_element, target_element);
 	}
 
 	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_DRAG, p_source_element.id);
 	result.events = events;
 	result.focus = _focused_element_id(p_snapshot);
+	result.details["holding"] = !release;
 	return result;
 }
 
@@ -1394,14 +1471,17 @@ EditorAutomationActionResult _action_dock(
 	const MouseButton button = EditorAutomationInput::parse_mouse_button(String(p_options.get("button", Variant())));
 	const Vector<Vector2> waypoints = _read_waypoints(p_options);
 
+	const bool release = _read_drag_release_option(p_options);
+
 	PackedStringArray events;
-	if (!EditorAutomationInput::push_mouse_drag(viewport, source_position, target_position, waypoints, button, modifiers, events)) {
+	if (!EditorAutomationInput::push_mouse_drag(viewport, source_position, target_position, waypoints, button, modifiers, events, release)) {
 		return _drag_failure("unsupported_route", "Dock input could not be dispatched.", p_snapshot, &p_source_element, nullptr);
 	}
 
 	EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::INPUT_DOCK, p_source_element.id);
 	result.events = events;
 	result.focus = _focused_element_id(p_snapshot);
+	result.details["holding"] = !release;
 	result.details["target_tile_id"] = target_tile_id;
 	result.details["region"] = EditorAutomationWorkspace::drop_region_name(region);
 	return result;
@@ -1463,6 +1543,17 @@ Variant _read_variant_option(const Dictionary &p_options, const char *p_key) {
 		return Variant();
 	}
 	return p_options.get(p_key, Variant());
+}
+
+bool _read_bool_option(const Dictionary &p_options, const char *p_key, bool p_default) {
+	if (!p_options.has(p_key)) {
+		return p_default;
+	}
+	const Variant value = p_options.get(p_key, Variant());
+	if (value.get_type() == Variant::NIL) {
+		return p_default;
+	}
+	return bool(value);
 }
 
 String _element_summary_from_snapshot(const EditorAutomationSnapshot &p_snapshot, const EditorAutomationElement &p_element) {
@@ -1595,6 +1686,11 @@ EditorAutomationActionResult EditorAutomationDriver::perform(
 			break;
 		case EditorAutomationActionKind::CLICK:
 			result = _action_click(p_snapshot, element, p_options, route_preference);
+			break;
+		case EditorAutomationActionKind::MOUSE_DOWN:
+		case EditorAutomationActionKind::MOUSE_MOVE:
+		case EditorAutomationActionKind::MOUSE_UP:
+			result = _action_mouse_step(p_snapshot, element, p_options, route_preference, action_kind);
 			break;
 		case EditorAutomationActionKind::SET_TEXT: {
 			if (!p_options.has("text")) {

@@ -97,6 +97,45 @@ public:
 			PackedStringArray &r_events,
 			bool p_local_coords = false);
 
+	// Explicit gesture primitives. Because each synthesized event is delivered
+	// synchronously, a gesture can be split across separate action calls: press
+	// in one call, move in another (with frames drawn in between, so the
+	// in-flight state is observable and photographable), release in a third.
+	static bool begin_mouse_gesture(
+			Viewport *p_viewport,
+			const Vector2 &p_global,
+			MouseButton p_button,
+			const EditorAutomationInputModifiers &p_modifiers,
+			PackedStringArray &r_events);
+
+	static bool move_mouse_gesture(
+			Viewport *p_viewport,
+			const Vector2 &p_to_global,
+			const Vector<Vector2> &p_waypoints,
+			const EditorAutomationInputModifiers &p_modifiers,
+			PackedStringArray &r_events);
+
+	static bool end_mouse_gesture(
+			Viewport *p_viewport,
+			const Vector2 &p_global,
+			const EditorAutomationInputModifiers &p_modifiers,
+			PackedStringArray &r_events);
+
+	static MouseButton get_held_mouse_button();
+	static Vector2 get_last_mouse_position();
+	static void reset_pointer_state();
+
+	// Ends a gesture that was never finished: releases the still-held button on
+	// the viewport that received its press and returns the system pointer. Leaving
+	// a drag in flight across requests is intentional, so this is only for
+	// teardown -- an automation session that stops mid-gesture must not leave the
+	// editor with a phantom button down.
+	static void abandon_gesture();
+
+	// Places the system pointer over p_global when the display server supports
+	// warping, so window-manager pointer state matches the synthesized gesture.
+	static void sync_window_pointer(Viewport *p_viewport, const Vector2 &p_global);
+
 	static bool push_mouse_drag(
 			Viewport *p_viewport,
 			const Vector2 &p_from_global,
@@ -104,7 +143,8 @@ public:
 			const Vector<Vector2> &p_waypoints,
 			MouseButton p_button,
 			const EditorAutomationInputModifiers &p_modifiers,
-			PackedStringArray &r_events);
+			PackedStringArray &r_events,
+			bool p_release = true);
 
 	static Vector2 resolve_position_in_bounds(const Rect2i &p_bounds, const Dictionary &p_options);
 	static Dictionary position_options_for_source(const Dictionary &p_options);

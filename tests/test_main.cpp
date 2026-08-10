@@ -70,6 +70,7 @@
 #include "tests/editor/test_dock_scene_context_binding.h"
 #include "tests/editor/test_dock_split_layout.h"
 #include "tests/editor/test_editor_autoload_settings.h"
+#include "tests/editor/test_editor_automation_drag.h"
 #include "tests/editor/test_editor_automation_driver.h"
 #include "tests/editor/test_editor_automation_mcp.h"
 #include "tests/editor/test_editor_automation_screenshot.h"

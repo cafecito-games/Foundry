@@ -818,6 +818,7 @@ Dictionary EditorAutomationMCPDispatcher::_tool_capture_screenshot(const Diction
 	screenshot_options.format = "png";
 	screenshot_options.snapshot_root = _snapshot_root();
 	screenshot_options.max_bytes = options.max_screenshot_bytes;
+	screenshot_options.force_draw = _read_bool(p_args, "force_draw", false);
 	if (p_args.has("max_screenshot_bytes")) {
 		screenshot_options.max_bytes = _read_int(p_args, "max_screenshot_bytes", options.max_screenshot_bytes);
 	}

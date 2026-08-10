@@ -89,6 +89,7 @@ public:
 	bool has_feature(Feature p_feature) const override {
 		switch (p_feature) {
 			case FEATURE_MOUSE:
+			case FEATURE_MOUSE_WARP:
 			case FEATURE_CURSOR_SHAPE:
 			case FEATURE_CLIPBOARD:
 			case FEATURE_CLIPBOARD_PRIMARY:
@@ -125,6 +126,11 @@ public:
 	}
 
 	virtual Point2i mouse_get_position() const override { return mouse_position; }
+
+	// Mirrors a real display server: warping moves the pointer the engine reads
+	// back through mouse_get_position() and produces the window enter/exit
+	// events that drive drop-target tracking.
+	virtual void warp_mouse(const Point2i &p_position) override { _set_mouse_position(p_position); }
 
 	virtual void clipboard_set(const String &p_text) override { clipboard_text = p_text; }
 	virtual String clipboard_get() const override { return clipboard_text; }

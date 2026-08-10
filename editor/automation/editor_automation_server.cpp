@@ -33,6 +33,7 @@
 #include "editor/automation/editor_automation_acceptance_workflow.h"
 #include "editor/automation/editor_automation_events.h"
 #include "editor/automation/editor_automation_indicator.h"
+#include "editor/automation/editor_automation_input.h"
 #include "editor/automation/editor_automation_mcp_server.h"
 #include "editor/automation/editor_automation_wait.h"
 #include "editor/automation/editor_automation_workflow_registry.h"
@@ -297,6 +298,11 @@ void EditorAutomationServer::start() {
 }
 
 void EditorAutomationServer::stop() {
+	// A gesture may deliberately outlive the request that started it, so nothing
+	// in the request path force-releases it. Session teardown is where that
+	// permission ends: whatever is still held is released here.
+	EditorAutomationInput::abandon_gesture();
+
 	if (!started && mcp_server == nullptr) {
 		_hide_dev_indicator();
 		return;

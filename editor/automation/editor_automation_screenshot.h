@@ -44,6 +44,10 @@ struct EditorAutomationScreenshotOptions {
 	int max_bytes = 512 * 1024;
 	bool crop_to_target = true;
 	int crop_padding_px = 16;
+	// Draw a frame before reading the viewport texture. Captures otherwise
+	// return the last frame the main loop drew, which cannot show a state
+	// produced after that draw (a drag left in flight, for instance).
+	bool force_draw = false;
 	Node *snapshot_root = nullptr;
 };
 
@@ -94,7 +98,7 @@ public:
 
 private:
 	static Viewport *_resolve_capture_viewport(Node *p_snapshot_root);
-	static Ref<Image> _acquire_viewport_image(Node *p_snapshot_root, Dictionary &r_viewport_meta);
+	static Ref<Image> _acquire_viewport_image(Node *p_snapshot_root, Dictionary &r_viewport_meta, bool p_force_draw);
 	static Rect2i _resolve_highlight_rect(const EditorAutomationSnapshot &p_snapshot, const Dictionary &p_selector);
 	static Dictionary _rect_to_dictionary(const Rect2i &p_rect);
 };
