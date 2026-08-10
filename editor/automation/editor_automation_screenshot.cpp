@@ -45,9 +45,13 @@
 
 static bool _screenshot_renderer_supported() {
 	DisplayServer *display_server = DisplayServer::get_singleton();
-	// Headless uses the dummy texture storage, which ERR_FAIL_NULL_V's on
-	// texture_2d_get instead of returning a null image. Probe before reading.
-	return display_server != nullptr && display_server->get_name() != StringName("headless");
+	// Dummy texture storage ERR_FAIL_NULL_V's on texture_2d_get instead of
+	// returning a null image. Headless always uses it; --rendering-driver dummy
+	// can also select it under a real DisplayServer.
+	if (display_server == nullptr || display_server->get_name() == StringName("headless")) {
+		return false;
+	}
+	return OS::get_singleton()->get_current_rendering_method().to_lower() != "dummy";
 }
 
 Dictionary EditorAutomationScreenshotAttachment::to_dictionary() const {

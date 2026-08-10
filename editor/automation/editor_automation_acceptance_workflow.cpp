@@ -278,7 +278,8 @@ void _maybe_capture_editor_png(EditorWorkflowTestDriver &p_driver, const String 
 		return;
 	}
 	DisplayServer *display_server = DisplayServer::get_singleton();
-	if (display_server == nullptr || display_server->get_name() == StringName("headless")) {
+	if (display_server == nullptr || display_server->get_name() == StringName("headless") ||
+			OS::get_singleton()->get_current_rendering_method().to_lower() == "dummy") {
 		OS::get_singleton()->print("FOUNDRY_CAPTURE_SKIP %s (screenshot_unsupported_renderer)\n", p_filename.utf8().get_data());
 		return;
 	}
@@ -329,7 +330,8 @@ void _capture_demoted_chrome_budget_pair(EditorWorkflowTestDriver &p_driver, Sce
 		return;
 	}
 	DisplayServer *display_server = DisplayServer::get_singleton();
-	if (display_server == nullptr || display_server->get_name() == StringName("headless")) {
+	if (display_server == nullptr || display_server->get_name() == StringName("headless") ||
+			OS::get_singleton()->get_current_rendering_method().to_lower() == "dummy") {
 		// Skip chrome mutation under the dummy renderer; capture cannot succeed
 		// and temporarily restoring docks would only add flaky layout churn.
 		return;
