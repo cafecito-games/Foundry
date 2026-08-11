@@ -166,10 +166,26 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state-reports-preview-present
 	WorkspaceHarness h;
 	prepare_two_tile_workspace(h);
 
+	// Empty panes hide their ScenePaneTile via WorkspacePane bridge visibility.
+	// Assign scenes first so is_visible_in_tree() reflects preview chrome, not an
+	// unmounted empty pane.
+	const int scene_a = h.editor_data.add_edited_scene(-1);
+	h.editor_data.set_scene_path(scene_a, "res://tile_a.tscn");
+	h.editor_data.set_scene_tile(scene_a, 0);
+	const int scene_b = h.editor_data.add_edited_scene(-1);
+	h.editor_data.set_scene_path(scene_b, "res://tile_b.tscn");
+	h.editor_data.set_scene_tile(scene_b, 1);
+	h.editor_data.set_tile_current_scene(0, scene_a);
+	h.editor_data.set_tile_current_scene(1, scene_b);
+	h.editor_data.set_focused_tile_id(0);
+	h.workspace->set_focused_leaf(0);
+
 	ScenePaneTile *tile_a = h.workspace->get_tile_by_id(0);
 	ScenePaneTile *tile_b = h.workspace->get_tile_by_id(1);
 	REQUIRE(tile_a != nullptr);
 	REQUIRE(tile_b != nullptr);
+	REQUIRE(tile_a->is_visible_in_tree());
+	REQUIRE(tile_b->is_visible_in_tree());
 
 	tile_a->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
 	tile_b->set_preview_mode(TilePreviewMode::LIVE_2D);
@@ -194,10 +210,12 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state-reports-preview-present
 	CHECK(String(focused_tile.get("preview_mode", String())) == "focused_live");
 	CHECK_FALSE((bool)focused_tile.get("dock_presentation_hidden", true));
 	CHECK((bool)focused_tile.get("scene_tree_dock_visible", false));
+	CHECK(tile_a->get_scene_tree_dock()->is_visible_in_tree());
 
 	CHECK(String(demoted_tile.get("preview_mode", String())) == "live_2d");
 	CHECK((bool)demoted_tile.get("dock_presentation_hidden", false));
 	CHECK_FALSE((bool)demoted_tile.get("scene_tree_dock_visible", true));
+	CHECK_FALSE(tile_b->get_scene_tree_dock()->is_visible_in_tree());
 
 	tile_b->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
 	h.pump();
@@ -215,6 +233,7 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state-reports-preview-present
 	CHECK(String(restored_tile.get("preview_mode", String())) == "focused_live");
 	CHECK_FALSE((bool)restored_tile.get("dock_presentation_hidden", true));
 	CHECK((bool)restored_tile.get("scene_tree_dock_visible", false));
+	CHECK(tile_b->get_scene_tree_dock()->is_visible_in_tree());
 
 	h.unmount();
 }
