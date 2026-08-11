@@ -61,6 +61,18 @@ DEFAULT_MAX_BLOCK_MS = 250.0
 DEFAULT_MAX_WINDOW_MS = 500.0
 AC_SAMPLE_WINDOW_SECONDS = 20.0
 
+# The startup interval cafecito-games/Foundry#2097 is defined over. The editor emits exactly one of
+# each marker per process, from `platform/macos/startup_markers_macos.{h,mm}`, under its own
+# subsystem so the Metal driver's Points of Interest in the same trace cannot be mistaken for them.
+STARTUP_SIGNPOST_SUBSYSTEM = "org.cafecito.foundry.startup"
+MARKER_FIRST_WINDOW = "FoundryFirstWindowVisible"
+MARKER_FIRST_MAIN_ITERATION = "FoundryFirstMainIteration"
+
+# Why an exit code of its own: a capture whose markers are missing, doubled, reversed or spread
+# across processes measured *nothing*. Reporting that as a pass (0) or as a bound violation (1)
+# would both be wrong, and the first of those silently green-lights an unmeasured change.
+EXIT_MEASUREMENT_INVALID = 2
+
 # A window smaller than this is a helper surface (a status item, a tooltip host), not the
 # application window the user is waiting for.
 MIN_WINDOW_SIDE_PX = 32.0
@@ -872,12 +884,24 @@ def parse_time_profile(path: Path, bucket_ms: float) -> dict[str, Any]:
     }
 
 
-def parse_runloop_events(path: Path) -> dict[str, Any]:
-    """Main run loop iteration events -> the real 'not servicing' gap measurement."""
+def scan_runloop_iterations(path: Path, pid: int | None = None) -> tuple[list[int], int | None]:
+    """Absolute start timestamps of every main run loop iteration, plus the trace origin.
+
+    Returned in trace nanoseconds rather than as offsets, because the #2097 interval is defined by
+    signpost timestamps from a different exported table and the two only align on the raw clock.
+
+    `pid` restricts the result to one process. A trace records the launched editor *and* its
+    children, so measuring one process's markers against another process's run loop would combine
+    unrelated timelines — and a busy sibling servicing its own run loop would mask a real stall in
+    the process being measured. This table has no process column: the emitting process is reachable
+    only through `thread`, which every row after the first refers to by `ref`.
+    """
     strings: dict[str, str] = {}
     booleans: dict[str, str] = {}
     funcs: dict[str, str] = {}
     times: dict[str, int] = {}
+    thread_pids: dict[str, int] = {}
+    process_pids: dict[str, int] = {}
     iterations: list[int] = []
     origin: int | None = None
 
@@ -886,9 +910,29 @@ def parse_runloop_events(path: Path) -> dict[str, Any]:
         interval_type = ""
         is_main = ""
         func = ""
+        row_pid: int | None = None
         short_string_index = 0
         for child in row:
             tag = child.tag
+            if tag == "thread":
+                identifier = child.get("id")
+                if identifier is None:
+                    row_pid = thread_pids.get(child.get("ref") or "")
+                else:
+                    process = child.find("process")
+                    if process is not None:
+                        process_id = process.get("id")
+                        pid_element = process.find("pid")
+                        if process_id is not None and pid_element is not None and pid_element.text:
+                            process_pids[process_id] = int(pid_element.text)
+                            thread_pids[identifier] = process_pids[process_id]
+                        elif process_id is None:
+                            # Only the first thread of a process nests the definition; the rest —
+                            # including, typically, the main thread — refer to it.
+                            resolved = process_pids.get(process.get("ref") or "")
+                            if resolved is not None:
+                                thread_pids[identifier] = resolved
+                    row_pid = thread_pids.get(identifier)
             if tag == "event-time":
                 identifier = child.get("id")
                 reference = child.get("ref")
@@ -923,14 +967,23 @@ def parse_runloop_events(path: Path) -> dict[str, Any]:
                     func = funcs.get(child.get("ref") or "", "")
         if timestamp is None:
             continue
+        # The origin stays trace-wide: it anchors the legacy offsets, which predate this filter.
         origin = timestamp if origin is None else min(origin, timestamp)
+        if pid is not None and row_pid != pid:
+            continue
         if is_main == "Yes" and interval_type == "individual_iteration" and func == "START":
             iterations.append(timestamp)
 
+    iterations.sort()
+    return iterations, origin
+
+
+def parse_runloop_events(path: Path) -> dict[str, Any]:
+    """Main run loop iteration events -> the real 'not servicing' gap measurement."""
+    iterations, origin = scan_runloop_iterations(path)
     if not iterations or origin is None:
         return {"main_runloop_iterations": 0}
 
-    iterations.sort()
     gaps = [
         {
             "start_ms": round((iterations[index] - origin) / 1e6, 1),
@@ -947,6 +1000,190 @@ def parse_runloop_events(path: Path) -> dict[str, Any]:
         "longest_gap_between_iterations_ms": max(entry["gap_ms"] for entry in gaps) if gaps else 0.0,
         "worst_gaps": worst,
         "gaps_over_250ms": [entry for entry in gaps if entry["gap_ms"] > DEFAULT_MAX_BLOCK_MS],
+    }
+
+
+# --------------------------------------------------------------------------- #
+# #2097 startup interval: `[first window visible, first Main::iteration entry)`
+# --------------------------------------------------------------------------- #
+
+
+def parse_startup_markers(path: Path) -> dict[str, Any]:
+    """Extract the two Foundry startup markers from an exported `os-signpost` table.
+
+    An export reuses values by reference: a column carries `id` the first time a value appears and
+    `ref` afterwards. The `process` column is *defined* nested inside `thread` and only referenced
+    at row level, so ids are registered from the whole row subtree while column values are read from
+    the row's direct children.
+    """
+    names: dict[str, str] = {}
+    subsystems: dict[str, str] = {}
+    processes: dict[str, int] = {}
+    times: dict[str, int] = {}
+    # marker name -> pid -> timestamps, so a duplicate is distinguishable from a second process.
+    found: dict[str, dict[int, list[int]]] = {MARKER_FIRST_WINDOW: {}, MARKER_FIRST_MAIN_ITERATION: {}}
+
+    for row in _iter_rows(path):
+        # Register definitions from anywhere in the row, including nested `process` inside `thread`.
+        for element in row.iter():
+            identifier = element.get("id")
+            if identifier is None:
+                continue
+            if element.tag == "signpost-name":
+                names[identifier] = element.get("fmt") or (element.text or "")
+            elif element.tag == "subsystem":
+                subsystems[identifier] = element.get("fmt") or (element.text or "")
+            elif element.tag == "event-time" and element.text:
+                times[identifier] = int(element.text)
+            elif element.tag == "process":
+                pid_element = element.find("pid")
+                if pid_element is not None and pid_element.text:
+                    processes[identifier] = int(pid_element.text)
+
+        def value(tag: str, table: dict[str, Any]) -> Any:
+            element = row.find(tag)
+            if element is None:
+                return None
+            identifier = element.get("id")
+            return table.get(identifier if identifier is not None else (element.get("ref") or ""))
+
+        name = value("signpost-name", names)
+        if name not in found:
+            continue
+        if value("subsystem", subsystems) != STARTUP_SIGNPOST_SUBSYSTEM:
+            continue  # e.g. the Metal driver's own Points of Interest in the same trace.
+        timestamp = value("event-time", times)
+        pid = value("process", processes)
+        if timestamp is None or pid is None:
+            continue
+        found[name].setdefault(pid, []).append(timestamp)
+
+    return _resolve_startup_markers(found)
+
+
+def _resolve_startup_markers(found: dict[str, dict[int, list[int]]]) -> dict[str, Any]:
+    def invalid(reason: str) -> dict[str, Any]:
+        return {
+            "invalid_reason": reason,
+            "first_window_ns": None,
+            "first_main_iteration_ns": None,
+            "interval_ms": None,
+            "pid": None,
+        }
+
+    windows = found[MARKER_FIRST_WINDOW]
+    iterations = found[MARKER_FIRST_MAIN_ITERATION]
+    # A trace can contain unrelated processes (a helper, a previous editor). The measured process is
+    # the one that emitted both markers; anything else is noise rather than a broken capture.
+    shared = sorted(set(windows) & set(iterations))
+    if not shared:
+        return invalid("cross-process" if windows and iterations else "missing")
+    if len(shared) > 1:
+        return invalid("cross-process")
+
+    pid = shared[0]
+    if len(windows[pid]) > 1 or len(iterations[pid]) > 1:
+        return invalid("duplicate")
+
+    first_window = windows[pid][0]
+    first_iteration = iterations[pid][0]
+    if first_iteration <= first_window:
+        # Includes the coincident case: a zero-length interval measures nothing.
+        return invalid("reversed")
+
+    return {
+        "invalid_reason": None,
+        "first_window_ns": first_window,
+        "first_main_iteration_ns": first_iteration,
+        "interval_ms": (first_iteration - first_window) / 1e6,
+        "pid": pid,
+    }
+
+
+def clip_gaps_to_interval(iterations_ns: Sequence[int], start_ns: int, end_ns: int) -> list[dict[str, float]]:
+    """Stretches inside `[start_ns, end_ns)` during which the main run loop began no iteration.
+
+    Expressed as the spans between successive boundaries — the interval start, every iteration
+    strictly inside it, and the interval end. That definition clips for free at both edges: a stall
+    that began before the window is charged only from the window, and one still running at the first
+    `Main::iteration()` is charged only up to it. Pre-window and post-startup work are excluded by
+    construction rather than by a separate filter that could disagree with it.
+
+    Values are kept at full precision rather than rounded for readability. The gate is a strict
+    `<= 250.0 ms`, and rounding to a tenth first would let a real 250.04 ms gap record as 250.0 and
+    pass — a false green on the one number the criterion is defined on. Rounding happens at display.
+    """
+    boundaries = [start_ns] + [value for value in sorted(iterations_ns) if start_ns < value < end_ns] + [end_ns]
+    return [
+        {
+            "offset_ms": (boundaries[index] - start_ns) / 1e6,
+            "gap_ms": (boundaries[index + 1] - boundaries[index]) / 1e6,
+        }
+        for index in range(len(boundaries) - 1)
+    ]
+
+
+def measure_startup_interval(runloop_xml: Path, signpost_xml: Path) -> dict[str, Any]:
+    """One run's #2097 measurement: markers, the interval they bound, and the clipped gaps."""
+    markers = parse_startup_markers(signpost_xml)
+    result: dict[str, Any] = dict(markers)
+    if markers["invalid_reason"] is not None:
+        result["clipped_gaps"] = []
+        result["worst_clipped_gap_ms"] = None
+        return result
+
+    # Same process as the markers: see `scan_runloop_iterations`.
+    iterations, _ = scan_runloop_iterations(runloop_xml, pid=markers["pid"])
+    if not iterations:
+        # Nothing to align the markers against. The gaps would degenerate to a single span covering
+        # the interval, and a short interval would then pass while having measured nothing at all.
+        # Iterations existing outside the interval but none inside is a different case — a real
+        # total stall — and stays valid, because the process did have run loop data to align to.
+        result["invalid_reason"] = "unalignable"
+        result["clipped_gaps"] = []
+        result["worst_clipped_gap_ms"] = None
+        return result
+
+    gaps = clip_gaps_to_interval(iterations, markers["first_window_ns"], markers["first_main_iteration_ns"])
+    result["clipped_gaps"] = sorted(gaps, key=lambda entry: entry["gap_ms"], reverse=True)[:10]
+    result["worst_clipped_gap_ms"] = max((entry["gap_ms"] for entry in gaps), default=0.0)
+    result["main_runloop_iterations_in_interval"] = max(len(gaps) - 1, 0)
+    return result
+
+
+def startup_run_invalid_reason(run: dict[str, Any]) -> str | None:
+    """Why one capture cannot be measured, or None if it can.
+
+    A run that reports no `invalid_reason` but carries no gap measured nothing. Reading that absent
+    value as 0.0 ms would let a summary with no data in it report PASS, so absence is its own kind
+    of invalid. A genuine 0.0 is a real result — the run loop serviced every turn — and stays valid.
+    """
+    reason = run.get("invalid_reason")
+    if reason is not None:
+        return str(reason)
+    if run.get("worst_clipped_gap_ms") is None:
+        return "incomplete"
+    return None
+
+
+def summarize_startup_intervals(runs: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """The `startup_interval` summary block, including the across-run maximum the gate is defined on.
+
+    Per-run data alone would force every consumer of `summary.json` to reimplement the acceptance
+    calculation to learn the one number that decides it, so the aggregate is recorded alongside.
+
+    Invalid runs are excluded from the maximum rather than folded in as zeros: a missing marker
+    means "unmeasured", and a fabricated 0.0 would drag the aggregate toward a pass. The capture is
+    rejected separately on the invalid reason, so nothing is lost by leaving them out here.
+    """
+    valid = [run for run in runs if startup_run_invalid_reason(run) is None]
+    worst = [float(run["worst_clipped_gap_ms"]) for run in valid]
+    return {
+        "runs": list(runs),
+        "runs_measured": len(runs),
+        "valid_runs": len(valid),
+        "max_clipped_gap_ms": max(worst) if worst else None,
+        "interval_ms": spread([float(run.get("interval_ms") or 0.0) for run in valid]),
     }
 
 
@@ -971,6 +1208,15 @@ def command_timeline(args: argparse.Namespace) -> int:
         run: dict[str, Any] = {"trace": str(trace_path)}
         run.update(parse_runloop_events(runloop_xml))
 
+        # The Time Profiler template records `os-signpost` on the same trace clock as
+        # `runloop-events`, so the #2097 interval needs no separate capture to align against.
+        log("  exporting os-signpost")
+        signpost_xml = export_table(trace_path, "os-signpost", out_dir / f"signposts-run{index}.xml")
+        interval = measure_startup_interval(runloop_xml, signpost_xml)
+        run["startup_interval"] = interval
+        if interval["invalid_reason"] is not None:
+            log(f"  WARNING: startup markers {interval['invalid_reason']}; #2097 interval unmeasurable this run")
+
         if not args.skip_time_profile:
             log("  exporting time-profile")
             profile_xml = export_table(trace_path, "time-profile", out_dir / f"timeprofile-run{index}.xml")
@@ -980,6 +1226,11 @@ def command_timeline(args: argparse.Namespace) -> int:
             f"  first main run loop iteration at {run.get('time_to_first_main_iteration_ms')} ms, "
             f"longest non-servicing gap {run.get('longest_non_servicing_gap_ms')} ms"
         )
+        if interval["invalid_reason"] is None:
+            log(
+                f"  #2097 interval {interval['interval_ms']:.1f} ms, "
+                f"worst clipped gap {interval['worst_clipped_gap_ms']:.1f} ms"
+            )
 
     summary = load_or_new_summary(out_dir, args.label, binary, project, args.cache_state)
     summary["timeline"] = {
@@ -992,6 +1243,9 @@ def command_timeline(args: argparse.Namespace) -> int:
             [run.get("blocked_percent_of_running_main_samples", 0.0) for run in runs]
         ),
         "longest_contiguous_blocked_ms": spread([run.get("longest_contiguous_blocked_ms", 0.0) for run in runs]),
+        # Per-run data is kept alongside the aggregate rather than replaced by a spread: the #2097
+        # gate is a hard maximum, and a median would make the criterion unable to see one bad run.
+        "startup_interval": summarize_startup_intervals([run["startup_interval"] for run in runs]),
     }
     record_load(summary, "timeline")
     write_summary(out_dir, summary)
@@ -1161,6 +1415,7 @@ def print_timeline_summary(summary: dict[str, Any]) -> None:
         print(f"  longest non-servicing gap       : {run.get('longest_non_servicing_gap_ms')} ms")
         for gap in run.get("worst_gaps", [])[:5]:
             print(f"      gap {gap['gap_ms']:>8} ms starting at {gap['start_ms']} ms")
+        _print_startup_interval(run.get("startup_interval"))
         if "blocked_percent_of_running_main_samples" in run:
             print(f"  running main samples inside the blocked frame: {run['blocked_percent_of_running_main_samples']}%")
             print(f"  longest contiguous blocked run  : {run['longest_contiguous_blocked_ms']} ms")
@@ -1179,6 +1434,20 @@ def print_timeline_summary(summary: dict[str, Any]) -> None:
                 elif not printed_idle:
                     printed_idle = True
                     print(f"      t={bucket['start_ms']:>8} ms  main={bucket['main_samples']:>4}  blocked=   0  (0.0%)")
+
+
+def _print_startup_interval(interval: dict[str, Any] | None) -> None:
+    if not interval:
+        return
+    print("  #2097 startup interval [first window, first Main::iteration):")
+    if interval.get("invalid_reason") is not None:
+        print(f"      UNMEASURABLE: startup markers {interval['invalid_reason']}")
+        return
+    print(f"      duration                    : {interval['interval_ms']:.1f} ms (pid {interval['pid']})")
+    print(f"      worst clipped gap           : {interval['worst_clipped_gap_ms']:.1f} ms")
+    print(f"      run loop iterations inside  : {interval.get('main_runloop_iterations_in_interval')}")
+    for gap in interval.get("clipped_gaps", [])[:5]:
+        print(f"      clipped gap {gap['gap_ms']:>8.1f} ms at +{gap['offset_ms']:.1f} ms")
 
 
 def print_phases_summary(summary: dict[str, Any]) -> None:
@@ -1292,21 +1561,91 @@ def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max
     }
 
 
+def evaluate_acceptance_2097(summary: dict[str, Any], max_block_ms: float = DEFAULT_MAX_BLOCK_MS) -> dict[str, Any]:
+    """The #2097 gate: the worst clipped gap in *every* run, not the median of the runs.
+
+    #2090 gates on a median, which is the right shape for a "typical launch" claim but the wrong one
+    here: "no gap exceeds 250 ms" is a hard maximum, and a median lets one bad capture in three pass
+    unnoticed.
+    """
+    runs = (summary.get("timeline") or {}).get("startup_interval", {}).get("runs") or []
+    invalid_runs = [
+        {"run": index + 1, "reason": reason}
+        for index, run in enumerate(runs)
+        if (reason := startup_run_invalid_reason(run)) is not None
+    ]
+    if not runs or invalid_runs:
+        return {
+            "issue": "cafecito-games/Foundry#2097",
+            "invalid": True,
+            "invalid_runs": invalid_runs,
+            "reason": "no startup interval measurements in summary" if not runs else "invalid markers",
+            "max_clipped_gap_ms": None,
+            "threshold": max_block_ms,
+            "runs": len(runs),
+            "passed": False,
+        }
+
+    # Every run is valid here: `invalid_runs` above returned early otherwise.
+    worst = [float(run["worst_clipped_gap_ms"]) for run in runs]
+    maximum = max(worst)
+    return {
+        "issue": "cafecito-games/Foundry#2097",
+        "invalid": False,
+        "invalid_runs": [],
+        "reason": None,
+        "criterion": f"max clipped non-servicing gap in [first window, first Main::iteration) <= {max_block_ms} ms",
+        "max_clipped_gap_ms": maximum,
+        "per_run_worst_ms": worst,
+        "threshold": max_block_ms,
+        "runs": len(runs),
+        "passed": maximum <= max_block_ms,
+    }
+
+
 def command_check(args: argparse.Namespace) -> int:
     summary = json.loads(Path(args.summary).expanduser().resolve().read_text())
+    if getattr(args, "criteria", "2090") == "2097":
+        return _print_2097_check(summary, args.max_block_ms)
     acceptance = evaluate_acceptance(summary, args.max_blocked_percent, args.max_block_ms)
     print("== acceptance gate (cafecito-games/Foundry#2090) ==")
     print_context(summary)
     print()
     if not acceptance["checks"]:
         print("no measurements in summary; nothing to check")
-        return 2
+        return EXIT_MEASUREMENT_INVALID
     for warning in acceptance["warnings"]:
         print(f"WARNING: {warning}")
     for check in acceptance["checks"]:
         state = "PASS" if check["passed"] else "FAIL"
         print(f"[{state}] {check['criterion']}")
         print(f"        measured {check['value']} (source: {check['source']})")
+    print()
+    print("RESULT:", "PASS" if acceptance["passed"] else "FAIL")
+    return 0 if acceptance["passed"] else 1
+
+
+def _print_2097_check(summary: dict[str, Any], max_block_ms: float) -> int:
+    acceptance = evaluate_acceptance_2097(summary, max_block_ms)
+    print("== acceptance gate (cafecito-games/Foundry#2097) ==")
+    print_context(summary)
+    print()
+    if acceptance["invalid"]:
+        print("INVALID MEASUREMENT: the startup interval could not be established.")
+        if not acceptance["invalid_runs"]:
+            print(f"  {acceptance['reason']}")
+        for entry in acceptance["invalid_runs"]:
+            print(f"  run {entry['run']}: {entry['reason']} startup markers")
+        print()
+        print("RESULT: INVALID")
+        return EXIT_MEASUREMENT_INVALID
+    for index, value in enumerate(acceptance["per_run_worst_ms"], start=1):
+        state = "PASS" if value <= max_block_ms else "FAIL"
+        print(f"[{state}] run {index}: worst clipped gap {value:.1f} ms")
+    print()
+    state = "PASS" if acceptance["passed"] else "FAIL"
+    print(f"[{state}] {acceptance['criterion']}")
+    print(f"        measured {acceptance['max_clipped_gap_ms']:.1f} ms (max across {acceptance['runs']} runs)")
     print()
     print("RESULT:", "PASS" if acceptance["passed"] else "FAIL")
     return 0 if acceptance["passed"] else 1
@@ -1594,8 +1933,18 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--max-block-ms", type=float, default=DEFAULT_MAX_BLOCK_MS)
     compare.set_defaults(func=command_compare)
 
-    check = subparsers.add_parser("check", help="evaluate the #2090 acceptance criteria against a summary.json")
+    check = subparsers.add_parser("check", help="evaluate an acceptance criteria set against a summary.json")
     check.add_argument("summary")
+    check.add_argument(
+        "--criteria",
+        choices=("2090", "2097"),
+        default="2090",
+        help=(
+            "'2090' (default) keeps the historical median-based gate; '2097' gates the maximum "
+            "clipped non-servicing gap in the first-window to first-Main::iteration interval across "
+            f"every run, and exits {EXIT_MEASUREMENT_INVALID} when the markers make it unmeasurable"
+        ),
+    )
     check.add_argument("--max-blocked-percent", type=float, default=DEFAULT_MAX_BLOCKED_PERCENT)
     check.add_argument("--max-block-ms", type=float, default=DEFAULT_MAX_BLOCK_MS)
     check.set_defaults(func=command_check)

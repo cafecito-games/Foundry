@@ -37,6 +37,7 @@
 #import "display_server_macos.h"
 #import "foundry_application.h"
 #import "foundry_application_delegate.h"
+#import "startup_markers_macos.h"
 
 #include "core/crypto/crypto_core.h"
 #include "core/io/file_access.h"
@@ -1351,6 +1352,10 @@ void OS_MacOS_NSApp::start_main() {
 						joypad_sdl->process_events();
 					}
 #endif
+
+					// Closes the startup interval: boot is over and the engine is iterating. Emitted
+					// before the call so the marker cannot be pushed past a slow first frame.
+					StartupMarkersMacOS::first_main_iteration();
 
 					if (Main::iteration() || sig_received) {
 						terminate();

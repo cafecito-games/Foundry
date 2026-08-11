@@ -43,6 +43,7 @@
 #import "foundry_window_delegate.h"
 #import "key_mapping_macos.h"
 #import "os_macos.h"
+#import "startup_markers_macos.h"
 
 #ifdef TOOLS_ENABLED
 #import "macos_quartz_core_spi.h"
@@ -1783,6 +1784,7 @@ void DisplayServerMacOS::show_window(WindowID p_id) {
 
 	popup_open(p_id);
 	if ([wd.window_object isMiniaturized]) {
+		// Nothing became visible, so this is not the marker's moment.
 		return;
 	} else if (wd.no_focus) {
 		if (wd.transient_parent != INVALID_WINDOW_ID) {
@@ -1795,6 +1797,13 @@ void DisplayServerMacOS::show_window(WindowID p_id) {
 		}
 	} else {
 		[wd.window_object makeKeyAndOrderFront:nil];
+	}
+
+	if (p_id == MAIN_WINDOW_ID) {
+		// The main window has just been ordered on screen, which is where the user's wait for a
+		// responsive editor begins. Only the main window counts: a splash or status surface is not
+		// what the run loop bound is measured against.
+		StartupMarkersMacOS::first_window_visible();
 	}
 }
 
