@@ -4870,6 +4870,11 @@ void TextEdit::end_complex_operation() {
 	complex_operation_has_text_ops = false;
 
 	last_op->get().end_carets = carets;
+	if (first_op->get().prev_version != complex_operation_start_version) {
+		// The retained action boundary should be maintained by eviction and redo truncation.
+		// If it is ever lost, leave the operations standalone rather than chaining unrelated history.
+		return;
+	}
 	if (first_op == last_op) {
 		first_op->get().chain_forward = false;
 		first_op->get().chain_backward = false;
@@ -4917,18 +4922,18 @@ void TextEdit::undo() {
 
 	deselect();
 
-	TextOperation op = undo_stack_pos->get();
-	_do_text_op(op, true);
+	const TextOperation *op = &undo_stack_pos->get();
+	_do_text_op(*op, true);
 
-	current_op.version = op.prev_version;
+	current_op.version = op->prev_version;
 	if (undo_stack_pos->get().chain_backward) {
 		// This was part of a complex operation, undo until the chain forward at the start of the complex operation.
 		while (true) {
 			ERR_BREAK(!undo_stack_pos->prev());
 			undo_stack_pos = undo_stack_pos->prev();
-			op = undo_stack_pos->get();
-			_do_text_op(op, true);
-			current_op.version = op.prev_version;
+			op = &undo_stack_pos->get();
+			_do_text_op(*op, true);
+			current_op.version = op->prev_version;
 			if (undo_stack_pos->get().chain_forward) {
 				break;
 			}
@@ -4979,17 +4984,17 @@ void TextEdit::redo() {
 
 	deselect();
 
-	TextOperation op = undo_stack_pos->get();
-	_do_text_op(op, false);
-	current_op.version = op.version;
+	const TextOperation *op = &undo_stack_pos->get();
+	_do_text_op(*op, false);
+	current_op.version = op->version;
 	if (undo_stack_pos->get().chain_forward) {
 		// This was part of a complex operation, redo until the chain backward at the end of the complex operation.
 		while (true) {
 			ERR_BREAK(!undo_stack_pos->next());
 			undo_stack_pos = undo_stack_pos->next();
-			op = undo_stack_pos->get();
-			_do_text_op(op, false);
-			current_op.version = op.version;
+			op = &undo_stack_pos->get();
+			_do_text_op(*op, false);
+			current_op.version = op->version;
 			if (undo_stack_pos->get().chain_backward) {
 				break;
 			}
@@ -8348,9 +8353,14 @@ void TextEdit::_push_current_op() {
 	current_op.chain_forward = false;
 
 	if (undo_stack.size() > undo_stack_max_size) {
-		const bool removed_complex_start = undo_stack.front()->get().chain_forward;
+		const TextOperation &removed_op = undo_stack.front()->get();
+		const bool removed_closed_complex_start = removed_op.chain_forward;
+		const bool removed_open_complex_start = complex_operation_count > 0 && removed_op.prev_version == complex_operation_start_version;
 		undo_stack.pop_front();
-		if (removed_complex_start && !undo_stack.is_empty()) {
+		if (removed_open_complex_start) {
+			complex_operation_start_version = undo_stack.is_empty() ? current_op.version : undo_stack.front()->get().prev_version;
+		}
+		if (removed_closed_complex_start && !undo_stack.is_empty()) {
 			TextOperation &new_front = undo_stack.front()->get();
 			if (new_front.chain_backward) {
 				new_front.chain_forward = false;
@@ -8387,11 +8397,23 @@ void TextEdit::_clear_redo() {
 	}
 
 	_push_current_op();
+	bool removes_open_complex_start = false;
+	if (complex_operation_count > 0) {
+		for (List<TextOperation>::Element *element = undo_stack_pos; element; element = element->next()) {
+			if (element->get().prev_version == complex_operation_start_version) {
+				removes_open_complex_start = true;
+				break;
+			}
+		}
+	}
 
 	while (undo_stack_pos) {
 		List<TextOperation>::Element *elem = undo_stack_pos;
 		undo_stack_pos = undo_stack_pos->next();
 		undo_stack.erase(elem);
+	}
+	if (removes_open_complex_start) {
+		complex_operation_start_version = get_version();
 	}
 }
 
@@ -9509,11 +9531,12 @@ void TextEdit::_insert_text(int p_line, int p_char, const String &p_text, int *r
 		idle_detect->start();
 	}
 
+	LocalVector<Underline> start_underlines;
 	if (undo_enabled) {
 		_clear_redo();
+		start_underlines = underlines;
 	}
 
-	const LocalVector<Underline> start_underlines = underlines;
 	int retline, retchar;
 	_base_insert_text(p_line, p_char, p_text, retline, retchar);
 	if (r_end_line) {
@@ -9544,12 +9567,12 @@ void TextEdit::_insert_text(int p_line, int p_char, const String &p_text, int *r
 		op.start_carets = carets;
 	}
 	op.end_carets = carets;
-	op.start_underlines = start_underlines;
+	op.start_underlines = std::move(start_underlines);
 	op.has_start_underlines = true;
 
 	op.prev_version = get_version();
 	_push_current_op();
-	current_op = op;
+	current_op = std::move(op);
 	if (complex_operation_count > 0) {
 		complex_operation_has_text_ops = true;
 	}
@@ -9560,10 +9583,11 @@ void TextEdit::_remove_text(int p_from_line, int p_from_column, int p_to_line, i
 		idle_detect->start();
 	}
 
-	const LocalVector<Underline> start_underlines = underlines;
+	LocalVector<Underline> start_underlines;
 	String txt;
 	if (undo_enabled) {
 		_clear_redo();
+		start_underlines = underlines;
 		txt = _base_get_text(p_from_line, p_from_column, p_to_line, p_to_column);
 	}
 
@@ -9590,12 +9614,12 @@ void TextEdit::_remove_text(int p_from_line, int p_from_column, int p_to_line, i
 		op.start_carets = carets;
 	}
 	op.end_carets = carets;
-	op.start_underlines = start_underlines;
+	op.start_underlines = std::move(start_underlines);
 	op.has_start_underlines = true;
 
 	op.prev_version = get_version();
 	_push_current_op();
-	current_op = op;
+	current_op = std::move(op);
 	if (complex_operation_count > 0) {
 		complex_operation_has_text_ops = true;
 	}
