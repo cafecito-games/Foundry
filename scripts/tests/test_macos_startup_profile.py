@@ -9,6 +9,9 @@ without launching an editor.
 from __future__ import annotations
 
 import importlib.util
+import itertools
+import json
+import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
@@ -154,6 +157,313 @@ class LoadMismatchTests(unittest.TestCase):
         macos_startup_profile.record_load(summary, "window")
         self.assertEqual(sorted(summary["machine_load"]), ["sample", "window"])
         self.assertEqual(len(macos_startup_profile.load_averages(summary)), 2)
+
+
+MS = 1_000_000  # nanoseconds per millisecond, the unit `xctrace` exports event times in.
+
+
+class SignpostTableBuilder:
+    """Builds an `os-signpost` export shaped like a real one.
+
+    Every element in a real export carries an `id` the first time a value appears and a `ref` to
+    that id afterwards, and the `process` column is *defined* nested inside `thread` while the row's
+    own `process` column is only a `ref`. A parser that only reads a row's direct children never
+    sees the definition, so the fixtures reproduce that structure rather than a flattened one.
+    """
+
+    def __init__(self) -> None:
+        self._ids = itertools.count(1)
+        self._rows: list[str] = []
+        self._process_ids: dict[int, int] = {}
+
+    def add(
+        self,
+        time_ns: int,
+        name: str,
+        *,
+        pid: int = 4242,
+        process: str = "foundry.macos.editor.arm64",
+        subsystem: str | None = None,
+        category: str = "PointsOfInterest",
+    ) -> SignpostTableBuilder:
+        if subsystem is None:
+            subsystem = macos_startup_profile.STARTUP_SIGNPOST_SUBSYSTEM
+        new = next(self._ids)
+        if pid in self._process_ids:
+            thread = f'<thread ref="{self._process_ids[pid] - 1}"/>'
+            process_column = f'<process ref="{self._process_ids[pid]}"/>'
+        else:
+            thread_id = next(self._ids)
+            process_id = next(self._ids)
+            self._process_ids[pid] = process_id
+            thread = (
+                f'<thread id="{thread_id}" fmt="Main Thread"><tid id="{next(self._ids)}" fmt="0x1">1</tid>'
+                f'<process id="{process_id}" fmt="{process} ({pid})">'
+                f'<pid id="{next(self._ids)}" fmt="{pid}">{pid}</pid></process></thread>'
+            )
+            process_column = f'<process ref="{process_id}"/>'
+        self._rows.append(
+            f'<row><event-time id="{new}" fmt="t">{time_ns}</event-time>'
+            f"{thread}{process_column}"
+            f'<event-type id="{next(self._ids)}" fmt="Event">Event</event-type>'
+            f'<string id="{next(self._ids)}" fmt="Process">Process</string>'
+            f'<os-signpost-identifier id="{next(self._ids)}" fmt="E">1</os-signpost-identifier>'
+            f'<signpost-name id="{next(self._ids)}" fmt="{name}">{name}</signpost-name>'
+            f"<sentinel/><sentinel/>"
+            f'<subsystem id="{next(self._ids)}" fmt="{subsystem}">{subsystem}</subsystem>'
+            f'<category id="{next(self._ids)}" fmt="{category}">{category}</category>'
+            f"<sentinel/></row>"
+        )
+        return self
+
+    def write(self, directory: Path, filename: str = "signposts.xml") -> Path:
+        path = directory / filename
+        path.write_text(
+            '<?xml version="1.0"?>\n<trace-query-result>\n<node xpath="x">'
+            '<schema name="os-signpost"/>' + "\n".join(self._rows) + "</node>\n</trace-query-result>\n"
+        )
+        return path
+
+
+class StartupMarkerParsingTests(unittest.TestCase):
+    """`FoundryFirstWindowVisible` / `FoundryFirstMainIteration` extraction from an export."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def parse(self, builder: SignpostTableBuilder) -> dict[str, Any]:
+        markers: dict[str, Any] = macos_startup_profile.parse_startup_markers(builder.write(self.tmp))
+        return markers
+
+    def both_markers(self, *, window_ns: int = 400 * MS, iteration_ns: int = 1400 * MS) -> SignpostTableBuilder:
+        return (
+            SignpostTableBuilder()
+            .add(window_ns, macos_startup_profile.MARKER_FIRST_WINDOW)
+            .add(iteration_ns, macos_startup_profile.MARKER_FIRST_MAIN_ITERATION)
+        )
+
+    def test_extracts_both_markers_and_the_interval(self):
+        markers = self.parse(self.both_markers())
+        self.assertIsNone(markers["invalid_reason"])
+        self.assertEqual(markers["first_window_ns"], 400 * MS)
+        self.assertEqual(markers["first_main_iteration_ns"], 1400 * MS)
+        self.assertEqual(markers["interval_ms"], 1000.0)
+        self.assertEqual(markers["pid"], 4242)
+
+    def test_ignores_signposts_from_other_subsystems(self):
+        # The Metal driver emits Points of Interest under its own subsystem in the very same trace.
+        builder = self.both_markers()
+        builder.add(500 * MS, "create_pipeline", subsystem="org.cafecito.foundry.metal")
+        markers = self.parse(builder)
+        self.assertIsNone(markers["invalid_reason"])
+        self.assertEqual(markers["first_window_ns"], 400 * MS)
+
+    def test_ignores_a_same_named_marker_from_another_process(self):
+        builder = self.both_markers()
+        builder.add(50 * MS, macos_startup_profile.MARKER_FIRST_WINDOW, pid=999, process="other.tool")
+        markers = self.parse(builder)
+        self.assertIsNone(markers["invalid_reason"])
+        self.assertEqual(markers["pid"], 4242)
+        self.assertEqual(markers["first_window_ns"], 400 * MS)
+
+    def test_markers_split_across_two_processes_are_invalid(self):
+        builder = SignpostTableBuilder()
+        builder.add(400 * MS, macos_startup_profile.MARKER_FIRST_WINDOW, pid=1)
+        builder.add(1400 * MS, macos_startup_profile.MARKER_FIRST_MAIN_ITERATION, pid=2)
+        self.assertEqual(self.parse(builder)["invalid_reason"], "cross-process")
+
+    def test_a_missing_marker_is_invalid(self):
+        only_window = SignpostTableBuilder().add(400 * MS, macos_startup_profile.MARKER_FIRST_WINDOW)
+        self.assertEqual(self.parse(only_window)["invalid_reason"], "missing")
+        self.assertEqual(self.parse(SignpostTableBuilder())["invalid_reason"], "missing")
+
+    def test_a_duplicated_marker_is_invalid(self):
+        builder = self.both_markers()
+        builder.add(600 * MS, macos_startup_profile.MARKER_FIRST_WINDOW)
+        self.assertEqual(self.parse(builder)["invalid_reason"], "duplicate")
+
+    def test_reversed_markers_are_invalid(self):
+        builder = self.both_markers(window_ns=1400 * MS, iteration_ns=400 * MS)
+        self.assertEqual(self.parse(builder)["invalid_reason"], "reversed")
+
+    def test_coincident_markers_are_reversed_not_a_zero_length_interval(self):
+        # A zero-length interval measures nothing; reporting it as a pass would be a false green.
+        builder = self.both_markers(window_ns=400 * MS, iteration_ns=400 * MS)
+        self.assertEqual(self.parse(builder)["invalid_reason"], "reversed")
+
+
+class GapClippingTests(unittest.TestCase):
+    """Gaps intersected with `[first window visible, first Main::iteration entry)`."""
+
+    def clip(self, iterations_ms: list[float], start_ms: float, end_ms: float) -> list[float]:
+        gaps = macos_startup_profile.clip_gaps_to_interval(
+            [int(value * MS) for value in iterations_ms], int(start_ms * MS), int(end_ms * MS)
+        )
+        return [gap["gap_ms"] for gap in gaps]
+
+    def test_a_gap_wholly_inside_the_interval_is_measured_whole(self):
+        self.assertEqual(self.clip([100, 500, 1500], 400, 2000), [100.0, 1000.0, 500.0])
+
+    def test_a_gap_spanning_the_window_marker_is_clipped_at_the_marker(self):
+        # The run loop stalls from 100 ms to 900 ms, but the window only appears at 400 ms. Only the
+        # 500 ms the user could actually see counts; charging the whole 800 ms would reject
+        # pre-window work the criterion deliberately excludes.
+        self.assertEqual(self.clip([100, 900], 400, 1000), [500.0, 100.0])
+
+    def test_work_after_the_first_main_iteration_is_excluded(self):
+        # A 5 s post-startup stall must not leak into a startup criterion.
+        self.assertEqual(self.clip([400, 600, 6000], 400, 1000), [200.0, 400.0])
+
+    def test_a_stall_straddling_both_boundaries_is_clipped_to_the_interval(self):
+        self.assertEqual(self.clip([0, 9000], 400, 1000), [600.0])
+
+    def test_iterations_exactly_on_the_boundaries_do_not_create_empty_gaps(self):
+        self.assertEqual(self.clip([400, 700, 1000], 400, 1000), [300.0, 300.0])
+
+    def test_offsets_are_reported_relative_to_the_window_marker(self):
+        gaps = macos_startup_profile.clip_gaps_to_interval(
+            [int(400 * MS), int(900 * MS)], int(400 * MS), int(1000 * MS)
+        )
+        self.assertEqual([gap["offset_ms"] for gap in gaps], [0.0, 500.0])
+
+    def test_unsorted_input_is_handled(self):
+        self.assertEqual(self.clip([1500, 100, 500], 400, 2000), [100.0, 1000.0, 500.0])
+
+
+class Criteria2097Tests(unittest.TestCase):
+    """The #2097 gate is a hard maximum across every capture, not a median."""
+
+    def summary(self, *runs: dict[str, Any]) -> dict[str, Any]:
+        return {"timeline": {"runs": list(runs), "startup_interval": {"runs": list(runs)}}}
+
+    def run_entry(self, worst_ms: float, *, invalid: str | None = None) -> dict[str, Any]:
+        return {"worst_clipped_gap_ms": worst_ms, "invalid_reason": invalid, "interval_ms": 1000.0}
+
+    def test_passes_when_every_run_is_under_the_bound(self):
+        acceptance = macos_startup_profile.evaluate_acceptance_2097(
+            self.summary(self.run_entry(120.0), self.run_entry(240.0), self.run_entry(90.0))
+        )
+        self.assertTrue(acceptance["passed"])
+        self.assertFalse(acceptance["invalid"])
+        self.assertEqual(acceptance["max_clipped_gap_ms"], 240.0)
+
+    def test_one_bad_run_fails_even_when_the_median_passes(self):
+        # Median would be 100 ms and pass; the criterion is a hard maximum, so this must fail.
+        acceptance = macos_startup_profile.evaluate_acceptance_2097(
+            self.summary(self.run_entry(90.0), self.run_entry(100.0), self.run_entry(610.0))
+        )
+        self.assertFalse(acceptance["passed"])
+        self.assertEqual(acceptance["max_clipped_gap_ms"], 610.0)
+
+    def test_the_bound_is_inclusive_at_exactly_250_ms(self):
+        self.assertTrue(macos_startup_profile.evaluate_acceptance_2097(self.summary(self.run_entry(250.0)))["passed"])
+        self.assertFalse(macos_startup_profile.evaluate_acceptance_2097(self.summary(self.run_entry(250.1)))["passed"])
+
+    def test_an_invalid_run_invalidates_the_whole_measurement(self):
+        acceptance = macos_startup_profile.evaluate_acceptance_2097(
+            self.summary(self.run_entry(90.0), self.run_entry(0.0, invalid="missing"))
+        )
+        self.assertTrue(acceptance["invalid"])
+        self.assertFalse(acceptance["passed"])
+
+    def test_no_runs_at_all_is_invalid_rather_than_a_pass(self):
+        acceptance = macos_startup_profile.evaluate_acceptance_2097(self.summary())
+        self.assertTrue(acceptance["invalid"])
+        self.assertFalse(acceptance["passed"])
+
+    def test_a_summary_without_the_interval_block_is_invalid(self):
+        acceptance = macos_startup_profile.evaluate_acceptance_2097({})
+        self.assertTrue(acceptance["invalid"])
+        self.assertFalse(acceptance["passed"])
+
+
+class CheckCommandExitCodeTests(unittest.TestCase):
+    """`check` must exit 2 for an unmeasurable capture, never 0."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def check(self, summary: dict[str, Any], *extra: str) -> int:
+        path = self.tmp / "summary.json"
+        path.write_text(json.dumps(summary))
+        exit_code: int = macos_startup_profile.main(["check", str(path), *extra])
+        return exit_code
+
+    def interval_summary(self, *worst: float, invalid: str | None = None) -> dict[str, Any]:
+        runs: list[dict[str, Any]] = [
+            {"worst_clipped_gap_ms": value, "invalid_reason": None, "interval_ms": 1000.0} for value in worst
+        ]
+        if invalid is not None:
+            runs.append({"worst_clipped_gap_ms": 0.0, "invalid_reason": invalid, "interval_ms": 0.0})
+        return {"timeline": {"startup_interval": {"runs": runs}}}
+
+    def test_passing_capture_exits_zero(self):
+        self.assertEqual(self.check(self.interval_summary(120.0, 200.0), "--criteria", "2097"), 0)
+
+    def test_failing_capture_exits_one(self):
+        self.assertEqual(self.check(self.interval_summary(120.0, 700.0), "--criteria", "2097"), 1)
+
+    def test_missing_markers_exit_two(self):
+        self.assertEqual(self.check(self.interval_summary(120.0, invalid="missing"), "--criteria", "2097"), 2)
+
+    def test_duplicate_markers_exit_two(self):
+        self.assertEqual(self.check(self.interval_summary(120.0, invalid="duplicate"), "--criteria", "2097"), 2)
+
+    def test_reversed_markers_exit_two(self):
+        self.assertEqual(self.check(self.interval_summary(120.0, invalid="reversed"), "--criteria", "2097"), 2)
+
+    def test_cross_process_markers_exit_two(self):
+        self.assertEqual(self.check(self.interval_summary(120.0, invalid="cross-process"), "--criteria", "2097"), 2)
+
+    def test_a_summary_with_no_interval_block_exits_two(self):
+        self.assertEqual(self.check({"timeline": {}}, "--criteria", "2097"), 2)
+
+
+class LegacyCriteriaPreservationTests(unittest.TestCase):
+    """The #2090 gate must keep its exact behavior for historical comparisons."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def legacy_summary(self) -> dict[str, Any]:
+        return {
+            "window": {"time_to_first_window_ms": macos_startup_profile.spread([434.7])},
+            "timeline": {
+                "longest_non_servicing_gap_ms": macos_startup_profile.spread([606.9]),
+                "longest_contiguous_blocked_ms": macos_startup_profile.spread([180.0]),
+            },
+        }
+
+    def test_default_criteria_still_evaluate_the_2090_checks(self):
+        acceptance = macos_startup_profile.evaluate_acceptance(self.legacy_summary(), 8.0, 250.0)
+        self.assertEqual(acceptance["issue"], "cafecito-games/Foundry#2090")
+        sources = sorted(check["source"] for check in acceptance["checks"])
+        self.assertEqual(sources, ["timeline/runloop-events", "timeline/time-profile", "window"])
+
+    def test_the_2090_gate_still_uses_the_median_not_a_maximum(self):
+        # Two good runs and one bad one: the median passes, and that is the documented #2090
+        # behavior. #2097 deliberately differs, so this pins the two apart.
+        summary = {"timeline": {"longest_non_servicing_gap_ms": macos_startup_profile.spread([90.0, 100.0, 610.0])}}
+        checks = macos_startup_profile.evaluate_acceptance(summary, 8.0, 250.0)["checks"]
+        gap_check = [check for check in checks if check["source"] == "timeline/runloop-events"][0]
+        self.assertEqual(gap_check["value"], 100.0)
+        self.assertTrue(gap_check["passed"])
+
+    def test_startup_interval_data_does_not_leak_into_the_2090_gate(self):
+        summary = self.legacy_summary()
+        summary["timeline"]["startup_interval"] = {
+            "runs": [{"worst_clipped_gap_ms": 900.0, "invalid_reason": None, "interval_ms": 1000.0}]
+        }
+        with_interval = macos_startup_profile.evaluate_acceptance(summary, 8.0, 250.0)
+        del summary["timeline"]["startup_interval"]
+        without_interval = macos_startup_profile.evaluate_acceptance(summary, 8.0, 250.0)
+        self.assertEqual(with_interval, without_interval)
 
 
 if __name__ == "__main__":
