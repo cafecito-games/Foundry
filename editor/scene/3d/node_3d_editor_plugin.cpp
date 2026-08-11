@@ -6934,16 +6934,31 @@ Node3DEditorViewport::~Node3DEditorViewport() {
 	}
 }
 
+SubViewport *Node3DEditorViewport::_resolve_preview_parent_viewport() const {
+	return ObjectDB::get_instance<SubViewport>(preview_parent_viewport_id);
+}
+
 void Node3DEditorViewport::bind_world(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
 	ERR_FAIL_COND(p_world.is_null());
+
+	const bool had_bound_world = bound_world.is_valid();
+	const bool world_changed = had_bound_world && bound_world != p_world;
+	if (world_changed && spatial_editor) {
+		spatial_editor->_note_world_view_unbound(bound_world);
+	}
+
 	bound_world = p_world;
-	preview_parent_viewport = p_preview_parent_viewport;
-	viewport->set_world_3d(p_world);
+	preview_parent_viewport_id = p_preview_parent_viewport ? p_preview_parent_viewport->get_instance_id() : ObjectID();
+	viewport->set_world_3d(bound_world);
 	if (is_inside_tree()) {
-		_rebind_gizmo_scenarios(p_world);
+		_rebind_gizmo_scenarios(bound_world);
 	}
 	if (spatial_editor) {
-		spatial_editor->_note_world_view_bound(p_world, p_preview_parent_viewport);
+		if (!had_bound_world || world_changed) {
+			spatial_editor->_note_world_view_bound(bound_world, p_preview_parent_viewport);
+		} else {
+			spatial_editor->_note_world_view_rebound(bound_world, p_preview_parent_viewport);
+		}
 	}
 }
 
@@ -8139,13 +8154,13 @@ EditorWorldFurniture &Node3DEditor::_ensure_world_furniture(const Ref<World3D> &
 	if (!world_furniture.has(world_id)) {
 		EditorWorldFurniture furniture;
 		if (p_preview_parent_viewport) {
-			furniture.preview_parent_viewport = p_preview_parent_viewport;
+			furniture.preview_parent_viewport_id = p_preview_parent_viewport->get_instance_id();
 		}
 		world_furniture.insert(world_id, furniture);
 	}
 	EditorWorldFurniture &furniture = world_furniture[world_id];
 	if (p_preview_parent_viewport) {
-		furniture.preview_parent_viewport = p_preview_parent_viewport;
+		furniture.preview_parent_viewport_id = p_preview_parent_viewport->get_instance_id();
 	}
 
 	if (!shared_furniture_resources_ready) {
@@ -8161,22 +8176,26 @@ EditorWorldFurniture &Node3DEditor::_ensure_world_furniture(const Ref<World3D> &
 		RenderingServer::get_singleton()->instance_set_visible(furniture.origin_instance, origin_enabled);
 	}
 
-	if (!furniture.preview_sun) {
-		furniture.preview_sun = memnew(DirectionalLight3D);
-		furniture.preview_sun_id = furniture.preview_sun->get_instance_id();
-		furniture.preview_sun->set_shadow(true);
-		furniture.preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
+	DirectionalLight3D *preview_sun = _resolve_preview_sun(furniture);
+	if (!preview_sun) {
+		preview_sun = memnew(DirectionalLight3D);
+		furniture.preview_sun_id = preview_sun->get_instance_id();
+		furniture.preview_sun_dangling = false;
+		preview_sun->set_shadow(true);
+		preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
 	}
-	if (!furniture.preview_environment) {
-		furniture.preview_environment = memnew(WorldEnvironment);
-		furniture.preview_environment_id = furniture.preview_environment->get_instance_id();
+	WorldEnvironment *preview_environment = _resolve_preview_environment(furniture);
+	if (!preview_environment) {
+		preview_environment = memnew(WorldEnvironment);
+		furniture.preview_environment_id = preview_environment->get_instance_id();
+		furniture.preview_env_dangling = false;
 		Ref<Environment> world_environment = environment;
 		if (world_environment.is_null()) {
 			world_environment.instantiate();
 		}
-		furniture.preview_environment->set_environment(world_environment->duplicate(true));
+		preview_environment->set_environment(world_environment->duplicate(true));
 		if (camera_attributes.is_valid()) {
-			furniture.preview_environment->set_camera_attributes(camera_attributes->duplicate(true));
+			preview_environment->set_camera_attributes(camera_attributes->duplicate(true));
 		}
 	}
 
@@ -8211,6 +8230,18 @@ EditorWorldFurniture &Node3DEditor::_get_edited_world_furniture() {
 	return _ensure_world_furniture(world, EditorNode::get_singleton() ? EditorNode::get_singleton()->get_scene_root() : nullptr);
 }
 
+DirectionalLight3D *Node3DEditor::_resolve_preview_sun(const EditorWorldFurniture &p_furniture) const {
+	return ObjectDB::get_instance<DirectionalLight3D>(p_furniture.preview_sun_id);
+}
+
+WorldEnvironment *Node3DEditor::_resolve_preview_environment(const EditorWorldFurniture &p_furniture) const {
+	return ObjectDB::get_instance<WorldEnvironment>(p_furniture.preview_environment_id);
+}
+
+SubViewport *Node3DEditor::_resolve_preview_parent(const EditorWorldFurniture &p_furniture) const {
+	return ObjectDB::get_instance<SubViewport>(p_furniture.preview_parent_viewport_id);
+}
+
 void Node3DEditor::_free_world_furniture(EditorWorldFurniture &p_furniture) {
 	RenderingServer *rs = RenderingServer::get_singleton();
 	if (rs) {
@@ -8221,26 +8252,24 @@ void Node3DEditor::_free_world_furniture(EditorWorldFurniture &p_furniture) {
 		_free_world_grid_instances(p_furniture);
 	}
 
-	if (DirectionalLight3D *preview_sun = ObjectDB::get_instance<DirectionalLight3D>(p_furniture.preview_sun_id)) {
+	if (DirectionalLight3D *preview_sun = _resolve_preview_sun(p_furniture)) {
 		if (preview_sun->get_parent()) {
 			preview_sun->get_parent()->remove_child(preview_sun);
 		}
 		memdelete(preview_sun);
 	}
-	p_furniture.preview_sun = nullptr;
 	p_furniture.preview_sun_id = ObjectID();
 	p_furniture.preview_sun_dangling = false;
 
-	if (WorldEnvironment *preview_environment = ObjectDB::get_instance<WorldEnvironment>(p_furniture.preview_environment_id)) {
+	if (WorldEnvironment *preview_environment = _resolve_preview_environment(p_furniture)) {
 		if (preview_environment->get_parent()) {
 			preview_environment->get_parent()->remove_child(preview_environment);
 		}
 		memdelete(preview_environment);
 	}
-	p_furniture.preview_environment = nullptr;
 	p_furniture.preview_environment_id = ObjectID();
 	p_furniture.preview_env_dangling = false;
-	p_furniture.preview_parent_viewport = nullptr;
+	p_furniture.preview_parent_viewport_id = ObjectID();
 	p_furniture.live_view_count = 0;
 }
 
@@ -8268,12 +8297,16 @@ void Node3DEditor::_note_world_view_bound(const Ref<World3D> &p_world, SubViewpo
 	_rebind_preview_sun_env_parent();
 }
 
+void Node3DEditor::_note_world_view_rebound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
+	_ensure_world_furniture(p_world, p_preview_parent_viewport);
+	_rebind_preview_sun_env_parent();
+}
+
 void Node3DEditor::_note_world_view_unbound(const Ref<World3D> &p_world) {
 	EditorWorldFurniture *furniture = _get_world_furniture(p_world);
-	if (!furniture) {
-		return;
-	}
-	furniture->live_view_count = MAX(furniture->live_view_count - 1, 0);
+	ERR_FAIL_NULL_MSG(furniture, "Cannot unbind a 3D view from a world with no furniture entry.");
+	ERR_FAIL_COND_MSG(furniture->live_view_count == 0, "Cannot unbind a 3D view from a world with no live views.");
+	furniture->live_view_count--;
 	if (furniture->live_view_count == 0) {
 		_release_world_furniture(p_world);
 	} else {
@@ -9312,13 +9345,13 @@ void Node3DEditor::_rebind_editor_world_furniture() {
 	}
 	for (Node3DEditorViewport *secondary_viewport : secondary_viewports) {
 		if (secondary_viewport && secondary_viewport->bound_world.is_valid()) {
-			_ensure_world_furniture(secondary_viewport->bound_world, secondary_viewport->preview_parent_viewport);
+			_ensure_world_furniture(secondary_viewport->bound_world, secondary_viewport->_resolve_preview_parent_viewport());
 		}
 	}
 }
 
 void Node3DEditor::_rebind_preview_sun_env_parent() {
-	call_deferred(SNAME("_sync_preview_environment_parenting"));
+	callable_mp(this, &Node3DEditor::_sync_preview_environment_parenting).call_deferred();
 }
 
 void Node3DEditor::_sync_preview_environment_parenting() {
@@ -9327,41 +9360,52 @@ void Node3DEditor::_sync_preview_environment_parenting() {
 
 	for (KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
 		EditorWorldFurniture &furniture = world_entry.value;
-		SubViewport *context_viewport = furniture.preview_parent_viewport;
+		SubViewport *context_viewport = _resolve_preview_parent(furniture);
 		if (!context_viewport && EditorNode::get_singleton()) {
 			Ref<World3D> world = ObjectDB::get_instance<World3D>(world_entry.key);
+			// Only the active edited world may fall back to the live scene root. An expired
+			// secondary-world parent must never be remapped onto an unrelated context viewport.
 			if (world.is_valid() && world == _get_edited_world_3d()) {
 				context_viewport = EditorNode::get_singleton()->get_scene_root();
-				furniture.preview_parent_viewport = context_viewport;
+				if (context_viewport) {
+					furniture.preview_parent_viewport_id = context_viewport->get_instance_id();
+				}
 			}
 		}
-		ERR_CONTINUE(!context_viewport);
-		ERR_CONTINUE(!furniture.preview_sun);
-		ERR_CONTINUE(!furniture.preview_environment);
+		if (!context_viewport) {
+			continue;
+		}
+
+		DirectionalLight3D *preview_sun = _resolve_preview_sun(furniture);
+		WorldEnvironment *preview_environment = _resolve_preview_environment(furniture);
+		if (!preview_sun || !preview_environment) {
+			// Expired furniture children are expected after the former parent was deleted.
+			continue;
+		}
 
 		if (disable_light) {
-			if (furniture.preview_sun->get_parent()) {
-				furniture.preview_sun->get_parent()->remove_child(furniture.preview_sun);
+			if (preview_sun->get_parent()) {
+				preview_sun->get_parent()->remove_child(preview_sun);
 				furniture.preview_sun_dangling = true;
 			}
-		} else if (furniture.preview_sun->get_parent() != context_viewport) {
-			if (furniture.preview_sun->get_parent()) {
-				furniture.preview_sun->get_parent()->remove_child(furniture.preview_sun);
+		} else if (preview_sun->get_parent() != context_viewport) {
+			if (preview_sun->get_parent()) {
+				preview_sun->get_parent()->remove_child(preview_sun);
 			}
-			context_viewport->add_child(furniture.preview_sun, true);
+			context_viewport->add_child(preview_sun, true);
 			furniture.preview_sun_dangling = false;
 		}
 
 		if (disable_env) {
-			if (furniture.preview_environment->get_parent()) {
-				furniture.preview_environment->get_parent()->remove_child(furniture.preview_environment);
+			if (preview_environment->get_parent()) {
+				preview_environment->get_parent()->remove_child(preview_environment);
 				furniture.preview_env_dangling = true;
 			}
-		} else if (furniture.preview_environment->get_parent() != context_viewport) {
-			if (furniture.preview_environment->get_parent()) {
-				furniture.preview_environment->get_parent()->remove_child(furniture.preview_environment);
+		} else if (preview_environment->get_parent() != context_viewport) {
+			if (preview_environment->get_parent()) {
+				preview_environment->get_parent()->remove_child(preview_environment);
 			}
-			context_viewport->add_child(furniture.preview_environment);
+			context_viewport->add_child(preview_environment);
 			furniture.preview_env_dangling = false;
 		}
 	}
@@ -9691,7 +9735,9 @@ void Node3DEditor::_add_sun_to_scene(bool p_already_added_environment) {
 		base = get_tree()->get_edited_scene_root();
 	}
 	ERR_FAIL_NULL(base);
-	Node *new_sun = _get_edited_world_furniture().preview_sun->duplicate();
+	DirectionalLight3D *preview_sun = _resolve_preview_sun(_get_edited_world_furniture());
+	ERR_FAIL_NULL(preview_sun);
+	Node *new_sun = preview_sun->duplicate();
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
 	undo_redo->create_action(TTR("Add Preview Sun to Scene"));
@@ -9721,10 +9767,12 @@ void Node3DEditor::_add_environment_to_scene(bool p_already_added_sun) {
 	}
 	ERR_FAIL_NULL(base);
 
+	WorldEnvironment *preview_environment = _resolve_preview_environment(_get_edited_world_furniture());
+	ERR_FAIL_NULL(preview_environment);
 	WorldEnvironment *new_env = memnew(WorldEnvironment);
-	new_env->set_environment(_get_edited_world_furniture().preview_environment->get_environment()->duplicate(true));
+	new_env->set_environment(preview_environment->get_environment()->duplicate(true));
 	if (GLOBAL_GET("rendering/lights_and_shadows/use_physical_light_units")) {
-		new_env->set_camera_attributes(_get_edited_world_furniture().preview_environment->get_camera_attributes()->duplicate(true));
+		new_env->set_camera_attributes(preview_environment->get_camera_attributes()->duplicate(true));
 	}
 
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
@@ -10008,6 +10056,40 @@ void Node3DEditor::release_secondary_viewport(Node3DEditorViewport *p_viewport) 
 	}
 	memdelete(p_viewport);
 }
+
+#ifdef TESTS_ENABLED
+int Node3DEditor::get_world_live_view_count_for_tests(const Ref<World3D> &p_world) const {
+	const EditorWorldFurniture *furniture = _get_world_furniture(p_world);
+	return furniture ? furniture->live_view_count : 0;
+}
+
+bool Node3DEditor::has_world_furniture_for_tests(const Ref<World3D> &p_world) const {
+	return _get_world_furniture(p_world) != nullptr;
+}
+
+ObjectID Node3DEditor::get_world_preview_parent_id_for_tests(const Ref<World3D> &p_world) const {
+	const EditorWorldFurniture *furniture = _get_world_furniture(p_world);
+	return furniture ? furniture->preview_parent_viewport_id : ObjectID();
+}
+
+ObjectID Node3DEditor::get_world_preview_sun_id_for_tests(const Ref<World3D> &p_world) const {
+	const EditorWorldFurniture *furniture = _get_world_furniture(p_world);
+	return furniture ? furniture->preview_sun_id : ObjectID();
+}
+
+ObjectID Node3DEditor::get_world_preview_environment_id_for_tests(const Ref<World3D> &p_world) const {
+	const EditorWorldFurniture *furniture = _get_world_furniture(p_world);
+	return furniture ? furniture->preview_environment_id : ObjectID();
+}
+
+void Node3DEditor::sync_preview_environment_parenting_for_tests() {
+	_sync_preview_environment_parenting();
+}
+
+void Node3DEditor::preview_settings_changed_for_tests() {
+	_preview_settings_changed();
+}
+#endif
 
 void Node3DEditor::add_control_to_left_panel(Control *p_control) {
 	left_panel_split->add_child(p_control);
@@ -10326,7 +10408,7 @@ void Node3DEditor::clear() {
 }
 
 void Node3DEditor::_sun_direction_draw() {
-	DirectionalLight3D *preview_sun = _get_edited_world_furniture().preview_sun;
+	DirectionalLight3D *preview_sun = _resolve_preview_sun(_get_edited_world_furniture());
 	if (!preview_sun) {
 		return;
 	}
@@ -10344,7 +10426,7 @@ void Node3DEditor::_preview_settings_changed() {
 	}
 
 	{ // preview sun
-		DirectionalLight3D *preview_sun = _get_edited_world_furniture().preview_sun;
+		DirectionalLight3D *preview_sun = _resolve_preview_sun(_get_edited_world_furniture());
 		if (preview_sun) {
 			sun_rotation.x = Math::deg_to_rad(-sun_angle_altitude->get_value());
 			sun_rotation.y = Math::deg_to_rad(180.0 - sun_angle_azimuth->get_value());
@@ -10374,7 +10456,7 @@ void Node3DEditor::_preview_settings_changed() {
 		environment->set_tonemapper(environ_tonemap_button->is_pressed() ? Environment::TONE_MAPPER_FILMIC : Environment::TONE_MAPPER_LINEAR);
 
 		for (KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
-			WorldEnvironment *preview_environment = world_entry.value.preview_environment;
+			WorldEnvironment *preview_environment = _resolve_preview_environment(world_entry.value);
 			if (!preview_environment) {
 				continue;
 			}
@@ -10455,7 +10537,7 @@ void Node3DEditor::_update_preview_environment() {
 		environ_vb->show();
 	}
 
-	call_deferred(SNAME("_sync_preview_environment_parenting"));
+	callable_mp(this, &Node3DEditor::_sync_preview_environment_parenting).call_deferred();
 }
 
 void Node3DEditor::_sun_direction_input(const Ref<InputEvent> &p_event) {
@@ -10499,9 +10581,10 @@ void Node3DEditor::_sun_direction_set_azimuth(float p_azimuth) {
 
 void Node3DEditor::_sun_set_color(const Color &p_color) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	DirectionalLight3D *preview_sun = _resolve_preview_sun(_get_edited_world_furniture());
 	undo_redo->create_action(TTR("Set Preview Sun Color"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_color, "set_pick_color", p_color);
-	undo_redo->add_undo_method(sun_color, "set_pick_color", _get_edited_world_furniture().preview_sun ? _get_edited_world_furniture().preview_sun->get_color() : sun_color->get_pick_color());
+	undo_redo->add_undo_method(sun_color, "set_pick_color", preview_sun ? preview_sun->get_color() : sun_color->get_pick_color());
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();
@@ -10509,9 +10592,10 @@ void Node3DEditor::_sun_set_color(const Color &p_color) {
 
 void Node3DEditor::_sun_set_energy(float p_energy) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	DirectionalLight3D *preview_sun = _resolve_preview_sun(_get_edited_world_furniture());
 	undo_redo->create_action(TTR("Set Preview Sun Energy"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_energy, "set_value_no_signal", p_energy);
-	undo_redo->add_undo_method(sun_energy, "set_value_no_signal", _get_edited_world_furniture().preview_sun ? _get_edited_world_furniture().preview_sun->get_param(Light3D::PARAM_ENERGY) : sun_energy->get_value());
+	undo_redo->add_undo_method(sun_energy, "set_value_no_signal", preview_sun ? preview_sun->get_param(Light3D::PARAM_ENERGY) : sun_energy->get_value());
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();
@@ -10519,9 +10603,10 @@ void Node3DEditor::_sun_set_energy(float p_energy) {
 
 void Node3DEditor::_sun_set_shadow_max_distance(float p_shadow_max_distance) {
 	EditorUndoRedoManager *undo_redo = EditorUndoRedoManager::get_singleton();
+	DirectionalLight3D *preview_sun = _resolve_preview_sun(_get_edited_world_furniture());
 	undo_redo->create_action(TTR("Set Preview Sun Max Shadow Distance"), UndoRedo::MergeMode::MERGE_ENDS);
 	undo_redo->add_do_method(sun_shadow_max_distance, "set_value_no_signal", p_shadow_max_distance);
-	undo_redo->add_undo_method(sun_shadow_max_distance, "set_value_no_signal", _get_edited_world_furniture().preview_sun ? _get_edited_world_furniture().preview_sun->get_param(Light3D::PARAM_SHADOW_MAX_DISTANCE) : sun_shadow_max_distance->get_value());
+	undo_redo->add_undo_method(sun_shadow_max_distance, "set_value_no_signal", preview_sun ? preview_sun->get_param(Light3D::PARAM_SHADOW_MAX_DISTANCE) : sun_shadow_max_distance->get_value());
 	undo_redo->add_do_method(this, "_preview_settings_changed");
 	undo_redo->add_undo_method(this, "_preview_settings_changed");
 	undo_redo->commit_action();

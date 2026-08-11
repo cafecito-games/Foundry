@@ -63,6 +63,8 @@
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_view.h"
 #include "editor/scene/canvas_item_editor_view_state.h"
+#include "scene/3d/light_3d.h"
+#include "scene/3d/world_environment.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_editor_view.h"
@@ -2789,6 +2791,26 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 				"The 3D tile lost its secondary 3D viewport after switching boards a second time.");
 	}
 
+#ifdef TESTS_ENABLED
+	p_driver.set_step("assert_live_view_count_is_one_after_rebind");
+	{
+		Node3DEditor *spatial_editor = Node3DEditor::get_singleton();
+		if (spatial_editor == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "Node3DEditor is unavailable while checking world binding counts.");
+		}
+		Node3DEditorViewport *spatial_view = surviving_tile->get_spatial_view();
+		const Ref<World3D> bound_world = spatial_view->get_bound_world();
+		if (bound_world.is_null()) {
+			return _failure_with_message(p_driver, result.workflow, "The demoted secondary 3D viewport has no bound world.");
+		}
+		const int live_view_count = spatial_editor->get_world_live_view_count_for_tests(bound_world);
+		if (live_view_count != 1) {
+			return _failure_with_message(p_driver, result.workflow,
+					vformat("Expected demoted 3D world live_view_count == 1 after same-world rebind, found %d.", live_view_count));
+		}
+	}
+#endif
+
 	p_driver.set_step("assert_no_new_errors");
 	if (!p_driver.assert_no_new_errors()) {
 		return _failure_from_driver(p_driver, result.workflow);
@@ -2802,6 +2824,205 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	result.details = details;
 	return result;
 }
+
+#ifdef TESTS_ENABLED
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_board_close_3d_context_lifetime(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "board_close_3d_context_lifetime";
+
+	p_driver.begin_workflow();
+	p_driver.set_step("open_3d_scene");
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+	if (editor_node->load_scene(BOARD_SWITCH_3D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Failed to load scene '%s'.", BOARD_SWITCH_3D_SCENE));
+	}
+	p_driver.flush_frames(30);
+
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Board strip is unavailable.");
+	}
+	if (strip->get_board_count() != 1 || strip->get_active_index() != 0) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected a single active board at startup, found %d board(s) with active index %d.",
+						strip->get_board_count(), strip->get_active_index()));
+	}
+
+	EditorBoard *board1 = strip->get_board(0);
+	if (board1 == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Board 1 is unavailable.");
+	}
+	const ObjectID board1_id = board1->get_instance_id();
+
+	ScenePaneTile *initial_tile = _resolve_focused_scene_tile(board1);
+	if (initial_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve the scene tile holding the 3D scene.");
+	}
+	const ObjectID initial_tile_id = initial_tile->get_instance_id();
+	if (initial_tile->get_spatial_view() != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The focused tile already owns a secondary 3D viewport before any board switch.");
+	}
+
+	p_driver.set_step("add_second_board");
+	if (strip->add_board() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Failed to add a second board.");
+	}
+	p_driver.flush_frames(20);
+
+	p_driver.set_step("switch_to_second_board");
+	strip->set_active_board(1);
+	p_driver.flush_frames(90);
+
+	p_driver.set_step("open_scene_on_second_board");
+	if (editor_node->load_scene(BOARD_SWITCH_2D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Failed to load scene '%s'.", BOARD_SWITCH_2D_SCENE));
+	}
+	p_driver.flush_frames(60);
+
+	ScenePaneTile *demoted_tile = ObjectDB::get_instance<ScenePaneTile>(initial_tile_id);
+	if (demoted_tile == nullptr || demoted_tile->get_spatial_view() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow,
+				"Demoting the 3D tile did not build a secondary 3D viewport, so this run never exercised the lifetime gap.");
+	}
+
+	// Exercise the same-world rebind path that used to over-count live views.
+	p_driver.set_step("rebind_secondary_viewport");
+	strip->set_active_board(0);
+	p_driver.flush_frames(90);
+	strip->set_active_board(1);
+	p_driver.flush_frames(90);
+
+	demoted_tile = ObjectDB::get_instance<ScenePaneTile>(initial_tile_id);
+	if (demoted_tile == nullptr || demoted_tile->get_spatial_view() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The demoted 3D tile lost its secondary viewport after rebind.");
+	}
+
+	Node3DEditor *spatial_editor = Node3DEditor::get_singleton();
+	if (spatial_editor == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Node3DEditor is unavailable.");
+	}
+
+	Node3DEditorViewport *spatial_view = demoted_tile->get_spatial_view();
+	const ObjectID spatial_view_id = spatial_view->get_instance_id();
+	const Ref<World3D> bound_world = spatial_view->get_bound_world();
+	if (bound_world.is_null()) {
+		return _failure_with_message(p_driver, result.workflow, "The demoted secondary 3D viewport has no bound world.");
+	}
+
+	p_driver.set_step("sync_preview_parenting_before_close");
+	spatial_editor->sync_preview_environment_parenting_for_tests();
+
+	EditorSceneContext *context = demoted_tile->get_scene_context();
+	if (context == nullptr || context->get_viewport() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Board 1's demoted tile has no live scene context viewport before close.");
+	}
+	SubViewport *context_viewport = context->get_viewport();
+	const ObjectID context_viewport_id = context_viewport->get_instance_id();
+	const ObjectID preview_sun_id = spatial_editor->get_world_preview_sun_id_for_tests(bound_world);
+	const ObjectID preview_environment_id = spatial_editor->get_world_preview_environment_id_for_tests(bound_world);
+	const ObjectID preview_parent_id = spatial_editor->get_world_preview_parent_id_for_tests(bound_world);
+
+	p_driver.set_step("assert_furniture_live_before_close");
+	DirectionalLight3D *preview_sun = ObjectDB::get_instance<DirectionalLight3D>(preview_sun_id);
+	WorldEnvironment *preview_environment = ObjectDB::get_instance<WorldEnvironment>(preview_environment_id);
+	if (preview_sun == nullptr || preview_environment == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Preview sun/environment identities do not resolve before board close.");
+	}
+	if (preview_parent_id != context_viewport_id) {
+		return _failure_with_message(p_driver, result.workflow, "Furniture preview parent identity does not match Board 1's context viewport.");
+	}
+	if (preview_sun->get_parent() != context_viewport || preview_environment->get_parent() != context_viewport) {
+		return _failure_with_message(p_driver, result.workflow,
+				"Preview sun/environment are not parented to Board 1's context viewport before close.");
+	}
+	const int live_view_count_before = spatial_editor->get_world_live_view_count_for_tests(bound_world);
+	if (live_view_count_before != 1) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected demoted 3D world live_view_count == 1 before close, found %d.", live_view_count_before));
+	}
+
+	p_driver.set_step("close_board_with_pending_teardown");
+	if (strip->close_board(0)) {
+		return _failure_with_message(p_driver, result.workflow,
+				"close_board(0) returned true immediately; scene close did not leave a deferred board teardown gap.");
+	}
+
+	// Do not flush here: the gap under test is the window after synchronous context
+	// destruction and before deferred board/tile/secondary-viewport deletion.
+	p_driver.set_step("assert_context_dead_tile_live_gap");
+	if (ObjectDB::get_instance<EditorBoard>(board1_id) == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Board 1 was destroyed before the deferred close flush; the lifetime gap was missed.");
+	}
+	if (ObjectDB::get_instance<ScenePaneTile>(initial_tile_id) == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The demoted tile was destroyed before the deferred close flush; the lifetime gap was missed.");
+	}
+	Node3DEditorViewport *surviving_view = ObjectDB::get_instance<Node3DEditorViewport>(spatial_view_id);
+	if (surviving_view == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The secondary 3D viewport was destroyed before the deferred close flush; the lifetime gap was missed.");
+	}
+	if (ObjectDB::get_instance<SubViewport>(context_viewport_id) != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Board 1's context viewport still resolves after close_board; the context was not destroyed synchronously.");
+	}
+	if (ObjectDB::get_instance<DirectionalLight3D>(preview_sun_id) != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Preview sun still resolves after its parent context viewport was destroyed.");
+	}
+	if (ObjectDB::get_instance<WorldEnvironment>(preview_environment_id) != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Preview environment still resolves after its parent context viewport was destroyed.");
+	}
+	if (surviving_view->get_preview_parent_viewport_for_tests() != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Secondary view still reports a live preview parent after context destruction.");
+	}
+	const int live_view_count_during_gap = spatial_editor->get_world_live_view_count_for_tests(bound_world);
+	if (live_view_count_during_gap != 1) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected demoted 3D world live_view_count == 1 during the gap, found %d.", live_view_count_during_gap));
+	}
+
+	p_driver.set_step("force_furniture_consumers_during_gap");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	spatial_editor->sync_preview_environment_parenting_for_tests();
+	spatial_editor->preview_settings_changed_for_tests();
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	p_driver.set_step("flush_pending_board_close");
+	bool board_closed = false;
+	for (int i = 0; i < 90; i++) {
+		p_driver.flush_frames(1);
+		if (ObjectDB::get_instance<EditorBoard>(board1_id) == nullptr) {
+			board_closed = true;
+			break;
+		}
+	}
+	if (!board_closed) {
+		return _failure_with_message(p_driver, result.workflow, "Deferred board close did not destroy Board 1.");
+	}
+	if (ObjectDB::get_instance<ScenePaneTile>(initial_tile_id) != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Demoted tile survived deferred board close.");
+	}
+	if (ObjectDB::get_instance<Node3DEditorViewport>(spatial_view_id) != nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Secondary 3D viewport survived deferred board close.");
+	}
+	if (spatial_editor->has_world_furniture_for_tests(bound_world)) {
+		return _failure_with_message(p_driver, result.workflow, "World furniture entry survived after its last secondary view was released.");
+	}
+
+	result.ok = true;
+	result.message = "3D preview context lifetime survived deferred board close with identity-safe furniture.";
+	Dictionary details;
+	details["board_count"] = strip->get_board_count();
+	details["observed_context_dead_tile_live_gap"] = true;
+	result.details = details;
+	return result;
+}
+#endif // TESTS_ENABLED
 
 EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_passive_preview_input_policy(EditorWorkflowTestDriver &p_driver) {
 	Result result;

@@ -66,6 +66,12 @@ public:
 	// Opens a 3D scene in a board tile and switches boards, which demotes that tile out
 	// of focus and makes the editor build a secondary 3D viewport for its live preview.
 	static Result run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver);
+#ifdef TESTS_ENABLED
+	// Closes a demoted 3D board while proving its EditorSceneContext viewport dies before
+	// the deferred board/tile/secondary-viewport teardown, and that preview furniture is
+	// held by ObjectID rather than raw address (#2082).
+	static Result run_board_close_3d_context_lifetime(EditorWorkflowTestDriver &p_driver);
+#endif
 	// Splits the active board so a 3D tile is demoted next to a focused sibling, then
 	// drives real pointer and key input at both the passive 3D and passive 2D previews.
 	static Result run_passive_preview_input_policy(EditorWorkflowTestDriver &p_driver);
