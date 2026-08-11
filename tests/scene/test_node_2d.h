@@ -85,6 +85,47 @@ TEST_CASE("[SceneTree][Node2D]") {
 	}
 }
 
+TEST_CASE("[SceneTree][CanvasItem] CanvasItem uses its cached viewport") {
+	Window *root = SceneTree::get_singleton()->get_root();
+
+	SUBCASE("CanvasItem beneath a non-CanvasItem in a Window") {
+		Window *window = memnew(Window);
+		Node *intermediary = memnew(Node);
+		Node2D *canvas_item = memnew(Node2D);
+		root->add_child(window);
+		window->add_child(intermediary);
+		intermediary->add_child(canvas_item);
+
+		CHECK_EQ(canvas_item->get_viewport(), window);
+		CHECK(canvas_item->is_visible_in_tree());
+
+		window->hide();
+		CHECK_FALSE(canvas_item->is_visible_in_tree());
+		window->show();
+		CHECK(canvas_item->is_visible_in_tree());
+
+		memdelete(canvas_item);
+		memdelete(intermediary);
+		memdelete(window);
+	}
+
+	SUBCASE("CanvasItem beneath a non-CanvasItem in a SubViewport") {
+		SubViewport *viewport = memnew(SubViewport);
+		Node *intermediary = memnew(Node);
+		Node2D *canvas_item = memnew(Node2D);
+		root->add_child(viewport);
+		viewport->add_child(intermediary);
+		intermediary->add_child(canvas_item);
+
+		CHECK_EQ(canvas_item->get_viewport(), viewport);
+		CHECK(canvas_item->is_visible_in_tree());
+
+		memdelete(canvas_item);
+		memdelete(intermediary);
+		memdelete(viewport);
+	}
+}
+
 TEST_CASE("[SceneTree][Node2D] Utility methods") {
 	Node2D *test_node1 = memnew(Node2D);
 	Node2D *test_node2 = memnew(Node2D);

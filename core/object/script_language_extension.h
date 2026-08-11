@@ -236,6 +236,71 @@ class ScriptLanguageExtension : public ScriptLanguage {
 	FOUNDRY_CLASS(ScriptLanguageExtension, ScriptLanguage)
 protected:
 	static void _bind_methods();
+	static bool _parse_validate_result(const Dictionary &p_result, List<String> *r_functions, List<ScriptError> *r_errors, List<Warning> *r_warnings, HashSet<int> *r_safe_lines) {
+		if (!p_result.has("valid")) {
+			return false;
+		}
+		if (r_functions != nullptr && p_result.has("functions")) {
+			Vector<String> functions = p_result["functions"];
+			for (int i = 0; i < functions.size(); i++) {
+				r_functions->push_back(functions[i]);
+			}
+		}
+		if (r_errors != nullptr && p_result.has("errors")) {
+			Array errors = p_result["errors"];
+			for (const Variant &error : errors) {
+				Dictionary err = error;
+				ERR_CONTINUE(!err.has("line"));
+				ERR_CONTINUE(!err.has("column"));
+				ERR_CONTINUE(!err.has("message"));
+
+				ScriptError serr;
+				if (err.has("path")) {
+					serr.path = err["path"];
+				}
+				serr.start_line = err["line"];
+				serr.start_column = err["column"];
+				serr.end_line = serr.start_line;
+				serr.end_column = serr.start_column < INT_MAX ? serr.start_column + 1 : INT_MAX;
+				serr.message = err["message"];
+
+				r_errors->push_back(serr);
+			}
+		}
+		if (r_warnings != nullptr && p_result.has("warnings")) {
+			Array warnings = p_result["warnings"];
+			for (const Variant &warning : warnings) {
+				Dictionary warn = warning;
+				ERR_CONTINUE(!warn.has("start_line"));
+				ERR_CONTINUE(!warn.has("end_line"));
+				ERR_CONTINUE(!warn.has("code"));
+				ERR_CONTINUE(!warn.has("string_code"));
+				ERR_CONTINUE(!warn.has("message"));
+
+				Warning swarn;
+				swarn.start_line = warn["start_line"];
+				if (warn.has("start_column")) {
+					swarn.start_column = warn["start_column"];
+				}
+				swarn.end_line = warn["end_line"];
+				if (warn.has("end_column")) {
+					swarn.end_column = warn["end_column"];
+				}
+				swarn.code = warn["code"];
+				swarn.string_code = warn["string_code"];
+				swarn.message = warn["message"];
+
+				r_warnings->push_back(swarn);
+			}
+		}
+		if (r_safe_lines != nullptr && p_result.has("safe_lines")) {
+			PackedInt32Array safe_lines = p_result["safe_lines"];
+			for (int i = 0; i < safe_lines.size(); i++) {
+				r_safe_lines->insert(safe_lines[i]);
+			}
+		}
+		return p_result["valid"];
+	}
 
 public:
 	EXBIND0RC(String, get_name)
@@ -314,62 +379,7 @@ public:
 	virtual bool validate(const String &p_script, const String &p_path = "", List<String> *r_functions = nullptr, List<ScriptError> *r_errors = nullptr, List<Warning> *r_warnings = nullptr, HashSet<int> *r_safe_lines = nullptr) const override {
 		Dictionary ret;
 		FOUNDRY_VIRTUAL_CALL(_validate, p_script, p_path, r_functions != nullptr, r_errors != nullptr, r_warnings != nullptr, r_safe_lines != nullptr, ret);
-		if (!ret.has("valid")) {
-			return false;
-		}
-		if (r_functions != nullptr && ret.has("functions")) {
-			Vector<String> functions = ret["functions"];
-			for (int i = 0; i < functions.size(); i++) {
-				r_functions->push_back(functions[i]);
-			}
-		}
-		if (r_errors != nullptr && ret.has("errors")) {
-			Array errors = ret["errors"];
-			for (const Variant &error : errors) {
-				Dictionary err = error;
-				ERR_CONTINUE(!err.has("line"));
-				ERR_CONTINUE(!err.has("column"));
-				ERR_CONTINUE(!err.has("message"));
-
-				ScriptError serr;
-				if (err.has("path")) {
-					serr.path = err["path"];
-				}
-				serr.line = err["line"];
-				serr.column = err["column"];
-				serr.message = err["message"];
-
-				r_errors->push_back(serr);
-			}
-		}
-		if (r_warnings != nullptr && ret.has("warnings")) {
-			ERR_FAIL_COND_V(!ret.has("warnings"), false);
-			Array warnings = ret["warnings"];
-			for (const Variant &warning : warnings) {
-				Dictionary warn = warning;
-				ERR_CONTINUE(!warn.has("start_line"));
-				ERR_CONTINUE(!warn.has("end_line"));
-				ERR_CONTINUE(!warn.has("code"));
-				ERR_CONTINUE(!warn.has("string_code"));
-				ERR_CONTINUE(!warn.has("message"));
-
-				Warning swarn;
-				swarn.start_line = warn["start_line"];
-				swarn.end_line = warn["end_line"];
-				swarn.code = warn["code"];
-				swarn.string_code = warn["string_code"];
-				swarn.message = warn["message"];
-
-				r_warnings->push_back(swarn);
-			}
-		}
-		if (r_safe_lines != nullptr && ret.has("safe_lines")) {
-			PackedInt32Array safe_lines = ret["safe_lines"];
-			for (int i = 0; i < safe_lines.size(); i++) {
-				r_safe_lines->insert(safe_lines[i]);
-			}
-		}
-		return ret["valid"];
+		return _parse_validate_result(ret, r_functions, r_errors, r_warnings, r_safe_lines);
 	}
 
 	EXBIND1RC(String, validate_path, const String &)

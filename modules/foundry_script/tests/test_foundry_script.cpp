@@ -52,6 +52,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/resource_uid.h"
+#include "core/object/script_language_extension.h"
 #include "core/os/os.h"
 #include "core/string/string_builder.h"
 #include "tests/test_tools.h"
@@ -63,11 +64,210 @@
 
 namespace FSTests {
 
+class ScriptLanguageExtensionValidationProbe : public ScriptLanguageExtension {
+	FOUNDRY_SOFTCLASS(ScriptLanguageExtensionValidationProbe, ScriptLanguageExtension);
+
+public:
+	bool parse_validate_result(const Dictionary &p_result, List<ScriptError> *r_errors, List<Warning> *r_warnings) const {
+		return _parse_validate_result(p_result, nullptr, r_errors, r_warnings, nullptr);
+	}
+};
+
+TEST_CASE("[Core][ScriptLanguageExtension] diagnostic range compatibility") {
+	ScriptLanguageExtensionValidationProbe *language = memnew(ScriptLanguageExtensionValidationProbe);
+
+	SUBCASE("Legacy errors become one-character ranges") {
+		Dictionary error;
+		error["line"] = 4;
+		error["column"] = 7;
+		error["message"] = "legacy error";
+		error["path"] = "res://legacy.fs";
+
+		Dictionary result;
+		result["valid"] = false;
+		result["errors"] = Array({ error });
+		List<ScriptLanguage::ScriptError> errors;
+
+		CHECK_FALSE(language->parse_validate_result(result, &errors, nullptr));
+		CHECK_EQ(errors.size(), 1);
+		if (errors.size() == 1) {
+			const ScriptLanguage::ScriptError &parsed = errors.front()->get();
+			CHECK_EQ(parsed.path, "res://legacy.fs");
+			CHECK_EQ(parsed.start_line, 4);
+			CHECK_EQ(parsed.start_column, 7);
+			CHECK_EQ(parsed.end_line, 4);
+			CHECK_EQ(parsed.end_column, 8);
+		}
+	}
+
+	SUBCASE("Warnings remain compatible with optional columns") {
+		Dictionary line_warning;
+		line_warning["start_line"] = 2;
+		line_warning["end_line"] = 3;
+		line_warning["code"] = 1;
+		line_warning["string_code"] = "LINE_ONLY";
+		line_warning["message"] = "line warning";
+
+		Dictionary ranged_warning;
+		ranged_warning["start_line"] = 5;
+		ranged_warning["start_column"] = 6;
+		ranged_warning["end_line"] = 5;
+		ranged_warning["end_column"] = 10;
+		ranged_warning["code"] = 2;
+		ranged_warning["string_code"] = "RANGED";
+		ranged_warning["message"] = "ranged warning";
+
+		Dictionary result;
+		result["valid"] = true;
+		result["warnings"] = Array({ line_warning, ranged_warning });
+		List<ScriptLanguage::Warning> warnings;
+
+		CHECK(language->parse_validate_result(result, nullptr, &warnings));
+		CHECK_EQ(warnings.size(), 2);
+		if (warnings.size() == 2) {
+			const ScriptLanguage::Warning &line_only = warnings.front()->get();
+			CHECK_EQ(line_only.start_line, 2);
+			CHECK_EQ(line_only.start_column, -1);
+			CHECK_EQ(line_only.end_line, 3);
+			CHECK_EQ(line_only.end_column, -1);
+
+			const ScriptLanguage::Warning &ranged = warnings.back()->get();
+			CHECK_EQ(ranged.start_line, 5);
+			CHECK_EQ(ranged.start_column, 6);
+			CHECK_EQ(ranged.end_line, 5);
+			CHECK_EQ(ranged.end_column, 10);
+		}
+	}
+
+	SUBCASE("Malformed and invalid coordinates degrade without overflow") {
+		Dictionary malformed_error;
+		malformed_error["line"] = 3;
+		malformed_error["message"] = "missing column";
+
+		Dictionary invalid_error;
+		invalid_error["line"] = -2;
+		invalid_error["column"] = -4;
+		invalid_error["message"] = "invalid range";
+
+		Dictionary maximum_error;
+		maximum_error["line"] = INT_MAX;
+		maximum_error["column"] = INT_MAX;
+		maximum_error["message"] = "maximum range";
+
+		Dictionary result;
+		result["valid"] = false;
+		result["errors"] = Array({ malformed_error, invalid_error, maximum_error });
+		List<ScriptLanguage::ScriptError> errors;
+
+		ERR_PRINT_OFF;
+		CHECK_FALSE(language->parse_validate_result(result, &errors, nullptr));
+		ERR_PRINT_ON;
+		CHECK_EQ(errors.size(), 2);
+		if (errors.size() == 2) {
+			const ScriptLanguage::ScriptError &invalid = errors.front()->get();
+			CHECK_EQ(invalid.start_line, -2);
+			CHECK_EQ(invalid.start_column, -4);
+			CHECK_EQ(invalid.end_line, -2);
+			CHECK_EQ(invalid.end_column, -3);
+
+			const ScriptLanguage::ScriptError &maximum = errors.back()->get();
+			CHECK_EQ(maximum.start_line, INT_MAX);
+			CHECK_EQ(maximum.start_column, INT_MAX);
+			CHECK_EQ(maximum.end_line, INT_MAX);
+			CHECK_EQ(maximum.end_column, INT_MAX);
+		}
+	}
+
+	memdelete(language);
+}
+
 TEST_CASE("[Modules][FoundryScript] Language reserved words include namespace declarations") {
 	Vector<String> reserved_words = FSLanguage::get_singleton()->get_reserved_words();
 	CHECK(reserved_words.has("import"));
 	CHECK(reserved_words.has("namespace"));
 }
+
+#ifdef DEBUG_ENABLED
+class DiagnosticRangeWarningSettingsScope {
+	Variant previous_enable;
+	Variant previous_unused_variable;
+	bool previous_ignore = false;
+
+public:
+	DiagnosticRangeWarningSettingsScope() {
+		const String unused_variable_setting = FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE);
+		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
+		previous_unused_variable = ProjectSettings::get_singleton()->get_setting(unused_variable_setting, (int)FSWarning::WARN);
+		previous_ignore = FSParser::is_ignoring_warnings();
+
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
+		ProjectSettings::get_singleton()->set_setting(unused_variable_setting, (int)FSWarning::WARN);
+		FSParser::set_ignoring_warnings(false);
+		FSParser::update_project_settings();
+	}
+
+	~DiagnosticRangeWarningSettingsScope() {
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
+		ProjectSettings::get_singleton()->set_setting(
+				FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE), previous_unused_variable);
+		FSParser::set_ignoring_warnings(previous_ignore);
+		FSParser::update_project_settings();
+	}
+};
+
+TEST_CASE("[Modules][FoundryScript] diagnostic range validation is one-based and end-exclusive") {
+	DiagnosticRangeWarningSettingsScope warning_settings;
+
+	SUBCASE("Unused variable warning carries the variable declaration range") {
+		const String source = "func diagnose() -> void:\n    var unused = 42\n";
+		List<ScriptLanguage::ScriptError> errors;
+		List<ScriptLanguage::Warning> warnings;
+
+		const bool valid = FSLanguage::get_singleton()->validate(
+				source, "res://diagnostic_warning_range.fs", nullptr, &errors, &warnings);
+
+		CHECK(valid);
+		CHECK(errors.is_empty());
+		if (!valid || !errors.is_empty()) {
+			return;
+		}
+		const ScriptLanguage::Warning *warning = nullptr;
+		for (const ScriptLanguage::Warning &candidate : warnings) {
+			if (candidate.string_code == "UNUSED_VARIABLE") {
+				warning = &candidate;
+				break;
+			}
+		}
+		CHECK_NE(warning, nullptr);
+		if (warning == nullptr) {
+			return;
+		}
+		CHECK_EQ(warning->start_line, 2);
+		CHECK_EQ(warning->start_column, 5);
+		CHECK_EQ(warning->end_line, 2);
+		CHECK_EQ(warning->end_column, 20);
+	}
+
+	SUBCASE("Parser error carries the preceding token range") {
+		const String source = "func diagnose() -> void:\n    var broken =\n";
+		List<ScriptLanguage::ScriptError> errors;
+
+		const bool valid = FSLanguage::get_singleton()->validate(
+				source, "res://diagnostic_error_range.fs", nullptr, &errors);
+
+		CHECK_FALSE(valid);
+		CHECK_FALSE(errors.is_empty());
+		if (valid || errors.is_empty()) {
+			return;
+		}
+		const ScriptLanguage::ScriptError &error = errors.front()->get();
+		CHECK_EQ(error.start_line, 2);
+		CHECK_EQ(error.start_column, 16);
+		CHECK_EQ(error.end_line, 2);
+		CHECK_EQ(error.end_column, 17);
+	}
+}
+#endif // DEBUG_ENABLED
 
 TEST_CASE("[Modules][FoundryScript] Language reserved words include hard trait declarations") {
 	Vector<String> reserved_words = FSLanguage::get_singleton()->get_reserved_words();

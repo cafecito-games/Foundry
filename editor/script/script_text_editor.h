@@ -153,6 +153,8 @@ class ScriptTextEditor : public ScriptEditorBase {
 	Color marked_line_color = Color(1, 1, 1);
 	Color warning_line_color = Color(1, 1, 1);
 	Color folded_code_region_color = Color(1, 1, 1);
+	Color warning_underline_color = Color(1, 1, 1);
+	Color error_underline_color = Color(1, 1, 1);
 	int previous_line = 0;
 
 	PopupPanel *color_panel = nullptr;

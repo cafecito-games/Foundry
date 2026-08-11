@@ -236,6 +236,14 @@ public:
 
 #ifdef TESTS_ENABLED
 	static bool prepare_doc_cache_for_tests(const String &p_path) { return _prepare_doc_cache(p_path); }
+	static void render_doc_text_for_tests(
+			const String &p_bbcode,
+			RichTextLabel *p_rich_text_label,
+			const Control *p_owner_node);
+	static void render_packed_array_copy_note_for_tests(
+			const String &p_type,
+			RichTextLabel *p_rich_text_label,
+			const Control *p_owner_node);
 #endif
 
 	// Adding scripts to DocData directly may make script doc cache inconsistent. Use methods below when adding script docs.

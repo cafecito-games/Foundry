@@ -266,7 +266,11 @@ public:
 
 	/* EDITOR FUNCTIONS */
 	struct Warning {
-		int start_line = -1, end_line = -1;
+		/// All one-based. The start is inclusive and the end is exclusive.
+		int start_line = 0;
+		int start_column = -1;
+		int end_line = 0;
+		int end_column = -1;
 		int code;
 		String string_code;
 		String message;
@@ -274,8 +278,11 @@ public:
 
 	struct ScriptError {
 		String path;
-		int line = -1;
-		int column = -1;
+		/// All one-based. The start is inclusive and the end is exclusive.
+		int start_line = -1;
+		int start_column = -1;
+		int end_line = -1;
+		int end_column = -1;
 		String message;
 	};
 

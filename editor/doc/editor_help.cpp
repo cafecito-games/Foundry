@@ -51,6 +51,7 @@
 #include "editor/script/script_editor_plugin.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/themes/editor_scale.h"
+#include "editor/themes/editor_theme_manager.h"
 #include "scene/gui/line_edit.h"
 
 #include "modules/modules_enabled.gen.h" // For foundry_script, mono.
@@ -119,6 +120,13 @@ const Vector<String> packed_array_types = {
 	"PackedVector3Array",
 	"PackedVector4Array",
 };
+
+static String _make_packed_array_copy_note(const String &p_type) {
+	return vformat(
+			TTR("[note]The returned array is [i]copied[/i] and any changes to it will not update the original "
+				"property value. See [%s] for more details.[/note]"),
+			p_type);
+}
 
 static String _replace_nbsp_with_space(const String &p_string) {
 	return p_string.replace_char(nbsp_chr, ' ');
@@ -2689,7 +2697,7 @@ void EditorHelp::_update_doc() {
 				class_desc->add_newline();
 				class_desc->add_newline();
 				// See also `EditorHelpBit::parse_symbol()` and `doc/tools/make_rst.py`.
-				_add_text(vformat(TTR("[b]Note:[/b] The returned array is [i]copied[/i] and any changes to it will not update the original property value. See [%s] for more details."), prop.type));
+				_add_text(_make_packed_array_copy_note(prop.type));
 			}
 
 			class_desc->pop(); // color
@@ -2822,9 +2830,14 @@ void EditorHelp::_help_callback(const String &p_topic) {
 	}
 }
 
-static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
+static void _add_text_to_rt(
+		const String &p_bbcode,
+		RichTextLabel *p_rt,
+		const Control *p_owner_node,
+		const String &p_class,
+		bool p_skip_doc_lookup = false) {
 	bool is_native = false;
-	{
+	if (!p_skip_doc_lookup) {
 		const DocData::ClassDoc *E = EditorHelp::get_doc(p_class);
 		if (E && !E->is_script_doc) {
 			is_native = true;
@@ -2848,6 +2861,15 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 	const Color code_color = p_owner_node->get_theme_color(SNAME("code_color"), SNAME("EditorHelp"));
 	const Color kbd_color = p_owner_node->get_theme_color(SNAME("kbd_color"), SNAME("EditorHelp"));
 	const Color code_dark_color = Color(code_color, 0.8);
+	const Color note_color = p_owner_node->get_theme_color(SNAME("note_color"), SNAME("EditorHelp"));
+	const Color warning_color = p_owner_node->get_theme_color(SNAME("warning_color"), SNAME("EditorHelp"));
+	const Color important_color = p_owner_node->get_theme_color(SNAME("important_color"), SNAME("EditorHelp"));
+	const Color tip_color = p_owner_node->get_theme_color(SNAME("tip_color"), SNAME("EditorHelp"));
+
+	const Ref<Texture2D> note_icon = p_owner_node->get_editor_theme_icon(SNAME("NodeInfo"));
+	const Ref<Texture2D> warning_icon = p_owner_node->get_editor_theme_icon(SNAME("NodeWarning"));
+	const Ref<Texture2D> important_icon = p_owner_node->get_editor_theme_icon(SNAME("StatusWarning"));
+	const Ref<Texture2D> tip_icon = p_owner_node->get_editor_theme_icon(SNAME("StatusSuccess"));
 
 	const Color link_color = p_owner_node->get_theme_color(SNAME("link_color"), SNAME("EditorHelp"));
 	const Color link_method_color = p_owner_node->get_theme_color(SNAME("accent_color"), EditorStringName(Editor));
@@ -3041,7 +3063,7 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 			p_rt->pop(); // font
 
 			pos = brk_end + 1;
-		} else if (EditorHelp::has_doc(tag)) {
+		} else if (!p_skip_doc_lookup && EditorHelp::has_doc(tag)) {
 			// Use a monospace font for class reference tags such as [Node2D] or [SceneTree].
 
 			p_rt->push_font(doc_code_font);
@@ -3057,6 +3079,39 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 			p_rt->pop(); // font
 
 			pos = brk_end + 1;
+		} else if (tag == "note" || tag == "warning" || tag == "important" || tag == "tip") {
+			const Color &admonition_color = tag == "warning" ? warning_color : (tag == "important" ? important_color : (tag == "tip" ? tip_color : note_color));
+			p_rt->push_color(admonition_color);
+			p_rt->push_font(doc_bold_font);
+
+			if (tag == "note") {
+				if (note_icon.is_valid()) {
+					p_rt->add_image(note_icon, note_icon->get_width(), note_icon->get_height(), note_color * (EditorThemeManager::is_dark_theme() ? Color(1, 1, 1) : Color(3.92, 3.92, 3.92)));
+				}
+				p_rt->add_text(nbsp + TTR("Note:") + " ");
+			} else if (tag == "warning") {
+				if (warning_icon.is_valid()) {
+					// The source icon is already colored, so don't tint it further.
+					p_rt->add_image(warning_icon, warning_icon->get_width(), warning_icon->get_height());
+				}
+				p_rt->add_text(nbsp + TTR("Warning:") + " ");
+			} else if (tag == "important") {
+				if (important_icon.is_valid()) {
+					// The source icon is already colored, so adjust it to match text color.
+					p_rt->add_image(important_icon, important_icon->get_width(), important_icon->get_height(), important_color / warning_color);
+				}
+				p_rt->add_text(nbsp + TTR("Important:") + " ");
+			} else {
+				if (tip_icon.is_valid()) {
+					// The source icon is already colored, so adjust it to match text color.
+					p_rt->add_image(tip_icon, tip_icon->get_width(), tip_icon->get_height(), Color(2.68, 1, 1.69) * tip_color);
+				}
+				p_rt->add_text(nbsp + TTR("Tip:") + " ");
+			}
+
+			p_rt->pop(); // font
+			pos = brk_end + 1;
+			tag_stack.push_front(tag);
 		} else if (tag == "b") {
 			// Use bold font.
 			p_rt->push_font(doc_bold_font);
@@ -3321,6 +3376,22 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 void EditorHelp::_add_text(const String &p_bbcode) {
 	_add_text_to_rt(p_bbcode, class_desc, this, edited_class);
 }
+
+#ifdef TESTS_ENABLED
+void EditorHelp::render_doc_text_for_tests(
+		const String &p_bbcode,
+		RichTextLabel *p_rich_text_label,
+		const Control *p_owner_node) {
+	_add_text_to_rt(p_bbcode, p_rich_text_label, p_owner_node, String(), true);
+}
+
+void EditorHelp::render_packed_array_copy_note_for_tests(
+		const String &p_type,
+		RichTextLabel *p_rich_text_label,
+		const Control *p_owner_node) {
+	_add_text_to_rt(_make_packed_array_copy_note(p_type), p_rich_text_label, p_owner_node, String(), true);
+}
+#endif
 
 void EditorHelp::_wait_for_thread(Thread &p_thread) {
 	if (p_thread.is_started()) {
@@ -4901,7 +4972,7 @@ void EditorHelpBit::parse_symbol(const String &p_symbol, const String &p_prologu
 				help_data.description += "\n";
 			}
 			// See also `EditorHelp::_update_doc()` and `doc/tools/make_rst.py`.
-			help_data.description += vformat(TTR("[b]Note:[/b] The returned array is [i]copied[/i] and any changes to it will not update the original property value. See [%s] for more details."), help_data.doc_type.type);
+			help_data.description += _make_packed_array_copy_note(help_data.doc_type.type);
 		}
 	} else if (item_type == "internal_property") {
 		symbol_type = TTR("Internal Property");

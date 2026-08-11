@@ -261,9 +261,9 @@ void FSParser::push_error(const String &p_message, const Node *p_origin) {
 	panic_mode = true;
 	// TODO: Improve positional information.
 	if (p_origin == nullptr) {
-		errors.push_back({ p_message, previous.start_line, previous.start_column });
+		errors.push_back({ p_message, previous.start_line, previous.start_column, previous.end_line, previous.end_column });
 	} else {
-		errors.push_back({ p_message, p_origin->start_line, p_origin->start_column });
+		errors.push_back({ p_message, p_origin->start_line, p_origin->start_column, p_origin->end_line, p_origin->end_column });
 	}
 }
 
@@ -337,7 +337,9 @@ void FSParser::apply_pending_warnings() {
 		warning.code = pw.code;
 		warning.symbols = pw.symbols;
 		warning.start_line = pw.source->start_line;
+		warning.start_column = pw.source->start_column;
 		warning.end_line = pw.source->end_line;
+		warning.end_column = pw.source->end_column;
 
 		if (pw.treated_as_error) {
 			push_error(warning.get_message() + String(" (Warning treated as error.)"), pw.source);

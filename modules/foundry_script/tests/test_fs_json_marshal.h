@@ -45,7 +45,7 @@
 #include "core/object/class_db.h"
 #include "core/object/ref_counted.h"
 #include "core/object/script_language.h"
-#include "tests/core/config/test_project_settings.h"
+#include "tests/core/config/project_settings_test_helpers.h"
 #include "tests/test_macros.h"
 
 // Declared in the global namespace because of the FOUNDRY_CLASS macro warning on Windows:

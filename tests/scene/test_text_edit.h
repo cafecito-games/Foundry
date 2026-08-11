@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/config/project_settings.h"
 #include "scene/gui/text_edit.h"
 
 #include "tests/test_macros.h"
@@ -42,6 +43,851 @@ static inline Array reverse_nested(Array array) {
 		((Array)reversed_array[i]).reverse();
 	}
 	return reversed_array;
+}
+
+static void check_underline_decoration(TextEdit *p_text_edit, int p_index, const Color &p_color, int p_start_line, int p_start_column, int p_end_line, int p_end_column) {
+	CHECK_LT(p_index, p_text_edit->get_underline_count());
+	if (p_index >= p_text_edit->get_underline_count()) {
+		return;
+	}
+	CHECK_EQ(p_text_edit->get_underline_color(p_index), p_color);
+	CHECK_EQ(p_text_edit->get_underline_start_line(p_index), p_start_line);
+	CHECK_EQ(p_text_edit->get_underline_start_column(p_index), p_start_column);
+	CHECK_EQ(p_text_edit->get_underline_end_line(p_index), p_end_line);
+	CHECK_EQ(p_text_edit->get_underline_end_column(p_index), p_end_column);
+}
+
+static TextEdit *create_text_edit_with_undo_stack_size(int p_max_size) {
+	ProjectSettings *project_settings = ProjectSettings::get_singleton();
+	const StringName setting = "gui/common/text_edit_undo_stack_max_size";
+	const Variant previous_value = project_settings->get_setting(setting);
+	project_settings->set_setting(setting, p_max_size);
+	TextEdit *text_edit = memnew(TextEdit);
+	project_settings->set_setting(setting, previous_value);
+	return text_edit;
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration add clear color and normalization") {
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_text("abc\ndef");
+	const Color warning_color(0.9, 0.7, 0.2);
+	const Color error_color(1.0, 0.0, 0.0);
+
+	SUBCASE("Add update color and clear") {
+		text_edit->add_underline(warning_color, 0, 1, 0, 3);
+		text_edit->add_underline(error_color, 1, 0, 1, 2);
+		CHECK_EQ(text_edit->get_underline_count(), 2);
+		check_underline_decoration(text_edit, 0, warning_color, 0, 1, 0, 3);
+		check_underline_decoration(text_edit, 1, error_color, 1, 0, 1, 2);
+
+		const Color updated_warning_color(1.0, 0.8, 0.1);
+		text_edit->update_underline_color(warning_color, updated_warning_color);
+		check_underline_decoration(text_edit, 0, updated_warning_color, 0, 1, 0, 3);
+		check_underline_decoration(text_edit, 1, error_color, 1, 0, 1, 2);
+
+		text_edit->clear_underlines();
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+	}
+
+	SUBCASE("Out of document coordinates are clamped") {
+		text_edit->add_underline(warning_color, -4, -3, 9, 99);
+		check_underline_decoration(text_edit, 0, warning_color, 0, 0, 1, 3);
+	}
+
+	SUBCASE("Reversed coordinates are ordered after clamping") {
+		text_edit->add_underline(warning_color, 1, 99, 0, -5);
+		check_underline_decoration(text_edit, 0, warning_color, 0, 0, 1, 3);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks insertion boundaries") {
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_text("0123456789");
+	const Color color(0.9, 0.7, 0.2);
+	text_edit->add_underline(color, 0, 3, 0, 7);
+
+	SUBCASE("Insertion before shifts both endpoints") {
+		text_edit->insert_text("AB", 0, 1);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+	}
+
+	SUBCASE("Insertion at the start shifts both endpoints") {
+		text_edit->insert_text("AB", 0, 3);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+	}
+
+	SUBCASE("Insertion inside shifts only the end") {
+		text_edit->insert_text("AB", 0, 5);
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 9);
+	}
+
+	SUBCASE("Insertion at the end does not grow the range") {
+		text_edit->insert_text("AB", 0, 7);
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+	}
+
+	SUBCASE("Insertion at an empty range keeps it empty") {
+		text_edit->clear_underlines();
+		text_edit->add_underline(color, 0, 3, 0, 3);
+		text_edit->insert_text("AB", 0, 3);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 5);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks deletion overlap") {
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_text("0123456789");
+	const Color color(1.0, 0.0, 0.0);
+	text_edit->add_underline(color, 0, 3, 0, 7);
+
+	SUBCASE("Deletion before shifts both endpoints") {
+		text_edit->remove_text(0, 0, 0, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 5);
+	}
+
+	SUBCASE("Deletion overlapping the start trims to the deletion start") {
+		text_edit->remove_text(0, 1, 0, 5);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 3);
+	}
+
+	SUBCASE("Deletion inside shifts only the end") {
+		text_edit->remove_text(0, 4, 0, 6);
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 5);
+	}
+
+	SUBCASE("Deletion overlapping the end trims to the deletion start") {
+		text_edit->remove_text(0, 5, 0, 9);
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 5);
+	}
+
+	SUBCASE("Deletion covering the range collapses it") {
+		text_edit->remove_text(0, 1, 0, 9);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 1);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks undo and redo") {
+	TextEdit *text_edit = memnew(TextEdit);
+	const Color color(1.0, 0.0, 0.0);
+
+	SUBCASE("Single-line insertion undo and redo") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->insert_text("AB", 0, 1);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+	}
+
+	SUBCASE("Multiline removal undo and redo") {
+		text_edit->set_text("abcd\nefgh\nijkl\nmnop");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 2, 3, 2);
+
+		text_edit->remove_text(1, 2, 2, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 2, 3, 2);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
+	}
+
+	SUBCASE("Partial-overlap deletion undo and redo restores the original endpoints") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->remove_text(0, 1, 0, 5);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 3);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 3);
+	}
+
+	SUBCASE("Covering deletion undo and redo restores the collapsed range") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->remove_text(0, 1, 0, 9);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 1);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 1);
+	}
+
+	SUBCASE("Set line undo and redo restores clamped endpoints") {
+		text_edit->set_text("abcdef\nsecond");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 2, 0, 5);
+
+		text_edit->set_line(0, "abc");
+		check_underline_decoration(text_edit, 0, color, 0, 2, 0, 3);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 2, 0, 5);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 2, 0, 3);
+	}
+
+	SUBCASE("Swap lines undo and redo restores split ranges") {
+		text_edit->set_text("aaaa\nbbbbb\ncc\nddddddd\neee");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 1, 4, 2);
+
+		text_edit->swap_lines(1, 3);
+		CHECK_EQ(text_edit->get_underline_count(), 5);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_underline_count(), 1);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 4, 2);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_underline_count(), 5);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 4);
+		check_underline_decoration(text_edit, 1, color, 2, 0, 2, 2);
+		check_underline_decoration(text_edit, 2, color, 4, 0, 4, 2);
+		check_underline_decoration(text_edit, 3, color, 3, 0, 3, 5);
+		check_underline_decoration(text_edit, 4, color, 1, 0, 1, 7);
+	}
+
+	SUBCASE("Clear removes decorations and undo restores them") {
+		text_edit->set_text("abcd\nefgh");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 2, 1, 3);
+
+		text_edit->clear();
+		CHECK_EQ(text_edit->get_text(), "");
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "abcd\nefgh");
+		CHECK_EQ(text_edit->get_underline_count(), 1);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 1, 3);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "");
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+	}
+
+	SUBCASE("Set text removes decorations and undo restores them") {
+		text_edit->set_text("abcd\nefgh");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 2, 1, 3);
+
+		text_edit->set_text("replacement");
+		CHECK_EQ(text_edit->get_text(), "replacement");
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "abcd\nefgh");
+		CHECK_EQ(text_edit->get_underline_count(), 1);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 1, 3);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "replacement");
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+	}
+
+	SUBCASE("Merged typing action restores one before and after snapshot") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->start_action(TextEdit::ACTION_TYPING);
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->end_action();
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+	}
+
+	SUBCASE("Empty complex operation does not merge neighboring snapshots") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->insert_text("A", 0, 1);
+		text_edit->begin_complex_operation();
+		text_edit->end_complex_operation();
+		text_edit->insert_text("B", 0, 2);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0A123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks open and bounded undo history") {
+	const Color color(1.0, 0.0, 0.0);
+
+	SUBCASE("Undo redo and branch continuation while nested operations remain open") {
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->begin_complex_operation();
+		text_edit->begin_complex_operation();
+		text_edit->begin_complex_operation();
+		text_edit->end_complex_operation();
+
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0A123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->undo();
+		text_edit->insert_text("C", 0, 2);
+		CHECK_EQ(text_edit->get_text(), "0AC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->end_complex_operation();
+		text_edit->end_complex_operation();
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0AC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("Multiline undo and redo while the outer operation remains open") {
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text("abcd\nefgh\nijkl");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 1, 1, 2, 2);
+
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("X\nY", 0, 2);
+		check_underline_decoration(text_edit, 0, color, 2, 1, 3, 2);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "abcd\nefgh\nijkl");
+		check_underline_decoration(text_edit, 0, color, 1, 1, 2, 2);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "abX\nYcd\nefgh\nijkl");
+		check_underline_decoration(text_edit, 0, color, 2, 1, 3, 2);
+		text_edit->end_complex_operation();
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("Redo remains atomic until nested operations close") {
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->begin_complex_operation();
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+
+		text_edit->undo();
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0A123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+
+		text_edit->redo();
+		text_edit->insert_text("C", 0, 3);
+		CHECK_EQ(text_edit->get_text(), "0ABC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		text_edit->end_complex_operation();
+		text_edit->end_complex_operation();
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0ABC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("A new edit after undoing the open action gets a fresh boundary") {
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->insert_text("P", 0, 0);
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->undo();
+		text_edit->undo();
+		text_edit->insert_text("C", 0, 1);
+		text_edit->end_complex_operation();
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "P0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "PC0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("Rewinding past the open action start does not chain unrelated history") {
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->insert_text("P", 0, 0);
+		text_edit->insert_text("Q", 0, 1);
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 2);
+		text_edit->undo();
+		text_edit->undo();
+		text_edit->insert_text("C", 0, 1);
+		text_edit->end_complex_operation();
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "P0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+		CHECK(text_edit->has_undo());
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "PC0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("Branching before the first action edit groups the surviving branch") {
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->set_caret_column(3);
+
+		text_edit->insert_text("P", 0, 0);
+		text_edit->insert_text("Q", 0, 1);
+		text_edit->begin_complex_operation();
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_caret_column(), 4);
+		text_edit->insert_text("C", 0, 1);
+		text_edit->insert_text("D", 0, 2);
+		text_edit->end_complex_operation();
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "P0123456789");
+		CHECK_EQ(text_edit->get_caret_column(), 4);
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+		CHECK(text_edit->has_undo());
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "PCD0123456789");
+		CHECK_EQ(text_edit->get_caret_column(), 6);
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("Branching after multiple pre-action undos uses the applied boundary") {
+		TextEdit *text_edit = memnew(TextEdit);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->insert_text("P", 0, 0);
+		text_edit->insert_text("Q", 0, 1);
+		text_edit->insert_text("R", 0, 2);
+		text_edit->begin_complex_operation();
+		text_edit->undo();
+		text_edit->undo();
+		text_edit->insert_text("C", 0, 1);
+		text_edit->insert_text("D", 0, 2);
+		text_edit->end_complex_operation();
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "P0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+		CHECK(text_edit->has_undo());
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "PCD0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("A zero-record cap keeps edits and decorations without history") {
+		TextEdit *text_edit = create_text_edit_with_undo_stack_size(0);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->end_complex_operation();
+
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+		CHECK_FALSE(text_edit->has_undo());
+		CHECK_FALSE(text_edit->has_redo());
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("A one-record cap preserves the retained operation baseline") {
+		TextEdit *text_edit = create_text_edit_with_undo_stack_size(1);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->insert_text("C", 0, 3);
+		text_edit->end_complex_operation();
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+		CHECK_FALSE(text_edit->has_undo());
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0ABC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("A two-record cap keeps the retained complex suffix grouped") {
+		TextEdit *text_edit = create_text_edit_with_undo_stack_size(2);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->insert_text("C", 0, 3);
+		text_edit->end_complex_operation();
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0A123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+		CHECK_FALSE(text_edit->has_undo());
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0ABC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("A one-record cap stays consistent after a closed action is evicted") {
+		TextEdit *text_edit = create_text_edit_with_undo_stack_size(1);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->end_complex_operation();
+		text_edit->insert_text("C", 0, 3);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+		CHECK_FALSE(text_edit->has_undo());
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0ABC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("A two-record cap promotes a closed action tail before a later edit") {
+		TextEdit *text_edit = create_text_edit_with_undo_stack_size(2);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->end_complex_operation();
+		text_edit->insert_text("C", 0, 3);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0A123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+		CHECK_FALSE(text_edit->has_undo());
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0ABC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		memdelete(text_edit);
+	}
+
+	SUBCASE("A three-record cap keeps an evicted closed action suffix grouped") {
+		TextEdit *text_edit = create_text_edit_with_undo_stack_size(3);
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->begin_complex_operation();
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->insert_text("C", 0, 3);
+		text_edit->end_complex_operation();
+		text_edit->insert_text("D", 0, 4);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0ABC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0A123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+		CHECK_FALSE(text_edit->has_undo());
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0ABC123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 6, 0, 10);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0ABCD123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 7, 0, 11);
+
+		memdelete(text_edit);
+	}
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks editing actions") {
+	TextEdit *text_edit = memnew(TextEdit);
+	SceneTree::get_singleton()->get_root()->add_child(text_edit);
+	text_edit->grab_focus();
+	const Color color(1.0, 0.0, 0.0);
+
+	SUBCASE("Backspace") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->set_caret_column(5);
+
+		text_edit->backspace();
+
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 6);
+	}
+
+	SUBCASE("Forward delete") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->set_caret_column(5);
+
+		SEND_GUI_ACTION("ui_text_delete");
+
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 6);
+	}
+
+	SUBCASE("Overtype replacement") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->set_caret_column(5);
+		text_edit->set_overtype_mode_enabled(true);
+
+		SEND_GUI_KEY_EVENT(Key::A);
+
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+	}
+
+	SUBCASE("Selection deletion") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->select(0, 1, 0, 5);
+
+		text_edit->delete_selection();
+
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 3);
+	}
+
+	SUBCASE("Selection replacement") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->select(0, 1, 0, 5);
+
+		text_edit->insert_text_at_caret("AB");
+
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 5);
+	}
+
+	SUBCASE("Repeated backspace action keeps the final redo snapshot") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->set_caret_column(6);
+
+		SEND_GUI_ACTION("ui_text_backspace");
+		SEND_GUI_ACTION("ui_text_backspace");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 5);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "01236789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 5);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks multiline and line operations") {
+	TextEdit *text_edit = memnew(TextEdit);
+	const Color color(0.9, 0.7, 0.2);
+
+	SUBCASE("Multiline insertion at the start keeps inserted text outside") {
+		text_edit->set_text("abcd\nefgh\nijkl");
+		text_edit->add_underline(color, 1, 1, 2, 2);
+		text_edit->insert_text("X\nY", 1, 1);
+		check_underline_decoration(text_edit, 0, color, 2, 1, 3, 2);
+	}
+
+	SUBCASE("Multiline insertion inside extends the end") {
+		text_edit->set_text("abcd\nefgh\nijkl");
+		text_edit->add_underline(color, 0, 2, 2, 2);
+		text_edit->insert_text("X\nY", 1, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 3, 2);
+	}
+
+	SUBCASE("Multiline removal inside shifts the end") {
+		text_edit->set_text("abcd\nefgh\nijkl\nmnop");
+		text_edit->add_underline(color, 0, 2, 3, 2);
+		text_edit->remove_text(1, 2, 2, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
+	}
+
+	SUBCASE("Multiline replacement composes removal and insertion") {
+		text_edit->set_text("abcd\nefgh\nijkl");
+		text_edit->add_underline(color, 0, 1, 2, 3);
+		text_edit->remove_text(0, 2, 2, 2);
+		text_edit->insert_text("X\nY", 0, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 1, 2);
+	}
+
+	SUBCASE("Set line preserves columns and clamps to the new length") {
+		text_edit->set_text("abcdef\nsecond");
+		text_edit->add_underline(color, 0, 2, 0, 5);
+		text_edit->set_line(0, "abc");
+		check_underline_decoration(text_edit, 0, color, 0, 2, 0, 3);
+	}
+
+	SUBCASE("Insert line shifts a range beginning on the insertion line") {
+		text_edit->set_text("alpha\nbeta\ngamma");
+		text_edit->add_underline(color, 1, 1, 2, 3);
+		text_edit->insert_line_at(1, "new");
+		check_underline_decoration(text_edit, 0, color, 2, 1, 3, 3);
+	}
+
+	SUBCASE("Remove line shifts a spanning range") {
+		text_edit->set_text("zero\none\ntwo\nthree");
+		text_edit->add_underline(color, 0, 2, 3, 2);
+		text_edit->remove_line_at(1);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
+	}
+
+	SUBCASE("Remove line collapses a range contained by that line") {
+		text_edit->set_text("zero\none\ntwo");
+		text_edit->add_underline(color, 1, 1, 1, 3);
+		text_edit->remove_line_at(1);
+		check_underline_decoration(text_edit, 0, color, 1, 0, 1, 0);
+	}
+
+	SUBCASE("Swap lines moves covered text and splits the remaining spans") {
+		text_edit->set_text("aaaa\nbbbbb\ncc\nddddddd\neee");
+		text_edit->add_underline(color, 0, 1, 4, 2);
+		text_edit->swap_lines(1, 3);
+
+		CHECK_EQ(text_edit->get_underline_count(), 5);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 4);
+		check_underline_decoration(text_edit, 1, color, 2, 0, 2, 2);
+		check_underline_decoration(text_edit, 2, color, 4, 0, 4, 2);
+		check_underline_decoration(text_edit, 3, color, 3, 0, 3, 5);
+		check_underline_decoration(text_edit, 4, color, 1, 0, 1, 7);
+	}
+
+	memdelete(text_edit);
 }
 
 TEST_CASE("[SceneTree][TextEdit] text entry") {

@@ -46,7 +46,7 @@
 #include "core/io/file_access.h"
 #include "core/object/script_language.h"
 #include "core/string/print_string.h"
-#include "tests/core/config/test_project_settings.h"
+#include "tests/core/config/project_settings_test_helpers.h"
 #include "tests/test_macros.h"
 
 namespace FSTests {

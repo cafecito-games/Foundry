@@ -89,7 +89,7 @@ BASE_STRINGS = [
     "This operator may be changed or removed in future versions.",
     "This theme property may be changed or removed in future versions.",
     # See also `make_rst_class()` and `editor/doc/editor_help.cpp`.
-    "[b]Note:[/b] The returned array is [i]copied[/i] and any changes to it will not update the original property value. See [%s] for more details.",
+    "[note]The returned array is [i]copied[/i] and any changes to it will not update the original property value. See [%s] for more details.[/note]",
 ]
 strings_l10n: dict[str, str] = {}
 writing_translation = False
@@ -1319,7 +1319,7 @@ def make_rst_class(class_def: ClassDef, state: State, dry_run: bool, output_dir:
                 # Add copy note to built-in properties returning `Packed*Array`.
                 if property_def.type_name.type_name in PACKED_ARRAY_TYPES:
                     # See also `BASE_STRINGS` and `editor/doc/editor_help.cpp`.
-                    copy_note = f"[b]Note:[/b] The returned array is [i]copied[/i] and any changes to it will not update the original property value. See [{property_def.type_name.type_name}] for more details."
+                    copy_note = f"[note]The returned array is [i]copied[/i] and any changes to it will not update the original property value. See [{property_def.type_name.type_name}] for more details.[/note]"
                     f.write(f"{format_text_block(copy_note, property_def, state)}\n\n")
 
                 index += 1
@@ -1804,6 +1804,7 @@ RESERVED_CROSSLINK_TAGS = [
     "theme_item",
     "param",
 ]
+RESERVED_ADMONITION_TAGS = ["important", "note", "tip", "warning"]
 
 
 def is_in_tagset(tag_text: str, tagset: list[str]) -> bool:
@@ -1859,11 +1860,13 @@ def format_text_block(
     text: str,
     context: DefinitionBase,
     state: State,
+    preformatted: bool = False,
 ) -> str:
-    result = preformat_text_block(text, state)
-    if result is None:
-        return ""
-    text = result
+    if not preformatted:
+        result = preformat_text_block(text, state)
+        if result is None:
+            return ""
+        text = result
 
     next_brac_pos = text.find("[")
     text = escape_rst(text, next_brac_pos)
@@ -2363,6 +2366,97 @@ def format_text_block(
                     tag_text = ":kbd:" + tag_text
                     tag_depth += 1
                     escape_pre = True
+
+            elif tag_state.name in RESERVED_ADMONITION_TAGS:
+                if tag_state.closing:
+                    print_error(
+                        f'{state.current_class}.xml: Closing admonition tag "[{tag_state.raw}]" has no opening counterpart in {context_name}.',
+                        state,
+                    )
+                    break
+
+                admonition_type = tag_state.name
+                search_pos = endq_pos + 1
+                closing_pos = -1
+                parsing_error = False
+                inside_admonition_code_tag = ""
+                while True:
+                    candidate_pos = text.find("[", search_pos)
+                    if candidate_pos == -1:
+                        print_error(
+                            f"{state.current_class}.xml: Tag depth mismatch for [{admonition_type}]: no closing [/{admonition_type}] in {context_name}.",
+                            state,
+                        )
+                        parsing_error = True
+                        break
+
+                    candidate_end = text.find("]", candidate_pos + 1)
+                    if candidate_end == -1:
+                        print_error(
+                            f"{state.current_class}.xml: Tag depth mismatch for [{admonition_type}]: no closing [/{admonition_type}] in {context_name}.",
+                            state,
+                        )
+                        parsing_error = True
+                        break
+
+                    candidate = get_tag_and_args(text[candidate_pos + 1 : candidate_end])
+
+                    if inside_admonition_code_tag:
+                        if candidate.closing and candidate.name == inside_admonition_code_tag:
+                            inside_admonition_code_tag = ""
+                        search_pos = candidate_end + 1
+                        continue
+
+                    if not candidate.closing and (
+                        candidate.name == "code" or is_in_tagset(candidate.name, RESERVED_CODEBLOCK_TAGS)
+                    ):
+                        inside_admonition_code_tag = candidate.name
+                        search_pos = candidate_end + 1
+                        continue
+
+                    if candidate.name not in RESERVED_ADMONITION_TAGS:
+                        search_pos = candidate_end + 1
+                        continue
+
+                    if not candidate.closing:
+                        print_error(
+                            f'{state.current_class}.xml: Nested admonition tag "[{candidate.raw}]" in [{admonition_type}] is not supported in {context_name}.',
+                            state,
+                        )
+                        parsing_error = True
+                        break
+
+                    if candidate.name != admonition_type:
+                        print_error(
+                            f'{state.current_class}.xml: Mismatched closing admonition tag "[{candidate.raw}]" for "[{admonition_type}]" in {context_name}.',
+                            state,
+                        )
+                        parsing_error = True
+                        break
+
+                    closing_pos = candidate_pos
+                    closing_end = candidate_end
+                    break
+
+                if parsing_error:
+                    break
+
+                admonition_contents = format_text_block(
+                    text[endq_pos + 1 : closing_pos].strip(), context, state, preformatted=True
+                )
+                indented_contents = "\n".join(f"    {line}" for line in admonition_contents.splitlines())
+                admonition_text = f".. classref_{admonition_type}::\n\n{indented_contents}"
+
+                pre_text = text[:pos].rstrip()
+                post_text = text[closing_end + 1 :].lstrip()
+                text = pre_text
+                if pre_text:
+                    text += "\n\n"
+                text += admonition_text
+                if post_text:
+                    text += "\n\n" + post_text
+                pos = len(pre_text) + (2 if pre_text else 0) + len(admonition_text)
+                continue
 
             # Invalid syntax.
             else:
