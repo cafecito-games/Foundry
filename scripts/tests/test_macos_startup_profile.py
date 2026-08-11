@@ -517,6 +517,27 @@ class Criteria2097Tests(unittest.TestCase):
         self.assertTrue(acceptance["invalid"])
         self.assertFalse(acceptance["passed"])
 
+    def test_a_run_with_no_measured_gap_is_invalid_rather_than_a_passing_zero(self):
+        # `check` reads whatever summary.json it is handed — an older schema, a truncated file, a
+        # hand-edited one. A run that claims to be valid but carries no gap measured nothing, and
+        # reading the absent value as 0.0 ms would report PASS for a capture with no data in it.
+        runs = [{"invalid_reason": None, "interval_ms": 1000.0}]
+        acceptance = macos_startup_profile.evaluate_acceptance_2097({"timeline": {"startup_interval": {"runs": runs}}})
+        self.assertTrue(acceptance["invalid"])
+        self.assertFalse(acceptance["passed"])
+
+    def test_an_explicit_null_gap_is_also_invalid(self):
+        runs = [{"invalid_reason": None, "worst_clipped_gap_ms": None, "interval_ms": 1000.0}]
+        acceptance = macos_startup_profile.evaluate_acceptance_2097({"timeline": {"startup_interval": {"runs": runs}}})
+        self.assertTrue(acceptance["invalid"])
+
+    def test_a_genuine_zero_gap_is_still_a_valid_measurement(self):
+        # Zero is a legitimate result (the run loop serviced every turn); only *absence* is invalid.
+        runs = [{"invalid_reason": None, "worst_clipped_gap_ms": 0.0, "interval_ms": 1000.0}]
+        acceptance = macos_startup_profile.evaluate_acceptance_2097({"timeline": {"startup_interval": {"runs": runs}}})
+        self.assertFalse(acceptance["invalid"])
+        self.assertTrue(acceptance["passed"])
+
     def test_no_runs_at_all_is_invalid_rather_than_a_pass(self):
         acceptance = macos_startup_profile.evaluate_acceptance_2097(self.summary())
         self.assertTrue(acceptance["invalid"])
@@ -620,6 +641,10 @@ class CheckCommandExitCodeTests(unittest.TestCase):
 
     def test_a_summary_with_no_interval_block_exits_two(self):
         self.assertEqual(self.check({"timeline": {}}, "--criteria", "2097"), 2)
+
+    def test_a_run_carrying_no_measured_gap_exits_two(self):
+        summary = {"timeline": {"startup_interval": {"runs": [{"invalid_reason": None, "interval_ms": 1000.0}]}}}
+        self.assertEqual(self.check(summary, "--criteria", "2097"), 2)
 
 
 class LegacyCriteriaPreservationTests(unittest.TestCase):

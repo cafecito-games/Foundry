@@ -1141,6 +1141,21 @@ def measure_startup_interval(runloop_xml: Path, signpost_xml: Path) -> dict[str,
     return result
 
 
+def startup_run_invalid_reason(run: dict[str, Any]) -> str | None:
+    """Why one capture cannot be measured, or None if it can.
+
+    A run that reports no `invalid_reason` but carries no gap measured nothing. Reading that absent
+    value as 0.0 ms would let a summary with no data in it report PASS, so absence is its own kind
+    of invalid. A genuine 0.0 is a real result — the run loop serviced every turn — and stays valid.
+    """
+    reason = run.get("invalid_reason")
+    if reason is not None:
+        return str(reason)
+    if run.get("worst_clipped_gap_ms") is None:
+        return "incomplete"
+    return None
+
+
 def summarize_startup_intervals(runs: Sequence[dict[str, Any]]) -> dict[str, Any]:
     """The `startup_interval` summary block, including the across-run maximum the gate is defined on.
 
@@ -1151,8 +1166,8 @@ def summarize_startup_intervals(runs: Sequence[dict[str, Any]]) -> dict[str, Any
     means "unmeasured", and a fabricated 0.0 would drag the aggregate toward a pass. The capture is
     rejected separately on the invalid reason, so nothing is lost by leaving them out here.
     """
-    valid = [run for run in runs if run.get("invalid_reason") is None]
-    worst = [float(run.get("worst_clipped_gap_ms") or 0.0) for run in valid]
+    valid = [run for run in runs if startup_run_invalid_reason(run) is None]
+    worst = [float(run["worst_clipped_gap_ms"]) for run in valid]
     return {
         "runs": list(runs),
         "runs_measured": len(runs),
@@ -1545,9 +1560,9 @@ def evaluate_acceptance_2097(summary: dict[str, Any], max_block_ms: float = DEFA
     """
     runs = (summary.get("timeline") or {}).get("startup_interval", {}).get("runs") or []
     invalid_runs = [
-        {"run": index + 1, "reason": run.get("invalid_reason")}
+        {"run": index + 1, "reason": reason}
         for index, run in enumerate(runs)
-        if run.get("invalid_reason") is not None
+        if (reason := startup_run_invalid_reason(run)) is not None
     ]
     if not runs or invalid_runs:
         return {
@@ -1561,7 +1576,8 @@ def evaluate_acceptance_2097(summary: dict[str, Any], max_block_ms: float = DEFA
             "passed": False,
         }
 
-    worst = [float(run.get("worst_clipped_gap_ms") or 0.0) for run in runs]
+    # Every run is valid here: `invalid_runs` above returned early otherwise.
+    worst = [float(run["worst_clipped_gap_ms"]) for run in runs]
     maximum = max(worst)
     return {
         "issue": "cafecito-games/Foundry#2097",
