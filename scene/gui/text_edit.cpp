@@ -8335,8 +8335,10 @@ void TextEdit::_do_text_op(const TextOperation &p_op, bool p_reverse) {
 		_base_insert_text(p_op.from_line, p_op.from_column, p_op.text, check_line, check_column);
 		ERR_FAIL_COND(check_line != p_op.to_line); // BUG.
 		ERR_FAIL_COND(check_column != p_op.to_column); // BUG.
+		_offset_underlines_after(p_op.from_line, p_op.from_column, p_op.to_line, p_op.to_column);
 	} else {
 		_base_remove_text(p_op.from_line, p_op.from_column, p_op.to_line, p_op.to_column);
+		_offset_underlines_after(p_op.to_line, p_op.to_column, p_op.from_line, p_op.from_column);
 	}
 }
 

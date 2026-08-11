@@ -161,6 +161,103 @@ TEST_CASE("[SceneTree][TextEdit] underline decoration tracks deletion overlap") 
 	memdelete(text_edit);
 }
 
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks undo and redo") {
+	TextEdit *text_edit = memnew(TextEdit);
+	const Color color(1.0, 0.0, 0.0);
+
+	SUBCASE("Single-line insertion undo and redo") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->insert_text("AB", 0, 1);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+	}
+
+	SUBCASE("Multiline removal undo and redo") {
+		text_edit->set_text("abcd\nefgh\nijkl\nmnop");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 2, 3, 2);
+
+		text_edit->remove_text(1, 2, 2, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 2, 3, 2);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks editing actions") {
+	TextEdit *text_edit = memnew(TextEdit);
+	SceneTree::get_singleton()->get_root()->add_child(text_edit);
+	text_edit->grab_focus();
+	const Color color(1.0, 0.0, 0.0);
+
+	SUBCASE("Backspace") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->set_caret_column(5);
+
+		text_edit->backspace();
+
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 6);
+	}
+
+	SUBCASE("Forward delete") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->set_caret_column(5);
+
+		SEND_GUI_ACTION("ui_text_delete");
+
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 6);
+	}
+
+	SUBCASE("Overtype replacement") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->set_caret_column(5);
+		text_edit->set_overtype_mode_enabled(true);
+
+		SEND_GUI_KEY_EVENT(Key::A);
+
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+	}
+
+	SUBCASE("Selection deletion") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->select(0, 1, 0, 5);
+
+		text_edit->delete_selection();
+
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 3);
+	}
+
+	SUBCASE("Selection replacement") {
+		text_edit->set_text("0123456789");
+		text_edit->add_underline(color, 0, 3, 0, 7);
+		text_edit->select(0, 1, 0, 5);
+
+		text_edit->insert_text_at_caret("AB");
+
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 5);
+	}
+
+	memdelete(text_edit);
+}
+
 TEST_CASE("[SceneTree][TextEdit] underline decoration tracks multiline and line operations") {
 	TextEdit *text_edit = memnew(TextEdit);
 	const Color color(0.9, 0.7, 0.2);
