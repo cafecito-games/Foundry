@@ -87,6 +87,7 @@ class EditorDockManager;
 class EditorExport;
 class EditorExportPreset;
 class EditorFeatureProfileManager;
+class EditorFeatureProfile;
 class EditorFileDialog;
 class EditorFolding;
 class EditorLayoutStore;
@@ -776,6 +777,7 @@ private:
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _sync_focused_tile_chrome(ScenePaneTile *p_tile);
 	void _apply_scene_editor_mode(ScenePaneTile *p_tile, EditorSceneContext *p_context, bool p_force_scene_screen = false);
+	void _apply_feature_profile_to_tile(ScenePaneTile *p_tile, const Ref<EditorFeatureProfile> &p_profile);
 	void _bind_leaf_docks(int p_leaf_id);
 	void _bind_all_leaf_docks();
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
@@ -930,6 +932,9 @@ public:
 	// Returns the focused scene tile's in-tile dock instances (not global shell docks).
 	ScenePaneTile *get_focused_tile() const;
 	void set_focused_tile_scene_editor_mode(SceneEditorMode p_mode);
+	// Restores the shared scene editor from the focused tile's durable mode after
+	// a transient main-screen plugin disappears.
+	bool restore_focused_scene_main_screen();
 	void select_main_screen(int p_index);
 	SceneTreeDock *get_focused_scene_tree_dock() const;
 	InspectorDock *get_focused_inspector_dock() const;

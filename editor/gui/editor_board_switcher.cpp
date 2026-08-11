@@ -162,10 +162,11 @@ void EditorBoardSwitcher::_rebuild() {
 		button->set_focus_mode(FOCUS_ACCESSIBILITY);
 		button->set_theme_type_variation("BoardRailButton");
 		button->set_text(board->get_title());
+		button->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 		button->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
 		button->set_clip_text(true);
 		button->set_tooltip_text(board->get_title());
-		button->set_accessibility_name(board->get_title());
+		button->set_tooltip_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 		button->set_pressed_no_signal(i == strip->get_active_index());
 		button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_board_button_pressed).bind(i));
 		button->connect(SceneStringName(gui_input), callable_mp(this, &EditorBoardSwitcher::_on_board_button_gui_input).bind(i));

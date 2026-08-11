@@ -706,8 +706,9 @@ void EditorBoardStrip::_rebuild_captions() {
 	for (EditorBoard *board : boards) {
 		Button *caption = memnew(Button);
 		caption->set_text(board->get_title());
+		caption->set_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 		caption->set_tooltip_text(board->get_title());
-		caption->set_accessibility_name(board->get_title());
+		caption->set_tooltip_auto_translate_mode(AUTO_TRANSLATE_MODE_DISABLED);
 		caption->set_focus_mode(Control::FOCUS_ACCESSIBILITY);
 		// Bound by instance id rather than index: a close shifts every index after it, and
 		// these buttons outlive that shift.

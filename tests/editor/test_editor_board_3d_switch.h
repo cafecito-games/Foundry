@@ -96,6 +96,34 @@ TEST_CASE("[Editor][Boards] Switching boards with a 3D scene open does not crash
 	CHECK(exit_code == 0);
 }
 
+TEST_CASE("[Editor][MainScreen] Hidden compatibility buttons retain AssetLib and dynamic shortcuts") {
+	const String project_path = EditorWorkflowTestFixtures::prepare_disposable_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary main-screen shortcut project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=main_screen_hidden_shortcuts");
+
+	int exit_code = -1;
+	const String output = EditorWorkflowTestFixtures::workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+
+	Dictionary payload;
+	const bool parsed = parse_workflow_payload(output, payload);
+	REQUIRE_MESSAGE(parsed, "Main-screen shortcut workflow result line was not printed.");
+	if (!parsed) {
+		return;
+	}
+	CHECK(String(payload.get("workflow", String())) == "main_screen_hidden_shortcuts");
+	CHECK_MESSAGE((bool)payload.get("ok", false), String(payload.get("message", String())));
+	CHECK(exit_code == 0);
+}
+
 // Closing a demoted 3D board destroys its EditorSceneContext viewport immediately while the
 // board, ScenePaneTile, and secondary Node3DEditorViewport survive until a deferred callback.
 // Preview furniture must therefore be held by ObjectID and same-world rebinds must not inflate

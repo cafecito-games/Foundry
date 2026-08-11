@@ -72,7 +72,9 @@ void EditorBoardActionsMenu::_rebuild_items() {
 			}
 			const int item_id = ITEM_BOARD_BASE + i;
 			add_check_item(board->get_title(), item_id);
-			set_item_checked(get_item_index(item_id), i == strip->get_active_index());
+			const int item_index = get_item_index(item_id);
+			set_item_auto_translate_mode(item_index, AUTO_TRANSLATE_MODE_DISABLED);
+			set_item_checked(item_index, i == strip->get_active_index());
 			board_item_targets.insert(item_id, board->get_instance_id());
 		}
 		add_separator();

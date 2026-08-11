@@ -447,14 +447,9 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 		bool is_handled = true;
 		if (ED_IS_SHORTCUT("editor/filter_files", p_event)) {
 			FileSystemDock::get_singleton()->focus_on_filter();
-		} else if (ED_IS_SHORTCUT("editor/editor_2d", p_event)) {
-			set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_2D);
-		} else if (ED_IS_SHORTCUT("editor/editor_3d", p_event)) {
-			set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_3D);
 		} else if (ED_IS_SHORTCUT("editor/editor_script", p_event)) {
 			reveal_script_leaf();
-		} else if (ED_IS_SHORTCUT("editor/editor_game", p_event)) {
-			editor_main_screen->select(EditorMainScreen::EDITOR_GAME);
+		} else if (editor_main_screen->dispatch_shortcut_input(p_event)) {
 		} else if (ED_IS_SHORTCUT("editor/editor_help", p_event)) {
 			if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
 				script_editor->notify_request_help_search("");
@@ -7809,6 +7804,15 @@ void EditorNode::set_focused_tile_scene_editor_mode(SceneEditorMode p_mode) {
 	_focus_tile(tile->get_tile_id());
 }
 
+bool EditorNode::restore_focused_scene_main_screen() {
+	ScenePaneTile *tile = get_focused_tile();
+	if (tile == nullptr) {
+		return false;
+	}
+	_focus_tile_internal(tile->get_tile_id(), true);
+	return editor_main_screen->is_scene_mode_selected();
+}
+
 void EditorNode::select_main_screen(int p_index) {
 	if (p_index == EditorMainScreen::EDITOR_2D) {
 		set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_2D);
@@ -7918,6 +7922,11 @@ void EditorNode::_wire_leaf_tile(WorkspaceLeafNode *p_leaf) {
 	tile->get_signals_dock()->set_scene_context(no_scene_context);
 	tile->get_groups_dock()->set_scene_context(no_scene_context);
 	tile->get_history_dock()->set_scene_context(no_scene_context);
+	Ref<EditorFeatureProfile> profile;
+	if (feature_profile_manager != nullptr) {
+		profile = feature_profile_manager->get_current_profile();
+	}
+	_apply_feature_profile_to_tile(tile, profile);
 }
 
 void EditorNode::_on_leaf_added(int p_leaf_id) {
@@ -10470,6 +10479,14 @@ void EditorNode::_resource_loaded(Ref<Resource> p_resource, const String &p_path
 	singleton->editor_folding.load_resource_folding(p_resource, p_path);
 }
 
+void EditorNode::_apply_feature_profile_to_tile(ScenePaneTile *p_tile, const Ref<EditorFeatureProfile> &p_profile) {
+	ERR_FAIL_NULL(p_tile);
+	p_tile->set_signals_dock_enabled(p_profile.is_null() || !p_profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SIGNALS_DOCK));
+	p_tile->set_groups_dock_enabled(p_profile.is_null() || !p_profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GROUPS_DOCK));
+	p_tile->set_history_dock_enabled(p_profile.is_null() || !p_profile->is_feature_disabled(EditorFeatureProfile::FEATURE_HISTORY_DOCK));
+	p_tile->set_3d_scene_mode_enabled(p_profile.is_null() || !p_profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D));
+}
+
 void EditorNode::_feature_profile_changed() {
 	Ref<EditorFeatureProfile> profile = feature_profile_manager->get_current_profile();
 	if (profile.is_valid()) {
@@ -10479,18 +10496,11 @@ void EditorNode::_feature_profile_changed() {
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), !fs_dock_disabled && !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_IMPORT_DOCK));
 
 		if (board_strip) {
-			const bool signals_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SIGNALS_DOCK);
-			const bool groups_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GROUPS_DOCK);
-			const bool history_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_HISTORY_DOCK);
-			const bool scene_3d_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D);
 			// Feature profiles are editor-global: every tile on every board has to pick
 			// up the new dock-enabled state, not just the visible board's tiles.
 			for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
 				for (ScenePaneTile *tile : workspace->get_tiles()) {
-					tile->set_signals_dock_enabled(!signals_disabled);
-					tile->set_groups_dock_enabled(!groups_disabled);
-					tile->set_history_dock_enabled(!history_disabled);
-					tile->set_3d_scene_mode_enabled(!scene_3d_disabled);
+					_apply_feature_profile_to_tile(tile, profile);
 				}
 			}
 		}
@@ -10507,10 +10517,7 @@ void EditorNode::_feature_profile_changed() {
 			// Clearing a feature profile is editor-global for the same reason.
 			for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
 				for (ScenePaneTile *tile : workspace->get_tiles()) {
-					tile->set_signals_dock_enabled(true);
-					tile->set_groups_dock_enabled(true);
-					tile->set_history_dock_enabled(true);
-					tile->set_3d_scene_mode_enabled(true);
+					_apply_feature_profile_to_tile(tile, profile);
 				}
 			}
 		}

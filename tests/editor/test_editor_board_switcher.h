@@ -39,6 +39,7 @@
 
 #include "core/io/config_file.h"
 #include "core/object/message_queue.h"
+#include "core/string/translation_server.h"
 
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
@@ -371,6 +372,62 @@ TEST_CASE("[Editor][BoardSwitcher] Rebuilds one button per board and marks the a
 	harness.unmount();
 }
 
+TEST_CASE("[Editor][BoardSwitcher] User-authored titles stay literal under an active locale") {
+	const StringName domain_name = "board.title.literal.test";
+	const String authored_title = "Lighting Notes";
+	const String localized_collision = "NOTES TRADUITES";
+	Ref<TranslationDomain> domain = TranslationServer::get_singleton()->get_or_add_domain(domain_name);
+	Ref<Translation> translation;
+	translation.instantiate();
+	translation->set_locale("fr");
+	translation->add_message(authored_title, localized_collision);
+	domain->add_translation(translation);
+	domain->set_locale_override("fr");
+	REQUIRE(domain->translate(authored_title, StringName()) == localized_collision);
+
+	BoardSwitcherHarness harness;
+	harness.mount();
+	harness.host->set_translation_domain(domain_name);
+	harness.strip->add_board(authored_title);
+	harness.pump();
+
+	Button *rail_button = harness.board_button(1);
+	REQUIRE(rail_button != nullptr);
+	CHECK(rail_button->get_text() == authored_title);
+	CHECK(rail_button->get_auto_translate_mode() == Node::AUTO_TRANSLATE_MODE_DISABLED);
+	CHECK(rail_button->get_tooltip_auto_translate_mode() == Node::AUTO_TRANSLATE_MODE_DISABLED);
+	CHECK(rail_button->get_accessibility_name().is_empty());
+	for (const String &warning : rail_button->get_accessibility_configuration_warnings()) {
+		CHECK_FALSE(warning.contains("Accessibility Name must not be empty"));
+	}
+
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	harness.switcher->popup_active_board_menu(Point2(), true);
+	const int board_item = menu->get_item_index(EditorBoardActionsMenu::ITEM_BOARD_BASE + 1);
+	REQUIRE(board_item >= 0);
+	CHECK(menu->get_item_text(board_item) == authored_title);
+	CHECK(menu->get_item_xl_text(board_item) == authored_title);
+	menu->hide();
+
+	harness.strip->set_overview(true);
+	harness.pump();
+	Control *overlay = harness.strip->get_caption_overlay();
+	REQUIRE(overlay != nullptr);
+	Button *caption = Object::cast_to<Button>(overlay->get_child(1));
+	REQUIRE(caption != nullptr);
+	CHECK(caption->get_text() == authored_title);
+	CHECK(caption->get_auto_translate_mode() == Node::AUTO_TRANSLATE_MODE_DISABLED);
+	CHECK(caption->get_tooltip_auto_translate_mode() == Node::AUTO_TRANSLATE_MODE_DISABLED);
+	CHECK(caption->get_accessibility_name().is_empty());
+	for (const String &warning : caption->get_accessibility_configuration_warnings()) {
+		CHECK_FALSE(warning.contains("Accessibility Name must not be empty"));
+	}
+
+	harness.unmount();
+	TranslationServer::get_singleton()->remove_domain(domain_name);
+}
+
 TEST_CASE("[Editor][BoardSwitcher] The board menu appends and activates a new board") {
 	BoardSwitcherHarness harness;
 	harness.mount();
@@ -462,7 +519,7 @@ TEST_CASE("[Editor][BoardSwitcher] Compact transition refreshes a pending rename
 	REQUIRE(renamed_button != nullptr);
 	CHECK(renamed_button->get_text() == new_title);
 	CHECK(renamed_button->get_tooltip_text() == new_title);
-	CHECK(renamed_button->get_accessibility_name() == new_title);
+	CHECK(renamed_button->get_accessibility_name().is_empty());
 	CHECK(renamed_button->get_custom_minimum_size().x > old_minimum_width);
 	CHECK(harness.board_button(0)->is_visible());
 	CHECK_FALSE(renamed_button->is_visible());

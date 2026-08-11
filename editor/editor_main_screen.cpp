@@ -194,6 +194,20 @@ void EditorMainScreen::select_prev() {
 	EditorNode::get_singleton()->select_main_screen(editor);
 }
 
+bool EditorMainScreen::dispatch_shortcut_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND_V(p_event.is_null(), false);
+
+	for (int i = 0; i < buttons.size(); i++) {
+		Button *button = buttons[i];
+		const Ref<Shortcut> shortcut = button->get_shortcut();
+		if (button->is_visible() && !button->is_disabled() && shortcut.is_valid() && shortcut->matches_event(p_event)) {
+			EditorNode::get_singleton()->select_main_screen(i);
+			return true;
+		}
+	}
+	return false;
+}
+
 void EditorMainScreen::select_by_name(const String &p_name) {
 	ERR_FAIL_COND(p_name.is_empty());
 
@@ -377,7 +391,20 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 	for (int i = buttons.size() - 1; i >= 0; i--) {
 		if (p_editor->get_plugin_name() == buttons[i]->get_text()) {
 			if (buttons[i]->is_pressed()) {
-				select(EDITOR_2D);
+				EditorNode *editor_node = EditorNode::get_singleton();
+				if (editor_node != nullptr) {
+					if (!editor_node->restore_focused_scene_main_screen()) {
+						select(EDITOR_2D);
+					}
+				} else {
+					p_editor->make_visible(false);
+					selected_plugin = nullptr;
+					if (EDITOR_2D < editor_table.size() && editor_table[EDITOR_2D] != p_editor) {
+						buttons[EDITOR_2D]->set_pressed_no_signal(true);
+						selected_plugin = editor_table[EDITOR_2D];
+						selected_plugin->make_visible(true);
+					}
+				}
 			}
 
 			memdelete(buttons[i]);

@@ -30,6 +30,7 @@
 
 #include "editor_automation_acceptance_workflow.h"
 
+#include "editor/automation/editor_automation_commands.h"
 #include "editor/automation/editor_automation_driver.h"
 #include "editor/automation/editor_automation_input.h"
 #include "editor/automation/editor_automation_mcp_dispatcher.h"
@@ -39,6 +40,7 @@
 #include "editor/debugger/debugger_editor_plugin.h"
 #include "editor/docks/editor_dock.h"
 #include "editor/docks/groups_dock.h"
+#include "editor/docks/history_dock.h"
 #include "editor/docks/scene_tree_dock.h"
 #include "editor/docks/signals_dock.h"
 #include "editor/editor_board.h"
@@ -55,6 +57,7 @@
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/file_system/editor_paths.h"
 #include "editor/gui/code_editor.h"
+#include "editor/gui/editor_scene_mode_switcher.h"
 #include "editor/gui/editor_side_rail_strip.h"
 #include "editor/gui/progress_dialog.h"
 #include "editor/gui/side_rail_state.h"
@@ -89,6 +92,7 @@
 #include "scene/3d/world_environment.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/split_container.h"
+#include "scene/gui/subviewport_container.h"
 #include "scene/gui/tab_bar.h"
 #include "scene/gui/tab_container.h"
 #include "scene/gui/tree.h"
@@ -105,6 +109,32 @@ static constexpr const char *MIXED_WORKSPACE_SCRIPT = "res://scripts/player.fs";
 // non-focused tile eligible for a secondary 3D viewport preview.
 static constexpr const char *BOARD_SWITCH_3D_SCENE = "res://scenes/secondary.tscn";
 static constexpr const char *BOARD_SWITCH_2D_SCENE = "res://scenes/main.tscn";
+
+class AutomationDynamicMainScreenPlugin : public EditorPlugin {
+	FOUNDRY_CLASS(AutomationDynamicMainScreenPlugin, EditorPlugin);
+
+	String plugin_name;
+	bool visible = false;
+
+public:
+	explicit AutomationDynamicMainScreenPlugin(const String &p_plugin_name) :
+			plugin_name(p_plugin_name) {}
+	String get_plugin_name() const override { return plugin_name; }
+	bool has_main_screen() const override { return true; }
+	void make_visible(bool p_visible) override { visible = p_visible; }
+	bool is_visible_for_test() const { return visible; }
+};
+
+bool _dispatch_shortcut_event(const Ref<Shortcut> &p_shortcut, EditorWorkflowTestDriver &p_driver) {
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || p_shortcut.is_null()) {
+		return false;
+	}
+	const EditorAutomationCommands::ShortcutDispatchResult dispatch_result =
+			EditorAutomationCommands::push_shortcut_event(editor_node->get_viewport(), p_shortcut);
+	p_driver.flush_frames(2);
+	return dispatch_result != EditorAutomationCommands::ShortcutDispatchResult::UNAVAILABLE;
+}
 
 ScenePaneTile *_resolve_focused_scene_tile(EditorBoard *p_board) {
 	EditorSceneWorkspace *workspace = p_board ? p_board->get_workspace() : nullptr;
@@ -194,6 +224,9 @@ public:
 		Ref<EditorFeatureProfile> profile;
 		profile.instantiate();
 		profile->set_disable_feature(EditorFeatureProfile::FEATURE_3D, true);
+		profile->set_disable_feature(EditorFeatureProfile::FEATURE_SIGNALS_DOCK, true);
+		profile->set_disable_feature(EditorFeatureProfile::FEATURE_GROUPS_DOCK, true);
+		profile->set_disable_feature(EditorFeatureProfile::FEATURE_HISTORY_DOCK, true);
 		const Error save_error = profile->save_to_file(temporary_profile_path);
 		if (save_error != OK) {
 			return save_error;
@@ -227,6 +260,33 @@ public:
 		restore();
 	}
 };
+
+String _disabled_tile_profile_violation(ScenePaneTile *p_tile) {
+	if (p_tile == nullptr) {
+		return "tile is null";
+	}
+	if (p_tile->get_scene_mode_switcher()->is_3d_enabled()) {
+		return "3D remains enabled";
+	}
+	if (p_tile->get_signals_dock()->is_enabled() || p_tile->get_groups_dock()->is_enabled() || p_tile->get_history_dock()->is_enabled()) {
+		return "a profile-disabled tile dock remains enabled";
+	}
+	p_tile->set_scene_editor_mode(SceneEditorMode::MODE_3D, false);
+	if (p_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D) {
+		return "a direct durable 3D assignment was accepted";
+	}
+	p_tile->get_scene_mode_switcher()->emit_signal(SNAME("mode_selected"), int(SceneEditorMode::MODE_3D));
+	if (p_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D) {
+		return "a user-routed 3D request was accepted";
+	}
+	Ref<ConfigFile> layout;
+	layout.instantiate();
+	p_tile->save_layout(layout, "Tile");
+	if (StringName(layout->get_value("Tile", "scene_editor_mode", StringName())) != StringName("2d")) {
+		return "durable persistence did not normalize to 2D";
+	}
+	return String();
+}
 
 // Drives a pointer gesture at a control through the same EditorAutomationInput
 // primitives the MCP "click" action uses (see _push_mouse_click in
@@ -3019,6 +3079,95 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	return result;
 }
 
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_main_screen_hidden_shortcuts(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "main_screen_hidden_shortcuts";
+	p_driver.begin_workflow();
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (editor_node == nullptr || main_screen == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "Editor main screen is not ready.");
+	}
+
+	p_driver.set_step("open_focused_3d_scene");
+	if (editor_node->load_scene(BOARD_SWITCH_3D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, "Could not load the 3D shortcut fixture scene.");
+	}
+	editor_node->select_main_screen(EditorMainScreen::EDITOR_3D);
+	p_driver.flush_frames(30);
+	ScenePaneTile *focused_tile = editor_node->get_focused_tile();
+	if (focused_tile == nullptr || focused_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D) {
+		return _failure_with_message(p_driver, result.workflow, "The focused tile did not enter its durable 3D mode.");
+	}
+
+	p_driver.set_step("dispatch_asset_library_shortcut");
+	AutomationDynamicMainScreenPlugin *asset_library_plugin = nullptr;
+	int asset_library_index = main_screen->get_button_index_by_name("AssetLib");
+	if (asset_library_index < 0) {
+		asset_library_plugin = memnew(AutomationDynamicMainScreenPlugin("AssetLib"));
+		EditorNode::add_editor_plugin(asset_library_plugin);
+		asset_library_index = main_screen->get_plugin_index(asset_library_plugin);
+	}
+	const Ref<Shortcut> asset_library_shortcut = EditorSettings::get_singleton()->get_shortcut("editor/editor_assetlib");
+	if (asset_library_index < 0 || !_dispatch_shortcut_event(asset_library_shortcut, p_driver)) {
+		if (asset_library_plugin != nullptr) {
+			EditorNode::remove_editor_plugin(asset_library_plugin);
+			memdelete(asset_library_plugin);
+		}
+		return _failure_with_message(p_driver, result.workflow, "Asset Library shortcut fixture is unavailable.");
+	}
+	if (main_screen->get_selected_index() != asset_library_index) {
+		if (asset_library_plugin != nullptr) {
+			EditorNode::remove_editor_plugin(asset_library_plugin);
+			memdelete(asset_library_plugin);
+		}
+		return _failure_with_message(p_driver, result.workflow,
+				"The real Asset Library InputEvent did not select its screen while the compatibility buttons were hidden.");
+	}
+	editor_node->select_main_screen(EditorMainScreen::EDITOR_3D);
+	if (asset_library_plugin != nullptr) {
+		EditorNode::remove_editor_plugin(asset_library_plugin);
+		memdelete(asset_library_plugin);
+	}
+
+	p_driver.set_step("dispatch_dynamic_screen_shortcut");
+	ED_SHORTCUT("editor/editor_reviewdynamic", "Open Review Dynamic", KeyModifierMask::ALT | KeyModifierMask::CTRL | Key::F9);
+	AutomationDynamicMainScreenPlugin *dynamic_plugin = memnew(AutomationDynamicMainScreenPlugin("ReviewDynamic"));
+	EditorNode::add_editor_plugin(dynamic_plugin);
+	const int dynamic_index = main_screen->get_plugin_index(dynamic_plugin);
+	const Ref<Shortcut> dynamic_shortcut = EditorSettings::get_singleton()->get_shortcut("editor/editor_reviewdynamic");
+	if (dynamic_index < 0 || !_dispatch_shortcut_event(dynamic_shortcut, p_driver) ||
+			main_screen->get_selected_plugin() != dynamic_plugin || !dynamic_plugin->is_visible_for_test()) {
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow,
+				"The real dynamic-screen InputEvent did not select its live plugin while the compatibility buttons were hidden.");
+	}
+
+	p_driver.set_step("remove_selected_dynamic_screen");
+	EditorNode::remove_editor_plugin(dynamic_plugin);
+	memdelete(dynamic_plugin);
+	p_driver.flush_frames(4);
+	focused_tile = editor_node->get_focused_tile();
+	EditorSceneContext *context = focused_tile ? focused_tile->get_scene_context() : nullptr;
+	if (focused_tile == nullptr || focused_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D ||
+			main_screen->get_selected_index() != EditorMainScreen::EDITOR_3D ||
+			focused_tile->get_scene_mode_switcher()->get_mode() != SceneEditorMode::MODE_3D ||
+			focused_tile->get_preview_mode() != TilePreviewMode::FOCUSED_LIVE || context == nullptr || !context->is_active() ||
+			context->get_viewport()->get_parent() == nullptr || main_screen->get_scene_mode_control()->get_parent() != focused_tile->get_content_host()) {
+		return _failure_with_message(p_driver, result.workflow,
+				"Removing the active dynamic screen did not restore the focused tile's durable 3D presentation coherently.");
+	}
+
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	result.ok = true;
+	result.message = "Hidden main-screen shortcuts and dynamic-screen removal preserved tile-aware routing.";
+	return result;
+}
+
 EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver) {
 	Result result;
 	result.workflow = "board_switch_3d_scene";
@@ -3172,6 +3321,39 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 	if (demoted_tile->get_preview_mode() != TilePreviewMode::LIVE_2D) {
 		return _failure_with_message(p_driver, result.workflow, "Disabling 3D did not immediately rebuild the passive tile as LIVE_2D.");
+	}
+	const String existing_violation = _disabled_tile_profile_violation(demoted_tile);
+	if (!existing_violation.is_empty()) {
+		return _failure_with_message(p_driver, result.workflow, "The active profile did not constrain an existing tile: " + existing_violation + ".");
+	}
+
+	p_driver.set_step("split_tile_under_active_profile");
+	EditorSceneWorkspace *active_workspace = strip->get_active_workspace();
+	WorkspaceLeafNode *source_leaf = active_workspace ? active_workspace->get_focused_leaf() : nullptr;
+	WorkspaceLeafNode *split_leaf = source_leaf ? active_workspace->split(source_leaf, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND) : nullptr;
+	p_driver.flush_frames(8);
+	ScenePaneTile *split_tile = split_leaf ? split_leaf->get_pane_tile() : nullptr;
+	const String split_violation = _disabled_tile_profile_violation(split_tile);
+	if (!split_violation.is_empty()) {
+		return _failure_with_message(p_driver, result.workflow, "A tile created by split did not inherit the active feature profile: " + split_violation + ".");
+	}
+
+	p_driver.set_step("new_board_tile_under_active_profile");
+	EditorBoard *profile_board = strip->add_board("Profile constrained");
+	p_driver.flush_frames(8);
+	ScenePaneTile *new_board_tile = _resolve_focused_scene_tile(profile_board);
+	const String board_violation = _disabled_tile_profile_violation(new_board_tile);
+	if (!board_violation.is_empty()) {
+		return _failure_with_message(p_driver, result.workflow, "A new-board tile did not inherit the active feature profile: " + board_violation + ".");
+	}
+
+	EditorSceneContext *demoted_context = demoted_tile->get_scene_context();
+	CanvasItemEditorView *demoted_canvas = demoted_tile->get_canvas_view();
+	SubViewportContainer *expected_display_parent = demoted_canvas ? demoted_canvas->get_scene_viewport_container() : demoted_tile->get_preview_container();
+	if (demoted_context == nullptr || expected_display_parent == nullptr ||
+			demoted_context->get_viewport()->get_parent() != static_cast<Node *>(expected_display_parent) ||
+			demoted_tile->get_preview_mode() != TilePreviewMode::LIVE_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Creating constrained tiles left the existing 2D preview display attachment inconsistent.");
 	}
 	disabled_3d_profile.restore();
 	demoted_tile->set_scene_editor_mode(SceneEditorMode::MODE_3D, false);

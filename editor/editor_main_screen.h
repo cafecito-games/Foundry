@@ -93,6 +93,10 @@ public:
 
 	void select_next();
 	void select_prev();
+	// Dispatch shortcuts from the live main-screen table even when the legacy
+	// compatibility button container is hidden. EditorNode remains the routing
+	// authority so scene-mode shortcuts update the focused tile.
+	bool dispatch_shortcut_input(const Ref<InputEvent> &p_event);
 	void select_by_name(const String &p_name);
 	void select(int p_index);
 	int get_selected_index() const;
