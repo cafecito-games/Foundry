@@ -37,6 +37,7 @@
 #import "display_server_macos.h"
 #import "foundry_application.h"
 #import "foundry_application_delegate.h"
+#import "startup_markers_macos.h"
 
 #include "core/crypto/crypto_core.h"
 #include "core/io/file_access.h"
@@ -1295,6 +1296,18 @@ void OS_MacOS_NSApp::start_main() {
 	// turn by the observer installed below, so the window that `Main::setup()` puts on screen is
 	// never left unserviced long enough for macOS to call the application unresponsive.
 	startup_sequence.begin();
+	startup_sequence.set_boot_complete_callback(
+			[](void *) {
+				// The tree is complete but input is still gated, so the window state coalesced
+				// during boot reaches the finished editor before any user event does.
+				DisplayServerMacOS *ds_mac = Object::cast_to<DisplayServerMacOS>(DisplayServer::get_singleton());
+				if (ds_mac) {
+					ds_mac->replay_boot_window_state();
+				} else {
+					StartupBootGateMacOS::abandon();
+				}
+			},
+			nullptr);
 
 	Error err;
 	@autoreleasepool {
@@ -1352,6 +1365,10 @@ void OS_MacOS_NSApp::start_main() {
 					}
 #endif
 
+					// Closes the startup interval: boot is over and the engine is iterating. Emitted
+					// before the call so the marker cannot be pushed past a slow first frame.
+					StartupMarkersMacOS::first_main_iteration();
+
 					if (Main::iteration() || sig_received) {
 						terminate();
 					}
@@ -1372,6 +1389,7 @@ void OS_MacOS_NSApp::terminate() {
 	// Shutdown may still need to talk to the user (a confirmation dialog, an error alert), so the
 	// boot input gate must not outlive the boot it was protecting.
 	StartupInputGateMacOS::set_suppressed(false);
+	StartupBootGateMacOS::abandon();
 	[(FoundryApplicationDelegate *)delegate abandonDeferredTermination];
 
 	if (pre_wait_observer) {

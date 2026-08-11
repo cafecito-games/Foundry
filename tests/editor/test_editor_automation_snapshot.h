@@ -418,6 +418,14 @@ TEST_CASE("[Editor][Automation] within selector disambiguates duplicate button n
 	CHECK(match.name == "Add Child Node");
 	CHECK(match.path == String(root->get_path_to(scene_button)));
 
+	// resolve() must not erase `within` from a reused caller Dictionary.
+	CHECK(selector.has("within"));
+	const EditorAutomationSelectorResult second = EditorAutomationSelector::resolve(snapshot, selector);
+	CHECK(second.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(second.match_indices.size() == 1);
+	CHECK(second.match_indices[0] == result.match_indices[0]);
+	CHECK(selector.has("within"));
+
 	memdelete(root);
 }
 

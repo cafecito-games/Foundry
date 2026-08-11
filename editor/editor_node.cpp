@@ -854,10 +854,7 @@ void EditorNode::_notification(int p_what) {
 		} break;
 
 		case NOTIFICATION_POSTINITIALIZE: {
-			EditorHelp::generate_doc();
-#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
-			EditorHelpHighlighter::create_singleton();
-#endif
+			initialize_documentation();
 		} break;
 
 		case NOTIFICATION_PROCESS: {
@@ -11013,8 +11010,74 @@ HashMap<String, Variant> EditorNode::get_initial_settings() {
 	return settings;
 }
 
+// Names the dependency-ordered blocks this constructor builds, so `--benchmark-file` reports where
+// editor construction actually spends its time.
+//
+// The blocks are the unit #2108 will turn into resumable startup steps, and their grouping has to
+// follow measured cost rather than a guess: a step that cannot be interrupted must not be able to
+// consume the 250 ms run loop bound on its own. Measuring them is what makes that checkable, so the
+// marks come first and the split follows.
+//
+// Each `begin()` closes the previous block, and the destructor closes the last, so a block cannot be
+// left unclosed by an early return.
+class EditorNode::StartupPhases {
+	String current;
+
+public:
+	void begin(const String &p_name) {
+		end();
+		current = p_name;
+		OS::get_singleton()->benchmark_begin_measure("Editor Init", current);
+	}
+
+	void end() {
+		if (current.is_empty()) {
+			return;
+		}
+		OS::get_singleton()->benchmark_end_measure("Editor Init", current);
+		current = String();
+	}
+
+	~StartupPhases() { end(); }
+};
+
+bool EditorNode::documentation_initialized = false;
+
+void EditorNode::initialize_documentation() {
+	// An explicit, exactly-once startup phase rather than work hanging off a notification.
+	//
+	// This used to run from `NOTIFICATION_POSTINITIALIZE`, which fires the moment the object is
+	// constructed. #2108 makes editor construction resumable, and a deferred `EditorNode` would
+	// otherwise generate documentation at an arbitrary point in a partially built editor — or, if
+	// construction is ever retried, generate it twice. Naming the phase pins it to one place in the
+	// dependency order and makes "exactly once" an assertable property rather than a side effect of
+	// how often the notification happens to fire.
+	if (documentation_initialized) {
+		return;
+	}
+	documentation_initialized = true;
+
+	OS::get_singleton()->benchmark_begin_measure("Editor Init", "Documentation");
+	EditorHelp::generate_doc();
+#if defined(MODULE_FOUNDRY_SCRIPT_ENABLED) || defined(MODULE_MONO_ENABLED)
+	EditorHelpHighlighter::create_singleton();
+#endif
+	OS::get_singleton()->benchmark_end_measure("Editor Init", "Documentation");
+}
+
+bool EditorNode::is_documentation_initialized() {
+	return documentation_initialized;
+}
+
+void EditorNode::reset_documentation_initialized_for_testing() {
+	documentation_initialized = false;
+}
+
 EditorNode::EditorNode() {
 	DEV_ASSERT(!singleton);
+
+	StartupPhases phases;
+	phases.begin("Core Services");
 	singleton = this;
 
 	projectless_shell = Engine::get_singleton()->is_projectless_editor_shell_hint();
@@ -11316,10 +11379,14 @@ EditorNode::EditorNode() {
 	editor_export = memnew(EditorExport);
 	add_child(editor_export);
 
+	phases.begin("Theme");
+
 	// Exporters might need the theme.
 	EditorThemeManager::initialize();
 	theme = EditorThemeManager::generate_theme();
 	DisplayServer::set_early_window_clear_color_override(true, theme->get_color(SNAME("background"), EditorStringName(Editor)));
+
+	phases.begin("Main Chrome");
 
 	EDITOR_DEF("_export_preset_advanced_mode", false); // Could be accessed in EditorExportPreset.
 
@@ -11826,6 +11893,8 @@ EditorNode::EditorNode() {
 	p->add_item(TTRC("Hide Update Spinner"), SPINNER_UPDATE_SPINNER_HIDE);
 	_update_update_spinner();
 
+	phases.begin("Docks");
+
 	// Instantiate and place editor docks. Scene tree, inspector, signals,
 	// groups, and history live inside workspace tiles, not in the global
 	// EditorDockManager slots.
@@ -11891,6 +11960,8 @@ EditorNode::EditorNode() {
 	_update_layouts_menu();
 
 	// Bottom panels.
+
+	phases.begin("Bottom Panels");
 
 	bottom_panel = memnew(EditorBottomPanel);
 	editor_dock_manager->register_dock_slot(DockConstants::DOCK_SLOT_BOTTOM, bottom_panel, DockConstants::DOCK_LAYOUT_HORIZONTAL);
@@ -12018,6 +12089,8 @@ EditorNode::EditorNode() {
 	audio_preview_gen = memnew(AudioStreamPreviewGenerator);
 	add_child(audio_preview_gen);
 
+	phases.begin("Plugins");
+
 	add_editor_plugin(memnew(DebuggerEditorPlugin(debug_menu)));
 
 	disk_changed = memnew(ConfirmationDialog);
@@ -12089,6 +12162,8 @@ EditorNode::EditorNode() {
 	}
 	FoundryExtensionEditorPlugins::editor_node_add_plugin = &EditorNode::add_extension_editor_plugin;
 	FoundryExtensionEditorPlugins::editor_node_remove_plugin = &EditorNode::remove_extension_editor_plugin;
+
+	phases.begin("Finalization");
 
 	for (int i = 0; i < plugin_init_callback_count; i++) {
 		plugin_init_callbacks[i]();

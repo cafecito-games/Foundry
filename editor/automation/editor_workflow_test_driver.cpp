@@ -280,7 +280,8 @@ Dictionary EditorWorkflowTestDriver::act(const Dictionary &p_selector, const Str
 	last_route = p_route;
 
 	const EditorAutomationSnapshot snapshot = _capture_snapshot();
-	Dictionary options_dict = p_args;
+	// Dictionary assignment shares storage; duplicate before stamping `route`.
+	Dictionary options_dict = p_args.duplicate();
 	if (!p_route.is_empty()) {
 		options_dict["route"] = p_route;
 	}

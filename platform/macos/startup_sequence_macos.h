@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 // User input arriving while the editor is still booting.
 //
 // The staged boot below lets the run loop turn between boot phases, which means AppKit will
@@ -58,6 +60,62 @@ public:
 	static bool should_discard_event(unsigned long p_ns_event_type, bool p_native_modal_session) {
 		return suppressed && !p_native_modal_session && is_user_input_event_type(p_ns_event_type);
 	}
+};
+
+// Window and application callbacks arriving while the editor is still booting.
+//
+// `StartupInputGateMacOS` above stops user input at the `-[FoundryApplication sendEvent:]` ingress,
+// which is necessary but not sufficient. The root `Window` installs its DisplayServer callbacks
+// during `NOTIFICATION_ENTER_TREE`, before the rest of the editor tree has entered or become ready,
+// so once the outer run loop turns mid-boot AppKit can drive rect, focus, DPI and titlebar
+// callbacks straight into a partially built tree. Those arrive as AppKit notifications rather than
+// as `NSEvent`s, so they never pass through the input gate at all.
+//
+// While engaged, the engine sees none of them. State is coalesced per window and replayed once,
+// after boot completes, as the final observable state — a window that was resized four times during
+// boot produces one rect callback against the finished tree, not four against a half-built one.
+class StartupBootGateMacOS {
+public:
+	// Coalescible window state. Anything not listed here is a *request* rather than state and is
+	// discarded outright while gated; see `should_discard_request()`.
+	enum WindowState {
+		WINDOW_STATE_RECT, // Position or size; the current rect is re-read at replay.
+		WINDOW_STATE_DPI,
+		WINDOW_STATE_TITLEBAR,
+		WINDOW_STATE_FOCUS, // Carries a value: the last focused/unfocused observed wins.
+		WINDOW_STATE_MOUSE, // Carries a value: the last enter/exit observed wins.
+		WINDOW_STATE_MAX,
+	};
+
+	// Replays one coalesced state change. `p_value` is meaningful for FOCUS and MOUSE only.
+	typedef void (*ReplayCallback)(int64_t p_window_id, WindowState p_state, bool p_value, void *p_userdata);
+
+	static bool is_engaged() { return engaged; }
+	static void engage();
+
+	// Replays coalesced state, then disengages. Input stays gated by the caller across the replay,
+	// so a callback cannot be interleaved with input that was discarded while it accumulated.
+	static void release_and_replay(ReplayCallback p_replay, void *p_userdata);
+
+	// Drops all pending state without replaying it. For a boot that failed: the tree that would
+	// have received the callbacks does not exist.
+	static void abandon();
+
+	// True when the engine callback must not run. Records the change for replay.
+	static bool defer_window_state(int64_t p_window_id, WindowState p_state, bool p_value = false);
+
+	// True when the caller must drop the event entirely. Requests — a close button, a file drop —
+	// are user intent, and the gate discards user intent rather than deferring it. Replaying a
+	// boot-time close would quit the editor the instant it finished launching.
+	static bool should_discard_request() { return engaged; }
+
+	static bool has_pending_state();
+
+	// Test seam; boot state is process wide.
+	static void reset();
+
+private:
+	static bool engaged;
 };
 
 // Staged boot for the AppKit GUI path.
@@ -104,6 +162,13 @@ public:
 	// Engages the input gate for the whole boot. Called once, before the first `step()`.
 	void begin();
 
+	// Runs once when boot completes, after the main loop is initialized and *before* the input gate
+	// is lifted. That ordering is the point: the coalesced window state has to reach the finished
+	// tree before user input starts flowing, so a replayed callback cannot interleave with input
+	// that arrived while that state was accumulating.
+	typedef void (*BootCompleteCallback)(void *p_userdata);
+	void set_boot_complete_callback(BootCompleteCallback p_callback, void *p_userdata);
+
 	virtual ~StartupSequenceMacOS() = default;
 
 protected:
@@ -121,4 +186,6 @@ private:
 
 	Phase phase = PHASE_MAIN_START;
 	bool stepping = false;
+	BootCompleteCallback boot_complete_callback = nullptr;
+	void *boot_complete_userdata = nullptr;
 };

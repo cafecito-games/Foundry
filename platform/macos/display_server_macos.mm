@@ -43,6 +43,7 @@
 #import "foundry_window_delegate.h"
 #import "key_mapping_macos.h"
 #import "os_macos.h"
+#import "startup_markers_macos.h"
 
 #ifdef TOOLS_ENABLED
 #import "macos_quartz_core_spi.h"
@@ -91,6 +92,7 @@ DisplayServerMacOS::WindowID DisplayServerMacOS::_create_window(WindowMode p_mod
 	WindowID id = window_id_counter;
 	{
 		WindowData &wd = windows[id];
+		wd.id = id;
 
 		wd.window_delegate = [[FoundryWindowDelegate alloc] initWithDisplayServer:this];
 		ERR_FAIL_NULL_V_MSG(wd.window_delegate, INVALID_WINDOW_ID, "Can't create a window delegate");
@@ -665,10 +667,87 @@ void DisplayServerMacOS::send_event(NSEvent *p_event) {
 void DisplayServerMacOS::send_window_event(const WindowData &wd, WindowEvent p_event) {
 	_THREAD_SAFE_METHOD_
 
+	if (_defer_window_event_during_boot(wd, p_event)) {
+		return;
+	}
+
 	if (wd.event_callback.is_valid()) {
 		Variant event = int(p_event);
 		wd.event_callback.call(event);
 	}
+}
+
+// True when the boot gate swallowed the event. Every engine-facing window event funnels through
+// `send_window_event()`, so gating here covers the whole surface rather than each AppKit callback.
+bool DisplayServerMacOS::_defer_window_event_during_boot(const WindowData &wd, WindowEvent p_event) {
+	if (!StartupBootGateMacOS::is_engaged()) {
+		return false;
+	}
+	switch (p_event) {
+		case WINDOW_EVENT_MOUSE_ENTER:
+			return StartupBootGateMacOS::defer_window_state(wd.id, StartupBootGateMacOS::WINDOW_STATE_MOUSE, true);
+		case WINDOW_EVENT_MOUSE_EXIT:
+			return StartupBootGateMacOS::defer_window_state(wd.id, StartupBootGateMacOS::WINDOW_STATE_MOUSE, false);
+		case WINDOW_EVENT_FOCUS_IN:
+			return StartupBootGateMacOS::defer_window_state(wd.id, StartupBootGateMacOS::WINDOW_STATE_FOCUS, true);
+		case WINDOW_EVENT_FOCUS_OUT:
+			return StartupBootGateMacOS::defer_window_state(wd.id, StartupBootGateMacOS::WINDOW_STATE_FOCUS, false);
+		case WINDOW_EVENT_DPI_CHANGE:
+			return StartupBootGateMacOS::defer_window_state(wd.id, StartupBootGateMacOS::WINDOW_STATE_DPI);
+		case WINDOW_EVENT_TITLEBAR_CHANGE:
+			return StartupBootGateMacOS::defer_window_state(wd.id, StartupBootGateMacOS::WINDOW_STATE_TITLEBAR);
+		case WINDOW_EVENT_CLOSE_REQUEST:
+			// Not gated here, because this is not exclusively user intent: `popup_open()` sends it
+			// to close the previous popup before opening the next one, and the popup close paths
+			// use it too. Swallowing those would leave two popups open and the popup stack
+			// inconsistent. The user-driven close is discarded at its own source instead, in
+			// `-[FoundryWindowDelegate windowShouldClose:]`.
+			break;
+		case WINDOW_EVENT_GO_BACK_REQUEST:
+		case WINDOW_EVENT_FORCE_CLOSE:
+			// Engine-driven teardown, not something AppKit hands us mid-boot. Swallowing it could
+			// leak the window it is tearing down.
+			break;
+	}
+	return false;
+}
+
+void DisplayServerMacOS::_replay_boot_window_state(int64_t p_window_id, StartupBootGateMacOS::WindowState p_state, bool p_value, void *p_userdata) {
+	DisplayServerMacOS *ds = static_cast<DisplayServerMacOS *>(p_userdata);
+	const WindowID window_id = (WindowID)p_window_id;
+	if (!ds->has_window(window_id)) {
+		// Closed again before boot finished; there is no tree state left to synchronize.
+		return;
+	}
+	WindowData &wd = ds->windows[window_id];
+
+	switch (p_state) {
+		case StartupBootGateMacOS::WINDOW_STATE_RECT: {
+			// The current rect, not the one observed when the change arrived: the point is to
+			// synchronize the finished tree with where the window actually ended up.
+			if (wd.rect_changed_callback.is_valid()) {
+				wd.rect_changed_callback.call(Rect2i(ds->window_get_position(window_id), ds->window_get_size(window_id)));
+			}
+		} break;
+		case StartupBootGateMacOS::WINDOW_STATE_DPI: {
+			ds->send_window_event(wd, WINDOW_EVENT_DPI_CHANGE);
+		} break;
+		case StartupBootGateMacOS::WINDOW_STATE_TITLEBAR: {
+			ds->send_window_event(wd, WINDOW_EVENT_TITLEBAR_CHANGE);
+		} break;
+		case StartupBootGateMacOS::WINDOW_STATE_MOUSE: {
+			ds->send_window_event(wd, p_value ? WINDOW_EVENT_MOUSE_ENTER : WINDOW_EVENT_MOUSE_EXIT);
+		} break;
+		case StartupBootGateMacOS::WINDOW_STATE_FOCUS: {
+			ds->send_window_event(wd, p_value ? WINDOW_EVENT_FOCUS_IN : WINDOW_EVENT_FOCUS_OUT);
+		} break;
+		case StartupBootGateMacOS::WINDOW_STATE_MAX:
+			break;
+	}
+}
+
+void DisplayServerMacOS::replay_boot_window_state() {
+	StartupBootGateMacOS::release_and_replay(&DisplayServerMacOS::_replay_boot_window_state, this);
 }
 
 void DisplayServerMacOS::release_pressed_events() {
@@ -1783,6 +1862,7 @@ void DisplayServerMacOS::show_window(WindowID p_id) {
 
 	popup_open(p_id);
 	if ([wd.window_object isMiniaturized]) {
+		// Nothing became visible, so this is not the marker's moment.
 		return;
 	} else if (wd.no_focus) {
 		if (wd.transient_parent != INVALID_WINDOW_ID) {
@@ -1795,6 +1875,13 @@ void DisplayServerMacOS::show_window(WindowID p_id) {
 		}
 	} else {
 		[wd.window_object makeKeyAndOrderFront:nil];
+	}
+
+	if (p_id == MAIN_WINDOW_ID) {
+		// The main window has just been ordered on screen, which is where the user's wait for a
+		// responsive editor begins. Only the main window counts: a splash or status surface is not
+		// what the run loop bound is measured against.
+		StartupMarkersMacOS::first_window_visible();
 	}
 }
 

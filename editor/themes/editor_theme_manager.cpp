@@ -221,16 +221,33 @@ Ref<EditorTheme> EditorThemeManager::_create_base_theme(const Ref<EditorTheme> &
 
 	print_verbose("EditorTheme: Generating new styles.");
 
+	// Measured separately because these four calls are the only part of theme generation with no
+	// instrumentation, and together they are the largest share of it. They are also the natural
+	// boundaries a resumable theme phase would suspend at, so their individual cost decides whether
+	// theme generation needs a continuation of its own or can stay one atomic startup step (#2108).
+	OS::get_singleton()->benchmark_begin_measure(get_benchmark_key(), "Standard Styles");
 	if (is_default_style) {
 		ThemeModern::populate_standard_styles(theme, config);
-		ThemeModern::populate_editor_styles(theme, config);
 	} else {
 		ThemeClassic::populate_standard_styles(theme, config);
+	}
+	OS::get_singleton()->benchmark_end_measure(get_benchmark_key(), "Standard Styles");
+
+	OS::get_singleton()->benchmark_begin_measure(get_benchmark_key(), "Editor Styles");
+	if (is_default_style) {
+		ThemeModern::populate_editor_styles(theme, config);
+	} else {
 		ThemeClassic::populate_editor_styles(theme, config);
 	}
+	OS::get_singleton()->benchmark_end_measure(get_benchmark_key(), "Editor Styles");
 
+	OS::get_singleton()->benchmark_begin_measure(get_benchmark_key(), "Text Editor Styles");
 	_populate_text_editor_styles(theme, config);
+	OS::get_singleton()->benchmark_end_measure(get_benchmark_key(), "Text Editor Styles");
+
+	OS::get_singleton()->benchmark_begin_measure(get_benchmark_key(), "Visual Shader Styles");
 	_populate_visual_shader_styles(theme, config);
+	OS::get_singleton()->benchmark_end_measure(get_benchmark_key(), "Visual Shader Styles");
 
 	OS::get_singleton()->benchmark_end_measure(get_benchmark_key(), "Create Base Theme");
 	return theme;
