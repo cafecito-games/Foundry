@@ -89,6 +89,14 @@ protected:
 	mutable TypedArray<RID> rids;
 	mutable bool dirty_rids = true;
 
+	// Per-size combined metric cache (height/ascent/descent over the full
+	// fallback chain). Avoids forcing every fallback to open its face just to
+	// answer a line-height query at a size already seen. Cleared together with
+	// dirty_rids so changes to fallbacks, variations or spacing invalidate it.
+	mutable HashMap<int, real_t> height_cache;
+	mutable HashMap<int, real_t> ascent_cache;
+	mutable HashMap<int, real_t> descent_cache;
+
 	// Fallbacks.
 	static constexpr int MAX_FALLBACK_DEPTH = 64;
 	TypedArray<Font> fallbacks;

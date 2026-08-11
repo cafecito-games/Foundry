@@ -125,6 +125,11 @@ void Font::_invalidate_rids() {
 	rids.clear();
 	dirty_rids = true;
 
+	// Metrics depend on the fallback chain (and spacing), so drop the cache.
+	height_cache.clear();
+	ascent_cache.clear();
+	descent_cache.clear();
+
 	cache.clear();
 	cache_wrap.clear();
 
@@ -211,33 +216,56 @@ real_t Font::get_height(int p_font_size) const {
 		_update_rids();
 	}
 
+	const real_t *cached = height_cache.getptr(p_font_size);
+	if (cached) {
+		return *cached;
+	}
+
 	real_t ret = 0.f;
 	for (int i = 0; i < rids.size(); i++) {
 		ret = MAX(ret, TS->font_get_ascent(rids.get(i), p_font_size) + TS->font_get_descent(rids.get(i), p_font_size));
 	}
-	return ret + get_spacing(TextServer::SPACING_BOTTOM) + get_spacing(TextServer::SPACING_TOP);
+	ret += get_spacing(TextServer::SPACING_BOTTOM) + get_spacing(TextServer::SPACING_TOP);
+	height_cache[p_font_size] = ret;
+	return ret;
 }
 
 real_t Font::get_ascent(int p_font_size) const {
 	if (dirty_rids) {
 		_update_rids();
 	}
+
+	const real_t *cached = ascent_cache.getptr(p_font_size);
+	if (cached) {
+		return *cached;
+	}
+
 	real_t ret = 0.f;
 	for (int i = 0; i < rids.size(); i++) {
 		ret = MAX(ret, TS->font_get_ascent(rids.get(i), p_font_size));
 	}
-	return ret + get_spacing(TextServer::SPACING_TOP);
+	ret += get_spacing(TextServer::SPACING_TOP);
+	ascent_cache[p_font_size] = ret;
+	return ret;
 }
 
 real_t Font::get_descent(int p_font_size) const {
 	if (dirty_rids) {
 		_update_rids();
 	}
+
+	const real_t *cached = descent_cache.getptr(p_font_size);
+	if (cached) {
+		return *cached;
+	}
+
 	real_t ret = 0.f;
 	for (int i = 0; i < rids.size(); i++) {
 		ret = MAX(ret, TS->font_get_descent(rids.get(i), p_font_size));
 	}
-	return ret + get_spacing(TextServer::SPACING_BOTTOM);
+	ret += get_spacing(TextServer::SPACING_BOTTOM);
+	descent_cache[p_font_size] = ret;
+	return ret;
 }
 
 real_t Font::get_underline_position(int p_font_size) const {

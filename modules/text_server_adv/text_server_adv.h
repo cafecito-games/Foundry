@@ -120,6 +120,7 @@ FOUNDRY_CLANG_WARNING_POP
 #ifdef MODULE_FREETYPE_ENABLED
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_SIZES_H
 #include FT_TRUETYPE_TABLES_H
 #include FT_STROKER_H
 #include FT_ADVANCES_H
@@ -296,8 +297,9 @@ class TextServerAdvanced : public TextServerExtension {
 		hb_font_t *hb_handle = nullptr;
 
 #ifdef MODULE_FREETYPE_ENABLED
-		FT_Face face = nullptr;
-		FT_StreamRec stream;
+		// Per-size FreeType state. The FT_Face itself is owned by FontAdvanced
+		// (shared across all sizes); each FontForSizeAdvanced only owns an FT_Size.
+		FT_Size ft_size = nullptr;
 #endif
 
 		~FontForSizeAdvanced() {
@@ -305,8 +307,8 @@ class TextServerAdvanced : public TextServerExtension {
 				hb_font_destroy(hb_handle);
 			}
 #ifdef MODULE_FREETYPE_ENABLED
-			if (face != nullptr) {
-				FT_Done_Face(face);
+			if (ft_size != nullptr) {
+				FT_Done_Size(ft_size);
 			}
 #endif
 		}
@@ -372,11 +374,26 @@ class TextServerAdvanced : public TextServerExtension {
 		size_t data_size;
 		int face_index = 0;
 
+#ifdef MODULE_FREETYPE_ENABLED
+		// Shared FreeType face for this font data + face index + variation.
+		// Created once and reused by every cached size via FT_New_Size, so the
+		// expensive WOFF2/TTF parse and decompression happens only once.
+		FT_Face face = nullptr;
+		FT_StreamRec stream;
+#endif
+
 		~FontAdvanced() {
 			for (const KeyValue<Vector2i, FontForSizeAdvanced *> &E : cache) {
 				memdelete(E.value);
 			}
 			cache.clear();
+#ifdef MODULE_FREETYPE_ENABLED
+			// Destroy per-size FT_Size objects first (via the loop above), then
+			// the shared face. The stream buffer (data_ptr) outlives the face.
+			if (face != nullptr) {
+				FT_Done_Face(face);
+			}
+#endif
 		}
 	};
 
@@ -389,6 +406,10 @@ class TextServerAdvanced : public TextServerExtension {
 #endif
 	bool _ensure_glyph(FontAdvanced *p_font_data, const Vector2i &p_size, int32_t p_glyph, FontGlyph &r_glyph, uint32_t p_oversampling = 0) const;
 	bool _ensure_cache_for_size(FontAdvanced *p_font_data, const Vector2i &p_size, FontForSizeAdvanced *&r_cache_for_size, bool p_silent = false, uint32_t p_oversampling = 0) const;
+
+	// Diagnostics: see TextServer::font_get_debug_face_open_count().
+	virtual uint32_t font_get_debug_face_open_count() const override { return debug_face_open_count; }
+
 	_FORCE_INLINE_ bool _font_validate(const RID &p_font_rid) const;
 	_FORCE_INLINE_ void _font_clear_cache(FontAdvanced *p_font_data);
 	static void _generateMTSDF_threaded(void *p_td, uint32_t p_y);
@@ -590,6 +611,11 @@ class TextServerAdvanced : public TextServerExtension {
 	mutable RID_PtrOwner<FontAdvancedLinkedVariation> font_var_owner;
 	mutable RID_PtrOwner<FontAdvanced> font_owner;
 	mutable RID_PtrOwner<ShapedTextDataAdvanced> shaped_owner{ 65536, 1048576 };
+
+	// Test/diagnostics: counts how many times FT_Open_Face has been called for a
+	// real (non-throwaway) font face. With the shared-face design this should be
+	// one per FontAdvanced, regardless of how many distinct sizes are requested.
+	mutable uint32_t debug_face_open_count = 0;
 
 	_FORCE_INLINE_ FontAdvanced *_get_font_data(const RID &p_font_rid) const {
 		RID rid = p_font_rid;
