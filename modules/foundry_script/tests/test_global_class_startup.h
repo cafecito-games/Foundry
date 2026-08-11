@@ -50,13 +50,28 @@ struct GlobalClassStartupProcessResult {
 };
 
 static GlobalClassStartupProcessResult run_global_class_startup_process(
-		const List<String> &p_arguments, const String &p_working_directory = String()) {
+		const List<String> &p_arguments, const TemporaryProjectTree &p_tree,
+		const String &p_working_directory = String()) {
 	GlobalClassStartupProcessResult result;
 	Vector<uint8_t> stdout_bytes;
 	Vector<uint8_t> stderr_bytes;
+	const String user_data_root = p_tree.root.path_join("user_data");
+	const String home_path = user_data_root.path_join("home");
+	const String xdg_data_path = user_data_root.path_join("xdg_data");
+	const String app_data_path = user_data_root.path_join("app_data");
+	const String local_app_data_path = user_data_root.path_join("local_app_data");
+	p_tree.write_file("user_data/home/.keep", String());
+	p_tree.write_file("user_data/xdg_data/.keep", String());
+	p_tree.write_file("user_data/app_data/.keep", String());
+	p_tree.write_file("user_data/local_app_data/.keep", String());
+	Dictionary environment;
+	environment["HOME"] = home_path;
+	environment["XDG_DATA_HOME"] = xdg_data_path;
+	environment["APPDATA"] = app_data_path;
+	environment["LOCALAPPDATA"] = local_app_data_path;
 	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
 			OS::get_singleton()->get_executable_path(), p_arguments, false,
-			p_working_directory, Dictionary(), false);
+			p_working_directory, environment, false);
 	if (pipe_info.is_empty()) {
 		return result;
 	}
@@ -96,6 +111,8 @@ static GlobalClassStartupProcessResult run_global_class_startup_process(
 	}
 	if (result.error != OK && OS::get_singleton()->is_process_running(pid)) {
 		OS::get_singleton()->kill(pid);
+		pump(stdout_pipe, stdout_bytes);
+		pump(stderr_pipe, stderr_bytes);
 	}
 	if (stdout_pipe.is_valid()) {
 		stdout_pipe->close();
@@ -104,6 +121,7 @@ static GlobalClassStartupProcessResult run_global_class_startup_process(
 		stderr_pipe->close();
 	}
 	result.exit_code = OS::get_singleton()->get_process_exit_code(pid);
+	OS::get_singleton()->release_finished_process(pid);
 	result.output = String::utf8((const char *)stdout_bytes.ptr(), stdout_bytes.size());
 	result.output += String::utf8((const char *)stderr_bytes.ptr(), stderr_bytes.size());
 	return result;
@@ -160,6 +178,98 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		CHECK_FALSE(GlobalClassScanPolicy::should_scan(true, false, false, false, false));
 	}
 
+	TEST_CASE("GlobalClassStartup script docs do not scan runtime global classes") {
+		TemporaryProjectTree tree("fs_global_class_startup_script_docs");
+		REQUIRE(tree.is_valid());
+		tree.write_file("project.foundry",
+				"config_version=5\n\n"
+				"[application]\n\n"
+				"config/name=\"Global Class Startup Script Docs\"\n"
+				"run/main_scene=\"res://main.tscn\"\n");
+		tree.write_file("main.tscn",
+				"[gd_scene format=3]\n\n"
+				"[node name=\"Main\" type=\"Node\"]\n");
+		tree.write_file("scripts/docs_probe.fs",
+				"## Documentation generated without a runtime startup scan.\n"
+				"class_name StartupDocsProbe\n"
+				"extends RefCounted\n");
+
+		const String output_dir = tree.root.path_join("generated_docs");
+		List<String> args;
+		args.push_back("--headless");
+		args.push_back("--no-header");
+		args.push_back("--verbose");
+		args.push_back("docs");
+		args.push_back("generate-script");
+		args.push_back("--project");
+		args.push_back(tree.root);
+		args.push_back("--source");
+		args.push_back(tree.root.path_join("scripts"));
+		args.push_back("--output");
+		args.push_back(output_dir);
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args, tree, tree.root);
+		REQUIRE_MESSAGE(result.error == OK, result.output);
+		CHECK_MESSAGE(result.exit_code == 0, result.output);
+		CHECK(FileAccess::exists(output_dir.path_join("StartupDocsProbe.xml")));
+		CHECK_MESSAGE(count_startup_scan_summaries(result.output) == 0, result.output);
+	}
+
+	TEST_CASE("GlobalClassStartup invalid explicit eval project does not scan an ambient project") {
+		TemporaryProjectTree tree("fs_global_class_startup_invalid_eval_project");
+		REQUIRE(tree.is_valid());
+		tree.write_file("project.foundry",
+				"config_version=5\n\n"
+				"[application]\n\n"
+				"config/name=\"Global Class Startup Ambient Eval\"\n");
+		tree.write_file("ambient_dependency.fs",
+				"class_name StartupInvalidEvalAmbientDependency\n"
+				"extends RefCounted\n");
+
+		const String missing_project = tree.root.path_join("missing_project");
+		List<String> args;
+		args.push_back("--headless");
+		args.push_back("--no-header");
+		args.push_back("--verbose");
+		args.push_back("script");
+		args.push_back("eval");
+		args.push_back("--project");
+		args.push_back(missing_project);
+		args.push_back("print(\"GLOBAL_CLASS_STARTUP_INVALID_EVAL_SHOULD_NOT_RUN\")");
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args, tree, tree.root);
+		REQUIRE_MESSAGE(result.error == OK, result.output);
+		CHECK_MESSAGE(result.exit_code != 0, result.output);
+		CHECK_MESSAGE(result.output.contains("script eval could not use the requested project"), result.output);
+		CHECK_MESSAGE(count_startup_scan_summaries(result.output) == 0, result.output);
+	}
+
+	TEST_CASE("GlobalClassStartup subprocess user data stays inside its project tree") {
+		TemporaryProjectTree tree("fs_global_class_startup_user_data");
+		REQUIRE(tree.is_valid());
+		tree.write_file("project.foundry",
+				"config_version=5\n\n"
+				"[application]\n\n"
+				"config/name=\"Global Class Startup User Data\"\n"
+				"run/main_scene=\"res://main.tscn\"\n");
+		tree.write_file("main.tscn",
+				"[gd_scene load_steps=2 format=3]\n\n"
+				"[ext_resource path=\"res://main.fs\" type=\"Script\" id=\"1\"]\n\n"
+				"[node name=\"Main\" type=\"Node\"]\n"
+				"script = ExtResource(\"1\")\n");
+		tree.write_file("main.fs",
+				"extends Node\n\n"
+				"func _ready() -> void:\n"
+				"\tprint(\"GLOBAL_CLASS_STARTUP_USER_DATA:\" + ProjectSettings.globalize_path(\"user://\"))\n"
+				"\tget_tree().quit()\n");
+
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(
+				global_class_project_run_args(tree.root), tree);
+		REQUIRE_MESSAGE(result.error == OK, result.output);
+		CHECK_MESSAGE(result.exit_code == 0, result.output);
+		CHECK_MESSAGE(result.output.contains(
+					  "GLOBAL_CLASS_STARTUP_USER_DATA:" + tree.root.path_join("user_data")),
+				result.output);
+	}
+
 	TEST_CASE("GlobalClassStartup cacheless main scene resolves current global classes") {
 		TemporaryProjectTree tree("fs_global_class_startup_cacheless_scene");
 		REQUIRE(tree.is_valid());
@@ -186,7 +296,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 				"\treturn \"resolved\"\n");
 
 		const GlobalClassStartupProcessResult result = run_global_class_startup_process(
-				global_class_project_run_args(tree.root, true));
+				global_class_project_run_args(tree.root, true), tree);
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_SCENE_OK:resolved"), result.output);
@@ -226,7 +336,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		REQUIRE_FALSE(stale_cache_bytes.is_empty());
 
 		const GlobalClassStartupProcessResult result = run_global_class_startup_process(
-				global_class_project_run_args(tree.root, true));
+				global_class_project_run_args(tree.root, true), tree);
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_SCENE_OK:resolved"), result.output);
@@ -254,7 +364,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 				"\tquit()\n");
 
 		const GlobalClassStartupProcessResult result = run_global_class_startup_process(
-				global_class_project_run_args(tree.root, true));
+				global_class_project_run_args(tree.root, true), tree);
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_MAIN_LOOP_OK"), result.output);
@@ -307,7 +417,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 
 		List<String> args = global_class_project_run_args(tree.root);
 		args.push_back("--trusted");
-		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args);
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args, tree);
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_PROVIDER_RUNTIME_OK"), result.output);
@@ -336,7 +446,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		List<String> args = global_class_project_run_args(tree.root, true);
 		args.push_back("--script");
 		args.push_back("res://entry.fs");
-		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args);
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args, tree);
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_SCRIPT_OK:resolved"), result.output);
@@ -372,7 +482,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		args.push_back(tree.root);
 		args.push_back("--runner");
 		args.push_back("res://runner.fs");
-		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args);
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args, tree);
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_PROJECT_TEST_OK:resolved"), result.output);
@@ -402,7 +512,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		args.push_back(tree.root);
 		args.push_back(
 				"print(\"GLOBAL_CLASS_STARTUP_EVAL_OK:\" + StartupDirectEntryDependency.new().value())");
-		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args);
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args, tree);
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_EVAL_OK:resolved"), result.output);
@@ -440,7 +550,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		List<String> args = global_class_project_run_args(tree.root, true);
 		args.push_back("--editor-pid");
 		args.push_back(itos(OS::get_singleton()->get_process_id()));
-		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args);
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args, tree);
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_EDITOR_CHILD_OK:resolved"), result.output);

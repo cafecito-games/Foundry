@@ -4707,12 +4707,31 @@ int Main::start() {
 	}
 #endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	// A projectless eval is valid, but an explicit `--project` that could not be honored must
+	// not silently degrade to projectless (or ambient-project) execution: a CI probe expecting
+	// the requested project's context would otherwise pass while evaluating elsewhere. This
+	// covers both a directory that failed to apply (`foundry_cli_project_path_error`, e.g. it
+	// does not exist, so an ambient project under the original cwd may have loaded instead) and
+	// a valid directory that simply has no project to load.
+	if (eval_requested && !cli_invocation.project_path.is_empty() &&
+			(foundry_cli_project_path_error || !ProjectSettings::get_singleton()->is_project_loaded())) {
+		ERR_PRINT(vformat("script eval could not use the requested project at \"%s\".", cli_invocation.project_path));
+		return EXIT_FAILURE;
+	}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
 	bool runtime_consumes_project_scripts = !game_path.is_empty() || !script.is_empty() ||
 			!test_runner_path.is_empty();
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	runtime_consumes_project_scripts = runtime_consumes_project_scripts ||
 			(eval_requested && ProjectSettings::get_singleton()->is_project_loaded());
 #endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
+	// Foundry Script docs use project setup and autoloads, but they are a tooling consumer rather
+	// than a standalone runtime consumer. `fs_docs_path` covers command-first and legacy requests.
+	runtime_consumes_project_scripts = runtime_consumes_project_scripts && fs_docs_path.is_empty();
+#endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 	const bool scan_runtime_global_classes = GlobalClassScanPolicy::should_scan(
 			ProjectSettings::get_singleton()->is_project_loaded(),
 			ProjectSettings::get_singleton()->is_using_datapack(), editor, editor_pid != 0,
@@ -4751,18 +4770,6 @@ int Main::start() {
 	}
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	else if (eval_requested) {
-		// A projectless eval is valid, but an explicit `--project` that could not be honored must
-		// not silently degrade to projectless (or ambient-project) execution: a CI probe expecting
-		// the requested project's context would otherwise pass while evaluating elsewhere. This
-		// covers both a directory that failed to apply (`foundry_cli_project_path_error`, e.g. it
-		// does not exist, so an ambient project under the original cwd may have loaded instead) and
-		// a valid directory that simply has no project to load.
-		if (!cli_invocation.project_path.is_empty() &&
-				(foundry_cli_project_path_error || !ProjectSettings::get_singleton()->is_project_loaded())) {
-			ERR_PRINT(vformat("script eval could not use the requested project at \"%s\".", cli_invocation.project_path));
-			return EXIT_FAILURE;
-		}
-
 		String eval_error;
 		script_runner = FSInlineEval::compile_runner(eval_source, eval_error);
 		if (script_runner.is_null()) {
