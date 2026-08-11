@@ -439,6 +439,38 @@ TEST_CASE("[Editor][BoardSwitcher] Double-clicking a board button renames it inl
 	harness.unmount();
 }
 
+TEST_CASE("[Editor][BoardSwitcher] Compact transition refreshes a pending renamed segment") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("B");
+	harness.strip->add_board("C");
+
+	Button *button = harness.board_button(1);
+	REQUIRE(button != nullptr);
+	const float old_minimum_width = button->get_custom_minimum_size().x;
+	harness.double_click(button);
+	LineEdit *rename_edit = harness.find_rename_edit();
+	REQUIRE(rename_edit != nullptr);
+	const String new_title = "A much longer renamed board";
+	rename_edit->set_text(new_title);
+
+	harness.resize_host(Size2(120, 48));
+
+	CHECK_FALSE(harness.switcher->is_renaming());
+	CHECK(harness.strip->get_board(1)->get_title() == new_title);
+	Button *renamed_button = harness.board_button(1);
+	REQUIRE(renamed_button != nullptr);
+	CHECK(renamed_button->get_text() == new_title);
+	CHECK(renamed_button->get_tooltip_text() == new_title);
+	CHECK(renamed_button->get_accessibility_name() == new_title);
+	CHECK(renamed_button->get_custom_minimum_size().x > old_minimum_width);
+	CHECK(harness.board_button(0)->is_visible());
+	CHECK_FALSE(renamed_button->is_visible());
+	CHECK_FALSE(harness.board_button(2)->is_visible());
+
+	harness.unmount();
+}
+
 TEST_CASE("[Editor][BoardSwitcher] Losing focus commits the rename") {
 	BoardSwitcherHarness harness;
 	harness.mount();

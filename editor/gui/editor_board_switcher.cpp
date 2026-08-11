@@ -215,6 +215,10 @@ void EditorBoardSwitcher::_set_compact(bool p_compact) {
 	}
 	if (rename_edit) {
 		_apply_pending_rename(rename_edit->get_text());
+		// Recreate the segment from the committed title so every derived property (label,
+		// tooltip, accessibility name, and measured width) changes together. Rebuild only
+		// queues the guarded compact recomputation, so this cannot recurse into _set_compact().
+		_rebuild();
 	}
 	compact = p_compact;
 	for (int i = 0; i < board_buttons.size(); i++) {
