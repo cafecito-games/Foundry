@@ -33,6 +33,7 @@
 #import "display_server_macos.h"
 #import "foundry_application_delegate.h"
 #import "os_macos.h"
+#import "startup_sequence_macos.h"
 
 FoundryApplication *FoundryApp = nil;
 
@@ -140,6 +141,12 @@ FoundryApplication *FoundryApp = nil;
 }
 
 - (void)sendEvent:(NSEvent *)event {
+	if (StartupInputGateMacOS::should_discard_event((unsigned long)[event type], [NSApp modalWindow] != nil)) {
+		// The editor is still booting. Input must not reach a half-constructed editor, and
+		// merely deferring it is not enough: accumulated input is replayed once boot finishes.
+		return;
+	}
+
 	if ([event type] == NSEventTypeSystemDefined && [event subtype] == 8) {
 		int keyCode = (([event data1] & 0xFFFF0000) >> 16);
 		int keyFlags = ([event data1] & 0x0000FFFF);

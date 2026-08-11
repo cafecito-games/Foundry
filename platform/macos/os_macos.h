@@ -31,6 +31,7 @@
 #pragma once
 
 #include "crash_handler_macos.h"
+#include "startup_sequence_macos.h"
 
 #include "core/input/input.h"
 #import "drivers/coreaudio/audio_driver_coreaudio.h"
@@ -199,6 +200,8 @@ class OS_MacOS_NSApp : public OS_MacOS {
 	bool main_started = false;
 
 	CFRunLoopObserverRef pre_wait_observer = nil;
+
+	StartupSequenceMacOS startup_sequence;
 
 	void terminate();
 

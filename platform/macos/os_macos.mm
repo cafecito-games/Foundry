@@ -1289,71 +1289,88 @@ static void handle_interrupt(int sig) {
 }
 
 void OS_MacOS_NSApp::start_main() {
+	// This runs inside `applicationDidFinishLaunching:`. Everything done here happens before the
+	// run loop can turn, so only `Main::setup()` — which has to complete before there is anything
+	// to schedule — is executed inline. The remaining boot phases are driven one per run loop
+	// turn by the observer installed below, so the window that `Main::setup()` puts on screen is
+	// never left unserviced long enough for macOS to call the application unresponsive.
+	startup_sequence.begin();
+
 	Error err;
 	@autoreleasepool {
 		err = Main::setup(execpath, argc, argv);
 	}
 
-	if (err == OK) {
-		main_started = true;
-
-		int ret;
-		@autoreleasepool {
-			ret = Main::start();
-		}
-		if (ret == EXIT_SUCCESS) {
-			if (main_loop) {
-				@autoreleasepool {
-					main_loop->initialize();
-				}
-				DisplayServer *ds = DisplayServer::get_singleton();
-				DisplayServerMacOS *ds_mac = Object::cast_to<DisplayServerMacOS>(ds);
-
-				pre_wait_observer = CFRunLoopObserverCreateWithHandler(kCFAllocatorDefault, kCFRunLoopBeforeWaiting, true, 0, ^(CFRunLoopObserverRef observer, CFRunLoopActivity activity) {
-					@autoreleasepool {
-						@try {
-							FoundryProfileFrameMark;
-							FoundryProfileZone("macOS main loop");
-
-							if (ds_mac) {
-								ds_mac->_process_events(false);
-							} else if (ds) {
-								ds->process_events();
-							}
-#ifdef SDL_ENABLED
-							if (joypad_sdl) {
-								joypad_sdl->process_events();
-							}
-#endif
-
-							if (Main::iteration() || sig_received) {
-								terminate();
-							}
-						} @catch (NSException *exception) {
-							ERR_PRINT("NSException: " + String::utf8([exception reason].UTF8String));
-						}
-					}
-					if (wait_timer == nil) {
-						CFRunLoopWakeUp(CFRunLoopGetCurrent()); // Prevent main loop from sleeping.
-					}
-				});
-				CFRunLoopAddObserver(CFRunLoopGetCurrent(), pre_wait_observer, kCFRunLoopCommonModes);
-				return;
-			}
-		} else {
-			set_exit_code(EXIT_FAILURE);
-		}
-	} else if (err == ERR_HELP) { // Returned by --help and --version, so success.
-		set_exit_code(EXIT_SUCCESS);
-	} else {
-		set_exit_code(EXIT_FAILURE);
+	if (err != OK) {
+		// `ERR_HELP` is returned by --help and --version, so success.
+		set_exit_code(err == ERR_HELP ? EXIT_SUCCESS : EXIT_FAILURE);
+		terminate();
+		return;
 	}
 
-	terminate();
+	main_started = true;
+
+	__block DisplayServer *ds = nullptr;
+	__block DisplayServerMacOS *ds_mac = nullptr;
+
+	pre_wait_observer = CFRunLoopObserverCreateWithHandler(kCFAllocatorDefault, kCFRunLoopBeforeWaiting, true, 0, ^(CFRunLoopObserverRef observer, CFRunLoopActivity activity) {
+		@autoreleasepool {
+			@try {
+				if (startup_sequence.get_phase() != StartupSequenceMacOS::PHASE_RUNNING) {
+					FoundryProfileZone("macOS startup phase");
+
+					switch (startup_sequence.step()) {
+						case StartupSequenceMacOS::STEP_PENDING: {
+							// Give the run loop a turn before the next boot phase.
+						} break;
+						case StartupSequenceMacOS::STEP_RUNNING: {
+							ds = DisplayServer::get_singleton();
+							ds_mac = Object::cast_to<DisplayServerMacOS>(ds);
+						} break;
+						case StartupSequenceMacOS::STEP_EXIT_SUCCESS: {
+							terminate();
+						} break;
+						case StartupSequenceMacOS::STEP_EXIT_FAILURE: {
+							set_exit_code(EXIT_FAILURE);
+							terminate();
+						} break;
+					}
+				} else {
+					FoundryProfileFrameMark;
+					FoundryProfileZone("macOS main loop");
+
+					if (ds_mac) {
+						ds_mac->_process_events(false);
+					} else if (ds) {
+						ds->process_events();
+					}
+#ifdef SDL_ENABLED
+					if (joypad_sdl) {
+						joypad_sdl->process_events();
+					}
+#endif
+
+					if (Main::iteration() || sig_received) {
+						terminate();
+					}
+				}
+			} @catch (NSException *exception) {
+				ERR_PRINT("NSException: " + String::utf8([exception reason].UTF8String));
+			}
+		}
+		if (wait_timer == nil) {
+			CFRunLoopWakeUp(CFRunLoopGetCurrent()); // Prevent main loop from sleeping.
+		}
+	});
+	CFRunLoopAddObserver(CFRunLoopGetCurrent(), pre_wait_observer, kCFRunLoopCommonModes);
 }
 
 void OS_MacOS_NSApp::terminate() {
 	// Note: This method only sends app termination request. Use `OS_MacOS_NSApp::cleanup()` for cleanup.
+	// Shutdown may still need to talk to the user (a confirmation dialog, an error alert), so the
+	// boot input gate must not outlive the boot it was protecting.
+	StartupInputGateMacOS::set_suppressed(false);
+
 	if (pre_wait_observer) {
 		CFRunLoopRemoveObserver(CFRunLoopGetCurrent(), pre_wait_observer, kCFRunLoopCommonModes);
 		CFRelease(pre_wait_observer);
