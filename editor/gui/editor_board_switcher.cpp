@@ -33,9 +33,11 @@
 #include "editor/editor_board.h"
 #include "editor/editor_board_strip.h"
 #include "editor/gui/editor_board_actions_menu.h"
+#include "editor/themes/editor_scale.h"
 
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/container.h"
 #include "scene/gui/line_edit.h"
 #include "scene/resources/font.h"
 #include "scene/resources/style_box.h"
@@ -45,14 +47,26 @@ void EditorBoardSwitcher::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			resize_parent = Object::cast_to<Control>(get_parent());
-			if (resize_parent && !resize_parent->is_connected(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_update_compact_mode))) {
-				resize_parent->connect(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_update_compact_mode));
+			const Callable queue_update = callable_mp(this, &EditorBoardSwitcher::_queue_compact_mode_update);
+			if (resize_parent && !resize_parent->is_connected(SceneStringName(resized), queue_update)) {
+				resize_parent->connect(SceneStringName(resized), queue_update);
 			}
-			_update_compact_mode();
+			if (Container *container = Object::cast_to<Container>(resize_parent)) {
+				if (!container->is_connected(SceneStringName(sort_children), queue_update)) {
+					container->connect(SceneStringName(sort_children), queue_update);
+				}
+			}
+			_queue_compact_mode_update();
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
-			if (resize_parent && resize_parent->is_connected(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_update_compact_mode))) {
-				resize_parent->disconnect(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_update_compact_mode));
+			const Callable queue_update = callable_mp(this, &EditorBoardSwitcher::_queue_compact_mode_update);
+			if (resize_parent && resize_parent->is_connected(SceneStringName(resized), queue_update)) {
+				resize_parent->disconnect(SceneStringName(resized), queue_update);
+			}
+			if (Container *container = Object::cast_to<Container>(resize_parent)) {
+				if (container->is_connected(SceneStringName(sort_children), queue_update)) {
+					container->disconnect(SceneStringName(sort_children), queue_update);
+				}
 			}
 			resize_parent = nullptr;
 		} break;
@@ -176,7 +190,7 @@ void EditorBoardSwitcher::_rebuild() {
 	menu_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_menu_pressed));
 	rail_hbox->add_child(menu_button);
 
-	_update_compact_mode();
+	_queue_compact_mode_update();
 }
 
 int EditorBoardSwitcher::_get_desired_full_width() const {
@@ -211,9 +225,21 @@ void EditorBoardSwitcher::_set_compact(bool p_compact) {
 	update_minimum_size();
 }
 
+void EditorBoardSwitcher::_queue_compact_mode_update() {
+	if (compact_update_queued) {
+		return;
+	}
+	compact_update_queued = true;
+	callable_mp(this, &EditorBoardSwitcher::_update_compact_mode).call_deferred();
+}
+
 void EditorBoardSwitcher::_update_compact_mode() {
+	compact_update_queued = false;
+	if (!is_inside_tree()) {
+		return;
+	}
 	Control *parent_control = resize_parent ? resize_parent : Object::cast_to<Control>(get_parent());
-	if (!parent_control) {
+	if (!parent_control || parent_control != get_parent()) {
 		return;
 	}
 
@@ -344,7 +370,8 @@ void EditorBoardSwitcher::_begin_rename(int p_index) {
 
 	rename_edit = memnew(LineEdit);
 	rename_edit->set_text(board->get_title());
-	rename_edit->set_custom_minimum_size(button->get_size());
+	const Size2 segment_minimum = button->get_combined_minimum_size();
+	rename_edit->set_custom_minimum_size(Size2(segment_minimum.x, MAX(segment_minimum.y, button->get_size().y)));
 	rename_edit->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
 	rail_hbox->add_child(rename_edit);
 	// Place the editor where the (hidden) board button sits, without assuming board
@@ -414,7 +441,7 @@ EditorBoardSwitcher::EditorBoardSwitcher() {
 	set_theme_type_variation("BoardRail");
 
 	rail_hbox = memnew(HBoxContainer);
-	rail_hbox->add_theme_constant_override(SNAME("separation"), 1);
+	rail_hbox->add_theme_constant_override(SNAME("separation"), MAX(1, Math::round(EDSCALE)));
 	add_child(rail_hbox);
 
 	actions_menu = memnew(EditorBoardActionsMenu);

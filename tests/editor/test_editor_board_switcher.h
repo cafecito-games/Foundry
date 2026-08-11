@@ -40,6 +40,7 @@
 #include "core/io/config_file.h"
 #include "core/object/message_queue.h"
 
+#include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/control.h"
 #include "scene/gui/line_edit.h"
@@ -77,8 +78,17 @@ struct BoardSwitcherHarness {
 	EditorBoardSwitcher *switcher = nullptr;
 	Ref<EditorTheme> theme;
 
-	void mount(bool p_with_editor_theme = false) {
-		host = memnew(Control);
+	~BoardSwitcherHarness() {
+		unmount();
+	}
+
+	void mount(bool p_with_editor_theme = false, bool p_container_host = false) {
+		unmount();
+		if (p_container_host) {
+			host = memnew(HBoxContainer);
+		} else {
+			host = memnew(Control);
+		}
 		host->set_size(Size2(1400, 48));
 		if (p_with_editor_theme) {
 			theme = EditorThemeManager::generate_theme();
@@ -96,12 +106,29 @@ struct BoardSwitcherHarness {
 	}
 
 	void unmount() {
+		if (switcher && switcher->is_renaming()) {
+			if (LineEdit *edit = find_rename_edit()) {
+				edit->emit_signal(SceneStringName(text_submitted), edit->get_text());
+			}
+		}
 		if (EditorBoardActionsMenu *menu = switcher ? switcher->get_actions_menu() : nullptr) {
 			menu->hide();
 		}
-		SceneTree::get_singleton()->get_root()->remove_child(host);
-		memdelete(host);
-		memdelete(selection);
+		if (host) {
+			MessageQueue::get_singleton()->flush();
+			if (host->get_parent()) {
+				host->get_parent()->remove_child(host);
+			}
+			memdelete(host);
+		}
+		host = nullptr;
+		strip = nullptr;
+		switcher = nullptr;
+		if (selection) {
+			memdelete(selection);
+		}
+		selection = nullptr;
+		theme.unref();
 	}
 
 	void pump(double p_delta = 0.016) {
@@ -198,6 +225,50 @@ TEST_CASE("[Editor][BoardSwitcher] Rail compacts without losing active board") {
 	}
 
 	harness.resize_host(Size2(1400, 48));
+	CHECK(harness.strip->get_active_index() == 2);
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		Button *button = harness.board_button(i);
+		REQUIRE(button != nullptr);
+		CHECK(button->is_visible());
+	}
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Rail responds to sibling layout changes without a parent resize") {
+	BoardSwitcherHarness harness;
+	harness.mount(true, true);
+	harness.strip->add_board("Materials");
+	harness.strip->add_board("Lighting");
+	harness.strip->add_board("Animation");
+	harness.strip->set_active_board(2);
+
+	Control *side_control = memnew(Control);
+	side_control->set_custom_minimum_size(Size2(100, 48));
+	harness.host->add_child(side_control);
+	harness.host->move_child(side_control, harness.switcher->get_index());
+	harness.pump();
+
+	const Size2 fixed_host_size = harness.host->get_size();
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		Button *button = harness.board_button(i);
+		REQUIRE(button != nullptr);
+		CHECK(button->is_visible());
+	}
+
+	side_control->set_custom_minimum_size(Size2(600, 48));
+	harness.pump();
+	CHECK(harness.host->get_size() == fixed_host_size);
+	CHECK(harness.strip->get_active_index() == 2);
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		Button *button = harness.board_button(i);
+		REQUIRE(button != nullptr);
+		CHECK(button->is_visible() == (i == 2));
+	}
+
+	side_control->set_custom_minimum_size(Size2(100, 48));
+	harness.pump();
+	CHECK(harness.host->get_size() == fixed_host_size);
 	CHECK(harness.strip->get_active_index() == 2);
 	for (int i = 0; i < harness.strip->get_board_count(); i++) {
 		Button *button = harness.board_button(i);
@@ -1004,6 +1075,36 @@ TEST_CASE("[Editor][BoardSwitcher] Activating Rename Board starts an inline rena
 	rename_edit->set_text("from menu");
 	rename_edit->emit_signal(SceneStringName(text_submitted), String("from menu"));
 	CHECK(harness.strip->get_board(0)->get_title() == "from menu");
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Renaming a hidden compact segment preserves its desired width") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("Hidden board with a useful title");
+	Button *hidden_button = harness.board_button(1);
+	REQUIRE(hidden_button != nullptr);
+	hidden_button->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	harness.pump();
+
+	const float segment_minimum_width = hidden_button->get_combined_minimum_size().x;
+	CHECK(segment_minimum_width > 1.0f);
+	CHECK(hidden_button->get_size().x > segment_minimum_width);
+
+	harness.resize_host(Size2(280, 48));
+	CHECK_FALSE(hidden_button->is_visible());
+	CHECK(hidden_button->get_size().x != segment_minimum_width);
+
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	menu->popup_for_board(1, Point2());
+	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_RENAME);
+
+	LineEdit *rename_edit = harness.find_rename_edit();
+	REQUIRE(rename_edit != nullptr);
+	CHECK(rename_edit->get_custom_minimum_size().x == segment_minimum_width);
+	CHECK(rename_edit->get_custom_minimum_size().y > 1.0f);
 
 	harness.unmount();
 }
