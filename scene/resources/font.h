@@ -97,6 +97,15 @@ protected:
 	mutable HashMap<int, real_t> ascent_cache;
 	mutable HashMap<int, real_t> descent_cache;
 
+	// Clear only the per-size metric cache without the heavier rid/shape invalidation.
+	// Used by FontFile setters that mutate TS RID metrics (ascent/descent/spacing/etc.)
+	// directly without going through _invalidate_rids().
+	void _invalidate_metric_cache() {
+		height_cache.clear();
+		ascent_cache.clear();
+		descent_cache.clear();
+	}
+
 	// Fallbacks.
 	static constexpr int MAX_FALLBACK_DEPTH = 64;
 	TypedArray<Font> fallbacks;

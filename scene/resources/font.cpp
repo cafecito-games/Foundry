@@ -2047,6 +2047,7 @@ void FontFile::set_data(const PackedByteArray &p_data) {
 			TS->font_set_data_ptr(cache[i], data_ptr, data_size);
 		}
 	}
+	_invalidate_metric_cache();
 }
 
 PackedByteArray FontFile::get_data() const {
@@ -2465,6 +2466,7 @@ void FontFile::set_extra_spacing(int p_cache_index, TextServer::SpacingType p_sp
 	ERR_FAIL_COND(p_cache_index < 0);
 	_ensure_rid(p_cache_index);
 	TS->font_set_spacing(cache[p_cache_index], p_spacing, p_value);
+	_invalidate_metric_cache();
 }
 
 int64_t FontFile::get_extra_spacing(int p_cache_index, TextServer::SpacingType p_spacing) const {
@@ -2504,6 +2506,7 @@ void FontFile::set_cache_ascent(int p_cache_index, int p_size, real_t p_ascent) 
 	ERR_FAIL_COND(p_cache_index < 0);
 	_ensure_rid(p_cache_index);
 	TS->font_set_ascent(cache[p_cache_index], p_size, p_ascent);
+	_invalidate_metric_cache();
 }
 
 real_t FontFile::get_cache_ascent(int p_cache_index, int p_size) const {
@@ -2516,6 +2519,7 @@ void FontFile::set_cache_descent(int p_cache_index, int p_size, real_t p_descent
 	ERR_FAIL_COND(p_cache_index < 0);
 	_ensure_rid(p_cache_index);
 	TS->font_set_descent(cache[p_cache_index], p_size, p_descent);
+	_invalidate_metric_cache();
 }
 
 real_t FontFile::get_cache_descent(int p_cache_index, int p_size) const {
