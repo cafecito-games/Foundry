@@ -67,6 +67,7 @@
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_editor_view.h"
+#include "editor/settings/editor_feature_profile.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/workspace/workspace_pane.h"
 #include "editor/workspace/workspace_tab_type.h"
@@ -174,6 +175,58 @@ EditorAutomationAcceptanceWorkflow::Result _failure_with_message(EditorWorkflowT
 	fail.details = p_driver.make_failure_details();
 	return fail;
 }
+
+class ScopedDisabled3DFeatureProfile {
+	EditorFeatureProfileManager *manager = nullptr;
+	String previous_profile_name;
+	String temporary_profile_path;
+	bool restore_required = false;
+
+public:
+	Error activate() {
+		manager = EditorFeatureProfileManager::get_singleton();
+		ERR_FAIL_NULL_V(manager, ERR_UNCONFIGURED);
+
+		previous_profile_name = manager->get_current_profile_name();
+		const String temporary_profile_name = vformat("_automation_3d_disabled_%d", OS::get_singleton()->get_process_id());
+		temporary_profile_path = EditorPaths::get_singleton()->get_feature_profiles_dir().path_join(temporary_profile_name + ".profile");
+
+		Ref<EditorFeatureProfile> profile;
+		profile.instantiate();
+		profile->set_disable_feature(EditorFeatureProfile::FEATURE_3D, true);
+		const Error save_error = profile->save_to_file(temporary_profile_path);
+		if (save_error != OK) {
+			return save_error;
+		}
+
+		restore_required = true;
+		// Refresh the manager's profile list before selecting the profile created by
+		// this workflow. set_current_profile() normally receives a name already shown
+		// by the feature-profile dialog.
+		manager->set_current_profile(String(), false);
+		manager->set_current_profile(temporary_profile_name, true);
+		const Ref<EditorFeatureProfile> current = manager->get_current_profile();
+		if (current.is_null() || !current->is_feature_disabled(EditorFeatureProfile::FEATURE_3D)) {
+			return ERR_CANT_CREATE;
+		}
+		return OK;
+	}
+
+	void restore() {
+		if (!restore_required) {
+			return;
+		}
+		restore_required = false;
+		if (!temporary_profile_path.is_empty()) {
+			DirAccess::remove_absolute(temporary_profile_path);
+		}
+		manager->set_current_profile(previous_profile_name, !previous_profile_name.is_empty());
+	}
+
+	~ScopedDisabled3DFeatureProfile() {
+		restore();
+	}
+};
 
 // Drives a pointer gesture at a control through the same EditorAutomationInput
 // primitives the MCP "click" action uses (see _push_mouse_click in
@@ -2547,6 +2600,16 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (!_assert_command_routing(p_driver, result.workflow, context, script_leaf, failure)) {
 		return failure;
 	}
+
+	p_driver.set_step("persist_global_screen_with_workspace_layout");
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (!main_screen->is_button_enabled(EditorMainScreen::EDITOR_GAME)) {
+		return _failure_with_message(p_driver, result.workflow, "The Game main screen is unavailable for layout persistence coverage.");
+	}
+	main_screen->select(EditorMainScreen::EDITOR_GAME);
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_GAME) {
+		return _failure_with_message(p_driver, result.workflow, "Could not select the Game main screen before saving the workspace layout.");
+	}
 	if (!_save_mixed_workspace_layout(p_driver, result.workflow, context, failure)) {
 		return failure;
 	}
@@ -2571,6 +2634,14 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	p_driver.begin_workflow();
 	p_driver.set_step("verify_restored_workspace");
 	p_driver.flush_frames(60);
+	if (EditorNode::get_editor_main_screen()->get_selected_index() != EditorMainScreen::EDITOR_GAME) {
+		return _failure_with_message(p_driver, result.workflow, "Deferred workspace reconciliation overrode the restored Game main screen.");
+	}
+	// The remaining restore checks inspect controls hosted inside scene mode. Return
+	// there only after proving that the persisted global surface survived all deferred
+	// structural reconciliation.
+	EditorNode::get_singleton()->select_main_screen(EditorMainScreen::EDITOR_2D);
+	p_driver.flush_frames(30);
 
 	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
 	if (workspace == nullptr) {
@@ -2789,6 +2860,25 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 
+	p_driver.set_step("disable_3d_feature_for_passive_tile");
+	ScopedDisabled3DFeatureProfile disabled_3d_profile;
+	if (disabled_3d_profile.activate() != OK) {
+		return _failure_with_message(p_driver, result.workflow, "Could not activate the temporary 3D-disabled feature profile.");
+	}
+	p_driver.flush_frames(30);
+	demoted_tile = ObjectDB::get_instance<ScenePaneTile>(initial_tile_id);
+	if (demoted_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The passive tile disappeared while applying a feature profile.");
+	}
+	if (demoted_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Disabling 3D did not demote the passive tile's durable editor mode.");
+	}
+	if (demoted_tile->get_preview_mode() != TilePreviewMode::LIVE_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Disabling 3D did not immediately rebuild the passive tile as LIVE_2D.");
+	}
+	disabled_3d_profile.restore();
+	demoted_tile->set_scene_editor_mode(SceneEditorMode::MODE_3D, false);
+
 	// Switching back and forth re-runs the demotion against an existing secondary
 	// viewport, which is a different code path from building the first one.
 	p_driver.set_step("switch_back_to_first_board");
@@ -2887,6 +2977,11 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	if (initial_tile == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "Could not resolve the scene tile holding the 3D scene.");
 	}
+	initial_tile->set_scene_editor_mode(SceneEditorMode::MODE_3D, true);
+	p_driver.flush_frames(30);
+	if (initial_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D) {
+		return _failure_with_message(p_driver, result.workflow, "Could not establish the initial tile's 3D mode before board-close coverage.");
+	}
 	const ObjectID initial_tile_id = initial_tile->get_instance_id();
 	if (initial_tile->get_spatial_view() != nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "The focused tile already owns a secondary 3D viewport before any board switch.");
@@ -2970,6 +3065,16 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 				vformat("Expected demoted 3D world live_view_count == 1 before close, found %d.", live_view_count_before));
 	}
 
+	p_driver.set_step("select_game_before_inactive_board_close");
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (!main_screen->is_button_enabled(EditorMainScreen::EDITOR_GAME)) {
+		return _failure_with_message(p_driver, result.workflow, "The Game main screen is unavailable for inactive-board close coverage.");
+	}
+	main_screen->select(EditorMainScreen::EDITOR_GAME);
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_GAME) {
+		return _failure_with_message(p_driver, result.workflow, "Could not select the Game main screen before closing an inactive board.");
+	}
+
 	p_driver.set_step("close_board_with_pending_teardown");
 	if (strip->close_board(0)) {
 		return _failure_with_message(p_driver, result.workflow,
@@ -3028,6 +3133,9 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 	if (!board_closed) {
 		return _failure_with_message(p_driver, result.workflow, "Deferred board close did not destroy Board 1.");
+	}
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_GAME) {
+		return _failure_with_message(p_driver, result.workflow, "Closing an inactive board overrode the selected Game main screen.");
 	}
 	if (ObjectDB::get_instance<ScenePaneTile>(initial_tile_id) != nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "Demoted tile survived deferred board close.");

@@ -7982,7 +7982,7 @@ void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
 	ScenePaneTile *focused_tile = get_focused_tile();
 	if (focused_tile) {
 		const int scene_idx = editor_data.get_tile_current_scene(focused_tile->get_tile_id());
-		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, true);
+		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, false);
 	}
 	_reparent_scene_mode_into(focused_tile);
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
@@ -8523,7 +8523,7 @@ void EditorNode::_on_board_removed(int p_index) {
 	ScenePaneTile *focused_tile = get_focused_tile();
 	if (focused_tile) {
 		const int scene_idx = editor_data.get_tile_current_scene(focused_tile->get_tile_id());
-		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, true);
+		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, false);
 	}
 	_reparent_scene_mode_into(focused_tile);
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
@@ -8659,7 +8659,7 @@ void EditorNode::_reconcile_workspace_empty_leaves_after_restore() {
 	ScenePaneTile *focused_tile = get_focused_tile();
 	if (focused_tile) {
 		const int scene_idx = editor_data.get_tile_current_scene(focused_tile->get_tile_id());
-		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, true);
+		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, false);
 		_sync_focused_tile_chrome(focused_tile);
 	}
 	_reparent_scene_mode_into(focused_tile);
@@ -10499,6 +10499,7 @@ void EditorNode::_feature_profile_changed() {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, true);
 		}
 	}
+	_update_tile_display_attachments();
 
 	// The script editor lives in a workspace leaf rather than a toolbar tab, so
 	// disabling the script feature must also close any open script leaf.
