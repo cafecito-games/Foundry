@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Behavioral coverage for documentation admonition conversion."""
 
 from __future__ import annotations
