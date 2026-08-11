@@ -36,29 +36,13 @@
 
 #include "scene/gui/button.h"
 #include "scene/gui/line_edit.h"
-#include "scene/main/scene_tree.h"
 #include "scene/scene_string_names.h"
-
-// Slightly under a typical OS double-click window so a second press can cancel the
-// pending menu open and claim the gesture for inline rename before the popup appears
-// (a FLAG_POPUP menu would otherwise swallow the second press).
-static constexpr double BOARD_ACTIONS_MENU_OPEN_DELAY_SEC = 0.2;
 
 void EditorBoardSwitcher::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_THEME_CHANGED: {
-			if (add_button) {
-				add_button->set_button_icon(get_editor_theme_icon(SNAME("Add")));
-			}
-			if (overview_button) {
-				overview_button->set_button_icon(get_editor_theme_icon(SNAME("GridLayout")));
-			}
-			if (strip) {
-				const int active = strip->get_active_index();
-				if (Button *active_button = _board_button_at(active)) {
-					active_button->set_button_icon(get_editor_theme_icon(SNAME("GuiDropdown")));
-					active_button->set_icon_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
-				}
+			if (menu_button) {
+				menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
 			}
 		} break;
 	}
@@ -77,7 +61,6 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 		strip->disconnect(SNAME("board_moved"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(2));
 		strip->disconnect(SNAME("boards_restored"), callable_mp(this, &EditorBoardSwitcher::_rebuild));
 		strip->disconnect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
-		strip->disconnect(SNAME("overview_changed"), callable_mp(this, &EditorBoardSwitcher::_on_overview_changed));
 	}
 
 	strip = p_strip;
@@ -98,9 +81,6 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 		strip->connect(SNAME("board_moved"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(2));
 		strip->connect(SNAME("boards_restored"), callable_mp(this, &EditorBoardSwitcher::_rebuild));
 		strip->connect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
-		// The overview toggle is the only piece of chrome the mode affects, so it is patched
-		// in place rather than triggering a full rebuild the way structural changes do.
-		strip->connect(SNAME("overview_changed"), callable_mp(this, &EditorBoardSwitcher::_on_overview_changed));
 	}
 
 	_rebuild();
@@ -115,8 +95,6 @@ void EditorBoardSwitcher::_rebuild() {
 	if (rename_edit) {
 		_apply_pending_rename(rename_edit->get_text());
 	}
-	_cancel_pending_menu();
-
 	// Free chrome children but keep the owned actions menu across rebuilds. The menu
 	// captures its target by ObjectID, so surviving a board_removed that frees that board
 	// is what lets an activation after the close resolve to -1 and no-op.
@@ -134,8 +112,7 @@ void EditorBoardSwitcher::_rebuild() {
 		remove_child(child);
 		child->queue_free();
 	}
-	add_button = nullptr;
-	overview_button = nullptr;
+	menu_button = nullptr;
 	renaming_button = nullptr;
 	board_buttons.clear();
 
@@ -157,37 +134,21 @@ void EditorBoardSwitcher::_rebuild() {
 		button->set_tooltip_text(board->get_title());
 		button->set_accessibility_name(board->get_title());
 		button->set_pressed_no_signal(i == strip->get_active_index());
-		if (i == strip->get_active_index()) {
-			// Trailing caret marks the active board as the menu trigger. Pressing it is
-			// otherwise inert today, so treating the whole button as the menu open costs
-			// no prior behavior and avoids hit-testing the icon half by hand.
-			button->set_button_icon(get_editor_theme_icon(SNAME("GuiDropdown")));
-			button->set_icon_alignment(HORIZONTAL_ALIGNMENT_RIGHT);
-		}
 		button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_board_button_pressed).bind(i));
 		button->connect(SceneStringName(gui_input), callable_mp(this, &EditorBoardSwitcher::_on_board_button_gui_input).bind(i));
 		add_child(button);
 		board_buttons.push_back(button);
 	}
 
-	add_button = memnew(Button);
-	add_button->set_flat(true);
-	add_button->set_text("+");
-	add_button->set_tooltip_text(TTR("Add Board"));
-	add_button->set_accessibility_name(TTRC("Add Board"));
-	add_button->set_button_icon(get_editor_theme_icon(SNAME("Add")));
-	add_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_add_pressed));
-	add_child(add_button);
-
-	overview_button = memnew(Button);
-	overview_button->set_flat(true);
-	overview_button->set_toggle_mode(true);
-	overview_button->set_tooltip_text(TTR("Board Overview"));
-	overview_button->set_accessibility_name(TTRC("Board Overview"));
-	overview_button->set_button_icon(get_editor_theme_icon(SNAME("GridLayout")));
-	overview_button->set_pressed_no_signal(strip->is_overview_active());
-	overview_button->connect(SceneStringName(toggled), callable_mp(this, &EditorBoardSwitcher::_on_overview_toggled));
-	add_child(overview_button);
+	menu_button = memnew(Button);
+	menu_button->set_flat(true);
+	menu_button->set_focus_mode(FOCUS_ACCESSIBILITY);
+	menu_button->set_theme_type_variation("BoardRailMenuButton");
+	menu_button->set_accessibility_name(TTRC("Board Menu"));
+	menu_button->set_tooltip_text(TTR("Board Menu"));
+	menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
+	menu_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_menu_pressed));
+	add_child(menu_button);
 }
 
 Button *EditorBoardSwitcher::_board_button_at(int p_index) const {
@@ -195,19 +156,6 @@ Button *EditorBoardSwitcher::_board_button_at(int p_index) const {
 		return nullptr;
 	}
 	return board_buttons[p_index];
-}
-
-void EditorBoardSwitcher::_on_overview_toggled(bool p_pressed) {
-	if (!strip) {
-		return;
-	}
-	strip->set_overview(p_pressed);
-}
-
-void EditorBoardSwitcher::_on_overview_changed(bool p_active) {
-	if (overview_button) {
-		overview_button->set_pressed_no_signal(p_active);
-	}
 }
 
 void EditorBoardSwitcher::_popup_actions_menu(int p_index, const Point2 &p_screen_position) {
@@ -218,40 +166,22 @@ void EditorBoardSwitcher::_popup_actions_menu(int p_index, const Point2 &p_scree
 }
 
 void EditorBoardSwitcher::popup_board_actions(int p_board_index, const Point2 &p_screen_position) {
-	_cancel_pending_menu();
 	_popup_actions_menu(p_board_index, p_screen_position);
 }
 
-void EditorBoardSwitcher::_cancel_pending_menu() {
-	pending_menu_board_id = ObjectID();
-	if (pending_menu_timer.is_valid()) {
-		// SceneTree keeps its own Ref; unref alone leaves the timeout armed. Drop the
-		// connection so a cancelled delay cannot open the menu for a later press.
-		pending_menu_timer->release_connections();
-		pending_menu_timer.unref();
+void EditorBoardSwitcher::popup_active_board_menu(const Point2 &p_screen_position, bool p_include_board_list) {
+	if (!actions_menu || !strip) {
+		return;
 	}
+	actions_menu->popup_for_board(strip->get_active_index(), p_screen_position, p_include_board_list);
 }
 
-void EditorBoardSwitcher::_open_pending_actions_menu() {
-	pending_menu_timer.unref();
-	if (!pending_menu_board_id.is_valid() || !strip || is_renaming()) {
-		pending_menu_board_id = ObjectID();
+void EditorBoardSwitcher::_on_menu_pressed() {
+	if (!menu_button) {
 		return;
 	}
-
-	const int index = strip->resolve_board_index(pending_menu_board_id);
-	pending_menu_board_id = ObjectID();
-	if (index < 0) {
-		return;
-	}
-
-	if (Button *button = _board_button_at(index)) {
-		button->set_pressed_no_signal(true);
-		const Rect2 screen_rect = button->get_screen_rect();
-		_popup_actions_menu(index, Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y));
-	} else {
-		_popup_actions_menu(index, get_screen_transform().xform(get_local_mouse_position()));
-	}
+	const Rect2 screen_rect = menu_button->get_screen_rect();
+	popup_active_board_menu(Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y), true);
 }
 
 void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
@@ -263,30 +193,16 @@ void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
 	}
 
 	if (p_index == strip->get_active_index()) {
-		// Toggle mode flips the button off on press; restore the active visual before
-		// opening the menu so the button never reads as deselected.
+		// Toggle mode flips the button off on press; the active segment remains selected.
 		if (Button *button = _board_button_at(p_index)) {
 			button->set_pressed_no_signal(true);
 		}
-		// A double-click starts an inline rename from gui_input, which runs before the
-		// button's own release handling; that same release must not also open the menu.
-		if (is_renaming()) {
-			return;
+		if (strip->is_overview_active()) {
+			strip->set_active_board(p_index);
 		}
-
-		EditorBoard *board = strip->get_board(p_index);
-		if (!board || !get_tree()) {
-			return;
-		}
-		// Delay the popup so a follow-up double-click can cancel it and rename instead.
-		// Opening immediately would raise a FLAG_POPUP menu that swallows the second press.
-		pending_menu_board_id = board->get_instance_id();
-		pending_menu_timer = get_tree()->create_timer(BOARD_ACTIONS_MENU_OPEN_DELAY_SEC);
-		pending_menu_timer->connect(SNAME("timeout"), callable_mp(this, &EditorBoardSwitcher::_open_pending_actions_menu), Object::CONNECT_ONE_SHOT);
 		return;
 	}
 
-	_cancel_pending_menu();
 	strip->set_active_board(p_index);
 }
 
@@ -297,7 +213,6 @@ void EditorBoardSwitcher::_on_board_button_gui_input(const Ref<InputEvent> &p_ev
 	}
 
 	if (mb->get_button_index() == MouseButton::RIGHT) {
-		_cancel_pending_menu();
 		// InputEventMouse::global_position is viewport-relative; Popup::popup expects screen
 		// coordinates for non-embedded editor subwindows.
 		_popup_actions_menu(p_index, get_screen_transform().xform(get_local_mouse_position()));
@@ -305,18 +220,7 @@ void EditorBoardSwitcher::_on_board_button_gui_input(const Ref<InputEvent> &p_ev
 	}
 
 	if (mb->get_button_index() == MouseButton::LEFT && mb->is_double_click()) {
-		_cancel_pending_menu();
 		_begin_rename(p_index);
-	}
-}
-
-void EditorBoardSwitcher::_on_add_pressed() {
-	if (!strip) {
-		return;
-	}
-	EditorBoard *board = strip->add_board();
-	if (board) {
-		strip->set_active_board(strip->get_board_index(board));
 	}
 }
 

@@ -38,29 +38,26 @@ class Button;
 class EditorBoardActionsMenu;
 class EditorBoardStrip;
 class LineEdit;
-class SceneTreeTimer;
 
 /**
- * Title-bar chrome for switching between boards: one button per board, an "add
- * board" button, and a toggle for the zoomed-out board overview.
+ * Title-bar chrome for switching between boards: one button per board and a
+ * dedicated menu for board creation, overview, switching, and board actions.
  *
  * The switcher holds no board list of its own. It mirrors EditorBoardStrip by
  * rebuilding its buttons from scratch on every structural signal the strip
  * emits, which is cheaper and far less bug-prone than incrementally patching
  * button state for a handful of boards.
  *
- * The active board button carries a dropdown caret and opens a board actions
- * menu (rename / close / reorder) after a short delay so a double-click can
- * still claim the gesture for inline rename. Inactive buttons switch on
- * left-click; any board button opens the same menu on right-click.
+ * Inactive buttons switch on left-click. The active button stays selected and
+ * leaves menu opening to the dedicated button, preserving double-click rename.
+ * Any board button opens the actions menu for that board on right-click.
  */
 class EditorBoardSwitcher : public HBoxContainer {
 	FOUNDRY_CLASS(EditorBoardSwitcher, HBoxContainer);
 
 	EditorBoardStrip *strip = nullptr;
 	EditorBoardActionsMenu *actions_menu = nullptr;
-	Button *add_button = nullptr;
-	Button *overview_button = nullptr;
+	Button *menu_button = nullptr;
 	// Identity-keyed rather than child-index-keyed: rebuilds free and recreate buttons,
 	// and the owned actions menu is a sibling that must not participate in board indexing.
 	Vector<Button *> board_buttons;
@@ -72,27 +69,16 @@ class EditorBoardSwitcher : public HBoxContainer {
 	Button *renaming_button = nullptr;
 	LineEdit *rename_edit = nullptr;
 
-	// Delayed open of the actions menu on the active board. A double-click cancels this
-	// so inline rename keeps working; the board is held by ObjectID across the delay.
-	ObjectID pending_menu_board_id;
-	Ref<SceneTreeTimer> pending_menu_timer;
-
 	void _rebuild();
 	void _on_board_button_pressed(int p_index);
 	void _on_board_button_gui_input(const Ref<InputEvent> &p_event, int p_index);
-	void _on_add_pressed();
-	void _on_overview_toggled(bool p_pressed);
-	// Keeps the toggle in step with the strip when the overview is entered or left from
-	// somewhere else -- a caption click, a drop onto another board, a board shortcut.
-	void _on_overview_changed(bool p_active);
+	void _on_menu_pressed();
 	void _begin_rename(int p_index);
 	void _apply_pending_rename(const String &p_text);
 	void _commit_rename(const String &p_text);
 	void _commit_rename_from_focus_loss();
 	void _cancel_rename();
 	void _popup_actions_menu(int p_index, const Point2 &p_screen_position);
-	void _cancel_pending_menu();
-	void _open_pending_actions_menu();
 	Button *_board_button_at(int p_index) const;
 
 protected:
@@ -107,10 +93,12 @@ public:
 
 	EditorBoardStrip *get_strip() const { return strip; }
 	EditorBoardActionsMenu *get_actions_menu() const { return actions_menu; }
+	Button *get_menu_button() const { return menu_button; }
 
 	// Opens the board actions menu for p_board_index at p_screen_position. Used by the
 	// strip's caption context-menu handler and by the switcher's own button interactions.
 	void popup_board_actions(int p_board_index, const Point2 &p_screen_position);
+	void popup_active_board_menu(const Point2 &p_screen_position, bool p_include_board_list = false);
 
 	// True while an inline rename LineEdit is showing. Exposed for tests, which
 	// cannot observe the swapped-in LineEdit through the strip.

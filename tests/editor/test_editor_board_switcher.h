@@ -90,28 +90,17 @@ struct BoardSwitcherHarness {
 		MessageQueue::get_singleton()->flush();
 	}
 
-	// Wait past the active-board menu open delay so a pressed signal's deferred popup lands.
-	void pump_menu_open_delay() {
-		pump(0.25);
-	}
-
-	// Board buttons plus the add button, overview toggle, and owned actions menu.
+	// Board buttons plus the dedicated menu button and owned actions menu.
 	int chrome_child_count() const {
-		return strip->get_board_count() + 3;
+		return strip->get_board_count() + 2;
 	}
 
 	Button *board_button(int p_index) const {
 		return switcher->get_board_button(p_index);
 	}
 
-	Button *add_board_button() const {
-		for (int i = 0; i < switcher->get_child_count(); i++) {
-			Button *button = Object::cast_to<Button>(switcher->get_child(i));
-			if (button && button->get_tooltip_text() == TTR("Add Board")) {
-				return button;
-			}
-		}
-		return nullptr;
+	Button *menu_button() const {
+		return switcher->get_menu_button();
 	}
 
 	void right_click(Button *p_button) const {
@@ -128,17 +117,6 @@ struct BoardSwitcherHarness {
 		const int idx = menu->get_item_index(p_id);
 		REQUIRE(idx >= 0);
 		menu->activate_item(idx);
-	}
-
-	// Real click order: gui_input (possibly double-click) then pressed on release.
-	void press_board_button(Button *p_button, bool p_double_click = false) const {
-		Ref<InputEventMouseButton> event;
-		event.instantiate();
-		event->set_button_index(MouseButton::LEFT);
-		event->set_pressed(true);
-		event->set_double_click(p_double_click);
-		p_button->emit_signal(SceneStringName(gui_input), event);
-		p_button->emit_signal(SceneStringName(pressed));
 	}
 
 	LineEdit *find_rename_edit() const {
@@ -177,7 +155,7 @@ TEST_CASE("[Editor][BoardSwitcher] Rebuilds one button per board and marks the a
 	BoardSwitcherHarness harness;
 	harness.mount();
 
-	// One board button plus the add button, the overview toggle, and the actions menu.
+	// One board button plus the dedicated menu button and the actions menu.
 	REQUIRE(harness.switcher->get_child_count() == harness.chrome_child_count());
 	Button *first = harness.board_button(0);
 	REQUIRE(first != nullptr);
@@ -214,22 +192,31 @@ TEST_CASE("[Editor][BoardSwitcher] Rebuilds one button per board and marks the a
 	harness.unmount();
 }
 
-TEST_CASE("[Editor][BoardSwitcher] The add button appends and activates a new board") {
+TEST_CASE("[Editor][BoardSwitcher] The board menu appends and activates a new board") {
 	BoardSwitcherHarness harness;
 	harness.mount();
 
 	const int board_count_before = harness.strip->get_board_count();
-	// The add button sits after the board buttons; the overview toggle and actions menu follow.
-	Button *add_button = harness.add_board_button();
-	REQUIRE(add_button != nullptr);
-	if (!add_button) {
-		harness.unmount();
-		return;
-	}
-	add_button->emit_signal(SceneStringName(pressed));
+	harness.switcher->popup_active_board_menu(Point2());
+	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_NEW_BOARD);
+	harness.pump();
 
 	CHECK(harness.strip->get_board_count() == board_count_before + 1);
 	CHECK(harness.strip->get_active_index() == board_count_before);
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] The board menu enters overview") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	CHECK_FALSE(harness.strip->is_overview_active());
+	harness.switcher->popup_active_board_menu(Point2());
+	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_OVERVIEW);
+	harness.pump();
+
+	CHECK(harness.strip->is_overview_active());
 
 	harness.unmount();
 }
@@ -651,46 +638,7 @@ TEST_CASE("[Editor][BoardSwitcher] A reorder triggers exactly one rebuild, match
 	harness.unmount();
 }
 
-TEST_CASE("[Editor][BoardSwitcher] The active board button carries a dropdown caret; inactive buttons do not") {
-	BoardSwitcherHarness harness;
-	harness.mount();
-
-	harness.strip->add_board();
-	harness.strip->set_active_board(0);
-
-	Button *active = harness.board_button(0);
-	Button *inactive = harness.board_button(1);
-	REQUIRE(active != nullptr);
-	REQUIRE(inactive != nullptr);
-	if (!active || !inactive) {
-		harness.unmount();
-		return;
-	}
-
-	// The caret is a trailing GuiDropdown icon on the active button only. Headless tests
-	// may not have EditorIcons loaded, so the affordance is asserted by alignment (set
-	// only when the caret is applied) and by the inactive button having neither.
-	CHECK(active->get_icon_alignment() == HORIZONTAL_ALIGNMENT_RIGHT);
-	CHECK(inactive->get_icon_alignment() == HORIZONTAL_ALIGNMENT_LEFT);
-	CHECK(inactive->get_button_icon().is_null());
-
-	harness.strip->set_active_board(1);
-	active = harness.board_button(1);
-	inactive = harness.board_button(0);
-	REQUIRE(active != nullptr);
-	REQUIRE(inactive != nullptr);
-	if (!active || !inactive) {
-		harness.unmount();
-		return;
-	}
-	CHECK(active->get_icon_alignment() == HORIZONTAL_ALIGNMENT_RIGHT);
-	CHECK(inactive->get_icon_alignment() == HORIZONTAL_ALIGNMENT_LEFT);
-	CHECK(inactive->get_button_icon().is_null());
-
-	harness.unmount();
-}
-
-TEST_CASE("[Editor][BoardSwitcher] Pressing the active board opens the actions menu and stays pressed") {
+TEST_CASE("[Editor][BoardSwitcher] Pressing the active board opens no menu and stays pressed") {
 	BoardSwitcherHarness harness;
 	harness.mount();
 
@@ -703,13 +651,35 @@ TEST_CASE("[Editor][BoardSwitcher] Pressing the active board opens the actions m
 	REQUIRE(active->is_pressed());
 
 	active->emit_signal(SceneStringName(pressed));
-	harness.pump_menu_open_delay();
 
 	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
 	REQUIRE(menu != nullptr);
-	CHECK(menu->is_visible());
+	CHECK_FALSE(menu->is_visible());
 	CHECK(active->is_pressed());
 	CHECK(harness.strip->get_active_index() == 0);
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Pressing the dedicated board menu opens it immediately") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	Button *menu_button = harness.menu_button();
+	REQUIRE(menu_button != nullptr);
+	if (!menu_button) {
+		harness.unmount();
+		return;
+	}
+
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	CHECK_FALSE(menu->is_visible());
+
+	menu_button->emit_signal(SceneStringName(pressed));
+
+	CHECK(menu->is_visible());
+	CHECK(menu->get_target_board_id() == harness.strip->get_active_board()->get_instance_id());
 
 	harness.unmount();
 }
@@ -735,6 +705,26 @@ TEST_CASE("[Editor][BoardSwitcher] Pressing an inactive board switches boards an
 	CHECK(harness.strip->get_active_index() == 1);
 	CHECK_FALSE(menu->is_visible());
 
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Pressing a board while overview is active exits overview") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	harness.strip->set_overview(true);
+	REQUIRE(harness.strip->is_overview_active());
+	Button *active = harness.board_button(0);
+	REQUIRE(active != nullptr);
+	if (!active) {
+		harness.unmount();
+		return;
+	}
+
+	active->emit_signal(SceneStringName(pressed));
+
+	CHECK_FALSE(harness.strip->is_overview_active());
+	CHECK(active->is_pressed());
 	harness.unmount();
 }
 
@@ -773,8 +763,7 @@ TEST_CASE("[Editor][BoardSwitcher] With one board, Close Board and Close Other B
 		harness.unmount();
 		return;
 	}
-	active->emit_signal(SceneStringName(pressed));
-	harness.pump_menu_open_delay();
+	harness.switcher->popup_active_board_menu(Point2());
 
 	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
 	REQUIRE(menu != nullptr);
@@ -927,50 +916,23 @@ TEST_CASE("[Editor][BoardSwitcher] A menu whose target board was freed activates
 	harness.unmount();
 }
 
-TEST_CASE("[Editor][BoardSwitcher] Double-click rename on the active board cancels the pending menu open") {
+TEST_CASE("[Editor][BoardSwitcher] Board list activation follows board identity across a reorder") {
 	BoardSwitcherHarness harness;
 	harness.mount();
 
-	Button *active = harness.board_button(0);
-	REQUIRE(active != nullptr);
-	if (!active) {
-		harness.unmount();
-		return;
-	}
-
-	// Real event order for a double-click: first release opens a pending menu, second press
-	// arrives as gui_input(double_click) and must cancel that pending open for rename.
-	harness.press_board_button(active, false);
-	harness.press_board_button(active, true);
-
-	CHECK(harness.switcher->is_renaming());
+	EditorBoard *board_b = harness.strip->add_board("B");
+	REQUIRE(board_b != nullptr);
 	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
 	REQUIRE(menu != nullptr);
-	harness.pump_menu_open_delay();
-	CHECK_FALSE(menu->is_visible());
+	menu->popup_for_board(0, Point2(), true);
 
-	LineEdit *rename_edit = harness.find_rename_edit();
-	REQUIRE(rename_edit != nullptr);
-	if (!rename_edit) {
-		harness.unmount();
-		return;
-	}
-	rename_edit->set_text("renamed after double-click");
-	rename_edit->emit_signal(SceneStringName(text_submitted), String("renamed after double-click"));
-	CHECK(harness.strip->get_board(0)->get_title() == "renamed after double-click");
+	const int board_b_item = menu->get_item_index(EditorBoardActionsMenu::ITEM_BOARD_BASE + 1);
+	REQUIRE(board_b_item >= 0);
+	menu->activate_item(board_b_item);
+	harness.strip->move_board(1, 0);
+	harness.pump();
 
-	// The next single press on the (rebuilt) active button must still open the menu -- the
-	// double-click path must not leave a sticky suppression flag behind.
-	active = harness.board_button(0);
-	REQUIRE(active != nullptr);
-	if (!active) {
-		harness.unmount();
-		return;
-	}
-	active->emit_signal(SceneStringName(pressed));
-	harness.pump_menu_open_delay();
-	CHECK(menu->is_visible());
-
+	CHECK(harness.strip->get_active_board() == board_b);
 	harness.unmount();
 }
 

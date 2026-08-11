@@ -31,38 +31,47 @@
 #pragma once
 
 #include "core/object/object_id.h"
+#include "core/templates/hash_map.h"
 
 #include "scene/gui/popup_menu.h"
 
 class EditorBoardStrip;
 
 /**
- * Context menu for a single board: rename, close, close others, and reorder.
+ * Board menu for creation, overview, switching, rename, close, and reorder.
  *
  * The target board is captured by ObjectID when the menu opens so a close or
  * reorder that lands while the menu is still up cannot make an activation act
- * on the wrong board. Items and their disabled state are rebuilt from the strip
- * on every popup.
+ * on the wrong board. The optional board list captures every target the same
+ * way. Items and their disabled state are rebuilt from the strip on every popup.
  */
 class EditorBoardActionsMenu : public PopupMenu {
 	FOUNDRY_CLASS(EditorBoardActionsMenu, PopupMenu);
 
 public:
 	enum ItemID {
-		ITEM_RENAME = 0,
-		ITEM_CLOSE = 1,
-		ITEM_CLOSE_OTHERS = 2,
-		ITEM_MOVE_LEFT = 3,
-		ITEM_MOVE_RIGHT = 4,
+		ITEM_NEW_BOARD,
+		ITEM_OVERVIEW,
+		ITEM_RENAME,
+		ITEM_CLOSE,
+		ITEM_CLOSE_OTHERS,
+		ITEM_MOVE_LEFT,
+		ITEM_MOVE_RIGHT,
+		ITEM_BOARD_BASE = 1000,
 	};
 
 private:
 	EditorBoardStrip *strip = nullptr;
 	ObjectID target_board_id;
+	bool include_board_list = false;
+	HashMap<int, ObjectID> board_item_targets;
 
 	void _rebuild_items();
 	void _on_id_pressed(int p_id);
-	// Deferred from id_pressed so close_board cannot run inside popup input dispatch.
+	void _add_board_and_activate();
+	void _enter_overview();
+	void _activate_board(ObjectID p_board_id);
+	// Deferred from id_pressed so collection mutations cannot run inside popup input dispatch.
 	void _close_target_board();
 	void _close_other_boards();
 
@@ -75,7 +84,7 @@ public:
 	EditorBoardStrip *get_strip() const { return strip; }
 
 	// Rebuilds items for the board at p_index and pops the menu at p_screen_position.
-	void popup_for_board(int p_index, const Point2 &p_screen_position);
+	void popup_for_board(int p_index, const Point2 &p_screen_position, bool p_include_board_list = false);
 
 	ObjectID get_target_board_id() const { return target_board_id; }
 
