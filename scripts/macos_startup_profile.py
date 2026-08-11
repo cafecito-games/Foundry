@@ -1095,7 +1095,7 @@ def _resolve_startup_markers(found: dict[str, dict[int, list[int]]]) -> dict[str
         "invalid_reason": None,
         "first_window_ns": first_window,
         "first_main_iteration_ns": first_iteration,
-        "interval_ms": round((first_iteration - first_window) / 1e6, 1),
+        "interval_ms": (first_iteration - first_window) / 1e6,
         "pid": pid,
     }
 
@@ -1108,12 +1108,16 @@ def clip_gaps_to_interval(iterations_ns: Sequence[int], start_ns: int, end_ns: i
     that began before the window is charged only from the window, and one still running at the first
     `Main::iteration()` is charged only up to it. Pre-window and post-startup work are excluded by
     construction rather than by a separate filter that could disagree with it.
+
+    Values are kept at full precision rather than rounded for readability. The gate is a strict
+    `<= 250.0 ms`, and rounding to a tenth first would let a real 250.04 ms gap record as 250.0 and
+    pass — a false green on the one number the criterion is defined on. Rounding happens at display.
     """
     boundaries = [start_ns] + [value for value in sorted(iterations_ns) if start_ns < value < end_ns] + [end_ns]
     return [
         {
-            "offset_ms": round((boundaries[index] - start_ns) / 1e6, 1),
-            "gap_ms": round((boundaries[index + 1] - boundaries[index]) / 1e6, 1),
+            "offset_ms": (boundaries[index] - start_ns) / 1e6,
+            "gap_ms": (boundaries[index + 1] - boundaries[index]) / 1e6,
         }
         for index in range(len(boundaries) - 1)
     ]
@@ -1199,8 +1203,8 @@ def command_timeline(args: argparse.Namespace) -> int:
         )
         if interval["invalid_reason"] is None:
             log(
-                f"  #2097 interval {interval['interval_ms']} ms, "
-                f"worst clipped gap {interval['worst_clipped_gap_ms']} ms"
+                f"  #2097 interval {interval['interval_ms']:.1f} ms, "
+                f"worst clipped gap {interval['worst_clipped_gap_ms']:.1f} ms"
             )
 
     summary = load_or_new_summary(out_dir, args.label, binary, project, args.cache_state)
@@ -1414,11 +1418,11 @@ def _print_startup_interval(interval: dict[str, Any] | None) -> None:
     if interval.get("invalid_reason") is not None:
         print(f"      UNMEASURABLE: startup markers {interval['invalid_reason']}")
         return
-    print(f"      duration                    : {interval['interval_ms']} ms (pid {interval['pid']})")
-    print(f"      worst clipped gap           : {interval['worst_clipped_gap_ms']} ms")
+    print(f"      duration                    : {interval['interval_ms']:.1f} ms (pid {interval['pid']})")
+    print(f"      worst clipped gap           : {interval['worst_clipped_gap_ms']:.1f} ms")
     print(f"      run loop iterations inside  : {interval.get('main_runloop_iterations_in_interval')}")
     for gap in interval.get("clipped_gaps", [])[:5]:
-        print(f"      clipped gap {gap['gap_ms']:>8} ms at +{gap['offset_ms']} ms")
+        print(f"      clipped gap {gap['gap_ms']:>8.1f} ms at +{gap['offset_ms']:.1f} ms")
 
 
 def print_phases_summary(summary: dict[str, Any]) -> None:
@@ -1611,11 +1615,11 @@ def _print_2097_check(summary: dict[str, Any], max_block_ms: float) -> int:
         return EXIT_MEASUREMENT_INVALID
     for index, value in enumerate(acceptance["per_run_worst_ms"], start=1):
         state = "PASS" if value <= max_block_ms else "FAIL"
-        print(f"[{state}] run {index}: worst clipped gap {value} ms")
+        print(f"[{state}] run {index}: worst clipped gap {value:.1f} ms")
     print()
     state = "PASS" if acceptance["passed"] else "FAIL"
     print(f"[{state}] {acceptance['criterion']}")
-    print(f"        measured {acceptance['max_clipped_gap_ms']} ms (maximum across {acceptance['runs']} runs)")
+    print(f"        measured {acceptance['max_clipped_gap_ms']:.1f} ms (max across {acceptance['runs']} runs)")
     print()
     print("RESULT:", "PASS" if acceptance["passed"] else "FAIL")
     return 0 if acceptance["passed"] else 1

@@ -461,6 +461,22 @@ class GapClippingTests(unittest.TestCase):
         )
         self.assertEqual([gap["offset_ms"] for gap in gaps], [0.0, 500.0])
 
+    def test_a_gap_just_over_the_bound_is_not_rounded_into_a_pass(self):
+        # 250.04 ms rounded to one decimal is 250.0, which satisfies a `<= 250.0` gate. Rounding
+        # before the comparison therefore turns a real violation into a false green, so the measured
+        # value has to keep full precision and round only for display.
+        gaps = macos_startup_profile.clip_gaps_to_interval([], 0, 250_040_000)
+        self.assertGreater(gaps[0]["gap_ms"], macos_startup_profile.DEFAULT_MAX_BLOCK_MS)
+
+    def test_a_gap_just_under_the_bound_still_passes(self):
+        gaps = macos_startup_profile.clip_gaps_to_interval([], 0, 249_960_000)
+        self.assertLess(gaps[0]["gap_ms"], macos_startup_profile.DEFAULT_MAX_BLOCK_MS)
+
+    def test_sub_tenth_millisecond_overruns_reach_the_gate(self):
+        runs = [{"worst_clipped_gap_ms": 250.04, "invalid_reason": None, "interval_ms": 1000.0}]
+        acceptance = macos_startup_profile.evaluate_acceptance_2097({"timeline": {"startup_interval": {"runs": runs}}})
+        self.assertFalse(acceptance["passed"])
+
     def test_unsorted_input_is_handled(self):
         self.assertEqual(self.clip([1500, 100, 500], 400, 2000), [100.0, 1000.0, 500.0])
 
