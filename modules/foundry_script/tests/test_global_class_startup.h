@@ -30,8 +30,8 @@
 
 #pragma once
 
-#include "fs_test_python.h"
 #include "fs_temporary_project_tree.h"
+#include "fs_test_python.h"
 
 #include "core/config/project_settings.h"
 #include "core/io/config_file.h"
@@ -280,7 +280,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains(
-					  "GLOBAL_CLASS_STARTUP_USER_DATA:" + tree.root.path_join("user_data")),
+							  "GLOBAL_CLASS_STARTUP_USER_DATA:" + tree.root.path_join("user_data")),
 				result.output);
 	}
 
@@ -343,7 +343,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 				"func value() -> String:\n"
 				"\treturn \"resolved\"\n");
 		REQUIRE_EQ(write_global_class_startup_cache(
-					   tree, SNAME("StartupCachelessDependency"), "res://deleted_dependency.fs"),
+						   tree, SNAME("StartupCachelessDependency"), "res://deleted_dependency.fs"),
 				OK);
 		const String cache_path = tree.root.path_join(".foundry/global_script_class_cache.cfg");
 		const Vector<uint8_t> stale_cache_bytes = FileAccess::get_file_as_bytes(cache_path);
@@ -694,7 +694,7 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 				"func value() -> String:\n"
 				"\treturn \"resolved\"\n");
 		REQUIRE_EQ(write_global_class_startup_cache(
-					   tree, SNAME("StartupEditorChildDependency"), "res://dependency.fs"),
+						   tree, SNAME("StartupEditorChildDependency"), "res://dependency.fs"),
 				OK);
 
 		List<String> args = global_class_project_run_args(tree.root, true);
