@@ -597,7 +597,8 @@ Dictionary _selector_within_modal(const Dictionary &p_selector) {
 	Dictionary within;
 	within["role"] = "dialog";
 	within["focused"] = true;
-	Dictionary selector = p_selector;
+	// Dictionary assignment shares storage; duplicate before inserting `within`.
+	Dictionary selector = p_selector.duplicate();
 	selector["within"] = within;
 	return selector;
 }
@@ -1899,6 +1900,37 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		fail.details = details;
 		return fail;
 	}
+	const Dictionary demoted_global_root_buttons = p_driver.find(global_root_button_selector, 10);
+	if ((int)demoted_global_root_buttons.get("match_count", 0) != 0) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = vformat(
+				"A 2D Scene root button is still visible somewhere in the editor while tile 1 is demoted (found %d).",
+				(int)demoted_global_root_buttons.get("match_count", 0));
+		Dictionary details = p_driver.make_failure_details("demote_tile_1_global_selector");
+		details["root_buttons"] = demoted_global_root_buttons;
+		details["editor_state"] = state;
+		fail.details = details;
+		return fail;
+	}
+	const Dictionary demoted_tile_0 = _tile_entry_by_id(demoted_workspace, 0);
+	if ((bool)demoted_tile_0.get("scene_tree_dock_shows_create_root", true) ||
+			!(bool)demoted_tile_1.get("scene_tree_dock_shows_create_root", false)) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = vformat(
+				"Root dialog decisions were not context-aware while demoted: tile0=%s tile1=%s.",
+				(bool)demoted_tile_0.get("scene_tree_dock_shows_create_root", true) ? "true" : "false",
+				(bool)demoted_tile_1.get("scene_tree_dock_shows_create_root", false) ? "true" : "false");
+		Dictionary details = p_driver.make_failure_details("demote_tile_1_root_context");
+		details["editor_state"] = state;
+		details["tile_0"] = demoted_tile_0;
+		details["tile_1"] = demoted_tile_1;
+		fail.details = details;
+		return fail;
+	}
 
 	p_driver.set_step("promote_tile_1");
 	workspace->request_leaf_focus(1);
@@ -1910,15 +1942,42 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	state = p_driver.read_editor_state();
 	const Dictionary promoted_workspace = state.get("workspace", Dictionary());
 	const Dictionary promoted_tile_1 = _tile_entry_by_id(promoted_workspace, 1);
-	if (promoted_tile_1.is_empty() ||
-			(int)promoted_workspace.get("focused_tile_id", -1) != 1 ||
-			!(bool)promoted_tile_1.get("focused", false) ||
-			String(promoted_tile_1.get("preview_mode", String())) != "focused_live" ||
-			(bool)promoted_tile_1.get("dock_presentation_hidden", true)) {
+	if (promoted_tile_1.is_empty()) {
+		return _failure_with_message(p_driver, result.workflow, "Tile 1 disappeared from workspace state after promotion.");
+	}
+	if ((int)promoted_workspace.get("focused_tile_id", -1) != 1 || !(bool)promoted_tile_1.get("focused", false)) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
-		fail.message = "Promoting tile 1 did not restore focused_live Scene dock chrome.";
+		fail.message = vformat(
+				"Promoting tile 1 left focused_tile_id=%d focused=%s.",
+				(int)promoted_workspace.get("focused_tile_id", -1),
+				(bool)promoted_tile_1.get("focused", false) ? "true" : "false");
+		Dictionary details = p_driver.make_failure_details("promote_tile_1");
+		details["editor_state"] = state;
+		details["tile_1"] = promoted_tile_1;
+		fail.details = details;
+		return fail;
+	}
+	if (String(promoted_tile_1.get("preview_mode", String())) != "focused_live") {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = vformat(
+				"Promoting tile 1 left preview_mode=%s (expected focused_live).",
+				String(promoted_tile_1.get("preview_mode", String())));
+		Dictionary details = p_driver.make_failure_details("promote_tile_1");
+		details["editor_state"] = state;
+		details["tile_1"] = promoted_tile_1;
+		details["geometry"] = _describe_tile_preview_geometry(right_tile, right_tile->get_content_host());
+		fail.details = details;
+		return fail;
+	}
+	if ((bool)promoted_tile_1.get("dock_presentation_hidden", true)) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Promoting tile 1 left dock_presentation_hidden=true.";
 		Dictionary details = p_driver.make_failure_details("promote_tile_1");
 		details["editor_state"] = state;
 		details["tile_1"] = promoted_tile_1;

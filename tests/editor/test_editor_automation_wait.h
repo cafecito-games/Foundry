@@ -37,6 +37,7 @@
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_wait.h"
 
+#include "core/os/os.h"
 #include "scene/gui/button.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel_container.h"
@@ -158,6 +159,76 @@ TEST_CASE("[Editor][Automation] wait_for selector_disappears succeeds when contr
 
 	const EditorAutomationWaitResult result = EditorAutomationWait::wait_for(condition, 1.0, context);
 	CHECK(result.ok);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] wait_for within-scoped selector_disappears survives multiple polls") {
+	EditorAutomationWait::clear_all_cooperative();
+	EditorAutomationTrace::get_singleton().clear();
+
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(640, 480));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	PanelContainer *scene_dock = memnew(PanelContainer);
+	scene_dock->set_accessibility_name("Scene");
+	setup_visible_control(scene_dock, Size2(280, 200));
+	root->add_child(scene_dock);
+
+	Button *scene_button = memnew(Button);
+	scene_button->set_text("Add Child Node");
+	setup_visible_control(scene_button);
+	scene_dock->add_child(scene_button);
+
+	PanelContainer *import_dock = memnew(PanelContainer);
+	import_dock->set_accessibility_name("Import");
+	setup_visible_control(import_dock, Size2(280, 200));
+	root->add_child(import_dock);
+
+	Button *import_button = memnew(Button);
+	import_button->set_text("Add Child Node");
+	setup_visible_control(import_button);
+	import_dock->add_child(import_button);
+	flush_frames();
+
+	EditorAutomationWaitContext context;
+	context.snapshot_root = root;
+
+	Dictionary within;
+	within["role"] = "control";
+	within["name"] = "Scene";
+	Dictionary selector;
+	selector["role"] = "button";
+	selector["name"] = "Add Child Node";
+	selector["within"] = within;
+	Dictionary condition;
+	condition["type"] = "selector_disappears";
+	condition["selector"] = selector;
+
+	// Keep the wait pending across more than one poll so resolve() must not erase
+	// `within` from the retained condition (EditorAutomationWait re-reads it each poll).
+	const String wait_id = EditorAutomationWait::begin_cooperative(condition, 2.0, context);
+	EditorAutomationCooperativeWaitHandle handle;
+	REQUIRE(EditorAutomationWait::poll_cooperative(wait_id, handle));
+	CHECK(handle.status == EditorAutomationCooperativeWaitStatus::PENDING);
+	CHECK(selector.has("within"));
+	CHECK(Dictionary(condition.get("selector", Dictionary())).has("within"));
+
+	scene_button->set_visible(false);
+	flush_frames();
+
+	const uint64_t deadline = OS::get_singleton()->get_ticks_msec() + 2000;
+	while (handle.status == EditorAutomationCooperativeWaitStatus::PENDING &&
+			OS::get_singleton()->get_ticks_msec() < deadline) {
+		REQUIRE(EditorAutomationWait::poll_cooperative(wait_id, handle));
+	}
+	CHECK(handle.status == EditorAutomationCooperativeWaitStatus::COMPLETE);
+	CHECK(handle.result.ok);
+	CHECK(selector.has("within"));
+	CHECK(Dictionary(condition.get("selector", Dictionary())).has("within"));
+	const Dictionary echoed_condition = handle.result.details.get("condition", Dictionary());
+	CHECK(Dictionary(echoed_condition.get("selector", Dictionary())).has("within"));
 
 	memdelete(root);
 }
