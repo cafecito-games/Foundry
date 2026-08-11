@@ -88,6 +88,12 @@ public:
 
 	// Runs the phase that is due and returns what the caller must do next. Must be called from
 	// the run loop, once per turn.
+	//
+	// Re-entrant calls do nothing and report `STEP_PENDING`. The observer that drives this is
+	// registered in the common run loop modes, which include the modal panel mode, so a boot
+	// phase that raises a native alert — a startup error, say — spins a nested run loop that
+	// calls straight back in while that same phase is still on the stack. Running it again would
+	// raise the alert again, without bound.
 	StepResult step();
 
 	// Engages the input gate for the whole boot. Called once, before the first `step()`.
@@ -103,5 +109,8 @@ protected:
 	virtual void _main_loop_initialize();
 
 private:
+	StepResult _run_phase();
+
 	Phase phase = PHASE_MAIN_START;
+	bool stepping = false;
 };

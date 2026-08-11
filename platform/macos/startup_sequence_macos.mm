@@ -82,6 +82,17 @@ void StartupSequenceMacOS::begin() {
 }
 
 StartupSequenceMacOS::StepResult StartupSequenceMacOS::step() {
+	if (stepping) {
+		// Re-entered from a nested run loop while a phase is still running; see the header.
+		return STEP_PENDING;
+	}
+	stepping = true;
+	const StepResult result = _run_phase();
+	stepping = false;
+	return result;
+}
+
+StartupSequenceMacOS::StepResult StartupSequenceMacOS::_run_phase() {
 	switch (phase) {
 		case PHASE_MAIN_START: {
 			if (_main_start() != EXIT_SUCCESS) {

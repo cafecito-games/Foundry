@@ -182,6 +182,51 @@ TEST_CASE("[StartupSequence][macOS] input arriving during a boot phase is never 
 	CHECK(sink.get_delivered() == 2);
 }
 
+// Stands in for a boot phase that raises a native alert: `NSAlert` spins a nested run loop in the
+// modal panel mode, which is one of the common modes the boot observer is registered in, so the
+// observer calls back into the sequence while this phase is still on the stack.
+class ReentrantSequence : public StartupSequenceMacOS {
+public:
+	int main_start_calls = 0;
+	int main_loop_initialize_calls = 0;
+	StepResult nested_result = STEP_RUNNING;
+	int nested_calls = 0;
+
+protected:
+	virtual int _main_start() override {
+		main_start_calls++;
+		if (nested_calls == 0) {
+			nested_calls++;
+			nested_result = step();
+		}
+		return EXIT_SUCCESS;
+	}
+
+	virtual bool _has_main_loop() const override { return true; }
+
+	virtual void _main_loop_initialize() override { main_loop_initialize_calls++; }
+};
+
+TEST_CASE("[StartupSequence][macOS] a nested run loop cannot re-enter the phase that is running") {
+	GateStateGuard guard;
+	ReentrantSequence sequence;
+	sequence.begin();
+
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_PENDING);
+
+	// The re-entrant call reported "still booting" and ran nothing; an unbounded alert loop is
+	// exactly what would happen if it had run the phase again.
+	CHECK(sequence.nested_result == StartupSequenceMacOS::STEP_PENDING);
+	CHECK(sequence.main_start_calls == 1);
+	CHECK(sequence.main_loop_initialize_calls == 0);
+	CHECK(sequence.get_phase() == StartupSequenceMacOS::PHASE_MAIN_LOOP_INITIALIZE);
+
+	// The sequence is not wedged: the next real turn runs the next phase.
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_RUNNING);
+	CHECK(sequence.main_loop_initialize_calls == 1);
+	CHECK(sequence.get_phase() == StartupSequenceMacOS::PHASE_RUNNING);
+}
+
 TEST_CASE("[StartupSequence][macOS] the gate stays engaged for every boot phase and lifts only at the end") {
 	// Not every input path runs through `-[FoundryApplication sendEvent:]`: media keys and the
 	// modifier poll on application activation reach the engine directly, and consult this flag.
