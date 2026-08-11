@@ -758,6 +758,7 @@ private:
 	// EditorData's focused tile by the time this runs, so scene routing is correct even if
 	// the presentation below has to wait for a drop to finish.
 	void _on_active_board_changed(int p_index);
+	void _on_board_requested(int p_index);
 	// Activates the board p_delta positions away from the active one, wrapping around the
 	// ends of the list. Used by the previous/next board shortcuts.
 	void _activate_relative_board(int p_delta);

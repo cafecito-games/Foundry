@@ -1709,6 +1709,35 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		p_theme->set_stylebox("hover_pressed", "MainScreenButton", p_config.base_empty_wide_style);
 		p_theme->set_stylebox("hover_pressed_mirrored", "MainScreenButton", p_config.base_empty_wide_style);
 
+		p_theme->set_type_variation("BoardRail", "PanelContainer");
+		p_theme->set_constant("segment_horizontal_padding", "BoardRail", Math::round(24 * EDSCALE));
+		p_theme->set_constant("segment_maximum_width", "BoardRail", Math::round(180 * EDSCALE));
+		Ref<StyleBoxFlat> board_rail_panel = p_config.content_panel_style->duplicate();
+		board_rail_panel->set_bg_color(p_config.dark_color_2.lerp(p_config.base_color, 0.12));
+		board_rail_panel->set_border_color(p_config.contrast_color_1);
+		board_rail_panel->set_border_width_all(MAX(1, Math::round(EDSCALE)));
+		board_rail_panel->set_corner_radius_all(Math::round(8 * EDSCALE));
+		board_rail_panel->set_content_margin_all(Math::round(3 * EDSCALE));
+		p_theme->set_stylebox(SceneStringName(panel), "BoardRail", board_rail_panel);
+
+		Ref<StyleBoxFlat> board_rail_button_pressed = p_config.base_empty_wide_style->duplicate();
+		board_rail_button_pressed->set_border_color(p_config.accent_color);
+		board_rail_button_pressed->set_border_width(SIDE_BOTTOM, MAX(2, Math::round(2 * EDSCALE)));
+
+		p_theme->set_type_variation("BoardRailButton", "Button");
+		p_theme->set_stylebox(CoreStringName(normal), "BoardRailButton", p_config.base_empty_wide_style);
+		p_theme->set_stylebox(SceneStringName(hover), "BoardRailButton", p_config.button_style_hover);
+		p_theme->set_stylebox(SceneStringName(pressed), "BoardRailButton", board_rail_button_pressed);
+		p_theme->set_stylebox("hover_pressed", "BoardRailButton", board_rail_button_pressed);
+		p_theme->set_type_variation("BoardRailMenuButton", "FlatMenuButton");
+
+		p_theme->set_type_variation("SceneModeSwitcher", "HBoxContainer");
+		p_theme->set_type_variation("SceneModeButton", "Button");
+		p_theme->set_stylebox(CoreStringName(normal), "SceneModeButton", p_config.base_empty_wide_style);
+		p_theme->set_stylebox(SceneStringName(hover), "SceneModeButton", p_config.button_style_hover);
+		p_theme->set_stylebox(SceneStringName(pressed), "SceneModeButton", board_rail_button_pressed);
+		p_theme->set_stylebox("hover_pressed", "SceneModeButton", board_rail_button_pressed);
+
 		// Main screen buttons.
 		const Color mb_font_color = p_config.font_color * Color(1, 1, 1, 0.95);
 		const Color mb_font_hover_color = p_config.font_hover_color * Color(1, 1, 1, 0.95);

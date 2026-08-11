@@ -34,21 +34,41 @@
 #include "editor/editor_board_strip.h"
 #include "editor/gui/editor_board_actions_menu.h"
 
+#include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/line_edit.h"
+#include "scene/resources/font.h"
+#include "scene/resources/style_box.h"
 #include "scene/scene_string_names.h"
 
 void EditorBoardSwitcher::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_ENTER_TREE: {
+			resize_parent = Object::cast_to<Control>(get_parent());
+			if (resize_parent && !resize_parent->is_connected(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_update_compact_mode))) {
+				resize_parent->connect(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_update_compact_mode));
+			}
+			_update_compact_mode();
+		} break;
+		case NOTIFICATION_EXIT_TREE: {
+			if (resize_parent && resize_parent->is_connected(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_update_compact_mode))) {
+				resize_parent->disconnect(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_update_compact_mode));
+			}
+			resize_parent = nullptr;
+		} break;
 		case NOTIFICATION_THEME_CHANGED: {
 			if (menu_button) {
 				menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
+			}
+			if (strip) {
+				_rebuild();
 			}
 		} break;
 	}
 }
 
 void EditorBoardSwitcher::_bind_methods() {
+	ADD_SIGNAL(MethodInfo("board_requested", PropertyInfo(Variant::INT, "board_index")));
 }
 
 void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
@@ -95,21 +115,17 @@ void EditorBoardSwitcher::_rebuild() {
 	if (rename_edit) {
 		_apply_pending_rename(rename_edit->get_text());
 	}
-	// Free chrome children but keep the owned actions menu across rebuilds. The menu
+	// Free rail children but keep the rail and owned actions menu across rebuilds. The menu
 	// captures its target by ObjectID, so surviving a board_removed that frees that board
 	// is what lets an activation after the close resolve to -1 and no-op.
 	// renaming_button is cleared here: the button is about to be queue_freed, and leaving
 	// the pointer set would let a later _cancel_rename() call show() on freed memory.
 	Vector<Node *> to_free;
-	for (int i = 0; i < get_child_count(); i++) {
-		Node *child = get_child(i);
-		if (child == actions_menu) {
-			continue;
-		}
-		to_free.push_back(child);
+	for (int i = 0; i < rail_hbox->get_child_count(); i++) {
+		to_free.push_back(rail_hbox->get_child(i));
 	}
 	for (Node *child : to_free) {
-		remove_child(child);
+		rail_hbox->remove_child(child);
 		child->queue_free();
 	}
 	menu_button = nullptr;
@@ -130,13 +146,23 @@ void EditorBoardSwitcher::_rebuild() {
 		Button *button = memnew(Button);
 		button->set_toggle_mode(true);
 		button->set_focus_mode(FOCUS_ACCESSIBILITY);
+		button->set_theme_type_variation("BoardRailButton");
 		button->set_text(board->get_title());
+		button->set_text_overrun_behavior(TextServer::OVERRUN_TRIM_ELLIPSIS);
+		button->set_clip_text(true);
 		button->set_tooltip_text(board->get_title());
 		button->set_accessibility_name(board->get_title());
 		button->set_pressed_no_signal(i == strip->get_active_index());
 		button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_board_button_pressed).bind(i));
 		button->connect(SceneStringName(gui_input), callable_mp(this, &EditorBoardSwitcher::_on_board_button_gui_input).bind(i));
-		add_child(button);
+		rail_hbox->add_child(button);
+		const Ref<Font> segment_font = button->get_theme_font(SceneStringName(font));
+		const int font_size = button->get_theme_font_size(SceneStringName(font_size));
+		const int horizontal_padding = get_theme_constant("segment_horizontal_padding");
+		const int maximum_width = get_theme_constant("segment_maximum_width");
+		const int text_width = Math::ceil(segment_font->get_string_size(board->get_title(), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x);
+		button->set_custom_minimum_size(Size2(MIN(text_width + horizontal_padding, maximum_width), 0));
+		button->set_visible(!compact || i == strip->get_active_index());
 		board_buttons.push_back(button);
 	}
 
@@ -148,7 +174,70 @@ void EditorBoardSwitcher::_rebuild() {
 	menu_button->set_tooltip_text(TTR("Board Menu"));
 	menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
 	menu_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_menu_pressed));
-	add_child(menu_button);
+	rail_hbox->add_child(menu_button);
+
+	_update_compact_mode();
+}
+
+int EditorBoardSwitcher::_get_desired_full_width() const {
+	if (!rail_hbox || !menu_button) {
+		return 0;
+	}
+
+	int desired_width = menu_button->get_combined_minimum_size().x;
+	for (Button *button : board_buttons) {
+		if (button) {
+			desired_width += button->get_combined_minimum_size().x;
+		}
+	}
+	desired_width += rail_hbox->get_theme_constant(SNAME("separation")) * MAX(0, board_buttons.size());
+	desired_width += get_theme_stylebox(SceneStringName(panel))->get_minimum_size().x;
+	return desired_width;
+}
+
+void EditorBoardSwitcher::_set_compact(bool p_compact) {
+	if (compact == p_compact) {
+		return;
+	}
+	if (rename_edit) {
+		_apply_pending_rename(rename_edit->get_text());
+	}
+	compact = p_compact;
+	for (int i = 0; i < board_buttons.size(); i++) {
+		if (board_buttons[i]) {
+			board_buttons[i]->set_visible(!compact || (strip && i == strip->get_active_index()));
+		}
+	}
+	update_minimum_size();
+}
+
+void EditorBoardSwitcher::_update_compact_mode() {
+	Control *parent_control = resize_parent ? resize_parent : Object::cast_to<Control>(get_parent());
+	if (!parent_control) {
+		return;
+	}
+
+	int before_width = 0;
+	int after_width = 0;
+	bool found_switcher = false;
+	for (int i = 0; i < parent_control->get_child_count(); i++) {
+		Control *sibling = Object::cast_to<Control>(parent_control->get_child(i));
+		if (!sibling || !sibling->is_visible()) {
+			continue;
+		}
+		if (sibling == this) {
+			found_switcher = true;
+			continue;
+		}
+		if (found_switcher) {
+			after_width += sibling->get_combined_minimum_size().x;
+		} else {
+			before_width += sibling->get_combined_minimum_size().x;
+		}
+	}
+
+	const int center_budget = MAX(0, int(parent_control->get_size().x) - 2 * MAX(before_width, after_width));
+	_set_compact(_get_desired_full_width() > center_budget);
 }
 
 Button *EditorBoardSwitcher::_board_button_at(int p_index) const {
@@ -181,29 +270,32 @@ void EditorBoardSwitcher::_on_menu_pressed() {
 		return;
 	}
 	const Rect2 screen_rect = menu_button->get_screen_rect();
-	popup_active_board_menu(Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y), false);
+	popup_active_board_menu(Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y), compact);
 }
 
 void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
 	if (!strip) {
 		return;
 	}
+	if (rename_edit) {
+		_apply_pending_rename(rename_edit->get_text());
+		_rebuild();
+	}
 	if (p_index < 0 || p_index >= strip->get_board_count()) {
 		return;
 	}
 
-	if (p_index == strip->get_active_index()) {
+	if (strip->is_overview_active()) {
+		strip->set_active_board(p_index);
+	} else if (p_index == strip->get_active_index()) {
 		// Toggle mode flips the button off on press; the active segment remains selected.
 		if (Button *button = _board_button_at(p_index)) {
 			button->set_pressed_no_signal(true);
 		}
-		if (strip->is_overview_active()) {
-			strip->set_active_board(p_index);
-		}
-		return;
+	} else {
+		strip->set_active_board(p_index);
 	}
-
-	strip->set_active_board(p_index);
+	emit_signal(SNAME("board_requested"), p_index);
 }
 
 void EditorBoardSwitcher::_on_board_button_gui_input(const Ref<InputEvent> &p_event, int p_index) {
@@ -248,10 +340,10 @@ void EditorBoardSwitcher::_begin_rename(int p_index) {
 	rename_edit->set_text(board->get_title());
 	rename_edit->set_custom_minimum_size(button->get_size());
 	rename_edit->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
-	add_child(rename_edit);
+	rail_hbox->add_child(rename_edit);
 	// Place the editor where the (hidden) board button sits, without assuming board
 	// buttons occupy child indices 0..n-1 relative to the actions menu sibling.
-	move_child(rename_edit, button->get_index());
+	rail_hbox->move_child(rename_edit, button->get_index());
 
 	rename_edit->connect(SceneStringName(text_submitted), callable_mp(this, &EditorBoardSwitcher::_commit_rename));
 	rename_edit->connect(SceneStringName(focus_exited), callable_mp(this, &EditorBoardSwitcher::_commit_rename_from_focus_loss));
@@ -313,6 +405,11 @@ void EditorBoardSwitcher::_cancel_rename() {
 
 EditorBoardSwitcher::EditorBoardSwitcher() {
 	set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	set_theme_type_variation("BoardRail");
+
+	rail_hbox = memnew(HBoxContainer);
+	rail_hbox->add_theme_constant_override(SNAME("separation"), 1);
+	add_child(rail_hbox);
 
 	actions_menu = memnew(EditorBoardActionsMenu);
 	add_child(actions_menu);

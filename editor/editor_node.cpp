@@ -8560,6 +8560,27 @@ void EditorNode::_on_active_board_changed(int p_index) {
 	_focus_tile_internal(tile_id, true);
 }
 
+void EditorNode::_on_board_requested(int p_index) {
+	if (!editor_main_screen || !editor_main_screen->is_global_screen_selected() || !board_strip) {
+		return;
+	}
+	if (p_index < 0 || p_index >= board_strip->get_board_count()) {
+		return;
+	}
+
+	EditorBoard *board = board_strip->get_board(p_index);
+	EditorSceneWorkspace *workspace = board ? board->get_workspace() : nullptr;
+	if (!workspace) {
+		return;
+	}
+	const int tile_id = workspace->get_effective_focused_tile_id();
+	if (tile_id < 0 || !workspace->get_leaf_by_id(tile_id) || !board_strip->is_leaf_on_active_board(tile_id)) {
+		return;
+	}
+
+	_focus_tile_internal(tile_id, true);
+}
+
 void EditorNode::_activate_relative_board(int p_delta) {
 	ERR_FAIL_NULL(board_strip);
 	const int board_count = board_strip->get_board_count();
@@ -11703,9 +11724,17 @@ EditorNode::EditorNode() {
 	HBoxContainer *main_editor_button_hb = memnew(HBoxContainer);
 	main_editor_button_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	main_editor_button_hb->set_name("EditorMainScreenButtons");
+	main_editor_button_hb->hide();
 	editor_main_screen->set_button_container(main_editor_button_hb);
 	title_bar->add_child(main_editor_button_hb);
-	title_bar->set_center_control(main_editor_button_hb);
+
+	board_switcher = memnew(EditorBoardSwitcher);
+	title_bar->add_child(board_switcher);
+	board_switcher->setup(board_strip);
+	board_switcher->connect(SNAME("board_requested"), callable_mp(this, &EditorNode::_on_board_requested));
+	title_bar->set_center_control(board_switcher);
+	// Overview captions reach the same board actions menu the title-bar switcher owns.
+	board_strip->set_board_context_menu_handler(callable_mp(board_switcher, &EditorBoardSwitcher::popup_board_actions));
 
 	// Spacer to center 2D / 3D / Script buttons.
 	right_spacer = memnew(Control);
@@ -11718,12 +11747,6 @@ EditorNode::EditorNode() {
 	title_bar->add_child(project_run_bar);
 	project_run_bar->connect("play_pressed", callable_mp(this, &EditorNode::_project_run_started));
 	project_run_bar->connect("stop_pressed", callable_mp(this, &EditorNode::_project_run_stopped));
-
-	board_switcher = memnew(EditorBoardSwitcher);
-	title_bar->add_child(board_switcher);
-	board_switcher->setup(board_strip);
-	// Overview captions reach the same board actions menu the title-bar switcher owns.
-	board_strip->set_board_context_menu_handler(callable_mp(board_switcher, &EditorBoardSwitcher::popup_board_actions));
 
 	right_menu_hb = memnew(HBoxContainer);
 	right_menu_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);

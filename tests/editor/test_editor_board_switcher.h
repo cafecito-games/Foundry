@@ -35,6 +35,7 @@
 #include "editor/editor_data.h"
 #include "editor/gui/editor_board_actions_menu.h"
 #include "editor/gui/editor_board_switcher.h"
+#include "editor/themes/editor_theme_manager.h"
 
 #include "core/io/config_file.h"
 #include "core/object/message_queue.h"
@@ -58,22 +59,40 @@ static void record_board_moved(int, int) {
 	board_moved_counter.count++;
 }
 
+struct BoardRequestedRecorder {
+	Vector<int> indices;
+};
+
+static BoardRequestedRecorder board_requested_recorder;
+
+static void record_board_requested(int p_index) {
+	board_requested_recorder.indices.push_back(p_index);
+}
+
 struct BoardSwitcherHarness {
 	Control *host = nullptr;
 	EditorData editor_data;
 	EditorSelection *selection = nullptr;
 	EditorBoardStrip *strip = nullptr;
 	EditorBoardSwitcher *switcher = nullptr;
+	Ref<EditorTheme> theme;
 
-	void mount() {
+	void mount(bool p_with_editor_theme = false) {
 		host = memnew(Control);
+		host->set_size(Size2(1400, 48));
+		if (p_with_editor_theme) {
+			theme = EditorThemeManager::generate_theme();
+			host->set_theme(theme);
+		}
 		SceneTree::get_singleton()->get_root()->add_child(host);
 		selection = memnew(EditorSelection);
 		strip = EditorBoardStrip::create(selection, &editor_data);
 		host->add_child(strip);
 		switcher = memnew(EditorBoardSwitcher);
 		host->add_child(switcher);
+		switcher->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		switcher->setup(strip);
+		pump();
 	}
 
 	void unmount() {
@@ -90,9 +109,14 @@ struct BoardSwitcherHarness {
 		MessageQueue::get_singleton()->flush();
 	}
 
-	// Board buttons plus the dedicated menu button and owned actions menu.
+	void resize_host(const Size2 &p_size) {
+		host->set_size(p_size);
+		pump();
+	}
+
+	// The responsive rail plus the owned, non-layout actions menu.
 	int chrome_child_count() const {
-		return strip->get_board_count() + 2;
+		return 2;
 	}
 
 	Button *board_button(int p_index) const {
@@ -121,8 +145,14 @@ struct BoardSwitcherHarness {
 
 	LineEdit *find_rename_edit() const {
 		for (int i = 0; i < switcher->get_child_count(); i++) {
-			if (LineEdit *edit = Object::cast_to<LineEdit>(switcher->get_child(i))) {
+			Node *child = switcher->get_child(i);
+			if (LineEdit *edit = Object::cast_to<LineEdit>(child)) {
 				return edit;
+			}
+			for (int j = 0; j < child->get_child_count(); j++) {
+				if (LineEdit *edit = Object::cast_to<LineEdit>(child->get_child(j))) {
+					return edit;
+				}
 			}
 		}
 		return nullptr;
@@ -131,11 +161,10 @@ struct BoardSwitcherHarness {
 	// Finds a board button by its visible label rather than its position, so callers can
 	// identify a board after a reorder without relying on the index it used to occupy.
 	Button *board_button_with_text(const String &p_text) const {
-		for (int i = 0; i < switcher->get_child_count(); i++) {
-			if (Button *button = Object::cast_to<Button>(switcher->get_child(i))) {
-				if (button->get_text() == p_text) {
-					return button;
-				}
+		for (int i = 0; i < strip->get_board_count(); i++) {
+			Button *button = board_button(i);
+			if (button && button->get_text() == p_text) {
+				return button;
 			}
 		}
 		return nullptr;
@@ -150,6 +179,76 @@ struct BoardSwitcherHarness {
 		p_button->emit_signal(SceneStringName(gui_input), event);
 	}
 };
+
+TEST_CASE("[Editor][BoardSwitcher] Rail compacts without losing active board") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+
+	harness.strip->add_board("Materials");
+	harness.strip->add_board("Lighting");
+	harness.strip->add_board("Animation");
+	harness.strip->set_active_board(2);
+	harness.resize_host(Size2(280, 48));
+
+	CHECK(harness.strip->get_active_index() == 2);
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		Button *button = harness.board_button(i);
+		REQUIRE(button != nullptr);
+		CHECK(button->is_visible() == (i == 2));
+	}
+
+	harness.resize_host(Size2(1400, 48));
+	CHECK(harness.strip->get_active_index() == 2);
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		Button *button = harness.board_button(i);
+		REQUIRE(button != nullptr);
+		CHECK(button->is_visible());
+	}
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Every segment emits a board request") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+	harness.strip->add_board("Second");
+
+	board_requested_recorder.indices.clear();
+	harness.switcher->connect(SNAME("board_requested"), callable_mp_static(&record_board_requested));
+	harness.board_button(0)->emit_signal(SceneStringName(pressed));
+	harness.board_button(1)->emit_signal(SceneStringName(pressed));
+
+	REQUIRE(board_requested_recorder.indices.size() == 2);
+	if (board_requested_recorder.indices.size() == 2) {
+		CHECK(board_requested_recorder.indices[0] == 0);
+		CHECK(board_requested_recorder.indices[1] == 1);
+	}
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Compact menu lists and activates every board") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("Materials");
+	harness.strip->add_board("Lighting");
+	harness.strip->add_board("Animation");
+	harness.resize_host(Size2(280, 48));
+
+	harness.menu_button()->emit_signal(SceneStringName(pressed));
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		CHECK(menu->get_item_index(EditorBoardActionsMenu::ITEM_BOARD_BASE + i) >= 0);
+	}
+
+	const int last = harness.strip->get_board_count() - 1;
+	harness.activate_menu_item(EditorBoardActionsMenu::ItemID(EditorBoardActionsMenu::ITEM_BOARD_BASE + last));
+	harness.pump();
+	CHECK(harness.strip->get_active_index() == last);
+
+	harness.unmount();
+}
 
 TEST_CASE("[Editor][BoardSwitcher] Rebuilds one button per board and marks the active one") {
 	BoardSwitcherHarness harness;
