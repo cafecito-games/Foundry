@@ -41,6 +41,7 @@
 #include "editor/editor_string_names.h"
 #include "editor/editor_tile_dock_region.h"
 #include "editor/editor_tile_drop_overlay.h"
+#include "editor/gui/editor_scene_mode_switcher.h"
 #include "editor/gui/editor_side_rail_strip.h"
 #include "editor/scene/3d/node_3d_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_plugin.h"
@@ -53,6 +54,12 @@
 #include "scene/gui/subviewport_container.h"
 #include "scene/main/viewport.h"
 #include "scene/resources/3d/world_3d.h"
+
+void ScenePaneTile::_bind_methods() {
+	ADD_SIGNAL(MethodInfo("scene_editor_mode_requested",
+			PropertyInfo(Variant::INT, "tile_id"),
+			PropertyInfo(Variant::INT, "mode")));
+}
 
 void ScenePaneTile::_notification(int p_what) {
 	switch (p_what) {
@@ -211,6 +218,44 @@ void ScenePaneTile::set_focused_visual(bool p_focused) {
 	}
 }
 
+void ScenePaneTile::_on_scene_editor_mode_selected(int p_mode) {
+	set_scene_editor_mode(SceneEditorMode(p_mode), true);
+}
+
+void ScenePaneTile::_sync_scene_editor_mode() {
+	EditorSceneContext *context = get_scene_context();
+	scene_mode_switcher->set_mode_available(context != nullptr);
+	initialize_scene_editor_mode(context);
+}
+
+void ScenePaneTile::set_scene_editor_mode(SceneEditorMode p_mode, bool p_user_requested) {
+	scene_editor_mode = p_mode;
+	scene_editor_mode_initialized = true;
+	scene_mode_switcher->set_mode_available(get_scene_context() != nullptr);
+	scene_mode_switcher->set_mode(scene_editor_mode);
+	if (p_user_requested) {
+		emit_signal(SNAME("scene_editor_mode_requested"), tile_id, int(scene_editor_mode));
+	}
+}
+
+void ScenePaneTile::initialize_scene_editor_mode(EditorSceneContext *p_context) {
+	if (scene_editor_mode_initialized || p_context == nullptr) {
+		return;
+	}
+	set_scene_editor_mode(
+			p_context->scene_has_3d_content() && scene_mode_switcher->is_3d_enabled()
+					? SceneEditorMode::MODE_3D
+					: SceneEditorMode::MODE_2D,
+			false);
+}
+
+void ScenePaneTile::set_3d_scene_mode_enabled(bool p_enabled) {
+	scene_mode_switcher->set_3d_enabled(p_enabled);
+	if (!p_enabled && scene_editor_mode_initialized && scene_editor_mode == SceneEditorMode::MODE_3D) {
+		set_scene_editor_mode(SceneEditorMode::MODE_2D, false);
+	}
+}
+
 void ScenePaneTile::_apply_preview_chrome_for_current_mode() {
 	const bool preview_only = preview_mode == TilePreviewMode::LIVE_2D || preview_mode == TilePreviewMode::LIVE_3D;
 	dock_region.set_presentation_hidden(preview_only);
@@ -316,6 +361,11 @@ void ScenePaneTile::setup(int p_tile_id, EditorSelection *p_editor_selection, Ed
 
 	scene_tabs = memnew(EditorSceneTabs(p_tile_id));
 	add_child(scene_tabs);
+	scene_mode_switcher = memnew(EditorSceneModeSwitcher);
+	scene_mode_switcher->set_accessibility_description(vformat(TTR("Editing mode for scene tile %d"), tile_id));
+	scene_mode_switcher->connect(SNAME("mode_selected"), callable_mp(this, &ScenePaneTile::_on_scene_editor_mode_selected));
+	scene_tabs->add_extra_control(scene_mode_switcher);
+	scene_tabs->connect(SNAME("tabs_updated"), callable_mp(this, &ScenePaneTile::_sync_scene_editor_mode));
 
 	focus_frame = memnew(PanelContainer);
 	focus_frame->set_v_size_flags(Control::SIZE_EXPAND_FILL);
@@ -501,6 +551,9 @@ void ScenePaneTile::set_history_dock_enabled(bool p_enabled) {
 void ScenePaneTile::save_layout(const Ref<ConfigFile> &p_config, const String &p_section) const {
 	ERR_FAIL_COND(p_config.is_null());
 	p_config->set_value(p_section, "tile_id", tile_id);
+	if (scene_editor_mode_initialized) {
+		p_config->set_value(p_section, "scene_editor_mode", scene_editor_mode_to_name(scene_editor_mode));
+	}
 	dock_region.save_layout(p_config, p_section);
 }
 
@@ -508,6 +561,11 @@ void ScenePaneTile::load_layout(const Ref<ConfigFile> &p_config, const String &p
 	ERR_FAIL_COND(p_config.is_null());
 	// tile_id is assigned structurally when the leaf is created.
 	p_config->get_value(p_section, "tile_id", tile_id);
+	const StringName saved_mode = p_config->get_value(p_section, "scene_editor_mode", StringName());
+	SceneEditorMode restored_mode;
+	if (scene_editor_mode_from_name(saved_mode, restored_mode)) {
+		set_scene_editor_mode(restored_mode, false);
+	}
 	dock_region.load_layout(p_config, p_section);
 }
 

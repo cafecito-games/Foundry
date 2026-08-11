@@ -114,6 +114,7 @@
 #include "tests/editor/test_project_scanner.h"
 #include "tests/editor/test_projectless_editor_shell.h"
 #include "tests/editor/test_refactor_diff_preview.h"
+#include "tests/editor/test_scene_pane_tile_mode.h"
 #include "tests/editor/test_script_code_actions_model.h"
 #include "tests/editor/test_script_create_dialog.h"
 #include "tests/editor/test_script_editor_views.h"

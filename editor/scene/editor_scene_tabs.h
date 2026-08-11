@@ -108,6 +108,7 @@ public:
 	int get_tile_id() const { return tile_id; }
 	TabBar *get_tab_bar() const { return scene_tabs; }
 
+	void add_extra_control(Control *p_control);
 	void add_extra_button(Button *p_button);
 
 	void set_current_tab(int p_tab);
