@@ -124,4 +124,26 @@ TEST_CASE("[FontFile] Create font file and check data") {
 #endif
 }
 
+
+TEST_CASE("[FontFile] Metric cache invalidation after setter changes") {
+#ifdef MODULE_FREETYPE_ENABLED
+	Ref<FontFile> ff;
+	ff.instantiate();
+	CHECK(ff->load_dynamic_font("thirdparty/fonts/Inter_Regular.woff2") == OK);
+
+	// Populate the per-size metric cache.
+	real_t orig_height = ff->get_height(16);
+	real_t orig_ascent = ff->get_ascent(16);
+	CHECK_MESSAGE(orig_height > 0.0, "Height should be positive.");
+
+	// Override ascent via FontFile setter; get_height must reflect the change,
+	// not a stale cache entry.
+	ff->set_cache_ascent(0, 16, orig_ascent + 100.0);
+	CHECK_MESSAGE(ff->get_ascent(16) == doctest::Approx(orig_ascent + 100.0),
+			"get_ascent should reflect overridden value, not a stale cache.");
+	CHECK_MESSAGE(ff->get_height(16) == doctest::Approx(orig_height + 100.0),
+			"get_height should reflect overridden ascent, not a stale cache.");
+#endif
+}
+
 } // namespace TestFontfile

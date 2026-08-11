@@ -2035,6 +2035,7 @@ void FontFile::set_data_ptr(const uint8_t *p_data, size_t p_size) {
 			TS->font_set_data_ptr(cache[i], data_ptr, data_size);
 		}
 	}
+	_invalidate_metric_cache();
 }
 
 void FontFile::set_data(const PackedByteArray &p_data) {
@@ -2165,6 +2166,7 @@ void FontFile::set_msdf_size(int p_msdf_size) {
 			_ensure_rid(i);
 			TS->font_set_msdf_size(cache[i], msdf_size);
 		}
+		_invalidate_metric_cache();
 		emit_changed();
 	}
 }
@@ -2180,6 +2182,7 @@ void FontFile::set_fixed_size(int p_fixed_size) {
 			_ensure_rid(i);
 			TS->font_set_fixed_size(cache[i], fixed_size);
 		}
+		_invalidate_metric_cache();
 		emit_changed();
 	}
 }
@@ -2195,6 +2198,7 @@ void FontFile::set_fixed_size_scale_mode(TextServer::FixedSizeScaleMode p_fixed_
 			_ensure_rid(i);
 			TS->font_set_fixed_size_scale_mode(cache[i], fixed_size_scale_mode);
 		}
+		_invalidate_metric_cache();
 		emit_changed();
 	}
 }
