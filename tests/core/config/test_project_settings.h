@@ -30,61 +30,14 @@
 
 #pragma once
 
+#include "project_settings_test_helpers.h"
+
 #include "core/config/project_settings.h"
 #include "core/io/dir_access.h"
 #include "core/io/resource_uid.h"
 #include "core/variant/variant.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
-
-class TestProjectSettingsInternalsAccessor {
-public:
-	static String &resource_path() {
-		return ProjectSettings::get_singleton()->resource_path;
-	}
-
-	static String &project_data_dir_name() {
-		return ProjectSettings::get_singleton()->project_data_dir_name;
-	}
-
-	static bool &project_loaded() {
-		return ProjectSettings::get_singleton()->project_loaded;
-	}
-
-	static uint64_t &last_save_time() {
-		return ProjectSettings::get_singleton()->last_save_time;
-	}
-
-	static Error load_settings_text(const String &p_path) {
-		return ProjectSettings::get_singleton()->_load_settings_text(p_path);
-	}
-
-	static Error load_settings_binary(const String &p_path) {
-		return ProjectSettings::get_singleton()->_load_settings_binary(p_path);
-	}
-};
-
-// RAII guard for tests that call ProjectSettings::setup() against a temporary
-// project root. Restores the fields that affect res:// and user:// resolution
-// so later cases keep a writable user:// mapping under arbitrary --case filters.
-class TestProjectSettingsRestoreScope {
-	String saved_resource_path;
-	bool saved_project_loaded = false;
-	String saved_app_name;
-
-public:
-	TestProjectSettingsRestoreScope() {
-		saved_resource_path = ProjectSettings::get_singleton()->get_resource_path();
-		saved_project_loaded = ProjectSettings::get_singleton()->is_project_loaded();
-		saved_app_name = GLOBAL_GET("application/config/name");
-	}
-
-	~TestProjectSettingsRestoreScope() {
-		TestProjectSettingsInternalsAccessor::resource_path() = saved_resource_path;
-		TestProjectSettingsInternalsAccessor::project_loaded() = saved_project_loaded;
-		ProjectSettings::get_singleton()->set_setting("application/config/name", saved_app_name);
-	}
-};
 
 namespace TestProjectSettings {
 

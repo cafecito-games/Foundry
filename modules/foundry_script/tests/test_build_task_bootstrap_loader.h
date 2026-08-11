@@ -43,7 +43,7 @@
 #include "core/object/script_language.h"
 #include "core/os/os.h"
 #include "core/os/thread.h"
-#include "tests/core/config/test_project_settings.h"
+#include "tests/core/config/project_settings_test_helpers.h"
 #include "tests/test_macros.h"
 #include "tests/test_utils.h"
 

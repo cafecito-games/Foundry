@@ -47,7 +47,7 @@
 #include "scene/resources/compressed_texture.h"
 #include "scene/resources/material.h"
 #include "scene/resources/packed_scene.h"
-#include "tests/core/config/test_project_settings.h"
+#include "tests/core/config/project_settings_test_helpers.h"
 #include "tests/test_utils.h"
 
 #include "modules/gltf/editor/editor_scene_importer_gltf.h"

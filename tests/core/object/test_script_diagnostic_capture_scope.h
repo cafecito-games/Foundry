@@ -173,7 +173,7 @@ TEST_CASE("[ScriptDiagnosticCapture] Event dictionaries expose the stable schema
 #include "core/object/script_function_state.h"
 #include "scene/main/scene_tree.h"
 #include "scene/main/window.h"
-#include "tests/core/config/test_project_settings.h"
+#include "tests/core/config/project_settings_test_helpers.h"
 
 namespace TestScriptDiagnosticCaptureScopeAsync {
 
