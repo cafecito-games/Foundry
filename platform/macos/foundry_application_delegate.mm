@@ -35,6 +35,7 @@
 #import "key_mapping_macos.h"
 #import "native_menu_macos.h"
 #import "os_macos.h"
+#import "startup_sequence_macos.h"
 
 #import "core/os/main_loop.h"
 #import "main/main.h"
@@ -44,6 +45,9 @@
 @interface FoundryApplicationDelegate ()
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context;
 - (void)accessibilityDisplayOptionsChange:(NSNotification *)notification;
+- (void)handleDidBecomeActive;
+- (void)handleDidResignActive;
+- (void)requestMainWindowClose;
 @end
 
 @implementation FoundryApplicationDelegate {
@@ -51,6 +55,8 @@
 	bool reduce_motion;
 	bool reduce_transparency;
 	bool voice_over;
+	bool deferred_activation;
+	bool deferred_termination;
 	OS_MacOS_NSApp *os_mac;
 }
 
@@ -58,6 +64,8 @@
 	self = [super init];
 	if (self) {
 		os_mac = os;
+		deferred_activation = false;
+		deferred_termination = false;
 	}
 
 	[[NSWorkspace sharedWorkspace] addObserver:self forKeyPath:@"voiceOverEnabled" options:(NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld) context:(void *)godot_ac_ctx];
@@ -189,8 +197,10 @@ static const char *godot_ac_ctx = "gd_accessibility_observer_ctx";
 		}
 	}
 	if (!args.is_empty()) {
-		if (os_mac->get_main_loop()) {
-			// Application is already running, open a new instance with the URL/files as command line arguments.
+		if (os_mac->is_command_line_consumed()) {
+			// `Main::setup()` has already read the platform argument list and nothing reads it
+			// again, so a late request has to open a new instance with the URL/files as command
+			// line arguments. That covers a running application and the staged boot alike.
 			os_mac->create_instance(args);
 		} else if (os_mac->get_cmd_argc() == 0) {
 			// Application is just started, add to the list of command line arguments and continue.
@@ -206,8 +216,10 @@ static const char *godot_ac_ctx = "gd_accessibility_observer_ctx";
 		args.push_back(String::utf8([url.path UTF8String]));
 	}
 	if (!args.is_empty()) {
-		if (os_mac->get_main_loop()) {
-			// Application is already running, open a new instance with the URL/files as command line arguments.
+		if (os_mac->is_command_line_consumed()) {
+			// `Main::setup()` has already read the platform argument list and nothing reads it
+			// again, so a late request has to open a new instance with the URL/files as command
+			// line arguments. That covers a running application and the staged boot alike.
 			os_mac->create_instance(args);
 		} else if (os_mac->get_cmd_argc() == 0) {
 			// Application is just started, add to the list of command line arguments and continue.
@@ -217,6 +229,17 @@ static const char *godot_ac_ctx = "gd_accessibility_observer_ctx";
 }
 
 - (void)applicationDidResignActive:(NSNotification *)notification {
+	if (StartupInputGateMacOS::is_suppressed()) {
+		// The staged boot lets the run loop turn, so activation changes now arrive while the
+		// editor is only half constructed. Withhold them; `applyDeferredActivation` replays the
+		// activation state once boot is over, which is when they used to arrive.
+		deferred_activation = true;
+		return;
+	}
+	[self handleDidResignActive];
+}
+
+- (void)handleDidResignActive {
 	DisplayServerMacOS *ds = Object::cast_to<DisplayServerMacOS>(DisplayServer::get_singleton());
 	if (ds) {
 		ds->mouse_process_popups(true);
@@ -241,6 +264,29 @@ static const CGKeyCode modifiers[8] = {
 constexpr static NSEventModifierFlags FLAGS = NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption | NSEventModifierFlagControl;
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
+	if (StartupInputGateMacOS::is_suppressed()) {
+		// Withheld for the same reason as resignation above. The modifier poll below reads the
+		// keyboard as it is at replay time, so a modifier released during boot cannot leave a
+		// press behind without its release.
+		deferred_activation = true;
+		return;
+	}
+	[self handleDidBecomeActive];
+}
+
+- (void)applyDeferredActivation {
+	if (!deferred_activation) {
+		return;
+	}
+	deferred_activation = false;
+	if ([NSApp isActive]) {
+		[self handleDidBecomeActive];
+	} else {
+		[self handleDidResignActive];
+	}
+}
+
+- (void)handleDidBecomeActive {
 	if (os_mac->get_main_loop()) {
 		os_mac->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_IN);
 	}
@@ -319,12 +365,45 @@ constexpr static NSEventModifierFlags FLAGS = NSEventModifierFlagCommand | NSEve
 		return NSTerminateNow;
 	}
 
+	if (StartupInputGateMacOS::is_suppressed()) {
+		// The staged boot lets the run loop turn, so a Dock Quit or a logout can arrive before the
+		// scene tree has installed the window event callback that carries the close request.
+		// Answering `NSTerminateCancel` here would silently drop the request and veto the logout,
+		// so hold the answer until boot finishes and the normal path below can run for real.
+		deferred_termination = true;
+		return NSTerminateLater;
+	}
+
+	[self requestMainWindowClose];
+	return NSTerminateCancel;
+}
+
+- (void)requestMainWindowClose {
 	DisplayServerMacOS *ds = Object::cast_to<DisplayServerMacOS>(DisplayServer::get_singleton());
 	if (ds && ds->has_window(DisplayServerMacOS::MAIN_WINDOW_ID)) {
 		ds->send_window_event(ds->get_window(DisplayServerMacOS::MAIN_WINDOW_ID), DisplayServerMacOS::WINDOW_EVENT_CLOSE_REQUEST);
 	}
+}
 
-	return NSTerminateCancel;
+- (void)applyDeferredTermination {
+	if (!deferred_termination) {
+		return;
+	}
+	deferred_termination = false;
+	// Boot is over: run exactly what a post-boot request would have run, then decline the system
+	// request so the editor's own quit confirmation drives the actual shutdown.
+	[self requestMainWindowClose];
+	[NSApp replyToApplicationShouldTerminate:NO];
+}
+
+- (void)abandonDeferredTermination {
+	if (!deferred_termination) {
+		return;
+	}
+	deferred_termination = false;
+	// The application is shutting down anyway; releasing the held answer as "yes" keeps AppKit
+	// from waiting on a reply that is never coming.
+	[NSApp replyToApplicationShouldTerminate:YES];
 }
 
 - (void)showAbout:(id)sender {

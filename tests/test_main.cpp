@@ -291,6 +291,10 @@
 #include "tests/test_doctest_case_shard.h"
 #include "tests/test_validate_testing.h"
 
+#ifdef MACOS_ENABLED
+#include "tests/platform/test_startup_sequence_macos.h"
+#endif // MACOS_ENABLED
+
 #ifndef ADVANCED_GUI_DISABLED
 #include "tests/scene/test_code_edit.h"
 #include "tests/scene/test_color_picker.h"

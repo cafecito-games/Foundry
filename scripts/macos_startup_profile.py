@@ -5,7 +5,7 @@ Captures, parses and compares startup profiles of the macOS editor so that the
 "editor blocks the run loop during launch" measurements are reproducible instead
 of being re-derived by hand every session.
 
-Three independent measurements are supported, each answering a different
+Four independent measurements are supported, each answering a different
 question:
 
 * ``sample``   - what share of main-thread samples sits inside
@@ -16,6 +16,9 @@ question:
                  uninterrupted non-servicing block can be measured in
                  milliseconds instead of inferred.
 * ``phases``   - ``--benchmark`` marks, i.e. the engine's own phase timings.
+* ``window``   - milliseconds from spawning the editor to its first on-screen
+                 window, polled from the CoreGraphics window list. Geometry and
+                 owner pid only, never window titles or pixels.
 
 Everything is stdlib only. Run ``--help`` on any subcommand for details.
 """
@@ -26,6 +29,7 @@ import argparse
 import json
 import os
 import platform as platform_module
+import plistlib
 import re
 import shutil
 import signal
@@ -54,7 +58,12 @@ BLOCK_FRAME = "-[NSApplication _sendFinishLaunchingNotification]"
 # Acceptance thresholds from cafecito-games/Foundry#2090.
 DEFAULT_MAX_BLOCKED_PERCENT = 8.0
 DEFAULT_MAX_BLOCK_MS = 250.0
+DEFAULT_MAX_WINDOW_MS = 500.0
 AC_SAMPLE_WINDOW_SECONDS = 20.0
+
+# A window smaller than this is a helper surface (a status item, a tooltip host), not the
+# application window the user is waiting for.
+MIN_WINDOW_SIDE_PX = 32.0
 
 # Leaf symbols that mean "main thread parked", not "main thread working".
 IDLE_LEAF_SYMBOLS = frozenset(
@@ -119,6 +128,14 @@ def fail(message: str) -> NoReturn:
     raise SystemExit(2)
 
 
+def positive_int(value: str) -> int:
+    """A run count of zero would record an empty measurement, which reads as a passing zero."""
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {parsed}")
+    return parsed
+
+
 def resolve_binary(value: str) -> Path:
     if value in BINARY_FLAVORS:
         candidate = REPO_ROOT / BINARY_FLAVORS[value]
@@ -158,6 +175,18 @@ def host_metadata() -> dict[str, Any]:
         "cpu_count": os.cpu_count(),
         "node": platform_module.node(),
     }
+
+
+def machine_load() -> dict[str, float]:
+    """Load average around the capture, recorded so a busy machine cannot be mistaken for a delta.
+
+    Every metric here is sensitive to machine load: the same two binaries measured while a build
+    and two test suites were running reported a worst run-loop gap of 1184/1165 ms instead of
+    837/842 ms. The absolute milliseconds move by tens of percent while the before/after ratios
+    hold, so a pair captured under different loads is not a pair. `compare` warns on it.
+    """
+    one, five, fifteen = os.getloadavg()
+    return {"load_average_1m": round(one, 2), "load_average_5m": round(five, 2), "load_average_15m": round(fifteen, 2)}
 
 
 def git_revision() -> str:
@@ -233,6 +262,149 @@ def warm_caches(binary: Path, project: Path, log_path: Path) -> None:
         stop_editor(process)
     finally:
         handle.close()
+
+
+# --------------------------------------------------------------------------- #
+# Time to first on-screen window
+# --------------------------------------------------------------------------- #
+
+# `CGWindowListCopyWindowInfo` options, from CGWindow.h.
+_CG_WINDOW_LIST_ON_SCREEN_ONLY = 1 << 0
+_CG_NULL_WINDOW_ID = 0
+# `CFPropertyListCreateData` format, from CFPropertyList.h.
+_CF_PROPERTY_LIST_BINARY_FORMAT_V1_0 = 200
+
+
+def _load_window_list_api():
+    """CoreGraphics window list, reached through ctypes so the script stays stdlib only.
+
+    Only window geometry, layer and owner pid are ever read. Window *titles* are deliberately
+    not touched: they can carry the contents of whatever the user has open, and reading them
+    would additionally require Screen Recording permission. Geometry alone needs no permission.
+    """
+    import ctypes
+    import ctypes.util
+
+    core_foundation = ctypes.CDLL(ctypes.util.find_library("CoreFoundation"))
+    core_graphics = ctypes.CDLL(ctypes.util.find_library("CoreGraphics"))
+
+    core_graphics.CGWindowListCopyWindowInfo.restype = ctypes.c_void_p
+    core_graphics.CGWindowListCopyWindowInfo.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+    core_foundation.CFPropertyListCreateData.restype = ctypes.c_void_p
+    core_foundation.CFPropertyListCreateData.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_uint32,
+        ctypes.c_void_p,
+    ]
+    core_foundation.CFDataGetBytePtr.restype = ctypes.c_void_p
+    core_foundation.CFDataGetBytePtr.argtypes = [ctypes.c_void_p]
+    core_foundation.CFDataGetLength.restype = ctypes.c_long
+    core_foundation.CFDataGetLength.argtypes = [ctypes.c_void_p]
+    core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+
+    def on_screen_windows() -> list[dict[str, Any]]:
+        info = core_graphics.CGWindowListCopyWindowInfo(_CG_WINDOW_LIST_ON_SCREEN_ONLY, _CG_NULL_WINDOW_ID)
+        if not info:
+            return []
+        data = None
+        try:
+            data = core_foundation.CFPropertyListCreateData(None, info, _CF_PROPERTY_LIST_BINARY_FORMAT_V1_0, 0, None)
+            if not data:
+                return []
+            length = core_foundation.CFDataGetLength(data)
+            raw = ctypes.string_at(core_foundation.CFDataGetBytePtr(data), length)
+        finally:
+            if data:
+                core_foundation.CFRelease(data)
+            core_foundation.CFRelease(info)
+        parsed: list[dict[str, Any]] = plistlib.loads(raw)
+        return parsed
+
+    return on_screen_windows
+
+
+def _has_visible_window(windows: Sequence[dict[str, Any]], pid: int) -> bool:
+    for window in windows:
+        if window.get("kCGWindowOwnerPID") != pid:
+            continue
+        if window.get("kCGWindowLayer") != 0:
+            # Non-zero layers are panels, menus and status items, not the application window.
+            continue
+        if window.get("kCGWindowIsOnscreen") is False:
+            # The key is optional in CoreGraphics' dictionaries and the query is already
+            # on-screen-only, so absence means "no opinion", not "not visible".
+            continue
+        bounds = window.get("kCGWindowBounds") or {}
+        if float(bounds.get("Width", 0)) > MIN_WINDOW_SIDE_PX and float(bounds.get("Height", 0)) > MIN_WINDOW_SIDE_PX:
+            return True
+    return False
+
+
+def measure_first_window_ms(
+    binary: Path,
+    project: Path,
+    log_path: Path,
+    poll_interval_ms: float,
+    timeout_seconds: float,
+) -> float:
+    """Milliseconds from spawning the editor to its first window being on screen.
+
+    The clock starts at `Popen`, so the number includes dyld and everything before the engine
+    runs — which is what the user experiences, and what the 500 ms criterion on #2090 is about.
+    """
+    on_screen_windows = _load_window_list_api()
+    interval = poll_interval_ms / 1000.0
+
+    started = time.monotonic()
+    process, handle = launch_editor(binary, project, log_path)
+    try:
+        deadline = started + timeout_seconds
+        while time.monotonic() < deadline:
+            if _has_visible_window(on_screen_windows(), process.pid):
+                return (time.monotonic() - started) * 1000.0
+            if process.poll() is not None:
+                fail(f"editor exited before showing a window (exit {process.returncode}); see {log_path}")
+            time.sleep(interval)
+        fail(f"no window appeared within {timeout_seconds}s; see {log_path}")
+    finally:
+        stop_editor(process)
+        handle.close()
+
+
+def command_window(args: argparse.Namespace) -> int:
+    binary = resolve_binary(args.binary)
+    project = Path(args.project).expanduser().resolve()
+    out_dir = make_output_dir(args.out, args.label)
+
+    if args.warm:
+        warm_caches(binary, project, out_dir / "warmup.log")
+
+    runs: list[float] = []
+    for index in range(1, args.runs + 1):
+        log(f"window run {index}/{args.runs}")
+        runs.append(
+            measure_first_window_ms(
+                binary,
+                project,
+                out_dir / f"window-run{index}.log",
+                args.poll_interval_ms,
+                args.timeout,
+            )
+        )
+
+    summary = load_or_new_summary(out_dir, args.label, binary, project, args.cache_state)
+    summary["window"] = {
+        "poll_interval_ms": args.poll_interval_ms,
+        "min_window_side_px": MIN_WINDOW_SIDE_PX,
+        "runs": runs,
+        "time_to_first_window_ms": spread(runs),
+    }
+    record_load(summary, "window")
+    write_summary(out_dir, summary)
+    print_window_summary(summary)
+    return 0
 
 
 # --------------------------------------------------------------------------- #
@@ -536,6 +708,7 @@ def command_capture(args: argparse.Namespace) -> int:
         "blocked_ms_estimate": spread([run["blocked_ms_estimate"] for run in runs]),
         "idle_percent": spread([run["idle_percent"] for run in runs]),
     }
+    record_load(summary, "sample")
     write_summary(out_dir, summary)
     print_sample_summary(summary)
     return 0
@@ -820,6 +993,7 @@ def command_timeline(args: argparse.Namespace) -> int:
         ),
         "longest_contiguous_blocked_ms": spread([run.get("longest_contiguous_blocked_ms", 0.0) for run in runs]),
     }
+    record_load(summary, "timeline")
     write_summary(out_dir, summary)
     print_timeline_summary(summary)
     return 0
@@ -869,6 +1043,7 @@ def command_phases(args: argparse.Namespace) -> int:
 
     summary = load_or_new_summary(out_dir, args.label, binary, project, args.cache_state)
     summary["phases"] = {"quit_after": args.quit_after, "runs": runs, "median": aggregate}
+    record_load(summary, "phases")
     write_summary(out_dir, summary)
     print_phases_summary(summary)
     return 0
@@ -904,6 +1079,30 @@ def load_or_new_summary(out_dir: Path, label: str, binary: Path, project: Path, 
     return summary
 
 
+def record_load(summary: dict[str, Any], measurement: str) -> None:
+    """Load is recorded per measurement: `all` runs four of them, minutes apart."""
+    loads = summary.setdefault("machine_load", {})
+    if not isinstance(loads, dict) or "load_average_1m" in loads:
+        # A summary from before per-measurement recording; start over rather than merge shapes.
+        loads = {}
+        summary["machine_load"] = loads
+    loads[measurement] = machine_load()
+
+
+def load_averages(summary: dict[str, Any]) -> list[float]:
+    """Every 1-minute load average recorded for this summary, whatever the record's vintage."""
+    loads = summary.get("machine_load")
+    if not isinstance(loads, dict):
+        return []
+    if "load_average_1m" in loads:
+        return [float(loads["load_average_1m"])]
+    return [
+        float(entry["load_average_1m"])
+        for entry in loads.values()
+        if isinstance(entry, dict) and "load_average_1m" in entry
+    ]
+
+
 def write_summary(out_dir: Path, summary: dict[str, Any]) -> None:
     summary["acceptance"] = evaluate_acceptance(summary, DEFAULT_MAX_BLOCKED_PERCENT, DEFAULT_MAX_BLOCK_MS)
     summary_path(out_dir).write_text(json.dumps(summary, indent=2) + "\n")
@@ -918,6 +1117,9 @@ def print_context(summary: dict[str, Any]) -> None:
     print(f"built        : {binary.get('mtime')}")
     print(f"project      : {summary.get('project')}")
     print(f"cache state  : {summary.get('cache_state')}")
+    loads = load_averages(summary)
+    if loads:
+        print(f"machine load : {min(loads)} to {max(loads)} (1m average, across measurements)")
     print(f"tree revision: {summary.get('git_revision')}")
 
 
@@ -1005,11 +1207,29 @@ def print_phases_summary(summary: dict[str, Any]) -> None:
     )
 
 
+def print_window_summary(summary: dict[str, Any]) -> None:
+    block = summary.get("window")
+    if not block:
+        return
+    print()
+    print("== window (time from spawn to first on-screen window) ==")
+    print_context(summary)
+    stats = block["time_to_first_window_ms"]
+    print(f"runs         : {', '.join(f'{value:.1f}' for value in block['runs'])} ms")
+    print(f"median       : {stats['median']:.1f} ms (min {stats['min']:.1f}, max {stats['max']:.1f})")
+    print(f"poll interval: {block['poll_interval_ms']} ms")
+
+
+def measured(stats: Any) -> bool:
+    """False for a spread that aggregates nothing, so a fabricated 0.0 is never gated on."""
+    return isinstance(stats, dict) and stats.get("runs", 0) >= 1
+
+
 def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max_block_ms: float) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     warnings: list[str] = []
     sample_block = summary.get("sample")
-    if sample_block:
+    if sample_block and measured(sample_block.get("blocked_percent")):
         value = sample_block["blocked_percent"]["median"]
         # The percentage criterion is a share of a capture window, so it is only
         # meaningful against the window length the issue names.
@@ -1029,7 +1249,7 @@ def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max
             }
         )
     timeline_block = summary.get("timeline")
-    if timeline_block:
+    if timeline_block and measured(timeline_block.get("longest_non_servicing_gap_ms")):
         value = timeline_block["longest_non_servicing_gap_ms"]["median"]
         checks.append(
             {
@@ -1040,7 +1260,8 @@ def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max
                 "source": "timeline/runloop-events",
             }
         )
-        contiguous = timeline_block.get("longest_contiguous_blocked_ms", {}).get("median")
+        contiguous_stats = timeline_block.get("longest_contiguous_blocked_ms")
+        contiguous = contiguous_stats.get("median") if measured(contiguous_stats) else None
         if contiguous is not None:
             checks.append(
                 {
@@ -1051,6 +1272,18 @@ def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max
                     "source": "timeline/time-profile",
                 }
             )
+    window_block = summary.get("window")
+    if window_block and measured(window_block.get("time_to_first_window_ms")):
+        value = window_block["time_to_first_window_ms"]["median"]
+        checks.append(
+            {
+                "criterion": f"time from spawn to first on-screen window <= {DEFAULT_MAX_WINDOW_MS} ms",
+                "value": value,
+                "threshold": DEFAULT_MAX_WINDOW_MS,
+                "passed": value <= DEFAULT_MAX_WINDOW_MS,
+                "source": "window",
+            }
+        )
     return {
         "issue": "cafecito-games/Foundry#2090",
         "checks": checks,
@@ -1099,10 +1332,37 @@ COMPARE_METRICS = [
     ),
     ("timeline: longest non-servicing gap", ("timeline", "longest_non_servicing_gap_ms", "median"), "ms"),
     ("timeline: longest contiguous blocked run", ("timeline", "longest_contiguous_blocked_ms", "median"), "ms"),
+    ("window: time to first on-screen window", ("window", "time_to_first_window_ms", "median"), "ms"),
     ("phases: Main::Setup", ("phases", "median", "[Startup] Main::Setup", "median"), "s"),
     ("phases: Main::Setup2", ("phases", "median", "[Startup] Main::Setup2", "median"), "s"),
     ("phases: Main::Start", ("phases", "median", "[Startup] Main::Start", "median"), "s"),
 ]
+
+
+# Absolute timings move by tens of percent between an idle and a busy machine, so a pair captured
+# either side of that difference measures the load, not the change.
+LOAD_MISMATCH_THRESHOLD = 1.5
+
+
+def load_mismatch_warning(baseline: dict[str, Any], candidate: dict[str, Any]) -> str | None:
+    """Warn when any two of the recorded loads are far enough apart to explain a delta by itself.
+
+    The comparison spans both summaries, so it also catches a single campaign whose own
+    measurements ran under changing load — `all` runs four of them over several minutes.
+    """
+    before = load_averages(baseline)
+    after = load_averages(candidate)
+    if not before or not after:
+        # Summaries written before load recording existed; nothing to compare.
+        return None
+    low = min(min(before), min(after))
+    high = max(max(before), max(after))
+    if high - low < LOAD_MISMATCH_THRESHOLD:
+        return None
+    return (
+        f"machine load varies materially across these measurements ({low} to {high}, 1m average) - "
+        "absolute milliseconds are not comparable across that difference; re-capture both on an idle machine"
+    )
 
 
 def command_compare(args: argparse.Namespace) -> int:
@@ -1116,6 +1376,9 @@ def command_compare(args: argparse.Namespace) -> int:
         warnings.append("cache states differ - these numbers are NOT comparable")
     if baseline.get("project") != candidate.get("project"):
         warnings.append("projects differ - these numbers are NOT comparable")
+    load_warning = load_mismatch_warning(baseline, candidate)
+    if load_warning:
+        warnings.append(load_warning)
 
     print("== comparison ==")
     print(
@@ -1215,6 +1478,12 @@ def command_all(args: argparse.Namespace) -> int:
         )
         command_phases(phases_args)
 
+    if not args.skip_window:
+        window_args = build_parser().parse_args(
+            ["window", "--binary", args.binary, "--runs", str(args.runs), *shared, "--no-warm"]
+        )
+        command_window(window_args)
+
     check_args = build_parser().parse_args(["check", str(summary_path(out_dir))])
     return command_check(check_args)
 
@@ -1263,14 +1532,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     capture = subparsers.add_parser("capture", help="capture `sample -wait` startup profiles (magnitude)")
     add_common(capture)
-    capture.add_argument("--runs", type=int, default=3, help="number of runs (default 3; a single run is not a trend)")
+    capture.add_argument(
+        "--runs", type=positive_int, default=3, help="number of runs (default 3; a single run is not a trend)"
+    )
     capture.add_argument("--duration", type=float, default=20.0, help="sampling window in seconds (default 20)")
     capture.add_argument("--interval", type=int, default=1, help="sampling interval in milliseconds (default 1)")
     capture.set_defaults(func=command_capture)
 
     timeline = subparsers.add_parser("timeline", help="capture an Instruments trace and derive the per-bucket timeline")
     add_common(timeline)
-    timeline.add_argument("--runs", type=int, default=1, help="number of traces (default 1; traces are expensive)")
+    timeline.add_argument(
+        "--runs", type=positive_int, default=1, help="number of traces (default 1; traces are expensive)"
+    )
     timeline.add_argument("--time-limit", type=float, default=20.0, help="recording length in seconds (default 20)")
     timeline.add_argument("--bucket-ms", type=float, default=100.0, help="timeline bucket size (default 100 ms)")
     timeline.add_argument("--skip-time-profile", action="store_true", help="only parse run loop events (much faster)")
@@ -1278,18 +1551,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     phases = subparsers.add_parser("phases", help="capture engine `--benchmark` marks")
     add_common(phases)
-    phases.add_argument("--runs", type=int, default=3, help="number of runs (default 3)")
+    phases.add_argument("--runs", type=positive_int, default=3, help="number of runs (default 3)")
     phases.add_argument("--quit-after", type=int, default=300, help="iterations before the editor exits (default 300)")
     phases.set_defaults(func=command_phases)
 
+    window = subparsers.add_parser("window", help="measure time from spawn to the first on-screen window")
+    add_common(window)
+    window.add_argument("--runs", type=positive_int, default=3, help="number of launches (default 3)")
+    window.add_argument("--poll-interval-ms", type=float, default=2.0, help="window list poll interval (default 2 ms)")
+    window.add_argument("--timeout", type=float, default=60.0, help="give up after this many seconds (default 60)")
+    window.set_defaults(func=command_window)
+
     every = subparsers.add_parser(
-        "all", help="capture + timeline + phases into one directory, then run the acceptance gate"
+        "all", help="capture + timeline + phases + window into one directory, then run the acceptance gate"
     )
     add_common(every)
-    every.add_argument("--runs", type=int, default=3)
+    every.add_argument("--runs", type=positive_int, default=3)
     every.add_argument("--duration", type=float, default=20.0)
     every.add_argument("--skip-timeline", action="store_true")
     every.add_argument("--skip-phases", action="store_true")
+    every.add_argument("--skip-window", action="store_true")
     every.set_defaults(func=command_all)
 
     analyze = subparsers.add_parser(

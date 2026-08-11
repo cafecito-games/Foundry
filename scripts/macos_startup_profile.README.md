@@ -6,15 +6,16 @@ loop while it boots" measurements behind
 [#2090](https://github.com/cafecito-games/Foundry/issues/2090) are reproducible
 with one command instead of being re-derived by hand each session.
 
-It answers three different questions with three different instruments, keeps the
+It answers four different questions with four different instruments, keeps the
 raw artifacts, and enforces the acceptance thresholds from #2090
 (`< 8%` of main-thread samples inside `-[NSApplication _sendFinishLaunchingNotification]`,
-no uninterrupted non-servicing block longer than `250 ms`).
+no uninterrupted non-servicing block longer than `250 ms`, and a window on screen
+within `500 ms` of launch).
 
 ## Quick start
 
 ```sh
-# Everything: 3 sample runs + 1 Instruments trace + 3 benchmark runs, then the gate.
+# Everything: 3 sample runs + 1 Instruments trace + 3 benchmark runs + 3 window runs, then the gate.
 python3 scripts/macos_startup_profile.py all --project /path/to/project --label baseline
 
 # Just the headline number (magnitude, optimized binary, 3 runs, warm caches).
@@ -23,14 +24,17 @@ python3 scripts/macos_startup_profile.py capture --project /path/to/project
 # Just the timeline / longest non-servicing block (Instruments).
 python3 scripts/macos_startup_profile.py timeline --project /path/to/project
 
+# Just the time from launch to a window being on screen.
+python3 scripts/macos_startup_profile.py window --project /path/to/project
+
 # Before/after, once a fix is built.
 python3 scripts/macos_startup_profile.py compare baseline/summary.json fix/summary.json
 ```
 
 Artifacts land in `~/.foundry-startup-profiles/<label>-<timestamp>/` unless
 `--out` is given. Every subcommand writes/updates a single `summary.json` in
-that directory, so `capture`, `timeline` and `phases` can be pointed at the same
-`--out` and accumulate into one comparable record.
+that directory, so `capture`, `timeline`, `phases` and `window` can be pointed at
+the same `--out` and accumulate into one comparable record.
 
 ## Subcommands
 
@@ -39,7 +43,8 @@ that directory, so `capture`, `timeline` and `phases` can be pointed at the same
 | `capture` | `/usr/bin/sample -wait` | What share of main-thread samples is inside the blocked AppKit frame, and roughly how many milliseconds is that? |
 | `timeline` | `xctrace` "Time Profiler" | When exactly does the block start and end, per 100 ms bucket, and what is the longest gap between main run loop iterations? |
 | `phases` | engine `--benchmark` marks | How much of the block is accounted for by instrumented boot phases? |
-| `all` | all three | One command; ends by running the acceptance gate. |
+| `window` | CoreGraphics window list | How long after launch does the user see a window at all? |
+| `all` | all four | One command; ends by running the acceptance gate. |
 | `analyze` | — | Re-parse an existing `sample` `.txt`, exported `.xml`, or `.trace` without re-capturing. |
 | `compare` | — | Baseline vs candidate, with a refusal to compare across binary flavors, cache states or projects. |
 | `check` | — | Evaluate the #2090 acceptance criteria against a `summary.json`; non-zero exit on failure. |
@@ -96,6 +101,22 @@ The file is only written at shutdown, so the run must exit cleanly — hence
 marks, so the instrumented total is materially smaller than the measured block.
 The tool prints that gap rather than hiding it.
 
+**`window` (CoreGraphics window list).** Spawns the editor and polls
+`CGWindowListCopyWindowInfo` every 2 ms (`--poll-interval-ms`) until a window
+owned by that pid is on screen, on layer 0, and larger than 32x32 — i.e. the
+application window, not a status item. The clock starts at `Popen`, so the
+number includes dyld and everything before the engine runs, which is what the
+user experiences and what the 500 ms criterion on #2090 is about.
+
+It is the least noisy measurement the tool has: on the #2090 before/after pair
+the two sets did not overlap (1119-1401 ms vs 706-993 ms), where the run loop
+gap metric could not resolve the same change at all.
+
+Only window geometry, layer and owner pid are read. Window **titles are
+deliberately never touched**: they can carry the contents of whatever the user
+has open, and reading them would additionally require Screen Recording
+permission. Geometry needs no permission, and the tool never captures pixels.
+
 ## Binary selection
 
 ```sh
@@ -136,6 +157,12 @@ meaningful output on a symbolized profile.
 - **`compare` refuses silently-wrong deltas.** Differing binary flavor, cache
   state or project prints a `WARNING` and exits `2`; a delta across those is not
   a delta.
+- **Machine load is recorded at capture time**, and `compare` warns when the two
+  captures ran under materially different load (1-minute average apart by more
+  than 1.5). This is not fussiness: measured on a busy machine, the #2090
+  before/after pair reported a worst run-loop gap of 1184 / 1165 ms; the same two
+  binaries on an idle machine reported 837 / 842 ms. The ratios held, the
+  absolute milliseconds did not. Capture both sides back to back, idle.
 - **The binary is fingerprinted.** Path, flavor, `--version`, size and build
   time go into the summary alongside the checkout revision, so a summary can
   never be mistaken for one produced by a different build.
@@ -148,6 +175,7 @@ meaningful output on a symbolized profile.
 [PASS/FAIL] median main-thread samples under -[NSApplication _sendFinishLaunchingNotification] < 8%
 [PASS/FAIL] longest main run loop non-servicing gap <= 250 ms
 [PASS/FAIL] longest contiguous run inside the blocked frame <= 250 ms
+[PASS/FAIL] time from spawn to first on-screen window <= 500 ms
 ```
 
 Exit codes: `0` pass, `1` fail, `2` unusable input (no measurements, or a
@@ -156,9 +184,9 @@ comparison across incompatible conditions). Thresholds are overridable with
 the ones the issue commits to.
 
 The gate deliberately does **not** cover the remaining #2090 criteria — no wait
-cursor across ten launches, input suppression during init, and the progress
-indication within 500 ms. Those need a screen capture and a regression test, not
-a profiler.
+cursor across ten launches, and input suppression during init. Those need a
+screen capture and a regression test, not a profiler. Input suppression is
+covered by `tests/platform/test_startup_sequence_macos.h`.
 
 ## Requirements
 

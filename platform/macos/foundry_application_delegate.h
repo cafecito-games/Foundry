@@ -41,6 +41,17 @@ class OS_MacOS_NSApp;
 
 - (FoundryApplicationDelegate *)initWithOS:(OS_MacOS_NSApp *)os;
 
+// Applies the activation change that was withheld while the editor was booting, using the
+// activation state as it stands now. Called once, when the staged boot completes.
+- (void)applyDeferredActivation;
+
+// Answers a system termination request that arrived while the editor was booting, by running the
+// normal close-request path now that there is something to run it against.
+- (void)applyDeferredTermination;
+
+// Releases a held termination answer when the application is shutting down for another reason.
+- (void)abandonDeferredTermination;
+
 - (bool)getHighContrast;
 - (bool)getReduceMotion;
 - (bool)getReduceTransparency;

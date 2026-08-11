@@ -31,6 +31,7 @@
 #pragma once
 
 #include "crash_handler_macos.h"
+#include "startup_sequence_macos.h"
 
 #include "core/input/input.h"
 #import "drivers/coreaudio/audio_driver_coreaudio.h"
@@ -200,12 +201,20 @@ class OS_MacOS_NSApp : public OS_MacOS {
 
 	CFRunLoopObserverRef pre_wait_observer = nil;
 
+	StartupSequenceMacOS startup_sequence;
+
 	void terminate();
 
 public:
 	void start_main(); // Initializes and runs Godot main loop.
 	void cleanup();
 	bool os_should_terminate() const { return should_terminate; }
+
+	// True once `Main::setup()` has parsed the command line and therefore consumed whatever
+	// Launch Services queued before launch. Requests arriving after that point must open a new
+	// instance, because nothing reads the platform argument list again.
+	bool is_command_line_consumed() const { return main_started; }
+
 	int get_cmd_argc() const { return argc; }
 
 	virtual void run() override;

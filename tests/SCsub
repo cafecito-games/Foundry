@@ -19,5 +19,10 @@ if env["disable_exceptions"]:
 
 env_tests.add_source_files(env.tests_sources, "*.cpp")
 
+# Tests for platform code that only exists as Objective-C++. Compiled into the same library as
+# `test_main.cpp` so doctest registration is not dropped by the linker.
+if env_tests["platform"] == "macos":
+    env_tests.add_source_files(env.tests_sources, "platform/*.mm")
+
 lib = env_tests.add_library("tests", env.tests_sources)
 env.Prepend(LIBS=[lib])
