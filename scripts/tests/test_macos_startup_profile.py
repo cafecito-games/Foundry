@@ -43,8 +43,15 @@ class HasVisibleWindowTests(unittest.TestCase):
     def test_ignores_panels_and_status_items_above_layer_zero(self):
         self.assertFalse(macos_startup_profile._has_visible_window([window(42, layer=25)], 42))
 
-    def test_ignores_windows_that_are_not_on_screen_yet(self):
+    def test_ignores_windows_explicitly_marked_off_screen(self):
         self.assertFalse(macos_startup_profile._has_visible_window([window(42, on_screen=False)], 42))
+
+    def test_accepts_windows_that_omit_the_optional_on_screen_key(self):
+        # `kCGWindowIsOnscreen` is optional, and the query is already on-screen-only, so a missing
+        # key must not be read as "not visible" — that would report no window for a visible one.
+        entry = window(42)
+        del entry["kCGWindowIsOnscreen"]
+        self.assertTrue(macos_startup_profile._has_visible_window([entry], 42))
 
     def test_ignores_windows_smaller_than_the_minimum_side(self):
         side = macos_startup_profile.MIN_WINDOW_SIDE_PX
@@ -112,24 +119,41 @@ class EmptyMeasurementTests(unittest.TestCase):
 
 
 class LoadMismatchTests(unittest.TestCase):
-    def summary(self, load: float | None) -> dict[str, Any]:
-        return {} if load is None else {"machine_load": {"load_average_1m": load}}
+    def summary(self, *loads: float) -> dict[str, Any]:
+        return {"machine_load": {f"m{index}": {"load_average_1m": value} for index, value in enumerate(loads)}}
 
     def test_no_warning_when_load_is_comparable(self):
         self.assertIsNone(macos_startup_profile.load_mismatch_warning(self.summary(1.2), self.summary(1.9)))
 
     def test_warns_when_one_capture_ran_on_a_busy_machine(self):
         warning = macos_startup_profile.load_mismatch_warning(self.summary(0.8), self.summary(11.4))
-        self.assertIsNotNone(warning)
         assert warning is not None
-        self.assertIn("machine load differs materially", warning)
+        self.assertIn("machine load varies materially", warning)
 
     def test_warns_symmetrically(self):
         self.assertIsNotNone(macos_startup_profile.load_mismatch_warning(self.summary(11.4), self.summary(0.8)))
 
+    def test_warns_when_one_campaign_drifted_across_its_own_measurements(self):
+        # `all` runs four measurements minutes apart; a build starting halfway through is exactly
+        # the case that produced two wrong conclusions before this check existed.
+        drifted = self.summary(0.9, 1.1, 9.7, 8.4)
+        self.assertIsNotNone(macos_startup_profile.load_mismatch_warning(drifted, self.summary(1.0)))
+
     def test_summaries_without_load_are_not_flagged(self):
-        self.assertIsNone(macos_startup_profile.load_mismatch_warning(self.summary(None), self.summary(1.0)))
-        self.assertIsNone(macos_startup_profile.load_mismatch_warning(self.summary(1.0), self.summary(None)))
+        self.assertIsNone(macos_startup_profile.load_mismatch_warning({}, self.summary(1.0)))
+        self.assertIsNone(macos_startup_profile.load_mismatch_warning(self.summary(1.0), {}))
+
+    def test_reads_the_older_single_load_shape(self):
+        legacy = {"machine_load": {"load_average_1m": 0.7, "load_average_5m": 0.8, "load_average_15m": 0.9}}
+        self.assertEqual(macos_startup_profile.load_averages(legacy), [0.7])
+        self.assertIsNotNone(macos_startup_profile.load_mismatch_warning(legacy, self.summary(9.9)))
+
+    def test_records_one_load_per_measurement(self):
+        summary: dict[str, Any] = {}
+        macos_startup_profile.record_load(summary, "sample")
+        macos_startup_profile.record_load(summary, "window")
+        self.assertEqual(sorted(summary["machine_load"]), ["sample", "window"])
+        self.assertEqual(len(macos_startup_profile.load_averages(summary)), 2)
 
 
 if __name__ == "__main__":

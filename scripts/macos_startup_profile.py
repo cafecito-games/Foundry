@@ -332,7 +332,9 @@ def _has_visible_window(windows: Sequence[dict[str, Any]], pid: int) -> bool:
         if window.get("kCGWindowLayer") != 0:
             # Non-zero layers are panels, menus and status items, not the application window.
             continue
-        if not window.get("kCGWindowIsOnscreen"):
+        if window.get("kCGWindowIsOnscreen") is False:
+            # The key is optional in CoreGraphics' dictionaries and the query is already
+            # on-screen-only, so absence means "no opinion", not "not visible".
             continue
         bounds = window.get("kCGWindowBounds") or {}
         if float(bounds.get("Width", 0)) > MIN_WINDOW_SIDE_PX and float(bounds.get("Height", 0)) > MIN_WINDOW_SIDE_PX:
@@ -399,6 +401,7 @@ def command_window(args: argparse.Namespace) -> int:
         "runs": runs,
         "time_to_first_window_ms": spread(runs),
     }
+    record_load(summary, "window")
     write_summary(out_dir, summary)
     print_window_summary(summary)
     return 0
@@ -705,6 +708,7 @@ def command_capture(args: argparse.Namespace) -> int:
         "blocked_ms_estimate": spread([run["blocked_ms_estimate"] for run in runs]),
         "idle_percent": spread([run["idle_percent"] for run in runs]),
     }
+    record_load(summary, "sample")
     write_summary(out_dir, summary)
     print_sample_summary(summary)
     return 0
@@ -989,6 +993,7 @@ def command_timeline(args: argparse.Namespace) -> int:
         ),
         "longest_contiguous_blocked_ms": spread([run.get("longest_contiguous_blocked_ms", 0.0) for run in runs]),
     }
+    record_load(summary, "timeline")
     write_summary(out_dir, summary)
     print_timeline_summary(summary)
     return 0
@@ -1038,6 +1043,7 @@ def command_phases(args: argparse.Namespace) -> int:
 
     summary = load_or_new_summary(out_dir, args.label, binary, project, args.cache_state)
     summary["phases"] = {"quit_after": args.quit_after, "runs": runs, "median": aggregate}
+    record_load(summary, "phases")
     write_summary(out_dir, summary)
     print_phases_summary(summary)
     return 0
@@ -1067,11 +1073,34 @@ def load_or_new_summary(out_dir: Path, label: str, binary: Path, project: Path, 
             "project": str(project),
             "cache_state": cache_state,
             "host": host_metadata(),
-            "machine_load": machine_load(),
             "git_revision": git_revision(),
         }
     )
     return summary
+
+
+def record_load(summary: dict[str, Any], measurement: str) -> None:
+    """Load is recorded per measurement: `all` runs four of them, minutes apart."""
+    loads = summary.setdefault("machine_load", {})
+    if not isinstance(loads, dict) or "load_average_1m" in loads:
+        # A summary from before per-measurement recording; start over rather than merge shapes.
+        loads = {}
+        summary["machine_load"] = loads
+    loads[measurement] = machine_load()
+
+
+def load_averages(summary: dict[str, Any]) -> list[float]:
+    """Every 1-minute load average recorded for this summary, whatever the record's vintage."""
+    loads = summary.get("machine_load")
+    if not isinstance(loads, dict):
+        return []
+    if "load_average_1m" in loads:
+        return [float(loads["load_average_1m"])]
+    return [
+        float(entry["load_average_1m"])
+        for entry in loads.values()
+        if isinstance(entry, dict) and "load_average_1m" in entry
+    ]
 
 
 def write_summary(out_dir: Path, summary: dict[str, Any]) -> None:
@@ -1088,9 +1117,9 @@ def print_context(summary: dict[str, Any]) -> None:
     print(f"built        : {binary.get('mtime')}")
     print(f"project      : {summary.get('project')}")
     print(f"cache state  : {summary.get('cache_state')}")
-    load = summary.get("machine_load") or {}
-    if load:
-        print(f"machine load : {load.get('load_average_1m')} (1m), {load.get('load_average_5m')} (5m)")
+    loads = load_averages(summary)
+    if loads:
+        print(f"machine load : {min(loads)} to {max(loads)} (1m average, across measurements)")
     print(f"tree revision: {summary.get('git_revision')}")
 
 
@@ -1316,16 +1345,23 @@ LOAD_MISMATCH_THRESHOLD = 1.5
 
 
 def load_mismatch_warning(baseline: dict[str, Any], candidate: dict[str, Any]) -> str | None:
-    before = (baseline.get("machine_load") or {}).get("load_average_1m")
-    after = (candidate.get("machine_load") or {}).get("load_average_1m")
-    if before is None or after is None:
+    """Warn when any two of the recorded loads are far enough apart to explain a delta by itself.
+
+    The comparison spans both summaries, so it also catches a single campaign whose own
+    measurements ran under changing load — `all` runs four of them over several minutes.
+    """
+    before = load_averages(baseline)
+    after = load_averages(candidate)
+    if not before or not after:
         # Summaries written before load recording existed; nothing to compare.
         return None
-    if abs(float(after) - float(before)) < LOAD_MISMATCH_THRESHOLD:
+    low = min(min(before), min(after))
+    high = max(max(before), max(after))
+    if high - low < LOAD_MISMATCH_THRESHOLD:
         return None
     return (
-        f"machine load differs materially ({before} vs {after}, 1m average) - absolute "
-        "milliseconds are not comparable across this difference; re-capture both on an idle machine"
+        f"machine load varies materially across these measurements ({low} to {high}, 1m average) - "
+        "absolute milliseconds are not comparable across that difference; re-capture both on an idle machine"
     )
 
 
