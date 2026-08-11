@@ -4040,6 +4040,7 @@ void TextEdit::_clear() {
 		_remove_text(0, 0, MAX(0, get_line_count() - 1), MAX(get_line(MAX(get_line_count() - 1, 0)).size() - 1, 0));
 		insert_text_at_caret("");
 		text.clear();
+		clear_underlines();
 
 		end_complex_operation();
 		return;
@@ -4049,6 +4050,7 @@ void TextEdit::_clear() {
 
 	clear_undo_history();
 	text.clear();
+	clear_underlines();
 	remove_secondary_carets();
 	set_caret_line(0, false, true, -1);
 	set_caret_column(0);
@@ -4082,6 +4084,7 @@ void TextEdit::_set_text(const String &p_text, bool p_emit_signal) {
 	}
 
 	insert_text_at_caret(p_text);
+	clear_underlines();
 
 	if (p_emit_signal && get_text() != previous_text) {
 		_text_changed();
@@ -4835,6 +4838,9 @@ void TextEdit::begin_complex_operation() {
 	if (complex_operation_count == 0) {
 		next_operation_is_complex = true;
 		current_op.start_carets = carets;
+		complex_operation_has_text_ops = false;
+		complex_operation_start_version = get_version();
+		complex_operation_start_underlines = underlines;
 	}
 	complex_operation_count++;
 }
@@ -4848,17 +4854,41 @@ void TextEdit::end_complex_operation() {
 	if (complex_operation_count > 0) {
 		return;
 	}
+	if (!complex_operation_has_text_ops) {
+		next_operation_is_complex = false;
+		complex_operation_start_underlines.clear();
+		return;
+	}
 	if (undo_stack.is_empty()) {
+		complex_operation_has_text_ops = false;
+		complex_operation_start_underlines.clear();
 		return;
 	}
 
-	undo_stack.back()->get().end_carets = carets;
-	if (undo_stack.back()->get().chain_forward) {
-		undo_stack.back()->get().chain_forward = false;
+	List<TextOperation>::Element *last_op = undo_stack.back();
+	List<TextOperation>::Element *first_op = last_op;
+	while (first_op->get().prev_version != complex_operation_start_version && first_op->prev()) {
+		first_op = first_op->prev();
+	}
+
+	first_op->get().start_underlines = complex_operation_start_underlines;
+	first_op->get().has_start_underlines = true;
+	last_op->get().end_underlines = underlines;
+	last_op->get().has_end_underlines = true;
+	complex_operation_has_text_ops = false;
+	complex_operation_start_underlines.clear();
+
+	last_op->get().end_carets = carets;
+	if (last_op->get().chain_forward) {
+		last_op->get().chain_forward = false;
 		return;
 	}
 
-	undo_stack.back()->get().chain_backward = true;
+	last_op->get().chain_backward = true;
+	if (!first_op->get().chain_forward) {
+		// The beginning of a long complex operation may have fallen off the bounded undo stack.
+		first_op->get().chain_forward = true;
+	}
 }
 
 bool TextEdit::has_undo() const {
@@ -4914,6 +4944,11 @@ void TextEdit::undo() {
 				break;
 			}
 		}
+	}
+	if (undo_stack_pos->get().has_start_underlines) {
+		underlines = undo_stack_pos->get().start_underlines;
+		_normalize_underlines();
+		queue_redraw();
 	}
 
 	_update_scrollbars();
@@ -4971,6 +5006,11 @@ void TextEdit::redo() {
 			}
 		}
 	}
+	if (undo_stack_pos->get().has_end_underlines) {
+		underlines = undo_stack_pos->get().end_underlines;
+		_normalize_underlines();
+		queue_redraw();
+	}
 
 	_update_scrollbars();
 	bool dirty_carets = get_caret_count() != undo_stack_pos->get().end_carets.size();
@@ -5001,6 +5041,8 @@ void TextEdit::clear_undo_history() {
 	current_op.type = TextOperation::TYPE_NONE;
 	undo_stack_pos = nullptr;
 	undo_stack.clear();
+	complex_operation_has_text_ops = false;
+	complex_operation_start_underlines.clear();
 }
 
 bool TextEdit::is_insert_text_operation() const {
@@ -8335,10 +8377,8 @@ void TextEdit::_do_text_op(const TextOperation &p_op, bool p_reverse) {
 		_base_insert_text(p_op.from_line, p_op.from_column, p_op.text, check_line, check_column);
 		ERR_FAIL_COND(check_line != p_op.to_line); // BUG.
 		ERR_FAIL_COND(check_column != p_op.to_column); // BUG.
-		_offset_underlines_after(p_op.from_line, p_op.from_column, p_op.to_line, p_op.to_column);
 	} else {
 		_base_remove_text(p_op.from_line, p_op.from_column, p_op.to_line, p_op.to_column);
-		_offset_underlines_after(p_op.to_line, p_op.to_column, p_op.from_line, p_op.from_column);
 	}
 }
 
@@ -9508,6 +9548,9 @@ void TextEdit::_insert_text(int p_line, int p_char, const String &p_text, int *r
 	op.prev_version = get_version();
 	_push_current_op();
 	current_op = op;
+	if (complex_operation_count > 0) {
+		complex_operation_has_text_ops = true;
+	}
 }
 
 void TextEdit::_remove_text(int p_from_line, int p_from_column, int p_to_line, int p_to_column) {
@@ -9548,6 +9591,9 @@ void TextEdit::_remove_text(int p_from_line, int p_from_column, int p_to_line, i
 	op.prev_version = get_version();
 	_push_current_op();
 	current_op = op;
+	if (complex_operation_count > 0) {
+		complex_operation_has_text_ops = true;
+	}
 }
 
 void TextEdit::_base_insert_text(int p_line, int p_char, const String &p_text, int &r_end_line, int &r_end_column) {

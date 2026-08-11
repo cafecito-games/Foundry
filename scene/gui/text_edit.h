@@ -400,6 +400,8 @@ private:
 		};
 		Vector<Caret> start_carets;
 		Vector<Caret> end_carets;
+		LocalVector<Underline> start_underlines;
+		LocalVector<Underline> end_underlines;
 
 		Type type = TYPE_NONE;
 		int from_line = 0;
@@ -411,6 +413,8 @@ private:
 		uint32_t version = 0;
 		bool chain_forward = false;
 		bool chain_backward = false;
+		bool has_start_underlines = false;
+		bool has_end_underlines = false;
 	};
 
 	bool undo_enabled = true;
@@ -422,6 +426,9 @@ private:
 
 	int complex_operation_count = 0;
 	bool next_operation_is_complex = false;
+	bool complex_operation_has_text_ops = false;
+	uint32_t complex_operation_start_version = 0;
+	LocalVector<Underline> complex_operation_start_underlines;
 
 	TextOperation current_op;
 	List<TextOperation> undo_stack;

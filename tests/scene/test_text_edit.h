@@ -195,6 +195,149 @@ TEST_CASE("[SceneTree][TextEdit] underline decoration tracks undo and redo") {
 		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
 	}
 
+	SUBCASE("Partial-overlap deletion undo and redo restores the original endpoints") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->remove_text(0, 1, 0, 5);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 3);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 3);
+	}
+
+	SUBCASE("Covering deletion undo and redo restores the collapsed range") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->remove_text(0, 1, 0, 9);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 1);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 1);
+	}
+
+	SUBCASE("Set line undo and redo restores clamped endpoints") {
+		text_edit->set_text("abcdef\nsecond");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 2, 0, 5);
+
+		text_edit->set_line(0, "abc");
+		check_underline_decoration(text_edit, 0, color, 0, 2, 0, 3);
+
+		text_edit->undo();
+		check_underline_decoration(text_edit, 0, color, 0, 2, 0, 5);
+
+		text_edit->redo();
+		check_underline_decoration(text_edit, 0, color, 0, 2, 0, 3);
+	}
+
+	SUBCASE("Swap lines undo and redo restores split ranges") {
+		text_edit->set_text("aaaa\nbbbbb\ncc\nddddddd\neee");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 1, 4, 2);
+
+		text_edit->swap_lines(1, 3);
+		CHECK_EQ(text_edit->get_underline_count(), 5);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_underline_count(), 1);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 4, 2);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_underline_count(), 5);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 4);
+		check_underline_decoration(text_edit, 1, color, 2, 0, 2, 2);
+		check_underline_decoration(text_edit, 2, color, 4, 0, 4, 2);
+		check_underline_decoration(text_edit, 3, color, 3, 0, 3, 5);
+		check_underline_decoration(text_edit, 4, color, 1, 0, 1, 7);
+	}
+
+	SUBCASE("Clear removes decorations and undo restores them") {
+		text_edit->set_text("abcd\nefgh");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 2, 1, 3);
+
+		text_edit->clear();
+		CHECK_EQ(text_edit->get_text(), "");
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "abcd\nefgh");
+		CHECK_EQ(text_edit->get_underline_count(), 1);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 1, 3);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "");
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+	}
+
+	SUBCASE("Set text removes decorations and undo restores them") {
+		text_edit->set_text("abcd\nefgh");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 2, 1, 3);
+
+		text_edit->set_text("replacement");
+		CHECK_EQ(text_edit->get_text(), "replacement");
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "abcd\nefgh");
+		CHECK_EQ(text_edit->get_underline_count(), 1);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 1, 3);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "replacement");
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+	}
+
+	SUBCASE("Merged typing action restores one before and after snapshot") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->start_action(TextEdit::ACTION_TYPING);
+		text_edit->insert_text("A", 0, 1);
+		text_edit->insert_text("B", 0, 2);
+		text_edit->end_action();
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+
+		text_edit->redo();
+		CHECK_EQ(text_edit->get_text(), "0AB123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+	}
+
+	SUBCASE("Empty complex operation does not merge neighboring snapshots") {
+		text_edit->set_text("0123456789");
+		text_edit->clear_undo_history();
+		text_edit->add_underline(color, 0, 3, 0, 7);
+
+		text_edit->insert_text("A", 0, 1);
+		text_edit->begin_complex_operation();
+		text_edit->end_complex_operation();
+		text_edit->insert_text("B", 0, 2);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0A123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 4, 0, 8);
+
+		text_edit->undo();
+		CHECK_EQ(text_edit->get_text(), "0123456789");
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+	}
+
 	memdelete(text_edit);
 }
 

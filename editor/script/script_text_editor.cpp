@@ -376,9 +376,24 @@ void ScriptTextEditor::_error_clicked(const Variant &p_line) {
 				EditorNode::get_singleton()->show_warning(TTR("Could not load file at:") + "\n\n" + path, TTR("Error!"));
 			} else {
 				int corrected_column = column;
-
-				const String line_text = code_editor->get_text_editor()->get_line(line);
-				const int indent_size = code_editor->get_text_editor()->get_indent_size();
+				String line_text;
+				int indent_size = EDITOR_GET("text_editor/behavior/indent/size");
+				ScriptEditorBase *target_editor = ScriptEditor::get_singleton()->get_open_editor_for_path(path);
+				if (target_editor && target_editor->get_code_editor()) {
+					CodeEdit *target_text_edit = target_editor->get_code_editor()->get_text_editor();
+					if (line >= 0 && line < target_text_edit->get_line_count()) {
+						line_text = target_text_edit->get_line(line);
+					}
+					indent_size = target_text_edit->get_indent_size();
+				} else {
+					Ref<Script> target_script = scr;
+					if (target_script.is_valid()) {
+						const PackedStringArray source_lines = target_script->get_source_code().split("\n");
+						if (line >= 0 && line < source_lines.size()) {
+							line_text = source_lines[line];
+						}
+					}
+				}
 				if (indent_size > 1) {
 					const int tab_count = line_text.length() - line_text.lstrip("\t").length();
 					corrected_column -= tab_count * (indent_size - 1);
