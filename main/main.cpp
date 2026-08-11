@@ -62,6 +62,7 @@
 #include "main/app_icon.gen.h"
 #include "main/cli_help.h"
 #include "main/cli_parser.h"
+#include "main/global_class_scan_policy.h"
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
 #include "main/splash.gen.h"
@@ -370,8 +371,12 @@ static Vector<String> get_files_with_extension(const String &p_root, const Strin
 #endif
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
-static bool run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::Stage p_stage, const String &p_context) {
+static bool run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::Stage p_stage,
+		const String &p_context, bool *r_ran_any_task = nullptr) {
 	const FoundryBuildPipelineRunner::StageRunResult result = FoundryBuildPipelineRunner::run_stage(p_stage);
+	if (r_ran_any_task != nullptr) {
+		*r_ran_any_task = result.ran_any_task;
+	}
 	if (result.is_success()) {
 		return true;
 	}
@@ -970,13 +975,24 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		// to a writable directory from the first `user://` write.
 		OS::get_singleton()->ensure_user_data_dir();
 
+		const bool scan_test_project_global_classes = GlobalClassScanPolicy::should_scan(
+				ProjectSettings::get_singleton()->is_project_loaded(),
+				ProjectSettings::get_singleton()->is_using_datapack(), false, false, true);
+		if (scan_test_project_global_classes) {
+			ScriptServer::scan_global_classes();
+		}
+
+		bool pre_compile_ran_any_task = false;
 		ProjectBuildTrustStore::set_cli_trusted_execution(cli_parse.trusted);
 		const bool pre_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
-				"Foundry pre_compile test stage");
+				"Foundry pre_compile test stage", &pre_compile_ran_any_task);
 		ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
 		if (!pre_compile_ok) {
 			test_cleanup();
 			return EXIT_FAILURE;
+		}
+		if (scan_test_project_global_classes && pre_compile_ran_any_task) {
+			ScriptServer::scan_global_classes();
 		}
 		ResourceLoader::add_custom_loaders();
 		ResourceSaver::add_custom_savers();
@@ -4707,6 +4723,39 @@ int Main::start() {
 #endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	// A projectless eval is valid, but an explicit `--project` that could not be honored must
+	// not silently degrade to projectless (or ambient-project) execution: a CI probe expecting
+	// the requested project's context would otherwise pass while evaluating elsewhere. This
+	// covers both a directory that failed to apply (`foundry_cli_project_path_error`, e.g. it
+	// does not exist, so an ambient project under the original cwd may have loaded instead) and
+	// a valid directory that simply has no project to load.
+	if (eval_requested && !cli_invocation.project_path.is_empty() &&
+			(foundry_cli_project_path_error || !ProjectSettings::get_singleton()->is_project_loaded())) {
+		ERR_PRINT(vformat("script eval could not use the requested project at \"%s\".", cli_invocation.project_path));
+		return EXIT_FAILURE;
+	}
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+
+	bool runtime_consumes_project_scripts = !game_path.is_empty() || !script.is_empty() ||
+			!test_runner_path.is_empty();
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	runtime_consumes_project_scripts = runtime_consumes_project_scripts ||
+			(eval_requested && ProjectSettings::get_singleton()->is_project_loaded());
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+#if defined(TOOLS_ENABLED) && defined(MODULE_FOUNDRY_SCRIPT_ENABLED)
+	// Foundry Script docs use project setup and autoloads, but they are a tooling consumer rather
+	// than a standalone runtime consumer. `fs_docs_path` covers command-first and legacy requests.
+	runtime_consumes_project_scripts = runtime_consumes_project_scripts && fs_docs_path.is_empty();
+#endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
+	const bool scan_runtime_global_classes = GlobalClassScanPolicy::should_scan(
+			ProjectSettings::get_singleton()->is_project_loaded(),
+			ProjectSettings::get_singleton()->is_using_datapack(), editor, editor_pid != 0,
+			runtime_consumes_project_scripts);
+	if (scan_runtime_global_classes) {
+		ScriptServer::scan_global_classes();
+	}
+
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	// `--script --check-only` still loads and validates the script, so run pre_compile before script loading.
 	// Inline eval only needs the build pipeline when it runs against a real project (so
 	// project-provided generated types resolve); a projectless probe skips the stages.
@@ -4717,9 +4766,13 @@ int Main::start() {
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	if (foundry_runtime_build_stages_enabled) {
+		bool pre_compile_ran_any_task = false;
 		if (!run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
-					"Foundry pre_compile runtime stage")) {
+					"Foundry pre_compile runtime stage", &pre_compile_ran_any_task)) {
 			return EXIT_FAILURE;
+		}
+		if (scan_runtime_global_classes && pre_compile_ran_any_task) {
+			ScriptServer::scan_global_classes();
 		}
 
 		ResourceLoader::add_custom_loaders();
@@ -4731,33 +4784,11 @@ int Main::start() {
 	MainLoop *main_loop = nullptr;
 	Ref<ScriptRunner> script_runner;
 	if (!test_runner_path.is_empty()) {
-		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
-			ScriptServer::scan_global_classes();
-		}
-
 		script_runner = load_script_runner(test_runner_path);
 		ERR_FAIL_COND_V_MSG(script_runner.is_null(), EXIT_FAILURE, "Failed to load script runner.");
 	}
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	else if (eval_requested) {
-		// A projectless eval is valid, but an explicit `--project` that could not be honored must
-		// not silently degrade to projectless (or ambient-project) execution: a CI probe expecting
-		// the requested project's context would otherwise pass while evaluating elsewhere. This
-		// covers both a directory that failed to apply (`foundry_cli_project_path_error`, e.g. it
-		// does not exist, so an ambient project under the original cwd may have loaded instead) and
-		// a valid directory that simply has no project to load.
-		if (!cli_invocation.project_path.is_empty() &&
-				(foundry_cli_project_path_error || !ProjectSettings::get_singleton()->is_project_loaded())) {
-			ERR_PRINT(vformat("script eval could not use the requested project at \"%s\".", cli_invocation.project_path));
-			return EXIT_FAILURE;
-		}
-
-		// Scan project global classes (in memory) so an inline snippet can reference the
-		// project's `class_name` scripts, mirroring `project run --script`.
-		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
-			ScriptServer::scan_global_classes();
-		}
-
 		String eval_error;
 		script_runner = FSInlineEval::compile_runner(eval_source, eval_error);
 		if (script_runner.is_null()) {
@@ -4775,15 +4806,6 @@ int Main::start() {
 	}
 
 	if (!script.is_empty()) {
-		// Without the editor there is no EditorFileSystem to rebuild the global script class cache,
-		// so a missing or stale `global_script_class_cache.cfg` would break `class_name` resolution
-		// for the whole run. Rescan the project for global classes in memory instead (never written
-		// back to disk). Exported projects (running from a datapack) keep trusting the cache bundled
-		// at export time: their scripts may be compiled to bytecode the scan cannot parse.
-		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
-			ScriptServer::scan_global_classes();
-		}
-
 		Ref<Script> script_res = ResourceLoader::load(script);
 		ERR_FAIL_COND_V_MSG(script_res.is_null(), EXIT_FAILURE, "Can't load script: " + script);
 
