@@ -8275,7 +8275,7 @@ int Node3DEditor::_count_live_views_for_world(const Ref<World3D> &p_world) const
 	}
 	int count = 0;
 	for (const Node3DEditorViewport *viewport : secondary_viewports) {
-		if (viewport && viewport->bound_world == p_world) {
+		if (viewport && viewport->world_binding_registered && viewport->bound_world == p_world) {
 			count++;
 		}
 	}
