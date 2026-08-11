@@ -31,6 +31,7 @@
 #pragma once
 
 #include "display_server_macos_base.h"
+#include "startup_sequence_macos.h"
 
 #if defined(GLES3_ENABLED)
 #include "gl_manager_macos_angle.h"
@@ -117,6 +118,10 @@ public:
 
 		bool im_active = false;
 		Size2i im_position;
+
+		// Set once at creation. `send_window_event()` only receives the `WindowData`, and the boot
+		// gate has to know which window a coalesced state change belongs to.
+		WindowID id = INVALID_WINDOW_ID;
 
 		Callable rect_changed_callback;
 		Callable event_callback;
@@ -264,6 +269,11 @@ public:
 
 	void send_event(NSEvent *p_event);
 	void send_window_event(const WindowData &p_wd, WindowEvent p_event);
+	bool _defer_window_event_during_boot(const WindowData &p_wd, WindowEvent p_event);
+	// Replays one coalesced window state change once boot finishes; see `StartupBootGateMacOS`.
+	static void _replay_boot_window_state(int64_t p_window_id, StartupBootGateMacOS::WindowState p_state, bool p_value, void *p_userdata);
+	// Releases the boot gate and delivers the final coalesced window state to the finished tree.
+	void replay_boot_window_state();
 	void release_pressed_events();
 	void sync_mouse_state();
 	void get_key_modifier_state(unsigned int p_macos_state, Ref<InputEventWithModifiers> r_state) const;

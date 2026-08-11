@@ -30,6 +30,8 @@
 
 #import "foundry_window_delegate.h"
 
+#import "startup_sequence_macos.h"
+
 #import "display_server_macos.h"
 #import "foundry_button_view.h"
 #import "foundry_content_view.h"
@@ -57,6 +59,14 @@
 - (BOOL)windowShouldClose:(id)sender {
 	if (!ds->has_window(window_id)) {
 		return YES;
+	}
+
+	if (StartupBootGateMacOS::should_discard_request()) {
+		// The close button pressed while the editor is still booting. This is the one close request
+		// that is purely user intent — the engine sends the same event internally to manage popups
+		// — and it is discarded rather than deferred, because replaying it would quit the editor
+		// the instant it finished launching. The user can close the window again once it is up.
+		return NO;
 	}
 
 	ds->send_window_event(ds->get_window(window_id), DisplayServerMacOS::WINDOW_EVENT_CLOSE_REQUEST);
@@ -280,7 +290,9 @@
 
 	ds->window_resize(window_id, wd.size.width, wd.size.height);
 
-	if (wd.rect_changed_callback.is_valid()) {
+	if (StartupBootGateMacOS::defer_window_state(window_id, StartupBootGateMacOS::WINDOW_STATE_RECT)) {
+		// Still booting: the final rect is replayed once the tree can receive it.
+	} else if (wd.rect_changed_callback.is_valid()) {
 		wd.rect_changed_callback.call(Rect2i(ds->window_get_position(window_id), ds->window_get_size(window_id)));
 	}
 }
@@ -301,7 +313,9 @@
 	DisplayServerMacOS::WindowData &wd = ds->get_window(window_id);
 	ds->release_pressed_events();
 
-	if (wd.rect_changed_callback.is_valid()) {
+	if (StartupBootGateMacOS::defer_window_state(window_id, StartupBootGateMacOS::WINDOW_STATE_RECT)) {
+		// Still booting: the final rect is replayed once the tree can receive it.
+	} else if (wd.rect_changed_callback.is_valid()) {
 		wd.rect_changed_callback.call(Rect2i(ds->window_get_position(window_id), ds->window_get_size(window_id)));
 	}
 }

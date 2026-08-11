@@ -30,6 +30,8 @@
 
 #import "foundry_content_view.h"
 
+#import "startup_sequence_macos.h"
+
 #import "display_server_macos.h"
 #import "foundry_window.h"
 #import "key_mapping_macos.h"
@@ -347,6 +349,14 @@
 	}
 
 	DisplayServerMacOS::WindowData &wd = ds->get_window(window_id);
+	if (StartupBootGateMacOS::should_discard_request()) {
+		// Drag and drop reaches the engine through `NSDraggingDestination`, not through
+		// `-[FoundryApplication sendEvent:]`, so the input gate never sees it. A file dropped on a
+		// booting editor would otherwise open against a half-built tree. It is user intent, so it
+		// is discarded rather than replayed; the user can drop it again once the editor is up.
+		return NO;
+	}
+
 	if (wd.drop_files_callback.is_valid()) {
 		Vector<String> files;
 		NSPasteboard *pboard = [sender draggingPasteboard];

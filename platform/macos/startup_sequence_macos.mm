@@ -34,6 +34,7 @@
 #import "core/os/main_loop.h"
 #import "core/os/os.h"
 #import "core/string/ustring.h"
+#import "core/templates/local_vector.h"
 #import "main/main.h"
 
 #import <AppKit/AppKit.h>
@@ -79,8 +80,123 @@ bool StartupInputGateMacOS::is_user_input_event_type(unsigned long p_ns_event_ty
 	}
 }
 
+bool StartupBootGateMacOS::engaged = false;
+
+namespace {
+
+struct PendingWindow {
+	int64_t window_id = 0;
+	uint32_t dirty = 0;
+	bool focused = false;
+	bool mouse_inside = false;
+};
+
+// Boot touches a handful of windows at most, so a flat vector beats a hash map and keeps replay in
+// a deterministic order: the order the windows were first seen.
+LocalVector<PendingWindow> &pending_windows() {
+	static LocalVector<PendingWindow> windows;
+	return windows;
+}
+
+PendingWindow *find_or_add(int64_t p_window_id) {
+	LocalVector<PendingWindow> &windows = pending_windows();
+	for (PendingWindow &window : windows) {
+		if (window.window_id == p_window_id) {
+			return &window;
+		}
+	}
+	PendingWindow added;
+	added.window_id = p_window_id;
+	windows.push_back(added);
+	return &windows[windows.size() - 1];
+}
+
+} // namespace
+
+void StartupBootGateMacOS::engage() {
+	engaged = true;
+	pending_windows().clear();
+}
+
+bool StartupBootGateMacOS::defer_window_state(int64_t p_window_id, WindowState p_state, bool p_value) {
+	if (!engaged) {
+		return false;
+	}
+	ERR_FAIL_INDEX_V(p_state, WINDOW_STATE_MAX, false);
+	PendingWindow *window = find_or_add(p_window_id);
+	window->dirty |= 1u << (uint32_t)p_state;
+	if (p_state == WINDOW_STATE_FOCUS) {
+		window->focused = p_value;
+	} else if (p_state == WINDOW_STATE_MOUSE) {
+		window->mouse_inside = p_value;
+	}
+	return true;
+}
+
+bool StartupBootGateMacOS::has_pending_state() {
+	for (const PendingWindow &window : pending_windows()) {
+		if (window.dirty != 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+void StartupBootGateMacOS::release_and_replay(ReplayCallback p_replay, void *p_userdata) {
+	// Disengage first: a replayed callback may re-enter the display server and ask it about window
+	// state, and that read must see the running editor rather than a gate still claiming to boot.
+	engaged = false;
+
+	LocalVector<PendingWindow> windows = pending_windows();
+	pending_windows().clear();
+	if (p_replay == nullptr) {
+		return;
+	}
+	// Geometry and appearance are per-window and independent, so they go first: the tree sees each
+	// window settled into its final shape before it is told anything about hover or focus.
+	const WindowState per_window_order[] = { WINDOW_STATE_RECT, WINDOW_STATE_DPI, WINDOW_STATE_TITLEBAR };
+	for (const PendingWindow &window : windows) {
+		for (const WindowState state : per_window_order) {
+			if (window.dirty & (1u << (uint32_t)state)) {
+				p_replay(window.window_id, state, false, p_userdata);
+			}
+		}
+	}
+
+	// Hover and focus are not per-window facts — they are one globally ordered transition stream,
+	// because at most one window is hovered or focused at a time. Replaying window by window could
+	// deliver one window's arrival before another's departure, and the departure would then clear
+	// the state the arrival had just established, leaving the tree with nothing hovered or focused
+	// while the display server still reports a window. So every departure is replayed before any
+	// arrival, across all windows.
+	const bool arrival_passes[] = { false, true };
+	for (const bool arriving : arrival_passes) {
+		for (const PendingWindow &window : windows) {
+			if ((window.dirty & (1u << (uint32_t)WINDOW_STATE_MOUSE)) && window.mouse_inside == arriving) {
+				p_replay(window.window_id, WINDOW_STATE_MOUSE, arriving, p_userdata);
+			}
+		}
+		for (const PendingWindow &window : windows) {
+			if ((window.dirty & (1u << (uint32_t)WINDOW_STATE_FOCUS)) && window.focused == arriving) {
+				p_replay(window.window_id, WINDOW_STATE_FOCUS, arriving, p_userdata);
+			}
+		}
+	}
+}
+
+void StartupBootGateMacOS::abandon() {
+	engaged = false;
+	pending_windows().clear();
+}
+
+void StartupBootGateMacOS::reset() {
+	engaged = false;
+	pending_windows().clear();
+}
+
 void StartupSequenceMacOS::begin() {
 	StartupInputGateMacOS::set_suppressed(true);
+	StartupBootGateMacOS::engage();
 }
 
 StartupSequenceMacOS::StepResult StartupSequenceMacOS::step() {
@@ -136,6 +252,10 @@ StartupSequenceMacOS::StepResult StartupSequenceMacOS::_run_phase() {
 				return STEP_EXIT_FAILURE;
 			}
 			phase = PHASE_RUNNING;
+			if (boot_complete_callback) {
+				// Before the input gate is lifted; see `set_boot_complete_callback()`.
+				boot_complete_callback(boot_complete_userdata);
+			}
 			StartupInputGateMacOS::set_suppressed(false);
 			return STEP_RUNNING;
 		}
@@ -147,8 +267,16 @@ StartupSequenceMacOS::StepResult StartupSequenceMacOS::_run_phase() {
 	return STEP_RUNNING;
 }
 
+void StartupSequenceMacOS::set_boot_complete_callback(BootCompleteCallback p_callback, void *p_userdata) {
+	boot_complete_callback = p_callback;
+	boot_complete_userdata = p_userdata;
+}
+
 void StartupSequenceMacOS::_fail() {
 	phase = PHASE_FAILED;
+	// The tree that would have received the coalesced window state does not exist. Dropping the
+	// state also disengages the gate, so a shutdown dialog is not gated behind a boot that ended.
+	StartupBootGateMacOS::abandon();
 }
 
 int StartupSequenceMacOS::_main_start() {
