@@ -3319,7 +3319,9 @@ void Node3DEditorViewport::_notification(int p_what) {
 			// Secondary views are parented under a tile content host. Node PREDELETE frees
 			// children before ~ScenePaneTile can release them, so unregister here while the
 			// Object is still in ObjectDB and the world binding can be transferred exactly once.
-			if (viewport_binding == ViewportBinding::SECONDARY && spatial_editor) {
+			// Refuse to call into a Node3DEditor that has already cleared its singleton — the
+			// viewport's raw spatial_editor pointer is never nulled and can outlive the editor.
+			if (viewport_binding == ViewportBinding::SECONDARY && spatial_editor && Node3DEditor::get_singleton() == spatial_editor) {
 				spatial_editor->_unregister_secondary_viewport(this, false);
 			}
 		} break;
@@ -6965,9 +6967,11 @@ void Node3DEditorViewport::bind_world(const Ref<World3D> &p_world, SubViewport *
 		_rebind_gizmo_scenarios(bound_world);
 	}
 	if (spatial_editor) {
-		if (!world_binding_registered) {
+		// Mark registered before noting so live-view recount includes this viewport.
+		const bool first_or_transferred = !world_binding_registered;
+		world_binding_registered = true;
+		if (first_or_transferred) {
 			spatial_editor->_note_world_view_bound(bound_world, p_preview_parent_viewport);
-			world_binding_registered = true;
 		} else {
 			spatial_editor->_note_world_view_rebound(bound_world, p_preview_parent_viewport);
 		}
@@ -8336,7 +8340,8 @@ void Node3DEditor::_note_world_view_bound(const Ref<World3D> &p_world, SubViewpo
 		return;
 	}
 	EditorWorldFurniture &furniture = _ensure_world_furniture(p_world, p_preview_parent_viewport);
-	furniture.live_view_count++;
+	furniture.live_view_count = _count_live_views_for_world(p_world);
+	ERR_FAIL_COND_MSG(furniture.live_view_count == 0, "Bound a 3D view but no registered live views were counted for its world.");
 	_rebind_preview_sun_env_parent();
 }
 
@@ -8345,9 +8350,8 @@ void Node3DEditor::_note_world_view_rebound(const Ref<World3D> &p_world, SubView
 		return;
 	}
 	EditorWorldFurniture &furniture = _ensure_world_furniture(p_world, p_preview_parent_viewport);
-	// If furniture was wiped and rebuilt while views remained live, restore the count from
-	// the still-registered secondary viewports rather than leaving a zero-count association.
-	furniture.live_view_count = MAX(furniture.live_view_count, _count_live_views_for_world(p_world));
+	furniture.live_view_count = _count_live_views_for_world(p_world);
+	ERR_FAIL_COND_MSG(furniture.live_view_count == 0, "Rebound a 3D view but no registered live views were counted for its world.");
 	_rebind_preview_sun_env_parent();
 }
 
@@ -8357,8 +8361,9 @@ void Node3DEditor::_note_world_view_unbound(const Ref<World3D> &p_world) {
 	}
 	EditorWorldFurniture *furniture = _get_world_furniture(p_world);
 	ERR_FAIL_NULL_MSG(furniture, "Cannot unbind a 3D view from a world with no furniture entry.");
-	ERR_FAIL_COND_MSG(furniture->live_view_count == 0, "Cannot unbind a 3D view from a world with no live views.");
-	furniture->live_view_count--;
+	// Caller clears world_binding_registered / erases the viewport before this note so the
+	// derived count excludes the departing view.
+	furniture->live_view_count = _count_live_views_for_world(p_world);
 	if (furniture->live_view_count == 0) {
 		_release_world_furniture(p_world);
 	} else {
@@ -10093,8 +10098,9 @@ Node3DEditorViewport *Node3DEditor::create_secondary_viewport(const Ref<World3D>
 		viewport->set_h_size_flags(Control::SIZE_EXPAND_FILL);
 		p_parent->add_child(viewport);
 	}
-	viewport->bind_world(p_world, p_preview_parent_viewport);
+	// Register before bind_world so live-view recount can see this viewport immediately.
 	secondary_viewports.push_back(viewport);
+	viewport->bind_world(p_world, p_preview_parent_viewport);
 	return viewport;
 }
 
@@ -10113,8 +10119,9 @@ void Node3DEditor::_unregister_secondary_viewport(Node3DEditorViewport *p_viewpo
 	}
 	secondary_viewports.erase(p_viewport);
 	if (p_viewport->world_binding_registered && p_viewport->bound_world.is_valid()) {
-		_note_world_view_unbound(p_viewport->bound_world);
+		const Ref<World3D> unbound_world = p_viewport->bound_world;
 		p_viewport->world_binding_registered = false;
+		_note_world_view_unbound(unbound_world);
 	}
 	if (p_delete) {
 		memdelete(p_viewport);
@@ -11445,10 +11452,12 @@ Node3DEditor::~Node3DEditor() {
 	}
 	_finish_indicators();
 	memdelete(preview_node);
-	for (Node3DEditorViewport *secondary_viewport : secondary_viewports) {
-		memdelete(secondary_viewport);
+	// Drain rather than range-for: each memdelete fires PREDELETE, which erases from
+	// secondary_viewports. Iterating a Vector while it shrinks under us is a use-after-free
+	// once two or more secondary views are registered.
+	while (!secondary_viewports.is_empty()) {
+		_unregister_secondary_viewport(secondary_viewports[0], true);
 	}
-	secondary_viewports.clear();
 	singleton = nullptr;
 }
 
