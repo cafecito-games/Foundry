@@ -63,7 +63,42 @@ class GateStateGuard {
 public:
 	GateStateGuard() :
 			previous(StartupInputGateMacOS::is_suppressed()) {}
-	~GateStateGuard() { StartupInputGateMacOS::set_suppressed(previous); }
+	~GateStateGuard() {
+		StartupInputGateMacOS::set_suppressed(previous);
+		StartupBootGateMacOS::reset();
+	}
+};
+
+// Records what the engine would have been told once boot finished.
+struct ReplayedState {
+	int64_t window_id = 0;
+	StartupBootGateMacOS::WindowState state = StartupBootGateMacOS::WINDOW_STATE_MAX;
+	bool value = false;
+};
+
+class ReplayRecorder {
+public:
+	Vector<ReplayedState> replayed;
+
+	static void record(int64_t p_window_id, StartupBootGateMacOS::WindowState p_state, bool p_value, void *p_userdata) {
+		ReplayedState entry;
+		entry.window_id = p_window_id;
+		entry.state = p_state;
+		entry.value = p_value;
+		static_cast<ReplayRecorder *>(p_userdata)->replayed.push_back(entry);
+	}
+
+	void replay() { StartupBootGateMacOS::release_and_replay(&ReplayRecorder::record, this); }
+
+	int count_of(StartupBootGateMacOS::WindowState p_state) const {
+		int total = 0;
+		for (const ReplayedState &entry : replayed) {
+			if (entry.state == p_state) {
+				total++;
+			}
+		}
+		return total;
+	}
 };
 
 // Stands in for `-[FoundryApplication sendEvent:]`: applies the same gate and counts what would
@@ -314,6 +349,214 @@ TEST_CASE("[StartupSequence][macOS] a native modal session still receives input 
 
 	sink.send(application_defined_event_type());
 	CHECK(sink.get_delivered() == 3);
+}
+
+// The boot event gate. `StartupInputGateMacOS` stops `NSEvent`s at the application ingress, but
+// window state arrives as AppKit notifications that never pass through it, so these are the paths
+// that could otherwise drive a half-built tree.
+
+TEST_CASE("[StartupSequence][macOS] window state is withheld while booting and delivered after") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+
+	// Not booting: the engine callback runs inline and nothing is queued.
+	CHECK_FALSE(StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_RECT));
+	CHECK_FALSE(StartupBootGateMacOS::has_pending_state());
+
+	StartupBootGateMacOS::engage();
+	CHECK(StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_RECT));
+	CHECK(StartupBootGateMacOS::has_pending_state());
+	CHECK(recorder.replayed.is_empty());
+
+	recorder.replay();
+	CHECK(recorder.replayed.size() == 1);
+	CHECK(recorder.replayed[0].state == StartupBootGateMacOS::WINDOW_STATE_RECT);
+	CHECK_FALSE(StartupBootGateMacOS::is_engaged());
+}
+
+TEST_CASE("[StartupSequence][macOS] repeated window changes collapse to one replayed state") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+	StartupBootGateMacOS::engage();
+
+	// A window being dragged and resized during a slow boot produces a stream of these. The tree
+	// only needs to learn where the window ended up, not every intermediate rect.
+	for (int index = 0; index < 12; index++) {
+		StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_RECT);
+	}
+	recorder.replay();
+	CHECK(recorder.count_of(StartupBootGateMacOS::WINDOW_STATE_RECT) == 1);
+}
+
+TEST_CASE("[StartupSequence][macOS] the last focus and mouse state observed is the one replayed") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+	StartupBootGateMacOS::engage();
+
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_FOCUS, true);
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_FOCUS, false);
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_FOCUS, true);
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_MOUSE, true);
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_MOUSE, false);
+
+	recorder.replay();
+	CHECK(recorder.count_of(StartupBootGateMacOS::WINDOW_STATE_FOCUS) == 1);
+	CHECK(recorder.count_of(StartupBootGateMacOS::WINDOW_STATE_MOUSE) == 1);
+	for (const ReplayedState &entry : recorder.replayed) {
+		if (entry.state == StartupBootGateMacOS::WINDOW_STATE_FOCUS) {
+			CHECK(entry.value); // Ended focused.
+		}
+		if (entry.state == StartupBootGateMacOS::WINDOW_STATE_MOUSE) {
+			CHECK_FALSE(entry.value); // Ended outside.
+		}
+	}
+}
+
+TEST_CASE("[StartupSequence][macOS] replayed state settles geometry before focus") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+	StartupBootGateMacOS::engage();
+
+	// Queued in the opposite order to the one they must be replayed in.
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_FOCUS, true);
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_TITLEBAR);
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_DPI);
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_RECT);
+
+	recorder.replay();
+	REQUIRE(recorder.replayed.size() == 4);
+	CHECK(recorder.replayed[0].state == StartupBootGateMacOS::WINDOW_STATE_RECT);
+	CHECK(recorder.replayed[1].state == StartupBootGateMacOS::WINDOW_STATE_DPI);
+	CHECK(recorder.replayed[2].state == StartupBootGateMacOS::WINDOW_STATE_TITLEBAR);
+	CHECK(recorder.replayed[3].state == StartupBootGateMacOS::WINDOW_STATE_FOCUS);
+}
+
+TEST_CASE("[StartupSequence][macOS] each window keeps its own coalesced state") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+	StartupBootGateMacOS::engage();
+
+	StartupBootGateMacOS::defer_window_state(7, StartupBootGateMacOS::WINDOW_STATE_FOCUS, true);
+	StartupBootGateMacOS::defer_window_state(9, StartupBootGateMacOS::WINDOW_STATE_FOCUS, false);
+	StartupBootGateMacOS::defer_window_state(7, StartupBootGateMacOS::WINDOW_STATE_RECT);
+
+	recorder.replay();
+	REQUIRE(recorder.replayed.size() == 3);
+	// Windows replay in the order they were first seen, so the ordering is deterministic.
+	CHECK(recorder.replayed[0].window_id == 7);
+	CHECK(recorder.replayed[0].state == StartupBootGateMacOS::WINDOW_STATE_RECT);
+	CHECK(recorder.replayed[1].window_id == 7);
+	CHECK(recorder.replayed[1].value);
+	CHECK(recorder.replayed[2].window_id == 9);
+	CHECK_FALSE(recorder.replayed[2].value);
+}
+
+TEST_CASE("[StartupSequence][macOS] requests are discarded rather than replayed") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+
+	CHECK_FALSE(StartupBootGateMacOS::should_discard_request());
+	StartupBootGateMacOS::engage();
+	CHECK(StartupBootGateMacOS::should_discard_request());
+
+	// A close button pressed, or a file dropped, during boot. Replaying either would act on the
+	// user's behalf the instant the editor finished launching.
+	CHECK_FALSE(StartupBootGateMacOS::has_pending_state());
+	recorder.replay();
+	CHECK(recorder.replayed.is_empty());
+	CHECK_FALSE(StartupBootGateMacOS::should_discard_request());
+}
+
+TEST_CASE("[StartupSequence][macOS] an abandoned boot replays nothing and lifts the gate") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+	StartupBootGateMacOS::engage();
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_RECT);
+
+	// The tree that would have received this does not exist.
+	StartupBootGateMacOS::abandon();
+	CHECK_FALSE(StartupBootGateMacOS::is_engaged());
+	CHECK_FALSE(StartupBootGateMacOS::has_pending_state());
+
+	recorder.replay();
+	CHECK(recorder.replayed.is_empty());
+}
+
+TEST_CASE("[StartupSequence][macOS] begin engages the boot gate alongside the input gate") {
+	GateStateGuard guard;
+	StartupBootGateMacOS::reset();
+	RecordingSequence sequence;
+
+	CHECK_FALSE(StartupBootGateMacOS::is_engaged());
+	sequence.begin();
+	CHECK(StartupBootGateMacOS::is_engaged());
+	CHECK(StartupInputGateMacOS::is_suppressed());
+}
+
+TEST_CASE("[StartupSequence][macOS] window state reaches the tree before input is let through") {
+	GateStateGuard guard;
+	StartupBootGateMacOS::reset();
+	RecordingSequence sequence;
+	sequence.begin();
+
+	// The replay has to see input still suppressed. Otherwise a user event could interleave with
+	// the state that accumulated while it was being discarded.
+	static bool input_suppressed_during_replay = false;
+	static bool boot_gate_pending_during_replay = false;
+	input_suppressed_during_replay = false;
+	boot_gate_pending_during_replay = false;
+
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_RECT);
+	sequence.set_boot_complete_callback(
+			[](void *) {
+				input_suppressed_during_replay = StartupInputGateMacOS::is_suppressed();
+				boot_gate_pending_during_replay = StartupBootGateMacOS::has_pending_state();
+			},
+			nullptr);
+
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_PENDING);
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_RUNNING);
+
+	CHECK(input_suppressed_during_replay);
+	CHECK(boot_gate_pending_during_replay);
+	CHECK_FALSE(StartupInputGateMacOS::is_suppressed());
+}
+
+TEST_CASE("[StartupSequence][macOS] a failed boot never replays the state it collected") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+	RecordingSequence sequence;
+	sequence.main_start_result = EXIT_FAILURE;
+	sequence.begin();
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_RECT);
+
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_EXIT_FAILURE);
+	// As with the input gate in #2090, a failed boot stays gated here: the caller responds by
+	// terminating, and `OS_MacOS_NSApp::terminate()` is what lifts both gates so shutdown can still
+	// raise a dialog. What must never happen is the state reaching a tree that was never built.
+	CHECK(sequence.main_loop_initialize_calls == 0);
+	CHECK_FALSE(recorder.replayed.size() > 0);
+}
+
+TEST_CASE("[StartupSequence][macOS] a phase that abandons the boot drops pending window state") {
+	GateStateGuard guard;
+	StartupBootGateMacOS::reset();
+	AbandoningSequence sequence;
+	sequence.begin();
+	StartupBootGateMacOS::defer_window_state(1, StartupBootGateMacOS::WINDOW_STATE_RECT);
+
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_EXIT_FAILURE);
+	CHECK(sequence.get_phase() == StartupSequenceMacOS::PHASE_FAILED);
+	CHECK_FALSE(StartupBootGateMacOS::is_engaged());
+	CHECK_FALSE(StartupBootGateMacOS::has_pending_state());
 }
 
 } // namespace TestStartupSequenceMacOS

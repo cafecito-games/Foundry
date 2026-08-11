@@ -30,6 +30,8 @@
 
 #import "foundry_window_delegate.h"
 
+#import "startup_sequence_macos.h"
+
 #import "display_server_macos.h"
 #import "foundry_button_view.h"
 #import "foundry_content_view.h"
@@ -280,7 +282,9 @@
 
 	ds->window_resize(window_id, wd.size.width, wd.size.height);
 
-	if (wd.rect_changed_callback.is_valid()) {
+	if (StartupBootGateMacOS::defer_window_state(window_id, StartupBootGateMacOS::WINDOW_STATE_RECT)) {
+		// Still booting: the final rect is replayed once the tree can receive it.
+	} else if (wd.rect_changed_callback.is_valid()) {
 		wd.rect_changed_callback.call(Rect2i(ds->window_get_position(window_id), ds->window_get_size(window_id)));
 	}
 }
@@ -301,7 +305,9 @@
 	DisplayServerMacOS::WindowData &wd = ds->get_window(window_id);
 	ds->release_pressed_events();
 
-	if (wd.rect_changed_callback.is_valid()) {
+	if (StartupBootGateMacOS::defer_window_state(window_id, StartupBootGateMacOS::WINDOW_STATE_RECT)) {
+		// Still booting: the final rect is replayed once the tree can receive it.
+	} else if (wd.rect_changed_callback.is_valid()) {
 		wd.rect_changed_callback.call(Rect2i(ds->window_get_position(window_id), ds->window_get_size(window_id)));
 	}
 }
