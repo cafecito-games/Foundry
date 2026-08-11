@@ -245,7 +245,14 @@ private:
 	int index;
 	ViewportBinding viewport_binding = ViewportBinding::FOCUSED_TILE;
 	Ref<World3D> bound_world;
-	SubViewport *preview_parent_viewport = nullptr;
+	// True only after bind_world() has registered this view with Node3DEditor furniture
+	// accounting. A temporary bound_world assignment (e.g. constructor placeholder) must not
+	// count as a registered association or world-change unbinds underflow the live-view count.
+	bool world_binding_registered = false;
+	// Held by identity: the host EditorSceneContext can free its SubViewport while this
+	// secondary view is still alive during deferred board close (#2082).
+	ObjectID preview_parent_viewport_id;
+	SubViewport *_resolve_preview_parent_viewport() const;
 	ViewType view_type;
 	void _menu_option(int p_option);
 	void _set_auto_orthogonal();
@@ -619,6 +626,10 @@ public:
 	void bind_world(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport = nullptr);
 	void bind_context(EditorSceneContext *p_context);
 
+#ifdef TESTS_ENABLED
+	SubViewport *get_preview_parent_viewport_for_tests() const { return _resolve_preview_parent_viewport(); }
+#endif
+
 	Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p_index, ViewportBinding p_binding = ViewportBinding::FOCUSED_TILE);
 	~Node3DEditorViewport();
 };
@@ -689,11 +700,11 @@ public:
 struct EditorWorldFurniture {
 	RID origin_instance;
 	RID grid_instance[3];
-	DirectionalLight3D *preview_sun = nullptr;
-	WorldEnvironment *preview_environment = nullptr;
+	// Preview furniture nodes are owned by a context SubViewport that can be destroyed
+	// while this map entry remains reachable through a secondary view's World3D (#2082).
 	ObjectID preview_sun_id;
 	ObjectID preview_environment_id;
-	SubViewport *preview_parent_viewport = nullptr;
+	ObjectID preview_parent_viewport_id;
 	bool preview_sun_dangling = false;
 	bool preview_env_dangling = false;
 	int live_view_count = 0;
@@ -754,6 +765,7 @@ private:
 	RID origin_multimesh;
 	bool origin_enabled = false;
 	bool shared_furniture_resources_ready = false;
+	bool world_furniture_finished = false;
 	RID grid[3];
 	HashMap<ObjectID, EditorWorldFurniture> world_furniture;
 	bool grid_visible[3] = { false, false, false }; //currently visible
@@ -901,9 +913,16 @@ private:
 	EditorWorldFurniture *_get_world_furniture(const Ref<World3D> &p_world);
 	const EditorWorldFurniture *_get_world_furniture(const Ref<World3D> &p_world) const;
 	EditorWorldFurniture &_get_edited_world_furniture();
+	DirectionalLight3D *_resolve_preview_sun(const EditorWorldFurniture &p_furniture) const;
+	WorldEnvironment *_resolve_preview_environment(const EditorWorldFurniture &p_furniture) const;
+	SubViewport *_resolve_preview_parent(const EditorWorldFurniture &p_furniture) const;
+	bool _is_preview_furniture_id(ObjectID p_id) const;
+	int _count_live_views_for_world(const Ref<World3D> &p_world) const;
+	void _unregister_secondary_viewport(Node3DEditorViewport *p_viewport, bool p_delete);
 	void _free_world_furniture(EditorWorldFurniture &p_furniture);
 	void _release_world_furniture(const Ref<World3D> &p_world);
 	void _note_world_view_bound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport);
+	void _note_world_view_rebound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport);
 	void _note_world_view_unbound(const Ref<World3D> &p_world);
 	void _create_world_grid_instances(const Ref<World3D> &p_world);
 	void _free_world_grid_instances(EditorWorldFurniture &p_furniture);
@@ -1143,6 +1162,16 @@ public:
 
 	Node3DEditorViewport *create_secondary_viewport(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport = nullptr, Control *p_parent = nullptr);
 	void release_secondary_viewport(Node3DEditorViewport *p_viewport);
+
+#ifdef TESTS_ENABLED
+	int get_world_live_view_count_for_tests(const Ref<World3D> &p_world) const;
+	bool has_world_furniture_for_tests(const Ref<World3D> &p_world) const;
+	ObjectID get_world_preview_parent_id_for_tests(const Ref<World3D> &p_world) const;
+	ObjectID get_world_preview_sun_id_for_tests(const Ref<World3D> &p_world) const;
+	ObjectID get_world_preview_environment_id_for_tests(const Ref<World3D> &p_world) const;
+	void sync_preview_environment_parenting_for_tests();
+	void preview_settings_changed_for_tests();
+#endif
 
 	void set_freelook_viewport(Node3DEditorViewport *p_viewport) { freelook_viewport = p_viewport; }
 	Node3DEditorViewport *get_freelook_viewport() const { return freelook_viewport; }

@@ -235,6 +235,7 @@ void ScenePaneTile::set_preview_mode(TilePreviewMode p_mode) {
 	if (canvas_view && canvas_view->get_viewport_scrollable()) {
 		canvas_view->get_viewport_scrollable()->set_visible(show_canvas_view);
 	}
+	Node3DEditorViewport *spatial_view = get_spatial_view();
 	if (preview_3d_container) {
 		preview_3d_container->set_visible(p_mode == TilePreviewMode::LIVE_3D && !spatial_view);
 	}
@@ -510,13 +511,23 @@ void ScenePaneTile::load_layout(const Ref<ConfigFile> &p_config, const String &p
 	dock_region.load_layout(p_config, p_section);
 }
 
+Node3DEditorViewport *ScenePaneTile::get_spatial_view() const {
+	return ObjectDB::get_instance<Node3DEditorViewport>(spatial_view_id);
+}
+
+void ScenePaneTile::set_spatial_view(Node3DEditorViewport *p_view) {
+	spatial_view_id = p_view ? p_view->get_instance_id() : ObjectID();
+}
+
 ScenePaneTile::~ScenePaneTile() {
 	if (canvas_view) {
 		CanvasItemEditor::destroy_secondary_view(canvas_view);
 		canvas_view = nullptr;
 	}
-	if (spatial_view && Node3DEditor::get_singleton()) {
-		Node3DEditor::get_singleton()->release_secondary_viewport(spatial_view);
-		spatial_view = nullptr;
+	if (Node3DEditorViewport *spatial_view = get_spatial_view()) {
+		if (Node3DEditor::get_singleton()) {
+			Node3DEditor::get_singleton()->release_secondary_viewport(spatial_view);
+		}
 	}
+	spatial_view_id = ObjectID();
 }

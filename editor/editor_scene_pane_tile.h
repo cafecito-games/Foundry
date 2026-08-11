@@ -98,7 +98,9 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	SubViewportContainer *preview_3d_container = nullptr; // Camera-only 3D preview fallback.
 	SubViewport *preview_3d_viewport = nullptr;
 	Camera3D *preview_3d_camera = nullptr;
-	Node3DEditorViewport *spatial_view = nullptr; // World-bound 3D editing surface.
+	// Held by identity: Node PREDELETE can free the child viewport before ~ScenePaneTile
+	// runs, so a raw pointer would be read through after the free (#2082).
+	ObjectID spatial_view_id;
 	PanelContainer *focus_frame = nullptr; // Accent border when focused.
 	EditorSideRailStrip *left_rail = nullptr;
 	EditorSideRailStrip *right_rail = nullptr;
@@ -159,7 +161,7 @@ public:
 	CanvasItemEditorView *get_canvas_view() const { return canvas_view; }
 	void set_canvas_view(CanvasItemEditorView *p_view) { canvas_view = p_view; }
 	SubViewportContainer *get_context_viewport_host() const { return context_viewport_host; }
-	Node3DEditorViewport *get_spatial_view() const { return spatial_view; }
+	Node3DEditorViewport *get_spatial_view() const;
 	Camera3D *get_preview_3d_camera() const { return preview_3d_camera; }
 	SubViewport *get_preview_3d_viewport() const { return preview_3d_viewport; }
 
@@ -184,7 +186,7 @@ public:
 	bool is_preview_refresh_throttled() const { return preview_refresh_throttled; }
 	void refresh_throttled_previews();
 
-	void set_spatial_view(Node3DEditorViewport *p_view) { spatial_view = p_view; }
+	void set_spatial_view(Node3DEditorViewport *p_view);
 
 	void set_focused_visual(bool p_focused);
 	void set_preview_mode(TilePreviewMode p_mode);
