@@ -40,6 +40,7 @@
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/editor_scene_workspace.h"
+#include "editor/editor_tile_dock_region.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/workspace/workspace_pane.h"
 #include "scene/gui/split_container.h"
@@ -98,6 +99,18 @@ String _node_path_or_none(Node *p_node) {
 	return String(p_node->get_path());
 }
 
+String _preview_mode_name(TilePreviewMode p_mode) {
+	switch (p_mode) {
+		case TilePreviewMode::FOCUSED_LIVE:
+			return "focused_live";
+		case TilePreviewMode::LIVE_2D:
+			return "live_2d";
+		case TilePreviewMode::LIVE_3D:
+			return "live_3d";
+	}
+	return "unknown";
+}
+
 Dictionary _tile_state_entry(EditorData *p_editor_data, ScenePaneTile *p_tile, int p_focused_leaf_id) {
 	Dictionary tile;
 	const int tile_id = p_tile ? p_tile->get_tile_id() : -1;
@@ -123,6 +136,11 @@ Dictionary _tile_state_entry(EditorData *p_editor_data, ScenePaneTile *p_tile, i
 	tile["scene_tree_dock_context_matches_current"] = dock_context == current_context;
 	tile["scene_tree_dock_shows_create_root"] = scene_tree_dock ? scene_tree_dock->should_show_create_root_dialog() : false;
 	tile["scene_tree_rendered_root_name"] = tree_root ? tree_root->get_text(0) : String("<none>");
+
+	tile["preview_mode"] = p_tile ? _preview_mode_name(p_tile->get_preview_mode()) : String("unknown");
+	// Match snapshot visibility (is_visible_in_tree), not the node's own flag.
+	tile["dock_presentation_hidden"] = p_tile ? p_tile->get_dock_region()->is_presentation_hidden() : false;
+	tile["scene_tree_dock_visible"] = scene_tree_dock ? scene_tree_dock->is_visible_in_tree() : false;
 
 	Array scenes;
 	for (int scene_index : p_editor_data->get_tile_scene_indices(tile_id)) {

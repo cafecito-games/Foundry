@@ -540,6 +540,7 @@ TEST_CASE("[Editor][EditorAutomation] split-scene-root-button-context workflow s
 	arguments.push_back("--project");
 	arguments.push_back(project_path);
 	arguments.push_back("--automation");
+	arguments.push_back("--automation-failure-screenshots");
 	arguments.push_back("--automation-run-workflow=split_scene_root_button_context");
 
 	int exit_code = -1;
