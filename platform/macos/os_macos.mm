@@ -1326,6 +1326,7 @@ void OS_MacOS_NSApp::start_main() {
 						case StartupSequenceMacOS::STEP_RUNNING: {
 							ds = DisplayServer::get_singleton();
 							ds_mac = Object::cast_to<DisplayServerMacOS>(ds);
+							[(FoundryApplicationDelegate *)delegate applyDeferredActivation];
 						} break;
 						case StartupSequenceMacOS::STEP_EXIT_SUCCESS: {
 							terminate();

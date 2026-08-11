@@ -35,6 +35,7 @@
 #import "key_mapping_macos.h"
 #import "native_menu_macos.h"
 #import "os_macos.h"
+#import "startup_sequence_macos.h"
 
 #import "core/os/main_loop.h"
 #import "main/main.h"
@@ -44,6 +45,8 @@
 @interface FoundryApplicationDelegate ()
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context;
 - (void)accessibilityDisplayOptionsChange:(NSNotification *)notification;
+- (void)handleDidBecomeActive;
+- (void)handleDidResignActive;
 @end
 
 @implementation FoundryApplicationDelegate {
@@ -51,6 +54,7 @@
 	bool reduce_motion;
 	bool reduce_transparency;
 	bool voice_over;
+	bool deferred_activation;
 	OS_MacOS_NSApp *os_mac;
 }
 
@@ -58,6 +62,7 @@
 	self = [super init];
 	if (self) {
 		os_mac = os;
+		deferred_activation = false;
 	}
 
 	[[NSWorkspace sharedWorkspace] addObserver:self forKeyPath:@"voiceOverEnabled" options:(NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld) context:(void *)godot_ac_ctx];
@@ -217,6 +222,17 @@ static const char *godot_ac_ctx = "gd_accessibility_observer_ctx";
 }
 
 - (void)applicationDidResignActive:(NSNotification *)notification {
+	if (StartupInputGateMacOS::is_suppressed()) {
+		// The staged boot lets the run loop turn, so activation changes now arrive while the
+		// editor is only half constructed. Withhold them; `applyDeferredActivation` replays the
+		// activation state once boot is over, which is when they used to arrive.
+		deferred_activation = true;
+		return;
+	}
+	[self handleDidResignActive];
+}
+
+- (void)handleDidResignActive {
 	DisplayServerMacOS *ds = Object::cast_to<DisplayServerMacOS>(DisplayServer::get_singleton());
 	if (ds) {
 		ds->mouse_process_popups(true);
@@ -241,6 +257,29 @@ static const CGKeyCode modifiers[8] = {
 constexpr static NSEventModifierFlags FLAGS = NSEventModifierFlagCommand | NSEventModifierFlagShift | NSEventModifierFlagOption | NSEventModifierFlagControl;
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
+	if (StartupInputGateMacOS::is_suppressed()) {
+		// Withheld for the same reason as resignation above. The modifier poll below reads the
+		// keyboard as it is at replay time, so a modifier released during boot cannot leave a
+		// press behind without its release.
+		deferred_activation = true;
+		return;
+	}
+	[self handleDidBecomeActive];
+}
+
+- (void)applyDeferredActivation {
+	if (!deferred_activation) {
+		return;
+	}
+	deferred_activation = false;
+	if ([NSApp isActive]) {
+		[self handleDidBecomeActive];
+	} else {
+		[self handleDidResignActive];
+	}
+}
+
+- (void)handleDidBecomeActive {
 	if (os_mac->get_main_loop()) {
 		os_mac->get_main_loop()->notification(MainLoop::NOTIFICATION_APPLICATION_FOCUS_IN);
 	}

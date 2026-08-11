@@ -41,6 +41,10 @@ class OS_MacOS_NSApp;
 
 - (FoundryApplicationDelegate *)initWithOS:(OS_MacOS_NSApp *)os;
 
+// Applies the activation change that was withheld while the editor was booting, using the
+// activation state as it stands now. Called once, when the staged boot completes.
+- (void)applyDeferredActivation;
+
 - (bool)getHighContrast;
 - (bool)getReduceMotion;
 - (bool)getReduceTransparency;

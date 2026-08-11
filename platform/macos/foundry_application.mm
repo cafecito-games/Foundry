@@ -147,7 +147,9 @@ FoundryApplication *FoundryApp = nil;
 		return;
 	}
 
-	if ([event type] == NSEventTypeSystemDefined && [event subtype] == 8) {
+	// System defined events must keep flowing for AppKit, but subtype 8 carries media keys, which
+	// this class turns into engine key events. That is user input and stays gated during boot.
+	if ([event type] == NSEventTypeSystemDefined && [event subtype] == 8 && !StartupInputGateMacOS::is_suppressed()) {
 		int keyCode = (([event data1] & 0xFFFF0000) >> 16);
 		int keyFlags = ([event data1] & 0x0000FFFF);
 		int keyState = (((keyFlags & 0xFF00) >> 8)) == 0xA;

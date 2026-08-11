@@ -182,6 +182,21 @@ TEST_CASE("[StartupSequence][macOS] input arriving during a boot phase is never 
 	CHECK(sink.get_delivered() == 2);
 }
 
+TEST_CASE("[StartupSequence][macOS] the gate stays engaged for every boot phase and lifts only at the end") {
+	// Not every input path runs through `-[FoundryApplication sendEvent:]`: media keys and the
+	// modifier poll on application activation reach the engine directly, and consult this flag.
+	GateStateGuard guard;
+	RecordingSequence sequence;
+	sequence.begin();
+	CHECK(StartupInputGateMacOS::is_suppressed());
+
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_PENDING);
+	CHECK(StartupInputGateMacOS::is_suppressed());
+
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_RUNNING);
+	CHECK_FALSE(StartupInputGateMacOS::is_suppressed());
+}
+
 TEST_CASE("[StartupSequence][macOS] the gate discards user input and nothing else") {
 	GateStateGuard guard;
 	StartupInputGateMacOS::set_suppressed(true);
