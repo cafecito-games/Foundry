@@ -975,13 +975,24 @@ int Main::test_entrypoint(int argc, char *argv[], bool &tests_need_run) {
 		// to a writable directory from the first `user://` write.
 		OS::get_singleton()->ensure_user_data_dir();
 
+		const bool scan_test_project_global_classes = GlobalClassScanPolicy::should_scan(
+				ProjectSettings::get_singleton()->is_project_loaded(),
+				ProjectSettings::get_singleton()->is_using_datapack(), false, false, true);
+		if (scan_test_project_global_classes) {
+			ScriptServer::scan_global_classes();
+		}
+
+		bool pre_compile_ran_any_task = false;
 		ProjectBuildTrustStore::set_cli_trusted_execution(cli_parse.trusted);
 		const bool pre_compile_ok = run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
-				"Foundry pre_compile test stage");
+				"Foundry pre_compile test stage", &pre_compile_ran_any_task);
 		ProjectBuildTrustStore::set_cli_trusted_execution(old_foundry_build_trusted);
 		if (!pre_compile_ok) {
 			test_cleanup();
 			return EXIT_FAILURE;
+		}
+		if (scan_test_project_global_classes && pre_compile_ran_any_task) {
+			ScriptServer::scan_global_classes();
 		}
 		ResourceLoader::add_custom_loaders();
 		ResourceSaver::add_custom_savers();

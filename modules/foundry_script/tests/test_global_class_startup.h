@@ -33,8 +33,10 @@
 #include "fs_test_python.h"
 #include "fs_temporary_project_tree.h"
 
+#include "core/config/project_settings.h"
 #include "core/io/config_file.h"
 #include "core/io/file_access.h"
+#include "core/object/script_language.h"
 #include "core/os/os.h"
 #include "main/global_class_scan_policy.h"
 #include "tests/test_macros.h"
@@ -60,15 +62,18 @@ static GlobalClassStartupProcessResult run_global_class_startup_process(
 	const String xdg_data_path = user_data_root.path_join("xdg_data");
 	const String app_data_path = user_data_root.path_join("app_data");
 	const String local_app_data_path = user_data_root.path_join("local_app_data");
+	const String child_test_scratch = p_tree.root.path_join("child_test_scratch");
 	p_tree.write_file("user_data/home/.keep", String());
 	p_tree.write_file("user_data/xdg_data/.keep", String());
 	p_tree.write_file("user_data/app_data/.keep", String());
 	p_tree.write_file("user_data/local_app_data/.keep", String());
+	p_tree.write_file("child_test_scratch/.keep", String());
 	Dictionary environment;
 	environment["HOME"] = home_path;
 	environment["XDG_DATA_HOME"] = xdg_data_path;
 	environment["APPDATA"] = app_data_path;
 	environment["LOCALAPPDATA"] = local_app_data_path;
+	environment["FOUNDRY_TEST_SCRATCH"] = child_test_scratch;
 	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
 			OS::get_singleton()->get_executable_path(), p_arguments, false,
 			p_working_directory, environment, false);
@@ -176,6 +181,15 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		CHECK_FALSE(GlobalClassScanPolicy::should_scan(true, false, true, false, true));
 		CHECK_FALSE(GlobalClassScanPolicy::should_scan(true, false, false, true, true));
 		CHECK_FALSE(GlobalClassScanPolicy::should_scan(true, false, false, false, false));
+	}
+
+	TEST_CASE("GlobalClassStartup child project probe") {
+		ProjectSettings *settings = ProjectSettings::get_singleton();
+		if (settings == nullptr || !bool(settings->get_setting("global_class_startup/child_probe", false))) {
+			return;
+		}
+		CHECK(ScriptServer::is_global_class("startup.test.StartupEngineTestDependency"));
+		CHECK_EQ(FileAccess::get_file_as_string("res://generated/provider.marker"), "provider-ok");
 	}
 
 	TEST_CASE("GlobalClassStartup script docs do not scan runtime global classes") {
@@ -421,6 +435,63 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		REQUIRE_MESSAGE(result.error == OK, result.output);
 		CHECK_MESSAGE(result.exit_code == 0, result.output);
 		CHECK_MESSAGE(result.output.contains("GLOBAL_CLASS_STARTUP_PROVIDER_RUNTIME_OK"), result.output);
+		CHECK_EQ(FileAccess::get_file_as_string(tree.root.path_join("generated/provider.marker")), "provider-ok");
+	}
+
+	TEST_CASE("GlobalClassStartup test run project scans globals before build") {
+		TemporaryProjectTree tree("fs_global_class_startup_test_run_project");
+		REQUIRE(tree.is_valid());
+		tree.write_file("project.foundry",
+				"config_version=5\n\n"
+				"[application]\n\n"
+				"config/name=\"Global Class Startup Test Run Project\"\n\n"
+				"[global_class_startup]\n\n"
+				"child_probe=true\n\n"
+				"[build]\n\n"
+				"enabled=true\n"
+				"pre_compile=PackedStringArray(\"startup_provider\")\n\n"
+				"[build/providers/startup.provider]\n\n"
+				"script=\"res://build/provider.fs\"\n"
+				"class_name=\"StartupBuildProvider\"\n\n"
+				"[build/tasks/startup_provider]\n\n"
+				"provider=\"startup.provider\"\n"
+				"outputs=PackedStringArray(\"res://generated/provider.marker\")\n");
+		tree.write_file("scripts/dependency.fs",
+				"namespace startup.test\n"
+				"class_name StartupEngineTestDependency extends RefCounted\n");
+		tree.write_file("build/helper.fs",
+				"namespace startup.provider\n"
+				"class_name StartupProviderHelper extends RefCounted\n\n"
+				"static func value() -> String:\n"
+				"\treturn \"provider-ok\"\n");
+		tree.write_file("build/provider.fs",
+				"import startup.provider\n"
+				"class_name StartupBuildProvider extends FoundryBuildTask\n\n"
+				"func run(context: FoundryBuildContext) -> FoundryBuildResult:\n"
+				"\tvar file := FileAccess.open(\"res://generated/provider.marker\", FileAccess.WRITE)\n"
+				"\tfile.store_string(StartupProviderHelper.value())\n"
+				"\tvar result := FoundryBuildResult.new()\n"
+				"\tresult.success = true\n"
+				"\tresult.fingerprint = StartupProviderHelper.value()\n"
+				"\treturn result\n");
+		tree.write_file("generated/.keep", String());
+
+		List<String> args;
+		args.push_back("--headless");
+		args.push_back("--no-header");
+		args.push_back("--trusted");
+		args.push_back("test");
+		args.push_back("run");
+		args.push_back("--project");
+		args.push_back(tree.root);
+		args.push_back("--case");
+		args.push_back("GlobalClassStartup child project probe");
+		args.push_back("--no-colors");
+		const GlobalClassStartupProcessResult result = run_global_class_startup_process(args, tree);
+		REQUIRE_MESSAGE(result.error == OK, result.output);
+		CHECK_MESSAGE(result.exit_code == 0, result.output);
+		CHECK_MESSAGE(result.output.contains("[doctest] Status: SUCCESS!"), result.output);
+		CHECK_MESSAGE(FileAccess::exists(tree.root.path_join("generated/provider.marker")), result.output);
 		CHECK_EQ(FileAccess::get_file_as_string(tree.root.path_join("generated/provider.marker")), "provider-ok");
 	}
 
