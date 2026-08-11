@@ -235,17 +235,26 @@ TEST_CASE("[Editor][BoardSwitcher] Compact menu lists and activates every board"
 	harness.strip->add_board("Animation");
 	harness.resize_host(Size2(280, 48));
 
-	harness.menu_button()->emit_signal(SceneStringName(pressed));
 	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
 	REQUIRE(menu != nullptr);
+	harness.menu_button()->emit_signal(SceneStringName(pressed));
 	for (int i = 0; i < harness.strip->get_board_count(); i++) {
 		CHECK(menu->get_item_index(EditorBoardActionsMenu::ITEM_BOARD_BASE + i) >= 0);
 	}
 
-	const int last = harness.strip->get_board_count() - 1;
-	harness.activate_menu_item(EditorBoardActionsMenu::ItemID(EditorBoardActionsMenu::ITEM_BOARD_BASE + last));
-	harness.pump();
-	CHECK(harness.strip->get_active_index() == last);
+	for (int i = 0; i < harness.strip->get_board_count(); i++) {
+		// Reopen before each activation: selecting a board closes the popup and the switcher
+		// may rebuild its segments, while the owned menu instance itself stays stable.
+		harness.menu_button()->emit_signal(SceneStringName(pressed));
+		harness.activate_menu_item(EditorBoardActionsMenu::ItemID(EditorBoardActionsMenu::ITEM_BOARD_BASE + i));
+		harness.pump();
+		CHECK(harness.strip->get_active_index() == i);
+		for (int j = 0; j < harness.strip->get_board_count(); j++) {
+			Button *button = harness.board_button(j);
+			REQUIRE(button != nullptr);
+			CHECK(button->is_visible() == (j == i));
+		}
+	}
 
 	harness.unmount();
 }
@@ -826,10 +835,20 @@ TEST_CASE("[Editor][BoardSwitcher] Pressing a board while overview is active exi
 		return;
 	}
 
+	board_requested_recorder.indices.clear();
+	harness.switcher->connect(SNAME("board_requested"), callable_mp_static(&record_board_requested));
+	// BaseButton toggles a pressed toggle button before emitting pressed. Reproduce that
+	// ordering explicitly instead of bypassing it with a direct signal emission.
+	active->set_pressed_no_signal(false);
 	active->emit_signal(SceneStringName(pressed));
 
 	CHECK_FALSE(harness.strip->is_overview_active());
+	CHECK(harness.strip->get_active_index() == 0);
 	CHECK(active->is_pressed());
+	REQUIRE(board_requested_recorder.indices.size() == 1);
+	if (board_requested_recorder.indices.size() == 1) {
+		CHECK(board_requested_recorder.indices[0] == 0);
+	}
 	harness.unmount();
 }
 

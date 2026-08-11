@@ -286,7 +286,13 @@ void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
 	}
 
 	if (strip->is_overview_active()) {
+		const bool requested_active_board = p_index == strip->get_active_index();
 		strip->set_active_board(p_index);
+		if (requested_active_board) {
+			if (Button *button = _board_button_at(p_index)) {
+				button->set_pressed_no_signal(true);
+			}
+		}
 	} else if (p_index == strip->get_active_index()) {
 		// Toggle mode flips the button off on press; the active segment remains selected.
 		if (Button *button = _board_button_at(p_index)) {
