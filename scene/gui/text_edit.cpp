@@ -8397,11 +8397,13 @@ void TextEdit::_clear_redo() {
 	}
 
 	_push_current_op();
-	bool removes_open_complex_start = false;
+	bool truncates_open_complex_boundary = false;
 	if (complex_operation_count > 0) {
 		for (List<TextOperation>::Element *element = undo_stack_pos; element; element = element->next()) {
-			if (element->get().prev_version == complex_operation_start_version) {
-				removes_open_complex_start = true;
+			const TextOperation &operation = element->get();
+			// The saved boundary is invalid if redo truncation removes the operation entering or leaving it.
+			if (operation.prev_version == complex_operation_start_version || operation.version == complex_operation_start_version) {
+				truncates_open_complex_boundary = true;
 				break;
 			}
 		}
@@ -8412,8 +8414,11 @@ void TextEdit::_clear_redo() {
 		undo_stack_pos = undo_stack_pos->next();
 		undo_stack.erase(elem);
 	}
-	if (removes_open_complex_start) {
+	if (truncates_open_complex_boundary) {
 		complex_operation_start_version = get_version();
+		if (next_operation_is_complex) {
+			current_op.start_carets = carets;
+		}
 	}
 }
 
