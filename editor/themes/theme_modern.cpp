@@ -1720,8 +1720,10 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		board_rail_panel->set_content_margin_all(Math::round(3 * EDSCALE));
 		p_theme->set_stylebox(SceneStringName(panel), "BoardRail", board_rail_panel);
 
-		Ref<StyleBoxFlat> board_rail_button_pressed = EditorThemeManager::make_flat_stylebox(
-				Color(0, 0, 0, 0),
+		Ref<StyleBoxFlat> board_rail_button_pressed;
+		board_rail_button_pressed.instantiate();
+		board_rail_button_pressed->set_bg_color(Color(0, 0, 0, 0));
+		board_rail_button_pressed->set_content_margin_individual(
 				p_config.base_empty_wide_style->get_content_margin(SIDE_LEFT),
 				p_config.base_empty_wide_style->get_content_margin(SIDE_TOP),
 				p_config.base_empty_wide_style->get_content_margin(SIDE_RIGHT),

@@ -288,6 +288,13 @@ int EditorMainScreen::get_plugin_index(EditorPlugin *p_editor) const {
 	return screen;
 }
 
+String EditorMainScreen::get_plugin_name(int p_index) const {
+	if (p_index < 0 || p_index >= editor_table.size() || editor_table[p_index] == nullptr) {
+		return String();
+	}
+	return editor_table[p_index]->get_plugin_name();
+}
+
 EditorPlugin *EditorMainScreen::get_selected_plugin() const {
 	return selected_plugin;
 }

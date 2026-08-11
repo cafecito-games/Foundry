@@ -178,17 +178,12 @@ Dictionary EditorAutomationState::read_scene_tree(Node *p_snapshot_root) {
 	return payload;
 }
 
-String EditorAutomationState::main_screen_name(int p_index) {
-	switch (p_index) {
-		case EditorMainScreen::EDITOR_2D:
-			return "2d";
-		case EditorMainScreen::EDITOR_3D:
-			return "3d";
-		case EditorMainScreen::EDITOR_GAME:
-			return "game";
-		default:
-			return String();
+String EditorAutomationState::main_screen_name(const EditorMainScreen *p_main_screen, int p_index) {
+	if (p_main_screen == nullptr) {
+		return String();
 	}
+	const String plugin_name = p_main_screen->get_plugin_name(p_index);
+	return plugin_name.is_empty() ? String() : plugin_name.to_snake_case().to_lower();
 }
 
 Array EditorAutomationState::capture_modal_stack(Node *p_root) {
@@ -370,7 +365,7 @@ Dictionary EditorAutomationState::read_editor_state() {
 		const int selected_index = main_screen_editor->get_selected_index();
 		main_screen["supported"] = true;
 		main_screen["index"] = selected_index;
-		main_screen["name"] = main_screen_name(selected_index);
+		main_screen["name"] = main_screen_name(main_screen_editor, selected_index);
 	} else {
 		main_screen["supported"] = false;
 	}

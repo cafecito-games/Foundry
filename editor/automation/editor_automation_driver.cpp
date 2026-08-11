@@ -1126,6 +1126,19 @@ EditorAutomationActionResult _action_select(
 
 	Node *node = _resolve_node_from_object_id(p_element.object_id);
 	if (OptionButton *option_button = Object::cast_to<OptionButton>(node)) {
+		const ObjectID option_button_id = option_button->get_instance_id();
+		option_button->show_popup();
+
+		option_button = Object::cast_to<OptionButton>(ObjectDB::get_instance(option_button_id));
+		if (option_button == nullptr) {
+			return EditorAutomationActionResult::failure("invalid_element", "OptionButton is no longer available after opening its popup.");
+		}
+
+		auto fail_selection = [option_button](const String &p_message) {
+			option_button->get_popup()->hide();
+			return EditorAutomationActionResult::failure("invalid_parameter", p_message);
+		};
+
 		int index = option_button->get_selected();
 		if (p_value.get_type() != Variant::NIL) {
 			if (p_value.get_type() == Variant::INT) {
@@ -1139,10 +1152,20 @@ EditorAutomationActionResult _action_select(
 						break;
 					}
 				}
-				ERR_FAIL_COND_V(index < 0, EditorAutomationActionResult::failure("invalid_parameter", vformat("Option '%s' was not found.", text)));
+				if (index < 0) {
+					return fail_selection(vformat("Option '%s' was not found.", text));
+				}
 			}
 		}
-		option_button->show_popup();
+		if (index < 0 || index >= option_button->get_item_count()) {
+			return fail_selection(vformat("Option index %d is out of range.", index));
+		}
+		if (option_button->is_item_separator(index)) {
+			return fail_selection(vformat("Option index %d is a separator.", index));
+		}
+		if (option_button->is_item_disabled(index)) {
+			return fail_selection(vformat("Option index %d is disabled.", index));
+		}
 		option_button->get_popup()->activate_item(index);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SELECT, p_element.id);
 		result.events.push_back("selected");

@@ -33,10 +33,11 @@
 #include "core/variant/variant.h"
 
 class Node;
+class EditorMainScreen;
 
 class EditorAutomationState {
 public:
-	static String main_screen_name(int p_index);
+	static String main_screen_name(const EditorMainScreen *p_main_screen, int p_index);
 	static Dictionary read_editor_state();
 	static Dictionary read_scene_tree(Node *p_snapshot_root = nullptr);
 	static Array capture_modal_stack(Node *p_root = nullptr);

@@ -331,6 +331,8 @@ void WorkspacePane::_update_pane_state(bool p_activate) {
 		_detach_ephemeral_chrome();
 		_set_bridge_visibility(false, false);
 	}
+
+	_sync_scene_mode_switcher_mount();
 }
 
 void WorkspacePane::_notification(int p_what) {

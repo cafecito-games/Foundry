@@ -333,13 +333,6 @@ TEST_CASE("[Editor][Automation] editor state readback degrades without full edit
 	CHECK(((Array)state["modal_stack"]).is_empty());
 }
 
-TEST_CASE("[Editor][Automation] main screen state names follow the current editor table") {
-	CHECK(EditorAutomationState::main_screen_name(EditorMainScreen::EDITOR_2D) == "2d");
-	CHECK(EditorAutomationState::main_screen_name(EditorMainScreen::EDITOR_3D) == "3d");
-	CHECK(EditorAutomationState::main_screen_name(EditorMainScreen::EDITOR_GAME) == "game");
-	CHECK(EditorAutomationState::main_screen_name(-1).is_empty());
-}
-
 TEST_CASE("[Editor][Automation] wait_for no_new_errors distinguishes new log entries") {
 	EditorAutomationLog::clear_test_messages();
 

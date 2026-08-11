@@ -97,6 +97,9 @@ public:
 	void select(int p_index);
 	int get_selected_index() const;
 	int get_plugin_index(EditorPlugin *p_editor) const;
+	// Plugin identity at the current live table index. Consumers that expose a
+	// screen name must resolve through this table instead of assuming fixed slots.
+	String get_plugin_name(int p_index) const;
 	// Index of the main-screen button whose plugin name matches p_name, or -1 when
 	// no current button matches. Persistence resolves screens by name through this
 	// so registration-order changes cannot restore the wrong screen.

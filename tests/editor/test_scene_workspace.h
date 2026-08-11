@@ -50,6 +50,7 @@
 #include "editor/editor_tile_drop_overlay.h"
 #include "editor/editor_undo_redo_manager.h"
 #include "editor/editor_workspace_leaf_content.h"
+#include "editor/gui/editor_scene_mode_switcher.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/scene/scene_tree_editor.h"
 #include "editor/script/script_editor_controller.h"
@@ -3525,6 +3526,102 @@ static void remove_resource_file(const String &p_path) {
 	if (da.is_valid()) {
 		da->remove(p_path);
 	}
+}
+
+static void check_scene_mode_switcher_trailing_mount(WorkspacePane *p_pane, bool p_visible) {
+	REQUIRE(p_pane != nullptr);
+	ScenePaneTile *tile = p_pane->get_scene_tile();
+	REQUIRE(tile != nullptr);
+	EditorSceneModeSwitcher *switcher = tile->get_scene_mode_switcher();
+	REQUIRE(switcher != nullptr);
+	REQUIRE(switcher->get_parent() != nullptr);
+	REQUIRE(switcher->get_parent()->get_parent() != nullptr);
+	CHECK(switcher->get_parent()->get_parent() == p_pane->get_tab_strip()->get_parent());
+	CHECK(switcher->is_visible_in_tree() == p_visible);
+}
+
+TEST_CASE("[Editor][ScenePaneTileMode] mixed scene and script active tabs update switcher visibility") {
+	const String script_path = make_existing_resource_file("scene_mode_switcher_mixed.fs");
+	REQUIRE_FALSE(script_path.is_empty());
+	WorkspaceTabRegistry registry;
+	registry.clear_canonical_index();
+	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	REQUIRE(scene_type != nullptr);
+	REQUIRE(script_type != nullptr);
+
+	EditorData editor_data;
+	EditorSelection selection;
+	WorkspacePane *pane = memnew(WorkspacePane);
+	pane->set_tab_registry(&registry);
+	SceneTree::get_singleton()->get_root()->add_child(pane);
+	pane->set_size(Size2(800, 600));
+	pane->setup(71, &selection, &editor_data);
+	pane->add_tab(scene_type->make_tab("res://mixed_scene.tscn", registry.allocate_stable_id()));
+	pane->add_tab(script_type->make_tab(script_path, registry.allocate_stable_id()));
+
+	pane->set_active_tab(0, false);
+	check_scene_mode_switcher_trailing_mount(pane, true);
+	pane->set_active_tab(1, false);
+	check_scene_mode_switcher_trailing_mount(pane, false);
+	pane->set_active_tab(0, false);
+	check_scene_mode_switcher_trailing_mount(pane, true);
+
+	SceneTree::get_singleton()->get_root()->remove_child(pane);
+	memdelete(pane);
+	remove_resource_file(script_path);
+}
+
+TEST_CASE("[Editor][ScenePaneTileMode] pending restored active tab finalizes switcher visibility") {
+	const String script_path = make_existing_resource_file("scene_mode_switcher_restore.fs");
+	REQUIRE_FALSE(script_path.is_empty());
+
+	for (const int active_index : { 0, 1 }) {
+		CAPTURE(active_index);
+		WorkspaceTabRegistry source_registry;
+		source_registry.clear_canonical_index();
+		WorkspaceTabType *scene_type = source_registry.find_type(StringName("scene"));
+		WorkspaceTabType *script_type = source_registry.find_type(StringName("script"));
+		REQUIRE(scene_type != nullptr);
+		REQUIRE(script_type != nullptr);
+
+		EditorData editor_data;
+		EditorSelection selection;
+		WorkspacePane *source = memnew(WorkspacePane);
+		source->set_tab_registry(&source_registry);
+		SceneTree::get_singleton()->get_root()->add_child(source);
+		source->set_size(Size2(800, 600));
+		source->setup(72 + active_index, &selection, &editor_data);
+		source->add_tab(scene_type->make_tab("res://restored_scene.tscn", source_registry.allocate_stable_id()));
+		source->add_tab(script_type->make_tab(script_path, source_registry.allocate_stable_id()));
+		source->set_active_tab(active_index, false);
+		Ref<ConfigFile> config;
+		config.instantiate();
+		source->save_layout(config, "Pane");
+		SceneTree::get_singleton()->get_root()->remove_child(source);
+		memdelete(source);
+
+		WorkspaceTabRegistry restored_registry;
+		restored_registry.clear_canonical_index();
+		WorkspacePane *restored = memnew(WorkspacePane);
+		restored->set_tab_registry(&restored_registry);
+		restored->setup(82 + active_index, &selection, &editor_data);
+		restored->load_layout(config, "Pane");
+		CHECK(restored->get_restored_active_tab_index() == active_index);
+		SceneTree::get_singleton()->get_root()->add_child(restored);
+		restored->set_size(Size2(800, 600));
+		MessageQueue::get_singleton()->flush();
+		SceneTree::get_singleton()->process(0.016);
+		MessageQueue::get_singleton()->flush();
+
+		CHECK(restored->get_active_tab_index() == active_index);
+		check_scene_mode_switcher_trailing_mount(restored, active_index == 0);
+
+		SceneTree::get_singleton()->get_root()->remove_child(restored);
+		memdelete(restored);
+	}
+
+	remove_resource_file(script_path);
 }
 
 TEST_CASE("[SceneWorkspace][SceneTree][Editor] persist-mixed-pane-roundtrip") {

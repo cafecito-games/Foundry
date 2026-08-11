@@ -35,6 +35,7 @@
 #include "editor/inspector/editor_properties.h"
 #include "editor/inspector/editor_properties_array_dict.h"
 #include "editor/settings/editor_settings.h"
+#include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme.h"
 #include "editor/themes/editor_theme_manager.h"
 
@@ -53,6 +54,28 @@ public:
 };
 
 namespace TestInspectorDensity {
+
+struct EditorScaleGuard {
+	float previous = 1.0f;
+	explicit EditorScaleGuard(float p_scale) :
+			previous(EditorScale::get_scale()) {
+		EditorScale::set_scale(p_scale);
+	}
+	~EditorScaleGuard() {
+		EditorScale::set_scale(previous);
+	}
+};
+
+struct ThemeStyleGuard {
+	String previous;
+	explicit ThemeStyleGuard(const String &p_style) :
+			previous(EDITOR_GET("interface/theme/style")) {
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", p_style);
+	}
+	~ThemeStyleGuard() {
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", previous);
+	}
+};
 
 // A minimal native class exposing a typed `float` array property, registered with ClassDB so
 // `EditorPropertyArray::set_object_and_property()`/`update_property()` exercise their real
@@ -259,6 +282,26 @@ TEST_CASE("[Editor][InspectorDensity] generated theme produces distinct ordered 
 		CHECK(default_height < spacious_height);
 
 		EditorSettings::get_singleton()->set_manually("interface/theme/style", previous_style);
+	}
+}
+
+TEST_CASE("[Editor][Theme] modern board rail pressed styles preserve resolved normal margins") {
+	EditorScaleGuard scale_guard(2.0f);
+	ThemeStyleGuard style_guard("Modern");
+	Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+	REQUIRE(theme.is_valid());
+
+	Ref<StyleBox> normal = theme->get_stylebox(CoreStringName(normal), "BoardRailButton");
+	Ref<StyleBox> board_pressed = theme->get_stylebox(SceneStringName(pressed), "BoardRailButton");
+	Ref<StyleBox> scene_pressed = theme->get_stylebox(SceneStringName(pressed), "SceneModeButton");
+	REQUIRE(normal.is_valid());
+	REQUIRE(board_pressed.is_valid());
+	REQUIRE(scene_pressed.is_valid());
+
+	for (Side side : { SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM }) {
+		CAPTURE(side);
+		CHECK(board_pressed->get_content_margin(side) == doctest::Approx(normal->get_content_margin(side)));
+		CHECK(scene_pressed->get_content_margin(side) == doctest::Approx(normal->get_content_margin(side)));
 	}
 }
 

@@ -1043,6 +1043,31 @@ public:
 	}
 };
 
+class OptionButtonPopupMutation : public Object {
+	FOUNDRY_CLASS(OptionButtonPopupMutation, Object);
+
+public:
+	enum Mode {
+		REORDER_ITEMS,
+		REMOVE_TARGET,
+	};
+
+	OptionButton *option_button = nullptr;
+	Mode mode = REORDER_ITEMS;
+
+	void on_popup_opened() {
+		REQUIRE(option_button != nullptr);
+		option_button->clear();
+		if (mode == REORDER_ITEMS) {
+			option_button->add_item("Dark");
+			option_button->add_item("System");
+			option_button->add_item("Light");
+		} else {
+			option_button->add_item("Dark");
+		}
+	}
+};
+
 static const EditorAutomationElement *find_virtual_element(const EditorAutomationSnapshot &p_snapshot, const String &p_role, const String &p_name) {
 	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
 		const EditorAutomationElement &element = p_snapshot.get_element(i);
@@ -1189,6 +1214,141 @@ TEST_CASE("[Editor][Automation] option button select follows the user-facing sig
 	CHECK(tracker.popup_opened);
 	CHECK(option_button->get_selected() == 1);
 	CHECK(tracker.selected_index == 1);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] option button text selection resolves items after popup rebuild") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	OptionButton *option_button = memnew(OptionButton);
+	option_button->set_accessibility_name("Theme");
+	option_button->add_item("Dark");
+	option_button->add_item("Light");
+	option_button->select(0);
+	setup_visible_control(option_button);
+	root->add_child(option_button);
+
+	OptionButtonSelectionTracker selection_tracker;
+	OptionButtonPopupMutation mutation;
+	mutation.option_button = option_button;
+	mutation.mode = OptionButtonPopupMutation::REORDER_ITEMS;
+	option_button->connect(SceneStringName(item_selected), callable_mp(&selection_tracker, &OptionButtonSelectionTracker::on_item_selected));
+	option_button->get_popup()->connect(SNAME("about_to_popup"), callable_mp(&mutation, &OptionButtonPopupMutation::on_popup_opened));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *theme = find_element_by_role_and_name(snapshot, "button", "Theme");
+	REQUIRE(theme != nullptr);
+
+	Dictionary target;
+	target["id"] = theme->id;
+	Dictionary options;
+	options["value"] = "Light";
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "select", target, options);
+	CHECK(result.ok);
+	CHECK(option_button->get_selected() == 2);
+	CHECK(selection_tracker.selected_index == 2);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] option button selection fails when popup rebuild removes target") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	OptionButton *option_button = memnew(OptionButton);
+	option_button->set_accessibility_name("Theme");
+	option_button->add_item("Dark");
+	option_button->add_item("Light");
+	setup_visible_control(option_button);
+	root->add_child(option_button);
+
+	OptionButtonSelectionTracker selection_tracker;
+	OptionButtonPopupMutation mutation;
+	mutation.option_button = option_button;
+	mutation.mode = OptionButtonPopupMutation::REMOVE_TARGET;
+	option_button->connect(SceneStringName(item_selected), callable_mp(&selection_tracker, &OptionButtonSelectionTracker::on_item_selected));
+	option_button->get_popup()->connect(SNAME("about_to_popup"), callable_mp(&mutation, &OptionButtonPopupMutation::on_popup_opened));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *theme = find_element_by_role_and_name(snapshot, "button", "Theme");
+	REQUIRE(theme != nullptr);
+	Dictionary target;
+	target["id"] = theme->id;
+	Dictionary options;
+	options["value"] = "Light";
+
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "select", target, options);
+	CHECK_FALSE(result.ok);
+	CHECK(selection_tracker.selected_index == -1);
+	CHECK_FALSE(option_button->get_popup()->is_visible());
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] option button selection rejects disabled and separator items") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	OptionButton *option_button = memnew(OptionButton);
+	option_button->set_accessibility_name("Theme");
+	option_button->add_item("Dark");
+	option_button->add_item("Disabled");
+	option_button->add_item("Separator");
+	option_button->set_item_disabled(1, true);
+	option_button->get_popup()->set_item_as_separator(2, true);
+	setup_visible_control(option_button);
+	root->add_child(option_button);
+
+	OptionButtonSelectionTracker selection_tracker;
+	option_button->connect(SceneStringName(item_selected), callable_mp(&selection_tracker, &OptionButtonSelectionTracker::on_item_selected));
+	MessageQueue::get_singleton()->flush();
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *theme = find_element_by_role_and_name(snapshot, "button", "Theme");
+	REQUIRE(theme != nullptr);
+	Dictionary target;
+	target["id"] = theme->id;
+
+	for (const String &item : { String("Disabled"), String("Separator") }) {
+		Dictionary options;
+		options["value"] = item;
+		const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "select", target, options);
+		CAPTURE(item);
+		CHECK_FALSE(result.ok);
+		CHECK(selection_tracker.selected_index == -1);
+		CHECK_FALSE(option_button->get_popup()->is_visible());
+	}
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] option button selection rejects an invalid live index") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+	OptionButton *option_button = memnew(OptionButton);
+	option_button->set_accessibility_name("Theme");
+	option_button->add_item("Dark");
+	setup_visible_control(option_button);
+	root->add_child(option_button);
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *theme = find_element_by_role_and_name(snapshot, "button", "Theme");
+	REQUIRE(theme != nullptr);
+	Dictionary target;
+	target["id"] = theme->id;
+	Dictionary options;
+	options["value"] = 8;
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "select", target, options);
+	CHECK_FALSE(result.ok);
+	CHECK_FALSE(option_button->get_popup()->is_visible());
 
 	memdelete(root);
 }
