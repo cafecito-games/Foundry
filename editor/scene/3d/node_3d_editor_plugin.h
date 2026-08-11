@@ -245,6 +245,10 @@ private:
 	int index;
 	ViewportBinding viewport_binding = ViewportBinding::FOCUSED_TILE;
 	Ref<World3D> bound_world;
+	// True only after bind_world() has registered this view with Node3DEditor furniture
+	// accounting. A temporary bound_world assignment (e.g. constructor placeholder) must not
+	// count as a registered association or world-change unbinds underflow the live-view count.
+	bool world_binding_registered = false;
 	// Held by identity: the host EditorSceneContext can free its SubViewport while this
 	// secondary view is still alive during deferred board close (#2082).
 	ObjectID preview_parent_viewport_id;

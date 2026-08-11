@@ -6559,9 +6559,11 @@ Node3DEditorViewport::Node3DEditorViewport(Node3DEditor *p_spatial_editor, int p
 		surface->set_focus_mode(FOCUS_NONE);
 		surface->set_mouse_filter(MOUSE_FILTER_IGNORE);
 
+		// Do not assign bound_world here. bind_world() owns the view-to-world association;
+		// a constructor placeholder would look like a prior binding and trigger a spurious
+		// unbind of an uncounted world when the real demoted scene world is applied.
 		Ref<World3D> world = EditorNode::get_singleton() ? EditorNode::get_singleton()->get_edited_world_3d() : Ref<World3D>();
 		if (world.is_valid()) {
-			bound_world = world;
 			viewport->set_world_3d(world);
 		}
 		gizmo_scale = 1.0;
@@ -6950,10 +6952,10 @@ SubViewport *Node3DEditorViewport::_resolve_preview_parent_viewport() const {
 void Node3DEditorViewport::bind_world(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
 	ERR_FAIL_COND(p_world.is_null());
 
-	const bool had_bound_world = bound_world.is_valid();
-	const bool world_changed = had_bound_world && bound_world != p_world;
+	const bool world_changed = world_binding_registered && bound_world.is_valid() && bound_world != p_world;
 	if (world_changed && spatial_editor) {
 		spatial_editor->_note_world_view_unbound(bound_world);
+		world_binding_registered = false;
 	}
 
 	bound_world = p_world;
@@ -6963,8 +6965,9 @@ void Node3DEditorViewport::bind_world(const Ref<World3D> &p_world, SubViewport *
 		_rebind_gizmo_scenarios(bound_world);
 	}
 	if (spatial_editor) {
-		if (!had_bound_world || world_changed) {
+		if (!world_binding_registered) {
 			spatial_editor->_note_world_view_bound(bound_world, p_preview_parent_viewport);
+			world_binding_registered = true;
 		} else {
 			spatial_editor->_note_world_view_rebound(bound_world, p_preview_parent_viewport);
 		}
@@ -10109,8 +10112,9 @@ void Node3DEditor::_unregister_secondary_viewport(Node3DEditorViewport *p_viewpo
 		focused_viewport = viewports[last_used_viewport];
 	}
 	secondary_viewports.erase(p_viewport);
-	if (p_viewport->bound_world.is_valid()) {
+	if (p_viewport->world_binding_registered && p_viewport->bound_world.is_valid()) {
 		_note_world_view_unbound(p_viewport->bound_world);
+		p_viewport->world_binding_registered = false;
 	}
 	if (p_delete) {
 		memdelete(p_viewport);
