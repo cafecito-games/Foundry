@@ -884,16 +884,24 @@ def parse_time_profile(path: Path, bucket_ms: float) -> dict[str, Any]:
     }
 
 
-def scan_runloop_iterations(path: Path) -> tuple[list[int], int | None]:
+def scan_runloop_iterations(path: Path, pid: int | None = None) -> tuple[list[int], int | None]:
     """Absolute start timestamps of every main run loop iteration, plus the trace origin.
 
     Returned in trace nanoseconds rather than as offsets, because the #2097 interval is defined by
     signpost timestamps from a different exported table and the two only align on the raw clock.
+
+    `pid` restricts the result to one process. A trace records the launched editor *and* its
+    children, so measuring one process's markers against another process's run loop would combine
+    unrelated timelines — and a busy sibling servicing its own run loop would mask a real stall in
+    the process being measured. This table has no process column: the emitting process is reachable
+    only through `thread`, which every row after the first refers to by `ref`.
     """
     strings: dict[str, str] = {}
     booleans: dict[str, str] = {}
     funcs: dict[str, str] = {}
     times: dict[str, int] = {}
+    thread_pids: dict[str, int] = {}
+    process_pids: dict[str, int] = {}
     iterations: list[int] = []
     origin: int | None = None
 
@@ -902,9 +910,29 @@ def scan_runloop_iterations(path: Path) -> tuple[list[int], int | None]:
         interval_type = ""
         is_main = ""
         func = ""
+        row_pid: int | None = None
         short_string_index = 0
         for child in row:
             tag = child.tag
+            if tag == "thread":
+                identifier = child.get("id")
+                if identifier is None:
+                    row_pid = thread_pids.get(child.get("ref") or "")
+                else:
+                    process = child.find("process")
+                    if process is not None:
+                        process_id = process.get("id")
+                        pid_element = process.find("pid")
+                        if process_id is not None and pid_element is not None and pid_element.text:
+                            process_pids[process_id] = int(pid_element.text)
+                            thread_pids[identifier] = process_pids[process_id]
+                        elif process_id is None:
+                            # Only the first thread of a process nests the definition; the rest —
+                            # including, typically, the main thread — refer to it.
+                            resolved = process_pids.get(process.get("ref") or "")
+                            if resolved is not None:
+                                thread_pids[identifier] = resolved
+                    row_pid = thread_pids.get(identifier)
             if tag == "event-time":
                 identifier = child.get("id")
                 reference = child.get("ref")
@@ -939,7 +967,10 @@ def scan_runloop_iterations(path: Path) -> tuple[list[int], int | None]:
                     func = funcs.get(child.get("ref") or "", "")
         if timestamp is None:
             continue
+        # The origin stays trace-wide: it anchors the legacy offsets, which predate this filter.
         origin = timestamp if origin is None else min(origin, timestamp)
+        if pid is not None and row_pid != pid:
+            continue
         if is_main == "Yes" and interval_type == "individual_iteration" and func == "START":
             iterations.append(timestamp)
 
@@ -1097,12 +1128,34 @@ def measure_startup_interval(runloop_xml: Path, signpost_xml: Path) -> dict[str,
         result["worst_clipped_gap_ms"] = None
         return result
 
-    iterations, _ = scan_runloop_iterations(runloop_xml)
+    # Same process as the markers: see `scan_runloop_iterations`.
+    iterations, _ = scan_runloop_iterations(runloop_xml, pid=markers["pid"])
     gaps = clip_gaps_to_interval(iterations, markers["first_window_ns"], markers["first_main_iteration_ns"])
     result["clipped_gaps"] = sorted(gaps, key=lambda entry: entry["gap_ms"], reverse=True)[:10]
     result["worst_clipped_gap_ms"] = max((entry["gap_ms"] for entry in gaps), default=0.0)
     result["main_runloop_iterations_in_interval"] = max(len(gaps) - 1, 0)
     return result
+
+
+def summarize_startup_intervals(runs: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """The `startup_interval` summary block, including the across-run maximum the gate is defined on.
+
+    Per-run data alone would force every consumer of `summary.json` to reimplement the acceptance
+    calculation to learn the one number that decides it, so the aggregate is recorded alongside.
+
+    Invalid runs are excluded from the maximum rather than folded in as zeros: a missing marker
+    means "unmeasured", and a fabricated 0.0 would drag the aggregate toward a pass. The capture is
+    rejected separately on the invalid reason, so nothing is lost by leaving them out here.
+    """
+    valid = [run for run in runs if run.get("invalid_reason") is None]
+    worst = [float(run.get("worst_clipped_gap_ms") or 0.0) for run in valid]
+    return {
+        "runs": list(runs),
+        "runs_measured": len(runs),
+        "valid_runs": len(valid),
+        "max_clipped_gap_ms": max(worst) if worst else None,
+        "interval_ms": spread([float(run.get("interval_ms") or 0.0) for run in valid]),
+    }
 
 
 def command_timeline(args: argparse.Namespace) -> int:
@@ -1161,9 +1214,9 @@ def command_timeline(args: argparse.Namespace) -> int:
             [run.get("blocked_percent_of_running_main_samples", 0.0) for run in runs]
         ),
         "longest_contiguous_blocked_ms": spread([run.get("longest_contiguous_blocked_ms", 0.0) for run in runs]),
-        # Kept as a per-run list rather than a spread: the #2097 gate is a hard maximum, and
-        # aggregating to a median here would make the criterion unable to see a single bad run.
-        "startup_interval": {"runs": [run["startup_interval"] for run in runs]},
+        # Per-run data is kept alongside the aggregate rather than replaced by a spread: the #2097
+        # gate is a hard maximum, and a median would make the criterion unable to see one bad run.
+        "startup_interval": summarize_startup_intervals([run["startup_interval"] for run in runs]),
     }
     record_load(summary, "timeline")
     write_summary(out_dir, summary)

@@ -225,6 +225,139 @@ class SignpostTableBuilder:
         return path
 
 
+class RunloopTableBuilder:
+    """Builds a `runloop-events` export shaped like a real one.
+
+    Unlike `os-signpost`, this table has no process column: the emitting process is reachable only
+    through the `thread` column, and every row after the first refers to its thread by `ref`. A
+    parser that wants to attribute an iteration to a process has to resolve that indirection.
+    """
+
+    def __init__(self) -> None:
+        self._ids = itertools.count(1)
+        self._rows: list[str] = []
+        self._threads: dict[tuple[int, str], int] = {}
+        self._processes: dict[int, int] = {}
+
+    def add_iteration(
+        self, time_ns: int, *, pid: int = 4242, is_main: bool = True, thread_name: str = "Main Thread"
+    ) -> RunloopTableBuilder:
+        key = (pid, thread_name)
+        if key in self._threads:
+            thread = f'<thread ref="{self._threads[key]}"/>'
+        else:
+            thread_id = next(self._ids)
+            self._threads[key] = thread_id
+            if pid in self._processes:
+                # A process is defined once, by whichever thread appears first, and every later
+                # thread of that process refers to it. In a real export the *main* thread is
+                # usually not the first one seen, so this is the shape that matters most.
+                process = f'<process ref="{self._processes[pid]}"/>'
+            else:
+                process_id = next(self._ids)
+                self._processes[pid] = process_id
+                process = (
+                    f'<process id="{process_id}" fmt="foundry ({pid})">'
+                    f'<pid id="{next(self._ids)}" fmt="{pid}">{pid}</pid>'
+                    f'<device-session id="{next(self._ids)}" fmt="TODO">TODO</device-session></process>'
+                )
+            thread = (
+                f'<thread id="{thread_id}" fmt="{thread_name} (foundry, pid: {pid})">'
+                f'<tid id="{next(self._ids)}" fmt="0x1">1</tid>{process}</thread>'
+            )
+        self._rows.append(
+            f'<row><event-time id="{next(self._ids)}" fmt="t">{time_ns}</event-time>'
+            f'<string id="{next(self._ids)}" fmt="recorded">recorded</string>'
+            f'<short-string id="{next(self._ids)}" fmt="individual_iteration">individual_iteration</short-string>'
+            f'<kdebug-func id="{next(self._ids)}" fmt="START">1</kdebug-func>'
+            f'<short-string id="{next(self._ids)}" fmt="r1">r1</short-string>'
+            f'<uint64 id="{next(self._ids)}" fmt="1">1</uint64>'
+            f'<medium-length-string id="{next(self._ids)}" fmt="m">kCFRunLoopDefaultMode</medium-length-string>'
+            f'<boolean id="{next(self._ids)}" fmt="{"Yes" if is_main else "No"}">{int(is_main)}</boolean>'
+            f"{thread}</row>"
+        )
+        return self
+
+    def write(self, directory: Path, filename: str = "runloop.xml") -> Path:
+        path = directory / filename
+        path.write_text(
+            '<?xml version="1.0"?>\n<trace-query-result>\n<node xpath="x">'
+            '<schema name="runloop-events"/>' + "\n".join(self._rows) + "</node>\n</trace-query-result>\n"
+        )
+        return path
+
+
+class RunloopProcessAttributionTests(unittest.TestCase):
+    """Iterations must be attributed to the process that emitted the markers.
+
+    A trace records the launched editor *and its children*. Measuring one process's markers against
+    another's run loop would silently combine unrelated timelines, which can turn a real stall into
+    a passing number.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_all_iterations_are_returned_when_no_process_is_requested(self):
+        builder = RunloopTableBuilder().add_iteration(100 * MS, pid=1).add_iteration(200 * MS, pid=2)
+        iterations, _ = macos_startup_profile.scan_runloop_iterations(builder.write(self.tmp))
+        self.assertEqual(iterations, [100 * MS, 200 * MS])
+
+    def test_iterations_from_other_processes_are_excluded(self):
+        builder = (
+            RunloopTableBuilder()
+            .add_iteration(100 * MS, pid=4242)
+            .add_iteration(150 * MS, pid=999)
+            .add_iteration(200 * MS, pid=4242)
+        )
+        iterations, _ = macos_startup_profile.scan_runloop_iterations(builder.write(self.tmp), pid=4242)
+        self.assertEqual(iterations, [100 * MS, 200 * MS])
+
+    def test_a_thread_referenced_by_ref_still_resolves_to_its_process(self):
+        # Only the first row per thread carries the process; the rest are `ref`s.
+        builder = RunloopTableBuilder()
+        for offset in range(4):
+            builder.add_iteration((100 + offset * 10) * MS, pid=4242)
+        builder.add_iteration(300 * MS, pid=999)
+        iterations, _ = macos_startup_profile.scan_runloop_iterations(builder.write(self.tmp), pid=4242)
+        self.assertEqual(len(iterations), 4)
+
+    def test_a_thread_whose_process_is_a_reference_still_resolves(self):
+        # The shape that matters in practice: an event thread appears first and defines the process,
+        # then the main thread refers to it. Resolving only the nested definition drops every main
+        # thread iteration and silently reports the whole interval as one stall.
+        builder = (
+            RunloopTableBuilder()
+            .add_iteration(50 * MS, pid=4242, is_main=False, thread_name="com.apple.NSEventThread")
+            .add_iteration(100 * MS, pid=4242, thread_name="Main Thread")
+            .add_iteration(200 * MS, pid=4242, thread_name="Main Thread")
+        )
+        iterations, _ = macos_startup_profile.scan_runloop_iterations(builder.write(self.tmp), pid=4242)
+        self.assertEqual(iterations, [100 * MS, 200 * MS])
+
+    def test_non_main_runloop_iterations_are_still_excluded(self):
+        builder = RunloopTableBuilder().add_iteration(100 * MS).add_iteration(200 * MS, is_main=False)
+        iterations, _ = macos_startup_profile.scan_runloop_iterations(builder.write(self.tmp), pid=4242)
+        self.assertEqual(iterations, [100 * MS])
+
+    def test_the_interval_uses_only_the_marker_process_run_loop(self):
+        signposts = (
+            SignpostTableBuilder()
+            .add(400 * MS, macos_startup_profile.MARKER_FIRST_WINDOW, pid=4242)
+            .add(1400 * MS, macos_startup_profile.MARKER_FIRST_MAIN_ITERATION, pid=4242)
+        ).write(self.tmp)
+        # The measured process stalls for the whole interval; a busy sibling services constantly.
+        runloop = RunloopTableBuilder().add_iteration(100 * MS, pid=4242)
+        for step in range(10):
+            runloop.add_iteration((400 + step * 100) * MS, pid=999)
+        measured = macos_startup_profile.measure_startup_interval(runloop.write(self.tmp), signposts)
+        self.assertIsNone(measured["invalid_reason"])
+        # Without process attribution the sibling's iterations would mask this as ten 100 ms gaps.
+        self.assertEqual(measured["worst_clipped_gap_ms"], 1000.0)
+
+
 class StartupMarkerParsingTests(unittest.TestCase):
     """`FoundryFirstWindowVisible` / `FoundryFirstMainIteration` extraction from an export."""
 
@@ -377,6 +510,56 @@ class Criteria2097Tests(unittest.TestCase):
         acceptance = macos_startup_profile.evaluate_acceptance_2097({})
         self.assertTrue(acceptance["invalid"])
         self.assertFalse(acceptance["passed"])
+
+
+class SummaryAggregateTests(unittest.TestCase):
+    """#2097 requires the summary artifact to record the across-run maximum, not just per-run data.
+
+    A consumer reading summary.json should not have to reimplement the acceptance calculation to
+    learn the number the gate is actually defined on.
+    """
+
+    def build(self, *worst: float | None) -> dict[str, Any]:
+        runs: list[dict[str, Any]] = [
+            {
+                "worst_clipped_gap_ms": value,
+                "invalid_reason": None if value is not None else "missing",
+                "interval_ms": 1000.0,
+            }
+            for value in worst
+        ]
+        block: dict[str, Any] = macos_startup_profile.summarize_startup_intervals(runs)
+        return block
+
+    def test_records_the_maximum_across_runs(self):
+        block = self.build(120.0, 610.0, 90.0)
+        self.assertEqual(block["max_clipped_gap_ms"], 610.0)
+        self.assertEqual(len(block["runs"]), 3)
+
+    def test_records_how_many_runs_were_valid(self):
+        block = self.build(120.0, None, 90.0)
+        self.assertEqual(block["valid_runs"], 2)
+        self.assertEqual(block["runs_measured"], 3)
+
+    def test_the_maximum_ignores_invalid_runs_rather_than_reading_them_as_zero(self):
+        # A missing marker means "unmeasured", not "0 ms"; folding it in as a zero would be a
+        # fabricated data point. The gate rejects the capture separately on the invalid reason.
+        block = self.build(300.0, None)
+        self.assertEqual(block["max_clipped_gap_ms"], 300.0)
+
+    def test_no_valid_run_leaves_the_maximum_unset_rather_than_zero(self):
+        block = self.build(None, None)
+        self.assertIsNone(block["max_clipped_gap_ms"])
+        self.assertEqual(block["valid_runs"], 0)
+
+    def test_the_recorded_maximum_agrees_with_the_gate(self):
+        runs = [
+            {"worst_clipped_gap_ms": value, "invalid_reason": None, "interval_ms": 1000.0}
+            for value in (120.0, 610.0, 90.0)
+        ]
+        block = macos_startup_profile.summarize_startup_intervals(runs)
+        gate = macos_startup_profile.evaluate_acceptance_2097({"timeline": {"startup_interval": block}})
+        self.assertEqual(block["max_clipped_gap_ms"], gate["max_clipped_gap_ms"])
 
 
 class CheckCommandExitCodeTests(unittest.TestCase):
