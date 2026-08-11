@@ -133,7 +133,12 @@ void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, co
 	// screen. Names that no longer resolve (a removed plugin, or a pre-name layout
 	// that only carried the old int key) fall back to the default screen by doing
 	// nothing here.
-	if (selected_main_editor == "Script" || get_button_index_by_name(selected_main_editor) >= 0) {
+	if (selected_main_editor == "Script") {
+		callable_mp(this, &EditorMainScreen::select_by_name).call_deferred(selected_main_editor);
+		return;
+	}
+	const int selected_index = get_button_index_by_name(selected_main_editor);
+	if (selected_index >= 0 && selected_index != EDITOR_2D && selected_index != EDITOR_3D) {
 		callable_mp(this, &EditorMainScreen::select_by_name).call_deferred(selected_main_editor);
 	}
 }
@@ -172,7 +177,7 @@ void EditorMainScreen::select_next() {
 		}
 	} while (!buttons[editor]->is_visible());
 
-	select(editor);
+	EditorNode::get_singleton()->select_main_screen(editor);
 }
 
 void EditorMainScreen::select_prev() {
@@ -186,7 +191,7 @@ void EditorMainScreen::select_prev() {
 		}
 	} while (!buttons[editor]->is_visible());
 
-	select(editor);
+	EditorNode::get_singleton()->select_main_screen(editor);
 }
 
 void EditorMainScreen::select_by_name(const String &p_name) {

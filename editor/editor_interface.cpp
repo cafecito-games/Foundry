@@ -434,7 +434,14 @@ SubViewport *EditorInterface::get_editor_viewport_3d(int p_idx) const {
 }
 
 void EditorInterface::set_main_screen_editor(const String &p_name) {
-	EditorNode::get_singleton()->get_editor_main_screen()->select_by_name(p_name);
+	EditorNode *editor_node = EditorNode::get_singleton();
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	const int index = main_screen->get_button_index_by_name(p_name);
+	if (index == EditorMainScreen::EDITOR_2D || index == EditorMainScreen::EDITOR_3D) {
+		editor_node->select_main_screen(index);
+		return;
+	}
+	main_screen->select_by_name(p_name);
 }
 
 void EditorInterface::set_distraction_free_mode(bool p_enter) {

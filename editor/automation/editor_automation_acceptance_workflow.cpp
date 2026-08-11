@@ -44,6 +44,7 @@
 #include "editor/editor_board.h"
 #include "editor/editor_board_strip.h"
 #include "editor/editor_data.h"
+#include "editor/editor_interface.h"
 #include "editor/editor_main_screen.h"
 #include "editor/editor_node.h"
 #include "editor/editor_scene_context.h"
@@ -2682,6 +2683,30 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	ScenePaneTile *initial_tile = _resolve_focused_scene_tile(strip->get_board(0));
 	if (initial_tile == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "Could not resolve the scene tile holding the 3D scene.");
+	}
+	initial_tile->set_scene_editor_mode(SceneEditorMode::MODE_2D, true);
+	p_driver.flush_frames(30);
+	if (EditorNode::get_editor_main_screen()->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "A tile-local 2D request did not select the shared 2D editor.");
+	}
+
+	initial_tile->set_scene_editor_mode(SceneEditorMode::MODE_3D, true);
+	p_driver.flush_frames(30);
+	if (EditorNode::get_editor_main_screen()->get_selected_index() != EditorMainScreen::EDITOR_3D) {
+		return _failure_with_message(p_driver, result.workflow, "A tile-local 3D request did not restore the shared 3D editor.");
+	}
+
+	EditorInterface::get_singleton()->set_main_screen_editor("2D");
+	p_driver.flush_frames(30);
+	if (initial_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D ||
+			EditorNode::get_editor_main_screen()->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "EditorInterface did not route 2D through the focused tile.");
+	}
+	EditorInterface::get_singleton()->set_main_screen_editor("3D");
+	p_driver.flush_frames(30);
+	if (initial_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D ||
+			EditorNode::get_editor_main_screen()->get_selected_index() != EditorMainScreen::EDITOR_3D) {
+		return _failure_with_message(p_driver, result.workflow, "EditorInterface did not route 3D through the focused tile.");
 	}
 	const ObjectID initial_tile_id = initial_tile->get_instance_id();
 	if (initial_tile->get_spatial_view() != nullptr) {
