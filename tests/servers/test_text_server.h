@@ -56,6 +56,119 @@ TEST_SUITE("[TextServer]") {
 			}
 		}
 
+		SUBCASE("[TextServer] Shared face: one FT_Face per font regardless of sizes") {
+			for (int i = 0; i < TextServerManager::get_singleton()->get_interface_count(); i++) {
+				Ref<TextServer> ts = TextServerManager::get_singleton()->get_interface(i);
+				CHECK_FALSE_MESSAGE(ts.is_null(), "Invalid TS interface.");
+
+				if (!ts->has_feature(TextServer::FEATURE_FONT_DYNAMIC)) {
+					continue;
+				}
+
+				const uint32_t before = ts->font_get_debug_face_open_count();
+				if (before == UINT32_MAX) {
+					continue; // This text server does not track face-open count.
+				}
+
+				RID font = ts->create_font();
+				ts->font_set_data_ptr(font, _font_Inter_Regular, _font_Inter_Regular_size);
+				ts->font_set_allow_system_fallback(font, false);
+
+				// Request metrics at several distinct sizes. With the shared-face
+				// design the underlying FT_Face must be opened exactly once.
+				const int sizes[] = { 8, 10, 12, 14, 16, 20, 24, 32 };
+				const int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
+				for (int j = 0; j < num_sizes; j++) {
+					int s = sizes[j];
+					ts->font_get_ascent(font, s);
+					ts->font_get_descent(font, s);
+					// Touch a glyph so the per-size rasterization path is exercised too.
+					Vector2 adv = ts->font_get_glyph_advance(font, s, 0x41); // 'A'
+					(void)adv;
+				}
+
+				const uint32_t after = ts->font_get_debug_face_open_count();
+				CHECK_MESSAGE((after - before) == (uint32_t)1,
+						"FT_Open_Face should run once per font, not once per size.");
+
+				// Sanity: the size cache now has one entry per requested size.
+				CHECK_EQ(ts->font_get_size_cache_list(font).size(), num_sizes);
+
+				ts->free_rid(font);
+			}
+		}
+
+		SUBCASE("[TextServer] Font metrics are stable and consistent across sizes") {
+			for (int i = 0; i < TextServerManager::get_singleton()->get_interface_count(); i++) {
+				Ref<TextServer> ts = TextServerManager::get_singleton()->get_interface(i);
+				CHECK_FALSE_MESSAGE(ts.is_null(), "Invalid TS interface.");
+
+				if (!ts->has_feature(TextServer::FEATURE_FONT_DYNAMIC)) {
+					continue;
+				}
+
+				RID font = ts->create_font();
+				ts->font_set_data_ptr(font, _font_Inter_Regular, _font_Inter_Regular_size);
+				ts->font_set_allow_system_fallback(font, false);
+
+				const int sizes[] = { 8, 10, 12, 14, 16, 20, 24, 32 };
+				const int num_sizes = sizeof(sizes) / sizeof(sizes[0]);
+				double first_height = 0.0;
+				for (int j = 0; j < num_sizes; j++) {
+					int s = sizes[j];
+					const double ascent = ts->font_get_ascent(font, s);
+					const double descent = ts->font_get_descent(font, s);
+					const double height = ascent + descent;
+
+					CHECK_MESSAGE(ascent > 0.0, "Ascent should be positive.");
+					CHECK_MESSAGE(descent >= 0.0, "Descent should be non-negative.");
+
+					// Re-querying must return the exact same value (shared face stability).
+					CHECK_EQ(ts->font_get_ascent(font, s), ascent);
+					CHECK_EQ(ts->font_get_descent(font, s), descent);
+
+					if (j == 0) {
+						first_height = height;
+					}
+				}
+
+				// Larger sizes produce larger (or equal) metrics.
+				const double largest_height = ts->font_get_ascent(font, 32) + ts->font_get_descent(font, 32);
+				CHECK_MESSAGE(largest_height >= first_height,
+						"Height should scale up with font size.");
+
+				ts->free_rid(font);
+			}
+		}
+
+		SUBCASE("[TextServer] Font metric cache invalidation on metric change") {
+			for (int i = 0; i < TextServerManager::get_singleton()->get_interface_count(); i++) {
+				Ref<TextServer> ts = TextServerManager::get_singleton()->get_interface(i);
+				CHECK_FALSE_MESSAGE(ts.is_null(), "Invalid TS interface.");
+
+				if (!ts->has_feature(TextServer::FEATURE_FONT_DYNAMIC)) {
+					continue;
+				}
+
+				RID font = ts->create_font();
+				ts->font_set_data_ptr(font, _font_Inter_Regular, _font_Inter_Regular_size);
+				ts->font_set_allow_system_fallback(font, false);
+
+				// Populate any internal size cache by reading the metric.
+				const double orig_ascent = ts->font_get_ascent(font, 16);
+				CHECK_MESSAGE(orig_ascent > 0.0, "Ascent should be positive.");
+
+				// Override the ascent on the TS RID; reading again must reflect the new value,
+				// not a stale cache entry.
+				ts->font_set_ascent(font, 16, orig_ascent + 100.0);
+				const double new_ascent = ts->font_get_ascent(font, 16);
+				CHECK_MESSAGE(new_ascent == orig_ascent + 100.0,
+						"font_get_ascent should reflect overridden value, not a stale cache.");
+
+				ts->free_rid(font);
+			}
+		}
+
 		SUBCASE("[TextServer] Text layout: Font fallback") {
 			for (int i = 0; i < TextServerManager::get_singleton()->get_interface_count(); i++) {
 				Ref<TextServer> ts = TextServerManager::get_singleton()->get_interface(i);
