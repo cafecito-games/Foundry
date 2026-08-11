@@ -4038,9 +4038,9 @@ void TextEdit::_clear() {
 		begin_complex_operation();
 
 		_remove_text(0, 0, MAX(0, get_line_count() - 1), MAX(get_line(MAX(get_line_count() - 1, 0)).size() - 1, 0));
+		clear_underlines();
 		insert_text_at_caret("");
 		text.clear();
-		clear_underlines();
 
 		end_complex_operation();
 		return;
@@ -4074,6 +4074,7 @@ void TextEdit::_set_text(const String &p_text, bool p_emit_signal) {
 		begin_complex_operation();
 		deselect();
 		_remove_text(0, 0, MAX(0, get_line_count() - 1), MAX(get_line(MAX(get_line_count() - 1, 0)).size() - 1, 0));
+		clear_underlines();
 	} else {
 		_clear();
 	}
@@ -4084,7 +4085,6 @@ void TextEdit::_set_text(const String &p_text, bool p_emit_signal) {
 	}
 
 	insert_text_at_caret(p_text);
-	clear_underlines();
 
 	if (p_emit_signal && get_text() != previous_text) {
 		_text_changed();
@@ -4840,7 +4840,6 @@ void TextEdit::begin_complex_operation() {
 		current_op.start_carets = carets;
 		complex_operation_has_text_ops = false;
 		complex_operation_start_version = get_version();
-		complex_operation_start_underlines = underlines;
 	}
 	complex_operation_count++;
 }
@@ -4856,12 +4855,10 @@ void TextEdit::end_complex_operation() {
 	}
 	if (!complex_operation_has_text_ops) {
 		next_operation_is_complex = false;
-		complex_operation_start_underlines.clear();
 		return;
 	}
 	if (undo_stack.is_empty()) {
 		complex_operation_has_text_ops = false;
-		complex_operation_start_underlines.clear();
 		return;
 	}
 
@@ -4870,25 +4867,17 @@ void TextEdit::end_complex_operation() {
 	while (first_op->get().prev_version != complex_operation_start_version && first_op->prev()) {
 		first_op = first_op->prev();
 	}
-
-	first_op->get().start_underlines = complex_operation_start_underlines;
-	first_op->get().has_start_underlines = true;
-	last_op->get().end_underlines = underlines;
-	last_op->get().has_end_underlines = true;
 	complex_operation_has_text_ops = false;
-	complex_operation_start_underlines.clear();
 
 	last_op->get().end_carets = carets;
-	if (last_op->get().chain_forward) {
-		last_op->get().chain_forward = false;
+	if (first_op == last_op) {
+		first_op->get().chain_forward = false;
+		first_op->get().chain_backward = false;
 		return;
 	}
 
+	first_op->get().chain_forward = true;
 	last_op->get().chain_backward = true;
-	if (!first_op->get().chain_forward) {
-		// The beginning of a long complex operation may have fallen off the bounded undo stack.
-		first_op->get().chain_forward = true;
-	}
 }
 
 bool TextEdit::has_undo() const {
@@ -5042,7 +5031,6 @@ void TextEdit::clear_undo_history() {
 	undo_stack_pos = nullptr;
 	undo_stack.clear();
 	complex_operation_has_text_ops = false;
-	complex_operation_start_underlines.clear();
 }
 
 bool TextEdit::is_insert_text_operation() const {
@@ -8349,9 +8337,10 @@ void TextEdit::_push_current_op() {
 	}
 
 	if (next_operation_is_complex) {
-		current_op.chain_forward = true;
 		next_operation_is_complex = false;
 	}
+	current_op.end_underlines = underlines;
+	current_op.has_end_underlines = true;
 
 	undo_stack.push_back(current_op);
 	current_op.type = TextOperation::TYPE_NONE;
@@ -8359,7 +8348,17 @@ void TextEdit::_push_current_op() {
 	current_op.chain_forward = false;
 
 	if (undo_stack.size() > undo_stack_max_size) {
+		const bool removed_complex_start = undo_stack.front()->get().chain_forward;
 		undo_stack.pop_front();
+		if (removed_complex_start && !undo_stack.is_empty()) {
+			TextOperation &new_front = undo_stack.front()->get();
+			if (new_front.chain_backward) {
+				new_front.chain_forward = false;
+				new_front.chain_backward = false;
+			} else {
+				new_front.chain_forward = true;
+			}
+		}
 	}
 }
 
@@ -9514,6 +9513,7 @@ void TextEdit::_insert_text(int p_line, int p_char, const String &p_text, int *r
 		_clear_redo();
 	}
 
+	const LocalVector<Underline> start_underlines = underlines;
 	int retline, retchar;
 	_base_insert_text(p_line, p_char, p_text, retline, retchar);
 	if (r_end_line) {
@@ -9544,6 +9544,8 @@ void TextEdit::_insert_text(int p_line, int p_char, const String &p_text, int *r
 		op.start_carets = carets;
 	}
 	op.end_carets = carets;
+	op.start_underlines = start_underlines;
+	op.has_start_underlines = true;
 
 	op.prev_version = get_version();
 	_push_current_op();
@@ -9558,6 +9560,7 @@ void TextEdit::_remove_text(int p_from_line, int p_from_column, int p_to_line, i
 		idle_detect->start();
 	}
 
+	const LocalVector<Underline> start_underlines = underlines;
 	String txt;
 	if (undo_enabled) {
 		_clear_redo();
@@ -9587,6 +9590,8 @@ void TextEdit::_remove_text(int p_from_line, int p_from_column, int p_to_line, i
 		op.start_carets = carets;
 	}
 	op.end_carets = carets;
+	op.start_underlines = start_underlines;
+	op.has_start_underlines = true;
 
 	op.prev_version = get_version();
 	_push_current_op();

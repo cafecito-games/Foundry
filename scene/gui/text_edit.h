@@ -428,7 +428,6 @@ private:
 	bool next_operation_is_complex = false;
 	bool complex_operation_has_text_ops = false;
 	uint32_t complex_operation_start_version = 0;
-	LocalVector<Underline> complex_operation_start_underlines;
 
 	TextOperation current_op;
 	List<TextOperation> undo_stack;
