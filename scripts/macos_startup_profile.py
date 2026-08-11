@@ -1134,6 +1134,16 @@ def measure_startup_interval(runloop_xml: Path, signpost_xml: Path) -> dict[str,
 
     # Same process as the markers: see `scan_runloop_iterations`.
     iterations, _ = scan_runloop_iterations(runloop_xml, pid=markers["pid"])
+    if not iterations:
+        # Nothing to align the markers against. The gaps would degenerate to a single span covering
+        # the interval, and a short interval would then pass while having measured nothing at all.
+        # Iterations existing outside the interval but none inside is a different case — a real
+        # total stall — and stays valid, because the process did have run loop data to align to.
+        result["invalid_reason"] = "unalignable"
+        result["clipped_gaps"] = []
+        result["worst_clipped_gap_ms"] = None
+        return result
+
     gaps = clip_gaps_to_interval(iterations, markers["first_window_ns"], markers["first_main_iteration_ns"])
     result["clipped_gaps"] = sorted(gaps, key=lambda entry: entry["gap_ms"], reverse=True)[:10]
     result["worst_clipped_gap_ms"] = max((entry["gap_ms"] for entry in gaps), default=0.0)

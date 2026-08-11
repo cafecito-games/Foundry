@@ -342,6 +342,33 @@ class RunloopProcessAttributionTests(unittest.TestCase):
         iterations, _ = macos_startup_profile.scan_runloop_iterations(builder.write(self.tmp), pid=4242)
         self.assertEqual(iterations, [100 * MS])
 
+    def test_a_trace_with_no_run_loop_data_for_the_marker_process_is_unalignable(self):
+        # With no iterations to align against, the interval degenerates to a single gap spanning it
+        # — and a short interval would then PASS despite nothing having been measured. #2097 calls
+        # for unalignable markers to invalidate the capture rather than produce a number.
+        signposts = (
+            SignpostTableBuilder()
+            .add(400 * MS, macos_startup_profile.MARKER_FIRST_WINDOW, pid=4242)
+            .add(500 * MS, macos_startup_profile.MARKER_FIRST_MAIN_ITERATION, pid=4242)
+        ).write(self.tmp)
+        runloop = RunloopTableBuilder().add_iteration(100 * MS, pid=999).write(self.tmp)
+        measured = macos_startup_profile.measure_startup_interval(runloop, signposts)
+        self.assertEqual(measured["invalid_reason"], "unalignable")
+        self.assertIsNone(measured["worst_clipped_gap_ms"])
+
+    def test_a_total_stall_inside_the_interval_is_still_a_valid_measurement(self):
+        # The process has run loop data, just none *inside* the interval. That is a real result —
+        # the run loop never turned during startup — and must not be confused with unalignable.
+        signposts = (
+            SignpostTableBuilder()
+            .add(400 * MS, macos_startup_profile.MARKER_FIRST_WINDOW, pid=4242)
+            .add(1400 * MS, macos_startup_profile.MARKER_FIRST_MAIN_ITERATION, pid=4242)
+        ).write(self.tmp)
+        runloop = RunloopTableBuilder().add_iteration(100 * MS, pid=4242).write(self.tmp)
+        measured = macos_startup_profile.measure_startup_interval(runloop, signposts)
+        self.assertIsNone(measured["invalid_reason"])
+        self.assertEqual(measured["worst_clipped_gap_ms"], 1000.0)
+
     def test_the_interval_uses_only_the_marker_process_run_loop(self):
         signposts = (
             SignpostTableBuilder()
