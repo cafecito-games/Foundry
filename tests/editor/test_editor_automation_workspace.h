@@ -124,6 +124,15 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state") {
 	h.editor_data.set_focused_tile_id(1);
 	h.workspace->set_focused_leaf(1);
 
+	ScenePaneTile *mode_tile_a = h.workspace->get_tile_by_id(0);
+	ScenePaneTile *mode_tile_b = h.workspace->get_tile_by_id(1);
+	REQUIRE(mode_tile_a != nullptr);
+	REQUIRE(mode_tile_b != nullptr);
+	mode_tile_a->set_scene_editor_mode(SceneEditorMode::MODE_2D, false);
+	mode_tile_a->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+	mode_tile_b->set_scene_editor_mode(SceneEditorMode::MODE_3D, false);
+	mode_tile_b->set_preview_mode(TilePreviewMode::LIVE_3D);
+
 	const Dictionary workspace_state = EditorAutomationWorkspace::capture_workspace_state(&h.editor_data, h.workspace);
 	CHECK((bool)workspace_state.get("supported", false));
 	CHECK(int(workspace_state.get("focused_tile_id", -1)) == 1);
@@ -139,6 +148,10 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state") {
 	CHECK((bool)tile_b.get("focused", false));
 	CHECK(String(tile_a.get("current_scene_path", String())) == "res://tile_a.tscn");
 	CHECK(String(tile_b.get("current_scene_path", String())) == "res://tile_b.tscn");
+	CHECK(String(tile_a.get("scene_editor_mode", String())) == "2d");
+	CHECK(String(tile_a.get("preview_mode", String())) == "focused_live");
+	CHECK(String(tile_b.get("scene_editor_mode", String())) == "3d");
+	CHECK(String(tile_b.get("preview_mode", String())) == "live_3d");
 
 	const Dictionary tree = workspace_state.get("tree", Dictionary());
 	CHECK(String(tree.get("type", String())) == "split");
@@ -166,6 +179,10 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state-reports-detached-viewpo
 
 	Node *detached_parent = memnew(Node);
 	detached_parent->add_child(h.editor_data.get_scene_context(scene_a)->get_viewport());
+	ScenePaneTile *tile_with_uninitialized_modes = h.workspace->get_tile_by_id(0);
+	REQUIRE(tile_with_uninitialized_modes != nullptr);
+	CHECK_FALSE(tile_with_uninitialized_modes->is_scene_editor_mode_initialized());
+	tile_with_uninitialized_modes->set_preview_mode(static_cast<TilePreviewMode>(999));
 
 	ErrorDetector error_detector;
 	const Dictionary workspace_state = EditorAutomationWorkspace::capture_workspace_state(&h.editor_data, h.workspace);
@@ -175,6 +192,8 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state-reports-detached-viewpo
 	REQUIRE(tiles.size() == 1);
 	const Dictionary tile = tiles[0];
 	CHECK(String(tile.get("current_scene_viewport_parent", String())) == "<detached>");
+	CHECK(String(tile.get("scene_editor_mode", String())) == "uninitialized");
+	CHECK(String(tile.get("preview_mode", String())) == "unknown");
 
 	detached_parent->remove_child(h.editor_data.get_scene_context(scene_a)->get_viewport());
 	memdelete(detached_parent);

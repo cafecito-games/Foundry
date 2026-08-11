@@ -98,11 +98,36 @@ String _node_path_or_none(Node *p_node) {
 	return String(p_node->get_path());
 }
 
+String _scene_editor_mode_state(ScenePaneTile *p_tile) {
+	if (p_tile == nullptr || !p_tile->is_scene_editor_mode_initialized()) {
+		return "uninitialized";
+	}
+	return String(scene_editor_mode_to_name(p_tile->get_scene_editor_mode()));
+}
+
+String _preview_mode_state(ScenePaneTile *p_tile) {
+	if (p_tile == nullptr) {
+		return "unknown";
+	}
+
+	switch (p_tile->get_preview_mode()) {
+		case TilePreviewMode::FOCUSED_LIVE:
+			return "focused_live";
+		case TilePreviewMode::LIVE_2D:
+			return "live_2d";
+		case TilePreviewMode::LIVE_3D:
+			return "live_3d";
+	}
+	return "unknown";
+}
+
 Dictionary _tile_state_entry(EditorData *p_editor_data, ScenePaneTile *p_tile, int p_focused_leaf_id) {
 	Dictionary tile;
 	const int tile_id = p_tile ? p_tile->get_tile_id() : -1;
 	tile["tile_id"] = tile_id;
 	tile["focused"] = tile_id == p_focused_leaf_id;
+	tile["scene_editor_mode"] = _scene_editor_mode_state(p_tile);
+	tile["preview_mode"] = _preview_mode_state(p_tile);
 	const int current_scene_index = p_editor_data->get_tile_current_scene(tile_id);
 	tile["current_scene"] = current_scene_index;
 	tile["current_scene_path"] = current_scene_index >= 0 ? p_editor_data->get_scene_path(current_scene_index) : String();
