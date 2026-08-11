@@ -41,6 +41,10 @@ class MakeRstAdmonitionTests(unittest.TestCase):
             result = make_rst.format_text_block(text, context, state)
         return result, state.num_errors, output.getvalue()
 
+    @staticmethod
+    def error_diagnostic(message: str) -> str:
+        return f"{make_rst.Ansi.RED}{make_rst.Ansi.BOLD}ERROR:{make_rst.Ansi.REGULAR} {message}{make_rst.Ansi.RESET}\n"
+
     def test_converts_each_admonition_type_to_an_indented_directive(self) -> None:
         for admonition in ("note", "warning", "tip", "important"):
             with self.subTest(admonition=admonition):
@@ -93,34 +97,50 @@ class MakeRstAdmonitionTests(unittest.TestCase):
     def test_reports_unmatched_closing_admonition(self) -> None:
         _result, errors, diagnostic = self.format_with_diagnostics("[/note]")
         self.assertEqual(errors, 1)
-        self.assertIn('TestClass.xml: Closing admonition tag "[/note]" has no opening counterpart', diagnostic)
+        self.assertEqual(
+            diagnostic,
+            self.error_diagnostic(
+                'TestClass.xml: Closing admonition tag "[/note]" has no opening counterpart in class "TestClass" description.'
+            ),
+        )
 
     def test_reports_mismatched_admonition(self) -> None:
         _result, errors, diagnostic = self.format_with_diagnostics("[note]Body.[/warning]")
         self.assertEqual(errors, 1)
-        self.assertIn('TestClass.xml: Mismatched closing admonition tag "[/warning]" for "[note]"', diagnostic)
+        self.assertEqual(
+            diagnostic,
+            self.error_diagnostic(
+                'TestClass.xml: Mismatched closing admonition tag "[/warning]" for "[note]" in class "TestClass" description.'
+            ),
+        )
 
     def test_reports_unclosed_admonition(self) -> None:
         _result, errors, diagnostic = self.format_with_diagnostics("[note]Body.")
         self.assertEqual(errors, 1)
-        self.assertIn("TestClass.xml: Tag depth mismatch for [note]: no closing [/note]", diagnostic)
+        self.assertEqual(
+            diagnostic,
+            self.error_diagnostic(
+                "TestClass.xml: Tag depth mismatch for [note]: no closing [/note] in class \"TestClass\" description."
+            ),
+        )
 
     def test_reports_nested_admonition(self) -> None:
         _result, errors, diagnostic = self.format_with_diagnostics("[note]Outer [tip]inner[/tip].[/note]")
         self.assertEqual(errors, 1)
-        self.assertIn('TestClass.xml: Nested admonition tag "[tip]" in [note] is not supported', diagnostic)
+        self.assertEqual(
+            diagnostic,
+            self.error_diagnostic(
+                'TestClass.xml: Nested admonition tag "[tip]" in [note] is not supported in class "TestClass" description.'
+            ),
+        )
 
-    def test_valid_parse_with_fresh_state_succeeds_after_invalid_parse(self) -> None:
-        invalid_context, invalid_state = self.context()
+    def test_valid_parse_with_same_state_succeeds_after_invalid_parse(self) -> None:
+        context, state = self.context()
         with contextlib.redirect_stdout(io.StringIO()):
-            make_rst.format_text_block("[note]Unclosed.", invalid_context, invalid_state)
-        self.assertEqual(invalid_state.num_errors, 1)
-
-        valid_context, valid_state = self.context()
-        with contextlib.redirect_stdout(io.StringIO()):
-            result = make_rst.format_text_block("[tip]Valid.[/tip]", valid_context, valid_state)
+            make_rst.format_text_block("[note]Unclosed.", context, state)
+            result = make_rst.format_text_block("[tip]Valid.[/tip]", context, state)
         self.assertEqual(result, ".. classref_tip::\n\n    Valid.")
-        self.assertEqual(valid_state.num_errors, 0)
+        self.assertEqual(state.num_errors, 1)
 
 
 if __name__ == "__main__":
