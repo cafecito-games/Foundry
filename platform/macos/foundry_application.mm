@@ -141,31 +141,37 @@ FoundryApplication *FoundryApp = nil;
 }
 
 - (void)sendEvent:(NSEvent *)event {
+	const bool booting = StartupInputGateMacOS::is_suppressed();
 	if (StartupInputGateMacOS::should_discard_event((unsigned long)[event type], [NSApp modalWindow] != nil)) {
 		// The editor is still booting. Input must not reach a half-constructed editor, and
 		// merely deferring it is not enough: accumulated input is replayed once boot finishes.
 		return;
 	}
 
-	// System defined events must keep flowing for AppKit, but subtype 8 carries media keys, which
-	// this class turns into engine key events. That is user input and stays gated during boot.
-	if ([event type] == NSEventTypeSystemDefined && [event subtype] == 8 && !StartupInputGateMacOS::is_suppressed()) {
-		int keyCode = (([event data1] & 0xFFFF0000) >> 16);
-		int keyFlags = ([event data1] & 0x0000FFFF);
-		int keyState = (((keyFlags & 0xFF00) >> 8)) == 0xA;
-		int keyRepeat = (keyFlags & 0x1);
+	// While booting, everything below that feeds the engine stays shut: a native modal session —
+	// a startup error alert — needs its events delivered to AppKit so it can be dismissed, but the
+	// engine's own input queue must not see them either way, or they surface once boot finishes.
+	if (!booting) {
+		// System defined events must keep flowing for AppKit, but subtype 8 carries media keys,
+		// which this class turns into engine key events.
+		if ([event type] == NSEventTypeSystemDefined && [event subtype] == 8) {
+			int keyCode = (([event data1] & 0xFFFF0000) >> 16);
+			int keyFlags = ([event data1] & 0x0000FFFF);
+			int keyState = (((keyFlags & 0xFF00) >> 8)) == 0xA;
+			int keyRepeat = (keyFlags & 0x1);
 
-		[self mediaKeyEvent:keyCode state:keyState repeat:keyRepeat];
-	}
-
-	DisplayServerMacOS *ds = Object::cast_to<DisplayServerMacOS>(DisplayServer::get_singleton());
-	if (ds) {
-		if ([event type] == NSEventTypeLeftMouseDown || [event type] == NSEventTypeRightMouseDown || [event type] == NSEventTypeOtherMouseDown) {
-			if (ds->mouse_process_popups()) {
-				return;
-			}
+			[self mediaKeyEvent:keyCode state:keyState repeat:keyRepeat];
 		}
-		ds->send_event(event);
+
+		DisplayServerMacOS *ds = Object::cast_to<DisplayServerMacOS>(DisplayServer::get_singleton());
+		if (ds) {
+			if ([event type] == NSEventTypeLeftMouseDown || [event type] == NSEventTypeRightMouseDown || [event type] == NSEventTypeOtherMouseDown) {
+				if (ds->mouse_process_popups()) {
+					return;
+				}
+			}
+			ds->send_event(event);
+		}
 	}
 
 	// From http://cocoadev.com/index.pl?GameKeyboardHandlingAlmost

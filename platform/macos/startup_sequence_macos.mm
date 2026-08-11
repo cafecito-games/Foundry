@@ -30,8 +30,10 @@
 
 #import "startup_sequence_macos.h"
 
+#import "core/error/error_macros.h"
 #import "core/os/main_loop.h"
 #import "core/os/os.h"
+#import "core/string/ustring.h"
 #import "main/main.h"
 
 #import <AppKit/AppKit.h>
@@ -86,10 +88,21 @@ StartupSequenceMacOS::StepResult StartupSequenceMacOS::step() {
 		// Re-entered from a nested run loop while a phase is still running; see the header.
 		return STEP_PENDING;
 	}
+	if (phase == PHASE_FAILED) {
+		return STEP_EXIT_FAILURE;
+	}
 	stepping = true;
 	StepResult result = STEP_PENDING;
 	@try {
 		result = _run_phase();
+	} @catch (NSException *exception) {
+		// Defense in depth. An `NSException` raised below a C++ frame cannot reach here — those
+		// frames are compiled `-fno-exceptions` and abort the process at that boundary — but a
+		// raise from Objective-C called directly by a phase body does, and retrying a phase that
+		// stopped part way through would repeat whatever it managed to do first.
+		ERR_PRINT("Startup phase failed with NSException: " + String::utf8([exception reason].UTF8String));
+		_fail();
+		result = STEP_EXIT_FAILURE;
 	} @finally {
 		// `@finally` rather than a scope guard: an `NSException` raised by a boot phase unwinds
 		// without running C++ destructors in this translation unit, and the observer catches it.
@@ -102,7 +115,12 @@ StartupSequenceMacOS::StepResult StartupSequenceMacOS::step() {
 StartupSequenceMacOS::StepResult StartupSequenceMacOS::_run_phase() {
 	switch (phase) {
 		case PHASE_MAIN_START: {
-			if (_main_start() != EXIT_SUCCESS) {
+			const int result = _main_start();
+			if (phase == PHASE_FAILED) {
+				// The phase abandoned the boot part way through; advancing would hide that.
+				return STEP_EXIT_FAILURE;
+			}
+			if (result != EXIT_SUCCESS) {
 				return STEP_EXIT_FAILURE;
 			}
 			if (!_has_main_loop()) {
@@ -114,14 +132,23 @@ StartupSequenceMacOS::StepResult StartupSequenceMacOS::_run_phase() {
 		}
 		case PHASE_MAIN_LOOP_INITIALIZE: {
 			_main_loop_initialize();
+			if (phase == PHASE_FAILED) {
+				return STEP_EXIT_FAILURE;
+			}
 			phase = PHASE_RUNNING;
 			StartupInputGateMacOS::set_suppressed(false);
 			return STEP_RUNNING;
 		}
 		case PHASE_RUNNING:
 			break;
+		case PHASE_FAILED:
+			return STEP_EXIT_FAILURE;
 	}
 	return STEP_RUNNING;
+}
+
+void StartupSequenceMacOS::_fail() {
+	phase = PHASE_FAILED;
 }
 
 int StartupSequenceMacOS::_main_start() {

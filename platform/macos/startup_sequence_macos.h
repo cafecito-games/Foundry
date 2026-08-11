@@ -75,6 +75,7 @@ public:
 		PHASE_MAIN_START,
 		PHASE_MAIN_LOOP_INITIALIZE,
 		PHASE_RUNNING,
+		PHASE_FAILED,
 	};
 
 	enum StepResult {
@@ -88,6 +89,10 @@ public:
 
 	// Runs the phase that is due and returns what the caller must do next. Must be called from
 	// the run loop, once per turn.
+	//
+	// A phase that fails leaves the sequence in `PHASE_FAILED`, which reports `STEP_EXIT_FAILURE`
+	// for good: it stopped part way through whatever it was doing, and running it again would
+	// repeat the part that already happened.
 	//
 	// Re-entrant calls do nothing and report `STEP_PENDING`. The observer that drives this is
 	// registered in the common run loop modes, which include the modal panel mode, so a boot
@@ -107,6 +112,9 @@ protected:
 	// A `Main::start()` that ran a command line tool leaves no main loop behind.
 	virtual bool _has_main_loop() const;
 	virtual void _main_loop_initialize();
+
+	// Abandons the boot. A phase body calls this when it cannot finish and must not be retried.
+	void _fail();
 
 private:
 	StepResult _run_phase();

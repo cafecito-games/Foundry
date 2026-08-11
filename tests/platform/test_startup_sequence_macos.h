@@ -227,6 +227,42 @@ TEST_CASE("[StartupSequence][macOS] a nested run loop cannot re-enter the phase 
 	CHECK(sequence.get_phase() == StartupSequenceMacOS::PHASE_RUNNING);
 }
 
+// A boot phase that abandons the boot part way through, the way the observer's exception handler
+// does when a phase raises.
+class AbandoningSequence : public StartupSequenceMacOS {
+public:
+	int main_start_calls = 0;
+	int main_loop_initialize_calls = 0;
+
+protected:
+	virtual int _main_start() override {
+		main_start_calls++;
+		_fail();
+		return EXIT_SUCCESS;
+	}
+
+	virtual bool _has_main_loop() const override { return true; }
+
+	virtual void _main_loop_initialize() override { main_loop_initialize_calls++; }
+};
+
+TEST_CASE("[StartupSequence][macOS] an abandoned phase fails the boot instead of being retried") {
+	GateStateGuard guard;
+	AbandoningSequence sequence;
+	sequence.begin();
+
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_EXIT_FAILURE);
+	CHECK(sequence.main_start_calls == 1);
+	CHECK(sequence.get_phase() == StartupSequenceMacOS::PHASE_FAILED);
+	// The boot never completed, so input stays gated.
+	CHECK(StartupInputGateMacOS::is_suppressed());
+
+	// A later run loop turn must not run the half-finished phase again, nor advance past it.
+	CHECK(sequence.step() == StartupSequenceMacOS::STEP_EXIT_FAILURE);
+	CHECK(sequence.main_start_calls == 1);
+	CHECK(sequence.main_loop_initialize_calls == 0);
+}
+
 TEST_CASE("[StartupSequence][macOS] the gate stays engaged for every boot phase and lifts only at the end") {
 	// Not every input path runs through `-[FoundryApplication sendEvent:]`: media keys and the
 	// modifier poll on application activation reach the engine directly, and consult this flag.
