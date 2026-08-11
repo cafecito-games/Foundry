@@ -137,7 +137,20 @@ struct EditorProgress {
 class EditorNode : public Node {
 	FOUNDRY_CLASS(EditorNode, Node);
 
+	// Names the dependency-ordered blocks the constructor builds, for `--benchmark-file`. Defined in
+	// the implementation; nothing outside construction needs it.
+	class StartupPhases;
+
+	static bool documentation_initialized;
+
 public:
+	// Generates the class reference and creates the help highlighter. An explicit startup phase
+	// rather than work hanging off `NOTIFICATION_POSTINITIALIZE`, and a no-op after the first call:
+	// see the definition.
+	static void initialize_documentation();
+	static bool is_documentation_initialized();
+	static void reset_documentation_initialized_for_testing();
+
 	enum SceneNameCasing {
 		SCENE_NAME_CASING_AUTO,
 		SCENE_NAME_CASING_PASCAL_CASE,
