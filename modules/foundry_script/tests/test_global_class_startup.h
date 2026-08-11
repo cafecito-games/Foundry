@@ -424,6 +424,85 @@ TEST_SUITE("[Modules][FoundryScript][GlobalClassStartup]") {
 		CHECK_EQ(FileAccess::get_file_as_string(tree.root.path_join("generated/provider.marker")), "provider-ok");
 	}
 
+	TEST_CASE("GlobalClassStartup generated runtime class reconciles only after task runs") {
+		TemporaryProjectTree tree("fs_global_class_startup_generated_runtime_class");
+		REQUIRE(tree.is_valid());
+
+		Ref<ConfigFile> config;
+		config.instantiate();
+		config->set_value(String(), "config_version", 5);
+		config->set_value("application", "config/name", "Global Class Startup Generated Runtime Class");
+		config->set_value("application", "run/main_scene", "res://main.tscn");
+		config->set_value("build", "enabled", true);
+		PackedStringArray pre_compile_tasks;
+		pre_compile_tasks.push_back("generate_dependency");
+		config->set_value("build", "pre_compile", pre_compile_tasks);
+		config->set_value("build/tasks/generate_dependency", "provider", "command");
+		config->set_value("build/tasks/generate_dependency", "command", fs_test_python_command());
+		PackedStringArray generate_args;
+		generate_args.push_back("res://tools/generate_dependency.py");
+		generate_args.push_back("res://generated/dependency.fs");
+		config->set_value("build/tasks/generate_dependency", "args", generate_args);
+		PackedStringArray generate_outputs;
+		generate_outputs.push_back("res://generated/dependency.fs");
+		config->set_value("build/tasks/generate_dependency", "outputs", generate_outputs);
+		config->set_value("build/tasks/generate_dependency", "working_directory", "res://");
+		config->set_value("build/tasks/generate_dependency", "timeout_seconds", 5);
+		REQUIRE_EQ(config->save(tree.root.path_join("project.foundry")), OK);
+
+		tree.write_file("main.tscn",
+				"[gd_scene load_steps=2 format=3]\n\n"
+				"[ext_resource path=\"res://main.fs\" type=\"Script\" id=\"1\"]\n\n"
+				"[node name=\"Main\" type=\"Node\"]\n"
+				"script = ExtResource(\"1\")\n");
+		tree.write_file("main.fs",
+				"extends Node\n\n"
+				"func _ready() -> void:\n"
+				"\tvar dependency := StartupGeneratedDependency.new()\n"
+				"\tprint(\"GLOBAL_CLASS_STARTUP_GENERATED_OK:\" + dependency.value())\n"
+				"\tget_tree().quit()\n");
+		tree.write_file("tools/generate_dependency.py",
+				"import pathlib\n"
+				"import sys\n\n"
+				"output_path = pathlib.Path(sys.argv[1])\n"
+				"output_path.parent.mkdir(parents=True, exist_ok=True)\n"
+				"output_path.write_text(\n"
+				"    'class_name StartupGeneratedDependency\\n'\n"
+				"    'extends RefCounted\\n\\n'\n"
+				"    'func value() -> String:\\n'\n"
+				"    '\\treturn \"generated\"\\n',\n"
+				"    encoding='utf-8',\n"
+				")\n");
+
+		List<String> args;
+		args.push_back("--headless");
+		args.push_back("--no-header");
+		args.push_back("--trusted");
+		args.push_back("--verbose");
+		args.push_back("project");
+		args.push_back("run");
+		args.push_back("--project");
+		args.push_back(tree.root);
+		args.push_back("--quit-after");
+		args.push_back("60");
+
+		const String generated_path = tree.root.path_join("generated/dependency.fs");
+		const GlobalClassStartupProcessResult first_result = run_global_class_startup_process(args, tree);
+		REQUIRE_MESSAGE(first_result.error == OK, first_result.output);
+		CHECK_MESSAGE(FileAccess::exists(generated_path), first_result.output);
+		CHECK_MESSAGE(first_result.exit_code == 0, first_result.output);
+		CHECK_MESSAGE(first_result.output.contains("GLOBAL_CLASS_STARTUP_GENERATED_OK:generated"),
+				first_result.output);
+		CHECK_MESSAGE(count_startup_scan_summaries(first_result.output) == 2, first_result.output);
+
+		const GlobalClassStartupProcessResult clean_result = run_global_class_startup_process(args, tree);
+		REQUIRE_MESSAGE(clean_result.error == OK, clean_result.output);
+		CHECK_MESSAGE(clean_result.exit_code == 0, clean_result.output);
+		CHECK_MESSAGE(clean_result.output.contains("GLOBAL_CLASS_STARTUP_GENERATED_OK:generated"),
+				clean_result.output);
+		CHECK_MESSAGE(count_startup_scan_summaries(clean_result.output) == 1, clean_result.output);
+	}
+
 	TEST_CASE("GlobalClassStartup direct script keeps one centralized scan") {
 		TemporaryProjectTree tree("fs_global_class_startup_direct_script");
 		REQUIRE(tree.is_valid());

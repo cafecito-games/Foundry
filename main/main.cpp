@@ -371,8 +371,12 @@ static Vector<String> get_files_with_extension(const String &p_root, const Strin
 #endif
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
-static bool run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::Stage p_stage, const String &p_context) {
+static bool run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::Stage p_stage,
+		const String &p_context, bool *r_ran_any_task = nullptr) {
 	const FoundryBuildPipelineRunner::StageRunResult result = FoundryBuildPipelineRunner::run_stage(p_stage);
+	if (r_ran_any_task != nullptr) {
+		*r_ran_any_task = result.ran_any_task;
+	}
 	if (result.is_success()) {
 		return true;
 	}
@@ -4751,9 +4755,13 @@ int Main::start() {
 
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	if (foundry_runtime_build_stages_enabled) {
+		bool pre_compile_ran_any_task = false;
 		if (!run_foundry_build_stage_for_cli(ProjectBuildPipelineConfig::STAGE_PRE_COMPILE,
-					"Foundry pre_compile runtime stage")) {
+					"Foundry pre_compile runtime stage", &pre_compile_ran_any_task)) {
 			return EXIT_FAILURE;
+		}
+		if (scan_runtime_global_classes && pre_compile_ran_any_task) {
+			ScriptServer::scan_global_classes();
 		}
 
 		ResourceLoader::add_custom_loaders();
