@@ -49,14 +49,6 @@
 
 namespace {
 
-static const char *MAIN_SCREEN_NAMES[] = {
-	"2d",
-	"3d",
-	"script",
-	"game",
-	"assetlib",
-};
-
 String _node_tree_path(Node *p_node) {
 	if (p_node == nullptr || !p_node->is_inside_tree()) {
 		return String();
@@ -87,14 +79,6 @@ Dictionary _scene_entry(int p_index, const String &p_path, Node *p_root, bool p_
 	}
 	entry["unsaved"] = p_unsaved;
 	return entry;
-}
-
-String _main_screen_name(int p_index) {
-	static const int k_main_screen_count = 5;
-	if (p_index >= 0 && p_index < k_main_screen_count) {
-		return MAIN_SCREEN_NAMES[p_index];
-	}
-	return String();
 }
 
 String _canvas_tool_name(CanvasItemEditor::Tool p_tool) {
@@ -192,6 +176,19 @@ Dictionary EditorAutomationState::read_scene_tree(Node *p_snapshot_root) {
 	payload["active_scene_path"] = EditorNode::get_editor_data().get_scene_path(EditorNode::get_editor_data().get_edited_scene());
 	payload["source"] = "edited_scene_root";
 	return payload;
+}
+
+String EditorAutomationState::main_screen_name(int p_index) {
+	switch (p_index) {
+		case EditorMainScreen::EDITOR_2D:
+			return "2d";
+		case EditorMainScreen::EDITOR_3D:
+			return "3d";
+		case EditorMainScreen::EDITOR_GAME:
+			return "game";
+		default:
+			return String();
+	}
 }
 
 Array EditorAutomationState::capture_modal_stack(Node *p_root) {
@@ -373,7 +370,7 @@ Dictionary EditorAutomationState::read_editor_state() {
 		const int selected_index = main_screen_editor->get_selected_index();
 		main_screen["supported"] = true;
 		main_screen["index"] = selected_index;
-		main_screen["name"] = _main_screen_name(selected_index);
+		main_screen["name"] = main_screen_name(selected_index);
 	} else {
 		main_screen["supported"] = false;
 	}

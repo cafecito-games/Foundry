@@ -606,7 +606,7 @@ TEST_CASE("[Editor][BoardSwitcher] Closing the active board through the strip re
 	harness.strip->set_active_board(1);
 	REQUIRE(harness.strip->get_active_index() == 1);
 
-	// Closing the active board fires active_board_changed (the strip activates a neighbour
+	// Closing the active board fires active_board_changed (the strip activates a neighbor
 	// first) and then board_removed, each triggering its own switcher rebuild; what matters
 	// is that the buttons are left consistent once both have landed.
 	CHECK(harness.strip->close_board(1));
@@ -793,7 +793,7 @@ TEST_CASE("[Editor][BoardSwitcher] Activating the Nth entry after a reorder acti
 	// even if the switcher never refreshed its labels after a reorder. Identify the button
 	// by its visible text instead: board "A" now lives at strip index 1, but if the
 	// switcher failed to rebuild after board_moved, its buttons would still read the
-	// pre-reorder labels (A, B, C at positions 0, 1, 2), so the button labelled "A" would
+	// pre-reorder labels (A, B, C at positions 0, 1, 2), so the button labeled "A" would
 	// still sit at position 0 and pressing it would activate the board actually at index 0
 	// ("C"), not "A". That mismatch is what this test catches.
 	Button *entry = harness.board_button_with_text("A");

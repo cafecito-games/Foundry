@@ -36,6 +36,7 @@
 #include "editor/editor_scene_pane_tile.h"
 #include "editor/gui/editor_scene_mode_switcher.h"
 #include "editor/scene/editor_scene_tabs.h"
+#include "editor/workspace/workspace_pane.h"
 
 #include "scene/2d/node_2d.h"
 #include "scene/3d/node_3d.h"
@@ -171,6 +172,35 @@ TEST_CASE("[Editor][ScenePaneTileMode] disabled 3D feature forces 2D inference")
 
 	memdelete(context_3d);
 	memdelete(tile);
+}
+
+TEST_CASE("[Editor][ScenePaneTileMode] switcher stays visible with workspace scene tabs") {
+	EditorData editor_data;
+	EditorSelection selection;
+	const int tile_id = 23;
+	const int scene_index = editor_data.add_edited_scene(-1);
+	EditorSceneContext *context = editor_data.get_scene_context(scene_index);
+	REQUIRE(context != nullptr);
+	context->set_scene_root_node(memnew(Node2D));
+	editor_data.set_scene_tile(scene_index, tile_id);
+	editor_data.set_tile_current_scene(tile_id, scene_index);
+
+	WorkspacePane *pane = memnew(WorkspacePane);
+	SceneTree::get_singleton()->get_root()->add_child(pane);
+	pane->set_size(Size2(800, 600));
+	pane->setup(tile_id, &selection, &editor_data);
+	pane->sync_scene_tabs_from_editor_data(false);
+	SceneTree::get_singleton()->process(0.016);
+	MessageQueue::get_singleton()->flush();
+
+	ScenePaneTile *tile = pane->get_scene_tile();
+	REQUIRE(tile != nullptr);
+	REQUIRE(tile->get_scene_mode_switcher() != nullptr);
+	CHECK_FALSE(tile->get_scene_tabs()->is_visible());
+	CHECK(tile->get_scene_mode_switcher()->is_visible_in_tree());
+
+	SceneTree::get_singleton()->get_root()->remove_child(pane);
+	memdelete(pane);
 }
 
 TEST_CASE("[Editor][ScenePaneTileMode] disabled 3D feature constrains durable assignments and restore") {

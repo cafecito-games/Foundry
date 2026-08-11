@@ -36,6 +36,7 @@
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_wait.h"
+#include "editor/editor_main_screen.h"
 
 #include "scene/gui/button.h"
 #include "scene/gui/line_edit.h"
@@ -330,6 +331,13 @@ TEST_CASE("[Editor][Automation] editor state readback degrades without full edit
 	CHECK(state.has("unsaved"));
 	CHECK(state.has("main_screen"));
 	CHECK(((Array)state["modal_stack"]).is_empty());
+}
+
+TEST_CASE("[Editor][Automation] main screen state names follow the current editor table") {
+	CHECK(EditorAutomationState::main_screen_name(EditorMainScreen::EDITOR_2D) == "2d");
+	CHECK(EditorAutomationState::main_screen_name(EditorMainScreen::EDITOR_3D) == "3d");
+	CHECK(EditorAutomationState::main_screen_name(EditorMainScreen::EDITOR_GAME) == "game");
+	CHECK(EditorAutomationState::main_screen_name(-1).is_empty());
 }
 
 TEST_CASE("[Editor][Automation] wait_for no_new_errors distinguishes new log entries") {

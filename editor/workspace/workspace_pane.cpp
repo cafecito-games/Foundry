@@ -39,6 +39,7 @@
 #include "editor/editor_script_leaf.h"
 #include "editor/editor_string_names.h"
 #include "editor/editor_tile_drop_overlay.h"
+#include "editor/gui/editor_scene_mode_switcher.h"
 #include "editor/scene/editor_scene_tabs.h"
 #include "editor/script/script_editor_view.h"
 #include "editor/workspace/scene_tab.h"
@@ -117,7 +118,36 @@ void WorkspacePane::_sync_tab_strip() {
 		tab_strip->set_current_tab(active_tab_index);
 	}
 	tab_strip->set_visible(!tabs.is_empty());
+	if (tab_chrome) {
+		tab_chrome->set_visible(!tabs.is_empty());
+	}
 	tab_strip->set_block_signals(false);
+	_sync_scene_mode_switcher_mount();
+}
+
+void WorkspacePane::_sync_scene_mode_switcher_mount() {
+	if (!scene_tile || !tab_strip_trailing_host) {
+		return;
+	}
+	EditorSceneModeSwitcher *switcher = scene_tile->get_scene_mode_switcher();
+	if (!switcher) {
+		return;
+	}
+
+	if (tabs.is_empty()) {
+		tab_strip_trailing_host->hide();
+		if (switcher->get_parent() != scene_tile->get_scene_tabs()) {
+			scene_tile->get_scene_tabs()->add_extra_control(switcher);
+		}
+		return;
+	}
+
+	if (switcher->get_parent() != tab_strip_trailing_host) {
+		switcher->reparent(tab_strip_trailing_host);
+	}
+	const bool scene_tab_active = active_tab_index >= 0 && active_tab_index < tabs.size() &&
+			tabs[active_tab_index].get_type_id() == StringName("scene");
+	tab_strip_trailing_host->set_visible(scene_tab_active);
 }
 
 void WorkspacePane::_refresh_canonical_locations() {
@@ -1001,6 +1031,11 @@ WorkspacePane::WorkspacePane() {
 
 	tab_registry = &get_shared_tab_registry();
 
+	tab_chrome = memnew(HBoxContainer);
+	tab_chrome->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	tab_chrome->hide();
+	add_child(tab_chrome);
+
 	WorkspaceTabBar *strip = memnew(WorkspaceTabBar);
 	strip->set_pane(this);
 	// Every workspace pane's strip shares one rearrange group so a tab dragged from
@@ -1012,7 +1047,10 @@ WorkspacePane::WorkspacePane() {
 	tab_strip->set_drag_to_rearrange_enabled(true);
 	tab_strip->set_tab_close_display_policy(TabBar::CLOSE_BUTTON_SHOW_ACTIVE_ONLY);
 	tab_strip->hide();
-	add_child(tab_strip);
+	tab_chrome->add_child(tab_strip);
+	tab_strip_trailing_host = memnew(HBoxContainer);
+	tab_chrome->add_child(tab_strip_trailing_host);
+	tab_strip_trailing_host->hide();
 	_bind_tab_strip();
 
 	// The single expanding child below the strip. It is never hidden, so the pane

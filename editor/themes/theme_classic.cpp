@@ -1796,7 +1796,7 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_type_variation("BottomDrawerStrip", "PanelContainer");
 		p_theme->set_stylebox(SceneStringName(panel), "BottomDrawerStrip", style_bottom_drawer_strip);
 
-		// Tile side rail: the vertical analogue of the bottom drawer strip, a
+		// Tile side rail: the vertical analog of the bottom drawer strip, a
 		// slim flat bar with a single border on the edge facing the tile body.
 		// Two type variations (not overrides, for the same recursion reason as
 		// the bottom strip) since the bordered edge differs per side.

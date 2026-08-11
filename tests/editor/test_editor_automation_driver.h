@@ -46,6 +46,7 @@
 #include "scene/gui/label.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/menu_button.h"
+#include "scene/gui/option_button.h"
 #include "scene/gui/panel_container.h"
 #include "scene/gui/popup_menu.h"
 #include "scene/gui/scroll_container.h"
@@ -1026,6 +1027,22 @@ public:
 	}
 };
 
+class OptionButtonSelectionTracker : public Object {
+	FOUNDRY_CLASS(OptionButtonSelectionTracker, Object);
+
+public:
+	int selected_index = -1;
+	bool popup_opened = false;
+
+	void on_item_selected(int p_index) {
+		selected_index = p_index;
+	}
+
+	void on_popup_opened() {
+		popup_opened = true;
+	}
+};
+
 static const EditorAutomationElement *find_virtual_element(const EditorAutomationSnapshot &p_snapshot, const String &p_role, const String &p_name) {
 	for (int i = 0; i < p_snapshot.get_element_count(); i++) {
 		const EditorAutomationElement &element = p_snapshot.get_element(i);
@@ -1137,6 +1154,41 @@ TEST_CASE("[Editor][Automation] item list select and activate") {
 	CHECK(activate_result.route == EditorAutomationActionRouteNames::SEMANTIC_ACTIVATE);
 	CHECK(activate_result.events.has("activated"));
 	CHECK(tracker.activated_index == 1);
+
+	memdelete(root);
+}
+
+TEST_CASE("[Editor][Automation] option button select follows the user-facing signal path") {
+	PanelContainer *root = memnew(PanelContainer);
+	root->set_size(Size2(400, 300));
+	SceneTree::get_singleton()->get_root()->add_child(root);
+
+	OptionButton *option_button = memnew(OptionButton);
+	option_button->set_accessibility_name("Theme");
+	option_button->add_item("Dark");
+	option_button->add_item("Light");
+	option_button->select(0);
+	setup_visible_control(option_button);
+	root->add_child(option_button);
+
+	OptionButtonSelectionTracker tracker;
+	option_button->connect(SceneStringName(item_selected), callable_mp(&tracker, &OptionButtonSelectionTracker::on_item_selected));
+	option_button->get_popup()->connect(SNAME("about_to_popup"), callable_mp(&tracker, &OptionButtonSelectionTracker::on_popup_opened));
+	MessageQueue::get_singleton()->flush();
+
+	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(root);
+	const EditorAutomationElement *theme = find_element_by_role_and_name(snapshot, "button", "Theme");
+	REQUIRE(theme != nullptr);
+
+	Dictionary target;
+	target["id"] = theme->id;
+	Dictionary options;
+	options["value"] = "Light";
+	const EditorAutomationActionResult result = EditorAutomationDriver::perform(snapshot, "select", target, options);
+	CHECK(result.ok);
+	CHECK(tracker.popup_opened);
+	CHECK(option_button->get_selected() == 1);
+	CHECK(tracker.selected_index == 1);
 
 	memdelete(root);
 }

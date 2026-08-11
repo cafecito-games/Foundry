@@ -444,7 +444,11 @@ void EditorSceneTabs::shortcut_input(const Ref<InputEvent> &p_event) {
 
 void EditorSceneTabs::add_extra_control(Control *p_control) {
 	ERR_FAIL_NULL(p_control);
-	tabbar_container->add_child(p_control);
+	if (p_control->get_parent()) {
+		p_control->reparent(tabbar_container);
+	} else {
+		tabbar_container->add_child(p_control);
+	}
 	if (scene_list) {
 		tabbar_container->move_child(p_control, scene_list->get_index());
 	}

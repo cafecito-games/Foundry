@@ -44,6 +44,7 @@ class EditorSceneContext;
 class EditorSceneWorkspace;
 class EditorSelection;
 class EditorTileDropOverlay;
+class HBoxContainer;
 class Label;
 class ScenePaneTile;
 class ScriptLeaf;
@@ -65,7 +66,9 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	Vector<WorkspaceTab> tabs;
 	int active_tab_index = -1;
 	WorkspaceTabRegistry *tab_registry = nullptr;
+	HBoxContainer *tab_chrome = nullptr;
 	TabBar *tab_strip = nullptr;
+	HBoxContainer *tab_strip_trailing_host = nullptr;
 	Control *body_host = nullptr;
 	Control *chrome_host = nullptr;
 	Control *empty_placeholder = nullptr;
@@ -87,6 +90,7 @@ class WorkspacePane : public VBoxContainer, public WorkspaceLeafContent {
 	void _on_tab_strip_close_pressed(int p_index);
 	void _collapse_self_if_empty();
 	void _sync_tab_strip();
+	void _sync_scene_mode_switcher_mount();
 	void _refresh_canonical_locations();
 	void _fit_chrome_child(Control *p_child);
 	void _detach_ephemeral_chrome();

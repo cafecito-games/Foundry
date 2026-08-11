@@ -1720,7 +1720,12 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		board_rail_panel->set_content_margin_all(Math::round(3 * EDSCALE));
 		p_theme->set_stylebox(SceneStringName(panel), "BoardRail", board_rail_panel);
 
-		Ref<StyleBoxFlat> board_rail_button_pressed = p_config.base_empty_wide_style->duplicate();
+		Ref<StyleBoxFlat> board_rail_button_pressed = EditorThemeManager::make_flat_stylebox(
+				Color(0, 0, 0, 0),
+				p_config.base_empty_wide_style->get_content_margin(SIDE_LEFT),
+				p_config.base_empty_wide_style->get_content_margin(SIDE_TOP),
+				p_config.base_empty_wide_style->get_content_margin(SIDE_RIGHT),
+				p_config.base_empty_wide_style->get_content_margin(SIDE_BOTTOM));
 		board_rail_button_pressed->set_border_color(p_config.accent_color);
 		board_rail_button_pressed->set_border_width(SIDE_BOTTOM, MAX(2, Math::round(2 * EDSCALE)));
 
@@ -1864,7 +1869,7 @@ void ThemeModern::populate_editor_styles(const Ref<EditorTheme> &p_theme, Editor
 		p_theme->set_type_variation("BottomDrawerStrip", "PanelContainer");
 		p_theme->set_stylebox(SceneStringName(panel), "BottomDrawerStrip", style_bottom_drawer_strip);
 
-		// Tile side rail: the vertical analogue of the bottom drawer strip, a
+		// Tile side rail: the vertical analog of the bottom drawer strip, a
 		// slim flat bar with a single border on the edge facing the tile body.
 		// Two type variations (not overrides, for the same recursion reason as
 		// the bottom strip) since the bordered edge differs per side.

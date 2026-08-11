@@ -36,6 +36,7 @@ class Node;
 
 class EditorAutomationState {
 public:
+	static String main_screen_name(int p_index);
 	static Dictionary read_editor_state();
 	static Dictionary read_scene_tree(Node *p_snapshot_root = nullptr);
 	static Array capture_modal_stack(Node *p_root = nullptr);

@@ -1142,7 +1142,8 @@ EditorAutomationActionResult _action_select(
 				ERR_FAIL_COND_V(index < 0, EditorAutomationActionResult::failure("invalid_parameter", vformat("Option '%s' was not found.", text)));
 			}
 		}
-		option_button->select(index);
+		option_button->show_popup();
+		option_button->get_popup()->activate_item(index);
 		EditorAutomationActionResult result = EditorAutomationActionResult::success(EditorAutomationActionRouteNames::SEMANTIC_SELECT, p_element.id);
 		result.events.push_back("selected");
 		result.focus = _focused_element_id(p_snapshot);
