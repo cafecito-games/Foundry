@@ -6754,10 +6754,6 @@ bool TextServerAdvanced::_shaped_text_update_justification_ops(const RID &p_shap
 
 Glyph TextServerAdvanced::_shape_single_glyph(ShapedTextDataAdvanced *p_sd, char32_t p_char, hb_script_t p_script, hb_direction_t p_direction, const RID &p_font, int64_t p_font_size) {
 	bool color = false;
-	hb_font_t *hb_font = _font_get_hb_handle(p_font, p_font_size, color);
-	double scale = _font_get_scale(p_font, p_font_size);
-	bool subpos = (scale != 1.0) || (_font_get_subpixel_positioning(p_font) == SUBPIXEL_POSITIONING_ONE_HALF) || (_font_get_subpixel_positioning(p_font) == SUBPIXEL_POSITIONING_ONE_QUARTER) || (_font_get_subpixel_positioning(p_font) == SUBPIXEL_POSITIONING_AUTO && p_font_size <= SUBPIXEL_POSITIONING_ONE_HALF_MAX_SIZE);
-	ERR_FAIL_NULL_V(hb_font, Glyph());
 
 	hb_buffer_clear_contents(p_sd->hb_buffer);
 	hb_buffer_set_direction(p_sd->hb_buffer, p_direction);
@@ -6765,11 +6761,30 @@ Glyph TextServerAdvanced::_shape_single_glyph(ShapedTextDataAdvanced *p_sd, char
 	hb_buffer_set_script(p_sd->hb_buffer, (p_script == HB_TAG('Z', 's', 'y', 'e')) ? HB_SCRIPT_COMMON : p_script);
 	hb_buffer_add_utf32(p_sd->hb_buffer, (const uint32_t *)&p_char, 1, 0, 1);
 
-	hb_shape(hb_font, p_sd->hb_buffer, nullptr, 0);
-
 	unsigned int glyph_count = 0;
-	hb_glyph_info_t *glyph_info = hb_buffer_get_glyph_infos(p_sd->hb_buffer, &glyph_count);
-	hb_glyph_position_t *glyph_pos = hb_buffer_get_glyph_positions(p_sd->hb_buffer, &glyph_count);
+	hb_glyph_info_t *glyph_info = nullptr;
+	hb_glyph_position_t *glyph_pos = nullptr;
+
+	// The FT_Face is shared across all sizes; _font_get_hb_handle activates the
+	// correct FT_Size, but that activation is face-global state. Hold the font's
+	// mutex across hb_shape so no other thread can change the active size or
+	// clobber the shared glyph slot mid-shape. (Godot Mutex is recursive, so the
+	// inner MutexLock in _font_get_hb_handle is safe.)
+	FontAdvanced *fd = _get_font_data(p_font);
+	ERR_FAIL_NULL_V(fd, Glyph());
+	{
+		MutexLock lock(fd->mutex);
+		hb_font_t *hb_font = _font_get_hb_handle(p_font, p_font_size, color);
+		ERR_FAIL_NULL_V(hb_font, Glyph());
+
+		hb_shape(hb_font, p_sd->hb_buffer, nullptr, 0);
+
+		glyph_info = hb_buffer_get_glyph_infos(p_sd->hb_buffer, &glyph_count);
+		glyph_pos = hb_buffer_get_glyph_positions(p_sd->hb_buffer, &glyph_count);
+	}
+
+	double scale = _font_get_scale(p_font, p_font_size);
+	bool subpos = (scale != 1.0) || (_font_get_subpixel_positioning(p_font) == SUBPIXEL_POSITIONING_ONE_HALF) || (_font_get_subpixel_positioning(p_font) == SUBPIXEL_POSITIONING_ONE_QUARTER) || (_font_get_subpixel_positioning(p_font) == SUBPIXEL_POSITIONING_AUTO && p_font_size <= SUBPIXEL_POSITIONING_ONE_HALF_MAX_SIZE);
 
 	// Process glyphs.
 	Glyph gl;
