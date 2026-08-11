@@ -55,6 +55,10 @@
 #include "scene/main/viewport.h"
 #include "scene/resources/3d/world_3d.h"
 
+static bool _is_scene_editor_mode_valid(SceneEditorMode p_mode) {
+	return p_mode == SceneEditorMode::MODE_2D || p_mode == SceneEditorMode::MODE_3D;
+}
+
 void ScenePaneTile::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("scene_editor_mode_requested",
 			PropertyInfo(Variant::INT, "tile_id"),
@@ -229,6 +233,12 @@ void ScenePaneTile::_sync_scene_editor_mode() {
 }
 
 void ScenePaneTile::set_scene_editor_mode(SceneEditorMode p_mode, bool p_user_requested) {
+	if (!_is_scene_editor_mode_valid(p_mode)) {
+		return;
+	}
+	if (p_mode == SceneEditorMode::MODE_3D && !scene_mode_switcher->is_3d_enabled()) {
+		p_mode = SceneEditorMode::MODE_2D;
+	}
 	scene_editor_mode = p_mode;
 	scene_editor_mode_initialized = true;
 	scene_mode_switcher->set_mode_available(get_scene_context() != nullptr);

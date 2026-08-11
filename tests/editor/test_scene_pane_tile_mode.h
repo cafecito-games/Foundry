@@ -173,4 +173,109 @@ TEST_CASE("[Editor][ScenePaneTileMode] disabled 3D feature forces 2D inference")
 	memdelete(tile);
 }
 
+TEST_CASE("[Editor][ScenePaneTileMode] disabled 3D feature constrains durable assignments and restore") {
+	EditorData editor_data;
+	EditorSelection selection;
+
+	ScenePaneTile *direct = memnew(ScenePaneTile);
+	direct->setup(14, &selection, editor_data);
+	direct->set_3d_scene_mode_enabled(false);
+	requested_count = 0;
+	direct->connect(SNAME("scene_editor_mode_requested"), callable_mp_static(&record_requested_mode));
+	direct->set_scene_editor_mode(SceneEditorMode::MODE_3D, false);
+	CHECK(direct->is_scene_editor_mode_initialized());
+	CHECK(direct->get_scene_editor_mode() == SceneEditorMode::MODE_2D);
+	CHECK(requested_count == 0);
+
+	ScenePaneTile *user_routed = memnew(ScenePaneTile);
+	user_routed->setup(19, &selection, editor_data);
+	user_routed->set_3d_scene_mode_enabled(false);
+	requested_count = 0;
+	requested_tile_id = -1;
+	requested_mode = -1;
+	user_routed->connect(SNAME("scene_editor_mode_requested"), callable_mp_static(&record_requested_mode));
+	user_routed->get_scene_mode_switcher()->emit_signal(SNAME("mode_selected"), int(SceneEditorMode::MODE_3D));
+	CHECK(user_routed->get_scene_editor_mode() == SceneEditorMode::MODE_2D);
+	CHECK(requested_count == 1);
+	CHECK(requested_tile_id == 19);
+	CHECK(requested_mode == int(SceneEditorMode::MODE_2D));
+
+	Ref<ConfigFile> saved_3d;
+	saved_3d.instantiate();
+	saved_3d->set_value("Tile", "scene_editor_mode", StringName("3d"));
+	ScenePaneTile *restored = memnew(ScenePaneTile);
+	restored->setup(15, &selection, editor_data);
+	restored->set_3d_scene_mode_enabled(false);
+	requested_count = 0;
+	restored->connect(SNAME("scene_editor_mode_requested"), callable_mp_static(&record_requested_mode));
+	restored->load_layout(saved_3d, "Tile");
+	CHECK(restored->is_scene_editor_mode_initialized());
+	CHECK(restored->get_scene_editor_mode() == SceneEditorMode::MODE_2D);
+	CHECK(requested_count == 0);
+
+	Ref<ConfigFile> normalized;
+	normalized.instantiate();
+	restored->save_layout(normalized, "Tile");
+	CHECK(StringName(normalized->get_value("Tile", "scene_editor_mode")) == StringName("2d"));
+
+	ScenePaneTile *fallback = memnew(ScenePaneTile);
+	fallback->setup(16, &selection, editor_data);
+	fallback->set_scene_editor_mode(SceneEditorMode::MODE_3D, false);
+	CHECK(fallback->get_scene_editor_mode() == SceneEditorMode::MODE_3D);
+	requested_count = 0;
+	fallback->connect(SNAME("scene_editor_mode_requested"), callable_mp_static(&record_requested_mode));
+	fallback->set_3d_scene_mode_enabled(false);
+	CHECK(fallback->get_scene_editor_mode() == SceneEditorMode::MODE_2D);
+	CHECK(requested_count == 0);
+
+	memdelete(fallback);
+	memdelete(restored);
+	memdelete(user_routed);
+	memdelete(direct);
+}
+
+TEST_CASE("[Editor][ScenePaneTileMode] invalid modes leave durable state unchanged") {
+	EditorData editor_data;
+	EditorSelection selection;
+
+	ScenePaneTile *direct = memnew(ScenePaneTile);
+	direct->setup(17, &selection, editor_data);
+	requested_count = 0;
+	direct->connect(SNAME("scene_editor_mode_requested"), callable_mp_static(&record_requested_mode));
+	direct->set_scene_editor_mode(SceneEditorMode(99), true);
+	CHECK_FALSE(direct->is_scene_editor_mode_initialized());
+	CHECK(direct->get_scene_editor_mode() == SceneEditorMode::MODE_2D);
+	CHECK(requested_count == 0);
+
+	Ref<ConfigFile> uninitialized_layout;
+	uninitialized_layout.instantiate();
+	direct->save_layout(uninitialized_layout, "Tile");
+	CHECK_FALSE(uninitialized_layout->has_section_key("Tile", "scene_editor_mode"));
+
+	direct->set_scene_editor_mode(SceneEditorMode::MODE_3D, false);
+	CHECK(direct->is_scene_editor_mode_initialized());
+	CHECK(direct->get_scene_editor_mode() == SceneEditorMode::MODE_3D);
+	requested_count = 0;
+	direct->set_scene_editor_mode(SceneEditorMode(-1), true);
+	CHECK(direct->get_scene_editor_mode() == SceneEditorMode::MODE_3D);
+	CHECK(requested_count == 0);
+
+	Ref<ConfigFile> initialized_layout;
+	initialized_layout.instantiate();
+	direct->save_layout(initialized_layout, "Tile");
+	CHECK(StringName(initialized_layout->get_value("Tile", "scene_editor_mode")) == StringName("3d"));
+
+	ScenePaneTile *signal_tile = memnew(ScenePaneTile);
+	signal_tile->setup(18, &selection, editor_data);
+	requested_count = 0;
+	signal_tile->connect(SNAME("scene_editor_mode_requested"), callable_mp_static(&record_requested_mode));
+	signal_tile->get_scene_mode_switcher()->emit_signal(SNAME("mode_selected"), 99);
+	CHECK_FALSE(signal_tile->is_scene_editor_mode_initialized());
+	CHECK(signal_tile->get_scene_editor_mode() == SceneEditorMode::MODE_2D);
+	CHECK(requested_count == 0);
+
+	memdelete(signal_tile);
+	memdelete(direct);
+}
+
 } // namespace TestScenePaneTileMode
