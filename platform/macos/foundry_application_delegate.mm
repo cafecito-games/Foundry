@@ -194,8 +194,10 @@ static const char *godot_ac_ctx = "gd_accessibility_observer_ctx";
 		}
 	}
 	if (!args.is_empty()) {
-		if (os_mac->get_main_loop()) {
-			// Application is already running, open a new instance with the URL/files as command line arguments.
+		if (os_mac->is_command_line_consumed()) {
+			// `Main::setup()` has already read the platform argument list and nothing reads it
+			// again, so a late request has to open a new instance with the URL/files as command
+			// line arguments. That covers a running application and the staged boot alike.
 			os_mac->create_instance(args);
 		} else if (os_mac->get_cmd_argc() == 0) {
 			// Application is just started, add to the list of command line arguments and continue.
@@ -211,8 +213,10 @@ static const char *godot_ac_ctx = "gd_accessibility_observer_ctx";
 		args.push_back(String::utf8([url.path UTF8String]));
 	}
 	if (!args.is_empty()) {
-		if (os_mac->get_main_loop()) {
-			// Application is already running, open a new instance with the URL/files as command line arguments.
+		if (os_mac->is_command_line_consumed()) {
+			// `Main::setup()` has already read the platform argument list and nothing reads it
+			// again, so a late request has to open a new instance with the URL/files as command
+			// line arguments. That covers a running application and the staged boot alike.
 			os_mac->create_instance(args);
 		} else if (os_mac->get_cmd_argc() == 0) {
 			// Application is just started, add to the list of command line arguments and continue.
