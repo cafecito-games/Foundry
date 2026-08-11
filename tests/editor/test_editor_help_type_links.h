@@ -172,11 +172,17 @@ TEST_CASE("[Editor][EditorHelp] Declared integer widths render as written and li
 }
 
 TEST_CASE("[Editor][EditorHelp] Documentation admonitions render labels, bodies, and inline code") {
-	const String rendered = EditorHelp::render_doc_text_for_tests(
+	Control *owner = memnew(Control);
+	RichTextLabel *rich_text_label = memnew(RichTextLabel);
+	owner->add_child(rich_text_label);
+	EditorHelp::render_doc_text_for_tests(
 			"Before. [note]A [code]note[/code] body.[/note] "
 			"[warning]Warning body.[/warning] "
 			"[tip]Tip body.[/tip] "
-			"[important]Important body.[/important] After.");
+			"[important]Important body.[/important] After.",
+			rich_text_label,
+			owner);
+	const String rendered = rich_text_label->get_parsed_text();
 
 	CHECK(rendered.contains("Before."));
 	CHECK(rendered.contains("Note:"));
@@ -188,6 +194,18 @@ TEST_CASE("[Editor][EditorHelp] Documentation admonitions render labels, bodies,
 	CHECK(rendered.contains("Important:"));
 	CHECK(rendered.contains("Important body."));
 	CHECK(rendered.contains("After."));
+
+	rich_text_label->clear();
+	EditorHelp::render_packed_array_copy_note_for_tests(
+			"PackedByteArray",
+			rich_text_label,
+			owner);
+	const String copy_note = rich_text_label->get_parsed_text();
+	CHECK(copy_note.contains("Note:"));
+	CHECK(copy_note.contains("The returned array is copied"));
+	CHECK(copy_note.contains("PackedByteArray"));
+
+	memdelete(owner);
 }
 
 } // namespace TestEditorHelpTypeLinks

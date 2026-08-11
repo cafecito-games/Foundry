@@ -121,6 +121,13 @@ const Vector<String> packed_array_types = {
 	"PackedVector4Array",
 };
 
+static String _make_packed_array_copy_note(const String &p_type) {
+	return vformat(
+			TTR("[note]The returned array is [i]copied[/i] and any changes to it will not update the original "
+				"property value. See [%s] for more details.[/note]"),
+			p_type);
+}
+
 static String _replace_nbsp_with_space(const String &p_string) {
 	return p_string.replace_char(nbsp_chr, ' ');
 }
@@ -2690,7 +2697,7 @@ void EditorHelp::_update_doc() {
 				class_desc->add_newline();
 				class_desc->add_newline();
 				// See also `EditorHelpBit::parse_symbol()` and `doc/tools/make_rst.py`.
-				_add_text(vformat(TTR("[b]Note:[/b] The returned array is [i]copied[/i] and any changes to it will not update the original property value. See [%s] for more details."), prop.type));
+				_add_text(_make_packed_array_copy_note(prop.type));
 			}
 
 			class_desc->pop(); // color
@@ -2823,9 +2830,14 @@ void EditorHelp::_help_callback(const String &p_topic) {
 	}
 }
 
-static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const Control *p_owner_node, const String &p_class) {
+static void _add_text_to_rt(
+		const String &p_bbcode,
+		RichTextLabel *p_rt,
+		const Control *p_owner_node,
+		const String &p_class,
+		bool p_skip_doc_lookup = false) {
 	bool is_native = false;
-	{
+	if (!p_skip_doc_lookup) {
 		const DocData::ClassDoc *E = EditorHelp::get_doc(p_class);
 		if (E && !E->is_script_doc) {
 			is_native = true;
@@ -3051,7 +3063,7 @@ static void _add_text_to_rt(const String &p_bbcode, RichTextLabel *p_rt, const C
 			p_rt->pop(); // font
 
 			pos = brk_end + 1;
-		} else if (EditorHelp::has_doc(tag)) {
+		} else if (!p_skip_doc_lookup && EditorHelp::has_doc(tag)) {
 			// Use a monospace font for class reference tags such as [Node2D] or [SceneTree].
 
 			p_rt->push_font(doc_code_font);
@@ -3366,18 +3378,18 @@ void EditorHelp::_add_text(const String &p_bbcode) {
 }
 
 #ifdef TESTS_ENABLED
-String EditorHelp::render_doc_text_for_tests(const String &p_bbcode) {
-	Control *owner = memnew(Control);
-	RichTextLabel *rich_text_label = memnew(RichTextLabel);
-	owner->add_child(rich_text_label);
-	DocTools test_doc;
-	DocTools *previous_doc = doc;
-	doc = &test_doc;
-	_add_text_to_rt(p_bbcode, rich_text_label, owner, String());
-	doc = previous_doc;
-	const String parsed_text = rich_text_label->get_parsed_text();
-	memdelete(owner);
-	return parsed_text;
+void EditorHelp::render_doc_text_for_tests(
+		const String &p_bbcode,
+		RichTextLabel *p_rich_text_label,
+		const Control *p_owner_node) {
+	_add_text_to_rt(p_bbcode, p_rich_text_label, p_owner_node, String(), true);
+}
+
+void EditorHelp::render_packed_array_copy_note_for_tests(
+		const String &p_type,
+		RichTextLabel *p_rich_text_label,
+		const Control *p_owner_node) {
+	_add_text_to_rt(_make_packed_array_copy_note(p_type), p_rich_text_label, p_owner_node, String(), true);
 }
 #endif
 
@@ -4960,7 +4972,7 @@ void EditorHelpBit::parse_symbol(const String &p_symbol, const String &p_prologu
 				help_data.description += "\n";
 			}
 			// See also `EditorHelp::_update_doc()` and `doc/tools/make_rst.py`.
-			help_data.description += vformat(TTR("[b]Note:[/b] The returned array is [i]copied[/i] and any changes to it will not update the original property value. See [%s] for more details."), help_data.doc_type.type);
+			help_data.description += _make_packed_array_copy_note(help_data.doc_type.type);
 		}
 	} else if (item_type == "internal_property") {
 		symbol_type = TTR("Internal Property");
