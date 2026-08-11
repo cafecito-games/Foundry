@@ -1546,21 +1546,21 @@ bool TextServerAdvanced::_ensure_cache_for_size(FontAdvanced *p_font_data, const
 
 		fd->hb_handle = hb_ft_font_create(p_font_data->face, nullptr);
 
-			// Apply variation coordinates before reading metrics, so that
-			// variation-dependent vertical metrics (MVAR, sTypoAscender, etc.)
-			// are consistent across all sizes of the shared face.
-			if (p_font_data->face->face_flags & FT_FACE_FLAG_MULTIPLE_MASTERS) {
-				FT_MM_Var *amaster;
+		// Apply variation coordinates before reading metrics, so that
+		// variation-dependent vertical metrics (MVAR, sTypoAscender, etc.)
+		// are consistent across all sizes of the shared face.
+		if (p_font_data->face->face_flags & FT_FACE_FLAG_MULTIPLE_MASTERS) {
+			FT_MM_Var *amaster;
 
-				FT_Get_MM_Var(p_font_data->face, &amaster);
+			FT_Get_MM_Var(p_font_data->face, &amaster);
 
-				Vector<hb_variation_t> hb_vars;
-				Vector<FT_Fixed> coords;
-				coords.resize(amaster->num_axis);
+			Vector<hb_variation_t> hb_vars;
+			Vector<FT_Fixed> coords;
+			coords.resize(amaster->num_axis);
 
-				FT_Get_Var_Design_Coordinates(p_font_data->face, coords.size(), coords.ptrw());
+			FT_Get_Var_Design_Coordinates(p_font_data->face, coords.size(), coords.ptrw());
 
-				for (FT_UInt i = 0; i < amaster->num_axis; i++) {
+			for (FT_UInt i = 0; i < amaster->num_axis; i++) {
 				hb_variation_t var;
 
 				// Reset to default.
@@ -1579,12 +1579,12 @@ bool TextServerAdvanced::_ensure_cache_for_size(FontAdvanced *p_font_data, const
 				}
 
 				hb_vars.push_back(var);
-				}
-
-				FT_Set_Var_Design_Coordinates(p_font_data->face, coords.size(), coords.ptrw());
-				hb_font_set_variations(fd->hb_handle, hb_vars.is_empty() ? nullptr : &hb_vars[0], hb_vars.size());
-				FT_Done_MM_Var(ft_library, amaster);
 			}
+
+			FT_Set_Var_Design_Coordinates(p_font_data->face, coords.size(), coords.ptrw());
+			hb_font_set_variations(fd->hb_handle, hb_vars.is_empty() ? nullptr : &hb_vars[0], hb_vars.size());
+			FT_Done_MM_Var(ft_library, amaster);
+		}
 
 		fd->ascent = (p_font_data->face->size->metrics.ascender / 64.0) * fd->scale;
 		fd->descent = (-p_font_data->face->size->metrics.descender / 64.0) * fd->scale;
