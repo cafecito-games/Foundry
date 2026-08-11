@@ -2841,32 +2841,62 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return _failure_with_message(p_driver, result.workflow, "Restoring fixture scene ownership changed a durable tile mode.");
 	}
 
-	p_driver.set_step("select_foreign_3d_child_in_2d_scene");
-	Node *scene_2d_root = editor_data.get_edited_scene_root(scene_2d);
-	EditorSelection *selection = editor_node->get_editor_selection();
-	if (scene_2d_root == nullptr || selection == nullptr) {
-		return _failure_with_message(p_driver, result.workflow, "The 2D scene root or editor selection is unavailable.");
-	}
-	Node3D *foreign_child = memnew(Node3D);
-	foreign_child->set_name("Foreign3DSelectionProbe");
-	scene_2d_root->add_child(foreign_child);
-	foreign_child->set_owner(scene_2d_root);
-	selection->clear();
-	selection->add_node(foreign_child);
-	selection->update();
-	left_tile->on_focus_entered();
+	// The previous acceptance path invoked the left tile's focus callback while it
+	// was already focused, so the test never exercised the public right-to-left
+	// workspace focus path.
+	p_driver.set_step("focus_right_before_foreign_selection");
+	workspace->request_leaf_focus(right_tile_id);
 	p_driver.flush_frames(60);
-	if (left_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D ||
-			main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
-		selection->clear();
-		scene_2d_root->remove_child(foreign_child);
-		memdelete(foreign_child);
-		return _failure_with_message(p_driver, result.workflow, "Selecting a foreign Node3D changed the left tile's durable 2D mode.");
+	if (workspace->get_focused_leaf_id() != right_tile_id ||
+			workspace->get_effective_focused_tile_id() != right_tile_id ||
+			main_screen->get_selected_index() != EditorMainScreen::EDITOR_3D) {
+		return _failure_with_message(p_driver, result.workflow, "Could not establish right-tile 3D focus before the foreign selection probe.");
 	}
-	selection->clear();
-	selection->update();
-	scene_2d_root->remove_child(foreign_child);
-	memdelete(foreign_child);
+
+	p_driver.set_step("select_foreign_3d_child_in_2d_scene");
+	{
+		Node *scene_2d_root = editor_data.get_edited_scene_root(scene_2d);
+		EditorSelection *selection = editor_node->get_editor_selection();
+		if (scene_2d_root == nullptr || selection == nullptr) {
+			return _failure_with_message(p_driver, result.workflow, "The 2D scene root or editor selection is unavailable.");
+		}
+		Node3D *foreign_child = memnew(Node3D);
+		struct ForeignSelectionProbeCleanup {
+			Node *root = nullptr;
+			Node3D *child = nullptr;
+			EditorSelection *selection = nullptr;
+
+			~ForeignSelectionProbeCleanup() {
+				if (selection != nullptr) {
+					selection->clear();
+					selection->update();
+				}
+				if (child != nullptr) {
+					if (child->get_parent() == root) {
+						root->remove_child(child);
+					}
+					memdelete(child);
+				}
+			}
+		} cleanup{ scene_2d_root, foreign_child, selection };
+		foreign_child->set_name("Foreign3DSelectionProbe");
+		scene_2d_root->add_child(foreign_child);
+		foreign_child->set_owner(scene_2d_root);
+		selection->clear();
+		selection->add_node(foreign_child);
+		selection->update();
+
+		p_driver.set_step("focus_left_after_foreign_selection");
+		workspace->request_leaf_focus(left_tile_id);
+		p_driver.flush_frames(60);
+		if (workspace->get_focused_leaf_id() != left_tile_id ||
+				workspace->get_effective_focused_tile_id() != left_tile_id ||
+				left_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D ||
+				main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+			return _failure_with_message(p_driver, result.workflow, "Public workspace focus did not return the foreign-selected 2D tile to its durable 2D mode.");
+		}
+	}
+
 	p_driver.flush_frames(10);
 
 	p_driver.set_step("switch_boards_and_return");
