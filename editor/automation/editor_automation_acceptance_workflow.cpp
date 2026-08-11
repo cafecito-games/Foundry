@@ -1741,10 +1741,13 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 
 	p_driver.set_step("verify_contextual_root_buttons");
+	Dictionary root_button_within;
+	root_button_within["tile_id"] = 1;
 	Dictionary root_button_selector;
 	root_button_selector["role"] = "button";
 	root_button_selector["name"] = "2D Scene";
 	root_button_selector["visible_only"] = true;
+	root_button_selector["within"] = root_button_within;
 	Dictionary root_buttons = p_driver.find(root_button_selector, 10);
 	const int root_button_count = (int)root_buttons.get("match_count", 0);
 	if (root_button_count != 1) {
@@ -1752,7 +1755,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		fail.ok = false;
 		fail.workflow = result.workflow;
 		fail.message = vformat(
-				"Expected only the focused empty scene tile to show root buttons, found %d visible 2D Scene buttons.",
+				"Expected exactly one visible 2D Scene button inside tile 1 while it is focused, found %d.",
 				root_button_count);
 		Dictionary details = p_driver.make_failure_details("verify_contextual_root_buttons");
 		details["root_buttons"] = root_buttons;
@@ -1761,31 +1764,102 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		return fail;
 	}
 
-	const Array root_button_elements = root_buttons.get("elements", Array());
-	if (!root_button_elements.is_empty()) {
-		const Dictionary element = root_button_elements[0];
-		const Dictionary metadata = element.get("metadata", Dictionary());
-		if ((int)metadata.get("tile_id", -1) != 1) {
-			Result fail;
-			fail.ok = false;
-			fail.workflow = result.workflow;
-			fail.message = "The remaining visible root button belongs to the wrong workspace tile.";
-			Dictionary details = p_driver.make_failure_details("verify_contextual_root_buttons");
-			details["root_buttons"] = root_buttons;
-			details["editor_state"] = state;
-			fail.details = details;
-			return fail;
-		}
-	}
-
 	p_driver.set_step("create_third_scene_root");
 	workspace->request_leaf_focus(0);
 	p_driver.flush_frames(30);
-	Dictionary right_root_button_selector = root_button_selector;
-	Dictionary right_root_button_metadata;
-	right_root_button_metadata["tile_id"] = 1;
-	right_root_button_selector["metadata"] = right_root_button_metadata;
-	if (!p_driver.require_ok(p_driver.act(right_root_button_selector, "click", Dictionary(), "semantic"), "click_right_root_button_from_left_focus")) {
+	if (!p_driver.wait_workspace_settled(5000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after focusing tile 0.");
+	}
+
+	state = p_driver.read_editor_state();
+	const Dictionary demoted_workspace = state.get("workspace", Dictionary());
+	const Array demoted_tiles = demoted_workspace.get("tiles", Array());
+	Dictionary demoted_tile_1;
+	for (int i = 0; i < demoted_tiles.size(); i++) {
+		const Dictionary tile_entry = demoted_tiles[i];
+		if ((int)tile_entry.get("tile_id", -1) == 1) {
+			demoted_tile_1 = tile_entry;
+			break;
+		}
+	}
+	if (demoted_tile_1.is_empty() ||
+			(int)demoted_workspace.get("focused_tile_id", -1) != 0 ||
+			String(demoted_tile_1.get("preview_mode", String())) != "live_2d" ||
+			!(bool)demoted_tile_1.get("dock_presentation_hidden", false) ||
+			(bool)demoted_tile_1.get("scene_tree_dock_visible", true)) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Focusing tile 0 did not demote tile 1 to a presentation-hidden LIVE_2D preview.";
+		Dictionary details = p_driver.make_failure_details("create_third_scene_root_demoted");
+		details["editor_state"] = state;
+		details["tile_1"] = demoted_tile_1;
+		fail.details = details;
+		return fail;
+	}
+
+	Dictionary demoted_root_buttons = p_driver.find(root_button_selector, 10);
+	if ((bool)demoted_root_buttons.get("ok", true) || (int)demoted_root_buttons.get("match_count", 0) != 0) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Tile 1's 2D Scene root button remained visible/actionable while the tile was demoted.";
+		Dictionary details = p_driver.make_failure_details("create_third_scene_root_demoted_selector");
+		details["root_buttons"] = demoted_root_buttons;
+		details["editor_state"] = state;
+		fail.details = details;
+		return fail;
+	}
+
+	workspace->request_leaf_focus(1);
+	p_driver.flush_frames(30);
+	if (!p_driver.wait_workspace_settled(5000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Workspace did not settle after promoting tile 1.");
+	}
+
+	state = p_driver.read_editor_state();
+	const Dictionary promoted_workspace = state.get("workspace", Dictionary());
+	const Array promoted_tiles = promoted_workspace.get("tiles", Array());
+	Dictionary promoted_tile_1;
+	for (int i = 0; i < promoted_tiles.size(); i++) {
+		const Dictionary tile_entry = promoted_tiles[i];
+		if ((int)tile_entry.get("tile_id", -1) == 1) {
+			promoted_tile_1 = tile_entry;
+			break;
+		}
+	}
+	if (promoted_tile_1.is_empty() ||
+			(int)promoted_workspace.get("focused_tile_id", -1) != 1 ||
+			!(bool)promoted_tile_1.get("focused", false) ||
+			String(promoted_tile_1.get("preview_mode", String())) != "focused_live" ||
+			(bool)promoted_tile_1.get("dock_presentation_hidden", true) ||
+			!(bool)promoted_tile_1.get("scene_tree_dock_visible", false)) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Promoting tile 1 did not restore focused_live Scene dock chrome.";
+		Dictionary details = p_driver.make_failure_details("create_third_scene_root_promoted");
+		details["editor_state"] = state;
+		details["tile_1"] = promoted_tile_1;
+		fail.details = details;
+		return fail;
+	}
+
+	root_buttons = p_driver.find(root_button_selector, 10);
+	if ((int)root_buttons.get("match_count", 0) != 1) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = vformat(
+				"Expected exactly one visible 2D Scene button inside promoted tile 1, found %d.",
+				(int)root_buttons.get("match_count", 0));
+		Dictionary details = p_driver.make_failure_details("create_third_scene_root_promoted_selector");
+		details["root_buttons"] = root_buttons;
+		details["editor_state"] = state;
+		fail.details = details;
+		return fail;
+	}
+	if (!p_driver.require_ok(p_driver.act(root_button_selector, "click", Dictionary(), "semantic"), "click_right_root_button_after_promote")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 	p_driver.flush_frames(30);
@@ -1800,7 +1874,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
-		fail.message = "Clicking the right root button while the left tile was focused did not keep the split panes bound to distinct scene roots.";
+		fail.message = "Clicking the right root button after promoting tile 1 did not keep the split panes bound to distinct scene roots.";
 		Dictionary details = p_driver.make_failure_details("create_third_scene_root");
 		details["editor_state"] = p_driver.read_editor_state();
 		details["left_tile_root"] = left_tile->get_current_scene_root() ? String(left_tile->get_current_scene_root()->get_name()) : String("<none>");

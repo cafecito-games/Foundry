@@ -139,6 +139,15 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state") {
 	CHECK((bool)tile_b.get("focused", false));
 	CHECK(String(tile_a.get("current_scene_path", String())) == "res://tile_a.tscn");
 	CHECK(String(tile_b.get("current_scene_path", String())) == "res://tile_b.tscn");
+	CHECK(tile_a.has("preview_mode"));
+	CHECK(tile_a.has("dock_presentation_hidden"));
+	CHECK(tile_a.has("scene_tree_dock_visible"));
+	CHECK(String(tile_a.get("preview_mode", String())) == "focused_live");
+	CHECK(String(tile_b.get("preview_mode", String())) == "focused_live");
+	CHECK_FALSE((bool)tile_a.get("dock_presentation_hidden", true));
+	CHECK_FALSE((bool)tile_b.get("dock_presentation_hidden", true));
+	CHECK((bool)tile_a.get("scene_tree_dock_visible", false));
+	CHECK((bool)tile_b.get("scene_tree_dock_visible", false));
 
 	const Dictionary tree = workspace_state.get("tree", Dictionary());
 	CHECK(String(tree.get("type", String())) == "split");
@@ -149,6 +158,63 @@ TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state") {
 		CHECK(String(leaf.get("type", String())) == "leaf");
 		CHECK(String(leaf.get("content_type", String())) == "pane");
 	}
+
+	h.unmount();
+}
+
+TEST_CASE("[Editor][Automation][MCP] mcp-workspace-state-reports-preview-presentation") {
+	WorkspaceHarness h;
+	prepare_two_tile_workspace(h);
+
+	ScenePaneTile *tile_a = h.workspace->get_tile_by_id(0);
+	ScenePaneTile *tile_b = h.workspace->get_tile_by_id(1);
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+
+	tile_a->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+	tile_b->set_preview_mode(TilePreviewMode::LIVE_2D);
+	h.pump();
+
+	const Dictionary workspace_state = EditorAutomationWorkspace::capture_workspace_state(&h.editor_data, h.workspace);
+	const Array tiles = workspace_state.get("tiles", Array());
+	REQUIRE(tiles.size() == 2);
+	Dictionary focused_tile;
+	Dictionary demoted_tile;
+	for (int i = 0; i < tiles.size(); i++) {
+		const Dictionary entry = tiles[i];
+		if (int(entry.get("tile_id", -1)) == 0) {
+			focused_tile = entry;
+		} else if (int(entry.get("tile_id", -1)) == 1) {
+			demoted_tile = entry;
+		}
+	}
+	REQUIRE(!focused_tile.is_empty());
+	REQUIRE(!demoted_tile.is_empty());
+
+	CHECK(String(focused_tile.get("preview_mode", String())) == "focused_live");
+	CHECK_FALSE((bool)focused_tile.get("dock_presentation_hidden", true));
+	CHECK((bool)focused_tile.get("scene_tree_dock_visible", false));
+
+	CHECK(String(demoted_tile.get("preview_mode", String())) == "live_2d");
+	CHECK((bool)demoted_tile.get("dock_presentation_hidden", false));
+	CHECK_FALSE((bool)demoted_tile.get("scene_tree_dock_visible", true));
+
+	tile_b->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+	h.pump();
+	const Dictionary restored_state = EditorAutomationWorkspace::capture_workspace_state(&h.editor_data, h.workspace);
+	const Array restored_tiles = restored_state.get("tiles", Array());
+	Dictionary restored_tile;
+	for (int i = 0; i < restored_tiles.size(); i++) {
+		const Dictionary entry = restored_tiles[i];
+		if (int(entry.get("tile_id", -1)) == 1) {
+			restored_tile = entry;
+			break;
+		}
+	}
+	REQUIRE(!restored_tile.is_empty());
+	CHECK(String(restored_tile.get("preview_mode", String())) == "focused_live");
+	CHECK_FALSE((bool)restored_tile.get("dock_presentation_hidden", true));
+	CHECK((bool)restored_tile.get("scene_tree_dock_visible", false));
 
 	h.unmount();
 }
@@ -198,12 +264,12 @@ TEST_CASE("[Editor][Automation][MCP] mcp-tile-scoped-selector") {
 	h.sync_panes();
 	h.pump();
 
-	const EditorAutomationSnapshot snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
+	const EditorAutomationSnapshot baseline_snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
 
 	Dictionary unscoped;
 	unscoped["role"] = "dock";
 	unscoped["name"] = "Scene";
-	const EditorAutomationSelectorResult ambiguous = EditorAutomationSelector::resolve(snapshot, unscoped);
+	const EditorAutomationSelectorResult ambiguous = EditorAutomationSelector::resolve(baseline_snapshot, unscoped);
 	CHECK(ambiguous.status == EditorAutomationSelectorStatus::AMBIGUOUS);
 
 	Dictionary within;
@@ -212,12 +278,35 @@ TEST_CASE("[Editor][Automation][MCP] mcp-tile-scoped-selector") {
 	scoped["role"] = "dock";
 	scoped["name"] = "Scene";
 	scoped["within"] = within;
-	const EditorAutomationSelectorResult resolved = EditorAutomationSelector::resolve(snapshot, scoped);
+	scoped["visible_only"] = true;
+	const EditorAutomationSelectorResult resolved = EditorAutomationSelector::resolve(baseline_snapshot, scoped);
 	REQUIRE(resolved.status == EditorAutomationSelectorStatus::OK);
 	REQUIRE(resolved.match_indices.size() == 1);
 
-	const EditorAutomationElement &dock = snapshot.get_element(resolved.match_indices[0]);
+	const EditorAutomationElement &dock = baseline_snapshot.get_element(resolved.match_indices[0]);
 	CHECK(int(dock.metadata.get("tile_id", -1)) == 1);
+
+	// Demoted tiles hide dock chrome; visible-only tile-scoped selectors must miss,
+	// then resolve again after the tile is promoted back to focused_live.
+	ScenePaneTile *tile_a = h.workspace->get_tile_by_id(0);
+	ScenePaneTile *tile_b = h.workspace->get_tile_by_id(1);
+	REQUIRE(tile_a != nullptr);
+	REQUIRE(tile_b != nullptr);
+	tile_b->set_preview_mode(TilePreviewMode::LIVE_2D);
+	tile_a->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+	h.pump();
+	const EditorAutomationSnapshot demoted_snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
+	const EditorAutomationSelectorResult demoted = EditorAutomationSelector::resolve(demoted_snapshot, scoped);
+	CHECK(demoted.status == EditorAutomationSelectorStatus::NO_MATCH);
+
+	tile_b->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
+	tile_a->set_preview_mode(TilePreviewMode::LIVE_2D);
+	h.pump();
+	const EditorAutomationSnapshot promoted_snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
+	const EditorAutomationSelectorResult promoted = EditorAutomationSelector::resolve(promoted_snapshot, scoped);
+	REQUIRE(promoted.status == EditorAutomationSelectorStatus::OK);
+	REQUIRE(promoted.match_indices.size() == 1);
+	CHECK(int(promoted_snapshot.get_element(promoted.match_indices[0]).metadata.get("tile_id", -1)) == 1);
 
 	h.unmount();
 }
