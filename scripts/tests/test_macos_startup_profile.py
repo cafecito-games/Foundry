@@ -62,7 +62,7 @@ class HasVisibleWindowTests(unittest.TestCase):
 
 class AcceptanceGateTests(unittest.TestCase):
     def summary(self, median_ms: float) -> dict[str, Any]:
-        return {"window": {"time_to_first_window_ms": {"median": median_ms, "min": median_ms, "max": median_ms}}}
+        return {"window": {"time_to_first_window_ms": macos_startup_profile.spread([median_ms])}}
 
     def test_window_criterion_passes_under_the_bound(self):
         acceptance = macos_startup_profile.evaluate_acceptance(self.summary(420.0), 8.0, 250.0)
@@ -80,6 +80,35 @@ class AcceptanceGateTests(unittest.TestCase):
     def test_no_window_measurement_adds_no_criterion(self):
         acceptance = macos_startup_profile.evaluate_acceptance({}, 8.0, 250.0)
         self.assertEqual([check for check in acceptance["checks"] if check["source"] == "window"], [])
+
+
+class EmptyMeasurementTests(unittest.TestCase):
+    """A measurement that aggregates nothing must never be gated on as if it were a zero."""
+
+    def test_run_count_of_zero_is_rejected_at_the_command_line(self):
+        with self.assertRaises(Exception):
+            macos_startup_profile.positive_int("0")
+        with self.assertRaises(Exception):
+            macos_startup_profile.positive_int("-1")
+        self.assertEqual(macos_startup_profile.positive_int("1"), 1)
+
+    def test_empty_window_measurement_adds_no_criterion(self):
+        empty = {"window": {"time_to_first_window_ms": macos_startup_profile.spread([])}}
+        acceptance = macos_startup_profile.evaluate_acceptance(empty, 8.0, 250.0)
+        self.assertEqual([check for check in acceptance["checks"] if check["source"] == "window"], [])
+        self.assertFalse(acceptance["passed"])
+
+    def test_empty_sample_measurement_adds_no_criterion(self):
+        empty = {"sample": {"blocked_percent": macos_startup_profile.spread([]), "duration_seconds": 20.0}}
+        acceptance = macos_startup_profile.evaluate_acceptance(empty, 8.0, 250.0)
+        self.assertEqual([check for check in acceptance["checks"] if check["source"] == "sample"], [])
+
+    def test_a_real_single_run_measurement_still_counts(self):
+        one = {"window": {"time_to_first_window_ms": macos_startup_profile.spread([412.0])}}
+        acceptance = macos_startup_profile.evaluate_acceptance(one, 8.0, 250.0)
+        checks = [check for check in acceptance["checks"] if check["source"] == "window"]
+        self.assertEqual(len(checks), 1)
+        self.assertTrue(checks[0]["passed"])
 
 
 class LoadMismatchTests(unittest.TestCase):

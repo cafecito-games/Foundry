@@ -128,6 +128,14 @@ def fail(message: str) -> NoReturn:
     raise SystemExit(2)
 
 
+def positive_int(value: str) -> int:
+    """A run count of zero would record an empty measurement, which reads as a passing zero."""
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, got {parsed}")
+    return parsed
+
+
 def resolve_binary(value: str) -> Path:
     if value in BINARY_FLAVORS:
         candidate = REPO_ROOT / BINARY_FLAVORS[value]
@@ -1183,11 +1191,16 @@ def print_window_summary(summary: dict[str, Any]) -> None:
     print(f"poll interval: {block['poll_interval_ms']} ms")
 
 
+def measured(stats: Any) -> bool:
+    """False for a spread that aggregates nothing, so a fabricated 0.0 is never gated on."""
+    return isinstance(stats, dict) and stats.get("runs", 0) >= 1
+
+
 def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max_block_ms: float) -> dict[str, Any]:
     checks: list[dict[str, Any]] = []
     warnings: list[str] = []
     sample_block = summary.get("sample")
-    if sample_block:
+    if sample_block and measured(sample_block.get("blocked_percent")):
         value = sample_block["blocked_percent"]["median"]
         # The percentage criterion is a share of a capture window, so it is only
         # meaningful against the window length the issue names.
@@ -1207,7 +1220,7 @@ def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max
             }
         )
     timeline_block = summary.get("timeline")
-    if timeline_block:
+    if timeline_block and measured(timeline_block.get("longest_non_servicing_gap_ms")):
         value = timeline_block["longest_non_servicing_gap_ms"]["median"]
         checks.append(
             {
@@ -1218,7 +1231,8 @@ def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max
                 "source": "timeline/runloop-events",
             }
         )
-        contiguous = timeline_block.get("longest_contiguous_blocked_ms", {}).get("median")
+        contiguous_stats = timeline_block.get("longest_contiguous_blocked_ms")
+        contiguous = contiguous_stats.get("median") if measured(contiguous_stats) else None
         if contiguous is not None:
             checks.append(
                 {
@@ -1230,7 +1244,7 @@ def evaluate_acceptance(summary: dict[str, Any], max_blocked_percent: float, max
                 }
             )
     window_block = summary.get("window")
-    if window_block:
+    if window_block and measured(window_block.get("time_to_first_window_ms")):
         value = window_block["time_to_first_window_ms"]["median"]
         checks.append(
             {
@@ -1482,14 +1496,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     capture = subparsers.add_parser("capture", help="capture `sample -wait` startup profiles (magnitude)")
     add_common(capture)
-    capture.add_argument("--runs", type=int, default=3, help="number of runs (default 3; a single run is not a trend)")
+    capture.add_argument(
+        "--runs", type=positive_int, default=3, help="number of runs (default 3; a single run is not a trend)"
+    )
     capture.add_argument("--duration", type=float, default=20.0, help="sampling window in seconds (default 20)")
     capture.add_argument("--interval", type=int, default=1, help="sampling interval in milliseconds (default 1)")
     capture.set_defaults(func=command_capture)
 
     timeline = subparsers.add_parser("timeline", help="capture an Instruments trace and derive the per-bucket timeline")
     add_common(timeline)
-    timeline.add_argument("--runs", type=int, default=1, help="number of traces (default 1; traces are expensive)")
+    timeline.add_argument(
+        "--runs", type=positive_int, default=1, help="number of traces (default 1; traces are expensive)"
+    )
     timeline.add_argument("--time-limit", type=float, default=20.0, help="recording length in seconds (default 20)")
     timeline.add_argument("--bucket-ms", type=float, default=100.0, help="timeline bucket size (default 100 ms)")
     timeline.add_argument("--skip-time-profile", action="store_true", help="only parse run loop events (much faster)")
@@ -1497,13 +1515,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     phases = subparsers.add_parser("phases", help="capture engine `--benchmark` marks")
     add_common(phases)
-    phases.add_argument("--runs", type=int, default=3, help="number of runs (default 3)")
+    phases.add_argument("--runs", type=positive_int, default=3, help="number of runs (default 3)")
     phases.add_argument("--quit-after", type=int, default=300, help="iterations before the editor exits (default 300)")
     phases.set_defaults(func=command_phases)
 
     window = subparsers.add_parser("window", help="measure time from spawn to the first on-screen window")
     add_common(window)
-    window.add_argument("--runs", type=int, default=3, help="number of launches (default 3)")
+    window.add_argument("--runs", type=positive_int, default=3, help="number of launches (default 3)")
     window.add_argument("--poll-interval-ms", type=float, default=2.0, help="window list poll interval (default 2 ms)")
     window.add_argument("--timeout", type=float, default=60.0, help="give up after this many seconds (default 60)")
     window.set_defaults(func=command_window)
@@ -1512,7 +1530,7 @@ def build_parser() -> argparse.ArgumentParser:
         "all", help="capture + timeline + phases + window into one directory, then run the acceptance gate"
     )
     add_common(every)
-    every.add_argument("--runs", type=int, default=3)
+    every.add_argument("--runs", type=positive_int, default=3)
     every.add_argument("--duration", type=float, default=20.0)
     every.add_argument("--skip-timeline", action="store_true")
     every.add_argument("--skip-phases", action="store_true")
