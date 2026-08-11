@@ -47,6 +47,7 @@
 - (void)accessibilityDisplayOptionsChange:(NSNotification *)notification;
 - (void)handleDidBecomeActive;
 - (void)handleDidResignActive;
+- (void)requestMainWindowClose;
 @end
 
 @implementation FoundryApplicationDelegate {
@@ -55,6 +56,7 @@
 	bool reduce_transparency;
 	bool voice_over;
 	bool deferred_activation;
+	bool deferred_termination;
 	OS_MacOS_NSApp *os_mac;
 }
 
@@ -63,6 +65,7 @@
 	if (self) {
 		os_mac = os;
 		deferred_activation = false;
+		deferred_termination = false;
 	}
 
 	[[NSWorkspace sharedWorkspace] addObserver:self forKeyPath:@"voiceOverEnabled" options:(NSKeyValueObservingOptionNew | NSKeyValueObservingOptionOld) context:(void *)godot_ac_ctx];
@@ -362,12 +365,45 @@ constexpr static NSEventModifierFlags FLAGS = NSEventModifierFlagCommand | NSEve
 		return NSTerminateNow;
 	}
 
+	if (StartupInputGateMacOS::is_suppressed()) {
+		// The staged boot lets the run loop turn, so a Dock Quit or a logout can arrive before the
+		// scene tree has installed the window event callback that carries the close request.
+		// Answering `NSTerminateCancel` here would silently drop the request and veto the logout,
+		// so hold the answer until boot finishes and the normal path below can run for real.
+		deferred_termination = true;
+		return NSTerminateLater;
+	}
+
+	[self requestMainWindowClose];
+	return NSTerminateCancel;
+}
+
+- (void)requestMainWindowClose {
 	DisplayServerMacOS *ds = Object::cast_to<DisplayServerMacOS>(DisplayServer::get_singleton());
 	if (ds && ds->has_window(DisplayServerMacOS::MAIN_WINDOW_ID)) {
 		ds->send_window_event(ds->get_window(DisplayServerMacOS::MAIN_WINDOW_ID), DisplayServerMacOS::WINDOW_EVENT_CLOSE_REQUEST);
 	}
+}
 
-	return NSTerminateCancel;
+- (void)applyDeferredTermination {
+	if (!deferred_termination) {
+		return;
+	}
+	deferred_termination = false;
+	// Boot is over: run exactly what a post-boot request would have run, then decline the system
+	// request so the editor's own quit confirmation drives the actual shutdown.
+	[self requestMainWindowClose];
+	[NSApp replyToApplicationShouldTerminate:NO];
+}
+
+- (void)abandonDeferredTermination {
+	if (!deferred_termination) {
+		return;
+	}
+	deferred_termination = false;
+	// The application is shutting down anyway; releasing the held answer as "yes" keeps AppKit
+	// from waiting on a reply that is never coming.
+	[NSApp replyToApplicationShouldTerminate:YES];
 }
 
 - (void)showAbout:(id)sender {

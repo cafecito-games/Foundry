@@ -45,6 +45,13 @@ class OS_MacOS_NSApp;
 // activation state as it stands now. Called once, when the staged boot completes.
 - (void)applyDeferredActivation;
 
+// Answers a system termination request that arrived while the editor was booting, by running the
+// normal close-request path now that there is something to run it against.
+- (void)applyDeferredTermination;
+
+// Releases a held termination answer when the application is shutting down for another reason.
+- (void)abandonDeferredTermination;
+
 - (bool)getHighContrast;
 - (bool)getReduceMotion;
 - (bool)getReduceTransparency;

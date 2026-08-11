@@ -1327,6 +1327,7 @@ void OS_MacOS_NSApp::start_main() {
 							ds = DisplayServer::get_singleton();
 							ds_mac = Object::cast_to<DisplayServerMacOS>(ds);
 							[(FoundryApplicationDelegate *)delegate applyDeferredActivation];
+							[(FoundryApplicationDelegate *)delegate applyDeferredTermination];
 						} break;
 						case StartupSequenceMacOS::STEP_EXIT_SUCCESS: {
 							terminate();
@@ -1371,6 +1372,7 @@ void OS_MacOS_NSApp::terminate() {
 	// Shutdown may still need to talk to the user (a confirmation dialog, an error alert), so the
 	// boot input gate must not outlive the boot it was protecting.
 	StartupInputGateMacOS::set_suppressed(false);
+	[(FoundryApplicationDelegate *)delegate abandonDeferredTermination];
 
 	if (pre_wait_observer) {
 		CFRunLoopRemoveObserver(CFRunLoopGetCurrent(), pre_wait_observer, kCFRunLoopCommonModes);

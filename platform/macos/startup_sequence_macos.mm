@@ -87,8 +87,15 @@ StartupSequenceMacOS::StepResult StartupSequenceMacOS::step() {
 		return STEP_PENDING;
 	}
 	stepping = true;
-	const StepResult result = _run_phase();
-	stepping = false;
+	StepResult result = STEP_PENDING;
+	@try {
+		result = _run_phase();
+	} @finally {
+		// `@finally` rather than a scope guard: an `NSException` raised by a boot phase unwinds
+		// without running C++ destructors in this translation unit, and the observer catches it.
+		// A guard left standing would make every later turn a no-op and wedge boot for good.
+		stepping = false;
+	}
 	return result;
 }
 
