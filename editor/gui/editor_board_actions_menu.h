@@ -68,12 +68,13 @@ private:
 
 	void _rebuild_items();
 	void _on_id_pressed(int p_id);
-	void _add_board_and_activate();
-	void _enter_overview();
-	void _activate_board(ObjectID p_board_id);
+	void _add_board_and_activate(ObjectID p_strip_id);
+	void _enter_overview(ObjectID p_strip_id);
+	void _activate_board(ObjectID p_strip_id, ObjectID p_board_id);
 	// Deferred from id_pressed so collection mutations cannot run inside popup input dispatch.
-	void _close_target_board();
-	void _close_other_boards();
+	void _close_target_board(ObjectID p_strip_id, ObjectID p_board_id);
+	void _close_other_boards(ObjectID p_strip_id, ObjectID p_target_board_id, const Array &p_board_ids);
+	void _move_board(ObjectID p_strip_id, ObjectID p_board_id, int p_direction);
 
 protected:
 	void _notification(int p_what);

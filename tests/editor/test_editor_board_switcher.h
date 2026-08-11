@@ -837,6 +837,33 @@ TEST_CASE("[Editor][BoardSwitcher] Activating Move Right emits one board_moved a
 	harness.unmount();
 }
 
+TEST_CASE("[Editor][BoardSwitcher] A deferred move follows its board identity after an interleaved reorder") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	EditorBoard *board_a = harness.strip->get_board(0);
+	EditorBoard *board_b = harness.strip->add_board("B");
+	EditorBoard *board_c = harness.strip->add_board("C");
+	REQUIRE(board_a != nullptr);
+	REQUIRE(board_b != nullptr);
+	REQUIRE(board_c != nullptr);
+
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	menu->popup_for_board(0, Point2());
+	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_MOVE_RIGHT);
+
+	// A is now in the middle before the queued command runs. The command must resolve A
+	// again and move it right from its current position, rather than moving stale index 0.
+	harness.strip->move_board(0, 1);
+	harness.pump();
+
+	CHECK(harness.strip->get_board(0) == board_b);
+	CHECK(harness.strip->get_board(1) == board_c);
+	CHECK(harness.strip->get_board(2) == board_a);
+	harness.unmount();
+}
+
 TEST_CASE("[Editor][BoardSwitcher] Activating Rename Board starts an inline rename with the title selected") {
 	BoardSwitcherHarness harness;
 	harness.mount();
@@ -887,6 +914,24 @@ TEST_CASE("[Editor][BoardSwitcher] Activating Close Board removes a scene-less b
 	}
 	CHECK(remaining->is_pressed());
 
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] A deferred close keeps its original target after a repopup") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	EditorBoard *board_b = harness.strip->add_board("B");
+	REQUIRE(board_b != nullptr);
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	menu->popup_for_board(0, Point2());
+	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_CLOSE);
+	menu->popup_for_board(1, Point2());
+	harness.pump();
+
+	CHECK(harness.strip->get_board_count() == 1);
+	CHECK(harness.strip->get_board(0) == board_b);
 	harness.unmount();
 }
 
@@ -984,6 +1029,86 @@ TEST_CASE("[Editor][BoardSwitcher] Close Other Boards from the menu drains every
 	CHECK(harness.strip->get_active_board() == keep);
 
 	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Close Other Boards keeps its original snapshot after a repopup") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	const ObjectID board_a_id = harness.strip->get_board(0)->get_instance_id();
+	EditorBoard *board_b = harness.strip->add_board("B");
+	EditorBoard *board_c = harness.strip->add_board("C");
+	REQUIRE(board_b != nullptr);
+	REQUIRE(board_c != nullptr);
+	const ObjectID board_b_id = board_b->get_instance_id();
+	const ObjectID board_c_id = board_c->get_instance_id();
+
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	menu->popup_for_board(0, Point2());
+	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_CLOSE_OTHERS);
+	menu->popup_for_board(1, Point2());
+	for (int i = 0; i < 4; i++) {
+		harness.pump();
+	}
+
+	CHECK(harness.strip->get_board_count() == 1);
+	CHECK(harness.strip->resolve_board_index(board_a_id) == 0);
+	CHECK(harness.strip->resolve_board_index(board_b_id) == -1);
+	CHECK(harness.strip->resolve_board_index(board_c_id) == -1);
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Close Other Boards no-ops when its original keeper is gone") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	EditorBoard *board_b = harness.strip->add_board("B");
+	EditorBoard *board_c = harness.strip->add_board("C");
+	REQUIRE(board_b != nullptr);
+	REQUIRE(board_c != nullptr);
+	const ObjectID board_b_id = board_b->get_instance_id();
+	const ObjectID board_c_id = board_c->get_instance_id();
+
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	menu->popup_for_board(0, Point2());
+	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_CLOSE_OTHERS);
+	CHECK(harness.strip->close_board(0));
+	for (int i = 0; i < 4; i++) {
+		harness.pump();
+	}
+
+	CHECK(harness.strip->get_board_count() == 2);
+	CHECK(harness.strip->resolve_board_index(board_b_id) >= 0);
+	CHECK(harness.strip->resolve_board_index(board_c_id) >= 0);
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] A deferred collection action keeps its original strip") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+
+	EditorData other_editor_data;
+	EditorSelection *other_selection = memnew(EditorSelection);
+	EditorBoardStrip *other_strip = EditorBoardStrip::create(other_selection, &other_editor_data);
+	harness.host->add_child(other_strip);
+
+	const int original_count = harness.strip->get_board_count();
+	const int other_count = other_strip->get_board_count();
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	menu->popup_for_board(0, Point2());
+	harness.activate_menu_item(EditorBoardActionsMenu::ITEM_NEW_BOARD);
+	harness.switcher->setup(other_strip);
+	harness.pump();
+
+	CHECK(harness.strip->get_board_count() == original_count + 1);
+	CHECK(harness.strip->get_active_index() == original_count);
+	CHECK(other_strip->get_board_count() == other_count);
+
+	harness.unmount();
+	memdelete(other_selection);
 }
 
 } // namespace TestEditorBoardSwitcher

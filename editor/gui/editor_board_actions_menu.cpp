@@ -106,79 +106,88 @@ void EditorBoardActionsMenu::popup_for_board(int p_index, const Point2 &p_screen
 	popup(Rect2i(p_screen_position, Size2i(1, 1)));
 }
 
-void EditorBoardActionsMenu::_add_board_and_activate() {
-	if (!strip) {
+void EditorBoardActionsMenu::_add_board_and_activate(ObjectID p_strip_id) {
+	EditorBoardStrip *target_strip = ObjectDB::get_instance<EditorBoardStrip>(p_strip_id);
+	if (!target_strip) {
 		return;
 	}
-	EditorBoard *board = strip->add_board();
+	EditorBoard *board = target_strip->add_board();
 	if (board) {
-		strip->set_active_board(strip->get_board_index(board));
+		target_strip->set_active_board(target_strip->get_board_index(board));
 	}
 }
 
-void EditorBoardActionsMenu::_enter_overview() {
-	if (strip) {
-		strip->set_overview(true);
+void EditorBoardActionsMenu::_enter_overview(ObjectID p_strip_id) {
+	if (EditorBoardStrip *target_strip = ObjectDB::get_instance<EditorBoardStrip>(p_strip_id)) {
+		target_strip->set_overview(true);
 	}
 }
 
-void EditorBoardActionsMenu::_activate_board(ObjectID p_board_id) {
-	if (!strip) {
+void EditorBoardActionsMenu::_activate_board(ObjectID p_strip_id, ObjectID p_board_id) {
+	EditorBoardStrip *target_strip = ObjectDB::get_instance<EditorBoardStrip>(p_strip_id);
+	if (!target_strip) {
 		return;
 	}
-	const int index = strip->resolve_board_index(p_board_id);
+	const int index = target_strip->resolve_board_index(p_board_id);
 	if (index >= 0) {
-		strip->set_active_board(index);
+		target_strip->set_active_board(index);
 	}
 }
 
-void EditorBoardActionsMenu::_close_target_board() {
-	if (!strip) {
+void EditorBoardActionsMenu::_close_target_board(ObjectID p_strip_id, ObjectID p_board_id) {
+	EditorBoardStrip *target_strip = ObjectDB::get_instance<EditorBoardStrip>(p_strip_id);
+	if (!target_strip) {
 		return;
 	}
-	const int index = strip->resolve_board_index(target_board_id);
+	const int index = target_strip->resolve_board_index(p_board_id);
 	if (index < 0) {
 		return;
 	}
-	strip->close_board(index);
+	target_strip->close_board(index);
 }
 
-void EditorBoardActionsMenu::_close_other_boards() {
-	if (!strip) {
-		return;
-	}
-	const int index = strip->resolve_board_index(target_board_id);
-	if (index < 0) {
+void EditorBoardActionsMenu::_close_other_boards(
+		ObjectID p_strip_id, ObjectID p_target_board_id, const Array &p_board_ids) {
+	EditorBoardStrip *target_strip = ObjectDB::get_instance<EditorBoardStrip>(p_strip_id);
+	if (!target_strip || target_strip->resolve_board_index(p_target_board_id) < 0) {
 		return;
 	}
 
-	Vector<ObjectID> others;
-	for (int i = 0; i < strip->get_board_count(); i++) {
-		if (i == index) {
-			continue;
-		}
-		EditorBoard *board = strip->get_board(i);
-		if (board) {
-			others.push_back(board->get_instance_id());
-		}
+	Vector<ObjectID> board_ids;
+	for (int i = 0; i < p_board_ids.size(); i++) {
+		board_ids.push_back(ObjectID(uint64_t(p_board_ids[i])));
 	}
-	strip->close_boards(others);
+	target_strip->close_boards(board_ids);
+}
+
+void EditorBoardActionsMenu::_move_board(ObjectID p_strip_id, ObjectID p_board_id, int p_direction) {
+	EditorBoardStrip *target_strip = ObjectDB::get_instance<EditorBoardStrip>(p_strip_id);
+	if (!target_strip) {
+		return;
+	}
+	const int index = target_strip->resolve_board_index(p_board_id);
+	const int destination = index + p_direction;
+	if (index < 0 || destination < 0 || destination >= target_strip->get_board_count()) {
+		return;
+	}
+	target_strip->move_board(index, destination);
 }
 
 void EditorBoardActionsMenu::_on_id_pressed(int p_id) {
 	if (!strip) {
 		return;
 	}
+	const ObjectID strip_id = strip->get_instance_id();
 	if (p_id == ITEM_NEW_BOARD) {
-		callable_mp(this, &EditorBoardActionsMenu::_add_board_and_activate).call_deferred();
+		callable_mp(this, &EditorBoardActionsMenu::_add_board_and_activate).bind(strip_id).call_deferred();
 		return;
 	}
 	if (p_id == ITEM_OVERVIEW) {
-		callable_mp(this, &EditorBoardActionsMenu::_enter_overview).call_deferred();
+		callable_mp(this, &EditorBoardActionsMenu::_enter_overview).bind(strip_id).call_deferred();
 		return;
 	}
 	if (const ObjectID *board_id = board_item_targets.getptr(p_id)) {
-		callable_mp(this, &EditorBoardActionsMenu::_activate_board).bind(*board_id).call_deferred();
+		callable_mp(this, &EditorBoardActionsMenu::_activate_board).bind(strip_id, *board_id).call_deferred();
 		return;
 	}
 
@@ -196,21 +205,33 @@ void EditorBoardActionsMenu::_on_id_pressed(int p_id) {
 		case ITEM_CLOSE: {
 			// Never tear a board down from inside PopupMenu input dispatch: EditorNode's
 			// board-close finish path is deferred for the same reason.
-			callable_mp(this, &EditorBoardActionsMenu::_close_target_board).call_deferred();
+			callable_mp(this, &EditorBoardActionsMenu::_close_target_board).bind(strip_id, target_board_id).call_deferred();
 		} break;
 		case ITEM_CLOSE_OTHERS: {
-			callable_mp(this, &EditorBoardActionsMenu::_close_other_boards).call_deferred();
+			Array others;
+			for (int i = 0; i < strip->get_board_count(); i++) {
+				if (i == index) {
+					continue;
+				}
+				EditorBoard *board = strip->get_board(i);
+				if (board) {
+					others.push_back(uint64_t(board->get_instance_id()));
+				}
+			}
+			callable_mp(this, &EditorBoardActionsMenu::_close_other_boards)
+					.bind(strip_id, target_board_id, others)
+					.call_deferred();
 		} break;
 		case ITEM_MOVE_LEFT: {
 			if (index > 0) {
 				// Same deferral as close: move_board rebuilds switcher chrome and must not
 				// run inside PopupMenu input dispatch.
-				callable_mp(strip, &EditorBoardStrip::move_board).bind(index, index - 1).call_deferred();
+				callable_mp(this, &EditorBoardActionsMenu::_move_board).bind(strip_id, target_board_id, -1).call_deferred();
 			}
 		} break;
 		case ITEM_MOVE_RIGHT: {
 			if (index < strip->get_board_count() - 1) {
-				callable_mp(strip, &EditorBoardStrip::move_board).bind(index, index + 1).call_deferred();
+				callable_mp(this, &EditorBoardActionsMenu::_move_board).bind(strip_id, target_board_id, 1).call_deferred();
 			}
 		} break;
 	}
