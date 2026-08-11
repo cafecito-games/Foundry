@@ -256,6 +256,8 @@ TEST_CASE("[Editor][Automation] workflow registry resolves canonical names and a
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("canvas_2d_zoom_automation"));
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("close_last_scene_empty_pane"));
 	CHECK(EditorAutomationWorkflowRegistry::has_workflow("split_scene_root_button_context"));
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("tile_local_scene_modes"));
+	CHECK(EditorAutomationWorkflowRegistry::has_workflow("tile_local_scene_modes_restore"));
 	CHECK(EditorAutomationWorkflowRegistry::resolve_canonical_name("mvp") == "basic_scene_editing");
 	CHECK(EditorAutomationWorkflowRegistry::resolve_canonical_name("basic_scene_editing") == "basic_scene_editing");
 	CHECK_FALSE(EditorAutomationWorkflowRegistry::has_workflow("does_not_exist"));
@@ -265,6 +267,8 @@ TEST_CASE("[Editor][Automation] workflow registry resolves canonical names and a
 	CHECK(names.has("canvas_2d_zoom_automation"));
 	CHECK(names.has("close_last_scene_empty_pane"));
 	CHECK(names.has("split_scene_root_button_context"));
+	CHECK(names.has("tile_local_scene_modes"));
+	CHECK(names.has("tile_local_scene_modes_restore"));
 	CHECK(EditorAutomationWorkflowRegistry::format_unknown_workflow_message("missing").contains("basic_scene_editing"));
 }
 

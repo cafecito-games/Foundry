@@ -106,6 +106,7 @@
 #include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
 #include "tests/editor/test_editor_scene_context.h"
 #include "tests/editor/test_editor_scene_mode_switcher.h"
+#include "tests/editor/test_editor_tile_local_scene_modes.h"
 #include "tests/editor/test_editor_tooling_host.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_inspector_density.h"

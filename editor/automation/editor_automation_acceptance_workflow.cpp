@@ -2722,6 +2722,273 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	return result;
 }
 
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_tile_local_scene_modes(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "tile_local_scene_modes";
+
+	p_driver.begin_workflow();
+	p_driver.set_step("load_fixture_scenes");
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+	if (editor_node->load_scene(BOARD_SWITCH_2D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Failed to load scene '%s'.", BOARD_SWITCH_2D_SCENE));
+	}
+	if (editor_node->load_scene(BOARD_SWITCH_3D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Failed to load scene '%s'.", BOARD_SWITCH_3D_SCENE));
+	}
+	p_driver.flush_frames(60);
+
+	EditorData &editor_data = editor_node->get_editor_data();
+	int scene_2d = -1;
+	int scene_3d = -1;
+	for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
+		const String scene_path = editor_data.get_scene_path(i);
+		if (scene_path == BOARD_SWITCH_2D_SCENE) {
+			scene_2d = i;
+		} else if (scene_path == BOARD_SWITCH_3D_SCENE) {
+			scene_3d = i;
+		}
+	}
+	if (scene_2d < 0 || scene_3d < 0) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve both loaded fixture scenes by path.");
+	}
+
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	EditorBoard *active_board = strip ? strip->get_active_board() : nullptr;
+	EditorSceneWorkspace *workspace = active_board ? active_board->get_workspace() : nullptr;
+	if (strip == nullptr || active_board == nullptr || workspace == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Active board workspace is unavailable.");
+	}
+
+	p_driver.set_step("split_board_and_assign_scenes");
+	WorkspaceLeafNode *left_leaf = workspace->get_focused_leaf();
+	if (left_leaf == nullptr || left_leaf->get_pane_tile() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not resolve the focused left scene tile.");
+	}
+	WorkspaceLeafNode *right_leaf = workspace->split(left_leaf, false, EditorSceneWorkspace::SPLIT_SIDE_SECOND);
+	if (right_leaf == nullptr || right_leaf->get_pane_tile() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not split a right scene tile.");
+	}
+	p_driver.flush_frames(20);
+
+	ScenePaneTile *left_tile = left_leaf->get_pane_tile();
+	ScenePaneTile *right_tile = right_leaf->get_pane_tile();
+	if (left_tile == nullptr || right_tile == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Split workspace did not expose both scene pane tiles.");
+	}
+	const int left_tile_id = left_leaf->get_leaf_id();
+	const int right_tile_id = right_leaf->get_leaf_id();
+	editor_data.set_scene_tile(scene_2d, left_tile_id);
+	editor_data.set_scene_tile(scene_3d, right_tile_id);
+	editor_data.set_tile_current_scene(left_tile_id, scene_2d);
+	editor_data.set_tile_current_scene(right_tile_id, scene_3d);
+	workspace->sync_scene_tabs_from_editor_data();
+	p_driver.flush_frames(40);
+
+	p_driver.set_step("set_independent_tile_modes");
+	left_tile->set_scene_editor_mode(SceneEditorMode::MODE_2D, true);
+	right_tile->set_scene_editor_mode(SceneEditorMode::MODE_3D, true);
+	p_driver.flush_frames(60);
+	if (left_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D ||
+			right_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D) {
+		return _failure_with_message(p_driver, result.workflow, "Could not establish independent durable 2D and 3D tile modes.");
+	}
+
+	p_driver.set_step("focus_left_tile");
+	workspace->request_leaf_focus(left_tile_id);
+	p_driver.flush_frames(60);
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen == nullptr || main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Focusing the 2D tile did not select the shared 2D editor.");
+	}
+	if (left_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D ||
+			right_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D ||
+			right_tile->get_preview_mode() != TilePreviewMode::LIVE_3D) {
+		return _failure_with_message(p_driver, result.workflow, "Left focus did not preserve both durable modes and the right LIVE_3D preview.");
+	}
+
+	p_driver.set_step("focus_right_tile");
+	workspace->request_leaf_focus(right_tile_id);
+	p_driver.flush_frames(60);
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_3D ||
+			left_tile->get_preview_mode() != TilePreviewMode::LIVE_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Right focus did not select 3D and leave the left tile in LIVE_2D preview.");
+	}
+
+	p_driver.set_step("switch_left_tile_tab_type");
+	workspace->request_leaf_focus(left_tile_id);
+	p_driver.flush_frames(30);
+	editor_data.set_scene_tile(scene_3d, left_tile_id);
+	editor_data.set_tile_current_scene(left_tile_id, scene_3d);
+	workspace->sync_scene_tabs_from_editor_data();
+	p_driver.flush_frames(40);
+	if (left_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Opening 3D content in the left tile overwrote its durable 2D mode.");
+	}
+
+	p_driver.set_step("restore_fixture_scene_ownership");
+	editor_data.set_scene_tile(scene_3d, right_tile_id);
+	editor_data.set_scene_tile(scene_2d, left_tile_id);
+	editor_data.set_tile_current_scene(right_tile_id, scene_3d);
+	editor_data.set_tile_current_scene(left_tile_id, scene_2d);
+	workspace->sync_scene_tabs_from_editor_data();
+	p_driver.flush_frames(60);
+	if (left_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D ||
+			right_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D) {
+		return _failure_with_message(p_driver, result.workflow, "Restoring fixture scene ownership changed a durable tile mode.");
+	}
+
+	p_driver.set_step("select_foreign_3d_child_in_2d_scene");
+	Node *scene_2d_root = editor_data.get_edited_scene_root(scene_2d);
+	EditorSelection *selection = editor_node->get_editor_selection();
+	if (scene_2d_root == nullptr || selection == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The 2D scene root or editor selection is unavailable.");
+	}
+	Node3D *foreign_child = memnew(Node3D);
+	foreign_child->set_name("Foreign3DSelectionProbe");
+	scene_2d_root->add_child(foreign_child);
+	foreign_child->set_owner(scene_2d_root);
+	selection->clear();
+	selection->add_node(foreign_child);
+	selection->update();
+	left_tile->on_focus_entered();
+	p_driver.flush_frames(60);
+	if (left_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D ||
+			main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		selection->clear();
+		scene_2d_root->remove_child(foreign_child);
+		memdelete(foreign_child);
+		return _failure_with_message(p_driver, result.workflow, "Selecting a foreign Node3D changed the left tile's durable 2D mode.");
+	}
+	selection->clear();
+	selection->update();
+	scene_2d_root->remove_child(foreign_child);
+	memdelete(foreign_child);
+	p_driver.flush_frames(10);
+
+	p_driver.set_step("switch_boards_and_return");
+	if (strip->add_board() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Failed to add a second board.");
+	}
+	p_driver.flush_frames(30);
+	strip->set_active_board(1);
+	p_driver.flush_frames(90);
+	strip->set_active_board(0);
+	p_driver.flush_frames(90);
+	if (strip->get_active_index() != 0 ||
+			left_tile->get_scene_editor_mode() != SceneEditorMode::MODE_2D ||
+			right_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D) {
+		return _failure_with_message(p_driver, result.workflow, "Board switching changed an independent durable tile mode.");
+	}
+
+	p_driver.set_step("return_from_game_with_active_board");
+	if (!main_screen->is_button_enabled(EditorMainScreen::EDITOR_GAME)) {
+		return _failure_with_message(p_driver, result.workflow, "The Game main screen is unavailable.");
+	}
+	main_screen->select(EditorMainScreen::EDITOR_GAME);
+	p_driver.flush_frames(30);
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_GAME) {
+		return _failure_with_message(p_driver, result.workflow, "Could not select the Game main screen.");
+	}
+	EditorBoard *returned_board = strip->get_active_board();
+	if (returned_board == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The active board disappeared before the Board Rail click.");
+	}
+	Dictionary board_selector;
+	board_selector["role"] = "button";
+	board_selector["name"] = returned_board->get_title();
+	if (!p_driver.require_ok(p_driver.act(board_selector, "click"), "return_from_game_with_active_board")) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+	p_driver.flush_frames(60);
+	if (main_screen->is_global_screen_selected() || main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "The active Board Rail segment did not return from Game to the remembered 2D tile mode.");
+	}
+
+	p_driver.set_step("save_tile_local_scene_modes_layout");
+	editor_node->save_editor_layout_delayed();
+	p_driver.flush_frames(120);
+	if (!p_driver.wait_editor_idle(10000)) {
+		return _failure_from_driver(p_driver, result.workflow, "Editor did not become idle after saving the tile-local scene modes layout.");
+	}
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Independent tile modes were retained across focus, tabs, selection, boards, Game, and the layout was saved.";
+	result.details = p_driver.read_editor_state();
+	return result;
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_tile_local_scene_modes_restore(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "tile_local_scene_modes_restore";
+
+	p_driver.begin_workflow();
+	p_driver.set_step("verify_restored_tile_modes");
+	p_driver.flush_frames(120);
+
+	EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace();
+	if (workspace == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Restored scene workspace is unavailable.");
+	}
+	const Vector<ScenePaneTile *> tiles = workspace->get_tiles();
+	if (workspace->get_leaf_count() != 2 || tiles.size() != 2) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Expected exactly two restored scene tiles, found %d leaves and %d tiles.", workspace->get_leaf_count(), tiles.size()));
+	}
+
+	ScenePaneTile *tile_2d = nullptr;
+	ScenePaneTile *tile_3d = nullptr;
+	for (ScenePaneTile *tile : tiles) {
+		if (tile == nullptr || !tile->is_scene_editor_mode_initialized()) {
+			return _failure_with_message(p_driver, result.workflow, "A restored tile has an uninitialized durable scene mode.");
+		}
+		if (tile->get_scene_editor_mode() == SceneEditorMode::MODE_2D) {
+			tile_2d = tile;
+		} else if (tile->get_scene_editor_mode() == SceneEditorMode::MODE_3D) {
+			tile_3d = tile;
+		}
+	}
+	if (tile_2d == nullptr || tile_3d == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Restored workspace did not contain one durable 2D tile and one durable 3D tile.");
+	}
+
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Editor main screen is unavailable after restore.");
+	}
+
+	p_driver.set_step("focus_restored_2d_tile");
+	workspace->request_leaf_focus(tile_2d->get_tile_id());
+	p_driver.flush_frames(60);
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Focusing the restored 2D tile did not select the shared 2D editor.");
+	}
+
+	p_driver.set_step("focus_restored_3d_tile");
+	workspace->request_leaf_focus(tile_3d->get_tile_id());
+	p_driver.flush_frames(60);
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_3D ||
+			tile_2d->get_preview_mode() != TilePreviewMode::LIVE_2D) {
+		return _failure_with_message(p_driver, result.workflow, "Focusing the restored 3D tile did not leave the 2D tile in LIVE_2D preview.");
+	}
+
+	p_driver.set_step("assert_no_new_errors");
+	if (!p_driver.assert_no_new_errors()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Independent 2D and 3D tile modes were restored after restart.";
+	result.details = p_driver.read_editor_state();
+	return result;
+}
+
 EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver) {
 	Result result;
 	result.workflow = "board_switch_3d_scene";
