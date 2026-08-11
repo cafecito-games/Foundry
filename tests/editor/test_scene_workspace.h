@@ -3528,17 +3528,21 @@ static void remove_resource_file(const String &p_path) {
 	}
 }
 
+static String workspace_test_scratch_root() {
+	String scratch_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
+	if (scratch_root.is_empty()) {
+		scratch_root = OS::get_singleton()->get_temp_path();
+	}
+	return scratch_root.simplify_path();
+}
+
 class ScopedWorkspaceResourceFile {
 	String directory;
 	String resource_path;
 
 public:
 	explicit ScopedWorkspaceResourceFile(const String &p_name) {
-		String scratch_root = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH");
-		if (scratch_root.is_empty()) {
-			scratch_root = OS::get_singleton()->get_temp_path();
-		}
-		directory = scratch_root.simplify_path().path_join(vformat("scene_workspace_mixed_%d", OS::get_singleton()->get_process_id()));
+		directory = workspace_test_scratch_root().path_join(vformat("scene_workspace_mixed_%d", OS::get_singleton()->get_process_id()));
 		Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
 		if (dir.is_null() || dir->make_dir_recursive(directory) != OK) {
 			return;
@@ -3581,9 +3585,9 @@ TEST_CASE("[Editor][ScenePaneTileMode] mixed scene and script active tabs update
 	ScopedWorkspaceResourceFile script_file("scene_mode_switcher_mixed.fs");
 	const String script_path = script_file.path();
 	REQUIRE_FALSE(script_path.is_empty());
-	const String configured_scratch = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH").simplify_path();
-	REQUIRE_FALSE(configured_scratch.is_empty());
-	CHECK(script_path.simplify_path().begins_with(configured_scratch.trim_suffix("/") + "/"));
+	const String expected_scratch_root = workspace_test_scratch_root();
+	REQUIRE_FALSE(expected_scratch_root.is_empty());
+	CHECK(script_path.simplify_path().begins_with(expected_scratch_root.trim_suffix("/") + "/"));
 	WorkspaceTabRegistry registry;
 	registry.clear_canonical_index();
 	WorkspaceTabType *scene_type = registry.find_type(StringName("scene"));
@@ -3616,9 +3620,9 @@ TEST_CASE("[Editor][ScenePaneTileMode] pending restored active tab finalizes swi
 	ScopedWorkspaceResourceFile script_file("scene_mode_switcher_restore.fs");
 	const String script_path = script_file.path();
 	REQUIRE_FALSE(script_path.is_empty());
-	const String configured_scratch = OS::get_singleton()->get_environment("FOUNDRY_TEST_SCRATCH").simplify_path();
-	REQUIRE_FALSE(configured_scratch.is_empty());
-	CHECK(script_path.simplify_path().begins_with(configured_scratch.trim_suffix("/") + "/"));
+	const String expected_scratch_root = workspace_test_scratch_root();
+	REQUIRE_FALSE(expected_scratch_root.is_empty());
+	CHECK(script_path.simplify_path().begins_with(expected_scratch_root.trim_suffix("/") + "/"));
 
 	for (const int active_index : { 0, 1 }) {
 		CAPTURE(active_index);
