@@ -6956,8 +6956,11 @@ void Node3DEditorViewport::bind_world(const Ref<World3D> &p_world, SubViewport *
 
 	const bool world_changed = world_binding_registered && bound_world.is_valid() && bound_world != p_world;
 	if (world_changed && spatial_editor) {
-		spatial_editor->_note_world_view_unbound(bound_world);
+		const Ref<World3D> previous_world = bound_world;
+		// Clear registration before the note so the derived count excludes this view from
+		// the world it is leaving.
 		world_binding_registered = false;
+		spatial_editor->_note_world_view_unbound(previous_world);
 	}
 
 	bound_world = p_world;
@@ -11452,12 +11455,15 @@ Node3DEditor::~Node3DEditor() {
 	}
 	_finish_indicators();
 	memdelete(preview_node);
-	// Drain rather than range-for: each memdelete fires PREDELETE, which erases from
-	// secondary_viewports. Iterating a Vector while it shrinks under us is a use-after-free
-	// once two or more secondary views are registered.
-	while (!secondary_viewports.is_empty()) {
-		_unregister_secondary_viewport(secondary_viewports[0], true);
+	// Snapshot then release: each memdelete fires PREDELETE, which erases from
+	// secondary_viewports. A range-for over the live Vector is a use-after-free once two or
+	// more secondary views are registered, and a while-drain that depends on erase succeeding
+	// can spin forever if an ERR_FAIL returns early.
+	const Vector<Node3DEditorViewport *> secondary_to_release = secondary_viewports;
+	for (Node3DEditorViewport *secondary_viewport : secondary_to_release) {
+		_unregister_secondary_viewport(secondary_viewport, true);
 	}
+	secondary_viewports.clear();
 	singleton = nullptr;
 }
 
