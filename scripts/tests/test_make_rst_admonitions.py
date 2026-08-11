@@ -74,10 +74,10 @@ class MakeRstAdmonitionTests(unittest.TestCase):
             packed_array_xml_path = root / "PackedByteArray.xml"
             output_dir = root / "rst"
             xml_path.write_text(
-                "<class name=\"AdmonitionFixture\">\n"
+                '<class name="AdmonitionFixture">\n'
                 "  <brief_description>Before. [note]Brief body.[/note] After.</brief_description>\n"
                 "  <members>\n"
-                "    <member name=\"bytes\" type=\"PackedByteArray\">Byte contents.</member>\n"
+                '    <member name="bytes" type="PackedByteArray">Byte contents.</member>\n'
                 "  </members>\n"
                 "</class>\n",
                 encoding="utf-8",
@@ -120,7 +120,7 @@ class MakeRstAdmonitionTests(unittest.TestCase):
         self.assertEqual(
             diagnostic,
             self.error_diagnostic(
-                "TestClass.xml: Tag depth mismatch for [note]: no closing [/note] in class \"TestClass\" description."
+                'TestClass.xml: Tag depth mismatch for [note]: no closing [/note] in class "TestClass" description.'
             ),
         )
 
