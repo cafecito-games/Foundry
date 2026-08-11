@@ -564,6 +564,17 @@ String _rendered_scene_tree_root_name(SceneTreeDock *p_dock) {
 	return root_item ? root_item->get_text(0) : String("<none>");
 }
 
+Dictionary _tile_entry_by_id(const Dictionary &p_workspace, int p_tile_id) {
+	const Array tiles = p_workspace.get("tiles", Array());
+	for (int i = 0; i < tiles.size(); i++) {
+		const Dictionary entry = tiles[i];
+		if ((int)entry.get("tile_id", -1) == p_tile_id) {
+			return entry;
+		}
+	}
+	return Dictionary();
+}
+
 struct MixedWorkspaceContext {
 	EditorNode *editor_node = nullptr;
 	EditorSceneWorkspace *workspace = nullptr;
@@ -1741,12 +1752,29 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 
 	p_driver.set_step("verify_contextual_root_buttons");
+	Dictionary global_root_button_selector;
+	global_root_button_selector["role"] = "button";
+	global_root_button_selector["name"] = "2D Scene";
+	global_root_button_selector["visible_only"] = true;
+	const Dictionary global_root_buttons = p_driver.find(global_root_button_selector, 10);
+	const int global_root_button_count = (int)global_root_buttons.get("match_count", 0);
+	if (global_root_button_count != 1) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = vformat(
+				"Expected exactly one visible 2D Scene button across the editor while tile 1 is focused, found %d.",
+				global_root_button_count);
+		Dictionary details = p_driver.make_failure_details("verify_contextual_root_buttons");
+		details["root_buttons"] = global_root_buttons;
+		details["editor_state"] = state;
+		fail.details = details;
+		return fail;
+	}
+
 	Dictionary root_button_within;
 	root_button_within["tile_id"] = 1;
-	Dictionary root_button_selector;
-	root_button_selector["role"] = "button";
-	root_button_selector["name"] = "2D Scene";
-	root_button_selector["visible_only"] = true;
+	Dictionary root_button_selector = global_root_button_selector.duplicate();
 	root_button_selector["within"] = root_button_within;
 	Dictionary root_buttons = p_driver.find(root_button_selector, 10);
 	const int root_button_count = (int)root_buttons.get("match_count", 0);
@@ -1757,14 +1785,16 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		fail.message = vformat(
 				"Expected exactly one visible 2D Scene button inside tile 1 while it is focused, found %d.",
 				root_button_count);
-		Dictionary details = p_driver.make_failure_details("verify_contextual_root_buttons");
+		Dictionary details = p_driver.make_failure_details("verify_contextual_root_buttons_scoped");
 		details["root_buttons"] = root_buttons;
 		details["editor_state"] = state;
 		fail.details = details;
 		return fail;
 	}
+	const TileChromeSnapshot tile_1_chrome_before = _sample_tile_chrome(right_tile);
 
-	p_driver.set_step("create_third_scene_root");
+	// Empty third scene has no 3D content, so demotion uses LIVE_2D.
+	p_driver.set_step("demote_tile_1");
 	workspace->request_leaf_focus(0);
 	p_driver.flush_frames(30);
 	if (!p_driver.wait_workspace_settled(5000)) {
@@ -1773,44 +1803,104 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	state = p_driver.read_editor_state();
 	const Dictionary demoted_workspace = state.get("workspace", Dictionary());
-	const Array demoted_tiles = demoted_workspace.get("tiles", Array());
-	Dictionary demoted_tile_1;
-	for (int i = 0; i < demoted_tiles.size(); i++) {
-		const Dictionary tile_entry = demoted_tiles[i];
-		if ((int)tile_entry.get("tile_id", -1) == 1) {
-			demoted_tile_1 = tile_entry;
-			break;
-		}
+	const Dictionary demoted_tile_1 = _tile_entry_by_id(demoted_workspace, 1);
+	if (demoted_tile_1.is_empty()) {
+		return _failure_with_message(p_driver, result.workflow, "Tile 1 disappeared from workspace state after focusing tile 0.");
 	}
-	if (demoted_tile_1.is_empty() ||
-			(int)demoted_workspace.get("focused_tile_id", -1) != 0 ||
-			String(demoted_tile_1.get("preview_mode", String())) != "live_2d" ||
-			!(bool)demoted_tile_1.get("dock_presentation_hidden", false) ||
-			(bool)demoted_tile_1.get("scene_tree_dock_visible", true)) {
+	if ((int)demoted_workspace.get("focused_tile_id", -1) != 0) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
-		fail.message = "Focusing tile 0 did not demote tile 1 to a presentation-hidden LIVE_2D preview.";
-		Dictionary details = p_driver.make_failure_details("create_third_scene_root_demoted");
+		fail.message = vformat(
+				"Focusing tile 0 left focused_tile_id=%d.",
+				(int)demoted_workspace.get("focused_tile_id", -1));
+		Dictionary details = p_driver.make_failure_details("demote_tile_1");
 		details["editor_state"] = state;
 		details["tile_1"] = demoted_tile_1;
 		fail.details = details;
 		return fail;
 	}
+	if (String(demoted_tile_1.get("preview_mode", String())) != "live_2d") {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = vformat(
+				"Focusing tile 0 left tile 1 preview_mode=%s (expected live_2d).",
+				String(demoted_tile_1.get("preview_mode", String())));
+		Dictionary details = p_driver.make_failure_details("demote_tile_1");
+		details["editor_state"] = state;
+		details["tile_1"] = demoted_tile_1;
+		fail.details = details;
+		return fail;
+	}
+	if (!(bool)demoted_tile_1.get("dock_presentation_hidden", false)) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Focusing tile 0 left tile 1 dock_presentation_hidden=false.";
+		Dictionary details = p_driver.make_failure_details("demote_tile_1");
+		details["editor_state"] = state;
+		details["tile_1"] = demoted_tile_1;
+		details["geometry"] = _describe_tile_preview_geometry(right_tile, right_tile->get_content_host());
+		fail.details = details;
+		return fail;
+	}
+	if ((bool)demoted_tile_1.get("scene_tree_dock_visible", true)) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Focusing tile 0 left tile 1 scene_tree_dock_visible=true.";
+		Dictionary details = p_driver.make_failure_details("demote_tile_1");
+		details["editor_state"] = state;
+		details["tile_1"] = demoted_tile_1;
+		details["geometry"] = _describe_tile_preview_geometry(right_tile, right_tile->get_content_host());
+		fail.details = details;
+		return fail;
+	}
+	{
+		String chrome_message;
+		if (!_assert_preview_only_chrome(right_tile, right_tile->get_content_host(), chrome_message)) {
+			Result fail;
+			fail.ok = false;
+			fail.workflow = result.workflow;
+			fail.message = chrome_message;
+			Dictionary details = p_driver.make_failure_details("demote_tile_1_chrome");
+			details["editor_state"] = state;
+			details["tile_1"] = demoted_tile_1;
+			fail.details = details;
+			return fail;
+		}
+	}
 
-	Dictionary demoted_root_buttons = p_driver.find(root_button_selector, 10);
-	if ((bool)demoted_root_buttons.get("ok", true) || (int)demoted_root_buttons.get("match_count", 0) != 0) {
+	Dictionary tile_scope_probe;
+	tile_scope_probe["tile_id"] = 1;
+	const Dictionary tile_scope_found = p_driver.find(tile_scope_probe, 5);
+	if (!(bool)tile_scope_found.get("ok", false)) {
+		Result fail;
+		fail.ok = false;
+		fail.workflow = result.workflow;
+		fail.message = "Tile 1's container disappeared from the snapshot while demoted.";
+		Dictionary details = p_driver.make_failure_details("demote_tile_1_scope");
+		details["tile_scope"] = tile_scope_found;
+		details["editor_state"] = state;
+		fail.details = details;
+		return fail;
+	}
+	const Dictionary demoted_root_buttons = p_driver.find(root_button_selector, 10);
+	if (String(demoted_root_buttons.get("kind", String())) != "no_match" ||
+			(int)demoted_root_buttons.get("match_count", 0) != 0) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
 		fail.message = "Tile 1's 2D Scene root button remained visible/actionable while the tile was demoted.";
-		Dictionary details = p_driver.make_failure_details("create_third_scene_root_demoted_selector");
+		Dictionary details = p_driver.make_failure_details("demote_tile_1_selector");
 		details["root_buttons"] = demoted_root_buttons;
 		details["editor_state"] = state;
 		fail.details = details;
 		return fail;
 	}
 
+	p_driver.set_step("promote_tile_1");
 	workspace->request_leaf_focus(1);
 	p_driver.flush_frames(30);
 	if (!p_driver.wait_workspace_settled(5000)) {
@@ -1819,32 +1909,39 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 
 	state = p_driver.read_editor_state();
 	const Dictionary promoted_workspace = state.get("workspace", Dictionary());
-	const Array promoted_tiles = promoted_workspace.get("tiles", Array());
-	Dictionary promoted_tile_1;
-	for (int i = 0; i < promoted_tiles.size(); i++) {
-		const Dictionary tile_entry = promoted_tiles[i];
-		if ((int)tile_entry.get("tile_id", -1) == 1) {
-			promoted_tile_1 = tile_entry;
-			break;
-		}
-	}
+	const Dictionary promoted_tile_1 = _tile_entry_by_id(promoted_workspace, 1);
 	if (promoted_tile_1.is_empty() ||
 			(int)promoted_workspace.get("focused_tile_id", -1) != 1 ||
 			!(bool)promoted_tile_1.get("focused", false) ||
 			String(promoted_tile_1.get("preview_mode", String())) != "focused_live" ||
-			(bool)promoted_tile_1.get("dock_presentation_hidden", true) ||
-			!(bool)promoted_tile_1.get("scene_tree_dock_visible", false)) {
+			(bool)promoted_tile_1.get("dock_presentation_hidden", true)) {
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
 		fail.message = "Promoting tile 1 did not restore focused_live Scene dock chrome.";
-		Dictionary details = p_driver.make_failure_details("create_third_scene_root_promoted");
+		Dictionary details = p_driver.make_failure_details("promote_tile_1");
 		details["editor_state"] = state;
 		details["tile_1"] = promoted_tile_1;
+		details["geometry"] = _describe_tile_preview_geometry(right_tile, right_tile->get_content_host());
 		fail.details = details;
 		return fail;
 	}
+	{
+		String chrome_message;
+		if (!_assert_chrome_restored(right_tile, tile_1_chrome_before, chrome_message)) {
+			Result fail;
+			fail.ok = false;
+			fail.workflow = result.workflow;
+			fail.message = chrome_message;
+			Dictionary details = p_driver.make_failure_details("promote_tile_1_chrome");
+			details["editor_state"] = state;
+			details["tile_1"] = promoted_tile_1;
+			fail.details = details;
+			return fail;
+		}
+	}
 
+	p_driver.set_step("create_third_scene_root");
 	root_buttons = p_driver.find(root_button_selector, 10);
 	if ((int)root_buttons.get("match_count", 0) != 1) {
 		Result fail;
@@ -1853,13 +1950,15 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		fail.message = vformat(
 				"Expected exactly one visible 2D Scene button inside promoted tile 1, found %d.",
 				(int)root_buttons.get("match_count", 0));
-		Dictionary details = p_driver.make_failure_details("create_third_scene_root_promoted_selector");
+		Dictionary details = p_driver.make_failure_details("create_third_scene_root_selector");
 		details["root_buttons"] = root_buttons;
 		details["editor_state"] = state;
 		fail.details = details;
 		return fail;
 	}
-	if (!p_driver.require_ok(p_driver.act(root_button_selector, "click", Dictionary(), "semantic"), "click_right_root_button_after_promote")) {
+	if (!p_driver.require_ok(
+				p_driver.act(root_button_selector, "click", Dictionary(), "semantic"),
+				"click_right_root_button_after_promote")) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 	p_driver.flush_frames(30);
@@ -1874,7 +1973,8 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 		Result fail;
 		fail.ok = false;
 		fail.workflow = result.workflow;
-		fail.message = "Clicking the right root button after promoting tile 1 did not keep the split panes bound to distinct scene roots.";
+		fail.message =
+				"Clicking the right root button after promoting tile 1 did not keep the split panes bound to distinct scene roots.";
 		Dictionary details = p_driver.make_failure_details("create_third_scene_root");
 		details["editor_state"] = p_driver.read_editor_state();
 		details["left_tile_root"] = left_tile->get_current_scene_root() ? String(left_tile->get_current_scene_root()->get_name()) : String("<none>");

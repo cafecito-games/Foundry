@@ -338,7 +338,9 @@ EditorAutomationSelectorResult _resolve_internal(const EditorAutomationSnapshot 
 		}
 	}
 
-	Dictionary selector_without_within = p_selector;
+	// Dictionary assignment shares storage with no copy-on-write; duplicate before
+	// erase so resolve() does not strip `within` from the caller's selector.
+	Dictionary selector_without_within = p_selector.duplicate();
 	if (selector_without_within.has("within")) {
 		selector_without_within.erase("within");
 	}

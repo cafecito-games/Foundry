@@ -137,10 +137,10 @@ Dictionary _tile_state_entry(EditorData *p_editor_data, ScenePaneTile *p_tile, i
 	tile["scene_tree_dock_shows_create_root"] = scene_tree_dock ? scene_tree_dock->should_show_create_root_dialog() : false;
 	tile["scene_tree_rendered_root_name"] = tree_root ? tree_root->get_text(0) : String("<none>");
 
-	const EditorTileDockRegion *dock_region = p_tile ? p_tile->get_dock_region() : nullptr;
 	tile["preview_mode"] = p_tile ? _preview_mode_name(p_tile->get_preview_mode()) : String("unknown");
-	tile["dock_presentation_hidden"] = dock_region ? dock_region->is_presentation_hidden() : false;
-	tile["scene_tree_dock_visible"] = scene_tree_dock ? scene_tree_dock->is_visible() : false;
+	// Match snapshot visibility (is_visible_in_tree), not the node's own flag.
+	tile["dock_presentation_hidden"] = p_tile ? p_tile->get_dock_region()->is_presentation_hidden() : false;
+	tile["scene_tree_dock_visible"] = scene_tree_dock ? scene_tree_dock->is_visible_in_tree() : false;
 
 	Array scenes;
 	for (int scene_index : p_editor_data->get_tile_scene_indices(tile_id)) {

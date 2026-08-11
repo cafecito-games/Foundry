@@ -282,12 +282,14 @@ TEST_CASE("[Editor][Automation][MCP] mcp-tile-scoped-selector") {
 	const EditorAutomationSelectorResult resolved = EditorAutomationSelector::resolve(baseline_snapshot, scoped);
 	REQUIRE(resolved.status == EditorAutomationSelectorStatus::OK);
 	REQUIRE(resolved.match_indices.size() == 1);
+	CHECK(scoped.has("within"));
 
 	const EditorAutomationElement &dock = baseline_snapshot.get_element(resolved.match_indices[0]);
 	CHECK(int(dock.metadata.get("tile_id", -1)) == 1);
 
-	// Demoted tiles hide dock chrome; visible-only tile-scoped selectors must miss,
-	// then resolve again after the tile is promoted back to focused_live.
+	// Demoted tiles hide dock chrome. Prove the causal chain: chrome hides, the
+	// tile scope still resolves, and only then the dock selector returns no_match.
+	// Reusing `scoped` also guards against resolve() mutating the caller's `within`.
 	ScenePaneTile *tile_a = h.workspace->get_tile_by_id(0);
 	ScenePaneTile *tile_b = h.workspace->get_tile_by_id(1);
 	REQUIRE(tile_a != nullptr);
@@ -295,9 +297,19 @@ TEST_CASE("[Editor][Automation][MCP] mcp-tile-scoped-selector") {
 	tile_b->set_preview_mode(TilePreviewMode::LIVE_2D);
 	tile_a->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
 	h.pump();
+	CHECK_FALSE(tile_b->get_scene_tree_dock()->is_visible_in_tree());
+	CHECK(tile_b->get_dock_region()->is_presentation_hidden());
+
 	const EditorAutomationSnapshot demoted_snapshot = EditorAutomationSnapshot::capture_from_node(h.host);
+	Dictionary tile_scope;
+	tile_scope["tile_id"] = 1;
+	CHECK(EditorAutomationSelector::resolve(demoted_snapshot, tile_scope).status == EditorAutomationSelectorStatus::OK);
+
 	const EditorAutomationSelectorResult demoted = EditorAutomationSelector::resolve(demoted_snapshot, scoped);
 	CHECK(demoted.status == EditorAutomationSelectorStatus::NO_MATCH);
+	CHECK(scoped.has("within"));
+	CHECK(EditorAutomationSelector::resolve(demoted_snapshot, scoped).status == EditorAutomationSelectorStatus::NO_MATCH);
+	CHECK(scoped.has("within"));
 
 	tile_b->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
 	tile_a->set_preview_mode(TilePreviewMode::LIVE_2D);
@@ -307,6 +319,7 @@ TEST_CASE("[Editor][Automation][MCP] mcp-tile-scoped-selector") {
 	REQUIRE(promoted.status == EditorAutomationSelectorStatus::OK);
 	REQUIRE(promoted.match_indices.size() == 1);
 	CHECK(int(promoted_snapshot.get_element(promoted.match_indices[0]).metadata.get("tile_id", -1)) == 1);
+	CHECK(scoped.has("within"));
 
 	h.unmount();
 }
