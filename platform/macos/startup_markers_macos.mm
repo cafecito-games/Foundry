@@ -41,6 +41,7 @@ namespace {
 // Its own subsystem, not the engine-wide one: a Time Profiler trace also carries the Metal driver's
 // Points of Interest, and the profiler selects the startup markers by subsystem so an unrelated
 // signpost can never be mistaken for one.
+API_AVAILABLE(macos(10.14))
 os_log_t startup_log() {
 	static os_log_t log = os_log_create("org.cafecito.foundry.startup", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
 	return log;
@@ -48,18 +49,28 @@ os_log_t startup_log() {
 
 } // namespace
 
+// Signposts arrived in macOS 10.14, and the x86_64 build still deploys to 10.13
+// (`platform/macos/detect.py:90`), where the strict build promotes the resulting
+// `-Wunguarded-availability-new` to an error. The markers are a measurement aid, so being absent on
+// a system too old to record them costs nothing; the latches below still run either way, so the
+// once-per-process contract holds identically on every deployment target.
+
 void StartupMarkersMacOS::first_window_visible() {
 	if (first_window_calls++ > 0) {
 		return;
 	}
-	os_signpost_event_emit(startup_log(), OS_SIGNPOST_ID_EXCLUSIVE, "FoundryFirstWindowVisible");
+	if (__builtin_available(macOS 10.14, *)) {
+		os_signpost_event_emit(startup_log(), OS_SIGNPOST_ID_EXCLUSIVE, "FoundryFirstWindowVisible");
+	}
 }
 
 void StartupMarkersMacOS::first_main_iteration() {
 	if (first_main_iteration_calls++ > 0) {
 		return;
 	}
-	os_signpost_event_emit(startup_log(), OS_SIGNPOST_ID_EXCLUSIVE, "FoundryFirstMainIteration");
+	if (__builtin_available(macOS 10.14, *)) {
+		os_signpost_event_emit(startup_log(), OS_SIGNPOST_ID_EXCLUSIVE, "FoundryFirstMainIteration");
+	}
 }
 
 void StartupMarkersMacOS::reset() {
