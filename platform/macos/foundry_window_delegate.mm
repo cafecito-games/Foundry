@@ -61,6 +61,14 @@
 		return YES;
 	}
 
+	if (StartupBootGateMacOS::should_discard_request()) {
+		// The close button pressed while the editor is still booting. This is the one close request
+		// that is purely user intent — the engine sends the same event internally to manage popups
+		// — and it is discarded rather than deferred, because replaying it would quit the editor
+		// the instant it finished launching. The user can close the window again once it is up.
+		return NO;
+	}
+
 	ds->send_window_event(ds->get_window(window_id), DisplayServerMacOS::WINDOW_EVENT_CLOSE_REQUEST);
 	return NO;
 }

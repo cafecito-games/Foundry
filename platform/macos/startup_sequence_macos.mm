@@ -152,28 +152,34 @@ void StartupBootGateMacOS::release_and_replay(ReplayCallback p_replay, void *p_u
 	if (p_replay == nullptr) {
 		return;
 	}
+	// Geometry and appearance are per-window and independent, so they go first: the tree sees each
+	// window settled into its final shape before it is told anything about hover or focus.
+	const WindowState per_window_order[] = { WINDOW_STATE_RECT, WINDOW_STATE_DPI, WINDOW_STATE_TITLEBAR };
 	for (const PendingWindow &window : windows) {
-		// Fixed order rather than the order the changes arrived: geometry before appearance before
-		// focus, so the tree sees a window settled into its final shape before it is told it is
-		// focused. Focus last is what the editor reacts to most visibly.
-		static const WindowState replay_order[] = {
-			WINDOW_STATE_RECT,
-			WINDOW_STATE_DPI,
-			WINDOW_STATE_TITLEBAR,
-			WINDOW_STATE_MOUSE,
-			WINDOW_STATE_FOCUS,
-		};
-		for (const WindowState state : replay_order) {
-			if ((window.dirty & (1u << (uint32_t)state)) == 0) {
-				continue;
+		for (const WindowState state : per_window_order) {
+			if (window.dirty & (1u << (uint32_t)state)) {
+				p_replay(window.window_id, state, false, p_userdata);
 			}
-			bool value = false;
-			if (state == WINDOW_STATE_FOCUS) {
-				value = window.focused;
-			} else if (state == WINDOW_STATE_MOUSE) {
-				value = window.mouse_inside;
+		}
+	}
+
+	// Hover and focus are not per-window facts — they are one globally ordered transition stream,
+	// because at most one window is hovered or focused at a time. Replaying window by window could
+	// deliver one window's arrival before another's departure, and the departure would then clear
+	// the state the arrival had just established, leaving the tree with nothing hovered or focused
+	// while the display server still reports a window. So every departure is replayed before any
+	// arrival, across all windows.
+	const bool arrival_passes[] = { false, true };
+	for (const bool arriving : arrival_passes) {
+		for (const PendingWindow &window : windows) {
+			if ((window.dirty & (1u << (uint32_t)WINDOW_STATE_MOUSE)) && window.mouse_inside == arriving) {
+				p_replay(window.window_id, WINDOW_STATE_MOUSE, arriving, p_userdata);
 			}
-			p_replay(window.window_id, state, value, p_userdata);
+		}
+		for (const PendingWindow &window : windows) {
+			if ((window.dirty & (1u << (uint32_t)WINDOW_STATE_FOCUS)) && window.focused == arriving) {
+				p_replay(window.window_id, WINDOW_STATE_FOCUS, arriving, p_userdata);
+			}
 		}
 	}
 }

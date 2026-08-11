@@ -697,10 +697,13 @@ bool DisplayServerMacOS::_defer_window_event_during_boot(const WindowData &wd, W
 		case WINDOW_EVENT_TITLEBAR_CHANGE:
 			return StartupBootGateMacOS::defer_window_state(wd.id, StartupBootGateMacOS::WINDOW_STATE_TITLEBAR);
 		case WINDOW_EVENT_CLOSE_REQUEST:
+			// Not gated here, because this is not exclusively user intent: `popup_open()` sends it
+			// to close the previous popup before opening the next one, and the popup close paths
+			// use it too. Swallowing those would leave two popups open and the popup stack
+			// inconsistent. The user-driven close is discarded at its own source instead, in
+			// `-[FoundryWindowDelegate windowShouldClose:]`.
+			break;
 		case WINDOW_EVENT_GO_BACK_REQUEST:
-			// User intent, discarded rather than deferred: replaying a boot-time close would quit
-			// the editor the instant it finished launching.
-			return StartupBootGateMacOS::should_discard_request();
 		case WINDOW_EVENT_FORCE_CLOSE:
 			// Engine-driven teardown, not something AppKit hands us mid-boot. Swallowing it could
 			// leak the window it is tearing down.

@@ -447,13 +447,47 @@ TEST_CASE("[StartupSequence][macOS] each window keeps its own coalesced state") 
 
 	recorder.replay();
 	REQUIRE(recorder.replayed.size() == 3);
-	// Windows replay in the order they were first seen, so the ordering is deterministic.
+	// Per-window geometry first, then the global focus stream: the window losing focus is told
+	// before the window gaining it, so the gain is not immediately undone.
 	CHECK(recorder.replayed[0].window_id == 7);
 	CHECK(recorder.replayed[0].state == StartupBootGateMacOS::WINDOW_STATE_RECT);
-	CHECK(recorder.replayed[1].window_id == 7);
-	CHECK(recorder.replayed[1].value);
-	CHECK(recorder.replayed[2].window_id == 9);
-	CHECK_FALSE(recorder.replayed[2].value);
+	CHECK(recorder.replayed[1].window_id == 9);
+	CHECK_FALSE(recorder.replayed[1].value);
+	CHECK(recorder.replayed[2].window_id == 7);
+	CHECK(recorder.replayed[2].value);
+}
+
+TEST_CASE("[StartupSequence][macOS] every window is told it lost hover before any is told it gained") {
+	GateStateGuard guard;
+	ReplayRecorder recorder;
+	StartupBootGateMacOS::reset();
+	StartupBootGateMacOS::engage();
+
+	// Window 3 is seen first for an unrelated reason, then the pointer leaves 5 and enters 3.
+	// Hover is one global transition stream, so replaying 3's arrival before 5's departure would
+	// let the departure clear the hover that the arrival had just established.
+	StartupBootGateMacOS::defer_window_state(3, StartupBootGateMacOS::WINDOW_STATE_RECT);
+	StartupBootGateMacOS::defer_window_state(5, StartupBootGateMacOS::WINDOW_STATE_MOUSE, false);
+	StartupBootGateMacOS::defer_window_state(3, StartupBootGateMacOS::WINDOW_STATE_MOUSE, true);
+
+	recorder.replay();
+
+	int departure_index = -1;
+	int arrival_index = -1;
+	for (int index = 0; index < recorder.replayed.size(); index++) {
+		const ReplayedState &entry = recorder.replayed[index];
+		if (entry.state != StartupBootGateMacOS::WINDOW_STATE_MOUSE) {
+			continue;
+		}
+		if (entry.value) {
+			arrival_index = index;
+		} else {
+			departure_index = index;
+		}
+	}
+	REQUIRE(departure_index >= 0);
+	REQUIRE(arrival_index >= 0);
+	CHECK(departure_index < arrival_index);
 }
 
 TEST_CASE("[StartupSequence][macOS] requests are discarded rather than replayed") {
