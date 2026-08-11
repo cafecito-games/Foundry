@@ -664,6 +664,7 @@ TEST_CASE("[Editor][BoardSwitcher] Pressing the active board opens no menu and s
 TEST_CASE("[Editor][BoardSwitcher] Pressing the dedicated board menu opens it immediately") {
 	BoardSwitcherHarness harness;
 	harness.mount();
+	harness.strip->add_board("B");
 
 	Button *menu_button = harness.menu_button();
 	REQUIRE(menu_button != nullptr);
@@ -680,6 +681,11 @@ TEST_CASE("[Editor][BoardSwitcher] Pressing the dedicated board menu opens it im
 
 	CHECK(menu->is_visible());
 	CHECK(menu->get_target_board_id() == harness.strip->get_active_board()->get_instance_id());
+	CHECK(menu->get_item_index(EditorBoardActionsMenu::ITEM_BOARD_BASE) == -1);
+	CHECK(menu->get_item_index(EditorBoardActionsMenu::ITEM_NEW_BOARD) >= 0);
+	CHECK(menu->get_item_index(EditorBoardActionsMenu::ITEM_OVERVIEW) >= 0);
+	CHECK(menu->get_item_index(EditorBoardActionsMenu::ITEM_RENAME) >= 0);
+	CHECK(menu->get_item_index(EditorBoardActionsMenu::ITEM_CLOSE) >= 0);
 
 	harness.unmount();
 }

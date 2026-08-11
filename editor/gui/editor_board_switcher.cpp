@@ -181,7 +181,7 @@ void EditorBoardSwitcher::_on_menu_pressed() {
 		return;
 	}
 	const Rect2 screen_rect = menu_button->get_screen_rect();
-	popup_active_board_menu(Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y), true);
+	popup_active_board_menu(Point2(screen_rect.position.x, screen_rect.position.y + screen_rect.size.y), false);
 }
 
 void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
