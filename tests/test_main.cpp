@@ -105,6 +105,7 @@
 #include "tests/editor/test_editor_passive_scene_preview.h"
 #include "tests/editor/test_editor_plugin_focused_tile_forwarding.h"
 #include "tests/editor/test_editor_scene_context.h"
+#include "tests/editor/test_editor_scene_mode_switcher.h"
 #include "tests/editor/test_editor_tooling_host.h"
 #include "tests/editor/test_extract_method_name_prompt.h"
 #include "tests/editor/test_inspector_density.h"
