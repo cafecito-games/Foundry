@@ -1561,24 +1561,24 @@ bool TextServerAdvanced::_ensure_cache_for_size(FontAdvanced *p_font_data, const
 				FT_Get_Var_Design_Coordinates(p_font_data->face, coords.size(), coords.ptrw());
 
 				for (FT_UInt i = 0; i < amaster->num_axis; i++) {
-					hb_variation_t var;
+				hb_variation_t var;
 
-					// Reset to default.
-					var.tag = amaster->axis[i].tag;
-					var.value = (double)amaster->axis[i].def / 65536.0;
-					coords.write[i] = amaster->axis[i].def;
+				// Reset to default.
+				var.tag = amaster->axis[i].tag;
+				var.value = (double)amaster->axis[i].def / 65536.0;
+				coords.write[i] = amaster->axis[i].def;
 
-					if (p_font_data->variation_coordinates.has(var.tag)) {
-						var.value = p_font_data->variation_coordinates[var.tag];
-						coords.write[i] = CLAMP(var.value * 65536.0, amaster->axis[i].minimum, amaster->axis[i].maximum);
-					}
+				if (p_font_data->variation_coordinates.has(var.tag)) {
+					var.value = p_font_data->variation_coordinates[var.tag];
+					coords.write[i] = CLAMP(var.value * 65536.0, amaster->axis[i].minimum, amaster->axis[i].maximum);
+				}
 
-					if (p_font_data->variation_coordinates.has(_tag_to_name(var.tag))) {
-						var.value = p_font_data->variation_coordinates[_tag_to_name(var.tag)];
-						coords.write[i] = CLAMP(var.value * 65536.0, amaster->axis[i].minimum, amaster->axis[i].maximum);
-					}
+				if (p_font_data->variation_coordinates.has(_tag_to_name(var.tag))) {
+					var.value = p_font_data->variation_coordinates[_tag_to_name(var.tag)];
+					coords.write[i] = CLAMP(var.value * 65536.0, amaster->axis[i].minimum, amaster->axis[i].maximum);
+				}
 
-					hb_vars.push_back(var);
+				hb_vars.push_back(var);
 				}
 
 				FT_Set_Var_Design_Coordinates(p_font_data->face, coords.size(), coords.ptrw());
@@ -2971,6 +2971,7 @@ void TextServerAdvanced::_font_set_descent(const RID &p_font_rid, int64_t p_size
 	FontAdvanced *fd = _get_font_data(p_font_rid);
 	ERR_FAIL_NULL(fd);
 
+	MutexLock lock(fd->mutex);
 	Vector2i size = _get_size(fd, p_size);
 
 	FontForSizeAdvanced *ffsd = nullptr;

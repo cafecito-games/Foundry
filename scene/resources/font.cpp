@@ -2136,6 +2136,7 @@ void FontFile::set_multichannel_signed_distance_field(bool p_msdf) {
 			_ensure_rid(i);
 			TS->font_set_multichannel_signed_distance_field(cache[i], msdf);
 		}
+		_invalidate_metric_cache();
 		emit_changed();
 	}
 }
@@ -2434,6 +2435,7 @@ void FontFile::set_variation_coordinates(int p_cache_index, const Dictionary &p_
 	ERR_FAIL_COND(p_cache_index < 0);
 	_ensure_rid(p_cache_index);
 	TS->font_set_variation_coordinates(cache[p_cache_index], p_variation_coordinates);
+	_invalidate_metric_cache();
 }
 
 Dictionary FontFile::get_variation_coordinates(int p_cache_index) const {
@@ -2498,6 +2500,7 @@ void FontFile::set_face_index(int p_cache_index, int64_t p_index) {
 
 	_ensure_rid(p_cache_index);
 	TS->font_set_face_index(cache[p_cache_index], p_index);
+	_invalidate_metric_cache();
 }
 
 int64_t FontFile::get_face_index(int p_cache_index) const {
