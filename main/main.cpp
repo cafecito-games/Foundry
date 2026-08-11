@@ -62,6 +62,7 @@
 #include "main/app_icon.gen.h"
 #include "main/cli_help.h"
 #include "main/cli_parser.h"
+#include "main/global_class_scan_policy.h"
 #include "main/main_timer_sync.h"
 #include "main/performance.h"
 #include "main/splash.gen.h"
@@ -4706,6 +4707,20 @@ int Main::start() {
 	}
 #endif // TOOLS_ENABLED && MODULE_FOUNDRY_SCRIPT_ENABLED
 
+	bool runtime_consumes_project_scripts = !game_path.is_empty() || !script.is_empty() ||
+			!test_runner_path.is_empty();
+#ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
+	runtime_consumes_project_scripts = runtime_consumes_project_scripts ||
+			(eval_requested && ProjectSettings::get_singleton()->is_project_loaded());
+#endif // MODULE_FOUNDRY_SCRIPT_ENABLED
+	const bool scan_runtime_global_classes = GlobalClassScanPolicy::should_scan(
+			ProjectSettings::get_singleton()->is_project_loaded(),
+			ProjectSettings::get_singleton()->is_using_datapack(), editor, editor_pid != 0,
+			runtime_consumes_project_scripts);
+	if (scan_runtime_global_classes) {
+		ScriptServer::scan_global_classes();
+	}
+
 #ifdef MODULE_FOUNDRY_SCRIPT_ENABLED
 	// `--script --check-only` still loads and validates the script, so run pre_compile before script loading.
 	// Inline eval only needs the build pipeline when it runs against a real project (so
@@ -4731,10 +4746,6 @@ int Main::start() {
 	MainLoop *main_loop = nullptr;
 	Ref<ScriptRunner> script_runner;
 	if (!test_runner_path.is_empty()) {
-		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
-			ScriptServer::scan_global_classes();
-		}
-
 		script_runner = load_script_runner(test_runner_path);
 		ERR_FAIL_COND_V_MSG(script_runner.is_null(), EXIT_FAILURE, "Failed to load script runner.");
 	}
@@ -4750,12 +4761,6 @@ int Main::start() {
 				(foundry_cli_project_path_error || !ProjectSettings::get_singleton()->is_project_loaded())) {
 			ERR_PRINT(vformat("script eval could not use the requested project at \"%s\".", cli_invocation.project_path));
 			return EXIT_FAILURE;
-		}
-
-		// Scan project global classes (in memory) so an inline snippet can reference the
-		// project's `class_name` scripts, mirroring `project run --script`.
-		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
-			ScriptServer::scan_global_classes();
 		}
 
 		String eval_error;
@@ -4775,15 +4780,6 @@ int Main::start() {
 	}
 
 	if (!script.is_empty()) {
-		// Without the editor there is no EditorFileSystem to rebuild the global script class cache,
-		// so a missing or stale `global_script_class_cache.cfg` would break `class_name` resolution
-		// for the whole run. Rescan the project for global classes in memory instead (never written
-		// back to disk). Exported projects (running from a datapack) keep trusting the cache bundled
-		// at export time: their scripts may be compiled to bytecode the scan cannot parse.
-		if (!editor && ProjectSettings::get_singleton()->is_project_loaded() && !ProjectSettings::get_singleton()->is_using_datapack()) {
-			ScriptServer::scan_global_classes();
-		}
-
 		Ref<Script> script_res = ResourceLoader::load(script);
 		ERR_FAIL_COND_V_MSG(script_res.is_null(), EXIT_FAILURE, "Can't load script: " + script);
 
