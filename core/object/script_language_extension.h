@@ -335,8 +335,10 @@ public:
 				if (err.has("path")) {
 					serr.path = err["path"];
 				}
-				serr.line = err["line"];
-				serr.column = err["column"];
+				serr.start_line = err["line"];
+				serr.start_column = err["column"];
+				serr.end_line = serr.start_line;
+				serr.end_column = serr.start_column < INT_MAX ? serr.start_column + 1 : INT_MAX;
 				serr.message = err["message"];
 
 				r_errors->push_back(serr);
@@ -355,7 +357,13 @@ public:
 
 				Warning swarn;
 				swarn.start_line = warn["start_line"];
+				if (warn.has("start_column")) {
+					swarn.start_column = warn["start_column"];
+				}
 				swarn.end_line = warn["end_line"];
+				if (warn.has("end_column")) {
+					swarn.end_column = warn["end_column"];
+				}
 				swarn.code = warn["code"];
 				swarn.string_code = warn["string_code"];
 				swarn.message = warn["message"];

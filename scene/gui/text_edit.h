@@ -307,6 +307,28 @@ private:
 	String ime_text = "";
 	Point2 ime_selection;
 
+	// Internal colored underline decorations.
+	struct Underline {
+		Color color;
+		int start_line = 0;
+		int start_column = 0;
+		int end_line = 0;
+		int end_column = 0;
+
+		bool contains_line(int p_line) const {
+			return start_line <= p_line && p_line <= end_line;
+		}
+	};
+	LocalVector<Underline> underlines;
+
+	static bool _is_position_before(int p_line, int p_column, int p_other_line, int p_other_column);
+	static bool _is_position_equal(int p_line, int p_column, int p_other_line, int p_other_column);
+	void _normalize_underline(Underline &r_underline) const;
+	void _normalize_underlines();
+	void _offset_underlines_after(int p_old_line, int p_old_column, int p_new_line, int p_new_column);
+	Vector<Underline> _cut_line_from_underline(const Underline &p_underline, int p_line) const;
+	Vector<Underline> _get_underline_data_for_line(int p_line) const;
+
 	// Placeholder
 	String placeholder_text = "";
 	Array placeholder_bidi_override;
@@ -493,7 +515,6 @@ private:
 	bool _is_line_col_in_range(int p_line, int p_column, int p_from_line, int p_from_column, int p_to_line, int p_to_column, bool p_include_edges = true) const;
 
 	void _offset_carets_after(int p_old_line, int p_old_column, int p_new_line, int p_new_column, bool p_include_selection_begin = true, bool p_include_selection_end = true);
-
 	void _cancel_drag_and_drop_text();
 
 	/* Selection. */
@@ -773,6 +794,19 @@ protected:
 	FOUNDRY_VIRTUAL1(_paste_primary_clipboard, int)
 
 public:
+	void clear_underlines();
+	void add_underline(const Color &p_color, int p_start_line, int p_start_column, int p_end_line, int p_end_column);
+	void update_underline_color(const Color &p_original_color, const Color &p_new_color);
+
+#ifdef TESTS_ENABLED
+	int get_underline_count() const { return underlines.size(); }
+	Color get_underline_color(int p_index) const;
+	int get_underline_start_line(int p_index) const;
+	int get_underline_start_column(int p_index) const;
+	int get_underline_end_line(int p_index) const;
+	int get_underline_end_column(int p_index) const;
+#endif // TESTS_ENABLED
+
 	/* General overrides. */
 	virtual void unhandled_key_input(const Ref<InputEvent> &p_event) override;
 	virtual void gui_input(const Ref<InputEvent> &p_gui_input) override;

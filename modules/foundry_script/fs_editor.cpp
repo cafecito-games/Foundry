@@ -154,8 +154,10 @@ bool FSLanguage::validate(const String &p_script, const String &p_path, List<Str
 	if (r_errors) {
 		ScriptLanguage::ScriptError error;
 		error.path = p_path;
-		error.line = 0;
-		error.column = 0;
+		error.start_line = 1;
+		error.start_column = 1;
+		error.end_line = 1;
+		error.end_column = 2;
 		error.message = "This binary was built without the Foundry Script front-end (foundry_script_frontend=no).";
 		r_errors->push_back(error);
 	}
@@ -174,7 +176,9 @@ bool FSLanguage::validate(const String &p_script, const String &p_path, List<Str
 			const FSWarning &warn = E;
 			ScriptLanguage::Warning w;
 			w.start_line = warn.start_line;
+			w.start_column = warn.start_column;
 			w.end_line = warn.end_line;
+			w.end_column = warn.end_column;
 			w.code = (int)warn.code;
 			w.string_code = FSWarning::get_name_from_code(warn.code);
 			w.message = warn.get_message();
@@ -187,8 +191,10 @@ bool FSLanguage::validate(const String &p_script, const String &p_path, List<Str
 			for (const FSParser::ParserError &pe : parser.get_errors()) {
 				ScriptLanguage::ScriptError e;
 				e.path = p_path;
-				e.line = pe.line;
-				e.column = pe.column;
+				e.start_line = pe.line;
+				e.start_column = pe.column;
+				e.end_line = pe.end_line;
+				e.end_column = pe.end_column;
 				e.message = pe.message;
 				r_errors->push_back(e);
 			}
@@ -198,8 +204,10 @@ bool FSLanguage::validate(const String &p_script, const String &p_path, List<Str
 				for (const FSParser::ParserError &pe : depended_parser->get_errors()) {
 					ScriptLanguage::ScriptError e;
 					e.path = E.key;
-					e.line = pe.line;
-					e.column = pe.column;
+					e.start_line = pe.line;
+					e.start_column = pe.column;
+					e.end_line = pe.end_line;
+					e.end_column = pe.end_column;
 					e.message = pe.message;
 					r_errors->push_back(e);
 				}

@@ -44,6 +44,200 @@ static inline Array reverse_nested(Array array) {
 	return reversed_array;
 }
 
+static void check_underline_decoration(TextEdit *p_text_edit, int p_index, const Color &p_color, int p_start_line, int p_start_column, int p_end_line, int p_end_column) {
+	CHECK_LT(p_index, p_text_edit->get_underline_count());
+	if (p_index >= p_text_edit->get_underline_count()) {
+		return;
+	}
+	CHECK_EQ(p_text_edit->get_underline_color(p_index), p_color);
+	CHECK_EQ(p_text_edit->get_underline_start_line(p_index), p_start_line);
+	CHECK_EQ(p_text_edit->get_underline_start_column(p_index), p_start_column);
+	CHECK_EQ(p_text_edit->get_underline_end_line(p_index), p_end_line);
+	CHECK_EQ(p_text_edit->get_underline_end_column(p_index), p_end_column);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration add clear color and normalization") {
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_text("abc\ndef");
+	const Color warning_color(0.9, 0.7, 0.2);
+	const Color error_color(1.0, 0.0, 0.0);
+
+	SUBCASE("Add update color and clear") {
+		text_edit->add_underline(warning_color, 0, 1, 0, 3);
+		text_edit->add_underline(error_color, 1, 0, 1, 2);
+		CHECK_EQ(text_edit->get_underline_count(), 2);
+		check_underline_decoration(text_edit, 0, warning_color, 0, 1, 0, 3);
+		check_underline_decoration(text_edit, 1, error_color, 1, 0, 1, 2);
+
+		const Color updated_warning_color(1.0, 0.8, 0.1);
+		text_edit->update_underline_color(warning_color, updated_warning_color);
+		check_underline_decoration(text_edit, 0, updated_warning_color, 0, 1, 0, 3);
+		check_underline_decoration(text_edit, 1, error_color, 1, 0, 1, 2);
+
+		text_edit->clear_underlines();
+		CHECK_EQ(text_edit->get_underline_count(), 0);
+	}
+
+	SUBCASE("Out of document coordinates are clamped") {
+		text_edit->add_underline(warning_color, -4, -3, 9, 99);
+		check_underline_decoration(text_edit, 0, warning_color, 0, 0, 1, 3);
+	}
+
+	SUBCASE("Reversed coordinates are ordered after clamping") {
+		text_edit->add_underline(warning_color, 1, 99, 0, -5);
+		check_underline_decoration(text_edit, 0, warning_color, 0, 0, 1, 3);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks insertion boundaries") {
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_text("0123456789");
+	const Color color(0.9, 0.7, 0.2);
+	text_edit->add_underline(color, 0, 3, 0, 7);
+
+	SUBCASE("Insertion before shifts both endpoints") {
+		text_edit->insert_text("AB", 0, 1);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+	}
+
+	SUBCASE("Insertion at the start shifts both endpoints") {
+		text_edit->insert_text("AB", 0, 3);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 9);
+	}
+
+	SUBCASE("Insertion inside shifts only the end") {
+		text_edit->insert_text("AB", 0, 5);
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 9);
+	}
+
+	SUBCASE("Insertion at the end does not grow the range") {
+		text_edit->insert_text("AB", 0, 7);
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 7);
+	}
+
+	SUBCASE("Insertion at an empty range keeps it empty") {
+		text_edit->clear_underlines();
+		text_edit->add_underline(color, 0, 3, 0, 3);
+		text_edit->insert_text("AB", 0, 3);
+		check_underline_decoration(text_edit, 0, color, 0, 5, 0, 5);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks deletion overlap") {
+	TextEdit *text_edit = memnew(TextEdit);
+	text_edit->set_text("0123456789");
+	const Color color(1.0, 0.0, 0.0);
+	text_edit->add_underline(color, 0, 3, 0, 7);
+
+	SUBCASE("Deletion before shifts both endpoints") {
+		text_edit->remove_text(0, 0, 0, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 5);
+	}
+
+	SUBCASE("Deletion overlapping the start trims to the deletion start") {
+		text_edit->remove_text(0, 1, 0, 5);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 3);
+	}
+
+	SUBCASE("Deletion inside shifts only the end") {
+		text_edit->remove_text(0, 4, 0, 6);
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 5);
+	}
+
+	SUBCASE("Deletion overlapping the end trims to the deletion start") {
+		text_edit->remove_text(0, 5, 0, 9);
+		check_underline_decoration(text_edit, 0, color, 0, 3, 0, 5);
+	}
+
+	SUBCASE("Deletion covering the range collapses it") {
+		text_edit->remove_text(0, 1, 0, 9);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 1);
+	}
+
+	memdelete(text_edit);
+}
+
+TEST_CASE("[SceneTree][TextEdit] underline decoration tracks multiline and line operations") {
+	TextEdit *text_edit = memnew(TextEdit);
+	const Color color(0.9, 0.7, 0.2);
+
+	SUBCASE("Multiline insertion at the start keeps inserted text outside") {
+		text_edit->set_text("abcd\nefgh\nijkl");
+		text_edit->add_underline(color, 1, 1, 2, 2);
+		text_edit->insert_text("X\nY", 1, 1);
+		check_underline_decoration(text_edit, 0, color, 2, 1, 3, 2);
+	}
+
+	SUBCASE("Multiline insertion inside extends the end") {
+		text_edit->set_text("abcd\nefgh\nijkl");
+		text_edit->add_underline(color, 0, 2, 2, 2);
+		text_edit->insert_text("X\nY", 1, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 3, 2);
+	}
+
+	SUBCASE("Multiline removal inside shifts the end") {
+		text_edit->set_text("abcd\nefgh\nijkl\nmnop");
+		text_edit->add_underline(color, 0, 2, 3, 2);
+		text_edit->remove_text(1, 2, 2, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
+	}
+
+	SUBCASE("Multiline replacement composes removal and insertion") {
+		text_edit->set_text("abcd\nefgh\nijkl");
+		text_edit->add_underline(color, 0, 1, 2, 3);
+		text_edit->remove_text(0, 2, 2, 2);
+		text_edit->insert_text("X\nY", 0, 2);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 1, 2);
+	}
+
+	SUBCASE("Set line preserves columns and clamps to the new length") {
+		text_edit->set_text("abcdef\nsecond");
+		text_edit->add_underline(color, 0, 2, 0, 5);
+		text_edit->set_line(0, "abc");
+		check_underline_decoration(text_edit, 0, color, 0, 2, 0, 3);
+	}
+
+	SUBCASE("Insert line shifts a range beginning on the insertion line") {
+		text_edit->set_text("alpha\nbeta\ngamma");
+		text_edit->add_underline(color, 1, 1, 2, 3);
+		text_edit->insert_line_at(1, "new");
+		check_underline_decoration(text_edit, 0, color, 2, 1, 3, 3);
+	}
+
+	SUBCASE("Remove line shifts a spanning range") {
+		text_edit->set_text("zero\none\ntwo\nthree");
+		text_edit->add_underline(color, 0, 2, 3, 2);
+		text_edit->remove_line_at(1);
+		check_underline_decoration(text_edit, 0, color, 0, 2, 2, 2);
+	}
+
+	SUBCASE("Remove line collapses a range contained by that line") {
+		text_edit->set_text("zero\none\ntwo");
+		text_edit->add_underline(color, 1, 1, 1, 3);
+		text_edit->remove_line_at(1);
+		check_underline_decoration(text_edit, 0, color, 1, 0, 1, 0);
+	}
+
+	SUBCASE("Swap lines moves covered text and splits the remaining spans") {
+		text_edit->set_text("aaaa\nbbbbb\ncc\nddddddd\neee");
+		text_edit->add_underline(color, 0, 1, 4, 2);
+		text_edit->swap_lines(1, 3);
+
+		CHECK_EQ(text_edit->get_underline_count(), 5);
+		check_underline_decoration(text_edit, 0, color, 0, 1, 0, 4);
+		check_underline_decoration(text_edit, 1, color, 2, 0, 2, 2);
+		check_underline_decoration(text_edit, 2, color, 4, 0, 4, 2);
+		check_underline_decoration(text_edit, 3, color, 3, 0, 3, 5);
+		check_underline_decoration(text_edit, 4, color, 1, 0, 1, 7);
+	}
+
+	memdelete(text_edit);
+}
+
 TEST_CASE("[SceneTree][TextEdit] text entry") {
 #if !defined(PHYSICS_2D_DISABLED) || !defined(PHYSICS_3D_DISABLED)
 	SceneTree::get_singleton()->get_root()->set_physics_object_picking(false);

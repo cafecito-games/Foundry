@@ -69,6 +69,88 @@ TEST_CASE("[Modules][FoundryScript] Language reserved words include namespace de
 	CHECK(reserved_words.has("namespace"));
 }
 
+#ifdef DEBUG_ENABLED
+class DiagnosticRangeWarningSettingsScope {
+	Variant previous_enable;
+	Variant previous_unused_variable;
+	bool previous_ignore = false;
+
+public:
+	DiagnosticRangeWarningSettingsScope() {
+		const String unused_variable_setting = FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE);
+		previous_enable = ProjectSettings::get_singleton()->get_setting("debug/foundry_script/warnings/enable", true);
+		previous_unused_variable = ProjectSettings::get_singleton()->get_setting(unused_variable_setting, (int)FSWarning::WARN);
+		previous_ignore = FSParser::is_ignoring_warnings();
+
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", true);
+		ProjectSettings::get_singleton()->set_setting(unused_variable_setting, (int)FSWarning::WARN);
+		FSParser::set_ignoring_warnings(false);
+		FSParser::update_project_settings();
+	}
+
+	~DiagnosticRangeWarningSettingsScope() {
+		ProjectSettings::get_singleton()->set_setting("debug/foundry_script/warnings/enable", previous_enable);
+		ProjectSettings::get_singleton()->set_setting(
+				FSWarning::get_setting_path_from_code(FSWarning::UNUSED_VARIABLE), previous_unused_variable);
+		FSParser::set_ignoring_warnings(previous_ignore);
+		FSParser::update_project_settings();
+	}
+};
+
+TEST_CASE("[Modules][FoundryScript] diagnostic range validation is one-based and end-exclusive") {
+	DiagnosticRangeWarningSettingsScope warning_settings;
+
+	SUBCASE("Unused variable warning carries the variable declaration range") {
+		const String source = "func diagnose() -> void:\n    var unused = 42\n";
+		List<ScriptLanguage::ScriptError> errors;
+		List<ScriptLanguage::Warning> warnings;
+
+		const bool valid = FSLanguage::get_singleton()->validate(
+				source, "res://diagnostic_warning_range.fs", nullptr, &errors, &warnings);
+
+		CHECK(valid);
+		CHECK(errors.is_empty());
+		if (!valid || !errors.is_empty()) {
+			return;
+		}
+		const ScriptLanguage::Warning *warning = nullptr;
+		for (const ScriptLanguage::Warning &candidate : warnings) {
+			if (candidate.string_code == "UNUSED_VARIABLE") {
+				warning = &candidate;
+				break;
+			}
+		}
+		CHECK_NE(warning, nullptr);
+		if (warning == nullptr) {
+			return;
+		}
+		CHECK_EQ(warning->start_line, 2);
+		CHECK_EQ(warning->start_column, 5);
+		CHECK_EQ(warning->end_line, 2);
+		CHECK_EQ(warning->end_column, 20);
+	}
+
+	SUBCASE("Parser error carries the preceding token range") {
+		const String source = "func diagnose() -> void:\n    var broken =\n";
+		List<ScriptLanguage::ScriptError> errors;
+
+		const bool valid = FSLanguage::get_singleton()->validate(
+				source, "res://diagnostic_error_range.fs", nullptr, &errors);
+
+		CHECK_FALSE(valid);
+		CHECK_FALSE(errors.is_empty());
+		if (valid || errors.is_empty()) {
+			return;
+		}
+		const ScriptLanguage::ScriptError &error = errors.front()->get();
+		CHECK_EQ(error.start_line, 2);
+		CHECK_EQ(error.start_column, 16);
+		CHECK_EQ(error.end_line, 2);
+		CHECK_EQ(error.end_column, 17);
+	}
+}
+#endif // DEBUG_ENABLED
+
 TEST_CASE("[Modules][FoundryScript] Language reserved words include hard trait declarations") {
 	Vector<String> reserved_words = FSLanguage::get_singleton()->get_reserved_words();
 	CHECK(reserved_words.has("enum_name"));

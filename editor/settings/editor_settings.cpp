@@ -695,7 +695,7 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 	// Theme
 	EDITOR_SETTING_BASIC(Variant::STRING, PROPERTY_HINT_ENUM, "text_editor/theme/color_theme", "Default", "Default,Foundry 2,Custom")
 
-	// Theme: Highlighting
+	// Theme: Highlighting and underlining.
 	const LocalVector<StringName> basic_text_editor_settings = {
 		"text_editor/theme/highlighting/symbol_color",
 		"text_editor/theme/highlighting/keyword_color",
@@ -723,6 +723,8 @@ void EditorSettings::_load_defaults(Ref<ConfigFile> p_extra_config) {
 		"text_editor/theme/highlighting/function_color",
 		"text_editor/theme/highlighting/member_variable_color",
 		"text_editor/theme/highlighting/mark_color",
+		"text_editor/theme/highlighting/warning_underline_color",
+		"text_editor/theme/highlighting/error_underline_color",
 	};
 	// These values will be overwritten by EditorThemeManager, but can still be seen in some edge cases.
 	const HashMap<StringName, Color> text_colors = get_godot2_text_editor_theme();
@@ -1760,6 +1762,8 @@ HashMap<StringName, Color> EditorSettings::get_godot2_text_editor_theme() {
 	colors["text_editor/theme/highlighting/member_variable_color"] = Color(0.9, 0.31, 0.35);
 	colors["text_editor/theme/highlighting/mark_color"] = Color(1.0, 0.4, 0.4, 0.4);
 	colors["text_editor/theme/highlighting/warning_color"] = Color(1.0, 0.8, 0.4, 0.1);
+	colors["text_editor/theme/highlighting/warning_underline_color"] = Color(0.89, 0.7, 0.2);
+	colors["text_editor/theme/highlighting/error_underline_color"] = Color(1.0, 0.0, 0.0);
 	colors["text_editor/theme/highlighting/bookmark_color"] = Color(0.08, 0.49, 0.98);
 	colors["text_editor/theme/highlighting/breakpoint_color"] = Color(0.9, 0.29, 0.3);
 	colors["text_editor/theme/highlighting/executing_line_color"] = Color(0.98, 0.89, 0.27);

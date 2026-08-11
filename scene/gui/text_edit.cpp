@@ -1752,6 +1752,66 @@ void TextEdit::_notification(int p_what) {
 						}
 					}
 
+					for (const Underline &underline : underlines) {
+						if (!underline.contains_line(line)) {
+							continue;
+						}
+
+						const int start_column = line == underline.start_line ? underline.start_column : 0;
+						const int end_column = line == underline.end_line ? underline.end_column : text[line].length();
+						if (end_column <= start_column) {
+							continue;
+						}
+
+						const Vector<Vector2> selections = TS->shaped_text_get_selection(rid, start_column, end_column);
+						for (const Vector2 &selection : selections) {
+							const float visual_start = MIN(selection.x, selection.y) + char_margin;
+							const float visual_end = MAX(selection.x, selection.y) + char_margin;
+							const float clipped_start = MAX(visual_start, (float)xmargin_beg);
+							const float clipped_end = MIN(visual_end, (float)xmargin_end);
+							if (clipped_end <= clipped_start) {
+								continue;
+							}
+
+							const float squiggle_top = ofs_y + theme_cache.font->get_underline_position(theme_cache.font_size);
+							const float squiggle_height = MAX(theme_cache.font_size * 0.1f, 1.0f);
+							const float squiggle_center = squiggle_top + squiggle_height * 0.5f;
+							const float squiggle_bottom = squiggle_top + squiggle_height;
+							const float quarter_width = MAX(char_w * 0.25f, 1.0f);
+
+							auto get_squiggle_y = [&](float p_x) {
+								const float phase = (p_x - visual_start) / quarter_width;
+								if (phase <= 1.0f) {
+									return Math::lerp(squiggle_center, squiggle_bottom, MAX(phase, 0.0f));
+								}
+								const int segment = (int)Math::floor((phase - 1.0f) * 0.5f);
+								const float segment_phase = ((phase - 1.0f) - segment * 2.0f) * 0.5f;
+								const float from_y = (segment % 2 == 0) ? squiggle_bottom : squiggle_top;
+								const float to_y = (segment % 2 == 0) ? squiggle_top : squiggle_bottom;
+								return Math::lerp(from_y, to_y, segment_phase);
+							};
+
+							PackedVector2Array points;
+							points.push_back(Vector2(clipped_start, get_squiggle_y(clipped_start)));
+
+							float next_turn = visual_start + quarter_width;
+							if (next_turn <= clipped_start) {
+								const float completed_half_waves = Math::floor((clipped_start - next_turn) / (quarter_width * 2.0f)) + 1.0f;
+								next_turn += completed_half_waves * quarter_width * 2.0f;
+							}
+							while (next_turn < clipped_end) {
+								points.push_back(Vector2(next_turn, get_squiggle_y(next_turn)));
+								next_turn += quarter_width * 2.0f;
+							}
+							points.push_back(Vector2(clipped_end, get_squiggle_y(clipped_end)));
+
+							PackedColorArray colors;
+							colors.push_back(underline.color);
+							RS::get_singleton()->canvas_item_add_polyline(
+									text_ci, points, colors, MAX(theme_cache.font->get_underline_thickness(theme_cache.font_size), 1), true);
+						}
+					}
+
 					cache_entry.first_visible_chars.push_back(first_visible_char);
 					cache_entry.last_visible_chars.push_back(last_visible_char);
 
@@ -3192,6 +3252,7 @@ void TextEdit::_do_backspace(bool p_word, bool p_all_to_left) {
 			collapse_carets(get_caret_line(caret_index), 0, get_caret_line(caret_index), caret_current_column);
 			set_caret_column(0, caret_index == 0, caret_index);
 			_offset_carets_after(get_caret_line(caret_index), caret_current_column, get_caret_line(caret_index), 0);
+			_offset_underlines_after(get_caret_line(caret_index), caret_current_column, get_caret_line(caret_index), 0);
 			continue;
 		}
 
@@ -3224,6 +3285,7 @@ void TextEdit::_do_backspace(bool p_word, bool p_all_to_left) {
 			collapse_carets(get_caret_line(caret_index), column, get_caret_line(caret_index), from_column);
 			set_caret_column(column, caret_index == 0, caret_index);
 			_offset_carets_after(get_caret_line(caret_index), from_column, get_caret_line(caret_index), column);
+			_offset_underlines_after(get_caret_line(caret_index), from_column, get_caret_line(caret_index), column);
 		}
 	}
 
@@ -3299,6 +3361,7 @@ void TextEdit::_delete(bool p_word, bool p_all_to_right) {
 		_remove_text(get_caret_line(caret_index), get_caret_column(caret_index), next_line, next_column);
 		collapse_carets(get_caret_line(caret_index), get_caret_column(caret_index), next_line, next_column);
 		_offset_carets_after(next_line, next_column, get_caret_line(caret_index), get_caret_column(caret_index));
+		_offset_underlines_after(next_line, next_column, get_caret_line(caret_index), get_caret_column(caret_index));
 	}
 
 	end_multicaret_edit();
@@ -4097,6 +4160,20 @@ void TextEdit::set_line(int p_line, const String &p_new_text) {
 	// Don't offset carets that were on the old line.
 	_offset_carets_after(p_line, old_column, new_line, new_column, false, false);
 
+	const int added_lines = new_line - p_line;
+	if (added_lines != 0) {
+		for (Underline &underline : underlines) {
+			if (underline.start_line > p_line) {
+				underline.start_line += added_lines;
+			}
+			if (underline.end_line > p_line) {
+				underline.end_line += added_lines;
+			}
+		}
+	}
+	_normalize_underlines();
+	queue_redraw();
+
 	// Set the caret lines to update the column to match visually.
 	for (int i = 0; i < get_caret_count(); i++) {
 		if (_is_line_col_in_range(get_caret_line(i), get_caret_column(i), p_line, 0, p_line, old_column)) {
@@ -4211,6 +4288,40 @@ void TextEdit::swap_lines(int p_from_line, int p_to_line) {
 
 	String from_line_text = get_line(p_from_line);
 	String to_line_text = get_line(p_to_line);
+	Vector<Underline> from_line_underlines = _get_underline_data_for_line(p_from_line);
+	Vector<Underline> to_line_underlines = _get_underline_data_for_line(p_to_line);
+	LocalVector<Underline> new_underlines;
+	for (const Underline &underline : underlines) {
+		if (!underline.contains_line(p_from_line) && !underline.contains_line(p_to_line)) {
+			new_underlines.push_back(underline);
+		} else if (underline.contains_line(p_from_line) && !underline.contains_line(p_to_line)) {
+			for (const Underline &part : _cut_line_from_underline(underline, p_from_line)) {
+				new_underlines.push_back(part);
+			}
+		} else if (!underline.contains_line(p_from_line) && underline.contains_line(p_to_line)) {
+			for (const Underline &part : _cut_line_from_underline(underline, p_to_line)) {
+				new_underlines.push_back(part);
+			}
+		} else {
+			for (const Underline &first_part : _cut_line_from_underline(underline, p_from_line)) {
+				for (const Underline &second_part : _cut_line_from_underline(first_part, p_to_line)) {
+					new_underlines.push_back(second_part);
+				}
+			}
+		}
+	}
+
+	for (Underline &underline : from_line_underlines) {
+		underline.start_line = p_to_line;
+		underline.end_line = p_to_line;
+		new_underlines.push_back(underline);
+	}
+	for (Underline &underline : to_line_underlines) {
+		underline.start_line = p_from_line;
+		underline.end_line = p_from_line;
+		new_underlines.push_back(underline);
+	}
+
 	begin_complex_operation();
 	begin_multicaret_edit();
 	// Don't use set_line to avoid clamping and updating carets.
@@ -4234,6 +4345,9 @@ void TextEdit::swap_lines(int p_from_line, int p_to_line) {
 			select(origin_new_line, origin_column, get_caret_line(i), get_caret_column(i), i);
 		}
 	}
+	underlines = new_underlines;
+	_normalize_underlines();
+	queue_redraw();
 	// If only part of a selection was changed, it may now overlap.
 	merge_overlapping_carets();
 
@@ -4250,6 +4364,7 @@ void TextEdit::insert_line_at(int p_line, const String &p_text) {
 	int new_line, new_column;
 	_insert_text(p_line, 0, p_text + "\n", &new_line, &new_column);
 	_offset_carets_after(p_line, 0, new_line, new_column);
+	_offset_underlines_after(p_line, 0, new_line, new_column);
 
 	end_complex_operation();
 }
@@ -4263,6 +4378,7 @@ void TextEdit::remove_line_at(int p_line, bool p_move_carets_down) {
 		int line_length = get_line(p_line).length();
 		_remove_text(p_line, 0, p_line, line_length);
 		collapse_carets(p_line, 0, p_line, line_length, true);
+		_offset_underlines_after(p_line, line_length, p_line, 0);
 		end_complex_operation();
 		return;
 	}
@@ -4311,6 +4427,7 @@ void TextEdit::remove_line_at(int p_line, bool p_move_carets_down) {
 		merge_overlapping_carets();
 	}
 	_offset_carets_after(next_line, next_column, from_line, from_column);
+	_offset_underlines_after(next_line, next_column, from_line, from_column);
 	end_multicaret_edit();
 	end_complex_operation();
 
@@ -4340,6 +4457,7 @@ void TextEdit::insert_text_at_caret(const String &p_text, int p_caret) {
 		_insert_text(from_line, from_col, p_text, &new_line, &new_column);
 		_update_scrollbars();
 		_offset_carets_after(from_line, from_col, new_line, new_column);
+		_offset_underlines_after(from_line, from_col, new_line, new_column);
 
 		set_caret_line(new_line, false, true, -1, i);
 		set_caret_column(new_column, i == 0, i);
@@ -4363,6 +4481,7 @@ void TextEdit::insert_text(const String &p_text, int p_line, int p_column, bool 
 	_insert_text(p_line, p_column, p_text, &new_line, &new_column);
 
 	_offset_carets_after(p_line, p_column, new_line, new_column, p_before_selection_begin, p_before_selection_end);
+	_offset_underlines_after(p_line, p_column, new_line, new_column);
 
 	end_complex_operation();
 }
@@ -4380,6 +4499,7 @@ void TextEdit::remove_text(int p_from_line, int p_from_column, int p_to_line, in
 	_remove_text(p_from_line, p_from_column, p_to_line, p_to_column);
 	collapse_carets(p_from_line, p_from_column, p_to_line, p_to_column);
 	_offset_carets_after(p_to_line, p_to_column, p_from_line, p_from_column);
+	_offset_underlines_after(p_to_line, p_to_column, p_from_line, p_from_column);
 
 	end_complex_operation();
 }
@@ -6364,6 +6484,7 @@ void TextEdit::delete_selection(int p_caret) {
 
 		_remove_text(selection_from_line, selection_from_column, selection_to_line, selection_to_column);
 		_offset_carets_after(selection_to_line, selection_to_column, selection_from_line, selection_from_column);
+		_offset_underlines_after(selection_to_line, selection_to_column, selection_from_line, selection_from_column);
 		merge_overlapping_carets();
 
 		deselect(i);
@@ -7791,6 +7912,7 @@ void TextEdit::_handle_unicode_input_internal(const uint32_t p_unicode, int p_ca
 			int cc = get_caret_column(i);
 			if (cc < get_line(cl).length()) {
 				_remove_text(cl, cc, cl, cc + 1);
+				_offset_underlines_after(cl, cc + 1, cl, cc);
 			}
 		}
 
@@ -7844,6 +7966,7 @@ void TextEdit::_backspace_internal(int p_caret) {
 		_remove_text(from_line, from_column, to_line, to_column);
 		collapse_carets(from_line, from_column, to_line, to_column);
 		_offset_carets_after(to_line, to_column, from_line, from_column);
+		_offset_underlines_after(to_line, to_column, from_line, from_column);
 
 		set_caret_line(from_line, false, true, -1, i);
 		set_caret_column(from_column, i == 0, i);
@@ -8430,6 +8553,217 @@ void TextEdit::_offset_carets_after(int p_old_line, int p_old_column, int p_new_
 		merge_overlapping_carets();
 	}
 }
+
+bool TextEdit::_is_position_before(int p_line, int p_column, int p_other_line, int p_other_column) {
+	return p_line < p_other_line || (p_line == p_other_line && p_column < p_other_column);
+}
+
+bool TextEdit::_is_position_equal(int p_line, int p_column, int p_other_line, int p_other_column) {
+	return p_line == p_other_line && p_column == p_other_column;
+}
+
+void TextEdit::_normalize_underline(Underline &r_underline) const {
+	if (text.size() == 0) {
+		r_underline.start_line = 0;
+		r_underline.start_column = 0;
+		r_underline.end_line = 0;
+		r_underline.end_column = 0;
+		return;
+	}
+
+	r_underline.start_line = CLAMP(r_underline.start_line, 0, text.size() - 1);
+	r_underline.end_line = CLAMP(r_underline.end_line, 0, text.size() - 1);
+	r_underline.start_column = CLAMP(r_underline.start_column, 0, text[r_underline.start_line].length());
+	r_underline.end_column = CLAMP(r_underline.end_column, 0, text[r_underline.end_line].length());
+
+	if (_is_position_before(r_underline.end_line, r_underline.end_column, r_underline.start_line, r_underline.start_column)) {
+		SWAP(r_underline.start_line, r_underline.end_line);
+		SWAP(r_underline.start_column, r_underline.end_column);
+	}
+}
+
+void TextEdit::_normalize_underlines() {
+	for (Underline &underline : underlines) {
+		_normalize_underline(underline);
+	}
+}
+
+void TextEdit::_offset_underlines_after(int p_old_line, int p_old_column, int p_new_line, int p_new_column) {
+	if (_is_position_equal(p_old_line, p_old_column, p_new_line, p_new_column)) {
+		return;
+	}
+
+	if (_is_position_before(p_old_line, p_old_column, p_new_line, p_new_column)) {
+		const int added_lines = p_new_line - p_old_line;
+		const int added_columns = p_new_column - p_old_column;
+		auto shift_after_insertion = [&](int &r_line, int &r_column) {
+			if (r_line == p_old_line) {
+				r_line += added_lines;
+				r_column += added_columns;
+			} else if (r_line > p_old_line) {
+				r_line += added_lines;
+			}
+		};
+
+		for (Underline &underline : underlines) {
+			const bool was_empty = _is_position_equal(
+					underline.start_line, underline.start_column, underline.end_line, underline.end_column);
+			const bool start_at_insertion = _is_position_equal(
+					underline.start_line, underline.start_column, p_old_line, p_old_column);
+			const bool start_after_insertion = _is_position_before(
+					p_old_line, p_old_column, underline.start_line, underline.start_column);
+			const bool end_at_insertion = _is_position_equal(
+					underline.end_line, underline.end_column, p_old_line, p_old_column);
+			const bool end_after_insertion = _is_position_before(
+					p_old_line, p_old_column, underline.end_line, underline.end_column);
+
+			if (start_at_insertion || start_after_insertion) {
+				shift_after_insertion(underline.start_line, underline.start_column);
+			}
+			if (end_after_insertion || (was_empty && end_at_insertion)) {
+				shift_after_insertion(underline.end_line, underline.end_column);
+			}
+		}
+	} else {
+		const int removed_lines = p_old_line - p_new_line;
+		auto shift_after_deletion = [&](int &r_line, int &r_column) {
+			if (!_is_position_before(r_line, r_column, p_new_line, p_new_column) &&
+					!_is_position_before(p_old_line, p_old_column, r_line, r_column)) {
+				r_line = p_new_line;
+				r_column = p_new_column;
+			} else if (_is_position_before(p_old_line, p_old_column, r_line, r_column)) {
+				if (r_line == p_old_line) {
+					r_line = p_new_line;
+					r_column = p_new_column + (r_column - p_old_column);
+				} else {
+					r_line -= removed_lines;
+				}
+			}
+		};
+
+		for (Underline &underline : underlines) {
+			shift_after_deletion(underline.start_line, underline.start_column);
+			shift_after_deletion(underline.end_line, underline.end_column);
+		}
+	}
+
+	_normalize_underlines();
+	queue_redraw();
+}
+
+Vector<TextEdit::Underline> TextEdit::_cut_line_from_underline(const Underline &p_underline, int p_line) const {
+	Vector<Underline> result;
+	if (!p_underline.contains_line(p_line)) {
+		result.push_back(p_underline);
+		return result;
+	}
+	if (p_underline.start_line == p_line && p_underline.end_line == p_line) {
+		return result;
+	}
+
+	if (p_underline.start_line == p_line) {
+		Underline remainder = p_underline;
+		remainder.start_line++;
+		remainder.start_column = 0;
+		result.push_back(remainder);
+		return result;
+	}
+	if (p_underline.end_line == p_line) {
+		Underline remainder = p_underline;
+		remainder.end_line--;
+		remainder.end_column = text[remainder.end_line].length();
+		result.push_back(remainder);
+		return result;
+	}
+
+	Underline before = p_underline;
+	before.end_line = p_line - 1;
+	before.end_column = text[before.end_line].length();
+	result.push_back(before);
+
+	Underline after = p_underline;
+	after.start_line = p_line + 1;
+	after.start_column = 0;
+	result.push_back(after);
+	return result;
+}
+
+Vector<TextEdit::Underline> TextEdit::_get_underline_data_for_line(int p_line) const {
+	Vector<Underline> result;
+	for (const Underline &underline : underlines) {
+		if (!underline.contains_line(p_line)) {
+			continue;
+		}
+
+		Underline line_underline = underline;
+		line_underline.start_line = p_line;
+		line_underline.end_line = p_line;
+		line_underline.start_column = underline.start_line == p_line ? underline.start_column : 0;
+		line_underline.end_column = underline.end_line == p_line ? underline.end_column : text[p_line].length();
+		result.push_back(line_underline);
+	}
+	return result;
+}
+
+void TextEdit::clear_underlines() {
+	if (underlines.is_empty()) {
+		return;
+	}
+	underlines.clear();
+	queue_redraw();
+}
+
+void TextEdit::add_underline(const Color &p_color, int p_start_line, int p_start_column, int p_end_line, int p_end_column) {
+	Underline underline;
+	underline.color = p_color;
+	underline.start_line = p_start_line;
+	underline.start_column = p_start_column;
+	underline.end_line = p_end_line;
+	underline.end_column = p_end_column;
+	_normalize_underline(underline);
+	underlines.push_back(underline);
+	queue_redraw();
+}
+
+void TextEdit::update_underline_color(const Color &p_original_color, const Color &p_new_color) {
+	bool changed = false;
+	for (Underline &underline : underlines) {
+		if (underline.color == p_original_color) {
+			underline.color = p_new_color;
+			changed = true;
+		}
+	}
+	if (changed) {
+		queue_redraw();
+	}
+}
+
+#ifdef TESTS_ENABLED
+Color TextEdit::get_underline_color(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, (int)underlines.size(), Color());
+	return underlines[p_index].color;
+}
+
+int TextEdit::get_underline_start_line(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, (int)underlines.size(), -1);
+	return underlines[p_index].start_line;
+}
+
+int TextEdit::get_underline_start_column(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, (int)underlines.size(), -1);
+	return underlines[p_index].start_column;
+}
+
+int TextEdit::get_underline_end_line(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, (int)underlines.size(), -1);
+	return underlines[p_index].end_line;
+}
+
+int TextEdit::get_underline_end_column(int p_index) const {
+	ERR_FAIL_INDEX_V(p_index, (int)underlines.size(), -1);
+	return underlines[p_index].end_column;
+}
+#endif // TESTS_ENABLED
 
 void TextEdit::_cancel_drag_and_drop_text() {
 	// Cancel the drag operation if drag originated from here.
