@@ -94,6 +94,8 @@ struct TemporaryNoMainSceneProject {
 	}
 };
 
+static String foundry_test_scratch_root();
+
 static String run_foundry_subprocess(const List<String> &p_arguments, int &r_exit_code) {
 	Vector<uint8_t> stdout_bytes;
 	Vector<uint8_t> stderr_bytes;
@@ -105,6 +107,10 @@ static String run_foundry_subprocess(const List<String> &p_arguments, int &r_exi
 			environment["DISPLAY"] = display;
 		}
 	}
+	// A nested `test run` recreates its user-data directory on startup. Give it a
+	// process-owned scratch root so it cannot erase the still-running parent's `user://` tree.
+	environment["FOUNDRY_TEST_SCRATCH"] = foundry_test_scratch_root().path_join(
+			vformat("foundry-cli-subprocess-%d", OS::get_singleton()->get_process_id()));
 
 	Dictionary pipe_info = OS::get_singleton()->execute_with_pipe(
 			OS::get_singleton()->get_executable_path(), p_arguments, false, String(), environment, false);
@@ -164,6 +170,33 @@ static String run_foundry_subprocess(const List<String> &p_arguments, int &r_exi
 		output += String::utf8((const char *)stderr_bytes.ptr(), stderr_bytes.size());
 	}
 	return output;
+}
+
+TEST_CASE("[FoundryCLI][TestRun] Nested test runs preserve the parent user data directory") {
+	const String sentinel_path = "user://foundry_cli_parent_user_data_sentinel.txt";
+	{
+		Ref<FileAccess> sentinel = FileAccess::open(sentinel_path, FileAccess::WRITE);
+		REQUIRE_MESSAGE(sentinel.is_valid(), "The parent user-data directory must be writable before launching the child");
+		sentinel->store_string("parent-owned");
+	}
+
+	List<String> arguments;
+	arguments.push_back("--headless");
+	arguments.push_back("test");
+	arguments.push_back("run");
+	arguments.push_back("--case");
+	arguments.push_back("*[FoundryCLIParser] Version query accepts JSON in either option order*");
+	arguments.push_back("--no-colors");
+
+	int exit_code = -1;
+	const String output = run_foundry_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	CHECK_EQ(exit_code, 0);
+	CHECK(FileAccess::exists(sentinel_path));
+	if (FileAccess::exists(sentinel_path)) {
+		CHECK_EQ(FileAccess::get_file_as_string(sentinel_path), "parent-owned");
+		DirAccess::remove_absolute(sentinel_path);
+	}
 }
 
 static String foundry_test_scratch_root() {
