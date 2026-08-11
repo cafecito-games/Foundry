@@ -171,6 +171,25 @@ TEST_CASE("[Editor][EditorHelp] Declared integer widths render as written and li
 	CHECK(rendered_text("Dictionary[long, ulong]") == "Dictionary[long, ulong]");
 }
 
+TEST_CASE("[Editor][EditorHelp] Documentation admonitions render labels, bodies, and inline code") {
+	const String rendered = EditorHelp::render_doc_text_for_tests(
+			"Before. [note]A [code]note[/code] body.[/note] "
+			"[warning]Warning body.[/warning] "
+			"[tip]Tip body.[/tip] "
+			"[important]Important body.[/important] After.");
+
+	CHECK(rendered.contains("Before."));
+	CHECK(rendered.contains("Note:"));
+	CHECK(rendered.contains("A note body."));
+	CHECK(rendered.contains("Warning:"));
+	CHECK(rendered.contains("Warning body."));
+	CHECK(rendered.contains("Tip:"));
+	CHECK(rendered.contains("Tip body."));
+	CHECK(rendered.contains("Important:"));
+	CHECK(rendered.contains("Important body."));
+	CHECK(rendered.contains("After."));
+}
+
 } // namespace TestEditorHelpTypeLinks
 
 #endif // TOOLS_ENABLED

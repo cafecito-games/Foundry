@@ -236,6 +236,7 @@ public:
 
 #ifdef TESTS_ENABLED
 	static bool prepare_doc_cache_for_tests(const String &p_path) { return _prepare_doc_cache(p_path); }
+	static String render_doc_text_for_tests(const String &p_bbcode);
 #endif
 
 	// Adding scripts to DocData directly may make script doc cache inconsistent. Use methods below when adding script docs.
