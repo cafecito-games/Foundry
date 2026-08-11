@@ -63,8 +63,6 @@
 #include "editor/scene/canvas_item_editor_plugin.h"
 #include "editor/scene/canvas_item_editor_view.h"
 #include "editor/scene/canvas_item_editor_view_state.h"
-#include "scene/3d/light_3d.h"
-#include "scene/3d/world_environment.h"
 #include "editor/script/script_editor_controller.h"
 #include "editor/script/script_editor_plugin.h"
 #include "editor/script/script_editor_view.h"
@@ -84,7 +82,9 @@
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
+#include "scene/3d/light_3d.h"
 #include "scene/3d/node_3d.h"
+#include "scene/3d/world_environment.h"
 #include "scene/gui/dialogs.h"
 #include "scene/gui/split_container.h"
 #include "scene/gui/tab_bar.h"
@@ -2948,7 +2948,7 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	p_driver.set_step("close_board_with_pending_teardown");
 	if (strip->close_board(0)) {
 		return _failure_with_message(p_driver, result.workflow,
-				"close_board(0) returned true immediately; scene close did not leave a deferred board teardown gap.");
+				"close_board(0) returned true immediately; expected a deferred board teardown (or a refused close would also fail the gap assertions below).");
 	}
 
 	// Do not flush here: the gap under test is the window after synchronous context
@@ -2983,12 +2983,12 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 
 	p_driver.set_step("force_furniture_consumers_during_gap");
-	if (!p_driver.assert_no_new_errors()) {
+	if (!p_driver.assert_no_new_errors_since_step()) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 	spatial_editor->sync_preview_environment_parenting_for_tests();
 	spatial_editor->preview_settings_changed_for_tests();
-	if (!p_driver.assert_no_new_errors()) {
+	if (!p_driver.assert_no_new_errors_since_step()) {
 		return _failure_from_driver(p_driver, result.workflow);
 	}
 
@@ -3012,6 +3012,9 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	}
 	if (spatial_editor->has_world_furniture_for_tests(bound_world)) {
 		return _failure_with_message(p_driver, result.workflow, "World furniture entry survived after its last secondary view was released.");
+	}
+	if (!p_driver.assert_no_new_errors_since_step()) {
+		return _failure_from_driver(p_driver, result.workflow);
 	}
 
 	result.ok = true;

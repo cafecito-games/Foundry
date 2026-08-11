@@ -3315,6 +3315,15 @@ static void override_button_stylebox(Button *p_button, const Ref<StyleBox> p_sty
 
 void Node3DEditorViewport::_notification(int p_what) {
 	switch (p_what) {
+		case NOTIFICATION_PREDELETE: {
+			// Secondary views are parented under a tile content host. Node PREDELETE frees
+			// children before ~ScenePaneTile can release them, so unregister here while the
+			// Object is still in ObjectDB and the world binding can be transferred exactly once.
+			if (viewport_binding == ViewportBinding::SECONDARY && spatial_editor) {
+				spatial_editor->_unregister_secondary_viewport(this, false);
+			}
+		} break;
+
 		case NOTIFICATION_TRANSLATION_CHANGED: {
 			// Everything retranslated below lives in the overlay, which a secondary
 			// viewport never builds.
@@ -8176,8 +8185,11 @@ EditorWorldFurniture &Node3DEditor::_ensure_world_furniture(const Ref<World3D> &
 		RenderingServer::get_singleton()->instance_set_visible(furniture.origin_instance, origin_enabled);
 	}
 
+	// Only recreate expired preview nodes when a live parent exists again. Orphan recreation
+	// during deferred teardown is wasted work and leaves furniture that can never be parented.
+	const bool can_create_preview_nodes = p_preview_parent_viewport != nullptr || _resolve_preview_parent(furniture) != nullptr;
 	DirectionalLight3D *preview_sun = _resolve_preview_sun(furniture);
-	if (!preview_sun) {
+	if (!preview_sun && can_create_preview_nodes) {
 		preview_sun = memnew(DirectionalLight3D);
 		furniture.preview_sun_id = preview_sun->get_instance_id();
 		furniture.preview_sun_dangling = false;
@@ -8185,7 +8197,7 @@ EditorWorldFurniture &Node3DEditor::_ensure_world_furniture(const Ref<World3D> &
 		preview_sun->set_shadow_mode(DirectionalLight3D::SHADOW_PARALLEL_4_SPLITS);
 	}
 	WorldEnvironment *preview_environment = _resolve_preview_environment(furniture);
-	if (!preview_environment) {
+	if (!preview_environment && can_create_preview_nodes) {
 		preview_environment = memnew(WorldEnvironment);
 		furniture.preview_environment_id = preview_environment->get_instance_id();
 		furniture.preview_env_dangling = false;
@@ -8242,6 +8254,31 @@ SubViewport *Node3DEditor::_resolve_preview_parent(const EditorWorldFurniture &p
 	return ObjectDB::get_instance<SubViewport>(p_furniture.preview_parent_viewport_id);
 }
 
+bool Node3DEditor::_is_preview_furniture_id(ObjectID p_id) const {
+	if (!p_id.is_valid()) {
+		return false;
+	}
+	for (const KeyValue<ObjectID, EditorWorldFurniture> &world_entry : world_furniture) {
+		if (world_entry.value.preview_sun_id == p_id || world_entry.value.preview_environment_id == p_id) {
+			return true;
+		}
+	}
+	return false;
+}
+
+int Node3DEditor::_count_live_views_for_world(const Ref<World3D> &p_world) const {
+	if (p_world.is_null()) {
+		return 0;
+	}
+	int count = 0;
+	for (const Node3DEditorViewport *viewport : secondary_viewports) {
+		if (viewport && viewport->bound_world == p_world) {
+			count++;
+		}
+	}
+	return count;
+}
+
 void Node3DEditor::_free_world_furniture(EditorWorldFurniture &p_furniture) {
 	RenderingServer *rs = RenderingServer::get_singleton();
 	if (rs) {
@@ -8292,17 +8329,29 @@ void Node3DEditor::_release_world_furniture(const Ref<World3D> &p_world) {
 }
 
 void Node3DEditor::_note_world_view_bound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
+	if (world_furniture_finished) {
+		return;
+	}
 	EditorWorldFurniture &furniture = _ensure_world_furniture(p_world, p_preview_parent_viewport);
 	furniture.live_view_count++;
 	_rebind_preview_sun_env_parent();
 }
 
 void Node3DEditor::_note_world_view_rebound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport) {
-	_ensure_world_furniture(p_world, p_preview_parent_viewport);
+	if (world_furniture_finished) {
+		return;
+	}
+	EditorWorldFurniture &furniture = _ensure_world_furniture(p_world, p_preview_parent_viewport);
+	// If furniture was wiped and rebuilt while views remained live, restore the count from
+	// the still-registered secondary viewports rather than leaving a zero-count association.
+	furniture.live_view_count = MAX(furniture.live_view_count, _count_live_views_for_world(p_world));
 	_rebind_preview_sun_env_parent();
 }
 
 void Node3DEditor::_note_world_view_unbound(const Ref<World3D> &p_world) {
+	if (world_furniture_finished) {
+		return;
+	}
 	EditorWorldFurniture *furniture = _get_world_furniture(p_world);
 	ERR_FAIL_NULL_MSG(furniture, "Cannot unbind a 3D view from a world with no furniture entry.");
 	ERR_FAIL_COND_MSG(furniture->live_view_count == 0, "Cannot unbind a 3D view from a world with no live views.");
@@ -8546,6 +8595,7 @@ void Node3DEditor::_finish_shared_furniture_resources() {
 }
 
 void Node3DEditor::_init_indicators() {
+	world_furniture_finished = false;
 	_init_shared_furniture_resources();
 	Ref<World3D> edited_world = _get_edited_world_3d();
 	if (edited_world.is_valid()) {
@@ -9255,6 +9305,7 @@ void Node3DEditor::_finish_indicators() {
 		_free_world_furniture(world_entry.value);
 	}
 	world_furniture.clear();
+	world_furniture_finished = true;
 	gizmo_bvh.clear();
 	_finish_shared_furniture_resources();
 }
@@ -10044,9 +10095,16 @@ Node3DEditorViewport *Node3DEditor::create_secondary_viewport(const Ref<World3D>
 	return viewport;
 }
 
-void Node3DEditor::release_secondary_viewport(Node3DEditorViewport *p_viewport) {
+void Node3DEditor::_unregister_secondary_viewport(Node3DEditorViewport *p_viewport, bool p_delete) {
 	ERR_FAIL_NULL(p_viewport);
 	ERR_FAIL_COND(!p_viewport->is_secondary_view());
+	if (!secondary_viewports.has(p_viewport)) {
+		// Already unregistered by PREDELETE or an earlier release; avoid double-unbind.
+		if (p_delete && ObjectDB::get_instance(p_viewport->get_instance_id()) == p_viewport) {
+			memdelete(p_viewport);
+		}
+		return;
+	}
 	if (focused_viewport == p_viewport) {
 		focused_viewport = viewports[last_used_viewport];
 	}
@@ -10054,7 +10112,13 @@ void Node3DEditor::release_secondary_viewport(Node3DEditorViewport *p_viewport) 
 	if (p_viewport->bound_world.is_valid()) {
 		_note_world_view_unbound(p_viewport->bound_world);
 	}
-	memdelete(p_viewport);
+	if (p_delete) {
+		memdelete(p_viewport);
+	}
+}
+
+void Node3DEditor::release_secondary_viewport(Node3DEditorViewport *p_viewport) {
+	_unregister_secondary_viewport(p_viewport, true);
 }
 
 #ifdef TESTS_ENABLED
@@ -10274,6 +10338,11 @@ void Node3DEditor::_viewport_clicked(int p_viewport_idx) {
 }
 
 void Node3DEditor::_node_added(Node *p_node) {
+	// Editor-owned preview furniture is parented under the scene-root SubViewport for
+	// rendering, but it is not scene content and must not disable the preview itself.
+	if (_is_preview_furniture_id(p_node->get_instance_id())) {
+		return;
+	}
 	if (EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
 			world_env_count++;
@@ -10290,6 +10359,9 @@ void Node3DEditor::_node_added(Node *p_node) {
 }
 
 void Node3DEditor::_node_removed(Node *p_node) {
+	if (_is_preview_furniture_id(p_node->get_instance_id())) {
+		return;
+	}
 	if (EditorNode::get_singleton()->get_scene_root()->is_ancestor_of(p_node)) {
 		if (Object::cast_to<WorldEnvironment>(p_node)) {
 			world_env_count--;

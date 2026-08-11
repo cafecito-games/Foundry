@@ -761,6 +761,7 @@ private:
 	RID origin_multimesh;
 	bool origin_enabled = false;
 	bool shared_furniture_resources_ready = false;
+	bool world_furniture_finished = false;
 	RID grid[3];
 	HashMap<ObjectID, EditorWorldFurniture> world_furniture;
 	bool grid_visible[3] = { false, false, false }; //currently visible
@@ -911,6 +912,9 @@ private:
 	DirectionalLight3D *_resolve_preview_sun(const EditorWorldFurniture &p_furniture) const;
 	WorldEnvironment *_resolve_preview_environment(const EditorWorldFurniture &p_furniture) const;
 	SubViewport *_resolve_preview_parent(const EditorWorldFurniture &p_furniture) const;
+	bool _is_preview_furniture_id(ObjectID p_id) const;
+	int _count_live_views_for_world(const Ref<World3D> &p_world) const;
+	void _unregister_secondary_viewport(Node3DEditorViewport *p_viewport, bool p_delete);
 	void _free_world_furniture(EditorWorldFurniture &p_furniture);
 	void _release_world_furniture(const Ref<World3D> &p_world);
 	void _note_world_view_bound(const Ref<World3D> &p_world, SubViewport *p_preview_parent_viewport);
