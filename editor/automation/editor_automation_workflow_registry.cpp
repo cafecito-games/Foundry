@@ -64,6 +64,10 @@ EditorAutomationAcceptanceWorkflow::Result _run_board_switch_3d_scene(EditorWork
 	return EditorAutomationAcceptanceWorkflow::run_board_switch_3d_scene(p_driver);
 }
 
+EditorAutomationAcceptanceWorkflow::Result _run_cross_board_existing_scene_reveal(EditorWorkflowTestDriver &p_driver) {
+	return EditorAutomationAcceptanceWorkflow::run_cross_board_existing_scene_reveal(p_driver);
+}
+
 #ifdef TESTS_ENABLED
 EditorAutomationAcceptanceWorkflow::Result _run_board_close_3d_context_lifetime(EditorWorkflowTestDriver &p_driver) {
 	return EditorAutomationAcceptanceWorkflow::run_board_close_3d_context_lifetime(p_driver);
@@ -184,6 +188,7 @@ void EditorAutomationWorkflowRegistry::register_builtin_workflows() {
 	_register_workflow("tile_local_scene_modes_restore", &_run_tile_local_scene_modes_restore);
 	_register_workflow("main_screen_hidden_shortcuts", &_run_main_screen_hidden_shortcuts);
 	_register_workflow("board_switch_3d_scene", &_run_board_switch_3d_scene);
+	_register_workflow("cross_board_existing_scene_reveal", &_run_cross_board_existing_scene_reveal);
 #ifdef TESTS_ENABLED
 	_register_workflow("board_close_3d_context_lifetime", &_run_board_close_3d_context_lifetime);
 #endif

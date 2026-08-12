@@ -5742,19 +5742,22 @@ Error EditorNode::load_scene(const String &p_scene, bool p_ignore_broken_deps, b
 	if (!p_set_inherited) {
 		for (int i = 0; i < editor_data.get_edited_scene_count(); i++) {
 			if (editor_data.get_scene_path(i) == lpath) {
-				_set_current_scene(i);
 				// An already-open scene is revealed where it lives rather than reopened:
 				// its owning tile may sit on a dormant board, so activate that board
-				// before focusing the tab, or the current scene would point at a tile the
-				// user cannot see while the focus call no-ops.
+				// before focusing the tab. Changing the current scene first would violate
+				// the focus invariant while the old board's tile is still focused.
+				bool revealed = false;
 				if (board_strip) {
 					EditorBoard *owner = board_strip->find_board_for_leaf(editor_data.get_scene_tile(i));
 					if (owner) {
 						board_strip->set_active_board(board_strip->get_board_index(owner));
-						owner->get_workspace()->focus_scene_tab(i);
+						revealed = owner->get_workspace()->focus_scene_tab(i);
 					} else if (EditorSceneWorkspace *workspace = board_strip->get_active_workspace()) {
-						workspace->focus_scene_tab(i);
+						revealed = workspace->focus_scene_tab(i);
 					}
+				}
+				if (!revealed) {
+					_set_current_scene(i);
 				}
 				return OK;
 			}
