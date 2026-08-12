@@ -35,10 +35,15 @@
 #include "editor/gui/editor_board_actions_menu.h"
 #include "editor/themes/editor_scale.h"
 
+#include "servers/display/display_server.h"
+
+#include "scene/animation/tween.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/color_rect.h"
 #include "scene/gui/container.h"
 #include "scene/gui/line_edit.h"
+#include "scene/gui/panel.h"
 #include "scene/resources/font.h"
 #include "scene/resources/style_box.h"
 #include "scene/scene_string_names.h"
@@ -56,9 +61,15 @@ void EditorBoardSwitcher::_notification(int p_what) {
 					container->connect(SceneStringName(sort_children), queue_update);
 				}
 			}
+			// The first board button is built while EditorNode is still off-tree. At scaled
+			// editor sizes its initial minimum therefore uses fallback theme metrics, and the
+			// switcher's theme notification can run before the button has resolved the editor
+			// theme. Remeasure after the complete subtree has entered and inherited its theme.
+			callable_mp(this, &EditorBoardSwitcher::_refresh_theme).call_deferred();
 			_queue_compact_mode_update();
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
+			_stop_active_surface_tween();
 			const Callable queue_update = callable_mp(this, &EditorBoardSwitcher::_queue_compact_mode_update);
 			if (resize_parent && resize_parent->is_connected(SceneStringName(resized), queue_update)) {
 				resize_parent->disconnect(SceneStringName(resized), queue_update);
@@ -89,7 +100,7 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 		strip->disconnect(SNAME("board_removed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
 		strip->disconnect(SNAME("board_moved"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(2));
 		strip->disconnect(SNAME("boards_restored"), callable_mp(this, &EditorBoardSwitcher::_rebuild));
-		strip->disconnect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
+		strip->disconnect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_on_active_board_changed));
 	}
 
 	strip = p_strip;
@@ -109,13 +120,14 @@ void EditorBoardSwitcher::setup(EditorBoardStrip *p_strip) {
 		strip->connect(SNAME("board_removed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
 		strip->connect(SNAME("board_moved"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(2));
 		strip->connect(SNAME("boards_restored"), callable_mp(this, &EditorBoardSwitcher::_rebuild));
-		strip->connect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_rebuild).unbind(1));
+		strip->connect(SNAME("active_board_changed"), callable_mp(this, &EditorBoardSwitcher::_on_active_board_changed));
 	}
 
 	_rebuild();
 }
 
 void EditorBoardSwitcher::_rebuild() {
+	_stop_active_surface_tween();
 	// A pending rename must be committed, not discarded: clicking another board button
 	// does not move keyboard focus off the LineEdit (the board buttons use
 	// FOCUS_ACCESSIBILITY, so focus_exited never fires outside a screen reader), and
@@ -142,6 +154,8 @@ void EditorBoardSwitcher::_rebuild() {
 	board_buttons.clear();
 
 	if (!strip) {
+		active_surface->hide();
+		_refresh_rail_stack_minimum();
 		return;
 	}
 
@@ -181,7 +195,122 @@ void EditorBoardSwitcher::_rebuild() {
 	menu_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_menu_pressed));
 	rail_hbox->add_child(menu_button);
 
+	_refresh_rail_stack_minimum();
+	_queue_active_surface_sync(false);
 	_queue_compact_mode_update();
+}
+
+void EditorBoardSwitcher::_refresh_rail_stack_minimum() {
+	if (!rail_stack || !rail_hbox) {
+		return;
+	}
+	rail_stack->set_custom_minimum_size(rail_hbox->get_combined_minimum_size());
+}
+
+void EditorBoardSwitcher::_stop_active_surface_tween() {
+	if (active_surface_tween.is_valid()) {
+		active_surface_tween->kill();
+		active_surface_tween.unref();
+	}
+}
+
+void EditorBoardSwitcher::_set_active_surface_rect(const Rect2 &p_rect) {
+	if (!active_surface) {
+		return;
+	}
+	active_surface->set_position(p_rect.position);
+	active_surface->set_size(p_rect.size);
+	if (active_indicator) {
+		const Size2 indicator_size(
+				get_theme_constant("active_indicator_width"),
+				get_theme_constant("active_indicator_height"));
+		active_indicator->set_size(indicator_size);
+		active_indicator->set_position(Point2(
+				(p_rect.size.x - indicator_size.x) * 0.5,
+				p_rect.size.y - indicator_size.y));
+	}
+}
+
+void EditorBoardSwitcher::_sync_menu_divider() {
+	if (!rail_stack || !menu_divider || !menu_button || !menu_button->is_visible_in_tree()) {
+		if (menu_divider) {
+			menu_divider->hide();
+		}
+		return;
+	}
+
+	const Size2 divider_size(
+			get_theme_constant("menu_divider_width"),
+			get_theme_constant("menu_divider_height"));
+	const float separation = rail_hbox->get_theme_constant(SNAME("separation"));
+	const float menu_x = menu_button->get_global_position().x - rail_stack->get_global_position().x;
+	const float divider_x = rail_hbox->is_layout_rtl()
+			? menu_x + menu_button->get_size().x + separation * 0.5 - divider_size.x * 0.5
+			: menu_x - separation * 0.5 - divider_size.x * 0.5;
+	menu_divider->set_size(divider_size);
+	menu_divider->set_position(Point2(
+			divider_x,
+			(rail_stack->get_size().y - divider_size.y) * 0.5));
+	menu_divider->show();
+}
+
+void EditorBoardSwitcher::_queue_active_surface_sync(bool p_animate) {
+	animate_pending_active_surface_sync = p_animate;
+	if (active_surface_sync_queued) {
+		return;
+	}
+	active_surface_sync_queued = true;
+	callable_mp(this, &EditorBoardSwitcher::_sync_active_surface).call_deferred();
+}
+
+void EditorBoardSwitcher::_queue_active_surface_layout_sync() {
+	if (!active_surface_sync_queued) {
+		_queue_active_surface_sync(false);
+	}
+}
+
+void EditorBoardSwitcher::_sync_active_surface() {
+	active_surface_sync_queued = false;
+	const bool animate = animate_pending_active_surface_sync;
+	animate_pending_active_surface_sync = false;
+
+	if (!is_inside_tree() || !strip || !rail_stack || !active_surface) {
+		return;
+	}
+	_sync_menu_divider();
+	Button *button = _board_button_at(strip->get_active_index());
+	if (!button || !button->is_visible_in_tree() || button->get_size().is_zero_approx()) {
+		active_surface->hide();
+		return;
+	}
+
+	const Rect2 target_rect(button->get_global_position() - rail_stack->get_global_position(), button->get_size());
+	const bool reduce_motion = DisplayServer::get_singleton()->accessibility_should_reduce_animation() == 1;
+	const bool can_animate = animate && active_surface->is_visible() && !reduce_motion && active_surface->get_rect() != target_rect;
+	if (!animate && active_surface_tween.is_valid() && active_surface_tween->is_running() && active_surface_tween_target_rect == target_rect) {
+		return;
+	}
+	_stop_active_surface_tween();
+
+	if (!can_animate) {
+		_set_active_surface_rect(target_rect);
+		active_surface->show();
+		return;
+	}
+
+	active_surface->show();
+	active_surface_tween_target_rect = target_rect;
+	active_surface_tween = create_tween();
+	active_surface_tween->tween_method(
+								callable_mp(this, &EditorBoardSwitcher::_set_active_surface_rect),
+								active_surface->get_rect(), target_rect, 0.115)
+			->set_trans(Tween::TRANS_CUBIC)
+			->set_ease(Tween::EASE_OUT);
+}
+
+void EditorBoardSwitcher::_on_active_board_changed(int p_index) {
+	_rebuild();
+	_queue_active_surface_sync(true);
 }
 
 void EditorBoardSwitcher::_refresh_board_button_minimum(Button *p_button) {
@@ -204,11 +333,20 @@ void EditorBoardSwitcher::_refresh_theme() {
 	if (menu_button) {
 		menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
 	}
+	if (active_indicator) {
+		active_indicator->set_color(get_theme_color("active_indicator_color"));
+	}
+	if (menu_divider) {
+		menu_divider->set_color(get_theme_color("menu_divider_color"));
+	}
 	for (Button *button : board_buttons) {
 		if (button) {
 			_refresh_board_button_minimum(button);
 		}
 	}
+	_refresh_rail_stack_minimum();
+	_stop_active_surface_tween();
+	_queue_active_surface_sync(false);
 	if (rename_edit && renaming_button) {
 		const Size2 segment_minimum = renaming_button->get_combined_minimum_size();
 		rename_edit->set_custom_minimum_size(
@@ -251,7 +389,10 @@ void EditorBoardSwitcher::_set_compact(bool p_compact, bool p_preserve_rename) {
 			board_buttons[i]->set_visible(!compact || (strip && i == strip->get_active_index()));
 		}
 	}
+	_refresh_rail_stack_minimum();
 	update_minimum_size();
+	_stop_active_surface_tween();
+	_queue_active_surface_sync(false);
 }
 
 void EditorBoardSwitcher::_queue_compact_mode_update() {
@@ -478,9 +619,34 @@ EditorBoardSwitcher::EditorBoardSwitcher() {
 	set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	set_theme_type_variation("BoardRail");
 
+	rail_stack = memnew(Control);
+	add_child(rail_stack);
+
+	active_surface = memnew(Panel);
+	active_surface->set_name("ActiveSurface");
+	active_surface->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	active_surface->set_theme_type_variation("BoardRailActiveSurface");
+	active_surface->hide();
+	rail_stack->add_child(active_surface);
+
+	active_indicator = memnew(ColorRect);
+	active_indicator->set_name("ActiveIndicator");
+	active_indicator->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	active_surface->add_child(active_indicator);
+
+	menu_divider = memnew(ColorRect);
+	menu_divider->set_name("MenuDivider");
+	menu_divider->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	menu_divider->hide();
+	rail_stack->add_child(menu_divider);
+
 	rail_hbox = memnew(HBoxContainer);
 	rail_hbox->add_theme_constant_override(SNAME("separation"), MAX(1, Math::round(EDSCALE)));
-	add_child(rail_hbox);
+	rail_hbox->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
+	rail_stack->add_child(rail_hbox);
+	rail_hbox->connect(SceneStringName(minimum_size_changed), callable_mp(this, &EditorBoardSwitcher::_refresh_rail_stack_minimum));
+	rail_hbox->connect(SceneStringName(resized), callable_mp(this, &EditorBoardSwitcher::_queue_active_surface_layout_sync));
+	rail_hbox->connect(SceneStringName(sort_children), callable_mp(this, &EditorBoardSwitcher::_queue_active_surface_layout_sync));
 
 	actions_menu = memnew(EditorBoardActionsMenu);
 	add_child(actions_menu);

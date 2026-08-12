@@ -43,12 +43,15 @@
 #include "core/object/message_queue.h"
 #include "core/string/translation_server.h"
 
+#include "servers/display/display_server.h"
+
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/control.h"
 #include "scene/gui/line_edit.h"
 #include "scene/main/window.h"
 #include "scene/resources/style_box.h"
+#include "scene/resources/style_box_flat.h"
 
 #include "tests/test_macros.h"
 
@@ -72,6 +75,22 @@ static BoardRequestedRecorder board_requested_recorder;
 
 static void record_board_requested(int p_index) {
 	board_requested_recorder.indices.push_back(p_index);
+}
+
+static LineEdit *find_line_edit_outside(Node *p_node, Node *p_excluded_subtree) {
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		Node *child = p_node->get_child(i);
+		if (child == p_excluded_subtree) {
+			continue;
+		}
+		if (LineEdit *edit = Object::cast_to<LineEdit>(child)) {
+			return edit;
+		}
+		if (LineEdit *edit = find_line_edit_outside(child, p_excluded_subtree)) {
+			return edit;
+		}
+	}
+	return nullptr;
 }
 
 struct BoardRailEditorScaleGuard {
@@ -108,7 +127,7 @@ struct BoardSwitcherHarness {
 		unmount();
 	}
 
-	void mount(bool p_with_editor_theme = false, bool p_container_host = false) {
+	void mount(bool p_with_editor_theme = false, bool p_container_host = false, bool p_setup_before_enter_tree = false) {
 		unmount();
 		if (p_container_host) {
 			host = memnew(HBoxContainer);
@@ -120,7 +139,9 @@ struct BoardSwitcherHarness {
 			theme = EditorThemeManager::generate_theme();
 			host->set_theme(theme);
 		}
-		SceneTree::get_singleton()->get_root()->add_child(host);
+		if (!p_setup_before_enter_tree) {
+			SceneTree::get_singleton()->get_root()->add_child(host);
+		}
 		selection = memnew(EditorSelection);
 		strip = EditorBoardStrip::create(selection, &editor_data);
 		host->add_child(strip);
@@ -128,6 +149,9 @@ struct BoardSwitcherHarness {
 		host->add_child(switcher);
 		switcher->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		switcher->setup(strip);
+		if (p_setup_before_enter_tree) {
+			SceneTree::get_singleton()->get_root()->add_child(host);
+		}
 		pump();
 	}
 
@@ -180,6 +204,31 @@ struct BoardSwitcherHarness {
 		return switcher->get_menu_button();
 	}
 
+	Control *active_surface() const {
+		return Object::cast_to<Control>(switcher->find_child("ActiveSurface", true, false));
+	}
+
+	Control *active_indicator() const {
+		return Object::cast_to<Control>(switcher->find_child("ActiveIndicator", true, false));
+	}
+
+	Control *menu_divider() const {
+		return Object::cast_to<Control>(switcher->find_child("MenuDivider", true, false));
+	}
+
+	Rect2 active_button_rect_in_surface_parent() const {
+		Control *surface = active_surface();
+		Button *button = board_button(strip->get_active_index());
+		if (!surface || !button) {
+			return Rect2();
+		}
+		Control *surface_parent = Object::cast_to<Control>(surface->get_parent());
+		if (!surface_parent) {
+			return Rect2();
+		}
+		return Rect2(button->get_global_position() - surface_parent->get_global_position(), button->get_size());
+	}
+
 	void right_click(Button *p_button) const {
 		Ref<InputEventMouseButton> event;
 		event.instantiate();
@@ -197,18 +246,7 @@ struct BoardSwitcherHarness {
 	}
 
 	LineEdit *find_rename_edit() const {
-		for (int i = 0; i < switcher->get_child_count(); i++) {
-			Node *child = switcher->get_child(i);
-			if (LineEdit *edit = Object::cast_to<LineEdit>(child)) {
-				return edit;
-			}
-			for (int j = 0; j < child->get_child_count(); j++) {
-				if (LineEdit *edit = Object::cast_to<LineEdit>(child->get_child(j))) {
-					return edit;
-				}
-			}
-		}
-		return nullptr;
+		return find_line_edit_outside(switcher, switcher->get_actions_menu());
 	}
 
 	// Finds a board button by its visible label rather than its position, so callers can
@@ -232,6 +270,135 @@ struct BoardSwitcherHarness {
 		p_button->emit_signal(SceneStringName(gui_input), event);
 	}
 };
+
+TEST_CASE("[Editor][BoardSwitcher] Active surface targets the selected board") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+
+	Control *surface = harness.active_surface();
+	REQUIRE(surface != nullptr);
+	if (!surface) {
+		harness.unmount();
+		return;
+	}
+	CHECK(surface->get_rect() == harness.active_button_rect_in_surface_parent());
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Initial board label fits after entering the themed tree") {
+	BoardRailEditorScaleGuard scale_guard(2.0f);
+	BoardSwitcherHarness harness;
+	harness.mount(true, false, true);
+
+	Button *button = harness.board_button(0);
+	REQUIRE(button != nullptr);
+	const Ref<Font> font = button->get_theme_font(SceneStringName(font));
+	REQUIRE(font.is_valid());
+	const int font_size = button->get_theme_font_size(SceneStringName(font_size));
+	const int text_width = Math::ceil(font->get_string_size(button->get_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x);
+	const int expected_width = MIN(
+			text_width + harness.switcher->get_theme_constant("segment_horizontal_padding"),
+			harness.switcher->get_theme_constant("segment_maximum_width"));
+	CHECK(button->get_size().x >= expected_width);
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Active indicator and menu divider use themed geometry") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+
+	Control *surface = harness.active_surface();
+	Control *indicator = harness.active_indicator();
+	Control *divider = harness.menu_divider();
+	REQUIRE(surface != nullptr);
+	REQUIRE(indicator != nullptr);
+	REQUIRE(divider != nullptr);
+	if (!surface || !indicator || !divider) {
+		harness.unmount();
+		return;
+	}
+
+	CHECK(indicator->get_parent() == surface);
+	CHECK(indicator->get_size() == Size2(harness.switcher->get_theme_constant("active_indicator_width"), harness.switcher->get_theme_constant("active_indicator_height")));
+	CHECK(indicator->get_position().x == doctest::Approx((surface->get_size().x - indicator->get_size().x) * 0.5));
+	CHECK(indicator->get_position().y == doctest::Approx(surface->get_size().y - indicator->get_size().y));
+	CHECK(divider->get_size() == Size2(harness.switcher->get_theme_constant("menu_divider_width"), harness.switcher->get_theme_constant("menu_divider_height")));
+	Control *divider_parent = Object::cast_to<Control>(divider->get_parent());
+	REQUIRE(divider_parent != nullptr);
+	CHECK(divider->get_position().y == doctest::Approx((divider_parent->get_size().y - divider->get_size().y) * 0.5));
+	CHECK(divider->get_position().x < harness.menu_button()->get_position().x);
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Active surface glides unless the system reduces motion") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("Second");
+
+	Control *surface = harness.active_surface();
+	REQUIRE(surface != nullptr);
+	if (!surface) {
+		harness.unmount();
+		return;
+	}
+	harness.strip->set_active_board(1);
+	harness.pump(0.001);
+
+	const Rect2 target = harness.active_button_rect_in_surface_parent();
+	if (DisplayServer::get_singleton()->accessibility_should_reduce_animation() == 1) {
+		CHECK(surface->get_rect() == target);
+	} else {
+		CHECK(surface->get_rect() != target);
+		harness.pump(0.2);
+		CHECK(surface->get_rect() == target);
+	}
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Menu divider stays between the menu and boards in RTL") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.switcher->set_layout_direction(Control::LAYOUT_DIRECTION_RTL);
+	harness.pump();
+
+	Button *button = harness.board_button(0);
+	Button *menu = harness.menu_button();
+	Control *divider = harness.menu_divider();
+	REQUIRE(button != nullptr);
+	REQUIRE(menu != nullptr);
+	REQUIRE(divider != nullptr);
+	CHECK(menu->get_global_position().x < button->get_global_position().x);
+	const float gap_center = (menu->get_global_position().x + menu->get_size().x + button->get_global_position().x) * 0.5;
+	const float divider_center = divider->get_global_position().x + divider->get_size().x * 0.5;
+	CHECK(divider_center == doctest::Approx(gap_center));
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Structural rebuild snaps an active surface glide") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("Second");
+
+	Control *surface = harness.active_surface();
+	REQUIRE(surface != nullptr);
+	if (!surface) {
+		harness.unmount();
+		return;
+	}
+	harness.strip->set_active_board(1);
+	harness.pump(0.001);
+	harness.strip->add_board("Third");
+	harness.pump();
+
+	CHECK(surface->get_rect() == harness.active_button_rect_in_surface_parent());
+
+	harness.unmount();
+}
 
 TEST_CASE("[Editor][BoardSwitcher] Rail compacts without losing active board") {
 	BoardSwitcherHarness harness;
@@ -611,7 +778,7 @@ TEST_CASE("[Editor][BoardSwitcher] Theme changes preserve an in-progress rename"
 	harness.unmount();
 }
 
-TEST_CASE("[Editor][Theme] board rail pressed styles preserve resolved normal margins") {
+TEST_CASE("[Editor][Theme] board rail exposes Quiet Precision resources") {
 	BoardRailEditorScaleGuard scale_guard(2.0f);
 	for (const String &style : { String("Classic"), String("Modern") }) {
 		CAPTURE(style);
@@ -620,17 +787,34 @@ TEST_CASE("[Editor][Theme] board rail pressed styles preserve resolved normal ma
 		REQUIRE(theme.is_valid());
 
 		Ref<StyleBox> normal = theme->get_stylebox(SNAME("normal"), "BoardRailButton");
-		Ref<StyleBox> board_pressed = theme->get_stylebox(SceneStringName(pressed), "BoardRailButton");
+		Ref<StyleBoxFlat> board_pressed = theme->get_stylebox(SceneStringName(pressed), "BoardRailButton");
 		Ref<StyleBox> scene_pressed = theme->get_stylebox(SceneStringName(pressed), "SceneModeButton");
+		Ref<StyleBoxFlat> rail_panel = theme->get_stylebox(SceneStringName(panel), "BoardRail");
+		Ref<StyleBoxFlat> active_surface = theme->get_stylebox(SceneStringName(panel), "BoardRailActiveSurface");
 		REQUIRE(normal.is_valid());
 		REQUIRE(board_pressed.is_valid());
 		REQUIRE(scene_pressed.is_valid());
+		REQUIRE(rail_panel.is_valid());
+		REQUIRE(active_surface.is_valid());
+		if (normal.is_null() || board_pressed.is_null() || scene_pressed.is_null() || rail_panel.is_null() || active_surface.is_null()) {
+			continue;
+		}
 
 		for (Side side : { SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM }) {
 			CAPTURE(side);
 			CHECK(board_pressed->get_content_margin(side) == doctest::Approx(normal->get_content_margin(side)));
 			CHECK(scene_pressed->get_content_margin(side) == doctest::Approx(normal->get_content_margin(side)));
 		}
+		CHECK(board_pressed->get_bg_color().a == doctest::Approx(0.0));
+		CHECK(rail_panel->get_corner_radius(CORNER_TOP_LEFT) == Math::round(12 * EDSCALE));
+		CHECK(active_surface->get_corner_radius(CORNER_TOP_LEFT) == Math::round(9 * EDSCALE));
+		CHECK(theme->get_constant("active_indicator_width", "BoardRail") == Math::round(24 * EDSCALE));
+		CHECK(theme->get_constant("active_indicator_height", "BoardRail") == Math::round(2 * EDSCALE));
+		CHECK(theme->get_constant("active_indicator_width", "BoardRail") < theme->get_constant("segment_maximum_width", "BoardRail"));
+		CHECK(theme->get_constant("menu_divider_width", "BoardRail") == MAX(1, Math::round(EDSCALE)));
+		CHECK(theme->get_constant("menu_divider_height", "BoardRail") == Math::round(18 * EDSCALE));
+		CHECK(theme->get_color("active_indicator_color", "BoardRail").a > 0.0f);
+		CHECK(theme->get_color("menu_divider_color", "BoardRail").a > 0.0f);
 	}
 }
 
