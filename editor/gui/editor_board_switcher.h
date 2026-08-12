@@ -64,6 +64,7 @@ class EditorBoardSwitcher : public PanelContainer {
 	Control *resize_parent = nullptr;
 	bool compact = false;
 	bool compact_update_queued = false;
+	bool preserve_rename_on_compact_update = false;
 	// Identity-keyed rather than child-index-keyed: rebuilds free and recreate buttons,
 	// and the owned actions menu is a sibling that must not participate in board indexing.
 	Vector<Button *> board_buttons;
@@ -76,10 +77,13 @@ class EditorBoardSwitcher : public PanelContainer {
 	LineEdit *rename_edit = nullptr;
 
 	void _rebuild();
+	void _refresh_theme();
+	void _refresh_board_button_minimum(Button *p_button);
 	void _on_board_button_pressed(int p_index);
+	void _on_menu_board_requested(ObjectID p_strip_id, int p_index);
 	void _on_board_button_gui_input(const Ref<InputEvent> &p_event, int p_index);
 	void _on_menu_pressed();
-	void _set_compact(bool p_compact);
+	void _set_compact(bool p_compact, bool p_preserve_rename = false);
 	void _queue_compact_mode_update();
 	void _update_compact_mode();
 	int _get_desired_full_width() const;

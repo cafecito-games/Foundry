@@ -562,7 +562,7 @@ void ScenePaneTile::save_layout(const Ref<ConfigFile> &p_config, const String &p
 	ERR_FAIL_COND(p_config.is_null());
 	p_config->set_value(p_section, "tile_id", tile_id);
 	if (scene_editor_mode_initialized) {
-		p_config->set_value(p_section, "scene_editor_mode", scene_editor_mode_to_name(scene_editor_mode));
+		p_config->set_value(p_section, "scene_editor_mode", String(scene_editor_mode_to_name(scene_editor_mode)));
 	}
 	dock_region.save_layout(p_config, p_section);
 }

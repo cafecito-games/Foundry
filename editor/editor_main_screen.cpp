@@ -80,8 +80,8 @@ void EditorMainScreen::set_button_container(HBoxContainer *p_button_hb) {
 	button_hb = p_button_hb;
 }
 
-EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const String &p_plugin_name) const {
-	if (p_plugin_name == "Game") {
+EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const EditorPlugin *p_plugin) const {
+	if (p_plugin != nullptr && EDITOR_GAME < editor_table.size() && p_plugin == editor_table[EDITOR_GAME]) {
 		return SCREEN_GLOBAL;
 	}
 	return SCREEN_SCENE_MODE;
@@ -89,9 +89,11 @@ EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const 
 
 String EditorMainScreen::_active_main_screen_name() const {
 	String pressed_name;
+	EditorPlugin *pressed_plugin = nullptr;
 	for (int i = 0; i < buttons.size(); i++) {
 		if (buttons[i]->is_pressed()) {
 			pressed_name = buttons[i]->get_text();
+			pressed_plugin = editor_table[i];
 			break;
 		}
 	}
@@ -101,7 +103,7 @@ String EditorMainScreen::_active_main_screen_name() const {
 	// underneath. Only in scene mode is a focused script leaf the visible surface;
 	// there, persist the "Script" sentinel so restore reveals the leaf via
 	// select_by_name().
-	if (pressed_name.is_empty() || _get_plugin_placement(pressed_name) == SCREEN_SCENE_MODE) {
+	if (pressed_name.is_empty() || _get_plugin_placement(pressed_plugin) == SCREEN_SCENE_MODE) {
 		if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
 			if (workspace->get_focused_script_leaf()) {
 				return "Script";
@@ -267,7 +269,7 @@ void EditorMainScreen::select(int p_index) {
 	selected_plugin->make_visible(true);
 	selected_plugin->selected_notify();
 
-	const ScreenPlacement placement = _get_plugin_placement(selected_plugin->get_plugin_name());
+	const ScreenPlacement placement = _get_plugin_placement(selected_plugin);
 	if (global_screen_vbox) {
 		global_screen_vbox->set_visible(placement == SCREEN_GLOBAL);
 	}
@@ -302,13 +304,6 @@ int EditorMainScreen::get_plugin_index(EditorPlugin *p_editor) const {
 	return screen;
 }
 
-String EditorMainScreen::get_plugin_name(int p_index) const {
-	if (p_index < 0 || p_index >= editor_table.size() || editor_table[p_index] == nullptr) {
-		return String();
-	}
-	return editor_table[p_index]->get_plugin_name();
-}
-
 EditorPlugin *EditorMainScreen::get_selected_plugin() const {
 	return selected_plugin;
 }
@@ -333,14 +328,14 @@ bool EditorMainScreen::is_scene_mode_selected() const {
 	if (!selected_plugin) {
 		return false;
 	}
-	return _get_plugin_placement(selected_plugin->get_plugin_name()) == SCREEN_SCENE_MODE;
+	return _get_plugin_placement(selected_plugin) == SCREEN_SCENE_MODE;
 }
 
 bool EditorMainScreen::is_global_screen_selected() const {
 	if (!selected_plugin) {
 		return false;
 	}
-	return _get_plugin_placement(selected_plugin->get_plugin_name()) == SCREEN_GLOBAL;
+	return _get_plugin_placement(selected_plugin) == SCREEN_GLOBAL;
 }
 
 VBoxContainer *EditorMainScreen::get_scene_mode_control() const {
@@ -392,10 +387,14 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 		if (p_editor->get_plugin_name() == buttons[i]->get_text()) {
 			if (buttons[i]->is_pressed()) {
 				EditorNode *editor_node = EditorNode::get_singleton();
-				if (editor_node != nullptr) {
+				if (editor_node != nullptr && editor_node->is_editor_ready() && !editor_node->is_exiting()) {
 					if (!editor_node->restore_focused_scene_main_screen()) {
 						select(EDITOR_2D);
 					}
+				} else if (editor_node != nullptr) {
+					// Startup/shutdown must not reactivate workspace content while the
+					// plugin table is being dismantled. Keep this a raw screen fallback.
+					select(EDITOR_2D);
 				} else {
 					p_editor->make_visible(false);
 					selected_plugin = nullptr;

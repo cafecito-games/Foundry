@@ -73,7 +73,7 @@ private:
 	HashMap<String, EditorPlugin *> main_editor_plugins;
 
 	int _get_current_main_editor() const;
-	ScreenPlacement _get_plugin_placement(const String &p_plugin_name) const;
+	ScreenPlacement _get_plugin_placement(const EditorPlugin *p_plugin) const;
 	// Name persisted for the currently active main screen: the pressed button's
 	// plugin name, the "Script" sentinel when a script leaf is the active surface,
 	// or an empty string when nothing is active.
@@ -101,9 +101,6 @@ public:
 	void select(int p_index);
 	int get_selected_index() const;
 	int get_plugin_index(EditorPlugin *p_editor) const;
-	// Plugin identity at the current live table index. Consumers that expose a
-	// screen name must resolve through this table instead of assuming fixed slots.
-	String get_plugin_name(int p_index) const;
 	// Index of the main-screen button whose plugin name matches p_name, or -1 when
 	// no current button matches. Persistence resolves screens by name through this
 	// so registration-order changes cannot restore the wrong screen.

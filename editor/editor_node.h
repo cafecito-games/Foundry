@@ -944,7 +944,7 @@ public:
 
 	// Returns the focused scene tile's in-tile dock instances (not global shell docks).
 	ScenePaneTile *get_focused_tile() const;
-	void set_focused_tile_scene_editor_mode(SceneEditorMode p_mode);
+	bool set_focused_tile_scene_editor_mode(SceneEditorMode p_mode);
 	// Restores the shared scene editor from the focused tile's durable mode after
 	// a transient main-screen plugin disappears.
 	bool restore_focused_scene_main_screen();

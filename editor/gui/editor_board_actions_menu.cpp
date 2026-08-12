@@ -37,6 +37,9 @@
 
 void EditorBoardActionsMenu::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("rename_requested", PropertyInfo(Variant::INT, "board_index")));
+	ADD_SIGNAL(MethodInfo("board_requested",
+			PropertyInfo(Variant::INT, "strip_id"),
+			PropertyInfo(Variant::INT, "board_index")));
 }
 
 void EditorBoardActionsMenu::_notification(int p_what) {
@@ -133,6 +136,7 @@ void EditorBoardActionsMenu::_activate_board(ObjectID p_strip_id, ObjectID p_boa
 	const int index = target_strip->resolve_board_index(p_board_id);
 	if (index >= 0) {
 		target_strip->set_active_board(index);
+		emit_signal(SNAME("board_requested"), int64_t(p_strip_id), index);
 	}
 }
 

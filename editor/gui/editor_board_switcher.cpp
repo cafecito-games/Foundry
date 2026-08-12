@@ -71,12 +71,7 @@ void EditorBoardSwitcher::_notification(int p_what) {
 			resize_parent = nullptr;
 		} break;
 		case NOTIFICATION_THEME_CHANGED: {
-			if (menu_button) {
-				menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
-			}
-			if (strip) {
-				_rebuild();
-			}
+			_refresh_theme();
 		} break;
 	}
 }
@@ -171,12 +166,7 @@ void EditorBoardSwitcher::_rebuild() {
 		button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_board_button_pressed).bind(i));
 		button->connect(SceneStringName(gui_input), callable_mp(this, &EditorBoardSwitcher::_on_board_button_gui_input).bind(i));
 		rail_hbox->add_child(button);
-		const Ref<Font> segment_font = button->get_theme_font(SceneStringName(font));
-		const int font_size = button->get_theme_font_size(SceneStringName(font_size));
-		const int horizontal_padding = get_theme_constant("segment_horizontal_padding");
-		const int maximum_width = get_theme_constant("segment_maximum_width");
-		const int text_width = Math::ceil(segment_font->get_string_size(board->get_title(), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x);
-		button->set_custom_minimum_size(Size2(MIN(text_width + horizontal_padding, maximum_width), 0));
+		_refresh_board_button_minimum(button);
 		button->set_visible(!compact || i == strip->get_active_index());
 		board_buttons.push_back(button);
 	}
@@ -191,6 +181,40 @@ void EditorBoardSwitcher::_rebuild() {
 	menu_button->connect(SceneStringName(pressed), callable_mp(this, &EditorBoardSwitcher::_on_menu_pressed));
 	rail_hbox->add_child(menu_button);
 
+	_queue_compact_mode_update();
+}
+
+void EditorBoardSwitcher::_refresh_board_button_minimum(Button *p_button) {
+	ERR_FAIL_NULL(p_button);
+	const Ref<Font> segment_font = p_button->get_theme_font(SceneStringName(font));
+	if (segment_font.is_null()) {
+		return;
+	}
+	const int font_size = p_button->get_theme_font_size(SceneStringName(font_size));
+	const int horizontal_padding = get_theme_constant("segment_horizontal_padding");
+	const int maximum_width = get_theme_constant("segment_maximum_width");
+	const int text_width = Math::ceil(segment_font->get_string_size(p_button->get_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x);
+	p_button->set_custom_minimum_size(Size2(MIN(text_width + horizontal_padding, maximum_width), 0));
+}
+
+void EditorBoardSwitcher::_refresh_theme() {
+	if (rail_hbox) {
+		rail_hbox->add_theme_constant_override(SNAME("separation"), MAX(1, Math::round(EDSCALE)));
+	}
+	if (menu_button) {
+		menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
+	}
+	for (Button *button : board_buttons) {
+		if (button) {
+			_refresh_board_button_minimum(button);
+		}
+	}
+	if (rename_edit && renaming_button) {
+		const Size2 segment_minimum = renaming_button->get_combined_minimum_size();
+		rename_edit->set_custom_minimum_size(
+				Size2(segment_minimum.x, MAX(segment_minimum.y, renaming_button->get_size().y)));
+		preserve_rename_on_compact_update = true;
+	}
 	_queue_compact_mode_update();
 }
 
@@ -210,11 +234,11 @@ int EditorBoardSwitcher::_get_desired_full_width() const {
 	return desired_width;
 }
 
-void EditorBoardSwitcher::_set_compact(bool p_compact) {
+void EditorBoardSwitcher::_set_compact(bool p_compact, bool p_preserve_rename) {
 	if (compact == p_compact) {
 		return;
 	}
-	if (rename_edit) {
+	if (rename_edit && !p_preserve_rename) {
 		_apply_pending_rename(rename_edit->get_text());
 		// Recreate the segment from the committed title so every derived property (label,
 		// tooltip, accessibility name, and measured width) changes together. Rebuild only
@@ -268,7 +292,9 @@ void EditorBoardSwitcher::_update_compact_mode() {
 	}
 
 	const int center_budget = MAX(0, int(parent_control->get_size().x) - 2 * MAX(before_width, after_width));
-	_set_compact(_get_desired_full_width() > center_budget);
+	const bool preserve_rename = preserve_rename_on_compact_update;
+	preserve_rename_on_compact_update = false;
+	_set_compact(_get_desired_full_width() > center_budget, preserve_rename);
 }
 
 Button *EditorBoardSwitcher::_board_button_at(int p_index) const {
@@ -331,6 +357,13 @@ void EditorBoardSwitcher::_on_board_button_pressed(int p_index) {
 		}
 	} else {
 		strip->set_active_board(p_index);
+	}
+	emit_signal(SNAME("board_requested"), p_index);
+}
+
+void EditorBoardSwitcher::_on_menu_board_requested(ObjectID p_strip_id, int p_index) {
+	if (!strip || strip->get_instance_id() != p_strip_id) {
+		return;
 	}
 	emit_signal(SNAME("board_requested"), p_index);
 }
@@ -452,4 +485,5 @@ EditorBoardSwitcher::EditorBoardSwitcher() {
 	actions_menu = memnew(EditorBoardActionsMenu);
 	add_child(actions_menu);
 	actions_menu->connect(SNAME("rename_requested"), callable_mp(this, &EditorBoardSwitcher::_begin_rename));
+	actions_menu->connect(SNAME("board_requested"), callable_mp(this, &EditorBoardSwitcher::_on_menu_board_requested));
 }

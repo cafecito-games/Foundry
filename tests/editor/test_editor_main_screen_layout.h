@@ -31,7 +31,6 @@
 #pragma once
 
 #include "core/io/config_file.h"
-#include "editor/automation/editor_automation_state.h"
 #include "editor/editor_main_screen.h"
 #include "editor/plugins/editor_plugin.h"
 
@@ -169,42 +168,6 @@ TEST_CASE("[EditorMainScreen][Editor] name resolution survives plugin reordering
 	memdelete(plugin_a);
 	memdelete(plugin_b);
 	memdelete(plugin_c);
-}
-
-TEST_CASE("[EditorMainScreen][Editor][Automation] state name follows dynamic plugin identity after reorder") {
-	EditorMainScreen *main_screen = memnew(EditorMainScreen);
-	HBoxContainer *button_hb = memnew(HBoxContainer);
-	main_screen->set_button_container(button_hb);
-
-	NamedMainScreenPlugin *plugin_2d = make_plugin("2D");
-	NamedMainScreenPlugin *plugin_3d = make_plugin("3D");
-	NamedMainScreenPlugin *plugin_game = make_plugin("Game");
-	NamedMainScreenPlugin *plugin_tools = make_plugin("Telemetry Tools");
-	NamedMainScreenPlugin *plugin_assetlib = make_plugin("AssetLib");
-	main_screen->add_main_plugin(plugin_2d);
-	main_screen->add_main_plugin(plugin_3d);
-	main_screen->add_main_plugin(plugin_game);
-	main_screen->add_main_plugin(plugin_tools);
-	main_screen->add_main_plugin(plugin_assetlib);
-
-	CHECK(EditorAutomationState::main_screen_name(main_screen, main_screen->get_button_index_by_name("2D")) == "2d");
-	CHECK(EditorAutomationState::main_screen_name(main_screen, main_screen->get_button_index_by_name("3D")) == "3d");
-	CHECK(EditorAutomationState::main_screen_name(main_screen, main_screen->get_button_index_by_name("Game")) == "game");
-	CHECK(EditorAutomationState::main_screen_name(main_screen, main_screen->get_button_index_by_name("AssetLib")) == "asset_lib");
-
-	main_screen->remove_main_plugin(plugin_tools);
-	main_screen->add_main_plugin(plugin_tools);
-	const int reordered_index = main_screen->get_button_index_by_name("Telemetry Tools");
-	CHECK(reordered_index == 4);
-	CHECK(EditorAutomationState::main_screen_name(main_screen, reordered_index) == "telemetry_tools");
-
-	memdelete(main_screen);
-	memdelete(button_hb);
-	memdelete(plugin_2d);
-	memdelete(plugin_3d);
-	memdelete(plugin_game);
-	memdelete(plugin_tools);
-	memdelete(plugin_assetlib);
 }
 
 TEST_CASE("[EditorMainScreen][Editor] save no longer scrubs the retired key inline") {

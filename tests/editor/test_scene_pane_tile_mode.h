@@ -109,7 +109,9 @@ TEST_CASE("[Editor][ScenePaneTileMode] layout round-trips mode and missing key s
 	Ref<ConfigFile> saved;
 	saved.instantiate();
 	source->save_layout(saved, "Tile");
-	CHECK(StringName(saved->get_value("Tile", "scene_editor_mode")) == StringName("3d"));
+	const Variant saved_mode = saved->get_value("Tile", "scene_editor_mode");
+	CHECK(saved_mode.get_type() == Variant::STRING);
+	CHECK(String(saved_mode) == "3d");
 
 	ScenePaneTile *restored = memnew(ScenePaneTile);
 	restored->setup(9, &selection, editor_data);

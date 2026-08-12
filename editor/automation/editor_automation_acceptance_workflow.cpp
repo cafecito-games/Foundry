@@ -115,6 +115,8 @@ class AutomationDynamicMainScreenPlugin : public EditorPlugin {
 
 	String plugin_name;
 	bool visible = false;
+	Object *handled_object = nullptr;
+	ObjectID last_edited_object;
 
 public:
 	explicit AutomationDynamicMainScreenPlugin(const String &p_plugin_name) :
@@ -122,7 +124,11 @@ public:
 	String get_plugin_name() const override { return plugin_name; }
 	bool has_main_screen() const override { return true; }
 	void make_visible(bool p_visible) override { visible = p_visible; }
+	bool handles(Object *p_object) const override { return p_object == handled_object; }
+	void edit(Object *p_object) override { last_edited_object = p_object ? p_object->get_instance_id() : ObjectID(); }
 	bool is_visible_for_test() const { return visible; }
+	void set_handled_object(Object *p_object) { handled_object = p_object; }
+	ObjectID get_last_edited_object() const { return last_edited_object; }
 };
 
 bool _dispatch_shortcut_event(const Ref<Shortcut> &p_shortcut, EditorWorkflowTestDriver &p_driver) {
@@ -1673,6 +1679,76 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	EditorNode *editor_node = EditorNode::get_singleton();
 	if (editor_node == nullptr) {
 		return _failure_with_message(p_driver, result.workflow, "EditorNode singleton was unavailable after closing the last scene.");
+	}
+
+	EditorMainScreen *main_screen = EditorNode::get_editor_main_screen();
+	if (main_screen == nullptr || !main_screen->is_button_enabled(EditorMainScreen::EDITOR_GAME)) {
+		return _failure_with_message(p_driver, result.workflow, "Main-screen routing fixtures were unavailable after closing the last scene.");
+	}
+
+	p_driver.set_step("scene_mode_shortcuts_after_empty");
+	main_screen->select(EditorMainScreen::EDITOR_GAME);
+	const Ref<Shortcut> shortcut_2d = EditorSettings::get_singleton()->get_shortcut("editor/editor_2d");
+	const Ref<Shortcut> shortcut_3d = EditorSettings::get_singleton()->get_shortcut("editor/editor_3d");
+	if (!_dispatch_shortcut_event(shortcut_2d, p_driver) || main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "The real 2D shortcut did not select the shared screen with no scene open.");
+	}
+	if (!_dispatch_shortcut_event(shortcut_3d, p_driver) || main_screen->get_selected_index() != EditorMainScreen::EDITOR_3D) {
+		return _failure_with_message(p_driver, result.workflow, "The real 3D shortcut did not select the shared screen with no scene open.");
+	}
+
+	p_driver.set_step("main_screen_cycle_after_empty");
+	main_screen->select_next();
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_GAME) {
+		return _failure_with_message(p_driver, result.workflow, "Next-main-screen cycling did not advance from 3D with no scene open.");
+	}
+	main_screen->select_prev();
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_3D) {
+		return _failure_with_message(p_driver, result.workflow, "Previous-main-screen cycling dead-ended on a scene screen with no scene open.");
+	}
+
+	p_driver.set_step("editor_interface_scene_modes_after_empty");
+	main_screen->select(EditorMainScreen::EDITOR_GAME);
+	EditorInterface::get_singleton()->set_main_screen_editor("2D");
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow, "EditorInterface did not select the shared 2D screen with no scene open.");
+	}
+	EditorInterface::get_singleton()->set_main_screen_editor("3D");
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_3D) {
+		return _failure_with_message(p_driver, result.workflow, "EditorInterface did not select the shared 3D screen with no scene open.");
+	}
+
+	p_driver.set_step("focus_uninitialized_empty_tile");
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr || strip->add_board("Uninitialized empty tile") == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not create an empty board for the uninitialized-tile removal probe.");
+	}
+	strip->set_active_board(strip->get_board_count() - 1);
+	p_driver.flush_frames(90);
+	ScenePaneTile *empty_tile = editor_node->get_focused_tile();
+	if (empty_tile == nullptr || empty_tile->is_scene_editor_mode_initialized() ||
+			editor_node->get_editor_data().get_tile_current_scene(empty_tile->get_tile_id()) >= 0) {
+		return _failure_with_message(p_driver, result.workflow,
+				"The dynamic-screen removal probe did not start on an empty, uninitialized tile.");
+	}
+
+	p_driver.set_step("remove_dynamic_screen_after_empty");
+	AutomationDynamicMainScreenPlugin *empty_dynamic_plugin = memnew(AutomationDynamicMainScreenPlugin("EmptyDynamic"));
+	EditorNode::add_editor_plugin(empty_dynamic_plugin);
+	const int empty_dynamic_index = main_screen->get_plugin_index(empty_dynamic_plugin);
+	if (empty_dynamic_index >= 0) {
+		main_screen->select(empty_dynamic_index);
+	}
+	if (empty_dynamic_index < 0 || main_screen->get_selected_plugin() != empty_dynamic_plugin) {
+		EditorNode::remove_editor_plugin(empty_dynamic_plugin);
+		memdelete(empty_dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow, "Could not select the empty-tile dynamic screen removal fixture.");
+	}
+	EditorNode::remove_editor_plugin(empty_dynamic_plugin);
+	memdelete(empty_dynamic_plugin);
+	if (main_screen->get_selected_index() != EditorMainScreen::EDITOR_2D) {
+		return _failure_with_message(p_driver, result.workflow,
+				"Removing a selected dynamic screen with an empty tile did not fall back to the built-in 2D screen.");
 	}
 
 	p_driver.set_step("close_scene_api_after_empty");
@@ -3378,19 +3454,121 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 				"The real dynamic-screen InputEvent did not select its live plugin while the compatibility buttons were hidden.");
 	}
 
+	p_driver.set_step("preserve_dynamic_screen_during_board_refresh");
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr || strip->add_board() == nullptr) {
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow, "Could not create an inactive board for the dynamic-screen refresh probe.");
+	}
+	p_driver.flush_frames(20);
+	if (!strip->close_board(strip->get_board_count() - 1)) {
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow, "Could not close the inactive board for the dynamic-screen refresh probe.");
+	}
+	p_driver.flush_frames(60);
+	if (main_screen->get_selected_plugin() != dynamic_plugin || !dynamic_plugin->is_visible_for_test()) {
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow,
+				"A non-forced board/display refresh switched away from the selected dynamic main screen.");
+	}
+
+	p_driver.set_step("dynamic_plugin_handles_real_object");
+	editor_node->select_main_screen(EditorMainScreen::EDITOR_3D);
+	Object *handled_object = memnew(Object);
+	dynamic_plugin->set_handled_object(handled_object);
+	editor_node->push_item(handled_object);
+	p_driver.flush_frames(10);
+	if (main_screen->get_selected_plugin() != dynamic_plugin || dynamic_plugin->get_last_edited_object() != handled_object->get_instance_id()) {
+		dynamic_plugin->set_handled_object(nullptr);
+		editor_node->push_item(nullptr);
+		memdelete(handled_object);
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow,
+				"An initialized tile suppressed a non-scene main plugin that handles the edited object.");
+	}
+	dynamic_plugin->set_handled_object(nullptr);
+	editor_node->push_item(nullptr);
+	memdelete(handled_object);
+
+	p_driver.set_step("game_name_does_not_grant_global_placement");
+	AutomationDynamicMainScreenPlugin *game_named_plugin = memnew(AutomationDynamicMainScreenPlugin("Game"));
+	EditorNode::add_editor_plugin(game_named_plugin);
+	const int game_named_index = main_screen->get_plugin_index(game_named_plugin);
+	if (game_named_index >= 0) {
+		main_screen->select(game_named_index);
+	}
+	if (game_named_index < 0 || main_screen->get_selected_plugin() != game_named_plugin ||
+			!main_screen->is_scene_mode_selected() || main_screen->is_global_screen_selected()) {
+		EditorNode::remove_editor_plugin(game_named_plugin);
+		memdelete(game_named_plugin);
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow,
+				"A third-party plugin named Game inherited the built-in Game screen's global placement.");
+	}
+	EditorNode::remove_editor_plugin(game_named_plugin);
+	memdelete(game_named_plugin);
+	main_screen->select(dynamic_index);
+
+	p_driver.set_step("preserve_script_leaf_focus_when_dynamic_screen_is_removed");
+	MixedWorkspaceContext removal_context;
+	Result setup_failure;
+	if (!_load_mixed_workspace_scene(p_driver, result.workflow, removal_context, setup_failure)) {
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return setup_failure;
+	}
+	WorkspaceTabRegistry &registry = WorkspacePane::get_shared_tab_registry();
+	WorkspaceTabType *script_type = registry.find_type(StringName("script"));
+	if (script_type == nullptr) {
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow, "Workspace script tab type is unavailable for the removal-focus probe.");
+	}
+	removal_context.scene_pane->add_tab(script_type->make_tab(MIXED_WORKSPACE_SCRIPT, registry.allocate_stable_id()));
+	const int script_index = _find_workspace_tab_index(removal_context.scene_pane, StringName("script"), MIXED_WORKSPACE_SCRIPT);
+	WorkspaceLeafNode *script_leaf = script_index >= 0 ? removal_context.workspace->handle_tab_drop(
+																 removal_context.scene_leaf_id,
+																 script_index,
+																 removal_context.scene_leaf,
+																 EditorSceneWorkspace::DROP_RIGHT)
+													   : nullptr;
+	p_driver.flush_frames(40);
+	if (script_leaf == nullptr) {
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow, "Could not split a script leaf for the removal-focus probe.");
+	}
+	removal_context.workspace->set_focused_leaf(script_leaf->get_leaf_id());
+	main_screen->select(dynamic_index);
+	p_driver.flush_frames(20);
+	const int focused_script_leaf_id = removal_context.workspace->get_focused_leaf_id();
+	if (focused_script_leaf_id != script_leaf->get_leaf_id() || removal_context.workspace->get_focused_tile() != nullptr ||
+			removal_context.workspace->get_effective_focused_tile() == nullptr) {
+		EditorNode::remove_editor_plugin(dynamic_plugin);
+		memdelete(dynamic_plugin);
+		return _failure_with_message(p_driver, result.workflow, "Could not establish script-leaf focus before removing the dynamic screen.");
+	}
+
 	p_driver.set_step("remove_selected_dynamic_screen");
 	EditorNode::remove_editor_plugin(dynamic_plugin);
 	memdelete(dynamic_plugin);
 	p_driver.flush_frames(4);
 	focused_tile = editor_node->get_focused_tile();
 	EditorSceneContext *context = focused_tile ? focused_tile->get_scene_context() : nullptr;
-	if (focused_tile == nullptr || focused_tile->get_scene_editor_mode() != SceneEditorMode::MODE_3D ||
-			main_screen->get_selected_index() != EditorMainScreen::EDITOR_3D ||
-			focused_tile->get_scene_mode_switcher()->get_mode() != SceneEditorMode::MODE_3D ||
+	const SceneEditorMode restored_mode = focused_tile ? focused_tile->get_scene_editor_mode() : SceneEditorMode::MODE_2D;
+	const int restored_index = restored_mode == SceneEditorMode::MODE_3D ? EditorMainScreen::EDITOR_3D : EditorMainScreen::EDITOR_2D;
+	if (focused_tile == nullptr || removal_context.workspace->get_focused_leaf_id() != focused_script_leaf_id ||
+			main_screen->get_selected_index() != restored_index ||
+			focused_tile->get_scene_mode_switcher()->get_mode() != restored_mode ||
 			focused_tile->get_preview_mode() != TilePreviewMode::FOCUSED_LIVE || context == nullptr || !context->is_active() ||
 			context->get_viewport()->get_parent() == nullptr || main_screen->get_scene_mode_control()->get_parent() != focused_tile->get_content_host()) {
 		return _failure_with_message(p_driver, result.workflow,
-				"Removing the active dynamic screen did not restore the focused tile's durable 3D presentation coherently.");
+				"Removing the active dynamic screen did not restore the effective tile's durable presentation without stealing script-leaf focus.");
 	}
 
 	if (!p_driver.assert_no_new_errors()) {

@@ -36,7 +36,6 @@
 #include "editor/automation/editor_automation_state.h"
 #include "editor/automation/editor_automation_trace.h"
 #include "editor/automation/editor_automation_wait.h"
-#include "editor/editor_main_screen.h"
 
 #include "core/os/os.h"
 #include "scene/gui/button.h"

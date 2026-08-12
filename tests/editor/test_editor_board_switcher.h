@@ -35,6 +35,8 @@
 #include "editor/editor_data.h"
 #include "editor/gui/editor_board_actions_menu.h"
 #include "editor/gui/editor_board_switcher.h"
+#include "editor/settings/editor_settings.h"
+#include "editor/themes/editor_scale.h"
 #include "editor/themes/editor_theme_manager.h"
 
 #include "core/io/config_file.h"
@@ -46,6 +48,7 @@
 #include "scene/gui/control.h"
 #include "scene/gui/line_edit.h"
 #include "scene/main/window.h"
+#include "scene/resources/style_box.h"
 
 #include "tests/test_macros.h"
 
@@ -70,6 +73,28 @@ static BoardRequestedRecorder board_requested_recorder;
 static void record_board_requested(int p_index) {
 	board_requested_recorder.indices.push_back(p_index);
 }
+
+struct BoardRailEditorScaleGuard {
+	float previous = 1.0f;
+	explicit BoardRailEditorScaleGuard(float p_scale) :
+			previous(EditorScale::get_scale()) {
+		EditorScale::set_scale(p_scale);
+	}
+	~BoardRailEditorScaleGuard() {
+		EditorScale::set_scale(previous);
+	}
+};
+
+struct BoardRailThemeStyleGuard {
+	String previous;
+	explicit BoardRailThemeStyleGuard(const String &p_style) :
+			previous(EDITOR_GET("interface/theme/style")) {
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", p_style);
+	}
+	~BoardRailThemeStyleGuard() {
+		EditorSettings::get_singleton()->set_manually("interface/theme/style", previous);
+	}
+};
 
 struct BoardSwitcherHarness {
 	Control *host = nullptr;
@@ -299,6 +324,56 @@ TEST_CASE("[Editor][BoardSwitcher] Every segment emits a board request") {
 	harness.unmount();
 }
 
+TEST_CASE("[Editor][BoardSwitcher] Compact menu requesting the active board emits exactly once") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("Materials");
+	harness.resize_host(Size2(160, 48));
+	REQUIRE(harness.strip->get_active_index() == 0);
+
+	board_requested_recorder.indices.clear();
+	harness.switcher->connect(SNAME("board_requested"), callable_mp_static(&record_board_requested));
+	harness.menu_button()->emit_signal(SceneStringName(pressed));
+	harness.activate_menu_item(EditorBoardActionsMenu::ItemID(EditorBoardActionsMenu::ITEM_BOARD_BASE));
+	harness.pump();
+
+	REQUIRE(board_requested_recorder.indices.size() == 1);
+	if (board_requested_recorder.indices.size() == 1) {
+		CHECK(board_requested_recorder.indices[0] == 0);
+	}
+	CHECK(harness.strip->get_active_index() == 0);
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Retargeted switcher suppresses an old strip board request") {
+	BoardSwitcherHarness harness;
+	harness.mount();
+	EditorBoard *original_target = harness.strip->add_board("Original target");
+	REQUIRE(original_target != nullptr);
+
+	EditorData other_editor_data;
+	EditorSelection *other_selection = memnew(EditorSelection);
+	EditorBoardStrip *other_strip = EditorBoardStrip::create(other_selection, &other_editor_data);
+	harness.host->add_child(other_strip);
+
+	board_requested_recorder.indices.clear();
+	harness.switcher->connect(SNAME("board_requested"), callable_mp_static(&record_board_requested));
+	EditorBoardActionsMenu *menu = harness.switcher->get_actions_menu();
+	REQUIRE(menu != nullptr);
+	menu->popup_for_board(0, Point2(), true);
+	harness.activate_menu_item(EditorBoardActionsMenu::ItemID(EditorBoardActionsMenu::ITEM_BOARD_BASE + 1));
+	harness.switcher->setup(other_strip);
+	harness.pump();
+
+	CHECK(harness.strip->get_active_board() == original_target);
+	CHECK(other_strip->get_active_index() == 0);
+	CHECK(board_requested_recorder.indices.is_empty());
+
+	harness.unmount();
+	memdelete(other_selection);
+}
+
 TEST_CASE("[Editor][BoardSwitcher] Compact menu lists and activates every board") {
 	BoardSwitcherHarness harness;
 	harness.mount(true);
@@ -494,6 +569,69 @@ TEST_CASE("[Editor][BoardSwitcher] Double-clicking a board button renames it inl
 	CHECK(renamed_button->get_text() == "face shader");
 
 	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Theme changes preserve an in-progress rename") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("Second");
+	EditorBoard *board = harness.strip->get_board(0);
+	REQUIRE(board != nullptr);
+	const String original_title = board->get_title();
+
+	Button *button = harness.board_button(0);
+	REQUIRE(button != nullptr);
+	harness.double_click(button);
+	LineEdit *rename_edit = harness.find_rename_edit();
+	REQUIRE(rename_edit != nullptr);
+	rename_edit->set_text("partially typed title");
+	const ObjectID rename_edit_id = rename_edit->get_instance_id();
+
+	{
+		BoardRailThemeStyleGuard style_guard("Classic");
+		Ref<EditorTheme> replacement_theme = EditorThemeManager::generate_theme();
+		REQUIRE(replacement_theme.is_valid());
+		replacement_theme->set_constant("segment_horizontal_padding", "BoardRail", 2000);
+		replacement_theme->set_constant("segment_maximum_width", "BoardRail", 4000);
+		harness.host->set_theme(replacement_theme);
+		harness.pump();
+	}
+
+	CHECK(harness.switcher->is_renaming());
+	CHECK(harness.find_rename_edit() == ObjectDB::get_instance<LineEdit>(rename_edit_id));
+	LineEdit *preserved_edit = harness.find_rename_edit();
+	REQUIRE(preserved_edit != nullptr);
+	if (preserved_edit) {
+		CHECK(preserved_edit->get_text() == "partially typed title");
+	}
+	CHECK(board->get_title() == original_title);
+	REQUIRE(harness.board_button(1) != nullptr);
+	CHECK_FALSE(harness.board_button(1)->is_visible());
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][Theme] board rail pressed styles preserve resolved normal margins") {
+	BoardRailEditorScaleGuard scale_guard(2.0f);
+	for (const String &style : { String("Classic"), String("Modern") }) {
+		CAPTURE(style);
+		BoardRailThemeStyleGuard style_guard(style);
+		Ref<EditorTheme> theme = EditorThemeManager::generate_theme();
+		REQUIRE(theme.is_valid());
+
+		Ref<StyleBox> normal = theme->get_stylebox(SNAME("normal"), "BoardRailButton");
+		Ref<StyleBox> board_pressed = theme->get_stylebox(SceneStringName(pressed), "BoardRailButton");
+		Ref<StyleBox> scene_pressed = theme->get_stylebox(SceneStringName(pressed), "SceneModeButton");
+		REQUIRE(normal.is_valid());
+		REQUIRE(board_pressed.is_valid());
+		REQUIRE(scene_pressed.is_valid());
+
+		for (Side side : { SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM }) {
+			CAPTURE(side);
+			CHECK(board_pressed->get_content_margin(side) == doctest::Approx(normal->get_content_margin(side)));
+			CHECK(scene_pressed->get_content_margin(side) == doctest::Approx(normal->get_content_margin(side)));
+		}
+	}
 }
 
 TEST_CASE("[Editor][BoardSwitcher] Compact transition refreshes a pending renamed segment") {

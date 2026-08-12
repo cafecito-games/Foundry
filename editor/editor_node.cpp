@@ -3484,8 +3484,11 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 		} else {
 			EditorPlugin *main_plugin = editor_data.get_handling_main_editor(current_obj);
 			EditorPlugin *editor_plugin_screen = editor_main_screen->get_selected_plugin();
+			const int handling_plugin_index = editor_main_screen->get_plugin_index(main_plugin);
 			ScenePaneTile *focused_tile = get_focused_tile();
-			if (focused_tile && focused_tile->is_scene_editor_mode_initialized() && main_plugin != editor_plugin_screen) {
+			if (focused_tile && focused_tile->is_scene_editor_mode_initialized() &&
+					(handling_plugin_index == EditorMainScreen::EDITOR_2D || handling_plugin_index == EditorMainScreen::EDITOR_3D) &&
+					main_plugin != editor_plugin_screen) {
 				main_plugin = nullptr;
 			}
 
@@ -7764,7 +7767,7 @@ void EditorNode::_apply_scene_editor_mode(ScenePaneTile *p_tile, EditorSceneCont
 	if (!p_tile->is_scene_editor_mode_initialized()) {
 		return;
 	}
-	if (editor_main_screen->is_global_screen_selected() && !p_force_scene_screen) {
+	if (!p_force_scene_screen && !editor_main_screen->can_auto_switch_screens()) {
 		return;
 	}
 
@@ -7788,17 +7791,18 @@ ScenePaneTile *EditorNode::get_focused_tile() const {
 	return get_scene_workspace() ? get_scene_workspace()->get_effective_focused_tile() : nullptr;
 }
 
-void EditorNode::set_focused_tile_scene_editor_mode(SceneEditorMode p_mode) {
+bool EditorNode::set_focused_tile_scene_editor_mode(SceneEditorMode p_mode) {
 	ScenePaneTile *tile = get_focused_tile();
 	if (!tile) {
-		return;
+		return false;
 	}
 	const int scene_idx = editor_data.get_tile_current_scene(tile->get_tile_id());
 	if (scene_idx < 0 || !editor_data.get_scene_context(scene_idx)) {
-		return;
+		return false;
 	}
 	tile->set_scene_editor_mode(p_mode, false);
 	_focus_tile(tile->get_tile_id());
+	return true;
 }
 
 bool EditorNode::restore_focused_scene_main_screen() {
@@ -7806,17 +7810,24 @@ bool EditorNode::restore_focused_scene_main_screen() {
 	if (tile == nullptr) {
 		return false;
 	}
-	_focus_tile_internal(tile->get_tile_id(), true);
-	return editor_main_screen->is_scene_mode_selected();
+	const int scene_idx = editor_data.get_tile_current_scene(tile->get_tile_id());
+	EditorSceneContext *context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr;
+	_apply_scene_editor_mode(tile, context, true);
+	const int selected_index = editor_main_screen->get_selected_index();
+	return selected_index == EditorMainScreen::EDITOR_2D || selected_index == EditorMainScreen::EDITOR_3D;
 }
 
 void EditorNode::select_main_screen(int p_index) {
 	if (p_index == EditorMainScreen::EDITOR_2D) {
-		set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_2D);
+		if (!set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_2D)) {
+			editor_main_screen->select(p_index);
+		}
 		return;
 	}
 	if (p_index == EditorMainScreen::EDITOR_3D) {
-		set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_3D);
+		if (!set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_3D)) {
+			editor_main_screen->select(p_index);
+		}
 		return;
 	}
 	editor_main_screen->select(p_index);
@@ -8470,6 +8481,8 @@ void EditorNode::_on_boards_restored() {
 		if (focused_leaf && focused_leaf->get_pane_tile()) {
 			ScenePaneTile *focused_tile = focused_leaf->get_pane_tile();
 			const int scene_idx = editor_data.get_tile_current_scene(focused_tile->get_tile_id());
+			// Board restore establishes the focused tile's durable mode first. The
+			// deferred persisted main-screen selection then deterministically wins.
 			_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, true);
 			_sync_focused_tile_chrome(focused_tile);
 		}
@@ -11584,7 +11597,6 @@ EditorNode::EditorNode() {
 	distraction_free->set_toggle_mode(true);
 	distraction_free->connect(SceneStringName(pressed), callable_mp(this, &EditorNode::_toggle_distraction_free_mode));
 
-	_apply_scene_editor_mode(initial_tile, nullptr, true);
 	_reparent_scene_mode_into(initial_tile);
 
 	placeholder_scene_viewport = memnew(SubViewport);
@@ -11779,7 +11791,7 @@ EditorNode::EditorNode() {
 
 	_update_main_menu_type();
 
-	// Spacer to center 2D / 3D / Script buttons.
+	// Flexible title-bar space balanced around the centered board rail.
 	left_spacer = memnew(HBoxContainer);
 	left_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	left_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -11810,7 +11822,7 @@ EditorNode::EditorNode() {
 	// Overview captions reach the same board actions menu the title-bar switcher owns.
 	board_strip->set_board_context_menu_handler(callable_mp(board_switcher, &EditorBoardSwitcher::popup_board_actions));
 
-	// Spacer to center 2D / 3D / Script buttons.
+	// Flexible title-bar space balanced around the centered board rail.
 	right_spacer = memnew(Control);
 	right_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	right_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
