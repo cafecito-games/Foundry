@@ -60,6 +60,7 @@ public:
 	// Real-pointer drag that enters a neighboring tile in one uninterrupted
 	// gesture, asserting the drop affordance is live before the release.
 	static Result run_continuous_drag_arms_drop_overlay(EditorWorkflowTestDriver &p_driver);
+	static Result run_cross_pane_node_to_script_drop(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_seed(EditorWorkflowTestDriver &p_driver);
 	static Result run_mixed_workspace_restore(EditorWorkflowTestDriver &p_driver);

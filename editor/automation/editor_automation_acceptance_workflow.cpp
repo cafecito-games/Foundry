@@ -84,6 +84,7 @@
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/json.h"
+#include "core/object/message_queue.h"
 #include "core/os/keyboard.h"
 #include "core/os/os.h"
 #include "scene/2d/node_2d.h"
@@ -161,17 +162,88 @@ ScenePaneTile *_resolve_focused_scene_tile(EditorBoard *p_board) {
 	return nullptr;
 }
 
-ScriptLeaf *_find_mounted_script_leaf(WorkspacePane *p_pane) {
-	Control *host = p_pane ? p_pane->get_chrome_host() : nullptr;
-	if (host == nullptr) {
+ScriptLeaf *_find_descendant_script_leaf(Node *p_parent, ScriptLeaf **r_fallback = nullptr) {
+	if (p_parent == nullptr) {
 		return nullptr;
 	}
-	for (int i = 0; i < host->get_child_count(false); i++) {
-		if (ScriptLeaf *leaf = Object::cast_to<ScriptLeaf>(host->get_child(i, false))) {
+	for (int i = 0; i < p_parent->get_child_count(false); i++) {
+		Node *child = p_parent->get_child(i, false);
+		if (ScriptLeaf *leaf = Object::cast_to<ScriptLeaf>(child)) {
+			if (leaf->is_visible()) {
+				return leaf;
+			}
+			if (r_fallback && *r_fallback == nullptr) {
+				*r_fallback = leaf;
+			}
+		}
+		if (ScriptLeaf *leaf = _find_descendant_script_leaf(child, r_fallback)) {
 			return leaf;
 		}
 	}
 	return nullptr;
+}
+
+ScriptLeaf *_find_mounted_script_leaf(WorkspacePane *p_pane) {
+	ScriptLeaf *fallback = nullptr;
+	ScriptLeaf *visible = _find_descendant_script_leaf(p_pane ? p_pane->get_chrome_host() : nullptr, &fallback);
+	return visible ? visible : fallback;
+}
+
+CodeEdit *_find_descendant_code_edit(Node *p_parent) {
+	if (p_parent == nullptr) {
+		return nullptr;
+	}
+	for (int i = 0; i < p_parent->get_child_count(false); i++) {
+		Node *child = p_parent->get_child(i, false);
+		if (CodeEdit *code_edit = Object::cast_to<CodeEdit>(child)) {
+			return code_edit;
+		}
+		if (CodeEdit *code_edit = _find_descendant_code_edit(child)) {
+			return code_edit;
+		}
+	}
+	return nullptr;
+}
+
+CodeEdit *_find_mounted_code_edit(WorkspacePane *p_pane) {
+	ScriptLeaf *script_leaf = _find_mounted_script_leaf(p_pane);
+	ScriptEditorView *view = script_leaf ? script_leaf->get_script_editor_view() : nullptr;
+	ScriptEditorBase *editor = view ? view->get_open_editor_for_path(script_leaf->get_script_path()) : nullptr;
+	TabContainer *tabs = view ? view->get_tab_container() : nullptr;
+	if (editor == nullptr && tabs && tabs->get_current_tab() >= 0) {
+		editor = Object::cast_to<ScriptEditorBase>(tabs->get_tab_control(tabs->get_current_tab()));
+	}
+	if (editor == nullptr && tabs) {
+		for (int i = 0; i < tabs->get_tab_count(); i++) {
+			editor = Object::cast_to<ScriptEditorBase>(tabs->get_tab_control(i));
+			if (editor != nullptr) {
+				break;
+			}
+		}
+	}
+	CodeEdit *code_edit = (editor && editor->get_code_editor()) ? editor->get_code_editor()->get_text_editor() : nullptr;
+	return code_edit ? code_edit : _find_descendant_code_edit(script_leaf);
+}
+
+TreeItem *_find_tree_item_by_text(TreeItem *p_item, const String &p_text) {
+	for (TreeItem *item = p_item; item; item = item->get_next()) {
+		if (item->get_text(0) == p_text) {
+			return item;
+		}
+		if (TreeItem *found = _find_tree_item_by_text(item->get_first_child(), p_text)) {
+			return found;
+		}
+	}
+	return nullptr;
+}
+
+String _first_hidden_canvas_ancestor(CanvasItem *p_item) {
+	for (CanvasItem *item = p_item; item; item = Object::cast_to<CanvasItem>(item->get_parent())) {
+		if (!item->is_visible()) {
+			return vformat("%s:%s", item->get_class(), item->get_name());
+		}
+	}
+	return String("none");
 }
 
 ConfirmationDialog *_find_erase_confirm(ScriptEditorView *p_view) {
@@ -832,6 +904,126 @@ WorkspaceLeafNode *_split_script_tab_to_right(EditorWorkflowTestDriver &p_driver
 	}
 
 	return script_leaf;
+}
+
+Node2D *_add_node_drop_probe(EditorWorkflowTestDriver &p_driver, Node *p_scene_root, SceneTreeDock *p_scene_dock, const StringName &p_name) {
+	if (p_scene_root == nullptr || p_scene_dock == nullptr) {
+		return nullptr;
+	}
+	Node2D *probe = memnew(Node2D);
+	probe->set_name(p_name);
+	p_scene_root->add_child(probe);
+	probe->set_owner(p_scene_root);
+	p_scene_dock->update_tree();
+	p_driver.flush_frames(10);
+	return probe;
+}
+
+bool _perform_node_to_script_drag(EditorWorkflowTestDriver &p_driver, EditorSceneWorkspace *p_workspace,
+		SceneTreeDock *p_scene_dock, Node *p_source_node, CodeEdit *p_target, int p_target_leaf_id,
+		bool p_expect_accepted, String &r_error) {
+	if (p_workspace == nullptr || p_scene_dock == nullptr || p_source_node == nullptr || p_target == nullptr) {
+		r_error = "The drag source or script target was unavailable.";
+		return false;
+	}
+
+	SceneTreeEditor *tree_editor = p_scene_dock->get_tree_editor();
+	Tree *tree = tree_editor ? tree_editor->get_scene_tree() : nullptr;
+	if (tree == nullptr || !tree->is_visible_in_tree() || !p_target->is_visible_in_tree()) {
+		r_error = vformat("The live scene tree and CodeEdit were not both visible (tree=%s, code=%s, hidden=%s, code_rect=%s).",
+				tree != nullptr && tree->is_visible_in_tree(), p_target->is_visible_in_tree(), _first_hidden_canvas_ancestor(p_target), p_target->get_global_rect());
+		return false;
+	}
+	tree_editor->set_selected(p_source_node, true);
+	p_driver.flush_frames(5);
+	TreeItem *source_item = _find_tree_item_by_text(tree->get_root(), p_source_node->get_name());
+	if (source_item == nullptr) {
+		r_error = vformat("The scene tree did not render node '%s'.", p_source_node->get_name());
+		return false;
+	}
+
+	const Rect2 source_rect = tree->get_item_rect(source_item, 0);
+	const Vector2 source_local(source_rect.position.x + MIN(source_rect.size.x * 0.35f, 80.0f), source_rect.get_center().y);
+	const Vector2 source_point = tree->get_global_transform().xform(source_local);
+	Vector2 target_point = p_target->get_global_transform_with_canvas().xform(p_target->get_size() * 0.5f);
+	if (source_rect.size.is_zero_approx() || p_target->get_global_rect().size.is_zero_approx()) {
+		r_error = "The drag source row or CodeEdit had no hit-testable area.";
+		return false;
+	}
+
+	const String before_text = p_target->get_text();
+	const String expected_reference = "$" + String(p_source_node->get_name());
+	const int before_count = before_text.count(expected_reference);
+	const ObjectID target_id = p_target->get_instance_id();
+	Viewport *viewport = p_target->get_viewport();
+	Control *hit_target = viewport->gui_find_control(target_point);
+	const float hit_fractions[] = { 0.2f, 0.4f, 0.6f, 0.8f };
+	for (float y_fraction : hit_fractions) {
+		for (float x_fraction : hit_fractions) {
+			const Vector2 candidate = p_target->get_global_transform_with_canvas().xform(p_target->get_size() * Vector2(x_fraction, y_fraction));
+			Control *candidate_hit = viewport->gui_find_control(candidate);
+			if (candidate_hit == p_target || (candidate_hit != nullptr && p_target->is_ancestor_of(candidate_hit))) {
+				target_point = candidate;
+				hit_target = candidate_hit;
+				break;
+			}
+		}
+	}
+	PackedStringArray events;
+	EditorAutomationInputModifiers modifiers;
+	if (!EditorAutomationInput::begin_mouse_gesture(viewport, source_point, MouseButton::LEFT, modifiers, events) ||
+			!EditorAutomationInput::move_mouse_gesture(viewport, target_point, Vector<Vector2>(), modifiers, events) ||
+			!viewport->gui_is_dragging() ||
+			!EditorAutomationInput::end_mouse_gesture(viewport, target_point, modifiers, events)) {
+		EditorAutomationInput::abandon_gesture();
+		r_error = "The real pointer gesture did not complete a drag and release.";
+		return false;
+	}
+
+	const bool drag_successful = viewport->gui_is_drag_successful();
+	// This is the boundary that distinguishes next-frame activation from the old
+	// call_deferred path: deferred calls may run here while process_frame callbacks
+	// cannot. Re-resolve the receiver before sending the immediate follow-up input.
+	MessageQueue::get_singleton()->flush();
+	CodeEdit *live_target = ObjectDB::get_instance<CodeEdit>(target_id);
+	if (live_target == nullptr) {
+		r_error = "The receiving CodeEdit was destroyed while the drop stack unwound.";
+		return false;
+	}
+
+	if (!p_expect_accepted) {
+		if (drag_successful || live_target->get_text() != before_text) {
+			r_error = "A cross-scene node drop modified the script.";
+			return false;
+		}
+		return true;
+	}
+
+	if (!drag_successful || p_workspace->get_focused_leaf_id() != p_target_leaf_id || live_target->get_text().count(expected_reference) != before_count + 1) {
+		r_error = vformat("The accepted drop did not insert one node reference and synchronously focus its receiving pane (success=%s, focused=%d, expected=%d, before=%d, after=%d, hit=%s:%s, rect=%s, point=%s, viewport=%s, viewport_rect=%s).",
+				drag_successful, p_workspace->get_focused_leaf_id(), p_target_leaf_id, before_count, live_target->get_text().count(expected_reference),
+				hit_target ? hit_target->get_class() : String("none"), hit_target ? String(hit_target->get_name()) : String("none"),
+				p_target->get_global_rect(), target_point, viewport->get_class(), viewport->get_visible_rect());
+		return false;
+	}
+
+	if (!EditorAutomationInput::push_key_event(viewport, Key::COMMA, true, U',', modifiers, events) ||
+			!EditorAutomationInput::push_key_event(viewport, Key::COMMA, false, U',', modifiers, events)) {
+		r_error = "The immediate text input could not be routed after the drop.";
+		return false;
+	}
+	live_target = ObjectDB::get_instance<CodeEdit>(target_id);
+	if (live_target == nullptr || !live_target->get_text().contains(expected_reference + ",")) {
+		r_error = "The receiving CodeEdit did not survive and accept immediate text input.";
+		return false;
+	}
+
+	p_driver.flush_frames(5);
+	if (ObjectDB::get_instance<CodeEdit>(target_id) == nullptr) {
+		r_error = "The receiving CodeEdit did not survive queued workspace activation.";
+		return false;
+	}
+	return true;
 }
 
 bool _assert_command_routing(EditorWorkflowTestDriver &p_driver, const String &p_workflow, MixedWorkspaceContext &r_context, WorkspaceLeafNode *p_script_leaf, EditorAutomationAcceptanceWorkflow::Result &r_failure) {
@@ -2903,6 +3095,164 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 #else
 	return _failure_with_message(p_driver, result.workflow, "Continuous drag overlay workflow requires an editor (TOOLS_ENABLED) build.");
 #endif
+}
+
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_cross_pane_node_to_script_drop(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "cross_pane_node_to_script_drop";
+	p_driver.begin_workflow();
+
+	MixedWorkspaceContext context;
+	Result failure;
+	if (!_load_mixed_workspace_scene(p_driver, result.workflow, context, failure) ||
+			!_add_script_tab_to_scene_pane(p_driver, result.workflow, context, failure)) {
+		return failure;
+	}
+	WorkspaceLeafNode *script_leaf = _split_script_tab_to_right(p_driver, result.workflow, context, failure);
+	if (script_leaf == nullptr) {
+		return failure;
+	}
+
+	Node *main_root = context.editor_node->get_edited_scene();
+	ScenePaneTile *main_tile = context.scene_pane->get_scene_tile();
+	SceneTreeDock *main_dock = main_tile ? main_tile->get_scene_tree_dock() : nullptr;
+	WorkspacePane *script_pane = script_leaf->get_workspace_pane();
+	ScriptLeaf *script_surface = _find_mounted_script_leaf(script_pane);
+	if (script_surface != nullptr) {
+		script_pane->on_focus_entered();
+		if (ScriptEditorView *view = script_surface->get_script_editor_view()) {
+			if (view->get_open_editor_for_path(MIXED_WORKSPACE_SCRIPT) == nullptr) {
+				view->open_file(MIXED_WORKSPACE_SCRIPT);
+			}
+		}
+		p_driver.flush_frames(20);
+	}
+	CodeEdit *target = _find_mounted_code_edit(script_pane);
+	if (main_root == nullptr || main_dock == nullptr || script_surface == nullptr || target == nullptr) {
+		return _failure_with_message(p_driver, result.workflow,
+				vformat("Could not resolve the live scene-tree and script-editor surfaces (root=%s, dock=%s, leaf=%s, code=%s).",
+						main_root != nullptr, main_dock != nullptr, script_surface != nullptr, target != nullptr));
+	}
+	script_surface->set_associated_scene_root(main_root);
+	target->set_text("extends Node2D\n\nfunc _ready() -> void:\n\tvar refs = [ ]\n");
+	context.scene_pane->on_focus_entered();
+	p_driver.flush_frames(10);
+	Node2D *drop_probe = _add_node_drop_probe(p_driver, main_root, main_dock, SNAME("DropProbe"));
+	if (drop_probe == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not create the same-scene drag source.");
+	}
+
+	String drag_error;
+	for (int repetition = 0; repetition < 2; repetition++) {
+		p_driver.set_step(vformat("pure_script_drop_%d", repetition + 1));
+		context.scene_pane->on_focus_entered();
+		p_driver.flush_frames(5);
+		target = _find_mounted_code_edit(script_pane);
+		if (!_perform_node_to_script_drag(p_driver, context.workspace, main_dock, drop_probe, target, script_leaf->get_leaf_id(), true, drag_error)) {
+			return _failure_with_message(p_driver, result.workflow, drag_error);
+		}
+		if (!p_driver.assert_no_new_errors_since_step()) {
+			return _failure_from_driver(p_driver, result.workflow);
+		}
+	}
+
+	// Add the fixture's second scene to the main pane, split it into a scene pane,
+	// then move the script tab into that pane. The result is a scene-capable mixed
+	// receiver whose active resource tab is the script, while Main remains visible
+	// in a separate source pane.
+	p_driver.set_step("build_mixed_receiver");
+	if (context.editor_node->load_scene(BOARD_SWITCH_3D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, "Could not load the secondary scene for the mixed receiver.");
+	}
+	p_driver.flush_frames(30);
+	context.workspace->sync_scene_tabs_from_editor_data();
+	p_driver.flush_frames(20);
+
+	WorkspaceLeafNode *secondary_owner_leaf = nullptr;
+	int secondary_tab_index = -1;
+	for (WorkspaceLeafNode *leaf : context.workspace->get_leaves()) {
+		WorkspacePane *pane = leaf->get_workspace_pane();
+		const int index = _find_workspace_tab_index(pane, StringName("scene"), BOARD_SWITCH_3D_SCENE);
+		if (index >= 0) {
+			secondary_owner_leaf = leaf;
+			secondary_tab_index = index;
+			break;
+		}
+	}
+	if (secondary_owner_leaf == nullptr || secondary_tab_index < 0) {
+		return _failure_with_message(p_driver, result.workflow, "Could not locate the secondary scene tab.");
+	}
+	WorkspaceLeafNode *secondary_leaf = context.workspace->handle_tab_drop(
+			secondary_owner_leaf->get_leaf_id(), secondary_tab_index, script_leaf, EditorSceneWorkspace::DROP_BOTTOM);
+	p_driver.flush_frames(40);
+	if (secondary_leaf == nullptr || secondary_leaf->get_workspace_pane() == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not split the secondary scene into a receiver pane.");
+	}
+
+	script_pane = script_leaf->get_workspace_pane();
+	const int script_tab_index = _find_workspace_tab_index(script_pane, StringName("script"), MIXED_WORKSPACE_SCRIPT);
+	WorkspaceLeafNode *mixed_leaf = script_tab_index >= 0 ? context.workspace->handle_tab_drop(
+			script_leaf->get_leaf_id(), script_tab_index, secondary_leaf, EditorSceneWorkspace::DROP_CENTER) : nullptr;
+	p_driver.flush_frames(60);
+	WorkspacePane *mixed_pane = mixed_leaf ? mixed_leaf->get_workspace_pane() : nullptr;
+	if (mixed_pane == nullptr || !_pane_has_tab(mixed_pane, StringName("scene"), BOARD_SWITCH_3D_SCENE) ||
+			!_pane_has_tab(mixed_pane, StringName("script"), MIXED_WORKSPACE_SCRIPT) ||
+			_find_workspace_tab_index(mixed_pane, StringName("script"), MIXED_WORKSPACE_SCRIPT) != mixed_pane->get_active_tab_index()) {
+		return _failure_with_message(p_driver, result.workflow, "The scene-capable mixed receiver was not constructed with its script active.");
+	}
+	script_surface = _find_mounted_script_leaf(mixed_pane);
+	if (script_surface == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "The mixed receiver did not mount its script surface.");
+	}
+	script_surface->set_associated_scene_root(main_root);
+
+	for (int repetition = 0; repetition < 2; repetition++) {
+		p_driver.set_step(vformat("mixed_pane_drop_%d", repetition + 1));
+		context.scene_pane->on_focus_entered();
+		p_driver.flush_frames(5);
+		target = _find_mounted_code_edit(mixed_pane);
+		if (!_perform_node_to_script_drag(p_driver, context.workspace, main_dock, drop_probe, target, mixed_leaf->get_leaf_id(), true, drag_error)) {
+			return _failure_with_message(p_driver, result.workflow, drag_error);
+		}
+		if (!p_driver.assert_no_new_errors_since_step()) {
+			return _failure_from_driver(p_driver, result.workflow);
+		}
+	}
+
+	// Split the foreign scene back out so its live tree and the original script
+	// are visible in separate panes, then prove the real drop is rejected.
+	p_driver.set_step("cross_scene_rejection");
+	secondary_tab_index = _find_workspace_tab_index(mixed_pane, StringName("scene"), BOARD_SWITCH_3D_SCENE);
+	WorkspaceLeafNode *foreign_leaf = secondary_tab_index >= 0 ? context.workspace->handle_tab_drop(
+			mixed_leaf->get_leaf_id(), secondary_tab_index, mixed_leaf, EditorSceneWorkspace::DROP_BOTTOM) : nullptr;
+	p_driver.flush_frames(50);
+	WorkspacePane *foreign_pane = foreign_leaf ? foreign_leaf->get_workspace_pane() : nullptr;
+	ScenePaneTile *foreign_tile = foreign_pane ? foreign_pane->get_scene_tile() : nullptr;
+	SceneTreeDock *foreign_dock = foreign_tile ? foreign_tile->get_scene_tree_dock() : nullptr;
+	Node *foreign_root = foreign_tile ? foreign_tile->get_current_scene_root() : nullptr;
+	if (foreign_pane == nullptr || foreign_dock == nullptr || foreign_root == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Could not expose the foreign scene in a separate source pane.");
+	}
+	foreign_pane->on_focus_entered();
+	p_driver.flush_frames(10);
+	Node2D *foreign_probe = _add_node_drop_probe(p_driver, foreign_root, foreign_dock, SNAME("ForeignProbe"));
+	target = _find_mounted_code_edit(mixed_pane);
+	if (foreign_probe == nullptr || !_perform_node_to_script_drag(p_driver, context.workspace, foreign_dock, foreign_probe, target, mixed_leaf->get_leaf_id(), false, drag_error)) {
+		return _failure_with_message(p_driver, result.workflow, drag_error);
+	}
+	if (!p_driver.assert_no_new_errors_since_step()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "Cross-pane node-to-script drops preserve the live script editor.";
+	Dictionary details;
+	details["pure_script_drop_count"] = 2;
+	details["mixed_pane_drop_count"] = 2;
+	details["cross_scene_rejected"] = true;
+	details["immediate_input_safe"] = true;
+	result.details = details;
+	return result;
 }
 
 EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_mixed_workspace_editing(EditorWorkflowTestDriver &p_driver) {
