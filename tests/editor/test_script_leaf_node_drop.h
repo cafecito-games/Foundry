@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "core/io/json.h"
 #include "core/object/script_language.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
@@ -39,6 +40,7 @@
 #include "scene/2d/node_2d.h"
 #include "scene/gui/control.h"
 
+#include "tests/editor/editor_workflow_test_fixtures.h"
 #include "tests/editor/test_scene_workspace.h"
 #include "tests/test_macros.h"
 
@@ -175,6 +177,45 @@ TEST_CASE("[SceneTree][Editor] cross-scene-node-drop") {
 
 	scene_a->queue_free();
 	scene_b->queue_free();
+}
+
+TEST_CASE("[Editor][SceneTree] Cross-pane node-to-script drop workflow subprocess") {
+	if (!EditorWorkflowTestFixtures::workflow_has_display()) {
+		MESSAGE("Requires a GUI display. Re-run with DISPLAY set so the editor subprocess starts.");
+		return;
+	}
+
+	const String project_path = EditorWorkflowTestFixtures::prepare_disposable_project();
+	REQUIRE_MESSAGE(!project_path.is_empty(), "Failed to prepare a temporary workflow project copy.");
+
+	List<String> arguments;
+	arguments.push_back("editor");
+	arguments.push_back("open");
+	arguments.push_back("--headless");
+	arguments.push_back("--project");
+	arguments.push_back(project_path);
+	arguments.push_back("--automation");
+	arguments.push_back("--automation-run-workflow=cross_pane_node_to_script_drop");
+
+	int exit_code = -1;
+	const String output = EditorWorkflowTestFixtures::workflow_run_subprocess(arguments, exit_code);
+	INFO("Subprocess output:\n", output);
+	const int marker = output.find("FOUNDRY_AUTOMATION_WORKFLOW");
+	REQUIRE_MESSAGE(marker >= 0, "Workflow result line was not printed.");
+	const int line_start = marker + String("FOUNDRY_AUTOMATION_WORKFLOW ").length();
+	const int line_end = output.find_char('\n', line_start);
+	const String json_text = line_end >= 0 ? output.substr(line_start, line_end - line_start) : output.substr(line_start);
+	JSON json;
+	REQUIRE_MESSAGE(json.parse(json_text.strip_edges()) == OK, "Workflow result line was not valid JSON.");
+	const Dictionary payload = json.get_data();
+	const Dictionary details = payload.get("details", Dictionary());
+	CHECK(String(payload.get("workflow", String())) == "cross_pane_node_to_script_drop");
+	CHECK_MESSAGE((bool)payload.get("ok", false), String(payload.get("message", String())));
+	CHECK((int)details.get("pure_script_drop_count", 0) == 2);
+	CHECK((int)details.get("mixed_pane_drop_count", 0) == 2);
+	CHECK((bool)details.get("cross_scene_rejected", false));
+	CHECK((bool)details.get("immediate_input_safe", false));
+	CHECK(exit_code == 0);
 }
 
 } // namespace TestScriptLeafNodeDrop

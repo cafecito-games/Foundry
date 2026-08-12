@@ -1727,7 +1727,16 @@ void Viewport::_gui_call_input(Control *p_control, const Ref<InputEvent> &p_inpu
 		Control *control = Object::cast_to<Control>(ci);
 		if (control) {
 			if (control->get_mouse_filter_with_override() != Control::MOUSE_FILTER_IGNORE) {
+				const ObjectID control_id = control->get_instance_id();
 				control->_call_gui_input(ev);
+				control = ObjectDB::get_instance<Control>(control_id);
+				if (!control) {
+					if (is_pointer_event) {
+						set_input_as_handled();
+					}
+					break;
+				}
+				ci = control;
 			}
 
 			if (!control->is_inside_tree() || control->is_set_as_top_level()) {
@@ -1864,7 +1873,15 @@ bool Viewport::_gui_drop(Control *p_at_control, Point2 p_at_pos, bool p_just_che
 	while (ci) {
 		Control *control = Object::cast_to<Control>(ci);
 		if (control) {
-			if (control->can_drop_data(p_at_pos, section_root->gui.drag_data)) {
+			const ObjectID control_id = control->get_instance_id();
+			const bool can_drop = control->can_drop_data(p_at_pos, section_root->gui.drag_data);
+			control = ObjectDB::get_instance<Control>(control_id);
+			if (!control) {
+				return false;
+			}
+			ci = control;
+
+			if (can_drop) {
 				if (!p_just_check) {
 					control->drop_data(p_at_pos, section_root->gui.drag_data);
 				}
@@ -2149,7 +2166,9 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 			ds_cursor_shape = (DisplayServer::CursorShape)cursor_shape;
 
 			if (over->can_process()) {
+				const ObjectID over_id = over->get_instance_id();
 				_gui_call_input(over, mm);
+				over = ObjectDB::get_instance<Control>(over_id);
 			}
 		}
 

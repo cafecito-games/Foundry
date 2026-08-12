@@ -8021,6 +8021,7 @@ void EditorNode::_queue_focus_tile_activation(int p_tile_id) {
 	ERR_FAIL_NULL(get_scene_workspace());
 	ERR_FAIL_NULL(get_scene_workspace()->get_leaf_by_id(p_tile_id));
 
+	_cancel_queued_script_leaf_activation();
 	pending_focus_tile_id = p_tile_id;
 	const uint64_t generation = ++pending_focus_tile_generation;
 	SceneTree *tree = get_tree();
@@ -8042,6 +8043,46 @@ void EditorNode::_activate_queued_focus_tile(int p_tile_id, uint64_t p_generatio
 		return;
 	}
 	_focus_tile_internal(p_tile_id, true);
+}
+
+void EditorNode::_cancel_queued_script_leaf_activation() {
+	if (pending_script_leaf_id >= 0) {
+		pending_script_leaf_id = -1;
+		pending_script_leaf_generation++;
+	}
+}
+
+void EditorNode::_queue_script_leaf_activation(int p_leaf_id) {
+	ERR_FAIL_NULL(get_scene_workspace());
+	WorkspaceLeafNode *leaf = get_scene_workspace()->get_leaf_by_id(p_leaf_id);
+	ERR_FAIL_NULL(leaf);
+	ERR_FAIL_NULL(leaf->get_workspace_pane());
+
+	_cancel_queued_focus_tile_activation();
+	pending_script_leaf_id = p_leaf_id;
+	const uint64_t generation = ++pending_script_leaf_generation;
+	SceneTree *tree = get_tree();
+	if (tree) {
+		tree->connect(SNAME("process_frame"),
+				callable_mp(this, &EditorNode::_activate_queued_script_leaf).bind(p_leaf_id, generation),
+				CONNECT_ONE_SHOT);
+	} else {
+		callable_mp(this, &EditorNode::_activate_queued_script_leaf).call_deferred(p_leaf_id, generation);
+	}
+}
+
+void EditorNode::_activate_queued_script_leaf(int p_leaf_id, uint64_t p_generation) {
+	if (p_generation != pending_script_leaf_generation || pending_script_leaf_id != p_leaf_id) {
+		return;
+	}
+	pending_script_leaf_id = -1;
+	EditorSceneWorkspace *workspace = get_scene_workspace();
+	WorkspaceLeafNode *leaf = workspace ? workspace->get_leaf_by_id(p_leaf_id) : nullptr;
+	WorkspacePane *pane = leaf ? leaf->get_workspace_pane() : nullptr;
+	if (pane == nullptr || !pane->is_script_pane() || pane->get_script_leaf() == nullptr) {
+		return;
+	}
+	_complete_script_leaf_focus(p_leaf_id);
 }
 
 void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_already_focused) {
@@ -8118,6 +8159,7 @@ void EditorNode::_focus_tile(int p_tile_id) {
 			pending_focus_tile_id == p_tile_id &&
 			get_scene_workspace()->get_focused_leaf_id() == p_tile_id;
 	_cancel_queued_focus_tile_activation();
+	_cancel_queued_script_leaf_activation();
 	_focus_tile_internal(p_tile_id, should_activate_content);
 }
 
@@ -8132,15 +8174,16 @@ void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
 	}
 	if (WorkspacePane *pane = leaf->get_workspace_pane()) {
 		if (pane->is_script_pane()) {
-			_cancel_queued_focus_tile_activation();
 			get_scene_workspace()->set_focused_leaf(p_leaf_id);
 			Viewport *editor_viewport = get_viewport();
 			if (editor_viewport && editor_viewport->gui_is_dragging()) {
 				// Workspace focus must land before the drop applies, but reparenting the
 				// shared script surface mid-drag/drop can tear down the active drop target.
-				callable_mp(this, &EditorNode::_complete_script_leaf_focus).call_deferred(p_leaf_id);
+				_queue_script_leaf_activation(p_leaf_id);
 				return;
 			}
+			_cancel_queued_focus_tile_activation();
+			_cancel_queued_script_leaf_activation();
 			_complete_script_leaf_focus(p_leaf_id);
 		}
 	}
@@ -8149,6 +8192,7 @@ void EditorNode::_on_leaf_focus_requested(int p_leaf_id) {
 void EditorNode::_focus_script_leaf(int p_leaf_id) {
 	ERR_FAIL_NULL(get_scene_workspace());
 	_cancel_queued_focus_tile_activation();
+	_cancel_queued_script_leaf_activation();
 	get_scene_workspace()->set_focused_leaf(p_leaf_id);
 	_complete_script_leaf_focus(p_leaf_id);
 }

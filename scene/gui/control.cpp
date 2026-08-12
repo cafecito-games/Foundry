@@ -2284,20 +2284,31 @@ real_t Control::get_stretch_ratio() const {
 // Input events.
 
 void Control::_call_gui_input(const Ref<InputEvent> &p_event) {
+	const ObjectID control_id = get_instance_id();
+	Control *control = this;
+
 	if (p_event->get_device() != InputEvent::DEVICE_ID_INTERNAL) {
 		emit_signal(SceneStringName(gui_input), p_event); // Signal should be first, so it's possible to override an event (and then accept it).
+		control = ObjectDB::get_instance<Control>(control_id);
+		if (!control) {
+			return;
+		}
 	}
-	if (!is_inside_tree() || get_viewport()->is_input_handled()) {
+	if (!control->is_inside_tree() || control->get_viewport()->is_input_handled()) {
 		return; // Input was handled, abort.
 	}
 
 	if (p_event->get_device() != InputEvent::DEVICE_ID_INTERNAL) {
-		FOUNDRY_VIRTUAL_CALL(_gui_input, p_event);
+		FOUNDRY_VIRTUAL_CALL_PTR(control, _gui_input, p_event);
+		control = ObjectDB::get_instance<Control>(control_id);
+		if (!control) {
+			return;
+		}
 	}
-	if (!is_inside_tree() || get_viewport()->is_input_handled()) {
+	if (!control->is_inside_tree() || control->get_viewport()->is_input_handled()) {
 		return; // Input was handled, abort.
 	}
-	gui_input(p_event);
+	control->gui_input(p_event);
 }
 
 void Control::gui_input(const Ref<InputEvent> &p_event) {

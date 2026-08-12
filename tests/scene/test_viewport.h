@@ -188,6 +188,76 @@ public:
 	}
 };
 
+class GuiInputLifetimeTarget : public Control {
+	FOUNDRY_CLASS(GuiInputLifetimeTarget, Control);
+
+public:
+	int *native_input_count = nullptr;
+	bool delete_during_native_input = false;
+
+	void gui_input(const Ref<InputEvent> &p_event) override {
+		if (native_input_count) {
+			(*native_input_count)++;
+		}
+		if (delete_during_native_input) {
+			memdelete(this);
+		}
+	}
+};
+
+class GuiInputLifetimeDestroyer : public Object {
+	FOUNDRY_CLASS(GuiInputLifetimeDestroyer, Object);
+
+public:
+	ObjectID target_id;
+
+	void destroy_target(const Ref<InputEvent> &p_event) {
+		if (GuiInputLifetimeTarget *target = ObjectDB::get_instance<GuiInputLifetimeTarget>(target_id)) {
+			memdelete(target);
+		}
+	}
+};
+
+class GuiInputLifetimeUnhandledObserver : public Node {
+	FOUNDRY_CLASS(GuiInputLifetimeUnhandledObserver, Node);
+
+public:
+	int input_count = 0;
+
+	void unhandled_input(const Ref<InputEvent> &p_event) override {
+		input_count++;
+	}
+};
+
+class DropLifetimeTarget : public Control {
+	FOUNDRY_CLASS(DropLifetimeTarget, Control);
+
+public:
+	bool delete_during_validation = false;
+	bool delete_during_drop = false;
+	int *validation_count = nullptr;
+	int *drop_count = nullptr;
+
+	bool can_drop_data(const Point2 &p_point, const Variant &p_data) const override {
+		if (validation_count) {
+			(*validation_count)++;
+		}
+		if (delete_during_validation) {
+			memdelete(const_cast<DropLifetimeTarget *>(this));
+		}
+		return true;
+	}
+
+	void drop_data(const Point2 &p_point, const Variant &p_data) override {
+		if (drop_count) {
+			(*drop_count)++;
+		}
+		if (delete_during_drop) {
+			memdelete(this);
+		}
+	}
+};
+
 TEST_CASE("[SceneTree][Viewport] Controls and InputEvent handling") {
 	DragStart *node_a = memnew(DragStart);
 	NotificationControlViewport *node_b = memnew(NotificationControlViewport);
@@ -1540,6 +1610,128 @@ TEST_CASE("[SceneTree][Viewport] Controls and InputEvent handling") {
 	memdelete(node_c);
 	memdelete(node_b);
 	memdelete(node_a);
+}
+
+TEST_CASE("[SceneTree][Viewport] GUI callback target lifetime - signal deletion") {
+	Window *root = SceneTree::get_singleton()->get_root();
+	int native_input_count = 0;
+	GuiInputLifetimeTarget *target = memnew(GuiInputLifetimeTarget);
+	target->set_position(Point2i(40, 40));
+	target->set_size(Point2i(80, 40));
+	target->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	target->native_input_count = &native_input_count;
+	root->add_child(target);
+
+	GuiInputLifetimeDestroyer destroyer;
+	destroyer.target_id = target->get_instance_id();
+	const ObjectID target_id = destroyer.target_id;
+	target->connect(SceneStringName(gui_input), callable_mp(&destroyer, &GuiInputLifetimeDestroyer::destroy_target));
+
+	ERR_PRINT_OFF;
+	SEND_GUI_MOUSE_MOTION_EVENT(Point2i(60, 60), MouseButtonMask::NONE, Key::NONE);
+	ERR_PRINT_ON;
+
+	CHECK(ObjectDB::get_instance(target_id) == nullptr);
+	CHECK(native_input_count == 0);
+}
+
+TEST_CASE("[SceneTree][Viewport] GUI callback target lifetime - native deletion") {
+	Window *root = SceneTree::get_singleton()->get_root();
+	GuiInputLifetimeUnhandledObserver *unhandled_observer = memnew(GuiInputLifetimeUnhandledObserver);
+	unhandled_observer->set_process_unhandled_input(true);
+	root->add_child(unhandled_observer);
+	int parent_input_count = 0;
+	int child_input_count = 0;
+	GuiInputLifetimeTarget *parent = memnew(GuiInputLifetimeTarget);
+	parent->set_position(Point2i(140, 40));
+	parent->set_size(Point2i(100, 60));
+	parent->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	parent->native_input_count = &parent_input_count;
+	root->add_child(parent);
+
+	GuiInputLifetimeTarget *child = memnew(GuiInputLifetimeTarget);
+	child->set_size(Point2i(80, 40));
+	child->set_mouse_filter(Control::MOUSE_FILTER_PASS);
+	child->native_input_count = &child_input_count;
+	child->delete_during_native_input = true;
+	parent->add_child(child);
+	const ObjectID child_id = child->get_instance_id();
+
+	SEND_GUI_MOUSE_MOTION_EVENT(Point2i(160, 60), MouseButtonMask::NONE, Key::NONE);
+
+	CHECK(ObjectDB::get_instance(child_id) == nullptr);
+	CHECK(child_input_count == 1);
+	CHECK(parent_input_count == 0);
+	CHECK(unhandled_observer->input_count == 0);
+	memdelete(parent);
+	memdelete(unhandled_observer);
+}
+
+TEST_CASE("[SceneTree][Viewport] GUI callback target lifetime - validation deletion") {
+	Window *root = SceneTree::get_singleton()->get_root();
+	int validation_count = 0;
+	int drop_count = 0;
+	DragStart *source = memnew(DragStart);
+	source->set_position(Point2i(40, 140));
+	source->set_size(Point2i(80, 40));
+	source->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	root->add_child(source);
+
+	DropLifetimeTarget *target = memnew(DropLifetimeTarget);
+	target->set_position(Point2i(240, 140));
+	target->set_size(Point2i(80, 40));
+	target->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	target->delete_during_validation = true;
+	target->validation_count = &validation_count;
+	target->drop_count = &drop_count;
+	root->add_child(target);
+	const ObjectID target_id = target->get_instance_id();
+
+	SEND_GUI_MOUSE_BUTTON_EVENT(Point2i(60, 160), MouseButton::LEFT, MouseButtonMask::LEFT, Key::NONE);
+	SEND_GUI_MOUSE_MOTION_EVENT(Point2i(80, 160), MouseButtonMask::LEFT, Key::NONE);
+	CHECK(root->gui_is_dragging());
+	SEND_GUI_MOUSE_MOTION_EVENT(Point2i(260, 160), MouseButtonMask::LEFT, Key::NONE);
+	CHECK(validation_count == 1);
+	SEND_GUI_MOUSE_BUTTON_RELEASED_EVENT(Point2i(400, 160), MouseButton::LEFT, MouseButtonMask::NONE, Key::NONE);
+
+	CHECK(ObjectDB::get_instance(target_id) == nullptr);
+	CHECK(drop_count == 0);
+	CHECK_FALSE(root->gui_is_dragging());
+	CHECK_FALSE(root->gui_is_drag_successful());
+	memdelete(source);
+}
+
+TEST_CASE("[SceneTree][Viewport] GUI callback target lifetime - drop deletion") {
+	Window *root = SceneTree::get_singleton()->get_root();
+	int validation_count = 0;
+	int drop_count = 0;
+	DragStart *source = memnew(DragStart);
+	source->set_position(Point2i(40, 240));
+	source->set_size(Point2i(80, 40));
+	source->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	root->add_child(source);
+
+	DropLifetimeTarget *target = memnew(DropLifetimeTarget);
+	target->set_position(Point2i(240, 240));
+	target->set_size(Point2i(80, 40));
+	target->set_mouse_filter(Control::MOUSE_FILTER_STOP);
+	target->delete_during_drop = true;
+	target->validation_count = &validation_count;
+	target->drop_count = &drop_count;
+	root->add_child(target);
+	const ObjectID target_id = target->get_instance_id();
+
+	SEND_GUI_MOUSE_BUTTON_EVENT(Point2i(60, 260), MouseButton::LEFT, MouseButtonMask::LEFT, Key::NONE);
+	SEND_GUI_MOUSE_MOTION_EVENT(Point2i(80, 260), MouseButtonMask::LEFT, Key::NONE);
+	CHECK(root->gui_is_dragging());
+	SEND_GUI_MOUSE_MOTION_EVENT(Point2i(260, 260), MouseButtonMask::LEFT, Key::NONE);
+	SEND_GUI_MOUSE_BUTTON_RELEASED_EVENT(Point2i(260, 260), MouseButton::LEFT, MouseButtonMask::NONE, Key::NONE);
+
+	CHECK(ObjectDB::get_instance(target_id) == nullptr);
+	CHECK(drop_count == 1);
+	CHECK(root->gui_is_drag_successful());
+	CHECK_FALSE(root->gui_is_dragging());
+	memdelete(source);
 }
 
 TEST_CASE("[SceneTree][Viewport] Control mouse cursor shape") {
