@@ -1671,31 +1671,58 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_type_variation("BoardRail", "PanelContainer");
 		p_theme->set_constant("segment_horizontal_padding", "BoardRail", Math::round(24 * EDSCALE));
 		p_theme->set_constant("segment_maximum_width", "BoardRail", Math::round(180 * EDSCALE));
+		p_theme->set_constant("active_indicator_width", "BoardRail", Math::round(24 * EDSCALE));
+		p_theme->set_constant("active_indicator_height", "BoardRail", Math::round(2 * EDSCALE));
+		p_theme->set_constant("menu_divider_width", "BoardRail", MAX(1, Math::round(EDSCALE)));
+		p_theme->set_constant("menu_divider_height", "BoardRail", Math::round(18 * EDSCALE));
+		p_theme->set_color("active_indicator_color", "BoardRail", p_config.accent_color);
+		Color board_rail_divider_color = p_config.contrast_color_1;
+		board_rail_divider_color.a *= 0.45;
+		p_theme->set_color("menu_divider_color", "BoardRail", board_rail_divider_color);
 		Ref<StyleBoxFlat> board_rail_panel = p_config.content_panel_style->duplicate();
-		board_rail_panel->set_bg_color(p_config.dark_color_2.lerp(p_config.base_color, 0.12));
-		board_rail_panel->set_border_color(p_config.contrast_color_1);
+		board_rail_panel->set_bg_color(p_config.dark_color_2.lerp(p_config.base_color, 0.18));
+		Color board_rail_border_color = p_config.contrast_color_1;
+		board_rail_border_color.a *= 0.4;
+		board_rail_panel->set_border_color(board_rail_border_color);
 		board_rail_panel->set_border_width_all(MAX(1, Math::round(EDSCALE)));
-		board_rail_panel->set_corner_radius_all(Math::round(8 * EDSCALE));
-		board_rail_panel->set_content_margin_all(Math::round(3 * EDSCALE));
+		board_rail_panel->set_corner_radius_all(Math::round(12 * EDSCALE));
+		board_rail_panel->set_content_margin_all(Math::round(4 * EDSCALE));
 		p_theme->set_stylebox(SceneStringName(panel), "BoardRail", board_rail_panel);
 
+		p_theme->set_type_variation("BoardRailActiveSurface", "Panel");
+		Ref<StyleBoxFlat> board_rail_active_surface = p_config.button_style_pressed->duplicate();
+		board_rail_active_surface->set_border_width_all(0);
+		board_rail_active_surface->set_corner_radius_all(Math::round(9 * EDSCALE));
+		board_rail_active_surface->set_content_margin_all(0);
+		board_rail_active_surface->set_shadow_size(0);
+		p_theme->set_stylebox(SceneStringName(panel), "BoardRailActiveSurface", board_rail_active_surface);
+
 		Ref<StyleBoxFlat> board_rail_button_pressed = menu_transparent_style->duplicate();
-		board_rail_button_pressed->set_border_color(p_config.accent_color);
-		board_rail_button_pressed->set_border_width(SIDE_BOTTOM, MAX(2, Math::round(2 * EDSCALE)));
+		board_rail_button_pressed->set_border_width_all(0);
+		Ref<StyleBoxFlat> board_rail_button_hover = p_config.button_style_hover->duplicate();
+		board_rail_button_hover->set_border_width_all(0);
+		board_rail_button_hover->set_corner_radius_all(Math::round(8 * EDSCALE));
 
 		p_theme->set_type_variation("BoardRailButton", "Button");
 		p_theme->set_stylebox(CoreStringName(normal), "BoardRailButton", menu_transparent_style);
-		p_theme->set_stylebox(SceneStringName(hover), "BoardRailButton", p_config.button_style_hover);
+		p_theme->set_stylebox(SceneStringName(hover), "BoardRailButton", board_rail_button_hover);
 		p_theme->set_stylebox(SceneStringName(pressed), "BoardRailButton", board_rail_button_pressed);
 		p_theme->set_stylebox("hover_pressed", "BoardRailButton", board_rail_button_pressed);
 		p_theme->set_type_variation("BoardRailMenuButton", "FlatMenuButton");
+		p_theme->set_stylebox(CoreStringName(normal), "BoardRailMenuButton", menu_transparent_style);
+		p_theme->set_stylebox(SceneStringName(hover), "BoardRailMenuButton", board_rail_button_hover);
+		p_theme->set_stylebox(SceneStringName(pressed), "BoardRailMenuButton", board_rail_button_pressed);
+		p_theme->set_stylebox("hover_pressed", "BoardRailMenuButton", board_rail_button_hover);
 
+		Ref<StyleBoxFlat> scene_mode_button_pressed = menu_transparent_style->duplicate();
+		scene_mode_button_pressed->set_border_color(p_config.accent_color);
+		scene_mode_button_pressed->set_border_width(SIDE_BOTTOM, MAX(2, Math::round(2 * EDSCALE)));
 		p_theme->set_type_variation("SceneModeSwitcher", "HBoxContainer");
 		p_theme->set_type_variation("SceneModeButton", "Button");
 		p_theme->set_stylebox(CoreStringName(normal), "SceneModeButton", menu_transparent_style);
 		p_theme->set_stylebox(SceneStringName(hover), "SceneModeButton", p_config.button_style_hover);
-		p_theme->set_stylebox(SceneStringName(pressed), "SceneModeButton", board_rail_button_pressed);
-		p_theme->set_stylebox("hover_pressed", "SceneModeButton", board_rail_button_pressed);
+		p_theme->set_stylebox(SceneStringName(pressed), "SceneModeButton", scene_mode_button_pressed);
+		p_theme->set_stylebox("hover_pressed", "SceneModeButton", scene_mode_button_pressed);
 
 		p_theme->set_type_variation("MainMenuBar", "FlatMenuButton");
 		p_theme->set_stylebox(CoreStringName(normal), "MainMenuBar", menu_transparent_style);

@@ -40,6 +40,7 @@
 #include "scene/animation/tween.h"
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
+#include "scene/gui/color_rect.h"
 #include "scene/gui/container.h"
 #include "scene/gui/line_edit.h"
 #include "scene/gui/panel.h"
@@ -214,6 +215,35 @@ void EditorBoardSwitcher::_set_active_surface_rect(const Rect2 &p_rect) {
 	}
 	active_surface->set_position(p_rect.position);
 	active_surface->set_size(p_rect.size);
+	if (active_indicator) {
+		const Size2 indicator_size(
+				get_theme_constant("active_indicator_width"),
+				get_theme_constant("active_indicator_height"));
+		active_indicator->set_size(indicator_size);
+		active_indicator->set_position(Point2(
+				(p_rect.size.x - indicator_size.x) * 0.5,
+				p_rect.size.y - indicator_size.y));
+	}
+}
+
+void EditorBoardSwitcher::_sync_menu_divider() {
+	if (!rail_stack || !menu_divider || !menu_button || !menu_button->is_visible_in_tree()) {
+		if (menu_divider) {
+			menu_divider->hide();
+		}
+		return;
+	}
+
+	const Size2 divider_size(
+			get_theme_constant("menu_divider_width"),
+			get_theme_constant("menu_divider_height"));
+	const float separation = rail_hbox->get_theme_constant(SNAME("separation"));
+	const float menu_x = menu_button->get_global_position().x - rail_stack->get_global_position().x;
+	menu_divider->set_size(divider_size);
+	menu_divider->set_position(Point2(
+			menu_x - separation * 0.5 - divider_size.x * 0.5,
+			(rail_stack->get_size().y - divider_size.y) * 0.5));
+	menu_divider->show();
 }
 
 void EditorBoardSwitcher::_queue_active_surface_sync(bool p_animate) {
@@ -239,6 +269,7 @@ void EditorBoardSwitcher::_sync_active_surface() {
 	if (!is_inside_tree() || !strip || !rail_stack || !active_surface) {
 		return;
 	}
+	_sync_menu_divider();
 	Button *button = _board_button_at(strip->get_active_index());
 	if (!button || !button->is_visible_in_tree() || button->get_size().is_zero_approx()) {
 		active_surface->hide();
@@ -293,6 +324,12 @@ void EditorBoardSwitcher::_refresh_theme() {
 	}
 	if (menu_button) {
 		menu_button->set_button_icon(get_editor_theme_icon(SNAME("GuiTabMenuHl")));
+	}
+	if (active_indicator) {
+		active_indicator->set_color(get_theme_color("active_indicator_color"));
+	}
+	if (menu_divider) {
+		menu_divider->set_color(get_theme_color("menu_divider_color"));
 	}
 	for (Button *button : board_buttons) {
 		if (button) {
@@ -583,6 +620,17 @@ EditorBoardSwitcher::EditorBoardSwitcher() {
 	active_surface->set_theme_type_variation("BoardRailActiveSurface");
 	active_surface->hide();
 	rail_stack->add_child(active_surface);
+
+	active_indicator = memnew(ColorRect);
+	active_indicator->set_name("ActiveIndicator");
+	active_indicator->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	active_surface->add_child(active_indicator);
+
+	menu_divider = memnew(ColorRect);
+	menu_divider->set_name("MenuDivider");
+	menu_divider->set_mouse_filter(Control::MOUSE_FILTER_IGNORE);
+	menu_divider->hide();
+	rail_stack->add_child(menu_divider);
 
 	rail_hbox = memnew(HBoxContainer);
 	rail_hbox->add_theme_constant_override(SNAME("separation"), MAX(1, Math::round(EDSCALE)));

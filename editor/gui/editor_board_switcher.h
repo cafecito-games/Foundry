@@ -35,6 +35,7 @@
 #include "scene/gui/panel_container.h"
 
 class Button;
+class ColorRect;
 class Control;
 class EditorBoardActionsMenu;
 class EditorBoardStrip;
@@ -63,6 +64,8 @@ class EditorBoardSwitcher : public PanelContainer {
 	Control *rail_stack = nullptr;
 	HBoxContainer *rail_hbox = nullptr;
 	Panel *active_surface = nullptr;
+	ColorRect *active_indicator = nullptr;
+	ColorRect *menu_divider = nullptr;
 	Ref<Tween> active_surface_tween;
 	Rect2 active_surface_tween_target_rect;
 	EditorBoardActionsMenu *actions_menu = nullptr;
@@ -93,6 +96,7 @@ class EditorBoardSwitcher : public PanelContainer {
 	void _queue_active_surface_layout_sync();
 	void _sync_active_surface();
 	void _set_active_surface_rect(const Rect2 &p_rect);
+	void _sync_menu_divider();
 	void _stop_active_surface_tween();
 	void _on_board_button_pressed(int p_index);
 	void _on_menu_board_requested(ObjectID p_strip_id, int p_index);

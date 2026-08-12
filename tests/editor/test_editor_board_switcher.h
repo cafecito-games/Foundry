@@ -51,6 +51,7 @@
 #include "scene/gui/line_edit.h"
 #include "scene/main/window.h"
 #include "scene/resources/style_box.h"
+#include "scene/resources/style_box_flat.h"
 
 #include "tests/test_macros.h"
 
@@ -202,6 +203,14 @@ struct BoardSwitcherHarness {
 		return Object::cast_to<Control>(switcher->find_child("ActiveSurface", true, false));
 	}
 
+	Control *active_indicator() const {
+		return Object::cast_to<Control>(switcher->find_child("ActiveIndicator", true, false));
+	}
+
+	Control *menu_divider() const {
+		return Object::cast_to<Control>(switcher->find_child("MenuDivider", true, false));
+	}
+
 	Rect2 active_button_rect_in_surface_parent() const {
 		Control *surface = active_surface();
 		Button *button = board_button(strip->get_active_index());
@@ -268,6 +277,34 @@ TEST_CASE("[Editor][BoardSwitcher] Active surface targets the selected board") {
 		return;
 	}
 	CHECK(surface->get_rect() == harness.active_button_rect_in_surface_parent());
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Active indicator and menu divider use themed geometry") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+
+	Control *surface = harness.active_surface();
+	Control *indicator = harness.active_indicator();
+	Control *divider = harness.menu_divider();
+	REQUIRE(surface != nullptr);
+	REQUIRE(indicator != nullptr);
+	REQUIRE(divider != nullptr);
+	if (!surface || !indicator || !divider) {
+		harness.unmount();
+		return;
+	}
+
+	CHECK(indicator->get_parent() == surface);
+	CHECK(indicator->get_size() == Size2(harness.switcher->get_theme_constant("active_indicator_width"), harness.switcher->get_theme_constant("active_indicator_height")));
+	CHECK(indicator->get_position().x == doctest::Approx((surface->get_size().x - indicator->get_size().x) * 0.5));
+	CHECK(indicator->get_position().y == doctest::Approx(surface->get_size().y - indicator->get_size().y));
+	CHECK(divider->get_size() == Size2(harness.switcher->get_theme_constant("menu_divider_width"), harness.switcher->get_theme_constant("menu_divider_height")));
+	Control *divider_parent = Object::cast_to<Control>(divider->get_parent());
+	REQUIRE(divider_parent != nullptr);
+	CHECK(divider->get_position().y == doctest::Approx((divider_parent->get_size().y - divider->get_size().y) * 0.5));
+	CHECK(divider->get_position().x < harness.menu_button()->get_position().x);
 
 	harness.unmount();
 }
@@ -697,7 +734,7 @@ TEST_CASE("[Editor][BoardSwitcher] Theme changes preserve an in-progress rename"
 	harness.unmount();
 }
 
-TEST_CASE("[Editor][Theme] board rail pressed styles preserve resolved normal margins") {
+TEST_CASE("[Editor][Theme] board rail exposes Quiet Precision resources") {
 	BoardRailEditorScaleGuard scale_guard(2.0f);
 	for (const String &style : { String("Classic"), String("Modern") }) {
 		CAPTURE(style);
@@ -706,17 +743,34 @@ TEST_CASE("[Editor][Theme] board rail pressed styles preserve resolved normal ma
 		REQUIRE(theme.is_valid());
 
 		Ref<StyleBox> normal = theme->get_stylebox(SNAME("normal"), "BoardRailButton");
-		Ref<StyleBox> board_pressed = theme->get_stylebox(SceneStringName(pressed), "BoardRailButton");
+		Ref<StyleBoxFlat> board_pressed = theme->get_stylebox(SceneStringName(pressed), "BoardRailButton");
 		Ref<StyleBox> scene_pressed = theme->get_stylebox(SceneStringName(pressed), "SceneModeButton");
+		Ref<StyleBoxFlat> rail_panel = theme->get_stylebox(SceneStringName(panel), "BoardRail");
+		Ref<StyleBoxFlat> active_surface = theme->get_stylebox(SceneStringName(panel), "BoardRailActiveSurface");
 		REQUIRE(normal.is_valid());
 		REQUIRE(board_pressed.is_valid());
 		REQUIRE(scene_pressed.is_valid());
+		REQUIRE(rail_panel.is_valid());
+		REQUIRE(active_surface.is_valid());
+		if (normal.is_null() || board_pressed.is_null() || scene_pressed.is_null() || rail_panel.is_null() || active_surface.is_null()) {
+			continue;
+		}
 
 		for (Side side : { SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM }) {
 			CAPTURE(side);
 			CHECK(board_pressed->get_content_margin(side) == doctest::Approx(normal->get_content_margin(side)));
 			CHECK(scene_pressed->get_content_margin(side) == doctest::Approx(normal->get_content_margin(side)));
 		}
+		CHECK(board_pressed->get_bg_color().a == doctest::Approx(0.0));
+		CHECK(rail_panel->get_corner_radius(CORNER_TOP_LEFT) == Math::round(12 * EDSCALE));
+		CHECK(active_surface->get_corner_radius(CORNER_TOP_LEFT) == Math::round(9 * EDSCALE));
+		CHECK(theme->get_constant("active_indicator_width", "BoardRail") == Math::round(24 * EDSCALE));
+		CHECK(theme->get_constant("active_indicator_height", "BoardRail") == Math::round(2 * EDSCALE));
+		CHECK(theme->get_constant("active_indicator_width", "BoardRail") < theme->get_constant("segment_maximum_width", "BoardRail"));
+		CHECK(theme->get_constant("menu_divider_width", "BoardRail") == MAX(1, Math::round(EDSCALE)));
+		CHECK(theme->get_constant("menu_divider_height", "BoardRail") == Math::round(18 * EDSCALE));
+		CHECK(theme->get_color("active_indicator_color", "BoardRail").a > 0.0f);
+		CHECK(theme->get_color("menu_divider_color", "BoardRail").a > 0.0f);
 	}
 }
 
