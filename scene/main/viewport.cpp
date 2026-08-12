@@ -2163,7 +2163,9 @@ void Viewport::_gui_input_event(Ref<InputEvent> p_event) {
 			ds_cursor_shape = (DisplayServer::CursorShape)cursor_shape;
 
 			if (over->can_process()) {
+				const ObjectID over_id = over->get_instance_id();
 				_gui_call_input(over, mm);
+				over = ObjectDB::get_instance<Control>(over_id);
 			}
 		}
 
