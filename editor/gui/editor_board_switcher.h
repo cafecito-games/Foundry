@@ -40,6 +40,8 @@ class EditorBoardActionsMenu;
 class EditorBoardStrip;
 class HBoxContainer;
 class LineEdit;
+class Panel;
+class Tween;
 
 /**
  * Title-bar chrome for switching between boards: one button per board and a
@@ -58,13 +60,19 @@ class EditorBoardSwitcher : public PanelContainer {
 	FOUNDRY_CLASS(EditorBoardSwitcher, PanelContainer);
 
 	EditorBoardStrip *strip = nullptr;
+	Control *rail_stack = nullptr;
 	HBoxContainer *rail_hbox = nullptr;
+	Panel *active_surface = nullptr;
+	Ref<Tween> active_surface_tween;
+	Rect2 active_surface_tween_target_rect;
 	EditorBoardActionsMenu *actions_menu = nullptr;
 	Button *menu_button = nullptr;
 	Control *resize_parent = nullptr;
 	bool compact = false;
 	bool compact_update_queued = false;
 	bool preserve_rename_on_compact_update = false;
+	bool active_surface_sync_queued = false;
+	bool animate_pending_active_surface_sync = false;
 	// Identity-keyed rather than child-index-keyed: rebuilds free and recreate buttons,
 	// and the owned actions menu is a sibling that must not participate in board indexing.
 	Vector<Button *> board_buttons;
@@ -78,7 +86,14 @@ class EditorBoardSwitcher : public PanelContainer {
 
 	void _rebuild();
 	void _refresh_theme();
+	void _refresh_rail_stack_minimum();
 	void _refresh_board_button_minimum(Button *p_button);
+	void _on_active_board_changed(int p_index);
+	void _queue_active_surface_sync(bool p_animate);
+	void _queue_active_surface_layout_sync();
+	void _sync_active_surface();
+	void _set_active_surface_rect(const Rect2 &p_rect);
+	void _stop_active_surface_tween();
 	void _on_board_button_pressed(int p_index);
 	void _on_menu_board_requested(ObjectID p_strip_id, int p_index);
 	void _on_board_button_gui_input(const Ref<InputEvent> &p_event, int p_index);

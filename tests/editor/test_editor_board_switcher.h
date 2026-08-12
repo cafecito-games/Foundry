@@ -43,6 +43,8 @@
 #include "core/object/message_queue.h"
 #include "core/string/translation_server.h"
 
+#include "servers/display/display_server.h"
+
 #include "scene/gui/box_container.h"
 #include "scene/gui/button.h"
 #include "scene/gui/control.h"
@@ -72,6 +74,22 @@ static BoardRequestedRecorder board_requested_recorder;
 
 static void record_board_requested(int p_index) {
 	board_requested_recorder.indices.push_back(p_index);
+}
+
+static LineEdit *find_line_edit_outside(Node *p_node, Node *p_excluded_subtree) {
+	for (int i = 0; i < p_node->get_child_count(); i++) {
+		Node *child = p_node->get_child(i);
+		if (child == p_excluded_subtree) {
+			continue;
+		}
+		if (LineEdit *edit = Object::cast_to<LineEdit>(child)) {
+			return edit;
+		}
+		if (LineEdit *edit = find_line_edit_outside(child, p_excluded_subtree)) {
+			return edit;
+		}
+	}
+	return nullptr;
 }
 
 struct BoardRailEditorScaleGuard {
@@ -180,6 +198,23 @@ struct BoardSwitcherHarness {
 		return switcher->get_menu_button();
 	}
 
+	Control *active_surface() const {
+		return Object::cast_to<Control>(switcher->find_child("ActiveSurface", true, false));
+	}
+
+	Rect2 active_button_rect_in_surface_parent() const {
+		Control *surface = active_surface();
+		Button *button = board_button(strip->get_active_index());
+		if (!surface || !button) {
+			return Rect2();
+		}
+		Control *surface_parent = Object::cast_to<Control>(surface->get_parent());
+		if (!surface_parent) {
+			return Rect2();
+		}
+		return Rect2(button->get_global_position() - surface_parent->get_global_position(), button->get_size());
+	}
+
 	void right_click(Button *p_button) const {
 		Ref<InputEventMouseButton> event;
 		event.instantiate();
@@ -197,18 +232,7 @@ struct BoardSwitcherHarness {
 	}
 
 	LineEdit *find_rename_edit() const {
-		for (int i = 0; i < switcher->get_child_count(); i++) {
-			Node *child = switcher->get_child(i);
-			if (LineEdit *edit = Object::cast_to<LineEdit>(child)) {
-				return edit;
-			}
-			for (int j = 0; j < child->get_child_count(); j++) {
-				if (LineEdit *edit = Object::cast_to<LineEdit>(child->get_child(j))) {
-					return edit;
-				}
-			}
-		}
-		return nullptr;
+		return find_line_edit_outside(switcher, switcher->get_actions_menu());
 	}
 
 	// Finds a board button by its visible label rather than its position, so callers can
@@ -232,6 +256,68 @@ struct BoardSwitcherHarness {
 		p_button->emit_signal(SceneStringName(gui_input), event);
 	}
 };
+
+TEST_CASE("[Editor][BoardSwitcher] Active surface targets the selected board") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+
+	Control *surface = harness.active_surface();
+	REQUIRE(surface != nullptr);
+	if (!surface) {
+		harness.unmount();
+		return;
+	}
+	CHECK(surface->get_rect() == harness.active_button_rect_in_surface_parent());
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Active surface glides unless the system reduces motion") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("Second");
+
+	Control *surface = harness.active_surface();
+	REQUIRE(surface != nullptr);
+	if (!surface) {
+		harness.unmount();
+		return;
+	}
+	harness.strip->set_active_board(1);
+	harness.pump(0.001);
+
+	const Rect2 target = harness.active_button_rect_in_surface_parent();
+	if (DisplayServer::get_singleton()->accessibility_should_reduce_animation() == 1) {
+		CHECK(surface->get_rect() == target);
+	} else {
+		CHECK(surface->get_rect() != target);
+		harness.pump(0.2);
+		CHECK(surface->get_rect() == target);
+	}
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Structural rebuild snaps an active surface glide") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.strip->add_board("Second");
+
+	Control *surface = harness.active_surface();
+	REQUIRE(surface != nullptr);
+	if (!surface) {
+		harness.unmount();
+		return;
+	}
+	harness.strip->set_active_board(1);
+	harness.pump(0.001);
+	harness.strip->add_board("Third");
+	harness.pump();
+
+	CHECK(surface->get_rect() == harness.active_button_rect_in_surface_parent());
+
+	harness.unmount();
+}
 
 TEST_CASE("[Editor][BoardSwitcher] Rail compacts without losing active board") {
 	BoardSwitcherHarness harness;
