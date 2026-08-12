@@ -3192,7 +3192,8 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	script_pane = script_leaf->get_workspace_pane();
 	const int script_tab_index = _find_workspace_tab_index(script_pane, StringName("script"), MIXED_WORKSPACE_SCRIPT);
 	WorkspaceLeafNode *mixed_leaf = script_tab_index >= 0 ? context.workspace->handle_tab_drop(
-			script_leaf->get_leaf_id(), script_tab_index, secondary_leaf, EditorSceneWorkspace::DROP_CENTER) : nullptr;
+																	script_leaf->get_leaf_id(), script_tab_index, secondary_leaf, EditorSceneWorkspace::DROP_CENTER)
+														  : nullptr;
 	p_driver.flush_frames(60);
 	WorkspacePane *mixed_pane = mixed_leaf ? mixed_leaf->get_workspace_pane() : nullptr;
 	if (mixed_pane == nullptr || !_pane_has_tab(mixed_pane, StringName("scene"), BOARD_SWITCH_3D_SCENE) ||
@@ -3224,7 +3225,8 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	p_driver.set_step("cross_scene_rejection");
 	secondary_tab_index = _find_workspace_tab_index(mixed_pane, StringName("scene"), BOARD_SWITCH_3D_SCENE);
 	WorkspaceLeafNode *foreign_leaf = secondary_tab_index >= 0 ? context.workspace->handle_tab_drop(
-			mixed_leaf->get_leaf_id(), secondary_tab_index, mixed_leaf, EditorSceneWorkspace::DROP_BOTTOM) : nullptr;
+																		 mixed_leaf->get_leaf_id(), secondary_tab_index, mixed_leaf, EditorSceneWorkspace::DROP_BOTTOM)
+															   : nullptr;
 	p_driver.flush_frames(50);
 	WorkspacePane *foreign_pane = foreign_leaf ? foreign_leaf->get_workspace_pane() : nullptr;
 	ScenePaneTile *foreign_tile = foreign_pane ? foreign_pane->get_scene_tile() : nullptr;

@@ -30,8 +30,8 @@
 
 #pragma once
 
-#include "core/object/script_language.h"
 #include "core/io/json.h"
+#include "core/object/script_language.h"
 #include "editor/editor_scene_context.h"
 #include "editor/editor_scene_workspace.h"
 #include "editor/editor_script_leaf.h"
@@ -40,8 +40,8 @@
 #include "scene/2d/node_2d.h"
 #include "scene/gui/control.h"
 
-#include "tests/editor/test_scene_workspace.h"
 #include "tests/editor/editor_workflow_test_fixtures.h"
+#include "tests/editor/test_scene_workspace.h"
 #include "tests/test_macros.h"
 
 namespace TestScriptLeafNodeDrop {
