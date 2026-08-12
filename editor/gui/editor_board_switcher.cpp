@@ -244,9 +244,12 @@ void EditorBoardSwitcher::_sync_menu_divider() {
 			get_theme_constant("menu_divider_height"));
 	const float separation = rail_hbox->get_theme_constant(SNAME("separation"));
 	const float menu_x = menu_button->get_global_position().x - rail_stack->get_global_position().x;
+	const float divider_x = rail_hbox->is_layout_rtl()
+			? menu_x + menu_button->get_size().x + separation * 0.5 - divider_size.x * 0.5
+			: menu_x - separation * 0.5 - divider_size.x * 0.5;
 	menu_divider->set_size(divider_size);
 	menu_divider->set_position(Point2(
-			menu_x - separation * 0.5 - divider_size.x * 0.5,
+			divider_x,
 			(rail_stack->get_size().y - divider_size.y) * 0.5));
 	menu_divider->show();
 }

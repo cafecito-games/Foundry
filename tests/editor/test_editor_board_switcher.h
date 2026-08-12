@@ -359,6 +359,26 @@ TEST_CASE("[Editor][BoardSwitcher] Active surface glides unless the system reduc
 	harness.unmount();
 }
 
+TEST_CASE("[Editor][BoardSwitcher] Menu divider stays between the menu and boards in RTL") {
+	BoardSwitcherHarness harness;
+	harness.mount(true);
+	harness.switcher->set_layout_direction(Control::LAYOUT_DIRECTION_RTL);
+	harness.pump();
+
+	Button *button = harness.board_button(0);
+	Button *menu = harness.menu_button();
+	Control *divider = harness.menu_divider();
+	REQUIRE(button != nullptr);
+	REQUIRE(menu != nullptr);
+	REQUIRE(divider != nullptr);
+	CHECK(menu->get_global_position().x < button->get_global_position().x);
+	const float gap_center = (menu->get_global_position().x + menu->get_size().x + button->get_global_position().x) * 0.5;
+	const float divider_center = divider->get_global_position().x + divider->get_size().x * 0.5;
+	CHECK(divider_center == doctest::Approx(gap_center));
+
+	harness.unmount();
+}
+
 TEST_CASE("[Editor][BoardSwitcher] Structural rebuild snaps an active surface glide") {
 	BoardSwitcherHarness harness;
 	harness.mount(true);
