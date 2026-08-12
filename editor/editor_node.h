@@ -378,6 +378,8 @@ private:
 	ObjectID pending_board_close_id;
 	int pending_focus_tile_id = -1;
 	uint64_t pending_focus_tile_generation = 0;
+	int pending_script_leaf_id = -1;
+	uint64_t pending_script_leaf_generation = 0;
 	Control *global_screen_host = nullptr;
 
 	// Main tabs.
@@ -804,6 +806,9 @@ private:
 	void _cancel_queued_focus_tile_activation();
 	void _queue_focus_tile_activation(int p_tile_id);
 	void _activate_queued_focus_tile(int p_tile_id, uint64_t p_generation);
+	void _cancel_queued_script_leaf_activation();
+	void _queue_script_leaf_activation(int p_leaf_id);
+	void _activate_queued_script_leaf(int p_leaf_id, uint64_t p_generation);
 	void _focus_tile_internal(int p_tile_id, bool p_activate_content_if_already_focused = false);
 	void _focus_tile(int p_tile_id);
 	void _focus_script_leaf(int p_leaf_id);
