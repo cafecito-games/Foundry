@@ -127,7 +127,7 @@ struct BoardSwitcherHarness {
 		unmount();
 	}
 
-	void mount(bool p_with_editor_theme = false, bool p_container_host = false) {
+	void mount(bool p_with_editor_theme = false, bool p_container_host = false, bool p_setup_before_enter_tree = false) {
 		unmount();
 		if (p_container_host) {
 			host = memnew(HBoxContainer);
@@ -139,7 +139,9 @@ struct BoardSwitcherHarness {
 			theme = EditorThemeManager::generate_theme();
 			host->set_theme(theme);
 		}
-		SceneTree::get_singleton()->get_root()->add_child(host);
+		if (!p_setup_before_enter_tree) {
+			SceneTree::get_singleton()->get_root()->add_child(host);
+		}
 		selection = memnew(EditorSelection);
 		strip = EditorBoardStrip::create(selection, &editor_data);
 		host->add_child(strip);
@@ -147,6 +149,9 @@ struct BoardSwitcherHarness {
 		host->add_child(switcher);
 		switcher->set_anchors_and_offsets_preset(Control::PRESET_FULL_RECT);
 		switcher->setup(strip);
+		if (p_setup_before_enter_tree) {
+			SceneTree::get_singleton()->get_root()->add_child(host);
+		}
 		pump();
 	}
 
@@ -277,6 +282,25 @@ TEST_CASE("[Editor][BoardSwitcher] Active surface targets the selected board") {
 		return;
 	}
 	CHECK(surface->get_rect() == harness.active_button_rect_in_surface_parent());
+
+	harness.unmount();
+}
+
+TEST_CASE("[Editor][BoardSwitcher] Initial board label fits after entering the themed tree") {
+	BoardRailEditorScaleGuard scale_guard(2.0f);
+	BoardSwitcherHarness harness;
+	harness.mount(true, false, true);
+
+	Button *button = harness.board_button(0);
+	REQUIRE(button != nullptr);
+	const Ref<Font> font = button->get_theme_font(SceneStringName(font));
+	REQUIRE(font.is_valid());
+	const int font_size = button->get_theme_font_size(SceneStringName(font_size));
+	const int text_width = Math::ceil(font->get_string_size(button->get_text(), HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x);
+	const int expected_width = MIN(
+			text_width + harness.switcher->get_theme_constant("segment_horizontal_padding"),
+			harness.switcher->get_theme_constant("segment_maximum_width"));
+	CHECK(button->get_size().x >= expected_width);
 
 	harness.unmount();
 }

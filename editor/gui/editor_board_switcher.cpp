@@ -61,6 +61,11 @@ void EditorBoardSwitcher::_notification(int p_what) {
 					container->connect(SceneStringName(sort_children), queue_update);
 				}
 			}
+			// The first board button is built while EditorNode is still off-tree. At scaled
+			// editor sizes its initial minimum therefore uses fallback theme metrics, and the
+			// switcher's theme notification can run before the button has resolved the editor
+			// theme. Remeasure after the complete subtree has entered and inherited its theme.
+			callable_mp(this, &EditorBoardSwitcher::_refresh_theme).call_deferred();
 			_queue_compact_mode_update();
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
