@@ -3579,6 +3579,82 @@ EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::r
 	return result;
 }
 
+EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_cross_board_existing_scene_reveal(EditorWorkflowTestDriver &p_driver) {
+	Result result;
+	result.workflow = "cross_board_existing_scene_reveal";
+
+	p_driver.begin_workflow();
+	p_driver.set_step("open_scene_on_first_board");
+
+	EditorNode *editor_node = EditorNode::get_singleton();
+	if (editor_node == nullptr || !editor_node->is_editor_ready()) {
+		return _failure_with_message(p_driver, result.workflow, "EditorNode is not ready.");
+	}
+	if (editor_node->load_scene(BOARD_SWITCH_2D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, vformat("Failed to load scene '%s'.", BOARD_SWITCH_2D_SCENE));
+	}
+	p_driver.flush_frames(30);
+
+	EditorBoardStrip *strip = EditorNode::get_board_strip();
+	if (strip == nullptr || strip->get_board_count() != 1 || strip->get_active_index() != 0) {
+		return _failure_with_message(p_driver, result.workflow, "Expected one active board after opening the fixture scene.");
+	}
+	EditorData &editor_data = editor_node->get_editor_data();
+	const int scene_index = editor_data.get_edited_scene_from_path(BOARD_SWITCH_2D_SCENE);
+	EditorBoard *owner = strip->get_board(0);
+	ScenePaneTile *owner_tile = _resolve_focused_scene_tile(owner);
+	EditorSceneContext *context = scene_index >= 0 ? editor_data.get_scene_context(scene_index) : nullptr;
+	if (scene_index < 0 || owner == nullptr || owner_tile == nullptr || context == nullptr ||
+			editor_data.get_scene_tile(scene_index) != owner_tile->get_tile_id()) {
+		return _failure_with_message(p_driver, result.workflow, "The fixture scene is not owned by Board 1's focused tile.");
+	}
+	const ObjectID owner_id = owner->get_instance_id();
+	const ObjectID owner_tile_id = owner_tile->get_instance_id();
+
+	p_driver.set_step("switch_to_empty_second_board");
+	if (strip->add_board("Board 2") == nullptr) {
+		return _failure_with_message(p_driver, result.workflow, "Failed to add an empty second board.");
+	}
+	p_driver.flush_frames(20);
+	strip->set_active_board(1);
+	p_driver.flush_frames(90);
+	if (strip->get_active_index() != 1 || editor_data.get_edited_scene() != -1) {
+		return _failure_with_message(p_driver, result.workflow, "The empty second board did not become the no-scene active workspace.");
+	}
+
+	// FileSystemDock's scene activation calls this same API. The scene is already open on
+	// Board 1, so load_scene() must change board/tile focus before it changes current scene.
+	p_driver.set_step("reveal_existing_scene_from_second_board");
+	if (editor_node->load_scene(BOARD_SWITCH_2D_SCENE) != OK) {
+		return _failure_with_message(p_driver, result.workflow, "Failed to reveal the already-open scene.");
+	}
+	p_driver.flush_frames(90);
+
+	strip = EditorNode::get_board_strip();
+	owner = ObjectDB::get_instance<EditorBoard>(owner_id);
+	owner_tile = ObjectDB::get_instance<ScenePaneTile>(owner_tile_id);
+	if (strip == nullptr || owner == nullptr || owner_tile == nullptr || strip->get_active_board() != owner ||
+			editor_data.get_focused_tile_id() != owner_tile->get_tile_id() || editor_data.get_edited_scene() != scene_index) {
+		return _failure_with_message(p_driver, result.workflow, "Revealing the existing scene did not restore its owning board, tile, and scene index.");
+	}
+	if (!context->is_active() || context->get_viewport()->get_parent() == nullptr || !owner_tile->is_ancestor_of(context->get_viewport()) ||
+			owner_tile->get_scene_context() != context) {
+		return _failure_with_message(p_driver, result.workflow, "The revealed scene context is not active under its owning tile.");
+	}
+	if (!p_driver.assert_no_new_errors_since_step()) {
+		return _failure_from_driver(p_driver, result.workflow);
+	}
+
+	result.ok = true;
+	result.message = "An existing scene revealed from another board preserved board, tile, and scene-context focus.";
+	Dictionary details;
+	details["active_board"] = strip->get_active_index();
+	details["focused_tile_id"] = editor_data.get_focused_tile_id();
+	details["active_scene_index"] = editor_data.get_edited_scene();
+	result.details = details;
+	return result;
+}
+
 EditorAutomationAcceptanceWorkflow::Result EditorAutomationAcceptanceWorkflow::run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver) {
 	Result result;
 	result.workflow = "board_switch_3d_scene";

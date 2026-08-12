@@ -71,6 +71,9 @@ public:
 	// Opens a 3D scene in a board tile and switches boards, which demotes that tile out
 	// of focus and makes the editor build a secondary 3D viewport for its live preview.
 	static Result run_board_switch_3d_scene(EditorWorkflowTestDriver &p_driver);
+	// Reveals a scene already open on another board from an empty active board, exercising
+	// the same EditorNode::load_scene() path used by a FileSystem dock double-click.
+	static Result run_cross_board_existing_scene_reveal(EditorWorkflowTestDriver &p_driver);
 #ifdef TESTS_ENABLED
 	// Closes a demoted 3D board while proving its EditorSceneContext viewport dies before
 	// the deferred board/tile/secondary-viewport teardown, and that preview furniture is
