@@ -1668,6 +1668,35 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_stylebox("hover_pressed", "MainScreenButton", main_screen_button_hover);
 		p_theme->set_stylebox("hover_pressed_mirrored", "MainScreenButton", main_screen_button_hover);
 
+		p_theme->set_type_variation("BoardRail", "PanelContainer");
+		p_theme->set_constant("segment_horizontal_padding", "BoardRail", Math::round(24 * EDSCALE));
+		p_theme->set_constant("segment_maximum_width", "BoardRail", Math::round(180 * EDSCALE));
+		Ref<StyleBoxFlat> board_rail_panel = p_config.content_panel_style->duplicate();
+		board_rail_panel->set_bg_color(p_config.dark_color_2.lerp(p_config.base_color, 0.12));
+		board_rail_panel->set_border_color(p_config.contrast_color_1);
+		board_rail_panel->set_border_width_all(MAX(1, Math::round(EDSCALE)));
+		board_rail_panel->set_corner_radius_all(Math::round(8 * EDSCALE));
+		board_rail_panel->set_content_margin_all(Math::round(3 * EDSCALE));
+		p_theme->set_stylebox(SceneStringName(panel), "BoardRail", board_rail_panel);
+
+		Ref<StyleBoxFlat> board_rail_button_pressed = menu_transparent_style->duplicate();
+		board_rail_button_pressed->set_border_color(p_config.accent_color);
+		board_rail_button_pressed->set_border_width(SIDE_BOTTOM, MAX(2, Math::round(2 * EDSCALE)));
+
+		p_theme->set_type_variation("BoardRailButton", "Button");
+		p_theme->set_stylebox(CoreStringName(normal), "BoardRailButton", menu_transparent_style);
+		p_theme->set_stylebox(SceneStringName(hover), "BoardRailButton", p_config.button_style_hover);
+		p_theme->set_stylebox(SceneStringName(pressed), "BoardRailButton", board_rail_button_pressed);
+		p_theme->set_stylebox("hover_pressed", "BoardRailButton", board_rail_button_pressed);
+		p_theme->set_type_variation("BoardRailMenuButton", "FlatMenuButton");
+
+		p_theme->set_type_variation("SceneModeSwitcher", "HBoxContainer");
+		p_theme->set_type_variation("SceneModeButton", "Button");
+		p_theme->set_stylebox(CoreStringName(normal), "SceneModeButton", menu_transparent_style);
+		p_theme->set_stylebox(SceneStringName(hover), "SceneModeButton", p_config.button_style_hover);
+		p_theme->set_stylebox(SceneStringName(pressed), "SceneModeButton", board_rail_button_pressed);
+		p_theme->set_stylebox("hover_pressed", "SceneModeButton", board_rail_button_pressed);
+
 		p_theme->set_type_variation("MainMenuBar", "FlatMenuButton");
 		p_theme->set_stylebox(CoreStringName(normal), "MainMenuBar", menu_transparent_style);
 		p_theme->set_stylebox(SceneStringName(pressed), "MainMenuBar", main_screen_button_hover);
@@ -1767,7 +1796,7 @@ void ThemeClassic::populate_editor_styles(const Ref<EditorTheme> &p_theme, Edito
 		p_theme->set_type_variation("BottomDrawerStrip", "PanelContainer");
 		p_theme->set_stylebox(SceneStringName(panel), "BottomDrawerStrip", style_bottom_drawer_strip);
 
-		// Tile side rail: the vertical analogue of the bottom drawer strip, a
+		// Tile side rail: the vertical analog of the bottom drawer strip, a
 		// slim flat bar with a single border on the edge facing the tile body.
 		// Two type variations (not overrides, for the same recursion reason as
 		// the bottom strip) since the bordered edge differs per side.

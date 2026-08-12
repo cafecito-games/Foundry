@@ -80,8 +80,8 @@ void EditorMainScreen::set_button_container(HBoxContainer *p_button_hb) {
 	button_hb = p_button_hb;
 }
 
-EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const String &p_plugin_name) const {
-	if (p_plugin_name == "Game") {
+EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const EditorPlugin *p_plugin) const {
+	if (p_plugin != nullptr && EDITOR_GAME < editor_table.size() && p_plugin == editor_table[EDITOR_GAME]) {
 		return SCREEN_GLOBAL;
 	}
 	return SCREEN_SCENE_MODE;
@@ -89,9 +89,11 @@ EditorMainScreen::ScreenPlacement EditorMainScreen::_get_plugin_placement(const 
 
 String EditorMainScreen::_active_main_screen_name() const {
 	String pressed_name;
+	EditorPlugin *pressed_plugin = nullptr;
 	for (int i = 0; i < buttons.size(); i++) {
 		if (buttons[i]->is_pressed()) {
 			pressed_name = buttons[i]->get_text();
+			pressed_plugin = editor_table[i];
 			break;
 		}
 	}
@@ -101,7 +103,7 @@ String EditorMainScreen::_active_main_screen_name() const {
 	// underneath. Only in scene mode is a focused script leaf the visible surface;
 	// there, persist the "Script" sentinel so restore reveals the leaf via
 	// select_by_name().
-	if (pressed_name.is_empty() || _get_plugin_placement(pressed_name) == SCREEN_SCENE_MODE) {
+	if (pressed_name.is_empty() || _get_plugin_placement(pressed_plugin) == SCREEN_SCENE_MODE) {
 		if (EditorSceneWorkspace *workspace = EditorNode::get_scene_workspace()) {
 			if (workspace->get_focused_script_leaf()) {
 				return "Script";
@@ -133,7 +135,12 @@ void EditorMainScreen::load_layout_from_config(Ref<ConfigFile> p_config_file, co
 	// screen. Names that no longer resolve (a removed plugin, or a pre-name layout
 	// that only carried the old int key) fall back to the default screen by doing
 	// nothing here.
-	if (selected_main_editor == "Script" || get_button_index_by_name(selected_main_editor) >= 0) {
+	if (selected_main_editor == "Script") {
+		callable_mp(this, &EditorMainScreen::select_by_name).call_deferred(selected_main_editor);
+		return;
+	}
+	const int selected_index = get_button_index_by_name(selected_main_editor);
+	if (selected_index >= 0 && selected_index != EDITOR_2D && selected_index != EDITOR_3D) {
 		callable_mp(this, &EditorMainScreen::select_by_name).call_deferred(selected_main_editor);
 	}
 }
@@ -172,7 +179,7 @@ void EditorMainScreen::select_next() {
 		}
 	} while (!buttons[editor]->is_visible());
 
-	select(editor);
+	EditorNode::get_singleton()->select_main_screen(editor);
 }
 
 void EditorMainScreen::select_prev() {
@@ -186,7 +193,21 @@ void EditorMainScreen::select_prev() {
 		}
 	} while (!buttons[editor]->is_visible());
 
-	select(editor);
+	EditorNode::get_singleton()->select_main_screen(editor);
+}
+
+bool EditorMainScreen::dispatch_shortcut_input(const Ref<InputEvent> &p_event) {
+	ERR_FAIL_COND_V(p_event.is_null(), false);
+
+	for (int i = 0; i < buttons.size(); i++) {
+		Button *button = buttons[i];
+		const Ref<Shortcut> shortcut = button->get_shortcut();
+		if (button->is_visible() && !button->is_disabled() && shortcut.is_valid() && shortcut->matches_event(p_event)) {
+			EditorNode::get_singleton()->select_main_screen(i);
+			return true;
+		}
+	}
+	return false;
 }
 
 void EditorMainScreen::select_by_name(const String &p_name) {
@@ -248,7 +269,7 @@ void EditorMainScreen::select(int p_index) {
 	selected_plugin->make_visible(true);
 	selected_plugin->selected_notify();
 
-	const ScreenPlacement placement = _get_plugin_placement(selected_plugin->get_plugin_name());
+	const ScreenPlacement placement = _get_plugin_placement(selected_plugin);
 	if (global_screen_vbox) {
 		global_screen_vbox->set_visible(placement == SCREEN_GLOBAL);
 	}
@@ -307,14 +328,14 @@ bool EditorMainScreen::is_scene_mode_selected() const {
 	if (!selected_plugin) {
 		return false;
 	}
-	return _get_plugin_placement(selected_plugin->get_plugin_name()) == SCREEN_SCENE_MODE;
+	return _get_plugin_placement(selected_plugin) == SCREEN_SCENE_MODE;
 }
 
 bool EditorMainScreen::is_global_screen_selected() const {
 	if (!selected_plugin) {
 		return false;
 	}
-	return _get_plugin_placement(selected_plugin->get_plugin_name()) == SCREEN_GLOBAL;
+	return _get_plugin_placement(selected_plugin) == SCREEN_GLOBAL;
 }
 
 VBoxContainer *EditorMainScreen::get_scene_mode_control() const {
@@ -365,7 +386,24 @@ void EditorMainScreen::remove_main_plugin(EditorPlugin *p_editor) {
 	for (int i = buttons.size() - 1; i >= 0; i--) {
 		if (p_editor->get_plugin_name() == buttons[i]->get_text()) {
 			if (buttons[i]->is_pressed()) {
-				select(EDITOR_2D);
+				EditorNode *editor_node = EditorNode::get_singleton();
+				if (editor_node != nullptr && editor_node->is_editor_ready() && !editor_node->is_exiting()) {
+					if (!editor_node->restore_focused_scene_main_screen()) {
+						select(EDITOR_2D);
+					}
+				} else if (editor_node != nullptr) {
+					// Startup/shutdown must not reactivate workspace content while the
+					// plugin table is being dismantled. Keep this a raw screen fallback.
+					select(EDITOR_2D);
+				} else {
+					p_editor->make_visible(false);
+					selected_plugin = nullptr;
+					if (EDITOR_2D < editor_table.size() && editor_table[EDITOR_2D] != p_editor) {
+						buttons[EDITOR_2D]->set_pressed_no_signal(true);
+						selected_plugin = editor_table[EDITOR_2D];
+						selected_plugin->make_visible(true);
+					}
+				}
 			}
 
 			memdelete(buttons[i]);

@@ -32,6 +32,7 @@
 
 #include "scene/gui/box_container.h"
 
+#include "editor/editor_scene_mode.h"
 #include "editor/editor_tile_dock_region.h"
 #include "editor/editor_workspace_leaf_content.h"
 
@@ -40,6 +41,7 @@ class CanvasItemEditorView;
 class ConfigFile;
 class EditorData;
 class EditorSceneContext;
+class EditorSceneModeSwitcher;
 class EditorSceneTabs;
 class EditorSelection;
 class EditorSideRailStrip;
@@ -81,6 +83,9 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	int tile_id = 0;
 	EditorData *editor_data = nullptr;
 	EditorSceneTabs *scene_tabs = nullptr;
+	EditorSceneModeSwitcher *scene_mode_switcher = nullptr;
+	SceneEditorMode scene_editor_mode = SceneEditorMode::MODE_2D;
+	bool scene_editor_mode_initialized = false;
 	HSplitContainer *body = nullptr;
 	EditorTileDockRegion dock_region;
 	SceneTreeDock *scene_tree_dock = nullptr; // Left, in-tile.
@@ -127,6 +132,8 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	void _apply_preview_bounds();
 
 	void _request_focus();
+	void _on_scene_editor_mode_selected(int p_mode);
+	void _sync_scene_editor_mode();
 	void _interaction_gui_input(const Ref<InputEvent> &p_event);
 	void _bind_focus_on_interaction(Control *p_control);
 	void _fit_content_child(Control *p_child);
@@ -137,6 +144,7 @@ class ScenePaneTile : public VBoxContainer, public WorkspaceLeafContent {
 	void _apply_preview_chrome_for_current_mode();
 
 protected:
+	static void _bind_methods();
 	void _notification(int p_what);
 	virtual void input(const Ref<InputEvent> &p_event) override;
 
@@ -189,6 +197,12 @@ public:
 	void set_spatial_view(Node3DEditorViewport *p_view);
 
 	void set_focused_visual(bool p_focused);
+	void set_scene_editor_mode(SceneEditorMode p_mode, bool p_user_requested);
+	void initialize_scene_editor_mode(EditorSceneContext *p_context);
+	SceneEditorMode get_scene_editor_mode() const { return scene_editor_mode; }
+	bool is_scene_editor_mode_initialized() const { return scene_editor_mode_initialized; }
+	EditorSceneModeSwitcher *get_scene_mode_switcher() const { return scene_mode_switcher; }
+	void set_3d_scene_mode_enabled(bool p_enabled);
 	void set_preview_mode(TilePreviewMode p_mode);
 	TilePreviewMode get_preview_mode() const { return preview_mode; }
 	void bind_3d_preview_world(const Ref<World3D> &p_world);

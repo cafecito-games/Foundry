@@ -73,7 +73,7 @@ private:
 	HashMap<String, EditorPlugin *> main_editor_plugins;
 
 	int _get_current_main_editor() const;
-	ScreenPlacement _get_plugin_placement(const String &p_plugin_name) const;
+	ScreenPlacement _get_plugin_placement(const EditorPlugin *p_plugin) const;
 	// Name persisted for the currently active main screen: the pressed button's
 	// plugin name, the "Script" sentinel when a script leaf is the active surface,
 	// or an empty string when nothing is active.
@@ -93,6 +93,10 @@ public:
 
 	void select_next();
 	void select_prev();
+	// Dispatch shortcuts from the live main-screen table even when the legacy
+	// compatibility button container is hidden. EditorNode remains the routing
+	// authority so scene-mode shortcuts update the focused tile.
+	bool dispatch_shortcut_input(const Ref<InputEvent> &p_event);
 	void select_by_name(const String &p_name);
 	void select(int p_index);
 	int get_selected_index() const;

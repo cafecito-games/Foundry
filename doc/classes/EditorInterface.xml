@@ -531,7 +531,7 @@
 			<return type="void" />
 			<param index="0" name="name" type="String" />
 			<description>
-				Sets the editor's current main screen to the one specified in [param name]. [param name] must match the title of the tab in question exactly (e.g. [code]2D[/code], [code]3D[/code], [code skip-lint]Script[/code], [code]Game[/code], or [code]AssetLib[/code] for default tabs).
+				Sets the editor's active surface to the one specified in [param name]. Name matching is exact. Selecting [code]2D[/code] or [code]3D[/code] updates the focused scene tile's local editor mode and displays the corresponding scene editor. If no focused tile has an open scene, the corresponding main screen is still selected without changing any tile's mode. [code skip-lint]Script[/code] reveals the script workspace leaf. Other registered main-screen names, such as [code]Game[/code] or [code]AssetLib[/code], select those screens normally.
 			</description>
 		</method>
 		<method name="set_object_edited">

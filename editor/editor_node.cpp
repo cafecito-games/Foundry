@@ -447,14 +447,9 @@ void EditorNode::shortcut_input(const Ref<InputEvent> &p_event) {
 		bool is_handled = true;
 		if (ED_IS_SHORTCUT("editor/filter_files", p_event)) {
 			FileSystemDock::get_singleton()->focus_on_filter();
-		} else if (ED_IS_SHORTCUT("editor/editor_2d", p_event)) {
-			editor_main_screen->select(EditorMainScreen::EDITOR_2D);
-		} else if (ED_IS_SHORTCUT("editor/editor_3d", p_event)) {
-			editor_main_screen->select(EditorMainScreen::EDITOR_3D);
 		} else if (ED_IS_SHORTCUT("editor/editor_script", p_event)) {
 			reveal_script_leaf();
-		} else if (ED_IS_SHORTCUT("editor/editor_game", p_event)) {
-			editor_main_screen->select(EditorMainScreen::EDITOR_GAME);
+		} else if (editor_main_screen->dispatch_shortcut_input(p_event)) {
 		} else if (ED_IS_SHORTCUT("editor/editor_help", p_event)) {
 			if (ScriptEditorController *script_editor = ScriptEditorController::get_singleton()) {
 				script_editor->notify_request_help_search("");
@@ -3488,12 +3483,19 @@ void EditorNode::_edit_current(bool p_skip_foreign, bool p_skip_inspector_update
 			}
 		} else {
 			EditorPlugin *main_plugin = editor_data.get_handling_main_editor(current_obj);
+			EditorPlugin *editor_plugin_screen = editor_main_screen->get_selected_plugin();
+			const int handling_plugin_index = editor_main_screen->get_plugin_index(main_plugin);
+			ScenePaneTile *focused_tile = get_focused_tile();
+			if (focused_tile && focused_tile->is_scene_editor_mode_initialized() &&
+					(handling_plugin_index == EditorMainScreen::EDITOR_2D || handling_plugin_index == EditorMainScreen::EDITOR_3D) &&
+					main_plugin != editor_plugin_screen) {
+				main_plugin = nullptr;
+			}
 
 			int plugin_index = editor_main_screen->get_plugin_index(main_plugin);
 			if (main_plugin && plugin_index >= 0 && !editor_main_screen->is_button_enabled(plugin_index)) {
 				main_plugin = nullptr;
 			}
-			EditorPlugin *editor_plugin_screen = editor_main_screen->get_selected_plugin();
 
 			ObjectID editor_owner_id = editor_owner->get_instance_id();
 			if (main_plugin && !skip_main_plugin) {
@@ -4907,6 +4909,7 @@ void EditorNode::activate_workspace_scene_tab(int p_scene_idx, int p_tile_id) {
 
 	if (get_scene_workspace()) {
 		if (ScenePaneTile *tile = get_scene_workspace()->get_tile_by_id(p_tile_id)) {
+			_apply_scene_editor_mode(tile, editor_data.get_scene_context(p_scene_idx), true);
 			_sync_focused_tile_chrome(tile);
 			_reparent_scene_mode_into(tile);
 			_bind_all_leaf_docks();
@@ -5017,17 +5020,7 @@ void EditorNode::_set_main_scene_state(Dictionary p_state, Node *p_for_scene) {
 	EditorInspector *inspector = get_focused_inspector();
 
 	if (get_edited_scene()) {
-		if (editor_main_screen->can_auto_switch_screens()) {
-			// Switch between 2D and 3D if currently in 2D or 3D.
-			Node *selected_node = scene_tree_dock ? scene_tree_dock->get_tree_editor()->get_selected() : nullptr;
-			if (!selected_node) {
-				selected_node = get_edited_scene();
-			}
-			const int plugin_index = editor_main_screen->get_plugin_index(editor_data.get_handling_main_editor(selected_node));
-			if (plugin_index >= 0) {
-				editor_main_screen->select(plugin_index);
-			}
-		}
+		_apply_scene_editor_mode(get_focused_tile(), editor_data.get_active_scene_context(), false);
 	}
 
 	if (scene_tree_dock && p_state.has("scene_tree_offset")) {
@@ -5424,8 +5417,11 @@ void EditorNode::_update_tile_display_attachments() {
 		}
 
 		const bool is_focused_tile = tile_id == focused_tile_id;
+		tile->initialize_scene_editor_mode(ctx);
+		const SceneEditorMode tile_mode = tile->get_scene_editor_mode();
 
 		if (is_focused_tile) {
+			_apply_scene_editor_mode(tile, ctx, false);
 			tile->set_preview_mode(TilePreviewMode::FOCUSED_LIVE);
 			if (scene_viewport_container) {
 				ctx->set_display_parent(scene_viewport_container, true, true);
@@ -5441,7 +5437,7 @@ void EditorNode::_update_tile_display_attachments() {
 			if (last_theme_preview_mode_set) {
 				_apply_preview_themes(ctx->get_viewport());
 			}
-		} else if (ctx->scene_has_3d_content()) {
+		} else if (tile_mode == SceneEditorMode::MODE_3D) {
 			tile->set_preview_mode(TilePreviewMode::LIVE_3D);
 			SubViewportContainer *context_host = tile->get_context_viewport_host();
 			ctx->set_display_parent(context_host, false);
@@ -7765,6 +7761,22 @@ EditorSceneWorkspace *EditorNode::get_scene_workspace() {
 	return singleton && singleton->board_strip ? singleton->board_strip->get_active_workspace() : nullptr;
 }
 
+void EditorNode::_apply_scene_editor_mode(ScenePaneTile *p_tile, EditorSceneContext *p_context, bool p_force_scene_screen) {
+	ERR_FAIL_NULL(p_tile);
+	p_tile->initialize_scene_editor_mode(p_context);
+	if (!p_tile->is_scene_editor_mode_initialized()) {
+		return;
+	}
+	if (!p_force_scene_screen && !editor_main_screen->can_auto_switch_screens()) {
+		return;
+	}
+
+	const int target = p_tile->get_scene_editor_mode() == SceneEditorMode::MODE_3D ? EditorMainScreen::EDITOR_3D : EditorMainScreen::EDITOR_2D;
+	if (editor_main_screen->is_button_enabled(target) && editor_main_screen->get_selected_index() != target) {
+		editor_main_screen->select(target);
+	}
+}
+
 void EditorNode::_connect_workspace_signals(EditorSceneWorkspace *p_workspace) {
 	ERR_FAIL_NULL(p_workspace);
 	p_workspace->connect("leaf_focus_requested", callable_mp(this, &EditorNode::_on_leaf_focus_requested));
@@ -7777,6 +7789,48 @@ ScenePaneTile *EditorNode::get_focused_tile() const {
 	// Resolve against the effective scene tile so the scene/inspector docks stay
 	// valid when a tile-less script leaf currently holds workspace focus.
 	return get_scene_workspace() ? get_scene_workspace()->get_effective_focused_tile() : nullptr;
+}
+
+bool EditorNode::set_focused_tile_scene_editor_mode(SceneEditorMode p_mode) {
+	ScenePaneTile *tile = get_focused_tile();
+	if (!tile) {
+		return false;
+	}
+	const int scene_idx = editor_data.get_tile_current_scene(tile->get_tile_id());
+	if (scene_idx < 0 || !editor_data.get_scene_context(scene_idx)) {
+		return false;
+	}
+	tile->set_scene_editor_mode(p_mode, false);
+	_focus_tile(tile->get_tile_id());
+	return true;
+}
+
+bool EditorNode::restore_focused_scene_main_screen() {
+	ScenePaneTile *tile = get_focused_tile();
+	if (tile == nullptr) {
+		return false;
+	}
+	const int scene_idx = editor_data.get_tile_current_scene(tile->get_tile_id());
+	EditorSceneContext *context = scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr;
+	_apply_scene_editor_mode(tile, context, true);
+	const int selected_index = editor_main_screen->get_selected_index();
+	return selected_index == EditorMainScreen::EDITOR_2D || selected_index == EditorMainScreen::EDITOR_3D;
+}
+
+void EditorNode::select_main_screen(int p_index) {
+	if (p_index == EditorMainScreen::EDITOR_2D) {
+		if (!set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_2D)) {
+			editor_main_screen->select(p_index);
+		}
+		return;
+	}
+	if (p_index == EditorMainScreen::EDITOR_3D) {
+		if (!set_focused_tile_scene_editor_mode(SceneEditorMode::MODE_3D)) {
+			editor_main_screen->select(p_index);
+		}
+		return;
+	}
+	editor_main_screen->select(p_index);
 }
 
 SceneTreeDock *EditorNode::get_focused_scene_tree_dock() const {
@@ -7867,11 +7921,20 @@ void EditorNode::_wire_leaf_tile(WorkspaceLeafNode *p_leaf) {
 	if (!tile_scene_tabs->is_connected("tab_closed", tab_closed)) {
 		tile_scene_tabs->connect("tab_closed", tab_closed, CONNECT_DEFERRED);
 	}
+	const Callable scene_editor_mode_requested = callable_mp(this, &EditorNode::_on_tile_scene_editor_mode_requested);
+	if (!tile->is_connected("scene_editor_mode_requested", scene_editor_mode_requested)) {
+		tile->connect("scene_editor_mode_requested", scene_editor_mode_requested);
+	}
 	tile->get_scene_tree_dock()->set_scene_context(no_scene_context);
 	tile->get_inspector_dock()->set_scene_context(no_scene_context);
 	tile->get_signals_dock()->set_scene_context(no_scene_context);
 	tile->get_groups_dock()->set_scene_context(no_scene_context);
 	tile->get_history_dock()->set_scene_context(no_scene_context);
+	Ref<EditorFeatureProfile> profile;
+	if (feature_profile_manager != nullptr) {
+		profile = feature_profile_manager->get_current_profile();
+	}
+	_apply_feature_profile_to_tile(tile, profile);
 }
 
 void EditorNode::_on_leaf_added(int p_leaf_id) {
@@ -7933,7 +7996,12 @@ void EditorNode::_on_leaf_removed(int p_leaf_id, int p_successor_leaf_id) {
 	_update_all_scene_tabs();
 	_bind_all_leaf_docks();
 	_update_tile_display_attachments();
-	_reparent_scene_mode_into(get_focused_tile());
+	ScenePaneTile *focused_tile = get_focused_tile();
+	if (focused_tile) {
+		const int scene_idx = editor_data.get_tile_current_scene(focused_tile->get_tile_id());
+		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, false);
+	}
+	_reparent_scene_mode_into(focused_tile);
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
 		debugger->rebind_remote_scene_tree();
 	}
@@ -8001,6 +8069,7 @@ void EditorNode::_focus_tile_internal(int p_tile_id, bool p_activate_content_if_
 	ScenePaneTile *tile = leaf->get_pane_tile();
 	ERR_FAIL_NULL(tile);
 
+	_apply_scene_editor_mode(tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, true);
 	_sync_focused_tile_chrome(tile);
 	// Focused tiles always restore normal chrome, even when they have no current
 	// scene (the early return below skips _update_tile_display_attachments).
@@ -8109,6 +8178,22 @@ void EditorNode::_on_tile_tab_closed(int p_tab, int p_tile_id) {
 		_focus_tile(p_tile_id);
 		_scene_tab_closed(scene_idx);
 	}
+}
+
+void EditorNode::_on_tile_scene_editor_mode_requested(int p_tile_id, int p_mode) {
+	if (board_strip && !board_strip->is_leaf_on_active_board(p_tile_id)) {
+		return;
+	}
+	ScenePaneTile *tile = board_strip ? board_strip->find_tile_by_id(p_tile_id) : nullptr;
+	if (!tile) {
+		return;
+	}
+	const int scene_idx = editor_data.get_tile_current_scene(p_tile_id);
+	if (scene_idx < 0 || !editor_data.get_scene_context(scene_idx)) {
+		return;
+	}
+	tile->set_scene_editor_mode(SceneEditorMode(p_mode), false);
+	_focus_tile(p_tile_id);
 }
 
 void EditorNode::handle_tile_tab_drop(int p_target_pane_id, int p_region, int p_source_pane_id, int p_source_tab_index) {
@@ -8394,7 +8479,12 @@ void EditorNode::_on_boards_restored() {
 	if (EditorSceneWorkspace *active = board_strip->get_active_workspace()) {
 		WorkspaceLeafNode *focused_leaf = active->get_focused_leaf();
 		if (focused_leaf && focused_leaf->get_pane_tile()) {
-			_sync_focused_tile_chrome(focused_leaf->get_pane_tile());
+			ScenePaneTile *focused_tile = focused_leaf->get_pane_tile();
+			const int scene_idx = editor_data.get_tile_current_scene(focused_tile->get_tile_id());
+			// Board restore establishes the focused tile's durable mode first. The
+			// deferred persisted main-screen selection then deterministically wins.
+			_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, true);
+			_sync_focused_tile_chrome(focused_tile);
 		}
 		_reparent_scene_mode_into(active->get_focused_tile());
 	}
@@ -8449,7 +8539,12 @@ void EditorNode::_on_board_removed(int p_index) {
 	_update_all_scene_tabs();
 	_bind_all_leaf_docks();
 	_update_tile_display_attachments();
-	_reparent_scene_mode_into(get_focused_tile());
+	ScenePaneTile *focused_tile = get_focused_tile();
+	if (focused_tile) {
+		const int scene_idx = editor_data.get_tile_current_scene(focused_tile->get_tile_id());
+		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, false);
+	}
+	_reparent_scene_mode_into(focused_tile);
 	if (EditorDebuggerNode *debugger = EditorDebuggerNode::get_singleton()) {
 		debugger->rebind_remote_scene_tree();
 	}
@@ -8481,6 +8576,27 @@ void EditorNode::_on_active_board_changed(int p_index) {
 	// Any activation queued for the board being left names a leaf that is no longer on the
 	// active board, so it must not be allowed to land after this one.
 	_cancel_queued_focus_tile_activation();
+	_focus_tile_internal(tile_id, true);
+}
+
+void EditorNode::_on_board_requested(int p_index) {
+	if (!editor_main_screen || !editor_main_screen->is_global_screen_selected() || !board_strip) {
+		return;
+	}
+	if (p_index < 0 || p_index >= board_strip->get_board_count()) {
+		return;
+	}
+
+	EditorBoard *board = board_strip->get_board(p_index);
+	EditorSceneWorkspace *workspace = board ? board->get_workspace() : nullptr;
+	if (!workspace) {
+		return;
+	}
+	const int tile_id = workspace->get_effective_focused_tile_id();
+	if (tile_id < 0 || !workspace->get_leaf_by_id(tile_id) || !board_strip->is_leaf_on_active_board(tile_id)) {
+		return;
+	}
+
 	_focus_tile_internal(tile_id, true);
 }
 
@@ -8582,6 +8698,8 @@ void EditorNode::_reconcile_workspace_empty_leaves_after_restore() {
 
 	ScenePaneTile *focused_tile = get_focused_tile();
 	if (focused_tile) {
+		const int scene_idx = editor_data.get_tile_current_scene(focused_tile->get_tile_id());
+		_apply_scene_editor_mode(focused_tile, scene_idx >= 0 ? editor_data.get_scene_context(scene_idx) : nullptr, false);
 		_sync_focused_tile_chrome(focused_tile);
 	}
 	_reparent_scene_mode_into(focused_tile);
@@ -10371,6 +10489,14 @@ void EditorNode::_resource_loaded(Ref<Resource> p_resource, const String &p_path
 	singleton->editor_folding.load_resource_folding(p_resource, p_path);
 }
 
+void EditorNode::_apply_feature_profile_to_tile(ScenePaneTile *p_tile, const Ref<EditorFeatureProfile> &p_profile) {
+	ERR_FAIL_NULL(p_tile);
+	p_tile->set_signals_dock_enabled(p_profile.is_null() || !p_profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SIGNALS_DOCK));
+	p_tile->set_groups_dock_enabled(p_profile.is_null() || !p_profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GROUPS_DOCK));
+	p_tile->set_history_dock_enabled(p_profile.is_null() || !p_profile->is_feature_disabled(EditorFeatureProfile::FEATURE_HISTORY_DOCK));
+	p_tile->set_3d_scene_mode_enabled(p_profile.is_null() || !p_profile->is_feature_disabled(EditorFeatureProfile::FEATURE_3D));
+}
+
 void EditorNode::_feature_profile_changed() {
 	Ref<EditorFeatureProfile> profile = feature_profile_manager->get_current_profile();
 	if (profile.is_valid()) {
@@ -10380,16 +10506,11 @@ void EditorNode::_feature_profile_changed() {
 		editor_dock_manager->set_dock_enabled(ImportDock::get_singleton(), !fs_dock_disabled && !profile->is_feature_disabled(EditorFeatureProfile::FEATURE_IMPORT_DOCK));
 
 		if (board_strip) {
-			const bool signals_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_SIGNALS_DOCK);
-			const bool groups_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_GROUPS_DOCK);
-			const bool history_disabled = profile->is_feature_disabled(EditorFeatureProfile::FEATURE_HISTORY_DOCK);
 			// Feature profiles are editor-global: every tile on every board has to pick
 			// up the new dock-enabled state, not just the visible board's tiles.
 			for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
 				for (ScenePaneTile *tile : workspace->get_tiles()) {
-					tile->set_signals_dock_enabled(!signals_disabled);
-					tile->set_groups_dock_enabled(!groups_disabled);
-					tile->set_history_dock_enabled(!history_disabled);
+					_apply_feature_profile_to_tile(tile, profile);
 				}
 			}
 		}
@@ -10406,9 +10527,7 @@ void EditorNode::_feature_profile_changed() {
 			// Clearing a feature profile is editor-global for the same reason.
 			for (EditorSceneWorkspace *workspace : board_strip->get_workspaces()) {
 				for (ScenePaneTile *tile : workspace->get_tiles()) {
-					tile->set_signals_dock_enabled(true);
-					tile->set_groups_dock_enabled(true);
-					tile->set_history_dock_enabled(true);
+					_apply_feature_profile_to_tile(tile, profile);
 				}
 			}
 		}
@@ -10418,6 +10537,7 @@ void EditorNode::_feature_profile_changed() {
 			editor_main_screen->set_button_enabled(EditorMainScreen::EDITOR_GAME, true);
 		}
 	}
+	_update_tile_display_attachments();
 
 	// The script editor lives in a workspace leaf rather than a toolbar tab, so
 	// disabling the script feature must also close any open script leaf.
@@ -11671,7 +11791,7 @@ EditorNode::EditorNode() {
 
 	_update_main_menu_type();
 
-	// Spacer to center 2D / 3D / Script buttons.
+	// Flexible title-bar space balanced around the centered board rail.
 	left_spacer = memnew(HBoxContainer);
 	left_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	left_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -11690,11 +11810,19 @@ EditorNode::EditorNode() {
 	HBoxContainer *main_editor_button_hb = memnew(HBoxContainer);
 	main_editor_button_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);
 	main_editor_button_hb->set_name("EditorMainScreenButtons");
+	main_editor_button_hb->hide();
 	editor_main_screen->set_button_container(main_editor_button_hb);
 	title_bar->add_child(main_editor_button_hb);
-	title_bar->set_center_control(main_editor_button_hb);
 
-	// Spacer to center 2D / 3D / Script buttons.
+	board_switcher = memnew(EditorBoardSwitcher);
+	title_bar->add_child(board_switcher);
+	board_switcher->setup(board_strip);
+	board_switcher->connect(SNAME("board_requested"), callable_mp(this, &EditorNode::_on_board_requested));
+	title_bar->set_center_control(board_switcher);
+	// Overview captions reach the same board actions menu the title-bar switcher owns.
+	board_strip->set_board_context_menu_handler(callable_mp(board_switcher, &EditorBoardSwitcher::popup_board_actions));
+
+	// Flexible title-bar space balanced around the centered board rail.
 	right_spacer = memnew(Control);
 	right_spacer->set_mouse_filter(Control::MOUSE_FILTER_PASS);
 	right_spacer->set_h_size_flags(Control::SIZE_EXPAND_FILL);
@@ -11705,12 +11833,6 @@ EditorNode::EditorNode() {
 	title_bar->add_child(project_run_bar);
 	project_run_bar->connect("play_pressed", callable_mp(this, &EditorNode::_project_run_started));
 	project_run_bar->connect("stop_pressed", callable_mp(this, &EditorNode::_project_run_stopped));
-
-	board_switcher = memnew(EditorBoardSwitcher);
-	title_bar->add_child(board_switcher);
-	board_switcher->setup(board_strip);
-	// Overview captions reach the same board actions menu the title-bar switcher owns.
-	board_strip->set_board_context_menu_handler(callable_mp(board_switcher, &EditorBoardSwitcher::popup_board_actions));
 
 	right_menu_hb = memnew(HBoxContainer);
 	right_menu_hb->set_mouse_filter(Control::MOUSE_FILTER_STOP);

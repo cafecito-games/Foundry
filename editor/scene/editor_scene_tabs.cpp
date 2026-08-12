@@ -268,6 +268,7 @@ void EditorSceneTabs::update_scene_tabs() {
 	const Vector<int> tile_scenes = EditorNode::get_editor_data().get_tile_scene_indices(tile_id);
 	if (menu_initialized.has(tile_id) && scene_tabs->get_tab_count() == tile_scenes.size()) {
 		_update_tab_titles();
+		emit_signal(SNAME("tabs_updated"));
 		return;
 	}
 	menu_initialized.insert(tile_id);
@@ -302,6 +303,7 @@ void EditorSceneTabs::update_scene_tabs() {
 	}
 
 	_update_tab_titles();
+	emit_signal(SNAME("tabs_updated"));
 }
 
 void EditorSceneTabs::_update_tab_titles() {
@@ -440,8 +442,20 @@ void EditorSceneTabs::shortcut_input(const Ref<InputEvent> &p_event) {
 	}
 }
 
+void EditorSceneTabs::add_extra_control(Control *p_control) {
+	ERR_FAIL_NULL(p_control);
+	if (p_control->get_parent()) {
+		p_control->reparent(tabbar_container);
+	} else {
+		tabbar_container->add_child(p_control);
+	}
+	if (scene_list) {
+		tabbar_container->move_child(p_control, scene_list->get_index());
+	}
+}
+
 void EditorSceneTabs::add_extra_button(Button *p_button) {
-	tabbar_container->add_child(p_button);
+	add_extra_control(p_button);
 }
 
 void EditorSceneTabs::set_current_tab(int p_tab) {
@@ -455,6 +469,7 @@ int EditorSceneTabs::get_current_tab() const {
 void EditorSceneTabs::_bind_methods() {
 	ADD_SIGNAL(MethodInfo("tab_changed", PropertyInfo(Variant::INT, "tab_index")));
 	ADD_SIGNAL(MethodInfo("tab_closed", PropertyInfo(Variant::INT, "tab_index")));
+	ADD_SIGNAL(MethodInfo("tabs_updated"));
 }
 
 EditorSceneTabs::EditorSceneTabs(int p_tile_id) {

@@ -33,6 +33,7 @@
 #include "core/object/script_language.h"
 #include "core/templates/safe_refcount.h"
 #include "editor/editor_data.h"
+#include "editor/editor_scene_mode.h"
 #include "editor/gui/side_rail_state.h"
 #include "editor/plugins/editor_plugin.h"
 #include "editor/settings/editor_folding.h"
@@ -86,6 +87,7 @@ class EditorDockManager;
 class EditorExport;
 class EditorExportPreset;
 class EditorFeatureProfileManager;
+class EditorFeatureProfile;
 class EditorFileDialog;
 class EditorFolding;
 class EditorLayoutStore;
@@ -770,6 +772,7 @@ private:
 	// EditorData's focused tile by the time this runs, so scene routing is correct even if
 	// the presentation below has to wait for a drop to finish.
 	void _on_active_board_changed(int p_index);
+	void _on_board_requested(int p_index);
 	// Activates the board p_delta positions away from the active one, wrapping around the
 	// ends of the list. Used by the previous/next board shortcuts.
 	void _activate_relative_board(int p_delta);
@@ -786,6 +789,8 @@ private:
 	void _promote_non_demotable_tiles();
 	void _sync_scene_viewport_2d_state_with_main_screen();
 	void _sync_focused_tile_chrome(ScenePaneTile *p_tile);
+	void _apply_scene_editor_mode(ScenePaneTile *p_tile, EditorSceneContext *p_context, bool p_force_scene_screen = false);
+	void _apply_feature_profile_to_tile(ScenePaneTile *p_tile, const Ref<EditorFeatureProfile> &p_profile);
 	void _bind_leaf_docks(int p_leaf_id);
 	void _bind_all_leaf_docks();
 	void _wire_leaf_tile(WorkspaceLeafNode *p_leaf);
@@ -805,6 +810,7 @@ private:
 	void _complete_script_leaf_focus(int p_leaf_id);
 	void _on_tile_tab_changed(int p_tab, int p_tile_id);
 	void _on_tile_tab_closed(int p_tab, int p_tile_id);
+	void _on_tile_scene_editor_mode_requested(int p_tile_id, int p_mode);
 	void _update_all_scene_tabs();
 	void _focus_leaf_scene_tree_dock();
 	void _focus_leaf_inspector_dock();
@@ -938,6 +944,11 @@ public:
 
 	// Returns the focused scene tile's in-tile dock instances (not global shell docks).
 	ScenePaneTile *get_focused_tile() const;
+	bool set_focused_tile_scene_editor_mode(SceneEditorMode p_mode);
+	// Restores the shared scene editor from the focused tile's durable mode after
+	// a transient main-screen plugin disappears.
+	bool restore_focused_scene_main_screen();
+	void select_main_screen(int p_index);
 	SceneTreeDock *get_focused_scene_tree_dock() const;
 	InspectorDock *get_focused_inspector_dock() const;
 	EditorInspector *get_focused_inspector() const;
