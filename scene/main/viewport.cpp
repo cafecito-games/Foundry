@@ -1731,6 +1731,9 @@ void Viewport::_gui_call_input(Control *p_control, const Ref<InputEvent> &p_inpu
 				control->_call_gui_input(ev);
 				control = ObjectDB::get_instance<Control>(control_id);
 				if (!control) {
+					if (is_pointer_event) {
+						set_input_as_handled();
+					}
 					break;
 				}
 				ci = control;

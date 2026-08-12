@@ -218,6 +218,17 @@ public:
 	}
 };
 
+class GuiInputLifetimeUnhandledObserver : public Node {
+	FOUNDRY_CLASS(GuiInputLifetimeUnhandledObserver, Node);
+
+public:
+	int input_count = 0;
+
+	void unhandled_input(const Ref<InputEvent> &p_event) override {
+		input_count++;
+	}
+};
+
 class DropLifetimeTarget : public Control {
 	FOUNDRY_CLASS(DropLifetimeTarget, Control);
 
@@ -1626,6 +1637,9 @@ TEST_CASE("[SceneTree][Viewport] GUI callback target lifetime - signal deletion"
 
 TEST_CASE("[SceneTree][Viewport] GUI callback target lifetime - native deletion") {
 	Window *root = SceneTree::get_singleton()->get_root();
+	GuiInputLifetimeUnhandledObserver *unhandled_observer = memnew(GuiInputLifetimeUnhandledObserver);
+	unhandled_observer->set_process_unhandled_input(true);
+	root->add_child(unhandled_observer);
 	int parent_input_count = 0;
 	int child_input_count = 0;
 	GuiInputLifetimeTarget *parent = memnew(GuiInputLifetimeTarget);
@@ -1648,7 +1662,9 @@ TEST_CASE("[SceneTree][Viewport] GUI callback target lifetime - native deletion"
 	CHECK(ObjectDB::get_instance(child_id) == nullptr);
 	CHECK(child_input_count == 1);
 	CHECK(parent_input_count == 0);
+	CHECK(unhandled_observer->input_count == 0);
 	memdelete(parent);
+	memdelete(unhandled_observer);
 }
 
 TEST_CASE("[SceneTree][Viewport] GUI callback target lifetime - validation deletion") {
