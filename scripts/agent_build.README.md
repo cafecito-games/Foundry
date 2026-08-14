@@ -10,9 +10,34 @@ backend.
 python3 scripts/agent_build.py
 ```
 
-The default build enables both `dev_mode=yes` and `dev_build=yes`, builds tests, uses all host CPUs,
-and shares SCons objects through `$HOME/.scons_cache`. `--dev-build` omits `dev_mode=yes` for faster
-iteration only; rerun the default native strict build before handoff.
+The default build enables both `dev_mode=yes` and `dev_build=yes`, builds tests, uses all CPUs the
+workspace is actually allowed to use, and shares SCons objects through `$HOME/.scons_cache`.
+`--dev-build` omits `dev_mode=yes` for faster iteration only; rerun the default native strict build
+before handoff.
+
+## Build concurrency
+
+The job count is resolved in this order, highest precedence first:
+
+1. `--jobs <n>`.
+2. `FOUNDRY_BUILD_JOBS=<n>` in the environment.
+3. The effective cgroup CPU quota, when the process runs under one (cgroup v2 `cpu.max` or cgroup v1
+   CFS quota, whichever is tightest, rounded down and clamped to at least one job).
+4. The host CPU count.
+
+Step 3 exists because a container can see every host CPU through `nproc`/`os.cpu_count()` while being
+allowed only a fraction of them. Defaulting to the host count there launches far more compilers than
+the workspace can sustain, and builds fail to spawn processes instead of merely running slowly.
+
+The wrapper prints the decision at startup:
+
+```text
+[agent-build] jobs: 4 (source: cgroup-cpu-quota)
+```
+
+and records it as `jobs` and `jobs_source` in the final `build_summary` progress event. `jobs_source`
+is one of `--jobs`, `FOUNDRY_BUILD_JOBS`, `cgroup-cpu-quota`, or `host-cpu-count`. A non-positive or
+non-numeric `FOUNDRY_BUILD_JOBS` is a hard error rather than a silent fallback.
 
 ## Prerequisites
 

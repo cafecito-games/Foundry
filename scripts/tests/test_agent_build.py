@@ -1021,7 +1021,14 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
         self.assertEqual(payload["invocation_id"], "invocation-stdout")
         self.assertEqual(payload["cache_stats_status"], "disabled")
         self.assertEqual(run_command.call_args.kwargs["invocation_id"], payload["invocation_id"])
-        self.assertIn("[agent-build] summary: backend=scons cache=none duration=1s", stderr.getvalue())
+        source = payload["jobs_source"]
+        self.assertIn(source, {"host-cpu-count", "cgroup-cpu-quota", agent_build.JOBS_ENVIRONMENT_VARIABLE})
+        self.assertGreaterEqual(payload["jobs"], 1)
+        self.assertIn(f"[agent-build] jobs: {payload['jobs']} (source: {source})", stderr.getvalue())
+        self.assertIn(
+            f"[agent-build] summary: backend=scons cache=none jobs={payload['jobs']}({source}) duration=1s",
+            stderr.getvalue(),
+        )
 
     def test_main_records_spawn_error_summary_and_returns_127(self) -> None:
         stdout = io.StringIO()
@@ -1087,6 +1094,146 @@ class AgentBuildCharacterizationTests(unittest.TestCase):
             [f"cache_path={agent_build.DEFAULT_CACHE_PATH}", "cache_path=/tmp/custom-scons-cache"],
         )
         self.assertIn("verbose=yes", command)
+
+
+class JobConcurrencyTests(unittest.TestCase):
+    def _temporary_directory(self) -> str:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        return directory.name
+
+    def _cgroup_v2(self, cpu_max: str | None, relative: str = "/") -> tuple[Path, Path]:
+        root = Path(self._temporary_directory())
+        cgroup_root = root / "cgroup"
+        leaf = cgroup_root / relative.lstrip("/")
+        leaf.mkdir(parents=True, exist_ok=True)
+        if cpu_max is not None:
+            (leaf / "cpu.max").write_text(f"{cpu_max}\n", encoding="utf-8")
+        proc_cgroup = root / "proc_self_cgroup"
+        proc_cgroup.write_text(f"0::{relative}\n", encoding="utf-8")
+        return cgroup_root, proc_cgroup
+
+    def _resolve(self, **overrides: Any) -> Any:
+        cgroup_root, proc_cgroup = self._cgroup_v2(overrides.pop("cpu_max", None), overrides.pop("relative", "/"))
+        arguments: dict[str, Any] = {
+            "explicit_jobs": None,
+            "environment": {},
+            "host_cpu_count": 16,
+            "cgroup_root": cgroup_root,
+            "proc_cgroup": proc_cgroup,
+        }
+        arguments.update(overrides)
+        return agent_build.resolve_job_selection(**arguments)
+
+    def test_host_cpu_count_is_used_without_a_cgroup_quota(self) -> None:
+        selection = self._resolve(cpu_max="max 100000")
+        self.assertEqual(selection.jobs, 16)
+        self.assertEqual(selection.source, "host-cpu-count")
+
+    def test_missing_cgroup_files_fall_back_to_the_host_cpu_count(self) -> None:
+        selection = self._resolve()
+        self.assertEqual(selection.jobs, 16)
+        self.assertEqual(selection.source, "host-cpu-count")
+
+    def test_cgroup_quota_caps_the_default_job_count(self) -> None:
+        selection = self._resolve(cpu_max="400000 100000")
+        self.assertEqual(selection.jobs, 4)
+        self.assertEqual(selection.source, "cgroup-cpu-quota")
+
+    def test_fractional_cgroup_quota_rounds_down_but_stays_positive(self) -> None:
+        self.assertEqual(self._resolve(cpu_max="250000 100000").jobs, 2)
+        self.assertEqual(self._resolve(cpu_max="50000 100000").jobs, 1)
+
+    def test_cgroup_quota_above_the_host_cpu_count_does_not_inflate_jobs(self) -> None:
+        selection = self._resolve(cpu_max="3200000 100000", host_cpu_count=8)
+        self.assertEqual(selection.jobs, 8)
+        self.assertEqual(selection.source, "host-cpu-count")
+
+    def test_nested_cgroup_quota_is_read_from_the_process_cgroup_path(self) -> None:
+        selection = self._resolve(cpu_max="200000 100000", relative="/workspace/build")
+        self.assertEqual(selection.jobs, 2)
+        self.assertEqual(selection.source, "cgroup-cpu-quota")
+
+    def test_cgroup_v1_quota_is_honored(self) -> None:
+        root = Path(self._temporary_directory())
+        cgroup_root = root / "cgroup"
+        (cgroup_root / "cpu").mkdir(parents=True)
+        (cgroup_root / "cpu" / "cpu.cfs_quota_us").write_text("300000\n", encoding="utf-8")
+        (cgroup_root / "cpu" / "cpu.cfs_period_us").write_text("100000\n", encoding="utf-8")
+        proc_cgroup = root / "proc_self_cgroup"
+        proc_cgroup.write_text("1:cpu:/\n", encoding="utf-8")
+        selection = agent_build.resolve_job_selection(
+            explicit_jobs=None,
+            environment={},
+            host_cpu_count=16,
+            cgroup_root=cgroup_root,
+            proc_cgroup=proc_cgroup,
+        )
+        self.assertEqual(selection.jobs, 3)
+        self.assertEqual(selection.source, "cgroup-cpu-quota")
+
+    def test_nested_cgroup_v1_quota_is_read_from_the_process_cgroup_path(self) -> None:
+        root = Path(self._temporary_directory())
+        cgroup_root = root / "cgroup"
+        scoped = cgroup_root / "cpu,cpuacct" / "docker" / "abc123"
+        scoped.mkdir(parents=True)
+        (scoped / "cpu.cfs_quota_us").write_text("200000\n", encoding="utf-8")
+        (scoped / "cpu.cfs_period_us").write_text("100000\n", encoding="utf-8")
+        proc_cgroup = root / "proc_self_cgroup"
+        proc_cgroup.write_text("3:cpu,cpuacct:/docker/abc123\n", encoding="utf-8")
+        selection = agent_build.resolve_job_selection(
+            explicit_jobs=None,
+            environment={},
+            host_cpu_count=16,
+            cgroup_root=cgroup_root,
+            proc_cgroup=proc_cgroup,
+        )
+        self.assertEqual(selection.jobs, 2)
+        self.assertEqual(selection.source, "cgroup-cpu-quota")
+
+    def test_environment_override_beats_the_detected_default(self) -> None:
+        selection = self._resolve(cpu_max="400000 100000", environment={"FOUNDRY_BUILD_JOBS": "6"})
+        self.assertEqual(selection.jobs, 6)
+        self.assertEqual(selection.source, "FOUNDRY_BUILD_JOBS")
+
+    def test_explicit_jobs_beat_the_environment_override(self) -> None:
+        selection = self._resolve(
+            cpu_max="400000 100000",
+            environment={"FOUNDRY_BUILD_JOBS": "6"},
+            explicit_jobs=9,
+        )
+        self.assertEqual(selection.jobs, 9)
+        self.assertEqual(selection.source, "--jobs")
+
+    def test_invalid_environment_override_is_rejected(self) -> None:
+        for value in ("0", "-2", "many", ""):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    self._resolve(environment={"FOUNDRY_BUILD_JOBS": value})
+
+    def test_unreadable_cgroup_values_fall_back_to_the_host_cpu_count(self) -> None:
+        for value in ("garbage", "100000 0", "100000"):
+            with self.subTest(value=value):
+                selection = self._resolve(cpu_max=value)
+                self.assertEqual(selection.jobs, 16)
+                self.assertEqual(selection.source, "host-cpu-count")
+
+    def test_parse_args_records_the_job_count_and_its_source(self) -> None:
+        with mock.patch.dict(os.environ, {"FOUNDRY_BUILD_JOBS": "5"}, clear=False):
+            args = agent_build.parse_args([])
+        self.assertEqual(args.jobs, 5)
+        self.assertEqual(args.jobs_source, "FOUNDRY_BUILD_JOBS")
+        with mock.patch.dict(os.environ, {"FOUNDRY_BUILD_JOBS": "5"}, clear=False):
+            args = agent_build.parse_args(["--jobs", "3"])
+        self.assertEqual(args.jobs, 3)
+        self.assertEqual(args.jobs_source, "--jobs")
+
+    def test_parse_args_rejects_an_invalid_environment_override(self) -> None:
+        stderr = io.StringIO()
+        with mock.patch.dict(os.environ, {"FOUNDRY_BUILD_JOBS": "nope"}, clear=False):
+            with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+                agent_build.parse_args([])
+        self.assertIn("FOUNDRY_BUILD_JOBS", stderr.getvalue())
 
 
 if __name__ == "__main__":
