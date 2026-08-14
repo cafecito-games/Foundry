@@ -106,9 +106,8 @@ def read_cgroup_v2_cpu_limit(directory: Path) -> float | None:
     return quota / period
 
 
-def read_cgroup_v1_cpu_limit(cgroup_root: Path) -> float | None:
+def read_cgroup_v1_cpu_limit(directory: Path) -> float | None:
     """Effective CPU count from cgroup v1 CFS quota files, or None when unlimited."""
-    directory = cgroup_root / "cpu"
     try:
         quota = int((directory / "cpu.cfs_quota_us").read_text(encoding="utf-8").strip())
         period = int((directory / "cpu.cfs_period_us").read_text(encoding="utf-8").strip())
@@ -136,21 +135,49 @@ def cgroup_v2_directories(cgroup_root: Path, proc_cgroup: Path) -> list[Path]:
     return directories
 
 
+def cgroup_v1_directories(cgroup_root: Path, proc_cgroup: Path) -> list[Path]:
+    """Every cgroup v1 CPU controller directory that applies to this process.
+
+    A container's quota can live either at the controller mount root (when the mount is already
+    scoped to the container) or under the process-specific path from `/proc/self/cgroup`.
+    """
+    bases = [cgroup_root / "cpu"]
+    relative = ""
+    try:
+        lines = proc_cgroup.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    for line in lines:
+        _, _, remainder = line.partition(":")
+        controllers, _, path = remainder.partition(":")
+        if "cpu" not in controllers.split(","):
+            continue
+        mount = cgroup_root / controllers
+        if mount not in bases:
+            bases.append(mount)
+        relative = path
+        break
+
+    directories: list[Path] = []
+    for base in bases:
+        directories.append(base)
+        directory = base
+        for part in relative.split("/"):
+            if not part or part in (".", ".."):
+                continue
+            directory = directory / part
+            directories.append(directory)
+    return directories
+
+
 def cgroup_cpu_limit(
     cgroup_root: Path = DEFAULT_CGROUP_ROOT,
     proc_cgroup: Path = DEFAULT_PROC_CGROUP,
 ) -> float | None:
     """The tightest CPU quota that applies to this process, or None when unconstrained."""
-    limits = [
-        limit
-        for limit in (
-            read_cgroup_v2_cpu_limit(directory) for directory in cgroup_v2_directories(cgroup_root, proc_cgroup)
-        )
-        if limit is not None
-    ]
-    version_one_limit = read_cgroup_v1_cpu_limit(cgroup_root)
-    if version_one_limit is not None:
-        limits.append(version_one_limit)
+    readings = [read_cgroup_v2_cpu_limit(directory) for directory in cgroup_v2_directories(cgroup_root, proc_cgroup)]
+    readings += [read_cgroup_v1_cpu_limit(directory) for directory in cgroup_v1_directories(cgroup_root, proc_cgroup)]
+    limits = [limit for limit in readings if limit is not None]
     return min(limits) if limits else None
 
 

@@ -1172,6 +1172,25 @@ class JobConcurrencyTests(unittest.TestCase):
         self.assertEqual(selection.jobs, 3)
         self.assertEqual(selection.source, "cgroup-cpu-quota")
 
+    def test_nested_cgroup_v1_quota_is_read_from_the_process_cgroup_path(self) -> None:
+        root = Path(self._temporary_directory())
+        cgroup_root = root / "cgroup"
+        scoped = cgroup_root / "cpu,cpuacct" / "docker" / "abc123"
+        scoped.mkdir(parents=True)
+        (scoped / "cpu.cfs_quota_us").write_text("200000\n", encoding="utf-8")
+        (scoped / "cpu.cfs_period_us").write_text("100000\n", encoding="utf-8")
+        proc_cgroup = root / "proc_self_cgroup"
+        proc_cgroup.write_text("3:cpu,cpuacct:/docker/abc123\n", encoding="utf-8")
+        selection = agent_build.resolve_job_selection(
+            explicit_jobs=None,
+            environment={},
+            host_cpu_count=16,
+            cgroup_root=cgroup_root,
+            proc_cgroup=proc_cgroup,
+        )
+        self.assertEqual(selection.jobs, 2)
+        self.assertEqual(selection.source, "cgroup-cpu-quota")
+
     def test_environment_override_beats_the_detected_default(self) -> None:
         selection = self._resolve(cpu_max="400000 100000", environment={"FOUNDRY_BUILD_JOBS": "6"})
         self.assertEqual(selection.jobs, 6)
