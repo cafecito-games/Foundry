@@ -124,7 +124,6 @@ TEST_CASE("[FontFile] Create font file and check data") {
 #endif
 }
 
-
 TEST_CASE("[FontFile] Metric cache invalidation after setter changes") {
 #ifdef MODULE_FREETYPE_ENABLED
 	Ref<FontFile> ff;
@@ -144,6 +143,38 @@ TEST_CASE("[FontFile] Metric cache invalidation after setter changes") {
 	CHECK_MESSAGE(ff->get_height(16) == doctest::Approx(orig_height + 100.0),
 			"get_height should reflect overridden ascent, not a stale cache.");
 #endif
+}
+
+TEST_CASE("[FontFile] get_char_from_glyph_index carries the signed Variant carrier through Object::call") {
+	// `FontFile::get_char_from_glyph_index()` returns `char32_t` and is bound through
+	// `ClassDB::bind_method` without `ADD_PROPERTY` (no property, no XML default), so the
+	// generic call path in `MethodBind::call()` is its only route to the documentation tool
+	// and script access. That path builds the return value with `VariantInternal::make()`,
+	// doing plain `Variant(v)` overload resolution, which before the dedicated `char32_t`
+	// constructor selected `Variant(uint32_t)` and produced `Variant::UINT`, contradicting
+	// the `Variant::INT` carrier that `GetTypeInfo<char32_t>` declares. This test pins the
+	// carrier independently of the `InputEventKey.unicode` coverage in
+	// `tests/core/variant/test_variant_char_carrier.h` (see #1805, #1806).
+	Ref<FontFile> font_file;
+	font_file.instantiate();
+
+#if defined(MODULE_FREETYPE_ENABLED) && defined(MODULE_TEXT_SERVER_ADV_ENABLED)
+	// Only the Advanced server with FreeType maps characters to real glyph indexes and
+	// back; the fallback server and the advanced server without FreeType identity-map
+	// glyph indexes to code points.
+	CHECK(font_file->load_dynamic_font("thirdparty/fonts/Inter_Regular.woff2") == OK);
+
+	const int32_t a_glyph_index = font_file->get_glyph_index(2, U'a', 0);
+	CHECK(a_glyph_index != 0);
+#else
+	// Identity-mapping configurations return the glyph index unchanged as the character,
+	// so any code point is a valid glyph index round-trip.
+	const int32_t a_glyph_index = U'a';
+#endif
+
+	const Variant char_variant = font_file->call("get_char_from_glyph_index", 2, a_glyph_index);
+	CHECK_MESSAGE(char_variant.get_type() == Variant::INT, "The char32_t return value must carry Variant::INT, not Variant::UINT.");
+	CHECK_MESSAGE(char_variant.operator int64_t() == int64_t(U'a'), "The glyph index should return the code point of the original character.");
 }
 
 } // namespace TestFontfile
