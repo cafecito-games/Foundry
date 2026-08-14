@@ -19,6 +19,7 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple, TextIO, cast
@@ -43,6 +44,9 @@ NINJA_OWNED_SCONS_KEYS = frozenset(
     }
 )
 TELEMETRY_TIMEOUT_SECONDS = 5.0
+JOBS_ENVIRONMENT_VARIABLE = "FOUNDRY_BUILD_JOBS"
+DEFAULT_CGROUP_ROOT = Path("/sys/fs/cgroup")
+DEFAULT_PROC_CGROUP = Path("/proc/self/cgroup")
 BUILD_DESCRIPTION_EXCLUDED_DIRECTORIES = frozenset(
     {".foundry", ".git", ".ninja", ".test_scratch", ".worktrees", "__pycache__", "bin", "build", "out"}
 )
@@ -75,6 +79,115 @@ BUILD_GRAPH_UNTRACKED_SUFFIXES = frozenset(
         ".yml",
     }
 )
+
+
+class JobSelection(NamedTuple):
+    """Build concurrency together with the input that determined it."""
+
+    jobs: int
+    source: str
+
+
+def read_cgroup_v2_cpu_limit(directory: Path) -> float | None:
+    """Effective CPU count from a cgroup v2 `cpu.max` file, or None when unlimited."""
+    try:
+        fields = (directory / "cpu.max").read_text(encoding="utf-8").split()
+    except OSError:
+        return None
+    if len(fields) != 2 or fields[0] == "max":
+        return None
+    try:
+        quota = int(fields[0])
+        period = int(fields[1])
+    except ValueError:
+        return None
+    if quota <= 0 or period <= 0:
+        return None
+    return quota / period
+
+
+def read_cgroup_v1_cpu_limit(cgroup_root: Path) -> float | None:
+    """Effective CPU count from cgroup v1 CFS quota files, or None when unlimited."""
+    directory = cgroup_root / "cpu"
+    try:
+        quota = int((directory / "cpu.cfs_quota_us").read_text(encoding="utf-8").strip())
+        period = int((directory / "cpu.cfs_period_us").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    if quota <= 0 or period <= 0:
+        return None
+    return quota / period
+
+
+def cgroup_v2_directories(cgroup_root: Path, proc_cgroup: Path) -> list[Path]:
+    """The cgroup mount root plus every directory down to this process' own cgroup."""
+    directories = [cgroup_root]
+    try:
+        lines = proc_cgroup.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return directories
+    relative = next((line.partition("::")[2] for line in lines if line.startswith("0::")), "")
+    directory = cgroup_root
+    for part in relative.split("/"):
+        if not part or part in (".", ".."):
+            continue
+        directory = directory / part
+        directories.append(directory)
+    return directories
+
+
+def cgroup_cpu_limit(
+    cgroup_root: Path = DEFAULT_CGROUP_ROOT,
+    proc_cgroup: Path = DEFAULT_PROC_CGROUP,
+) -> float | None:
+    """The tightest CPU quota that applies to this process, or None when unconstrained."""
+    limits = [
+        limit
+        for limit in (
+            read_cgroup_v2_cpu_limit(directory) for directory in cgroup_v2_directories(cgroup_root, proc_cgroup)
+        )
+        if limit is not None
+    ]
+    version_one_limit = read_cgroup_v1_cpu_limit(cgroup_root)
+    if version_one_limit is not None:
+        limits.append(version_one_limit)
+    return min(limits) if limits else None
+
+
+def resolve_job_selection(
+    explicit_jobs: int | None,
+    environment: Mapping[str, str],
+    host_cpu_count: int | None,
+    cgroup_root: Path = DEFAULT_CGROUP_ROOT,
+    proc_cgroup: Path = DEFAULT_PROC_CGROUP,
+) -> JobSelection:
+    """Pick build concurrency from --jobs, the environment override, or the execution environment.
+
+    A container can see every host CPU while being allowed only a fraction of them, so the
+    host CPU count alone overcommits the workspace and makes builds fail to spawn processes.
+    """
+    if explicit_jobs is not None:
+        if explicit_jobs < 1:
+            raise ValueError("--jobs must be at least 1")
+        return JobSelection(explicit_jobs, "--jobs")
+
+    override = environment.get(JOBS_ENVIRONMENT_VARIABLE)
+    if override is not None:
+        try:
+            requested = int(override.strip())
+        except ValueError:
+            requested = 0
+        if requested < 1:
+            raise ValueError(f"{JOBS_ENVIRONMENT_VARIABLE} must be a positive integer, got {override!r}")
+        return JobSelection(requested, JOBS_ENVIRONMENT_VARIABLE)
+
+    host_jobs = max(1, host_cpu_count or 1)
+    quota = cgroup_cpu_limit(cgroup_root, proc_cgroup)
+    if quota is not None:
+        quota_jobs = max(1, int(quota))
+        if quota_jobs < host_jobs:
+            return JobSelection(quota_jobs, "cgroup-cpu-quota")
+    return JobSelection(host_jobs, "host-cpu-count")
 
 
 def resolve_compiler_cache(args: argparse.Namespace) -> str:
@@ -797,8 +910,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--jobs",
         type=int,
-        default=os.cpu_count() or 1,
-        help="Parallel SCons jobs. Default: CPU count.",
+        default=None,
+        help=(
+            "Parallel build jobs. Default: the effective cgroup CPU quota when one applies, "
+            f"otherwise the host CPU count. Set {JOBS_ENVIRONMENT_VARIABLE} to override the default."
+        ),
     )
     parser.add_argument(
         "--log",
@@ -850,8 +966,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         parser.error("--dev-mode and --dev-build cannot be combined")
     if args.test_case:
         args.test = True
-    if args.jobs < 1:
-        parser.error("--jobs must be at least 1")
+    try:
+        job_selection = resolve_job_selection(args.jobs, os.environ, os.cpu_count())
+    except ValueError as exc:
+        parser.error(str(exc))
+    args.jobs = job_selection.jobs
+    args.jobs_source = job_selection.source
     if args.heartbeat < 0:
         parser.error("--heartbeat must be non-negative")
     if args.backend == "ninja":
@@ -910,6 +1030,8 @@ def main(argv: list[str]) -> int:
     progress_path = progress_path_from_args(args)
     progress_stdout_jsonl = args.progress_format == "jsonl"
     human_stream = sys.stderr if progress_stdout_jsonl else sys.stdout
+
+    print(f"[agent-build] jobs: {args.jobs} (source: {args.jobs_source})", file=human_stream)
 
     invocation_id = new_invocation_id()
     git_commit, git_commit_error = read_git_commit()
@@ -1033,6 +1155,7 @@ def main(argv: list[str]) -> int:
             "platform": target.scons_platform,
             "arch": arch_from_args(args),
             "jobs": args.jobs,
+            "jobs_source": args.jobs_source,
             "build_command": build_command_args,
             "generation_command": generation_command_args,
             "generation_status": generation_status,
@@ -1065,7 +1188,7 @@ def main(argv: list[str]) -> int:
             print(f"[agent-build] warning: could not emit build summary: {exc}", file=sys.stderr)
         print(
             f"[agent-build] summary: backend={args.backend} cache={compiler_cache} "
-            f"duration={format_duration(build_duration)} log={args.log}",
+            f"jobs={args.jobs}({args.jobs_source}) duration={format_duration(build_duration)} log={args.log}",
             file=human_stream,
         )
         if stats_log_path is not None:
