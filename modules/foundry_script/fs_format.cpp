@@ -420,6 +420,13 @@ static bool class_line_is_inside_member(const FSParser::ClassNode *p_class, int 
 	if (p_class == nullptr) {
 		return false;
 	}
+	// A retroactive conformance body is not a member, but its witness bodies are
+	// ordinary function suites whose strings belong to the AST just the same.
+	for (const FSParser::ConformanceNode *conformance : p_class->conformances) {
+		if (conformance->start_line > 0 && p_line >= conformance->start_line && p_line <= conformance->end_line) {
+			return true;
+		}
+	}
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const FSParser::ClassNode::Member &member = p_class->members[i];
 		const FSParser::Node *node = member.get_source_node();
@@ -1109,10 +1116,9 @@ void FSPrinter::print_class(const FSParser::ClassNode *p_class, bool p_is_root, 
 	emit_trailing_comment(p_class->start_line);
 	indent_level++;
 	if (p_class->members.is_empty()) {
-		// An inner class with an empty body (only `pass`) still needs a body line.
-		write_indent();
-		write("pass");
-		newline();
+		// An inner class or trait with an empty body (only `pass`) still needs a body
+		// line, and the parser does not retain the source `pass`.
+		print_synthesized_pass(p_class->start_line, p_class->end_line);
 	} else {
 		print_class_body(p_class, false);
 	}
@@ -1262,7 +1268,45 @@ void FSPrinter::print_trait_use(const FSParser::ClassNode::TraitUse &p_use) {
 }
 
 void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_root) {
-	const FSParser::ClassNode::Member *previous = nullptr;
+	// Canonical vertical spacing around definitions (functions, classes, and
+	// conformances): two blank lines at the top level, one inside a nested class.
+	// Other member kinds (vars, constants, signals) keep no enforced blank.
+	const int top_level_definition_blanks = 2;
+	const int nested_definition_blanks = 1;
+	bool has_previous = false;
+	bool previous_is_definition = false;
+	const auto required_blanks_before = [&](bool p_definition) -> int {
+		if (!has_previous) {
+			return 0;
+		}
+		const bool definition = p_definition || previous_is_definition;
+		return definition ? (p_is_root ? top_level_definition_blanks : nested_definition_blanks) : 0;
+	};
+
+	// Retroactive conformances (`extend X uses Y:`) declare no runtime member, so the
+	// parser keeps them in a side list instead of `members`. They are still source-order
+	// declarations, and both lists are already in source order, so a two-cursor merge on
+	// start line restores the file's ordering without giving them a member entry.
+	int conformance_index = 0;
+	const auto emit_conformances_before = [&](int p_line) {
+		while (conformance_index < p_class->conformances.size()) {
+			const FSParser::ConformanceNode *conformance = p_class->conformances[conformance_index];
+			if (p_line > 0 && conformance->start_line > p_line) {
+				return;
+			}
+			conformance_index++;
+			if (conformance->start_line > 0) {
+				emit_leading_trivia(conformance->start_line, required_blanks_before(true));
+			}
+			print_conformance(conformance);
+			if (conformance->end_line > last_emitted_line) {
+				last_emitted_line = conformance->end_line;
+			}
+			has_previous = true;
+			previous_is_definition = true;
+		}
+	};
+
 	for (int i = 0; i < p_class->members.size(); i++) {
 		const FSParser::ClassNode::Member &member = p_class->members[i];
 		// Unnamed enum values are flattened into the class; only the first one
@@ -1273,17 +1317,9 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 
 		const FSParser::Node *node = member_node(member);
 		const int start_line = member_start_line(member);
+		emit_conformances_before(start_line);
 
-		// Canonical vertical spacing around definitions (functions and classes):
-		// two blank lines at the top level, one inside a nested class. Other
-		// member kinds (vars, constants, signals) keep no enforced blank.
-		const int top_level_definition_blanks = 2;
-		const int nested_definition_blanks = 1;
-		int required_blanks = 0;
-		if (previous != nullptr) {
-			const bool definition = member_is_definition(member) || member_is_definition(*previous);
-			required_blanks = definition ? (p_is_root ? top_level_definition_blanks : nested_definition_blanks) : 0;
-		}
+		const int required_blanks = required_blanks_before(member_is_definition(member));
 		if (start_line > 0) {
 			emit_leading_trivia(start_line, required_blanks);
 		}
@@ -1329,12 +1365,65 @@ void FSPrinter::print_class_body(const FSParser::ClassNode *p_class, bool p_is_r
 				last_emitted_line = node->end_line;
 			}
 		}
-		previous = &member;
+		has_previous = true;
+		previous_is_definition = member_is_definition(member);
 	}
+	// Conformances written after the last member (or in a class with no members at all).
+	emit_conformances_before(0);
 
 	if (p_is_root) {
 		flush_tail_comments();
 	}
+}
+
+void FSPrinter::print_conformance(const FSParser::ConformanceNode *p_conformance) {
+	write_indent();
+	write("extend ");
+	print_type(p_conformance->target);
+	for (int i = 0; i < p_conformance->traits.size(); i++) {
+		write(i == 0 ? " uses " : ", ");
+		print_trait_use(p_conformance->traits[i]);
+	}
+	write(":");
+	newline();
+	if (p_conformance->start_line > last_emitted_line) {
+		last_emitted_line = p_conformance->start_line;
+	}
+	emit_trailing_comment(p_conformance->start_line);
+
+	indent_level++;
+	if (p_conformance->witnesses.is_empty()) {
+		// A conformance body accepts only methods and `pass`; an all-`pass` body still
+		// needs a body line, and `pass` itself is not retained in the tree.
+		print_synthesized_pass(p_conformance->start_line, p_conformance->end_line);
+	} else {
+		for (int i = 0; i < p_conformance->witnesses.size(); i++) {
+			const FSParser::FunctionNode *witness = p_conformance->witnesses[i];
+			if (witness->start_line > 0) {
+				emit_leading_trivia(witness->start_line, i == 0 ? 0 : 1);
+			}
+			// A witness is a function: it emits its own suite (or, bodyless, collapses to
+			// one declaration line) and attaches its closing line's inline comment itself.
+			print_function(witness);
+			if (witness->end_line > last_emitted_line) {
+				last_emitted_line = witness->end_line;
+			}
+		}
+	}
+	indent_level--;
+}
+
+void FSPrinter::print_synthesized_pass(int p_header_line, int p_body_end_line) {
+	// The body's own lines are the ones between the header and the erased `pass`; a
+	// single-line body (`class Inner: pass`) has none, and its inline comment has
+	// already been claimed by the header line.
+	if (p_body_end_line > p_header_line) {
+		emit_leading_trivia(p_body_end_line, 0);
+	}
+	write_indent();
+	write("pass");
+	newline();
+	emit_trailing_comment(p_body_end_line);
 }
 
 void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member, bool p_owns_trailing_comment) {

@@ -355,6 +355,14 @@ static void test_directory(const String &p_dir, const HashSet<String> &p_selecte
 			FSLanguage::get_singleton()->complete_code(code, res_path, owner, &options, forced, call_hint, analyze);
 			ERR_PRINT_ON;
 
+			for (const ScriptLanguage::CodeCompletionOption &option : options) {
+				// A member kind that is meant to be skipped (e.g. an `@export_group` marker) must
+				// `continue` past the insert rather than falling out of the switch, or it ends up
+				// here as a blank, unusable suggestion.
+				CHECK_MESSAGE(!option.display.is_empty(),
+						"Autocompletion suggested an option with an empty display text for '", path.path_join(next), "'.");
+			}
+
 			if (conf.has_section_key("output", "expect_completion_type")) {
 				const String expected_type_name = conf.get_value("output", "expect_completion_type");
 				FSParser::CompletionType expected_type = FSParser::COMPLETION_NONE;
