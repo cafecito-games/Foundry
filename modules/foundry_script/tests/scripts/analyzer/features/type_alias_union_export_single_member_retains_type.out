@@ -1,0 +1,7 @@
+FS_TEST_OK
+var distance: float
+  hint=NONE hint_string="" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
+var count: uint
+  hint=NONE hint_string="" usage=DEFAULT|SCRIPT_VARIABLE class_name=&""
+true
+true
