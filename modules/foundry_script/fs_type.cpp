@@ -1127,6 +1127,18 @@ bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_n
 		// error rather than become an unsafe-but-allowed assignment.
 		return false;
 	}
+	if (p_wide.kind == FSParser::DataType::UNION && FSNumericConversion::is_numeric_builtin(p_narrow)) {
+		// A union erases to one untyped slot, so the runtime check behind a downcast sees only the stored
+		// value. A declared integer width is not part of that value, so an alternative the destination
+		// cannot represent would be laundered into the slot untested -- the same conversion the concrete
+		// wide-to-narrow case above refuses. Alternatives the runtime can still tell apart, a class
+		// downcast in particular, keep going through the reverse-compatibility rule below.
+		for (const FSParser::DataType &member : p_wide.union_members) {
+			if (FSNumericConversion::is_numeric_builtin(member) && !is_compatible(p_narrow, member)) {
+				return false;
+			}
+		}
+	}
 	return is_compatible(p_wide, p_narrow);
 }
 
