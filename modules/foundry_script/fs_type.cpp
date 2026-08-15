@@ -52,6 +52,17 @@ static bool _is_erased_type_parameter(const FSParser::DataType &p_type) {
 			p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD;
 }
 
+// A parameter bounded by a `final` class denotes exactly that class: no subtype of the bound can
+// exist, so the caller has only the bound (or its nullable form) to choose from. A value the bound
+// accepts is therefore a value every possible type argument accepts, and the erasure argument does
+// not apply. Only the direct bound counts, matching how a final bound closes a receiver elsewhere.
+static bool _is_type_parameter_bounded_by_final_class(const FSParser::DataType &p_type) {
+	return p_type.kind == FSParser::DataType::TYPE_PARAMETER && p_type.type_parameter_bound.size() == 1 &&
+			p_type.type_parameter_bound[0].kind == FSParser::DataType::CLASS &&
+			p_type.type_parameter_bound[0].class_type != nullptr &&
+			p_type.type_parameter_bound[0].class_type->is_final;
+}
+
 // A resource path identifies the one class that owns the file. Every inner class compiled from the
 // file reports that same path, so a conformance lookup by path on behalf of an inner class would
 // answer with a sibling's or the root class's conformance. See
@@ -622,6 +633,10 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			target_identity.is_nullable = false;
 			source_identity.is_nullable = false;
 			result.compatible = target_identity == source_identity;
+		} else if (_is_erased_type_parameter(p_target) && _is_type_parameter_bounded_by_final_class(p_target)) {
+			// The parameter denotes exactly its bound, so the assignment is decided against the bound like
+			// any other concrete destination.
+			return check(p_target.type_parameter_bound[0], p_source, p_options);
 		} else if (_is_erased_type_parameter(p_target)) {
 			// A downcast is licensed by a check the runtime can actually perform: `var n: Node2D = node`
 			// is accepted because `Node2D` still exists at run time and the value carries its class. A
@@ -1146,7 +1161,7 @@ bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_n
 		// become a "runtime check" the runtime cannot perform.
 		return false;
 	}
-	if (_is_erased_type_parameter(p_narrow)) {
+	if (_is_erased_type_parameter(p_narrow) && !_is_type_parameter_bounded_by_final_class(p_narrow)) {
 		// The reverse-compatibility rule below reads an assignment as a downcast the runtime will check.
 		// An erased type-parameter destination has no runtime type to check against and gets no emitted
 		// check at all, so nothing backs that reading and the assignment must stay a static error. Same

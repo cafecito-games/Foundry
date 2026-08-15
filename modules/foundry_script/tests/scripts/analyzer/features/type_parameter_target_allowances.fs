@@ -23,6 +23,18 @@ class Relay[U] extends List[U]:
 		return head
 
 
+# A parameter bounded by a `final` class denotes exactly that class -- no subtype of it can exist --
+# so a value the bound accepts is a value every possible type argument accepts, and the erasure
+# argument does not apply.
+final class Worker:
+	func label() -> String:
+		return "worker"
+
+
+func hire[W: Worker]() -> W:
+	return Worker.new()
+
+
 func identity[X: Number](value: X) -> X:
 	# A value already known to be `X` still satisfies an `X` return.
 	return value
@@ -54,3 +66,5 @@ func test():
 
 	var relay := Relay[String].new()
 	print(relay.store("kept"))
+
+	print(hire[Worker]().label())
