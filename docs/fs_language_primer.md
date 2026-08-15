@@ -337,7 +337,7 @@ Choosing between a union and its neighbors:
 | You want | Reach for | Why |
 | --- | --- | --- |
 | One body over several numeric types | A union bound plus narrowing, `[T: Number]` | Static constraint, no runtime cost |
-| Arithmetic without narrowing | A narrow bound, `[T: int \| long]` | Every pair in that set promotes; wider sets do not |
+| Arithmetic without narrowing | A bound of one signedness, `[T: int \| long]` | Every pair in such a set promotes; mixed-signedness sets do not |
 | A readable name for one type | A single-member alias, `type Meters = float` | Transparent, keeps runtime type and width, free |
 | To tell the alternatives apart at runtime | A tagged union (payload enum) | It carries a real tag; a type union carries none |
 | A shared method surface | A trait | A union exposes no common operations at all |
@@ -350,7 +350,9 @@ Two sharp edges are worth stating outright:
 - **A full `Number` bound does not permit direct arithmetic.** `Number` admits `int` paired with
   `ulong`, and signed and unsigned integers use disjoint runtime carriers with no common type, so
   `left + right` under `[X: Number, Y: Number]` is rejected. Narrow both operands first, or declare
-  a narrower bound. `int | long` is roughly the widest bound that still allows `+` directly.
+  a bound that stays on one side of the signed/unsigned divide. `int | long`, `int | long | float`,
+  and `uint | ulong` all permit `+` directly; any set that mixes signed and unsigned integers,
+  `Number` included, does not.
 - **Numeric type tests go narrowest-first.** `is` on a numeric type is a carrier-plus-value-range
   predicate, not a declared-width test, so `int` is a *subset* of `long`: for a value of `5`, both
   `is int` and `is long` are true. Testing `long` first therefore matches every `int` too and leaves
@@ -615,8 +617,8 @@ func to_meters[T: Number](value: T) -> Meters:
 	return value
 
 
-# `int | long` is roughly the widest bound that still permits arithmetic without narrowing, because
-# every pair it admits promotes to a common type.
+# A bound that stays on one side of the signed/unsigned divide permits arithmetic without
+# narrowing, because every pair it admits promotes to a common type.
 func total[T: int | long](left: T, right: T) -> String:
 	return str(left + right)
 
@@ -653,7 +655,7 @@ func test() -> void:
 - Do not declare a rest parameter as `...args: Array[int]`; rest parameters use `Array` and must be final.
 - Do not expect `left + right` to work under a full `Number` bound. `Number` admits `int` paired
   with `ulong`, and those carriers have no common type. Narrow both operands first, or declare a
-  narrower bound such as `int | long`.
+  bound that does not mix signed and unsigned integers, such as `int | long`.
 - Do not use a type union when the alternatives must be told apart at runtime, or when they need a
   shared method surface. A union has no runtime tag and no common operations. Use a tagged union
   (a payload enum) for the first case and a trait for the second.
