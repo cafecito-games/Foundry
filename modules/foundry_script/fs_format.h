@@ -219,6 +219,13 @@ private:
 	// `ClassNode::conformances` rather than `members`, so `print_class_body` merges them
 	// back into the member walk by source line and calls this for each one.
 	void print_conformance(const FSParser::ConformanceNode *p_conformance);
+	// Writes the `pass` line that stands in for a body whose only statement was a
+	// `pass` the parser did not retain (an empty class, trait, or conformance body).
+	// The comments on that erased line are retained, so this flushes the full-line
+	// trivia between the header and the body's last line above the synthesized `pass`
+	// and reattaches the inline comment from that last line onto it. Call with
+	// `indent_level` already stepped into the body.
+	void print_synthesized_pass(int p_header_line, int p_body_end_line);
 	// `p_owns_trailing_comment` mirrors the same-named parameter on `print_enum`/
 	// `print_tuple`: true when the caller (`print_class_body`) has already
 	// determined this member self-flushes its own closing-line comment, so this

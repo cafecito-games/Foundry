@@ -1521,6 +1521,37 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 				vformat("Comment count changed around a conformance: %s", formatted));
 	}
 
+	TEST_CASE("[Format] Keeps the comments of a pass-only nested class") {
+		// A class-level `pass` is consumed by the parser and never reaches `members`, so
+		// the synthesized body line has to carry the comments written on and above it.
+		const String source =
+				"class Inner:\n"
+				"\t# why\n"
+				"\tpass #note\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "class Inner:\n\t# why\n\tpass  # note\n",
+				vformat("Pass-only class must keep its comments: %s", formatted));
+
+		FSParser reparser;
+		CHECK_MESSAGE(parse_no_errors(reparser, formatted, "pass_only_class.fs"),
+				vformat("Formatted pass-only class must re-parse: %s", formatted));
+	}
+
+	TEST_CASE("[Format] Keeps the comments of a pass-only trait") {
+		// Traits share `print_class()`, so the same synthesized-`pass` path governs them.
+		const String source =
+				"trait EmptyTrait:\n"
+				"\t# why\n"
+				"\tpass #note\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "trait EmptyTrait:\n\t# why\n\tpass  # note\n",
+				vformat("Pass-only trait must keep its comments: %s", formatted));
+
+		FSParser reparser;
+		CHECK_MESSAGE(parse_no_errors(reparser, formatted, "pass_only_trait.fs"),
+				vformat("Formatted pass-only trait must re-parse: %s", formatted));
+	}
+
 	TEST_CASE("[Format] Golden fixtures match byte-for-byte") {
 		const String fixture_root = "modules/foundry_script/tests/scripts/format";
 		Vector<String> inputs;
