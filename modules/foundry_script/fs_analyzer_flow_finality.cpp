@@ -1631,22 +1631,20 @@ static bool _type_test_subsumes(const FSParser::DataType &p_test_type, const FSP
 	return p_test_type == p_alternative;
 }
 
-// The alternatives a value of `p_type` can actually hold at run time. A bounded type parameter
-// contributes its bound's alternatives because narrowing refines the value, never the type parameter,
-// and a concrete builtin is its own single alternative so a set that narrowed down to one member is
-// still reasoned about the same way. Anything else is not a set and cannot be subtracted from.
-static Vector<FSParser::DataType> _flow_narrowing_alternatives(const FSParser::DataType &p_type) {
+// The set of alternatives a value of `p_type` can actually hold at run time, or null when the type
+// is not a set and nothing can be subtracted from it. A bounded type parameter answers with its
+// bound, because narrowing refines the value and never the type parameter itself. The set is
+// returned whole rather than as bare members so callers also see where its nullability lives: a
+// type-parameter descriptor carries none of its own, so `[X: int? | String]` would otherwise look
+// non-nullable and let a failed test smuggle away a null the test never ruled out.
+static const FSParser::DataType *_flow_narrowing_alternative_set(const FSParser::DataType &p_type) {
 	if (p_type.is_union()) {
-		return p_type.union_members;
+		return &p_type;
 	}
 	if (p_type.is_type_parameter() && p_type.type_parameter_bound.size() == 1 && p_type.type_parameter_bound[0].is_union()) {
-		return p_type.type_parameter_bound[0].union_members;
+		return &p_type.type_parameter_bound[0];
 	}
-	Vector<FSParser::DataType> alternatives;
-	if (p_type.kind == FSParser::DataType::BUILTIN) {
-		alternatives.push_back(p_type);
-	}
-	return alternatives;
+	return nullptr;
 }
 
 const FSParser::Node *FSAnalyzer::FlowFinalityContext::flow_narrowing_key_from_identifier(const FSParser::IdentifierNode *p_identifier) const {
@@ -1849,10 +1847,11 @@ void FSAnalyzer::FlowFinalityContext::apply_failed_type_test_flow_narrowing(cons
 	}
 
 	const FSParser::DataType current_type = p_identifier->get_datatype();
-	const Vector<FSParser::DataType> alternatives = _flow_narrowing_alternatives(current_type);
-	if (alternatives.size() < 2) {
+	const FSParser::DataType *alternative_set = _flow_narrowing_alternative_set(current_type);
+	if (alternative_set == nullptr) {
 		return;
 	}
+	const Vector<FSParser::DataType> &alternatives = alternative_set->union_members;
 
 	Vector<FSParser::DataType> survivors;
 	for (const FSParser::DataType &alternative : alternatives) {
@@ -1870,8 +1869,9 @@ void FSAnalyzer::FlowFinalityContext::apply_failed_type_test_flow_narrowing(cons
 	if (!narrowed_type.is_set()) {
 		return;
 	}
-	// A failed type test says nothing about nullability, so whatever the value already carried stays.
-	narrowed_type.is_nullable = current_type.is_nullable;
+	// A failed type test says nothing about whether the value is null, so every way the value could
+	// already have been null survives: the declaration itself, and the set it was drawn from.
+	narrowed_type.is_nullable = current_type.is_nullable || alternative_set->is_nullable;
 	apply_flow_narrowing(p_identifier, narrowed_type);
 }
 
