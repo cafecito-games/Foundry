@@ -357,6 +357,8 @@ private:
 		void clear_captured_flow_narrowing();
 		bool null_check_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier) const;
 		bool type_test_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier, FSParser::DataType &r_type) const;
+		bool type_test_condition(FSParser::ExpressionNode *p_condition, FSParser::TypeTestNode *&r_type_test, FSParser::IdentifierNode *&r_identifier, bool &r_true_means_match) const;
+		void apply_failed_type_test_flow_narrowing(const FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_tested_type);
 		void reduce_condition_expression(FSParser::ExpressionNode *p_condition);
 		void apply_flow_narrowing_from_condition(FSParser::ExpressionNode *p_condition, bool p_condition_value);
 		const FSParser::DataType *lookup_flow_narrowed_type(const FSParser::Node *p_key) const;
