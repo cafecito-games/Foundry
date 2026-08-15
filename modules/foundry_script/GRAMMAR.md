@@ -1498,7 +1498,14 @@ Details (`parse_type`):
   `type Meters = float` behaves exactly like `float`, its integer width included.
 - **Runtime erasure.** A multi-member union has no runtime representation: it produces no typed
   local, no typed parameter check, no runtime type test, and a `PropertyInfo` of `Variant::NIL`.
-  A single-member alias keeps the member's runtime typing in full.
+  A single-member alias keeps the member's runtime typing in full. Two consequences follow. A
+  multi-member union is **not a valid typed-container element type** — `Array[int | uint]` and
+  `Dictionary[String, int | uint]` are errors, because a typed container enforces exactly one
+  element type at runtime — and it is **not a valid `is` or `as` operand type**, because the
+  runtime has no union carrier to test or cast against; an individual alternative is named instead.
+- **Union compatibility.** A concrete value satisfies a union slot when it satisfies at least one
+  alternative. A union-typed value satisfies a concrete slot only when **every** alternative does,
+  since nothing narrows the value at the boundary.
 - A **type suffix binds to the last name of the dotted head**, so `Outer.Box[int]` applies `[int]`
   to `Box`, exactly as the value-position spelling does. A type carries **at most one** suffix;
   writing it on an earlier name (`Outer[int].Box`) is a parse error

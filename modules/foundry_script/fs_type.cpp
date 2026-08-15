@@ -517,6 +517,53 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 		return result;
 	}
 
+	if (p_source.kind == FSParser::DataType::UNION) {
+		// A value whose static type is a set of alternatives satisfies a concrete target only when every
+		// alternative does. The runtime carries no tag, so nothing narrows the value at the boundary and
+		// a target that accepts only some alternatives would accept the wrong value at runtime.
+		Options member_options = p_options;
+		member_options.constant_source_value = nullptr;
+		for (const FSParser::DataType &member : p_source.union_members) {
+			// Nullability was hoisted onto the union during normalization, so it is put back on each
+			// alternative before it faces the target's own null rules.
+			FSParser::DataType source_member = member;
+			source_member.is_nullable = p_source.is_nullable;
+			const Result member_result = check(p_target, source_member, member_options);
+			if (!member_result.compatible) {
+				return result;
+			}
+			result.uses_implicit_conversion = result.uses_implicit_conversion || member_result.uses_implicit_conversion;
+		}
+		result.compatible = true;
+		// A union erases to an untyped value, so reaching a typed slot always costs a runtime check.
+		result.requires_runtime_check = true;
+		return result;
+	}
+
+	if (p_target.kind == FSParser::DataType::UNION) {
+		// A union target accepts a source that satisfies any one of its alternatives.
+		for (const FSParser::DataType &member : p_target.union_members) {
+			FSParser::DataType target_member = member;
+			target_member.is_nullable = p_target.is_nullable;
+			const Result member_result = check(target_member, p_source, p_options);
+			if (!member_result.compatible) {
+				continue;
+			}
+			if (member_result.uses_implicit_conversion &&
+					(p_source.kind != FSParser::DataType::BUILTIN || target_member.builtin_type != p_source.builtin_type)) {
+				// A union slot is untyped at runtime, so no conversion instruction is emitted for it.
+				// An alternative reachable only by changing the value's carrier would therefore hold an
+				// unconverted value and fail its own type test. A width-only conversion is fine: width is
+				// out-of-band metadata and the stored value is unchanged.
+				continue;
+			}
+			result.compatible = true;
+			result.uses_implicit_conversion = member_result.uses_implicit_conversion;
+			return result;
+		}
+		return result;
+	}
+
 	if (p_target.is_type_handle_annotation && p_source.kind == FSParser::DataType::BUILTIN && p_source.builtin_type == Variant::NIL) {
 		// Type handles are object-like values at runtime, so null is accepted even without an explicit
 		// nullable suffix, matching legacy Object compatibility.

@@ -1958,7 +1958,10 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				}
 			} break;
 			case FSParser::ClassNode::Member::TYPE_ALIAS:
-				// Aliases are resolved lazily, from the type positions that name them.
+				// An alias declares no runtime member, but it is expanded here rather than only from its
+				// use sites so a cyclic or unresolvable alias is still reported at its declaration when
+				// nothing happens to name it. The expansion is memoized, so use sites pay nothing.
+				resolve_type_alias(member.type_alias);
 				break;
 			case FSParser::ClassNode::Member::UNDEFINED:
 				ERR_PRINT("Trying to resolve undefined member.");

@@ -1,0 +1,4 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 20: Cannot assign a value of type String to variable "wrong" with specified type int | uint.
+>> ERROR at line 22: Cannot assign a value of type Left | Right to variable "text" with specified type String.
+>> ERROR at line 24: Invalid argument for "take_string()" function: argument 1 should be "String" but is "int | uint".

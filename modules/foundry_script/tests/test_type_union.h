@@ -31,6 +31,7 @@
 #pragma once
 
 #include "modules/foundry_script/fs_parser.h"
+#include "modules/foundry_script/fs_type.h"
 
 #include "core/variant/numeric_type.h"
 
@@ -384,6 +385,78 @@ TEST_CASE("[Modules][FoundryScript][TypeUnion] Substitution rewrites and renorma
 	CHECK_FALSE(collapsed.is_union());
 	CHECK(collapsed.kind == FSParser::DataType::BUILTIN);
 	CHECK(collapsed.builtin_type == Variant::FLOAT);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A concrete source satisfies a union target through one member") {
+	Vector<FSParser::DataType> members;
+	members.push_back(union_test_builtin(Variant::INT, NumericType::INT32));
+	members.push_back(union_test_builtin(Variant::STRING));
+	const FSParser::DataType target = FSParser::DataType::make_union(members);
+	REQUIRE(target.is_union());
+
+	CHECK(FSTypeCompatibility::check(target, union_test_builtin(Variant::INT, NumericType::INT32)).compatible);
+	CHECK(FSTypeCompatibility::check(target, union_test_builtin(Variant::STRING)).compatible);
+	CHECK_FALSE(FSTypeCompatibility::check(target, union_test_builtin(Variant::FLOAT)).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A union source satisfies a concrete target only when every member does") {
+	Vector<FSParser::DataType> members;
+	members.push_back(union_test_builtin(Variant::INT, NumericType::INT32));
+	members.push_back(union_test_builtin(Variant::STRING));
+	const FSParser::DataType source = FSParser::DataType::make_union(members);
+	REQUIRE(source.is_union());
+
+	// Neither concrete alternative accepts the other, so no concrete member type accepts the set.
+	CHECK_FALSE(FSTypeCompatibility::check(union_test_builtin(Variant::INT, NumericType::INT32), source).compatible);
+	CHECK_FALSE(FSTypeCompatibility::check(union_test_builtin(Variant::STRING), source).compatible);
+
+	FSParser::DataType variant_target;
+	variant_target.kind = FSParser::DataType::VARIANT;
+	variant_target.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+	CHECK(FSTypeCompatibility::check(variant_target, source).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A union satisfies a union that covers all its members") {
+	Vector<FSParser::DataType> narrow_members;
+	narrow_members.push_back(union_test_builtin(Variant::INT, NumericType::INT32));
+	narrow_members.push_back(union_test_builtin(Variant::STRING));
+	const FSParser::DataType narrow = FSParser::DataType::make_union(narrow_members);
+
+	Vector<FSParser::DataType> wide_members = narrow_members;
+	wide_members.push_back(union_test_builtin(Variant::FLOAT));
+	const FSParser::DataType wide = FSParser::DataType::make_union(wide_members);
+
+	REQUIRE(narrow.is_union());
+	REQUIRE(wide.is_union());
+	CHECK(FSTypeCompatibility::check(wide, narrow).compatible);
+	// `float` has nothing to satisfy in the narrower set.
+	CHECK_FALSE(FSTypeCompatibility::check(narrow, wide).compatible);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A nullable union accepts null and its members' nullability") {
+	Vector<FSParser::DataType> members;
+	FSParser::DataType nullable_int = union_test_builtin(Variant::INT, NumericType::INT32);
+	nullable_int.is_nullable = true;
+	members.push_back(nullable_int);
+	members.push_back(union_test_builtin(Variant::STRING));
+	const FSParser::DataType nullable_union = FSParser::DataType::make_union(members);
+	REQUIRE(nullable_union.is_union());
+	REQUIRE(nullable_union.is_nullable);
+
+	FSParser::DataType null_source = union_test_builtin(Variant::NIL);
+	CHECK(FSTypeCompatibility::check(nullable_union, null_source).compatible);
+
+	FSTypeCompatibility::Options strict;
+	strict.strict_null = true;
+	// Nullability is hoisted, so a nullable source is answered by the union's own nullability rather
+	// than by whichever member it happens to match.
+	CHECK(FSTypeCompatibility::check(nullable_union, nullable_int, strict).compatible);
+
+	Vector<FSParser::DataType> plain_members;
+	plain_members.push_back(union_test_builtin(Variant::INT, NumericType::INT32));
+	plain_members.push_back(union_test_builtin(Variant::STRING));
+	const FSParser::DataType plain_union = FSParser::DataType::make_union(plain_members);
+	CHECK_FALSE(FSTypeCompatibility::check(plain_union, nullable_int, strict).compatible);
 }
 
 } // namespace FSTests

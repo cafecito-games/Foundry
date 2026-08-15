@@ -2184,6 +2184,103 @@ static bool _is_exact_open_enum_parameter_node(const FSParser::TypeNode *p_type,
 	return true;
 }
 
+bool FSAnalyzer::reject_union_container_element_type(const FSParser::DataType &p_element_type,
+		FSParser::TypeNode *p_element_node, const char *p_untyped_spelling) {
+	if (!p_element_type.is_union()) {
+		return false;
+	}
+	// A typed container validates its elements against exactly one `Variant::Type` and one numeric
+	// width at runtime (`core/variant/container_type_validate.cpp`), which a set of alternatives cannot
+	// supply. A single-alternative alias never reaches here: it collapsed to its alternative.
+	push_error(vformat(R"(A typed container cannot have the type union "%s" as an element type, because a container enforces exactly one element type at runtime. Use "%s" for a heterogeneous container.)",
+					   p_element_type.to_string(), String(p_untyped_spelling)),
+			p_element_node);
+	return true;
+}
+
+bool FSAnalyzer::class_is_in_current_file(FSParser::ClassNode *p_class) const {
+	if (p_class == nullptr) {
+		return false;
+	}
+	FSParser::ClassNode *outermost = p_class;
+	while (outermost->outer != nullptr) {
+		outermost = outermost->outer;
+	}
+	return outermost == parser->head;
+}
+
+FSParser::TypeAliasNode *FSAnalyzer::find_type_alias_in_scope(const StringName &p_name) const {
+	for (FSParser::ClassNode *scope = parser->current_class; scope != nullptr; scope = scope->outer) {
+		if (!scope->members_indices.has(p_name)) {
+			continue;
+		}
+		const FSParser::ClassNode::Member &member = scope->members[scope->members_indices[p_name]];
+		if (member.type == FSParser::ClassNode::Member::TYPE_ALIAS) {
+			return member.type_alias;
+		}
+	}
+	return nullptr;
+}
+
+FSParser::DataType FSAnalyzer::resolve_type_alias(FSParser::TypeAliasNode *p_type_alias) {
+	FSParser::DataType failed;
+	if (p_type_alias == nullptr || p_type_alias->identifier == nullptr || p_type_alias->aliased_type == nullptr) {
+		return failed;
+	}
+	if (const FSParser::DataType *cached = resolved_type_aliases.getptr(p_type_alias)) {
+		return *cached;
+	}
+	if (failed_type_aliases.has(p_type_alias)) {
+		// The expansion already failed and reported; a second diagnostic at every later use site would
+		// bury the declaration that actually needs fixing.
+		return failed;
+	}
+
+	const int64_t cycle_start = type_alias_resolution_stack.find(p_type_alias);
+	if (cycle_start >= 0) {
+		// Report at whichever participant is written first in the file, so the diagnostic names the same
+		// declaration no matter which use site happened to start the expansion.
+		FSParser::TypeAliasNode *reported_at = p_type_alias;
+		String cycle;
+		for (uint32_t i = (uint32_t)cycle_start; i < type_alias_resolution_stack.size(); i++) {
+			FSParser::TypeAliasNode *participant = type_alias_resolution_stack[i];
+			cycle += vformat(R"("%s" -> )", participant->identifier->name);
+			if (participant->start_line < reported_at->start_line ||
+					(participant->start_line == reported_at->start_line && participant->start_column < reported_at->start_column)) {
+				reported_at = participant;
+			}
+		}
+		cycle += vformat(R"("%s")", p_type_alias->identifier->name);
+		push_error(vformat(R"(Type alias %s expands to itself, so it names no type.)", cycle), reported_at);
+		for (uint32_t i = (uint32_t)cycle_start; i < type_alias_resolution_stack.size(); i++) {
+			failed_type_aliases.insert(type_alias_resolution_stack[i]);
+		}
+		return failed;
+	}
+
+	type_alias_resolution_stack.push_back(p_type_alias);
+	const int error_count = parser->errors.size();
+	// The expansion is returned exactly as the aliased type spelling resolves, meta-type flags
+	// included, so a use site demotes it the same way it would demote the spelling it replaces.
+	const FSParser::DataType resolved = resolve_datatype(p_type_alias->aliased_type);
+	type_alias_resolution_stack.remove_at(type_alias_resolution_stack.size() - 1);
+
+	if (failed_type_aliases.has(p_type_alias)) {
+		// A cycle closing on this alias was already reported at its designated declaration; naming the
+		// same loop again from another participant would only repeat it.
+		return failed;
+	}
+	if (!resolved.is_set() || parser->errors.size() > error_count) {
+		failed_type_aliases.insert(p_type_alias);
+		// The definition reported which part of it failed; this names the alias that inherits the
+		// failure, so a use site far from the declaration still leads back to it.
+		push_error(vformat(R"(Type alias "%s" has no expansion, because its definition does not name a resolvable type.)", p_type_alias->identifier->name), p_type_alias->identifier);
+		return failed;
+	}
+	resolved_type_aliases.insert(p_type_alias, resolved);
+	return resolved;
+}
+
 FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	FSParser::DataType bad_type;
 	bad_type.kind = FSParser::DataType::VARIANT;
@@ -2224,6 +2321,40 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			element_types.push_back(type_from_metatype(resolve_datatype(p_type->tuple_element_types[i])));
 		}
 		result = make_tuple_type(StringName(), String(), String(), element_types, Vector<StringName>(), false);
+		return finalize_datatype(result);
+	}
+
+	if (p_type->is_union) {
+		// A written union carries no `type_chain`, so it has to be answered before the `void` fallback
+		// below, which would otherwise report every union as `null` and turn a valid declaration into a
+		// misleading conversion error.
+		Vector<FSParser::DataType> members;
+		bool member_failed = false;
+		for (FSParser::TypeNode *member_node : p_type->union_member_types) {
+			const int error_count = parser->errors.size();
+			const FSParser::DataType member = type_from_metatype(resolve_datatype(member_node));
+			if (!member.is_set() || parser->errors.size() > error_count) {
+				// The member's own diagnostic already names it; a second one here would only repeat it.
+				member_failed = true;
+				continue;
+			}
+			if (member.kind == FSParser::DataType::VARIANT) {
+				// The parser rejects the `Variant` spelling directly. Reaching it through an alias is the
+				// same request, and it absorbs every other alternative, so it is rejected the same way.
+				push_error(R"(A type union cannot contain "Variant", because "Variant" already accepts every value. Annotate the declaration as "Variant" instead.)", member_node);
+				member_failed = true;
+				continue;
+			}
+			members.push_back(member);
+		}
+		if (member_failed) {
+			return bad_type;
+		}
+		result = FSParser::DataType::make_union(members);
+		if (!result.is_set()) {
+			push_error("A type union must name at least one alternative.", p_type);
+			return bad_type;
+		}
 		return finalize_datatype(result);
 	}
 
@@ -2404,6 +2535,9 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			}
 			if (builtin_type == Variant::ARRAY) {
 				FSParser::DataType container_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
+				if (reject_union_container_element_type(container_type, p_type->get_container_type_or_null(0), "Array[Variant]")) {
+					return bad_type;
+				}
 				if (container_type.kind != FSParser::DataType::VARIANT) {
 					container_type.is_constant = false;
 					result.set_container_element_type(0, container_type);
@@ -2411,11 +2545,17 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 			}
 			if (builtin_type == Variant::DICTIONARY) {
 				FSParser::DataType key_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(0)));
+				if (reject_union_container_element_type(key_type, p_type->get_container_type_or_null(0), "Dictionary[Variant, Variant]")) {
+					return bad_type;
+				}
 				if (key_type.kind != FSParser::DataType::VARIANT) {
 					key_type.is_constant = false;
 					result.set_container_element_type(0, key_type);
 				}
 				FSParser::DataType value_type = type_from_metatype(resolve_datatype(p_type->get_container_type_or_null(1)));
+				if (reject_union_container_element_type(value_type, p_type->get_container_type_or_null(1), "Dictionary[Variant, Variant]")) {
+					return bad_type;
+				}
 				if (value_type.kind != FSParser::DataType::VARIANT) {
 					value_type.is_constant = false;
 					result.set_container_element_type(1, value_type);
@@ -2580,6 +2720,25 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 							}
 							found = true;
 							break;
+						case FSParser::ClassNode::Member::TYPE_ALIAS: {
+							if (!class_is_in_current_file(script_class)) {
+								// Aliases are file-local: they are not global names and are not inherited, so
+								// one declared in another file is not in scope here even when the declaring
+								// class is a base class.
+								push_error(vformat(R"(Type alias "%s" is declared in another file, and type aliases are file-local. Declare it in this file to use it here.)", first), p_type);
+								return bad_type;
+							}
+							if (!p_type->container_types.is_empty()) {
+								push_error(vformat(R"(Type alias "%s" takes no type arguments.)", first), p_type);
+								return bad_type;
+							}
+							result = resolve_type_alias(member.type_alias);
+							if (!result.is_set()) {
+								// The alias declaration reported why it has no expansion.
+								return bad_type;
+							}
+							found = true;
+						} break;
 						case FSParser::ClassNode::Member::CONSTANT:
 							if (member.get_datatype().is_meta_type) {
 								result = member.get_datatype();
@@ -7858,6 +8017,14 @@ void FSAnalyzer::reduce_cast(FSParser::CastNode *p_cast) {
 		return;
 	}
 
+	if (cast_type.is_union()) {
+		// A cast is a runtime operation and the runtime has no union carrier, so a set of alternatives
+		// names nothing it could check against.
+		push_error(vformat(R"(Cannot cast to the type union "%s", because it has no runtime type. Cast to one of its alternatives instead.)", cast_type.to_string()), p_cast->cast_type);
+		mark_node_unsafe(p_cast);
+		return;
+	}
+
 	if (p_cast->is_reinterpret) {
 		reduce_reinterpret_cast(p_cast, cast_type);
 		return;
@@ -11342,6 +11509,16 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		return;
 	}
 
+	if (find_type_alias_in_scope(name) != nullptr) {
+		// A `type` declaration introduces a name for a type, not a value and not a nominal type, so it
+		// has no constructor and no expression meaning -- not even when it aliases a single class.
+		push_error(vformat(R"(Type alias "%s" can only be used in a type position. It declares no value, so it cannot be called, constructed, or read.)", name), p_identifier);
+		FSParser::DataType alias_use;
+		alias_use.kind = FSParser::DataType::VARIANT;
+		p_identifier->set_datatype(alias_use);
+		return;
+	}
+
 	// Not found.
 	push_error(vformat(R"(Identifier "%s" not declared in the current scope.)", name), p_identifier);
 	FSParser::DataType dummy;
@@ -12962,6 +13139,15 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 		test_type = type_from_metatype(resolve_datatype(p_type_test->test_type));
 	}
 	p_type_test->test_datatype = test_type;
+
+	if (test_type.is_union()) {
+		// `is` compiles to a runtime type test and the runtime has no union carrier, so a set of
+		// alternatives cannot be tested as one. A single-alternative alias never reaches here: it
+		// collapsed to its alternative and behaves exactly like it.
+		push_error(vformat(R"(Cannot test against the type union "%s", because it has no runtime type. Test one of its alternatives instead.)", test_type.to_string()), p_type_test->test_type);
+		test_type = FSParser::DataType();
+		p_type_test->test_datatype = test_type;
+	}
 
 	if (!operand_type.is_set() || !test_type.is_set()) {
 		// The surrounding error already explains the unresolved type; give the binds a usable type so
@@ -14656,6 +14842,12 @@ bool FSAnalyzer::get_function_signature(FSParser::Node *p_source, bool p_is_cons
 			if (member.type != FSParser::ClassNode::Member::FUNCTION) {
 				const FSParser::DataType member_type = member.get_datatype();
 				if (member_type.is_set() && member_type.kind == FSParser::DataType::BUILTIN && member_type.builtin_type == Variant::CALLABLE) {
+					return false;
+				}
+				if (member.type == FSParser::ClassNode::Member::TYPE_ALIAS) {
+					// An alias is a spelling for a type, not a nominal type, so it has no constructor even
+					// when it collapses to a single class.
+					push_error(vformat(R"(Type alias "%s" cannot be called. It names a type without declaring one, so it has no constructor; call the aliased type instead.)", function_name), p_source);
 					return false;
 				}
 				push_error(vformat(R"(Member "%s" is not a function.)", function_name), p_source);

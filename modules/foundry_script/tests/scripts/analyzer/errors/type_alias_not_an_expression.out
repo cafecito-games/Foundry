@@ -1,0 +1,5 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 11: Type alias "Scalar" can only be used in a type position. It declares no value, so it cannot be called, constructed, or read.
+>> ERROR at line 12: Type alias "Scalar" cannot be called. It names a type without declaring one, so it has no constructor; call the aliased type instead.
+>> ERROR at line 12: Function "Scalar()" not found in base self.
+>> ERROR at line 13: Type alias "Only" can only be used in a type position. It declares no value, so it cannot be called, constructed, or read.
