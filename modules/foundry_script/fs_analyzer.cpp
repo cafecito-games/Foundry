@@ -2243,6 +2243,10 @@ FSParser::ClassNode *find_type_alias_declaring_scope(FSParser::ClassNode *p_scop
 			r_type_alias = member.type_alias;
 			return scope;
 		}
+		// The nearest scope already claims the name for something other than an alias (a class, enum,
+		// tuple, ...), so a farther-out alias must not be reached past it; ordinary shadowing applies
+		// to an alias name exactly as it does to any other declaration.
+		break;
 	}
 	r_type_alias = nullptr;
 	return nullptr;
@@ -15532,6 +15536,30 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			return true;
 		}
 
+		// `Self` is answered at the same precedence resolve_datatype gives it: right after a type
+		// parameter and before every other spelling, including a builtin, `Number`, or an alias that
+		// happens to reuse the name.
+		if (identifier->name == SNAME("Self") && parser->current_class != nullptr) {
+			FSParser::DataType enum_type = enum_self_type(parser->current_function);
+			if (enum_type.is_set()) {
+				r_type_argument = enum_type;
+				return true;
+			}
+
+			const bool receiver_relative_self = resolving_function_signature_type || parser->current_function != nullptr || parser->current_class->is_trait;
+			if (receiver_relative_self) {
+				if (parser->current_function != nullptr) {
+					parser->current_function->uses_receiver_relative_self = true;
+				}
+				r_type_argument = _self_type_parameter_for_class(parser->current_class);
+			} else {
+				FSParser::DataType self_type = _self_type_for_class(parser->current_class);
+				self_type.is_meta_type = true;
+				r_type_argument = type_from_metatype(self_type);
+			}
+			return true;
+		}
+
 		// An explicit type argument is a type position, so it resolves the four integer spellings
 		// through the same registry an annotation does.
 		const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(identifier->name);
@@ -15571,34 +15599,15 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 		if (type_alias != nullptr) {
 			// A user-declared alias is answered the same way `Number` is: an explicit type argument is a
 			// type position, so it resolves through the alias registry rather than falling through to the
-			// value-position lookup, which has no value to find.
+			// value-position lookup, which has no value to find. `resolve_type_alias` returns the
+			// expansion with meta-type flags intact (see its own comment), so it is demoted here exactly
+			// as the general identifier fallback below demotes a bare class name.
 			const FSParser::DataType alias_type = alias_owner->resolve_type_alias(type_alias);
 			if (!alias_type.is_set()) {
 				// The alias declaration already reported why it has no expansion.
 				return fail_reported();
 			}
-			r_type_argument = alias_type;
-			return true;
-		}
-
-		if (identifier->name == SNAME("Self") && parser->current_class != nullptr) {
-			FSParser::DataType enum_type = enum_self_type(parser->current_function);
-			if (enum_type.is_set()) {
-				r_type_argument = enum_type;
-				return true;
-			}
-
-			const bool receiver_relative_self = resolving_function_signature_type || parser->current_function != nullptr || parser->current_class->is_trait;
-			if (receiver_relative_self) {
-				if (parser->current_function != nullptr) {
-					parser->current_function->uses_receiver_relative_self = true;
-				}
-				r_type_argument = _self_type_parameter_for_class(parser->current_class);
-			} else {
-				FSParser::DataType self_type = _self_type_for_class(parser->current_class);
-				self_type.is_meta_type = true;
-				r_type_argument = type_from_metatype(self_type);
-			}
+			r_type_argument = type_from_metatype(alias_type);
 			return true;
 		}
 
