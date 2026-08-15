@@ -628,6 +628,9 @@ private:
 	// Whether `p_class` belongs to the file being analyzed. Aliases are file-local, so an alias member
 	// reached through an inherited or foreign class is not a visible type name.
 	bool class_is_in_current_file(FSParser::ClassNode *p_class) const;
+	// The analyzer that owns `p_class`'s file, so a declaration written there is resolved against its
+	// own scope rather than this one's. Returns `nullptr` when that file is not reachable.
+	FSAnalyzer *analyzer_owning_class(FSParser::ClassNode *p_class, const FSParser::Node *p_source);
 	bool resolve_type_parameter(const StringName &p_name, FSParser::DataType &r_type);
 	bool find_trait_member_in_inheritance_chain(FSParser::ClassNode *p_receiver, const StringName &p_name,
 			const FSParser::Node *p_source, FSParser::ClassNode *&r_declaring_trait,

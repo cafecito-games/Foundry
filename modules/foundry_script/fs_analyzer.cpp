@@ -2209,6 +2209,21 @@ bool FSAnalyzer::class_is_in_current_file(FSParser::ClassNode *p_class) const {
 	return outermost == parser->head;
 }
 
+FSAnalyzer *FSAnalyzer::analyzer_owning_class(FSParser::ClassNode *p_class, const FSParser::Node *p_source) {
+	if (p_class == nullptr) {
+		return nullptr;
+	}
+	if (parser->has_class(p_class)) {
+		return this;
+	}
+	const Ref<FSParserRef> parser_ref = dependency_parser_access.ensure_cached_external_parser_for_class(
+			p_class, nullptr, "Trying to resolve a type alias", p_source);
+	if (parser_ref.is_null()) {
+		return nullptr;
+	}
+	return parser_ref->get_analyzer();
+}
+
 FSParser::TypeAliasNode *FSAnalyzer::find_type_alias_in_scope(const StringName &p_name) const {
 	for (FSParser::ClassNode *scope = parser->current_class; scope != nullptr; scope = scope->outer) {
 		if (!scope->members_indices.has(p_name)) {
@@ -2729,12 +2744,14 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 							found = true;
 							break;
 						case FSParser::ClassNode::Member::TYPE_ALIAS: {
-							if (!class_is_in_current_file(script_class)) {
-								// The file is the unit of alias visibility: an alias is not a global name and
-								// does not travel with a type, so one declared in another file is out of scope
-								// here even when its declaring class is a base class of the current one.
-								// Within one file the ordinary lookup chain applies, so a class body may name
-								// an alias declared by a lexical outer or by a same-file base.
+							// The file is the unit of alias visibility. A witness body reached through the
+							// declaring file's lexical scope is written in that file, so its aliases are in
+							// scope there even though this analyzer owns another file; an alias reached any
+							// other way -- through a base class in another file -- is not.
+							FSAnalyzer *alias_owner = declaration_site_classes.has(script_class)
+									? analyzer_owning_class(script_class, p_type)
+									: (class_is_in_current_file(script_class) ? this : nullptr);
+							if (alias_owner == nullptr) {
 								push_error(vformat(R"(Type alias "%s" is declared in another file, and type aliases are file-local. Declare it in this file to use it here.)", first), p_type);
 								return bad_type;
 							}
@@ -2742,7 +2759,10 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 								push_error(vformat(R"(Type alias "%s" takes no type arguments.)", first), p_type);
 								return bad_type;
 							}
-							result = resolve_type_alias(member.type_alias);
+							// The alias's definition is written in its own file, so it is expanded by the
+							// analyzer that owns that file; expanding it here would resolve its member names
+							// against the wrong scope.
+							result = alias_owner->resolve_type_alias(member.type_alias);
 							if (!result.is_set()) {
 								// The alias declaration reported why it has no expansion.
 								return bad_type;

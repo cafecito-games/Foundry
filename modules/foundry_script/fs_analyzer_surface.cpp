@@ -409,6 +409,9 @@ bool FSAnalyzer::is_type_bearing_member(const FSParser::ClassNode::Member &p_mem
 		case FSParser::ClassNode::Member::CLASS:
 		case FSParser::ClassNode::Member::ENUM:
 		case FSParser::ClassNode::Member::TUPLE:
+		// An alias declares no value, but it does name a type, which is exactly what a witness reaching
+		// back into its declaring file's lexical scope needs.
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
 			return true;
 		case FSParser::ClassNode::Member::CONSTANT: {
 			// A `preload`ed script or a class alias denotes a type; a plain value constant does not.
