@@ -28,6 +28,7 @@ class Circle extends Shape:
 type Value = int | String | Payload
 type EitherShape = Square | Circle
 type NarrowInteger = int | long
+type WideInteger = long | float
 
 
 func describe(value: Value) -> String:
@@ -94,6 +95,10 @@ func test():
 	var narrow: NarrowInteger = 5
 	var wide: long = narrow
 	prints(wide, typeof(wide) == TYPE_INT)
+
+	# The same width-only widening holds when the target is itself a set.
+	var widened: WideInteger = narrow
+	prints(widened, typeof(widened) == TYPE_INT)
 
 
 func area_of(shape: Shape) -> float:

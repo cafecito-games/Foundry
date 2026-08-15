@@ -16240,8 +16240,10 @@ bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FS
 	}
 	// A trait alternative of a union needs the same eager trait resolution the branch above performs,
 	// which the pure type model below cannot do. Both are additive: a set that answers no here still
-	// falls through to the ordinary set rules.
-	if (p_target.kind == FSParser::DataType::UNION && !p_source.is_meta_type &&
+	// falls through to the ordinary set rules. Neither may answer yes past the null rules, which the
+	// checker they short-circuit would otherwise apply.
+	const bool union_trait_shortcut_allowed = !strict_null_checks || !p_source.is_nullable || p_target.is_nullable;
+	if (union_trait_shortcut_allowed && p_target.kind == FSParser::DataType::UNION && !p_source.is_meta_type &&
 			p_source.kind == FSParser::DataType::CLASS && p_source.class_type != nullptr) {
 		for (const FSParser::DataType &member : p_target.union_members) {
 			if (member.kind == FSParser::DataType::CLASS && member.class_type != nullptr &&
@@ -16250,7 +16252,7 @@ bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FS
 			}
 		}
 	}
-	if (p_source.kind == FSParser::DataType::UNION && p_target.kind == FSParser::DataType::CLASS &&
+	if (union_trait_shortcut_allowed && p_source.kind == FSParser::DataType::UNION && p_target.kind == FSParser::DataType::CLASS &&
 			p_target.class_type != nullptr && p_target.class_type->is_trait && !p_target.is_meta_type) {
 		bool every_member_conforms = !p_source.union_members.is_empty();
 		for (const FSParser::DataType &member : p_source.union_members) {

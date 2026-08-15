@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include "modules/foundry_script/fs_analyzer.h"
 #include "modules/foundry_script/fs_parser.h"
 #include "modules/foundry_script/fs_type.h"
 
@@ -457,6 +458,42 @@ TEST_CASE("[Modules][FoundryScript][TypeUnion] A nullable union accepts null and
 	plain_members.push_back(union_test_builtin(Variant::STRING));
 	const FSParser::DataType plain_union = FSParser::DataType::make_union(plain_members);
 	CHECK_FALSE(FSTypeCompatibility::check(plain_union, nullable_int, strict).compatible);
+}
+
+static const char *NULLABLE_TRAIT_UNION_SOURCE =
+		"trait Describable:\n"
+		"\tabstract func describe() -> String\n"
+		"class Person:\n"
+		"\tuses Describable\n"
+		"\tfunc describe() -> String:\n"
+		"\t\treturn \"person\"\n"
+		"class Robot:\n"
+		"\tuses Describable\n"
+		"\tfunc describe() -> String:\n"
+		"\t\treturn \"robot\"\n"
+		"type MaybeDescribable = Person? | Robot\n"
+		"func take(value: Describable) -> String:\n"
+		"\treturn value.describe()\n"
+		"func use(maybe: MaybeDescribable) -> String:\n"
+		"\treturn take(maybe)\n";
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A nullable union is rejected against a trait under strict null checks") {
+	FSParser parser;
+	REQUIRE(parser.parse(NULLABLE_TRAIT_UNION_SOURCE, "user://test.fs", false) == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.set_strict_null_checks(true);
+	// Every alternative conforms to the trait, but the union's hoisted nullability is still part of
+	// the source type, so trait conformance must not short-circuit past the null rules.
+	CHECK(analyzer.analyze() != OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A nullable union satisfies a trait when strict null checks are off") {
+	FSParser parser;
+	REQUIRE(parser.parse(NULLABLE_TRAIT_UNION_SOURCE, "user://test.fs", false) == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
 }
 
 } // namespace FSTests

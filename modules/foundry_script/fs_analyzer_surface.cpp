@@ -1965,7 +1965,9 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				// would parse, resolve, and then never be reachable. It is reported like a class that
 				// hides the same name rather than left silently dead.
 				const StringName alias_name = member.type_alias->identifier->name;
-				if (FSParser::get_builtin_type(alias_name) < Variant::VARIANT_MAX || alias_name == SNAME("AsyncCallable")) {
+				// The same predicate the type resolver uses, so every spelling it answers first -- the
+				// unsigned and fixed-width numeric names included -- is reported here.
+				if (FSParser::get_builtin_data_type(alias_name).is_valid() || alias_name == SNAME("AsyncCallable")) {
 					push_error(vformat(R"(Type alias "%s" hides a built-in type.)", alias_name), member.type_alias->identifier);
 				} else if (class_exists(alias_name)) {
 					push_error(vformat(R"(Type alias "%s" hides a native class.)", alias_name), member.type_alias->identifier);
