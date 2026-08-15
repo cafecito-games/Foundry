@@ -667,6 +667,8 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 					a->type_argument_expression_is_nullable == b->type_argument_expression_is_nullable &&
 					a->has_signature == b->has_signature && a->signature_is_async == b->signature_is_async &&
 					a->is_nullable == b->is_nullable && a->is_tuple == b->is_tuple &&
+					a->is_union == b->is_union &&
+					node_vector_eq(a->union_member_types, b->union_member_types) &&
 					node_vector_eq(a->tuple_element_types, b->tuple_element_types) &&
 					node_vector_eq(a->signature_parameter_types, b->signature_parameter_types) &&
 					node_eq(a->signature_rest_parameter_type, b->signature_rest_parameter_type) &&
@@ -691,6 +693,12 @@ static bool node_eq(const FSParser::Node *p_a, const FSParser::Node *p_b) {
 				}
 			}
 			return true;
+		}
+		case Node::TYPE_ALIAS: {
+			const FSParser::TypeAliasNode *a = static_cast<const FSParser::TypeAliasNode *>(p_a);
+			const FSParser::TypeAliasNode *b = static_cast<const FSParser::TypeAliasNode *>(p_b);
+			return identifier_name(a->identifier) == identifier_name(b->identifier) &&
+					node_eq(a->aliased_type, b->aliased_type);
 		}
 		case Node::TYPE_PARAMETER: {
 			const FSParser::TypeParameterNode *a = static_cast<const FSParser::TypeParameterNode *>(p_a);

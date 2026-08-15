@@ -1137,6 +1137,9 @@ void DocumentClassifier::walk_class(const FSParser::ClassNode *p_class) {
 			case FSParser::ClassNode::Member::TUPLE:
 				walk_tuple(member.m_tuple);
 				break;
+			case FSParser::ClassNode::Member::TYPE_ALIAS:
+				// Highlighting an alias declaration is a tooling follow-up.
+				break;
 			case FSParser::ClassNode::Member::UNDEFINED:
 				break;
 		}

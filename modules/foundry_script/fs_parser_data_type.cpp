@@ -122,7 +122,121 @@ static String _method_signature_to_string(const Vector<FSParser::DataType> &p_ar
 	return vformat("[[%s]]", arguments);
 }
 
+// Canonical sort key for a union member. Ordering members by a key that does not uniquely identify
+// a type would leave distinct members in the order they were written -- the sort is not stable --
+// so `A | B` and `B | A` could compare unequal despite denoting the same set. The key therefore
+// appends whatever identifies the type beyond its rendered name: the declaring path of a script or
+// class, the qualified name of a native type, enum, or tuple, and the declaration site of a type
+// parameter.
+static String _union_member_sort_key(const FSParser::DataType &p_member) {
+	String key = itos(p_member.kind) + "\x1f" + p_member.to_string_diagnostic() + "\x1f";
+	switch (p_member.kind) {
+		case FSParser::DataType::BUILTIN:
+			key += itos(p_member.builtin_type) + "\x1f" + itos((int)p_member.numeric_type);
+			break;
+		case FSParser::DataType::NATIVE:
+		case FSParser::DataType::ENUM:
+			key += String(p_member.native_type) + "\x1f" + String(p_member.enum_type) + "\x1f" +
+					String(p_member.enum_case_name);
+			break;
+		case FSParser::DataType::SCRIPT:
+			key += p_member.script_type.is_valid() ? p_member.script_type->get_path() : p_member.script_path;
+			break;
+		case FSParser::DataType::CLASS:
+			key += p_member.class_type != nullptr ? p_member.class_type->fqcn : String();
+			break;
+		case FSParser::DataType::TUPLE:
+			key += String(p_member.tuple_name) + "\x1f" + String(p_member.native_type) + "\x1f" +
+					p_member.script_path;
+			break;
+		case FSParser::DataType::TYPE_PARAMETER:
+			key += String(p_member.type_parameter_name) + "\x1f" + itos(p_member.type_parameter_scope) + "\x1f" +
+					itos(p_member.type_parameter_index);
+			break;
+		case FSParser::DataType::UNION:
+			// Normalization flattens nested unions, so a member is never itself a union.
+		case FSParser::DataType::VARIANT:
+		case FSParser::DataType::RESOLVING:
+		case FSParser::DataType::UNRESOLVED:
+			break;
+	}
+	return key;
+}
+
+// Orders union members deterministically, so set identity is positional identity and diagnostics
+// never depend on the order the author happened to write.
+struct _UnionMemberSort {
+	bool operator()(const FSParser::DataType &p_left, const FSParser::DataType &p_right) const {
+		return _union_member_sort_key(p_left) < _union_member_sort_key(p_right);
+	}
+};
+
+FSParser::DataType FSParser::DataType::make_union(const Vector<DataType> &p_members) {
+	Vector<DataType> flattened;
+	bool nullable = false;
+	for (const DataType &member : p_members) {
+		nullable = nullable || member.is_nullable;
+		if (member.kind == UNION) {
+			// A nested union is already normalized, so its members are neither unions nor nullable.
+			for (const DataType &inner_member : member.union_members) {
+				flattened.push_back(inner_member);
+			}
+			continue;
+		}
+		DataType stored_member = member;
+		stored_member.is_nullable = false;
+		flattened.push_back(stored_member);
+	}
+
+	Vector<DataType> members;
+	for (const DataType &member : flattened) {
+		if (!members.has(member)) {
+			members.push_back(member);
+		}
+	}
+	members.sort_custom<_UnionMemberSort>();
+
+	if (members.is_empty()) {
+		return DataType();
+	}
+	if (members.size() == 1) {
+		// A single alternative is not a set: it is that type, keeping its runtime typing and its
+		// numeric width, so a one-member alias is indistinguishable from what it aliases.
+		DataType only_member = members[0];
+		only_member.is_nullable = only_member.is_nullable || nullable;
+		return only_member;
+	}
+
+	DataType result;
+	result.kind = UNION;
+	result.type_source = ANNOTATED_EXPLICIT;
+	result.union_members = members;
+	result.is_nullable = nullable;
+	return result;
+}
+
+// Renders a union with `p_member_to_string` applied to each alternative. A nullable union hangs its
+// `?` off the first alternative rather than the whole type: nullability is hoisted into the union
+// during normalization, there is no parenthesized type form to write `(A | B)?` with, and `A? | B`
+// normalizes straight back to this same type, so the rendering is valid source.
+static String _union_to_string(const FSParser::DataType &p_union, String (FSParser::DataType::*p_member_to_string)() const) {
+	String result;
+	for (int i = 0; i < p_union.union_members.size(); i++) {
+		if (i > 0) {
+			result += " | ";
+		}
+		result += (p_union.union_members[i].*p_member_to_string)();
+		if (i == 0 && p_union.is_nullable) {
+			result += "?";
+		}
+	}
+	return result;
+}
+
 String FSParser::DataType::to_string() const {
+	if (kind == UNION) {
+		return _union_to_string(*this, &DataType::to_string);
+	}
 	if (is_type_handle_annotation) {
 		DataType represented_type = *this;
 		represented_type.is_meta_type = false;
@@ -282,6 +396,11 @@ String FSParser::DataType::to_string() const {
 }
 
 String FSParser::DataType::to_string_diagnostic() const {
+	if (kind == UNION) {
+		// Each alternative renders with its own diagnostic spelling, so a union of widths does not
+		// print two distinct members identically.
+		return _union_to_string(*this, &DataType::to_string_diagnostic);
+	}
 	// The 8- and 16-bit integer descriptors are native-only constraints with no source spelling, so
 	// `to_string()` routes them through `get_builtin_type_source_name()`, which falls back to the
 	// carrier's name and renders `uint8`/`uint16` identically to `uint32` (and the signed widths
@@ -356,6 +475,17 @@ FSParser::DataType FSParser::DataType::substitute(const DataType &p_type, const 
 		for (int i = 0; i < payload.value.field_types.size(); i++) {
 			payload.value.field_types.write[i] = substitute(payload.value.field_types[i], p_bindings, p_mark_substituted_self);
 		}
+	}
+	if (result.kind == UNION) {
+		// Substitution can make two alternatives equal (`T | int` with `T := int`) or introduce a
+		// nested union, so the substituted set is re-normalized rather than written back in place.
+		Vector<DataType> substituted_members;
+		for (const DataType &member : result.union_members) {
+			substituted_members.push_back(substitute(member, p_bindings, p_mark_substituted_self));
+		}
+		DataType substituted_union = make_union(substituted_members);
+		substituted_union.is_nullable = substituted_union.is_nullable || result.is_nullable;
+		return substituted_union;
 	}
 	return result;
 }
@@ -610,6 +740,9 @@ static bool _signature_type_is_encodable(const FSParser::DataType &p_type) {
 		case FSParser::DataType::TUPLE:
 			// The flat hint grammar has no tuple spelling, so a tuple slot would decode back as a
 			// bare Array and turn a valid call into a false strict mismatch. Cross untyped instead.
+		case FSParser::DataType::UNION:
+			// A union has no spelling in the flat hint grammar and erases to untyped at runtime, so
+			// it crosses the signature boundary untyped rather than as a false concrete leaf.
 		case FSParser::DataType::TYPE_PARAMETER:
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:
@@ -732,6 +865,7 @@ PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 						result.hint_string = String(elem_type.native_type).replace("::", ".");
 						break;
 					case TUPLE:
+					case UNION:
 					case TYPE_PARAMETER:
 					case VARIANT:
 					case RESOLVING:
@@ -888,6 +1022,11 @@ PropertyInfo FSParser::DataType::to_property_info(const String &p_name) const {
 			// so no container hint is emitted.
 			result.type = Variant::ARRAY;
 			break;
+		case UNION:
+			// A multi-member union erases to untyped at runtime: a PropertyInfo transports exactly one
+			// Variant::Type, which a set of alternatives cannot supply. The normalized member list
+			// lives in the rich compiled Foundry metadata channel instead. A one-member alias never
+			// reaches here, having collapsed to its member during normalization.
 		case TYPE_PARAMETER:
 			// Type parameters are erased to Variant outside the type checker.
 		case VARIANT:
@@ -953,6 +1092,13 @@ int FSParser::DataType::get_tuple_field_index(const StringName &p_name) const {
 
 bool FSParser::DataType::can_reference(const FSParser::DataType &p_other) const {
 	if (p_other.is_meta_type) {
+		return false;
+	}
+
+	// A union names a set of alternatives, which no single runtime type test can answer: the
+	// runtime has no union carrier to compare against. Tests are written against an individual
+	// alternative instead.
+	if (kind == UNION || p_other.kind == UNION) {
 		return false;
 	}
 

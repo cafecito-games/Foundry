@@ -432,6 +432,7 @@ member          = { declaration_modifier },
                   | trait_decl
                   | enum_decl
                   | tuple_decl
+                  | type_alias_decl
                   | annotation_declaration
                   | conformance_declaration
                   | class_annotation
@@ -455,6 +456,7 @@ legal depends on the member (`validate_declaration_modifiers`):
 | `trait`   |  no   |   yes    |   no   |  no   | |
 | `enum`    |  no   |    no    |   no   |  no   | |
 | `tuple`   |  no   |    no    |   no   |  no   | |
+| `type`    |  no   |    no    |   no   |  no   | Contextual; see §4.4b |
 
 `final`+`abstract` is always contradictory. `abstract`+`static` is only allowed inside a
 trait.
@@ -637,6 +639,34 @@ tuple_field     = [ identifier, ":" ], type ;   (* a bare type is a positional f
   class-body member.
 - Named tuple declarations use the constant annotation target, matching named enums; this
   currently allows the built-in `@keep_name` annotation.
+
+### 4.4b Type alias declarations
+
+```ebnf
+type_alias_decl = "type", identifier, "=", type, NEWLINE ;
+```
+
+`type` is a **contextual keyword**, not a reserved word: it is lexed as an ordinary identifier and
+only introduces an alias where a member declaration is valid and the next token is an identifier.
+The decision is exactly that two-token lookahead (`type` `IDENTIFIER`), which steals nothing, since
+no declaration position admits an expression statement. `var type = 5`, `type = 5`, `type.value`,
+and `type(x)` all remain ordinary uses of the identifier.
+
+- Aliases may be declared at **file scope and in a class body only**. One written in a function
+  body is a parse error
+  (`Type alias declarations are only allowed at file scope or in a class body.`).
+- An alias takes **no type parameters**: `type Pair[T] = ...` is a parse error
+  (`A type alias cannot declare type parameters.`). A *member* may still be a generic
+  specialization (`type Numbers = Array[int]`).
+- An alias declares no runtime member, so **no annotation may be applied to it**
+  (`Annotation "@export" cannot be applied to a type alias.`).
+- An alias is **transparent**: it names a type, it does not create one. The name is not an
+  expression, not a constructor, and not an `extends`/`uses` target.
+- An alias shares the **member name space** of the class body it is declared in, so it collides
+  with a variable, constant, function, or nested type of the same name in either direction
+  (`Type alias "X" has the same name as a previously declared constant.`).
+- An alias is **file-local** in this version: it is not a global name and is not reachable through
+  `import`/`namespace`.
 
 ### 4.5 Functions and parameters
 
@@ -1409,7 +1439,9 @@ Rules:
 ## 7. Types
 
 ```ebnf
-type =
+type = type_member, { "|", type_member } ;           (* `|` is the loosest type operator *)
+
+type_member =
       "void"                                         (* only where allowed: return type *)
     | identifier, { ".", identifier }, [ type_suffix ], { ".", identifier }, [ "?" ]
     | tuple_type ;
@@ -1443,6 +1475,30 @@ type_handle_arg   = "[", type, "]" ;                 (* exactly one *)
 Details (`parse_type`):
 
 - A trailing `?` marks the type **nullable** (`Node?`, `Array[int]?`, `Callable[...]?`).
+- **Type unions.** `A | B` denotes the static set of its alternatives. `|` is contextual: it unions
+  types only while a type is being parsed, and expression-level `|` keeps its own precedence and
+  meaning as bitwise OR (§5.2). Within a type, `|` is the **loosest** operator — looser than `?` —
+  so `int? | uint` is the union of a nullable `int` and a `uint`. There is no parenthesized type
+  form to say otherwise, because `(A, B)` is already an unnamed tuple, so `(int | uint)?` is not
+  spellable; a nullable union is written by marking any one member instead. A union with a missing
+  alternative (`int |`) is a parse error (`Expected a type after "|".`).
+- **Union members.** Any type may be a member -- built-ins, native/script classes, traits, enums and
+  tagged unions, tuples, generic specializations, `Type[T]` handles, nullable forms of these, and
+  other aliases -- except `void` (`"void" cannot be a member of a type union.`) and `Variant`,
+  which already admits every type
+  (`"Variant" cannot be a member of a type union, since it already admits every type. Write
+  "Variant" on its own instead.`), and a **bare type parameter**
+  (`Type parameter "T" cannot be a member of a type union.`). A type parameter still nests freely
+  inside a member, so `Array[T] | int` is valid.
+- **Union normalization.** A union denotes a canonical set: alias members are expanded, nested
+  unions flattened, nullability **hoisted** onto the union (a union is nullable when any member is,
+  and members are then stored non-nullable), duplicates removed, and member order canonicalized. So
+  `int? | uint` and `int | uint?` are the same type, as are `int | uint` and `uint | int`. A set
+  that normalizes to a **single** member is that member, indistinguishable from it thereafter, so
+  `type Meters = float` behaves exactly like `float`, its integer width included.
+- **Runtime erasure.** A multi-member union has no runtime representation: it produces no typed
+  local, no typed parameter check, no runtime type test, and a `PropertyInfo` of `Variant::NIL`.
+  A single-member alias keeps the member's runtime typing in full.
 - A **type suffix binds to the last name of the dotted head**, so `Outer.Box[int]` applies `[int]`
   to `Box`, exactly as the value-position spelling does. A type carries **at most one** suffix;
   writing it on an earlier name (`Outer[int].Box`) is a parse error
@@ -1597,13 +1653,17 @@ are written in `##` doc comments and produce errors if used as annotations.
 - **Recursion bounds.** Expression, statement, type, and pattern nesting are each bounded
   (`MAX_NESTING_DEPTH`) so deeply nested input reports an error instead of overflowing the
   native stack.
+- **`|` in a type vs. bitwise OR.** `|` is a type-union operator only while a type is being
+  parsed. Because the right-hand side of `is` and `as` is a type position, `x is int | uint` and
+  `x as int | uint` union the two types there rather than applying bitwise OR to the test result;
+  everywhere else `|` is unchanged.
 - **`?` nullable vs. operator.** `?` is only valid as a type suffix. Subscript index parsing
   stops before a trailing `?` so `Box[Node?]` works; a bare `?` elsewhere is an error
   pointing to the `if/else` ternary.
 - **Named arguments are unambiguous** because assignment is never an expression: inside an
   argument list, `IDENTIFIER` `=` is always a named argument, while `==` is comparison.
 - **Dictionary style detection** is based on the first entry's separator (`:` vs `=`).
-- **Contextual keywords** (`annotation`, `extend`, `async`, `targets`, `get`, `set`,
+- **Contextual keywords** (`annotation`, `extend`, `type`, `async`, `targets`, `get`, `set`,
   `CLASS`/`METHOD`/`VARIABLE`/`SIGNAL`/`CONSTANT`) are lexed as identifiers and only gain
   meaning from position. `extend` is distinct from the reserved `extends` keyword token.
 - **Multiline mode** inside brackets and around lambda bodies suspends layout-token

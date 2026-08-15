@@ -250,6 +250,7 @@ private:
 	void print_parameter(const FSParser::ParameterNode *p_parameter);
 	void print_type_parameters(const Vector<FSParser::TypeParameterNode *> &p_params);
 	void print_type(const FSParser::TypeNode *p_type);
+	void print_type_alias(const FSParser::TypeAliasNode *p_type_alias);
 
 	// Statements / suites.
 	void print_suite(const FSParser::SuiteNode *p_suite);

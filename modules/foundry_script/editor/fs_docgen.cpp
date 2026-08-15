@@ -286,6 +286,11 @@ void FSDocGen::_doctype_from_gdtype(const GDType &p_gdtype, String &r_type, Stri
 			// nested containers compose with the existing synthetic spellings.
 			r_type = _structural_tuple_spelling(p_gdtype);
 			return;
+		case GDType::UNION:
+			// Documentation spells the union the way an author writes it; `to_string()` is the one
+			// place that rendering lives.
+			r_type = p_gdtype.to_string();
+			return;
 		case GDType::TYPE_PARAMETER:
 			r_type = p_gdtype.type_parameter_name;
 			return;

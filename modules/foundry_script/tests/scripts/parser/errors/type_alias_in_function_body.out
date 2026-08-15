@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+Type alias declarations are only allowed at file scope or in a class body.

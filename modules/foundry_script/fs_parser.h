@@ -106,6 +106,7 @@ public:
 	struct TraitNode;
 	struct TupleLiteralNode;
 	struct TupleNode;
+	struct TypeAliasNode;
 	struct TypeNode;
 	struct TypeParameterNode;
 	struct TypeTestNode;
@@ -125,6 +126,7 @@ public:
 			CLASS, // FoundryScript.
 			ENUM, // Enumeration.
 			TUPLE, // Fixed-size immutable aggregate, named (`tuple Vec2(...)`) or unnamed (`(int, String)`).
+			UNION, // Static set of alternative types, e.g. `int | uint`. Always holds two or more canonical members.
 			TYPE_PARAMETER, // Generic type parameter, e.g. `T` in `class Box[T]`.
 			VARIANT, // Can be any type.
 			RESOLVING, // Currently resolving.
@@ -217,6 +219,13 @@ public:
 		StringName tuple_name; // Empty for an unnamed (structural) tuple.
 		Vector<StringName> tuple_field_names; // Parallel to the elements; an empty entry is a positional field.
 
+		// For UNION kind. Alternatives of a static type set, already normalized: aliases expanded,
+		// nested unions flattened, nullability hoisted onto the union itself, duplicates removed, and
+		// order canonicalized so equality and diagnostics are deterministic. A set that normalizes to
+		// a single alternative is not a union at all -- it collapses to that alternative -- so a UNION
+		// always holds at least two members and no member is itself a UNION or nullable.
+		Vector<DataType> union_members;
+
 		// For TYPE_PARAMETER kind.
 		StringName type_parameter_name;
 		int type_parameter_index = -1; // Ordinal position in its declaring scope.
@@ -228,6 +237,15 @@ public:
 
 		_FORCE_INLINE_ bool is_type_parameter() const { return kind == TYPE_PARAMETER; }
 		_FORCE_INLINE_ bool is_tuple() const { return kind == TUPLE; }
+		_FORCE_INLINE_ bool is_union() const { return kind == UNION; }
+
+		// Normalizes p_members into the type they denote: alias members are already expanded by the
+		// caller, nested unions are flattened, a nullable member hoists nullability onto the result,
+		// duplicates are removed, and the surviving members are ordered canonically. A single
+		// surviving member is returned as itself (a one-member alias is indistinguishable from its
+		// member, keeping its runtime typing and numeric width); two or more produce a UNION.
+		// An empty member list yields an UNRESOLVED type; callers reject that at their own site.
+		static DataType make_union(const Vector<DataType> &p_members);
 		_FORCE_INLINE_ bool is_tagged_union_type() const { return kind == ENUM && is_tagged_union; }
 		// Payload of the named case, or nullptr when the case is payload-less or unknown.
 		_FORCE_INLINE_ const EnumCasePayload *get_enum_case_payload(const StringName &p_case_name) const {
@@ -406,6 +424,11 @@ public:
 							tuple_field_names == p_other.tuple_field_names &&
 							container_element_types == p_other.container_element_types;
 					break;
+				case UNION:
+					// Members are normalized into a canonical order, so set identity is positional
+					// identity and `int | uint` equals `uint | int` without a quadratic comparison.
+					equal = union_members == p_other.union_members;
+					break;
 				case SCRIPT:
 					equal = script_type == p_other.script_type;
 					break;
@@ -517,6 +540,7 @@ public:
 			TUPLE,
 			TUPLE_LITERAL,
 			TYPE,
+			TYPE_ALIAS,
 			TYPE_PARAMETER,
 			TYPE_TEST,
 			UNARY_OPERATOR,
@@ -1011,6 +1035,7 @@ public:
 				ENUM_VALUE, // For unnamed enums.
 				GROUP, // For member grouping.
 				TUPLE,
+				TYPE_ALIAS, // `type Name = ...`: a static-only type name, erased before runtime.
 			};
 
 			Type type = UNDEFINED;
@@ -1024,6 +1049,7 @@ public:
 				EnumNode *m_enum;
 				AnnotationNode *annotation;
 				TupleNode *m_tuple;
+				TypeAliasNode *type_alias;
 			};
 			EnumNode::Value enum_value;
 
@@ -1052,6 +1078,9 @@ public:
 					case TUPLE:
 						// All tuple-type members have an id.
 						return m_tuple->identifier->name;
+					case TYPE_ALIAS:
+						// All alias members have an id.
+						return type_alias->identifier->name;
 				}
 				return "";
 			}
@@ -1078,6 +1107,8 @@ public:
 						return "group";
 					case TUPLE:
 						return "tuple";
+					case TYPE_ALIAS:
+						return "type alias";
 				}
 				return "";
 			}
@@ -1102,6 +1133,8 @@ public:
 						return annotation->start_line;
 					case TUPLE:
 						return m_tuple->start_line;
+					case TYPE_ALIAS:
+						return type_alias->start_line;
 					case UNDEFINED:
 						ERR_FAIL_V_MSG(-1, "Reaching undefined member type.");
 				}
@@ -1130,6 +1163,10 @@ public:
 						// The declaration carries the tuple's meta type; `type_from_metatype()`
 						// turns it into the instance type at use sites.
 						return m_tuple->get_datatype();
+					case TYPE_ALIAS:
+						// An alias is a spelling for another type, never a value, so the
+						// declaration itself has no type of its own.
+						return DataType();
 					case UNDEFINED:
 						return DataType();
 				}
@@ -1156,6 +1193,8 @@ public:
 						return annotation;
 					case TUPLE:
 						return m_tuple;
+					case TYPE_ALIAS:
+						return type_alias;
 					case UNDEFINED:
 						return nullptr;
 				}
@@ -1199,6 +1238,10 @@ public:
 			Member(TupleNode *p_tuple) {
 				type = TUPLE;
 				m_tuple = p_tuple;
+			}
+			Member(TypeAliasNode *p_type_alias) {
+				type = TYPE_ALIAS;
+				type_alias = p_type_alias;
 			}
 		};
 
@@ -1844,6 +1887,12 @@ public:
 		// is empty in this case; the element types live in `tuple_element_types` instead.
 		bool is_tuple = false;
 		Vector<TypeNode *> tuple_element_types;
+		// Set when the type was written as a union of alternatives, `int | uint`. `type_chain` is
+		// empty in this case and the alternatives, in source order, live in `union_member_types`.
+		// A union node is only produced when a `|` was actually written, so a lone alternative is
+		// still its own node and no type acquires a wrapper it was not spelled with.
+		bool is_union = false;
+		Vector<TypeNode *> union_member_types;
 		// Set only for the right-hand side of an `is` test, where a dotted name may name a
 		// tagged-union case (`Message.Move`) instead of a type. Type annotations keep rejecting
 		// case names, since a case is not a type.
@@ -1871,6 +1920,18 @@ public:
 
 		TypeNode() {
 			type = TYPE;
+		}
+	};
+
+	// `type Name = A | B`: a transparent, file-local name for a type. The alias is static only --
+	// it declares no runtime member, no constant, and no nominal type -- so `aliased_type` is the
+	// whole declaration and the name never reaches the runtime.
+	struct TypeAliasNode : public Node {
+		IdentifierNode *identifier = nullptr;
+		TypeNode *aliased_type = nullptr;
+
+		TypeAliasNode() {
+			type = TYPE_ALIAS;
 		}
 	};
 
@@ -2124,6 +2185,7 @@ private:
 	bool has_lookahead = false;
 
 	ClassNode *current_class = nullptr;
+	EnumNode *current_enum = nullptr; // The enum whose body is being parsed, for its type-parameter scope.
 	FunctionNode *current_function = nullptr;
 	LambdaNode *current_lambda = nullptr;
 	SuiteNode *current_suite = nullptr;
@@ -2327,6 +2389,8 @@ private:
 			const DeclarationModifiers &p_modifiers, const StringName &p_exclusive_builtin = StringName());
 	void parse_function_class_member(const DeclarationModifiers &p_modifiers);
 	AnnotationDeclarationNode *parse_annotation_declaration();
+	TypeAliasNode *parse_type_alias();
+	bool starts_type_alias_declaration();
 	ConformanceNode *parse_conformance();
 	void parse_conformance_uses(ConformanceNode *p_conformance);
 	void parse_conformance_body(ConformanceNode *p_conformance, bool p_is_multiline);
@@ -2419,6 +2483,9 @@ private:
 	ExpressionNode *parse_yield(ExpressionNode *p_previous_operand, bool p_can_assign);
 	ExpressionNode *parse_invalid_token(ExpressionNode *p_previous_operand, bool p_can_assign);
 	TypeNode *parse_type(bool p_allow_void = false, CompletionType p_forced_completion = COMPLETION_NONE, bool p_allow_enum_case = false);
+	TypeNode *parse_type_member(bool p_allow_void, CompletionType p_forced_completion, bool p_allow_enum_case);
+	void validate_union_member_type(const TypeNode *p_member);
+	bool is_enclosing_type_parameter_name(const StringName &p_name) const;
 
 	// Declares a case-payload bind name as a transient local of `current_suite`, as soon as it is
 	// parsed, so later `and`-conjuncts of the same condition can already reference it. Rejects names
@@ -2562,6 +2629,7 @@ public:
 		void print_tuple(TupleNode *p_tuple);
 		void print_tuple_literal(TupleLiteralNode *p_tuple_literal);
 		void print_type(TypeNode *p_type);
+		void print_type_alias(TypeAliasNode *p_type_alias);
 		void print_type_parameters(const Vector<TypeParameterNode *> &p_type_parameters);
 		void print_type_test(TypeTestNode *p_type_test);
 		void print_unary_op(UnaryOpNode *p_unary_op);

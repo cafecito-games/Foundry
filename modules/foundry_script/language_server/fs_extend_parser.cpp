@@ -649,6 +649,10 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 
 				r_symbol.children.push_back(symbol);
 			} break;
+			case ClassNode::Member::TYPE_ALIAS:
+				// A type alias has no runtime symbol to document; presenting it is a tooling
+				// follow-up.
+				break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.
 			case ClassNode::Member::UNDEFINED:
@@ -1315,6 +1319,10 @@ Dictionary ExtendFSParser::dump_class_api(const FSParser::ClassNode *p_class) co
 			case ClassNode::Member::TUPLE:
 				// Tuple declarations do not have a dedicated API bucket yet; they are omitted
 				// from this legacy dump like other type-only declarations without a value.
+				break;
+			case ClassNode::Member::TYPE_ALIAS:
+				// A type alias has no runtime symbol to document; presenting it is a tooling
+				// follow-up.
 				break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.

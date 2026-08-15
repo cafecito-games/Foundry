@@ -1,0 +1,2 @@
+FS_TEST_PARSER_ERROR
+A type alias cannot declare type parameters.

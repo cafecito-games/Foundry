@@ -2130,6 +2130,10 @@ static void _find_identifiers_in_class(const FSParser::ClassNode *p_class, bool 
 						}
 						option = ScriptLanguage::CodeCompletionOption(member.m_tuple->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, location);
 						break;
+					case FSParser::ClassNode::Member::TYPE_ALIAS:
+						// An alias has no completion presentation yet, and it names no value, so it
+						// must be skipped rather than inserted as an empty option.
+						continue;
 					case FSParser::ClassNode::Member::GROUP:
 						break; // No-op, but silences warnings.
 					case FSParser::ClassNode::Member::UNDEFINED:
@@ -3917,6 +3921,9 @@ static bool _guess_identifier_type_from_base(FSParser::CompletionContext &p_cont
 							// Tuple typing (DataType::Kind::TUPLE) is a follow-up change; no
 							// static type can be guessed for a tuple-type name yet.
 							return false;
+						case FSParser::ClassNode::Member::TYPE_ALIAS:
+							// An alias is a spelling for another type, never a value.
+							return false;
 						case FSParser::ClassNode::Member::GROUP:
 							return false; // No-op, but silences warnings.
 						case FSParser::ClassNode::Member::UNDEFINED:
@@ -5693,6 +5700,7 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 	switch (p_member.type) {
 		case FSParser::ClassNode::Member::UNDEFINED:
 		case FSParser::ClassNode::Member::GROUP:
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
 			return ERR_BUG;
 		case FSParser::ClassNode::Member::CLASS: {
 			String doc_type_name;
@@ -6106,6 +6114,7 @@ static Error _lookup_symbol_from_base(const FSParser::DataType &p_base, const St
 				return ERR_CANT_RESOLVE;
 			} break;
 			case FSParser::DataType::TUPLE:
+			case FSParser::DataType::UNION:
 			case FSParser::DataType::TYPE_PARAMETER:
 			case FSParser::DataType::RESOLVING:
 			case FSParser::DataType::UNRESOLVED: {
