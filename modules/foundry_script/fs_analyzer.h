@@ -989,6 +989,12 @@ private:
 	// validated so assignment, arguments, returns, signals, and typed collection elements agree.
 	bool is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion = false, const FSParser::Node *p_source_node = nullptr, const FSParser::ExpressionNode *p_constant_source = nullptr);
 
+	// Whether an `is p_test_type` on a value of `p_operand_type` is statically always true because the
+	// test subsumes every alternative the operand can hold, reporting the exhausted set in
+	// `r_alternative_set`. Shares the subsumption rule that governs failed-test flow narrowing, so both
+	// agree on what a numeric test proves.
+	static bool type_test_exhausts_alternatives(const FSParser::DataType &p_operand_type, const FSParser::DataType &p_test_type, FSParser::DataType &r_alternative_set);
+
 	// The unsafe-integer-mix diagnostic for an operator whose operand types have no common integer
 	// type, or an empty string when they do. Shared so every operator site words it the same way.
 	String make_integer_promotion_error(const FSParser::DataType &p_left, const FSParser::DataType &p_right, Variant::Operator p_operation) const;

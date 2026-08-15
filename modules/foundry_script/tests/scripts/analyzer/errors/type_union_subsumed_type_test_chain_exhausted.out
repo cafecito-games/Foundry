@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 10: Every alternative of "int | long" passes "is long", so this test is always true and nothing reaches its false branch. Test the narrowest alternative first.

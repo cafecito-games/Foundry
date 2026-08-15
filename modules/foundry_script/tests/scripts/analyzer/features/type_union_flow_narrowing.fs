@@ -75,6 +75,14 @@ func narrowest_first(value: int | long | float) -> String:
 	return "float"
 
 
+# Narrowest-first stays legal even when the set holds nothing but same-carrier integers: `is int`
+# leaves `long` behind, so neither test exhausts the alternatives.
+func narrowest_first_pair(value: int | long) -> String:
+	if value is int:
+		return "int"
+	return "long"
+
+
 func test():
 	prints(describe("abc"), describe(1))
 	prints(describe_explicit_union("ab"), describe_explicit_union(2.5), describe_explicit_union(3))
@@ -83,4 +91,5 @@ func test():
 	prints(joined("ab"), joined(8))
 	prints(maybe(null), maybe("abcde"), maybe(9))
 	prints(narrowest_first(10), narrowest_first(4294967296L), narrowest_first(11.5))
+	prints(narrowest_first_pair(12), narrowest_first_pair(4294967297L))
 	print(Holder.new().length_of_stored())

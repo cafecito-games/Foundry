@@ -13346,6 +13346,13 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 		} else {
 			downgrade_node_type_source(p_type_test->operand);
 		}
+	} else if (operand_type.is_hard_type()) {
+		FSParser::DataType exhausted_set;
+		if (type_test_exhausts_alternatives(operand_type, compatibility_type, exhausted_set)) {
+			// The test is a static tautology, which in a chain is what makes every later arm dead: the arms
+			// exist to tell the alternatives apart, and this one already claimed all of them.
+			push_error(vformat(R"(Every alternative of "%s" passes "is %s", so this test is always true and nothing reaches its false branch. Test the narrowest alternative first.)", exhausted_set.to_string(), test_type.to_string()), p_type_test);
+		}
 	}
 }
 

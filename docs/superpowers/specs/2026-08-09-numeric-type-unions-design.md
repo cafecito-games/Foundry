@@ -134,7 +134,10 @@ Known pre-existing asymmetry, in scope to *not* regress and out of scope to fix:
 - `int` is a *subset* predicate of `long`, and `uint` of `ulong`. For a value of `5`, both `is int` and `is long` are true.
 - True-branch narrowing to the tested member is **sound**: if the value's carrier matches and its magnitude fits, treating it as that width in the branch is correct. This is the existing behavior and existing fixtures depend on it (`tests/scripts/runtime/errors/fixed_width_integer_flow_narrowed_type_test.fs`).
 - False-branch narrowing must be **downward-closed under the subset relation**, not plain member removal. `is not long` removes `long` *and* `int`; `is not ulong` removes `ulong` *and* `uint`. Removing only the named member is unsound. `is not int` removes only `int`, which is correct because a value that does not fit `int` may still be a `long`.
-- Same-carrier members cannot be discriminated from each other in the general case, so a union such as `Number` cannot be split into five disjoint arms. A chain that tests the wider member first makes the narrower arm unreachable. **Locked: emit a new warning** when a type test on a union subject is statically unreachable because an earlier test in the same chain subsumes it.
+- Same-carrier members cannot be discriminated from each other in the general case, so a union such as `Number` cannot be split into five disjoint arms. A chain that tests the wider member first makes the narrower arm unreachable. **Locked (revised by #2160): this is an error, not a warning**, and it is reported through one of two complementary rules, because a warning on the same node the error path already rejects is never observable:
+  - When the failed test leaves a non-empty surviving set, the later test is checked against that set and rejected because nothing in it can match — including when the set has collapsed to a single alternative, where the diagnostic names that alternative instead of a set.
+  - When the failed test leaves *nothing*, subtraction cannot express the result: there is no bottom type, `apply_failed_type_test_flow_narrowing()` gives up, and the later test would be checked against the full set and accepted. The exhausting test is reported instead — it is statically always true, so its false branch, and therefore every arm after it, is dead.
+  - Subsumption is decided only between numeric types on a shared carrier and between identical types, so the rule fires exactly where the analyzer can prove it. A union of two subclasses tested against their shared base is not reported; a nullable set is not reported either, because null does reach the false branch of a test on a non-nullable type.
 
 Type tests narrow union and bounded-generic values to the tested member in the true branch:
 
@@ -202,7 +205,7 @@ Each of these has its own actionable, source-located diagnostic:
 - A union operand pair with no valid operator result, naming the offending pair.
 - A type argument failing a union bound, naming the alias and its normalized members.
 - `@export` on a union type, and a union as a typed-container element type.
-- A subsumed, statically unreachable type test in a chain (warning, not error).
+- A subsumed, statically unreachable type test in a chain, or the always-true test that exhausted the alternatives ahead of it.
 
 A union containing types that share no operators is still a valid type; only the offending use site errors. User-defined classes in a union do not acquire numeric operators or promotion behavior.
 
