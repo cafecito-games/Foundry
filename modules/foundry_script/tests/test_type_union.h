@@ -477,6 +477,58 @@ static const char *NULLABLE_TRAIT_UNION_SOURCE =
 		"func use(maybe: MaybeDescribable) -> String:\n"
 		"\treturn take(maybe)\n";
 
+TEST_CASE("[Modules][FoundryScript][TypeUnion] `Number` is the union of the source-spellable numeric types") {
+	const FSParser::DataType number = FSParser::make_number_type();
+	REQUIRE(number.is_union());
+	CHECK_FALSE(number.is_nullable);
+
+	// The set is derived from the numeric registry plus `float`, so it is exactly the spellings the
+	// type resolver answers. A width with no source spelling is not in the registry and so is not a
+	// member; one that becomes spellable joins by construction.
+	Vector<FSParser::DataType> expected_members;
+	const char *spellable_numeric_names[] = { "int", "uint", "long", "ulong" };
+	for (const char *numeric_name : spellable_numeric_names) {
+		const FSParser::BuiltinDataType builtin = FSParser::get_builtin_data_type(StringName(numeric_name));
+		REQUIRE(builtin.is_valid());
+		expected_members.push_back(union_test_builtin(builtin.builtin_type, builtin.numeric_type));
+	}
+	expected_members.push_back(union_test_builtin(Variant::FLOAT));
+	CHECK(number == FSParser::DataType::make_union(expected_members));
+	CHECK(number.union_members.size() == 5);
+	CHECK(number.to_string() == "float | int | long | uint | ulong");
+
+	for (const FSParser::DataType &member : number.union_members) {
+		CHECK(member.kind == FSParser::DataType::BUILTIN);
+		CHECK((member.builtin_type == Variant::INT || member.builtin_type == Variant::UINT ||
+				member.builtin_type == Variant::FLOAT));
+	}
+}
+
+static const char *NULLABLE_NUMBER_BOUND_SOURCE =
+		"func take[T: Number](value: T) -> T:\n"
+		"\treturn value\n"
+		"func use(value: int?) -> Variant:\n"
+		"\treturn take(value)\n";
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A nullable argument is rejected against a `Number` bound under strict null checks") {
+	FSParser parser;
+	REQUIRE(parser.parse(NULLABLE_NUMBER_BOUND_SOURCE, "user://test.fs", false) == OK);
+
+	FSAnalyzer analyzer(&parser);
+	analyzer.set_strict_null_checks(true);
+	// The bound promises a non-null numeric value, so the strict-null guard has to run before the
+	// union's alternatives are considered; otherwise `int` would answer for `int?`.
+	CHECK(analyzer.analyze() != OK);
+}
+
+TEST_CASE("[Modules][FoundryScript][TypeUnion] A nullable argument satisfies a `Number` bound when strict null checks are off") {
+	FSParser parser;
+	REQUIRE(parser.parse(NULLABLE_NUMBER_BOUND_SOURCE, "user://test.fs", false) == OK);
+
+	FSAnalyzer analyzer(&parser);
+	CHECK(analyzer.analyze() == OK);
+}
+
 TEST_CASE("[Modules][FoundryScript][TypeUnion] A nullable union is rejected against a trait under strict null checks") {
 	FSParser parser;
 	REQUIRE(parser.parse(NULLABLE_TRAIT_UNION_SOURCE, "user://test.fs", false) == OK);

@@ -2494,6 +2494,20 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				return bad_type;
 			}
 			result.kind = FSParser::DataType::VARIANT;
+		} else if (first == FSParser::get_number_type_name()) {
+			// `Number` is compiler-provided and globally visible: the closed union of the
+			// source-spellable numeric types. It is answered at the same precedence as a built-in type
+			// name, which is what makes a declaration that reuses the name unreachable and therefore an
+			// error at its own declaration site.
+			if (p_type->type_chain.size() > 1) {
+				push_error(R"(Type "Number" does not contain nested types.)", p_type->type_chain[1]);
+				return bad_type;
+			}
+			if (!p_type->container_types.is_empty()) {
+				push_error(R"(Type "Number" cannot be specialized with type arguments.)", p_type);
+				return bad_type;
+			}
+			return finalize_datatype(FSParser::make_number_type());
 		} else if (FSParser::get_builtin_data_type(first).is_valid() || first == SNAME("AsyncCallable")) {
 			// Built-in types. AsyncCallable is an async-marked alias of Callable.
 			const bool is_async_callable = first == SNAME("AsyncCallable");
@@ -9227,6 +9241,35 @@ bool FSAnalyzer::type_argument_satisfies_bound(const FSParser::DataType &p_argum
 	if (strict_null_checks && p_argument.is_nullable && !p_bound.is_nullable) {
 		return false;
 	}
+	// A union argument names a set of alternatives the generic code may receive, and nothing narrows
+	// it at the boundary, so it satisfies a bound only when every alternative does. This case is
+	// reached through inference: solving a parameter from a union-typed argument yields the
+	// normalized union. Nullability was hoisted onto the union during normalization, so it is put
+	// back on each alternative before that alternative faces the bound's own null rules.
+	if (p_argument.is_union()) {
+		for (const FSParser::DataType &member : p_argument.union_members) {
+			FSParser::DataType argument_member = member;
+			argument_member.is_nullable = p_argument.is_nullable;
+			if (!type_argument_satisfies_bound(argument_member, p_bound)) {
+				return false;
+			}
+		}
+		return true;
+	}
+	// A union bound admits any one of its alternatives, so a concrete argument satisfies it as soon as
+	// it satisfies one member. Each member is checked by the same strict rules rather than by the
+	// permissive compatibility walk below, so a member reachable only by an implicit conversion does
+	// not launder an argument into the bound.
+	if (p_bound.is_union()) {
+		for (const FSParser::DataType &member : p_bound.union_members) {
+			FSParser::DataType bound_member = member;
+			bound_member.is_nullable = p_bound.is_nullable;
+			if (type_argument_satisfies_bound(p_argument, bound_member)) {
+				return true;
+			}
+		}
+		return false;
+	}
 	// A trait bound is satisfied nominally: the argument must `use` the trait (directly, transitively,
 	// or through an ancestor), never reach it by inheritance. Route to the dedicated trait check rather
 	// than the derivation walk below, which would always reject a conforming `uses` class.
@@ -11554,6 +11597,16 @@ void FSAnalyzer::reduce_identifier(FSParser::IdentifierNode *p_identifier, bool 
 		variant.is_meta_type = true;
 		variant.is_pseudo_type = true;
 		p_identifier->set_datatype(variant);
+		return;
+	}
+
+	if (name == FSParser::get_number_type_name()) {
+		// `Number` names a set of types, not a value: it has no constructor, no members, and no
+		// runtime representation, exactly like a user-written alias.
+		push_error(R"(Type "Number" can only be used in a type position. It declares no value, so it cannot be called, constructed, or read.)", p_identifier);
+		FSParser::DataType number_use;
+		number_use.kind = FSParser::DataType::VARIANT;
+		p_identifier->set_datatype(number_use);
 		return;
 	}
 

@@ -90,6 +90,31 @@ FSParser::BuiltinDataType FSParser::get_builtin_data_type(const StringName &p_ty
 	return result;
 }
 
+const StringName &FSParser::get_number_type_name() {
+	static const StringName number_type_name = StringName("Number");
+	return number_type_name;
+}
+
+FSParser::DataType FSParser::make_number_type() {
+	Vector<DataType> members;
+	for (const auto &numeric_builtin : NUMERIC_BUILTIN_TYPES) {
+		DataType member;
+		member.type_source = DataType::ANNOTATED_EXPLICIT;
+		member.kind = DataType::BUILTIN;
+		member.builtin_type = numeric_builtin.builtin_type;
+		member.numeric_type = numeric_builtin.numeric_type;
+		members.push_back(member);
+	}
+	// `float` carries no width descriptor, so it is not part of the integer registry, but it is a
+	// source-spellable numeric type and therefore a member.
+	DataType float_member;
+	float_member.type_source = DataType::ANNOTATED_EXPLICIT;
+	float_member.kind = DataType::BUILTIN;
+	float_member.builtin_type = Variant::FLOAT;
+	members.push_back(float_member);
+	return DataType::make_union(members);
+}
+
 String FSParser::get_builtin_type_source_name(Variant::Type p_builtin_type, NumericType p_numeric_type) {
 	if (numeric_type_has_public_name(p_numeric_type) && numeric_type_is_carrier_consistent(p_numeric_type, p_builtin_type)) {
 		return numeric_type_public_name(p_numeric_type);
