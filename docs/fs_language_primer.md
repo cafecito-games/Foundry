@@ -292,6 +292,75 @@ var renamed: Signal[[String]]
 - `Variant` is the dynamic boundary. With strict dynamic checks enabled, avoid assigning a `Variant` directly to a
   narrower static type without validation or conversion.
 
+### Type Aliases And Unions
+
+```foundry_script
+type Meters = float
+type Scalar = int | String
+
+var distance: Meters = 12.5
+
+func describe(value: Scalar) -> String:
+	if value is String:
+		return "String(%d)" % value.length()
+	return "int"
+
+func total[T: int | long](left: T, right: T) -> String:
+	return str(left + right)
+```
+
+- `type Name = SomeType` declares a type alias. Aliases are allowed at file scope and in a class
+  body, never inside a function, and they take no type parameters.
+- An alias is file-local: it is not a global name, not inherited, and not reachable through `import`
+  or `namespace`.
+- An alias is type-position-only. `Meters(1.0)`, `Meters.new()`, `extends Meters`, and
+  `uses Meters` are all errors.
+- `A | B` is a type union: the static set of its alternatives. It is a constraint, not a value
+  wrapper.
+- Unions normalize: alias members expand, nested unions flatten, duplicates disappear, member order
+  is canonical, and nullability is hoisted onto the whole union, so `int? | uint` and `int | uint?`
+  are the same type.
+- A union that normalizes to **one** member is that member. `type Meters = float` behaves exactly
+  like `float` at compile time and at runtime, numeric width included, and costs nothing.
+- A union with **two or more** members erases at runtime: no wrapper, no tag, no runtime type check,
+  and a `Variant::NIL` property type. This is why the restrictions below exist.
+- `Number` is compiler-provided and globally visible. It is exactly the source-spellable numeric
+  types: `int`, `uint`, `long`, `ulong`, and `float`. `Number` is a reserved name.
+- A type test narrows a union-typed or union-bounded value to the tested alternative for the rest of
+  the branch. Narrowing applies to parameters, locals, iterators, and binds only — never to member
+  or static variables.
+- Multi-member unions are rejected as typed-container element types, as `@export` types, and as the
+  target of `is`, `as`, or `Type[T]`, because each of those needs one runtime type.
+
+Choosing between a union and its neighbors:
+
+| You want | Reach for | Why |
+| --- | --- | --- |
+| One body over several numeric types | A union bound plus narrowing, `[T: Number]` | Static constraint, no runtime cost |
+| Arithmetic without narrowing | A bound of one signedness, `[T: int \| long]` | Every pair in such a set promotes; mixed-signedness sets do not |
+| A readable name for one type | A single-member alias, `type Meters = float` | Transparent, keeps runtime type and width, free |
+| To tell the alternatives apart at runtime | A tagged union (payload enum) | It carries a real tag; a type union carries none |
+| A shared method surface | A trait | A union exposes no common operations at all |
+| "A value, or nothing" | `T?` | Nullability is hoisted out of unions anyway |
+| A heterogeneous container or `@export` field | `Array[Variant]` plus validation | Both enforce exactly one runtime type |
+| Genuinely "anything" | `Variant` | A union is a constraint, not a dynamic escape hatch |
+
+Two sharp edges are worth stating outright:
+
+- **A full `Number` bound does not permit direct arithmetic.** `Number` admits `int` paired with
+  `ulong`, and signed and unsigned integers use disjoint runtime carriers with no common type, so
+  `left + right` under `[X: Number, Y: Number]` is rejected. Narrow both operands first, or declare
+  a bound that stays on one side of the signed/unsigned divide. `int | long`, `int | long | float`,
+  and `uint | ulong` all permit `+` directly; any set that mixes signed and unsigned integers,
+  `Number` included, does not.
+- **Numeric type tests go narrowest-first.** `is` on a numeric type is a carrier-plus-value-range
+  predicate, not a declared-width test, so `int` is a *subset* of `long`: for a value of `5`, both
+  `is int` and `is long` are true. Testing `long` first therefore matches every `int` too and leaves
+  the later `int` arm dead, and where nothing in the surviving set could still match, the analyzer
+  rejects the later test outright. For the same reason, `is not long` removes `long` *and* `int`,
+  while `is not int` removes only `int`, and a set such as `Number` can never be split into five
+  disjoint arms.
+
 ### Classes, Traits, Generics, And Annotations
 
 ```foundry_script
@@ -505,6 +574,61 @@ async func load_payload() -> void:
 	print(payload)
 ```
 
+### 6. Numeric Type Unions And Aliases
+
+```foundry_script
+extends RefCounted
+
+# A single-alternative alias is a transparent name for one type: `Meters` behaves exactly like
+# `float`, runtime width included.
+type Meters = float
+
+# A multi-alternative union is a static set with no runtime tag, so a value only becomes usable as
+# one alternative after a type test narrows it.
+type Scalar = int | String
+
+
+class Reading:
+	# Flow narrowing keys on parameters, locals, iterators, and binds, so a union-typed member is
+	# never narrowed in place. Copy it into a local first.
+	var raw: Scalar = 0
+
+	func label() -> String:
+		var local := raw
+		if local is String:
+			return local
+		return str(local)
+
+
+# `Number` is the closed set of source-spellable numeric types. A `Number`-bounded body must narrow
+# before it operates: the bound admits `int` paired with `ulong`, which has no common type.
+func to_meters[T: Number](value: T) -> Meters:
+	# Narrowest-first. Testing `long` first would also match every `int` value and leave the `int`
+	# arm unreachable.
+	if value is int:
+		return float(value)
+	if value is long:
+		return float(value)
+	if value is uint:
+		return float(value)
+	if value is ulong:
+		return float(value)
+	# Only `float` survives the tests above.
+	return value
+
+
+# A bound that stays on one side of the signed/unsigned divide permits arithmetic without
+# narrowing, because every pair it admits promotes to a common type.
+func total[T: int | long](left: T, right: T) -> String:
+	return str(left + right)
+
+
+func test() -> void:
+	prints(to_meters(3), to_meters(4.5), to_meters(6UL))
+	prints(total(2, 3), total(2L, 3L))
+	print(Reading.new().label())
+```
+
 ## Common Pitfalls
 
 - Do not write C-style or JavaScript-style blocks. Foundry Script uses `:` plus indentation, not braces.
@@ -529,3 +653,23 @@ async func load_payload() -> void:
   boundaries such as JSON, signals, untyped arrays, untyped dictionaries, and `Variant`.
 - Do not declare custom annotations inside traits, inner classes, or functions. They are root script declarations only.
 - Do not declare a rest parameter as `...args: Array[int]`; rest parameters use `Array` and must be final.
+- Do not expect `left + right` to work under a full `Number` bound. `Number` admits `int` paired
+  with `ulong`, and those carriers have no common type. Narrow both operands first, or declare a
+  bound that does not mix signed and unsigned integers, such as `int | long`.
+- Do not use a type union when the alternatives must be told apart at runtime, or when they need a
+  shared method surface. A union has no runtime tag and no common operations. Use a tagged union
+  (a payload enum) for the first case and a trait for the second.
+- Do not expect `is int` and `is long` to be disjoint. A numeric type test checks the runtime
+  carrier and value range, so `int` is a subset of `long`. Order numeric tests narrowest-first;
+  testing the wider alternative first silently makes the narrower arm unreachable, and rejects the
+  later test outright when nothing in the surviving set could match it.
+- Do not put a multi-member union in a typed container element position or on an `@export`. Both
+  enforce exactly one runtime type. Use `Array[Variant]` or `Dictionary[Variant, Variant]` and
+  validate.
+- Do not expect a union-typed member or static variable to narrow. Flow narrowing applies to
+  parameters, locals, iterators, and binds only, so inside `if member is int:` the member still has
+  the whole set as its type and an `int`-only operation on it is still rejected. Copy the member
+  into a local first.
+- Do not use an alias as a value. Aliases are type-position-only, so `MyAlias.new()`,
+  `extends MyAlias`, and `uses MyAlias` are errors, and `value is MyAlias` or `value as MyAlias`
+  is an error whenever the alias has more than one member.

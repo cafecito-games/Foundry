@@ -1517,7 +1517,9 @@ Details (`parse_type`):
   `type Meters = float` behaves exactly like `float`, its integer width included.
 - **Runtime erasure.** A multi-member union has no runtime representation: it produces no typed
   local, no typed parameter check, no runtime type test, and a `PropertyInfo` of `Variant::NIL`.
-  A single-member alias keeps the member's runtime typing in full. Two consequences follow. A
+  A single-member alias keeps the member's runtime typing in full.
+- This section specifies the syntax only; for when a type union is the right tool and when a tagged
+  union, a trait, `T?`, or `Variant` is, see `docs/fs_language_primer.md`. Two consequences follow. A
   multi-member union is **not a valid typed-container element type** — `Array[int | uint]` and
   `Dictionary[String, int | uint]` are errors, because a typed container enforces exactly one
   element type at runtime — and it is **not a valid `is` or `as` operand type**, because the
