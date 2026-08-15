@@ -277,6 +277,13 @@ Error FSAnalyzer::check_native_member_name_conflict(const StringName &p_member_n
 		return ERR_PARSE_ERROR;
 	}
 
+	if (p_member_name == FSParser::get_number_type_name()) {
+		// `Number` is compiler-provided and answered at built-in precedence, so a member declared with
+		// the name is unreachable from every type position exactly as a built-in spelling would be.
+		push_error(R"(The member "Number" cannot have the same name as the compiler-provided type "Number".)", p_member_node);
+		return ERR_PARSE_ERROR;
+	}
+
 	return OK;
 }
 

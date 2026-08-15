@@ -9,5 +9,14 @@ class Inner:
 		pass
 
 
+class MoreInner:
+	enum Number:
+		FIRST = 1
+
+
+class EvenMoreInner:
+	tuple Number(first: int, second: int)
+
+
 func test():
 	print("unreachable")

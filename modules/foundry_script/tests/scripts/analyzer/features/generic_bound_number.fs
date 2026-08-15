@@ -29,3 +29,7 @@ func test():
 	print(identity(narrow))
 
 	prints(counted, unsigned, wide, wide_unsigned, real, narrowed)
+
+	# An explicit type argument is a type position, so `Number` names the same set there.
+	var explicit := Measure[Number].new()
+	print(explicit != null)

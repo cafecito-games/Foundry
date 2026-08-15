@@ -15496,6 +15496,14 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			return true;
 		}
 
+		if (identifier->name == FSParser::get_number_type_name()) {
+			// `Number` is compiler-provided and answered at built-in precedence, so an explicit type
+			// argument names it exactly as an annotation does rather than falling through to the
+			// value-position lookup, which has no value to find.
+			r_type_argument = FSParser::make_number_type();
+			return true;
+		}
+
 		FSParser::DataType type_parameter;
 		if (resolve_type_parameter(identifier->name, type_parameter)) {
 			r_type_argument = type_parameter;
