@@ -15527,6 +15527,22 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			return true;
 		}
 
+		FSParser::TypeAliasNode *type_alias = find_type_alias_in_scope(identifier->name);
+		if (type_alias != nullptr) {
+			// A user-declared alias is answered the same way `Number` is: an explicit type argument is a
+			// type position, so it resolves through the alias registry rather than falling through to the
+			// value-position lookup, which has no value to find. Alias visibility is lexical and
+			// file-local, so `find_type_alias_in_scope` walking the enclosing class chain of this analyzer
+			// is enough; it never reaches into a foreign file the way a qualified name can.
+			const FSParser::DataType alias_type = resolve_type_alias(type_alias);
+			if (!alias_type.is_set()) {
+				// The alias declaration already reported why it has no expansion.
+				return fail_reported();
+			}
+			r_type_argument = alias_type;
+			return true;
+		}
+
 		FSParser::DataType type_parameter;
 		if (resolve_type_parameter(identifier->name, type_parameter)) {
 			r_type_argument = type_parameter;
