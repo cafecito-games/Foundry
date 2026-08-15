@@ -7716,6 +7716,12 @@ bool FSParser::export_annotations(AnnotationNode *p_annotation, Node *p_target, 
 					variable->export_info.usage |= PROPERTY_USAGE_NIL_IS_VARIANT;
 				}
 			} break;
+			case FSParser::DataType::UNION:
+				// A `PropertyInfo` carries exactly one runtime type, so a multi-member union cannot be
+				// exported. A single-member alias never reaches here, having collapsed to its member
+				// (with that member's runtime typing) during normalization.
+				push_error(vformat(R"(Cannot export type union "%s": a multi-member union has no single runtime type to export.)", export_type.to_string()), p_annotation);
+				return false;
 			default:
 				push_error(R"(Export type can only be built-in, a resource, a node, or an enum.)", p_annotation);
 				return false;

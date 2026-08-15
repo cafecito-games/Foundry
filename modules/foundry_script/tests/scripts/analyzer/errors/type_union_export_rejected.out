@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: Cannot export type union "int | uint": a multi-member union has no single runtime type to export.
