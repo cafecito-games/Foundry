@@ -2135,9 +2135,11 @@ static void _find_identifiers_in_class(const FSParser::ClassNode *p_class, bool 
 						// must be skipped rather than inserted as an empty option.
 						continue;
 					case FSParser::ClassNode::Member::GROUP:
-						break; // No-op, but silences warnings.
+						// `@export_group`/`@export_category`/`@export_subgroup` markers name no
+						// value, so they must be skipped rather than inserted as an empty option.
+						continue;
 					case FSParser::ClassNode::Member::UNDEFINED:
-						break;
+						continue;
 				}
 				r_result.insert(option.display, option);
 			}
