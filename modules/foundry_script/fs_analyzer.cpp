@@ -16198,7 +16198,15 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 
 // The type of an operation on one pair of concrete operand types. A set-typed operand never reaches
 // here: `get_operation_type()` enumerates its alternatives and asks this for each combination.
-static FSParser::DataType _operation_type_for_operand_pair(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid) {
+//
+// `r_requires_carrier_widening` reports that the pair only has a result because code generation
+// widens the `uint` operand into the shared `int` carrier first. That widening needs both operand
+// carriers to be statically known, which a set-typed operand does not supply, so set-wise checking
+// treats such a combination as having no result.
+static FSParser::DataType _operation_type_for_operand_pair(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid, bool *r_requires_carrier_widening = nullptr) {
+	if (r_requires_carrier_widening != nullptr) {
+		*r_requires_carrier_widening = false;
+	}
 	if (p_operation == Variant::OP_AND || p_operation == Variant::OP_OR) {
 		// Those work for any type of argument and always return a boolean.
 		// They don't use the Variant operator since they have short-circuit semantics.
@@ -16283,6 +16291,9 @@ static FSParser::DataType _operation_type_for_operand_pair(Variant::Operator p_o
 		if (FSNumericConversion::promote_integer_pair(_operand_numeric_type(p_a), _operand_numeric_type(p_b), promoted) &&
 				numeric_type_carrier(promoted) == Variant::INT) {
 			r_valid = true;
+			if (r_requires_carrier_widening != nullptr) {
+				*r_requires_carrier_widening = true;
+			}
 			result.type_source = hard_operation ? FSParser::DataType::ANNOTATED_INFERRED : FSParser::DataType::INFERRED;
 			result.kind = FSParser::DataType::BUILTIN;
 			result.builtin_type = Variant::INT;
@@ -16356,8 +16367,9 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 	for (const FSParser::DataType &a_alternative : a_alternatives) {
 		for (const FSParser::DataType &b_alternative : b_alternatives) {
 			bool pair_valid = false;
-			FSParser::DataType pair_result = _operation_type_for_operand_pair(p_operation, a_alternative, b_alternative, pair_valid);
-			if (!pair_valid) {
+			bool pair_requires_carrier_widening = false;
+			FSParser::DataType pair_result = _operation_type_for_operand_pair(p_operation, a_alternative, b_alternative, pair_valid, &pair_requires_carrier_widening);
+			if (!pair_valid || pair_requires_carrier_widening) {
 				r_valid = false;
 				FSParser::DataType invalid;
 				invalid.kind = FSParser::DataType::VARIANT;
@@ -16391,19 +16403,33 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 	return result;
 }
 
-// Whether a combination can be explained in promotion terms, which is what
-// `make_integer_promotion_error()` needs to say anything about it.
-static bool _pair_has_promotion_explanation(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
-	return FSNumericConversion::is_numeric_builtin(p_a) && FSNumericConversion::is_numeric_builtin(p_b) &&
-			p_a.builtin_type != Variant::FLOAT && p_b.builtin_type != Variant::FLOAT &&
-			p_a.numeric_type != NumericType::NONE && p_b.numeric_type != NumericType::NONE;
+// How well a rejected combination explains itself, so the strongest witness is the one reported. A
+// set may allow several unsupported combinations and any one of them is a complete reason to reject
+// the operation, but they do not all teach the same thing: two integer types with no common type at
+// all say the most, a carrier crossing the erased operands cannot perform says the next most, and a
+// combination `make_integer_promotion_error()` cannot describe says only that it is unsupported.
+enum class UnsupportedPairRank {
+	UNDESCRIBED,
+	CARRIER_CROSSING,
+	NO_COMMON_TYPE,
+};
+
+static UnsupportedPairRank _unsupported_pair_rank(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
+	if (!FSNumericConversion::is_numeric_builtin(p_a) || !FSNumericConversion::is_numeric_builtin(p_b) ||
+			p_a.builtin_type == Variant::FLOAT || p_b.builtin_type == Variant::FLOAT ||
+			p_a.numeric_type == NumericType::NONE || p_b.numeric_type == NumericType::NONE) {
+		return UnsupportedPairRank::UNDESCRIBED;
+	}
+	NumericType promoted = NumericType::NONE;
+	if (!FSNumericConversion::promote_integer_pair(p_a.numeric_type, p_b.numeric_type, promoted)) {
+		return UnsupportedPairRank::NO_COMMON_TYPE;
+	}
+	return UnsupportedPairRank::CARRIER_CROSSING;
 }
 
 // A combination that `p_operation` has no result for, or false when the operands are not set-typed or
-// every combination is valid. A set may allow several unsupported combinations and any one of them is
-// a complete reason to reject the operation, so the one with a promotion-level explanation wins: it
-// tells the author which values have no common type instead of only that a pair is unsupported.
-// Alternatives are in canonical order, so the choice does not depend on how the set was written.
+// every combination is valid. Alternatives are in canonical order, so the reported combination does
+// not depend on how the set was written.
 static bool _find_unsupported_operand_pair(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, FSParser::DataType &r_a_alternative, FSParser::DataType &r_b_alternative) {
 	Vector<FSParser::DataType> a_alternatives;
 	Vector<FSParser::DataType> b_alternatives;
@@ -16414,20 +16440,23 @@ static bool _find_unsupported_operand_pair(Variant::Operator p_operation, const 
 	}
 
 	bool found = false;
+	UnsupportedPairRank best_rank = UnsupportedPairRank::UNDESCRIBED;
 	for (const FSParser::DataType &a_alternative : a_alternatives) {
 		for (const FSParser::DataType &b_alternative : b_alternatives) {
 			bool pair_valid = false;
-			_operation_type_for_operand_pair(p_operation, a_alternative, b_alternative, pair_valid);
-			if (pair_valid) {
+			bool pair_requires_carrier_widening = false;
+			_operation_type_for_operand_pair(p_operation, a_alternative, b_alternative, pair_valid, &pair_requires_carrier_widening);
+			if (pair_valid && !pair_requires_carrier_widening) {
 				continue;
 			}
-			const bool explainable = _pair_has_promotion_explanation(a_alternative, b_alternative);
-			if (!found || explainable) {
+			const UnsupportedPairRank rank = _unsupported_pair_rank(a_alternative, b_alternative);
+			if (!found || rank > best_rank) {
 				r_a_alternative = a_alternative;
 				r_b_alternative = b_alternative;
+				best_rank = rank;
 				found = true;
 			}
-			if (explainable) {
+			if (best_rank == UnsupportedPairRank::NO_COMMON_TYPE) {
 				return true;
 			}
 		}

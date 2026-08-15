@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 7: Operands "int | long" and "uint" allow a combination the "+" operator has no result for. The "+" operator cannot mix "int" and "uint" operands. Convert both to "long" explicitly. Narrow both operands with a type test first.

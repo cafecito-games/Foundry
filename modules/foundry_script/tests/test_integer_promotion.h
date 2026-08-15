@@ -780,3 +780,21 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] Comparing set-typed operands s
 	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
 	check_initializer_type(snippet, "ordered", Variant::BOOL, NumericType::NONE);
 }
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A set operand cannot cross carriers, since erasure removes the widening") {
+	using namespace TestIntegerPromotion;
+
+	// `int` with `uint` has a common type, but only because code generation widens the `uint` operand
+	// into the shared carrier first, which needs both carriers statically. A set-typed operand erases
+	// to untyped, so the combination has no executable result and is rejected instead of failing with
+	// invalid operands at run time.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar left: int | long = 2\n"
+			"\tvar right: uint = 3U\n"
+			"\tprint(left + right)\n");
+	REQUIRE(snippet.parse_error == OK);
+	const String error = snippet.first_error();
+	CHECK(error.contains("int | long"));
+	CHECK(error.contains("cannot mix \"int\" and \"uint\" operands"));
+}
