@@ -236,6 +236,7 @@ static bool _member_is_visible_outer_class_surface(const FSParser::ClassNode::Me
 		case FSParser::ClassNode::Member::FUNCTION:
 		case FSParser::ClassNode::Member::SIGNAL:
 		case FSParser::ClassNode::Member::GROUP:
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
 		case FSParser::ClassNode::Member::UNDEFINED:
 			return false;
 	}
@@ -1956,6 +1957,9 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 					E->apply(parser, member.m_tuple, p_class);
 				}
 			} break;
+			case FSParser::ClassNode::Member::TYPE_ALIAS:
+				// Aliases are resolved lazily, from the type positions that name them.
+				break;
 			case FSParser::ClassNode::Member::UNDEFINED:
 				ERR_PRINT("Trying to resolve undefined member.");
 				break;

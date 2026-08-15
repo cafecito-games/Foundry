@@ -2196,6 +2196,7 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 				token.get_identifier() == StringName("annotation");
 		const bool starts_conformance_declaration = token.type == FSTokenizer::Token::IDENTIFIER &&
 				token.get_identifier() == StringName("extend");
+		const bool starts_alias_declaration = starts_type_alias_declaration();
 		const bool starts_declaration = token.type == FSTokenizer::Token::VAR ||
 				token.type == FSTokenizer::Token::TK_CONST ||
 				token.type == FSTokenizer::Token::SIGNAL ||
@@ -2216,7 +2217,8 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 						token.type == FSTokenizer::Token::ANNOTATION ||
 						token.type == FSTokenizer::Token::PASS ||
 						starts_annotation_declaration ||
-						starts_conformance_declaration);
+						starts_conformance_declaration ||
+						starts_alias_declaration);
 		if (disallowed_enum_file_member) {
 			push_error(R"(An "enum_name" file may only contain its enum declaration.)");
 		}
@@ -2227,7 +2229,8 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 						token.type == FSTokenizer::Token::ANNOTATION ||
 						token.type == FSTokenizer::Token::PASS ||
 						starts_annotation_declaration ||
-						starts_conformance_declaration);
+						starts_conformance_declaration ||
+						starts_alias_declaration);
 		if (disallowed_tuple_file_member) {
 			push_error(R"(A "tuple_name" file may only contain its tuple declaration.)");
 		}
@@ -2357,6 +2360,15 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 					// `extend` is contextual: it only starts a retroactive conformance where a
 					// root-body declaration is valid. Anywhere else it remains an ordinary identifier.
 					parse_conformance();
+					break;
+				}
+				if (starts_alias_declaration) {
+					// `type` is contextual: only the sequence `type IDENTIFIER` at a declaration
+					// position starts an alias. Anywhere else it remains an ordinary identifier.
+					TypeAliasNode *type_alias = parse_type_alias();
+					if (type_alias != nullptr && type_alias->identifier != nullptr) {
+						current_class->add_member(type_alias);
+					}
 					break;
 				}
 				// Display a completion with declaration-oriented identifiers.
@@ -3821,6 +3833,14 @@ FSParser::Node *FSParser::parse_statement() {
 			break;
 		}
 		default: {
+			if (starts_type_alias_declaration()) {
+				// `type` is contextual, so this sequence is unambiguously an alias declaration even
+				// though a function body is not where one may be declared. Report the position and
+				// consume the declaration so the rest of the body still parses.
+				push_error(R"(Type alias declarations are only allowed at file scope or in a class body.)");
+				parse_type_alias();
+				break;
+			}
 			// Expression statement.
 			ExpressionNode *expression = parse_expression(true); // Allow assignment here.
 			bool has_ended_lambda = false;
@@ -6313,7 +6333,111 @@ FSParser::ExpressionNode *FSParser::parse_invalid_token(ExpressionNode *p_previo
 	return p_previous_operand;
 }
 
+// True when the token stream at a declaration position starts a `type Name = ...` alias. `type` is
+// an ordinary identifier everywhere else, so the decision is exactly this two-token lookahead: no
+// other construct spells an identifier `type` immediately followed by another identifier, and no
+// declaration position admits an expression statement, so nothing valid is stolen.
+bool FSParser::starts_type_alias_declaration() {
+	if (current.type != FSTokenizer::Token::IDENTIFIER || current.get_identifier() != StringName("type")) {
+		return false;
+	}
+	return peek().is_identifier();
+}
+
+FSParser::TypeAliasNode *FSParser::parse_type_alias() {
+	TypeAliasNode *type_alias = alloc_node<TypeAliasNode>();
+
+	// The current token is the contextual `type` identifier. `alloc_node` anchored the node to the
+	// preceding token, so re-anchor it to `type` itself once consumed, keeping diagnostics on the
+	// declaration.
+	advance();
+	reset_extents(type_alias, previous);
+
+	// An alias is erased before runtime and declares no member, so no annotation may apply to it.
+	// Consume any pending annotations here (erroring on each) so they cannot silently carry over
+	// onto the next real member.
+	parse_class_member_annotations(AnnotationInfo::NONE, "type alias");
+
+	if (!consume(FSTokenizer::Token::IDENTIFIER, R"(Expected an alias name after "type".)")) {
+		complete_extents(type_alias);
+		return nullptr;
+	}
+	type_alias->identifier = parse_identifier();
+
+	if (check(FSTokenizer::Token::BRACKET_OPEN)) {
+		push_error(R"(A type alias cannot declare type parameters.)");
+		// Consume the parameter list so the rest of the declaration still parses.
+		Vector<TypeParameterNode *> discarded_parameters;
+		parse_type_parameters(discarded_parameters);
+	}
+
+	if (!consume(FSTokenizer::Token::EQUAL, R"(Expected "=" after the type alias name.)")) {
+		complete_extents(type_alias);
+		return nullptr;
+	}
+
+	type_alias->aliased_type = parse_type();
+	if (type_alias->aliased_type == nullptr) {
+		push_error(R"(Expected a type after "=" in a type alias declaration.)");
+	}
+
+	complete_extents(type_alias);
+	end_statement("type alias declaration");
+	return type_alias;
+}
+
+// Rejects the members a union may never contain and that are recognizable from syntax alone. `void`
+// is not a value type at all, and `Variant` absorbs every alternative, so a union naming it means
+// exactly `Variant` and is written that way instead. Members whose invalidity only shows after
+// resolution are rejected by the analyzer.
+void FSParser::validate_union_member_type(const TypeNode *p_member) {
+	if (p_member == nullptr) {
+		return;
+	}
+	if (!p_member->is_tuple && !p_member->is_union && p_member->type_chain.is_empty()) {
+		push_error(R"("void" cannot be a member of a type union.)", p_member);
+		return;
+	}
+	if (p_member->type_chain.size() == 1 && p_member->type_chain[0]->name == SNAME("Variant")) {
+		push_error(R"("Variant" cannot be a member of a type union, since it already admits every type. Write "Variant" on its own instead.)", p_member);
+	}
+}
+
 FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_forced_completion, bool p_allow_enum_case) {
+	TypeNode *first_member = parse_type_member(p_allow_void, p_forced_completion, p_allow_enum_case);
+	if (first_member == nullptr || !check(FSTokenizer::Token::PIPE)) {
+		return first_member;
+	}
+
+	// `|` unions types only while a type is being parsed, and there it binds looser than every
+	// other type operator, `?` included: `int? | uint` is the union of a nullable `int` and a
+	// `uint`, never a nullable union. There is no parenthesized type form to say otherwise --
+	// `(A, B)` is already an unnamed tuple -- so nullability is hoisted during normalization
+	// instead. Expression-level `|` keeps its own precedence and meaning as bitwise OR.
+	TypeNode *union_type = alloc_node<TypeNode>();
+	reset_extents(union_type, first_member);
+	union_type->is_union = true;
+	union_type->allows_enum_case = p_allow_enum_case;
+	union_type->union_member_types.push_back(first_member);
+
+	while (match(FSTokenizer::Token::PIPE)) {
+		TypeNode *member = parse_type_member(false, p_forced_completion, p_allow_enum_case);
+		if (member == nullptr) {
+			push_error(R"(Expected a type after "|".)");
+			break;
+		}
+		union_type->union_member_types.push_back(member);
+	}
+
+	for (const TypeNode *member : union_type->union_member_types) {
+		validate_union_member_type(member);
+	}
+
+	complete_extents(union_type);
+	return union_type;
+}
+
+FSParser::TypeNode *FSParser::parse_type_member(bool p_allow_void, CompletionType p_forced_completion, bool p_allow_enum_case) {
 	// Nested type annotations (e.g. `Array[Array[...]]`, Callable/Coroutine signatures)
 	// recurse through parse_type(); bound that depth so a pathologically nested type
 	// reports an error instead of overflowing the native stack.
@@ -8409,6 +8533,9 @@ void FSParser::TreePrinter::print_class(ClassNode *p_class) {
 			case ClassNode::Member::TUPLE:
 				print_tuple(m.m_tuple);
 				break;
+			case ClassNode::Member::TYPE_ALIAS:
+				print_type_alias(m.type_alias);
+				break;
 			case ClassNode::Member::UNDEFINED:
 				push_line("<unknown member>");
 				break;
@@ -8938,7 +9065,28 @@ void FSParser::TreePrinter::print_tuple_literal(TupleLiteralNode *p_tuple_litera
 	push_text(" )");
 }
 
+void FSParser::TreePrinter::print_type_alias(TypeAliasNode *p_type_alias) {
+	push_text("Type Alias ");
+	if (p_type_alias->identifier != nullptr) {
+		print_identifier(p_type_alias->identifier);
+	}
+	push_text(" = ");
+	if (p_type_alias->aliased_type != nullptr) {
+		print_type(p_type_alias->aliased_type);
+	}
+	push_line();
+}
+
 void FSParser::TreePrinter::print_type(TypeNode *p_type) {
+	if (p_type->is_union) {
+		for (int i = 0; i < p_type->union_member_types.size(); i++) {
+			if (i > 0) {
+				push_text(" | ");
+			}
+			print_type(p_type->union_member_types[i]);
+		}
+		return;
+	}
 	if (p_type->is_tuple) {
 		push_text("( ");
 		for (int i = 0; i < p_type->tuple_element_types.size(); i++) {

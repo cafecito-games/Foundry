@@ -3564,6 +3564,11 @@ String style_order_member_name(const FSParser::ClassNode::Member &p_member) {
 				return String();
 			}
 			return String(p_member.m_tuple->identifier->name);
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
+			if (p_member.type_alias == nullptr || p_member.type_alias->identifier == nullptr) {
+				return String();
+			}
+			return String(p_member.type_alias->identifier->name);
 		case FSParser::ClassNode::Member::UNDEFINED:
 			return String();
 	}
@@ -3709,6 +3714,7 @@ bool class_has_native_base_virtual_method(const FSParser::ClassNode *p_class, co
 			case FSParser::DataType::BUILTIN:
 			case FSParser::DataType::ENUM:
 			case FSParser::DataType::TUPLE:
+			case FSParser::DataType::UNION:
 			case FSParser::DataType::TYPE_PARAMETER:
 			case FSParser::DataType::VARIANT:
 			case FSParser::DataType::RESOLVING:
@@ -3767,6 +3773,7 @@ bool class_has_base_function(const FSParser::ClassNode *p_class, const StringNam
 			case FSParser::DataType::BUILTIN:
 			case FSParser::DataType::ENUM:
 			case FSParser::DataType::TUPLE:
+			case FSParser::DataType::UNION:
 			case FSParser::DataType::TYPE_PARAMETER:
 			case FSParser::DataType::VARIANT:
 			case FSParser::DataType::RESOLVING:
@@ -3876,6 +3883,7 @@ StyleOrderBucket get_style_order_bucket(
 		}
 		case FSParser::ClassNode::Member::CLASS:
 		case FSParser::ClassNode::Member::TUPLE:
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
 			return StyleOrderBucket::INNER_TYPE;
 		case FSParser::ClassNode::Member::GROUP:
 			return StyleOrderBucket::EXPORTED_VARIABLE;
@@ -5996,6 +6004,9 @@ StringName get_override_member_name(const FSParser::ClassNode::Member &p_member)
 			return get_identifier_name_or_empty(p_member.enum_value.identifier);
 		case FSParser::ClassNode::Member::TUPLE:
 			return p_member.m_tuple != nullptr ? get_identifier_name_or_empty(p_member.m_tuple->identifier) : StringName();
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
+			// An alias declares no member that can be overridden.
+			return StringName();
 		case FSParser::ClassNode::Member::GROUP:
 			return StringName();
 		case FSParser::ClassNode::Member::UNDEFINED:
@@ -6727,6 +6738,7 @@ StringName native_base_name_for_class(
 			case FSParser::DataType::BUILTIN:
 			case FSParser::DataType::ENUM:
 			case FSParser::DataType::TUPLE:
+			case FSParser::DataType::UNION:
 			case FSParser::DataType::TYPE_PARAMETER:
 			case FSParser::DataType::VARIANT:
 			case FSParser::DataType::RESOLVING:

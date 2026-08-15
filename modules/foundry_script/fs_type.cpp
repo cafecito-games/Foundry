@@ -858,6 +858,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			}
 			break;
 		case FSParser::DataType::TUPLE:
+		case FSParser::DataType::UNION:
 		case FSParser::DataType::TYPE_PARAMETER:
 		case FSParser::DataType::VARIANT:
 		case FSParser::DataType::BUILTIN:
@@ -947,6 +948,7 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 				return result;
 			}
 		case FSParser::DataType::TUPLE:
+		case FSParser::DataType::UNION:
 		case FSParser::DataType::TYPE_PARAMETER:
 		case FSParser::DataType::VARIANT:
 		case FSParser::DataType::BUILTIN:
@@ -1112,6 +1114,10 @@ static bool _datatype_invariant_equal(const FSParser::DataType &p_a, const FSPar
 			break;
 		case FSParser::DataType::TUPLE:
 			equal = p_a.native_type == p_b.native_type && p_a.script_path == p_b.script_path;
+			break;
+		case FSParser::DataType::UNION:
+			// Members are canonically ordered, so identity is positional.
+			equal = p_a.union_members == p_b.union_members;
 			break;
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:

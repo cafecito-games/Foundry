@@ -918,6 +918,8 @@ const FSParser::Node *FSPrinter::member_node(const FSParser::ClassNode::Member &
 			return p_member.annotation;
 		case FSParser::ClassNode::Member::TUPLE:
 			return p_member.m_tuple;
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
+			return p_member.type_alias;
 		case FSParser::ClassNode::Member::UNDEFINED:
 			return nullptr;
 	}
@@ -1371,6 +1373,9 @@ void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member, bool p
 		case FSParser::ClassNode::Member::TUPLE:
 			print_annotations(p_member.m_tuple->annotations, p_member.m_tuple->start_line);
 			print_tuple(p_member.m_tuple, "tuple", p_owns_trailing_comment);
+			break;
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
+			print_type_alias(p_member.type_alias);
 			break;
 		case FSParser::ClassNode::Member::GROUP:
 			print_annotations(p_member.annotation->annotations);
@@ -1959,8 +1964,30 @@ void FSPrinter::print_type_parameters(const Vector<FSParser::TypeParameterNode *
 	write("]");
 }
 
+void FSPrinter::print_type_alias(const FSParser::TypeAliasNode *p_type_alias) {
+	write_indent();
+	write("type ");
+	if (p_type_alias->identifier != nullptr) {
+		write(p_type_alias->identifier->name);
+	}
+	write(" = ");
+	print_type(p_type_alias->aliased_type);
+	newline();
+}
+
 void FSPrinter::print_type(const FSParser::TypeNode *p_type) {
 	if (p_type == nullptr) {
+		return;
+	}
+	if (p_type->is_union) {
+		// Canonical spacing around the union operator; a member carries its own `?`, since a union
+		// has no parenthesized form to attach one to.
+		for (int i = 0; i < p_type->union_member_types.size(); i++) {
+			if (i > 0) {
+				write(" | ");
+			}
+			print_type(p_type->union_member_types[i]);
+		}
 		return;
 	}
 	if (p_type->is_tuple) {

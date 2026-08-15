@@ -1789,6 +1789,7 @@ static bool _signature_slot_is_comparison_safe(const FSParser::DataType &p_type)
 		case FSParser::DataType::SCRIPT:
 		case FSParser::DataType::CLASS:
 		case FSParser::DataType::TUPLE:
+		case FSParser::DataType::UNION:
 		case FSParser::DataType::TYPE_PARAMETER:
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED:
@@ -3343,6 +3344,7 @@ void FSAnalyzer::resolve_node(FSParser::Node *p_node, bool p_is_root) {
 		case FSParser::Node::PASS:
 		case FSParser::Node::SIGNAL:
 		case FSParser::Node::TUPLE:
+		case FSParser::Node::TYPE_ALIAS:
 		case FSParser::Node::TYPE_PARAMETER:
 			// Nothing to do. Custom annotation declarations are resolved in a later pass.
 			break;
@@ -5919,6 +5921,7 @@ void FSAnalyzer::reduce_expression(FSParser::ExpressionNode *p_expression, bool 
 		case FSParser::Node::SUITE:
 		case FSParser::Node::TUPLE:
 		case FSParser::Node::TYPE:
+		case FSParser::Node::TYPE_ALIAS:
 		case FSParser::Node::TYPE_PARAMETER:
 		case FSParser::Node::VARIABLE:
 		case FSParser::Node::VARIABLE_DESTRUCTURE:
@@ -9280,6 +9283,10 @@ static bool _datatype_strict_identity_equal(const FSParser::DataType &p_a, const
 		case FSParser::DataType::TUPLE:
 			equal = p_a.native_type == p_b.native_type && p_a.script_path == p_b.script_path &&
 					p_a.tuple_field_names == p_b.tuple_field_names;
+			break;
+		case FSParser::DataType::UNION:
+			// Members are canonically ordered, so identity is positional.
+			equal = p_a.union_members == p_b.union_members;
 			break;
 		case FSParser::DataType::TYPE_PARAMETER:
 			equal = p_a.type_parameter_name == p_b.type_parameter_name &&

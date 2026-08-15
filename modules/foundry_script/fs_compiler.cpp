@@ -518,6 +518,12 @@ FSDataType FSCompiler::_gdtype_from_datatype(const FSParser::DataType &p_datatyp
 				result.kind = FSDataType::VARIANT;
 			}
 		} break;
+		case FSParser::DataType::UNION:
+			// A multi-member union erases to untyped at runtime: it produces no typed local, no
+			// typed parameter check, and no runtime type test. The normalized member list stays in
+			// the analyzer's rich type metadata, which is where union-aware tooling reads it.
+			result.kind = FSDataType::VARIANT;
+			break;
 		case FSParser::DataType::RESOLVING:
 		case FSParser::DataType::UNRESOLVED: {
 			_set_error("Parser bug (please report): converting unresolved type.", nullptr);
