@@ -618,18 +618,15 @@ private:
 	// name used in many positions resolves (and reports) exactly once. Returns an unset type when the
 	// expansion failed; the diagnostic has already been pushed in that case.
 	FSParser::DataType resolve_type_alias(FSParser::TypeAliasNode *p_type_alias);
-	// The alias declaration a bare name denotes in the current lexical scope, or `nullptr`. Aliases are
-	// file-local, so only the current class and its lexical outers are searched -- never a base class,
-	// a trait, or another file.
+	// The alias declaration a bare name denotes in the current lexical scope, or `nullptr`. Alias
+	// visibility is lexical and file-local, so only the current class and its lexical outers are
+	// searched -- never a base class, a trait, or another file.
 	FSParser::TypeAliasNode *find_type_alias_in_scope(const StringName &p_name) const;
 	// Reports a multi-alternative element type in a typed container and returns whether it did.
 	bool reject_union_container_element_type(const FSParser::DataType &p_element_type,
 			FSParser::TypeNode *p_element_node, const char *p_untyped_spelling);
-	// Whether `p_class` belongs to the file being analyzed. Aliases are file-local, so an alias member
-	// reached through an inherited or foreign class is not a visible type name.
-	bool class_is_in_current_file(FSParser::ClassNode *p_class) const;
-	// Whether both classes are written in the same file.
-	static bool classes_share_file(FSParser::ClassNode *p_left, FSParser::ClassNode *p_right);
+	// Whether `p_candidate` is `p_scope` or one of its lexically enclosing classes.
+	static bool class_encloses_class(FSParser::ClassNode *p_scope, FSParser::ClassNode *p_candidate);
 	// The analyzer that owns `p_class`'s file, so a declaration written there is resolved against its
 	// own scope rather than this one's. Returns `nullptr` when that file is not reachable.
 	FSAnalyzer *analyzer_owning_class(FSParser::ClassNode *p_class, const FSParser::Node *p_source);

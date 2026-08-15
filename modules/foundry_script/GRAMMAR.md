@@ -667,6 +667,13 @@ and `type(x)` all remain ordinary uses of the identifier.
   (`Type alias "X" has the same name as a previously declared constant.`).
 - An alias is **file-local** in this version: it is not a global name and is not reachable through
   `import`/`namespace`.
+- Alias visibility is **lexical, not nominal**: the name belongs to the body that declares it and to
+  the bodies nested inside it. Extending a class does not carry its aliases along, in the same file
+  or across files
+  (`Type alias "X" is not in scope here. A type alias is visible only inside the file and the body
+  that declare it, so it is neither inherited nor imported.`). A retroactive conformance witness is
+  written in the conformance's own file, so that file's aliases are in scope in the witness body even
+  though the target type is declared elsewhere.
 
 ### 4.5 Functions and parameters
 

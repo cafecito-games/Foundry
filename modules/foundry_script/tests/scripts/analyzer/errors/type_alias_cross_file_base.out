@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 7: Type alias "Meters" is declared in another file, and type aliases are file-local. Declare it in this file to use it here.
+>> ERROR at line 7: Type alias "Meters" is not in scope here. A type alias is visible only inside the file and the body that declare it, so it is neither inherited nor imported.
