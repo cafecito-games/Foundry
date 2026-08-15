@@ -2229,17 +2229,30 @@ FSAnalyzer *FSAnalyzer::analyzer_owning_class(FSParser::ClassNode *p_class, cons
 	return parser_ref->get_analyzer();
 }
 
-FSParser::TypeAliasNode *FSAnalyzer::find_type_alias_in_scope(const StringName &p_name) const {
-	for (FSParser::ClassNode *scope = parser->current_class; scope != nullptr; scope = scope->outer) {
+namespace {
+// Walks a class chain outward looking for a type alias member, starting at `p_scope`. Shared by
+// lookups that start at different roots: the current lexical scope for an ordinary use site, and a
+// conformance witness's own declaration scope for a witness body (see `witness_declaration_scope`).
+FSParser::ClassNode *find_type_alias_declaring_scope(FSParser::ClassNode *p_scope, const StringName &p_name, FSParser::TypeAliasNode *&r_type_alias) {
+	for (FSParser::ClassNode *scope = p_scope; scope != nullptr; scope = scope->outer) {
 		if (!scope->members_indices.has(p_name)) {
 			continue;
 		}
 		const FSParser::ClassNode::Member &member = scope->members[scope->members_indices[p_name]];
 		if (member.type == FSParser::ClassNode::Member::TYPE_ALIAS) {
-			return member.type_alias;
+			r_type_alias = member.type_alias;
+			return scope;
 		}
 	}
+	r_type_alias = nullptr;
 	return nullptr;
+}
+} // namespace
+
+FSParser::TypeAliasNode *FSAnalyzer::find_type_alias_in_scope(const StringName &p_name) const {
+	FSParser::TypeAliasNode *type_alias = nullptr;
+	find_type_alias_declaring_scope(parser->current_class, p_name, type_alias);
+	return type_alias;
 }
 
 FSParser::DataType FSAnalyzer::resolve_type_alias(FSParser::TypeAliasNode *p_type_alias) {
@@ -15509,6 +15522,16 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 
 	if (p_expression->type == FSParser::Node::IDENTIFIER) {
 		FSParser::IdentifierNode *identifier = static_cast<FSParser::IdentifierNode *>(p_expression);
+
+		// Type parameters of the enclosing generic class or method shadow any other name in a type
+		// position, exactly as `resolve_datatype` answers a bare annotation: a method parameter named
+		// `T` always means the parameter handle, never a same-spelled builtin, alias, or class.
+		FSParser::DataType type_parameter;
+		if (resolve_type_parameter(identifier->name, type_parameter)) {
+			r_type_argument = type_parameter;
+			return true;
+		}
+
 		// An explicit type argument is a type position, so it resolves the four integer spellings
 		// through the same registry an annotation does.
 		const FSParser::BuiltinDataType builtin_data_type = FSParser::get_builtin_data_type(identifier->name);
@@ -15527,25 +15550,34 @@ bool FSAnalyzer::resolve_explicit_type_argument(FSParser::ExpressionNode *p_expr
 			return true;
 		}
 
-		FSParser::TypeAliasNode *type_alias = find_type_alias_in_scope(identifier->name);
+		FSParser::TypeAliasNode *type_alias = nullptr;
+		FSAnalyzer *alias_owner = this;
+		FSParser::ClassNode *alias_scope = find_type_alias_declaring_scope(parser->current_class, identifier->name, type_alias);
+		if (alias_scope == nullptr && witness_declaration_scope != nullptr) {
+			// A retroactive-conformance witness body analyzes with `current_class` rebound to the
+			// target class, while a type declared beside the conformance itself lives in
+			// `witness_declaration_scope`. An alias visible to the witness's own annotations must be
+			// equally visible to its explicit type arguments; see `resolve_datatype`'s TYPE_ALIAS
+			// member case for the annotation-position counterpart of this lookup.
+			alias_scope = find_type_alias_declaring_scope(witness_declaration_scope, identifier->name, type_alias);
+			if (alias_scope != nullptr) {
+				alias_owner = analyzer_owning_class(alias_scope, p_expression);
+				if (alias_owner == nullptr) {
+					alias_scope = nullptr;
+					type_alias = nullptr;
+				}
+			}
+		}
 		if (type_alias != nullptr) {
 			// A user-declared alias is answered the same way `Number` is: an explicit type argument is a
 			// type position, so it resolves through the alias registry rather than falling through to the
-			// value-position lookup, which has no value to find. Alias visibility is lexical and
-			// file-local, so `find_type_alias_in_scope` walking the enclosing class chain of this analyzer
-			// is enough; it never reaches into a foreign file the way a qualified name can.
-			const FSParser::DataType alias_type = resolve_type_alias(type_alias);
+			// value-position lookup, which has no value to find.
+			const FSParser::DataType alias_type = alias_owner->resolve_type_alias(type_alias);
 			if (!alias_type.is_set()) {
 				// The alias declaration already reported why it has no expansion.
 				return fail_reported();
 			}
 			r_type_argument = alias_type;
-			return true;
-		}
-
-		FSParser::DataType type_parameter;
-		if (resolve_type_parameter(identifier->name, type_parameter)) {
-			r_type_argument = type_parameter;
 			return true;
 		}
 
