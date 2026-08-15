@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 13: Type argument "String | bool" does not satisfy the bound "String | int" of type parameter "T".
