@@ -1,5 +1,5 @@
 FS_TEST_OK
-1 0 5
-a 0 9
+1 <null> 5
+a <null> 9
 a b 1
-a 0 1
+a <null> 1

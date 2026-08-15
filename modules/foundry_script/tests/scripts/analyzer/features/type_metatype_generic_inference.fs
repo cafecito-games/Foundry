@@ -21,7 +21,9 @@ func accept_creatable[T: Creatable](_klass: Type[T]) -> void:
 	pass
 
 
-func make[T: Creatable](_klass: Type[T]) -> T:
+# A method-scope `T` is erased per call, so `null` -- a concrete value -- does not satisfy a bare
+# `T` return. The stub declares the nullable return it actually produces.
+func make[T: Creatable](_klass: Type[T]) -> T?:
 	return null
 
 
@@ -31,7 +33,7 @@ func test():
 	var inferred: Node = accept(klass, node)
 	var inferred_user_handle: Type[User] = id_type(User)
 	var inferred_node_handle: Type[Node] = id_type(Node)
-	var made: User = make(User)
+	var made: User? = make(User)
 	accept_creatable(User)
 	print(inferred == node)
 	print(inferred_user_handle == User)
