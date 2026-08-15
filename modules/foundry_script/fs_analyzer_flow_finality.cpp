@@ -1589,6 +1589,73 @@ static bool _match_branch_type_narrowing(FSParser::ExpressionNode *p_match_test,
 	}
 	return _match_pattern_type_narrowing(p_branch->patterns[0], p_match_test, r_type);
 }
+// The inclusive value range an `is` test on a numeric builtin accepts. `OPCODE_TYPE_TEST_BUILTIN`
+// checks the Variant carrier and then the value's magnitude, never a declared width, so a slot that
+// declared no width accepts everything its carrier can hold.
+static bool _numeric_type_test_range(const FSParser::DataType &p_type, int64_t &r_minimum, uint64_t &r_maximum) {
+	if (p_type.builtin_type != Variant::INT && p_type.builtin_type != Variant::UINT) {
+		return false;
+	}
+	NumericType numeric_type = p_type.numeric_type;
+	if (numeric_type == NumericType::NONE) {
+		numeric_type = numeric_type_wide_for_carrier(p_type.builtin_type);
+	}
+	if (!numeric_type_is_carrier_consistent(numeric_type, p_type.builtin_type)) {
+		return false;
+	}
+	r_minimum = numeric_type_minimum(numeric_type);
+	r_maximum = numeric_type_maximum(numeric_type);
+	return true;
+}
+
+// True when every value that passes `is p_test_type` would also pass `is p_alternative`, so a failed
+// `is p_test_type` proves the value is not a `p_alternative` either.
+//
+// This is what makes false-branch removal downward-closed rather than plain member removal: `int` and
+// `long` share the `Variant::INT` carrier and the test compares magnitudes, so every `int` value is
+// also a `long` value. `is not long` therefore removes `long` *and* `int`, while `is not int` removes
+// only `int` -- a value too large for `int` is still a perfectly good `long`. Non-numeric alternatives
+// are removed only on an exact type match, which is always sound and never over-removes.
+//
+// Nullability is a separate axis and is deliberately excluded here. Normalization hoists it onto the
+// union, so an alternative is always stored non-nullable, while `is T?` is a test an author may write
+// on any type. Comparing it would leave `is not String?` unable to remove the `String` alternative;
+// what a nullable test does prove -- that the value is not null -- is settled by the caller.
+static bool _type_test_subsumes(const FSParser::DataType &p_test_type, const FSParser::DataType &p_alternative) {
+	if (p_test_type.kind == FSParser::DataType::BUILTIN && p_alternative.kind == FSParser::DataType::BUILTIN &&
+			p_test_type.builtin_type == p_alternative.builtin_type) {
+		int64_t test_minimum = 0;
+		uint64_t test_maximum = 0;
+		int64_t alternative_minimum = 0;
+		uint64_t alternative_maximum = 0;
+		if (_numeric_type_test_range(p_test_type, test_minimum, test_maximum) &&
+				_numeric_type_test_range(p_alternative, alternative_minimum, alternative_maximum)) {
+			return test_minimum <= alternative_minimum && test_maximum >= alternative_maximum;
+		}
+	}
+	FSParser::DataType test_identity = p_test_type;
+	FSParser::DataType alternative_identity = p_alternative;
+	test_identity.is_nullable = false;
+	alternative_identity.is_nullable = false;
+	return test_identity == alternative_identity;
+}
+
+// The set of alternatives a value of `p_type` can actually hold at run time, or null when the type
+// is not a set and nothing can be subtracted from it. A bounded type parameter answers with its
+// bound, because narrowing refines the value and never the type parameter itself. The set is
+// returned whole rather than as bare members so callers also see where its nullability lives: a
+// type-parameter descriptor carries none of its own, so `[X: int? | String]` would otherwise look
+// non-nullable and let a failed test smuggle away a null the test never ruled out.
+static const FSParser::DataType *_flow_narrowing_alternative_set(const FSParser::DataType &p_type) {
+	if (p_type.is_union()) {
+		return &p_type;
+	}
+	if (p_type.is_type_parameter() && p_type.type_parameter_bound.size() == 1 && p_type.type_parameter_bound[0].is_union()) {
+		return &p_type.type_parameter_bound[0];
+	}
+	return nullptr;
+}
+
 const FSParser::Node *FSAnalyzer::FlowFinalityContext::flow_narrowing_key_from_identifier(const FSParser::IdentifierNode *p_identifier) const {
 	switch (p_identifier->source) {
 		case FSParser::IdentifierNode::FUNCTION_PARAMETER:
@@ -1733,22 +1800,22 @@ bool FSAnalyzer::FlowFinalityContext::null_check_narrowing_identifier(FSParser::
 	return true;
 }
 
-bool FSAnalyzer::FlowFinalityContext::type_test_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier, FSParser::DataType &r_type) const {
+bool FSAnalyzer::FlowFinalityContext::type_test_condition(FSParser::ExpressionNode *p_condition, FSParser::TypeTestNode *&r_type_test, FSParser::IdentifierNode *&r_identifier, bool &r_true_means_match) const {
+	r_type_test = nullptr;
 	r_identifier = nullptr;
-	r_type = FSParser::DataType();
+	r_true_means_match = true;
 
-	bool condition_true_means_type_match = true;
 	FSParser::ExpressionNode *condition = p_condition;
 	if (condition != nullptr && condition->type == FSParser::Node::UNARY_OPERATOR) {
 		FSParser::UnaryOpNode *unary_op = static_cast<FSParser::UnaryOpNode *>(condition);
 		if (unary_op->variant_op != Variant::OP_NOT) {
 			return false;
 		}
-		condition_true_means_type_match = false;
+		r_true_means_match = false;
 		condition = unary_op->operand;
 	}
 
-	if (p_condition_value != condition_true_means_type_match || condition == nullptr || condition->type != FSParser::Node::TYPE_TEST) {
+	if (condition == nullptr || condition->type != FSParser::Node::TYPE_TEST) {
 		return false;
 	}
 
@@ -1762,9 +1829,62 @@ bool FSAnalyzer::FlowFinalityContext::type_test_narrowing_identifier(FSParser::E
 		return false;
 	}
 
+	r_type_test = type_test;
+	r_identifier = identifier;
+	return true;
+}
+
+bool FSAnalyzer::FlowFinalityContext::type_test_narrowing_identifier(FSParser::ExpressionNode *p_condition, bool p_condition_value, FSParser::IdentifierNode *&r_identifier, FSParser::DataType &r_type) const {
+	r_identifier = nullptr;
+	r_type = FSParser::DataType();
+
+	FSParser::TypeTestNode *type_test = nullptr;
+	FSParser::IdentifierNode *identifier = nullptr;
+	bool true_means_match = true;
+	if (!type_test_condition(p_condition, type_test, identifier, true_means_match) || p_condition_value != true_means_match) {
+		return false;
+	}
+
 	r_identifier = identifier;
 	r_type = type_test->test_datatype;
 	return true;
+}
+
+void FSAnalyzer::FlowFinalityContext::apply_failed_type_test_flow_narrowing(const FSParser::IdentifierNode *p_identifier, const FSParser::DataType &p_tested_type) {
+	if (flow_narrowing_key_from_identifier(p_identifier) == nullptr || !p_tested_type.is_set()) {
+		return;
+	}
+
+	const FSParser::DataType current_type = p_identifier->get_datatype();
+	const FSParser::DataType *alternative_set = _flow_narrowing_alternative_set(current_type);
+	if (alternative_set == nullptr) {
+		return;
+	}
+	const Vector<FSParser::DataType> &alternatives = alternative_set->union_members;
+
+	Vector<FSParser::DataType> survivors;
+	for (const FSParser::DataType &alternative : alternatives) {
+		if (!_type_test_subsumes(p_tested_type, alternative)) {
+			survivors.push_back(alternative);
+		}
+	}
+	if (survivors.is_empty() || survivors.size() == alternatives.size()) {
+		// Nothing was ruled out, or the branch is statically contradictory. There is no empty type to
+		// narrow to, so leave the value's type alone rather than invent one.
+		return;
+	}
+
+	FSParser::DataType narrowed_type = FSParser::DataType::make_union(survivors);
+	if (!narrowed_type.is_set()) {
+		return;
+	}
+	// A failed type test never proves the value is non-null, not even when the test named a nullable
+	// type: only `OPCODE_TYPE_TEST_BUILTIN` accepts null for a `T?` test, while the native, script,
+	// typed-array and typed-dictionary opcodes answer false for null whatever the `?` said. Every way
+	// the value could already have been null therefore survives: the declaration itself, and the set
+	// the alternatives were drawn from. Null is removed by a null check, which is analyzed separately.
+	narrowed_type.is_nullable = current_type.is_nullable || alternative_set->is_nullable;
+	apply_flow_narrowing(p_identifier, narrowed_type);
 }
 
 void FSAnalyzer::FlowFinalityContext::reduce_condition_expression(FSParser::ExpressionNode *p_condition) {
@@ -1829,8 +1949,18 @@ void FSAnalyzer::FlowFinalityContext::apply_flow_narrowing_from_condition(FSPars
 		return;
 	}
 
-	FSParser::DataType narrowed_type;
-	if (type_test_narrowing_identifier(p_condition, p_condition_value, narrowed_identifier, narrowed_type)) {
-		apply_flow_narrowing(narrowed_identifier, narrowed_type);
+	FSParser::TypeTestNode *type_test = nullptr;
+	bool true_means_match = true;
+	if (!type_test_condition(p_condition, type_test, narrowed_identifier, true_means_match)) {
+		return;
 	}
+
+	if (p_condition_value == true_means_match) {
+		// The test held: the value is exactly the tested type here, whatever wider set it came from.
+		apply_flow_narrowing(narrowed_identifier, type_test->test_datatype);
+		return;
+	}
+
+	// The test failed, so every alternative the test would have accepted is gone.
+	apply_failed_type_test_flow_narrowing(narrowed_identifier, type_test->test_datatype);
 }

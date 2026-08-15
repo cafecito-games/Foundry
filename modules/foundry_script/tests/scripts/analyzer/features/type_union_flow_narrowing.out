@@ -1,0 +1,11 @@
+FS_TEST_OK
+String(3) int
+String(2) float int
+5 0
+String(4) float int
+2
+9
+true false
+null String(5) int
+int long float
+6
