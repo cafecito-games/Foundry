@@ -2198,15 +2198,21 @@ bool FSAnalyzer::reject_union_container_element_type(const FSParser::DataType &p
 	return true;
 }
 
+// A file's classes all share one outermost class, so that node identifies the file a class is
+// written in without consulting a path.
+static FSParser::ClassNode *_outermost_class(FSParser::ClassNode *p_class) {
+	while (p_class != nullptr && p_class->outer != nullptr) {
+		p_class = p_class->outer;
+	}
+	return p_class;
+}
+
 bool FSAnalyzer::class_is_in_current_file(FSParser::ClassNode *p_class) const {
-	if (p_class == nullptr) {
-		return false;
-	}
-	FSParser::ClassNode *outermost = p_class;
-	while (outermost->outer != nullptr) {
-		outermost = outermost->outer;
-	}
-	return outermost == parser->head;
+	return p_class != nullptr && _outermost_class(p_class) == parser->head;
+}
+
+bool FSAnalyzer::classes_share_file(FSParser::ClassNode *p_left, FSParser::ClassNode *p_right) {
+	return p_left != nullptr && p_right != nullptr && _outermost_class(p_left) == _outermost_class(p_right);
 }
 
 FSAnalyzer *FSAnalyzer::analyzer_owning_class(FSParser::ClassNode *p_class, const FSParser::Node *p_source) {
@@ -2748,9 +2754,16 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 							// declaring file's lexical scope is written in that file, so its aliases are in
 							// scope there even though this analyzer owns another file; an alias reached any
 							// other way -- through a base class in another file -- is not.
-							FSAnalyzer *alias_owner = declaration_site_classes.has(script_class)
-									? analyzer_owning_class(script_class, p_type)
-									: (class_is_in_current_file(script_class) ? this : nullptr);
+							// The declaration-site fallback contributes the witness scope's whole base and
+							// outer chain, which can reach into further files; only the conformance's own
+							// file is the witness's text, so the rest stays out of scope.
+							FSAnalyzer *alias_owner = nullptr;
+							if (class_is_in_current_file(script_class)) {
+								alias_owner = this;
+							} else if (declaration_site_classes.has(script_class) &&
+									classes_share_file(script_class, witness_declaration_scope)) {
+								alias_owner = analyzer_owning_class(script_class, p_type);
+							}
 							if (alias_owner == nullptr) {
 								push_error(vformat(R"(Type alias "%s" is declared in another file, and type aliases are file-local. Declare it in this file to use it here.)", first), p_type);
 								return bad_type;

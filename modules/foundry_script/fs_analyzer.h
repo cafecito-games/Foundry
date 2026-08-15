@@ -628,6 +628,8 @@ private:
 	// Whether `p_class` belongs to the file being analyzed. Aliases are file-local, so an alias member
 	// reached through an inherited or foreign class is not a visible type name.
 	bool class_is_in_current_file(FSParser::ClassNode *p_class) const;
+	// Whether both classes are written in the same file.
+	static bool classes_share_file(FSParser::ClassNode *p_left, FSParser::ClassNode *p_right);
 	// The analyzer that owns `p_class`'s file, so a declaration written there is resolved against its
 	// own scope rather than this one's. Returns `nullptr` when that file is not reachable.
 	FSAnalyzer *analyzer_owning_class(FSParser::ClassNode *p_class, const FSParser::Node *p_source);
