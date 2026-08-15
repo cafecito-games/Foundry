@@ -1089,6 +1089,29 @@ func f():
 			CHECK_EQ(cls.detail, "trait LspGlobalTrait");
 		}
 
+		SUBCASE("Type aliases are reported with their source spelling") {
+			String path = "res://lsp/type_aliases.fs";
+			assert_no_errors_in(path);
+			ExtendFSParser *parser = FSLanguageProtocol::get_singleton()->get_parse_result(path);
+			REQUIRE(parser);
+
+			const LSP::DocumentSymbol *meters = parser->get_member_symbol("Meters");
+			REQUIRE(meters);
+			CHECK_EQ(meters->kind, LSP::SymbolKind::TypeParameter);
+			CHECK_EQ(meters->detail, "type Meters = float");
+
+			const LSP::DocumentSymbol *scalar = parser->get_member_symbol("Scalar");
+			REQUIRE(scalar);
+			CHECK_EQ(scalar->kind, LSP::SymbolKind::TypeParameter);
+			CHECK_EQ(scalar->detail, "type Scalar = int | uint");
+
+			// Normalization orders a union's members canonically; presentation keeps the order the
+			// author wrote, so a native member does not jump ahead of a script one.
+			const LSP::DocumentSymbol *shape = parser->get_member_symbol("Shape");
+			REQUIRE(shape);
+			CHECK_EQ(shape->detail, "type Shape = Circle | Node");
+		}
+
 		SUBCASE("Tuple declarations are reported with fields") {
 			String path = "res://lsp/tuples.fs";
 			assert_no_errors_in(path);
@@ -2075,6 +2098,65 @@ func f():
 		test_resolve_symbol_at(uri, pos(7, 8), uri, "Drawable", trait_selection);
 		// Reference in a type position.
 		test_resolve_symbol_at(uri, pos(9, 20), uri, "Drawable", trait_selection);
+
+		memdelete(proto);
+		memdelete(efs);
+	}
+
+	TEST_CASE("[textDocument][definition] resolves type alias references") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		const String uri = workspace->get_file_uri("res://lsp/type_aliases.fs");
+
+		assert_no_errors_in("res://lsp/type_aliases.fs");
+
+		const LSP::Range meters_selection = range(pos(5, 5), pos(5, 11));
+		// The declaration is the definition of the alias name.
+		test_resolve_symbol_at(uri, pos(5, 6), uri, "Meters", meters_selection);
+		// A use in a member type annotation.
+		test_resolve_symbol_at(uri, pos(9, 15), uri, "Meters", meters_selection);
+		// A use in a return type.
+		test_resolve_symbol_at(uri, pos(11, 33), uri, "Meters", meters_selection);
+		// A use in a parameter type.
+		test_resolve_symbol_at(uri, pos(11, 22), uri, "Scalar", range(pos(6, 5), pos(6, 11)));
+
+		// A union member references its own declaration, never the alias that names it.
+		test_resolve_symbol_at(uri, pos(7, 14), uri, "Circle", range(pos(2, 6), pos(2, 12)));
+
+		memdelete(proto);
+		memdelete(efs);
+	}
+
+	TEST_CASE("[textDocument][rename] updates type alias declarations and uses") {
+		EditorFileSystem *efs = memnew(EditorFileSystem);
+		FSLanguageProtocol *proto = initialize(root);
+		REQUIRE(proto);
+
+		Ref<FSWorkspace> workspace = FSLanguageProtocol::get_singleton()->get_workspace();
+		Ref<FSTextDocument> text_document = proto->get_text_document();
+		const String uri = workspace->get_file_uri("res://lsp/type_aliases.fs");
+
+		assert_no_errors_in("res://lsp/type_aliases.fs");
+
+		SUBCASE("renaming the alias rewrites its declaration and every use") {
+			Dictionary edit = text_document->rename(make_rename_params(uri, pos(5, 6), "Distance"));
+			const Array edits = workspace_edits_for_uri(edit, uri);
+			CHECK_EQ(edits.size(), 3);
+			CHECK(text_edits_include(edits, 5, 5, 11, "Distance"));
+			CHECK(text_edits_include(edits, 9, 14, 20, "Distance"));
+			CHECK(text_edits_include(edits, 11, 32, 38, "Distance"));
+		}
+
+		SUBCASE("renaming a union member leaves the alias name alone") {
+			Dictionary edit = text_document->rename(make_rename_params(uri, pos(2, 7), "Ring"));
+			const Array edits = workspace_edits_for_uri(edit, uri);
+			CHECK_EQ(edits.size(), 2);
+			CHECK(text_edits_include(edits, 2, 6, 12, "Ring"));
+			CHECK(text_edits_include(edits, 7, 13, 19, "Ring"));
+		}
 
 		memdelete(proto);
 		memdelete(efs);
@@ -4044,6 +4126,29 @@ func f():
 			check_semantic_token_at(tokens, 9, 1, 4, LSP::SemanticTokenType::ENUM_MEMBER, declaration_modifier | readonly_modifier); // Stop
 			check_semantic_token_at(tokens, 11, 6, 5, LSP::SemanticTokenType::STRUCT, declaration_modifier); // Point
 			check_semantic_token_at(tokens, 11, 12, 1, LSP::SemanticTokenType::PROPERTY, declaration_modifier | readonly_modifier); // x
+		}
+
+		SUBCASE("type alias declarations and union members classify as types") {
+			const String source =
+					"class Circle:\n"
+					"\tpass\n"
+					"\n"
+					"type Meters = float\n"
+					"type Shape = Circle | Node\n"
+					"\n"
+					"var size: int | float = 0\n";
+			const String uri = workspace->get_file_uri("res://lsp/semantic_tokens_type_aliases.fs");
+			text_document->didOpen(make_did_open_params(uri, source));
+
+			Vector<DecodedSemanticToken> tokens = decode_semantic_tokens(semantic_token_data(request_semantic_tokens(uri)));
+			check_semantic_token_at(tokens, 3, 5, 6, LSP::SemanticTokenType::TYPE, declaration_modifier); // Meters
+			check_semantic_token_at(tokens, 3, 14, 5, LSP::SemanticTokenType::TYPE, default_library_modifier); // float
+			check_semantic_token_at(tokens, 4, 5, 5, LSP::SemanticTokenType::TYPE, declaration_modifier); // Shape
+			// Each alternative of a written union classifies against its own declaration.
+			check_semantic_token_at(tokens, 4, 13, 6, LSP::SemanticTokenType::CLASS); // Circle
+			check_semantic_token_at(tokens, 4, 22, 4, LSP::SemanticTokenType::CLASS, default_library_modifier); // Node
+			check_semantic_token_at(tokens, 6, 10, 3, LSP::SemanticTokenType::TYPE, default_library_modifier); // int
+			check_semantic_token_at(tokens, 6, 16, 5, LSP::SemanticTokenType::TYPE, default_library_modifier); // float
 		}
 
 		SUBCASE("a declaration named uses does not hide the trait-list keyword") {
