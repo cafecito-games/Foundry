@@ -1116,10 +1116,9 @@ void FSPrinter::print_class(const FSParser::ClassNode *p_class, bool p_is_root, 
 	emit_trailing_comment(p_class->start_line);
 	indent_level++;
 	if (p_class->members.is_empty()) {
-		// An inner class with an empty body (only `pass`) still needs a body line.
-		write_indent();
-		write("pass");
-		newline();
+		// An inner class or trait with an empty body (only `pass`) still needs a body
+		// line, and the parser does not retain the source `pass`.
+		print_synthesized_pass(p_class->start_line, p_class->end_line);
 	} else {
 		print_class_body(p_class, false);
 	}
@@ -1395,16 +1394,8 @@ void FSPrinter::print_conformance(const FSParser::ConformanceNode *p_conformance
 	indent_level++;
 	if (p_conformance->witnesses.is_empty()) {
 		// A conformance body accepts only methods and `pass`; an all-`pass` body still
-		// needs a body line, and `pass` itself is not retained in the tree. The body's
-		// comments are, though: flush the full-line ones above the synthesized `pass` and
-		// carry the inline comment on the body's last line (the source `pass`) onto it.
-		if (p_conformance->end_line > p_conformance->start_line) {
-			emit_leading_trivia(p_conformance->end_line, 0);
-		}
-		write_indent();
-		write("pass");
-		newline();
-		emit_trailing_comment(p_conformance->end_line);
+		// needs a body line, and `pass` itself is not retained in the tree.
+		print_synthesized_pass(p_conformance->start_line, p_conformance->end_line);
 	} else {
 		for (int i = 0; i < p_conformance->witnesses.size(); i++) {
 			const FSParser::FunctionNode *witness = p_conformance->witnesses[i];
@@ -1420,6 +1411,19 @@ void FSPrinter::print_conformance(const FSParser::ConformanceNode *p_conformance
 		}
 	}
 	indent_level--;
+}
+
+void FSPrinter::print_synthesized_pass(int p_header_line, int p_body_end_line) {
+	// The body's own lines are the ones between the header and the erased `pass`; a
+	// single-line body (`class Inner: pass`) has none, and its inline comment has
+	// already been claimed by the header line.
+	if (p_body_end_line > p_header_line) {
+		emit_leading_trivia(p_body_end_line, 0);
+	}
+	write_indent();
+	write("pass");
+	newline();
+	emit_trailing_comment(p_body_end_line);
 }
 
 void FSPrinter::print_member(const FSParser::ClassNode::Member &p_member, bool p_owns_trailing_comment) {
