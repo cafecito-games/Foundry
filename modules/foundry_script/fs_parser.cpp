@@ -2974,6 +2974,10 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 		complete_extents(enum_node);
 		return enum_node;
 	}
+
+	// The enum's own type parameters are in scope for its case payloads and its functions.
+	EnumNode *previous_enum = current_enum;
+	current_enum = enum_node;
 #ifdef TOOLS_ENABLED
 	// The INDENT token is anchored to the first body line. Start the doc-comment
 	// search after the enum header so a comment immediately above the first value
@@ -3220,6 +3224,7 @@ FSParser::EnumNode *FSParser::parse_enum(const DeclarationModifiers &p_modifiers
 	consume(FSTokenizer::Token::DEDENT, R"(Missing unindent at the end of the enum body.)");
 	complete_extents(enum_node);
 
+	current_enum = previous_enum;
 	return enum_node;
 }
 
@@ -6436,6 +6441,13 @@ bool FSParser::is_enclosing_type_parameter_name(const StringName &p_name) const 
 	for (const FunctionNode *scope = current_function; scope != nullptr;
 			scope = scope->source_lambda != nullptr ? scope->source_lambda->parent_function : nullptr) {
 		for (const TypeParameterNode *type_parameter : scope->type_parameters) {
+			if (type_parameter->identifier != nullptr && type_parameter->identifier->name == p_name) {
+				return true;
+			}
+		}
+	}
+	if (current_enum != nullptr) {
+		for (const TypeParameterNode *type_parameter : current_enum->type_parameters) {
 			if (type_parameter->identifier != nullptr && type_parameter->identifier->name == p_name) {
 				return true;
 			}

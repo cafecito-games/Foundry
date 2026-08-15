@@ -2185,6 +2185,7 @@ private:
 	bool has_lookahead = false;
 
 	ClassNode *current_class = nullptr;
+	EnumNode *current_enum = nullptr; // The enum whose body is being parsed, for its type-parameter scope.
 	FunctionNode *current_function = nullptr;
 	LambdaNode *current_lambda = nullptr;
 	SuiteNode *current_suite = nullptr;
