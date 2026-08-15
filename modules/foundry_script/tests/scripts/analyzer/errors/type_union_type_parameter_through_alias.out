@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 6: Type parameter "T" cannot be a member of a type union.

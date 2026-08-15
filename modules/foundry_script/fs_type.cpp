@@ -532,6 +532,15 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			if (!member_result.compatible) {
 				return result;
 			}
+			if (member_result.uses_implicit_conversion &&
+					(source_member.kind != FSParser::DataType::BUILTIN || p_target.builtin_type != source_member.builtin_type)) {
+				// The value is one untyped slot at runtime, so a per-alternative conversion cannot be
+				// emitted for it: the compiler sees a single erased source, not this alternative. Accepting
+				// an alternative that only reaches the target by changing carrier would leave the target
+				// slot holding an unconverted value that fails its own declared type. A width-only
+				// conversion is fine, since width is out-of-band metadata and the stored value is unchanged.
+				return result;
+			}
 			result.uses_implicit_conversion = result.uses_implicit_conversion || member_result.uses_implicit_conversion;
 		}
 		result.compatible = true;

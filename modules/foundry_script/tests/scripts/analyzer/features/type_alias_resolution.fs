@@ -27,6 +27,7 @@ class Circle extends Shape:
 
 type Value = int | String | Payload
 type EitherShape = Square | Circle
+type NarrowInteger = int | long
 
 
 func describe(value: Value) -> String:
@@ -88,6 +89,11 @@ func test():
 	# A union crosses into an untyped slot unconditionally.
 	var anything: Variant = either
 	print(anything != null)
+
+	# Every alternative shares the target's carrier, so widening to it converts nothing at runtime.
+	var narrow: NarrowInteger = 5
+	var wide: long = narrow
+	prints(wide, typeof(wide) == TYPE_INT)
 
 
 func area_of(shape: Shape) -> float:

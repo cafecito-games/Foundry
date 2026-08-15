@@ -2345,6 +2345,14 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 				member_failed = true;
 				continue;
 			}
+			if (member.kind == FSParser::DataType::TYPE_PARAMETER) {
+				// The parser rejects a bare type parameter spelled directly, because a union of erased
+				// parameters has no static meaning. An alias standing in for one is the same union, so it
+				// is rejected here rather than letting the alias launder the prohibition.
+				push_error(vformat(R"(Type parameter "%s" cannot be a member of a type union.)", member.type_parameter_name), member_node);
+				member_failed = true;
+				continue;
+			}
 			members.push_back(member);
 		}
 		if (member_failed) {
@@ -2722,9 +2730,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 							break;
 						case FSParser::ClassNode::Member::TYPE_ALIAS: {
 							if (!class_is_in_current_file(script_class)) {
-								// Aliases are file-local: they are not global names and are not inherited, so
-								// one declared in another file is not in scope here even when the declaring
-								// class is a base class.
+								// The file is the unit of alias visibility: an alias is not a global name and
+								// does not travel with a type, so one declared in another file is out of scope
+								// here even when its declaring class is a base class of the current one.
+								// Within one file the ordinary lookup chain applies, so a class body may name
+								// an alias declared by a lexical outer or by a same-file base.
 								push_error(vformat(R"(Type alias "%s" is declared in another file, and type aliases are file-local. Declare it in this file to use it here.)", first), p_type);
 								return bad_type;
 							}

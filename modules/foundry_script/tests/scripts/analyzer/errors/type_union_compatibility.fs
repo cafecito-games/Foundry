@@ -21,4 +21,7 @@ func test():
 	var either: Either = Left.new()
 	var text: String = either
 	var scalar: Scalar = 1
-	prints(wrong, text, take_string(scalar))
+	# Reaching "float" would need the value converted, but a union is one untyped slot at runtime and
+	# no per-alternative conversion can be emitted for it.
+	var as_float: float = scalar
+	prints(wrong, text, as_float, take_string(scalar))
