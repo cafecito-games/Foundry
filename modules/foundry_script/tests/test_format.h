@@ -1417,6 +1417,98 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 		CHECK(parse_no_errors(reparser, formatted, "reformatted.fs"));
 	}
 
+	TEST_CASE("[Format] Retroactive conformances survive formatting") {
+		// Regression: `extend X uses Y:` is parsed into `ClassNode::conformances`, a side
+		// list the member walk never visits, so the formatter used to drop the whole
+		// declaration -- silent data loss on an otherwise valid file.
+		const String source =
+				"extend Node uses Greeter:\n"
+				"\tfunc greet() -> String:\n"
+				"\t\treturn \"hi\"\n"
+				"\n"
+				"trait Greeter:\n"
+				"\tfunc greet() -> String\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted.contains("extend Node uses Greeter:"),
+				vformat("Conformance header must survive: %s", formatted));
+		CHECK_MESSAGE(formatted.contains("return \"hi\""),
+				vformat("Witness body must survive: %s", formatted));
+
+		FSParser reparser;
+		REQUIRE_MESSAGE(parse_no_errors(reparser, formatted, "conformance.fs"),
+				vformat("Formatted conformance must re-parse: %s", formatted));
+		const FSParser::ClassNode *root = reparser.get_tree();
+		REQUIRE(root != nullptr);
+		REQUIRE(root->conformances.size() == 1);
+		const FSParser::ConformanceNode *conformance = root->conformances[0];
+		REQUIRE(conformance->traits.size() == 1);
+		CHECK(conformance->traits[0].to_string() == String("Greeter"));
+		REQUIRE(conformance->witnesses.size() == 1);
+		CHECK(conformance->witnesses[0]->identifier->name == StringName("greet"));
+	}
+
+	TEST_CASE("[Format] Keeps a conformance in its source position") {
+		const String source =
+				"var counter: int = 0\n"
+				"\n"
+				"extend Node uses Greeter:\n"
+				"\tfunc greet() -> String:\n"
+				"\t\treturn \"hi\"\n"
+				"\n"
+				"func run() -> void:\n"
+				"\tprint(counter)\n"
+				"\n"
+				"trait Greeter:\n"
+				"\tfunc greet() -> String\n";
+		const String formatted = format_or_fail(source);
+		const int counter_position = formatted.find("var counter");
+		const int conformance_position = formatted.find("extend Node");
+		const int run_position = formatted.find("func run()");
+		const bool in_source_position = counter_position >= 0 &&
+				conformance_position > counter_position &&
+				run_position > conformance_position;
+		CHECK_MESSAGE(in_source_position,
+				vformat("Conformance must stay between the members it was written between: %s", formatted));
+	}
+
+	TEST_CASE("[Format] Prints a multi-trait conformance with canonical spacing") {
+		const String source =
+				"extend Node uses Greeter,Farewell:\n"
+				"\tfunc greet()->String:\n"
+				"\t\treturn \"hi\"\n"
+				"\tfunc farewell() -> String:\n"
+				"\t\treturn \"bye\"\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted.contains("extend Node uses Greeter, Farewell:"),
+				vformat("Trait list must be normalized: %s", formatted));
+		FSParser reparser;
+		REQUIRE_MESSAGE(parse_no_errors(reparser, formatted, "conformance.fs"),
+				vformat("Formatted conformance must re-parse: %s", formatted));
+		REQUIRE(reparser.get_tree()->conformances.size() == 1);
+		CHECK(reparser.get_tree()->conformances[0]->witnesses.size() == 2);
+	}
+
+	TEST_CASE("[Format] Gives an empty conformance body a `pass`") {
+		const String source =
+				"extend Node uses Marker:\n"
+				"\tpass\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "extend Node uses Marker:\n\tpass\n",
+				vformat("Empty conformance body must keep a `pass`: %s", formatted));
+	}
+
+	TEST_CASE("[Format] Keeps comments around a conformance") {
+		const String source =
+				"# above\n"
+				"extend Node uses Greeter:  # header\n"
+				"\t# inside\n"
+				"\tfunc greet() -> String:\n"
+				"\t\treturn \"hi\"  # body\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(count_comments(source) == count_comments(formatted),
+				vformat("Comment count changed around a conformance: %s", formatted));
+	}
+
 	TEST_CASE("[Format] Golden fixtures match byte-for-byte") {
 		const String fixture_root = "modules/foundry_script/tests/scripts/format";
 		Vector<String> inputs;
