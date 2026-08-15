@@ -2367,7 +2367,17 @@ void FSParser::parse_class_body(bool p_is_multiline) {
 					// position starts an alias. Anywhere else it remains an ordinary identifier.
 					TypeAliasNode *type_alias = parse_type_alias();
 					if (type_alias != nullptr && type_alias->identifier != nullptr) {
-						current_class->add_member(type_alias);
+						// An alias shares the class's member name space, so it collides with a
+						// variable, constant, or nested type of the same name exactly as those
+						// collide with each other (see `finalize_class_member`).
+						if (current_class->members_indices.has(type_alias->identifier->name)) {
+							push_error(vformat(R"(Type alias "%s" has the same name as a previously declared %s.)",
+											   type_alias->identifier->name,
+											   current_class->get_member(type_alias->identifier->name).get_type_name()),
+									type_alias->identifier);
+						} else {
+							current_class->add_member(type_alias);
+						}
 					}
 					break;
 				}
@@ -6398,9 +6408,44 @@ void FSParser::validate_union_member_type(const TypeNode *p_member) {
 		push_error(R"("void" cannot be a member of a type union.)", p_member);
 		return;
 	}
-	if (p_member->type_chain.size() == 1 && p_member->type_chain[0]->name == SNAME("Variant")) {
-		push_error(R"("Variant" cannot be a member of a type union, since it already admits every type. Write "Variant" on its own instead.)", p_member);
+	const bool is_bare_name = p_member->type_chain.size() == 1 && !p_member->has_signature &&
+			p_member->container_types.is_empty() && p_member->type_argument_expressions.is_empty();
+	if (!is_bare_name) {
+		return;
 	}
+	const StringName member_name = p_member->type_chain[0]->name;
+	if (member_name == SNAME("Variant")) {
+		push_error(R"("Variant" cannot be a member of a type union, since it already admits every type. Write "Variant" on its own instead.)", p_member);
+		return;
+	}
+	if (is_enclosing_type_parameter_name(member_name)) {
+		// A type parameter is erased, so a union that names one has no static meaning: nothing
+		// could satisfy the alternative that is not already covered by the parameter's own bound.
+		// A parameter still nests freely inside a member (`Array[T] | int`).
+		push_error(vformat(R"(Type parameter "%s" cannot be a member of a type union.)", member_name), p_member);
+	}
+}
+
+// True when p_name is a type parameter of the function or of a class currently being parsed. The
+// same shadowing rule the analyzer resolves types with applies here: an enclosing parameter of that
+// name wins over every other meaning, so this identifies exactly the bare-type-parameter members a
+// union may not contain.
+bool FSParser::is_enclosing_type_parameter_name(const StringName &p_name) const {
+	if (current_function != nullptr) {
+		for (const TypeParameterNode *type_parameter : current_function->type_parameters) {
+			if (type_parameter->identifier != nullptr && type_parameter->identifier->name == p_name) {
+				return true;
+			}
+		}
+	}
+	for (const ClassNode *scope = current_class; scope != nullptr; scope = scope->outer) {
+		for (const TypeParameterNode *type_parameter : scope->type_parameters) {
+			if (type_parameter->identifier != nullptr && type_parameter->identifier->name == p_name) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 FSParser::TypeNode *FSParser::parse_type(bool p_allow_void, CompletionType p_forced_completion, bool p_allow_enum_case) {

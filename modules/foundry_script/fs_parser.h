@@ -2484,6 +2484,7 @@ private:
 	TypeNode *parse_type(bool p_allow_void = false, CompletionType p_forced_completion = COMPLETION_NONE, bool p_allow_enum_case = false);
 	TypeNode *parse_type_member(bool p_allow_void, CompletionType p_forced_completion, bool p_allow_enum_case);
 	void validate_union_member_type(const TypeNode *p_member);
+	bool is_enclosing_type_parameter_name(const StringName &p_name) const;
 
 	// Declares a case-payload bind name as a transient local of `current_suite`, as soon as it is
 	// parsed, so later `and`-conjuncts of the same condition can already reference it. Rejects names

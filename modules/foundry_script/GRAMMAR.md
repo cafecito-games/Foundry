@@ -662,6 +662,9 @@ and `type(x)` all remain ordinary uses of the identifier.
   (`Annotation "@export" cannot be applied to a type alias.`).
 - An alias is **transparent**: it names a type, it does not create one. The name is not an
   expression, not a constructor, and not an `extends`/`uses` target.
+- An alias shares the **member name space** of the class body it is declared in, so it collides
+  with a variable, constant, function, or nested type of the same name in either direction
+  (`Type alias "X" has the same name as a previously declared constant.`).
 - An alias is **file-local** in this version: it is not a global name and is not reachable through
   `import`/`namespace`.
 
@@ -1484,7 +1487,9 @@ Details (`parse_type`):
   other aliases -- except `void` (`"void" cannot be a member of a type union.`) and `Variant`,
   which already admits every type
   (`"Variant" cannot be a member of a type union, since it already admits every type. Write
-  "Variant" on its own instead.`).
+  "Variant" on its own instead.`), and a **bare type parameter**
+  (`Type parameter "T" cannot be a member of a type union.`). A type parameter still nests freely
+  inside a member, so `Array[T] | int` is valid.
 - **Union normalization.** A union denotes a canonical set: alias members are expanded, nested
   unions flattened, nullability **hoisted** onto the union (a union is nullable when any member is,
   and members are then stored non-nullable), duplicates removed, and member order canonicalized. So

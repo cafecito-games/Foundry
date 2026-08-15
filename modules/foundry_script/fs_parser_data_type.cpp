@@ -122,15 +122,52 @@ static String _method_signature_to_string(const Vector<FSParser::DataType> &p_ar
 	return vformat("[[%s]]", arguments);
 }
 
-// Orders union members deterministically so equality is positional and diagnostics never depend on
-// the order the author happened to write. The kind leads so alternatives group by shape, and the
-// rendered name breaks ties within a kind.
+// Canonical sort key for a union member. Ordering members by a key that does not uniquely identify
+// a type would leave distinct members in the order they were written -- the sort is not stable --
+// so `A | B` and `B | A` could compare unequal despite denoting the same set. The key therefore
+// appends whatever identifies the type beyond its rendered name: the declaring path of a script or
+// class, the qualified name of a native type, enum, or tuple, and the declaration site of a type
+// parameter.
+static String _union_member_sort_key(const FSParser::DataType &p_member) {
+	String key = itos(p_member.kind) + "\x1f" + p_member.to_string_diagnostic() + "\x1f";
+	switch (p_member.kind) {
+		case FSParser::DataType::BUILTIN:
+			key += itos(p_member.builtin_type) + "\x1f" + itos((int)p_member.numeric_type);
+			break;
+		case FSParser::DataType::NATIVE:
+		case FSParser::DataType::ENUM:
+			key += String(p_member.native_type) + "\x1f" + String(p_member.enum_type) + "\x1f" +
+					String(p_member.enum_case_name);
+			break;
+		case FSParser::DataType::SCRIPT:
+			key += p_member.script_type.is_valid() ? p_member.script_type->get_path() : p_member.script_path;
+			break;
+		case FSParser::DataType::CLASS:
+			key += p_member.class_type != nullptr ? p_member.class_type->fqcn : String();
+			break;
+		case FSParser::DataType::TUPLE:
+			key += String(p_member.tuple_name) + "\x1f" + String(p_member.native_type) + "\x1f" +
+					p_member.script_path;
+			break;
+		case FSParser::DataType::TYPE_PARAMETER:
+			key += String(p_member.type_parameter_name) + "\x1f" + itos(p_member.type_parameter_scope) + "\x1f" +
+					itos(p_member.type_parameter_index);
+			break;
+		case FSParser::DataType::UNION:
+			// Normalization flattens nested unions, so a member is never itself a union.
+		case FSParser::DataType::VARIANT:
+		case FSParser::DataType::RESOLVING:
+		case FSParser::DataType::UNRESOLVED:
+			break;
+	}
+	return key;
+}
+
+// Orders union members deterministically, so set identity is positional identity and diagnostics
+// never depend on the order the author happened to write.
 struct _UnionMemberSort {
 	bool operator()(const FSParser::DataType &p_left, const FSParser::DataType &p_right) const {
-		if (p_left.kind != p_right.kind) {
-			return p_left.kind < p_right.kind;
-		}
-		return p_left.to_string_diagnostic() < p_right.to_string_diagnostic();
+		return _union_member_sort_key(p_left) < _union_member_sort_key(p_right);
 	}
 };
 
