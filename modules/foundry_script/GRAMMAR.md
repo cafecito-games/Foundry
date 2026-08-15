@@ -667,6 +667,11 @@ and `type(x)` all remain ordinary uses of the identifier.
   (`Type alias "X" has the same name as a previously declared constant.`).
 - An alias is **file-local** in this version: it is not a global name and is not reachable through
   `import`/`namespace`.
+- An alias name may not be a **built-in type or native class name**, which would win the type lookup
+  and leave the alias unreachable (`Type alias "int" hides a built-in type.`,
+  `Type alias "Label" hides a native class.`).
+- A **type handle** cannot represent a union: `Type[A | B]` is an error, since a handle names exactly
+  one type at runtime.
 - Alias visibility is **lexical, not nominal**: the name belongs to the body that declares it and to
   the bodies nested inside it. Extending a class does not carry its aliases along, in the same file
   or across files

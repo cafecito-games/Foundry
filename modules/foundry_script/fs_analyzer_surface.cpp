@@ -1960,12 +1960,21 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 					E->apply(parser, member.m_tuple, p_class);
 				}
 			} break;
-			case FSParser::ClassNode::Member::TYPE_ALIAS:
+			case FSParser::ClassNode::Member::TYPE_ALIAS: {
+				// Built-in and native type names win a type lookup outright, so an alias spelled with one
+				// would parse, resolve, and then never be reachable. It is reported like a class that
+				// hides the same name rather than left silently dead.
+				const StringName alias_name = member.type_alias->identifier->name;
+				if (FSParser::get_builtin_type(alias_name) < Variant::VARIANT_MAX || alias_name == SNAME("AsyncCallable")) {
+					push_error(vformat(R"(Type alias "%s" hides a built-in type.)", alias_name), member.type_alias->identifier);
+				} else if (class_exists(alias_name)) {
+					push_error(vformat(R"(Type alias "%s" hides a native class.)", alias_name), member.type_alias->identifier);
+				}
 				// An alias declares no runtime member, but it is expanded here rather than only from its
 				// use sites so a cyclic or unresolvable alias is still reported at its declaration when
 				// nothing happens to name it. The expansion is memoized, so use sites pay nothing.
 				resolve_type_alias(member.type_alias);
-				break;
+			} break;
 			case FSParser::ClassNode::Member::UNDEFINED:
 				ERR_PRINT("Trying to resolve undefined member.");
 				break;

@@ -2389,6 +2389,10 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	const FSParser::IdentifierNode *first_id = p_type->type_chain[0];
 	StringName first = first_id->name;
 	bool type_found = false;
+	// An alias found somewhere the name is not visible from does not end the search, so a base class
+	// declaring the name cannot hide a lexically visible alias the scan reaches later. It is only
+	// reported once nothing else in scope claims the name.
+	bool found_out_of_scope_alias = false;
 	int resolved_type_chain_size = 1;
 
 	// Type parameters of the enclosing generic class or method shadow any other name, so a bare
@@ -2755,8 +2759,8 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 								alias_owner = analyzer_owning_class(script_class, p_type);
 							}
 							if (alias_owner == nullptr) {
-								push_error(vformat(R"(Type alias "%s" is not in scope here. A type alias is visible only inside the file and the body that declare it, so it is neither inherited nor imported.)", first), p_type);
-								return bad_type;
+								found_out_of_scope_alias = true;
+								continue;
 							}
 							if (!p_type->container_types.is_empty()) {
 								push_error(vformat(R"(Type alias "%s" takes no type arguments.)", first), p_type);
@@ -2823,6 +2827,13 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 
 		const FSParser::DataType represented_type = type_from_metatype(
 				resolve_datatype(p_type->get_container_type_or_null(0)));
+		if (represented_type.is_union()) {
+			// A type handle is a runtime value naming one type. A set of alternatives names none, so it
+			// cannot be represented and would lower to a handle that accepts nothing.
+			push_error(vformat(R"(A type handle cannot represent the type union "%s", because a handle names exactly one type at runtime. Use a handle of one alternative instead.)", represented_type.to_string()),
+					p_type->get_container_type_or_null(0));
+			return bad_type;
+		}
 		FSParser::DataType handle_type;
 		if (!make_type_handle_meta_type(represented_type, p_type, handle_type)) {
 			return bad_type;
@@ -2831,7 +2842,11 @@ FSParser::DataType FSAnalyzer::resolve_datatype(FSParser::TypeNode *p_type) {
 	}
 
 	if (!result.is_set()) {
-		push_error(vformat(R"(Could not find type "%s" in the current scope.)", first), p_type);
+		if (found_out_of_scope_alias) {
+			push_error(vformat(R"(Type alias "%s" is not in scope here. A type alias is visible only inside the file and the body that declare it, so it is neither inherited nor imported.)", first), p_type);
+		} else {
+			push_error(vformat(R"(Could not find type "%s" in the current scope.)", first), p_type);
+		}
 		return bad_type;
 	}
 
@@ -16222,6 +16237,32 @@ bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FS
 			p_target.class_type->is_trait && !p_target.is_meta_type && !p_source.is_meta_type &&
 			p_source.kind == FSParser::DataType::CLASS && p_source.class_type != nullptr) {
 		return type_satisfies_trait(p_source, p_target);
+	}
+	// A trait alternative of a union needs the same eager trait resolution the branch above performs,
+	// which the pure type model below cannot do. Both are additive: a set that answers no here still
+	// falls through to the ordinary set rules.
+	if (p_target.kind == FSParser::DataType::UNION && !p_source.is_meta_type &&
+			p_source.kind == FSParser::DataType::CLASS && p_source.class_type != nullptr) {
+		for (const FSParser::DataType &member : p_target.union_members) {
+			if (member.kind == FSParser::DataType::CLASS && member.class_type != nullptr &&
+					member.class_type->is_trait && !member.is_meta_type && type_satisfies_trait(p_source, member)) {
+				return true;
+			}
+		}
+	}
+	if (p_source.kind == FSParser::DataType::UNION && p_target.kind == FSParser::DataType::CLASS &&
+			p_target.class_type != nullptr && p_target.class_type->is_trait && !p_target.is_meta_type) {
+		bool every_member_conforms = !p_source.union_members.is_empty();
+		for (const FSParser::DataType &member : p_source.union_members) {
+			if (member.kind != FSParser::DataType::CLASS || member.class_type == nullptr ||
+					member.is_meta_type || !type_satisfies_trait(member, p_target)) {
+				every_member_conforms = false;
+				break;
+			}
+		}
+		if (every_member_conforms) {
+			return true;
+		}
 	}
 	FSTypeCompatibility::Options options;
 	options.allow_implicit_conversion = p_allow_implicit_conversion;

@@ -568,6 +568,10 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			}
 			result.compatible = true;
 			result.uses_implicit_conversion = member_result.uses_implicit_conversion;
+			// An alternative that only accepts the source under a runtime check keeps that obligation.
+			// The union slot itself emits none, so the caller has to treat the flow as unsafe rather than
+			// read a set membership it never proved: an erased type parameter is the case that matters.
+			result.requires_runtime_check = member_result.requires_runtime_check;
 			return result;
 		}
 		return result;
