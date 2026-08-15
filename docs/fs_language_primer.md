@@ -332,18 +332,18 @@ func total[T: int | long](left: T, right: T) -> String:
 - Multi-member unions are rejected as typed-container element types, as `@export` types, and as the
   target of `is`, `as`, or `Type[T]`, because each of those needs one runtime type.
 
-Choosing between a union and its neighbours:
+Choosing between a union and its neighbors:
 
 | You want | Reach for | Why |
 | --- | --- | --- |
-| One function body over several numeric types | A union bound plus narrowing: `func f[T: Number](value: T)` | A static constraint with no runtime cost; the body narrows before it operates |
-| Direct arithmetic without narrowing | A narrow bound: `[T: int \| long]` | Every pair in that set promotes to a common type; wider sets do not |
-| A readable name for one existing type | A single-member alias: `type Meters = float` | Fully transparent, keeps the runtime type and width, costs nothing |
-| To reliably tell the alternatives apart at runtime | A tagged union (payload enum) | It carries a real runtime tag; a type union carries none |
-| A shared method surface across the alternatives | A trait | A union exposes no common operations at all; every use site must narrow first |
-| "A value, or nothing" | `T?` | Nullability is hoisted out of unions anyway, so a union adds nothing here |
-| A heterogeneous container, or an inspector-editable field | `Array[Variant]` or `Dictionary[Variant, Variant]` plus validation | Containers and `@export` each enforce exactly one runtime type |
-| Genuinely "anything" | `Variant` | A union is a static constraint, not a dynamic escape hatch |
+| One body over several numeric types | A union bound plus narrowing, `[T: Number]` | Static constraint, no runtime cost |
+| Arithmetic without narrowing | A narrow bound, `[T: int \| long]` | Every pair in that set promotes; wider sets do not |
+| A readable name for one type | A single-member alias, `type Meters = float` | Transparent, keeps runtime type and width, free |
+| To tell the alternatives apart at runtime | A tagged union (payload enum) | It carries a real tag; a type union carries none |
+| A shared method surface | A trait | A union exposes no common operations at all |
+| "A value, or nothing" | `T?` | Nullability is hoisted out of unions anyway |
+| A heterogeneous container or `@export` field | `Array[Variant]` plus validation | Both enforce exactly one runtime type |
+| Genuinely "anything" | `Variant` | A union is a constraint, not a dynamic escape hatch |
 
 Two sharp edges are worth stating outright:
 
@@ -353,9 +353,11 @@ Two sharp edges are worth stating outright:
   a narrower bound. `int | long` is roughly the widest bound that still allows `+` directly.
 - **Numeric type tests go narrowest-first.** `is` on a numeric type is a carrier-plus-value-range
   predicate, not a declared-width test, so `int` is a *subset* of `long`: for a value of `5`, both
-  `is int` and `is long` are true. Testing `long` before `int` consumes the `int` arm and the chain
-  is rejected. For the same reason, `is not long` removes `long` *and* `int`, while `is not int`
-  removes only `int`, and a set such as `Number` can never be split into five disjoint arms.
+  `is int` and `is long` are true. Testing `long` first therefore matches every `int` too and leaves
+  the later `int` arm dead, and where nothing in the surviving set could still match, the analyzer
+  rejects the later test outright. For the same reason, `is not long` removes `long` *and* `int`,
+  while `is not int` removes only `int`, and a set such as `Number` can never be split into five
+  disjoint arms.
 
 ### Classes, Traits, Generics, And Annotations
 
@@ -599,8 +601,8 @@ class Reading:
 # `Number` is the closed set of source-spellable numeric types. A `Number`-bounded body must narrow
 # before it operates: the bound admits `int` paired with `ulong`, which has no common type.
 func to_meters[T: Number](value: T) -> Meters:
-	# Narrowest-first. Testing `long` first would also accept every `int` and leave the `int` arm
-	# unreachable, which is an error rather than dead code.
+	# Narrowest-first. Testing `long` first would also match every `int` value and leave the `int`
+	# arm unreachable.
 	if value is int:
 		return float(value)
 	if value is long:
@@ -657,12 +659,15 @@ func test() -> void:
   (a payload enum) for the first case and a trait for the second.
 - Do not expect `is int` and `is long` to be disjoint. A numeric type test checks the runtime
   carrier and value range, so `int` is a subset of `long`. Order numeric tests narrowest-first;
-  testing the wider alternative first makes the narrower arm unreachable and is rejected.
+  testing the wider alternative first silently makes the narrower arm unreachable, and rejects the
+  later test outright when nothing in the surviving set could match it.
 - Do not put a multi-member union in a typed container element position or on an `@export`. Both
   enforce exactly one runtime type. Use `Array[Variant]` or `Dictionary[Variant, Variant]` and
   validate.
 - Do not expect a union-typed member or static variable to narrow. Flow narrowing applies to
-  parameters, locals, iterators, and binds only; copy the member into a local first.
+  parameters, locals, iterators, and binds only, so inside `if member is int:` the member still has
+  the whole set as its type and an `int`-only operation on it is still rejected. Copy the member
+  into a local first.
 - Do not use an alias as a value. Aliases are type-position-only, so `MyAlias.new()`,
   `extends MyAlias`, and `uses MyAlias` are errors, and `value is MyAlias` or `value as MyAlias`
   is an error whenever the alias has more than one member.
