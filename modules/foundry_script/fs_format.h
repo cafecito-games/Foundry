@@ -215,6 +215,10 @@ private:
 	void print_extends_clause(const FSParser::ClassNode *p_class);
 	void print_trait_use(const FSParser::ClassNode::TraitUse &p_use);
 	void print_class_body(const FSParser::ClassNode *p_class, bool p_is_root);
+	// A retroactive conformance (`extend X uses Y:`). The parser keeps these in
+	// `ClassNode::conformances` rather than `members`, so `print_class_body` merges them
+	// back into the member walk by source line and calls this for each one.
+	void print_conformance(const FSParser::ConformanceNode *p_conformance);
 	// `p_owns_trailing_comment` mirrors the same-named parameter on `print_enum`/
 	// `print_tuple`: true when the caller (`print_class_body`) has already
 	// determined this member self-flushes its own closing-line comment, so this
