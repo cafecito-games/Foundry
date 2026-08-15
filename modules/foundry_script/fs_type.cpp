@@ -1131,10 +1131,12 @@ bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_n
 		// A union erases to one untyped slot, so the runtime check behind a downcast sees only the stored
 		// value. A declared integer width is not part of that value, so an alternative the destination
 		// cannot represent would be laundered into the slot untested -- the same conversion the concrete
-		// wide-to-narrow case above refuses. Alternatives the runtime can still tell apart, a class
+		// wide-to-narrow case above refuses. Each numeric alternative is judged by the rule that governs
+		// the concrete assignment it stands for, implicit conversions included, so a widening alternative
+		// such as `int` into `long` still passes. Alternatives the runtime can still tell apart, a class
 		// downcast in particular, keep going through the reverse-compatibility rule below.
 		for (const FSParser::DataType &member : p_wide.union_members) {
-			if (FSNumericConversion::is_numeric_builtin(member) && !is_compatible(p_narrow, member)) {
+			if (FSNumericConversion::is_numeric_builtin(member) && !is_compatible(p_narrow, member, true)) {
 				return false;
 			}
 		}

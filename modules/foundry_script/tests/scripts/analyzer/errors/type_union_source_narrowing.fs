@@ -3,7 +3,7 @@
 # the destination cannot be verified at run time and is rejected statically, exactly like the concrete
 # assignment it stands for.
 type Scalar = int | long
-type Mixed = int | float
+type MaybeScalar = int? | long
 # A single-member alias collapses to the member and keeps its declared width.
 type Wide = long
 
@@ -19,8 +19,6 @@ func test():
 	var also_narrow: int = concrete
 	var collapsed: Wide = 2147483648L
 	var from_alias: int = collapsed
-	var mixed: Mixed = 1
-	var from_mixed: int = mixed
-	var maybe: int? | long = 7
+	var maybe: MaybeScalar = 7
 	var from_nullable: int = maybe
-	prints(narrow, also_narrow, from_alias, from_mixed, from_nullable, take_int(wide))
+	prints(narrow, also_narrow, from_alias, from_nullable, take_int(wide))

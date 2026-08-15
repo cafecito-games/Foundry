@@ -1,9 +1,11 @@
 # Rejecting an unverifiable integer-width narrowing out of a union does not close the downcast rule
-# itself. A union every alternative of which the destination accepts still assigns, a single-member
-# alias still carries the member's declared width, and a nullable union still widens.
+# itself. Each alternative is judged by the rule that governs the concrete assignment it stands for, so
+# a widening alternative still passes, an alias still carries the member's declared width, a nullable
+# union still widens, and an alternative the runtime can tell apart is still narrowed under a check.
 type Scalar = int | long
 type Wide = long
 type MaybeScalar = int? | long
+type ScalarOrText = int | long | String
 
 
 func take_long(value: long) -> long:
@@ -33,3 +35,9 @@ func test():
 	var maybe: MaybeScalar = 9
 	var maybe_widened: long? = maybe
 	print(maybe_widened)
+
+	# Both numeric alternatives fit `long` and the runtime check still distinguishes a `String`, so the
+	# downcast stays available.
+	var mixed: ScalarOrText = 11
+	var mixed_widened: long = mixed
+	print(mixed_widened)
