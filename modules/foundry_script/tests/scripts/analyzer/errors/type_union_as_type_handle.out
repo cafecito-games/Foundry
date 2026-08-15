@@ -1,0 +1,5 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 14: A type handle cannot represent the type union "Left | Right", because a handle names exactly one type at runtime. Use a handle of one alternative instead.
+>> ERROR at line 15: A type handle cannot represent the type union "int | uint", because a handle names exactly one type at runtime. Use a handle of one alternative instead.
+>> ERROR at line 15: Builtin type cannot be used as a name on its own.
+>> ERROR at line 15: Identifier "int" not declared in the current scope.

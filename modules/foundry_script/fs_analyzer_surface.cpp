@@ -409,6 +409,9 @@ bool FSAnalyzer::is_type_bearing_member(const FSParser::ClassNode::Member &p_mem
 		case FSParser::ClassNode::Member::CLASS:
 		case FSParser::ClassNode::Member::ENUM:
 		case FSParser::ClassNode::Member::TUPLE:
+		// An alias declares no value, but it does name a type, which is exactly what a witness reaching
+		// back into its declaring file's lexical scope needs.
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
 			return true;
 		case FSParser::ClassNode::Member::CONSTANT: {
 			// A `preload`ed script or a class alias denotes a type; a plain value constant does not.
@@ -1957,9 +1960,23 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 					E->apply(parser, member.m_tuple, p_class);
 				}
 			} break;
-			case FSParser::ClassNode::Member::TYPE_ALIAS:
-				// Aliases are resolved lazily, from the type positions that name them.
-				break;
+			case FSParser::ClassNode::Member::TYPE_ALIAS: {
+				// Built-in and native type names win a type lookup outright, so an alias spelled with one
+				// would parse, resolve, and then never be reachable. It is reported like a class that
+				// hides the same name rather than left silently dead.
+				const StringName alias_name = member.type_alias->identifier->name;
+				// The same predicate the type resolver uses, so every spelling it answers first -- the
+				// unsigned and fixed-width numeric names included -- is reported here.
+				if (FSParser::get_builtin_data_type(alias_name).is_valid() || alias_name == SNAME("AsyncCallable")) {
+					push_error(vformat(R"(Type alias "%s" hides a built-in type.)", alias_name), member.type_alias->identifier);
+				} else if (class_exists(alias_name)) {
+					push_error(vformat(R"(Type alias "%s" hides a native class.)", alias_name), member.type_alias->identifier);
+				}
+				// An alias declares no runtime member, but it is expanded here rather than only from its
+				// use sites so a cyclic or unresolvable alias is still reported at its declaration when
+				// nothing happens to name it. The expansion is memoized, so use sites pay nothing.
+				resolve_type_alias(member.type_alias);
+			} break;
 			case FSParser::ClassNode::Member::UNDEFINED:
 				ERR_PRINT("Trying to resolve undefined member.");
 				break;

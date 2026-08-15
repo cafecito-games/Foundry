@@ -1,0 +1,3 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 1: Type alias "Left" -> "Right" -> "Left" expands to itself, so it names no type.
+>> ERROR at line 3: Type alias "SelfReferential" -> "SelfReferential" expands to itself, so it names no type.

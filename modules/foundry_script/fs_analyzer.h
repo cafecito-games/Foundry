@@ -578,6 +578,14 @@ private:
 	LocalVector<FSParser::ExpressionNode *> reduced_contextual_enum_cases;
 	HashSet<const FSParser::ExpressionNode *> resolved_contextual_enum_cases;
 
+	// Expansion cache for `type Name = ...` declarations. An alias is transparent, so its expansion is
+	// computed once and shared by every position that names it; aliases whose expansion failed are
+	// remembered separately so the diagnostic is reported once instead of at every use site.
+	HashMap<const FSParser::TypeAliasNode *, FSParser::DataType> resolved_type_aliases;
+	HashSet<const FSParser::TypeAliasNode *> failed_type_aliases;
+	// The aliases currently being expanded, innermost last. A name reappearing here closes a cycle.
+	LocalVector<FSParser::TypeAliasNode *> type_alias_resolution_stack;
+
 	struct SuiteExitState {
 		bool always_terminates = false;
 		bool has_return = false;
@@ -606,6 +614,22 @@ private:
 	Error resolve_class_inheritance(FSParser::ClassNode *p_class, const FSParser::Node *p_source = nullptr);
 	Error resolve_class_inheritance(FSParser::ClassNode *p_class, bool p_recursive);
 	FSParser::DataType resolve_datatype(FSParser::TypeNode *p_type);
+	// Expands a `type Name = ...` declaration into the type it denotes, memoizing the result so a
+	// name used in many positions resolves (and reports) exactly once. Returns an unset type when the
+	// expansion failed; the diagnostic has already been pushed in that case.
+	FSParser::DataType resolve_type_alias(FSParser::TypeAliasNode *p_type_alias);
+	// The alias declaration a bare name denotes in the current lexical scope, or `nullptr`. Alias
+	// visibility is lexical and file-local, so only the current class and its lexical outers are
+	// searched -- never a base class, a trait, or another file.
+	FSParser::TypeAliasNode *find_type_alias_in_scope(const StringName &p_name) const;
+	// Reports a multi-alternative element type in a typed container and returns whether it did.
+	bool reject_union_container_element_type(const FSParser::DataType &p_element_type,
+			FSParser::TypeNode *p_element_node, const char *p_untyped_spelling);
+	// Whether `p_candidate` is `p_scope` or one of its lexically enclosing classes.
+	static bool class_encloses_class(FSParser::ClassNode *p_scope, FSParser::ClassNode *p_candidate);
+	// The analyzer that owns `p_class`'s file, so a declaration written there is resolved against its
+	// own scope rather than this one's. Returns `nullptr` when that file is not reachable.
+	FSAnalyzer *analyzer_owning_class(FSParser::ClassNode *p_class, const FSParser::Node *p_source);
 	bool resolve_type_parameter(const StringName &p_name, FSParser::DataType &r_type);
 	bool find_trait_member_in_inheritance_chain(FSParser::ClassNode *p_receiver, const StringName &p_name,
 			const FSParser::Node *p_source, FSParser::ClassNode *&r_declaring_trait,

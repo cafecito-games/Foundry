@@ -667,6 +667,18 @@ and `type(x)` all remain ordinary uses of the identifier.
   (`Type alias "X" has the same name as a previously declared constant.`).
 - An alias is **file-local** in this version: it is not a global name and is not reachable through
   `import`/`namespace`.
+- An alias name may not be a **built-in type or native class name**, which would win the type lookup
+  and leave the alias unreachable (`Type alias "int" hides a built-in type.`,
+  `Type alias "Label" hides a native class.`).
+- A **type handle** cannot represent a union: `Type[A | B]` is an error, since a handle names exactly
+  one type at runtime.
+- Alias visibility is **lexical, not nominal**: the name belongs to the body that declares it and to
+  the bodies nested inside it. Extending a class does not carry its aliases along, in the same file
+  or across files
+  (`Type alias "X" is not in scope here. A type alias is visible only inside the file and the body
+  that declare it, so it is neither inherited nor imported.`). A retroactive conformance witness is
+  written in the conformance's own file, so that file's aliases are in scope in the witness body even
+  though the target type is declared elsewhere.
 
 ### 4.5 Functions and parameters
 
@@ -1498,7 +1510,14 @@ Details (`parse_type`):
   `type Meters = float` behaves exactly like `float`, its integer width included.
 - **Runtime erasure.** A multi-member union has no runtime representation: it produces no typed
   local, no typed parameter check, no runtime type test, and a `PropertyInfo` of `Variant::NIL`.
-  A single-member alias keeps the member's runtime typing in full.
+  A single-member alias keeps the member's runtime typing in full. Two consequences follow. A
+  multi-member union is **not a valid typed-container element type** — `Array[int | uint]` and
+  `Dictionary[String, int | uint]` are errors, because a typed container enforces exactly one
+  element type at runtime — and it is **not a valid `is` or `as` operand type**, because the
+  runtime has no union carrier to test or cast against; an individual alternative is named instead.
+- **Union compatibility.** A concrete value satisfies a union slot when it satisfies at least one
+  alternative. A union-typed value satisfies a concrete slot only when **every** alternative does,
+  since nothing narrows the value at the boundary.
 - A **type suffix binds to the last name of the dotted head**, so `Outer.Box[int]` applies `[int]`
   to `Box`, exactly as the value-position spelling does. A type carries **at most one** suffix;
   writing it on an earlier name (`Outer[int].Box`) is a parse error
