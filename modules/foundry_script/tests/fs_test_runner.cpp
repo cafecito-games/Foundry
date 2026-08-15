@@ -849,9 +849,14 @@ static Error load_fixture_from_bytecode(const Vector<uint8_t> &p_buffer, const S
 FSTest::TestResult FSTest::execute_test_code(bool p_is_generating) {
 	disable_stdout();
 
-	// Each fixture is an isolated mini-project: drop conformances registered by prior fixtures so
-	// cross-file coherence checks only see dependencies resolved within this test.
-	FSConformanceRegistry::get_singleton()->clear();
+	// Each fixture is an isolated mini-project: drop declaration-side conformances registered by
+	// prior fixtures so cross-file coherence checks only see dependencies resolved within this test.
+	// This must stay narrowed to declarations: a declaring file compiles once per process, so a
+	// fixture that shares one with an earlier fixture gets a compiled-script cache hit rather than a
+	// recompile, and only a recompile re-registers the runtime witness store. Evicting the runtime
+	// store here would leave that still-cached compiled script with witnesses it can no longer
+	// dispatch.
+	FSConformanceRegistry::get_singleton()->clear_declarations();
 
 	TestResult result;
 	result.status = FS_TEST_OK;

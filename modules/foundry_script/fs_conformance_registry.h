@@ -212,6 +212,14 @@ public:
 
 	void clear();
 
+	// Drops only the declaration side (`conformances_by_file`, `index`) used by analyzer visibility
+	// and coherence checks. Deliberately leaves the runtime witness store (`runtime_by_file`,
+	// `runtime_index`, `runtime_trait_index`) untouched: those entries are borrowed `FSFunction *`s
+	// owned by the declaring script, which already drops them itself on reload, recompile, and
+	// teardown. Discarding them here without recompiling the owner would leave a live, still-cached
+	// compiled script whose witnesses can no longer be dispatched.
+	void clear_declarations();
+
 	// True when some *visible* target alias `p_target_key` declares an external conformance to
 	// `p_trait_name`.
 	// Analyzer/type-system callers use the parse registry alone. Runtime checks for bytecode-loaded
