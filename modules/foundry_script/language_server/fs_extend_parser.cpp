@@ -286,6 +286,57 @@ String ExtendFSParser::enum_case_detail(const FSParser::EnumNode::Value &p_value
 	return detail + ")";
 }
 
+String ExtendFSParser::source_text_in_range(const LSP::Range &p_range) const {
+	if (p_range.start.line < 0 || p_range.start.line >= lines.size() ||
+			p_range.end.line < p_range.start.line || p_range.end.line >= lines.size()) {
+		return String();
+	}
+
+	if (p_range.start.line == p_range.end.line) {
+		const String &line = lines[p_range.start.line];
+		const int start = CLAMP(p_range.start.character, 0, line.length());
+		const int end = CLAMP(p_range.end.character, start, line.length());
+		return line.substr(start, end - start);
+	}
+
+	// A declaration continued across lines has no single source spelling; each continued segment is
+	// joined by one space so the rendered type stays on one line without inventing indentation.
+	String text = lines[p_range.start.line].substr(CLAMP(p_range.start.character, 0, lines[p_range.start.line].length()));
+	for (int line_index = p_range.start.line + 1; line_index <= p_range.end.line; line_index++) {
+		const String &line = lines[line_index];
+		const String segment = line_index == p_range.end.line
+				? line.substr(0, CLAMP(p_range.end.character, 0, line.length()))
+				: line;
+		text += " " + segment.strip_edges();
+	}
+	return text.strip_edges();
+}
+
+String ExtendFSParser::type_alias_detail(const FSParser::TypeAliasNode *p_type_alias) const {
+	const String detail = "type " + String(p_type_alias->identifier->name);
+	if (p_type_alias->aliased_type == nullptr) {
+		return detail;
+	}
+
+	// An alias is presented with the spelling its author wrote, not with the normalized expansion the
+	// analyzer computes: normalization reorders and flattens union members, and only a diagnostic
+	// contrasting two types needs that canonical form.
+	String aliased = source_text_in_range(range_of_node(p_type_alias->aliased_type)).strip_edges();
+	// A type node is anchored to the token before it, which in an alias declaration is the `=`, so
+	// the spelling of the aliased type starts after that separator.
+	if (aliased.begins_with("=")) {
+		aliased = aliased.substr(1).strip_edges();
+	}
+	if (aliased.is_empty()) {
+		const FSParser::DataType aliased_type = FSAnalyzer::type_from_metatype(p_type_alias->aliased_type->get_datatype());
+		if (!aliased_type.is_set()) {
+			return detail;
+		}
+		aliased = aliased_type.to_string();
+	}
+	return detail + " = " + aliased;
+}
+
 void ExtendFSParser::append_enum_symbol_children(const FSParser::EnumNode *p_enum, LSP::DocumentSymbol &r_symbol) {
 	const String uri = get_uri();
 
@@ -649,10 +700,23 @@ void ExtendFSParser::parse_class_symbol(const FSParser::ClassNode *p_class, LSP:
 
 				r_symbol.children.push_back(symbol);
 			} break;
-			case ClassNode::Member::TYPE_ALIAS:
-				// A type alias has no runtime symbol to document; presenting it is a tooling
-				// follow-up.
-				break;
+			case ClassNode::Member::TYPE_ALIAS: {
+				if (m.type_alias == nullptr || m.type_alias->identifier == nullptr) {
+					break;
+				}
+				LSP::DocumentSymbol symbol;
+				symbol.name = m.type_alias->identifier->name;
+				// LSP has no kind for a name that denotes a type without declaring one, and
+				// `TypeParameter` is the kind language servers conventionally map an alias to.
+				symbol.kind = LSP::SymbolKind::TypeParameter;
+				symbol.range = range_of_node(m.type_alias);
+				symbol.selectionRange = range_of_node(m.type_alias->identifier);
+				symbol.uri = uri;
+				symbol.script_path = path;
+				symbol.detail = type_alias_detail(m.type_alias);
+
+				r_symbol.children.push_back(symbol);
+			} break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.
 			case ClassNode::Member::UNDEFINED:
@@ -1321,8 +1385,8 @@ Dictionary ExtendFSParser::dump_class_api(const FSParser::ClassNode *p_class) co
 				// from this legacy dump like other type-only declarations without a value.
 				break;
 			case ClassNode::Member::TYPE_ALIAS:
-				// A type alias has no runtime symbol to document; presenting it is a tooling
-				// follow-up.
+				// An alias declares no runtime member, so like other type-only declarations it has no
+				// bucket in this legacy dump; it is presented through the document symbol tree instead.
 				break;
 			case ClassNode::Member::GROUP:
 				break; // No-op, but silences warnings.

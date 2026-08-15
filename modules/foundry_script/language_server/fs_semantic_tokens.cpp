@@ -280,6 +280,7 @@ private:
 	void walk_suite(const FSParser::SuiteNode *p_suite);
 	void walk_trait_use(const FSParser::ClassNode::TraitUse &p_use, const FSParser::Node *p_owner);
 	void walk_tuple(const FSParser::TupleNode *p_tuple);
+	void walk_type_alias(const FSParser::TypeAliasNode *p_type_alias);
 	void walk_type(const FSParser::TypeNode *p_type);
 	void walk_type_parameter(const FSParser::TypeParameterNode *p_type_parameter);
 	void walk_variable(const FSParser::VariableNode *p_variable, bool p_is_member);
@@ -330,6 +331,11 @@ TypeClassification classify_datatype(const FSParser::DataType &p_datatype) {
 			break;
 		case FSParser::DataType::TUPLE:
 			result.type = TokenType::STRUCT;
+			break;
+		case FSParser::DataType::UNION:
+			// A union names a set of types and is written only in type positions, so the name that
+			// resolves to one is a type like any other.
+			result.type = TokenType::TYPE;
 			break;
 		case FSParser::DataType::TYPE_PARAMETER:
 			result.type = TokenType::TYPE_PARAMETER;
@@ -1138,7 +1144,7 @@ void DocumentClassifier::walk_class(const FSParser::ClassNode *p_class) {
 				walk_tuple(member.m_tuple);
 				break;
 			case FSParser::ClassNode::Member::TYPE_ALIAS:
-				// Highlighting an alias declaration is a tooling follow-up.
+				walk_type_alias(member.type_alias);
 				break;
 			case FSParser::ClassNode::Member::UNDEFINED:
 				break;
@@ -1484,6 +1490,16 @@ void DocumentClassifier::walk_tuple(const FSParser::TupleNode *p_tuple) {
 	}
 }
 
+void DocumentClassifier::walk_type_alias(const FSParser::TypeAliasNode *p_type_alias) {
+	if (p_type_alias == nullptr) {
+		return;
+	}
+	// An alias declares a name for a type, never a value, so the declared name is a type and the
+	// aliased spelling keeps whatever classification its own declarations give it.
+	add_identifier(p_type_alias->identifier, TokenType::TYPE, bit(TokenModifier::DECLARATION));
+	walk_type(p_type_alias->aliased_type);
+}
+
 void DocumentClassifier::walk_type(const FSParser::TypeNode *p_type) {
 	if (p_type == nullptr) {
 		return;
@@ -1498,6 +1514,11 @@ void DocumentClassifier::walk_type(const FSParser::TypeNode *p_type) {
 		return;
 	}
 	classify_chain(p_type->type_chain, p_type->get_datatype(), TokenType::TYPE, p_type->allows_enum_case);
+	// A written union carries no `type_chain`; each alternative is its own type node and classifies
+	// against its own declaration.
+	for (const FSParser::TypeNode *member : p_type->union_member_types) {
+		walk_type(member);
+	}
 	for (const FSParser::TypeNode *element : p_type->tuple_element_types) {
 		walk_type(element);
 	}

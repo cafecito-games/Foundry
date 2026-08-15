@@ -5691,6 +5691,26 @@ TEST_SUITE("[Modules][FoundryScript][Refactor]") {
 				CHECK_FALSE(out.contains("Vec2"));
 			}
 		}
+		SUBCASE("type alias declaration") {
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_type_alias.fs", 3, 6, "Distance", out); // caret on `Meters`
+			REQUIRE(r.ok);
+			CHECK(out.contains("type Distance = float"));
+			CHECK(out.contains("var distance: Distance = 0.0"));
+			CHECK(out.contains("func measure() -> Distance:"));
+			CHECK_FALSE(out.contains("Meters"));
+		}
+		SUBCASE("union member named by a type alias") {
+			// An alias member references its own declaration, so renaming that declaration rewrites
+			// the member spelling inside the alias and leaves the alias name untouched.
+			String out;
+			RefactorResult r = run_rename("res://refactor/rename_type_alias.fs", 0, 7, "Ring", out); // caret on `Circle`
+			REQUIRE(r.ok);
+			CHECK(out.contains("class Ring:"));
+			CHECK(out.contains("type Shape = Ring | Node"));
+			CHECK(out.contains("type Meters = float"));
+			CHECK_FALSE(out.contains("Circle"));
+		}
 		SUBCASE("class referenced inside Type[T] annotations") {
 			String out;
 			RefactorResult r = run_rename("res://refactor/type_metatype_rename.fs", 0, 6, "Client", out); // caret on `User` class

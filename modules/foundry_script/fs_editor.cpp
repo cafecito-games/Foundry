@@ -1816,6 +1816,7 @@ struct TypeCompletionListOptions {
 	bool include_self = false;
 	bool include_type_parameters = false;
 	bool include_member_enums = false;
+	bool include_type_aliases = false;
 	bool include_global_classes = true;
 	bool include_global_class_enums = false;
 	bool include_global_enums = false;
@@ -1888,6 +1889,14 @@ static void _list_type_completion_options(const FSParser::CompletionContext &p_c
 							r_result.insert(option.display, option);
 						}
 					} break;
+					case FSParser::ClassNode::Member::TYPE_ALIAS: {
+						// Alias visibility is lexical and file-local, which is exactly the scope this
+						// loop walks: the current class and the classes that enclose it, never a base.
+						if (p_options.include_type_aliases && member.type_alias != nullptr && member.type_alias->identifier != nullptr) {
+							ScriptLanguage::CodeCompletionOption option(member.type_alias->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, ScriptLanguage::LOCATION_LOCAL + location_offset);
+							r_result.insert(option.display, option);
+						}
+					} break;
 					default:
 						break;
 				}
@@ -1939,6 +1948,9 @@ static void _list_available_types(bool p_inherit_only, FSParser::CompletionConte
 	options.include_variant_meta_type = !p_inherit_only;
 	options.include_native_enums = !p_inherit_only;
 	options.include_member_enums = !p_inherit_only;
+	// An alias may expand to a builtin or a union, neither of which can be extended, so it is a
+	// candidate for an ordinary type position but never for an `extends` clause.
+	options.include_type_aliases = !p_inherit_only;
 	options.include_global_class_enums = !p_inherit_only;
 	options.include_global_enums = !p_inherit_only;
 	options.include_autoload_singletons = true;
@@ -2131,8 +2143,10 @@ static void _find_identifiers_in_class(const FSParser::ClassNode *p_class, bool 
 						option = ScriptLanguage::CodeCompletionOption(member.m_tuple->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, location);
 						break;
 					case FSParser::ClassNode::Member::TYPE_ALIAS:
-						// An alias has no completion presentation yet, and it names no value, so it
-						// must be skipped rather than inserted as an empty option.
+						// An alias names a type, never a value, and it is reached only through the
+						// lexical scope it was declared in, so this base-walking identifier list must
+						// skip it rather than fall through to an insert with an empty display.
+						// Type positions are served by the type completion list instead.
 						continue;
 					case FSParser::ClassNode::Member::GROUP:
 						// `@export_group`/`@export_category`/`@export_subgroup` markers name no
@@ -5702,8 +5716,12 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 	switch (p_member.type) {
 		case FSParser::ClassNode::Member::UNDEFINED:
 		case FSParser::ClassNode::Member::GROUP:
-		case FSParser::ClassNode::Member::TYPE_ALIAS:
 			return ERR_BUG;
+		case FSParser::ClassNode::Member::TYPE_ALIAS:
+			// An alias names a type without declaring one, so it has no class-reference page and no
+			// documented member to open. Its declaration in the script is the only destination.
+			r_result.type = ScriptLanguage::LOOKUP_RESULT_SCRIPT_LOCATION;
+			break;
 		case FSParser::ClassNode::Member::CLASS: {
 			String doc_type_name;
 			String doc_enum_name;
@@ -5736,7 +5754,7 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 			break;
 	}
 
-	if (p_member.type != FSParser::ClassNode::Member::CLASS) {
+	if (p_member.type != FSParser::ClassNode::Member::CLASS && p_member.type != FSParser::ClassNode::Member::TYPE_ALIAS) {
 		String doc_type_name;
 		String doc_enum_name;
 		String doc_tuple_name;
@@ -5751,6 +5769,25 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 	r_result.script_path = p_base_type.script_path;
 	r_result.location = p_member.get_line();
 	return err;
+}
+
+// An alias is visible in the class body that declares it and in every body that one lexically
+// encloses, which is not the inheritance chain `_lookup_symbol_from_base()` walks. A reference from
+// a nested class therefore needs the enclosing bodies searched separately, after the inheritance
+// walk has had its usual precedence.
+static Error _lookup_type_alias_in_lexical_scope(const FSParser::ClassNode *p_class, const String &p_symbol, FSLanguage::LookupResult &r_result) {
+	for (const FSParser::ClassNode *scope = p_class; scope != nullptr; scope = scope->outer) {
+		if (!scope->has_member(p_symbol)) {
+			continue;
+		}
+		const FSParser::ClassNode::Member member = scope->get_member(p_symbol);
+		if (member.type != FSParser::ClassNode::Member::TYPE_ALIAS) {
+			continue;
+		}
+		return _set_lookup_result_from_class_member(scope->get_datatype(), p_symbol, member, r_result);
+	}
+
+	return ERR_CANT_RESOLVE;
 }
 
 static Error _lookup_symbol_from_traits(const FSParser::DataType &p_base_type, const String &p_symbol, FSLanguage::LookupResult &r_result) {
@@ -6614,6 +6651,9 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 			FSParser::DataType base_type = context.current_class->get_datatype();
 
 			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+			if (_lookup_type_alias_in_lexical_scope(context.current_class, p_symbol, r_result) == OK) {
 				return OK;
 			}
 		} break;
