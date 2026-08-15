@@ -14,3 +14,7 @@ func measure(scalar: Scalar) -> Meters:
 
 func paint(shape: Shape) -> void:
 	pass
+
+class Inner:
+	func scale(value: Meters) -> Meters:
+		return value

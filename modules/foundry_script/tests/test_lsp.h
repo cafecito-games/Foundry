@@ -2123,6 +2123,10 @@ func f():
 		// A use in a parameter type.
 		test_resolve_symbol_at(uri, pos(11, 22), uri, "Scalar", range(pos(6, 5), pos(6, 11)));
 
+		// Alias visibility is lexical, so a nested class body reaches the enclosing declaration even
+		// though the alias is in no inheritance chain of that class.
+		test_resolve_symbol_at(uri, pos(18, 20), uri, "Meters", meters_selection);
+
 		// A union member references its own declaration, never the alias that names it.
 		test_resolve_symbol_at(uri, pos(7, 14), uri, "Circle", range(pos(2, 6), pos(2, 12)));
 
@@ -2144,10 +2148,13 @@ func f():
 		SUBCASE("renaming the alias rewrites its declaration and every use") {
 			Dictionary edit = text_document->rename(make_rename_params(uri, pos(5, 6), "Distance"));
 			const Array edits = workspace_edits_for_uri(edit, uri);
-			CHECK_EQ(edits.size(), 3);
+			CHECK_EQ(edits.size(), 5);
 			CHECK(text_edits_include(edits, 5, 5, 11, "Distance"));
 			CHECK(text_edits_include(edits, 9, 14, 20, "Distance"));
 			CHECK(text_edits_include(edits, 11, 32, 38, "Distance"));
+			// Uses from a nested class body are rewritten too.
+			CHECK(text_edits_include(edits, 18, 19, 25, "Distance"));
+			CHECK(text_edits_include(edits, 18, 30, 36, "Distance"));
 		}
 
 		SUBCASE("renaming a union member leaves the alias name alone") {

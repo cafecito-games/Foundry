@@ -5771,6 +5771,25 @@ static Error _set_lookup_result_from_class_member(const FSParser::DataType &p_ba
 	return err;
 }
 
+// An alias is visible in the class body that declares it and in every body that one lexically
+// encloses, which is not the inheritance chain `_lookup_symbol_from_base()` walks. A reference from
+// a nested class therefore needs the enclosing bodies searched separately, after the inheritance
+// walk has had its usual precedence.
+static Error _lookup_type_alias_in_lexical_scope(const FSParser::ClassNode *p_class, const String &p_symbol, FSLanguage::LookupResult &r_result) {
+	for (const FSParser::ClassNode *scope = p_class; scope != nullptr; scope = scope->outer) {
+		if (!scope->has_member(p_symbol)) {
+			continue;
+		}
+		const FSParser::ClassNode::Member member = scope->get_member(p_symbol);
+		if (member.type != FSParser::ClassNode::Member::TYPE_ALIAS) {
+			continue;
+		}
+		return _set_lookup_result_from_class_member(scope->get_datatype(), p_symbol, member, r_result);
+	}
+
+	return ERR_CANT_RESOLVE;
+}
+
 static Error _lookup_symbol_from_traits(const FSParser::DataType &p_base_type, const String &p_symbol, FSLanguage::LookupResult &r_result) {
 	if (p_base_type.kind != FSParser::DataType::CLASS || p_base_type.class_type == nullptr) {
 		return ERR_CANT_RESOLVE;
@@ -6632,6 +6651,9 @@ static Error _lookup_global_script_class(const StringName &p_global_class_name, 
 			FSParser::DataType base_type = context.current_class->get_datatype();
 
 			if (_lookup_symbol_from_base(base_type, p_symbol, r_result) == OK) {
+				return OK;
+			}
+			if (_lookup_type_alias_in_lexical_scope(context.current_class, p_symbol, r_result) == OK) {
 				return OK;
 			}
 		} break;
