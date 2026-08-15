@@ -384,6 +384,12 @@ void FSConformanceRegistry::clear() {
 	runtime_trait_index.clear();
 }
 
+void FSConformanceRegistry::clear_declarations() {
+	MutexLock lock(mutex);
+	conformances_by_file.clear();
+	index.clear();
+}
+
 bool FSConformanceRegistry::has_conformance(const String &p_target_key, const StringName &p_trait_name, bool p_include_runtime) const {
 	if (p_target_key.is_empty() || p_trait_name == StringName()) {
 		return false;
