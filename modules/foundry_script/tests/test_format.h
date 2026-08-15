@@ -1497,6 +1497,18 @@ TEST_SUITE("[Modules][FoundryScript][Format]") {
 				vformat("Empty conformance body must keep a `pass`: %s", formatted));
 	}
 
+	TEST_CASE("[Format] Keeps the comments of an empty conformance body") {
+		// The body's `pass` is not retained in the tree, so the synthesized one has to
+		// carry the comments that were written on and above it.
+		const String source =
+				"extend Node uses Marker:\n"
+				"\t# why\n"
+				"\tpass  # note\n";
+		const String formatted = format_or_fail(source);
+		CHECK_MESSAGE(formatted == "extend Node uses Marker:\n\t# why\n\tpass  # note\n",
+				vformat("Empty conformance body must keep its comments: %s", formatted));
+	}
+
 	TEST_CASE("[Format] Keeps comments around a conformance") {
 		const String source =
 				"# above\n"

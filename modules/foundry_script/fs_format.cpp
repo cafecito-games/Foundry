@@ -1395,10 +1395,16 @@ void FSPrinter::print_conformance(const FSParser::ConformanceNode *p_conformance
 	indent_level++;
 	if (p_conformance->witnesses.is_empty()) {
 		// A conformance body accepts only methods and `pass`; an all-`pass` body still
-		// needs a body line, and `pass` itself is not retained in the tree.
+		// needs a body line, and `pass` itself is not retained in the tree. The body's
+		// comments are, though: flush the full-line ones above the synthesized `pass` and
+		// carry the inline comment on the body's last line (the source `pass`) onto it.
+		if (p_conformance->end_line > p_conformance->start_line) {
+			emit_leading_trivia(p_conformance->end_line, 0);
+		}
 		write_indent();
 		write("pass");
 		newline();
+		emit_trailing_comment(p_conformance->end_line);
 	} else {
 		for (int i = 0; i < p_conformance->witnesses.size(); i++) {
 			const FSParser::FunctionNode *witness = p_conformance->witnesses[i];

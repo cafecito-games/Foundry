@@ -13,7 +13,7 @@ func run() -> void:
 	print(counter)
 
 extend int uses Marker:
-	pass
+	pass  # nothing to witness
 
 trait Greeter:
 	func greet() -> String

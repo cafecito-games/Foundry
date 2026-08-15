@@ -17,7 +17,7 @@ func run() -> void:
 
 
 extend int uses Marker:
-	pass
+	pass  # nothing to witness
 
 
 trait Greeter:
