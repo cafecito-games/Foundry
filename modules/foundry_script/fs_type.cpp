@@ -36,6 +36,22 @@
 
 #include "core/object/class_db.h"
 
+// A type parameter that leaves nothing behind for the runtime to check a value against.
+//
+// A method-scope parameter is chosen per call and erased to Variant, and `FSDataType::is_type()`
+// accepts any value for one, so no check exists or can be emitted for a slot declared with it.
+//
+// The other scopes survive execution. A class-scope parameter -- which includes the synthetic
+// `@Self` -- is reified onto the instance from its type arguments, and a slot declared with it is
+// projected against that reification before a store (`_project_binding_data_type()` in
+// `foundry_script.cpp`), which is what makes a member write through a raw `Box` a genuinely
+// runtime-checked assignment. Enum-scope parameters keep the same allowance: they are resolved
+// against the enum declaration rather than per call.
+static bool _is_erased_type_parameter(const FSParser::DataType &p_type) {
+	return p_type.kind == FSParser::DataType::TYPE_PARAMETER &&
+			p_type.type_parameter_scope == FSParser::DataType::TYPE_PARAMETER_METHOD;
+}
+
 // A resource path identifies the one class that owns the file. Every inner class compiled from the
 // file reports that same path, so a conformance lookup by path on behalf of an inner class would
 // answer with a sibling's or the root class's conformance. See
@@ -594,10 +610,9 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 	}
 
 	if (p_target.kind == FSParser::DataType::TYPE_PARAMETER || p_source.kind == FSParser::DataType::TYPE_PARAMETER) {
-		// Type parameters are erased to Variant at runtime. Two handles are statically compatible only
-		// when they denote the same parameter; mixing a parameter with a concrete type is accepted with a
-		// runtime check, mirroring how the runtime defensively accepts any value for an erased parameter.
+		// Type parameters are erased to Variant at runtime, so the two directions are not symmetric.
 		if (p_target.kind == FSParser::DataType::TYPE_PARAMETER && p_source.kind == FSParser::DataType::TYPE_PARAMETER) {
+			// Two handles are statically compatible only when they denote the same parameter.
 			// Nullability is deliberately excluded from this identity comparison so `T` widens to `T?`
 			// the same way `Node` widens to `Node?`. The unsafe direction (`T?` into `T`) is already
 			// rejected by the strict-null gate above, which runs before this branch, so ignoring
@@ -607,7 +622,18 @@ FSTypeCompatibility::Result FSTypeCompatibility::check(const FSParser::DataType 
 			target_identity.is_nullable = false;
 			source_identity.is_nullable = false;
 			result.compatible = target_identity == source_identity;
+		} else if (_is_erased_type_parameter(p_target)) {
+			// A downcast is licensed by a check the runtime can actually perform: `var n: Node2D = node`
+			// is accepted because `Node2D` still exists at run time and the value carries its class. A
+			// type-parameter destination has neither half of that. The caller picks `T` and it is erased
+			// before the callee runs, so there is nothing to test a value against and no check is emitted
+			// for the assignment. Accepting a concrete value here would launder it into a `T` slot
+			// untested, so only a value already known to be `T` satisfies one. Flow narrowing refines the
+			// value, never the parameter: `if value is int` makes the value an `int` and leaves `T` alone.
+			result.compatible = false;
 		} else {
+			// A type parameter as the source is the downcast shape instead: the destination is a concrete
+			// type the runtime can still name, and the erased value carries what a type test needs.
 			result.compatible = true;
 			result.requires_runtime_check = true;
 		}
@@ -1118,6 +1144,14 @@ bool FSTypeCompatibility::allows_runtime_narrowing(const FSParser::DataType &p_n
 		// there. Every other signature slot is compared symmetrically, so this only ever mattered once
 		// rest tails became contravariant: the unsafe direction must stay a static error rather than
 		// become a "runtime check" the runtime cannot perform.
+		return false;
+	}
+	if (_is_erased_type_parameter(p_narrow)) {
+		// The reverse-compatibility rule below reads an assignment as a downcast the runtime will check.
+		// An erased type-parameter destination has no runtime type to check against and gets no emitted
+		// check at all, so nothing backs that reading and the assignment must stay a static error. Same
+		// reasoning as the erased Callable signature and the numeric width below: an allowance that
+		// claims a runtime check must name one the runtime can actually perform.
 		return false;
 	}
 	if (FSNumericConversion::is_numeric_builtin(p_narrow) && FSNumericConversion::is_numeric_builtin(p_wide)) {
