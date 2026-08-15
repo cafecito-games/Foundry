@@ -686,6 +686,13 @@ static NumericType _checked_constant_operation_type(
 	return FSNumericOps::operation_type(declared, carrier);
 }
 
+// Defined next to `get_operation_type()`, which decides an operation on a set-typed operand by
+// enumerating the same combinations these report on.
+static bool _find_unsupported_operand_pair(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, FSParser::DataType &r_a_alternative, FSParser::DataType &r_b_alternative);
+static String _make_set_operation_error(const FSParser::DataType &p_a, const FSParser::DataType &p_b,
+		const FSParser::DataType &p_a_alternative, const FSParser::DataType &p_b_alternative,
+		Variant::Operator p_operation, const String &p_pair_error);
+
 static String _normalize_bootstrap_path(const String &p_path) {
 	return ResourceUID::ensure_path(p_path).replace_char('\\', '/').simplify_path();
 }
@@ -6764,7 +6771,16 @@ void FSAnalyzer::reduce_assignment(FSParser::AssignmentNode *p_assignment) {
 				p_assignment->use_conversion_assign = true;
 			} else {
 				// incompatible hard non-variant types
-				push_error(vformat(R"(Invalid operands "%s" and "%s" for assignment operator.)", assignee_type.to_string(), assigned_value_type.to_string()), p_assignment);
+				FSParser::DataType assignee_alternative;
+				FSParser::DataType assigned_alternative;
+				if (_find_unsupported_operand_pair(p_assignment->variant_op, compound_operand_type, assigned_value_type, assignee_alternative, assigned_alternative)) {
+					push_error(_make_set_operation_error(compound_operand_type, assigned_value_type,
+									   assignee_alternative, assigned_alternative, p_assignment->variant_op,
+									   make_integer_promotion_error(assignee_alternative, assigned_alternative, p_assignment->variant_op)),
+							p_assignment);
+				} else {
+					push_error(vformat(R"(Invalid operands "%s" and "%s" for assignment operator.)", assignee_type.to_string(), assigned_value_type.to_string()), p_assignment);
+				}
 			}
 		} else if (op_type.type_source == FSParser::DataType::UNDETECTED && !assigned_is_variant) {
 			// incompatible non-variant types (at least one weak)
@@ -7062,9 +7078,16 @@ void FSAnalyzer::reduce_binary_op(FSParser::BinaryOpNode *p_binary_op) {
 		if (!valid) {
 			const FSParser::DataType &union_type = left_type.is_tagged_union_type() && !left_type.is_meta_type ? left_type : right_type;
 			const String promotion_error = make_integer_promotion_error(left_type, right_type, p_binary_op->variant_op);
+			FSParser::DataType left_alternative;
+			FSParser::DataType right_alternative;
 			if (union_type.is_tagged_union_type() && !union_type.is_meta_type) {
 				push_error(vformat(R"*(Operator "%s" is not available on tagged union "%s"; its cases carry payloads, so its values are not integers. Match on the case first.)*",
 								   Variant::get_operator_name(p_binary_op->variant_op), union_type.enum_type),
+						p_binary_op);
+			} else if (_find_unsupported_operand_pair(p_binary_op->variant_op, left_type, right_type, left_alternative, right_alternative)) {
+				push_error(_make_set_operation_error(left_type, right_type, left_alternative, right_alternative,
+								   p_binary_op->variant_op,
+								   make_integer_promotion_error(left_alternative, right_alternative, p_binary_op->variant_op)),
 						p_binary_op);
 			} else if (!promotion_error.is_empty()) {
 				push_error(promotion_error, p_binary_op);
@@ -16173,7 +16196,9 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 	return get_operation_type(p_operation, p_a, nil_type, r_valid, p_source);
 }
 
-FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid, const FSParser::Node *p_source) {
+// The type of an operation on one pair of concrete operand types. A set-typed operand never reaches
+// here: `get_operation_type()` enumerates its alternatives and asks this for each combination.
+static FSParser::DataType _operation_type_for_operand_pair(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid) {
 	if (p_operation == Variant::OP_AND || p_operation == Variant::OP_OR) {
 		// Those work for any type of argument and always return a boolean.
 		// They don't use the Variant operator since they have short-circuit semantics.
@@ -16278,6 +16303,153 @@ FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation,
 	}
 
 	return result;
+}
+
+// The alternatives an operand of `p_type` can hold: the members of a union, the members of a type
+// parameter's union bound (erasure leaves the bound as the only static knowledge about the value), or
+// the type itself. A nullable or meta-typed operand is left whole so the rules that reject it keep
+// applying unchanged.
+static void _collect_operand_alternatives(const FSParser::DataType &p_type, Vector<FSParser::DataType> &r_alternatives) {
+	if (!p_type.is_nullable && !p_type.is_meta_type) {
+		if (p_type.kind == FSParser::DataType::UNION) {
+			r_alternatives = p_type.union_members;
+			return;
+		}
+		if (p_type.kind == FSParser::DataType::TYPE_PARAMETER && p_type.type_parameter_bound.size() == 1) {
+			const FSParser::DataType &bound = p_type.type_parameter_bound[0];
+			if (bound.kind == FSParser::DataType::UNION && !bound.is_nullable) {
+				r_alternatives = bound.union_members;
+				return;
+			}
+		}
+	}
+	r_alternatives.push_back(p_type);
+}
+
+// Whether an operation is decided set-wise when an operand denotes more than one type. Equality is
+// total and its result never depends on which alternative a value holds, so enumerating pairs there
+// could only reject comparisons the scalar rules accept, without refining the result.
+static bool _operation_is_checked_set_wise(Variant::Operator p_operation) {
+	return p_operation != Variant::OP_EQUAL && p_operation != Variant::OP_NOT_EQUAL;
+}
+
+// Whether an operand pair enumeration is needed at all: a single alternative on both sides is the
+// ordinary scalar case and must keep behaving exactly as it did.
+static bool _needs_set_wise_operation(Variant::Operator p_operation, const Vector<FSParser::DataType> &p_a_alternatives, const Vector<FSParser::DataType> &p_b_alternatives) {
+	return _operation_is_checked_set_wise(p_operation) && (p_a_alternatives.size() > 1 || p_b_alternatives.size() > 1);
+}
+
+FSParser::DataType FSAnalyzer::get_operation_type(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, bool &r_valid, const FSParser::Node *p_source) {
+	Vector<FSParser::DataType> a_alternatives;
+	Vector<FSParser::DataType> b_alternatives;
+	_collect_operand_alternatives(p_a, a_alternatives);
+	_collect_operand_alternatives(p_b, b_alternatives);
+	if (!_needs_set_wise_operation(p_operation, a_alternatives, b_alternatives)) {
+		return _operation_type_for_operand_pair(p_operation, p_a, p_b, r_valid);
+	}
+
+	// Set-wise checking: the operation is valid only when every permitted combination has a result,
+	// and its type is the normalized union of those results, which collapses to a single type when
+	// they all agree. A combination with no result is reported by the caller, which names the pair.
+	const bool hard_operation = p_a.is_hard_type() && p_b.is_hard_type();
+	Vector<FSParser::DataType> results;
+	for (const FSParser::DataType &a_alternative : a_alternatives) {
+		for (const FSParser::DataType &b_alternative : b_alternatives) {
+			bool pair_valid = false;
+			FSParser::DataType pair_result = _operation_type_for_operand_pair(p_operation, a_alternative, b_alternative, pair_valid);
+			if (!pair_valid) {
+				r_valid = false;
+				FSParser::DataType invalid;
+				invalid.kind = FSParser::DataType::VARIANT;
+				return invalid;
+			}
+			if (pair_result.is_variant()) {
+				// One unconstrained combination makes the whole result unconstrained; a union holding
+				// `Variant` would claim more than the operation proves.
+				r_valid = true;
+				FSParser::DataType dynamic_result;
+				dynamic_result.kind = FSParser::DataType::VARIANT;
+				return dynamic_result;
+			}
+			// Members are recorded as written types: `DataType::operator==`, which the normalizer
+			// deduplicates with, treats an inferred type as equal to every other type.
+			pair_result.type_source = FSParser::DataType::ANNOTATED_EXPLICIT;
+			results.push_back(pair_result);
+		}
+	}
+
+	if (results.is_empty()) {
+		r_valid = false;
+		FSParser::DataType invalid;
+		invalid.kind = FSParser::DataType::VARIANT;
+		return invalid;
+	}
+
+	r_valid = true;
+	FSParser::DataType result = FSParser::DataType::make_union(results);
+	result.type_source = hard_operation ? FSParser::DataType::ANNOTATED_INFERRED : FSParser::DataType::INFERRED;
+	return result;
+}
+
+// Whether a combination can be explained in promotion terms, which is what
+// `make_integer_promotion_error()` needs to say anything about it.
+static bool _pair_has_promotion_explanation(const FSParser::DataType &p_a, const FSParser::DataType &p_b) {
+	return FSNumericConversion::is_numeric_builtin(p_a) && FSNumericConversion::is_numeric_builtin(p_b) &&
+			p_a.builtin_type != Variant::FLOAT && p_b.builtin_type != Variant::FLOAT &&
+			p_a.numeric_type != NumericType::NONE && p_b.numeric_type != NumericType::NONE;
+}
+
+// A combination that `p_operation` has no result for, or false when the operands are not set-typed or
+// every combination is valid. A set may allow several unsupported combinations and any one of them is
+// a complete reason to reject the operation, so the one with a promotion-level explanation wins: it
+// tells the author which values have no common type instead of only that a pair is unsupported.
+// Alternatives are in canonical order, so the choice does not depend on how the set was written.
+static bool _find_unsupported_operand_pair(Variant::Operator p_operation, const FSParser::DataType &p_a, const FSParser::DataType &p_b, FSParser::DataType &r_a_alternative, FSParser::DataType &r_b_alternative) {
+	Vector<FSParser::DataType> a_alternatives;
+	Vector<FSParser::DataType> b_alternatives;
+	_collect_operand_alternatives(p_a, a_alternatives);
+	_collect_operand_alternatives(p_b, b_alternatives);
+	if (!_needs_set_wise_operation(p_operation, a_alternatives, b_alternatives)) {
+		return false;
+	}
+
+	bool found = false;
+	for (const FSParser::DataType &a_alternative : a_alternatives) {
+		for (const FSParser::DataType &b_alternative : b_alternatives) {
+			bool pair_valid = false;
+			_operation_type_for_operand_pair(p_operation, a_alternative, b_alternative, pair_valid);
+			if (pair_valid) {
+				continue;
+			}
+			const bool explainable = _pair_has_promotion_explanation(a_alternative, b_alternative);
+			if (!found || explainable) {
+				r_a_alternative = a_alternative;
+				r_b_alternative = b_alternative;
+				found = true;
+			}
+			if (explainable) {
+				return true;
+			}
+		}
+	}
+	return found;
+}
+
+// The diagnostic for a set-typed operand pair with no result. `p_pair_error` is the scalar
+// explanation for the offending combination, so the wording an author already sees for two concrete
+// operands is the wording they see here, with the set that admitted the combination named around it.
+static String _make_set_operation_error(const FSParser::DataType &p_a, const FSParser::DataType &p_b,
+		const FSParser::DataType &p_a_alternative, const FSParser::DataType &p_b_alternative,
+		Variant::Operator p_operation, const String &p_pair_error) {
+	if (p_pair_error.is_empty()) {
+		return vformat(R"(Operands "%s" and "%s" allow the combination "%s" and "%s", which the "%s" operator has no result for. Narrow both operands with a type test, or convert them explicitly.)",
+				p_a.to_string_diagnostic(), p_b.to_string_diagnostic(),
+				p_a_alternative.to_string_diagnostic(), p_b_alternative.to_string_diagnostic(),
+				Variant::get_operator_name(p_operation));
+	}
+	return vformat(R"(Operands "%s" and "%s" allow a combination the "%s" operator has no result for. %s Narrow both operands with a type test first.)",
+			p_a.to_string_diagnostic(), p_b.to_string_diagnostic(),
+			Variant::get_operator_name(p_operation), p_pair_error);
 }
 
 bool FSAnalyzer::is_type_compatible(const FSParser::DataType &p_target, const FSParser::DataType &p_source, bool p_allow_implicit_conversion, const FSParser::Node *p_source_node, const FSParser::ExpressionNode *p_constant_source) {

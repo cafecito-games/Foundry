@@ -674,3 +674,109 @@ TEST_CASE("[Modules][FoundryScript][NumericTypes] A native narrow destination ke
 	// A narrow native source still fits the double exactly, so it promotes to float.
 	CHECK(classify(make_float_type(), int8_type) == Conversion::IMPLICIT_WIDEN);
 }
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] Set-wise arithmetic collapses when every combination agrees") {
+	using namespace TestIntegerPromotion;
+
+	// `int` with `long` and `long` with `long` both promote to `long`, so the union of the results is
+	// a single type and the expression is an ordinary `long`.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar narrow: int | long = 1\n"
+			"\tvar wide: long = 2L\n"
+			"\tvar total = narrow + wide\n"
+			"\tprint(total)\n");
+	REQUIRE(snippet.parse_error == OK);
+	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
+	check_initializer_type(snippet, "total", Variant::INT, NumericType::INT64);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] Differing combination results become a union") {
+	using namespace TestIntegerPromotion;
+
+	// `int` with `int` stays `int` while every other combination reaches `long`, so the result is the
+	// union of both rather than a forced join onto the wider one.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar left: int | long = 1\n"
+			"\tvar right: int | long = 2\n"
+			"\tvar total = left + right\n"
+			"\tprint(total)\n");
+	REQUIRE(snippet.parse_error == OK);
+	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
+
+	const FSParser::VariableNode *total = snippet.local("total");
+	REQUIRE(total != nullptr);
+	REQUIRE(total->initializer != nullptr);
+	const FSParser::DataType total_type = total->initializer->get_datatype();
+	CHECK(total_type.kind == FSParser::DataType::UNION);
+	CHECK_MESSAGE(total_type.union_members.size() == 2, total_type.to_string());
+	CHECK(total_type.union_members.has(make_integer_type(NumericType::INT32)));
+	CHECK(total_type.union_members.has(make_integer_type(NumericType::INT64)));
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A combination with no result rejects the whole operation") {
+	using namespace TestIntegerPromotion;
+
+	// `ulong` with `int` has no common integer type, and one unsatisfiable combination is enough,
+	// even though `int` with `int` would be fine on its own.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar mixed: int | ulong = 1\n"
+			"\tvar narrow: int = 2\n"
+			"\tprint(mixed + narrow)\n");
+	REQUIRE(snippet.parse_error == OK);
+	const String error = snippet.first_error();
+	CHECK(error.contains("int | ulong"));
+	CHECK(error.contains("ulong"));
+	CHECK(error.contains("Narrow both operands with a type test"));
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] Two Number-bounded values cannot be added directly") {
+	using namespace TestIntegerPromotion;
+
+	// `Number` admits `long` with `ulong`, which the promotion matrix has no common type for, so a
+	// direct addition under a full numeric bound is always rejected. Narrowing or an explicit
+	// conversion is the supported way to write it.
+	const AnalyzedSnippet snippet(
+			"func add[X: Number, Y: Number](left: X, right: Y) -> long:\n"
+			"\treturn left + right\n"
+			"\n"
+			"func test():\n"
+			"\tprint(add(1, 2))\n");
+	REQUIRE(snippet.parse_error == OK);
+	const String error = snippet.first_error();
+	CHECK(error.contains("ulong"));
+	CHECK(error.contains("Narrow both operands with a type test"));
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] A set-typed integer still reaches float without a gate") {
+	using namespace TestIntegerPromotion;
+
+	// `long + 1.5` is accepted and yields `float` even though `var f: float = some_long` is not, and
+	// set-wise checking reproduces that asymmetry rather than diverging from it.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar value: int | long = 1\n"
+			"\tvar scaled = value + 1.5\n"
+			"\tprint(scaled)\n");
+	REQUIRE(snippet.parse_error == OK);
+	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
+	check_initializer_type(snippet, "scaled", Variant::FLOAT, NumericType::NONE);
+}
+
+TEST_CASE("[Modules][FoundryScript][NumericTypes] Comparing set-typed operands still yields a boolean") {
+	using namespace TestIntegerPromotion;
+
+	// Ordering needs no common carrier, so every combination a wide unsigned union allows has a
+	// result even though addition would not.
+	const AnalyzedSnippet snippet(
+			"func test():\n"
+			"\tvar left: long | ulong = 1L\n"
+			"\tvar right: long | ulong = 2L\n"
+			"\tvar ordered = left < right\n"
+			"\tprint(ordered)\n");
+	REQUIRE(snippet.parse_error == OK);
+	CHECK_MESSAGE(snippet.first_error().is_empty(), snippet.first_error());
+	check_initializer_type(snippet, "ordered", Variant::BOOL, NumericType::NONE);
+}

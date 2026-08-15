@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: Operands "X" and "Y" allow a combination the "+" operator has no result for. No integer type holds every value of both "int" and "ulong", so the "+" operator has no common type here. Convert one operand explicitly. Narrow both operands with a type test first.
