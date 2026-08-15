@@ -1878,10 +1878,12 @@ void FSAnalyzer::FlowFinalityContext::apply_failed_type_test_flow_narrowing(cons
 	if (!narrowed_type.is_set()) {
 		return;
 	}
-	// `null` passes `is T?` for every `T`, so a failed nullable test is itself a null check and the
-	// survivors are non-null. A failed non-nullable test says nothing about null, so every way the
-	// value could already have been null survives: the declaration, and the set it was drawn from.
-	narrowed_type.is_nullable = !p_tested_type.is_nullable && (current_type.is_nullable || alternative_set->is_nullable);
+	// A failed type test never proves the value is non-null, not even when the test named a nullable
+	// type: only `OPCODE_TYPE_TEST_BUILTIN` accepts null for a `T?` test, while the native, script,
+	// typed-array and typed-dictionary opcodes answer false for null whatever the `?` said. Every way
+	// the value could already have been null therefore survives: the declaration itself, and the set
+	// the alternatives were drawn from. Null is removed by a null check, which is analyzed separately.
+	narrowed_type.is_nullable = current_type.is_nullable || alternative_set->is_nullable;
 	apply_flow_narrowing(p_identifier, narrowed_type);
 }
 
