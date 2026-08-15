@@ -486,6 +486,13 @@ Generics appear on classes (`class Box[T]`, `class_name Pair[K, V]`), traits
 (`enum Result[T, E]`, `enum_name Tree[T]`; see §4.4). A bound constrains the
 parameter (`[T: Resource]`). A trailing comma is allowed.
 
+A bound is an ordinary type, so it may be a type union or an alias naming one
+(`[T: int | uint]`, `[T: Number]`). Satisfaction against a union bound is asymmetric:
+a **concrete** argument satisfies it when it satisfies **at least one** alternative; a
+**union** argument (which inference produces from a union-typed value) satisfies it only
+when **every** alternative does; and a **type-parameter** argument satisfies it only when
+its own bound proves it does, so an unbounded parameter never satisfies a concrete bound.
+
 A class's `static var` may not be typed by a class type parameter, directly or nested
 (`static var value: T`, `static var items: Array[T]`). Static storage is one slot per
 declaring class and specializing a class does not create a distinct one, so such a slot
@@ -1536,6 +1543,13 @@ Details (`parse_type`):
 - **Integer type names** are exactly `int`, `uint`, `long`, and `ulong`. They are ordinary
   built-in type names rather than keywords, so they are resolved in type position only and
   remain usable as identifiers elsewhere. No other integer spelling exists.
+- **`Number`** is a compiler-provided, globally visible type naming the union of the
+  source-spellable numeric types — `int`, `uint`, `long`, `ulong`, and `float`. It is closed: no
+  user declaration joins it. Like any other multi-member union it is type-position-only and
+  erases at runtime, and because it is answered at the same precedence as a built-in type name,
+  a declaration that reuses the spelling (`class_name Number`, `trait_name Number`, `class
+  Number`, `type Number = ...`) is reported at its own declaration
+  (`... "Number" hides the compiler-provided type "Number".`).
 - **Typed collections**: `Array[int]`, `Dictionary[String, int]`, etc. — one or more
   comma-separated element types. `void` is not allowed as an element type.
 - **`Callable[[P1, P2], R]`** — a parameter-type list in inner brackets, a comma, then

@@ -1,0 +1,8 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 17: Type argument "U" does not satisfy the bound "float | int | long | uint | ulong" of type parameter "T" of generic method "identity()".
+>> ERROR at line 20: Type argument "String" does not satisfy the bound "float | int | long | uint | ulong" of type parameter "T".
+>> ERROR at line 21: Type argument "Vector2" does not satisfy the bound "float | int | long | uint | ulong" of type parameter "T".
+>> ERROR at line 22: Type argument "Widget" does not satisfy the bound "float | int | long | uint | ulong" of type parameter "T".
+>> ERROR at line 23: Type argument "Variant" does not satisfy the bound "float | int | long | uint | ulong" of type parameter "T".
+>> ERROR at line 25: Type argument "String | int" does not satisfy the bound "float | int | long | uint | ulong" of type parameter "T".
+>> ERROR at line 29: Type argument "String" does not satisfy the bound "float | int | long | uint | ulong" of type parameter "T" of generic method "identity()".

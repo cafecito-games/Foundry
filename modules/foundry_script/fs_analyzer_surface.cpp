@@ -277,6 +277,13 @@ Error FSAnalyzer::check_native_member_name_conflict(const StringName &p_member_n
 		return ERR_PARSE_ERROR;
 	}
 
+	if (p_member_name == FSParser::get_number_type_name()) {
+		// `Number` is compiler-provided and answered at built-in precedence, so a member declared with
+		// the name is unreachable from every type position exactly as a built-in spelling would be.
+		push_error(R"(The member "Number" cannot have the same name as the compiler-provided type "Number".)", p_member_node);
+		return ERR_PARSE_ERROR;
+	}
+
 	return OK;
 }
 
@@ -508,6 +515,10 @@ Error FSAnalyzer::resolve_class_inheritance(FSParser::ClassNode *p_class, const 
 		ensure_autoload_index_current();
 		if (FSParser::get_builtin_type(class_name) < Variant::VARIANT_MAX || class_name == SNAME("AsyncCallable")) {
 			push_error(vformat(R"(Class "%s" hides a built-in type.)", class_name), p_class->identifier);
+		} else if (class_name == FSParser::get_number_type_name()) {
+			// `Number` is compiler-provided and wins a type lookup outright, so a class spelled with it
+			// could never be named in a type position.
+			push_error(R"(Class "Number" hides the compiler-provided type "Number".)", p_class->identifier);
 		} else if (class_exists(class_name)) {
 			push_error(vformat(R"(Class "%s" hides a native class.)", class_name), p_class->identifier);
 		} else if (ScriptServer::is_global_class(global_class_name) && (!FoundryScript::is_canonically_equal_paths(ScriptServer::get_global_class_path(global_class_name), parser->script_path) || p_class != parser->head)) {
@@ -1969,6 +1980,8 @@ void FSAnalyzer::resolve_class_member(FSParser::ClassNode *p_class, int p_index,
 				// unsigned and fixed-width numeric names included -- is reported here.
 				if (FSParser::get_builtin_data_type(alias_name).is_valid() || alias_name == SNAME("AsyncCallable")) {
 					push_error(vformat(R"(Type alias "%s" hides a built-in type.)", alias_name), member.type_alias->identifier);
+				} else if (alias_name == FSParser::get_number_type_name()) {
+					push_error(R"(Type alias "Number" hides the compiler-provided type "Number".)", member.type_alias->identifier);
 				} else if (class_exists(alias_name)) {
 					push_error(vformat(R"(Type alias "%s" hides a native class.)", alias_name), member.type_alias->identifier);
 				}

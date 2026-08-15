@@ -2534,6 +2534,12 @@ public:
 	};
 	static BuiltinDataType get_builtin_data_type(const StringName &p_type);
 
+	// The compiler-provided `Number` type: the closed union of the source-spellable numeric types.
+	// It is derived from the same registry `get_builtin_data_type()` answers from, plus `float`, so a
+	// width that becomes spellable joins `Number` by construction rather than through a second list.
+	static const StringName &get_number_type_name();
+	static DataType make_number_type();
+
 	// The FoundryScript source spelling of a built-in slot. This is the inverse of
 	// `get_builtin_data_type()` and the single spelling policy every source-facing surface uses:
 	// a declared width names itself, and a slot whose width the carrier erased falls back to the
