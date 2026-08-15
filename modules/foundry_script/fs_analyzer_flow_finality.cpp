@@ -1616,6 +1616,11 @@ static bool _numeric_type_test_range(const FSParser::DataType &p_type, int64_t &
 // also a `long` value. `is not long` therefore removes `long` *and* `int`, while `is not int` removes
 // only `int` -- a value too large for `int` is still a perfectly good `long`. Non-numeric alternatives
 // are removed only on an exact type match, which is always sound and never over-removes.
+//
+// Nullability is a separate axis and is deliberately excluded here. Normalization hoists it onto the
+// union, so an alternative is always stored non-nullable, while `is T?` is a test an author may write
+// on any type. Comparing it would leave `is not String?` unable to remove the `String` alternative;
+// what a nullable test does prove -- that the value is not null -- is settled by the caller.
 static bool _type_test_subsumes(const FSParser::DataType &p_test_type, const FSParser::DataType &p_alternative) {
 	if (p_test_type.kind == FSParser::DataType::BUILTIN && p_alternative.kind == FSParser::DataType::BUILTIN &&
 			p_test_type.builtin_type == p_alternative.builtin_type) {
@@ -1628,7 +1633,11 @@ static bool _type_test_subsumes(const FSParser::DataType &p_test_type, const FSP
 			return test_minimum <= alternative_minimum && test_maximum >= alternative_maximum;
 		}
 	}
-	return p_test_type == p_alternative;
+	FSParser::DataType test_identity = p_test_type;
+	FSParser::DataType alternative_identity = p_alternative;
+	test_identity.is_nullable = false;
+	alternative_identity.is_nullable = false;
+	return test_identity == alternative_identity;
 }
 
 // The set of alternatives a value of `p_type` can actually hold at run time, or null when the type
@@ -1869,9 +1878,10 @@ void FSAnalyzer::FlowFinalityContext::apply_failed_type_test_flow_narrowing(cons
 	if (!narrowed_type.is_set()) {
 		return;
 	}
-	// A failed type test says nothing about whether the value is null, so every way the value could
-	// already have been null survives: the declaration itself, and the set it was drawn from.
-	narrowed_type.is_nullable = current_type.is_nullable || alternative_set->is_nullable;
+	// `null` passes `is T?` for every `T`, so a failed nullable test is itself a null check and the
+	// survivors are non-null. A failed non-nullable test says nothing about null, so every way the
+	// value could already have been null survives: the declaration, and the set it was drawn from.
+	narrowed_type.is_nullable = !p_tested_type.is_nullable && (current_type.is_nullable || alternative_set->is_nullable);
 	apply_flow_narrowing(p_identifier, narrowed_type);
 }
 
