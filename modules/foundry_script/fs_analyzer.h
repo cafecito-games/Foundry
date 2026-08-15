@@ -573,7 +573,7 @@ private:
 	bool strict_dynamic_checks = false;
 	bool resolving_function_signature_type = false;
 	// Set while a `match` branch's pattern expression is reduced. A branch is only reached once every
-	// earlier pattern failed, but that ordering is not modelled as narrowing, so a test the analyzer
+	// earlier pattern failed, but that ordering is not modeled as narrowing, so a test the analyzer
 	// would otherwise call statically always true may well be the arm that tells the remaining
 	// alternatives apart.
 	bool reducing_match_pattern_expression = false;

@@ -1,5 +1,5 @@
 # A `match` branch is only reached once every earlier pattern failed, but that ordering is not
-# modelled as narrowing: each pattern still sees the whole set. A pattern that subsumes every
+# modeled as narrowing: each pattern still sees the whole set. A pattern that subsumes every
 # alternative is therefore not the always-true test a condition in the same shape would be, so
 # patterns are exempt from that rule and this ordering analyzes cleanly.
 type Small = int | long
