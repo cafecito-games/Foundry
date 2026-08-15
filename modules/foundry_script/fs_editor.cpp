@@ -2131,6 +2131,9 @@ static void _find_identifiers_in_class(const FSParser::ClassNode *p_class, bool 
 						option = ScriptLanguage::CodeCompletionOption(member.m_tuple->identifier->name, ScriptLanguage::CODE_COMPLETION_KIND_CLASS, location);
 						break;
 					case FSParser::ClassNode::Member::TYPE_ALIAS:
+						// An alias has no completion presentation yet, and it names no value, so it
+						// must be skipped rather than inserted as an empty option.
+						continue;
 					case FSParser::ClassNode::Member::GROUP:
 						break; // No-op, but silences warnings.
 					case FSParser::ClassNode::Member::UNDEFINED:

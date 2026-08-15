@@ -6431,8 +6431,11 @@ void FSParser::validate_union_member_type(const TypeNode *p_member) {
 // name wins over every other meaning, so this identifies exactly the bare-type-parameter members a
 // union may not contain.
 bool FSParser::is_enclosing_type_parameter_name(const StringName &p_name) const {
-	if (current_function != nullptr) {
-		for (const TypeParameterNode *type_parameter : current_function->type_parameters) {
+	// A lambda body is parsed with the lambda's own synthetic function current, so the walk follows
+	// the lambda chain back to the declaration that owns the type parameters.
+	for (const FunctionNode *scope = current_function; scope != nullptr;
+			scope = scope->source_lambda != nullptr ? scope->source_lambda->parent_function : nullptr) {
+		for (const TypeParameterNode *type_parameter : scope->type_parameters) {
 			if (type_parameter->identifier != nullptr && type_parameter->identifier->name == p_name) {
 				return true;
 			}
