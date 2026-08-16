@@ -1,6 +1,9 @@
 # Methods declared against a class or trait type parameter compile once, so top-level Array and
 # Dictionary return metadata is erased at runtime. Every concrete consumer must retype the value from
-# the unspecialized declaration while gradual consumers must keep the erased value.
+# the unspecialized declaration while gradual consumers must keep the erased value. The receiver-
+# relative check on such a slot therefore establishes only that the contents CAN become the receiver's
+# specialization; the retyping at a concrete consumer is what performs the conversion. See
+# class_parameter_erased_container_convertibility.fs for the observable consequence.
 class Parcel[T]:
 	pass
 
