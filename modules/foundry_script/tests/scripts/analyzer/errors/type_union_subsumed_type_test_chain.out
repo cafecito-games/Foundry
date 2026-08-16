@@ -1,2 +1,2 @@
 FS_TEST_ANALYZER_ERROR
->> ERROR at line 11: Expression is of type "String | float" so it can't be of type "int".
+>> ERROR at line 15: Expression is of type "String | float" so it can't be of type "int".

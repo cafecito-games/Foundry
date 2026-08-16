@@ -1,0 +1,2 @@
+FS_TEST_ANALYZER_ERROR
+>> ERROR at line 5: Every alternative of "uint | ulong" passes "is ulong", so this test is always true and nothing reaches its false branch. Test the narrowest alternative first.

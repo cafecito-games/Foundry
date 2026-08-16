@@ -5743,7 +5743,10 @@ void FSAnalyzer::resolve_match_pattern(FSParser::PatternNode *p_match_pattern, F
 					result = expr->get_datatype();
 					break;
 				}
+				const bool previous_reducing_match_pattern_expression = reducing_match_pattern_expression;
+				reducing_match_pattern_expression = true;
 				reduce_expression(expr);
+				reducing_match_pattern_expression = previous_reducing_match_pattern_expression;
 				result = expr->get_datatype();
 				if (!expr->is_constant) {
 					bool valid_type_test_pattern = false;
@@ -13345,6 +13348,13 @@ void FSAnalyzer::reduce_type_test(FSParser::TypeTestNode *p_type_test) {
 			push_error(vformat(R"(Expression is of type "%s" so it can't be of type "%s".)", operand_type.to_string(), test_type.to_string()), p_type_test->operand);
 		} else {
 			downgrade_node_type_source(p_type_test->operand);
+		}
+	} else if (operand_type.is_hard_type() && !reducing_match_pattern_expression) {
+		FSParser::DataType exhausted_set;
+		if (type_test_exhausts_alternatives(operand_type, compatibility_type, exhausted_set)) {
+			// The test is a static tautology, which in a chain is what makes every later arm dead: the arms
+			// exist to tell the alternatives apart, and this one already claimed all of them.
+			push_error(vformat(R"(Every alternative of "%s" passes "is %s", so this test is always true and nothing reaches its false branch. Test the narrowest alternative first.)", exhausted_set.to_string(), test_type.to_string()), p_type_test);
 		}
 	}
 }

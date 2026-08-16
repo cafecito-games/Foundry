@@ -356,8 +356,9 @@ Two sharp edges are worth stating outright:
 - **Numeric type tests go narrowest-first.** `is` on a numeric type is a carrier-plus-value-range
   predicate, not a declared-width test, so `int` is a *subset* of `long`: for a value of `5`, both
   `is int` and `is long` are true. Testing `long` first therefore matches every `int` too and leaves
-  the later `int` arm dead, and where nothing in the surviving set could still match, the analyzer
-  rejects the later test outright. For the same reason, `is not long` removes `long` *and* `int`,
+  the later `int` arm dead, so the analyzer rejects the chain: the later test when something still
+  survives the first one, and the first test itself when nothing does, because a test every
+  alternative passes is always true. For the same reason, `is not long` removes `long` *and* `int`,
   while `is not int` removes only `int`, and a set such as `Number` can never be split into five
   disjoint arms.
 
@@ -661,8 +662,8 @@ func test() -> void:
   (a payload enum) for the first case and a trait for the second.
 - Do not expect `is int` and `is long` to be disjoint. A numeric type test checks the runtime
   carrier and value range, so `int` is a subset of `long`. Order numeric tests narrowest-first;
-  testing the wider alternative first silently makes the narrower arm unreachable, and rejects the
-  later test outright when nothing in the surviving set could match it.
+  testing the wider alternative first makes the narrower arm unreachable and is rejected, either at
+  the later test or at the wider test itself when it already matches every alternative.
 - Do not put a multi-member union in a typed container element position or on an `@export`. Both
   enforce exactly one runtime type. Use `Array[Variant]` or `Dictionary[Variant, Variant]` and
   validate.

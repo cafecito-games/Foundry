@@ -1656,6 +1656,37 @@ static const FSParser::DataType *_flow_narrowing_alternative_set(const FSParser:
 	return nullptr;
 }
 
+// True when a type test on a value of `p_operand_type` can never be false: the operand is a set of
+// alternatives and `p_test_type` subsumes every one of them, so whatever the value holds it passes
+// the test. That is the one dead-arm shape failed-test subtraction cannot report on its own.
+// Removing every alternative leaves an empty set, `apply_failed_type_test_flow_narrowing()` has no
+// bottom type to narrow to and gives up, and the arms after such a test are then checked against the
+// full set and accepted -- silently never running. Reporting the exhausting test instead needs no
+// empty type, and names the test that is actually wrong.
+//
+// A nullable set is excluded, because null fails a test on a non-nullable type and therefore does
+// reach the false branch. Subsumption is only decided for numerics and for identical types, so this
+// deliberately under-approximates -- a union of two subclasses tested against their shared base is
+// not reported -- which keeps every answer it does give free of false positives.
+bool FSAnalyzer::type_test_exhausts_alternatives(const FSParser::DataType &p_operand_type, const FSParser::DataType &p_test_type, FSParser::DataType &r_alternative_set) {
+	if (!p_test_type.is_set() || p_operand_type.is_nullable) {
+		return false;
+	}
+	const FSParser::DataType *alternative_set = _flow_narrowing_alternative_set(p_operand_type);
+	if (alternative_set == nullptr || alternative_set->is_nullable || alternative_set->union_members.is_empty()) {
+		return false;
+	}
+	for (const FSParser::DataType &alternative : alternative_set->union_members) {
+		if (!_type_test_subsumes(p_test_type, alternative)) {
+			return false;
+		}
+	}
+	// The bound of a type parameter, not the parameter's own name, is what lists the alternatives a
+	// reader has to reorder, so the caller reports the set rather than the operand's type.
+	r_alternative_set = *alternative_set;
+	return true;
+}
+
 const FSParser::Node *FSAnalyzer::FlowFinalityContext::flow_narrowing_key_from_identifier(const FSParser::IdentifierNode *p_identifier) const {
 	switch (p_identifier->source) {
 		case FSParser::IdentifierNode::FUNCTION_PARAMETER:
