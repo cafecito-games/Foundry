@@ -599,12 +599,48 @@ static bool _projected_container_type_from_descriptor(const Variant &p_descripto
 	return true;
 }
 
-// Rebuilds the tuple shape a type test was compiled against. Only tuple descriptors carry the
-// `is_tuple` marker, so every other node reads back through the shared container-type path.
+// Rebuilds the tuple shape a type test or a tuple store was compiled against. Only tuple descriptors
+// carry the `is_tuple` marker, so every other node reads back through the shared container-type path.
+//
+// `p_receiver_arguments` are what the running frame's receiver reified for the declaring class's type
+// parameters, so a tuple element that names one is checked against the argument this instance
+// actually carries. Callers with no receiver -- every `is` test -- pass an empty vector, which leaves
+// such an element accepting anything, exactly as the fully erased lowering did.
 static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const FrameSelfBinding &p_frame_self,
-		FSDataType &r_type) {
+		const Vector<ProjectedContainerType> &p_receiver_arguments, FSDataType &r_type) {
 	const Dictionary descriptor = p_descriptor;
 	FSDataType type;
+	const Variant type_parameter_index = descriptor.get("type_parameter_index", Variant());
+	if (type_parameter_index.get_type() == Variant::INT) {
+		// An ordinal no receiver resolved -- a raw `Crate.new()`, an ancestor step that stayed
+		// unspecialized, or the -1 a method-scope parameter is recorded as -- leaves this element without
+		// evidence. Only that element degrades: the concrete ones keep being checked, matching how a
+		// projected member binding treats an unresolved node.
+		const int64_t ordinal = type_parameter_index;
+		if (ordinal < 0 || ordinal >= p_receiver_arguments.size() || !p_receiver_arguments[ordinal].is_known()) {
+			r_type = FSDataType();
+			return true;
+		}
+		const ContainerType resolved = p_receiver_arguments[ordinal].to_container_type();
+		if (descriptor.get("is_type_handle", false)) {
+			// A `Type[T]` element denotes a class handle for the argument, not an instance of it, and an
+			// argument with no handle form (`int` denotes no class at all) leaves the element without
+			// evidence rather than describing a handle that cannot exist -- the same rule the projected
+			// member-binding path applies to a nested handle node.
+			if (resolved.builtin_type != Variant::OBJECT) {
+				r_type = FSDataType();
+				return true;
+			}
+			type = FSDataType::from_type_handle_container_type(resolved);
+		} else {
+			type = FSDataType::from_container_type(resolved);
+		}
+		// A `T?` element admits null whatever the argument turns out to be, so the declared nullability
+		// travels with the node rather than being lost to the resolved type.
+		type.is_nullable = descriptor.get("is_nullable", false);
+		r_type = type;
+		return true;
+	}
 	if (!descriptor.get("is_tuple", false)) {
 		ContainerType container_type;
 		if (!_container_type_from_descriptor(descriptor, p_frame_self, container_type)) {
@@ -624,7 +660,7 @@ static bool _data_type_from_tuple_descriptor(const Variant &p_descriptor, const 
 	const Array element_types = descriptor.get("element_types", Array());
 	for (int i = 0; i < element_types.size(); i++) {
 		FSDataType element_type;
-		if (!_data_type_from_tuple_descriptor(element_types[i], p_frame_self, element_type)) {
+		if (!_data_type_from_tuple_descriptor(element_types[i], p_frame_self, p_receiver_arguments, element_type)) {
 			return false;
 		}
 		type.container_element_types.push_back(element_type);
@@ -2305,7 +2341,9 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 					// The arity check is the cheap rejection; only a candidate of the right shape pays
 					// for rebuilding the element types and testing them one by one.
 					FSDataType tuple_type;
-					if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, tuple_type))) {
+					// An `is` test has no slot to resolve against, so a parameter element keeps accepting
+					// anything rather than being checked against whatever receiver the test happens to run on.
+					if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, Vector<ProjectedContainerType>(), tuple_type))) {
 						err_text = _missing_static_self_error(name);
 						OPCODE_BREAK;
 					}
@@ -2313,7 +2351,7 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				} else if (value->get_type() == Variant::NIL) {
 					// A nullable tuple type accepts null; the flag travels on the descriptor.
 					FSDataType tuple_type;
-					if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, tuple_type))) {
+					if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, Vector<ProjectedContainerType>(), tuple_type))) {
 						err_text = _missing_static_self_error(name);
 						OPCODE_BREAK;
 					}
@@ -3414,10 +3452,23 @@ Variant FSFunction::call(FSInstance *p_instance, const Variant **p_args, int p_a
 				GET_VARIANT_PTR(type_info, 2);
 				const int arity = _code_ptr[ip + 4];
 
+				// A class type parameter is reified onto the instance, but a function body compiled once in
+				// the declaring class sees only the parameter. An element naming one therefore reaches here
+				// unresolved, and the receiver supplies the argument: the leaf script maps every ancestor's
+				// parameters onto its own reification, so a `(int, T)` slot in a body inherited by
+				// `IntCrate extends Crate[int]` checks its second element against `int`.
+				//
+				// An unspecialized receiver (`Crate.new()`), or a chain step that never resolved, leaves an
+				// element with no argument, and only that element degrades to accepting anything.
+				Vector<ProjectedContainerType> receiver_arguments;
+				if (p_instance != nullptr && p_instance->script.is_valid() && _script != nullptr) {
+					p_instance->script->project_type_arguments_onto_base(Ref<Script>(_script), p_instance->type_arguments, receiver_arguments);
+				}
+
 				// A tuple slot erases to a bare Array in the address type, so the declared shape reaches
 				// here as the same descriptor an `is` test is compiled against and is rebuilt the same way.
 				FSDataType tuple_type;
-				if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, tuple_type))) {
+				if (unlikely(!_data_type_from_tuple_descriptor(*type_info, frame_self, receiver_arguments, tuple_type))) {
 					err_text = _missing_static_self_error(name);
 					OPCODE_BREAK;
 				}
